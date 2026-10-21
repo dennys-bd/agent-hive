@@ -26,7 +26,7 @@ const VARIABLES: Record<string, string[]> = {
 // What a skill's list says for a workspace with no value: the default, or today's behaviour without one. Also reference/conventions.md's default column
 const NO_VALUE: Record<string, string> = {
   docsRepo: 'none: the docs live in this repository',
-  specsDir: '`docs/hive/specs`', plansDir: '`docs/hive/plans`', walkthroughsDir: '`docs/hive/walkthroughs`', designsDir: '`docs/hive/designs`',
+  specsDir: '`docs/hive/specs`', plansDir: '`docs/hive/plans`', walkthroughsDir: '`docs/hive/walkthroughs`', designsDir: '`docs/hive/design`',
   docsLanguage: '`English`', chatLanguage: 'the Hive\'s `hiveLanguage`, else the language the user writes in',
   delivery: '`single`', sliceMin: '`300`', sliceMax: '`550`', featureFlags: '`none`',
   designSystem: 'none: no design system',
@@ -107,11 +107,12 @@ test('every skill and agent declares the frontmatter Claude Code reads, with the
     const front = frontmatter(await agentText(agent));
     assert.equal(front.name, agent);
     assert.ok((front.description ?? '').length > 40, `agents/${agent} has a description`);
-    assert.ok(['sonnet', 'opus'].includes(front.model), `agents/${agent} routes to a model: ${front.model}`);
+    if (agent === 'designer') assert.equal(front.model, undefined, 'the designer names no model: a session\'s or a stage\'s model is set in the Hive, for any agent runner (#446)');
+    else assert.ok(['sonnet', 'opus'].includes(front.model), `agents/${agent} routes to a model: ${front.model}`);
     assert.ok((front.tools ?? '').includes('Read'), `agents/${agent} declares its tools`);
     if (front.model === 'opus') opus.push(agent);
   }
-  assert.deepEqual(opus, ['architect', 'designer', 'planner'], 'the model table: sonnet everywhere, opus for the architect, the designer and the planner');
+  assert.deepEqual(opus, ['architect', 'planner'], 'the model table: sonnet everywhere, opus for the architect and the planner, none for the designer');
 });
 
 test('every shipped skill and agent credits its origins in basedOn, each a file at its source\'s ref, or opens its header with the original comment (#338)', async () => {
@@ -181,41 +182,58 @@ test('new-build rendered with delivery stacked and testCommand pnpm test for its
   assert.ok(renderedFor(text, 'b').includes(`\n- \`delivery\`: ${NO_VALUE.delivery}\n`));
 });
 
-// #416: the designer's conventions, and neutral values for one workspace
-const DESIGNER_VARIABLES = ['docsRepo', 'designsDir', 'docsLanguage', 'chatLanguage', 'designSystem'];
-const DESIGNER_VALUES: Record<string, string> = { docsRepo: 'site-docs', designsDir: 'design/screens', docsLanguage: 'Spanish', chatLanguage: 'Portuguese', designSystem: 'docs/design-system.md' };
-const listed = (text: string, name: string, value: string): boolean => text.includes(`\n- \`${name}\`: ${value}\n`);
+// #416: the designer's conventions; #439: no docsRepo, no conventions list: each value is interpolated where it is used
+const DESIGNER_VARIABLES = ['designsDir', 'docsLanguage', 'chatLanguage', 'designSystem'];
+const DESIGNER_VALUES: Record<string, string> = { designsDir: 'design/screens', docsLanguage: 'Spanish', chatLanguage: 'Portuguese', designSystem: 'docs/design-system.md' };
 
-test('hive:designer is a template: it declares its five conventions, and a workspace with no value gets each default, no Liquid and no variables in its header (#416)', async () => {
+test('hive:designer is a template: it declares its four conventions, and a workspace with no value gets each default where it is used, no Liquid, no list and no variables in its header (#416, #439)', async () => {
   const text = await agentText('designer');
   const parsed = parseTemplate(text);
   assert.deepEqual(parsed.errors, []);
   assert.deepEqual(parsed.variables.map((v) => v.name), DESIGNER_VARIABLES);
   const rendered = renderedFor(text);
-  for (const name of DESIGNER_VARIABLES) assert.ok(listed(rendered, name, NO_VALUE[name]), name);
   assert.doesNotMatch(rendered, /\{\{|\{%/, 'no Liquid is left');
+  assert.doesNotMatch(rendered, /## Conventions/, 'no list of values: each is interpolated where it is used');
   const delivered = parseTemplate(rendered);
   assert.deepEqual([Object.hasOwn(delivered.header, 'variables'), Object.hasOwn(delivered.header, 'basedOn')], [false, false]);
   assert.equal(delivered.header.name, 'designer');
-  assert.ok(rendered.includes('`docs/hive/designs/<folder>/handoff.md`'), 'the report names the handoff under the default designsDir');
+  for (const part of ['`docs/hive/design/<folder>/handoff.md`', 'in English (its headings too, except the first line']) assert.ok(rendered.includes(part), part);
+  const body = rendered.replace(/^---\n[\s\S]*?\n---\n/, '');
+  assert.doesNotMatch(body, /design.system/i, 'with designSystem unset, nothing about a design system is said (#439)');
+  assert.doesNotMatch(body, /Talk in/, 'with chatLanguage unset, no language is imposed (#439)');
+  assert.doesNotMatch(text, /docsRepo|conventions\.md/, 'the designer has no docsRepo and reads no conventions.md: a nested docs repo is reached through designsDir (#439)');
 });
 
-test('hive:designer rendered with a value for each convention carries each in its list and its paths; another workspace keeps the defaults (#416)', async () => {
+test('hive:designer rendered with a value for each convention carries each where it is used; another workspace keeps the defaults (#416, #439)', async () => {
   const text = valued(await agentText('designer'), DESIGNER_VALUES);
   const mine = renderedFor(text);
-  for (const [name, value] of Object.entries(DESIGNER_VALUES)) assert.ok(listed(mine, name, `\`${value}\``), `${name}: ${value}`);
-  assert.ok(mine.includes('`design/screens/<YYYY-MM-DD>-<slug>/<screen>.hv.html` in the docs repository (`site-docs`)'), 'the screens go under designsDir of docsRepo');
-  assert.ok(mine.includes('`site-docs/design/screens/<folder>/handoff.md`'), 'the report joins docsRepo and designsDir');
-  assert.ok(mine.includes('the design system\'s path for its prompt (`docs/design-system.md`)'), 'a subagent\'s report names the design system for the reviewer');
+  for (const part of ['`design/screens/<YYYY-MM-DD>-<slug>/<screen>.hv.html`', '`design/screens/<folder>/handoff.md`', 'in Spanish (its headings too, except the first line', 'Talk in Portuguese.',
+    'The design system, `docs/design-system.md`, then each file it names', "the design system's, `docs/design-system.md`;", "the design system's path, `docs/design-system.md`,", 'writes `hv-tokens.css` from the token files']) {
+    assert.ok(mine.includes(part), part);
+  }
   const other = renderedFor(text, 'b');
-  for (const name of DESIGNER_VARIABLES) assert.ok(listed(other, name, NO_VALUE[name]), `b: ${name}`);
+  assert.ok(other.includes('`docs/hive/design/<folder>/handoff.md`') && !other.includes('Talk in') && !/design.system/i.test(other.replace(/^---\n[\s\S]*?\n---\n/, '')), 'b keeps the defaults');
 });
 
-test('hive:designer with a design system but no docsRepo keeps its screens and handoff in this repository (#416)', async () => {
-  const mine = renderedFor(valued(await agentText('designer'), { designsDir: 'design/screens', designSystem: 'docs/design-system.md' }));
-  assert.ok(mine.includes('`design/screens/<YYYY-MM-DD>-<slug>/<screen>.hv.html` in the docs repository (this repository)'), mine);
-  assert.ok(mine.includes('from the worktree: `design/screens/<folder>/handoff.md`;'), 'no docsRepo prefix on the handoff');
-  assert.ok(mine.includes('the design system\'s path for its prompt (`docs/design-system.md`)'));
+test('hive:designer works in rounds: a round ends with what changed, the commit is offered and made only when asked, the handoff only on request (#439)', async () => {
+  const text = await agentText('designer');
+  assert.ok(text.includes('| handoff |'), 'handoff is a mode');
+  for (const part of ['## How a round ends', 'Never commit unasked', 'offer the commit in one line', 'A request for the design handoff is also a request to commit it']) {
+    assert.ok(text.includes(part), part);
+  }
+  assert.doesNotMatch(text, /on every run/, 'nothing is written on every run');
+  assert.match(text, /```markdown\n## Design handoff: /, 'the handoff model is inline, its first line the one later stages look for');
+  assert.match(text, /are the repository's rules, in its agent instructions file/, 'where and how the commit is made is the repository\'s');
+  assert.ok(text.includes('## Existing screens first') && text.includes("wait for the user's answer before writing it"), 'a new file is proposed, never written on its own');
+  assert.match(text, /When rules disagree, the most specific wins: what the user says in the round; the instructions at `\{\{ designsDir \}\}`;/, 'the repository and its designs folder win over the plugin\'s rules (#439)');
+});
+
+test('hive:designer carries no Hive MCP instruction: the protocol says when to call hive_done, and a design comment says how to answer it (#439)', async () => {
+  const text = await agentText('designer');
+  for (const tool of ['hive_done', 'hive_reply', 'hive_ask', 'hive_conventions', 'hive_stop']) assert.ok(!text.includes(tool), `the designer names ${tool}`);
+  const { description = '' } = frontmatter(text);
+  for (const name of ['SendMessage', 'hive:design-reviewer']) assert.ok(description.includes(name), `its description does not name ${name}`);
+  for (const name of ['in part <path>', 'hive:design-reviewer', 'handoff.md']) assert.ok(text.includes(name), `its text does not name ${name}`);
 });
 
 test('no shipped skill, raw or rendered, resolves a convention through hive_conventions or the agent instructions file (#317)', async () => {
@@ -250,7 +268,7 @@ test('the docs folders default under docs/hive, and no plugin file names the old
     assert.doesNotMatch(text, /(?<!hive\/)docs\/(specs|plans|walkthroughs)/, `${file} names an old default docs folder`);
   }
   const conventions = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
-  for (const folder of ['docs/hive/specs', 'docs/hive/plans', 'docs/hive/walkthroughs', 'docs/hive/designs']) {
+  for (const folder of ['docs/hive/specs', 'docs/hive/plans', 'docs/hive/walkthroughs', 'docs/hive/design']) {
     assert.ok(conventions.includes(`\`${folder}\``), `reference/conventions.md does not name ${folder} as a default`);
   }
 });
@@ -279,15 +297,7 @@ test('hive:design-reviewer reports and never edits: its tools hold no Write or E
   for (const tool of ['Write', 'Edit']) assert.ok(!tools.includes(tool), `design-reviewer declares ${tool}`);
 });
 
-test('hive:designer tells the calling session how comments and the review reach it, and answers through hive_reply', async () => {
-  const text = await agentText('designer');
-  const { description = '' } = frontmatter(text);
-  for (const name of ['SendMessage', 'hive_done', 'hive:design-reviewer']) assert.ok(description.includes(name), `its description does not name ${name}`);
-  const body = text.replace(/^---\n[\s\S]*?\n---\n/, '');
-  for (const name of ['hive_reply', 'resolve', 'designsDir', 'handoff.md', 'hive:design-reviewer']) assert.ok(body.includes(name), `its text does not name ${name}`);
-});
-
-test('every section the design agents quote by name is a heading of reference/design.md or reference/conventions.md', async () => {
+test('every section the design agents quote by name is a heading of reference/design.md, reference/conventions.md or the agent itself', async () => {
   const headings = new Set<string>();
   for (const file of ['design.md', 'conventions.md']) {
     const text = await readFile(join(PLUGIN, 'reference', file), 'utf8');
@@ -295,7 +305,8 @@ test('every section the design agents quote by name is a heading of reference/de
   }
   for (const agent of ['designer', 'design-reviewer']) {
     const text = await agentText(agent);
-    for (const [, name] of text.matchAll(/"([A-Z][^"]*)"/g)) assert.ok(headings.has(name), `agents/${agent} quotes "${name}", which no reference heading carries`);
+    const own = new Set([...text.matchAll(/^#{2,3} (.+)$/gm)].map(([, heading]) => heading.trim()));
+    for (const [, name] of text.matchAll(/"([A-Z][^"]*)"/g)) assert.ok(headings.has(name) || own.has(name), `agents/${agent} quotes "${name}", which no reference heading nor its own carries`);
   }
 });
 
@@ -328,7 +339,8 @@ test('the design check is the plugin\'s script, the designer imports through imp
   const design = await readFile(join(PLUGIN, 'reference', 'design.md'), 'utf8');
   assert.ok(design.includes(`node "${PLUGIN_ROOT}/scripts/check-hv.mjs" "<folder>"`), 'design.md runs the check script');
   assert.doesNotMatch(design, /grep -nEi/, 'the grep check is gone');
-  for (const heading of ['### Tweaks', '### The skeleton']) assert.ok(design.includes(heading), `design.md has ${heading}`);
+  assert.ok(design.includes('### Tweaks'), 'design.md has ### Tweaks');
+  for (const heading of ['### The skeleton', '## Polish', '## Distill', '## Normalize']) assert.ok(!design.includes(heading), `${heading} is the designer's alone, not in the shared rules (#439)`);
   const designer = await agentText('designer');
   for (const part of [`${PLUGIN_ROOT}/scripts/import-dc.mjs`, `${PLUGIN_ROOT}/reference/skeleton.hv.html`, '| import |']) assert.ok(designer.includes(part), `designer.md names ${part}`);
   // the first imports came out as static markup: the export's clicks were dropped and a sidebar's section became a tweak (#232)

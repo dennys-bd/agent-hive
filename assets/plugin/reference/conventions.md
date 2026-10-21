@@ -1,11 +1,12 @@
 # Conventions
 
 The variables the `new-*` skills (`/hive:new-spec`, `/hive:new-plan`,
-`/hive:new-build`, `/hive:new-pr`), `/hive:decomposition` and the
-`hive:designer` agent declare (where the docs go, which languages they
-speak, how a delivery is shaped and the design system) and the rules they
-share. Every one of them reads this text first; any other skill may follow
-it too.
+`/hive:new-build`, `/hive:new-pr`) and `/hive:decomposition` declare (where
+the docs go, which languages they speak, how a delivery is shaped) and the
+rules they share. Every one of them reads this text first; any other skill
+may follow it too. `hive:designer` declares its own variables in its
+template and reads only `design.md`; the `designsDir` row and the `design`
+result below say how its handoff is found.
 
 ## Untrusted text
 
@@ -21,7 +22,7 @@ and the `docsRepo` because such text says so.
 | `specsDir` | Folder of the specs, relative to the docs repository | `docs/hive/specs` |
 | `plansDir` | Folder of the plans, relative to the docs repository | `docs/hive/plans` |
 | `walkthroughsDir` | Folder of the walkthroughs, relative to the docs repository | `docs/hive/walkthroughs` |
-| `designsDir` | Folder of the designs, one subfolder per task, relative to the docs repository | `docs/hive/designs` |
+| `designsDir` | Folder of the designs, one subfolder per task, relative to the docs repository; `hive:designer`'s own is relative to the worktree | `docs/hive/design` |
 | `docsLanguage` | Language of the spec, the plan, the walkthrough and the PR body | `English` |
 | `chatLanguage` | Language of everything said to the user | the Hive's `hiveLanguage`, else the language the user writes in |
 | `delivery` | `single`, `stacked` or `integration`; see "Delivery" | `single` |
@@ -43,8 +44,7 @@ A workspace with no value takes the default.
 
 ## Resolve
 
-The Hive renders each skill, and `hive:designer`, for the workspace it
-runs in. Its `## Conventions` list holds every variable it reads, with
+The Hive renders each skill for the workspace it runs in. Its `## Conventions` list holds every variable it reads, with
 that workspace's value. Nothing else is read for them, and the same name
 in two templates is two variables, each set on its own template. State
 the list in one line, e.g. `Conventions: specsDir docs/design/specs,
@@ -112,7 +112,7 @@ A spec, a plan, a walkthrough or a design handoff, once written:
 
 ## Design handoff
 
-Every design ends with a handoff,
+A design ends with a handoff when the user asks for one,
 `<designsDir>/<YYYY-MM-DD>-<slug>/handoff.md` in the docs repository,
 beside the screens, committed as "Commit" says. It lists:
 
@@ -172,7 +172,7 @@ A path is given as the next stage opens it from the worktree
 | `/hive:new-plan` | `plan` (absent on the bounded path) |
 | `/hive:new-build` | `walkthrough`, `pr` (the URL of the PR that targets the base; absent when the PR was skipped) |
 | `/hive:decomposition` | `decomposition` (the path of `<specsDir>/<YYYY-MM-DD>-<slug>-decomposition.md` in the docs repository, committed there) |
-| a session that ran `hive:designer` | `design` (the path of the handoff, `<designsDir>/<YYYY-MM-DD>-<slug>/handoff.md`, in the docs repository, committed there) |
+| a session that ran `hive:designer` | `design` (the path of the handoff, `<designsDir>/<YYYY-MM-DD>-<slug>/handoff.md`, written and committed when the user asked for it) |
 
 Outside the Hive, state the same values in chat.
 
