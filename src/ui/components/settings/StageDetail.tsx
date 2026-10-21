@@ -28,10 +28,10 @@ const Block = ({ anchor, children }: { anchor: string; children: ReactNode }) =>
 const tagsOf = (d: TransitionDraft): string[] =>
   [...(d.maxTries.trim() === '' ? [] : [`${d.maxTries.trim()}x`]), ...(d.prompt.trim() === '' ? [] : [t('settings.transitions.tag.prompt')]), ...(d.session === 'new' ? [t('settings.transitions.tag.newSession')] : [])];
 
-interface ExitsProps { stage: StageDraft; stages: StageDraft[]; transitions: TransitionDraft[]; sources: StageSource[]; onUpdate(patch: Partial<StageDraft>): void; onSelect(id: string): void; onAdd(): void }
+interface ExitsProps { stage: StageDraft; stages: StageDraft[]; transitions: TransitionDraft[]; onSelect(id: string): void; onAdd(): void }
 
-// 3 · saídas (#134): a row per transition leaving the stage, + transição, and what each source does when a run starts here
-function Exits({ stage, stages, transitions, sources, onUpdate, onSelect, onAdd }: ExitsProps) {
+// 4 · saídas (#134): a row per transition leaving the stage, and + transição
+function Exits({ stage, stages, transitions, onSelect, onAdd }: ExitsProps) {
   const nameOf = (id: string): string => (id === END ? t('flow.end') : stages.find((s) => s.id === id)?.name.trim() || t('settings.stages.unnamed'));
   return (
     <>
@@ -47,21 +47,38 @@ function Exits({ stage, stages, transitions, sources, onUpdate, onSelect, onAdd 
         ))}
       </ul>
       <Button type="button" variant="ghost" size="sm" className="self-start" onClick={onAdd}>{t('settings.transitions.add')}</Button>
-      {sources.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-muted-foreground">{t('settings.stages.exits.onStart')}</span>
+    </>
+  );
+}
+
+// 2 · ao começar (#266): what each source does as a run of the stage starts, laid out as the transition editor's sources
+function OnStart({ stage, sources, onUpdate }: { stage: StageDraft; sources: StageSource[]; onUpdate(patch: Partial<StageDraft>): void }) {
+  if (sources.length === 0) return <p className="text-muted-foreground text-sm">{t('settings.sources.none')}</p>;
+  const isEmpty = sources.every((b) => (stage.onStart[b.id] ?? []).length === 0);
+  return (
+    <>
+      <table aria-label={t('settings.stages.onStart')} className="w-full rounded-md border text-sm">
+        <thead>
+          <tr className="border-b text-left text-muted-foreground text-xs">
+            <th className="px-3 py-2 font-medium">{t('settings.stages.exit.source')}</th>
+            <th className="px-3 py-2 font-medium">{t('settings.stages.exit.start')}</th>
+          </tr>
+        </thead>
+        <tbody>
           {sources.map((b) => (
-            <span key={b.id} className="flex items-center gap-1.5">
-              <span>{b.name}</span>
-              <SourceActions
-                list={stage.onStart[b.id] ?? []} source={b} onStart when={t('settings.stages.exit.start')}
-                onChange={(next) => onUpdate({ onStart: withEntry(stage.onStart, b.id, next.length > 0 ? next : undefined) })}
-              />
-            </span>
+            <tr key={b.id} className="border-b last:border-b-0">
+              <td className="w-40 px-3 py-2">{b.name}</td>
+              <td className="px-3 py-2">
+                <SourceActions
+                  list={stage.onStart[b.id] ?? []} source={b} onStart when={t('settings.stages.exit.start')}
+                  onChange={(next) => onUpdate({ onStart: withEntry(stage.onStart, b.id, next.length > 0 ? next : undefined) })}
+                />
+              </td>
+            </tr>
           ))}
-          <span className="text-muted-foreground">{t('settings.stages.exits.onStartHint')}</span>
-        </div>
-      )}
+        </tbody>
+      </table>
+      {isEmpty && <p className="text-muted-foreground text-xs">{t('settings.stages.onStart.empty')}</p>}
     </>
   );
 }
@@ -71,7 +88,7 @@ export interface StageDetailProps extends AgentProps {
   onUpdate(patch: Partial<StageDraft>): void; onMove(to: number): void; onRemove(): void; onSelectTransition(id: string): void; onAddTransition(): void;
 }
 
-/** One stage's name and place in the fill order, then its 1 · entra / 2 · executa / 3 · saídas blocks (#515, #134). */
+/** One stage's name and place in the fill order, then its 1 · entra / 2 · ao começar / 3 · executa / 4 · saídas blocks, in the order a run goes through them (#515, #134, #266). */
 export function StageDetail(props: StageDetailProps) {
   const { stage, index, total, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, onUpdate, onMove, onRemove, onSelectTransition, onAddTransition } = props;
   const id = useId();
@@ -89,13 +106,17 @@ export function StageDetail(props: StageDetailProps) {
         </div>
       </div>
       <Block anchor={settingAnchor('settings.stages.enter', stage.id)}><BlockHeading n={1} title={t('settings.stages.enter')} hint={t('settings.stages.enter.hint')} /><StageEnter id={id} stage={stage} sources={sources} onUpdate={onUpdate} /></Block>
+      <Block anchor={settingAnchor('settings.stages.onStart', stage.id)}>
+        <BlockHeading n={2} title={t('settings.stages.onStart')} hint={t('settings.stages.onStart.hint')} />
+        <OnStart stage={stage} sources={sources} onUpdate={onUpdate} />
+      </Block>
       <Block anchor={settingAnchor('settings.stages.run', stage.id)}>
-        <BlockHeading n={2} title={t('settings.stages.run')} hint={t('settings.stages.run.hint')} />
+        <BlockHeading n={3} title={t('settings.stages.run')} hint={t('settings.stages.run.hint')} />
         <StageRun id={id} stage={stage} agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} canContinue={canContinueSession(stages, index, defaultAgent)} commands={commands} workspaces={workspaces} onUpdate={onUpdate} />
       </Block>
       <Block anchor={settingAnchor('settings.stages.exits', stage.id)}>
-        <BlockHeading n={3} title={t('settings.stages.exits')} hint={t('settings.stages.exits.hint')} />
-        <Exits stage={stage} stages={stages} transitions={transitions} sources={sources} onUpdate={onUpdate} onSelect={onSelectTransition} onAdd={onAddTransition} />
+        <BlockHeading n={4} title={t('settings.stages.exits')} hint={t('settings.stages.exits.hint')} />
+        <Exits stage={stage} stages={stages} transitions={transitions} onSelect={onSelectTransition} onAdd={onAddTransition} />
       </Block>
     </div>
   );
@@ -112,7 +133,7 @@ export function stageEntries(stage: StageDraft): SettingEntry[] {
   return [
     itself,
     ...contextEntries([
-      'settings.stages.name', 'settings.stages.enter', 'settings.stages.from', 'settings.stages.after', 'settings.stages.maxWorkers', 'settings.stages.run', 'settings.stages.action',
+      'settings.stages.name', 'settings.stages.enter', 'settings.stages.from', 'settings.stages.after', 'settings.stages.maxWorkers', 'settings.stages.onStart', 'settings.stages.run', 'settings.stages.action',
       ...(isAgentDraft(stage) ? agentFields : []),
       ...(stage.action === 'evaluate' ? (['settings.stages.evaluate.reviewers', 'settings.stages.evaluate.judge', 'settings.stages.evaluate.threshold', 'settings.stages.evaluate.rubric'] as const) : []),
       ...(gate ? (['settings.stages.approval'] as const) : []),

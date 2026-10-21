@@ -72,7 +72,7 @@ test('the selected stage moves earlier or later and stays selected; remove selec
 test('entra: one entry select over every source, "source · column" chips, and the after / máx. de workers fields (#515)', async () => {
   const { user, last } = setup();
   expect(screen.getByRole('heading', { level: 3, name: `1 · ${t('settings.stages.enter')}` })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { level: 3, name: `2 · ${t('settings.stages.run')}` })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 3, name: `3 · ${t('settings.stages.run')}` })).toBeInTheDocument();
   const entry = screen.getByRole('combobox', { name: t('settings.stages.from') });
   expect(entry).toHaveTextContent('hive · Ready');
   await user.click(entry);
@@ -141,7 +141,7 @@ test('an agent off PATH is disabled with the reason (#516)', async () => {
   expect(await screen.findByRole('option', { name: `claude · ${t('settings.agent.offPath')}` })).toHaveAttribute('aria-disabled', 'true');
 });
 
-test('saídas: one row per outgoing transition with its tags, + transição, and the on-start actions per source; a row opens the transition editor (#134)', async () => {
+test('saídas: one row per outgoing transition with its tags and + transição, the on-start actions in their own block; a row opens the transition editor (#134, #266)', async () => {
   const user = userEvent.setup();
   const stages = [stage('spec', { prompt: '/hive-spec {url}' }), stage('Checks', { action: 'commands', commands: ['lint'] })];
   const back: TransitionDraft = { ...emptyTransition(stages[1], stages), verdict: 'failed', to: stages[0].id, maxTries: '3', prompt: 'Fix', session: 'new' };
@@ -152,7 +152,7 @@ test('saídas: one row per outgoing transition with its tags, + transição, and
   expect(row).toHaveTextContent('3x');
   expect(row).toHaveTextContent('prompt');
   expect(row).toHaveTextContent('nova sessão');
-  expect(screen.getByText('ao começar, nas sources:')).toBeInTheDocument();
+  expect(within(screen.getByRole('table', { name: t('settings.stages.onStart') })).getByText('hive')).toBeInTheDocument();
   await user.click(row);
   expect(screen.getByRole('region', { name: 'Checks → spec · falhou' })).toBeInTheDocument();
 });
@@ -308,4 +308,24 @@ test('a focus selects the transition it names and opens its editor; one naming n
   unmount();
   render(<Harness initial={stages} transitions={transitions} focus={{ transition: 'gone', n: 1 }} onChange={vi.fn()} />);
   expect(nameField()).toHaveValue('Plan');
+});
+
+test('ao começar is its own block between entra and executa: a row per source, the empty line until one has an action, and saídas moves to 4 (#266)', async () => {
+  const { user, last } = setup();
+  expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['1 · entra', '2 · ao começar', '3 · executa', '4 · saídas']);
+  const table = within(screen.getByRole('table', { name: t('settings.stages.onStart') }));
+  expect(table.getAllByRole('row').map((r) => r.firstElementChild?.textContent)).toEqual([t('settings.stages.exit.source'), 'hive', 'core']);
+  expect(screen.getByText(t('settings.stages.onStart.empty'))).toBeInTheDocument();
+  table.getByRole('button', { name: t('settings.stages.exit.addTo', { source: 'hive', when: t('settings.stages.exit.start') }) }).focus();
+  await user.keyboard('{Enter}'); // as the Settings test opens it: a click does not open the Radix menu in jsdom
+  await user.click(await screen.findByRole('menuitem', { name: 'mover para In progress' }));
+  expect(last()[0].onStart).toEqual({ h: [{ type: 'move', column: 'In progress' }] });
+  expect(screen.queryByText(t('settings.stages.onStart.empty'))).not.toBeInTheDocument();
+});
+
+test('with no source, ao começar keeps its heading and says there is none (#266)', () => {
+  setup(STAGES, []);
+  expect(screen.getByRole('heading', { level: 3, name: '2 · ao começar' })).toBeInTheDocument();
+  expect(screen.queryByRole('table', { name: t('settings.stages.onStart') })).not.toBeInTheDocument();
+  expect(screen.getByText(t('settings.sources.none'))).toBeInTheDocument();
 });

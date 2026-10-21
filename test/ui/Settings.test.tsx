@@ -341,10 +341,10 @@ test('the local source edits the prefix; removing the only source hides the GitH
   await user.click(screen.getByRole('button', { name: t('settings.sources.editSource', { source: 'board' }) }));
   const removeButton = screen.getByRole('button', { name: t('settings.sources.remove') });
   await user.click(removeButton);
-  expect(screen.getByText(t('settings.sources.none'))).toBeInTheDocument();
+  expect(screen.getAllByText(t('settings.sources.none'))).toHaveLength(2); // the sources card and the stage's ao começar (#266)
   expect(screen.queryByRole('heading', { level: 2, name: t('settings.connections') })).not.toBeInTheDocument();
   expect(screen.queryByLabelText(t('settings.owner'))).not.toBeInTheDocument();
-  expect(screen.queryByText(t('settings.stages.exits.onStart'))).not.toBeInTheDocument(); // no source, no on-start actions to set (#134)
+  expect(screen.queryByRole('table', { name: t('settings.stages.onStart') })).not.toBeInTheDocument(); // no source, no on-start actions to set (#134, #266)
   expect(screen.getByLabelText(t('settings.stages.name'))).toHaveValue('fila');
   await user.click(screen.getByRole('button', { name: t('settings.save') }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -381,7 +381,7 @@ test('the stage fields follow the sources list: a source added through the dialo
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=%40me&number=2&auth=cli'));
   await user.click(screen.getByRole('button', { name: t('settings.sources') }));
 
-  const onStart = within(screen.getByText(t('settings.stages.exits.onStart')).parentElement as HTMLElement);
+  const onStart = within(screen.getByRole('table', { name: t('settings.stages.onStart') }));
   expect(onStart.getByText('notes')).toBeInTheDocument();
   onStart.getByRole('button', { name: t('settings.stages.exit.addTo', { source: 'notes', when: t('settings.stages.exit.start') }) }).focus();
   await user.keyboard('{Enter}');
