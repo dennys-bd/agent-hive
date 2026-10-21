@@ -1201,6 +1201,8 @@ export interface Workspace {
   memoryCap: number; // #73: required, no default; the sum of this workspace's lesson texts, MEMORY_CAP_MIN..MEMORY_CAP_MAX
   color: string; // #78: required; one of WORKSPACE_PRESET_COLORS or a lowercase #rrggbb
   fork: WorkspaceFork | false | null; // #854: required; null = never decided (Settings may suggest one), false = not a fork, never suggested again
+  nestedRepos: string[]; // #653: required; relative paths of nested repos, each a git top level this workspace's git ignores (POST /settings checks it); [] = none
+  notNestedRepos: string[]; // #653: required; paths the user said are not nested repos: never suggested again
   baseBranch?: string; // #854: this workspace's base branch, over config.baseBranch; absent = the general default
   setup?: string; // the worktree setup (#299): COPY / RUN / LOAD lines, run once in each new worktree; absent = none
   setupTimeout?: string; // #511: per RUN step, a TIMEOUT text ("5m"); absent = no limit
@@ -1544,7 +1546,16 @@ export interface WorktreeRow {
   branch: string | null; // what git lists checked out there; null = detached
   task?: { id: string; activityId: string; title: string; error?: string; removable: boolean }; // the owning task and its live activity, what its removal posts to (#629); removable = canDeleteActivity(task, workers)
   orphan?: 'noTask' | 'deleteActivityFailed' | 'kept'; // kept (#861): a task activity that outlived its tasks, kept while its worktree exists
+  nested: { path: string; uncommitted: number }[]; // #653: the nested worktrees present in this one; [] = none
 }
+
+/** Why a path cannot be a workspace's nested repo (#653): its shape, then git's answers, in order. root: the top level, for notTopLevel. */
+export type NestedCause = 'badPath' | 'notRepo' | 'notTopLevel' | 'submodule' | 'tracked' | 'notIgnored';
+export interface NestedProblem { cause: NestedCause; root?: string }
+/** One listed nested repo as GET /settings/nested-repos reads it (#653): its GitHub repository and resolved base, or its problem. */
+export interface NestedRepoRead { path: string; repository?: string; base?: string; problem?: NestedProblem }
+/** GET /settings/nested-repos (#653): the listed paths, and the ignored repositories the Hive found that are not listed. */
+export interface NestedReposAnswer { repos: NestedRepoRead[]; suggested: { path: string; repository?: string }[] }
 
 /** How a copy's first run starts (#587): the source session resumed as a new one (--fork-session) and the notice as its first prompt when asked. */
 export interface SessionCopy { from: string; name?: string; notice?: string } // name: the dialog's, the fork's Claude Code title
@@ -1786,7 +1797,7 @@ export interface RepoSummary {
   openIssues: number;
   closedIssues: number;
   lastActivity?: string; // ISO: latest of pushedAt, last updated issue, last updated PR
-  role?: 'original' | 'fork'; // #854: a fork workspace's pair; absent for any other repository
+  role?: 'original' | 'fork' | 'nested'; // #854: a fork workspace's pair; #653: a workspace's nested repo, paired with its repository
   pr?: PrTarget; // #854: the pair's workspace's PR target, what the fork's empty states read
   fork?: { parent: string }; // #854: GitHub says it is a fork of `parent` (owner/name)
   pair?: string; // #886: the other repository of a fork workspace's pair (owner/name as listed), what the sidebar pairs by

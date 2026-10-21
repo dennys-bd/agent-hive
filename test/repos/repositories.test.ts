@@ -4,7 +4,7 @@ import { initialState } from '../../src/orchestrator.js';
 import { listRepositories, originRepository } from '../../src/repos/repositories.js';
 import type { CombConfig, Exec, State, Task, Workspace } from '../../src/types.js';
 
-const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' });
+const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' });
 const COMB: CombConfig = { prefix: 'HIVE', workspaces: ['hive', 'site', 'docs', 'hive2'].map(workspace), sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' };
 // hive2 shares hive's repository; docs lives off GitHub; a path with no checkout makes git fail
 const REMOTES: Record<string, string> = {
@@ -66,5 +66,28 @@ test('a fork workspace lists its original then its fork where its origin stood, 
     { repository: 'me/excalidraw', workspace: 'ex', role: 'fork', pr: 'original', pair: 'ex/excalidraw' },
     { repository: 'acme/site', workspace: 'site' },
     { repository: 'me/half', workspace: 'half' },
+  ]);
+});
+
+test('a nested repo on GitHub follows its workspace\'s repositories, role nested, paired with the workspace\'s repository (a fork\'s original); one off GitHub or with no checkout adds none (#653)', async () => {
+  const urls: Record<string, string> = {
+    '/code/hive origin': 'git@github.com:acme/hive.git\n', '/code/hive/docs origin': 'https://github.com/acme/docs.git\n', '/code/hive/ee origin': 'https://gitlab.com/acme/ee.git\n',
+    '/code/ex upstream': 'https://github.com/ex/excalidraw.git\n', '/code/ex origin': 'git@github.com:me/excalidraw.git\n', '/code/ex/docs origin': 'https://github.com/me/ex-docs.git\n',
+  };
+  const remotes: Exec = async (_file, args) => {
+    const url = urls[`${args[1]} ${args.at(-1)}`];
+    if (url === undefined) throw new Error('no such remote');
+    return { stdout: url };
+  };
+  const comb: CombConfig = {
+    ...COMB,
+    workspaces: [{ ...workspace('hive'), nestedRepos: ['docs', 'ee', 'gone'] }, { ...workspace('ex'), fork: { remote: 'upstream', pr: 'original' }, nestedRepos: ['docs'] }],
+  };
+  assert.deepEqual(await listRepositories({ comb }, initialState(0), remotes), [
+    { repository: 'acme/hive', workspace: 'hive' },
+    { repository: 'acme/docs', workspace: 'hive', role: 'nested', pair: 'acme/hive' },
+    { repository: 'ex/excalidraw', workspace: 'ex', role: 'original', pr: 'original', pair: 'me/excalidraw' },
+    { repository: 'me/excalidraw', workspace: 'ex', role: 'fork', pr: 'original', pair: 'ex/excalidraw' },
+    { repository: 'me/ex-docs', workspace: 'ex', role: 'nested', pair: 'ex/excalidraw' },
   ]);
 });

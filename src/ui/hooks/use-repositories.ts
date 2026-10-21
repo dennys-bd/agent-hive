@@ -69,25 +69,35 @@ export function usePinned(): [string[], (repository: string, isPinned: boolean) 
 // copy loses the role; the repository page still reads it for the fork's empty states and PR target
 const withoutRole = ({ role: _role, ...rest }: RepoSummary): RepoSummary => rest;
 
-// #854, #886: a repository and the fork whose `pair` names it, as one unit, the repository first. The pair is written with both rows'
-// names, so it matches where GitHub's parent name does not after a rename. Matched by name only, since the original may be listed by
-// another workspace with no role. Any other repository, or a fork with no original listed, is alone. Each row is placed once, so a fork
-// whose original is itself another pair's fork, or two forks naming each other, still show
+const isChild = (repo: RepoSummary | undefined): boolean => repo?.role === 'fork' || repo?.role === 'nested';
+
+// #854, #886, #653: a repository with the fork whose `pair` names it and every nested repo whose `pair` names it, as one unit, in that order.
+// Matched by name only, since the repository may be listed by another workspace with no role. A fork or a nested repo with no repository listed
+// before it is alone, without its role. Each row is placed once, so a fork whose original is itself another pair's fork, or two forks
+// naming each other, still show
 function unitsOf(list: RepoSummary[]): RepoSummary[][] {
   const placed = new Set<string>();
   return list.flatMap((repo) => {
     if (placed.has(repo.repository)) return [];
     placed.add(repo.repository);
+    if (repo.role === 'nested') return [[withoutRole(repo)]];
     const fork = list.find((r) => r.role === 'fork' && r.pair === repo.repository && !placed.has(r.repository));
-    if (fork === undefined) return [[repo.role === 'fork' ? withoutRole(repo) : repo]];
-    placed.add(fork.repository);
-    return [[repo, fork]];
+    const nested = list.filter((r) => r.role === 'nested' && r.pair === repo.repository && !placed.has(r.repository));
+    const children = [...(fork === undefined ? [] : [fork]), ...nested];
+    for (const child of children) placed.add(child.repository);
+    return [[fork === undefined && repo.role === 'fork' ? withoutRole(repo) : repo, ...children]];
   });
+}
+
+/** Where the recent list is cut (#854, #653): after `shown` rows, and past every fork or nested row that follows, so a unit is never split. */
+export function recentCut(recent: readonly RepoSummary[], shown: number): number {
+  const parent = recent.slice(shown).findIndex((r) => !isChild(r));
+  return parent === -1 ? recent.length : shown + parent;
 }
 const newest = (unit: RepoSummary[]): string => unit.reduce((best, r) => ((r.lastActivity ?? '') > best ? (r.lastActivity ?? '') : best), '');
 
 /** The sidebar's two groups (#757): the pinned repositories still listed, in pin order; then every other one by last activity, newest first.
- * A fork's pair stays together (#854), found by the fork's `pair` (#886): it sorts by its newest activity, and a pin on either pins both. A
+ * A fork's pair and its nested repos (#653) stay together (#854), found by the fork's `pair` (#886): it sorts by its newest activity, and a pin on either pins both. A
  * fork with no original listed comes out without its role. */
 export function repoGroups(list: RepoSummary[], pinned: string[]): { pinned: RepoSummary[]; recent: RepoSummary[] } {
   const units = unitsOf(list);

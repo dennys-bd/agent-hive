@@ -1,4 +1,4 @@
-import { GitForkIcon } from 'lucide-react';
+import { GitForkIcon, type LucideIcon } from 'lucide-react';
 import { useId } from 'react';
 import { FORK_SYNCS, type ForkSync, type GitRemote, PR_TARGETS, type State, type WorkspaceFork as Fork } from '../../../types';
 import { LastSync, ManualSync } from '@/components/settings/ForkSyncStatus';
@@ -17,27 +17,36 @@ const HINT = 'text-muted-foreground text-xs';
 type Synced = Extract<Fork, { sync: ForkSync }>;
 type Change = (fork: Fork | false | null) => void;
 
-// The suggestion's first line with the original's name in mono: the sentence is translated whole and the name found in it
-function FoundLine({ original }: { original: string }) {
-  const text = t('settings.fork.found', { original });
-  const at = text.lastIndexOf(original);
+// The suggestion's first line with a name in mono: the sentence is translated whole and the name found in it
+function MonoIn({ text, mono }: { text: string; mono: string }) {
+  const at = text.lastIndexOf(mono);
   if (at === -1) return <span className="text-sm">{text}</span>;
-  return <span className="text-sm">{text.slice(0, at)}<span className="font-mono">{original}</span>{text.slice(at + original.length)}</span>;
+  return <span className="text-sm">{text.slice(0, at)}<span className="font-mono">{mono}</span>{text.slice(at + mono.length)}</span>;
 }
 
-// Item 4: an undecided workspace with an upstream remote; não é fork saves false, aceitar the suggested fork
-function ForkSuggestion({ original, onChange }: { original: string; onChange: Change }) {
+export interface SuggestionProps { icon: LucideIcon; line: string; mono: string; hint: string; dismiss: string; accept: string; onDismiss(): void; onAccept(): void }
+
+/** What the Hive found and suggests (#854's fork, #653's nested repo): the dismissal is config, never shown again; accept applies it. */
+export function Suggestion({ icon: Icon, line, mono, hint, dismiss, accept, onDismiss, onAccept }: SuggestionProps) {
   return (
     <div role="status" className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 rounded-lg border bg-background p-3">
-      <GitForkIcon aria-hidden="true" className="size-4 text-muted-foreground" />
-      <div className="flex flex-col"><FoundLine original={original} /><span className={HINT}>{t('settings.fork.suggestion')}</span></div>
+      <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
+      <div className="flex flex-col"><MonoIn text={line} mono={mono} /><span className={HINT}>{hint}</span></div>
       <div className="flex gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={() => onChange(false)}>{t('settings.fork.dismiss')}</Button>
-        <Button type="button" size="sm" onClick={() => onChange(SUGGESTED_FORK)}>{t('settings.fork.accept')}</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onDismiss}>{dismiss}</Button>
+        <Button type="button" size="sm" onClick={onAccept}>{accept}</Button>
       </div>
     </div>
   );
 }
+
+// Item 4: an undecided workspace with an upstream remote; não é fork saves false, aceitar the suggested fork
+const ForkSuggestion = ({ original, onChange }: { original: string; onChange: Change }) => (
+  <Suggestion
+    icon={GitForkIcon} line={t('settings.fork.found', { original })} mono={original} hint={t('settings.fork.suggestion')}
+    dismiss={t('settings.fork.dismiss')} accept={t('settings.fork.accept')} onDismiss={() => onChange(false)} onAccept={() => onChange(SUGGESTED_FORK)}
+  />
+);
 
 // Item 1: é uma fork. On, the first remote that is not origin is the original's, PRs to it
 function ForkSwitch({ fork, remotes, context, onChange }: { fork: Fork | false | null; remotes: GitRemote[]; context: string; onChange: Change }) {

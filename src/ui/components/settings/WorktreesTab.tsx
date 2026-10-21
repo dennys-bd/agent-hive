@@ -53,6 +53,10 @@ const removalMessage = (row: WorktreeRow): string => {
   return lines.join('\n');
 };
 
+// #653: what each nested worktree holds uncommitted, which a delete would lose too
+const nestedParts = (row: WorktreeRow): string[] =>
+  row.nested.filter((n) => n.uncommitted > 0).map((n) => t('worktrees.nestedUncommitted', { path: n.path, n: n.uncommitted }));
+
 const ROW = 'grid grid-cols-[6rem_minmax(0,1fr)_16rem_2.5rem] items-center gap-3 border-b border-l-2 px-5 py-2.5 last:border-b-0';
 
 // The red dot and word of a row nothing in the flow keeps: an orphan, or a task whose delete activity failed (its error on hover).
@@ -66,13 +70,13 @@ function OrphanStatus({ label, title }: { label: string; title?: string }) {
 
 // An active row's stage, its most urgent run and an open session, read from the State the page already holds; nothing when it has none yet.
 function RowStatus({ row, state }: { row: WorktreeRow; state?: Slice }) {
-  if (row.orphan === 'kept') return <OrphanStatus label={t('worktrees.kept')} />; // #861
-  if (row.orphan === 'noTask') return <OrphanStatus label={t('worktrees.orphan')} />;
-  if (row.orphan === 'deleteActivityFailed') return <OrphanStatus label={t('worktrees.deleteActivityFailed')} title={row.task?.error === undefined ? undefined : taskError(row.task.error)} />;
+  if (row.orphan === 'kept') return <OrphanStatus label={[t('worktrees.kept'), ...nestedParts(row)].join(' · ')} />; // #861
+  if (row.orphan === 'noTask') return <OrphanStatus label={[t('worktrees.orphan'), ...nestedParts(row)].join(' · ')} />;
+  if (row.orphan === 'deleteActivityFailed') return <OrphanStatus label={[t('worktrees.deleteActivityFailed'), ...nestedParts(row)].join(' · ')} title={row.task?.error === undefined ? undefined : taskError(row.task.error)} />;
   const task = state?.tasks.find((c) => taskId(c) === row.task?.id);
   if (!state || !task) return <span />;
   const status = taskState(task, state); // the task's state, as every other surface shows it (#663)
-  const parts = [task.stage, status === 'empty' ? t('worktrees.stopped') : statusText(status), ...(isLive(task, state) ? [t('worktrees.sessionOpen')] : [])];
+  const parts = [task.stage, status === 'empty' ? t('worktrees.stopped') : statusText(status), ...(isLive(task, state) ? [t('worktrees.sessionOpen')] : []), ...nestedParts(row)];
   return <span className="text-muted-foreground text-xs">{parts.join(' · ')}</span>;
 }
 

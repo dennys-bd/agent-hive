@@ -141,7 +141,7 @@ function baseGit(out: Record<string, string> = {}, refuse: string[] = []): { exe
 test('ensureWorktree on a path git does not list refreshes the base, then creates the branch and the worktree under .hive/worktrees at that path', async (t) => {
   const { repo, worktree } = await repoWith(t);
   const { exec, calls } = baseGit({ 'symbolic-ref --short': 'origin/main\n', 'refs/remotes/origin/main': 'a1b2c3d\n' }, NO_BRANCH);
-  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, ORIGIN, undefined, exec), { path: worktree, line: 'base: origin/main (a1b2c3d)' });
+  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, ORIGIN, undefined, exec), { path: worktree, line: 'base: origin/main (a1b2c3d)' , start: 'origin/main' });
   assert.deepEqual(calls, [
     ['worktree', 'list', '--porcelain'],
     ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
@@ -287,7 +287,7 @@ test('the base is config.baseBranch, else what origin/HEAD points at, else main'
 test('a chosen local branch is the start point as it is: no fetch, no fast-forward, and the line says it was chosen by hand', async (t) => {
   const { repo, worktree } = await repoWith(t);
   const { exec, calls } = baseGit({ 'refs/heads/hive/41-parent': 'b2c3d4e\n' }, NO_BRANCH);
-  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, ORIGIN, 'hive/41-parent', exec), { path: worktree, line: 'base: hive/41-parent (b2c3d4e), chosen by hand' });
+  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, ORIGIN, 'hive/41-parent', exec), { path: worktree, line: 'base: hive/41-parent (b2c3d4e), chosen by hand' , start: 'hive/41-parent' });
   assert.deepEqual(calls, [
     ['worktree', 'list', '--porcelain'],
     ['rev-parse', '--verify', '--short', 'refs/heads/hive/41-parent'],
@@ -299,7 +299,7 @@ test('a chosen local branch is the start point as it is: no fetch, no fast-forwa
 test('a chosen origin/<x> is fetched first, then the worktree branches from origin/<x>', async (t) => {
   const { repo, worktree } = await repoWith(t);
   const { exec, calls } = baseGit({ 'refs/remotes/origin/feature-x': 'c3d4e5f\n' }, NO_BRANCH);
-  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, { ...ORIGIN, branch: 'develop' }, 'origin/feature-x', exec), { path: worktree, line: 'base: origin/feature-x (c3d4e5f), chosen by hand' });
+  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, { ...ORIGIN, branch: 'develop' }, 'origin/feature-x', exec), { path: worktree, line: 'base: origin/feature-x (c3d4e5f), chosen by hand' , start: 'origin/feature-x' });
   assert.deepEqual(calls, [
     ['worktree', 'list', '--porcelain'],
     ['fetch', 'origin', '--end-of-options', 'feature-x'],
@@ -446,14 +446,14 @@ test('ensureCheckout switches to the task\'s branch when it exists: no base is r
 
 test('ensureCheckout creates the task\'s branch from the #119 default base with switch -c, and says which base (#444)', async () => {
   const { exec, calls } = baseGit({ 'branch --show-current': 'main\n', 'symbolic-ref --short': 'origin/main\n', 'refs/remotes/origin/main': 'a1b2c3d\n' }, NO_BRANCH);
-  assert.deepEqual(await ensureCheckout('/repo', BRANCH, ORIGIN, undefined, exec), { path: '/repo', line: 'base: origin/main (a1b2c3d)' });
+  assert.deepEqual(await ensureCheckout('/repo', BRANCH, ORIGIN, undefined, exec), { path: '/repo', line: 'base: origin/main (a1b2c3d)' , start: 'origin/main' });
   assert.deepEqual(calls.at(-1), ['switch', '-c', BRANCH, 'origin/main']);
   assert.ok(calls.some((c) => c[0] === 'fetch'), 'the same refresh a worktree start runs');
 });
 
 test('ensureCheckout creates the task\'s branch from a base chosen in the popup (#444)', async () => {
   const { exec, calls } = baseGit({ 'branch --show-current': 'main\n', 'refs/heads/hive/41-parent': 'b2c3d4e\n' }, NO_BRANCH);
-  assert.deepEqual(await ensureCheckout('/repo', BRANCH, ORIGIN, 'hive/41-parent', exec), { path: '/repo', line: 'base: hive/41-parent (b2c3d4e), chosen by hand' });
+  assert.deepEqual(await ensureCheckout('/repo', BRANCH, ORIGIN, 'hive/41-parent', exec), { path: '/repo', line: 'base: hive/41-parent (b2c3d4e), chosen by hand' , start: 'hive/41-parent' });
   assert.deepEqual(calls.at(-1), ['switch', '-c', BRANCH, 'hive/41-parent']);
 });
 
@@ -707,7 +707,7 @@ test('PRs to the original start from <remote>/<base> on the original\'s remote, 
   const { repo, worktree } = await repoWith(t);
   const { exec, calls } = forkExec({ 'symbolic-ref --short': 'upstream/main\n', 'refs/remotes/upstream/main': 'b2c3d4e\n' }, NO_BRANCH);
   const base: WorkspaceBase = { remote: 'upstream', fork: { remote: 'upstream', pr: 'original' } };
-  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, base, undefined, exec), { path: worktree, line: 'base: upstream/main (b2c3d4e)' });
+  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, base, undefined, exec), { path: worktree, line: 'base: upstream/main (b2c3d4e)' , start: 'upstream/main' });
   assert.ok(calls.some((c) => c.join(' ') === `git -C ${repo} fetch upstream --end-of-options main`));
   assert.deepEqual(calls.at(-1), ['git', '-C', repo, 'worktree', 'add', '-b', BRANCH, '--', worktree, 'upstream/main']);
   assert.equal(calls.some((c) => c[0] === 'gh'), false);
@@ -729,7 +729,7 @@ test('a missing <remote>/HEAD is set once with remote set-head --auto and read a
     return { stdout: command.at(-1) === 'refs/remotes/upstream/devtest' ? 'c3d4e5f\n' : '' };
   };
   const base: WorkspaceBase = { remote: 'upstream', fork: { remote: 'upstream', pr: 'original' } };
-  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, base, undefined, exec), { path: worktree, line: 'base: upstream/devtest (c3d4e5f)' });
+  assert.deepEqual(await ensureWorktree(repo, SLUG_7, BRANCH, base, undefined, exec), { path: worktree, line: 'base: upstream/devtest (c3d4e5f)' , start: 'upstream/devtest' });
   assert.deepEqual(calls.slice(1, 4), [['symbolic-ref', '--short', 'refs/remotes/upstream/HEAD'], ['remote', 'set-head', 'upstream', '--auto'], ['symbolic-ref', '--short', 'refs/remotes/upstream/HEAD']]);
 });
 
@@ -772,7 +772,7 @@ test('the manual mode adds nothing; an adopted worktree runs no sync; a base cho
   const manual = await repoWith(t);
   const quiet = forkExec({ ...REMOTES, 'refs/remotes/origin/main': 'a1b2c3d\n' }, NO_BRANCH);
   const fork = { remote: 'upstream', pr: 'fork' as const, sync: 'manual' as const };
-  assert.deepEqual(await ensureWorktree(manual.repo, SLUG_7, BRANCH, { remote: 'origin', fork }, undefined, quiet.exec), { path: manual.worktree, line: 'base: origin/main (a1b2c3d)' });
+  assert.deepEqual(await ensureWorktree(manual.repo, SLUG_7, BRANCH, { remote: 'origin', fork }, undefined, quiet.exec), { path: manual.worktree, line: 'base: origin/main (a1b2c3d)' , start: 'origin/main' });
   assert.equal(quiet.calls.some((c) => c[0] === 'gh' || c.includes('get-url')), false);
   const adopted = await repoWith(t, { worktree: true });
   const github = { remote: 'upstream', pr: 'fork' as const, sync: 'github' as const };

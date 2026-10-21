@@ -10,10 +10,10 @@ import { lastSync } from '@/lib/settings-fork';
 interface Lines { ok: boolean; first: string; second?: string }
 
 // One status line (handoff item 6): a 14px icon and two lines. Success takes no status colour (green is working); a failure is destructive
-function StatusLine({ ok, first, second }: Lines) {
+export function StatusLine({ ok, first, second, id }: Lines & { id?: string }) {
   const Icon = ok ? CheckIcon : CircleAlertIcon;
   return (
-    <div role="status" className="flex items-start gap-2">
+    <div id={id} role="status" className="flex items-start gap-2">
       <Icon aria-hidden="true" className={`mt-0.5 size-3.5 shrink-0 ${ok ? 'text-muted-foreground' : 'text-destructive'}`} />
       <div className="flex flex-col">
         <span className="text-sm">{first}</span>

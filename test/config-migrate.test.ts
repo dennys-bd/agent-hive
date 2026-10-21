@@ -23,13 +23,13 @@ const combOf = (raw: unknown): Record<string, unknown> => (raw as { comb: Record
 
 test('a pre-#511 file moves each workspace\'s commands into comb.commands and turns setupTimeoutMinutes into setupTimeout (#511)', () => {
   const raw = legacy([
-    { name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN a', setupTimeoutMinutes: 7, commands: [DEV, TEST] },
-    { name: 'web', path: '/web', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN b', commands: [{ ...DEV }, LINT] },
+    { name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN a', setupTimeoutMinutes: 7, commands: [DEV, TEST] },
+    { name: 'web', path: '/web', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN b', commands: [{ ...DEV }, LINT] },
   ]);
   const migrated = migrateWorkspaces(raw);
   assert.deepEqual(combOf(migrated).workspaces, [
-    { name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN a', setupTimeout: '7m' },
-    { name: 'web', path: '/web', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN b', setupTimeout: '5m' },
+    { name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN a', setupTimeout: '7m' },
+    { name: 'web', path: '/web', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN b', setupTimeout: '5m' },
   ], 'minutes kept; an absent key with a setup meant the old 5 min');
   assert.deepEqual(combOf(migrated).commands, [
     { ...DEV, workspaces: ['hive', 'web'] }, { ...TEST, workspaces: ['hive'] }, { ...LINT, workspaces: ['web'] },
@@ -40,18 +40,18 @@ test('a pre-#511 file moves each workspace\'s commands into comb.commands and tu
 
 test('a same-named but different command in a later workspace is renamed <name> (<workspace>) (#511)', () => {
   const migrated = migrateWorkspaces(legacy([
-    { name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', commands: [DEV] },
-    { name: 'web', path: '/web', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', commands: [{ ...DEV, command: 'vite' }] },
+    { name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', commands: [DEV] },
+    { name: 'web', path: '/web', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', commands: [{ ...DEV, command: 'vite' }] },
   ]));
   assert.deepEqual(combOf(migrated).commands, [{ ...DEV, workspaces: ['hive'] }, { ...DEV, name: 'dev (web)', command: 'vite', workspaces: ['web'] }]);
   assert.throws(() => parseConfig(migrated), { message: GONE });
 });
 
 test('a workspace with no setup gets no setupTimeout; a non-number setupTimeoutMinutes is carried for the parser to refuse (#511)', () => {
-  const migrated = migrateWorkspaces(legacy([{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', commands: [] }]));
-  assert.deepEqual(combOf(migrated).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }]);
+  const migrated = migrateWorkspaces(legacy([{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', commands: [] }]));
+  assert.deepEqual(combOf(migrated).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }]);
   assert.deepEqual(combOf(migrated).commands, []);
-  const odd = migrateWorkspaces(legacy([{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN a', setupTimeoutMinutes: 'x', commands: [] }]));
+  const odd = migrateWorkspaces(legacy([{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN a', setupTimeoutMinutes: 'x', commands: [] }]));
   assert.throws(() => parseConfig(odd), { message: 'hive.config.json: "comb.workspaces[0].setupTimeout" must be a timeout like "30s", "10m" or "1h", up to 24h' });
 });
 
@@ -68,7 +68,7 @@ test('non-object input and a file without comb.workspaces come back untouched (#
 
 test('readConfig applies the migration in memory: loadConfig meets comb.commands, now refused (#755), and the file on disk is unchanged (#511)', async (t) => {
   const home = await tempDir(t, 'home-');
-  const text = JSON.stringify(legacy([{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', commands: [DEV] }]));
+  const text = JSON.stringify(legacy([{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', commands: [DEV] }]));
   await writeFile(join(home, 'hive.config.json'), text);
   await assert.rejects(loadConfig(home), { message: GONE }, 'comb.commands[0] exists only once migrated');
   assert.equal(await readFile(join(home, 'hive.config.json'), 'utf8'), text);

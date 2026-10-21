@@ -160,7 +160,7 @@ test('the execution copy (#527)', () => {
       'só para tarefas com "desligar" armado: fecha o worker que ficou parado, esperando resposta.',
       'usados quando a etapa executa sozinha · ao iniciar uma tarefa na mão, o diálogo pergunta',
       'excluir atividade',
-      'sempre a worktree, o branch local e os terminais · o branch remoto e a memória do agente nunca são tocados',
+      'sempre a worktree (e antes as dos repos aninhados dela, só quando nada nelas ficou sem commit), o branch local e os terminais · o branch remoto e a memória do agente nunca são tocados',
       'inserir',
     ],
   );

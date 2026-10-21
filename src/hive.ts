@@ -208,7 +208,7 @@ function withCommands(raw: unknown): unknown {
   const comb = typeof raw === 'object' && raw !== null ? (raw as { comb?: unknown }).comb : undefined;
   const workspaces = typeof comb === 'object' && comb !== null ? (comb as { workspaces?: unknown }).workspaces : undefined;
   if (!Array.isArray(workspaces)) return raw;
-  const filled = workspaces.map((p: unknown) => (typeof p === 'object' && p !== null ? { env: {}, fork: null, ...p } : p)); // #854: a file from before fork, undecided
+  const filled = workspaces.map((p: unknown) => (typeof p === 'object' && p !== null ? { env: {}, fork: null, nestedRepos: [], notNestedRepos: [], ...p } : p)); // #854: a file from before fork, undecided; #653: before nested repos, none
   return { ...(raw as object), comb: { commands: [], ...(comb as object), workspaces: filled } };
 }
 

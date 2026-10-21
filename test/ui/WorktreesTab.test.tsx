@@ -8,13 +8,13 @@ import { SPAWN_FAILED } from '../../src/types';
 import { activityIdOf, taskPairOf, withPointedWork } from '../fixtures/work';
 
 const REFUSAL = "the branch 'hive/3-done' is not fully merged into HEAD";
-const ORPHAN: WorktreeRow = { workspace: 'hive', slug: 'hive-9-gone', path: '/repo/.hive/worktrees/hive-9-gone', branch: 'hive/9-gone', orphan: 'noTask' };
+const ORPHAN: WorktreeRow = { workspace: 'hive', slug: 'hive-9-gone', path: '/repo/.hive/worktrees/hive-9-gone', branch: 'hive/9-gone', orphan: 'noTask', nested: [] };
 const FAILED: WorktreeRow = {
-  workspace: 'hive', slug: 'hive-3-done', path: '/repo/.hive/worktrees/hive-3-done', branch: 'hive/3-done', orphan: 'deleteActivityFailed',
+  workspace: 'hive', slug: 'hive-3-done', path: '/repo/.hive/worktrees/hive-3-done', branch: 'hive/3-done', orphan: 'deleteActivityFailed', nested: [],
   task: { id: 'I3', activityId: 'a-I3', title: '#3 Done', error: REFUSAL, removable: true },
 };
-const RUNNING: WorktreeRow = { workspace: 'hive', slug: 'hive-1-local', path: '/repo/.hive/worktrees/hive-1-local', branch: null, task: { id: 'L1', activityId: 'a-L1', title: 'HIVE-1 Local', removable: false } };
-const DETACHED: WorktreeRow = { workspace: 'hive', slug: 'hive-2-detached', path: '/repo/.hive/worktrees/hive-2-detached', branch: null, task: { id: 'L2', activityId: 'a-L2', title: 'HIVE-2 Detached', removable: false } };
+const RUNNING: WorktreeRow = { workspace: 'hive', slug: 'hive-1-local', path: '/repo/.hive/worktrees/hive-1-local', branch: null, nested: [], task: { id: 'L1', activityId: 'a-L1', title: 'HIVE-1 Local', removable: false } };
+const DETACHED: WorktreeRow = { workspace: 'hive', slug: 'hive-2-detached', path: '/repo/.hive/worktrees/hive-2-detached', branch: null, nested: [], task: { id: 'L2', activityId: 'a-L2', title: 'HIVE-2 Detached', removable: false } };
 
 const taskOf = (itemId: string, title: string, stage: string): Task => ({ item: { itemId, id: itemId, title, body: '', url: '' }, stage, boardColumn: stage, auto: true });
 const WORKING: Worker = { id: 's1', activityId: activityIdOf('L1'), status: 'working' };
@@ -172,4 +172,14 @@ test('a kept worktree (its activity outlived its task, #861) reads as kept and i
   await user.click(trashOf(KEPT));
   await user.click(within(dialog()).getByRole('button', { name: t('detail.deleteActivity') }));
   await waitFor(() => expect(posts()).toEqual([['/worktrees/hive/hive-5-kept/remove', undefined]]));
+});
+
+test('a row names what its nested worktrees hold uncommitted, a clean one says nothing; the footer says they go first (#653)', async () => {
+  rows = [{ ...REMOVABLE, nested: [{ path: 'docs', uncommitted: 2 }, { path: 'ee', uncommitted: 0 }] }, { ...ORPHAN, nested: [{ path: 'docs', uncommitted: 1 }] }];
+  render(<WorktreesTab state={STATE} />);
+  await screen.findByText('HIVE-2 Detached');
+  expect(findRow(REMOVABLE)).toHaveTextContent(`Plan · ${t('worktrees.stopped')} · docs: 2 sem commit`);
+  expect(findRow(REMOVABLE)).not.toHaveTextContent('ee:');
+  expect(findRow(ORPHAN)).toHaveTextContent(`${t('worktrees.orphan')} · docs: 1 sem commit`);
+  expect(screen.getByText(t('worktrees.footer'))).toHaveTextContent('remove antes as worktrees dos repos aninhados');
 });

@@ -16,7 +16,7 @@ async function harness(t: AfterHost): Promise<Harness> {
   const output: string[] = [];
   const exec: Exec = async () => assert.fail('the steps run no git');
   const deps: StepDeps = { exec, log: { info: () => undefined }, output: (text) => output.push(text), home };
-  return { workspace: { name: 'hive', path: main, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, main, worktree, home, deps, output };
+  return { workspace: { name: 'hive', path: main, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, main, worktree, home, deps, output };
 }
 
 const setupPhase = (h: Harness): Phase => ({ name: 'setup', from: h.main, fromName: 'hive', to: h.worktree, toName: WORKTREE_NAME });

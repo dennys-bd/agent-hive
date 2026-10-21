@@ -26,7 +26,7 @@ export async function discardOrphan(deps: Pick<TaskRouteDeps, 'exec'>, current: 
   const branch = branchFor(current.runtime.config, found.item);
   try {
     // #267: an unmerged branch is set aside (<branch>-old-<sha7>) instead of refusing, so a branch like #105's can be discarded too
-    await cleanWorktree(workspace.path, { slug: slugFor(found.item), branch }, branch, deps.exec, undefined, 'setAside');
+    await cleanWorktree(workspace.path, { slug: slugFor(found.item), branch }, branch, deps.exec, undefined, 'setAside', workspace.nestedRepos); // #653
     return undefined;
   } catch (err) {
     return { status: HTTP_CONFLICT, error: err instanceof Error ? err.message : String(err), code: DISCARD_FAILED };

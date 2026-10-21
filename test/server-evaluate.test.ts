@@ -96,7 +96,7 @@ async function harness(t: TestContext, { env = {}, agents = ALL, added, onPrepar
     headless: { env: cli.env, tmpRoot: cli.tmpRoot, timeoutMs: 60_000 }, // generous: the whole suite runs in parallel
   });
   const runtime: Runtime = {
-    config: parseConfig(combConfig({ stages: [stageOf([])], workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }] })),
+    config: parseConfig(combConfig({ stages: [stageOf([])], workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }] })),
     sources: new Map(), hooksPath: '/hive/hooks.json', promptsDir: '/hive/prompts', protocol: { stage: '/hive/stage.md', session: '/hive/session.md', local: '/hive/local.md' }, port: 4321,
   };
   return {

@@ -662,8 +662,8 @@ export const slugTakenMessage = (slug: string, owner: Task): string => `slug ${s
  * any, and why it is an orphan. The branch is git's, never the task's. Derived from git plus the state: nothing about it is stored. */
 export function worktreeRows(
   listed: Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[], state: Pick<State, 'tasks' | 'stages' | 'workers' | 'workspaces' | 'sourceWorkspaces' | 'deleteActivity' | 'activities' | 'activityRecords'>, workspace: string,
-): WorktreeRow[] {
-  return listed.map((worktree): WorktreeRow => {
+): Omit<WorktreeRow, 'nested'>[] { // nested (#653) is git's: GET /worktrees adds it
+  return listed.map((worktree): Omit<WorktreeRow, 'nested'> => {
     const task = worktreeOwner(state, workspace, worktree.slug);
     if (!task) return { ...worktree, workspace, orphan: keptActivity(state, workspace, worktree.slug) ? 'kept' : 'noTask' }; // #861
     const live = activityOf(state, taskId(task));

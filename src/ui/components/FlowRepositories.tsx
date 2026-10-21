@@ -5,7 +5,7 @@ import type { RepoSummary } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Syncing } from '@/components/ui/spinner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { RECENT_SHOWN, reloadRepositories, repoGroups, usePinned, useRepositories } from '@/hooks/use-repositories';
+import { RECENT_SHOWN, recentCut, reloadRepositories, repoGroups, usePinned, useRepositories } from '@/hooks/use-repositories';
 import { t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
@@ -39,9 +39,9 @@ function RepoMenu({ repo, isPinned, onPin }: Pick<RepoRowProps, 'repo' | 'isPinn
 // fork's pair (#854) names each in full; the original says so, the fork hangs under it with ↳. A div, not a button: the ⋯ is a button of its
 // own inside it, as on a source's row. A repository the model never synced (#182) shows the syncing mark in place of its open PRs.
 function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
-  const isFork = repo.role === 'fork';
+  const isChild = repo.role === 'fork' || repo.role === 'nested'; // #653: a nested repo hangs as a fork does
   const when = repo.lastActivity === undefined ? [] : [relativeTime(repo.lastActivity)];
-  const second = isFork ? [t('repos.fork'), ...when] : [repo.workspace, ...(repo.role === 'original' ? [t('repos.original')] : []), ...when];
+  const second = isChild ? [t(repo.role === 'fork' ? 'repos.fork' : 'repos.nested'), ...when] : [repo.workspace, ...(repo.role === 'original' ? [t('repos.original')] : []), ...when];
   return (
     // biome-ignore lint/a11y/useSemanticElements: see above
     <div
@@ -50,13 +50,13 @@ function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
       onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onPick(repo.repository); } }}
     >
       <span className="flex items-center gap-2">
-        {isFork && <span aria-hidden="true" className="-mr-0.5 w-2.5 text-muted-foreground text-xs">↳</span>}
+        {isChild && <span aria-hidden="true" className="-mr-0.5 w-2.5 text-muted-foreground text-xs">↳</span>}
         <WorkspaceSquare name={repo.workspace} />
         <span className="min-w-0 flex-1 truncate">{repo.role === undefined ? repoName(repo.repository) : repo.repository}</span>
         <span className="w-6 text-right text-muted-foreground text-xs tabular-nums">{repo.syncedAt === null ? <Syncing /> : repo.openPrs}</span>
         <RepoMenu repo={repo} isPinned={isPinned} onPin={onPin} />
       </span>
-      <span className={`${isFork ? 'pl-[34px]' : 'pl-4'} text-muted-foreground text-xs`}>{second.join(' · ')}</span>
+      <span className={`${isChild ? 'pl-[34px]' : 'pl-4'} text-muted-foreground text-xs`}>{second.join(' · ')}</span>
     </div>
   );
 }
@@ -70,7 +70,7 @@ export function FlowRepositories({ selected, onPick }: { selected?: string; onPi
   useEffect(() => { void reloadRepositories(); }, []);
   if (repositories.length === 0) return null;
   const groups = repoGroups(repositories, pinned);
-  const cut = groups.recent[RECENT_SHOWN]?.role === 'fork' ? RECENT_SHOWN + 1 : RECENT_SHOWN; // #854: a fork follows its original, never cut from it
+  const cut = recentCut(groups.recent, RECENT_SHOWN); // #854, #653: a fork and the nested repos follow their repository, never cut from it
   const recent = isExpanded ? groups.recent : groups.recent.slice(0, cut);
   const hidden = groups.recent.length - recent.length;
   const row = (repo: RepoSummary) => (

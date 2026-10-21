@@ -179,3 +179,37 @@ test('a read overtaken by a newer one is dropped, so a burst of events never lan
   expect(screen.queryByTitle('acme/old')).not.toBeInTheDocument();
   expect(screen.getByTitle('acme/new')).toBeInTheDocument();
 });
+
+test('a nested repo hangs under its workspace\'s repository, after its fork, with ↳ and repo aninhado; a pin on it pins the whole unit; one whose pair is not listed is an ordinary row (#653)', async () => {
+  const user = userEvent.setup();
+  listed = [
+    { ...repo('b', 9), repository: 'ex/excalidraw', role: 'original', pr: 'original', pair: 'me/excalidraw', workspace: 'excalidraw' },
+    repo('c', 5),
+    { ...repo('d', 2), repository: 'me/excalidraw', role: 'fork', pr: 'original', pair: 'ex/excalidraw', workspace: 'excalidraw' },
+    { ...repo('e', 1), repository: 'acme/docs', role: 'nested', pair: 'ex/excalidraw', workspace: 'excalidraw' },
+    { ...repo('f', 3), repository: 'acme/lone', role: 'nested', pair: 'acme/gone' },
+  ];
+  render(<FlowRepositories onPick={vi.fn()} />);
+  await screen.findByTitle('acme/docs');
+  expect(rowNames()).toEqual(['ex/excalidraw', 'me/excalidraw', 'acme/docs', 'acme/c', 'acme/lone']);
+  expect(within(screen.getByTitle('acme/docs')).getByText('↳')).toBeInTheDocument();
+  expect(within(screen.getByTitle('acme/docs')).getByText(/^repo aninhado/)).toHaveClass('pl-[34px]');
+  expect(within(screen.getByTitle('acme/lone')).queryByText('↳')).not.toBeInTheDocument();
+  screen.getByRole('button', { name: 'ações de acme/docs' }).focus();
+  await user.keyboard('{Enter}');
+  await user.click(screen.getByRole('menuitem', { name: 'fixar' }));
+  expect(screen.getByText('fixados')).toBeInTheDocument();
+  expect(rowNames()).toEqual(['ex/excalidraw', 'me/excalidraw', 'acme/docs', 'acme/c', 'acme/lone']);
+});
+
+test('the recent cut never splits a unit: a fork and a nested repo past the fifth row still show with their repository (#653)', async () => {
+  listed = [
+    repo('a', 9), repo('b', 8), repo('c', 7), repo('d', 6),
+    { ...repo('e', 5), role: 'original', pair: 'me/e' }, { ...repo('f', 4), repository: 'me/e', role: 'fork', pair: 'acme/e' },
+    { ...repo('g', 3), repository: 'acme/e-docs', role: 'nested', pair: 'acme/e' }, repo('h', 2),
+  ];
+  render(<FlowRepositories onPick={vi.fn()} />);
+  await screen.findByTitle('acme/a');
+  expect(rowNames()).toEqual(['acme/a', 'acme/b', 'acme/c', 'acme/d', 'acme/e', 'me/e', 'acme/e-docs']);
+  expect(screen.getByRole('button', { name: '+1 repositórios' })).toBeInTheDocument();
+});

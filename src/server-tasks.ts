@@ -475,7 +475,9 @@ export async function deleteActivityOnDisk(
     const extras = await leftBehind(repo, activity, branch, exec); // a Restart's old branches (#283)
     if (!force) for (const name of extras) await refuseUnmerged(repo, name, exec); // all or nothing, as cleanWorktree checks its own
     const target = { id: teardownRunId(task.item.itemId), label: `#${task.item.id}`, workspace, force: force !== undefined };
-    await removeInRun(deps, target, (before) => (force ? removeWorktree(repo, activity, branch, force.promptsDir, exec) : cleanWorktree(repo, activity, branch, exec, before)));
+    await removeInRun(deps, target, (before) => (force
+      ? removeWorktree(repo, activity, branch, force.promptsDir, exec, workspace.nestedRepos)
+      : cleanWorktree(repo, activity, branch, exec, before, 'refuse', workspace.nestedRepos))); // #653
     await dropBranches(repo, extras, force !== undefined, exec);
     await dropStageStart(repo, activity.slug ?? slugFor(task.item), exec); // #812: a stage entry clears stageStart, never the ref; a missing ref is nothing
     await dropCheckpoints(repo, activity.slug ?? slugFor(task.item), exec); // #619: every checkpoint's restore point goes with the activity; none is nothing

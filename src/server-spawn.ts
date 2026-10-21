@@ -27,6 +27,7 @@ import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-f
 import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
 import type { PtyPool } from './ptys.js';
 import type { TerminalSize } from './terminal-wire.js';
+import { prepareNested } from './worktree-nested.js';
 import { taskDir, ensureCheckout, ensureWorktree } from './worktree.js';
 import type { FactLog } from './facts.js';
 
@@ -176,7 +177,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   // The run's cwd (#299, #351, #444): the worktree made (or adopted) through runTaskSetup, which marks the task before its git when the
   // worktree still needs its setup, runs that git and the setup in one console run, and hands the setup a controller a Stop's kill reaches. A local task
   // switches the workspace's own checkout instead, already set up by its user: no setup. ensure* refreshes the base first (#119) and answers
-  // with the `base: …` line.
+  // with the `base: …` line; the nested repos' worktrees (#653) come right after, in the same run.
   async function prepare(runtime: Runtime, activity: Activity, task: Task, ptyId: string): Promise<string> {
     const { config } = runtime;
     const workspace = requireWorkspace(config, task); // the task's workspace, frozen by the reducer (#179); gone = spawnFailed with the reason
@@ -185,11 +186,12 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     let reused: string | undefined; // #267: the branch ensure reused, which a failed setup names
     const ensure = async (git: Exec): Promise<string> => {
       const prepared = activity.local
-        ? await ensureCheckout(workspace.path, branch, base, activity.base?.ref, git)
+        ? await ensureCheckout(workspace.path, branch, base, activity.base?.ref, git, workspace.nestedRepos)
         : await ensureWorktree(workspace.path, workSlug(activity, task), branch, base, activity.base?.ref, git);
       reused = prepared.reused;
       if (prepared.line) log.info(prepared.line);
       if (prepared.sync) await dispatch({ type: 'forkSynced', activityId: activity.id, sync: prepared.sync }); // #854
+      for (const line of await prepareNested(workspace, prepared, branch, activity.local === true, base.remote, git)) log.info(line); // #653: before the setup, in its console run
       return prepared.path;
     };
     if (activity.local) return ensure(exec);

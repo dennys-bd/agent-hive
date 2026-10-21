@@ -87,7 +87,7 @@ test('settles: a server\'s installed, absent, failed or requires state rewrites 
   assert.equal(settles({ kind: 'syntax', id: 'vscode.go', state: { state: 'installed', version: '1' } }), false);
 });
 
-const TWO = [{ name: WORKSPACE, path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }];
+const TWO = [{ name: WORKSPACE, path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }];
 const configOf = (languages: EditorConfig['languages'] = {}, workspaces = TWO) =>
   parseConfig(combConfig({ stages: LOCAL_STAGES, workspaces, editor: { ...EDITOR_DEFAULTS, languages } }));
 const GOPLS = (home: string) => join(editorDir(home, { kind: 'server', id: 'gopls' }), 'bin', 'gopls');
@@ -113,7 +113,7 @@ test('a workspace\'s own PATH is the one its runtimes are found on, as the LSP h
   const home = await tempDir(t, 'wlsp-home-');
   await installServer(home, 'pyright');
   const lsp = createWorkerLsp({ home, log: fakeLog().log, env: { PATH: '' }, arch: 'arm64' });
-  await lsp.write(configOf({}, [{ name: WORKSPACE, path: '/repo', env: { PATH: NODE_DIR }, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, TWO[1]]));
+  await lsp.write(configOf({}, [{ name: WORKSPACE, path: '/repo', env: { PATH: NODE_DIR }, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, TWO[1]]));
   assert.deepEqual([lsp.servers(WORKSPACE), lsp.servers('site')], [['pyright-langserver'], []]);
 });
 
