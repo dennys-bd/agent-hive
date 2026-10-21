@@ -52,21 +52,26 @@ function refusals(commands: readonly Command[], names: readonly string[], worksp
   });
 }
 
+/** A held stage's worktree (#755, #877): prepared as a spawn prepares it, its setup included, and recorded on the activity, since no SessionStart
+ * will record it. Undefined when a Stop landed during the setup (`isCurrent` false): nothing runs then. */
+export async function readyWorktree(deps: Pick<StageCommandDeps, 'prepare' | 'dispatch'>, runtime: Runtime, activity: Activity, task: Task, key: string, isCurrent: () => boolean): Promise<string | undefined> {
+  const cwd = await deps.prepare(runtime, activity, task, key);
+  if (!isCurrent()) return undefined;
+  const branch = taskBranch(activity, branchFor(runtime.config, task.item));
+  await deps.dispatch({ type: 'worktreeReady', activityId: activity.id, path: cwd, branch, base: activity.base ?? null, local: activity.local === true });
+  return cwd;
+}
+
 export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRunner {
-  const { pool, ptys, consoleStore, dispatch, prepare, current } = deps;
+  const { pool, ptys, consoleStore, dispatch, current } = deps;
   const refuse = async (activityId: string, ptyId: string, message: string): Promise<void> => {
     await dispatch({ type: 'stageCommandsRefused', activityId, ptyId, message });
   };
 
-  // Index 0 prepares the worktree as a spawn does, its setup included, and records it on the activity (no SessionStart will, #755); a later
-  // index runs where the first one did. Undefined when a Stop landed during the setup: nothing runs then
+  // Index 0 prepares the worktree (readyWorktree); a later index runs where the first one did
   async function workDir(runtime: Runtime, { activity, task, at, ptyId }: StageCommandEffect, repo: string): Promise<string | undefined> {
     if (at > 0) return taskDir(repo, activity);
-    const cwd = await prepare(runtime, activity, task, ptyId);
-    if (current(activity.id)?.ptyId !== ptyId) return undefined;
-    const branch = taskBranch(activity, branchFor(runtime.config, task.item));
-    await dispatch({ type: 'worktreeReady', activityId: activity.id, path: cwd, branch, base: activity.base ?? null, local: activity.local === true });
-    return cwd;
+    return readyWorktree(deps, runtime, activity, task, ptyId, () => current(activity.id)?.ptyId === ptyId);
   }
 
   // The command's pty, launched as a command terminal is: the worktree as cwd, the workspace's env under the command's own; its output fed

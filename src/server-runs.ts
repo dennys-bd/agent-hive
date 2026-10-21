@@ -10,7 +10,7 @@ import { AWAITING_MESSAGE } from './server-approval.js';
 import { recordCheckpoint, registerCheckpointRoutes } from './server-checkpoints.js';
 import { type TaskRouteDeps, type LiveView, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { removeTranscripts } from './transcript.js';
-import type { Activity, ActivityRecord, Task, State, Worker } from './types.js';
+import type { Activity, ActivityRecord, HiveEvent, Task, State, Worker } from './types.js';
 import { liveShell } from './terminal-runs.js';
 import { sizeIn } from './terminal-wire.js';
 import { workDir } from './worktree.js';
@@ -21,6 +21,7 @@ const SLEEP_BODY_MESSAGE = 'informe ptyIds: os ids das execuções a dormir'; //
 const SLEEP_SPLIT_MESSAGE = 'as execuções são de atividades diferentes'; // #672: a sleep all is one activity's
 const NO_RUN_MESSAGE = 'nenhuma execução viva com esse id';
 const NO_WAIT_MESSAGE = 'nenhuma espera de CI nessa atividade'; // #834
+const NO_EVALUATION_MESSAGE = 'nenhuma avaliação nessa atividade'; // #877
 const HTTP_CONFLICT = 409;
 const NO_CONTINUE_MESSAGE = 'nada para continuar';
 const SESSION_HELD_MESSAGE = 'sessão já aberta'; // a live run holds the stage's session: the UI focuses it instead (#283)
@@ -54,7 +55,8 @@ const isLive = (state: State, id: string): boolean =>
  * task's sessions (#304). The checks answer what the reducer would ignore in silence, so the UI is never left without an answer. */
 export function registerRunRoutes(app: Express, deps: TaskRouteDeps): void {
   registerPtyRoutes(app, deps);
-  registerCiStopRoute(app, deps);
+  registerStageStopRoute(app, deps, '/activities/:id/ci/stop', (a) => a.ci !== undefined, (activityId) => ({ type: 'stopCi', activityId }), NO_WAIT_MESSAGE);
+  registerStageStopRoute(app, deps, '/activities/:id/evaluate/stop', (a) => a.evaluate !== undefined, (activityId) => ({ type: 'stopEvaluate', activityId }), NO_EVALUATION_MESSAGE);
   registerSleepRoutes(app, deps);
   registerContinueRoute(app, deps);
   registerRestartRoutes(app, deps);
@@ -233,15 +235,16 @@ async function clearLocal({ dispatch, log }: TaskRouteDeps, current: LiveView, a
   res.json({ ok: true });
 }
 
-// The Stop of a wait for CI (#834): the wait holds no pty, so /ptys/:id/stop cannot reach it; the task's dormir, the bar's and dormir todas post
-// here. The wait ends, the activity stopped, with no verdict. An activity waiting for nothing: 404, as an unknown run is.
-function registerCiStopRoute(app: Express, { requireLive, dispatch }: TaskRouteDeps): void {
-  app.post('/activities/:id/ci/stop', async (req: Request, res: Response) => {
+// The Stop of a stage run with no pty (#834, #877): /ptys/:id/stop cannot reach it; the task's dormir, the bar's and dormir todas post here. The
+// run ends, the activity stopped, with no verdict. An activity with none: 404, as an unknown run is.
+function registerStageStopRoute(app: Express, { requireLive, dispatch }: TaskRouteDeps, path: string, holds: (a: Activity) => boolean, event: (activityId: string) => HiveEvent, missing: string): void {
+  app.post(path, async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
     const activityId = activityParam(req);
-    if (current.state.activities.find((a) => a.id === activityId)?.ci === undefined) return void res.status(HTTP_NOT_FOUND).json({ error: NO_WAIT_MESSAGE });
-    await dispatch({ type: 'stopCi', activityId });
+    const activity = current.state.activities.find((a) => a.id === activityId);
+    if (activity === undefined || !holds(activity)) return void res.status(HTTP_NOT_FOUND).json({ error: missing });
+    await dispatch(event(activityId));
     res.json({ ok: true });
   });
 }
