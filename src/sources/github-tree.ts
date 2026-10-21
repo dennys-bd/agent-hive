@@ -1,3 +1,4 @@
+import type { InheritedBlocker } from '../types.js';
 import type { GhItemNode } from './github-queries.js';
 
 // A Project's tree (#211, #28): what the poll groups and links its items by. Its own file since #190, so github.ts stays under 400 lines
@@ -57,5 +58,38 @@ export function treeLinks(nodes: GhItemNode[]): Map<string, TreeLinks> {
   return new Map(own.map(([id, links]): [string, TreeLinks] => {
     const parent = parents.get(id);
     return [id, parent === undefined ? links : { parent, ...links }];
+  }));
+}
+
+// Every id reached from start through next, start first. A Set's loop visits what it adds and never adds a repeat, so a cycle on the wire ends
+function reach(start: string, next: (id: string) => string[]): string[] {
+  const seen = new Set([start]);
+  for (const id of seen) for (const other of next(id)) seen.add(other);
+  return [...seen];
+}
+
+/** #424: what each node inherits, by project item id: every ancestor's open blocked-by relations, nearest ancestor first, each id once at the
+ * nearest one that holds it. Never an ancestor's sub-issues, which only say it is not done. A blocker that is the node itself or one of its
+ * descendants is dropped: a parent blocked by its own child holds that child's siblings, never the child. Read over the whole listing, as
+ * treeLinks is, so an ancestor the column, the filter or a hidden epic drops still holds its tree. A node that inherits nothing has no entry. */
+export function inheritedBlockers(nodes: GhItemNode[], links: Map<string, TreeLinks>): Map<string, InheritedBlocker[]> {
+  const contentOf = new Map(nodes.map((node) => [node.id, node.content]));
+  const numberOf = (id: string): string[] => {
+    const n = contentOf.get(id)?.number;
+    return n === undefined ? [] : [String(n)];
+  };
+  const openOf = (id: string): string[] => (contentOf.get(id)?.blockedBy?.nodes ?? []).filter((b) => b.state === 'OPEN').map((b) => String(b.number));
+  const parentOf = (id: string): string[] => {
+    const parent = links.get(id)?.parent;
+    return parent === undefined ? [] : [parent];
+  };
+  const inherited = (id: string): InheritedBlocker[] => {
+    const own = new Set(reach(id, (at) => links.get(at)?.children ?? []).flatMap(numberOf));
+    const held = reach(id, parentOf).slice(1).flatMap((ancestor) => numberOf(ancestor).flatMap((via) => openOf(ancestor).map((blocker) => ({ id: blocker, via }))));
+    return held.filter((b, i) => !own.has(b.id) && held.findIndex((other) => other.id === b.id) === i);
+  };
+  return new Map(nodes.flatMap((node): [string, InheritedBlocker[]][] => {
+    const list = inherited(node.id);
+    return list.length > 0 ? [[node.id, list]] : [];
   }));
 }

@@ -6,6 +6,7 @@ import { Square } from '@/components/Home';
 import { GitMarkLetter } from '@/components/GitMarkLetter';
 import { KeyHint } from '@/components/KeyHint';
 import { agentName } from '../../agents';
+import { inheritedIds } from '@/components/BlockersSection';
 import { StatusWord } from '@/components/StatusWord';
 import { CommandItem } from '@/components/ui/command';
 import { t } from '@/i18n';
@@ -91,7 +92,7 @@ function TaskBody({ task, ranges, state }: { task: Task; ranges: readonly Range[
     <>
       <Square task={task} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} />
       <Title text={taskLabel(task)} ranges={ranges} meta={task.stage} />
-      {isHeld && <span className={META}>{t('task.blockedBy', { ids: (task.item.blockedBy ?? []).join(', ') })}</span>}
+      {isHeld && <span className={META}>{t('task.blockedBy', { ids: [...(task.item.blockedBy ?? []), ...inheritedIds(task.item)].join(', ') })}</span>}
       {!isHeld && task.auto && <span className={`shrink-0 rounded-sm border px-1 font-medium text-muted-foreground text-xs ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
     </>
   );

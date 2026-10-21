@@ -123,10 +123,11 @@ export function branchProblem(template: string): BranchProblem | undefined {
   return bad ? 'settings.error.branch.invalid' : undefined;
 }
 
-/** The only blocking rule: the adapter already filtered the list down to blockers that are still open. A wider parameter than `Item` so the
- * task filter's `blocked` rule (#441) can call it over a task-shaped value that carries no facets. */
-export function isBlocked(item: Pick<Item, 'blockedBy'>): boolean {
-  return (item.blockedBy?.length ?? 0) > 0;
+/** The only blocking rule: the adapter already filtered both lists down to blockers that are still open, the task's own and those it
+ * inherits from an ancestor (#424). A wider parameter than `Item` so the task filter's `blocked` rule (#441) can call it over a task-shaped
+ * value that carries no facets. */
+export function isBlocked(item: Pick<Item, 'blockedBy' | 'inheritedBlockedBy'>): boolean {
+  return (item.blockedBy?.length ?? 0) > 0 || (item.inheritedBlockedBy?.length ?? 0) > 0;
 }
 
 export const taskId = (task: Task): string => task.item.itemId;

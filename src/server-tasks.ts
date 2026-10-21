@@ -94,8 +94,12 @@ export type LiveView = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** Why a manual start refuses a blocked task (#283). An open no longer does (#491): a blocker holds the stage run only. */
-export const blockedMessage = (task: Task): string => `task bloqueado por ${(task.item.blockedBy ?? []).join(', ')}`;
+/** Why a manual start refuses a blocked task (#283): its own blockers, then each inherited one with the ancestor that holds it (#424). An
+ * open no longer does (#491): a blocker holds the stage run only. */
+export const blockedMessage = (task: Task): string => {
+  const inherited = (task.item.inheritedBlockedBy ?? []).map((b) => `${b.id} (via ${b.via})`);
+  return `task bloqueado por ${[...(task.item.blockedBy ?? []), ...inherited].join(', ')}`;
+};
 
 /** Why a manual start would be a no-op in the reducer, as the answer the route gives; undefined when it can go through. No free worker is
  * not a refusal: the reducer opens one over the cap (#116). */

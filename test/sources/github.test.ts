@@ -5,7 +5,7 @@ import { openReadModel } from '../../src/read-model/db.js';
 import type { ItemStore } from '../../src/read-model/items.js';
 import { createSource, resolveSources, sourceSpec } from '../../src/source.js';
 import { ITEM_FIELDS, ITEMS, PROBE, PROJECT_FIELDS, type GhItemFieldsNode, type GhItemNode } from '../../src/sources/github-queries.js';
-import type { Gql } from '../../src/types.js';
+import type { Gql, TaskFilter } from '../../src/types.js';
 import { combConfig, fakeGql, fakeLog, FILTER } from '../fakes.js';
 import { listFilterOptions } from '../../src/sources/github.js';
 import { itemNode, SOURCE as ROWS, T1, T2 } from '../read-model/fixtures.js';
@@ -137,6 +137,54 @@ test('stored() answers [] with no item store, with no account, and for an @me ow
   const mine = parseConfig(combConfig({ source: { type: 'github', owner: '@me', number: 6, filter: FILTER } }));
   assert.deepEqual(await createSource(sourceSpec(mine, mine.comb.sources[0]), { gql, items: await memoryStore() }).stored?.(), []);
   assert.deepEqual(calls, []);
+});
+
+// #424: 1, blocked by an open #9, lists 2 as its sub-issue; only 2 carries the hive label. The relations query answers the one kept task
+const HIVE: TaskFilter = [{ field: 'label', op: 'any', values: ['hive'] }];
+const specWith = (source: Record<string, unknown>) => {
+  const c = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER, ...source } }));
+  return sourceSpec(c, c.comb.sources[0]);
+};
+const child = (status = 'Ready', updatedAt = T1): GhItemNode => itemNode(2, status, updatedAt, { labels: { nodes: [{ name: 'hive' }] } });
+const family = (): GhItemNode[] => [
+  itemNode(1, 'Ready', T1, {
+    subIssuesSummary: { total: 1, completed: 0 }, subIssues: { nodes: [{ id: 'I_2', number: 2, state: 'OPEN' }] },
+    blockedBy: { nodes: [{ number: 9, title: 'T9', state: 'OPEN', repository: { nameWithOwner: 'acme/r' } }] },
+  }),
+  child(),
+];
+const ANSWERED = { i0: { issue: { blocking: { nodes: [] } } } };
+
+test('a poll stamps inheritedBlockedBy on a child whose parent the filter or epics: hide drops, from the wire and from the read model alike; a blocked: none rule drops that child (#424)', async () => {
+  for (const spec of [specWith({ filter: HIVE }), specWith({ epics: 'hide' })]) {
+    for (const items of [undefined, await memoryStore()]) {
+      const { gql } = fakeGql({ probe: probeAt(T1), items: page(family()), relations: ANSWERED });
+      const listed = await createSource(spec, { gql, ...(items === undefined ? {} : { items }) }).listItems();
+      assert.deepEqual(listed.map((task) => [task.item.id, task.item.blockedBy, task.item.inheritedBlockedBy]), [['2', undefined, [{ id: '9', via: '1' }]]]);
+    }
+  }
+  const free = specWith({ filter: [...HIVE, { field: 'blocked', op: 'none' }] });
+  const { gql } = fakeGql({ items: page(family()), relations: ANSWERED });
+  assert.deepEqual(await createSource(free, { gql }).listItems(), [], 'the blocked rule judges the inherited blocker too');
+});
+
+test('stored() stamps inheritedBlockedBy as listItems does (#424)', async () => {
+  const items = await memoryStore();
+  const spec = specWith({ filter: HIVE });
+  const listed = await createSource(spec, { gql: fakeGql({ probe: probeAt(T1), items: page(family()), relations: ANSWERED }).gql, items }).listItems();
+  const restored = await createSource(spec, { gql: fakeGql({}).gql, items }).stored?.();
+  // stored() applies no filter (it shows the whole stored listing), so the parent is in it too; the child's entry is the poll's
+  assert.deepEqual(restored?.find((task) => task.item.id === '2'), listed[0]);
+  assert.deepEqual(restored?.find((task) => task.item.id === '2')?.item.inheritedBlockedBy, [{ id: '9', via: '1' }]);
+});
+
+test('a field write\'s re-read entry inherits its parent\'s open blockers from the last listing, the parent in it though the re-read is one item (#424)', async () => {
+  const rereadChild = (status: string, updatedAt: string): GhItemFieldsNode => ({ ...child(status, updatedAt), project: { id: 'PVT_1', fields: { nodes: [STATUS_FIELD] } } });
+  const source = createSource(SPEC, { gql: writeGql([rereadChild('Ready', T1), rereadChild('In review', T2)], family()) });
+  await source.resolveFields();
+  await source.listItems(); // the listing the re-read's tree is read over
+  const written = await source.setField?.('PVTI_2', 'Status', 'In review');
+  assert.deepEqual(written?.entry?.item.inheritedBlockedBy, [{ id: '9', via: '1' }]);
 });
 
 test('with a store, setColumn stores its re-read item as a write answer: a poll read before the write, with an older updatedAt, leaves the task in the written column (#191)', async () => {

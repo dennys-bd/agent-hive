@@ -1285,6 +1285,7 @@ const en = {
   'settings.error.consoleLines': 'the console lines per channel must be a whole number from 100 to 100000',
   'stage.empty': 'empty',
   'task.blockedBy': 'blocked by {ids}',
+  'task.blockedVia': '{id} (via {via})', // #424: an inherited blocker and the ancestor that holds it
   'task.start': 'start',
   'task.retry': 'try again',
   'task.dismissError': 'dismiss error', // #354: the card's ✕ beside the error, its label and title
@@ -3595,6 +3596,7 @@ const pt: Record<MessageKey, string> = {
   'settings.error.consoleLines': 'as linhas do console por canal precisam ser um número inteiro de 100 a 100000',
   'stage.empty': 'vazia',
   'task.blockedBy': 'bloqueada por {ids}',
+  'task.blockedVia': '{id} (via {via})', // #424
   'task.start': 'iniciar',
   'task.retry': 'tentar de novo',
   'task.dismissError': 'dispensar erro', // #354

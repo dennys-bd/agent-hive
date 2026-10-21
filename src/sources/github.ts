@@ -2,7 +2,7 @@ import type { Citation } from '../tasks.js';
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type {
-  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef, ReadOptions,
+  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, InheritedBlocker, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef, ReadOptions,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
 import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
@@ -19,7 +19,7 @@ import { pageItems, PROJECT_ITEM_LIMIT, quotaFrom, type ItemPages } from './gith
 import { applyRelations, createItemsSync, fetchRelations, joinRelations, readProbe } from './github-items-sync.js';
 import { hasListing, readListing, storedNodes, type ItemStore, type ListingKey } from '../read-model/items.js';
 import { readProject, storedProject, type ProjectRead } from './github-project.js';
-import { groupUnderEpics, statusOf, treeLinks, type TreeLinks } from './github-tree.js';
+import { groupUnderEpics, inheritedBlockers, statusOf, treeLinks, type TreeLinks } from './github-tree.js';
 
 export { groupUnderEpics, treeLinks, type TreeLinks } from './github-tree.js';
 
@@ -211,14 +211,16 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   const blockedOut = (tasks: SourceItem[]): SourceItem[] => tasks.filter((task) => matchesRules(blocked, task.item)); // #441: judged on the relations
 
   // Then the relations and the blocked rules (#441). The relations query answers blocking; blockedBy and the sub-issues ride on the nodes
-  // (#282). A failed query rejects the poll, never "no blockers". What it read is kept for a write's answer (#190)
-  async function related(tasks: SourceItem[], nodes: GhItemNode[]): Promise<{ listed: SourceItem[]; relations: Map<string, GhIssueRelations | null> }> {
+  // (#282). #424: `inherited` is read over the whole listing, so the blocked rules see an ancestor's blockers. A failed query rejects the
+  // poll, never "no blockers". What it read is kept for a write's answer (#190)
+  async function related(tasks: SourceItem[], nodes: GhItemNode[], inherited: ReadonlyMap<string, InheritedBlocker[]>): Promise<{ listed: SourceItem[]; relations: Map<string, GhIssueRelations | null> }> {
     const relations = await fetchRelations(gql, tasks);
-    return { listed: blockedOut(applyRelations(tasks, joinRelations(nodes, relations))), relations };
+    return { listed: blockedOut(applyRelations(tasks, joinRelations(nodes, relations), inherited)), relations };
   }
 
   async function listed(nodes: GhItemNode[]): Promise<SourceItem[]> {
-    return (await related(keep(nodes), nodes)).listed;
+    const links = treeLinks(nodes);
+    return (await related(keep(nodes, links), nodes, inheritedBlockers(nodes, links))).listed;
   }
 
   function remember(nodes: GhItemNode[]): void {
@@ -250,7 +252,8 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     const offline = login ?? (owner === ME ? undefined : owner);
     if (items === undefined || rows === undefined || offline === undefined) return [];
     const read = readListing(items.db, keyOf(rows, offline));
-    return applyRelations(keep(read.nodes, treeLinks(read.nodes), false), joinRelations(read.nodes, read.relations));
+    const links = treeLinks(read.nodes);
+    return applyRelations(keep(read.nodes, links, false), joinRelations(read.nodes, read.relations), inheritedBlockers(read.nodes, links));
   }
 
   async function setColumn(itemId: string, column: string): Promise<void> {
@@ -326,14 +329,16 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   }
 
   // #686, #56: what a write on one item needs. related(keep([node])) is the poll's steps on one item. groupUnderEpics only reorders a list,
-  // the tree links (#28) are read over the last listing with the re-read node in its place, and the rest of the steps read the item alone, so
+  // the tree links (#28) and the inherited blockers (#424) are read over the last listing with the re-read node in its place, and the rest of the steps read the item alone, so
   // the one-item entry equals the poll's for that item. #190: answer stores the re-read node, and the relations entry read, in the model
   async function fieldsContext(): Promise<FieldsContext> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
     const read = await projectRead();
     let fetched = new Map<string, GhIssueRelations | null>();
     const entry = async (node: GhItemNode): Promise<SourceItem | undefined> => {
-      const one = await related(keep([node], treeLinks(inPlace(lastNodes, node))), [node]);
+      const whole = inPlace(lastNodes, node);
+      const links = treeLinks(whole);
+      const one = await related(keep([node], links), [node], inheritedBlockers(whole, links));
       fetched = one.relations;
       return one.listed[0];
     };

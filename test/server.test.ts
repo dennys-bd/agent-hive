@@ -20,7 +20,7 @@ import { createServer, type HiveServer, killStrays, type ServerDeps } from '../s
 import { activityOf, prsOf, recordWithSession, resultOf, taskOfWorker } from '../src/activities.js';
 import { activityIdOf, readyOn, withWork, workId, workPath } from './fixtures/work.js';
 import { sessionsOf, slugFor } from '../src/tasks.js';
-import { deleteActivityOnDisk, openTask } from '../src/server-tasks.js';
+import { blockedMessage, deleteActivityOnDisk, openTask } from '../src/server-tasks.js';
 import { saveState } from '../src/state-store.js';
 import { createConsoleStore } from '../src/console.js';
 import { createPtyHost, NO_PTY } from '../src/pty-host.js';
@@ -866,6 +866,14 @@ test('POST /tasks/:id/start is 409 for a blocked task; with every worker taken i
   assert.deepEqual(server.getState()?.tasks.filter((c) => !runOf(server, c)?.workerId).map((c) => c.item.id), ['3', '2'], 'the task waits for a worker again, above the blocked one its start moved it over (#117)');
   assert.equal(workers.length, 2, 'no free worker: nothing respawns');
   assert.equal(server.getState()?.error, undefined);
+});
+
+test('blockedMessage names the task\'s own blockers, then each inherited one with the ancestor that holds it (#424)', () => {
+  const item = { itemId: 'board:I2', source: 'board', id: '2', title: 'child', body: '', url: 'https://github.com/acme/r/issues/2' };
+  const held = (extra: Partial<Task['item']>): Task => ({ item: { ...item, ...extra }, stage: 'dev', boardColumn: 'Ready', auto: true });
+  assert.equal(blockedMessage(held({ inheritedBlockedBy: [{ id: '12', via: '7' }] })), 'task bloqueado por 12 (via 7)');
+  assert.equal(blockedMessage(held({ blockedBy: ['1'], inheritedBlockedBy: [{ id: '12', via: '7' }, { id: '15', via: '3' }] })), 'task bloqueado por 1, 12 (via 7), 15 (via 3)');
+  assert.equal(blockedMessage(held({ blockedBy: ['1'] })), 'task bloqueado por 1');
 });
 
 test('POST /tasks/:id/start is 409 for a show epic: it never runs (#31)', async (t) => {

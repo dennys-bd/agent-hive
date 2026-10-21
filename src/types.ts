@@ -280,6 +280,9 @@ export interface ItemBlockers { blockedBy: BlockerRef[]; blocking: BlockerRef[] 
 /** One edit of a relation (#56), as the route takes it: `ref` the other item's display id. */
 export interface BlockerChange { action: 'add' | 'remove'; kind: 'blockedBy' | 'blocking'; ref: string }
 
+/** A blocker a task inherits from an ancestor (#424): the blocker's display id, and the ancestor's that holds it. */
+export interface InheritedBlocker { id: string; via: string }
+
 /** What a source adapter reads for a task (glossary: item): the raw record; its id is itemId. */
 export interface Item {
   itemId: string; // `${source}:${adapter id}` for a source task (#180); `local:<n>` for a local one; the adapter's own key after the source's name
@@ -288,6 +291,7 @@ export interface Item {
   body: string;
   url: string;
   blockedBy?: string[]; // ids of blockers still open, per the adapter; absent or empty = free to start
+  inheritedBlockedBy?: InheritedBlocker[]; // #424: the ancestors' open blockers, nearest ancestor first, each id once; absent or empty = none. Derived on every poll, never written
   workspaceHint?: string; // the workspace the first matching rule that sets one names (#293, #688)
   autoOnEntry?: boolean; // #688: the auto a source task is born with, resolved by its adapter; absent on a task created in the Hive
   source?: string; // the listing source's name (#180); absent on a local task

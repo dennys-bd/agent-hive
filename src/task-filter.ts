@@ -6,7 +6,7 @@ import type { FilterOptions, FilterRule, Item, ItemFacets } from './types.js';
 // bundles it, like tasks.ts (the one place it imports from).
 
 /** What a rule reads of a task: its facets (GitHub only) and its open blockers (#441). */
-type Filterable = Pick<Item, 'facets' | 'blockedBy'>;
+type Filterable = Pick<Item, 'facets' | 'blockedBy' | 'inheritedBlockedBy'>;
 /** A rule with values to compare: every criterion but blocked. */
 type ValuedRule = Exclude<FilterRule, { field: 'blocked' }>;
 

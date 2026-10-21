@@ -1,7 +1,7 @@
 import { XIcon } from 'lucide-react';
 import { useState } from 'react';
 import { HIVE_SOURCE, sourceOf } from '../../tasks';
-import type { BlockerChange, BlockerRef, ItemBlockers, State, Task } from '../../types';
+import type { BlockerChange, BlockerRef, Item, ItemBlockers, State, Task } from '../../types';
 import { BlockerAddRow, shownBlockerId } from '@/components/BlockerAddRow';
 import { Button } from '@/components/ui/button';
 import { type MessageKey, t } from '@/i18n';
@@ -18,6 +18,10 @@ const ADDING = 'add'; // the pending key of an add; a row's is `<kind>:<id>`, wh
 /** Whether a task shows the blockers section (#57): a hive task, or a source item whose relations were read (every GitHub item since #56).
  * A source that cannot relate reads none, and its route would answer blockers.unknownItem. */
 export const hasBlockersSection = (task: Task): boolean => sourceOf(task) === HIVE_SOURCE || task.item.blockers !== undefined;
+
+/** #424: each inherited blocker as the ⊘ line, the search row and this section name it, `#12 (via #7)`, nearest ancestor first. */
+export const inheritedIds = (item: Pick<Item, 'inheritedBlockedBy'>): string[] =>
+  (item.inheritedBlockedBy ?? []).map((b) => t('task.blockedVia', { id: `#${b.id}`, via: `#${b.via}` }));
 
 // A row's right side: fechada; else the stage of the task the ref names in the flow (same source, same id); else aberta
 function refState(blocker: BlockerRef, source: string, tasks: readonly Task[]): string {
@@ -87,6 +91,10 @@ export function BlockersSection({ task, state }: { task: Task; state: State }) {
         const key = `${kind}:${b.id}`;
         return <BlockerRow key={key} kind={kind} blocker={b} stateText={refState(b, source, state.tasks)} isPending={pending === key} onRemove={() => void edit(key, { action: 'remove', kind, ref: b.id })} />;
       })}
+      {/* #424: read-only: the relation lives on the ancestor and is edited there */}
+      {inheritedIds(task.item).map((text) => (
+        <p key={text} data-slot="inherited-blocker" className={`truncate ${MUTED}`}>{`${t('blockers.blockedBy')} ${text}`}</p>
+      ))}
       {isAdding && (
         <BlockerAddRow
           source={source} itemId={task.item.itemId} selfId={task.item.id} blockers={blockers} isBusy={pending !== undefined}
