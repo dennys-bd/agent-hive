@@ -16,15 +16,15 @@ const NONE_ITEM = '@none';
 const ONE_M = '[1m]';
 const PLUGIN = 'hive'; // the Hive plugin, the hive: of every specialized agent (codex-home's CODEX_PLUGIN, which the page cannot import)
 
-interface FieldMenuProps { label: string; shown: string; isDefault: boolean; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; children: ReactNode }
+interface FieldMenuProps { id?: string; label: string; shown: string; isDefault: boolean; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; children: ReactNode }
 
 // A field's menu (#257): a combobox button showing the pick (the default muted, a pick in mono) over a searchable list. Modal: its content is
 // portalled out of the dialog that holds it, and the dialog's scroll lock eats the wheel there unless the popover registers its own (#290)
-function FieldMenu({ label, shown, isDefault, disabled = false, open, onOpenChange, children }: FieldMenuProps) {
+function FieldMenu({ id, label, shown, isDefault, disabled = false, open, onOpenChange, children }: FieldMenuProps) {
   return (
     <Popover modal open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" role="combobox" aria-expanded={open} aria-label={label} title={shown} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
+        <Button id={id} type="button" variant="outline" role="combobox" aria-expanded={open} aria-label={label} title={shown} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
           <span className={isDefault ? 'truncate text-muted-foreground' : 'truncate font-mono text-xs'}>{shown}</span>
           <ChevronsUpDownIcon className="opacity-50" />
         </Button>
@@ -48,12 +48,12 @@ function Row({ id, hint, isPicked }: { id: string; hint?: string; isPicked: bool
 // A [1m] alias names its context in the page's language; any other option its own hint
 const hintOf = ({ id, hint }: LaunchOption): string | undefined => (id.endsWith(ONE_M) ? t('newSession.model.context1m') : hint);
 
-interface ModelMenuProps { agent: AgentId; options?: AgentLaunchOptions; value: string; disabled?: boolean; defaultLabel?: string; open: boolean; onOpenChange(open: boolean): void; onPick(model: string): void }
+interface ModelMenuProps { id?: string; agent: AgentId; options?: AgentLaunchOptions; value: string; disabled?: boolean; defaultLabel?: string; open: boolean; onOpenChange(open: boolean): void; onPick(model: string): void }
 
 /** modelo (#257): the agent's default (the Hive passes no flag), its aliases and its versions, most recent first, and a typed name the lists
  * lack, offered when it has a model's shape. '' is the default; defaultLabel names what '' runs when a stage gives it a model (#290): '' never
  * unsets it. */
-export function ModelMenu({ agent, options, value, disabled = false, defaultLabel, open, onOpenChange, onPick }: ModelMenuProps) {
+export function ModelMenu({ id, agent, options, value, disabled = false, defaultLabel, open, onOpenChange, onPick }: ModelMenuProps) {
   const [search, setSearch] = useState('');
   const toggle = (isOpen: boolean): void => { onOpenChange(isOpen); if (!isOpen) setSearch(''); };
   const pick = (model: string): void => { onPick(model); toggle(false); };
@@ -67,7 +67,7 @@ export function ModelMenu({ agent, options, value, disabled = false, defaultLabe
     <CommandItem key={option.id} value={option.id} onSelect={() => pick(option.id)}><Row id={option.id} hint={hintOf(option)} isPicked={option.id === value} /></CommandItem>
   );
   return (
-    <FieldMenu label={t('newSession.model')} shown={value === '' ? fallback : value} isDefault={value === ''} disabled={disabled} open={open} onOpenChange={toggle}>
+    <FieldMenu id={id} label={t('newSession.model')} shown={value === '' ? fallback : value} isDefault={value === ''} disabled={disabled} open={open} onOpenChange={toggle}>
       <Command label={t('newSession.model.search')}>
         <CommandInput value={search} onValueChange={setSearch} aria-label={t('newSession.model.search')} placeholder={t('newSession.model.search')} />
         <CommandList>
@@ -90,18 +90,31 @@ export function ModelMenu({ agent, options, value, disabled = false, defaultLabe
   );
 }
 
-interface AgentMenuProps { agent: AgentId; agents?: AgentLaunchOptions['specializedAgents']; value: string; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; onPick(name: string): void }
+// A Hive item's row (#257, #710): check on the pick, its name in mono over its description
+function ItemRow({ name, description, isPicked }: { name: string; description: string; isPicked: boolean }) {
+  return (
+    <>
+      <CheckIcon className={isPicked ? 'opacity-100' : 'opacity-0'} />
+      <span className="flex min-w-0 flex-col">
+        <span className="font-mono text-xs">{name}</span>
+        <span className="truncate text-muted-foreground text-xs">{description}</span>
+      </span>
+    </>
+  );
+}
+
+interface AgentMenuProps { id?: string; agent: AgentId; agents?: AgentLaunchOptions['specializedAgents']; value: string; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; onPick(name: string): void }
 
 /** agente especializado (#257): none, or one of the Hive plugin's agents, searched by name or description; disabled with the reason when the
  * plugin lists none. '' is none. No list yet (the answer is still coming): the field works with none. The list ends with a footer naming which
  * agent's installed agents it shows (#893). */
-export function SpecializedAgentMenu({ agent, agents, value, disabled = false, open, onOpenChange, onPick }: AgentMenuProps) {
+export function SpecializedAgentMenu({ id, agent, agents, value, disabled = false, open, onOpenChange, onPick }: AgentMenuProps) {
   const pick = (name: string): void => { onPick(name); onOpenChange(false); };
   const isEmpty = agents !== undefined && agents.length === 0;
   const none = t('newSession.agents.none');
   const shown = value !== '' ? value : isEmpty ? t('newSession.agents.empty', { agent: agentName(agent) }) : none;
   return (
-    <FieldMenu label={t('newSession.specializedAgent')} shown={shown} isDefault={value === ''} disabled={isEmpty || disabled} open={open} onOpenChange={onOpenChange}>
+    <FieldMenu id={id} label={t('newSession.specializedAgent')} shown={shown} isDefault={value === ''} disabled={isEmpty || disabled} open={open} onOpenChange={onOpenChange}>
       <Command label={t('newSession.agents.search')}>
         <CommandInput aria-label={t('newSession.agents.search')} placeholder={t('newSession.agents.search')} />
         <CommandList>
@@ -116,17 +129,35 @@ export function SpecializedAgentMenu({ agent, agents, value, disabled = false, o
             <CommandGroup heading={t('newSession.agents.group', { plugin: PLUGIN, agent: agentName(agent) })}>
               {agents.map((a) => (
                 <CommandItem key={a.name} value={a.name} keywords={[a.description]} onSelect={() => pick(a.name)}>
-                  <CheckIcon className={a.name === value ? 'opacity-100' : 'opacity-0'} />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="font-mono text-xs">{a.name}</span>
-                    <span className="truncate text-muted-foreground text-xs">{a.description}</span>
-                  </span>
+                  <ItemRow name={a.name} description={a.description} isPicked={a.name === value} />
                 </CommandItem>
               ))}
             </CommandGroup>
           )}
         </CommandList>
         <p className="border-t px-2 py-1.5 text-muted-foreground text-xs">{t('newSession.agents.footer', { agent: agentName(agent) })}</p>
+      </Command>
+    </FieldMenu>
+  );
+}
+
+interface SkillMenuProps { id?: string; skills?: AgentLaunchOptions['skills']; value: string; open: boolean; onOpenChange(open: boolean): void; onPick(name: string): void }
+
+/** skill (#710): one of the Hive plugin's skills as hive:<name> in mono with its description, searched by either, as the specialized agent menu
+ * lists its agents. '' is none yet, which Settings refuses on save. No list (no workspace yet, or the answer still coming): the value stays shown. */
+export function SkillMenu({ id, skills = [], value, open, onOpenChange, onPick }: SkillMenuProps) {
+  const pick = (name: string): void => { onPick(name); onOpenChange(false); };
+  return (
+    <FieldMenu id={id} label={t('settings.stages.skill')} shown={value === '' ? t('settings.stages.skill.none') : `${PLUGIN}:${value}`} isDefault={value === ''} open={open} onOpenChange={onOpenChange}>
+      <Command label={t('settings.stages.skill.search')}>
+        <CommandInput aria-label={t('settings.stages.skill.search')} placeholder={t('settings.stages.skill.search')} />
+        <CommandList>
+          {skills.map((s) => (
+            <CommandItem key={s.name} value={s.name} keywords={[s.description]} onSelect={() => pick(s.name)}>
+              <ItemRow name={`${PLUGIN}:${s.name}`} description={s.description} isPicked={s.name === value} />
+            </CommandItem>
+          ))}
+        </CommandList>
       </Command>
     </FieldMenu>
   );

@@ -60,7 +60,7 @@ function useSelection(stages: readonly StageDraft[], transitions: readonly Trans
 /** Settings › fluxo's etapas card (#134, 6b; its own card since #887): + etapa and + transição in the header, the load hint, the chart, its
  * legend, then the selected stage's or transition's editor. Every update is immutable; the selection is local, and a stale id (a reverted draft)
  * reads as the first stage. A refused save's focus selects its transition (#918). */
-export function StageEditor({ stages, transitions, sources, commands, workspaces, agents, defaultAgent, focus, stage: picked, onChange }: StageEditorProps) {
+export function StageEditor({ stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, focus, stage: picked, onChange }: StageEditorProps) {
   const [selection, setSelection] = useSelection(stages, transitions, focus, picked);
   const transition = selection.kind === 'transition' ? transitions.find((d) => d.id === selection.id) : undefined;
   const index = Math.max(0, stages.findIndex((s) => s.id === (selection.kind === 'stage' ? selection.id : transition?.from)));
@@ -104,7 +104,7 @@ export function StageEditor({ stages, transitions, sources, commands, workspaces
       {!transition && stage && (
         <StageDetail
           key={stage.id} stage={stage} index={index} total={stages.length} stages={stages} transitions={transitions} sources={sources} commands={commands} workspaces={workspaces}
-          agents={agents} defaultAgent={defaultAgent} onUpdate={(patch) => onChange(patched({ stages, transitions }, index, patch))} onMove={move} onRemove={removeStage}
+          agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} onUpdate={(patch) => onChange(patched({ stages, transitions }, index, patch))} onMove={move} onRemove={removeStage}
           onSelectTransition={(id) => setSelection({ kind: 'transition', id, back: stage.id })} onAddTransition={addTransition}
         />
       )}

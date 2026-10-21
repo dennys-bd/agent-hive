@@ -130,7 +130,7 @@ test('the agent copy (#516): neutral delete activity texts, the execution hint, 
   assert.deepEqual([MESSAGES.pt['settings.defaultAgent'], MESSAGES.en['settings.defaultAgent']], ['agente padrão', 'default agent']);
   assert.match(MESSAGES.pt['settings.defaultAgent.hint'], /^usado quando a etapa não escolhe outro/);
   setLanguage('pt');
-  assert.deepEqual([t('settings.stages.agent.default', { agent: 'claude' }), t('settings.agent.offPath')], ['padrão (claude)', 'fora do PATH']);
+  assert.equal(t('settings.agent.offPath'), 'fora do PATH');
   assert.equal(t('settings.defaultAgent.missing', { agent: 'claude' }), 'claude está fora do PATH: as etapas dele não começam até ele ser instalado e o Hive reiniciado');
 });
 

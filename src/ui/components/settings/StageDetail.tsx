@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { t } from '@/i18n';
 import { triggerLabel } from '@/lib/flow-labels';
 import { contextEntries, named, type SettingEntry, settingAnchor } from '@/lib/settings-search';
-import { isGateDraft, type StageDraft, withEntry } from '@/lib/settings-stages';
+import { isAgentDraft, isGateDraft, type StageDraft, withEntry } from '@/lib/settings-stages';
 import type { TransitionDraft } from '@/lib/settings-transitions';
 import { END, type Command } from '../../../types';
 
@@ -73,7 +73,7 @@ export interface StageDetailProps extends AgentProps {
 
 /** One stage's name and place in the fill order, then its 1 · entra / 2 · executa / 3 · saídas blocks (#515, #134). */
 export function StageDetail(props: StageDetailProps) {
-  const { stage, index, total, stages, transitions, sources, commands, workspaces, agents, defaultAgent, onUpdate, onMove, onRemove, onSelectTransition, onAddTransition } = props;
+  const { stage, index, total, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, onUpdate, onMove, onRemove, onSelectTransition, onAddTransition } = props;
   const id = useId();
   return (
     <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
@@ -91,7 +91,7 @@ export function StageDetail(props: StageDetailProps) {
       <Block anchor={settingAnchor('settings.stages.enter', stage.id)}><BlockHeading n={1} title={t('settings.stages.enter')} hint={t('settings.stages.enter.hint')} /><StageEnter id={id} stage={stage} sources={sources} onUpdate={onUpdate} /></Block>
       <Block anchor={settingAnchor('settings.stages.run', stage.id)}>
         <BlockHeading n={2} title={t('settings.stages.run')} hint={t('settings.stages.run.hint')} />
-        <StageRun id={id} stage={stage} agents={agents} defaultAgent={defaultAgent} commands={commands} workspaces={workspaces} onUpdate={onUpdate} />
+        <StageRun id={id} stage={stage} agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} commands={commands} workspaces={workspaces} onUpdate={onUpdate} />
       </Block>
       <Block anchor={settingAnchor('settings.stages.exits', stage.id)}>
         <BlockHeading n={3} title={t('settings.stages.exits')} hint={t('settings.stages.exits.hint')} />
@@ -106,13 +106,14 @@ export function stageEntries(stage: StageDraft): SettingEntry[] {
   const view = { section: 'flow', stage: stage.id } as const;
   const path = ['settings.section.flow', 'settings.stages', named(stage.name, 'settings.stages.unnamed')] as const;
   const gate = isGateDraft(stage);
-  const runsPrompt = stage.action === '' && !gate;
+  // #710: a prompt or skill stage's run fields, then its prompt or its skill
+  const agentFields = ['settings.stages.agent', 'settings.stages.model', 'settings.stages.session', 'settings.stages.specializedAgent', stage.action === 'skill' ? 'settings.stages.skill' : 'settings.stages.prompt', 'settings.stages.approval', 'settings.stages.handoff'] as const;
   const itself = { label: path[2], path: path.slice(0, 2), view, anchor: settingAnchor('settings.stages.name', stage.id) };
   return [
     itself,
     ...contextEntries([
       'settings.stages.name', 'settings.stages.enter', 'settings.stages.from', 'settings.stages.after', 'settings.stages.maxWorkers', 'settings.stages.run', 'settings.stages.action',
-      ...(runsPrompt ? (['settings.stages.agent', 'settings.stages.model', 'settings.stages.session', 'settings.stages.prompt', 'settings.stages.approval', 'settings.stages.handoff'] as const) : []),
+      ...(isAgentDraft(stage) ? agentFields : []),
       ...(gate ? (['settings.stages.approval'] as const) : []),
       'settings.stages.exits',
     ], view, path, stage.id),

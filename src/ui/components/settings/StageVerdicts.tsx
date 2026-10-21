@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { t } from '@/i18n';
 import { verdictLabel } from '@/lib/flow-labels';
-import { isGateDraft } from '@/lib/settings-stages';
+import { isAgentDraft } from '@/lib/settings-stages';
 import { draftVerdicts } from '@/lib/settings-transitions';
 
 /** vereditos (#134, 6b): a prompt stage's own as chips with × and + veredito; a commands or wait-for-CI stage's fixed ones without ×; nenhum: a
@@ -31,7 +31,7 @@ export function StageVerdicts({ id, stage, onUpdate }: BlockProps) {
             )}
           </Badge>
         ))}
-        {!fixed && stage.action === '' && !isGateDraft(stage) && (
+        {!fixed && isAgentDraft(stage) && (
           <Input
             id={`${id}-verdict`} aria-label={t('settings.stages.verdicts.add')} placeholder={t('settings.stages.verdicts.add')} value={text} className="h-7 w-36"
             onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} onBlur={add}
