@@ -85,9 +85,9 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   assert.deepEqual(github.commands.map((c) => ({ ...withoutId(c), env: c.env.map(withoutId), impls: c.impls.map(withoutId) })), [
     { name: 'Run Frontend', impls: [{ workspace: github.workspaces[0].id, command: FRONT_LINE }], menu: true, env: [{ name: 'PORT', value: '5173' }, { name: 'HOST', value: 'localhost' }], timeout: '' },
   ], 'comb.commands over the workspace rows: env as rows, in order, each line\'s workspace as a row id (#300, #348, #511, #755)');
-  assert.deepEqual(withoutId(github.stages[0]), { name: 'spec', savedName: 'spec', session: 'new', model: 'opus', agent: '', from: { [work.id]: ['Backlog'] }, onStart: {}, gate: false, verdicts: [], prompt: '/hive-spec {url}', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
+  assert.deepEqual(withoutId(github.stages[0]), { name: 'spec', savedName: 'spec', session: 'new', model: 'opus', agent: '', from: { [work.id]: ['Backlog'] }, onStart: {}, gate: false, verdicts: [], prompt: '/hive-spec {url}', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
   assert.equal(github.stages[1].session, 'continue');
-  assert.deepEqual(withoutId(github.stages[2]), { name: 'done', savedName: 'done', session: 'new', model: '', agent: '', from: { [work.id]: ['Done'] }, onStart: {}, gate: false, verdicts: [], prompt: '', action: 'deleteActivity', after: '5d', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
+  assert.deepEqual(withoutId(github.stages[2]), { name: 'done', savedName: 'done', session: 'new', model: '', agent: '', from: { [work.id]: ['Done'] }, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: 'deleteActivity', after: '5d', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
   assert.notEqual(github.stages[0].id, github.stages[1].id, 'each row gets its own id');
   assert.deepEqual([github.language, github.budgetHour, github.budgetDay], ['pt', '50000', '']);
   assert.equal(github.baseBranch, 'develop');
@@ -223,7 +223,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
   assert.equal(bare.baseBranch, '', 'always sent, empty included: that is how a cleared field goes back to automatic');
   assert.equal(toSettingsBody({ ...draftFrom(undefined), baseBranch: '  release  ' }).baseBranch, 'release');
   assert.deepEqual(toSettingsBody({ ...draftFrom(undefined), stages: [{ ...emptyStage(), name: 'a', from: {}, after: '' }] }).stages?.map((c) => 'after' in c), [false], 'empty after = key absent');
-  assert.deepEqual(withoutId(emptyStage()), { name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
+  assert.deepEqual(withoutId(emptyStage()), { name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
   assert.notEqual(emptyStage().id, emptyStage().id, 'ids are unique per call');
 });
 
@@ -670,4 +670,22 @@ test('a renamed stage sends stageRenames and its stage rules under the new name;
   const body = toSettingsBody(renamed);
   assert.deepEqual(body.stageRenames, { dev: 'build' });
   assert.deepEqual(body.usageRules, [{ source: 'hour', percent: 50, maxWorkers: 1, stage: 'build' }]);
+});
+
+test('validateSettings refuses a stage that continues a session no earlier stage of its agent opened, on flow (#710)', () => {
+  setLanguage('pt');
+  const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
+  const first = { ...valid.stages[0], action: '' as const, prompt: '/x', agent: '' as const, session: 'continue' as const };
+  assert.deepEqual(validateSettings({ ...valid, stages: [first] }), { section: 'flow', message: t('settings.stages.error.continue', { n: 1, agent: 'claude' }) });
+  const second = { ...first, id: 'second', name: 'second' };
+  assert.equal(validateSettings({ ...valid, stages: [{ ...first, session: 'new' }, second] }), undefined);
+  assert.deepEqual(validateSettings({ ...valid, stages: [{ ...first, session: 'new' }, { ...second, agent: 'codex' }] }), { section: 'flow', message: t('settings.stages.error.continue', { n: 2, agent: 'codex' }) });
+});
+
+test('validateSettings refuses a skill stage with no skill, on flow (#710)', () => {
+  setLanguage('pt');
+  const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
+  const skill = { ...valid.stages[1], action: 'skill' as const, skill: '' };
+  assert.deepEqual(validateSettings({ ...valid, stages: [valid.stages[0], skill] }), { section: 'flow', message: t('settings.stages.error.skill', { n: 2 }) });
+  assert.equal(validateSettings({ ...valid, stages: [valid.stages[0], { ...skill, skill: 'new-plan' }] }), undefined);
 });

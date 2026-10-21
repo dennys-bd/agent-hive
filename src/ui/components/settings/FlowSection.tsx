@@ -15,14 +15,14 @@ export interface FlowProps {
   onConnectGithub(): void; onLoadProjects(source: SourceDraft): void; onLoadColumns(source: SourceDraft): void;
   onOpenSource(id?: string): void; onAddSource(added: NewSource): void; onOpenRules(): void;
 }
-interface FlowSectionProps { draft: SettingsDraft; source?: SourceDraft; flow: FlowProps; agents: readonly AgentAvailability[]; onChange(patch: Partial<SettingsDraft>): void }
+interface FlowSectionProps { draft: SettingsDraft; source?: SourceDraft; flow: FlowProps; agents: readonly AgentAvailability[]; launchWorkspace?: string; onChange(patch: Partial<SettingsDraft>): void }
 
 // Settings › fluxo (#514): the list, or one source's detail when the view names a row. Every edit is a draft edit; the page saves.
-export function FlowSection({ draft, source, flow, agents, onChange }: FlowSectionProps) {
+export function FlowSection({ draft, source, flow, agents, launchWorkspace, onChange }: FlowSectionProps) {
   if (!source) {
     return (
       <CombTab
-        draft={draft} options={flow.options} githubProjects={flow.githubProjects} github={flow.github} agents={agents} focus={flow.focus} stage={flow.stage} onChange={onChange}
+        draft={draft} options={flow.options} githubProjects={flow.githubProjects} github={flow.github} agents={agents} launchWorkspace={launchWorkspace} focus={flow.focus} stage={flow.stage} onChange={onChange}
         onConnectGithub={flow.onConnectGithub} onEditSource={flow.onOpenSource} onAddSource={flow.onAddSource} onOpenRules={flow.onOpenRules}
       />
     );

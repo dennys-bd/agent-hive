@@ -7,6 +7,7 @@ import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
 import { shellInitDir, shellQuote } from './shell-init.js';
 import { shimDir } from './shim.js';
+import { commandFirst } from './stage-agent.js';
 import { historyPath } from './terminal-files.js';
 import { AGENT_IDS, type Stage, type Exec, type SessionPolicy, type Item, type LaunchArg, type PtyLaunch } from './types.js';
 
@@ -56,7 +57,10 @@ export const HANDOFF_PROMPT = 'The next stage starts in a new session and needs 
 export function withHandoff(prompt: string, stage: Pick<Stage, 'handoff'>, result: Record<string, unknown> | undefined, session: SessionPolicy): string {
   const handoff = result?.handoff;
   if (stage.handoff !== true || session !== 'new' || typeof handoff !== 'string' || handoff.trim() === '') return prompt;
-  return `Handoff from the previous stage:\n\n${handoff}\n\n---\n\n${prompt}`;
+  const lead = `Handoff from the previous stage:\n\n${handoff}`;
+  const split = commandFirst(prompt); // #710: a slash command (/hive:<skill>) runs only at the start of the message, so the handoff follows it
+  if (split === undefined) return `${lead}\n\n---\n\n${prompt}`;
+  return split.rest === '' ? `${split.command}\n\n${lead}` : `${split.command}\n\n${lead}\n\n---\n\n${split.rest}`;
 }
 
 // Every prompt an agent reads is this file's content as its last argv word ("$(cat file)"), so one starting with a dash (a transition's prompt

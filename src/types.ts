@@ -328,8 +328,8 @@ export const SOURCE_ACTIONS: Record<SourceFields['type'], SourceAction['type'][]
 
 /** What a stage does with a stopped task instead of running a prompt (#573: was cleanup): deleteActivity deletes the task's activity; commands
  * runs a list of the workspace's commands in its worktree and ends with a verdict (#755); waitForCi waits for the checks of the task's open PRs
- * and ends with a verdict (#834). */
-export type StageAction = 'deleteActivity' | 'commands' | 'waitForCi';
+ * and ends with a verdict (#834); skill (#710) runs one of the Hive's skills as its agent's prompt, /hive:<skill>: an agent stage, unlike the others. */
+export type StageAction = 'deleteActivity' | 'commands' | 'waitForCi' | 'skill';
 
 /** What a commands stage does with a command that has no line in the task's workspace (#755): fail the stage before anything runs, or skip it.
  * A name the Comb no longer has fails it either way. */
@@ -348,10 +348,12 @@ export interface Stage {
   prompt?: string; // template ({id} {number} {title} {body} {url} {result.<path>}); absent = no action, the task just sits here
   session?: SessionPolicy; // continue = --resume the task's session; absent = new
   model?: string; // passed as is behind the agent's model flag (#516)
-  agent?: AgentId; // #516: the agent this stage runs; absent = Config.defaultAgent; prompt stages only: the parser refuses it next to action
+  agent?: AgentId; // #516: the agent this stage runs; absent = Config.defaultAgent; prompt and skill stages only (#710): the parser refuses it next to any other action
   from: Record<string, string[]>; // source name → its columns whose tasks enter here (#180)
   onStart?: Record<string, SourceAction[]>; // #515: source name → what its source does when a run starts, in order; no leaving action
   action?: StageAction; // instead of a prompt: deleteActivity deletes the task's activity: its terminals, its worktree and its local branch; exclusive with prompt
+  skill?: string; // #710: with action skill only, required there: a Hive skill's name, run as /hive:<skill>
+  specializedAgent?: string; // #710: prompt and skill stages only: hive:<name>, what a manual start's pick overrides
   commands?: string[]; // #755: with action commands only: names in comb.commands, in the order they run; a name the Comb lost fails the stage when it runs
   stopOnFailure?: boolean; // #755: with action commands only: the first non-zero exit ends the stage; false runs them all and joins the failures
   onMissing?: OnMissing; // #755: with action commands only, required there: a command with no line in the task's workspace fails the stage or is skipped
@@ -802,6 +804,7 @@ export interface AgentLaunchOptions {
   aliases: LaunchOption[]; // Codex: []
   versions: LaunchOption[];
   specializedAgents: { name: string; description: string }[]; // hive:<name>, sorted by file
+  skills: { name: string; description: string }[]; // #710: the folder's skills, bare names (shown hive:<name>), sorted by name
   args: string[]; // config.agentArgs[agent]: the dialog's "added to the global ones" and "runs" lines
 }
 

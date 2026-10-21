@@ -10,6 +10,7 @@ import { parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
 import { checkStageModels, parseAgentArgs } from './config-agent-args.js';
 import { checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
+import { hiveActionRaw, parseStageAgent, runsAgentRaw } from './config-stage-agent.js';
 import { parseFork } from './fork.js';
 import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseTimeout } from './run-commands.js';
 import { parseSourceEpics, refuseTopLevelEpics, requireSwitchAt } from './config-epics.js';
@@ -261,19 +262,21 @@ function parseStage(raw: unknown, field: string, sources: SourceRef[]): Stage {
   const maxWorkers = raw.maxWorkers === undefined ? {} : { maxWorkers: requireInt(raw.maxWorkers, `${field}.maxWorkers`) }; // #475: absent = no stage cap, 0 pauses it
   const action = raw.action === undefined ? {} : { action: requireAction(raw.action, `${field}.action`) };
   if (raw.action !== undefined && raw.prompt !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.action" cannot be combined with "prompt"`);
-  if (raw.approval !== undefined && raw.action !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.approval" cannot be combined with "action"`); // #268
-  if (raw.agent !== undefined && raw.action !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.agent" cannot be combined with "action"`); // #516
-  if (raw.handoff !== undefined && raw.action !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.handoff" cannot be combined with "action"`); // #692
+  const hiveAction = hiveActionRaw(raw); // #710: a skill stage runs an agent, so it takes every key a prompt stage takes
+  if (raw.approval !== undefined && hiveAction) throw new Error(`${CONFIG_FILE}: "${field}.approval" cannot be combined with "action"`); // #268
+  if (raw.agent !== undefined && hiveAction) throw new Error(`${CONFIG_FILE}: "${field}.agent" cannot be combined with "action"`); // #516
+  if (raw.handoff !== undefined && hiveAction) throw new Error(`${CONFIG_FILE}: "${field}.handoff" cannot be combined with "action"`); // #692
   if (raw.handoff !== undefined && raw.session === 'continue') throw new Error(`${CONFIG_FILE}: "${field}.handoff" cannot be combined with "session": "continue"`); // #692: that session already holds the work
-  if (raw.handoff !== undefined && raw.prompt === undefined) throw new Error(`${CONFIG_FILE}: "${field}.handoff" cannot be used without "prompt"`); // #692: a gate never spawns, so no session reads the handoff
+  if (raw.handoff !== undefined && !runsAgentRaw(raw)) throw new Error(`${CONFIG_FILE}: "${field}.handoff" cannot be used without "prompt"`); // #692: a gate never spawns, so no session reads the handoff
   const agent = raw.agent === undefined ? {} : { agent: requireAgent(raw.agent, `${field}.agent`) }; // absent = the default agent
   const after = raw.after === undefined ? {} : { after: requireDuration(raw.after, `${field}.after`) };
+  const stageAgent = parseStageAgent(raw, field); // #710: after the action and its combinations, so a bad action names itself first
   const commands = parseStageCommands(raw, field); // #755: after the action and the combinations every action refuses
   const ci = parseStageCi(raw, field); // #834: after the commands keys, so a commands key next to waitForCi names its own action
   const verdicts = parseVerdicts(raw, field); // #134: after the action keys, so an action stage's own refusal names its action first
   return {
     name: requireString(raw.name, `${field}.name`), from,
-    ...optionalString(raw.prompt, `${field}.prompt`), ...session, ...maxWorkers, ...optionalString(raw.model, `${field}.model`), ...agent,
+    ...optionalString(raw.prompt, `${field}.prompt`), ...session, ...maxWorkers, ...optionalString(raw.model, `${field}.model`), ...agent, ...stageAgent,
     ...onStart, ...action, ...commands, ...ci, ...verdicts, ...after, ...(raw.approval !== undefined && requireBoolean(raw.approval, `${field}.approval`) ? { approval: true as const } : {}),
     ...(raw.handoff !== undefined && requireBoolean(raw.handoff, `${field}.handoff`) ? { handoff: true as const } : {}),
   };
@@ -284,11 +287,11 @@ function requireSessionPolicy(value: unknown, field: string): SessionPolicy {
   return value as SessionPolicy;
 }
 
-// #573, #755, #834: the stage actions; a file still saying cleanup is refused with the new names, no legacy path
-const STAGE_ACTIONS: readonly StageAction[] = ['deleteActivity', 'commands', 'waitForCi'];
+// #573, #755, #834, #710: the stage actions; a file still saying cleanup is refused with the new names, no legacy path
+const STAGE_ACTIONS: readonly StageAction[] = ['deleteActivity', 'commands', 'waitForCi', 'skill'];
 
 function requireAction(value: unknown, field: string): StageAction {
-  if (!STAGE_ACTIONS.includes(value as StageAction)) throw new Error(`${CONFIG_FILE}: "${field}" must be "deleteActivity", "commands" or "waitForCi"`);
+  if (!STAGE_ACTIONS.includes(value as StageAction)) throw new Error(`${CONFIG_FILE}: "${field}" must be "deleteActivity", "commands", "waitForCi" or "skill"`);
   return value as StageAction;
 }
 

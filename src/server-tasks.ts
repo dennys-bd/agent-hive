@@ -3,6 +3,7 @@ import { activityOf, otherSlugs } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { createTask, UNKNOWN_STAGE_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from './create-task.js';
 import { branchFor, slugFor, canCloseMissing, canOpenSession, canMoveToStage, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
+import { hiveAction, runsAgent } from './stage-agent.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
 import { baseRemote, workspaceBase } from './fork.js';
 import { discardOrphan } from './server-orphan.js';
@@ -108,9 +109,9 @@ function startRefusal(state: State, itemId: string): Refusal | undefined {
   if (task.missing) return { status: HTTP_CONFLICT, message: MISSING_MESSAGE };
   if (activity?.deleting || activity?.approval) return { status: HTTP_CONFLICT, message: activity?.deleting ? DELETING_MESSAGE : AWAITING_MESSAGE }; // the reducer ignores both (#268)
   const stage = stageOf(state.stages, task.stage);
-  if (stage?.action !== undefined) return undefined; // a git command of the Hive or the workspace's commands (#755): no worker, no blockers, no prompt
+  if (hiveAction(stage) !== undefined) return undefined; // a git command of the Hive or the workspace's commands (#755): no worker, no blockers, no prompt
   if (isBlocked(task.item)) return { status: HTTP_CONFLICT, message: blockedMessage(task) };
-  if (stage?.prompt === undefined) return { status: HTTP_CONFLICT, message: 'etapa sem prompt' };
+  if (stage === undefined || !runsAgent(stage)) return { status: HTTP_CONFLICT, message: 'etapa sem prompt' }; // #710: a skill stage runs one
   return undefined;
 }
 

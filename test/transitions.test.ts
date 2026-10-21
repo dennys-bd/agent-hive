@@ -73,13 +73,15 @@ test('resolveSession: previous is the run that just ended, continueOf the task\'
 
 test('transitionPrompt: a new session reads the transition, a blank line, the stage; a continued one the transition alone, or the stage when it is empty; an empty feedback prompt is the feedback behind its lead (#134)', () => {
   const build = { prompt: '/build {url}' };
-  assert.equal(transitionPrompt({ when: 'verdict', prompt: 'Fix:\n\n{verdict}' }, build, 'new'), 'Fix:\n\n{verdict}\n\n/build {url}');
+  assert.equal(transitionPrompt({ when: 'verdict', prompt: 'Fix:\n\n{verdict}' }, build, 'new'), '/build {url}\n\nFix:\n\n{verdict}', '#710: a slash command stays first, or it never runs');
+  assert.equal(transitionPrompt({ when: 'feedback' }, { action: 'skill', skill: 'new-build' }, 'new'), `/hive:new-build\n\n${FEEDBACK_TEMPLATE}`);
+  assert.equal(transitionPrompt({ when: 'done', prompt: 'Also lint.' }, { prompt: 'Build it.' }, 'new'), 'Also lint.\n\nBuild it.');
   assert.equal(transitionPrompt({ when: 'verdict', prompt: 'Fix:\n\n{verdict}' }, build, 'continue'), 'Fix:\n\n{verdict}');
   assert.equal(transitionPrompt({ when: 'done' }, build, 'continue'), '/build {url}');
   assert.equal(transitionPrompt({ when: 'done', prompt: '  ' }, build, 'new'), '/build {url}');
   assert.equal(FEEDBACK_TEMPLATE, 'The user reviewed this stage and asks:\n\n{feedback}');
   assert.equal(transitionPrompt({ when: 'feedback' }, build, 'continue'), FEEDBACK_TEMPLATE);
-  assert.equal(transitionPrompt({ when: 'feedback' }, build, 'new'), `${FEEDBACK_TEMPLATE}\n\n/build {url}`);
+  assert.equal(transitionPrompt({ when: 'feedback' }, build, 'new'), `/build {url}\n\n${FEEDBACK_TEMPLATE}`);
   assert.equal(transitionPrompt({ when: 'approved' }, {}, 'new'), '');
   assert.deepEqual(
     [needsHandover({ when: 'done' }), needsHandover({ when: 'done', prompt: 'x' }), needsHandover({ when: 'feedback' }), needsHandover({ when: 'approved', session: 'new' })],
@@ -127,4 +129,13 @@ test('resolveSession never resumes a session of another agent: previous, continu
   assert.deepEqual(resolveSession(state, task, live, {}, { ...build, session: 'continue' }), { policy: 'new' });
   assert.deepEqual(resolveSession({ ...state, defaultAgent: OTHER }, task, live, { session: 'previous' }, STAGES[1]), { policy: 'new' }, 'a stage with no agent runs the default');
   assert.deepEqual(resolveSession(state, task, live, { session: 'previous' }, { ...build, agent: 'claude' }), { policy: 'continue', sessionId: 's-spec' });
+});
+
+test('a skill stage reads as a prompt stage: its own verdicts, done for an unrouted one, the evidence for {verdict}, /hive:<skill> handed on (#710)', () => {
+  const plan: Stage = { name: 'plan', from: {}, action: 'skill', skill: 'new-plan', verdicts: ['redo'] };
+  const done: Transition = { from: 'plan', to: 'build', when: 'done' };
+  assert.deepEqual(verdictsOf(plan), ['redo']);
+  assert.equal(exitOf({ stages: [plan], transitions: [done] }, 'plan', 'verdict', 'redo'), done);
+  assert.equal(verdictText(plan, { verdict: { evidence: 'why', output: 'no' } }), 'why');
+  assert.equal(transitionPrompt({ when: 'feedback' }, plan, 'new'), `/hive:new-plan\n\n${FEEDBACK_TEMPLATE}`);
 });

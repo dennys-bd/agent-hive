@@ -1,4 +1,6 @@
 import { agentOf } from './agents.js';
+import { hiveActionRaw, runsAgentRaw } from './config-stage-agent.js';
+import { runsAgent } from './stage-agent.js';
 import { isGate } from './tasks.js';
 import { isAutomatic, transitionKey, verdictsOf } from './transitions.js';
 import { END, TRIGGERS, type AgentId, type SourceAction, type Stage, type Transition, type TransitionSession, type Trigger } from './types.js';
@@ -21,8 +23,8 @@ export type SourcesParser = (raw: unknown, field: string) => Record<string, Sour
  * with nothing to run gives none. */
 export function parseVerdicts(raw: Record<string, unknown>, field: string): Pick<Stage, 'verdicts'> {
   if (raw.verdicts === undefined) return {};
-  if (raw.action !== undefined) fail(`${field}.verdicts`, 'cannot be combined with "action": its verdicts are fixed');
-  if (raw.prompt === undefined) fail(`${field}.verdicts`, 'needs "prompt": a stage that runs nothing gives no verdict');
+  if (hiveActionRaw(raw)) fail(`${field}.verdicts`, 'cannot be combined with "action": its verdicts are fixed'); // #710: a skill stage gives its own
+  if (!runsAgentRaw(raw)) fail(`${field}.verdicts`, 'needs "prompt": a stage that runs nothing gives no verdict');
   const list: unknown = raw.verdicts;
   const names = Array.isArray(list) && list.every((v): v is string => typeof v === 'string' && v !== '' && v === v.trim()) ? list : undefined;
   if (names === undefined || names.length === 0 || new Set(names).size !== names.length) return fail(`${field}.verdicts`, 'must be a non-empty array of distinct, trimmed names');
@@ -118,9 +120,6 @@ function resumedStage(transition: Transition, to: Stage): string | undefined {
   if (typeof transition.session === 'object') return transition.session.continueOf;
   return transition.session === undefined && to.session === 'continue' ? transition.from : undefined;
 }
-
-// A stage that spawns an agent: a prompt and no action. A gate, a commands, a wait-for-CI or a delete-activity stage runs none and resumes none
-const runsAgent = (stage: Stage): boolean => stage.action === undefined && stage.prompt !== undefined;
 
 /** #925: every transition whose resumed session the flow names, refused when that session's agent is not its destination's: one agent cannot
  * resume another's session, a handoff (#692) switches them. Pure, so it is tested with a stage of a second agent before AGENT_IDS has one;

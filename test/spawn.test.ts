@@ -348,7 +348,9 @@ test('a copy gives the fork the dialog\'s name as its Claude Code title, in the 
 test('withHandoff puts the handoff in front only for a handoff stage starting a new session with a non-empty result.handoff (#692)', () => {
   const stage = { handoff: true as const };
   const result = { handoff: 'spec at docs/s.md' };
-  assert.equal(withHandoff('/hive:new-plan 7', stage, result, 'new'), 'Handoff from the previous stage:\n\nspec at docs/s.md\n\n---\n\n/hive:new-plan 7');
+  assert.equal(withHandoff('/hive:new-plan 7', stage, result, 'new'), '/hive:new-plan 7\n\nHandoff from the previous stage:\n\nspec at docs/s.md', '#710: a slash command stays first, or it never runs');
+  assert.equal(withHandoff('/build {url}\nthen push', stage, result, 'new'), '/build {url}\n\nHandoff from the previous stage:\n\nspec at docs/s.md\n\n---\n\nthen push');
+  assert.equal(withHandoff('p', stage, result, 'new'), 'Handoff from the previous stage:\n\nspec at docs/s.md\n\n---\n\np');
   assert.equal(withHandoff('p', {}, result, 'new'), 'p', 'a stage without handoff');
   assert.equal(withHandoff('p', stage, result, 'continue'), 'p', 'a resumed session already read it');
   for (const empty of [undefined, {}, { handoff: '  ' }, { handoff: 3 }]) assert.equal(withHandoff('p', stage, empty, 'new'), 'p', JSON.stringify(empty));

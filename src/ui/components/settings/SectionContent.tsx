@@ -67,7 +67,7 @@ function headingAction(section: SettingsSection, { draft, onChange }: Pick<Secti
 function body(section: SettingsSection, source: SourceDraft | undefined, { draft, info, state, flow, language, onLanguage, onChange, onCapSaved }: Omit<SectionContentProps, 'section' | 'error' | 'source'>): ReactNode {
   switch (section) {
     case 'workspaces': return <WorkspacesSection draft={draft} state={state} savedNames={(info.config?.comb.workspaces ?? []).map((w) => w.name)} onChange={onChange} onCapSaved={onCapSaved} />;
-    case 'flow': return <FlowSection draft={draft} source={source} flow={flow} agents={info.agents} onChange={onChange} />;
+    case 'flow': return <FlowSection draft={draft} source={source} flow={flow} agents={info.agents} launchWorkspace={info.config?.comb.workspaces[0]?.name} onChange={onChange} />;
     case 'execution': return <ExecutionSection draft={draft} agents={info.agents} onChange={onChange} onOpenFlow={() => flow.onOpenSource(undefined)} />;
     case 'rules': return <RulesTab draft={draft} state={state} locale={LOCALE[info.language]} onChange={onChange} />;
     case 'app': return <AppSection draft={draft} onChange={onChange} />;

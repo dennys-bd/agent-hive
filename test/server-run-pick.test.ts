@@ -1,5 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { activityOf } from '../src/activities.js';
 import { runModel } from '../src/agents.js';
@@ -19,12 +20,12 @@ async function until(check: () => boolean): Promise<void> {
 
 // local:1 (its worktree on disk, sessions A and B of fila, both Claude's) moved by hand into build, a stage it never ran, with auto off so only a
 // start runs it: executar etapas posts a start there
-async function inBuild(t: TestContext): Promise<{ base: string; server: HiveServer; workers: FakeWorker[] }> {
+async function inBuild(t: TestContext, stage: Stage = BUILD): Promise<{ base: string; server: HiveServer; workers: FakeWorker[] }> {
   const { spawn, workers } = fakeSpawn();
   const { base, server } = await startReviews(t, { launchPty: spawn });
-  await server.dispatch({ type: 'setStages', stages: [...LOCAL_STAGES, BUILD], transitions: [] });
+  await server.dispatch({ type: 'setStages', stages: [...LOCAL_STAGES, stage], transitions: [] });
   await server.dispatch({ type: 'setAuto', taskId: 'local:1', auto: false });
-  await server.dispatch({ type: 'moveToStage', taskId: 'local:1', stage: 'build' });
+  await server.dispatch({ type: 'moveToStage', taskId: 'local:1', stage: stage.name });
   return { base, server, workers };
 }
 const startWith = (server: HiveServer, runPick?: RunPick) => server.dispatch({ type: 'start', itemId: 'local:1', ...(runPick === undefined ? {} : { runPick }) });
@@ -98,5 +99,34 @@ test('POST /tasks/:id/start refuses picks out of shape with a 400 naming the fie
     assert.equal(res.status, status, JSON.stringify(body));
     assert.match(error, field, JSON.stringify(body));
   }
+  assert.equal(workers.length, 0);
+});
+
+// #710: a skill stage with its own specialized agent
+const PLAN: Stage = { name: 'plan', from: {}, action: 'skill', skill: 'new-plan', specializedAgent: 'hive:planner' };
+const agentFlag = (worker: FakeWorker): string | undefined => {
+  const args = plainArgs(worker.launch);
+  return args.includes('--agent') ? args[args.indexOf('--agent') + 1] : undefined;
+};
+
+test('a skill stage\'s run is told /hive:<skill> and runs as the stage\'s specialized agent (#710)', async (t) => {
+  const { server, workers } = await inBuild(t, PLAN);
+  await startWith(server);
+  await until(() => workers.length === 1);
+  assert.equal(await readFile(workers[0].launch.promptPath ?? '', 'utf8'), '/hive:new-plan');
+  assert.equal(agentFlag(workers[0]), 'hive:planner');
+});
+
+test('a manual start\'s specialized agent wins over the stage\'s (#710)', async (t) => {
+  const { server, workers } = await inBuild(t, PLAN);
+  await startWith(server, { launch: { specializedAgent: 'hive:designer' } });
+  await until(() => workers.length === 1);
+  assert.equal(agentFlag(workers[0]), 'hive:designer');
+});
+
+test('a skill the workspace\'s plugin folder lacks fails the spawn, naming it, and runs nothing (#710)', async (t) => {
+  const { server, workers } = await inBuild(t, { ...PLAN, skill: 'gone' });
+  await startWith(server);
+  await until(() => (server.getState()!.error ?? '').includes('hive:gone'));
   assert.equal(workers.length, 0);
 });

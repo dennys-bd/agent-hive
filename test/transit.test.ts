@@ -102,7 +102,7 @@ test('retry takes the spent transition again: its counter and records gone, the 
   const live = activityOf(retried.state, ID);
   assert.deepEqual([retried.state.tasks[0].stage, live?.stopped, live?.stoppedAt, live?.error], ['fix', undefined, undefined, undefined]);
   assert.deepEqual([live?.tries, live?.tryLog, live?.via], [{ [transitionKey(OTHER)]: 1 }, [other], KEY], 'a retry counts no try and records none');
-  assert.match(live?.handover?.prompt ?? '', /^Fix: build \(1\)\nboom/);
+  assert.match(live?.handover?.prompt ?? '', /^\/fix [^\n]*\n\nFix: build \(1\)\nboom/); // #710: the stage's command first
 });
 
 test('retry answers undefined when the error is no TRIES_OUT, the transition is gone or renamed, a run holds the task, or the task is unknown (#915)', () => {

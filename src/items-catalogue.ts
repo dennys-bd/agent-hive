@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BASE_DIR, mainFiles, parseVersionJson, refusal, type StoreRefusal, VERSION_FILE } from './custom-versions.js';
 import { childFolders, type FileSet, HIVE_ORIGIN, itemDir, itemId, type ItemRef, type ItemSources, listFiles, originDir, originFiles, originNames, parseItemId, resolveRef, sameFiles, versionDir, versionFiles } from './item-sources.js';
+import { agentPrompt } from './stage-agent.js';
 import { parseTemplate } from './template.js';
 import type { LintItem } from './template-lint.js';
 import { templateRefs } from './template-refs.js';
@@ -13,7 +14,7 @@ type Header = Pick<CatalogueItem, 'description' | 'basedOn' | 'error'>;
 const NAME_TAKEN_MESSAGE = 'name taken by a skill';
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-export type StageRef = Pick<Stage, 'name' | 'prompt'>;
+export type StageRef = Pick<Stage, 'name' | 'prompt' | 'action' | 'skill'>; // #710: what agentPrompt reads
 type UsageTarget = Pick<CatalogueItem, 'id' | 'origin' | 'kind' | 'name'>;
 // An item with its main file's text, what usageOf scans; '' for an item with no main file
 interface Entry { item: CatalogueItem; text: string }
@@ -39,14 +40,15 @@ const names = (item: UsageTarget, ref: { kind: string; name: string }): boolean 
   return ref.kind === 'bare' && item.kind === 'skill';
 };
 
-/** Each item's usage (#313), aligned with `items`: the stages whose prompt runs it, in config order, then every other item whose main text
+/** Each item's usage (#313), aligned with `items`: the stages whose prompt or skill runs it, in config order, then every other item whose main text
  * (texts[i] is items[i]'s) names it, in catalogue order. An item sharing an id (a name clash) is never its own caller.
  * ponytail: every text is parsed once and tested against every item, O(n²); a catalogue is tens of items. */
 export function usageOf(items: readonly UsageTarget[], texts: readonly string[], stages: readonly StageRef[]): ItemUsage[][] {
   const refs = texts.map((text) => (text === '' ? [] : templateRefs(parseTemplate(text))));
   return items.map((item) => {
     const stage = stagePattern(item);
-    const ran = stage === undefined ? [] : stages.filter((s) => s.prompt !== undefined && stage.test(s.prompt)).map((s): ItemUsage => ({ kind: 'stage', stage: s.name }));
+    // #710: a stage runs what agentPrompt answers: its prompt, or /hive:<skill> on a skill stage
+    const ran = stage === undefined ? [] : stages.filter((s) => stage.test(agentPrompt(s) ?? '')).map((s): ItemUsage => ({ kind: 'stage', stage: s.name }));
     const callers = items.filter((other, i) => other.id !== item.id && (refs[i] ?? []).some((ref) => names(item, ref)));
     return [...ran, ...callers.map((c): ItemUsage => ({ kind: 'caller', id: c.id }))];
   });

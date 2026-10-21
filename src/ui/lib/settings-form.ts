@@ -18,7 +18,7 @@ import { type SourceTaskPropsDraft, emptyTaskProps, sourceTaskPropsProblem, task
 import { type CommandDraft, commandDraft, commandFrom, commandsProblem, type EnvRowDraft, envFrom, envRows } from './settings-commands.js';
 import { agentArgsDraft, agentArgsFrom } from './settings-agent-args.js';
 import { type RuleDraft, renamedRuleDrafts, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
-import { limitFrom, numberField, optional, type StageDraft, stageDraft, stageFrom, stageRenamesFrom } from './settings-stages.js';
+import { limitFrom, numberField, optional, orphanContinue, type StageDraft, stageDraft, stageFrom, stageRenamesFrom } from './settings-stages.js';
 import { draftTitle, type TransitionDraft, transitionDraft, transitionFrom, transitionsProblem } from './settings-transitions.js';
 
 export { emptyStage, type StageDraft } from './settings-stages.js';
@@ -208,10 +208,14 @@ function transitionsDraftProblem(draft: SettingsDraft): SettingsProblem | undefi
 const badWait = (c: StageDraft): boolean =>
   c.action === 'waitForCi' && ((c.ciChecks === 'list' && c.checks.length === 0) || (c.timeout.trim() !== '' && timeoutMs(c.timeout) === undefined));
 
-function stagesProblem(stages: StageDraft[]): SettingsProblem | undefined {
+function stagesProblem(stages: StageDraft[], defaultAgent: AgentId): SettingsProblem | undefined {
   if (stages.length === 0) return { section: 'flow', message: t('settings.stages.none') };
   const bad = stages.findIndex((c) => c.name.trim() === '' || !isEmptyOrDuration(c.after) || !isEmptyOrNonNegativeInt(c.maxWorkers) || (c.action === 'commands' && c.commands.length === 0)); // #755: the parser refuses an empty list
   if (bad !== -1) return { section: 'flow', message: t('settings.stages.error', { n: bad + 1 }) };
+  const unpicked = stages.findIndex((c) => c.action === 'skill' && c.skill === ''); // #710: a skill stage with none runs nothing; the parser refuses it
+  if (unpicked !== -1) return { section: 'flow', message: t('settings.stages.error.skill', { n: unpicked + 1 }) };
+  const orphan = orphanContinue(stages, defaultAgent); // #710: the first stage of an agent has no session of it to continue
+  if (orphan !== -1) return { section: 'flow', message: t('settings.stages.error.continue', { n: orphan + 1, agent: stages[orphan]?.agent || defaultAgent }) };
   const wait = stages.findIndex(badWait);
   return wait === -1 ? undefined : { section: 'flow', message: t('settings.stages.error.ci', { n: wait + 1 }) };
 }
@@ -286,7 +290,7 @@ function silentSourceProblem(draft: SettingsDraft): SettingsProblem | undefined 
  * window, approval window, run commands, shortcuts, silent sources) with the section to reveal (#510); undefined when the server may judge the
  * rest. A bad trusted-domain host is refused inline by its own chip field (#513), so it is not in this chain. */
 export function validateSettings(draft: SettingsDraft): SettingsProblem | undefined {
-  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages) ?? transitionsDraftProblem(draft) ?? rulesProblem(renamedRuleDrafts(draft.rules, stageRenamesFrom(draft.stages)), draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
+  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages, draft.defaultAgent) ?? transitionsDraftProblem(draft) ?? rulesProblem(renamedRuleDrafts(draft.rules, stageRenamesFrom(draft.stages)), draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
 }
 
 /** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the

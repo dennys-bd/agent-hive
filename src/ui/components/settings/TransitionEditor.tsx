@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import { verdictLabel } from '@/lib/flow-labels';
-import { isGateDraft, type StageDraft, withEntry } from '@/lib/settings-stages';
+import { isAgentDraft, type StageDraft, withEntry } from '@/lib/settings-stages';
 import { draftTitle, draftVerdicts, type TransitionDraft, triggersOf } from '@/lib/settings-transitions';
 
 interface TransitionEditorProps { transition: TransitionDraft; stages: StageDraft[]; sources: StageSource[]; backTo?: string; onUpdate(patch: Partial<TransitionDraft>): void; onRemove(): void; onBack?(): void }
@@ -77,7 +77,7 @@ function Tries({ id, transition, onUpdate }: { id: string; transition: Transitio
 
 // prompt da transição and sessão: the session it resumes, continuing any stage that runs a prompt
 function Handover({ id, transition, stages, onUpdate }: Omit<TransitionEditorProps, 'sources' | 'onRemove'> & { id: string }) {
-  const runners = stages.filter((s) => s.action === '' && !isGateDraft(s));
+  const runners = stages.filter(isAgentDraft); // #710: a skill stage's session can be continued too
   const label = (value: string): string => (value === SESSION_DEFAULT ? t('settings.transitions.session.default') : value === 'previous' || value === 'new'
     ? t(`settings.transitions.session.${value}`) : t('settings.transitions.session.continueOf', { stage: nameOf(stages, value.slice('of:'.length)) }));
   return (

@@ -1,4 +1,5 @@
 import { destinationOf } from '../../stage-delete.js';
+import type { HiveAction } from '../../stage-agent.js';
 import { isGate, onSource } from '../../tasks.js';
 import { type AgentId, type CiChecks, SOURCE_ACTIONS, type SourceAction, type SourceFields, isLeaving, type ItemAction, LEAVING_ACTIONS, type OnMissing, type Stage, type StageAction, type Task } from '../../types.js';
 import { t, tPlural } from '../i18n.js';
@@ -13,13 +14,14 @@ import { t, tPlural } from '../i18n.js';
 // id: a per-stage React key, never sent. from / onStart are keyed by source row id (#180): a name the user is still typing never
 // splits an entry. onStart holds an ordered list per row (#515).
 // gate (#134): the draft's só aprovação, a stage that runs nothing and awaits approval; verdicts: a prompt stage's own, in order
-export interface StageDraft { id: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; savedName?: string }
+// skill (#710): a skill stage's bare skill name, '' = none picked yet; specializedAgent: hive:<name>, '' = none
+export interface StageDraft { id: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; skill: string; specializedAgent: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; savedName?: string }
 /** What a stage's maps are keyed against: a source row's id and its name as typed. */
 export interface StageRow { id: string; name: string }
 
 const META_WORD_MAX = 24;
 
-export const emptyStage = (): StageDraft => ({ id: crypto.randomUUID(), name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
+export const emptyStage = (): StageDraft => ({ id: crypto.randomUUID(), name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
 
 /** A number field's text: 0 or absent = no limit = empty. */
 export const numberField = (n?: number): string => (n ? String(n) : '');
@@ -41,7 +43,7 @@ export const withEntry = <T>(map: Record<string, T>, key: string, value: T | und
 
 export const stageDraft = (c: Stage, rows: StageRow[]): StageDraft => ({
   id: crypto.randomUUID(), name: c.name, savedName: c.name, session: c.session ?? 'new', model: c.model ?? '', agent: c.agent ?? '', // '' = the default agent (#516)
-  from: byRow(c.from, rows), onStart: byRow(c.onStart, rows), gate: isGate(c), verdicts: c.verdicts ?? [], prompt: c.prompt ?? '',
+  from: byRow(c.from, rows), onStart: byRow(c.onStart, rows), gate: isGate(c), verdicts: c.verdicts ?? [], prompt: c.prompt ?? '', skill: c.skill ?? '', specializedAgent: c.specializedAgent ?? '', // #710
   action: c.action ?? '', after: c.after ?? '', approval: c.approval === true, handoff: c.handoff === true, // #692
   maxWorkers: c.maxWorkers === undefined ? '' : String(c.maxWorkers), // #475: not numberField, which reads 0 as empty; 0 here is a cap
   commands: c.commands ?? [], stopOnFailure: c.stopOnFailure ?? true, onMissing: c.onMissing ?? 'fail', // #755: the form starts the switch on and onMissing on fail; the file has no default
@@ -50,7 +52,7 @@ export const stageDraft = (c: Stage, rows: StageRow[]): StageDraft => ({
 });
 
 // #755, #834: each action sends its own keys only; parseStage refuses the others
-function actionKeys(c: StageDraft, action: StageAction): Partial<Stage> {
+function actionKeys(c: StageDraft, action: HiveAction): Partial<Stage> {
   if (action === 'commands') return { action, commands: c.commands, stopOnFailure: c.stopOnFailure, onMissing: c.onMissing };
   if (action !== 'waitForCi') return { action };
   return { action, ciChecks: c.ciChecks, ...(c.ciChecks === 'list' ? { checks: c.checks } : {}), rerunOnce: c.rerunOnce, ...optional('timeout', c.timeout) };
@@ -61,17 +63,22 @@ function actionKeys(c: StageDraft, action: StageAction): Partial<Stage> {
 export const named = <T>(map: Record<string, T[]>, rows: readonly StageRow[]): Record<string, T[]> =>
   Object.fromEntries(rows.flatMap((r) => ((map[r.id]?.length ?? 0) === 0 ? [] : [[r.name.trim(), map[r.id]]])));
 
-// A prompt stage's keys: its prompt, session, model, agent, approval, worker cap, handoff (#692) and its own verdicts (#134)
-const promptKeys = (c: StageDraft): Partial<Stage> => ({
-  ...(c.session === 'continue' ? { session: 'continue' as const } : {}), ...optional('model', c.model), ...(c.agent === '' ? {} : { agent: c.agent }), ...optional('prompt', c.prompt),
+// The keys of a stage that runs an agent (#710): its session, model, agent, specialized agent, approval, worker cap, handoff (#692) and its own
+// verdicts (#134). runs: a prompt typed or a skill: only then a handoff or a specialized agent, which the parser refuses on a stage that runs nothing
+const agentKeys = (c: StageDraft, runs: boolean): Partial<Stage> => ({
+  ...(c.session === 'continue' ? { session: 'continue' as const } : {}), ...optional('model', c.model), ...(c.agent === '' ? {} : { agent: c.agent }),
   ...(c.approval ? { approval: true as const } : {}), ...(c.maxWorkers.trim() === '' ? {} : { maxWorkers: Number(c.maxWorkers.trim()) }), // #475: a delete activity stage runs no worker, so it sends no cap
-  ...(c.handoff && c.session !== 'continue' && c.prompt.trim() !== '' ? { handoff: true as const } : {}), // #692: the switch is off under continue or without a prompt, and the parser refuses both
+  ...(c.handoff && c.session !== 'continue' && runs ? { handoff: true as const } : {}), // #692: off under continue or with nothing to run
+  ...(runs ? optional('specializedAgent', c.specializedAgent) : {}),
   ...(c.verdicts.length === 0 ? {} : { verdicts: c.verdicts }),
 });
+const promptKeys = (c: StageDraft): Partial<Stage> => ({ ...agentKeys(c, c.prompt.trim() !== ''), ...optional('prompt', c.prompt) });
+// #710: a skill stage's skill is chosen, not typed: every key but prompt; an empty skill is validateSettings' to refuse
+const skillKeys = (c: StageDraft): Partial<Stage> => ({ action: 'skill', ...optional('skill', c.skill), ...agentKeys(c, true) });
 
 // Absent keys stay absent (never an explicit undefined), so hive.config.json stays clean; the server validates the rest
 export const stageFrom = (c: StageDraft, rows: StageRow[]): Stage => {
-  const run = c.action !== '' ? actionKeys(c, c.action) : isGateDraft(c) ? { approval: true as const } : promptKeys(c); // #134: a gate sends approval alone
+  const run = c.action === 'skill' ? skillKeys(c) : c.action !== '' ? actionKeys(c, c.action) : isGateDraft(c) ? { approval: true as const } : promptKeys(c); // #134: a gate sends approval alone
   const onStart = named(c.onStart, rows);
   return { name: c.name.trim(), from: named(c.from, rows), ...(Object.keys(onStart).length === 0 ? {} : { onStart }), ...run, ...optional('after', c.after) };
 };
@@ -100,6 +107,25 @@ export const actionLabel = (a: SourceAction): string =>
 /** A manual gate (#315): requires approval on a prompt stage whose prompt is blank. Nothing starts there, so on start is never written. */
 export const isGateDraft = (stage: StageDraft): boolean => stage.action === '' && (stage.gate || (stage.approval && stage.prompt.trim() === ''));
 
+/** A stage whose action is an agent's (#710): a prompt stage, its prompt typed or still blank, or a skill stage; never a gate. What shows the run
+ * fields, the verdicts editor and the handoff, and what a transition's session may continue. */
+export const isAgentDraft = (stage: StageDraft): boolean => stage.action === 'skill' || (stage.action === '' && !isGateDraft(stage));
+
+const agentOfDraft = (stage: StageDraft, defaultAgent: AgentId): AgentId => (stage.agent === '' ? defaultAgent : stage.agent);
+
+/** Whether a stage may continue the previous session (#710): some earlier stage in the fill order runs an agent, the same one, so a task
+ * reaches it with a session of that agent to resume. Never the first stage, never the first stage of its agent. */
+export function canContinueSession(stages: readonly StageDraft[], index: number, defaultAgent: AgentId): boolean {
+  const stage = stages[index];
+  if (stage === undefined || !isAgentDraft(stage)) return false;
+  const agent = agentOfDraft(stage, defaultAgent);
+  return stages.slice(0, index).some((s) => isAgentDraft(s) && agentOfDraft(s, defaultAgent) === agent);
+}
+
+/** The first agent stage left on continue with no session to resume (canContinueSession), or -1. */
+export const orphanContinue = (stages: readonly StageDraft[], defaultAgent: AgentId): number =>
+  stages.findIndex((s, i) => isAgentDraft(s) && s.session === 'continue' && !canContinueSession(stages, i, defaultAgent));
+
 /** A stage chip's second line (#515): what the stage does, or the agent it runs (#516) and the prompt's first word. */
 export function stageMeta(s: StageDraft, defaultAgent: AgentId): string {
   if (s.action === 'deleteActivity') return t('settings.stages.meta.deleteActivity');
@@ -108,6 +134,8 @@ export function stageMeta(s: StageDraft, defaultAgent: AgentId): string {
     return s.checks.length > 0 ? s.checks.join(', ') : t('settings.stages.action.waitForCi');
   }
   if (s.action === 'commands') return s.commands.length > 0 ? s.commands.join(', ') : t('settings.stages.action.commands'); // #755: what it runs
+  // #710: the agent and the skill, as a prompt stage's reads the agent and its first word
+  if (s.action === 'skill') return `${s.agent === '' ? defaultAgent : s.agent} · ${s.skill === '' ? t('settings.stages.action.skill') : s.skill}`;
   if (isGateDraft(s)) return t('settings.stages.meta.gate');
   const prompt = s.prompt.trim();
   if (prompt === '') return t('settings.stages.meta.show');

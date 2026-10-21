@@ -108,3 +108,8 @@ test('by status: the task state groups a stopped activity, under review with an 
     ['aguardando aprovação', ['2'], false], ['aguardando review', ['1', '3'], false], ['parada', ['4', '5'], false],
   ]);
 });
+
+test('done: a last skill stage runs an agent, so a task there is never done (#710)', () => {
+  const planLast: Stage[] = [...FLOW.slice(0, 2), { name: 'plan', action: 'skill', skill: 'new-plan', from: {} }];
+  expect(isDone(task('1', 'plan'), planLast)).toBe(false);
+});

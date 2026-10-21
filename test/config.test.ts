@@ -42,7 +42,7 @@ test('parseConfig reads stages[].action and after, keeps them absent when unset 
   const plain = parsed({});
   assert.deepEqual(['action' in plain, 'after' in plain], [false, false], 'absent stays absent: the file stays clean');
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
-  assert.throws(bad({ action: 'other' }), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands" or "waitForCi"' });
+  assert.throws(bad({ action: 'other' }), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands", "waitForCi" or "skill"' });
   assert.throws(bad({ action: 1 }), /comb\.stages\[0\]\.action/);
   assert.throws(bad({ action: 'deleteActivity', prompt: '/x' }), { message: 'hive.config.json: "comb.stages[0].action" cannot be combined with "prompt"' });
   for (const after of ['5', '0d', '5 d', '1w', '', '05d', '1.5h', '1H', 5, null]) {
@@ -52,7 +52,7 @@ test('parseConfig reads stages[].action and after, keeps them absent when unset 
 
 test('parseConfig refuses a stage whose action is still delete activity, naming deleteActivity, and reads deleteActivity (#573)', () => {
   const stage = (action: string) => ({ name: 'done', from: { board: ['Done'] }, action });
-  assert.throws(() => parseConfig(github({ stages: [stage('cleanup')] })), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands" or "waitForCi"' }); // #573: the old name, on purpose
+  assert.throws(() => parseConfig(github({ stages: [stage('cleanup')] })), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands", "waitForCi" or "skill"' }); // #573: the old name, on purpose
   assert.equal(parseConfig(github({ stages: [stage('deleteActivity')] })).comb.stages[0].action, 'deleteActivity');
 });
 

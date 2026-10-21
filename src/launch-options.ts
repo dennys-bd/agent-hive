@@ -1,5 +1,7 @@
 // The new session dialog's lists (#257), GET /launch-options, and the checks of a free session's picks: the open routes' checkLaunch and the
 // spawn's launchRun, out of server-open.ts and server-spawn.ts.
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { AGENTS } from './agents.js';
 import type { AgentRun } from './agents/runner.js';
@@ -10,6 +12,8 @@ import { isLaunchArgs, isLaunchModel, savedLaunch } from './launch-pick.js';
 import type { Logger } from './log.js';
 import { isRecord } from './rate-limits.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
+import { SKILL_NAME } from './stage-agent.js';
+import { parseTemplate } from './template.js';
 import type { AgentId, Config, Exec, Language, LaunchOption, LaunchOptions, LaunchPick } from './types.js';
 import { MESSAGES } from './ui/i18n.js';
 
@@ -57,14 +61,45 @@ async function codexModels(exec: Exec, log: Pick<Logger, 'info'>): Promise<Launc
   }
 }
 
-/** GET /launch-options' answer (#257): Claude's hand-kept models, Codex's from its CLI, `pluginDir`'s agents for both (#316), each agent's config
+const SKILLS_DIR = 'skills';
+const SKILL_FILE = 'SKILL.md'; // the rendered folder's name: the render drops .liquid (template.ts deliveredName)
+
+const skillFile = (pluginDir: string, name: string): string => join(pluginDir, SKILLS_DIR, name, SKILL_FILE);
+
+/** Whether a rendered plugin folder has the skill (#710): what a skill stage's start checks, as launchRun checks a specialized agent. The shape
+ * first, so a name never walks out of skills/. */
+export const hasSkill = (pluginDir: string, name: string): boolean => SKILL_NAME.test(name) && statSync(skillFile(pluginDir, name), { throwIfNoEntry: false })?.isFile() === true; // a folder named SKILL.md is no skill
+
+// A skill's description from its header (#710): '' with none or an unreadable one, so the list still names the skill
+function skillDescription(pluginDir: string, name: string): string {
+  // One unreadable header costs that skill its description, never the whole /launch-options answer and its agent and model lists
+  try {
+    const description = parseTemplate(readFileSync(skillFile(pluginDir, name), 'utf8')).header.description;
+    return typeof description === 'string' ? description : '';
+  } catch {
+    return '';
+  }
+}
+
+/** A rendered plugin folder's skills (#710): each folder of skills/ with a SKILL.md, by bare name, sorted, with its description. Throws with no
+ * skills/, as specializedAgents does with no agents/. */
+export function pluginSkills(pluginDir: string): { name: string; description: string }[] {
+  return readdirSync(join(pluginDir, SKILLS_DIR), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && hasSkill(pluginDir, entry.name))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => ({ name, description: skillDescription(pluginDir, name) }));
+}
+
+/** GET /launch-options' answer (#257): Claude's hand-kept models, Codex's from its CLI, `pluginDir`'s agents and skills for both (#316), each agent's config
  * args. Throws when the folder's agents cannot be read. */
 export async function launchOptions(exec: Exec, log: Pick<Logger, 'info'>, agentArgs: Record<AgentId, string[]>, pluginDir: string): Promise<LaunchOptions> {
   const agents = specializedAgents(pluginDir).map(({ name, description }) => ({ name, description }));
+  const skills = pluginSkills(pluginDir); // #710: one list for both agents: a skill stage runs /hive:<name> on either
   const codex = await codexModels(exec, log);
   return {
-    claude: { aliases: [...CLAUDE_ALIASES], versions: [...CLAUDE_VERSIONS], specializedAgents: agents, args: [...agentArgs.claude] },
-    codex: { aliases: [], versions: codex, specializedAgents: agents, args: [...agentArgs.codex] },
+    claude: { aliases: [...CLAUDE_ALIASES], versions: [...CLAUDE_VERSIONS], specializedAgents: agents, skills, args: [...agentArgs.claude] },
+    codex: { aliases: [], versions: codex, specializedAgents: agents, skills, args: [...agentArgs.codex] },
   };
 }
 

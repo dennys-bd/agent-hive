@@ -1,6 +1,7 @@
 import { ConnectionsGroup } from '@/components/settings/ConnectionsGroup';
 import { SourcesGroup } from '@/components/settings/SourcesGroup';
 import { StageEditor, type StageFocus, type TransitionFocus } from '@/components/settings/StageEditor';
+import { useLaunchOptions } from '@/hooks/use-launch-options';
 import { t } from '@/i18n';
 import type { NewSource } from '@/lib/flow-sources';
 import { commandFrom } from '@/lib/settings-commands';
@@ -13,12 +14,14 @@ export interface CombTabProps {
   onChange(patch: Partial<SettingsDraft>): void; onConnectGithub(): void;
   onEditSource(id: string): void; onAddSource(added: NewSource): void; onOpenRules(): void;
   agents: readonly AgentAvailability[]; // found on boot (#516): each stage's agent select
+  launchWorkspace?: string; // #710: the config's first workspace, whose lists the run fields offer
   focus?: TransitionFocus; // #918: the transition a refused save selects
   stage?: StageFocus; // #689: the stage the Settings search opens
 }
 
 // Settings › fluxo's list page (#514): sources first (the local source, then the sources), then how the Hive reaches GitHub and the stages (#515 reworks those, #524 the local row).
-export function CombTab({ draft, options, githubProjects, github, agents, focus, stage, onChange, onConnectGithub, onEditSource, onAddSource, onOpenRules }: CombTabProps) {
+export function CombTab({ draft, options, githubProjects, github, agents, launchWorkspace, focus, stage, onChange, onConnectGithub, onEditSource, onAddSource, onOpenRules }: CombTabProps) {
+  const launchOptions = useLaunchOptions(launchWorkspace);
   const githubSources = draft.sources.filter((b) => b.type === 'github');
   const hasGithub = githubSources.length > 0;
   const workspaceNames = draft.workspaces.map((p) => p.name.trim()).filter((n) => n !== '');
@@ -43,7 +46,7 @@ export function CombTab({ draft, options, githubProjects, github, agents, focus,
         stages={draft.stages} transitions={draft.transitions}
         sources={draft.sources.map((b, i) => ({ id: b.id, name: b.name.trim() || `#${i + 1}`, type: b.type, options: options[b.id] ?? [] }))}
         commands={commands} workspaces={workspaceNames}
-        agents={agents} defaultAgent={draft.defaultAgent} focus={focus} stage={stage} onChange={({ stages, transitions }) => onChange({ stages, transitions: transitionsKept(transitions, stages) })}
+        agents={agents} defaultAgent={draft.defaultAgent} launchOptions={launchOptions} focus={focus} stage={stage} onChange={({ stages, transitions }) => onChange({ stages, transitions: transitionsKept(transitions, stages) })}
       />
     </>
   );

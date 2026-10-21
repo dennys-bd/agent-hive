@@ -13,13 +13,14 @@ import { taskWorkspace, noWorkspaceReason, workspaceByName, requireWorkspace } f
 import { commandChannel, type ConsoleStore } from './console.js';
 import { feedConsole } from './console-feed.js';
 import { workspaceProtocolPaths, writeMcpConfig, type ProtocolPaths } from './hooks-settings.js';
-import { launchRun, specializedAgents } from './launch-options.js';
+import { hasSkill, launchRun, specializedAgents } from './launch-options.js';
 import type { Logger } from './log.js';
 import type { PluginRender } from './plugin-render.js';
 import type { PtyHost } from './pty-host.js';
 import { recordStageStart } from './restart.js';
 import { commandIn } from './run-commands.js';
 import type { Runtime } from './server.js';
+import { agentPrompt } from './stage-agent.js';
 import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, writePrompt } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
@@ -92,7 +93,7 @@ const stackedLine = (base?: TaskBase): string => (base?.tellWorker ? stackedPrLi
  * (spawn or continuation) is told, so the line follows the task through every stage. How to end the stage is not here: it is the
  * protocol, handed to the agent at launch (#167). */
 export const stagePrompt = (stage: Stage, task: Task, result?: Record<string, unknown>, base?: TaskBase): string =>
-  renderPrompt(stage.prompt ?? '', task.item, result) + verdictsLine(stage) + stackedLine(base);
+  renderPrompt(agentPrompt(stage) ?? '', task.item, result) + verdictsLine(stage) + stackedLine(base); // #710: a skill stage's /hive:<skill>
 
 /** Continue's prompt (#283): the session already holds the stage's prompt and its launch the protocol (#167), so a fixed English line is enough. */
 export const CONTINUE_PROMPT = 'You were stopped in the middle of this stage. Continue from where you left off.';
@@ -130,14 +131,19 @@ async function sessionRun(config: Runtime['config'], effect: SessionEffect, plug
 // #808: the page's grid on a launch, and no `size: undefined` key when it sent none: the host's fallback applies
 const sized = (size?: TerminalSize): Pick<PtyLaunch, 'size'> => (size === undefined ? {} : { size });
 
-// What a stage run launches (#290): the worker's agent, which a manual start may have picked, else the stage's; the picks' specialized agent
-// and args after the config's (launchRun), and the model runModel resolves. Or why it cannot start: an agent boot did not find (#516), a
-// specialized agent the plugin no longer has (#257)
+// #710: a skill stage whose skill its workspace's folder lacks never starts, as a lost specialized agent does (#257)
+const skillRefusal = (stage: Stage, pluginDir: string): string | undefined =>
+  (stage.action === 'skill' && !hasSkill(pluginDir, stage.skill ?? '') ? `skill hive:${stage.skill ?? ''} is not in this workspace's Hive plugin` : undefined);
+
+// What a stage run launches (#290): the worker's agent, which a manual start may have picked, else the stage's; the stage's specialized agent
+// (#710) under the picks' specialized agent and args, after the config's (launchRun), and the model runModel resolves. Or why it cannot start: an
+// agent boot did not find (#516), a skill (#710) or a specialized agent (#257) the plugin no longer has
 function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], agents: readonly AgentAvailability[], pluginDir: string): { agent: AgentId; pluginDir: string; picked: Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> } | { refusal: string } {
   const agent = worker.agent ?? agentOf(stage, config);
-  const refusal = agentRefusal(agent, agents);
+  const refusal = agentRefusal(agent, agents) ?? skillRefusal(stage, pluginDir);
   if (refusal !== undefined) return { refusal };
-  const picked = launchRun(worker.launch, config.agentArgs[agent], () => specializedAgents(pluginDir)); // #316: the agents its workspace's folder delivers
+  const launch = { ...(stage.specializedAgent === undefined ? {} : { specializedAgent: stage.specializedAgent }), ...worker.launch }; // #710: a manual pick wins
+  const picked = launchRun(launch, config.agentArgs[agent], () => specializedAgents(pluginDir)); // #316: the agents its workspace's folder delivers
   if ('refusal' in picked) return picked;
   return { agent, pluginDir, picked: { ...picked, model: runModel(picked.model, stage, agent, config.defaultAgent) } };
 }

@@ -112,10 +112,8 @@ test('the entry select reads "adicionar coluna" when empty (#515)', () => {
 test('executa: action, agent, model, session, prompt and the approval switch on a prompt stage; delete activity keeps only the action (#515)', async () => {
   const { user, last } = setup();
   expect(screen.getByLabelText(t('settings.stages.action'))).toHaveTextContent('executar um prompt');
-  const agent = screen.getByLabelText(t('settings.stages.agent'));
-  expect([agent.textContent, agent.hasAttribute('disabled')]).toEqual(['padrão (claude)', false]); // #516: live
-  expect(screen.getByLabelText(t('settings.stages.model'))).toHaveAttribute('placeholder', 'padrão do agente');
-  expect(screen.getByText(t('settings.stages.model.hint'))).toBeInTheDocument();
+  expect(screen.getByLabelText(t('settings.stages.agent'))).toHaveTextContent(/^claude$/); // #710: no default row, the default agent shown picked
+  expect(screen.getByLabelText(t('settings.stages.model'))).toHaveTextContent('padrão do claude'); // #710: ModelMenu, '' = the agent's default
   expect(screen.getByLabelText(t('settings.stages.session'))).toBeInTheDocument();
   expect(screen.getByLabelText(t('settings.stages.prompt'))).toHaveValue('/hive-spec {url}');
   expect(screen.getByText(t('settings.stages.prompt.hint'))).toBeInTheDocument();
@@ -137,23 +135,10 @@ function openSelect(trigger: HTMLElement): void {
   fireEvent.click(trigger);
 }
 
-test("the stage's agent offers padrão (<default>) and each agent; a pick pins it, padrão clears it (#516)", async () => {
-  const { last } = setup();
-  openSelect(screen.getByLabelText(t('settings.stages.agent')));
-  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['padrão (claude)', 'claude']);
-  fireEvent.click(screen.getByRole('option', { name: 'claude' }));
-  expect(last()[0].agent).toBe('claude');
-  expect(screen.getByLabelText(t('settings.stages.agent'))).toHaveTextContent(/^claude$/);
-  openSelect(screen.getByLabelText(t('settings.stages.agent')));
-  fireEvent.click(await screen.findByRole('option', { name: 'padrão (claude)' }));
-  expect(last()[0].agent).toBe('');
-});
-
-test('an agent off PATH is disabled with the reason while padrão stays pickable (#516)', async () => {
+test('an agent off PATH is disabled with the reason (#516)', async () => {
   setup(STAGES, SOURCES, [{ agent: 'claude', available: false }]);
   openSelect(screen.getByLabelText(t('settings.stages.agent')));
   expect(await screen.findByRole('option', { name: `claude · ${t('settings.agent.offPath')}` })).toHaveAttribute('aria-disabled', 'true');
-  expect(screen.getByRole('option', { name: 'padrão (claude)' })).not.toHaveAttribute('aria-disabled');
 });
 
 test('saídas: one row per outgoing transition with its tags, + transição, and the on-start actions per source; a row opens the transition editor (#134)', async () => {

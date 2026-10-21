@@ -1,5 +1,6 @@
 // How a workspace's activities group in the Activities tab (#586): by stage, by status or not at all, done always last in a group of its own.
 // Pure: the tab renders what this answers.
+import { runsAgent } from '../../stage-agent.js';
 import type { Task, Stage, Status } from '../../types';
 import { statusText, t } from '@/i18n';
 import type { TaskActivity } from '@/lib/activities';
@@ -19,11 +20,11 @@ type StatusGroup = Exclude<Status, 'empty'> | 'stopped';
 const STATUS_ORDER: StatusGroup[] = ['waiting', 'approval', 'backoff', 'working', 'review', 'stopped']; // #805: backoff before a run that moves
 const SUMMARY_STATUSES = ['waiting', 'approval'] as const; // the two that need the user
 
-/** Whether the task is done (#586): it sits in the flow's last stage and that stage runs no prompt. A last stage with a prompt never is: the
+/** Whether the task is done (#586): it sits in the flow's last stage and that stage runs no agent. A last stage that runs one never is: the
  * task leaves state.tasks when that stage ends (moveOn). A delete activity stage has no prompt either, since the parser keeps the two exclusive. */
 export function isDone(task: Task, stages: Stage[]): boolean {
   const last = stages.at(-1);
-  return last !== undefined && task.stage === last.name && last.prompt === undefined;
+  return last !== undefined && task.stage === last.name && !runsAgent(last); // #710: a skill stage runs one too
 }
 
 /** When the activity last moved (#586): the later of its newest worker's start and its task's entry into its stage, '' with neither. ISO strings

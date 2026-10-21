@@ -1,6 +1,7 @@
 import { stageAgentIn } from './agents.js';
 import { stageSession } from './task-runs.js';
 import { sessionsOf } from './tasks.js';
+import { agentPrompt, commandFirst, hiveAction, runsAgent } from './stage-agent.js';
 import { FIXED_VERDICTS, TRIES_OUT, type Activity, type AgentId, type Stage, type State, type Task, type Transition, type Trigger } from './types.js';
 
 // The flow as a graph (#134): which transition a stage end fires, the session and the prompt it hands its destination, and the tries an
@@ -32,7 +33,7 @@ export function exitOf(graph: Graph, stage: string, trigger: Trigger, verdict?: 
   const own = matching(graph.transitions, stage, trigger, trigger === 'verdict' ? verdict : undefined);
   if (own !== undefined || trigger !== 'verdict') return own;
   const origin = graph.stages.find((s) => s.name === stage);
-  return origin !== undefined && origin.action === undefined && origin.approval !== true ? matching(graph.transitions, stage, 'done') : undefined;
+  return origin !== undefined && hiveAction(origin) === undefined && origin.approval !== true ? matching(graph.transitions, stage, 'done') : undefined;
 }
 
 /** Whether the user's answer has somewhere to go (#134): a transition for it, or a stage gone from the flow, which lets the task leave. Here,
@@ -54,9 +55,9 @@ export function retryTransition(state: Pick<State, 'transitions'>, task: Task, e
 }
 
 /** The verdicts a stage may give (#134): its own on a prompt stage, the fixed ones on commands and wait for CI, none on any other. */
-export function verdictsOf(stage: Pick<Stage, 'action' | 'prompt' | 'verdicts'>): readonly string[] {
+export function verdictsOf(stage: Pick<Stage, 'action' | 'prompt' | 'skill' | 'verdicts'>): readonly string[] {
   if (stage.action === 'commands' || stage.action === 'waitForCi') return FIXED_VERDICTS;
-  return stage.action === undefined && stage.prompt !== undefined ? stage.verdicts ?? [] : [];
+  return runsAgent(stage) ? stage.verdicts ?? [] : []; // #710: a skill stage's own, as a prompt stage's
 }
 
 /** The session a transition hands its destination (#134). */
@@ -92,11 +93,13 @@ export const FEEDBACK_TEMPLATE = `${FEEDBACK_LEAD}\n\n{feedback}`;
 
 /** The template a transition tells its destination (#134): a new session reads the transition's prompt, a blank line, the destination's; a
  * continued one already holds its stage's prompt, so the transition's alone, or the destination's when the transition has none. */
-export function transitionPrompt(transition: Pick<Transition, 'when' | 'prompt'>, destination: Pick<Stage, 'prompt'>, policy: 'new' | 'continue'): string {
+export function transitionPrompt(transition: Pick<Transition, 'when' | 'prompt'>, destination: Pick<Stage, 'action' | 'prompt' | 'skill'>, policy: 'new' | 'continue'): string {
   const own = transition.prompt !== undefined && transition.prompt.trim() !== '' ? transition.prompt : transition.when === 'feedback' ? FEEDBACK_TEMPLATE : '';
-  const stage = destination.prompt ?? '';
+  const stage = agentPrompt(destination) ?? ''; // #710: /hive:<skill> on a skill stage
   if (policy === 'continue') return own !== '' ? own : stage;
-  return [own, stage].filter((part) => part.trim() !== '').join('\n\n');
+  const split = commandFirst(stage); // #710: a stage opening on a slash command (/hive:<skill>) keeps it first, or it never runs
+  const parts = split === undefined ? [own, stage] : [split.command, own, split.rest];
+  return parts.filter((part) => part.trim() !== '').join('\n\n');
 }
 
 /** Whether a transition says more than its destination would (#134): a prompt of its own, a feedback, a session of its own. Only then is a
@@ -117,7 +120,7 @@ export function takeTry(activity: Pick<Activity, 'tries'> | undefined, transitio
 /** What {verdict} renders (#134): a commands or wait-for-CI verdict's output, an agent verdict's evidence, empty otherwise. */
 export function verdictText(origin: Pick<Stage, 'action'> | undefined, result: Record<string, unknown> | undefined): string {
   const field = origin?.action === 'commands' ? result?.commands : origin?.action === 'waitForCi' ? result?.ci : result?.verdict;
-  const key = origin?.action === undefined ? 'evidence' : 'output';
+  const key = hiveAction(origin) === undefined ? 'evidence' : 'output';
   const value = typeof field === 'object' && field !== null ? (field as Record<string, unknown>)[key] : undefined;
   return typeof value === 'string' ? value : '';
 }

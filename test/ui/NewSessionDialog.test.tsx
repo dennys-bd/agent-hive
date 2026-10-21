@@ -14,9 +14,10 @@ const OPTIONS: LaunchOptions = {
   claude: {
     aliases: [{ id: 'opus', hint: 'opus 5.5' }, { id: 'opus[1m]' }], versions: [{ id: 'claude-opus-5-5' }],
     specializedAgents: [{ name: 'hive:designer', description: 'Designs the interface' }, { name: 'hive:planner', description: 'Writes the plan' }],
+    skills: [],
     args: ['--permission-mode', 'auto'],
   },
-  codex: { aliases: [], versions: [{ id: 'gpt-5.6-terra', hint: 'GPT-5.6 Terra' }], specializedAgents: [{ name: 'hive:designer', description: 'Designs the interface' }], args: [] },
+  codex: { aliases: [], versions: [{ id: 'gpt-5.6-terra', hint: 'GPT-5.6 Terra' }], specializedAgents: [{ name: 'hive:designer', description: 'Designs the interface' }], skills: [], args: [] },
 };
 const answer = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (_path: string) => answer(OPTIONS));

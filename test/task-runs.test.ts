@@ -341,3 +341,11 @@ test('a plain terminal running a live captured session takes that run\'s label, 
   assert.deepEqual(localRuns('hive', { workers, terminals, activityRecords: [] }).map((r) => r.label), ['Claude']);
   assert.deepEqual(terminalLabels([]), ['Terminal 1', 'Terminal 2'], 'its exit released the worker');
 });
+
+test('startMode reads a skill stage as a prompt stage: none while blocked, start until it ran, then continue on its session (#710)', () => {
+  const PLAN: Stage = { name: 'plan', from: { board: ['Plan'] }, action: 'skill', skill: 'new-plan' };
+  const state = { stages: [...stages, PLAN], workers: [] };
+  assert.equal(startMode(task('plan', { item: { ...task('plan').item, blockedBy: ['9'] } }), state), 'none', 'an agent stage waits for its blockers');
+  assert.equal(startMode(task('plan'), state), 'start');
+  assert.deepEqual(startMode(task('plan', { sessions: [session('p-session-0001', ['plan'])], stopped: true }), state), { continue: true, restart: false });
+});

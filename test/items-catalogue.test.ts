@@ -192,3 +192,9 @@ test("a version answers editedAt, its newest file's mtime; touching base/ or ver
   await utimes(join(dir, 'version.json'), later, later);
   assert.deepEqual((await find(f, BUILD))?.versions.map((v) => [v.name, v.editedAt]), [['mine', newest.toISOString()]]);
 });
+
+test('usageOf counts a skill stage as running its skill, as a prompt stage naming it is; a Hive action runs none (#710)', () => {
+  const items = [target('hive:new-plan', 'skill'), target('hive:new-spec', 'skill')];
+  const stages = [{ name: 'plan', action: 'skill' as const, skill: 'new-plan' }, { name: 'spec', prompt: '/hive:new-spec {url}' }, { name: 'clean', action: 'deleteActivity' as const }];
+  assert.deepEqual(usageOf(items, ['', ''], stages), [[{ kind: 'stage', stage: 'plan' }], [{ kind: 'stage', stage: 'spec' }]]);
+});
