@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { loadConfig } from '../../src/config.js';
 import { loadState } from '../../src/state-store.js';
 import { runConfig, runState } from '../../scripts/experiment/harness-config.js';
-import { prepareState, writeHome } from '../../scripts/experiment/run-home.js';
+import { writeHome } from '../../src/benchmark/run-home.js';
+import { prepareState } from '../../scripts/experiment/state-dir.js';
 import { tempDir } from '../temp-dir.js';
 import { BRANCH, PATHS, PREFIX, STAGES, TASKS, WORKSPACE } from './fixtures.js';
 

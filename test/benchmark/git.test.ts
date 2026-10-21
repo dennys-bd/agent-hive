@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { existsSync, mkdirSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { inDir } from '../../src/benchmark/exec.js';
+import { inDir, type Run } from '../../src/benchmark/exec.js';
+import { prepareExperiment } from '../../src/benchmark/run-home.js';
 import { assertBaselineClean, BASELINE_MESSAGE, createRunBranch, dropRunWorktrees, EXPERIMENT_MENTION, EXPERIMENT_PATHS, experimentBaseline, nestedBaseline, resolveBaseline, sandboxPaths, strippedPackageJson, unsignedCommits } from '../../src/benchmark/git.js';
 import { tempDir } from '../temp-dir.js';
-import { fakeChild, fakeRun, line } from './fixtures.js';
+import { experiment, fakeChild, fakeRun, line, mainConfig, WS_PATH } from './fixtures.js';
 import { stopRun } from '../../src/benchmark/daemon.js';
 
 const BRANCH = 'feat/monitor-view-abc123';
@@ -141,4 +143,54 @@ test('stopRun stops the daemon, then removes the run\'s worktrees and task branc
   assert.deepEqual([...new Set(calls.map((c) => c.cwd))], ['/hive/benchmark/exp-1/clone/docs', '/hive/benchmark/exp-1/clone']);
   assert.ok(calls.map(line).includes('git branch -D hive/ABCD1234-1-x'));
   assert.ok(!calls.map(line).some((l) => l.includes('work/')));
+});
+
+const PKG_TEXT = JSON.stringify({ name: 'x', scripts: { test: 't' } });
+const prepGit = () => fakeRun((call) => {
+  const [cmd] = call.args;
+  if (cmd === 'init') mkdirSync(String(call.args.at(-1)), { recursive: true });
+  if (cmd === 'ls-tree') return call.args.includes('-r') ? 'src/a.ts\n' : 'package.json\n';
+  if (cmd === 'show') return PKG_TEXT;
+  if (cmd === 'rev-parse') return 'nestedsrc\n';
+  if (cmd === 'write-tree') return 'tree1\n';
+  if (cmd === 'commit-tree') return call.cwd === WS_PATH ? 'codebase0000\n' : 'nestbase0000\n';
+  return '';
+});
+
+test('prepareExperiment makes both origins with their baselines, the clone and its nested clone, unsigned, the sandbox excluded; a second call runs no git (#471)', async (t) => {
+  const hiveDir = await tempDir(t, 'bench-');
+  const { run, calls } = prepGit();
+  const deps = { hiveDir, config: mainConfig(), exec: run };
+  await prepareExperiment(experiment(), deps);
+  const dir = join(hiveDir, 'benchmark', 'exp-1');
+  const at = calls.map((c) => `${c.cwd ?? '.'}$ ${line(c)}`);
+  for (const expected of [
+    `${WS_PATH}$ git read-tree ${'a'.repeat(40)}`,
+    `${WS_PATH}$ git rm -r -q --cached --ignore-unmatch -- ${EXPERIMENT_PATHS.join(' ')}`,
+    `.$ git init --bare -q --initial-branch main ${join(dir, 'repo.git')}`,
+    `${WS_PATH}$ git push -q ${join(dir, 'repo.git')} codebase0000:refs/heads/main`,
+    `${join(WS_PATH, 'docs')}$ git grep -l -I -E ${EXPERIMENT_MENTION} nestedsrc --`,
+    `.$ git init --bare -q --initial-branch main ${join(dir, 'nested', 'docs.git')}`,
+    `${join(WS_PATH, 'docs')}$ git push -q ${join(dir, 'nested', 'docs.git')} nestbase0000:refs/heads/main`,
+    `.$ git clone -q -- ${join(dir, 'repo.git')} ${join(dir, 'clone')}`,
+    `.$ git clone -q -- ${join(dir, 'nested', 'docs.git')} ${join(dir, 'clone', 'docs')}`,
+    `${join(dir, 'clone')}$ git config --local commit.gpgsign false`,
+    `${join(dir, 'clone', 'docs')}$ git config --local commit.gpgsign false`,
+  ]) assert.ok(at.includes(expected), expected);
+  assert.equal(await readFile(join(dir, 'clone', '.git', 'info', 'exclude'), 'utf8'), '.claude/settings.local.json\n');
+  assert.equal((await stat(dir)).mode & 0o777, 0o700);
+  const before = calls.length;
+  await prepareExperiment(experiment(), deps);
+  assert.equal(calls.length, before);
+});
+
+test('a preparation that fails leaves no origin behind, so the next call prepares again; logs never name a path (#471)', async (t) => {
+  const hiveDir = await tempDir(t, 'bench-');
+  const ok = prepGit();
+  const exec: Run = (file, args, opts) => (args[0] === 'clone' ? Promise.reject(new Error('clone failed')) : ok.run(file, args, opts));
+  await assert.rejects(prepareExperiment(experiment(), { hiveDir, config: mainConfig(), exec }), /clone failed/);
+  assert.equal(existsSync(join(hiveDir, 'benchmark', 'exp-1', 'repo.git')), false);
+  const lines: string[] = [];
+  await prepareExperiment(experiment(), { hiveDir, config: mainConfig(), exec: prepGit().run, log: (l) => lines.push(l) });
+  assert.deepEqual(lines, ['benchmark exp-1: origins and clone ready']);
 });

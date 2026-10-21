@@ -12,7 +12,7 @@ import { addWorktree, fetchBranch, fullDiff, remoteSha, removeWorktree } from '.
 import { runDocs } from './docs-git.js';
 import { runBranch, runPrefix } from './plan.js';
 import { judgePrompt, testerPrompt } from './prompts.js';
-import { writeHome } from './run-home.js';
+import { writeHome } from '../../src/benchmark/run-home.js';
 import { materializeSample, type Seed } from './seed.js';
 import { type Click, CRITERIA, type Criterion, FILES, type Metrics, type Score } from './types.js';
 

@@ -17,7 +17,8 @@ const isNumber = (value: unknown): value is number => typeof value === 'number' 
 
 // A run's home is booted as a Hive home and removed with the experiment (3.1, 3.5): only the folder 3.1 makes for this id and token under
 // this Hive's home, compared whole so no root, `..` or separator of any platform slips through
-export const runHome = (hiveDir: string, id: string, token: string): string => join(hiveDir, 'benchmark', id, 'runs', token);
+export const experimentDir = (hiveDir: string, id: string): string => join(hiveDir, 'benchmark', id);
+export const runHome = (hiveDir: string, id: string, token: string): string => join(experimentDir(hiveDir, id), 'runs', token);
 // The run branch is `<neutral>/<token>` (3.1): a hand edit naming `main` or any other branch is not this run's
 const isRunBranch = (branch: unknown, token: string): boolean => isText(branch) && isBranchName(branch) && branch.endsWith(`/${token}`);
 

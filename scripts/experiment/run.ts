@@ -16,7 +16,7 @@ import { docsClone, pruneDocs } from './docs-git.js';
 import { installSandbox, type RepoPaths, SANDBOX_DOMAINS, sandboxSettings } from '../../src/benchmark/sandbox.js';
 import { endAttempt, experimentDir, isMeasured, latest, newExperimentId, newManifest, newToken, openAttempts, parseManifest, resumeManifest, runHome, runPrefix, startAttempt, stateRoot } from './plan.js';
 import { writeReport } from './report.js';
-import { prepareState } from './run-home.js';
+import { prepareState } from './state-dir.js';
 import { runLoop } from './run-loop.js';
 import { executeRun, recordFailure } from './run-one.js';
 import { handoffFiles, loadSeed, type Seed, seedHash } from './seed.js';

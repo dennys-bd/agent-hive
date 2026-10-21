@@ -10,7 +10,7 @@ import { createRunBranch, diffShortstat, dropRunWorktrees, fetchBranch } from '.
 import { pruneDocs } from './docs-git.js';
 import { failedMetrics, parseShortstat, runMetrics } from './metrics.js';
 import { runBranch, runHome, runPrefix } from './plan.js';
-import { writeHome } from './run-home.js';
+import { writeHome } from '../../src/benchmark/run-home.js';
 import type { Seed } from './seed.js';
 import { type Arm, FILES, type Metrics } from './types.js';
 import { type WatchClient, type WatchResult, watchRun } from './watcher.js';

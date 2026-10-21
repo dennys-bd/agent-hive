@@ -8,7 +8,8 @@ import { execRun } from '../../src/benchmark/exec.js';
 import { repoRoot } from '../../src/benchmark/git.js';
 import { stateRoot } from './plan.js';
 import { previewHome } from './preview-home.js';
-import { prepareState, writeHome } from './run-home.js';
+import { writeHome } from '../../src/benchmark/run-home.js';
+import { prepareState } from './state-dir.js';
 import { parseStagesSeed, parseTasks, SEED_DIR } from './seed.js';
 import { ARMS, type Arm } from './types.js';
 
