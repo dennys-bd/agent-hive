@@ -1,3 +1,4 @@
+import { runsAgent } from '../../stage-agent.js';
 import { isGate } from '../../tasks.js';
 import { DEFAULT_AGENT, type Stage, type Transition, type Trigger } from '../../types.js';
 import { t } from '../i18n.js';
@@ -42,7 +43,7 @@ export function executorLine(stage: Stage): string {
   }
   if (stage.action === 'deleteActivity') return t('settings.stages.meta.deleteActivity');
   if (isGate(stage)) return t('settings.stages.meta.gate');
-  if (stage.prompt === undefined) return t('settings.stages.meta.show');
+  if (!runsAgent(stage)) return t('settings.stages.meta.show'); // #710: a skill stage names its agent and model as a prompt stage does
   const who = [stage.agent ?? DEFAULT_AGENT, ...(stage.model === undefined ? [] : [stage.model])].join(' · ');
   return stage.approval ? `${who} · ${t('settings.stages.meta.gate')}` : who;
 }

@@ -1,5 +1,6 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { activityOf, workIdOf } from '../../activities';
+import { runsAgent } from '../../stage-agent';
 import { startMode, startsFresh } from '../../task-runs';
 import { canOpenSession, HIVE_SOURCE, resolveWorkspace } from '../../tasks';
 import { DISCARD_FAILED, type Task, type OpenResult, type SetupRows, type State } from '../../types';
@@ -62,8 +63,8 @@ function openFree(task: Task, state: State, base: BaseChoice, picks: RunPicks): 
   return postJson<OpenResult>(`${taskPath(task.item.itemId)}/open`, body);
 }
 
-// The stage a task created here enters: the first stage with a prompt, so executar etapas has something to run
-const createStage = (state: State): string | undefined => (state.stages.find((s) => s.prompt !== undefined) ?? state.stages[0])?.name;
+// The stage a task created here enters: the first stage that runs an agent (#710: a skill stage too), so executar etapas has something to run
+const createStage = (state: State): string | undefined => (state.stages.find(runsAgent) ?? state.stages[0])?.name;
 // A task with no stage left to run (#774): executar etapas is off for it, so the dialog lands on sessão livre on its arrival and on its pick
 const nothingToRun = (state: State, itemId: string | undefined): boolean => {
   const task = state.tasks.find((c) => c.item.itemId === itemId);

@@ -1,6 +1,7 @@
 import { MoreHorizontalIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { activityOf } from '../../activities';
+import { hiveAction } from '../../stage-agent';
 import { openFeedbackSession, startMode } from '../../task-runs';
 import { canOpenSession, stageOf } from '../../tasks';
 import type { Activity, Task, State } from '../../types';
@@ -25,7 +26,7 @@ function useRunStages(task: Task, state: State, { Item }: MenuKit): { item: Reac
   const [isStarting, setIsStarting] = useState(false);
   const opener = useOpenStarted();
   const mode = startMode(task, state);
-  const hasPrompt = stageOf(state.stages, task.stage)?.action === undefined; // a delete activity stage is git's, not the agent's
+  const hasPrompt = hiveAction(stageOf(state.stages, task.stage)) === undefined; // a delete activity stage is git's, not the agent's; #710: a skill stage is the agent's
   const canContinue = typeof mode === 'object' && mode.live === undefined;
   const item = <Item disabled={!hasPrompt || (mode !== 'start' && !canContinue)} onSelect={() => setIsStarting(true)}>{t('activities.menu.runStages')}</Item>;
   const dialog = isStarting && (
