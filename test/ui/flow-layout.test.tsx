@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { DEPTH, END_SIZE, FORWARD_Y, GAP, hiddenBelow, type LayoutOptions, layoutFlow, LOOP_RISE, MARGIN, maxNodeHeight, NODE_MIN, SPREAD, TOP_LOOPS } from '@/lib/flow-layout';
+import { DEPTH, END_SIZE, FORWARD_Y, GAP, GAP_ARROW, GAP_BARE, hiddenBelow, layoutFlow, LOOP_RISE, MARGIN, maxNodeHeight, NODE_MIN, SPREAD, TOP_LOOPS } from '@/lib/flow-layout';
 
 // The flowchart's geometry (#134, #887, #908), with no DOM.
 const W = 190;
@@ -102,16 +102,25 @@ test('maxNodeHeight is the viewport less top and MARGIN, never under NODE_MIN; h
   expect(hiddenBelow(300, 300, 0, 5)).toBe(0);
 });
 
-test('with loops off only arrows forward stay, to the next node or a labelled skip; back edges, loops and unlabelled skips go, labelled or not, and top falls with them (#909)', () => {
-  const skip = { ...edge('s', 'build', 'pr'), labelled: true };
-  const edges = [edge('f', 'spec', 'build'), { ...edge('b', 'checks', 'build'), labelled: true }, edge('l', 'spec', 'spec'), edge('u', 'spec', 'checks'), skip];
-  const ids = (options?: LayoutOptions): string[] => layoutFlow(NODES, edges, W, options).edges.map((e) => e.id);
-  expect(ids()).toEqual(['f', 'b', 'l', 'u', 's']);
+test('with loops off no arrow is drawn, not even to the next node, so no pill either; top falls to MARGIN and the nodes sit GAP_BARE apart (#909, #480)', () => {
+  const edges = [edge('f', 'spec', 'build'), edge('b', 'checks', 'build'), edge('l', 'spec', 'spec'), edge('u', 'spec', 'checks'), edge('s', 'build', 'pr')];
+  expect(layoutFlow(NODES, edges, W).edges.map((e) => e.id)).toEqual(['f', 'b', 'l', 'u', 's']);
   expect(layoutFlow(NODES, edges, W, { loops: true })).toEqual(layoutFlow(NODES, edges, W)); // the default is loops on: today's output
   const hidden = layoutFlow(NODES, edges, W, { loops: false });
-  expect(hidden.edges.map((e) => e.id)).toEqual(['f', 's']);
-  expect([hidden.levels, hidden.top]).toEqual([1, DEPTH + MARGIN]);
-  const bare = layoutFlow(NODES, edges.filter((e) => e !== skip), W, { loops: false });
-  expect([bare.edges.map((e) => e.id), bare.levels, bare.top]).toEqual([['f'], 0, MARGIN]);
-  expect(bare.nodes.every((n) => n.y === MARGIN)).toBe(true);
+  expect([hidden.edges, hidden.levels, hidden.top]).toEqual([[], 0, MARGIN]);
+  expect(hidden.nodes.map((n) => [n.x, n.y])).toEqual(NODES.map((_, i) => [MARGIN + i * (W + GAP_BARE), MARGIN]));
+  expect(hidden.width).toBe(MARGIN + 3 * (W + GAP_BARE) + W + MARGIN);
+});
+
+test('a neighbour arrow with no pill takes GAP_ARROW, one with a pill keeps GAP; edges that say nothing (Settings) keep GAP everywhere (#480)', () => {
+  const edges = [{ ...edge('a', 'spec', 'build'), unlabelled: true }, edge('b', 'build', 'checks'), { ...edge('c', 'checks', 'pr'), unlabelled: true }, { ...edge('d', 'checks', 'pr'), unlabelled: true }];
+  const layout = layoutFlow(NODES, edges, W);
+  const xs = [MARGIN, MARGIN + W + GAP_ARROW, MARGIN + 2 * W + GAP_ARROW + GAP, MARGIN + 3 * W + 2 * GAP_ARROW + GAP];
+  expect(layout.nodes.map((n) => n.x)).toEqual(xs);
+  expect(layout.width).toBe(xs[3] + W + MARGIN);
+  const [a] = layout.edges;
+  expect(a.path).toBe(`M ${MARGIN + W} ${MARGIN + FORWARD_Y} L ${xs[1]} ${MARGIN + FORWARD_Y}`);
+  const mixed = layoutFlow(NODES, [{ ...edge('a', 'spec', 'build'), unlabelled: true }, edge('a2', 'spec', 'build')], W);
+  expect(mixed.nodes[1].x).toBe(x(1)); // one of the two arrows carries a pill: the gap stays wide
+  expect(layoutFlow(NODES, edges.map(({ id, from, to, automatic }) => ({ id, from, to, automatic })), W).nodes.map((n) => n.x)).toEqual([0, 1, 2, 3].map(x));
 });

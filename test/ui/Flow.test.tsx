@@ -392,7 +392,7 @@ const LOOPED: Transition[] = [
 ];
 const kinds = (canvas: HTMLElement): (string | null)[] => [...canvas.querySelectorAll('path[data-kind]')].map((p) => p.getAttribute('data-kind'));
 
-test('↺ voltas hides every back edge, loop and unlabelled skip with their pills, the row falling to the margin, keeps it in flowView, and brings them back (#909)', async () => {
+test('↺ voltas hides every arrow with its pill, the row falling to the margin, keeps it in flowView, and brings them back (#909)', async () => {
   resetViewState();
   onTestFinished(() => resetViewState()); // drops the pending post
   const user = userEvent.setup();
@@ -405,7 +405,7 @@ test('↺ voltas hides every back edge, loop and unlabelled skip with their pill
   for (const pill of ['falhou · 3x', 'feedback']) expect(within(canvas).getByText(pill)).toBeInTheDocument();
   expect(row()).not.toBe(`${MARGIN}px`);
   await user.click(loops);
-  expect(kinds(canvas)).toEqual(['forward']);
+  expect(kinds(canvas)).toEqual([]);
   for (const pill of ['falhou · 3x', 'feedback']) expect(within(canvas).queryByText(pill)).not.toBeInTheDocument();
   expect(row()).toBe(`${MARGIN}px`);
   expect(readView('flowView')).toEqual({ loops: false, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
@@ -420,7 +420,7 @@ test('a stored flowView with loops off draws the flow without them on the first 
   render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(screen.getByRole('button', { name: '↺ voltas' })).toHaveAttribute('aria-pressed', 'false');
-  expect(kinds(canvas)).toEqual(['forward']);
+  expect(kinds(canvas)).toEqual([]);
   expect(within(canvas).queryByText('falhou · 3x')).not.toBeInTheDocument();
 });
 
@@ -433,7 +433,7 @@ const viewport = (width: number, height: number): void => {
   vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(width);
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(height);
 };
-// Two stages and the arrow between them: MARGIN + 2 × NODE_WIDTH (220) + GAP + MARGIN = 560 wide, MARGIN + NODE_MIN + MARGIN = 208 tall at NODE_MIN
+// Two stages and the arrow between them: MARGIN + 2 × NODE_WIDTH (220) + GAP_ARROW + MARGIN = 520 wide (its done arrow carries no pill, #480), MARGIN + NODE_MIN + MARGIN = 208 tall at NODE_MIN
 const twoStages = (): State => ({ ...state([task('1', 'dev')], [worker('s1')]), transitions: [{ from: 'dev', to: 'review', when: 'done' }] });
 
 test('− and + move the zoom by 10% and the number goes back to 100%; the chart scales inside a centred sizer, the list panel does not, and flowView keeps the zoom (#910)', async () => {
@@ -469,14 +469,14 @@ test('− and + move the zoom by 10% and the number goes back to 100%; the chart
 test('ajustar on a chart wider than the canvas zooms out until it fits and scrolls to the start, the nodes still reaching the bottom; on a small chart it is 100% (#910)', async () => {
   onTestFinished(() => { vi.restoreAllMocks(); });
   const user = userEvent.setup();
-  viewport(448, 600);
+  viewport(416, 600);
   const { unmount } = render(<Flow state={twoStages()} />);
   let canvas = screen.getByRole('region', { name: 'fluxograma' });
   paneOf(canvas).scrollLeft = 30;
   await user.click(screen.getByRole('button', { name: 'ajustar' }));
-  expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument(); // 448 / 560
+  expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument(); // 416 / 520
   expect(scaledOf(canvas).style.transform).toBe('scale(0.8)');
-  expect(sizerOf(canvas).style.width).toBe('448px');
+  expect(sizerOf(canvas).style.width).toBe('416px');
   expect([paneOf(canvas).scrollLeft, paneOf(canvas).scrollTop]).toEqual([0, 0]);
   expect(canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.style.maxHeight).toBe(`${600 / 0.8 - 2 * MARGIN}px`);
   expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
@@ -487,7 +487,7 @@ test('ajustar on a chart wider than the canvas zooms out until it fits and scrol
   expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument(); // flowView's zoom, back
   await user.click(screen.getByRole('button', { name: 'ajustar' }));
   expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument(); // never above 100%
-  expect(sizerOf(canvas).style.width).toBe('560px');
+  expect(sizerOf(canvas).style.width).toBe('520px');
 });
 
 test('a stored flowView with zoom 0.8 and a pan draws the chart at 80% scrolled to that pan, and a scroll keeps the new pan: the come-back case (#910)', () => {
@@ -816,7 +816,7 @@ const ZOOM_FIT = { key: '!', code: 'Digit1', shiftKey: true };
 
 test('Ctrl+=, Ctrl+-, Ctrl+0 and ⇧1 do what +, −, the number and ajustar do, only while the flow shows; ⇧1 in buscar tarefas types (#910)', () => {
   onTestFinished(() => { vi.restoreAllMocks(); });
-  viewport(448, 600);
+  viewport(416, 600);
   const flow = (isShown: boolean) => <FlowShownContext.Provider value={isShown}><Flow state={twoStages()} /></FlowShownContext.Provider>;
   const { rerender } = render(flow(true));
   const scale = (): string => scaledOf(screen.getByRole('region', { name: 'fluxograma' })).style.transform;
