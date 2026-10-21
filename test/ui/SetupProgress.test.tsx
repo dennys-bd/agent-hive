@@ -112,3 +112,31 @@ test('the log select opens under its trigger, at most the log box wide, each ite
   expect(screen.getByRole('option', { name: /pnpm install --frozen-lockfile/ })).toHaveAttribute('title', LONG);
   expect(screen.getByRole('option', { name: 'pnpm build' })).toHaveAttribute('title', 'pnpm build');
 });
+
+const nested = (path: string, status: SetupRowStatus, extra: Partial<SetupRow> = {}): SetupRow => ({ kind: 'nested', status, label: path, header: `nested ${path}`, ...extra });
+const NESTED_ROWS = (): SetupRow[] => [...PREPARED,
+  nested('docs', 'done', { durationMs: 2000, branch: 'hive/9-landing-hero', base: 'origin/main' }), nested('wiki', 'done', { durationMs: 100, branch: 'hive/9-landing-hero' }),
+  nested('ee', 'failed'), nested('notes', 'running', { startedAt: ago(3000) }), nested('more', 'queued')];
+
+test('a nested repo\'s row: its path while queued, running or failed; once done its branch and base, or reaproveitada; the bar counts it; in both languages (#450)', () => {
+  const { unmount } = render(view(NESTED_ROWS()));
+  expect(rowOf('docs')).toHaveTextContent(/repo aninhado docs · branch hive\/9-landing-hero a partir de origin\/main\s*2s/);
+  expect(rowOf('docs')).toHaveAttribute('title', 'repo aninhado docs · branch hive/9-landing-hero a partir de origin/main');
+  expect(rowOf('wiki')).toHaveTextContent('repo aninhado wiki · branch hive/9-landing-hero reaproveitada');
+  expect(rowOf('ee')).toHaveTextContent(/×.*repo aninhado ee.*falhou$/);
+  expect(rowOf('notes')).toHaveTextContent(/●.*repo aninhado notes.*executando · /);
+  expect(rowOf('more')).toHaveTextContent(/○.*repo aninhado more.*aguardando/);
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50'); // 4 done of 8 (7 rows and the session)
+  unmount();
+  setLanguage('en');
+  render(view(NESTED_ROWS()));
+  expect(rowOf('docs')).toHaveTextContent('nested repo docs · branch hive/9-landing-hero from origin/main');
+  expect(rowOf('wiki')).toHaveTextContent('nested repo wiki · branch hive/9-landing-hero reused');
+  expect(rowOf('ee')).toHaveTextContent(/nested repo ee.*failed$/);
+  expect(rowOf('more')).toHaveTextContent(/nested repo more.*waiting/);
+});
+
+test('the log follows a running nested repo and names it repo aninhado <path> (#450)', () => {
+  render(view([...PREPARED, nested('docs', 'running', { startedAt: ago(0) }), nested('wiki', 'queued'), step('pnpm install', 'queued')]));
+  expect(screen.getByRole('combobox', { name: 'log' })).toHaveTextContent('repo aninhado docs');
+});

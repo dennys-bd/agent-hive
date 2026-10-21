@@ -366,6 +366,8 @@ const en = {
   'setupProgress.row.branch': 'branch', // then the branch in mono and setup.row.from
   'setupProgress.row.from': 'from {base}',
   'setupProgress.row.step': 'setup ·', // then the step's command in mono
+  'setupProgress.row.nested': 'nested repo', // #450: then the repo's path in mono
+  'setupProgress.row.reused': 'reused', // #450: a nested branch checked out as it was, in place of setupProgress.row.from
   'setupProgress.session.stage': 'start {agent} session in stage {stage}',
   'setupProgress.session.free': 'open {agent} session',
   'setupProgress.running': 'running · {time}',
@@ -2682,6 +2684,8 @@ const pt: Record<MessageKey, string> = {
   'setupProgress.row.branch': 'branch',
   'setupProgress.row.from': 'a partir de {base}',
   'setupProgress.row.step': 'setup ·',
+  'setupProgress.row.nested': 'repo aninhado',
+  'setupProgress.row.reused': 'reaproveitada',
   'setupProgress.session.stage': 'iniciar sessão {agent} na etapa {stage}',
   'setupProgress.session.free': 'abrir sessão {agent}',
   'setupProgress.running': 'executando · {time}',

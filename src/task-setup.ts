@@ -2,12 +2,13 @@ import { commandLine, type ConsoleStore, crlf, failLine, okLine, runHeader, SETU
 import type { FactLog } from './facts.js';
 import type { Logger } from './log.js';
 import type { Pty, PtyHost } from './pty-host.js';
-import { endedRows, failedRows, plannedRows, preparedRows, startedRows, worktreeRows } from './setup-rows.js';
+import { endedRows, failedRows, nestedEndedRows, nestedFailedRows, nestedHeader, nestedStartedRows, plannedRows, preparedRows, startedRows, worktreeRows } from './setup-rows.js';
 import type { Task, Effect, Exec, HiveEvent, SetupRow, Workspace } from './types.js';
 import type { BeforeRemove } from './worktree.js';
 import { isSetUp, runSetup } from './worktree-setup.js';
 import { clearTeardownMarker, runTeardown, type TeardownResult } from './worktree-teardown.js';
 import type { RunShell, StepReport } from './worktree-steps.js';
+import type { NestedEnd, NestedObserver } from './worktree-nested.js';
 
 // A task's worktree setup as the user sees it (#351), shared by the stage spawn and a first /open: the task's run in the setup channel of the
 // console (#353), live over the pty socket (#407) through a pipe the pty host serves, and the task's setup events.
@@ -23,14 +24,19 @@ export interface WorktreeRunDeps {
 }
 export interface TaskSetupDeps extends WorktreeRunDeps { dispatch(event: HiveEvent): Promise<Effect[]> }
 
-export interface WorktreeRunOptions { id: string; label: string; kind: WorktreeRunKind; activityId?: string; branch?: string; base?: string } // branch, base: the branch row's (#390)
+export interface WorktreeRunOptions {
+  id: string; label: string; kind: WorktreeRunKind; activityId?: string;
+  branch?: string; base?: string; // the branch row's (#390)
+  nested?: readonly string[]; // #450: the workspace's nestedRepos, a queued row each
+}
 
 /** One worktree run in the console (#351, #654), from the first git to the end line. */
 export interface WorktreeRun {
   id: string; // the run's, in SETUP_CHANNEL: what setupStarted carries as consoleId
   exec: Exec; // the deps' exec, each command and its outcome written to the run: the git that makes the worktree goes through it
   rows(): SetupRow[]; // #390: its rows now, what setupStarted carries
-  prepared(): void; // #390: the worktree made: its worktree and branch rows done
+  prepared(): void; // #390: the worktree made: its worktree and branch rows done; #450: called right after the outer git, before the nested repos
+  nested: NestedObserver; // #450: each repo's `> nested <path>` line and row, for prepareNested
   // runSetup through that exec, its steps to the task and its output to the run; it leaves the run open for end
   setUp(workspace: Workspace, worktree: string, signal?: AbortSignal): Promise<void>;
   skip(why: string): void; // `<kind> skipped: <why>` (#654); the run then ends clean, with no summary
@@ -82,10 +88,13 @@ function loggedExec(exec: Exec, write: (text: string) => void): Exec {
   };
 }
 
+/** What a prepare is handed besides the logged exec (#450): the mark that the outer worktree is made, and the nested repos' observer. */
+export type PrepareHooks = Pick<WorktreeRun, 'prepared' | 'nested'>;
+
 // A task's run's rows as the Start dialog shows them (#390), each change dispatched whole with the step running, as describeStep writes it
 // (the flow card's line). Only a task's run (activityId) dispatches; an orphan's run or a teardown keeps its list to itself.
-function rowsTracker(dispatch: WorktreeRunDeps['dispatch'], { activityId, branch = '', base = '' }: WorktreeRunOptions) {
-  let rows = worktreeRows(branch, base, new Date().toISOString());
+function rowsTracker(dispatch: WorktreeRunDeps['dispatch'], { activityId, branch = '', base = '', nested = [] }: WorktreeRunOptions) {
+  let rows = worktreeRows(branch, base, new Date().toISOString(), nested);
   let step: string | undefined;
   const show = (next: SetupRow[]): void => {
     if (next === rows) return; // nothing changed: no event
@@ -95,6 +104,9 @@ function rowsTracker(dispatch: WorktreeRunDeps['dispatch'], { activityId, branch
   return {
     rows: (): SetupRow[] => rows,
     prepared: (): void => show(preparedRows(rows, Date.now())),
+    nestedStarted: (path: string): void => show(nestedStartedRows(rows, path, new Date().toISOString())),
+    nestedEnded: (path: string, end: NestedEnd): void => show(nestedEndedRows(rows, path, end, branch, Date.now())),
+    nestedFailed: (path: string): void => show(nestedFailedRows(rows, path, Date.now())),
     onPlan: (steps: string[], skipped: number): void => show(plannedRows(rows, steps, skipped)),
     onStep: (described: string): void => {
       step = described;
@@ -102,6 +114,23 @@ function rowsTracker(dispatch: WorktreeRunDeps['dispatch'], { activityId, branch
     },
     onStepEnd: (report: StepReport): void => show(endedRows(rows, report)),
     failed: (): void => show(failedRows(rows, Date.now())),
+  };
+}
+
+// #450: each nested repo's header line before its first git, where the dialog cuts its log, then its row. A repo refused before it
+// started writes its header too, so the failure line end() writes reads as that repo's
+function nestedObserver(write: (text: string) => void, tracked: ReturnType<typeof rowsTracker>): NestedObserver {
+  const header = (path: string): void => write(`${commandLine(`> ${nestedHeader(path)}`)}\n`);
+  return {
+    started: (path) => {
+      header(path);
+      tracked.nestedStarted(path);
+    },
+    ended: tracked.nestedEnded,
+    failed: (path) => {
+      header(path);
+      tracked.nestedFailed(path);
+    },
   };
 }
 
@@ -116,11 +145,8 @@ export function openWorktreeRun(deps: WorktreeRunDeps, options: WorktreeRunOptio
   consoleStore.begin(SETUP_CHANNEL, id, runHeader(label, new Date(), kind), activityId === undefined ? undefined : id); // #390: a task's runs are a group, so the Start dialog reads its own
   ptys.subscribe(id, (data) => consoleStore.append(id, data), (exitCode) => consoleStore.end(id, exitCode));
   const write = (text: string): void => pty.emit(crlf(text));
-  const exec = loggedExec(deps.exec, write);
-  const tracked = rowsTracker(dispatch, options);
-  const began = Date.now();
-  let steps = 0;
-  let skipped = false;
+  const [exec, tracked, began] = [loggedExec(deps.exec, write), rowsTracker(dispatch, options), Date.now()];
+  let [steps, skipped] = [0, false];
   const skip = (why: string): void => {
     skipped = true;
     write(`${kind} skipped: ${why}\n`);
@@ -138,6 +164,7 @@ export function openWorktreeRun(deps: WorktreeRunDeps, options: WorktreeRunOptio
     exec,
     rows: tracked.rows,
     prepared: tracked.prepared,
+    nested: nestedObserver(write, tracked),
     setUp: async (workspace, worktree, signal) => {
       steps = await runSetup(workspace, worktree, { exec, log, run, signal, output: write, onStep: tracked.onStep, onPlan: tracked.onPlan, onStepEnd });
     },
@@ -166,18 +193,20 @@ export interface SetupRunOptions { branch: string; base: string; signal?: AbortS
 /** The stage spawn's worktree (#351, #576): `prepare` makes it at `worktree` through the exec it is handed and answers its path. A worktree
  * already there and set up (isSetUp: for a workspace without steps, any folder on disk) prepares with the plain exec: no run, no event. Else,
  * with or without setup steps, the task is marked before the worktree's git with the worktree and branch rows (#390), and that git and the
- * setup run between setupStarted and setupEnded in one console run. A failure is rethrown after setupEnded: the spawn turns it into spawnFailed. */
+ * setup run between setupStarted and setupEnded in one console run. #450: the run is handed to `prepare`, which marks the outer worktree
+ * made before the nested repos and passes their observer to prepareNested. A failure is rethrown after setupEnded: the spawn turns it into spawnFailed. */
 export async function runTaskSetup(
-  deps: TaskSetupDeps, task: Task, activityId: string, workspace: Workspace, worktree: string, prepare: (exec: Exec) => Promise<string>,
+  deps: TaskSetupDeps, task: Task, activityId: string, workspace: Workspace, worktree: string,
+  prepare: (exec: Exec, run?: PrepareHooks) => Promise<string>,
   { branch, base, signal }: SetupRunOptions,
 ): Promise<string> {
   await clearTeardownMarker(workspace, worktree, deps.exec); // #654: used again, so its next removal takes the services down again
   if (await isSetUp(workspace, worktree, deps.exec)) return prepare(deps.exec);
-  const setup = openWorktreeRun(deps, { id: setupRunId(task.item.itemId), label: `#${task.item.id}`, kind: 'setup', activityId, branch, base });
+  const setup = openWorktreeRun(deps, { id: setupRunId(task.item.itemId), label: `#${task.item.id}`, kind: 'setup', activityId, branch, base, nested: workspace.nestedRepos });
   await deps.dispatch({ type: 'setupStarted', activityId, consoleId: setup.id, rows: setup.rows() });
   try {
-    const path = await prepare(setup.exec);
-    setup.prepared();
+    const path = await prepare(setup.exec, setup);
+    setup.prepared(); // a prepare that never marked it still ends the worktree and branch rows; after the mark, the same rows, no event
     await setup.setUp(workspace, path, signal);
     setup.end();
     return path;
