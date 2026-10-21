@@ -7,6 +7,8 @@ import { parseTemplate, renderTemplate } from '../src/template.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
+// #430: the decomposition skill declares its own variables and reads no reference; the new-* skills still read conventions.md
+const CONVENTIONS_SKILLS = SKILLS.filter((skill) => skill !== 'decomposition');
 const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
 
 const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
@@ -21,7 +23,7 @@ const VARIABLES: Record<string, string[]> = {
   'new-plan': ['docsRepo', 'specsDir', 'plansDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'sliceMin', 'sliceMax', 'featureFlags', 'testCommand'],
   'new-build': ['docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'uiCheck', 'testCommand'],
   'new-pr': ['docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'testCommand'],
-  decomposition: ['docsRepo', 'specsDir', 'docsLanguage', 'chatLanguage', 'decompositionLabel'],
+  decomposition: ['specsDir', 'docsLanguage', 'chatLanguage', 'decompositionLabel'],
 };
 // What a skill's list says for a workspace with no value: the default, or today's behaviour without one. Also reference/conventions.md's default column
 const NO_VALUE: Record<string, string> = {
@@ -156,10 +158,28 @@ test('the plugin depends on no other plugin: no ecc: or superpowers: reference a
 });
 
 test('every new-* skill resolves the conventions from the one reference text', async () => {
-  for (const skill of SKILLS) {
+  for (const skill of CONVENTIONS_SKILLS) {
     const text = await skillText(skill);
     assert.match(text, /reference\/conventions\.md/, `skills/${skill} does not read reference/conventions.md`);
   }
+});
+
+const DECOMPOSITION_VALUES: Record<string, string> = { specsDir: 'design/specs', docsLanguage: 'Spanish', chatLanguage: 'Portuguese', decompositionLabel: 'tree' };
+
+test('/hive:decomposition declares its own four variables, interpolated where used, and reads no reference, no Hive tool and no runner tool (#430)', async () => {
+  const text = await skillText('decomposition');
+  assert.doesNotMatch(text, /docsRepo|conventions\.md|CLAUDE\.md|AGENTS\.md|hiveLanguage/, 'no docsRepo (a nested docs repo is reached through specsDir), no reference, no agent instructions file by name');
+  for (const tool of ['hive_done', 'hive_ask', 'hive_conventions', 'hive_stop', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);
+  assert.match(text, /^## Rules$/m);
+  assert.match(text, /When rules disagree, the most specific wins: what the user says; the\ninstructions at `\{\{ specsDir \}\}`/, 'the repository and its specs folder win over the skill');
+  assert.match(text, /-\.->\|db\.submissions\|/, 'a labelled dotted edge is written with pipes: the `-. id .->` form breaks on a hyphen');
+  const rendered = renderedFor(text);
+  assert.doesNotMatch(rendered, /## Conventions/, 'no list of values: each is interpolated where it is used');
+  for (const part of ['`docs/hive/specs/<YYYY-MM-DD>-<slug>-decomposition.md`', 'in English, and committed there', 'Label: decomposed', '`Label: decomposed` is a line', "A `docs/hive/specs` that git\nignores is a stop"]) assert.ok(rendered.includes(part), part);
+  assert.doesNotMatch(rendered, /Talk to the user in/, 'with chatLanguage unset, no language is imposed');
+  const mine = renderedFor(valued(text, DECOMPOSITION_VALUES));
+  for (const part of ['`design/specs/<YYYY-MM-DD>-<slug>-decomposition.md`', 'in Spanish, and committed there', 'Talk to the user in Portuguese.', 'Label: tree', 'the nested\none that holds `design/specs`']) assert.ok(mine.includes(part), part);
+  assert.ok(renderedFor(valued(text, DECOMPOSITION_VALUES), 'b').includes('Label: decomposed'), 'another workspace keeps the defaults');
 });
 
 test('every shipped skill parses with no error, declares the variables its text reads, and renders for a workspace with no value to the defaults (#317)', async () => {
@@ -169,7 +189,7 @@ test('every shipped skill parses with no error, declares the variables its text 
     assert.deepEqual(parsed.errors, [], skill);
     assert.deepEqual(parsed.variables.map((v) => v.name), VARIABLES[skill], skill);
     const rendered = renderedFor(text);
-    for (const name of VARIABLES[skill]) assert.ok(rendered.includes(`\n- \`${name}\`: ${NO_VALUE[name]}\n`), `${skill}: ${name}`);
+    if (CONVENTIONS_SKILLS.includes(skill)) for (const name of VARIABLES[skill]) assert.ok(rendered.includes(`\n- \`${name}\`: ${NO_VALUE[name]}\n`), `${skill}: ${name}`);
     assert.doesNotMatch(rendered, /\{\{|\{%/, `${skill}: no Liquid is left`);
   }
 });
