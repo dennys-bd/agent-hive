@@ -5,6 +5,7 @@ import { EnvEditor } from '@/components/settings/EnvEditor';
 import { MemorySection } from '@/components/settings/MemorySection';
 import { WorkspaceColorPicker } from '@/components/settings/WorkspaceColorPicker';
 import { WorkspaceFork } from '@/components/settings/WorkspaceFork';
+import { WorkspaceNestedRepos } from '@/components/settings/WorkspaceNestedRepos';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import type { WorkspaceDraft } from '@/lib/settings-form';
 import { settingAnchor } from '@/lib/settings-search';
+import { nestedPaths, oldSetupPath } from '@/lib/settings-nested';
 import type { State } from '../../../types';
 import { workspaceNameFor } from '../../../tasks';
 
@@ -28,13 +30,13 @@ function chooseFolder(pick: (path: string) => void): void {
 }
 
 interface ScriptFieldsProps {
-  script: 'setup' | 'teardown'; n: number; context: string; text: string; timeout: string; placeholder: string; timeoutPlaceholder: string;
+  script: 'setup' | 'teardown'; n: number; context: string; text: string; timeout: string; placeholder: string; timeoutPlaceholder: string; describedBy?: string;
   onText(text: string): void; onTimeout(timeout: string): void;
 }
 
 // A workspace's worktree script (#299, #654): the setup run once in each new worktree, or the teardown run in it before the Hive removes it;
 // beside it each RUN's timeout as a timeout text (#511, empty = no limit); under both, the instructions it takes.
-function ScriptFields({ script, n, context, text, timeout, placeholder, timeoutPlaceholder, onText, onTimeout }: ScriptFieldsProps) {
+function ScriptFields({ script, n, context, text, timeout, placeholder, timeoutPlaceholder, describedBy, onText, onTimeout }: ScriptFieldsProps) {
   const id = useId();
   const label = t(`settings.workspaces.${script}`);
   // one visible label for both timeouts (#654); the accessible name adds the script's, so the two inputs never share one
@@ -46,7 +48,7 @@ function ScriptFields({ script, n, context, text, timeout, placeholder, timeoutP
           <Label htmlFor={`${id}-text`}>{label}</Label>
           <Textarea
             id={`${id}-text`} aria-label={`${label} ${n}`} rows={4} spellCheck={false} className="font-mono text-xs"
-            value={text} placeholder={placeholder} onChange={(e) => onText(e.target.value)}
+            value={text} placeholder={placeholder} aria-invalid={describedBy ? true : undefined} aria-describedby={describedBy} onChange={(e) => onText(e.target.value)}
           />
         </div>
         <div id={settingAnchor('settings.workspaces.stepTimeout', `${context}-${script}`)} className="flex flex-col gap-2">
@@ -84,6 +86,8 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
   const id = useId();
   const name = row.name.trim() || t('settings.workspaces.card', { n }); // not the name field's own label, which it would shadow
   const remove = t('settings.workspaces.remove', { n });
+  const flagId = `${id}-old-setup`;
+  const oldSetup = oldSetupPath(row.setup, nestedPaths(row)); // #653: a step that would now fail; saving stays allowed
   return (
     <section id={settingAnchor('settings.workspaces', row.id)} aria-label={name} className="flex flex-col gap-5 rounded-xl border bg-card p-5 shadow-sm">
       <div className="grid grid-cols-[auto_12.5rem_minmax(0,1fr)_auto_auto] items-end gap-3">
@@ -106,8 +110,12 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
       <CardGroup title={t('settings.fork.group')} hint={t('settings.fork.hint')} anchor={settingAnchor('settings.fork.group', row.id)}>
         <WorkspaceFork row={row} saved={saved} state={state} onChange={onChange} />
       </CardGroup>
+      {/* #653: the nested repos each task gets a worktree of, as drawn: after the repository, before the worktree setup */}
+      <CardGroup title={t('settings.nested.group')} hint={t('settings.nested.hint')} anchor={settingAnchor('settings.nested.group', row.id)}>
+        <WorkspaceNestedRepos row={row} oldSetup={oldSetup} flagId={flagId} onChange={onChange} />
+      </CardGroup>
       <ScriptFields
-        script="setup" n={n} context={row.id} text={row.setup} timeout={row.setupTimeout} placeholder={'COPY .env\nRUN pnpm install'} timeoutPlaceholder="5m"
+        script="setup" n={n} describedBy={oldSetup === undefined ? undefined : flagId} context={row.id} text={row.setup} timeout={row.setupTimeout} placeholder={'COPY .env\nRUN pnpm install'} timeoutPlaceholder="5m"
         onText={(setup) => onChange({ setup })} onTimeout={(setupTimeout) => onChange({ setupTimeout })}
       />
       <ScriptFields
