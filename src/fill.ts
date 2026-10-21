@@ -5,12 +5,13 @@
 import { liveDefaultAgent } from './agents.js';
 import { behaviourOf, mayContinue, mayResume } from './signals.js';
 import { candidates, isPastFirstStage, isStarted, stageOf, taskId } from './tasks.js';
-import { runsAgent } from './stage-agent.js';
+import { holdsWorker, runsAgent } from './stage-agent.js';
 import { treeStarted } from './task-tree.js';
 import { hasBudget } from './usage.js';
 import { activeRules, applyUsageRules, disableExpired, disabledStatuses, firedRules, isGlobalRule, rulePercents, stageCapRules, stageCaps, worstSignal } from './usage-rules.js';
 import { hasRoom, isFree, occupy, type Reduced, slugTaken, stageHasRoom, withTask } from './reducer-kit.js';
 import { startCommands } from './stage-commands.js';
+import { startEvaluate } from './stage-evaluate.js';
 import type { Effect, EffectiveLimits, SignalBehaviour, Stage, State, Task, Worker, WorkerEventKind } from './types.js';
 
 /** effectiveLimits' answer with what its signal lets the Hive do (#727). */
@@ -71,9 +72,13 @@ function startable(state: State, gate: Gate, now: number, keep?: string): Task[]
   return candidates(state, now).filter((c) => allowed(c) && stageHasRoom(state, c.stage, gate.stageCaps));
 }
 
-// A task's first move in a free worker: a commands stage's run holds it (#727), any other stage spawns its session
+/** A held stage's first move in worker `index` (#727, #877): a commands run or an evaluation; what the fill, a continuation and a manual start call. */
+export const startHeldRun = (state: State, task: Task, index: number, kind: WorkerEventKind, stage: Stage): Reduced =>
+  (stage.action === 'evaluate' ? startEvaluate(state, task, index, kind) : startCommands(state, task, index, kind));
+
+// A task's first move in a free worker: a held stage's run holds it (#727, #877), any other stage spawns its session
 const run = (state: State, index: number, task: Task, stage: Stage, kind: WorkerEventKind): Reduced =>
-  (stage.action === 'commands' ? startCommands(state, task, index, kind) : occupy(state, index, task, stage, kind));
+  (holdsWorker(stage) ? startHeldRun(state, task, index, kind, stage) : occupy(state, index, task, stage, kind));
 
 /** Every free worker takes the best task the table lets the Hive start. The gate is re-checked before every start against the workers as they
  * stand, so the cap counts what was just opened. */
@@ -120,13 +125,14 @@ export function canContinue(freed: State, worker: Worker, moved: Task, next: Sta
   return goesOn(freed, moved);
 }
 
-/** A stage whose transition enters a commands stage (#727): keepsRun is false there (no prompt), so the session's run ended; the commands run
- * takes the freed worker when the continuation's gate lets the task go on; otherwise the fill decides. A draining worker leaves with its run. */
-export function continueIntoCommands(ended: Reduced, worker: Worker, moved: Task, next: Stage | undefined): Reduced {
-  if (next?.action !== 'commands' || worker.draining) return ended;
+/** A stage whose transition enters a commands or evaluate stage (#727, #877): keepsRun is false there (no prompt), so the session's run ended;
+ * the held run takes the freed worker when the continuation's gate lets the task go on; otherwise the fill decides. A draining worker leaves
+ * with its run. */
+export function continueIntoHeld(ended: Reduced, worker: Worker, moved: Task, next: Stage | undefined): Reduced {
+  if (next === undefined || !holdsWorker(next) || worker.draining) return ended;
   const index = ended.state.workers.findIndex((w) => w.id === worker.id);
   const task = ended.state.tasks.find((c) => taskId(c) === taskId(moved));
   if (index < 0 || !task || task.stage !== next.name || !goesOn(ended.state, task)) return ended;
-  const started = startCommands(ended.state, task, index, 'continuing');
+  const started = startHeldRun(ended.state, task, index, 'continuing', next);
   return { state: started.state, effects: [...ended.effects, ...started.effects] };
 }

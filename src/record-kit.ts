@@ -1,4 +1,4 @@
-import { activityOf, addUsage, recordOf, recordsOf, recordWithSession, usageOf, withActivity, withRecord } from './activities.js';
+import { activityOf, addUsage, heldRun, recordOf, recordsOf, recordWithSession, usageOf, withActivity, withRecord } from './activities.js';
 import { NO_USAGE, runTime, sessionsOf, taskId, titled, workersOf } from './tasks.js';
 import { recordedIssues } from './decomposition.js';
 import { withLaunch } from './launch-pick.js';
@@ -81,8 +81,8 @@ export function sessionBaseline(state: Pick<State, 'activityRecords'>, task: Tas
  * worker's part (#617). Tokens are stored at every Stop, so they need no running share. The detail panel re-renders on the main window's
  * tick, so the time moves without a state write. */
 export function taskTotals(state: Pick<State, 'workers' | 'activities' | 'activityRecords'>, task: Task, now: number): TaskUsage {
-  const commands = activityOf(state, taskId(task))?.commands; // #617: a commands stage's worker holds no activity; its run names it
-  const running = [...workersOf(state, task), ...state.workers.filter((w) => w.id === commands?.workerId)];
+  const held = heldRun(activityOf(state, taskId(task))); // #617, #877: a held run's worker holds no activity; its run names it
+  const running = [...workersOf(state, task), ...state.workers.filter((w) => w.id === held?.workerId)];
   return running.reduce((total, worker) => addUsage(total, worker, { tokens: 0, ...runShare(worker, now) }), usageOf(state, taskId(task)) ?? NO_USAGE);
 }
 

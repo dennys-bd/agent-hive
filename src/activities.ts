@@ -1,4 +1,4 @@
-import type { Activity, ActivityRecord, ForkSyncResult, Session, State, Task, TaskPr, TaskUsage, Terminal, UsagePart, Worker } from './types.js';
+import type { Activity, ActivityRecord, ForkSyncResult, Session, StageEvaluate, State, Task, TaskPr, TaskUsage, Terminal, UsagePart, Worker } from './types.js';
 
 // The activity's two records in State (#629): the reads the reducer, the routes and the UI share. No Node import, since the UI bundles it, and
 // no import of tasks.ts, which imports this file.
@@ -198,3 +198,7 @@ export function withForkSync(state: State, { activityId, sync }: { activityId: s
   const activity = state.activities.find((a) => a.id === activityId);
   return activity === undefined ? state : withActivity(state, { ...activity, sync });
 }
+
+/** The stage run that holds a worker with no session on the activity (#727, #877): a commands stage's or an evaluation's. What frees, counts and
+ * times that worker, which holds no activity of its own. */
+export const heldRun = (a: Pick<Activity, 'commands' | 'evaluate'> | undefined): Pick<StageEvaluate, 'stage' | 'workerId'> | undefined => a?.commands ?? a?.evaluate;

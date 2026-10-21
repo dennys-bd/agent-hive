@@ -20,11 +20,13 @@ import { exitOf, transitionByKey } from './transitions.js';
 import { beingDeleted, clearedError, deletingOf, sourceWrites, continueInPlace, dropActivity, dropWorker, keptMarks, ensureActivity, emptyWorker, takeWorker, releaseWorker, liveWorker, none, occupiedCount, occupy, workerCount, patch, type Reduced, releaseRun, settleEntries, shouldWrite, slugTaken, unmarked, withError, withTask } from './reducer-kit.js';
 import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, forgetUnopenedLocal, newLocalSession, openLocalSession, settleCopy, withLocalTurn } from './session-copy.js';
 import { clearSession, renameSession } from './session-clear.js';
-import { canContinue, continueIntoCommands, fill, gateOf } from './fill.js';
+import { canContinue, continueIntoHeld, fill, gateOf, startHeldRun } from './fill.js';
 import { markForgotten, withSlept } from './slept.js';
 import { captureSession, dropOrphanTerminals, forgetTerminal, recordCapturedSession, resumedStart, sleepTerminal, wakeTerminal } from './terminal-runs.js';
 import { retryDue, settleWait, stopFailure } from './api-errors.js';
-import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
+import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused } from './stage-commands.js';
+import { evaluateBroken, evaluateEnded, evaluateJudging } from './stage-evaluate.js';
+import { holdsWorker } from './stage-agent.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
 import { renameStages } from './stage-rename.js';
 import { placeVanished } from './vanished-stages.js';
@@ -147,6 +149,9 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'ciClock': return afterCommands(state, ciClock(state, event)); // #834: only a timeout; #134: a routed failure moves the task, as a pass does
     case 'ciFailed': return afterCommands(state, ciFailed(state, event)); // #834; #134: a routed failure moves the task, as a pass does
     case 'stopCi': return none(haltCi(state, event.activityId)); // #834: no fill: the task stops in its stage, nothing freed
+    case 'evaluateJudging': return none(evaluateJudging(state, event)); // #877: no fill: a phase for the card
+    case 'evaluateEnded': return afterCommands(state, evaluateEnded(state, event)); // #877: the worker frees and the verdict routes, as a commands stage's end
+    case 'evaluateBroken': return afterCommands(state, evaluateBroken(state, event)); // #877: the worker frees; the task stops, no try spent
     case 'decompositionIssue': return none(decompositionIssue(state, event)); // #865: no fill, no effects: a step of the write, recorded on the task
     case 'forkSynced': return none(withForkSync(state, event)); // #854: no fill: a record of how the worktree started, nothing freed
     case 'sourceActionFailed': return sourceActionFailed(state, event.taskId, event.message, event.leaving); // no fill: the error keeps the task out of it (#286)
@@ -224,7 +229,7 @@ function setRateLimits(state: State, { agent, ptyId, rateLimits, replace = false
 
 // The human override: no signal, cap, budget or `after` check; the task runs in the stage it is in. Unknown, running, deleting, missing or
 // leaving (#286) task, or one awaiting approval (approve or feedback moves it, #268), or running a stage action (#755, #834): unchanged; a non-auto task starts like any other (#283). A delete-activity stage acts at once, with no worker and whatever the blockers (they are about starting work), and never
-// gets a base; a commands stage too, keeping the popup's base and switch for its worktree (#755). A wait for CI starts over, with a new clock and no re-run spent (#834). A prompt stage, or a manual gate carrying queued feedback (HIVE-2), needs an unblocked task; with a free worker it takes it, without one it opens a worker over the cap that leaves
+// gets a base; a commands stage too, and an evaluate stage (#877), keeping the popup's base and switch for its worktree (#755). A wait for CI starts over, with a new clock and no re-run spent (#834). A prompt stage, or a manual gate carrying queued feedback (HIVE-2), needs an unblocked task; with a free worker it takes it, without one it opens a worker over the cap that leaves
 // when its own worker ends: maxConcurrent is untouched and the extra worker is a draining one, as a setMax below the occupied count leaves
 // behind (#116). The popup's base (#131) is written before occupy, so the spawn effect carries it; null (the popup's default) drops a saved
 // one; absent (a task with a worktree, started with no popup) keeps it. A task with no workspace starts nothing; the popup's workspace is saved
@@ -240,20 +245,16 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
   // a manual start clears the last failure (spawn, delete activity or a commands stage's) and tries again
   if (stage.action === 'deleteActivity') return startDeleteActivity(clearedError(state, task), task);
   if (stage.action === 'waitForCi') return startCi(placed.state, task); // #834: no worker, no worktree; startCi clears the last failure itself
-  const isCommands = stage.action === 'commands';
-  if (!isCommands && (!canRunIn(stage) || isBlocked(task.item))) return none(state); // a prompt (#134: a gate runs nothing)
+  const isHeld = holdsWorker(stage); // #755, #877: a commands or evaluate stage runs in the worktree, holding a worker
+  if (!isHeld && (!canRunIn(stage) || isBlocked(task.item))) return none(state); // a prompt (#134: a gate runs nothing)
   const retried = clearedError(placed.state, task);
   const taken = slugTaken(retried, task);
   if (taken) return none(taken); // before a worker opens over the cap (#116)
   const born = ensureActivity(retried, task);
   if (!born) return none(state);
-  const chosen = withActivity(born.state, withRunPick(withLocal(withBase(born.activity, taskBase), local), isCommands ? undefined : runPick)); // the popup's base and switch (#131, #444) and the run picks (#290), on the activity so the spawn carries them
-  if (isCommands) { // #755, #727: its commands run in the worktree the base and switch decide, holding a free worker or one over the cap (#116)
-    const { state: opened, index } = takeWorker(chosen);
-    return startCommands(opened, task, index, 'manualStart');
-  }
+  const chosen = withActivity(born.state, withRunPick(withLocal(withBase(born.activity, taskBase), local), isHeld ? undefined : runPick)); // the popup's base and switch (#131, #444) and the run picks (#290), on the activity so the spawn carries them
   const { state: opened, index } = takeWorker(chosen); // a free worker, else one over the cap (#116)
-  return occupy(opened, index, task, stage, 'manualStart');
+  return isHeld ? startHeldRun(opened, task, index, 'manualStart', stage) : occupy(opened, index, task, stage, 'manualStart'); // #755, #727: a held run in the worktree the base and switch decide
 }
 
 // A task created in the Hive (#132): the next local number (never reused: localCount only grows), entered into the stage like a polled task
@@ -572,7 +573,7 @@ function finish(state: State, ptyId: string, end: EndOf = { trigger: 'done' }): 
   }
   // the run ends here (a continuation is the same run, #248); then the due deletions, this task's included (#284)
   const ended = runActions(releaseRun(freed, worker, Date.now()), [{ type: 'kill', slug: slugOf(state, taskId(task)), ptyId }, ...finished]);
-  return continueIntoCommands(ended, worker, moved, next); // #727: into a commands stage under the continuation's gate
+  return continueIntoHeld(ended, worker, moved, next); // #727, #877: into a commands or evaluate stage under the continuation's gate
 }
 
 // A Stop after hive_done (#268, #692, #134): its verdict when it gave one, else done. An approval stage waits for the user, unless the verdict
