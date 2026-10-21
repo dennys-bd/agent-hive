@@ -30,8 +30,7 @@ const COMMAND_LINE = /^\/[\w:-]+(?:[ \t].*)?$/;
 /** A prompt that opens on a slash command, split into that line and the rest (#710). Claude runs a command only at the start of the message,
  * so whatever a composer adds (a transition's text, a handoff) goes after the command line, never before it. Undefined for any other prompt. */
 export function commandFirst(prompt: string): { command: string; rest: string } | undefined {
-  const text = prompt.trimStart();
-  const end = text.indexOf('\n');
-  const command = end === -1 ? text : text.slice(0, end);
-  return COMMAND_LINE.test(command) ? { command: command.trimEnd(), rest: end === -1 ? '' : text.slice(end + 1).trim() } : undefined;
+  const [first = '', ...rest] = prompt.trimStart().split(/\r?\n/); // a hand-edited config may hold CRLF
+  const command = first.trimEnd();
+  return COMMAND_LINE.test(command) ? { command, rest: rest.join('\n').trim() } : undefined;
 }

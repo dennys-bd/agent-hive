@@ -20,6 +20,8 @@ test('runsAgent is a prompt or a skill stage; hiveAction names the actions the H
 test('commandFirst splits a prompt opening on a slash command into its command line and the rest, so composers keep it first (#710)', () => {
   assert.deepEqual(commandFirst('/hive:new-plan'), { command: '/hive:new-plan', rest: '' });
   assert.deepEqual(commandFirst('  /build {url}\n\nthen push'), { command: '/build {url}', rest: 'then push' });
+  assert.deepEqual(commandFirst('/build x\r\nthen push'), { command: '/build x', rest: 'then push' }, 'a CRLF config');
+  assert.deepEqual(commandFirst('/hive:new-plan\r'), { command: '/hive:new-plan', rest: '' });
   assert.equal(commandFirst('Run /hive:new-plan'), undefined);
   assert.equal(commandFirst('/ alone'), undefined);
   assert.equal(commandFirst('docs/x.md'), undefined);
