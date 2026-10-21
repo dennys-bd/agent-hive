@@ -71,7 +71,7 @@ export function registerApprovalRoutes(app: Express, { requireLive, dispatch }: 
       if ('status' in checked) return refuse(res, checked);
       if (trigger !== undefined && !answerable(current.state, checked, trigger)) return refuse(res, { status: HTTP_CONFLICT, message: NO_EXIT_MESSAGE[trigger] });
       const next = event(activityId, req.body, checked, current.state, current.runtime.config);
-      if ('status' in next) return refuse(res, next);
+      if (!('type' in next)) return refuse(res, next); // not 'status': benchmarkRunEnded carries one too
       await dispatch(next);
       res.json({ ok: true });
     });

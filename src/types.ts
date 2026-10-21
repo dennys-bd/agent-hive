@@ -1598,7 +1598,8 @@ export type HiveEvent =
   | { type: 'approvalExpired'; ptyId: string } // the server's hold timer ran out (#268)
   | { type: 'retryDue'; ptyId: string; until: string } // the server's backoff timer fired for that wait (#805)
   | { type: 'moveTask'; taskId: string; before?: string } // the task goes before `before` (same stage); absent = end of its stage
-  | { type: 'resetOrder'; stage: string }; // that stage's tasks back to the source's order
+  | { type: 'resetOrder'; stage: string } // that stage's tasks back to the source's order
+  | BenchmarkEvent; // #458: an experiment's life, applied by benchmark-reducer.ts
 
 export interface ProjectSummary {
   number: number;

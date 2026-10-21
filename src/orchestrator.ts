@@ -1,5 +1,6 @@
 
 import { canCloseMissing, inAction, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
+import { benchmarkReduce, isBenchmarkEvent } from './benchmark-reducer.js';
 import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
@@ -107,6 +108,7 @@ const ended = (reduced: Reduced): Reduced => fill(reduced.state.cleanStop ? redu
 const afterCommands = (state: State, reduced: Reduced): Reduced => (reduced.state === state ? reduced : fill(runActions(reduced.state, reduced.effects)));
 
 function step(state: State, event: HiveEvent): Reduced {
+  if (isBenchmarkEvent(event)) return none(benchmarkReduce(state, event)); // #458: an experiment's life frees no worker and starts no job
   switch (event.type) {
     case 'boot': return dropCopiesAtBoot(state, boot(state)); // no fill: bootHive polls right after, and the source is the truth; opens on signals.onOpen, a saved red always red (#727), and that poll's fill resumes the tasks in flight (#224)
     case 'poll': return fill(poll(state, event)); // also where a dynamic red ages out: samples leave the window with time, a plan window passes its reset
