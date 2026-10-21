@@ -9,11 +9,13 @@ const PLUGIN = pluginSource(); // the very directory the Hive copies into the ho
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
 // #430: the decomposition skill declares its own variables and reads no reference; the new-* skills still read conventions.md
 const CONVENTIONS_SKILLS = SKILLS.filter((skill) => skill !== 'decomposition');
-const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
+const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
 
 const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
 // #416: an agent that reads a Hive convention is a template; the rest stay plain Markdown
 const TEMPLATE_AGENTS: readonly string[] = ['designer'];
+// #446: an agent reviewed since names no model; the older ones still route to one
+const NO_MODEL: readonly string[] = ['decomposition-reviewer', 'designer'];
 const agentPath = (agent: string): string => `agents/${agent}${TEMPLATE_AGENTS.includes(agent) ? '.md.liquid' : '.md'}`;
 const agentText = (agent: string): Promise<string> => readFile(join(PLUGIN, agentPath(agent)), 'utf8');
 
@@ -71,6 +73,7 @@ const CREDITED: Record<string, string[]> = {
   'agents/architect.md': ['ecc:architect'],
   'agents/build-fixer.md': ['ecc:build-error-resolver'],
   'agents/code-reviewer.md': ['ecc:code-reviewer'],
+  'agents/decomposition-reviewer.md': [],
   'agents/design-reviewer.md': ['impeccable', 'ecc:frontend-design-direction'],
   'agents/designer.md.liquid': ['impeccable', 'ecc:frontend-design-direction'],
   'agents/plan-reviewer.md': ['superpowers:writing-plans'],
@@ -86,12 +89,12 @@ const CREDITED: Record<string, string[]> = {
   'skills/new-spec/SKILL.md.liquid': ['superpowers:brainstorming'],
 };
 
-test('the plugin ships the manifest, the five skills, the eleven agents and the two references, the skeleton and the scripts, and nothing else', async () => {
+test('the plugin ships the manifest, the five skills, the twelve agents and the three references, the skeleton and the scripts, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
   assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'scripts', 'skills']);
-  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html'], 'reference/ holds the conventions every new-* skill reads first, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares');
+  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'decomposition.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html'], 'reference/ holds the conventions every new-* skill reads first, the decomposition file the skill writes and its reviewer reads, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares');
   assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs', 'import-dc.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => agentPath(a).slice('agents/'.length)));
@@ -109,12 +112,12 @@ test('every skill and agent declares the frontmatter Claude Code reads, with the
     const front = frontmatter(await agentText(agent));
     assert.equal(front.name, agent);
     assert.ok((front.description ?? '').length > 40, `agents/${agent} has a description`);
-    if (agent === 'designer') assert.equal(front.model, undefined, 'the designer names no model: a session\'s or a stage\'s model is set in the Hive, for any agent runner (#446)');
+    if (NO_MODEL.includes(agent)) assert.equal(front.model, undefined, `${agent} names no model: a session's or a stage's model is set in the Hive, for any agent runner (#446)`);
     else assert.ok(['sonnet', 'opus'].includes(front.model), `agents/${agent} routes to a model: ${front.model}`);
     assert.ok((front.tools ?? '').includes('Read'), `agents/${agent} declares its tools`);
     if (front.model === 'opus') opus.push(agent);
   }
-  assert.deepEqual(opus, ['architect', 'planner'], 'the model table: sonnet everywhere, opus for the architect and the planner, none for the designer');
+  assert.deepEqual(opus, ['architect', 'planner'], 'the model table: sonnet everywhere, opus for the architect and the planner, none for the agents reviewed since #446');
 });
 
 test('every shipped skill and agent credits its origins in basedOn, each a file at its source\'s ref, or opens its header with the original comment (#338)', async () => {
@@ -137,7 +140,7 @@ test('every shipped skill and agent credits its origins in basedOn, each a file 
 });
 
 test('the plugin depends on no other plugin: no ecc: or superpowers: reference anywhere it delivers', async () => {
-  const others = ['CREDITS.md', 'reference/conventions.md', 'reference/design.md', 'reference/skeleton.hv.html', 'scripts/check-hv.mjs', 'scripts/import-dc.mjs'];
+  const others = ['CREDITS.md', 'reference/conventions.md', 'reference/decomposition.md', 'reference/design.md', 'reference/skeleton.hv.html', 'scripts/check-hv.mjs', 'scripts/import-dc.mjs'];
   const items = [...SKILLS.map((s) => `skills/${s}/SKILL.md.liquid`), ...AGENTS.map(agentPath)];
   for (const [file, isItem] of [...others.map((f): [string, boolean] => [f, false]), ...items.map((f): [string, boolean] => [f, true])]) {
     const raw = await readFile(join(PLUGIN, file), 'utf8');
@@ -172,10 +175,21 @@ test('/hive:decomposition declares its own four variables, interpolated where us
   for (const tool of ['hive_done', 'hive_ask', 'hive_conventions', 'hive_stop', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);
   assert.match(text, /^## Rules$/m);
   assert.match(text, /When rules disagree, the most specific wins: what the user says; the\ninstructions at `\{\{ specsDir \}\}`/, 'the repository and its specs folder win over the skill');
-  assert.match(text, /-\.->\|db\.submissions\|/, 'a labelled dotted edge is written with pipes: the `-. id .->` form breaks on a hyphen');
+  const reference = await readFile(join(PLUGIN, 'reference', 'decomposition.md'), 'utf8');
+  assert.match(reference, /-\.->\|db\.submissions\|/, 'a labelled dotted edge is written with pipes: the `-. id .->` form breaks on a hyphen');
+  for (const heading of ['## Contracts and blockers', '## Files touched', '## The file', '### The diagram', '### Check before you end']) assert.ok(reference.includes(heading), `reference/decomposition.md lacks ${heading}`);
+  for (const heading of ['## Contracts and blockers', '## Files touched', '### Check before you end']) assert.ok(!text.includes(heading), `the skill still carries ${heading}: it is the reference's`);
+  assert.doesNotMatch(reference, /\{\{|\{%/, 'the reference is plain Markdown: a .md never renders');
+  // #430: the reviewer is a separate pass the skill dispatches before every end, two rounds at most, and never edits or orders by Touches
+  assert.match(text, /## Review\n\nOnce the check passes, dispatch the reviewer with the file's path:\n`Use the hive:decomposition-reviewer agent on <path>`/);
+  for (const part of ['Two rounds at most', 'it never edits the file', 'a run resumed by feedback included']) assert.ok(text.includes(part), part);
+  const reviewer = await readFile(join(PLUGIN, 'agents', 'decomposition-reviewer.md'), 'utf8');
+  assert.ok(reviewer.includes(`${'$'}{CLAUDE_PLUGIN_ROOT}/reference/decomposition.md`), 'the reviewer reads the shared file rules');
+  for (const part of ['never derive a `Blocked by` from the files two leaves touch', '**Verdict:** clean | changes needed', '### Blocking', '### Advisory', 'Unwritten dependency']) assert.ok(reviewer.includes(part), part);
+  assert.ok(!frontmatter(reviewer).tools?.split(', ').some((tool) => ['Write', 'Edit', 'Bash'].includes(tool)), 'the reviewer only reads');
   const rendered = renderedFor(text);
   assert.doesNotMatch(rendered, /## Conventions/, 'no list of values: each is interpolated where it is used');
-  for (const part of ['`docs/hive/specs/<YYYY-MM-DD>-<slug>-decomposition.md`', 'in English, and committed there', 'Label: decomposed', '`Label: decomposed` is a line', "A `docs/hive/specs` that git\nignores is a stop"]) assert.ok(rendered.includes(part), part);
+  for (const part of ['`docs/hive/specs/<YYYY-MM-DD>-<slug>-decomposition.md`', 'in English, and committed there', '`Label: decomposed`', "A `docs/hive/specs` that git\nignores is a stop"]) assert.ok(rendered.includes(part), part);
   assert.doesNotMatch(rendered, /Talk to the user in/, 'with chatLanguage unset, no language is imposed');
   const mine = renderedFor(valued(text, DECOMPOSITION_VALUES));
   for (const part of ['`design/specs/<YYYY-MM-DD>-<slug>-decomposition.md`', 'in Spanish, and committed there', 'Talk to the user in Portuguese.', 'Label: tree', 'the nested\none that holds `design/specs`']) assert.ok(mine.includes(part), part);
@@ -317,13 +331,13 @@ test('hive:design-reviewer reports and never edits: its tools hold no Write or E
   for (const tool of ['Write', 'Edit']) assert.ok(!tools.includes(tool), `design-reviewer declares ${tool}`);
 });
 
-test('every section the design agents quote by name is a heading of reference/design.md, reference/conventions.md or the agent itself', async () => {
+test('every section the design agents and the decomposition reviewer quote by name is a heading of a reference or of the agent itself', async () => {
   const headings = new Set<string>();
-  for (const file of ['design.md', 'conventions.md']) {
+  for (const file of ['design.md', 'conventions.md', 'decomposition.md']) {
     const text = await readFile(join(PLUGIN, 'reference', file), 'utf8');
     for (const [, heading] of text.matchAll(/^#{2,3} (.+)$/gm)) headings.add(heading.trim());
   }
-  for (const agent of ['designer', 'design-reviewer']) {
+  for (const agent of ['designer', 'design-reviewer', 'decomposition-reviewer']) {
     const text = await agentText(agent);
     const own = new Set([...text.matchAll(/^#{2,3} (.+)$/gm)].map(([, heading]) => heading.trim()));
     for (const [, name] of text.matchAll(/"([A-Z][^"]*)"/g)) assert.ok(headings.has(name) || own.has(name), `agents/${agent} quotes "${name}", which no reference heading nor its own carries`);

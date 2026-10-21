@@ -40,7 +40,7 @@ const STARTUP: LaunchArg[] = [['-c', 'check_for_update_on_startup=false'], ['-c'
 // #934, #316: the skills as the render copied the run's folder into Codex's cache, then one role per agent of that folder
 const MARKETPLACE = marketplaceName(PLUGIN_FOLDER);
 const PLUGIN: LaunchArg = ['-c', `plugins.hive@${MARKETPLACE}.enabled=true`];
-const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
+const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
 const ROLES: LaunchArg[] = agentRoles(PLUGIN_FOLDER).map((role) => ['-c', `agents.hive:${role.name}={description=${JSON.stringify(role.description)},config_file=${tomlString(roleFile(PLUGIN_FOLDER, role.name))}}`]);
 const HIVE_PLUGIN: LaunchArg[] = [PLUGIN, ...ROLES];
 const TAIL = ['--dangerously-bypass-hook-trust', '--sandbox', 'workspace-write', '-m', 'gpt-5.6-terra'];
