@@ -166,7 +166,7 @@ test('reduce delegates a benchmark event to benchmarkReduce with no effect; isBe
 
 test("a benchmark event's log line names the experiment and the run's token only, never a name, a patch or a reason (#458)", () => {
   assert.equal(describeEvent({ type: 'benchmarkCreated', experiment: experiment({ name: 'secret name' }) }), 'benchmarkCreated experiment=exp-1');
-  assert.equal(describeEvent({ type: 'benchmarkRunEnded', id: 'exp-1', token: 'aaaa1', status: 'error', at: AT, reason: 'secret' }), 'benchmarkRunEnded experiment=exp-1 token=aaaa1');
-  assert.equal(describeEvent({ type: 'benchmarkRunStarted', id: 'exp-1', run: run('bbbb1') }), 'benchmarkRunStarted experiment=exp-1 token=bbbb1');
+  assert.equal(describeEvent({ type: 'benchmarkRunEnded', id: 'exp-1', token: 'aaaa1', status: 'error', at: AT, reason: 'secret' }), 'benchmarkRunEnded experiment=exp-1 run=aaaa1');
+  assert.equal(describeEvent({ type: 'benchmarkRunStarted', id: 'exp-1', run: run('bbbb1') }), 'benchmarkRunStarted experiment=exp-1 run=bbbb1');
   assert.equal(describeEvent({ type: 'benchmarkEdited', id: 'exp-1', patch: { name: 'secret' } }), 'benchmarkEdited experiment=exp-1');
 });

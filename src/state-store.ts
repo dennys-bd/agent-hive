@@ -175,7 +175,7 @@ function migrated(parsed: State & { localSessions?: unknown }, saved: Task[], ta
 // dropped here, not only by boot: the live state is built before boot runs, and a restart must never come back armed (#233), nor awake (#226). A `terminal`
 // from before #378 goes: the rest is spread. A file from before #570 has slots and shells, never read (no migration): its runs are lost, its
 // tasks stay, and it gets its cap (MAX_CONCURRENT_DEFAULT when it has none) in free workers, since boot never re-runs setMax.
-function normalize(parsed: State, scope?: WorkspaceNames): State {
+function normalize(parsed: State, hiveDir: string, scope?: WorkspaceNames): State {
   const { maxConcurrent: savedMax, rateLimits, terminals, cleanStop, crash, slots: _slots, shells: _shells, cleanup: _cleanup, boardQuota: _quota, lastPolledAt: _polled, boardProject: _default, queue: _queue, shutdown: _shutdown, keepAwake: _keepAwake, columns: _columns, terminal: _terminal, localSessions: _localSessions, slept: _slept, auto: _auto, ...rest } = parsed as State & { auto?: unknown; localSessions?: unknown; slept?: unknown; slots?: unknown; shells?: unknown; cleanup?: unknown; queue?: unknown; boardProject?: unknown; boardQuota?: unknown; lastPolledAt?: unknown; columns?: unknown; terminal?: unknown };
   const maxConcurrent = isCount(savedMax) ? Math.min(Math.floor(savedMax), MAX_CONCURRENT_MAX) : MAX_CONCURRENT_DEFAULT; // #727: the state is the cap's one source, so a bad value must not crash every boot
   const saved = Array.isArray(parsed.tasks) ? parsed.tasks.map(renamedStage).filter(isTask) : [];
@@ -215,7 +215,7 @@ function normalize(parsed: State, scope?: WorkspaceNames): State {
     rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, // overwritten by the config on boot (#805)
     signals: SIGNALS_DEFAULTS, // overwritten by the config on boot (#727)
     terminals: Array.isArray(terminals) ? terminals.filter((x) => isTerminal(x) && loadedIds.has(x.activityId)).map(loadTerminal) : [], // #283, #292, #378; on a loaded activity (#629)
-    benchmark: loadBenchmark(parsed.benchmark), // #458: through its own guard and boot rule; a file from before it has no experiment
+    benchmark: loadBenchmark(parsed.benchmark, hiveDir), // #458: through its own guard and boot rule; a file from before it has no experiment
     ...(cleanStop === true ? { cleanStop } : {}), ...(isCrash(crash) ? { crash: { at: crash.at, tasks: crash.tasks } } : {}), // #283
     ...(readings === undefined ? {} : { rateLimits: readings }), // #929: per agent; a wrong shape or a pre-#929 file is no key
   };
@@ -224,7 +224,7 @@ function normalize(parsed: State, scope?: WorkspaceNames): State {
 export async function loadState(hiveDir: string, scope?: WorkspaceNames): Promise<State> {
   try {
     const raw: unknown = JSON.parse(await readFile(join(hiveDir, STATE_FILE), 'utf8'));
-    if (isJsonObject(raw)) return normalize(raw as unknown as State, scope); // #727: the cap comes from the file, or its default
+    if (isJsonObject(raw)) return normalize(raw as unknown as State, hiveDir, scope); // #727: the cap comes from the file, or its default
   } catch {
     // missing or corrupt: start fresh
   }

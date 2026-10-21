@@ -10,13 +10,15 @@ import { arm, experiment, run } from './fixtures.js';
 
 const AT = '2026-10-21T11:00:00.000Z';
 const saved = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
-const ids = (raw: unknown): string[] => loadBenchmark(raw).experiments.map((e) => e.id);
+const ROOT = '/hive'; // the fixtures' fake Hive home
+const load = (raw: unknown) => loadBenchmark(raw, ROOT);
+const ids = (raw: unknown): string[] => load(raw).experiments.map((e) => e.id);
 // One experiment whose round 1 holds a run with `patch` over it, then a good run
 const withRun = (patch: Record<string, unknown>): unknown =>
   saved({ experiments: [{ ...experiment(), rounds: [{ n: 1, runs: [{ ...run('cccc1'), ...patch }, run('keep1')] }] }] });
 
 test('a state.json without benchmark, or with a malformed one, loads no experiment (#458)', () => {
-  for (const raw of [undefined, null, 'x', [], {}, { experiments: 'x' }]) assert.deepEqual(loadBenchmark(raw), { experiments: [] }, String(JSON.stringify(raw)));
+  for (const raw of [undefined, null, 'x', [], {}, { experiments: 'x' }]) assert.deepEqual(load(raw), { experiments: [] }, String(JSON.stringify(raw)));
 });
 
 test('a running experiment boots done: its queued, running and waiting runs interrupted with no endedAt, its ended runs as saved, stopAfterRound gone (#458)', () => {
@@ -24,7 +26,7 @@ test('a running experiment boots done: its queued, running and waiting runs inte
     run('aaaa1', { status: 'queued' }), run('aaaa2', { status: 'running' }), run('aaaa3', { status: 'waiting', endedAt: AT }),
     run('aaaa4', { status: 'done', endedAt: AT }), run('aaaa5', { status: 'timeout', endedAt: AT }),
   ];
-  const [loaded] = loadBenchmark(saved({ experiments: [experiment({ status: 'running', stopAfterRound: true, rounds: [{ n: 1, startedAt: AT, runs }] })] })).experiments;
+  const [loaded] = load(saved({ experiments: [experiment({ status: 'running', stopAfterRound: true, rounds: [{ n: 1, startedAt: AT, runs }] })] })).experiments;
   assert.equal(loaded.status, 'done');
   assert.equal('stopAfterRound' in loaded, false);
   assert.deepEqual(loaded.rounds[0].runs.map((r) => r.status), ['interrupted', 'interrupted', 'interrupted', 'done', 'timeout']);
@@ -33,7 +35,7 @@ test('a running experiment boots done: its queued, running and waiting runs inte
 
 test('a sleeping experiment loads as saved: its sleeping runs, its sleeps and its stopAfterRound (#458)', () => {
   const sleeping = experiment({ status: 'sleeping', stopAfterRound: true, rounds: [{ n: 1, startedAt: AT, runs: [run('bbbb1', { status: 'sleeping' })] }], sleeps: [{ round: 1, at: AT, reason: 'night' }] });
-  assert.deepEqual(loadBenchmark(saved({ experiments: [sleeping] })).experiments, [sleeping]);
+  assert.deepEqual(load(saved({ experiments: [sleeping] })).experiments, [sleeping]);
 });
 
 test('an experiment is dropped whole on a bad id, status, text field, seed commit, config object or list; duplicate ids keep the first (#458)', () => {
@@ -44,36 +46,41 @@ test('an experiment is dropped whole on a bad id, status, text field, seed commi
     { createdBy: 'user' }, { plugin: null }, { arms: {} }, { rounds: 'x' }, { sleeps: null },
   ];
   for (const patch of bad) assert.deepEqual(ids(saved({ experiments: [{ ...experiment({ id: 'drop' }), ...patch }, good] })), ['keep'], JSON.stringify(patch));
-  assert.deepEqual(loadBenchmark(saved({ experiments: [good, { ...good, name: 'second' }] })).experiments.map((e) => e.name), ['Skills']);
+  assert.deepEqual(load(saved({ experiments: [good, { ...good, name: 'second' }] })).experiments.map((e) => e.name), ['Skills']);
 });
 
 test('a run is dropped alone on a bad token, status, branch, home or shape; its round and experiment stay (#458)', () => {
   const bad: Record<string, unknown>[] = [
     { token: 'ab1' }, { token: 'UPPER1' }, { status: 'paused' }, { branch: '-x' }, { branch: 'a..b' },
-    { home: 'benchmark/exp-1/runs/cccc1' }, { home: '/hive/../benchmark/exp-1/runs/cccc1' }, { home: '/hive/benchmark/other/runs/cccc1' }, { home: '/hive/benchmark/exp-1/runs/dddd1' },
+    { home: 'benchmark/exp-1/runs/cccc1' }, { home: '/hive/../benchmark/exp-1/runs/cccc1' }, { home: '/hive/benchmark/other/runs/cccc1' }, { home: '/hive/benchmark/exp-1/runs/dddd1' }, { home: '/other/benchmark/exp-1/runs/cccc1' }, { home: '/hive/benchmark/exp-1/runs/cccc1/' }, { branch: 'main' }, { branch: 'neutral/dddd1' },
     { armId: 1 }, { sleptMs: 'x' }, { total: null }, { interventions: null },
   ];
   for (const patch of bad) {
-    const [loaded] = loadBenchmark(withRun(patch)).experiments;
+    const [loaded] = load(withRun(patch)).experiments;
     assert.deepEqual(loaded.rounds.map((r) => r.runs.map((x) => x.token)), [['keep1']], JSON.stringify(patch));
   }
 });
 
 test('a round whose n is not a positive integer, or with no runs list, is dropped with its runs; an arm without a string id or letter is dropped (#458)', () => {
   const rounds = [{ n: 0, runs: [run('eeee1')] }, { n: 1.5, runs: [run('eeee2')] }, { n: '2', runs: [] }, { n: 3, runs: 'x' }, { n: 4, runs: [run('eeee4')] }];
-  const [loaded] = loadBenchmark(saved({ experiments: [{ ...experiment(), rounds }] })).experiments;
+  const [loaded] = load(saved({ experiments: [{ ...experiment(), rounds }] })).experiments;
   assert.deepEqual(loaded.rounds.map((r) => [r.n, r.runs.map((x) => x.token)]), [[4, ['eeee4']]]);
-  const arms = [arm('a1', 'A'), { id: 2, letter: 'B', name: 'x', overrides: {} }, { id: 'a3', name: 'x', overrides: {} }];
-  assert.deepEqual(loadBenchmark(saved({ experiments: [{ ...experiment(), arms }] })).experiments[0].arms.map((a) => a.id), ['a1']);
+  const arms = [arm('a1', 'A'), { id: 2, letter: 'B', name: 'x', overrides: {} }, { id: 'a3', name: 'x', overrides: {} }, arm('__proto__', 'C'), arm('a1', 'D')];
+  assert.deepEqual(load(saved({ experiments: [{ ...experiment(), arms }] })).experiments[0].arms.map((a) => a.id), ['a1']);
 });
 
 test('loadState reads state.benchmark through the guard, and a file without it as no experiment (#458)', async (t) => {
   const dir = await tempDir(t, 'bench-');
-  const running = experiment({ status: 'running', rounds: [{ n: 1, runs: [run('ffff1')] }] });
+  const running = experiment({ status: 'running', rounds: [{ n: 1, runs: [run('ffff1', { home: join(dir, 'benchmark', 'exp-1', 'runs', 'ffff1') })] }] });
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), benchmark: { experiments: [running] } }));
   const loaded = await loadState(dir);
   assert.deepEqual(loaded.benchmark.experiments.map((e) => [e.status, e.rounds[0].runs[0].status]), [['done', 'interrupted']]);
   const { benchmark: _gone, ...before } = initialState(0);
   await writeFile(join(dir, 'state.json'), JSON.stringify(before));
   assert.deepEqual((await loadState(dir)).benchmark, { experiments: [] });
+});
+
+test('a token saved twice keeps its first run only, so two runs never share a home and a branch (#458)', () => {
+  const [loaded] = load(saved({ experiments: [{ ...experiment(), rounds: [{ n: 1, runs: [run('gggg1')] }, { n: 2, runs: [run('gggg1', { round: 2 }), run('gggg2', { round: 2 })] }] }] })).experiments;
+  assert.deepEqual(loaded.rounds.map((r) => r.runs.map((x) => x.token)), [['gggg1'], ['gggg2']]);
 });

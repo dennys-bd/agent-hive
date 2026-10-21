@@ -372,7 +372,7 @@ export function describeChanges(prev: State, next: State): string[] {
 function describeBenchmark(event: BenchmarkEvent): string {
   const id = 'experiment' in event ? event.experiment.id : event.id;
   const token = tokenOf(event);
-  return `${event.type} experiment=${id}${token === undefined ? '' : ` token=${token}`}`;
+  return `${event.type} experiment=${id}${token === undefined ? '' : ` run=${token}`}`;
 }
 
 function tokenOf(event: BenchmarkEvent): string | undefined {

@@ -16,7 +16,7 @@ export const ISOLATION: BenchIsolation = {
 
 export const arm = (id: string, letter: string, overrides: Partial<ArmSetup> = {}): Arm => ({ id, letter, name: `arm ${letter}`, overrides });
 
-// The home under a fake root: the guard only needs it absolute and ending in benchmark/<id>/runs/<token>
+// The home under the fake Hive home /hive: the guard wants exactly <hiveDir>/benchmark/<id>/runs/<token>
 export const run = (token: string, patch: Partial<BenchRun> = {}): BenchRun => ({
   token, armId: 'a1', round: 1, status: 'running', home: `/hive/benchmark/exp-1/runs/${token}`, branch: `neutral/${token}`,
   startedAt: '2026-10-21T10:00:00.000Z', sleptMs: 0, delivered: 0, total: 1, interventions: [], ...patch,
