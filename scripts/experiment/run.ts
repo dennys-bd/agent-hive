@@ -13,7 +13,7 @@ import { execRun, type Run, serialGit } from '../../src/benchmark/exec.js';
 import { readJson, type Store, serialStore, writeJson } from './files.js';
 import { dropRunWorktrees, experimentBaseline, nestedBaseline, repoRoot, resolveBaseline, sandboxPaths, unsignedCommits } from '../../src/benchmark/git.js';
 import { docsClone, pruneDocs } from './docs-git.js';
-import { installSandbox, type RepoPaths, sandboxSettings } from './sandbox.js';
+import { installSandbox, type RepoPaths, SANDBOX_DOMAINS, sandboxSettings } from '../../src/benchmark/sandbox.js';
 import { endAttempt, experimentDir, isMeasured, latest, newExperimentId, newManifest, newToken, openAttempts, parseManifest, resumeManifest, runHome, runPrefix, startAttempt, stateRoot } from './plan.js';
 import { writeReport } from './report.js';
 import { prepareState } from './run-home.js';
@@ -70,7 +70,7 @@ async function begin(night: Night, ref: RunRef, alone: boolean): Promise<string>
 let sandboxWrites = Promise.resolve();
 function allowPlugins(night: Night): Promise<void> {
   const plugins = openAttempts(night.store.get()).map((a) => join(runHome(night.state, a.token), PLUGINS_DIR));
-  sandboxWrites = sandboxWrites.then(() => installSandbox(night.root, night.repos[0].gitDir, sandboxSettings({ repos: night.repos, state: night.state, plugins })));
+  sandboxWrites = sandboxWrites.then(() => installSandbox(night.root, night.repos[0].gitDir, sandboxSettings({ repos: night.repos, denied: [night.state], allowRead: plugins, allowedDomains: SANDBOX_DOMAINS })));
   return sandboxWrites;
 }
 
@@ -106,7 +106,7 @@ async function main(): Promise<void> {
   // Every worker's Bash runs in Claude Code's sandbox: no prompt to stall a night on, no write outside the two clones (#105, #79)
   const { docs, paths: docsPaths } = await docsClone(git, root);
   const repos = [await sandboxPaths(git), docsPaths];
-  await installSandbox(root, repos[0].gitDir, sandboxSettings({ repos, state }));
+  await installSandbox(root, repos[0].gitDir, sandboxSettings({ repos, denied: [state], allowedDomains: SANDBOX_DOMAINS }));
   await unsignedCommits(git);
   await unsignedCommits(docs);
   const dir = experimentDir(state, id);

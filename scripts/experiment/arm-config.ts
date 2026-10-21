@@ -1,5 +1,5 @@
 import { MCP_DEFAULTS, MEMORY_CAP_DEFAULT, SIGNALS_DEFAULTS, WORKSPACE_PRESET_COLORS } from '../../src/types.js';
-import { SANDBOX_FILE } from './sandbox.js';
+import { SANDBOX_FILE } from '../../src/benchmark/sandbox.js';
 import type { SeedTask, StageRole, StagesSeed } from './seed.js';
 import type { Arm } from './types.js';
 import type { WatchTask } from './watcher.js';
