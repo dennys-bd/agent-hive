@@ -1347,6 +1347,12 @@ const en = {
   'stageCi.waiting': 'waiting for CI · {n}/{total}', // #834: a wait for CI, on the task and in its status box: checks done of those counted
   'stageCi.waitingPr': 'waiting for PR', // #834: the task has no open PR yet
   'stageCi.failed': 'CI failed: {list}', // #834: the failed checks, or the timeout
+  'stageEvaluate.reviewing.one': 'reviewing · {n} reviewer', // #877: an evaluation's phase, on the task and in its running block
+  'stageEvaluate.reviewing.other': 'reviewing · {n} reviewers', // #877
+  'stageEvaluate.judging': 'judging', // #877
+  'stageEvaluate.rejected': 'evaluation rejected: {list}', // #877: the dimensions under the threshold
+  'stageEvaluate.failed': 'evaluation failed: {reason}', // #877: a broken run, no verdict
+  'settings.stages.evaluate.judge': 'judge', // #877: the judge's line in the running block
   'running.ci': 'waiting for CI', // #914: the running block's header on a wait for CI
   'running.commands': 'running checks', // #914: the running block's header on a commands stage
   'running.stage': 'stage {name}', // #914: the header's right side
@@ -3604,6 +3610,12 @@ const pt: Record<MessageKey, string> = {
   'stageCi.waiting': 'aguardando CI · {n}/{total}',
   'stageCi.waitingPr': 'aguardando PR',
   'stageCi.failed': 'CI falhou: {list}',
+  'stageEvaluate.reviewing.one': 'avaliando · {n} revisor',
+  'stageEvaluate.reviewing.other': 'avaliando · {n} revisores',
+  'stageEvaluate.judging': 'julgando',
+  'stageEvaluate.rejected': 'avaliação reprovou: {list}',
+  'stageEvaluate.failed': 'avaliação falhou: {reason}',
+  'settings.stages.evaluate.judge': 'juiz',
   'running.ci': 'aguardando CI',
   'running.commands': 'executando checks',
   'running.stage': 'etapa {name}',
@@ -4552,7 +4564,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff';
+export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

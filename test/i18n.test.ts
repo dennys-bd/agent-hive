@@ -565,3 +565,11 @@ test("the based-on card's copy reads as the handoff writes it, in both languages
     ['based on x ↗', 'open on github ↗', 'link', 'credit only · the hive does not track changes'],
   );
 });
+
+test('an evaluation\'s card copy reads as the spec writes it, in both languages, and never says rodar (#877)', () => {
+  const keys = ['stageEvaluate.reviewing.other', 'stageEvaluate.judging', 'stageEvaluate.rejected', 'stageEvaluate.failed'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['avaliando · {n} revisores', 'julgando', 'avaliação reprovou: {list}', 'avaliação falhou: {reason}']);
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['reviewing · {n} reviewers', 'judging', 'evaluation rejected: {list}', 'evaluation failed: {reason}']);
+  const ours = Object.entries(MESSAGES.pt).filter(([key]) => key.startsWith('stageEvaluate.'));
+  assert.equal(ours.some(([, text]) => /\brod(ar|ando|am)\b/.test(text)), false);
+});

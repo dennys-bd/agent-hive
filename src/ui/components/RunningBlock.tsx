@@ -8,11 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useOpenStageOutput } from '@/hooks/use-console';
 import { useTick } from '@/hooks/use-tick';
-import { t } from '@/i18n';
-import { ciLines, commandLines, lineDuration, type RunningLine, type RunningMark, silence } from '@/lib/running-lines';
+import { t, tPlural } from '@/i18n';
+import { ciLines, commandLines, evaluateLines, lineDuration, type RunningLine, type RunningMark, silence } from '@/lib/running-lines';
+import { stageStopPath } from '@/lib/stage-stop';
 import { viaTries } from '@/lib/tries';
 
-// The details panel's block while a stage runs with no agent (#914): a wait for CI or a commands stage, one line per check or command with its
+// The details panel's block while a stage runs with no agent (#914): a wait for CI, a commands stage or an evaluation (#877), one line per check, command or reviewer with its
 // time, the loop the task came through, a silent command's line, ver saída and parar. DetailPanel shows it in place of the status box.
 
 const MUTED = 'text-muted-foreground';
@@ -44,18 +45,26 @@ function shownOf(live: Activity | undefined, state: State, now: number): Shown |
     const silent = minutes === undefined ? {} : { silent: t('running.silent', { n: minutes, name: names[run.at] ?? '' }) };
     return { title: t('running.commands'), stage: run.stage, lines: commandLines(run, names), ...silent };
   }
+  const judged = live?.evaluate;
+  if (judged !== undefined) { // #877: the reviewers then the judge; the card's own phase line is the title
+    const stage = stageOf(state.stages, judged.stage);
+    const n = stage?.reviewers?.length ?? 0;
+    const title = judged.phase === 'judging' ? t('stageEvaluate.judging') : tPlural('stageEvaluate.reviewing', n, { n });
+    return { title, stage: judged.stage, lines: evaluateLines(judged, stage, t('settings.stages.evaluate.judge')) };
+  }
   const ci = live?.ci;
   return ci === undefined ? undefined : { title: t('running.ci'), stage: ci.stage, lines: ciLines(ci) };
 }
 
-// ver saída: a commands stage's execution in its console tab; a wait's running check on GitHub, the one that started first (the first spinner in
+// ver saída: a commands stage's execution in its console tab; an evaluation has none; a wait's running check on GitHub, the one that started first (the first spinner in
 // the read's order), hidden with none running or no link. parar: the stage's own stop, the pty's or the wait's
 function RunningActions({ task, live, lines }: { task: Task; live: Activity; lines: readonly RunningLine[] }) {
   const open = useOpenStageOutput();
   const run = live.commands;
   const checkUrl = run === undefined ? lines.find((line) => line.mark === 'running')?.url : undefined;
   const stop = (): void => {
-    void act(run === undefined ? `/activities/${encodeURIComponent(live.id)}/ci/stop` : `/ptys/${encodeURIComponent(run.ptyId)}/stop`);
+    const path = stageStopPath(live);
+    if (path !== undefined) void act(path);
   };
   return (
     <div className="flex gap-1.5">
@@ -71,7 +80,7 @@ function RunningActions({ task, live, lines }: { task: Task; live: Activity; lin
 }
 
 /** The running block (#914): the header, a line per check or command, volta n/max, the silence line and the actions, in the working tone; a
- * silent command does not change the tone. Nothing while the task's live activity holds neither `ci` nor `commands`. */
+ * silent command does not change the tone. Nothing while the task's live activity holds none of `ci`, `commands` and `evaluate`. */
 export function RunningBlock({ task, state }: { task: Task; state: State }) {
   const live = activityOf(state, task.item.itemId);
   const now = Date.now();

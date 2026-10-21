@@ -13,6 +13,7 @@ import { SleepNotice } from '@/components/SleepNotice';
 import { type OpenRun, useOpenRun } from '@/components/terminal-tabs';
 import type { Activity } from '@/lib/activities';
 import { isTabOpen, readCenterLayouts } from '@/lib/center-layout';
+import { stageStopPath } from '@/lib/stage-stop';
 
 /** The switch each cause of a sleep shows its notice under (#672). */
 export const SLEEP_NOTICE_KEY: Record<SleepCause, SleepNoticeKey> = { manual: 'sleepNotice', auto: 'sleepAutoNotice', idle: 'sleepIdleNotice', all: 'sleepAllNotice' };
@@ -76,15 +77,18 @@ export function useSleptNotices(activities: Activity[], openRun?: OpenRun): void
   }, [activities, openRun, settings]);
 }
 
-/** A wait for CI on the activity (#834): an automatic run of a stage with no pty, which the Stop and the sleeps end through its own route. */
-export const waitsForCi = (activity: Activity | undefined): boolean => activity?.kind === 'task' && activity.activity.ci !== undefined;
-const stopCi = (activity: Activity): void => void act<{ ok: true }>(`/activities/${encodeURIComponent(activity.activity.id)}/ci/stop`);
+/** A wait for CI or an evaluation on the activity (#834, #877): an automatic run of a stage with no pty, which the Stop and the sleeps end through its own route. */
+export const stopsByRoute = (activity: Activity | undefined): boolean => activity?.kind === 'task' && (activity.activity.ci !== undefined || activity.activity.evaluate !== undefined);
+const stopByRoute = (activity: Activity): void => {
+  const path = stageStopPath(activity.activity);
+  if (path !== undefined) void act<{ ok: true }>(path);
+};
 
-/** A manual sleep, a sleep all (#672) and the Stop of a wait for CI (#834). */
-export interface Sleep { one(run: LiveRun): void; all(runs: LiveRun[]): void; ci(): void }
+/** A manual sleep, a sleep all (#672) and the Stop of a wait for CI or an evaluation (#834, #877). */
+export interface Sleep { one(run: LiveRun): void; all(runs: LiveRun[]): void; action(): void }
 
-/** One session through its stop route, cause manual; a sleep all through POST /ptys/sleep, cause all, and the activity's wait for CI with it
- * (#834). Each shows its notice once the server took it, a sleep all one notice for every session; a wait shows none, no session slept. No
+/** One session through its stop route, cause manual; a sleep all through POST /ptys/sleep, cause all, and the activity's wait for CI or evaluation with it
+ * (#834, #877). Each shows its notice once the server took it, a sleep all one notice for every session; a wait or an evaluation shows none, no session slept. No
  * activity: nothing to sleep. */
 export function useSleep(activity: Activity | undefined): Sleep {
   const settings = useCloseTab();
@@ -97,12 +101,12 @@ export function useSleep(activity: Activity | undefined): Sleep {
     },
     all: (runs) => {
       if (activity === undefined) return;
-      if (waitsForCi(activity)) stopCi(activity); // #834: a sleep all ends the wait too
+      if (stopsByRoute(activity)) stopByRoute(activity); // #834, #877: a sleep all ends the wait or the evaluation too
       if (runs.length === 0) return;
       const sessions = runs.filter((run) => run.kind !== 'terminal'); // #696: the notice speaks of sessions; a terminal's line says it sleeps
       const input = sleepInput(activity, sessions, 'all', openRun);
       void act<{ ok: true }>('/ptys/sleep', { ptyIds: runs.map((run) => run.ptyId) }).then((answer) => { if (answer !== undefined && sessions.length > 0) showSleepNotice(input, settings); });
     },
-    ci: () => { if (activity !== undefined && waitsForCi(activity)) stopCi(activity); },
+    action: () => { if (activity !== undefined && stopsByRoute(activity)) stopByRoute(activity); },
   };
 }

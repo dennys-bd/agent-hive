@@ -6,7 +6,7 @@ import { sleepTerminal } from '@/components/close-tab-notice';
 import { KeyHint } from '@/components/KeyHint';
 import { ranAgent } from '../../agents';
 import { agentName } from '@/components/NewRunButton';
-import { useSleep, waitsForCi } from '@/components/sleep-notice';
+import { stopsByRoute, useSleep } from '@/components/sleep-notice';
 import { asksBeforeSleepAll, SleepAllConfirm } from '@/components/SleepMenu';
 import { Button } from '@/components/ui/button';
 import {
@@ -61,7 +61,7 @@ export function SleepButton({ activity, focusedRun }: SleepButtonProps) {
   const agents = all.filter((run) => run.kind !== 'terminal');
   const focused = all.find((run) => run.ptyId === focusedRun);
   const isTerminal = focused?.kind === 'terminal';
-  const isWaiting = waitsForCi(activity); // #834: a wait for CI, a stage run with no pty
+  const isWaiting = stopsByRoute(activity); // #834, #877: a wait for CI or an evaluation, a stage run with no pty
   const sleepAll = (): void => {
     if (asksBeforeSleepAll(all)) setPending(all);
     else if (all.length === 1 || isWaiting) sleep.all(all);
@@ -74,7 +74,7 @@ export function SleepButton({ activity, focusedRun }: SleepButtonProps) {
   useEffect(() => onShortcutKey<'all' | 'one'>([['all', 'sleepAll'], ['one', 'sleepSession']], (which) => keys.current[which]()), []);
   const onMain = (): void => {
     if (focused === undefined) {
-      if (isWaiting) sleep.ci(); // #834: no run in focus: the wait is what runs
+      if (isWaiting) sleep.action(); // #834, #877: no run in focus: the wait or the evaluation is what runs
       return;
     }
     if (isTerminal) sleepTerminal(focused.ptyId, loss.confirm);

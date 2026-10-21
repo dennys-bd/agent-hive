@@ -1,6 +1,6 @@
 // .tsx without JSX: vitest.config.ts only picks test/ui/**/*.test.tsx
 import { expect, test } from 'vitest';
-import { ciLines, commandLines, formatDuration, lineDuration, SILENCE_MS, silence } from '@/lib/running-lines';
+import { ciLines, commandLines, evaluateLines, formatDuration, lineDuration, SILENCE_MS, silence } from '@/lib/running-lines';
 import type { StageCommands } from '../../src/types';
 
 const T0 = '2026-10-10T10:00:00.000Z';
@@ -54,4 +54,13 @@ test('lineDuration: a finished line\'s span, a running one\'s so far, none witho
   expect(lineDuration({ name: 'test', mark: 'running', startedAt: T1 }, now)).toBe('1m 55s');
   expect(lineDuration({ name: 'docs', mark: 'done', endedAt: T1 }, now)).toBeUndefined();
   expect(lineDuration({ name: 'e2e', mark: 'queued' }, now)).toBeUndefined();
+});
+
+test('an evaluation lists each reviewer, running while it reviews and done once the judge runs, then the judge, queued then running (#877)', () => {
+  const stage = { reviewers: [{ agent: 'claude' as const, focus: 'security' }, { agent: 'codex' as const, focus: 'spec' }], judge: { agent: 'claude' as const } };
+  const run = { stage: 'eval', runId: 'r', workerId: 'w', startedAt: '2026-10-21T10:00:00.000Z', phase: 'reviewing' as const };
+  expect(evaluateLines(run, stage, 'juiz').map((l) => [l.name, l.mark, l.startedAt])).toEqual([
+    ['claude · security', 'running', run.startedAt], ['codex · spec', 'running', run.startedAt], ['juiz · claude', 'queued', undefined],
+  ]);
+  expect(evaluateLines({ ...run, phase: 'judging' }, stage, 'juiz').map((l) => l.mark)).toEqual(['done', 'done', 'running']);
 });

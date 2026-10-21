@@ -101,3 +101,15 @@ test('a running line\'s clock moves every second (#914)', () => {
   act(() => { vi.advanceTimersByTime(2000); });
   expect(screen.getByText('3m 12s')).toBeInTheDocument();
 });
+
+test('an evaluation shows its reviewers then the judge under avaliando · 2 revisores, and parar posts its stop route (#877)', async () => {
+  const user = userEvent.setup();
+  const stage: Stage = { name: 'eval', from: { board: ['Eval'] }, action: 'evaluate', reviewers: [{ agent: 'claude', focus: 'security' }, { agent: 'codex', focus: 'spec' }], judge: { agent: 'claude' }, threshold: 7, rubric: 'Ok?' };
+  const run = { stage: 'eval', runId: 'R', workerId: 'w1', startedAt: '2026-10-10T10:00:00.000Z', phase: 'reviewing' as const };
+  const s = { ...at('eval', { evaluate: run }), stages: [stage] };
+  render(block(s));
+  const region = screen.getByRole('region', { name: 'avaliando · 2 revisores' });
+  expect(texts(region)).toEqual(['◌claude · security5m 10s', '◌codex · spec5m 10s', 'juiz · claude']);
+  await user.click(screen.getByRole('button', { name: 'parar' }));
+  expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/evaluate/stop', expect.objectContaining({ method: 'POST' }));
+});

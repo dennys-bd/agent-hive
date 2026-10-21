@@ -14,7 +14,7 @@ import { TaskMenu } from '@/components/TaskMenu';
 import { Confirm } from '@/components/Confirm';
 import { ciProgress, ciTone } from '@/components/CiProgress';
 import { SyncLine } from '@/components/ForkSyncNotice';
-import { commandsProgress, isStartFailure, StageOutputButton, taskError } from '@/components/CommandsProgress';
+import { commandsProgress, evaluateProgress, isStartFailure, StageOutputButton, taskError } from '@/components/CommandsProgress';
 import { TreeProgress } from '@/components/TreeProgress';
 import { TreeHoverContext } from '@/components/tree-hover';
 import { StartDialog } from '@/components/StartDialog';
@@ -130,7 +130,7 @@ function taskStatus(task: Task, state: State): TaskStatus {
   if (current !== 'empty' && current !== 'new' && !byAction) return { tone: current, text: current === 'backoff' ? backoffLabel(backoffUntil(task, state), Date.now()) : statusText(current) }; // #805: with the time left
   const setup = live?.setup;
   if (setup) return { text: setup.step === undefined ? t('event.starting') : t('task.setupStep', { detail: setup.step }) };
-  const progress = commandsProgress(task, state); // #755: a commands stage's command, after the setup's own line
+  const progress = commandsProgress(task, state) ?? evaluateProgress(task, state); // #755, #877: a held stage's line, after the setup's own
   if (progress !== undefined) return { text: progress };
   const waiting = ciProgress(task, state); // #834: a wait for CI in the working colour: the task is at work, with no worker
   if (waiting !== undefined) {
