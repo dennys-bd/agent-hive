@@ -1,7 +1,8 @@
 // The Hive's one headless agent run (#330): a prompt in on stdin, the agent's final answer out. It runs in a fresh temp folder of its own
 // (mkdtemp: 0700), or, given cwd, in that folder with the temp folder holding only the schema and Codex's answer (#877); with readOnlyTools
 // the agent reads but nothing is written to a worktree. Ask the agent (#330) and the template reviewer (#328) pass no cwd, so no repository's
-// CLAUDE.md / AGENTS.md reaches them; an evaluation (#877) passes the task's worktree. Each agent's flags and answer are its runner's.
+// CLAUDE.md / AGENTS.md reaches them; an evaluation (#877) passes the task's worktree, where Claude Code runs --restricted (the worktree's own
+// settings and hooks never load, nor its CLAUDE.md, which the prompt names instead). Each agent's flags and answer are its runner's.
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

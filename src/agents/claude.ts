@@ -35,9 +35,13 @@ const copyWords = (from: string, id: string, name: string | undefined): string[]
 const READ_ONLY_TOOLS = 'Read,Grep,Glob'; // #877: an evaluation reads the worktree; no Bash, Edit or Write, so nothing in it changes
 
 // #330: the prompt on stdin, the answer as JSON under the schema. --tools "" leaves no tool, --strict-mcp-config with no --mcp-config no MCP
-// server, and nothing of the run is kept or offered as a slash command; #877: readOnlyTools gives the read tools alone
+// server, and nothing of the run is kept or offered as a slash command. #877: readOnlyTools gives the read tools alone, and --restricted,
+// since the run starts in a worktree whose own .claude/settings.json would otherwise load: its hooks would run, its env (an
+// ANTHROPIC_BASE_URL) apply, so the work under evaluation would steer its judge. --restricted skips them and keeps the reads to the cwd; it
+// also loads no CLAUDE.md of the worktree's, which the evaluation's prompts point the agent at instead (--setting-sources user does the same)
+const toolWords = (run: HeadlessRun): string[] => (run.readOnlyTools ? ['--tools', READ_ONLY_TOOLS, '--restricted'] : ['--tools', '']);
 const headless = (run: HeadlessRun): string[] => [
-  '-p', '--output-format', 'json', '--json-schema', run.schema, '--tools', run.readOnlyTools ? READ_ONLY_TOOLS : '', '--strict-mcp-config', '--no-session-persistence',
+  '-p', '--output-format', 'json', '--json-schema', run.schema, ...toolWords(run), '--strict-mcp-config', '--no-session-persistence',
   '--disable-slash-commands', ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]),
 ];
 
