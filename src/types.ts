@@ -1548,6 +1548,14 @@ export interface WorktreeRow {
   orphan?: 'noTask' | 'deleteActivityFailed' | 'kept'; // kept (#861): a task activity that outlived its tasks, kept while its worktree exists
 }
 
+/** Why a path cannot be a workspace's nested repo (#653): its shape, then git's answers, in order. root: the top level, for notTopLevel. */
+export type NestedCause = 'badPath' | 'notRepo' | 'notTopLevel' | 'submodule' | 'tracked' | 'notIgnored';
+export interface NestedProblem { cause: NestedCause; root?: string }
+/** One listed nested repo as GET /settings/nested-repos reads it (#653): its GitHub repository and resolved base, or its problem. */
+export interface NestedRepoRead { path: string; repository?: string; base?: string; problem?: NestedProblem }
+/** GET /settings/nested-repos (#653): the listed paths, and the ignored repositories the Hive found that are not listed. */
+export interface NestedReposAnswer { repos: NestedRepoRead[]; suggested: { path: string; repository?: string }[] }
+
 /** How a copy's first run starts (#587): the source session resumed as a new one (--fork-session) and the notice as its first prompt when asked. */
 export interface SessionCopy { from: string; name?: string; notice?: string } // name: the dialog's, the fork's Claude Code title
 

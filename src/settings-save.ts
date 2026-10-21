@@ -4,7 +4,8 @@ import { migrateTransitions } from './config-migrate.js';
 import { DEFAULT_CONFIG, taskWorkspace, loadConfigIfPresent, parseConfig } from './config.js';
 import type { Refusal } from './server-tasks.js';
 import { parseSetup } from './setup-script.js';
-import type { Config, Language, Workspace, SettingsBody, SourceConfig, Stage, State, UsageRule } from './types.js';
+import { nestedProblemText, nestedRepoProblem } from './nested-check.js';
+import type { CombConfig, Config, Language, Workspace, SettingsBody, SourceConfig, Stage, State, UsageRule } from './types.js';
 import { workspacePathProblem } from './worktree.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -117,6 +118,18 @@ export async function workspacesRefusal(next: Config, live?: { config: Config; s
   const kept = (p: Workspace): boolean => next.comb.workspaces.some((q) => q.name === p.name && q.path === p.path);
   const lost = live.config.comb.workspaces.find((p) => busy.has(p.name) && !kept(p));
   return lost ? { status: HTTP_CONFLICT, message: `workspace ${lost.name} has a running worker` } : undefined;
+}
+
+/** Why a save cannot take a workspace's nested repos (#653): the first path git says cannot be one, named after its workspace, with the cause
+ * and its fix (400). The parser already checked each path's shape, and workspacesRefusal each folder. */
+export async function nestedRefusal(next: { comb: Pick<CombConfig, 'workspaces'> }): Promise<Refusal | undefined> {
+  for (const workspace of next.comb.workspaces) {
+    for (const path of workspace.nestedRepos) {
+      const problem = await nestedRepoProblem(workspace.path, path);
+      if (problem) return { status: HTTP_BAD_REQUEST, message: `${workspace.name}: nested repo ${path}: ${nestedProblemText(path, problem)}` };
+    }
+  }
+  return undefined;
 }
 
 // Each script with the prefix its 400 carries: the setup's text is unchanged since #299, the teardown's names itself (#654)

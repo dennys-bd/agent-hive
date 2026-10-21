@@ -60,6 +60,7 @@ import { registerLocalReviewRoutes } from './server-review-local.js';
 import { registerProjectRoutes } from './server-project.js';
 import { canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
 import { registerForkRoutes } from './server-fork.js';
+import { registerNestedRoute } from './server-nested.js';
 import { registerRepoRoutes } from './server-repos.js';
 import { accessFor, type ReadAccess } from './read-model/access.js';
 import type { ReadModel, SyncKind } from './read-model/db.js';
@@ -92,7 +93,7 @@ import { registerTemplateReviewRoutes } from './server-template-review.js';
 import { registerPluginRoutes } from './server-plugins.js';
 import { registerViewStateRoutes } from './server-view-state.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
-import { configFrom, hiveSourceRefusal, movedStages, workspacesRefusal, renamesRefusal, setupRefusal } from './settings-save.js';
+import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal } from './settings-save.js';
 import { killStray, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
 import { createPtyPool } from './ptys.js';
@@ -1093,7 +1094,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     const current = live && { config: live.runtime.config, state: live.state };
-    const refusal = (await workspacesRefusal(config, current)) ?? setupRefusal(config) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()); // all before any write (#278, #299)
+    const refusal = (await workspacesRefusal(config, current)) ?? (await nestedRefusal(config)) ?? setupRefusal(config) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()); // all before any write (#278, #299, #653)
     if (refusal) {
       res.status(refusal.status).json({ error: refusal.message });
       return;
@@ -1254,6 +1255,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerPrRoutes(app, prDeps);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, exec }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
+  registerNestedRoute(app, { config: () => live?.runtime.config }); // GET /settings/nested-repos (#653): also in setup mode, as /settings/remotes
 
   // The usage group's ↻ (#223): `{ agent }` reads that agent only, `{}` every agent with plan limits (↻ todos); either replaces the held
   // reading, e.g. after a plan upgrade lowered the percent. The page only offers ↻ on agents with plan limits: anything else is a 400
