@@ -13,7 +13,7 @@ export const isLaunchModel = (value: unknown): value is string => typeof value =
 export const isLaunchArgs = (value: unknown): value is string[] =>
   Array.isArray(value) && value.length <= ARGS_MAX && value.every((arg) => typeof arg === 'string' && arg.length >= 1 && arg.length <= ARG_MAX && !arg.includes('\u0000'));
 
-const isSpecializedAgent = (value: unknown): value is string => typeof value === 'string' && SPECIALIZED_AGENT.test(value);
+export const isSpecializedAgent = (value: unknown): value is string => typeof value === 'string' && SPECIALIZED_AGENT.test(value);
 
 /** A pick as a session or a worker carries it: absent stays absent, so a session with none has no key. */
 export const withLaunch = (launch: LaunchPick | undefined): Pick<Session, 'launch'> => (launch === undefined ? {} : { launch });
