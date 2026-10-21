@@ -4,6 +4,7 @@ import { AgentField, ModelMenu, SkillMenu, SpecializedAgentMenu } from '@/compon
 import { MultiSelect } from '@/components/settings/MultiSelect';
 import { StageCi } from '@/components/settings/StageCi';
 import { StageCommands } from '@/components/settings/StageCommands';
+import { StageEvaluate } from '@/components/settings/StageEvaluate';
 import { StageVerdicts } from '@/components/settings/StageVerdicts';
 import type { StageSource } from '@/components/settings/StageEditor';
 import { Input } from '@/components/ui/input';
@@ -46,10 +47,10 @@ export function StageEnter({ id, stage, sources, onUpdate }: BlockProps & { sour
       <Field id={`${id}-after`} anchor={settingAnchor('settings.stages.after', stage.id)} label={t('settings.stages.after')} hint={t('settings.stages.after.hint')}>
         <Input id={`${id}-after`} placeholder={t('settings.stages.after.placeholder')} defaultValue={stage.after} onChange={(e) => onUpdate({ after: e.target.value })} />
       </Field>
-      {/* #475, #755, #710: a delete-activity or a commands stage runs no worker, so it has no cap to set; a skill stage holds one */}
+      {/* #475, #755, #710: a delete-activity or a commands stage runs no worker, so it has no cap to set; a skill stage and an evaluate stage (#877) hold one */}
       <Field id={`${id}-maxWorkers`} anchor={settingAnchor('settings.stages.maxWorkers', stage.id)} label={t('settings.stages.maxWorkers')} hint={t('settings.stages.maxWorkers.hint')}>
         <Input
-          id={`${id}-maxWorkers`} type="number" min={0} step={1} placeholder={t('settings.stages.maxWorkers.none')} disabled={stage.action !== '' && stage.action !== 'skill'}
+          id={`${id}-maxWorkers`} type="number" min={0} step={1} placeholder={t('settings.stages.maxWorkers.none')} disabled={stage.action !== '' && stage.action !== 'skill' && stage.action !== 'evaluate'}
           defaultValue={stage.maxWorkers} onChange={(e) => onUpdate({ maxWorkers: e.target.value })}
         />
       </Field>
@@ -64,7 +65,7 @@ const ACTION_LABEL: Record<ActionValue, MessageKey> = {
   skill: 'settings.stages.action.skill', evaluate: 'settings.stages.action.evaluate',
 };
 const ACTION_ICON: Record<ActionValue, LucideIcon> = { prompt: BotIcon, commands: ListChecksIcon, waitForCi: WorkflowIcon, gate: UserCheckIcon, deleteActivity: Trash2Icon, skill: BotIcon, evaluate: ScaleIcon };
-const ACTIONS: readonly ActionValue[] = ['prompt', 'skill', 'commands', 'waitForCi', 'gate', 'deleteActivity'];
+const ACTIONS: readonly ActionValue[] = ['prompt', 'skill', 'commands', 'waitForCi', 'evaluate', 'gate', 'deleteActivity'];
 // #134: só aprovação is a prompt stage that runs nothing, so it is the draft's gate with approval locked on
 const picked = (value: string): Partial<StageDraft> =>
   (value === 'gate' ? { action: '', gate: true, approval: true } : { action: value === 'prompt' ? '' : (value as StageAction), gate: false });
@@ -180,7 +181,7 @@ function StageSwitch({ id, anchor, label, hint, checked, disabled = false, onCha
 export interface CommandsProps { commands: readonly Command[]; workspaces: readonly string[] }
 
 /** Executa: the action; on a prompt or skill stage (#710) the run fields, the prompt or the skill, the approval switch (#268) and the handoff
- * switch (#692); on a commands stage its commands block (#755), on a wait for CI its block (#834). */
+ * switch (#692); on a commands stage its commands block (#755), on a wait for CI its block (#834), on an evaluate stage its reviewers, judge and rubric (#877). */
 export function StageRun({ id, stage, onUpdate, agents, defaultAgent, launchOptions, canContinue, commands, workspaces }: BlockProps & AgentProps & ContinueProps & CommandsProps) {
   const isGate = isGateDraft(stage);
   const runsAgent = isAgentDraft(stage);
@@ -191,6 +192,7 @@ export function StageRun({ id, stage, onUpdate, agents, defaultAgent, launchOpti
       {runsAgent && <WorkerFields id={id} stage={stage} onUpdate={onUpdate} agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} canContinue={canContinue} />}
       {stage.action === 'commands' && <StageCommands id={id} stage={stage} options={commands} workspaces={workspaces} onUpdate={onUpdate} />}
       {stage.action === 'waitForCi' && <StageCi id={id} stage={stage} onUpdate={onUpdate} />}
+      {stage.action === 'evaluate' && <StageEvaluate id={id} stage={stage} onUpdate={onUpdate} agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} />}
       {isGate && (
         <>
           <p className="text-muted-foreground text-xs">{t('settings.stages.gate.note')}</p>

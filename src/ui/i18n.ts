@@ -1352,6 +1352,22 @@ const en = {
   'stageEvaluate.judging': 'judging', // #877
   'stageEvaluate.rejected': 'evaluation rejected: {list}', // #877: the dimensions under the threshold
   'stageEvaluate.failed': 'evaluation failed: {reason}', // #877: a broken run, no verdict
+  'settings.stages.evaluate.reviewers': 'reviewers', // #877
+  'settings.stages.evaluate.reviewers.add': '+ reviewer',
+  'settings.stages.evaluate.reviewers.remove': 'remove reviewer {n}',
+  'settings.stages.evaluate.reviewers.hint': 'they run in parallel; each writes findings with evidence (file and line)',
+  'settings.stages.evaluate.reviewer': 'reviewer {n}',
+  'settings.stages.evaluate.col.agent': 'agent',
+  'settings.stages.evaluate.col.model': 'model',
+  'settings.stages.evaluate.col.specializedAgent': 'specialized agent',
+  'settings.stages.evaluate.col.focus': 'focus',
+  'settings.stages.evaluate.reviewerField': '{field} of reviewer {n}',
+  'settings.stages.evaluate.judgeField': '{field} of the judge',
+  'settings.stages.evaluate.threshold': 'threshold',
+  'settings.stages.evaluate.threshold.hint': 'score from 0 to 10',
+  'settings.stages.evaluate.rubric': 'rubric',
+  'settings.stages.evaluate.rubric.hint': 'one dimension per line · the judge reads the findings, scores each dimension, and every score must reach the threshold',
+  'settings.stages.error.evaluate': 'stage {n}: every reviewer needs a focus, the threshold a whole number from 0 to 10 and the rubric at least one line',
   'settings.stages.evaluate.judge': 'judge', // #877: the judge's line in the running block
   'running.ci': 'waiting for CI', // #914: the running block's header on a wait for CI
   'running.commands': 'running checks', // #914: the running block's header on a commands stage
@@ -3620,6 +3636,22 @@ const pt: Record<MessageKey, string> = {
   'stageEvaluate.judging': 'julgando',
   'stageEvaluate.rejected': 'avaliação reprovou: {list}',
   'stageEvaluate.failed': 'avaliação falhou: {reason}',
+  'settings.stages.evaluate.reviewers': 'revisores',
+  'settings.stages.evaluate.reviewers.add': '+ revisor',
+  'settings.stages.evaluate.reviewers.remove': 'remover revisor {n}',
+  'settings.stages.evaluate.reviewers.hint': 'executam em paralelo; cada um escreve achados com evidência (arquivo e linha)',
+  'settings.stages.evaluate.reviewer': 'revisor {n}',
+  'settings.stages.evaluate.col.agent': 'agente',
+  'settings.stages.evaluate.col.model': 'modelo',
+  'settings.stages.evaluate.col.specializedAgent': 'agente especializado',
+  'settings.stages.evaluate.col.focus': 'foco',
+  'settings.stages.evaluate.reviewerField': '{field} do revisor {n}',
+  'settings.stages.evaluate.judgeField': '{field} do juiz',
+  'settings.stages.evaluate.threshold': 'limiar',
+  'settings.stages.evaluate.threshold.hint': 'nota de 0 a 10',
+  'settings.stages.evaluate.rubric': 'rubrica',
+  'settings.stages.evaluate.rubric.hint': 'uma dimensão por linha · o juiz lê os achados, dá uma nota a cada dimensão e toda nota precisa chegar ao limiar',
+  'settings.stages.error.evaluate': 'etapa {n}: todo revisor precisa de um foco, o limiar um número inteiro de 0 a 10 e a rubrica ao menos uma linha',
   'settings.stages.evaluate.judge': 'juiz',
   'running.ci': 'aguardando CI',
   'running.commands': 'executando checks',

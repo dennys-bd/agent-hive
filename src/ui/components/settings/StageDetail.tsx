@@ -114,6 +114,7 @@ export function stageEntries(stage: StageDraft): SettingEntry[] {
     ...contextEntries([
       'settings.stages.name', 'settings.stages.enter', 'settings.stages.from', 'settings.stages.after', 'settings.stages.maxWorkers', 'settings.stages.run', 'settings.stages.action',
       ...(isAgentDraft(stage) ? agentFields : []),
+      ...(stage.action === 'evaluate' ? (['settings.stages.evaluate.reviewers', 'settings.stages.evaluate.judge', 'settings.stages.evaluate.threshold', 'settings.stages.evaluate.rubric'] as const) : []),
       ...(gate ? (['settings.stages.approval'] as const) : []),
       'settings.stages.exits',
     ], view, path, stage.id),

@@ -573,3 +573,14 @@ test('an evaluation\'s card copy reads as the spec writes it, in both languages,
   const ours = Object.entries(MESSAGES.pt).filter(([key]) => key.startsWith('stageEvaluate.'));
   assert.equal(ours.some(([, text]) => /\brod(ar|ando|am)\b/.test(text)), false);
 });
+
+test('the evaluate stage\'s Settings copy reads as the spec writes it, in both languages, and never says rodar (#877)', () => {
+  const keys = ['settings.stages.action.evaluate', 'settings.stages.evaluate.reviewers', 'settings.stages.evaluate.reviewers.add', 'settings.stages.evaluate.reviewers.hint',
+    'settings.stages.evaluate.judge', 'settings.stages.evaluate.threshold', 'settings.stages.evaluate.threshold.hint', 'settings.stages.evaluate.rubric', 'settings.stages.evaluate.rubric.hint', 'flow.verdict.approved', 'flow.verdict.rejected'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['avaliar', 'revisores', '+ revisor', 'executam em paralelo; cada um escreve achados com evidência (arquivo e linha)', 'juiz', 'limiar', 'nota de 0 a 10', 'rubrica',
+    'uma dimensão por linha · o juiz lê os achados, dá uma nota a cada dimensão e toda nota precisa chegar ao limiar', 'aprovou', 'reprovou']);
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['evaluate', 'reviewers', '+ reviewer', 'they run in parallel; each writes findings with evidence (file and line)', 'judge', 'threshold', 'score from 0 to 10', 'rubric',
+    'one dimension per line · the judge reads the findings, scores each dimension, and every score must reach the threshold', 'approved', 'rejected']);
+  const ours = Object.entries(MESSAGES.pt).filter(([key]) => key.startsWith('settings.stages.evaluate.'));
+  assert.equal(ours.some(([, text]) => /\brod(ar|ando|am)\b/.test(text)), false);
+});

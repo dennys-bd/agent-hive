@@ -1,7 +1,7 @@
 import { destinationOf } from '../../stage-delete.js';
-import type { HiveAction } from '../../stage-agent.js';
+import { type HiveAction, rubricLines, SCORE_MAX } from '../../stage-agent.js';
 import { isGate, onSource } from '../../tasks.js';
-import { type AgentId, type CiChecks, SOURCE_ACTIONS, type SourceAction, type SourceFields, isLeaving, type ItemAction, LEAVING_ACTIONS, type OnMissing, type Stage, type StageAction, type Task } from '../../types.js';
+import { type AgentId, type CiChecks, DEFAULT_AGENT, type EvaluateRow, SOURCE_ACTIONS, type SourceAction, type SourceFields, isLeaving, type ItemAction, LEAVING_ACTIONS, type OnMissing, type Stage, type StageAction, type Task } from '../../types.js';
 import { t, tPlural } from '../i18n.js';
 
 // Settings › fluxo's stage editor (#515): the draft ↔ Stage edges and the action-list rules the entra / executa / sai blocks offer, out of
@@ -15,13 +15,22 @@ import { t, tPlural } from '../i18n.js';
 // splits an entry. onStart holds an ordered list per row (#515).
 // gate (#134): the draft's só aprovação, a stage that runs nothing and awaits approval; verdicts: a prompt stage's own, in order
 // skill (#710): a skill stage's bare skill name, '' = none picked yet; specializedAgent: hive:<name>, '' = none
-export interface StageDraft { id: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; skill: string; specializedAgent: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; savedName?: string }
+// reviewers / judge / threshold / rubric (#877): an evaluate stage's rows, its threshold as typed and its rubric
+export interface StageDraft { id: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; skill: string; specializedAgent: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; reviewers: EvaluateRowDraft[]; judge: EvaluateRowDraft; threshold: string; rubric: string; savedName?: string }
+/** One reviewer or the judge as the form edits it (#877): '' = absent model / specialized agent; focus unused on the judge. id: a React key, never sent. */
+export interface EvaluateRowDraft { id: string; agent: AgentId; model: string; specializedAgent: string; focus: string }
 /** What a stage's maps are keyed against: a source row's id and its name as typed. */
 export interface StageRow { id: string; name: string }
 
 const META_WORD_MAX = 24;
 
-export const emptyStage = (): StageDraft => ({ id: crypto.randomUUID(), name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
+export const emptyRow = (agent: AgentId): EvaluateRowDraft => ({ id: crypto.randomUUID(), agent, model: '', specializedAgent: '', focus: '' });
+const rowDraft = (r: EvaluateRow): EvaluateRowDraft => ({ id: crypto.randomUUID(), agent: r.agent, model: r.model ?? '', specializedAgent: r.specializedAgent ?? '', focus: r.focus ?? '' });
+const rowFrom = (r: EvaluateRowDraft): EvaluateRow => ({ agent: r.agent, ...optional('model', r.model), ...optional('specializedAgent', r.specializedAgent) });
+// #475, #877: a stage holding a worker sends its cap: a prompt, a skill or an evaluate stage
+const capKey = (c: StageDraft): Partial<Stage> => (c.maxWorkers.trim() === '' ? {} : { maxWorkers: Number(c.maxWorkers.trim()) });
+
+export const emptyStage = (defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({ id: crypto.randomUUID(), name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: emptyRow(defaultAgent), threshold: '7', rubric: '' });
 
 /** A number field's text: 0 or absent = no limit = empty. */
 export const numberField = (n?: number): string => (n ? String(n) : '');
@@ -41,7 +50,7 @@ export const withEntry = <T>(map: Record<string, T>, key: string, value: T | und
   return value === undefined ? rest : { ...rest, [key]: value };
 };
 
-export const stageDraft = (c: Stage, rows: StageRow[]): StageDraft => ({
+export const stageDraft = (c: Stage, rows: StageRow[], defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({
   id: crypto.randomUUID(), name: c.name, savedName: c.name, session: c.session ?? 'new', model: c.model ?? '', agent: c.agent ?? '', // '' = the default agent (#516)
   from: byRow(c.from, rows), onStart: byRow(c.onStart, rows), gate: isGate(c), verdicts: c.verdicts ?? [], prompt: c.prompt ?? '', skill: c.skill ?? '', specializedAgent: c.specializedAgent ?? '', // #710
   action: c.action ?? '', after: c.after ?? '', approval: c.approval === true, handoff: c.handoff === true, // #692
@@ -49,10 +58,15 @@ export const stageDraft = (c: Stage, rows: StageRow[]): StageDraft => ({
   commands: c.commands ?? [], stopOnFailure: c.stopOnFailure ?? true, onMissing: c.onMissing ?? 'fail', // #755: the form starts the switch on and onMissing on fail; the file has no default
   ciChecks: c.ciChecks ?? 'required', checks: c.checks ?? [], rerunOnce: c.rerunOnce ?? false, // #834: the form starts on required with the switch off
   timeout: c.action === 'waitForCi' ? c.timeout ?? '' : '60m', // #834: a saved wait with no key has no limit; a stage turned into one starts on 60m
+  reviewers: (c.reviewers ?? []).map(rowDraft), judge: c.judge === undefined ? emptyRow(defaultAgent) : rowDraft(c.judge),
+  threshold: c.threshold === undefined ? '7' : String(c.threshold), rubric: c.rubric ?? '', // #877: the form starts on 7, as the handoff draws it
 });
 
 // #755, #834: each action sends its own keys only; parseStage refuses the others
 function actionKeys(c: StageDraft, action: HiveAction): Partial<Stage> {
+  if (action === 'evaluate') { // #877: the rows' picks, the reviewers' focus trimmed; an empty one is badEvaluation's to refuse
+    return { action, reviewers: c.reviewers.map((r) => ({ ...rowFrom(r), focus: r.focus.trim() })), judge: rowFrom(c.judge), threshold: Number(c.threshold.trim()), rubric: c.rubric, ...capKey(c) };
+  }
   if (action === 'commands') return { action, commands: c.commands, stopOnFailure: c.stopOnFailure, onMissing: c.onMissing };
   if (action !== 'waitForCi') return { action };
   return { action, ciChecks: c.ciChecks, ...(c.ciChecks === 'list' ? { checks: c.checks } : {}), rerunOnce: c.rerunOnce, ...optional('timeout', c.timeout) };
@@ -67,7 +81,7 @@ export const named = <T>(map: Record<string, T[]>, rows: readonly StageRow[]): R
 // verdicts (#134). runs: a prompt typed or a skill: only then a handoff or a specialized agent, which the parser refuses on a stage that runs nothing
 const agentKeys = (c: StageDraft, runs: boolean): Partial<Stage> => ({
   ...(c.session === 'continue' ? { session: 'continue' as const } : {}), ...optional('model', c.model), ...(c.agent === '' ? {} : { agent: c.agent }),
-  ...(c.approval ? { approval: true as const } : {}), ...(c.maxWorkers.trim() === '' ? {} : { maxWorkers: Number(c.maxWorkers.trim()) }), // #475: a delete activity stage runs no worker, so it sends no cap
+  ...(c.approval ? { approval: true as const } : {}), ...capKey(c), // #475: a delete activity stage runs no worker, so it sends no cap
   ...(c.handoff && c.session !== 'continue' && runs ? { handoff: true as const } : {}), // #692: off under continue or with nothing to run
   ...(runs ? optional('specializedAgent', c.specializedAgent) : {}),
   ...(c.verdicts.length === 0 ? {} : { verdicts: c.verdicts }),
@@ -136,6 +150,7 @@ export function stageMeta(s: StageDraft, defaultAgent: AgentId): string {
   if (s.action === 'commands') return s.commands.length > 0 ? s.commands.join(', ') : t('settings.stages.action.commands'); // #755: what it runs
   // #710: the agent and the skill, as a prompt stage's reads the agent and its first word
   if (s.action === 'skill') return `${s.agent === '' ? defaultAgent : s.agent} · ${s.skill === '' ? t('settings.stages.action.skill') : s.skill}`;
+  if (s.action === 'evaluate') return s.reviewers.length === 0 ? t('settings.stages.meta.judge') : tPlural('settings.stages.meta.evaluate', s.reviewers.length, { n: s.reviewers.length }); // #877
   if (isGateDraft(s)) return t('settings.stages.meta.gate');
   const prompt = s.prompt.trim();
   if (prompt === '') return t('settings.stages.meta.show');
@@ -193,3 +208,7 @@ export function deletionMoves(drafts: readonly StageDraft[], saved: readonly Sta
 /** The deletion confirmation's text (#861): one line per destination. */
 export const deletionMessage = (moves: readonly StageMove[]): string =>
   [t('settings.stages.deleteMoves.message'), ...moves.map((m) => tPlural('settings.stages.deleteMoves.move', m.n, { n: m.n, stage: m.stage }))].join('\n');
+
+/** An evaluate stage the parser would refuse (#877): a reviewer with no focus, a threshold off 0..10 or not whole, a rubric with no dimension. */
+export const badEvaluation = (c: StageDraft): boolean =>
+  c.action === 'evaluate' && (c.reviewers.some((r) => r.focus.trim() === '') || !/^\d+$/.test(c.threshold.trim()) || Number(c.threshold.trim()) > SCORE_MAX || rubricLines(c.rubric).length === 0);
