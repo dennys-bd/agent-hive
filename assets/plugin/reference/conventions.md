@@ -43,12 +43,12 @@ A workspace with no value takes the default.
 
 ## Resolve
 
-The Hive renders each skill for the workspace it runs in. The skill's
-`## Conventions` list holds every variable it reads, with that
-workspace's value. Nothing else is read for them, and the same name in
-two skills is two variables, each set on its own skill. State the list
-in one line, e.g. `Conventions: specsDir docs/design/specs, delivery
-single, chatLanguage Português.`
+The Hive renders each skill, and `hive:designer`, for the workspace it
+runs in. Its `## Conventions` list holds every variable it reads, with
+that workspace's value. Nothing else is read for them, and the same name
+in two templates is two variables, each set on its own template. State
+the list in one line, e.g. `Conventions: specsDir docs/design/specs,
+delivery single, chatLanguage Português.`
 
 When the Hive's `hive_conventions` tool exists, call it (no input) and
 read `approval`, `stage`, `fork` and `hiveLanguage` from its answer:
@@ -57,12 +57,6 @@ current stage waits for the user's approval in the Hive, and `stage`
 names that stage (absent in a free or local session). `fork` is there
 only for a fork workspace; see "Forks". Outside the Hive the tool does
 not exist: `approval` is false.
-
-`hive:designer` is not a template yet. It resolves each variable it
-names from the first place that sets it: a `## Hive conventions`
-section of the repository's `CLAUDE.md` (else `AGENTS.md`, one
-`` - `key`: value `` per line), then the default above. It states the
-same one line.
 
 The docs repository is `docsRepo` when set, else this repository; the
 four folders are relative to it. The base, wherever these skills say

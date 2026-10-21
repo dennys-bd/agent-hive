@@ -248,6 +248,16 @@ test('the docs folders default under docs/hive, and no plugin file names the old
   }
 });
 
+test('no plugin file names a Hive conventions section, and neither hive:designer nor reference/conventions.md resolves a convention from CLAUDE.md or AGENTS.md (#416)', async () => {
+  const entries = await readdir(PLUGIN, { recursive: true, withFileTypes: true });
+  const files = entries.filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name));
+  assert.ok(files.length > 0, 'the plugin directory was read');
+  for (const file of files) assert.doesNotMatch(await readFile(file, 'utf8'), /Hive conventions/, file);
+  for (const path of [agentPath('designer'), 'reference/conventions.md']) {
+    assert.doesNotMatch(await readFile(join(PLUGIN, path), 'utf8'), /CLAUDE\.md|AGENTS\.md/, path);
+  }
+});
+
 test('every gh call /hive:new-pr makes for the docs PR names the docs repository, since GH_REPO names the code one', async () => {
   const text = await skillText('new-pr');
   const calls = text.match(/gh pr \w+[^`\n]*<docs (?:PR|head|base)>[^`\n]*/g) ?? [];
