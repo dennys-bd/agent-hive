@@ -6,6 +6,8 @@ import { END } from '../../types.js';
 // node's height, which sets only the layout's own height. ponytail: one row, hand-written; elkjs replaces it when parallel stages or several rows arrive.
 
 export const GAP = 72; // between two nodes: an arrow and its pill
+export const GAP_ARROW = 32; // between two nodes joined only by arrows with no pill (#480): room for the line and its head
+export const GAP_BARE = 16; // between two nodes with the loops hidden (#480): no arrow, no pill
 export const DEPTH = 28; // between two levels above the row (#908)
 export const SPREAD = 20; // arrows sharing a node's top, apart
 export const END_SIZE = 30;
@@ -17,8 +19,8 @@ export const NODE_MIN = 160; // the least a node is given, however little room t
 const CORNER = 8;
 
 export interface LayoutNode { id: string; height: number }
-export interface LayoutEdge { id: string; from: string; to: string; automatic: boolean; labelled?: boolean } // labelled: carries a pill (#909)
-export interface LayoutOptions { end?: boolean; loops?: boolean } // end: the end circle, Settings only (#908); loops: false routes only arrows forward (#909)
+export interface LayoutEdge { id: string; from: string; to: string; automatic: boolean; unlabelled?: boolean } // unlabelled: carries no pill (#480)
+export interface LayoutOptions { end?: boolean; loops?: boolean } // end: the end circle, Settings only (#908); loops: false draws no arrow (#909, #480)
 export interface Box { id: string; x: number; y: number; width: number; height: number }
 export type EdgeKind = 'forward' | 'above' | 'loop';
 export interface Routed { id: string; kind: EdgeKind; path: string; label: { x: number; y: number }; dashed: boolean }
@@ -31,13 +33,23 @@ const bottom = (b: Box): number => b.y + b.height;
 const centre = (b: Box): number => b.x + b.width / 2;
 const kindOf = (i: number, j: number): EdgeKind => (i === j ? 'loop' : j === i + 1 ? 'forward' : 'above');
 const range = (e: Span): [number, number] => [Math.min(e.i, e.j), Math.max(e.i, e.j)];
-// With the loops hidden (#909) only arrows forward stay: to the next node, or past it when they carry a pill, which says why the path skips
-const isForward = (e: Span): boolean => e.j === e.i + 1 || (e.j > e.i + 1 && e.labelled === true);
 
 // The end circle sits after the row, centred on the neighbour arrows' line
-function endBox(count: number, width: number, top: number): Box {
-  return { id: END, x: MARGIN + count * (width + GAP), y: top + FORWARD_Y - END_SIZE / 2, width: END_SIZE, height: END_SIZE };
+const endBox = (x: number, top: number): Box => ({ id: END, x, y: top + FORWARD_Y - END_SIZE / 2, width: END_SIZE, height: END_SIZE });
+
+// The room after each node (#480): GAP_BARE with the loops hidden; GAP_ARROW when the arrows to the next one all go without a pill, so the
+// default path packs tight; GAP when one carries a pill or none says, as in Settings, where every arrow has one
+function gapsOf(count: number, spans: readonly Span[], bare: boolean): number[] {
+  return Array.from({ length: count }, (_, k) => {
+    if (bare) return GAP_BARE;
+    const next = spans.filter((e) => e.i === k && e.j === k + 1);
+    return next.length > 0 && next.every((e) => e.unlabelled === true) ? GAP_ARROW : GAP;
+  });
 }
+
+// Each slot's x, the end circle's last: every node and the gap after it, in order
+const xsOf = (count: number, width: number, gaps: readonly number[]): number[] =>
+  Array.from({ length: count + 1 }, (_, i) => MARGIN + i * width + gaps.slice(0, i).reduce((a, g) => a + g, 0));
 
 // Each edge's node indices, the end circle's after the row. An edge naming an unknown node, or the end without its circle, is left out
 function spansOf(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[], hasEnd: boolean): Span[] {
@@ -94,17 +106,20 @@ function over(e: Placed, xa: number, xb: number, level: number, dashed: boolean)
 
 /** The chart (#134, #908): `nodes` in the stages' order, each `nodeWidth` wide and as tall as given; `edges` between their ids or to END, which
  * only `{ end: true }` draws. An edge naming an unknown node is left out. Dashed: an automatic arrow that goes back. With `{ loops: false }`
- * (#909) back edges, loops and unlabelled skips are left out before anything is placed, so `top` holds only what is still drawn. */
+ * (#909, #480) no arrow is drawn, so the row starts at the margin and the nodes sit GAP_BARE apart, with no pill to make room for; with them
+ * on, two nodes whose arrows all go `unlabelled` sit GAP_ARROW apart. */
 export function layoutFlow(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[], nodeWidth: number, options: LayoutOptions = {}): Layout {
   const hasEnd = options.end === true && edges.some((e) => e.to === END);
   const all = spansOf(nodes, edges, hasEnd);
-  const spans = options.loops === false ? all.filter(isForward) : all;
+  const bare = options.loops === false;
+  const spans = bare ? [] : all;
+  const xs = xsOf(nodes.length, nodeWidth, gapsOf(nodes.length, all, bare));
   const levels = levelsOf(spans.filter((e) => kindOf(e.i, e.j) === 'above'));
   const count = Math.max(0, ...levels.values());
   // The room above the row holds the levels, the outermost at MARGIN, and a loop's arc and pill (#887): with neither the row starts at the margin
   const top = Math.max(count * DEPTH + MARGIN, spans.some((e) => e.i === e.j) ? TOP_LOOPS : MARGIN);
-  const placed = nodes.map((n, i): Box => ({ id: n.id, x: MARGIN + i * (nodeWidth + GAP), y: top, width: nodeWidth, height: n.height }));
-  const end = hasEnd ? endBox(placed.length, nodeWidth, top) : undefined;
+  const placed = nodes.map((n, i): Box => ({ id: n.id, x: xs[i], y: top, width: nodeWidth, height: n.height }));
+  const end = hasEnd ? endBox(xs[nodes.length], top) : undefined;
   const boxes = end === undefined ? placed : [...placed, end];
   const known = spans.map((e): Placed => ({ ...e, a: boxes[e.i], b: boxes[e.j] }));
   const offsets = offsetsOf(known.filter((e) => kindOf(e.i, e.j) === 'above'));

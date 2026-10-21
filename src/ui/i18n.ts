@@ -68,7 +68,7 @@ const en = {
   'flow.updated': 'updated {time}',
   'flow.refresh': 'refresh',
   'flow.loops': '↺ loops', // #909: the flow header's toggle of the back edges and loops
-  'flow.loops.hide': 'hide the loops · only the arrows between stages stay',
+  'flow.loops.hide': 'hide the arrows · the stages sit closer',
   'flow.loops.show': 'show the loops',
   'flow.tree': '⑂ tree', // #34: the flow header's toggle of the tree grouping in the stage nodes
   'flow.tree.ungroup': 'grouped by tree · click to ungroup',
@@ -366,6 +366,8 @@ const en = {
   'setupProgress.row.branch': 'branch', // then the branch in mono and setup.row.from
   'setupProgress.row.from': 'from {base}',
   'setupProgress.row.step': 'setup ·', // then the step's command in mono
+  'setupProgress.row.nested': 'nested repo', // #450: then the repo's path in mono
+  'setupProgress.row.reused': 'reused', // #450: a nested branch checked out as it was, in place of setupProgress.row.from
   'setupProgress.session.stage': 'start {agent} session in stage {stage}',
   'setupProgress.session.free': 'open {agent} session',
   'setupProgress.running': 'running · {time}',
@@ -1285,6 +1287,7 @@ const en = {
   'settings.error.consoleLines': 'the console lines per channel must be a whole number from 100 to 100000',
   'stage.empty': 'empty',
   'task.blockedBy': 'blocked by {ids}',
+  'task.blockedVia': '{id} (via {via})', // #424: an inherited blocker and the ancestor that holds it
   'task.start': 'start',
   'task.retry': 'try again',
   'task.dismissError': 'dismiss error', // #354: the card's ✕ beside the error, its label and title
@@ -2383,7 +2386,7 @@ const pt: Record<MessageKey, string> = {
   'flow.updated': 'atualizado {time}',
   'flow.refresh': 'atualizar',
   'flow.loops': '↺ voltas',
-  'flow.loops.hide': 'esconder as voltas · ficam só as setas entre as etapas',
+  'flow.loops.hide': 'esconder as setas · as etapas ficam mais juntas',
   'flow.loops.show': 'mostrar as voltas',
   'flow.tree': '⑂ árvore',
   'flow.tree.ungroup': 'agrupado por árvore · clique para desagrupar',
@@ -2681,6 +2684,8 @@ const pt: Record<MessageKey, string> = {
   'setupProgress.row.branch': 'branch',
   'setupProgress.row.from': 'a partir de {base}',
   'setupProgress.row.step': 'setup ·',
+  'setupProgress.row.nested': 'repo aninhado',
+  'setupProgress.row.reused': 'reaproveitada',
   'setupProgress.session.stage': 'iniciar sessão {agent} na etapa {stage}',
   'setupProgress.session.free': 'abrir sessão {agent}',
   'setupProgress.running': 'executando · {time}',
@@ -3595,6 +3600,7 @@ const pt: Record<MessageKey, string> = {
   'settings.error.consoleLines': 'as linhas do console por canal precisam ser um número inteiro de 100 a 100000',
   'stage.empty': 'vazia',
   'task.blockedBy': 'bloqueada por {ids}',
+  'task.blockedVia': '{id} (via {via})', // #424
   'task.start': 'iniciar',
   'task.retry': 'tentar de novo',
   'task.dismissError': 'dispensar erro', // #354

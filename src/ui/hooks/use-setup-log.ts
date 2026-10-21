@@ -21,11 +21,15 @@ export function plainLines(text: string): string[] {
 /** A step a resume skipped (#390): done with no time; it printed nothing in this run. */
 export const isSkipped = (row: SetupRow): boolean => row.kind === 'step' && row.status === 'done' && row.durationMs === undefined;
 
-/** Each row's last TAIL lines (#390). The text is walked in order: a line that is exactly `> <header>` of the next step row not yet reached
- * (skipped ones never print theirs) opens that row; every other line, `> git …` and a RUN's own `> pkg@x build` included, belongs to the row
+/** A row its own header line opens (#390, #450): a step a resume did not skip, or a nested repo once it started or refused. A queued nested
+ * repo is left out: switchNested can refuse a later repo while an earlier one stays queued, and the later one's header comes first. */
+export const opensRow = (row: SetupRow): boolean => (row.kind === 'step' && !isSkipped(row)) || (row.kind === 'nested' && row.status !== 'queued');
+
+/** Each row's last TAIL lines (#390). The text is walked in order: a line that is exactly `> <header>` of the next row opensRow keeps and not yet reached
+ * (a skipped step, a queued nested repo, never printed theirs) opens that row; every other line, `> git …` and a RUN's own `> pkg@x build` included, belongs to the row
  * open at that point. What comes before the first header is the worktree row's. */
 export function rowTails(text: string, rows: readonly SetupRow[]): string[][] {
-  const opens = rows.flatMap((row, i) => (row.kind === 'step' && !isSkipped(row) ? [i] : []));
+  const opens = rows.flatMap((row, i) => (opensRow(row) ? [i] : []));
   const first = { at: rows.findIndex((row) => row.kind === 'worktree'), next: 0, owned: rows.map((): string[] => []) };
   return plainLines(text).reduce(({ at, next, owned }, line) => {
     const opened = next < opens.length && line === `> ${rows[opens[next]]?.header ?? ''}`;

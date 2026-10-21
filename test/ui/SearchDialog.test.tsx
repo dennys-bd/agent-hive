@@ -84,6 +84,15 @@ test('tudo groups atividades, tarefas and comandos; a task with an activity only
   expect(screen.getByText('ver no fluxo')).toBeInTheDocument();
 });
 
+test('a task held by an ancestor names the ancestor in its search row (#424)', async () => {
+  const user = userEvent.setup();
+  const held = task('468', '', { item: { itemId: 'I468', id: '468', title: 'The daemon logs its port', body: '', url: '', inheritedBlockedBy: [{ id: '12', via: '7' }] } });
+  const state = stateOf([DAEMON, held]);
+  renderSearch('all', ctxOf(state), state);
+  await user.keyboard('logs');
+  expect(screen.getByText('bloqueada por #12 (via #7)')).toBeInTheDocument();
+});
+
 test('↵ opens an activity in the center and ⌘↵ shows it in the flow; on a task ↵ opens the Start dialog on it and ⌘↵ its details (#584)', async () => {
   const user = userEvent.setup();
   const { onClose, nav } = renderSearch();

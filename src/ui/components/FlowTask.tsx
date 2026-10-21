@@ -15,6 +15,7 @@ import { Confirm } from '@/components/Confirm';
 import { ciProgress, ciTone } from '@/components/CiProgress';
 import { SyncLine } from '@/components/ForkSyncNotice';
 import { commandsProgress, evaluateProgress, isStartFailure, StageOutputButton, taskError } from '@/components/CommandsProgress';
+import { inheritedIds } from '@/components/BlockersSection';
 import { TreeProgress } from '@/components/TreeProgress';
 import { TreeHoverContext } from '@/components/tree-hover';
 import { StartDialog } from '@/components/StartDialog';
@@ -98,9 +99,9 @@ function shownBlockers(task: Task, state: State): string[] {
   return blockers.filter((id) => !childIds.has(id));
 }
 
-// #54: the blocker's own line between the title and the footer, in every state
+// #54: the blocker's own line between the title and the footer, in every state; #424: the inherited ones after the task's own
 function BlockedLine({ task, state }: { task: Task; state: State }) {
-  const ids = shownBlockers(task, state);
+  const ids = [...shownBlockers(task, state), ...inheritedIds(task.item)];
   if (ids.length === 0) return null;
   const text = `⊘ ${t('task.blockedBy', { ids: ids.join(', ') })}`;
   return <span className="truncate text-muted-foreground text-xs" title={text}>{text}</span>;

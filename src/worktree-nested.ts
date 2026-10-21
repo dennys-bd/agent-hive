@@ -16,6 +16,38 @@ const ORIGIN = 'origin'; // a nested repo's own remote, never the workspace's fo
 /** What the nested step reads of a workspace. */
 export type NestedWorkspace = Pick<Workspace, 'path'> & { nestedRepos: readonly string[] };
 
+/** How a nested repo's worktree or switch ended (#450): a new branch from `base`, or the task's branch checked out as it was. */
+export type NestedEnd = { base: string } | { reused: true };
+
+/** What the preparation tells the Start dialog's rows about each nested repo (#450). Optional everywhere: outside a run nothing listens. */
+export interface NestedObserver {
+  started(path: string): void;
+  ended(path: string, end: NestedEnd): void;
+  failed(path: string): void; // refused before it started: switchNested's checks
+}
+
+interface NestedOutcome { line: string; end: NestedEnd } // the hive.log line, unchanged, and how the repo ended
+const REUSED: NestedEnd = { reused: true };
+const reusedAs = (path: string, branch: string): NestedOutcome => ({ line: `${path}: reused ${branch}`, end: REUSED });
+
+// One repo's work between its start and its end (#450): a rejection leaves it started, and the run's failure fails its row
+async function observed(path: string, observer: NestedObserver | undefined, work: () => Promise<NestedOutcome>): Promise<string> {
+  observer?.started(path);
+  const { line, end } = await work();
+  observer?.ended(path, end);
+  return line;
+}
+
+// A refusal before any repo moved (#450): the observer hears which repo refused, then the refusal goes on as it was
+async function refusedAs<T>(path: string, observer: NestedObserver | undefined, check: () => Promise<T>): Promise<T> {
+  try {
+    return await check();
+  } catch (err) {
+    observer?.failed(path);
+    throw err;
+  }
+}
+
 const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
 const hasGit = (dir: string): Promise<boolean> => exists(join(dir, '.git')); // a checkout's .git folder, or a worktree's .git file
 const hasBranch = (repo: string, branch: string, exec: Exec): Promise<boolean> => gitAnswers(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], exec);
@@ -47,7 +79,7 @@ async function requireNestedRepo(repo: string, path: string, exec: Exec): Promis
 // One nested repo's worktree for a task, as ensureWorktree makes the task's: adopted on the task's branch and refused on any other, a stale
 // entry pruned, an existing branch checked out as it is, otherwise a new branch from the nested base with --no-track, so a push never lands
 // on the nested base branch
-async function ensureOne(workspace: NestedWorkspace, taskPath: string, path: string, branch: string, baseName: string | undefined, exec: Exec): Promise<string> {
+async function ensureOne(workspace: NestedWorkspace, taskPath: string, path: string, branch: string, baseName: string | undefined, exec: Exec): Promise<NestedOutcome> {
   const repo = join(workspace.path, path);
   const dir = join(taskPath, path);
   await requireNestedRepo(repo, path, exec);
@@ -55,53 +87,65 @@ async function ensureOne(workspace: NestedWorkspace, taskPath: string, path: str
   const listed = branchAt(await git('worktree', 'list', '--porcelain'), dir);
   if (listed !== undefined && (await exists(dir))) {
     if (listed !== branch) throw new Error(`${dir} is checked out on ${listed === null ? 'a detached HEAD' : listed}, not on ${branch}`);
-    return `${path}: reused ${branch}`;
+    return reusedAs(path, branch);
   }
   if (listed !== undefined) await git('worktree', 'prune'); // a stale entry for a folder gone from disk would refuse the add
   if (await hasBranch(repo, branch, exec)) {
     await git('worktree', 'add', '--', dir, branch); // a resume: checked out as it is, so no fetch and no network
-    return `${path}: reused ${branch}`;
+    return reusedAs(path, branch);
   }
   const note = await fetchNote(git);
   const base = await nestedBase(repo, baseName, exec);
   await git('worktree', 'add', '--no-track', '-b', branch, '--', dir, base);
-  return `${path}: ${base}${note}`;
+  return { line: `${path}: ${base}${note}`, end: { base } };
 }
 
 /** Every nested repo's worktree in the task's (#653), in order, right after ensureWorktree and before the setup: one line per nested repo,
- * which the spawn logs as it logs the `base:` line. The first failure rejects with git's words, and the task's preparation fails with them. */
-export function ensureNestedWorktrees(workspace: NestedWorkspace, taskPath: string, branch: string, baseName: string | undefined, exec: Exec = execFileAsync): Promise<string[]> {
+ * which the spawn logs as it logs the `base:` line. The first failure rejects with git's words, and the task's preparation fails with them.
+ * #450: the observer hears each repo start and end. */
+export function ensureNestedWorktrees(
+  workspace: NestedWorkspace, taskPath: string, branch: string, baseName: string | undefined, exec: Exec = execFileAsync, observer?: NestedObserver,
+): Promise<string[]> {
   return workspace.nestedRepos.reduce<Promise<string[]>>(
-    async (done, path) => [...(await done), await ensureOne(workspace, taskPath, path, branch, baseName, exec)], Promise.resolve([]),
+    async (done, path) => [...(await done), await observed(path, observer, () => ensureOne(workspace, taskPath, path, branch, baseName, exec))], Promise.resolve([]),
   );
 }
 
-async function switchOne(repo: string, path: string, branch: string, baseName: string | undefined, exec: Exec): Promise<string> {
+async function switchOne(repo: string, path: string, branch: string, baseName: string | undefined, exec: Exec): Promise<NestedOutcome> {
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   if (await hasBranch(repo, branch, exec)) {
     await git('switch', branch);
-    return `${path}: reused ${branch}`;
+    return reusedAs(path, branch);
   }
   const note = await fetchNote(git);
   const base = await nestedBase(repo, baseName, exec);
   await git('switch', '--no-track', '-c', branch, base);
-  return `${path}: ${base}${note}`;
+  return { line: `${path}: ${base}${note}`, end: { base } };
 }
 
 /** The checkout task's version (#653, #444): each nested checkout onto the task's branch, after ensureCheckout. One already on it is left alone,
  * work in progress included. Any one that would switch with uncommitted changes refuses before any of them moves. ensureCheckout already
- * refused the outer switch while one that would switch was dirty. */
-export async function switchNested(workspace: NestedWorkspace, branch: string, baseName: string | undefined, exec: Exec = execFileAsync): Promise<string[]> {
-  const current = await Promise.all(workspace.nestedRepos.map(async (path) => {
+ * refused the outer switch while one that would switch was dirty. #450: a repo already on the branch is reported started and ended as reused at
+ * its place, so header lines keep the rows' order. */
+export async function switchNested(
+  workspace: NestedWorkspace, branch: string, baseName: string | undefined, exec: Exec = execFileAsync, observer?: NestedObserver,
+): Promise<string[]> {
+  // In order, one at a time: a parallel check would let a second refusal report after the first has already ended the run
+  const current = await workspace.nestedRepos.reduce<Promise<string[]>>(async (done, path) => [...(await done), await refusedAs(path, observer, async () => {
     const repo = join(workspace.path, path);
     await requireNestedRepo(repo, path, exec);
     return (await gitOrWords(repo, ['branch', '--show-current'], exec)).trim();
-  }));
-  const pending = workspace.nestedRepos.filter((_, i) => current[i] !== branch);
-  for (const path of pending) await refuseDirty(join(workspace.path, path), exec);
-  return pending.reduce<Promise<string[]>>(
-    async (done, path) => [...(await done), await switchOne(join(workspace.path, path), path, branch, baseName, exec)], Promise.resolve([]),
-  );
+  })], Promise.resolve([]));
+  for (const [i, path] of workspace.nestedRepos.entries()) {
+    if (current[i] !== branch) await refusedAs(path, observer, () => refuseDirty(join(workspace.path, path), exec));
+  }
+  return workspace.nestedRepos.reduce<Promise<string[]>>(async (done, path, i) => {
+    const lines = await done;
+    if (current[i] !== branch) return [...lines, await observed(path, observer, () => switchOne(join(workspace.path, path), path, branch, baseName, exec))];
+    observer?.started(path);
+    observer?.ended(path, REUSED);
+    return lines;
+  }, Promise.resolve([]));
 }
 
 /** What `worktree remove` and a switch would lose, checked first (#653): every nested worktree under `root` (a task's worktree), or every nested
@@ -152,12 +196,12 @@ export async function removeNested(workspace: NestedWorkspace, taskPath: string,
  * in the same console run, before the setup. The base branch is the outer start's, else, for a branch reused or adopted, its upstream's;
  * neither: each nested repo's origin/HEAD. A workspace with no nested repo runs no git at all. */
 export async function prepareNested(
-  workspace: NestedWorkspace, prepared: Pick<PreparedWorktree, 'path' | 'start'>, branch: string, local: boolean, remote: string, exec: Exec,
+  workspace: NestedWorkspace, prepared: Pick<PreparedWorktree, 'path' | 'start'>, branch: string, local: boolean, remote: string, exec: Exec, observer?: NestedObserver,
 ): Promise<string[]> {
   if (workspace.nestedRepos.length === 0) return [];
   const start = prepared.start ?? (await upstreamOf(workspace.path, branch, exec));
   const baseName = nestedBaseName(start, [remote, ORIGIN]);
-  return local ? switchNested(workspace, branch, baseName, exec) : ensureNestedWorktrees(workspace, prepared.path, branch, baseName, exec);
+  return local ? switchNested(workspace, branch, baseName, exec, observer) : ensureNestedWorktrees(workspace, prepared.path, branch, baseName, exec, observer);
 }
 
 /** Each nested worktree present in a task's worktree with its count of uncommitted files (#653), for Maintenance › worktrees.

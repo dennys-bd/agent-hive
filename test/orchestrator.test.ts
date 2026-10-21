@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { candidates, canOpenSession, sessionsOf, canDeleteActivity, differsFromSource, isBlocked, mergeTasks, moveTask, removalBlocker, type RemovalBlocker, resetOrder, type Runs, slugFor } from '../src/tasks.js';
+import { candidates, canOpenSession, sessionsOf, canDeleteActivity, differsFromSource, isBlocked, isQueued, mergeTasks, moveTask, removalBlocker, type RemovalBlocker, resetOrder, type Runs, slugFor } from '../src/tasks.js';
 import { canSchedule, canStart, effectiveLimits, extractPrUrl, initialState, isChildSession, isFree, reduce, type Reduced, WAITING_NOTIFICATIONS } from '../src/orchestrator.js';
 import { startMode } from '../src/task-runs.js';
 import { localSessionsOf } from '../src/local-sessions.js';
@@ -1102,6 +1102,22 @@ test('fill skips a blocked task, takes the next free one and moves it above the 
   assert.equal(waiting.state.workers[0].status, 'empty');
   assert.equal(ownerAt(polled(waiting.state, [listed(1)]).state, 0), 'board:item1');
   assert.equal(ownerAt(polled(base(1), [{ item: { ...item(1), blockedBy: [] }, column: 'Backlog' }]).state, 0), 'board:item1', 'blockedBy: [] counts as free');
+});
+
+test('a task with only an inherited blocker is blocked: the fill skips it, a start leaves the state as is, it is not queued, and a poll without it frees it (#424)', () => {
+  const inherited: Item = { ...item(1), inheritedBlockedBy: [{ id: '9', via: '7' }] };
+  assert.equal(isBlocked(inherited), true);
+  assert.equal(isBlocked({ ...item(1), inheritedBlockedBy: [] }), false, 'an empty list is free');
+  const { state } = polled(base(1), [{ item: inherited, column: 'Backlog' }, listed(2)]);
+  assert.equal(taskOfWorker(state, state.workers[0])?.item.id, '2', 'the fill takes the free one');
+  assert.equal(isQueued(task(state, 1)!, state.stages, state), false);
+  const queued = polled(signaled(base(1), 'yellow').state, [{ item: inherited, column: 'Backlog' }]).state;
+  const start = started(queued, 'board:item1');
+  assert.equal(start.state, queued);
+  assert.equal(start.effects.length, 0);
+  const waiting = polled(base(1), [{ item: inherited, column: 'Backlog' }]);
+  assert.equal(waiting.state.workers[0].status, 'empty');
+  assert.equal(ownerAt(polled(waiting.state, [listed(1)]).state, 0), 'board:item1', 'the ancestor\'s blocker closed: the next poll frees it');
 });
 
 test('extractPrUrl finds the PR url only for gh pr create; isFree is true only for an empty worker that is not draining', () => {

@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { useOpenConsole } from '@/hooks/use-console';
-import { isSkipped, useSetupLog } from '@/hooks/use-setup-log';
+import { opensRow, useSetupLog } from '@/hooks/use-setup-log';
 import { useTick } from '@/hooks/use-tick';
 import { t } from '@/i18n';
 import { formatDuration } from '@/lib/running-lines';
@@ -48,16 +48,20 @@ function rightOf(row: SetupRow, now: number): { text: string; tone: string } {
 }
 
 const mono = (text: string): ReactNode => <span className="font-mono text-xs">{text}</span>;
-// A row's text (#390): worktree criada, branch <branch> a partir de <base>, setup · <command>
+// A done nested repo's branch end (#450): from its base, or reaproveitada when its branch was checked out as it was
+const nestedFrom = (row: SetupRow): string => (row.base === undefined ? t('setupProgress.row.reused') : t('setupProgress.row.from', { base: row.base }));
+// A row's text (#390, #450): worktree criada, branch <branch> a partir de <base>, setup · <command>
 function labelOf(row: SetupRow): ReactNode {
   if (row.kind === 'worktree') return t('setupProgress.row.worktree');
   if (row.kind === 'branch') return <>{t('setupProgress.row.branch')} {mono(row.branch ?? '')} {t('setupProgress.row.from', { base: row.base ?? '' })}</>;
+  if (row.kind === 'nested') return <>{t('setupProgress.row.nested')} {mono(row.label ?? '')}{row.branch !== undefined && <> · {t('setupProgress.row.branch')} {mono(row.branch)} {nestedFrom(row)}</>}</>;
   return <>{t('setupProgress.row.step')} {mono(row.label ?? '')}</>;
 }
 
 // A row's full text (#893): the title of a row its one line may cut, a branch's name or a setup step's command
 function titleOf(row: SetupRow): string | undefined {
   if (row.kind === 'branch') return `${t('setupProgress.row.branch')} ${row.branch ?? ''} ${t('setupProgress.row.from', { base: row.base ?? '' })}`;
+  if (row.kind === 'nested') return `${t('setupProgress.row.nested')} ${row.label ?? ''}${row.branch === undefined ? '' : ` · ${t('setupProgress.row.branch')} ${row.branch} ${nestedFrom(row)}`}`;
   if (row.kind === 'step') return `${t('setupProgress.row.step')} ${row.label ?? ''}`;
   return undefined;
 }
@@ -73,8 +77,9 @@ function Row({ status, label, title, value }: { status: SetupRowStatus; label: R
   );
 }
 
-// The log select's rows (#390): those that printed in this run; the branch row shares the worktree's git, a skipped step printed nothing
-const hasLog = (row: SetupRow): boolean => row.kind === 'worktree' || (row.kind === 'step' && row.status !== 'queued' && !isSkipped(row));
+// The log select's rows (#390, #450): those that printed in this run; the branch row shares the worktree's git, a skipped step and a
+// queued row printed nothing
+const hasLog = (row: SetupRow): boolean => row.kind === 'worktree' || (opensRow(row) && row.status !== 'queued');
 // The row the log follows (#390): the running one, else the failed one, else the last that printed
 function followedRow(rows: readonly SetupRow[]): number {
   const running = rows.findIndex((row) => row.status === 'running' && hasLog(row));
@@ -83,8 +88,15 @@ function followedRow(rows: readonly SetupRow[]): number {
   return failed !== -1 ? failed : rows.map(hasLog).lastIndexOf(true);
 }
 
+// A log option's text (#390, #450): the worktree's, a nested repo's path after its name, a step's command
+function logText(row: SetupRow): string {
+  if (row.kind === 'worktree') return t('setupProgress.row.worktree');
+  if (row.kind === 'nested') return `${t('setupProgress.row.nested')} ${row.label ?? ''}`;
+  return row.label ?? '';
+}
+
 function LogOption({ row, index }: { row: SetupRow; index: number }) {
-  const text = row.kind === 'worktree' ? t('setupProgress.row.worktree') : row.label ?? '';
+  const text = logText(row);
   // The last span of the item is Radix's ItemText: it needs min-w-0 so the truncate inside it can cut a long command
   return <SelectItem value={String(index)} title={text} className="*:[span]:last:min-w-0"><span className="truncate">{text}</span></SelectItem>;
 }

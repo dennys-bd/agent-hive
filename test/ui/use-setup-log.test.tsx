@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { plainLines, rowTails, useSetupLog } from '@/hooks/use-setup-log';
+import { opensRow, plainLines, rowTails, useSetupLog } from '@/hooks/use-setup-log';
 import type { SetupRow } from '../../src/types';
 import { FakeWebSocket, resetFakes } from './xterm-fakes';
 
@@ -96,4 +96,19 @@ test('a run\'s end keeps its tail while the channel is read again: only a new ru
   act(() => FakeWebSocket.all[0]?.end());
   rerender({ isLive: false });
   expect(result.current[2]).toEqual(['> RUN pnpm install', 'added 3']);
+});
+
+const nested = (path: string, status: SetupRow['status'], extra: Partial<SetupRow> = {}): SetupRow => ({ kind: 'nested', status, label: path, header: `nested ${path}`, ...extra });
+
+test('a nested repo\'s lines run from its `> nested <path>` line to the next row\'s; a queued one opens nothing, so a repo refused before an earlier one ran still gets its lines (#450)', () => {
+  const rows: SetupRow[] = [ROWS[0], ROWS[1], nested('docs', 'done', { durationMs: 300, branch: 'hive/9-x', base: 'origin/main' }), nested('wiki', 'running', { startedAt: AT }), step('pnpm install', 'queued')];
+  const text = ['> git -C /repo worktree add', 'ok 120ms', `${ESC}[97m> nested docs${ESC}[0m`, '> git -C /repo/docs fetch -q origin', 'ok 80ms', '> nested wiki', '> git -C /repo/wiki worktree add', 'fatal: is checked out on other'].join('\r\n');
+  expect(rowTails(text, rows)).toEqual([
+    ['> git -C /repo worktree add', 'ok 120ms'], [], ['> nested docs', '> git -C /repo/docs fetch -q origin', 'ok 80ms'],
+    ['> nested wiki', '> git -C /repo/wiki worktree add', 'fatal: is checked out on other'], [],
+  ]);
+  const refused: SetupRow[] = [ROWS[0], ROWS[1], nested('docs', 'queued'), nested('wiki', 'failed')];
+  expect(rowTails('> git -C /repo/wiki status --porcelain\r\nok 5ms\r\n> nested wiki\r\nwiki has changes that are not committed\r\n', refused))
+    .toEqual([['> git -C /repo/wiki status --porcelain', 'ok 5ms'], [], [], ['> nested wiki', 'wiki has changes that are not committed']]);
+  expect([nested('docs', 'queued'), nested('docs', 'running'), step('a', 'queued'), step('a', 'done')].map(opensRow)).toEqual([false, true, true, false]);
 });
