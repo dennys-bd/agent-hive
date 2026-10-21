@@ -1,8 +1,9 @@
 import type { Logger } from '../log.js';
 import { blockingRows, normalizeItem, readListing, storeListing, type ItemStore, type ItemsRead, type ListingKey, type StoredListing } from '../read-model/items.js';
 import { applyWriteAnswer } from '../read-model/write-answer.js';
-import type { Gql, SourceItem } from '../types.js';
+import type { Gql, InheritedBlocker, SourceItem } from '../types.js';
 import { blockersOf } from './github-blockers.js';
+import { inheritedBlockers, treeLinks } from './github-tree.js';
 import { issueRepo, PROBE, relationsQuery, type GhIssueRelations, type GhItemNode, type GhRateLimit, type ProbeData, type RelationsData } from './github-queries.js';
 
 /** A full read at least this often, whatever the probe says (#190): a blocker or a sub-issue off the Project does not move the probe. */
@@ -37,14 +38,16 @@ export async function fetchRelations(gql: Gql, tasks: SourceItem[]): Promise<Map
 }
 
 /** Every task with its relations (#441, #56): blockedBy when an open issue blocks it; a task whose issue was read also gets its blocker
- * relations both ways, empty lists included, so "none" and "not read" differ. Pure: the relations come fetched or stored. */
-export function applyRelations(tasks: SourceItem[], relations: Relations): SourceItem[] {
+ * relations both ways, empty lists included, so "none" and "not read" differ. #424: inheritedBlockedBy from `inherited`, read over the whole
+ * listing by the caller, since a task's ancestor may be a node the poll's steps dropped. Pure: the relations come fetched or stored. */
+export function applyRelations(tasks: SourceItem[], relations: Relations, inherited: ReadonlyMap<string, InheritedBlocker[]>): SourceItem[] {
   return tasks.map((task) => {
     const issue = relations.get(task.item.itemId);
     const blockedBy = openBlockers(issue);
+    const held = inherited.get(task.item.itemId);
     const repo = issueRepo(task.item.url);
     const blockers = issue && repo ? { blockers: blockersOf(issue, `${repo.owner}/${repo.name}`) } : {};
-    return { ...task, item: { ...task.item, ...(blockedBy.length > 0 ? { blockedBy } : {}), ...blockers } };
+    return { ...task, item: { ...task.item, ...(blockedBy.length > 0 ? { blockedBy } : {}), ...(held === undefined ? {} : { inheritedBlockedBy: held }), ...blockers } };
   });
 }
 
@@ -95,7 +98,7 @@ function storeBlocking(store: ItemStore, source: string, relations: ReadonlyMap<
 async function relateTasks(deps: ItemsSyncDeps, source: string, tasks: SourceItem[], read: StoredListing): Promise<SourceItem[]> {
   const fetched = await deps.fetchRelations(tasks.filter((task) => read.relations.get(task.item.itemId) === undefined));
   storeBlocking(deps.store, source, fetched);
-  return applyRelations(tasks, joinRelations(read.nodes, new Map([...read.relations, ...fetched])));
+  return applyRelations(tasks, joinRelations(read.nodes, new Map([...read.relations, ...fetched])), inheritedBlockers(read.nodes, treeLinks(read.nodes)));
 }
 
 async function storeAnswer(deps: ItemsSyncDeps, node: GhItemNode, relations: ReadonlyMap<string, GhIssueRelations | null>, project: string): Promise<void> {
