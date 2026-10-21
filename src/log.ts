@@ -221,6 +221,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'ciRead': return `ciRead activity=${shortId(event.activityId)} prs=${event.prs.map((p) => `#${prNumber(p.url)}`).join(',') || '-'}`; // #834: numbers, never the links
     case 'ciFailed': return `ciFailed activity=${shortId(event.activityId)} failed=${event.names.join(',')}`; // #834: the names only, never the output
     case 'stopCi': return `stopCi activity=${shortId(event.activityId)}`; // #834
+    case 'stopEvaluate': return `stopEvaluate activity=${shortId(event.activityId)}`; // #877
     case 'evaluateJudging': case 'evaluateEnded': case 'evaluateBroken': return `${event.type} activity=${shortId(event.activityId)}`; // #877
     case 'decompositionIssue': return `decompositionIssue #${event.taskId} ${event.id}=#${event.number}`; // #865: never a title
     case 'forkSynced': return `forkSynced activity=${shortId(event.activityId)} ${event.sync.mode} ${event.sync.result}`; // #854: never the reason, git's or gh's words

@@ -1482,6 +1482,7 @@ export type HiveEvent =
   | { type: 'evaluateJudging'; activityId: string; runId: string } // #877: every reviewer answered; the judge runs
   | { type: 'evaluateEnded'; activityId: string; runId: string; scores: JudgeScore[]; findings: ReviewFinding[] } // #877: the judge answered, one score per dimension
   | { type: 'evaluateBroken'; activityId: string; runId: string; message: string } // #877: a run broke: no verdict, no try
+  | { type: 'stopEvaluate'; activityId: string } // #877: the task's Stop or a sleep reached an evaluation, which holds no pty: every run aborts, no verdict
   | { type: 'decompositionIssue'; taskId: string; id: string; number: number } // #865: one step of the decomposition's write; merged into the task's result.decompositionIssues. Keyed by task: one awaiting approval may have no live worker
   | { type: 'forkSynced'; activityId: string; sync: ForkSyncResult } // #854: a fork synced (or failed to) before the activity's worktree was made
   | { type: 'sourceActionFailed'; taskId: string; message: string; leaving: boolean } // the source refused the stage's action (#286): the task keeps the adapter's message; leaving: the refused action was the leaving one (#515)

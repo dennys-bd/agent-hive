@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activityOf, resultOf } from '../src/activities.js';
+import { activityOf, resultOf, withActivity } from '../src/activities.js';
 import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
 import type { Activity, Effect, Item, JudgeScore, SourceItem, Stage, State, Transition } from '../src/types.js';
 
@@ -110,4 +110,39 @@ test('the reducer never writes to its input (#877)', () => {
   assert.doesNotThrow(() => ended(s, [8, 3, 9]));
   assert.doesNotThrow(() => reduce(s, { type: 'evaluateJudging', ...ids(s) }));
   assert.doesNotThrow(() => reduce(s, { type: 'evaluateBroken', ...ids(s), message: 'x' }));
+});
+
+test('stopEvaluate, a delete and the task leaving abort the evaluation and free its worker, with no verdict (#877)', () => {
+  const s = polled().state;
+  const runId = ids(s).runId;
+  const stop = reduce(s, { type: 'stopEvaluate', activityId: ids(s).activityId });
+  assert.deepEqual([live(stop.state)?.evaluate, live(stop.state)?.stopped, resultOf(stop.state, ID)?.evaluate], [undefined, true, undefined]);
+  assert.deepEqual(stop.effects.filter((e) => e.type === 'abortEvaluate'), [{ type: 'abortEvaluate', runId }]);
+  assert.equal(stop.state.workers.filter((w) => w.status !== 'empty').length, 0);
+  assert.equal(stop.state.tasks[0].stage, 'eval', 'the task stops in its stage');
+  const withTree = withActivity(s, { ...(live(s) as Activity), worktree: '/wt/hive-1-task-1' }); // something to delete, or the route refuses it
+  const deleting = reduce(withTree, { type: 'deletingActivity', activityId: ids(s).activityId });
+  assert.ok(deleting.effects.some((e) => e.type === 'abortEvaluate'), 'closeTerminals halts it');
+  assert.deepEqual([live(deleting.state)?.evaluate, live(deleting.state)?.stopped, live(deleting.state)?.deleting], [undefined, true, true]);
+  const missing = reduce(s, { type: 'poll', source: 'board', items: [] }).state; // only a missing or leaving task closes
+  assert.equal(missing.tasks[0].missing, true);
+  const closed = reduce(missing, { type: 'closeTask', taskId: ID });
+  assert.ok(closed.effects.some((e) => e.type === 'abortEvaluate'));
+  assert.equal(closed.state.workers.filter((w) => w.status !== 'empty').length, 0);
+  assert.equal(reduce(s, { type: 'stopEvaluate', activityId: 'other' }).state, s);
+});
+
+test('a boot during the stage drops the mark and leaves the activity stopped, its worker freed (#877)', () => {
+  const s = polled().state;
+  const booted = reduce(s, { type: 'boot' }).state;
+  assert.deepEqual([live(booted)?.evaluate, live(booted)?.stopped], [undefined, true]);
+  assert.equal(booted.workers.filter((w) => w.status !== 'empty').length, 0);
+});
+
+test('a save that removes the stage halts the evaluation at once and aborts it (#861, #877)', () => {
+  const s = polled().state;
+  const saved = reduce(s, { type: 'setStages', stages: [BUILD, PR], transitions: [] });
+  assert.equal(live(saved.state)?.evaluate, undefined);
+  assert.ok(saved.effects.some((e) => e.type === 'abortEvaluate'));
+  assert.equal(saved.state.workers.filter((w) => w.status !== 'empty').length, 0);
 });

@@ -38,6 +38,7 @@ function renamedActivity(a: Activity, stage: Rename, key: Rename): Activity {
     ...(a.freeSessionStage === undefined ? {} : { freeSessionStage: stage(a.freeSessionStage) }),
     ...(a.commands === undefined ? {} : { commands: { ...a.commands, stage: stage(a.commands.stage) } }),
     ...(a.ci === undefined ? {} : { ci: { ...a.ci, stage: stage(a.ci.stage) } }),
+    ...(a.evaluate === undefined ? {} : { evaluate: { ...a.evaluate, stage: stage(a.evaluate.stage) } }), // #877
     ...(a.checkpoints === undefined ? {} : { checkpoints: a.checkpoints.map((c) => ({ ...c, stage: stage(c.stage) })) }),
     ...(a.stageGone === undefined ? {} : { stageGone: stage(a.stageGone) }),
   };

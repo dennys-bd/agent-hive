@@ -25,7 +25,7 @@ import { markForgotten, withSlept } from './slept.js';
 import { captureSession, dropOrphanTerminals, forgetTerminal, recordCapturedSession, resumedStart, sleepTerminal, wakeTerminal } from './terminal-runs.js';
 import { retryDue, settleWait, stopFailure } from './api-errors.js';
 import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused } from './stage-commands.js';
-import { evaluateBroken, evaluateEnded, evaluateJudging } from './stage-evaluate.js';
+import { evaluateBroken, evaluateEnded, evaluateJudging, haltEvaluate } from './stage-evaluate.js';
 import { holdsWorker } from './stage-agent.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
 import { renameStages } from './stage-rename.js';
@@ -152,6 +152,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'evaluateJudging': return none(evaluateJudging(state, event)); // #877: no fill: a phase for the card
     case 'evaluateEnded': return afterCommands(state, evaluateEnded(state, event)); // #877: the worker frees and the verdict routes, as a commands stage's end
     case 'evaluateBroken': return afterCommands(state, evaluateBroken(state, event)); // #877: the worker frees; the task stops, no try spent
+    case 'stopEvaluate': return fill(haltEvaluate(state, event.activityId)); // #877: the freed worker may take another task
     case 'decompositionIssue': return none(decompositionIssue(state, event)); // #865: no fill, no effects: a step of the write, recorded on the task
     case 'forkSynced': return none(withForkSync(state, event)); // #854: no fill: a record of how the worktree started, nothing freed
     case 'sourceActionFailed': return sourceActionFailed(state, event.taskId, event.message, event.leaving); // no fill: the error keeps the task out of it (#286)

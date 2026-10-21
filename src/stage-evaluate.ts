@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { resultOf, taskOfActivity, withActivity } from './activities.js';
 import { withResult } from './record-kit.js';
-import { none, type Reduced } from './reducer-kit.js';
+import { none, type Reduced, stoppedWork } from './reducer-kit.js';
 import { heldStart, releaseHeld } from './stage-commands.js';
 import { stageOf, taskId } from './tasks.js';
 import { advance } from './transit.js';
@@ -88,4 +88,13 @@ export function evaluateBroken(state: State, { activityId, runId, message }: Ext
   if (!found) return none(state);
   const { state: released, rest } = freed(state, found);
   return none(withActivity(released, stoppedWith(rest, `${EVALUATION_FAILED}${message}`)));
+}
+
+/** The activity's evaluation stopped (#877): the user's Stop or a sleep (stopEvaluate), a delete, the task leaving or its stage removed. The
+ * mark goes, the worker frees, the activity is stopped with no verdict, and every run of it is aborted; the same state when none runs there. */
+export function haltEvaluate(state: State, activityId: string): Reduced {
+  const activity = state.activities.find((a) => a.id === activityId);
+  if (activity?.evaluate === undefined) return none(state);
+  const { evaluate, ...rest } = activity;
+  return { state: withActivity(releaseHeld(state, activity), stoppedWork(rest)), effects: [{ type: 'abortEvaluate', runId: evaluate.runId }] };
 }

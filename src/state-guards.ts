@@ -4,7 +4,7 @@ import { cleanTitle } from './usage.js';
 import { addUsage, localActivityId } from './activities.js';
 import { knownAgent, savedAgent } from './agents.js';
 import { savedLaunch } from './launch-pick.js';
-import { FEEDBACK_MAX, isBranchName, SETUP_ROW_KINDS, SETUP_ROW_STATUSES, SLICE_DELIVERIES, type Activity, type SetupRow, type SetupRowKind, type SetupRowStatus, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type RunPick, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type UsagePart, type Checkpoint, type CheckpointEnd } from './types.js';
+import { FEEDBACK_MAX, isBranchName, SETUP_ROW_KINDS, SETUP_ROW_STATUSES, SLICE_DELIVERIES, type Activity, type SetupRow, type SetupRowKind, type SetupRowStatus, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type RunPick, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageEvaluate, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type UsagePart, type Checkpoint, type CheckpointEnd } from './types.js';
 
 // The validators of what state.json holds, shared by the loader and the pre-#629 migration: each keeps a value only in the shape the
 // reducer writes, so a hand-edited file cannot feed it garbage.
@@ -158,6 +158,16 @@ function savedCi(value: unknown): { ci?: StageCi } {
   };
 }
 
+// #877: an evaluation in flight as the reducer wrote it, read so the boot can stop it; anything else reads as none
+const PHASES: readonly StageEvaluate['phase'][] = ['reviewing', 'judging'];
+const isPhase = (value: unknown): value is StageEvaluate['phase'] => PHASES.some((p) => p === value);
+function savedEvaluate(value: unknown): { evaluate?: StageEvaluate } {
+  if (!isJsonObject(value)) return {};
+  const { stage, runId, workerId, startedAt, phase } = value;
+  if (typeof stage !== 'string' || typeof runId !== 'string' || typeof workerId !== 'string' || !isDate(startedAt) || !isPhase(phase)) return {};
+  return { evaluate: { stage, runId, workerId, startedAt, phase } };
+}
+
 // An activity's work as the reducer writes it (#629), each key only in its written shape, as a task's were (#131, #208, #224, #268, #283, #692):
 // what loadActivity and the pre-#629 migration both read. setup and deleting never survive a boot (#182, #351), so they are never read; a commands
 // stage is read so the boot can stop it (#755), a wait for CI so it goes on (#834).
@@ -246,6 +256,7 @@ export function savedWork(value: Record<string, unknown>): Partial<Activity> {
     ...savedRouting(tries, via, tryLog), // #134, #915
     ...savedCommands(value.commands), // #755: the boot stops it
     ...savedCi(value.ci), // #834: the boot keeps it
+    ...savedEvaluate(value.evaluate), // #877: the boot stops it
     ...savedSync(value.sync), // #854: shown while the activity lives
     ...savedCheckpoints(value.checkpoints), // #619: listed until the activity's delete
     ...savedRunPick(value.runPick), // #290
