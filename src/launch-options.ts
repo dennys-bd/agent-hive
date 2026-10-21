@@ -1,6 +1,6 @@
 // The new session dialog's lists (#257), GET /launch-options, and the checks of a free session's picks: the open routes' checkLaunch and the
 // spawn's launchRun, out of server-open.ts and server-spawn.ts.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { AGENTS } from './agents.js';
@@ -68,12 +68,17 @@ const skillFile = (pluginDir: string, name: string): string => join(pluginDir, S
 
 /** Whether a rendered plugin folder has the skill (#710): what a skill stage's start checks, as launchRun checks a specialized agent. The shape
  * first, so a name never walks out of skills/. */
-export const hasSkill = (pluginDir: string, name: string): boolean => SKILL_NAME.test(name) && existsSync(skillFile(pluginDir, name));
+export const hasSkill = (pluginDir: string, name: string): boolean => SKILL_NAME.test(name) && statSync(skillFile(pluginDir, name), { throwIfNoEntry: false })?.isFile() === true; // a folder named SKILL.md is no skill
 
-// A skill's description from its header (#710): '' with none, so the list still names the skill
+// A skill's description from its header (#710): '' with none or an unreadable one, so the list still names the skill
 function skillDescription(pluginDir: string, name: string): string {
-  const description = parseTemplate(readFileSync(skillFile(pluginDir, name), 'utf8')).header.description;
-  return typeof description === 'string' ? description : '';
+  // One unreadable header costs that skill its description, never the whole /launch-options answer and its agent and model lists
+  try {
+    const description = parseTemplate(readFileSync(skillFile(pluginDir, name), 'utf8')).header.description;
+    return typeof description === 'string' ? description : '';
+  } catch {
+    return '';
+  }
 }
 
 /** A rendered plugin folder's skills (#710): each folder of skills/ with a SKILL.md, by bare name, sorted, with its description. Throws with no

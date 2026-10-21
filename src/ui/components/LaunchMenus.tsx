@@ -5,7 +5,7 @@ import { isLaunchModel } from '../../launch-pick';
 import { AGENT_IDS, type AgentAvailability, type AgentId, type AgentLaunchOptions, type LaunchOption } from '../../types';
 import { AGENT_COLOR, AgentIcon } from '@/components/SessionLabel';
 import { Button } from '@/components/ui/button';
-import { Command, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { t } from '@/i18n';
@@ -152,6 +152,7 @@ export function SkillMenu({ id, skills = [], value, open, onOpenChange, onPick }
       <Command label={t('settings.stages.skill.search')}>
         <CommandInput aria-label={t('settings.stages.skill.search')} placeholder={t('settings.stages.skill.search')} />
         <CommandList>
+          <CommandEmpty>{t('settings.stages.skill.empty')}</CommandEmpty>
           {skills.map((s) => (
             <CommandItem key={s.name} value={s.name} keywords={[s.description]} onSelect={() => pick(s.name)}>
               <ItemRow name={`${PLUGIN}:${s.name}`} description={s.description} isPicked={s.name === value} />

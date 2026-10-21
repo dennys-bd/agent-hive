@@ -1,6 +1,6 @@
 // How a workspace's activities group in the Activities tab (#586): by stage, by status or not at all, done always last in a group of its own.
 // Pure: the tab renders what this answers.
-import { runsAgent } from '../../stage-agent';
+import { runsAgent } from '../../stage-agent.js';
 import type { Task, Stage, Status } from '../../types';
 import { statusText, t } from '@/i18n';
 import type { TaskActivity } from '@/lib/activities';

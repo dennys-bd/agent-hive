@@ -23,3 +23,15 @@ export const runsAgent = (stage: StageRun): boolean => agentPrompt(stage) !== un
 
 /** The stage's action when the Hive runs it itself (#710): undefined on a prompt, a skill, a gate, a show-only stage and no stage. */
 export const hiveAction = (stage: Pick<Stage, 'action'> | undefined): HiveAction | undefined => (stage?.action === 'skill' ? undefined : stage?.action);
+
+// A slash command opening a prompt: `/` then a command name (`build`, `hive:new-plan`), never a path such as docs/x.md
+const COMMAND_LINE = /^\/[\w:-]+(?:[ \t].*)?$/;
+
+/** A prompt that opens on a slash command, split into that line and the rest (#710). Claude runs a command only at the start of the message,
+ * so whatever a composer adds (a transition's text, a handoff) goes after the command line, never before it. Undefined for any other prompt. */
+export function commandFirst(prompt: string): { command: string; rest: string } | undefined {
+  const text = prompt.trimStart();
+  const end = text.indexOf('\n');
+  const command = end === -1 ? text : text.slice(0, end);
+  return COMMAND_LINE.test(command) ? { command: command.trimEnd(), rest: end === -1 ? '' : text.slice(end + 1).trim() } : undefined;
+}

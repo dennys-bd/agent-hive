@@ -1,7 +1,7 @@
 import { stageAgentIn } from './agents.js';
 import { stageSession } from './task-runs.js';
 import { sessionsOf } from './tasks.js';
-import { agentPrompt, hiveAction, runsAgent } from './stage-agent.js';
+import { agentPrompt, commandFirst, hiveAction, runsAgent } from './stage-agent.js';
 import { FIXED_VERDICTS, TRIES_OUT, type Activity, type AgentId, type Stage, type State, type Task, type Transition, type Trigger } from './types.js';
 
 // The flow as a graph (#134): which transition a stage end fires, the session and the prompt it hands its destination, and the tries an
@@ -97,7 +97,9 @@ export function transitionPrompt(transition: Pick<Transition, 'when' | 'prompt'>
   const own = transition.prompt !== undefined && transition.prompt.trim() !== '' ? transition.prompt : transition.when === 'feedback' ? FEEDBACK_TEMPLATE : '';
   const stage = agentPrompt(destination) ?? ''; // #710: /hive:<skill> on a skill stage
   if (policy === 'continue') return own !== '' ? own : stage;
-  return [own, stage].filter((part) => part.trim() !== '').join('\n\n');
+  const split = commandFirst(stage); // #710: a stage opening on a slash command (/hive:<skill>) keeps it first, or it never runs
+  const parts = split === undefined ? [own, stage] : [split.command, own, split.rest];
+  return parts.filter((part) => part.trim() !== '').join('\n\n');
 }
 
 /** Whether a transition says more than its destination would (#134): a prompt of its own, a feedback, a session of its own. Only then is a

@@ -1,7 +1,7 @@
 import { MoreHorizontalIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { activityOf } from '../../activities';
-import { hiveAction } from '../../stage-agent';
+import { hiveAction } from '../../stage-agent.js';
 import { openFeedbackSession, startMode } from '../../task-runs';
 import { canOpenSession, stageOf } from '../../tasks';
 import type { Activity, Task, State } from '../../types';

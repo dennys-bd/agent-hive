@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { activityOf, workIdOf } from '../../activities';
-import { runsAgent } from '../../stage-agent';
+import { runsAgent } from '../../stage-agent.js';
 import { startMode, startsFresh } from '../../task-runs';
 import { canOpenSession, HIVE_SOURCE, resolveWorkspace } from '../../tasks';
 import { DISCARD_FAILED, type Task, type OpenResult, type SetupRows, type State } from '../../types';

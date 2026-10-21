@@ -135,7 +135,7 @@ test('a transition with a prompt and a session hands them to the destination\'s 
 test('a new session reads the transition\'s prompt, a blank line, then the destination\'s (#134)', () => {
   const ship: Transition = { from: 'Build', to: 'Ship', when: 'done', prompt: 'Ship it carefully.', session: 'new' };
   const queued = stageEnd(red(flow([ship]))).state;
-  assert.deepEqual(activityOf(queued, ID)?.handover, { prompt: 'Ship it carefully.\n\n/ship https://github.com/o/r/issues/1' });
+  assert.deepEqual(activityOf(queued, ID)?.handover, { prompt: '/ship https://github.com/o/r/issues/1\n\nShip it carefully.' });
   const spawn = spawnOf(reduce(queued, { type: 'setSignal', signal: 'green' }).effects);
   assert.deepEqual([spawn?.session, spawn?.run], ['new', 'stage']);
 });
@@ -175,7 +175,7 @@ test('feedback through a handoff reaches the destination: the handoff\'s end ren
   const asked = reduce(inGate, { type: 'feedback', activityId: workId(inGate, ID), text: 'split it', start: true });
   assert.equal(spawnOf(asked.effects)?.prompt, HANDOFF_PROMPT);
   const ended = stageEnd(red(asked.state), { result: { handoff: 'h' } }).state;
-  assert.deepEqual([taskOf(ended)?.stage, activityOf(ended, ID)?.handover?.prompt], ['Review', 'The user reviewed this stage and asks:\n\nsplit it\n\n/review https://github.com/o/r/issues/1']);
+  assert.deepEqual([taskOf(ended)?.stage, activityOf(ended, ID)?.handover?.prompt], ['Review', '/review https://github.com/o/r/issues/1\n\nThe user reviewed this stage and asks:\n\nsplit it']);
 });
 
 test('a transition whose tries are spent stops the task with TRIES_OUT at once: no handoff turn runs for it (#134, #692)', () => {

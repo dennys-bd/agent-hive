@@ -73,13 +73,15 @@ test('resolveSession: previous is the run that just ended, continueOf the task\'
 
 test('transitionPrompt: a new session reads the transition, a blank line, the stage; a continued one the transition alone, or the stage when it is empty; an empty feedback prompt is the feedback behind its lead (#134)', () => {
   const build = { prompt: '/build {url}' };
-  assert.equal(transitionPrompt({ when: 'verdict', prompt: 'Fix:\n\n{verdict}' }, build, 'new'), 'Fix:\n\n{verdict}\n\n/build {url}');
+  assert.equal(transitionPrompt({ when: 'verdict', prompt: 'Fix:\n\n{verdict}' }, build, 'new'), '/build {url}\n\nFix:\n\n{verdict}', '#710: a slash command stays first, or it never runs');
+  assert.equal(transitionPrompt({ when: 'feedback' }, { action: 'skill', skill: 'new-build' }, 'new'), `/hive:new-build\n\n${FEEDBACK_TEMPLATE}`);
+  assert.equal(transitionPrompt({ when: 'done', prompt: 'Also lint.' }, { prompt: 'Build it.' }, 'new'), 'Also lint.\n\nBuild it.');
   assert.equal(transitionPrompt({ when: 'verdict', prompt: 'Fix:\n\n{verdict}' }, build, 'continue'), 'Fix:\n\n{verdict}');
   assert.equal(transitionPrompt({ when: 'done' }, build, 'continue'), '/build {url}');
   assert.equal(transitionPrompt({ when: 'done', prompt: '  ' }, build, 'new'), '/build {url}');
   assert.equal(FEEDBACK_TEMPLATE, 'The user reviewed this stage and asks:\n\n{feedback}');
   assert.equal(transitionPrompt({ when: 'feedback' }, build, 'continue'), FEEDBACK_TEMPLATE);
-  assert.equal(transitionPrompt({ when: 'feedback' }, build, 'new'), `${FEEDBACK_TEMPLATE}\n\n/build {url}`);
+  assert.equal(transitionPrompt({ when: 'feedback' }, build, 'new'), `/build {url}\n\n${FEEDBACK_TEMPLATE}`);
   assert.equal(transitionPrompt({ when: 'approved' }, {}, 'new'), '');
   assert.deepEqual(
     [needsHandover({ when: 'done' }), needsHandover({ when: 'done', prompt: 'x' }), needsHandover({ when: 'feedback' }), needsHandover({ when: 'approved', session: 'new' })],
@@ -135,5 +137,5 @@ test('a skill stage reads as a prompt stage: its own verdicts, done for an unrou
   assert.deepEqual(verdictsOf(plan), ['redo']);
   assert.equal(exitOf({ stages: [plan], transitions: [done] }, 'plan', 'verdict', 'redo'), done);
   assert.equal(verdictText(plan, { verdict: { evidence: 'why', output: 'no' } }), 'why');
-  assert.equal(transitionPrompt({ when: 'feedback' }, plan, 'new'), `${FEEDBACK_TEMPLATE}\n\n/hive:new-plan`);
+  assert.equal(transitionPrompt({ when: 'feedback' }, plan, 'new'), `/hive:new-plan\n\n${FEEDBACK_TEMPLATE}`);
 });

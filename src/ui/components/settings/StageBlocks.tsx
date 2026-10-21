@@ -119,7 +119,7 @@ function WorkerFields({ id, stage, onUpdate, agents, defaultAgent, launchOptions
       </Field>
       <Field id={`${id}-specializedAgent`} anchor={settingAnchor('settings.stages.specializedAgent', stage.id)} label={t('settings.stages.specializedAgent')}>
         <SpecializedAgentMenu
-          id={`${id}-specializedAgent`} agent={agent} agents={options?.specializedAgents} value={stage.specializedAgent}
+          id={`${id}-specializedAgent`} agent={agent} agents={options?.specializedAgents} value={stage.specializedAgent} disabled={stage.action === '' && stage.prompt.trim() === ''}
           open={menu === 'specialized'} onOpenChange={toggle('specialized')} onPick={(specializedAgent) => onUpdate({ specializedAgent })}
         />
       </Field>

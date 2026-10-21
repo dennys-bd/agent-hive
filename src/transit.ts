@@ -164,7 +164,7 @@ const EVIDENCE_SIZE_MESSAGE = `evidence must be at most ${FEEDBACK_MAX} characte
 
 /** Why hive_done's verdict is refused, or undefined (#134): one of the stage's verdicts, the list named when it is not; an evidence only with a
  * verdict, at most FEEDBACK_MAX characters. Here, beside withVerdict, rather than in mcp.ts, which it would push past 400 lines. */
-export function verdictProblem(verdict: string | undefined, evidence: string | undefined, stage: Pick<Stage, 'action' | 'prompt' | 'verdicts'> | undefined): string | undefined {
+export function verdictProblem(verdict: string | undefined, evidence: string | undefined, stage: Pick<Stage, 'action' | 'prompt' | 'skill' | 'verdicts'> | undefined): string | undefined {
   if (verdict === undefined) return evidence === undefined ? undefined : EVIDENCE_ALONE_MESSAGE;
   const allowed = stage === undefined ? [] : verdictsOf(stage);
   if (!allowed.includes(verdict)) return allowed.length === 0 ? NO_VERDICT_MESSAGE : `verdict must be one of this stage's: ${allowed.join(', ')}`;
