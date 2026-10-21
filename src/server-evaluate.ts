@@ -45,7 +45,7 @@ interface Reviewed { findings: ReviewFinding[]; byRow: { who: string; findings: 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 // One row's launch (#877, decision 7): its agent on PATH, then its picks as a stage run's are checked, its specialized agent looked up in the
-// workspace's plugin folder, which is read only when some row names one, and once
+// workspace's plugin folder, which is read only when some row names one, and once for all the rows
 async function resolveRows(deps: EvaluateDeps, stage: Stage, workspace: string): Promise<{ reviewers: Row[]; judge: Row } | Broken> {
   const { reviewers = [], judge } = stage;
   if (judge === undefined) return { broken: 'the stage has no judge' }; // the config refuses it; a hand-edited state's stage might not
@@ -82,9 +82,9 @@ async function workOf(runtime: Runtime, { task, activity }: EvaluateEffect, work
 }
 
 // The rubric's dimensions as the judge reads them and the scores are named (#877, decision 4): each line rendered alone, its whitespace folded,
-// so a {body} of several lines never adds one
+// so a {body} of several lines never adds one; a line that renders empty keeps its raw text, so no score goes unnamed
 const dimensionsOf = ({ stage, task, result }: EvaluateEffect): string[] =>
-  rubricLines(stage.rubric ?? '').map((line) => renderPrompt(line, task.item, result).replace(/\s+/g, ' ').trim());
+  rubricLines(stage.rubric ?? '').map((line) => renderPrompt(line, task.item, result).replace(/\s+/g, ' ').trim() || line);
 
 export function createEvaluateRunner(deps: EvaluateDeps): EvaluateRunner {
   const runs = new Map<string, AbortController>();
@@ -149,7 +149,9 @@ export function createEvaluateRunner(deps: EvaluateDeps): EvaluateRunner {
     const judged = await judge(rows.judge, work, dimensionsOf(effect), reviewed, cwd, signal);
     if ('broken' in judged) return broken(judged.broken);
     const threshold = effect.stage.threshold ?? 0;
-    const below = failingScores(judged.scores, threshold).map((s) => s.dimension).join(', ') || 'none';
+    // the failing dimensions by their 1-based index: a rendered line can carry the task's text, which no log line holds
+    const failing = new Set(failingScores(judged.scores, threshold));
+    const below = judged.scores.flatMap((s, i) => (failing.has(s) ? [i + 1] : [])).join(',') || 'none';
     deps.log.info(`evaluate #${task.item.id}: scores ${judged.scores.map((s) => s.score).join(',')} against ${threshold}: below: ${below}`);
     return { type: 'evaluateEnded', activityId: activity.id, runId, scores: judged.scores, findings: reviewed.findings };
   }

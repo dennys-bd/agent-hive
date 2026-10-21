@@ -149,12 +149,15 @@ test('both reviewers run at once in the worktree, read-only; then evaluateJudgin
   assert.ok(h.logs.every((line) => !line.includes('a.ts') && !line.includes('diff --git')), 'no finding nor patch in the log');
 });
 
-test('zero reviewers: the judge reads the work alone; a failing score is logged by its dimension (#877)', async (t) => {
+test('zero reviewers: the judge reads the work alone; a failing score is logged by its index, never its text; a line rendering empty stays raw (#877)', async (t) => {
   const h = await harness(t, { env: { SCORES: scoresJson([8, 3]) } });
-  await h.runner.run(h.runtime, h.effect([]));
+  const effect = h.effect([]);
+  await h.runner.run(h.runtime, { ...effect, stage: { ...effect.stage, rubric: 'Meets {id}?\n{url}' } });
   assert.deepEqual(h.events.map((e) => e.type), ['worktreeReady', 'evaluateJudging', 'evaluateEnded']);
   assert.match(await h.read('judge.prompt'), /No reviewer ran: read the work yourself\./);
-  assert.ok(h.logs.includes('evaluate #HIVE-1: scores 8,3 against 7: below: Tests cover it?'), h.logs.join('\n'));
+  assert.ok(h.logs.includes('evaluate #HIVE-1: scores 8,3 against 7: below: 2'), h.logs.join('\n'));
+  const ended = lastOf(h) as Extract<HiveEvent, { type: 'evaluateEnded' }>;
+  assert.deepEqual(ended.scores.map((s) => s.dimension), ['Meets HIVE-1?', '{url}'], 'an empty render falls back to the raw line');
 });
 
 test('a patch past PATCH_MAX reaches the judge cut, with the line saying so (#877)', async (t) => {
