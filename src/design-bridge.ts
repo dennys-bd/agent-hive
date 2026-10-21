@@ -1,5 +1,6 @@
 // The design frame's bridge (#108): the one script the Hive puts into a design. It runs inside the sandboxed frame, whose origin is
-// opaque, so it talks to the design pane by postMessage alone. The comment mode (#112) adds anchors, pins, the pointer capture and the forwarded keys.
+// opaque, so it talks to the design pane by postMessage alone. The comment mode (#112) adds anchors, pins, the pointer capture and the forwarded keys;
+// the parts list (#421) tells the pane which files the screen was assembled from.
 import { type AnchorEntry, anchorFunctions, type ElementAnchor, type Pin, type Rect } from './design-anchor.js';
 
 /** The anchor functions the bridge calls. They come in as an argument, not as imports: the frame's script has no modules, and a test
@@ -34,7 +35,7 @@ interface BridgeState {
 
 /** Runs inside the frame, joined with its siblings by bridgeScript: it reads only its argument, browser globals and the functions
  *  joined beside it. Answers its teardown, which the tests call; the frame never does. */
-export function designBridge(helpers: AnchorHelpers): () => void {
+export function designBridge(helpers: AnchorHelpers, parts: readonly string[] = []): () => void {
   const root = document.documentElement;
   const listening = new AbortController();
   const { signal } = listening;
@@ -51,11 +52,11 @@ export function designBridge(helpers: AnchorHelpers): () => void {
   };
   const pointer = (event: MouseEvent): void => bridgePointer(bridge, event);
   window.addEventListener('message', (event: MessageEvent<unknown>) => bridgeMessage(bridge, event), { signal });
-  // ready on every load: the parent reloads the frame on a version change and marks it reloaded at the ready that follows. The tweaks block
-  // after it: the parent sends its values at ready, then settles them against the block that follows (#241). The natural width is
-  // measured once the page has laid out (#341)
+  // ready on every load: the parent reloads the frame on a version change and marks it reloaded at the ready that follows. Then the parts the
+  // route assembled the screen from, when any, which the parent polls too (#421); the tweaks block after (#241); the natural width once laid out (#341)
   window.addEventListener('load', () => {
     post({ type: 'ready' });
+    if (parts.length > 0) post({ type: 'parts', parts: [...parts] });
     postTweaks(post);
     sizes.measure();
   }, { signal });
@@ -304,10 +305,13 @@ const BRIDGE_FUNCTIONS = [
   pointerUp, bridgeKey, bridgeWheel, bridgeMiddle, postTweaks, applyTweak, sizeReporter, designBridge,
 ];
 
+// JSON in an inline script: every < escaped, so no part's name can close the script
+const inlineJson = (value: unknown): string => JSON.stringify(value).replaceAll('<', '\\u003c');
+
 /** The bridge as the inline script the design frame route puts into every HTML page it serves (#108): inline, so it needs no route.
  *  Function.toString carries no import, so every function the bridge reaches is joined in, and the anchor functions it calls are
- *  handed over by name. */
+ *  handed over by name. parts (#421): what the route assembled the screen from. */
 // The arrow wrapper keeps the joined functions out of the design's global scope: a design declaring one of their names would otherwise
 // break its own script or replace ours
-export const bridgeScript = (): string =>
-  `<script>(() => {\n${[...anchorFunctions, ...BRIDGE_FUNCTIONS].map(String).join('\n')}\ndesignBridge({ elementAnchor, findAnchor, pinRects, isEditable, isAnchorList });\n})()</script>`;
+export const bridgeScript = (parts: readonly string[] = []): string =>
+  `<script>(() => {\n${[...anchorFunctions, ...BRIDGE_FUNCTIONS].map(String).join('\n')}\ndesignBridge({ elementAnchor, findAnchor, pinRects, isEditable, isAnchorList }, ${inlineJson(parts)});\n})()</script>`;

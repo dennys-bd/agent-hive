@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { bridgeScript } from '../src/design-bridge.js';
+import { PART_REASONS, partNotice } from '../src/design-parts.js';
 import { initialState } from '../src/orchestrator.js';
 import { SECRET_HEADER, secretCookie } from '../src/secret.js';
 import { createServer } from '../src/server.js';
@@ -46,6 +47,8 @@ const SLUG = 'hive-1-design';
 const TASK: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Design', body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: 'hive' };
 const DESIGN = '<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><h1>Home</h1></body></html>';
 const CSS = 'h1 { color: red; }\n';
+const PART = '<nav class="sidebar"><a>Issues</a></nav>';
+const SHELL = '<!doctype html><html><head></head><body><hv-include src="parts/nav.html"></hv-include><hv-include src="parts/gone.html"></hv-include></body></html>';
 
 interface Frames { base: string; port: number; repo: string; activity: string; lines: string[] }
 
@@ -60,6 +63,9 @@ async function startFrames(t: TestContext): Promise<Frames> {
   await writeFile(join(design, 'home.hv.html'), DESIGN);
   await writeFile(join(design, 'style.css'), CSS);
   await writeFile(join(design, 'notes.md'), '# notes\n');
+  await mkdir(join(design, 'parts'));
+  await writeFile(join(design, 'parts', 'nav.html'), PART);
+  await writeFile(join(design, 'shell.hv.html'), SHELL);
   await writeFile(join(worktree, 'secret.txt'), 'outside the design folder\n');
   await symlink(join(worktree, 'secret.txt'), join(design, 'link.css'));
   await writeFile(join(repo, 'outside.hv.html'), DESIGN);
@@ -145,4 +151,28 @@ test('the mint stays behind the gate: 403 without the secret; 400 for a file tha
   assert.equal(atRoot.status, 404);
   const unknown = await hiveFetch(`${f.base}/activities/${savedActivityId(99)}/design-frame?path=design%2Fhome.hv.html`);
   assert.equal(unknown.status, 404);
+});
+
+test('bridgeScript hands the parts to the bridge as JSON that cannot close its script; none is an empty list (#421)', () => {
+  const script = bridgeScript(['parts/a.html', '</script><b>']);
+  assert.ok(script.endsWith('isAnchorList }, ["parts/a.html","\\u003c/script>\\u003cb>"]);\n})()</script>'), script.slice(-120));
+  assert.equal(script.indexOf('</script>'), script.length - '</script>'.length);
+  assert.equal(bridgeScript(), bridgeScript([]));
+});
+
+test('a screen is served assembled: its part in place and marked, a missing one as its notice, the bridge handed every part it asked for, under the same policy; a part asked directly is served as it is on disk (#421)', async (t) => {
+  const f = await startFrames(t);
+  const url = await minted(f, 'design/shell.hv.html');
+  const token = url.split('/')[2];
+  const page = await fetch(`${f.base}${url}`);
+  assert.equal(page.status, 200);
+  assert.equal(page.headers.get('content-security-policy'), framePolicy(`127.0.0.1:${f.port}`, token));
+  assert.equal(await page.text(), [
+    `<!doctype html><html><head>${bridgeScript(['parts/gone.html', 'parts/nav.html'])}</head><body>`,
+    '<nav data-hv-source="parts/nav.html" class="sidebar"><a>Issues</a></nav>', partNotice(PART_REASONS.missing, 'parts/gone.html'), '</body></html>',
+  ].join(''));
+  const part = await fetch(`${f.base}/design-frame/${token}/parts/nav.html`);
+  assert.equal(part.status, 200);
+  assert.equal(part.headers.get('content-security-policy'), framePolicy(`127.0.0.1:${f.port}`, token));
+  assert.equal(await part.text(), withBridge(PART));
 });
