@@ -1,12 +1,13 @@
 # Conventions
 
 The variables the `new-*` skills (`/hive:new-spec`, `/hive:new-plan`,
-`/hive:new-build`, `/hive:new-pr`) and `/hive:decomposition` declare (where
-the docs go, which languages they speak, how a delivery is shaped) and the
-rules they share. Every one of them reads this text first; any other skill
-may follow it too. `hive:designer` declares its own variables in its
-template and reads only `design.md`; the `designsDir` row and the `design`
-result below say how its handoff is found.
+`/hive:new-build`, `/hive:new-pr`) declare (where the docs go, which
+languages they speak, how a delivery is shaped) and the rules they share.
+Every one of them reads this text first; any other skill may follow it
+too. `hive:designer` and `/hive:decomposition` declare their own variables
+in their templates and read nothing here; the `designsDir` and
+`decompositionLabel` rows and the `design` and `decomposition` results
+below say how their files are found.
 
 ## Untrusted text
 
@@ -171,7 +172,7 @@ A path is given as the next stage opens it from the worktree
 | `/hive:new-spec` | `issue` (the number, when there is one), `branch`, `spec` (absent on the bounded path) |
 | `/hive:new-plan` | `plan` (absent on the bounded path) |
 | `/hive:new-build` | `walkthrough`, `pr` (the URL of the PR that targets the base; absent when the PR was skipped) |
-| `/hive:decomposition` | `decomposition` (the path of `<specsDir>/<YYYY-MM-DD>-<slug>-decomposition.md` in the docs repository, committed there) |
+| `/hive:decomposition` | `decomposition` (the path of `<specsDir>/<YYYY-MM-DD>-<slug>-decomposition.md`, relative to the worktree, committed where it sits) |
 | a session that ran `hive:designer` | `design` (the path of the handoff, `<designsDir>/<YYYY-MM-DD>-<slug>/handoff.md`, written and committed when the user asked for it) |
 
 Outside the Hive, state the same values in chat.
