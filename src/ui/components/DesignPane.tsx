@@ -101,6 +101,7 @@ function useReloads(activityId: string, path: string, parts: readonly string[], 
 // frame. The design itself may post too: anything else is dropped
 interface FrameSize { height?: number; width?: number; natural?: number }
 const isFramePx = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const withoutWidth = ({ height, natural }: FrameSize): FrameSize => ({ height, natural });
 
 function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: () => void): [FrameSize, () => void] {
   const [size, setSize] = useState<FrameSize>({});
@@ -110,7 +111,10 @@ function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: (
       const data = bridgeData(event, frame.current);
       if (data === undefined) return;
       const { type, height, width, natural } = data;
-      if (type === 'ready') ready();
+      if (type === 'ready') {
+        setSize(withoutWidth); // a reloaded file may no longer overflow: the bridge reports the width again if it still does (#453)
+        ready();
+      }
       else if (type === 'size' && isFramePx(height)) {
         setSize((now) => ({
           height: Math.min(height, MAX_FRAME_PX),
@@ -124,7 +128,7 @@ function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: (
   }, [frame]);
   // An overflow width belongs to the viewport it was measured at: a viewport change drops it, and the bridge reports the next one if the
   // content still overflows. The natural width is the content's own at any viewport, so it stays
-  return [size, () => setSize(({ height, natural }) => ({ height, natural }))];
+  return [size, () => setSize(withoutWidth)];
 }
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -155,11 +159,13 @@ function useFrameZoom(frame: RefObject<HTMLIFrameElement | null>, zoom: DesignZo
   }, [frame]);
 }
 
-// natural (#341): the content's measured width, held to mobile–desktop. A fixed viewport: its width, or a window screen's wider overflow (#241)
+// natural (#341): the content's measured width, held to mobile–desktop, since a fluid page measures far wider than it lays out. A fixed
+// viewport: its width. Both widen to the overflow the bridge reports (#241, #453), which a window screen past desktop has and a fluid page lacks
 const frameWidthOf = (viewport: DesignViewport, size: FrameSize): number =>
-  (viewport === 'natural'
-    ? Math.min(NATURAL_MAX, Math.max(NATURAL_MIN, size.natural ?? NATURAL_MAX))
-    : Math.max(DESIGN_VIEWPORT_PX[viewport], size.width ?? 0));
+  Math.max(
+    viewport === 'natural' ? Math.min(NATURAL_MAX, Math.max(NATURAL_MIN, size.natural ?? NATURAL_MAX)) : DESIGN_VIEWPORT_PX[viewport],
+    size.width ?? 0,
+  );
 
 // The switch's list (#341): natural, the viewports the screen declares, then the current one when the screen no longer declares it, so a
 // comment pinned there can be reopened
