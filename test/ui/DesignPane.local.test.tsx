@@ -56,6 +56,17 @@ test('a comment added on a local pane is a draft of the workspace\'s review, for
   await waitFor(() => expect(posted('/drafts')).toEqual([{ anchor: { ...ELEMENT, path: PATH, viewport: 'natural', theme: 'dark', tweaks: {} }, text: 'bigger', session: 'new' }]));
 });
 
+test('a comment on an element of a part carries the part from the activity, the screen\'s folder joined to the bridge\'s path, and its slot (#421)', async () => {
+  const user = userEvent.setup();
+  await pane();
+  await user.click(screen.getByRole('button', { name: 'comentar' }));
+  fromBridge({ type: 'anchor', anchor: { ...ELEMENT, part: 'parts/sidebar.html', slot: 'title' } });
+  await user.type(screen.getByRole('textbox', { name: 'comentar' }), 'shorter{Enter}');
+  await waitFor(() => expect(posted('/drafts')).toEqual([{
+    anchor: { ...ELEMENT, part: 'design/parts/sidebar.html', slot: 'title', path: PATH, viewport: 'natural', theme: 'dark', tweaks: {} }, text: 'shorter', session: 'new',
+  }]));
+});
+
 test('⌘⇧↵ on a local pane submits the file\'s drafts to the workspace\'s review: to a new session, then to the local session in focus (#345)', async () => {
   await pane();
   const region = screen.getByRole('region', { name: LABEL });
