@@ -6,7 +6,7 @@ import { runners } from './agents/registry.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
 import { shownBase } from './setup-rows.js';
-import { runTaskSetup } from './task-setup.js';
+import { type PrepareHooks, runTaskSetup } from './task-setup.js';
 import { withReused } from './worktree-setup.js';
 import { branchFor, LOCAL_SLUG, slugFor } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName, requireWorkspace } from './config.js';
@@ -177,21 +177,23 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   // The run's cwd (#299, #351, #444): the worktree made (or adopted) through runTaskSetup, which marks the task before its git when the
   // worktree still needs its setup, runs that git and the setup in one console run, and hands the setup a controller a Stop's kill reaches. A local task
   // switches the workspace's own checkout instead, already set up by its user: no setup. ensure* refreshes the base first (#119) and answers
-  // with the `base: …` line; the nested repos' worktrees (#653) come right after, in the same run.
+  // with the `base: …` line; the nested repos' worktrees (#653) come right after, in the same run, once the run has ended the worktree and
+  // branch rows (#450).
   async function prepare(runtime: Runtime, activity: Activity, task: Task, ptyId: string): Promise<string> {
     const { config } = runtime;
     const workspace = requireWorkspace(config, task); // the task's workspace, frozen by the reducer (#179); gone = spawnFailed with the reason
     const branch = taskBranch(activity, branchFor(config, task.item)); // a Restart's -r<n> (#283)
     const base = workspaceBase(config, workspace); // #854: the base remote, the workspace's base branch over the general one, its fork
     let reused: string | undefined; // #267: the branch ensure reused, which a failed setup names
-    const ensure = async (git: Exec): Promise<string> => {
+    const ensure = async (git: Exec, run?: PrepareHooks): Promise<string> => {
       const prepared = activity.local
         ? await ensureCheckout(workspace.path, branch, base, activity.base?.ref, git, workspace.nestedRepos)
         : await ensureWorktree(workspace.path, workSlug(activity, task), branch, base, activity.base?.ref, git);
+      run?.prepared(); // #450: the outer git alone is the worktree and branch rows' time; a local task's ensure runs with no run
       reused = prepared.reused;
       if (prepared.line) log.info(prepared.line);
       if (prepared.sync) await dispatch({ type: 'forkSynced', activityId: activity.id, sync: prepared.sync }); // #854
-      for (const line of await prepareNested(workspace, prepared, branch, activity.local === true, base.remote, git)) log.info(line); // #653: before the setup, in its console run
+      for (const line of await prepareNested(workspace, prepared, branch, activity.local === true, base.remote, git, run?.nested)) log.info(line); // #653, #450: before the setup, in its console run, each repo its row
       return prepared.path;
     };
     if (activity.local) return ensure(exec);

@@ -6,7 +6,7 @@ import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
 import { baseRemote, workspaceBase } from './fork.js';
 import { taskBranch } from './task-runs.js';
-import { openWorktreeRun } from './task-setup.js';
+import { openWorktreeRun, type WorktreeRun } from './task-setup.js';
 import { setupRunId } from './console.js';
 import { shownBase } from './setup-rows.js';
 import { branchFor, slugFor, slugOwner, slugTakenMessage, worktreeSessions } from './tasks.js';
@@ -85,19 +85,21 @@ async function confirmPlan(deps: TaskRouteDeps, task: Task, { task: placed, work
   return undefined;
 }
 
-// The worktree, or the workspace's own checkout (#444), then `setUp` in it (#299, #351), then the task's worktree fields. The base is saved
+// The worktree, or the workspace's own checkout (#444), then the setup run's `setUp` in it (#299, #351), then the task's worktree fields.
+// Inside a run (#450) its worktree and branch rows end right after the outer git, and each nested repo gets its row. The base is saved
 // with tellWorker false: a session gets no stage prompt to tell.
-async function makeWorktree(deps: TaskRouteDeps, current: LiveView, plan: WorktreePlan, activityId: string, setUp?: (path: string) => Promise<void>): Promise<void> {
+async function makeWorktree(deps: TaskRouteDeps, current: LiveView, plan: WorktreePlan, activityId: string, run?: Pick<WorktreeRun, 'prepared' | 'nested' | 'setUp'>): Promise<void> {
   const { workspace, slug, branch, place } = plan;
   const base = workspaceBase(current.runtime.config, workspace); // #854
   const prepared = place.local
     ? await ensureCheckout(workspace.path, branch, base, place.base?.ref, deps.exec, workspace.nestedRepos)
     : await ensureWorktree(workspace.path, slug, branch, base, place.base?.ref, deps.exec);
+  run?.prepared();
   const { path, sync, line, reused } = prepared;
   if (line) deps.log.info(line); // #267: the base and what became of an existing branch, as a spawn logs them
   if (sync) await deps.dispatch({ type: 'forkSynced', activityId, sync }); // #854: an open's worktree keeps its sync as a spawn's does
-  for (const nested of await prepareNested(workspace, prepared, branch, place.local, base.remote, deps.exec)) deps.log.info(nested); // #653: before the setup
-  if (setUp) await setUp(path).catch((err: unknown) => { throw withReused(err, reused); });
+  for (const nested of await prepareNested(workspace, prepared, branch, place.local, base.remote, deps.exec, run?.nested)) deps.log.info(nested); // #653: before the setup
+  if (run) await run.setUp(workspace, path).catch((err: unknown) => { throw withReused(err, reused); });
   await deps.dispatch({ type: 'worktreeReady', activityId, path, branch, base: place.base ?? null, local: place.local });
 }
 
@@ -138,13 +140,13 @@ async function openWithSetup(deps: OpenRouteDeps, current: LiveView, task: Task,
   if (!born) return noActivity(res);
   const { activityId, settled } = born;
   const base = shownBase(plan.place.base?.ref, workspaceBase(current.runtime.config, plan.workspace)); // #390: the branch row's
-  const setup = openWorktreeRun(deps, { id: setupRunId(task.item.itemId), label: `#${plan.task.item.id}`, kind: 'setup', activityId, branch: plan.branch, base });
+  const setup = openWorktreeRun(deps, { id: setupRunId(task.item.itemId), label: `#${plan.task.item.id}`, kind: 'setup', activityId, branch: plan.branch, base, nested: plan.workspace.nestedRepos });
   await Promise.all([settled, deps.dispatch({ type: 'setupStarted', activityId, consoleId: setup.id, rows: setup.rows() })]);
   const logged: OpenRouteDeps = { ...deps, exec: setup.exec };
   let refusal: Refusal | undefined;
   try { // everything after the mark: no throw may leave the task marked until the next boot
     refusal = await confirmPlan(logged, task, plan);
-    if (!refusal) await makeWorktree(logged, current, plan, activityId, (path) => { setup.prepared(); return setup.setUp(plan.workspace, path); });
+    if (!refusal) await makeWorktree(logged, current, plan, activityId, setup);
   } catch (err) {
     setup.end(err);
     await deps.dispatch({ type: 'setupEnded', activityId, error: errorMessage(err) });

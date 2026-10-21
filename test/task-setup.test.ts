@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { type TaskSetupDeps, removeInRun, runTaskSetup } from '../src/task-setup.js';
+import { type PrepareHooks, type TaskSetupDeps, removeInRun, runTaskSetup } from '../src/task-setup.js';
 import { type ConsoleStore, createConsoleStore } from '../src/console.js';
 import { createPtyHost, NO_PTY, type PtyHost } from '../src/pty-host.js';
 import type { Task, Effect, Exec, HiveEvent, SetupRow, Workspace } from '../src/types.js';
@@ -286,4 +286,50 @@ test('a RUN that fails marks its row failed with its exit code; a git failure ma
   };
   await assert.rejects(runTaskSetup({ ...git.deps, exec: refusing }, TASK, ACTIVITY, git.workspace, git.worktree, prepareIn(git.worktree), BRANCH));
   assert.deepEqual((rowsOf(git.events).at(-1) ?? []).map(({ kind, status, code }) => [kind, status, code]), [['worktree', 'failed', undefined], ['branch', 'failed', undefined]]);
+});
+
+// A prepare with the nested step (#450): the outer git, the mark, then each nested repo as prepareNested reports it
+const prepareNestedIn = (worktree: string) => async (exec: Exec, run?: PrepareHooks): Promise<string> => {
+  await exec('git', ['worktree', 'add', worktree]);
+  run?.prepared();
+  run?.nested.started('docs');
+  await exec('git', ['-C', 'docs', 'worktree', 'add']);
+  run?.nested.ended('docs', { base: 'origin/main' });
+  run?.nested.started('wiki');
+  run?.nested.ended('wiki', { reused: true });
+  return worktree;
+};
+
+test('a run with nested repos queues their rows from the mark, ends the worktree and branch rows before the first starts, and writes `> nested <path>` before that repo\'s git (#450)', async (t) => {
+  const h = await harness(t, 'RUN one', quiet);
+  await runTaskSetup(h.deps, TASK, ACTIVITY, { ...h.workspace, nestedRepos: ['docs', 'wiki'] }, h.worktree, prepareNestedIn(h.worktree), BRANCH);
+  assert.deepEqual(rowsOf(h.events).map(statuses), [
+    'running running queued queued', 'done done queued queued', 'done done running queued', 'done done done queued', 'done done done running', 'done done done done',
+    'done done done done queued', 'done done done done running', 'done done done done done',
+  ]);
+  const [, , docs, wiki] = rowsOf(h.events).at(-1) ?? [];
+  assert.deepEqual({ ...docs, durationMs: 0 }, { kind: 'nested', status: 'done', label: 'docs', header: 'nested docs', branch: BRANCH.branch, base: 'origin/main', durationMs: 0 });
+  assert.deepEqual({ ...wiki, durationMs: 0 }, { kind: 'nested', status: 'done', label: 'wiki', header: 'nested wiki', branch: BRANCH.branch, durationMs: 0 });
+  const outer = `${cmd(`git worktree add ${escaped(h.worktree)}`)}${MS}`;
+  assert.match(shown(h.store.history(CHANNEL)?.history), new RegExp(`${outer}${cmd('nested docs')}${cmd('git -C docs worktree add')}${MS}${cmd('nested wiki')}${GIT_DIR}${cmd('RUN one')}`));
+});
+
+test('a nested repo whose git fails fails its own row, the worktree and branch rows staying done; one refused before it started fails its row under its own header (#450)', async (t) => {
+  const h = await harness(t, 'RUN one', quiet);
+  const nested = { ...h.workspace, nestedRepos: ['docs', 'wiki'] };
+  const refusal = new Error('/wt/docs is checked out on other, not on hive/1-task-1');
+  await assert.rejects(runTaskSetup(h.deps, TASK, ACTIVITY, nested, h.worktree, async (_exec, run) => {
+    run?.prepared();
+    run?.nested.started('docs');
+    throw refusal;
+  }, BRANCH), refusal);
+  assert.equal(statuses(rowsOf(h.events).at(-1) ?? []), 'done done failed queued');
+  const dirty = await harness(t, 'RUN one', quiet);
+  await assert.rejects(runTaskSetup(dirty.deps, TASK, ACTIVITY, { ...dirty.workspace, nestedRepos: ['docs', 'wiki'] }, dirty.worktree, async (_exec, run) => {
+    run?.prepared();
+    run?.nested.failed('wiki');
+    throw new Error('wiki has changes that are not committed');
+  }, BRANCH));
+  assert.equal(statuses(rowsOf(dirty.events).at(-1) ?? []), 'done done queued failed');
+  assert.match(shown(dirty.store.history(CHANNEL)?.history), new RegExp(`${cmd('nested wiki')}${fail('wiki has changes that are not committed')}$`));
 });
