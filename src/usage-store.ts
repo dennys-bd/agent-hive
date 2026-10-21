@@ -1,13 +1,13 @@
 import { closeSync, openSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
-import { EVENTS_FILE, type EventName, type EventRecord } from './events.js';
+import { FACTS_FILE, type FactName, type FactRecord } from './facts.js';
 import { generations, type Logger } from './log.js';
 import { isRecord } from './rate-limits.js';
 import { migrate, restrict } from './read-model/db.js';
 import { inTransaction } from './read-model/sql.js';
 
-// usage.sqlite (#271): the usage, intervention and outcome records of events.jsonl, kept for good beside it. events.jsonl rotates at 5 MB into five generations (#93); this
+// usage.sqlite (#271): the usage, intervention and outcome records of the fact log (facts.jsonl), kept for good beside it. facts.jsonl rotates at 5 MB into five generations (#93); this
 // file never rotates and the Hive never deletes it: a file it cannot open or write turns the store off with one hive.log line and is left as it
 // is. One row per record, its correlation as columns and the whole record as JSON, so any later question (per day, task, stage, agent, model)
 // is one query. Cost and the planned/unplanned split are the query's: no price and no rule is stored.
@@ -16,7 +16,7 @@ export const USAGE_FILE = 'usage.sqlite';
 const FILE_MODE = 0o600; // the user's own history, as the read model's
 
 /** The events the store keeps (#271): usage, the interventions, and the outcomes they are counted against. */
-export const KEPT_EVENTS: readonly EventName[] = [
+export const KEPT_FACTS: readonly FactName[] = [
   'stage.ended', 'free_session.ended',
   'run.takeover', 'run.stopped', 'run.restarted', 'task.moved', 'question.answered', 'permission.answered',
   'approval.granted', 'approval.rejected', 'approval.extended', 'approval.expired',
@@ -33,13 +33,13 @@ const MIGRATIONS: readonly string[] = [
 const COLUMNS = ['task_id', 'task', 'activity_id', 'stage', 'session_id', 'attempt', 'run_kind', 'agent'] as const;
 const INSERT = `INSERT INTO records (ts, event, ${COLUMNS.join(', ')}, data) VALUES ($ts, $event, ${COLUMNS.map((c) => `$${c}`).join(', ')}, $data)`;
 
-export interface UsageStore { write(record: EventRecord): void; close(): void }
+export interface UsageStore { write(record: FactRecord): void; close(): void }
 type ErrorLog = Pick<Logger, 'error'>;
 type Cell = string | number | null;
 
 const OFF: UsageStore = { write: () => undefined, close: () => undefined };
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-const isKept = (event: unknown): boolean => KEPT_EVENTS.some((name) => name === event);
+const isKept = (event: unknown): boolean => KEPT_FACTS.some((name) => name === event);
 // A column's value: a string or a number as it is, anything else NULL (absent, or an imported line's odd field), so no row fails on its type
 const cell = (value: unknown): Cell => (typeof value === 'string' || typeof value === 'number' ? value : null);
 
@@ -71,9 +71,9 @@ function keptLines(path: string): Record<string, unknown>[] {
   });
 }
 
-// Every generation events.jsonl still holds, oldest first (#271, #93): about seven weeks at today's rate, the rest rotated away
+// Every generation facts.jsonl still holds, oldest first (#271, #93): about seven weeks at today's rate, the rest rotated away
 function importLogs(home: string, insert: StatementSync): void {
-  for (const file of generations(EVENTS_FILE)) for (const record of keptLines(join(home, file))) insert.run(rowOf(record));
+  for (const file of generations(FACTS_FILE)) for (const record of keptLines(join(home, file))) insert.run(rowOf(record));
 }
 
 // write never throws: the first failure turns the store off with one line, the file left as it is; close closes the handle once
@@ -120,7 +120,7 @@ function storeAt(Database: typeof DatabaseSync, home: string, log: ErrorLog): Us
   }
 }
 
-/** Opens usage.sqlite in `home` (#271), creating it on first use with the history events.jsonl's generations still hold. node:sqlite is imported here,
+/** Opens usage.sqlite in `home` (#271), creating it on first use with the history facts.jsonl's generations still hold. node:sqlite is imported here,
  * as openReadModel does. Never rejects: a file it cannot open (not a database, a newer schema, a disk error) gives a store that keeps nothing,
  * with one error line, and is never deleted. */
 export async function openUsageStore(home: string, log: ErrorLog): Promise<UsageStore> {

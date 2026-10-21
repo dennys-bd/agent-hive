@@ -1,6 +1,6 @@
 import { MEMORY_STATS_DAYS, type MemoryEntry, type MemoryStats } from './types.js';
 
-// The memory dialog's telemetry (#797), from the local events.jsonl only: nothing here is sent anywhere. Pure: the caller reads the files.
+// The memory dialog's telemetry (#797), from the local facts.jsonl only: nothing here is sent anywhere. Pure: the caller reads the files.
 
 const DAY_MS = 86_400_000;
 export const CHARS_PER_TOKEN = 4; // ponytail: the usual English estimate, not a tokenizer; the block shows it as ~n, the memory total limit as ≈ n (#73)
@@ -21,7 +21,7 @@ export function memoryRecord(line: string, workspace: string): MemoryRecord | un
 
 const distinct = (records: readonly Fields[]): Set<unknown> => new Set(records.map((r) => r.id));
 
-/** A workspace's memory stats over its `records` (every generation of events.jsonl, oldest first, so in time order), the last MEMORY_STATS_DAYS days before `now`. */
+/** A workspace's memory stats over its `records` (every generation of facts.jsonl, oldest first, so in time order), the last MEMORY_STATS_DAYS days before `now`. */
 export function memoryStats(records: readonly MemoryRecord[], entries: readonly MemoryEntry[], now: number): MemoryStats {
   const since = now - MEMORY_STATS_DAYS * DAY_MS;
   const recent = records.filter((r) => typeof r.ts === 'string' && Date.parse(r.ts) >= since);

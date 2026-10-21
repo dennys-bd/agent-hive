@@ -5,14 +5,14 @@ import { createInterface } from 'node:readline';
 import type { Express, Request, Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { taskWorkspace, workspaceByName } from './config.js';
-import { EVENTS_FILE, type EventLog } from './events.js';
+import { FACTS_FILE, type FactLog } from './facts.js';
 import { generations, type Logger } from './log.js';
 import {
   errorName, isMemoryRefusal, lessonRefusal, MEMORY_KIND_MESSAGE, MEMORY_TEXT_MESSAGE, memoryCounts, memoryView, type MemoryRefusal, type MemoryResult,
   type MemoryStore, withEdit, withEntry, withoutEntry,
 } from './memory.js';
 import { memoryRecord, memoryStats, type MemoryRecord } from './memory-stats.js';
-import type { RunFields } from './server-events.js';
+import type { RunFields } from './server-facts.js';
 import type { Runtime } from './server.js';
 import { type Config, isMemoryKind, MEMORY_CAP_MAX, MEMORY_CAP_MIN, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryRefusalCode, type SettingsBody, type Workspace } from './types.js';
 
@@ -50,9 +50,9 @@ const STATUS: Record<MemoryRefusalCode, number> = { bad_memory: 400, memory_secr
 export interface MemoryRouteDeps {
   requireLive(res: Response): { runtime: Pick<Runtime, 'config'> } | undefined;
   memory: Pick<MemoryStore, 'read' | 'update'>;
-  events: Pick<EventLog, 'write'>;
+  facts: Pick<FactLog, 'write'>;
   log: Pick<Logger, 'error'>;
-  home: string; // where events.jsonl is, for the stats
+  home: string; // where facts.jsonl is, for the stats
   /** Runs `save` on the POST /settings chain, after every save already queued: one writer of hive.config.json at a time (#115, as #404). */
   queueSave(save: () => Promise<void>): Promise<void>;
   saveSettings(body: Partial<SettingsBody>, res: Response): Promise<void>;
@@ -97,18 +97,18 @@ async function write(deps: MemoryRouteDeps, res: Response, workspace: Workspace,
       return result;
     });
     if (isMemoryRefusal(saved)) return refused(res, saved);
-    if (touched) deps.events.write({ event: 'memory.changed', level: 'info', action, kind: touched.kind, by: 'user', id: touched.id, workspace: workspace.name, ...memoryCounts(saved) });
+    if (touched) deps.facts.write({ event: 'memory.changed', level: 'info', action, kind: touched.kind, by: 'user', id: touched.id, workspace: workspace.name, ...memoryCounts(saved) });
     res.json(memoryView(saved, workspace.memoryCap));
   } catch (err) {
     unreadable(deps, res, workspace.name, err);
   }
 }
 
-// The workspace's records of every generation of events.jsonl, oldest first (#93), each line parsed as it is read and dropped unless it is the
+// The workspace's records of every generation of facts.jsonl, oldest first (#93), each line parsed as it is read and dropped unless it is the
 // workspace's; a generation that is not there has none
-async function eventRecords(home: string, workspace: string): Promise<MemoryRecord[]> {
+async function factRecords(home: string, workspace: string): Promise<MemoryRecord[]> {
   const records: MemoryRecord[] = [];
-  for (const file of generations(EVENTS_FILE)) {
+  for (const file of generations(FACTS_FILE)) {
     const path = join(home, file);
     if (!(await access(path).then(() => true, () => false))) continue;
     for await (const line of createInterface({ input: createReadStream(path), crlfDelay: Number.POSITIVE_INFINITY })) {
@@ -155,7 +155,7 @@ function registerReads(app: Express, deps: MemoryRouteDeps): void {
     const workspace = workspaceParam(deps, req, res);
     if (workspace === undefined) return;
     try {
-      const [file, records] = await Promise.all([deps.memory.read(workspace.name), eventRecords(deps.home, workspace.name)]);
+      const [file, records] = await Promise.all([deps.memory.read(workspace.name), factRecords(deps.home, workspace.name)]);
       res.json(memoryStats(records, file.entries, Date.now()));
     } catch (err) {
       unreadable(deps, res, workspace.name, err);

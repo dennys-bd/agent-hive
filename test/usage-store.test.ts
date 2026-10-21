@@ -5,22 +5,22 @@ import { readFileSync, statSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { EVENTS_FILE, SCHEMA_VERSION, ZERO_TOKENS, type EventRecord } from '../src/events.js';
+import { FACTS_FILE, SCHEMA_VERSION, ZERO_TOKENS, type FactRecord } from '../src/facts.js';
 import { openUsageStore, USAGE_FILE } from '../src/usage-store.js';
 import { fakeLog } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
 const TS = '2026-10-20T12:00:00.000Z';
 const TOKENS = { input: 1, output: 2, cache_write: 3, cache_read: 4 };
-const ENDED: EventRecord = {
+const ENDED: FactRecord = {
   schema_version: SCHEMA_VERSION, ts: TS, event: 'stage.ended', level: 'info', task_id: 'board:I1', task: '1', activity_id: 'a-board:I1', stage: 'dev',
   session_id: 's-1', attempt: 2, run_kind: 'spawn', agent: 'codex', outcome: 'done', duration_ms: 60_000, waited_ms: 0, tokens: TOKENS,
   subagent_tokens: ZERO_TOKENS, models: ['gpt-5.6-terra'], tokens_by_model: { 'gpt-5.6-terra': TOKENS }, tool_counts: {},
 };
-const MOVED: EventRecord = { schema_version: SCHEMA_VERSION, ts: '2026-10-20T12:01:00.000Z', event: 'task.moved', level: 'info', task_id: 'board:I1', from: 'dev', to: 'review', by: 'hand' };
-const POLLED: EventRecord = { schema_version: SCHEMA_VERSION, ts: TS, event: 'source.polled', level: 'debug', source: 'board', items: 1, duration_ms: 2 };
-const DONE: EventRecord = { schema_version: SCHEMA_VERSION, ts: '2026-10-20T12:02:00.000Z', event: 'task.moved', level: 'info', task_id: 'board:I1', from: 'review', to: 'done', by: 'merge' };
-const lineOf = (record: EventRecord): string => `${JSON.stringify(record)}\n`;
+const MOVED: FactRecord = { schema_version: SCHEMA_VERSION, ts: '2026-10-20T12:01:00.000Z', event: 'task.moved', level: 'info', task_id: 'board:I1', from: 'dev', to: 'review', by: 'hand' };
+const POLLED: FactRecord = { schema_version: SCHEMA_VERSION, ts: TS, event: 'source.polled', level: 'debug', source: 'board', items: 1, duration_ms: 2 };
+const DONE: FactRecord = { schema_version: SCHEMA_VERSION, ts: '2026-10-20T12:02:00.000Z', event: 'task.moved', level: 'info', task_id: 'board:I1', from: 'review', to: 'done', by: 'merge' };
+const lineOf = (record: FactRecord): string => `${JSON.stringify(record)}\n`;
 
 // The rows through a connection of the test's own, as plain objects
 function rowsOf(home: string): Record<string, unknown>[] {
@@ -62,7 +62,7 @@ test('the rows survive a reopen, which imports nothing: a later write lands besi
   const first = await openUsageStore(home, fakeLog().log);
   first.write(ENDED);
   first.close();
-  await writeFile(join(home, EVENTS_FILE), lineOf(MOVED)); // written after the creation: never imported
+  await writeFile(join(home, FACTS_FILE), lineOf(MOVED)); // written after the creation: never imported
   const second = await openUsageStore(home, fakeLog().log);
   second.write(MOVED);
   second.close();
@@ -70,11 +70,11 @@ test('the rows survive a reopen, which imports nothing: a later write lands besi
   assert.deepEqual(rowsOf(home).map((r) => r.event), ['stage.ended', 'task.moved']);
 });
 
-test('on creation the store imports the kept records of every generation, .2 then .1 then events.jsonl, skipping a line that does not parse (#271, #93)', async (t) => {
+test('on creation the store imports the kept records of every generation, .2 then .1 then facts.jsonl, skipping a line that does not parse (#271, #93)', async (t) => {
   const home = await tempDir(t, 'usage-');
-  await writeFile(join(home, `${EVENTS_FILE}.2`), lineOf(ENDED));
-  await writeFile(join(home, `${EVENTS_FILE}.1`), `${lineOf(POLLED)}${lineOf(MOVED)}{"event":"task.mo\n`);
-  await writeFile(join(home, EVENTS_FILE), `${lineOf(DONE)}not json\n`);
+  await writeFile(join(home, `${FACTS_FILE}.2`), lineOf(ENDED));
+  await writeFile(join(home, `${FACTS_FILE}.1`), `${lineOf(POLLED)}${lineOf(MOVED)}{"event":"task.mo\n`);
+  await writeFile(join(home, FACTS_FILE), `${lineOf(DONE)}not json\n`);
   const { log, lines } = fakeLog();
   const store = await openUsageStore(home, log);
   store.close();

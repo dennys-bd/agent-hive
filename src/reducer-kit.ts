@@ -288,7 +288,7 @@ export function continueInPlace(freed: State, worker: Worker, ptyId: string, mov
   const written = sourceWrites(moved, sameStage ? onStart?.filter((a) => a.type === 'move') : onStart);
   const now = Date.now();
   const { waitingSince: _waitingSince, ...running } = worker; // it leaves waiting outside patch (#233)
-  // #617: the run so far stays on the stage it leaves; the new stage run counts past it (runShare), its clocks untouched for events.jsonl
+  // #617: the run so far stays on the stage it leaves; the new stage run counts past it (runShare), its clocks untouched for facts.jsonl
   const ran = runTime(worker, now);
   const kept: Worker = {
     ...running, ...closeWait(worker, now), stage: next.name, foldedMs: ran.ms, foldedWaitingMs: ran.waitingMs,

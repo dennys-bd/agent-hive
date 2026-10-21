@@ -1,5 +1,5 @@
 import { commandLine, type ConsoleStore, crlf, failLine, okLine, runHeader, SETUP_CHANNEL, setupRunId, type WorktreeRunKind } from './console.js';
-import type { EventLog } from './events.js';
+import type { FactLog } from './facts.js';
 import type { Logger } from './log.js';
 import type { Pty, PtyHost } from './pty-host.js';
 import { endedRows, failedRows, plannedRows, preparedRows, startedRows, worktreeRows } from './setup-rows.js';
@@ -19,7 +19,7 @@ export interface WorktreeRunDeps {
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
   run?: RunShell; // runShell unless a test injects one
   dispatch?(event: HiveEvent): Promise<Effect[]>; // a task's setupStep (#351); an orphan's run dispatches nothing
-  events?: Pick<EventLog, 'write'>; // #742: each step's worktree.step
+  facts?: Pick<FactLog, 'write'>; // #742: each step's worktree.step
 }
 export interface TaskSetupDeps extends WorktreeRunDeps { dispatch(event: HiveEvent): Promise<Effect[]> }
 
@@ -110,7 +110,7 @@ function rowsTracker(dispatch: WorktreeRunDeps['dispatch'], { activityId, branch
  * marks and unmarks the activity, since the paths differ. */
 export function openWorktreeRun(deps: WorktreeRunDeps, options: WorktreeRunOptions): WorktreeRun {
   const { id, label, kind, activityId } = options;
-  const { log, dispatch, ptys, consoleStore, run, events } = deps;
+  const { log, dispatch, ptys, consoleStore, run, facts } = deps;
   const pty = pipePty();
   ptys.adopt(id, pty);
   consoleStore.begin(SETUP_CHANNEL, id, runHeader(label, new Date(), kind), activityId === undefined ? undefined : id); // #390: a task's runs are a group, so the Start dialog reads its own
@@ -125,9 +125,9 @@ export function openWorktreeRun(deps: WorktreeRunDeps, options: WorktreeRunOptio
     skipped = true;
     write(`${kind} skipped: ${why}\n`);
   };
-  // Each step's kind, place, time and outcome to events.jsonl (#742); a task's run names its activity
+  // Each step's kind, place, time and outcome to facts.jsonl (#742); a task's run names its activity
   const onStepEnd = (report: StepReport): void => {
-    events?.write({
+    facts?.write({
       event: 'worktree.step', level: report.ok ? 'info' : 'error', ...(activityId === undefined ? {} : { activity_id: activityId }),
       phase: kind, index: report.index, kind: report.kind, duration_ms: report.durationMs, outcome: report.ok ? 'ok' : 'failed',
     });

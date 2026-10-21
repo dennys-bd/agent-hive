@@ -3,7 +3,7 @@
 import { createReadStream } from 'node:fs';
 import { lstat, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
-import { ZERO_TOKENS, type Tokens } from '../events.js';
+import { ZERO_TOKENS, type Tokens } from '../facts.js';
 import type { TurnUsage } from '../usage.js';
 
 /** A finite number as is, anything else 0: 1e400 parses to Infinity and would jam every budget check. */

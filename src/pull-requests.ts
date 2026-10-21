@@ -1,4 +1,4 @@
-import type { Correlation, RecordInput } from './events.js';
+import type { Correlation, RecordInput } from './facts.js';
 import type { ActivityRecord, PrState, SliceDelivery, TaskPr } from './types.js';
 
 export const PR_STATES: readonly PrState[] = ['open', 'merged', 'closed'];

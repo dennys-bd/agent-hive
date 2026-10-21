@@ -10,7 +10,7 @@ import type { Activity, ActivityRecord, ForkSyncResult } from '../src/types.js';
 import { describeEvent } from '../src/log.js';
 import { savedWork } from '../src/state-guards.js';
 import { HOUR_MS } from '../src/usage.js';
-import { deriveEvents } from '../src/event-derive.js';
+import { deriveFacts } from '../src/fact-derive.js';
 import type { SourceItem, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
 import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS, SPAWN_FAILED, STAGE_GONE } from '../src/types.js';
 import { behaviourOf } from '../src/signals.js';
@@ -3650,7 +3650,7 @@ test('the last child reaching Done takes its epic review → done through that t
   const close: HiveEvent = { type: 'closeTask', taskId: 'board:item1' }; // what the server dispatches once the archive succeeded (#286)
   const closed = reduce(due.state, close).state;
   assert.equal(task(closed, 1), undefined);
-  assert.deepEqual(deriveEvents(due.state, closed, close, Date.now()).filter((r) => r.event === 'task.closed'), [
+  assert.deepEqual(deriveFacts(due.state, closed, close, Date.now()).filter((r) => r.event === 'task.closed'), [
     { event: 'task.closed', level: 'info', task_id: 'board:item1', task: '1', stage: 'done', reason: 'finished', via: 'archive' },
   ]);
 });

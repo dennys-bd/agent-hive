@@ -297,7 +297,7 @@ test('an input effect names the worker and never the text it types (#483)', () =
   assert.equal(describeEffect({ type: 'input', ptyId: PTY, text: 'secret plan' }), 'input pty=1a2b3c4d');
 });
 
-test('describeChanges lists each worker whose status changed (position in the grid, matched by id); [] when nothing moved; the signal is events.jsonl\'s (#742)', () => {
+test('describeChanges lists each worker whose status changed (position in the grid, matched by id); [] when nothing moved; the signal is facts.jsonl\'s (#742)', () => {
   const empty: Worker = { id: WORKER, status: 'empty' };
   const other: Worker = { id: 'b0b0b0b0-3333-4333-8333-333333333333', status: 'empty' };
   const working: Worker = { ...empty, runId: PTY, status: 'working', activityId: activityIdOf('I30') };
@@ -343,7 +343,7 @@ test('describeChanges names a task whose worktree vanished while stopped; a work
   const freed: State = { ...on(running, {}), workers: [{ id: WORKER, status: 'empty' }], tasks: [stopped] };
   assert.deepEqual(describeChanges(running, freed), ['worker 1: working → empty #30 pty=1a2b3c4d'], 'the path leaving with the worker is not a second line');
   assert.deepEqual(describeChanges(prev, { ...prev, tasks: [] }), [], 'a task that left says nothing here');
-  assert.deepEqual(describeChanges(prev, { ...lost, signal: 'red' }), ['task #30: worktree gone'], 'the signal is signal.changed in events.jsonl (#742)');
+  assert.deepEqual(describeChanges(prev, { ...lost, signal: 'red' }), ['task #30: worktree gone'], 'the signal is signal.changed in facts.jsonl (#742)');
 });
 
 test('describeChanges names the auto switch, the worktree a task with auto off got, its move and each free session, new or resumed (#164, #283, #573)', () => {
@@ -363,7 +363,7 @@ test('describeChanges names the auto switch, the worktree a task with auto off g
   ]);
   const fresh: State = { ...resumed, workers: [{ ...resumed.workers[0], sessionId: 'a1b2c3d4-0000-4000-8000-000000000009' }] };
   assert.equal(describeChanges(ready, fresh).at(-1), 'worker 1: free session new on #30');
-  assert.deepEqual(describeChanges(ready, { ...ready, tasks: [{ ...ready.tasks[0], stage: 'review' }] }), [], 'a move is task.moved in events.jsonl (#742)');
+  assert.deepEqual(describeChanges(ready, { ...ready, tasks: [{ ...ready.tasks[0], stage: 'review' }] }), [], 'a move is task.moved in facts.jsonl (#742)');
 });
 
 test('a message with line breaks stays one log line, and an oversized one is cut: the file is always grep-able', async (t) => {

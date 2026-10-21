@@ -4,8 +4,8 @@ import { z } from 'zod';
 import { localWorkspaceOf, taskOfWorker } from './activities.js';
 import { taskWorkspace, workspaceByName } from './config.js';
 import { createTask } from './create-task.js';
-import { correlationOf } from './event-derive.js';
-import type { Correlation } from './events.js';
+import { correlationOf } from './fact-derive.js';
+import type { Correlation } from './facts.js';
 import { isMemoryRefusal, lessonRefusal, looksLikeSecret, MEMORY_SECRET_MESSAGE, memoryCounts, whyProblem, withEntry, withUse } from './memory.js';
 import { livePtyId, type McpDeps, OK, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
 import { MEMORY_KINDS, type MemoryOrigin, type MemoryUse, OPTIONAL_TOOLS, type OptionalTool } from './types.js';
@@ -68,7 +68,7 @@ export function registerRememberTool(server: McpServer, deps: McpDeps, header: s
     const saved = await deps.memory.update(caller.workspace, (file) => withEntry(file, kind, text, caller.origin, new Date().toISOString(), caller.cap));
     if (isMemoryRefusal(saved)) return refuse(saved.code, saved.message);
     const id = `m-${saved.nextId - 1}`; // withEntry's: the counter it just moved on
-    deps.events.write({ event: 'memory.changed', level: 'info', ...caller.correlation, action: 'added', kind, by: 'worker', id, workspace: caller.workspace, ...memoryCounts(saved) });
+    deps.facts.write({ event: 'memory.changed', level: 'info', ...caller.correlation, action: 'added', kind, by: 'worker', id, workspace: caller.workspace, ...memoryCounts(saved) });
     return reply(`saved as ${id}`);
   }, { kind }));
 }
@@ -88,7 +88,7 @@ export function registerAppliedTool(server: McpServer, deps: McpDeps, header: st
     const saved = await deps.memory.update(caller.workspace, (file) => withUse(file, id, lastUsed));
     if (isMemoryRefusal(saved)) return refuse(saved.code, saved.message);
     const lesson = saved.entries.find((e) => e.id === id);
-    if (lesson) deps.events.write({ event: 'memory.applied', level: 'info', ...caller.correlation, id, kind: lesson.kind, uses: lesson.uses, workspace: caller.workspace });
+    if (lesson) deps.facts.write({ event: 'memory.applied', level: 'info', ...caller.correlation, id, kind: lesson.kind, uses: lesson.uses, workspace: caller.workspace });
     return reply(OK);
   }));
 }

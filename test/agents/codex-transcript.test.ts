@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ownsRollout, readRollout, rolloutFiles, sessionsRoot } from '../../src/agents/codex-transcript.js';
-import { ZERO_TOKENS } from '../../src/events.js';
+import { ZERO_TOKENS } from '../../src/facts.js';
 import { CHILD, CWD, DAY, NOW, OTHER, OTHER_CHILD, SESSION, STALE, sessionMeta, subagent, TWO_TURNS, usageRecord, writeRollout } from '../codex-rollouts.js';
 import { tempDir } from '../temp-dir.js';
 

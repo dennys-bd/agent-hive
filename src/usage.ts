@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
 import { runners } from './agents/registry.js';
-import type { Tokens } from './events.js';
+import type { Tokens } from './facts.js';
 import type { Activity, AgentId, Budget, UsageSample } from './types.js';
 import { taskDir } from './worktree.js';
 

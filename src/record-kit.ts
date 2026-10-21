@@ -148,6 +148,6 @@ export function forgetFailedFreeRun(state: State, task: Task, worker: Worker): S
 }
 
 /** One more stage run of `stage` on the task, in its live record (#742): a spawn, a restart, a continue and a feedback run each count, so the
- * count survives a restart and events.jsonl's attempt reads it from the reduced state. */
+ * count survives a restart and facts.jsonl's attempt reads it from the reduced state. */
 export const withStageRun = (state: State, task: Task, stage: string): State =>
   withLive(state, task, (r) => ({ ...r, stageRuns: { ...r.stageRuns, [stage]: (r.stageRuns?.[stage] ?? 0) + 1 } }));

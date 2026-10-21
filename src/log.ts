@@ -11,7 +11,7 @@ export type RecordLevel = 'error' | LogLevel; // what a line or a record carries
 export const LOG_LEVELS: readonly LogLevel[] = ['warn', 'info', 'debug'];
 export const LOG_FILE = 'hive.log';
 export const LOG_MAX_BYTES = 5 * 1024 * 1024;
-export const LOG_GENERATIONS = 5; // <file>.1 (newest) to <file>.5 (oldest), hive.log's and events.jsonl's alike (#93): about 7 weeks of events.jsonl
+export const LOG_GENERATIONS = 5; // <file>.1 (newest) to <file>.5 (oldest), hive.log's and facts.jsonl's alike (#93): about 7 weeks of facts.jsonl
 export const MESSAGE_MAX = 1000; // chars per line: a gh stderr blob or a crafted hook name must not become one unbounded entry
 const TAG_WIDTH = 5; // ERROR / WARN  / INFO  / DEBUG
 const ID_WIDTH = 8; // enough of a uuid to grep for
@@ -23,7 +23,7 @@ export const passes = (level: RecordLevel, threshold: LogLevel): boolean => LEVE
 
 export interface Logger {
   error(message: string): void; // file + stderr
-  record(level: RecordLevel, message: string): void; // file only, at its level (#742): an events.jsonl record's text line, whose failure already had its own stderr line
+  record(level: RecordLevel, message: string): void; // file only, at its level (#742): a facts.jsonl record's text line, whose failure already had its own stderr line
   warn(message: string): void; // refused or degraded (#742): an MCP refusal, a failed poll or source action, an HTTP 4xx/5xx
   info(message: string): void; // what the Hive did
   debug(message: string): void; // what it received; written only at level debug
@@ -71,7 +71,7 @@ function shift(path: string): void {
   for (let i = 0; i < LOG_GENERATIONS; i += 1) renameIfThere(names[i + 1], names[i]);
 }
 
-/** One file in `dir`, sync appends, rotated past `maxBytes` into LOG_GENERATIONS generations: hive.log's and events.jsonl's (#742, #93). Never
+/** One file in `dir`, sync appends, rotated past `maxBytes` into LOG_GENERATIONS generations: hive.log's and facts.jsonl's (#742, #93). Never
  * throws: a broken disk disables the file with one stderr line, not the Hive. */
 export function createAppender(dir: string, file: string, options: LoggerOptions = {}): (line: string) => void {
   const { maxBytes = LOG_MAX_BYTES, stderr = console.error } = options;
@@ -317,7 +317,7 @@ const workerDetail = (state: State, worker: Worker): string => {
 };
 
 // A task's own transitions, matched by item id: the worktree vanished from disk, the auto switch flipped, or its worktree became ready (#164,
-// only when no automatic worker holds the task: a SessionStart already has its own line). A move is task.moved in events.jsonl (#742).
+// only when no automatic worker holds the task: a SessionStart already has its own line). A move is task.moved in facts.jsonl (#742).
 const taskLines = (prev: State, next: State): string[] => {
   const before = new Map(prev.tasks.map((c) => [taskId(c), c]));
   return next.tasks.flatMap((task) => {
@@ -334,7 +334,7 @@ const taskLines = (prev: State, next: State): string[] => {
   });
 };
 
-/** Worker transitions between two states: one line per worker whose status changed, in grid order, matched by id; then the sessions that appeared; then the task lines (worktree gone, auto switch, worktree ready). The signal and a move are events.jsonl's (#742). */
+/** Worker transitions between two states: one line per worker whose status changed, in grid order, matched by id; then the sessions that appeared; then the task lines (worktree gone, auto switch, worktree ready). The signal and a move are facts.jsonl's (#742). */
 export function describeChanges(prev: State, next: State): string[] {
   // A worker missing from prev appeared in this reduce: empty (setMax: no line) or already occupied (a start over the cap: one line).
   const before = (worker: Worker): Worker => prev.workers.find((s) => s.id === worker.id) ?? { id: worker.id, status: 'empty' };

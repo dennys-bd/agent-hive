@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { correlationOf, deriveEvents, endedStageRuns, signalRecords, startedFreeRuns, startedRuns } from '../src/event-derive.js';
-import { textRef, type RecordInput, type RunKind } from '../src/events.js';
+import { correlationOf, deriveFacts, endedStageRuns, signalRecords, startedFreeRuns, startedRuns } from '../src/fact-derive.js';
+import { textRef, type RecordInput, type RunKind } from '../src/facts.js';
 import { renameStages } from '../src/stage-rename.js';
 import { initialState } from '../src/orchestrator.js';
 import type { LegacyStage } from '../src/config-migrate.js';
@@ -32,7 +32,7 @@ const IDS = { task_id: 'board:I1', task: '1', activity_id: ACTIVITY, stage: 'dev
 
 test('a new task is task.discovered with its source and the source\'s creation time; a task created in the Hive was created now (#742)', () => {
   const next = base([task(1, 'dev', { item: item(1, { createdAt: '2026-09-01T10:00:00Z' }) }), task(2, 'dev', { created: true, item: item(2, { source: undefined }) })]);
-  assert.deepEqual(only(deriveEvents(base([]), next, POLL, NOW), 'task.discovered'), [
+  assert.deepEqual(only(deriveFacts(base([]), next, POLL, NOW), 'task.discovered'), [
     { event: 'task.discovered', level: 'info', task_id: 'board:I1', task: '1', stage: 'dev', source: 'board', source_created_at: '2026-09-01T10:00:00Z' },
     { event: 'task.discovered', level: 'info', task_id: 'board:I2', task: '2', stage: 'dev', source: 'local', source_created_at: iso(NOW) },
   ]);
@@ -41,8 +41,8 @@ test('a new task is task.discovered with its source and the source\'s creation t
 test('task.moved names who moved it: by hand, an approval, a merge, a stage\'s action ending, the source poll, else the flow (#742)', () => {
   const prev = withWork(base(), 'board:I1');
   const next = withWork(base([task(1, 'review')]), 'board:I1');
-  const by = (event: HiveEvent): unknown => field(only(deriveEvents(prev, next, event, NOW), 'task.moved')[0], 'by');
-  assert.deepEqual(only(deriveEvents(prev, next, { type: 'moveToStage', taskId: 'board:I1', stage: 'review' }, NOW), 'task.moved'), [
+  const by = (event: HiveEvent): unknown => field(only(deriveFacts(prev, next, event, NOW), 'task.moved')[0], 'by');
+  assert.deepEqual(only(deriveFacts(prev, next, { type: 'moveToStage', taskId: 'board:I1', stage: 'review' }, NOW), 'task.moved'), [
     { event: 'task.moved', level: 'info', task_id: 'board:I1', task: '1', activity_id: ACTIVITY, stage: 'review', from: 'dev', to: 'review', by: 'hand' },
   ]);
   assert.equal(by({ type: 'approve', activityId: ACTIVITY }), 'approval');
@@ -53,7 +53,7 @@ test('task.moved names who moved it: by hand, an approval, a merge, a stage\'s a
 });
 
 test('a task that left is task.closed or task.deleted with finished (and the onFinish mechanism as via), missing or hand, carrying only the fields the old state still fills (#742)', () => {
-  const left = (gone: Task, event: HiveEvent): RecordInput[] => deriveEvents(base([gone]), base([]), event, NOW);
+  const left = (gone: Task, event: HiveEvent): RecordInput[] => deriveFacts(base([gone]), base([]), event, NOW);
   const CLOSE: HiveEvent = { type: 'closeTask', taskId: 'board:I1' };
   const closed = (stage: string, rest: Record<string, unknown>) => [{ event: 'task.closed', level: 'info', task_id: 'board:I1', task: '1', stage, ...rest }];
   assert.deepEqual(left(task(1, 'dev', { missing: true }), CLOSE), closed('dev', { reason: 'missing' }));
@@ -68,19 +68,19 @@ test('a task that left is task.closed or task.deleted with finished (and the onF
 test('approve, feedback, extendApproval and approvalExpired write their approval event timed from approval.since; feedback carries only its text\'s reference (#742)', () => {
   const prev = withWork({ ...base(), workers: [runner({ status: 'approval' })] }, 'board:I1', { approval: { since: iso(NOW - 60_000) }, workerId: 'w1' });
   const next = withWork(prev, 'board:I1', { workerId: 'w1' });
-  const answered = (event: HiveEvent): RecordInput[] => deriveEvents(prev, next, event, NOW).filter((r) => r.event.startsWith('approval.'));
+  const answered = (event: HiveEvent): RecordInput[] => deriveFacts(prev, next, event, NOW).filter((r) => r.event.startsWith('approval.'));
   const FEEDBACK: HiveEvent = { type: 'feedback', activityId: ACTIVITY, text: 'SECRET-FEEDBACK', start: true };
   assert.deepEqual(answered({ type: 'approve', activityId: ACTIVITY }), [{ event: 'approval.granted', level: 'info', ...IDS, duration_ms: 60_000 }]);
   assert.deepEqual(answered(FEEDBACK), [{ event: 'approval.rejected', level: 'info', ...IDS, duration_ms: 60_000, start: true, ...textRef('SECRET-FEEDBACK') }]);
   assert.deepEqual(answered({ type: 'extendApproval', activityId: ACTIVITY }), [{ event: 'approval.extended', level: 'info', ...IDS, duration_ms: 60_000 }]);
   assert.deepEqual(answered({ type: 'approvalExpired', ptyId: PTY }), [{ event: 'approval.expired', level: 'info', ...IDS, duration_ms: 60_000 }]);
-  assert.ok(!JSON.stringify(deriveEvents(prev, next, FEEDBACK, NOW)).includes('SECRET'));
+  assert.ok(!JSON.stringify(deriveFacts(prev, next, FEEDBACK, NOW)).includes('SECRET'));
 });
 
 test('stage.started carries the attempt the reduce just counted and how it started: spawn, Continue, restart, queued feedback, in place (#742)', () => {
   const idle = withWork({ ...base(), workers: [{ id: 'w1', status: 'empty' }] }, 'board:I1', { sessionId: SESSION }, { stageRuns: { dev: 1 } });
   const running = (runs: number): State => withWork({ ...base(), workers: [runner()] }, 'board:I1', { sessionId: SESSION, workerId: 'w1' }, { stageRuns: { dev: runs } });
-  const started = (prev: State, next: State, event: HiveEvent): RecordInput[] => only(deriveEvents(prev, next, event, NOW), 'stage.started');
+  const started = (prev: State, next: State, event: HiveEvent): RecordInput[] => only(deriveFacts(prev, next, event, NOW), 'stage.started');
   const expected = (attempt: number, run_kind: RunKind) => [{ event: 'stage.started', level: 'info', ...IDS, session_id: SESSION, attempt, run_kind }];
   assert.deepEqual(started(idle, running(2), POLL), expected(2, 'spawn'));
   assert.deepEqual(started(idle, running(2), { type: 'continue', activityId: ACTIVITY }), expected(2, 'continue'));
@@ -101,26 +101,26 @@ test('a stage run started names the agent its worker runs, and none for a worker
 test('run.spawned names the worker and the stage\'s model, run.started the spawn latency, run.exited and run.stopped the run\'s time, run.restarted the time since the stop; a failed spawn writes its first line with paths masked (#742)', () => {
   const idle = withWork({ ...base(), workers: [{ id: 'w1', status: 'empty' }] }, 'board:I1');
   const busy = withWork({ ...base(), workers: [runner()] }, 'board:I1', { workerId: 'w1' });
-  assert.deepEqual(only(deriveEvents(idle, busy, POLL, NOW), 'run.spawned'), [{ event: 'run.spawned', level: 'info', ...IDS, worker: 1, model: 'opus' }]);
+  assert.deepEqual(only(deriveFacts(idle, busy, POLL, NOW), 'run.spawned'), [{ event: 'run.spawned', level: 'info', ...IDS, worker: 1, model: 'opus' }]);
   const seen = withWork({ ...base(), workers: [runner({ sessionId: SESSION })] }, 'board:I1', { workerId: 'w1' });
-  assert.deepEqual(only(deriveEvents(busy, seen, { type: 'hook', ptyId: PTY, payload: { hook_event_name: 'SessionStart' } }, NOW), 'run.started'),
+  assert.deepEqual(only(deriveFacts(busy, seen, { type: 'hook', ptyId: PTY, payload: { hook_event_name: 'SessionStart' } }, NOW), 'run.started'),
     [{ event: 'run.started', level: 'info', ...IDS, session_id: SESSION, spawn_latency_ms: 10_000 }]);
-  assert.deepEqual(only(deriveEvents(busy, idle, { type: 'exit', ptyId: PTY }, NOW), 'run.exited'), [{ event: 'run.exited', level: 'info', ...IDS, duration_ms: 10_000 }]);
+  assert.deepEqual(only(deriveFacts(busy, idle, { type: 'exit', ptyId: PTY }, NOW), 'run.exited'), [{ event: 'run.exited', level: 'info', ...IDS, duration_ms: 10_000 }]);
   const failed: HiveEvent = { type: 'spawnFailed', ptyId: PTY, message: "fatal: '/tmp/r/.hive/worktrees/hive-1' already exists\nsetup output with TOKEN=x" };
-  assert.deepEqual(only(deriveEvents(busy, idle, failed, NOW), 'run.spawn_failed'), [{ event: 'run.spawn_failed', level: 'error', ...IDS, code: 'git_failed' }]);
+  assert.deepEqual(only(deriveFacts(busy, idle, failed, NOW), 'run.spawn_failed'), [{ event: 'run.spawn_failed', level: 'error', ...IDS, code: 'git_failed' }]);
   const stopped = withWork(busy, 'board:I1', { workerId: 'w1', stopped: true });
-  assert.deepEqual(only(deriveEvents(busy, stopped, { type: 'stop', ptyId: PTY, cause: 'manual' }, NOW), 'run.stopped'), [{ event: 'run.stopped', level: 'info', ...IDS, duration_ms: 10_000 }]);
-  assert.deepEqual(only(deriveEvents(busy, stopped, { type: 'stop', ptyId: PTY }, NOW), 'run.stopped'), [], 'hive_stop or a timeout: not the user\'s');
+  assert.deepEqual(only(deriveFacts(busy, stopped, { type: 'stop', ptyId: PTY, cause: 'manual' }, NOW), 'run.stopped'), [{ event: 'run.stopped', level: 'info', ...IDS, duration_ms: 10_000 }]);
+  assert.deepEqual(only(deriveFacts(busy, stopped, { type: 'stop', ptyId: PTY }, NOW), 'run.stopped'), [], 'hive_stop or a timeout: not the user\'s');
   const parked = withWork(idle, 'board:I1', { stopped: true, stoppedAt: iso(NOW - 300_000) });
-  assert.deepEqual(only(deriveEvents(parked, idle, { type: 'restart', activityId: ACTIVITY }, NOW), 'run.restarted'), [{ event: 'run.restarted', level: 'info', ...IDS, duration_ms: 300_000 }]);
+  assert.deepEqual(only(deriveFacts(parked, idle, { type: 'restart', activityId: ACTIVITY }, NOW), 'run.restarted'), [{ event: 'run.restarted', level: 'info', ...IDS, duration_ms: 300_000 }]);
 });
 
 test('workers.changed when the cap-counted runs or the cap move; signal.changed names the rule when the floor moved it (#742)', () => {
   const prev: State = { ...base(), workers: [{ id: 'w1', status: 'empty' }] };
   const next = withWork({ ...prev, workers: [runner()] }, 'board:I1', { workerId: 'w1' });
-  assert.deepEqual(only(deriveEvents(prev, next, POLL, NOW), 'workers.changed'), [{ event: 'workers.changed', level: 'info', active: 1, max: 1 }]);
-  assert.deepEqual(deriveEvents(prev, { ...prev, maxConcurrent: 3 }, { type: 'setMax', max: 3 }, NOW), [{ event: 'workers.changed', level: 'info', active: 0, max: 3 }]);
-  assert.deepEqual(only(deriveEvents(prev, { ...prev, signal: 'red' }, { type: 'setSignal', signal: 'red' }, NOW), 'signal.changed'), [], 'the server compares against the last signal it wrote');
+  assert.deepEqual(only(deriveFacts(prev, next, POLL, NOW), 'workers.changed'), [{ event: 'workers.changed', level: 'info', active: 1, max: 1 }]);
+  assert.deepEqual(deriveFacts(prev, { ...prev, maxConcurrent: 3 }, { type: 'setMax', max: 3 }, NOW), [{ event: 'workers.changed', level: 'info', active: 0, max: 3 }]);
+  assert.deepEqual(only(deriveFacts(prev, { ...prev, signal: 'red' }, { type: 'setSignal', signal: 'red' }, NOW), 'signal.changed'), [], 'the server compares against the last signal it wrote');
 });
 
 test('signalRecords: the first reduction writes the signal, then only a change from the last one written, time-driven too; the rule only when exactly one tripped (#742)', () => {
@@ -141,19 +141,19 @@ test('pr.opened when a record gains a PR; pr.state when the poll reads it merged
   const entered = base([task(1, 'dev', { enteredAt: iso(NOW - 7_200_000) })]);
   const none = withWork(entered, 'board:I1');
   const open = withWork(entered, 'board:I1', {}, { prs: [{ url, state: 'open', openedAt: iso(NOW - 3_600_000) }] });
-  assert.deepEqual(deriveEvents(none, open, { type: 'pr', ptyId: PTY, url }, NOW), [{ event: 'pr.opened', level: 'info', ...IDS, pr: 9 }]);
+  assert.deepEqual(deriveFacts(none, open, { type: 'pr', ptyId: PTY, url }, NOW), [{ event: 'pr.opened', level: 'info', ...IDS, pr: 9 }]);
   const merged = withWork(entered, 'board:I1', {}, { prs: [{ url, state: 'merged', openedAt: iso(NOW - 3_600_000), mergedAt: iso(NOW) }] });
-  assert.deepEqual(deriveEvents(open, merged, { type: 'prStates', states: [] }, NOW),
+  assert.deepEqual(deriveFacts(open, merged, { type: 'prStates', states: [] }, NOW),
     [{ event: 'pr.state', level: 'info', ...IDS, pr: 9, state: 'merged', since_opened_ms: 3_600_000, since_stage_started_ms: 7_200_000 }]);
 });
 
 test('a boot that sets the crash notice writes hive.crash_recovered with the runs it found dead, and no run.exited each; correlationOf leaves out what does not apply (#742)', () => {
   const dead = withWork({ ...base(), workers: [runner()] }, 'board:I1', { workerId: 'w1' });
   const booted: State = { ...withWork({ ...base(), workers: [{ id: 'w1', status: 'empty' }] }, 'board:I1', { stopped: true }), crash: { at: iso(NOW), tasks: ['board:I1'] } };
-  const records = deriveEvents(dead, booted, { type: 'boot' }, NOW);
+  const records = deriveFacts(dead, booted, { type: 'boot' }, NOW);
   assert.deepEqual(only(records, 'hive.crash_recovered'), [{ event: 'hive.crash_recovered', level: 'error', workers: 1 }]);
   assert.deepEqual(only(records, 'run.exited'), []);
-  assert.deepEqual(deriveEvents(booted, booted, { type: 'boot' }, NOW), [], 'the same state: nothing');
+  assert.deepEqual(deriveFacts(booted, booted, { type: 'boot' }, NOW), [], 'the same state: nothing');
   const free = withWork({ ...base(), workers: [runner({ freeSession: true })] }, 'board:I1', { sessionId: SESSION }, { stageRuns: { dev: 2 } });
   assert.deepEqual(correlationOf(free, free.workers[0]), { task_id: 'board:I1', task: '1', activity_id: ACTIVITY }, 'a free session: no stage, no attempt, not the stage run\'s session');
   const stage = withWork({ ...base(), workers: [runner()] }, 'board:I1', { sessionId: SESSION }, { stageRuns: { dev: 2 } });
@@ -163,7 +163,7 @@ test('a boot that sets the crash notice writes hive.crash_recovered with the run
 test('every record that carries task_id also carries task, the visible id the user knows the task by (#742)', () => {
   const prev = withWork({ ...base(), workers: [runner()] }, 'board:I1');
   const next = withWork({ ...base([task(1, 'review')]), workers: [] }, 'board:I1');
-  const records = deriveEvents(prev, next, { type: 'moveToStage', taskId: 'board:I1', stage: 'review' }, NOW);
+  const records = deriveFacts(prev, next, { type: 'moveToStage', taskId: 'board:I1', stage: 'review' }, NOW);
   assert.ok(records.some((r) => field(r, 'task_id') !== undefined));
   assert.deepEqual(records.filter((r) => field(r, 'task_id') !== undefined && field(r, 'task') !== '1'), []);
 });
@@ -173,11 +173,11 @@ test('a terminal that leaves the state is terminal.ended, timed from its open, w
   const local = { terminalId: 't2', activityId: 'local:ws', startedAt: iso(NOW - 1000), cwd: 'ws' };
   const prev: State = { ...withWork(base(), 'board:I1'), terminals: [shell, local] };
   const next: State = { ...prev, terminals: [] };
-  assert.deepEqual(only(deriveEvents(prev, next, { type: 'tick' }, NOW), 'terminal.ended'), [
+  assert.deepEqual(only(deriveFacts(prev, next, { type: 'tick' }, NOW), 'terminal.ended'), [
     { event: 'terminal.ended', level: 'info', task_id: 'board:I1', task: '1', activity_id: ACTIVITY, duration_ms: 4000, command: 'dev server' },
     { event: 'terminal.ended', level: 'info', activity_id: 'local:ws', duration_ms: 1000 },
   ]);
-  assert.deepEqual(only(deriveEvents(prev, next, { type: 'boot' }, NOW), 'terminal.ended'), [], 'it died with the Hive');
+  assert.deepEqual(only(deriveFacts(prev, next, { type: 'boot' }, NOW), 'terminal.ended'), [], 'it died with the Hive');
 });
 
 test('endedStageRuns: done or approval at the Stop after hive_done, stop by hand, failed, killed on quit or a dropped task, exit otherwise; a held run already ended (#742)', () => {
@@ -206,7 +206,7 @@ test('a StopFailure is run.api_error at warn: a backoff with its failure number 
   const failed = (error: string, worker: Worker = runner(), extra: Partial<State> = {}): RecordInput[] => {
     const prev = prevOf(worker, extra);
     const payload = { hook_event_name: 'StopFailure', error, error_details: 'SECRET-DETAILS', last_assistant_message: 'SECRET-MESSAGE' } as HookPayload;
-    return only(deriveEvents(prev, { ...prev, workers: [] }, { type: 'hook', ptyId: PTY, payload }, NOW), 'run.api_error');
+    return only(deriveFacts(prev, { ...prev, workers: [] }, { type: 'hook', ptyId: PTY, payload }, NOW), 'run.api_error');
   };
   const record = (fields: Record<string, unknown>): Record<string, unknown>[] => [{ event: 'run.api_error', level: 'warn', ...IDS, ...fields }];
   assert.deepEqual(failed('overloaded'), record({ error: 'overloaded', action: 'backoff', failure: 1, wait_ms: 60_000 }));
@@ -215,7 +215,7 @@ test('a StopFailure is run.api_error at warn: a backoff with its failure number 
   assert.deepEqual(failed('authentication_failed'), record({ error: 'authentication_failed', action: 'stopped' }));
   assert.deepEqual(failed('rate_limit', runner(), { rateLimits: { claude: LIMITS } }), record({ error: 'rate_limit', action: 'backoff', wait_ms: 3_660_000 }));
   assert.doesNotMatch(JSON.stringify(failed('overloaded')), /SECRET/, 'never the details nor the message');
-  assert.deepEqual(only(deriveEvents(base(), { ...base(), workers: [] }, STOP, NOW), 'run.api_error'), [], 'a plain Stop is no API error');
+  assert.deepEqual(only(deriveFacts(base(), { ...base(), workers: [] }, STOP, NOW), 'run.api_error'), [], 'a plain Stop is no API error');
   assert.deepEqual(failed('overloaded', runner({ done: true })), [], 'after hive_done it is the run\'s Stop, not an API error');
   const done = prevOf(runner({ done: true }));
   assert.deepEqual(endedStageRuns(done, { ...done, workers: [] }, FAILURE, NOW).map((end) => end.outcome), ['done'], 'and its stage ends done');
@@ -225,20 +225,20 @@ test('a start a dirty local checkout refused is run.spawn_failed code=checkout_d
   const idle = withWork({ ...base(), workers: [{ id: 'w1', status: 'empty' }] }, 'board:I1');
   const busy = withWork({ ...base(), workers: [runner()] }, 'board:I1', { workerId: 'w1' });
   const refused: HiveEvent = { type: 'spawnFailed', ptyId: PTY, message: '/repo has changes that are not committed:\n M src/app.ts\n?? notes.md' };
-  assert.deepEqual(only(deriveEvents(busy, idle, refused, NOW), 'run.spawn_failed'), [{ event: 'run.spawn_failed', level: 'error', ...IDS, code: 'checkout_dirty' }]);
+  assert.deepEqual(only(deriveFacts(busy, idle, refused, NOW), 'run.spawn_failed'), [{ event: 'run.spawn_failed', level: 'error', ...IDS, code: 'checkout_dirty' }]);
 });
 
 test('renameStages derives no task.moved and no stage.started: a rename moves nothing and starts nothing (#861)', () => {
   const prev = withWork({ ...base(), workers: [runner()] }, 'board:I1', { workerId: 'w1' }, { stageRuns: { dev: 1 } });
   const event: HiveEvent = { type: 'renameStages', renames: { dev: 'build' } };
-  assert.deepEqual(deriveEvents(prev, renameStages(prev, event.renames), event, NOW), []);
+  assert.deepEqual(deriveFacts(prev, renameStages(prev, event.renames), event, NOW), []);
 });
 
 test('a free session that leaves is free_session.ended with its worker and its agent; startedFreeRuns reports it once for the tracker, and it is never a stage run (#271)', () => {
   const idle = withWork({ ...base(), workers: [{ id: 'w1', status: 'empty' }] }, 'board:I1');
   const open = withWork({ ...base(), workers: [runner({ freeSession: true, agent: 'codex' })] }, 'board:I1');
   const ids = { task_id: 'board:I1', task: '1', activity_id: ACTIVITY };
-  assert.deepEqual(only(deriveEvents(open, idle, { type: 'exit', ptyId: PTY }, NOW), 'free_session.ended'),
+  assert.deepEqual(only(deriveFacts(open, idle, { type: 'exit', ptyId: PTY }, NOW), 'free_session.ended'),
     [{ event: 'free_session.ended', level: 'info', ...ids, duration_ms: 10_000, worker: 1, agent: 'codex' }]);
   assert.deepEqual(startedFreeRuns(idle, open), [{ ptyId: PTY, correlation: ids, waitedMs: 0, agent: 'codex' }]);
   assert.deepEqual(startedFreeRuns(open, open), [], 'a run already there');

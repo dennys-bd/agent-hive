@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import type { RecordInput } from '../src/events.js';
+import type { RecordInput } from '../src/facts.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
 import { MEMORY_FULL_MESSAGE, MEMORY_KIND_MESSAGE, MEMORY_SECRET_MESSAGE, MEMORY_TEXT_MESSAGE } from '../src/memory.js';
 import { STAGE_PROTOCOL } from '../src/protocol.js';
@@ -12,7 +12,7 @@ import { createServer } from '../src/server.js';
 import { CAP_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-memory.js';
 import type { Config, MemoryView, SettingsBody, Workspace } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MEMORY_TEXT_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeEvents, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
@@ -47,8 +47,8 @@ async function compact(home: string): Promise<string> {
 
 async function start(t: TestContext, memoryCap = 4000, more: Workspace[] = []): Promise<{ base: string; url: string; home: string; records: RecordInput[] }> {
   const { home, repo } = await tempHive(t);
-  const { events, records } = fakeEvents(); // no events.jsonl of the server's own: the stats test writes it
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, events, exec: async () => ({ stdout: '' }) });
+  const { facts, records } = fakeFacts(); // no facts.jsonl of the server's own: the stats test writes it
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, facts, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -90,16 +90,16 @@ test('an unknown workspace or lesson is 404, a bad kind, a bad text or a secret 
   await refused(Promise.resolve(last as Response), 409, { error: MEMORY_FULL_MESSAGE, code: 'memory_full' }, 'past the cap');
 });
 
-test('GET …/memory/stats reads every generation of events.jsonl, oldest first, for the workspace\'s last 7 days, skipping a bad line; an unknown workspace is 404 (#797, #93)', async (t) => {
+test('GET …/memory/stats reads every generation of facts.jsonl, oldest first, for the workspace\'s last 7 days, skipping a bad line; an unknown workspace is 404 (#797, #93)', async (t) => {
   const { base, url, home } = await start(t);
   await send('POST', url, { kind: 'fact', text: 'pnpm test is the gate' }); // m-1
   const at = new Date(Date.now() - 3_600_000).toISOString();
   const line = (record: Record<string, unknown>): string => `${JSON.stringify({ schema_version: 1, ts: at, level: 'info', ...record })}\n`;
   const spawned = (task: string, session: string): string =>
     line({ event: 'run.spawned', workspace: WORKSPACE, worker: 1, memory_ids: ['m-1'], memory_chars: 400, task, stage: 'fila', session_id: session });
-  await writeFile(join(home, 'events.jsonl.2'), spawned('1', 's0'));
-  await writeFile(join(home, 'events.jsonl.1'), spawned('2', 's1'));
-  await writeFile(join(home, 'events.jsonl'), `${line({ event: 'memory.applied', workspace: WORKSPACE, id: 'm-1', kind: 'fact', uses: 1, session_id: 's1' })}{"workspace": broken\n`);
+  await writeFile(join(home, 'facts.jsonl.2'), spawned('1', 's0'));
+  await writeFile(join(home, 'facts.jsonl.1'), spawned('2', 's1'));
+  await writeFile(join(home, 'facts.jsonl'), `${line({ event: 'memory.applied', workspace: WORKSPACE, id: 'm-1', kind: 'fact', uses: 1, session_id: 's1' })}{"workspace": broken\n`);
   // last is .1's run: read in any other order, the last run would be .2's, whose session cited nothing
   assert.deepEqual(await (await hiveFetch(`${url}/stats`)).json(), { runs: 2, cited: 1, tokensPerRun: 100, last: { at, task: '2', stage: 'fila', cited: 1 } });
   await refused(hiveFetch(`${base}/workspaces/ghost/memory/stats`), 404, { error: UNKNOWN_WORKSPACE_MESSAGE }, 'unknown workspace');
@@ -143,7 +143,7 @@ test('PUT …/memory/cap refuses a cap that is not an integer from 300 to 20000 
 
 test('PUT …/memory/cap before a setup answers 409 as every memory route does, and writes no file (#115)', async (t) => {
   const { home } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, events: fakeEvents().events, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, facts: fakeFacts().facts, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   assert.equal((await send('PUT', `http://127.0.0.1:${port}/workspaces/${WORKSPACE}/memory/cap`, { cap: 6000 })).status, 409);

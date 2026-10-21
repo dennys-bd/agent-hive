@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf, resultOf, usageOf, withActivity } from '../src/activities.js';
-import { deriveEvents } from '../src/event-derive.js';
+import { deriveFacts } from '../src/fact-derive.js';
 import { describeEffect, describeEvent } from '../src/log.js';
 import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
 import { savedWork } from '../src/state-guards.js';
@@ -147,7 +147,7 @@ test('the log names a command\'s end by its pty and code, never its output, and 
   assert.match(describeEffect(effect), /^stageCommand #1 stage="checks" command="build" 1\/3 pty=\S+$/);
   const last = ended(ended(s, 0).state, 0).state;
   const event = endOf(last, 0);
-  assert.match(JSON.stringify(deriveEvents(last, reduce(last, event).state, event, Date.now())), /"event":"task.moved"[^}]*"by":"on_finish"/);
+  assert.match(JSON.stringify(deriveFacts(last, reduce(last, event).state, event, Date.now())), /"event":"task.moved"[^}]*"by":"on_finish"/);
 });
 
 test('a Stop on the stage pty kills it under the task\'s slug and stops the activity with no verdict; the pty\'s late end changes nothing (#755)', () => {

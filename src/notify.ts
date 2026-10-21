@@ -1,5 +1,5 @@
 // The macOS notifications' facts (#199): what changed between two /events payloads that needs the user. Pure and Electron-free, so
-// node:test covers it; notify-viewer.ts shows the result. Derived from State, not from events.jsonl: its records carry no titles (#742).
+// node:test covers it; notify-viewer.ts shows the result. Derived from State, not from facts.jsonl: its records carry no titles (#742).
 import { localWorkspaceOf, recordOf, taskOfActivity } from './activities.js';
 import { taskId, taskLabel } from './tasks.js';
 import { type Activity, type EventsPayload, NOTIFICATION_KINDS, type NotificationKind, type NotificationSettings, type State } from './types.js';

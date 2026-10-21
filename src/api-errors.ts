@@ -58,7 +58,7 @@ function scheduled(state: State, worker: Worker, error: string, now: number): St
 
 /** The decision for one StopFailure of `worker` (#805). A captured session's claude runs in a terminal's pty (#696), which the retry's input
  * cannot reach by its run id: it gives up at once. Never asked for a worker that called hive_done: that failure is the run's Stop
- * (applyHook). event-derive asks it again for run.api_error. */
+ * (applyHook). fact-derive asks it again for run.api_error. */
 export function decideStopFailure(state: State, worker: Worker, error: string, now: number): StopFailureDecision {
   const decision = scheduled(state, worker, error, now);
   return decision.action === 'backoff' && worker.terminalId !== undefined ? { action: 'stopped', error, text: errorText(error) } : decision;

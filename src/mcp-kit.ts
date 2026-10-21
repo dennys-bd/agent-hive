@@ -1,7 +1,7 @@
 // The answer and record helpers every tool module shares, out of mcp.ts for #333 so the optional tools can live apart.
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { correlationOf } from './event-derive.js';
-import type { EventLog, RecordInput, RefusalCode } from './events.js';
+import { correlationOf } from './fact-derive.js';
+import type { FactLog, RecordInput, RefusalCode } from './facts.js';
 import type { MemoryStore } from './memory.js';
 import type { ReplyReviews } from './mcp-review.js';
 import type { RelateOutcome } from './server-blockers.js';
@@ -19,7 +19,7 @@ export interface McpDeps extends ReplyReviews {
   canClose(itemId: string): boolean; // hive_stop's reason (#314): whether the task's source can close its item
   relate(itemId: string, change: BlockerChange): Promise<RelateOutcome>; // hive_stop's block (#294): the blockers route's own write, relateItem
   canRelate(itemId: string): boolean; // hive_stop's block (#294): a hive task, or a task whose source relates
-  events: Pick<EventLog, 'write'>; // #742: each tool call's mcp.call
+  facts: Pick<FactLog, 'write'>; // #742: each tool call's mcp.call
   memory: Pick<MemoryStore, 'read' | 'update'>; // #797: hive_remember and hive_applied write the worker's workspace's memory
   exec: Exec; // #854: the remotes behind a fork's hive_conventions
 }
@@ -57,7 +57,7 @@ export async function recorded(deps: McpDeps, header: string | undefined, tool: 
   const ids = state && worker ? correlationOf(state, worker) : {};
   const kind = facts.kind === undefined ? {} : { kind: facts.kind };
   const written = (fields: Pick<Extract<RecordInput, { event: 'mcp.call' }>, 'level' | 'outcome' | 'reason' | 'result_keys' | 'result_keys_dropped'>): void =>
-    deps.events.write({ event: 'mcp.call', ...ids, tool, latency_ms: Date.now() - began, ...kind, ...fields });
+    deps.facts.write({ event: 'mcp.call', ...ids, tool, latency_ms: Date.now() - began, ...kind, ...fields });
   let answer: Answer;
   try {
     answer = await call();

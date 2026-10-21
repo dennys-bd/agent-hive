@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { addTokens, finiteTokens, firstLine, newTally, tally, turnUsage, writtenSince } from '../../src/agents/jsonl.js';
-import { ZERO_TOKENS } from '../../src/events.js';
+import { ZERO_TOKENS } from '../../src/facts.js';
 import { tempDir } from '../temp-dir.js';
 
 test('firstLine reads a file\'s first line only, undefined for an empty file, and refuses what is not a regular file (#929)', async (t) => {

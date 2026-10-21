@@ -3,7 +3,7 @@
 import { readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, normalize, relative, sep } from 'node:path';
-import type { Tokens } from '../events.js';
+import type { Tokens } from '../facts.js';
 import { isRecord } from '../rate-limits.js';
 import type { TranscriptTurn } from '../usage.js';
 import { eachLine, finite, finiteTokens, firstLine, isRealDir, newTally, tally, turnUsage, type UsageEntry, writtenSince } from './jsonl.js';

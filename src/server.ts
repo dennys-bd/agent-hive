@@ -27,8 +27,8 @@ import { excludeFromGit, pluginSource, prepareHome, type ProtocolPaths } from '.
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import { createLogger, describeChanges, describeStages, describeEffect, describeEvent, type Logger } from './log.js';
-import { createEventLog, type EventLog } from './events.js';
-import { createServerEvents, HOOKS_PREFIX, UI_HEADER, WRITE_METHODS } from './server-events.js';
+import { createFactLog, type FactLog } from './facts.js';
+import { createServerFacts, HOOKS_PREFIX, UI_HEADER, WRITE_METHODS } from './server-facts.js';
 import { canCloseTask, mountMcp } from './mcp.js';
 import { createDeliver, createDeliverLocal, type Deliver } from './review-deliver.js';
 import { createLocalReviewStore, createReviewStore, droppedReviews } from './review-store.js';
@@ -153,7 +153,7 @@ export interface ServerDeps {
   launchPty?: LaunchPty; // tests inject a fake; the default opens a real claude
   spawnPty?: SpawnPty; // node-pty from run.ts (#251); tests a fake. Absent: NO_PTY, and an internal worker fails to start
   log?: Logger; // tests inject a fake; default writes <home>/hive.log
-  events?: EventLog; // #742: tests inject a fake; default writes <home>/events.jsonl beside hive.log
+  facts?: FactLog; // #742: tests inject a fake; default writes <home>/facts.jsonl beside hive.log
   /** The agent CLIs this machine has, detected on boot (#516). Absent (tests) means every agent is available. */
   agents?: AgentAvailability[];
   exec?: Exec; // git for the spawn's worktree, the deleteActivity effect and the task routes, gh for the PR states (#207); tests inject a fake and see the calls
@@ -249,7 +249,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // run.spawned's server-side fields (#797, #803): the workspace memory and the language servers its launch read
   const memoryFields = runMemory(memory, () => live?.runtime.config);
   const lspFields = runLspServers(workerLsp, () => live?.runtime.config);
-  const wiring = createServerEvents(deps.events ?? createEventLog(home, 'info', { log, ...(deps.usage === undefined ? {} : { keep: deps.usage.write }) }), log, Date.now, (state, worker) => ({ ...memoryFields(state, worker), ...lspFields(state, worker) })); // events.jsonl (#742): activate sets its level with the log's
+  const wiring = createServerFacts(deps.facts ?? createFactLog(home, 'info', { log, ...(deps.usage === undefined ? {} : { keep: deps.usage.write }) }), log, Date.now, (state, worker) => ({ ...memoryFields(state, worker), ...lspFields(state, worker) })); // facts.jsonl (#742): activate sets its level with the log's
   const createdAt = Date.now(); // hive.booted's start (#742)
   const systemLanguage = deps.systemLanguage ?? 'en';
   const sourceFactory: SourceFactory = deps.sourceFactory ?? ((spec, items) => createSource(spec, { log, ...(items === undefined ? {} : { items }) }));
@@ -270,7 +270,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, log));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
-  const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, events: wiring.events, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later
+  const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ exec, pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands });
   // The PR's transport (#207, #592): gh, the login the workers open their PRs with, source or no source. Through an injected exec, so no test runs
@@ -549,7 +549,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         const { activity, task, scope } = effect;
         const activityId = activity.id;
         // In the task's own workspace (#179); none, or one gone, is a failure a manual start retries, like a git refusal. What goes is the scope's (#236).
-        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, dispatch, events: wiring.events });
+        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, dispatch, facts: wiring.facts });
         // Awaited, like kill: the answer is reduced inside this batch, so the next tick sees the task moved or errored, never mid-deletion.
         await clean().then(
           () => dispatch({ type: 'activityDeleted', activityId }),
@@ -787,7 +787,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     await pluginRender.write(config); // #316: each workspace's plugin folder, before any run of the boot or the save loads it; a failure is logged, never the save's
     for (const { path } of config.comb.workspaces) await excludeFromGit(path); // each workspace keeps its worktrees in <path>/.hive/ (#179)
     log.setLevel(config.logLevel); // read from the file on every save: a hand edit switches the level without a restart
-    wiring.events.setLevel(config.logLevel); // one switch for both files (#742)
+    wiring.facts.setLevel(config.logLevel); // one switch for both files (#742)
     log.info(`config port=${port} sources=${config.comb.sources.map((b) => `${b.name}:${b.type}`).join(',') || 'none'} logLevel=${config.logLevel} stages=${describeStages(config.comb.stages)}`);
     return { config, sources, hooksPath, promptsDir, protocol, port };
   }
@@ -950,7 +950,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
   mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
     relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
-    reviews, notifyReview, localReviews, notifyLocalReview, events: wiring.events, memory }); // #344: a local session's hive_reply
+    reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory }); // #344: a local session's hive_reply
 
   app.get('/events', (req: Request, res: Response) => {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
@@ -1174,16 +1174,16 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerTemplateReviewRoutes(app, { requireLive, home, pluginSource: pluginSource(), log, agents });
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings
-  registerMemoryRoutes(app, { requireLive, memory, events: wiring.events, log, home, queueSave, saveSettings });
+  registerMemoryRoutes(app, { requireLive, memory, facts: wiring.facts, log, home, queueSave, saveSettings });
   // The protocol routes (#336): blocks, passages and a workspace's render; a passage write rewrites the protocol files on the settings chain
   registerProtocolRoutes(app, { requireLive, queueSave, passages, memory, protocolFor, log });
 
   // create, start, bases, close, keep, session, session exit, delete-activity, move, reset-order, close-missing, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
-  const taskDeps = { exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, events: wiring.events, plugin: pluginRender };
+  const taskDeps = { exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
-  registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, events: wiring.events });
+  registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts });
   registerTaskRoutes(app, taskDeps);
   registerDesignFrameMint(app, { requireLive, tokens: designFrames }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
   // The review's conversations (#591): delivered into a session's pty, or into one openSession starts for them. A pty whose fd closed since
