@@ -4,8 +4,10 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { readDaemonSecret } from '../src/daemon-files.js';
 import { bootHive } from '../src/hive.js';
+import { FACTS_FILE } from '../src/facts.js';
 import { initialState } from '../src/orchestrator.js';
 import { READ_MODEL_FILE } from '../src/read-model/db.js';
 import type { ItemStore } from '../src/read-model/items.js';
@@ -583,6 +585,22 @@ test('bootHive opens usage.sqlite in the home in hive mode and in setup mode, si
   const setup = await bootHive(empty);
   t.after(() => setup.server.close());
   assert.deepEqual([existsSync(join(home, USAGE_FILE)), existsSync(join(empty, USAGE_FILE))], [true, true]);
+});
+
+test('bootHive moves events.jsonl and its generations to facts.jsonl before the usage store imports them, and appends to facts.jsonl (#93)', async (t) => {
+  const { home } = await hiveWithConfig(t, {});
+  const moved = JSON.stringify({ schema_version: 1, ts: '2026-10-20T12:00:00.000Z', event: 'task.moved', level: 'info', task_id: 'board:I1', from: 'dev', to: 'review', by: 'hand' });
+  await writeFile(join(home, 'events.jsonl.1'), `${moved}\n`);
+  await writeFile(join(home, 'events.jsonl'), 'current\n');
+  const { server } = await bootHive(home);
+  t.after(() => server.close());
+  assert.deepEqual([existsSync(join(home, 'events.jsonl')), existsSync(join(home, 'events.jsonl.1'))], [false, false]);
+  assert.equal(await readFile(join(home, `${FACTS_FILE}.1`), 'utf8'), `${moved}\n`);
+  assert.ok((await readFile(join(home, FACTS_FILE), 'utf8')).startsWith('current\n'), 'the Hive appends after the moved content');
+  const db = new DatabaseSync(join(home, USAGE_FILE));
+  t.after(() => db.close());
+  const rows = db.prepare("SELECT event, task_id FROM records WHERE task_id = 'board:I1'").all().map((row) => ({ ...row }));
+  assert.deepEqual(rows, [{ event: 'task.moved', task_id: 'board:I1' }], 'the first import found the moved generation');
 });
 
 test('a read model that cannot be opened is logged, and the daemon boots without its sync (#180)', async (t) => {

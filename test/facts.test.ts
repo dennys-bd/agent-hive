@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createFactLog, FACTS_FILE, type FactRecord, RAW_TEXT_MAX, rawText, SCHEMA_VERSION, textRef } from '../src/facts.js';
+import { createFactLog, FACTS_FILE, type FactRecord, moveEventsFiles, RAW_TEXT_MAX, rawText, SCHEMA_VERSION, textRef } from '../src/facts.js';
 import { createLogger, LOG_FILE } from '../src/log.js';
 import { fakeLog } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
@@ -129,4 +129,28 @@ test('the sink gets every record stamped and bounded as its line is, whatever th
   const after: FactRecord[] = [];
   createFactLog(broken, 'info', { log: fakeLog().log, stderr: quiet, keep: (record) => { after.push(record); } }).write({ event: 'hive.quit', level: 'info', reason: 'stop' });
   assert.deepEqual(after.map((r) => r.event), ['hive.quit']);
+});
+
+test('moveEventsFiles moves events.jsonl and each generation to the same one of facts.jsonl, and leaves one whose target exists (#93)', async (t) => {
+  const home = await tempDir(t, 'facts-');
+  await writeFile(join(home, 'events.jsonl'), 'current\n');
+  await writeFile(join(home, 'events.jsonl.1'), 'one\n');
+  await writeFile(join(home, 'events.jsonl.2'), 'old two\n');
+  await writeFile(join(home, 'events.jsonl.5'), 'five\n');
+  await writeFile(join(home, `${FACTS_FILE}.2`), 'new two\n');
+  const { log, lines } = fakeLog();
+  moveEventsFiles(home, log);
+  assert.deepEqual(['', '.1', '.2', '.5'].map((g) => readFileSync(join(home, `${FACTS_FILE}${g}`), 'utf8')), ['current\n', 'one\n', 'new two\n', 'five\n']);
+  assert.deepEqual((await readdir(home)).filter((name) => name.startsWith('events')), ['events.jsonl.2'], 'a generation whose target exists stays as it is');
+  assert.deepEqual(lines, []);
+});
+
+test('moveEventsFiles with no events file does nothing (#93)', async (t) => {
+  const home = await tempDir(t, 'facts-');
+  await writeFile(join(home, FACTS_FILE), 'kept\n');
+  const { log, lines } = fakeLog();
+  moveEventsFiles(home, log);
+  assert.deepEqual(await readdir(home), [FACTS_FILE]);
+  assert.equal(readFileSync(join(home, FACTS_FILE), 'utf8'), 'kept\n');
+  assert.deepEqual(lines, []);
 });

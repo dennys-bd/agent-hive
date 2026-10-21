@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
-import { createAppender, type Logger, type LoggerOptions, type LogLevel, passes, type RecordLevel, shortId, UNSAFE_CHARS } from './log.js';
+import { existsSync, renameSync } from 'node:fs';
+import { join } from 'node:path';
+import { createAppender, generations, type Logger, type LoggerOptions, type LogLevel, passes, type RecordLevel, shortId, UNSAFE_CHARS } from './log.js';
 import type { AgentId, MemoryKind, MemoryRefusalCode, Signal } from './types.js';
 
 // facts.jsonl (#742): the fact log, one JSON object per line beside hive.log, for statistics over the Hive's facts. Never a prompt, an output, a title, a
@@ -166,4 +168,19 @@ export function createFactLog(dir: string, level: LogLevel, options: FactLogOpti
       current = next;
     },
   };
+}
+
+/** Before #93 the fact log was events.jsonl: each of its generations moves to the same generation of facts.jsonl, before the usage store's
+ * first import reads them and before the writer appends. A target already there is never overwritten, and its source is left as it is. Never
+ * throws: a rename that fails is one hive.log line, never a failed boot. */
+export function moveEventsFiles(home: string, log: Pick<Logger, 'error'>): void {
+  for (const to of generations(FACTS_FILE)) {
+    const from = `events.jsonl${to.slice(FACTS_FILE.length)}`; // the same generation: '' or '.<n>'
+    if (!existsSync(join(home, from)) || existsSync(join(home, to))) continue;
+    try {
+      renameSync(join(home, from), join(home, to));
+    } catch (err) {
+      log.error(`facts: ${from} not moved to ${to} (${(err as NodeJS.ErrnoException).code ?? 'unknown'})`); // the code only: the message holds the home path
+    }
+  }
 }
