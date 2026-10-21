@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runBranch } from '../../scripts/experiment/plan.js';
 import { parseStagesSeed, SEED_DIR } from '../../scripts/experiment/seed.js';
-import { harnessRulePaths } from '../../scripts/experiment/arm-config.js';
+import { harnessRulePaths } from '../../scripts/experiment/harness-config.js';
 import { runClaudeArgs, runRules } from '../../src/benchmark/worker-rules.js';
 import { bashDecision, readDecision, rulesOf } from './rules.js';
 

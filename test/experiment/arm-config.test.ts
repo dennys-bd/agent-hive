@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { parseConfig } from '../../src/config.js';
 import { migrateTransitions } from '../../src/config-migrate.js';
 import { loadState } from '../../src/state-store.js';
-import { ARM_COMMANDS, evalConfig, runConfig, runState, WORKSPACE_TEARDOWN, watchTasks, workspaceSetup } from '../../scripts/experiment/arm-config.js';
+import { ARM_COMMANDS, evalConfig, runConfig, runState, WORKSPACE_TEARDOWN, watchTasks, workspaceSetup } from '../../scripts/experiment/harness-config.js';
 import type { Arm } from '../../scripts/experiment/types.js';
 import { tempDir } from '../temp-dir.js';
 import { BRANCH, PATHS, PREFIX, STAGES, TASKS, WORKSPACE } from './fixtures.js';

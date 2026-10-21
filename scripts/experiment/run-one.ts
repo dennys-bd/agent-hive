@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadState } from '../../src/state-store.js';
-import { runConfig, runState, watchTasks } from './arm-config.js';
+import { runConfig, runState, watchTasks } from './harness-config.js';
 import type { RunningDaemon } from '../../src/benchmark/daemon.js';
 import type { Run } from '../../src/benchmark/exec.js';
 import { writeJson } from './files.js';

@@ -1,7 +1,9 @@
 import type { ChildLike } from '../../src/benchmark/daemon.js';
 import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
-import type { Arm, ArmSetup, BenchIsolation, BenchStagePick, BenchRun, Experiment, State } from '../../src/types.js';
+import { parseConfig } from '../../src/config.js';
+import { combConfig } from '../fakes.js';
+import type { Arm, ArmSetup, Config, BenchIsolation, BenchStagePick, BenchRun, Experiment, State } from '../../src/types.js';
 
 const pick = (skill: string): BenchStagePick => ({ agent: 'claude', skill, prompt: `${skill} {title}\n\n{body}` });
 export const SETUP: ArmSetup = {
@@ -62,3 +64,10 @@ export function fakeChild(exitCode: number | null = null): { child: ChildLike; k
   const kills: string[] = [];
   return { kills, child: { pid: 7, exitCode, kill: (signal?: NodeJS.Signals): boolean => { kills.push(signal ?? 'SIGTERM'); return true; } } };
 }
+
+export const WS_PATH = '/work/hive';
+// The main Hive's config: the workspace has a nested repo, its own env, base branch, setup and teardown, and the Hive a branch template
+export const mainConfig = (): Config => parseConfig(combConfig({
+  path: WS_PATH, branch: 'feat/{id}', stages: [{ name: 'Todo', from: {} }],
+  workspaces: [{ name: 'hive', path: WS_PATH, env: { A: '1' }, fork: null, nestedRepos: ['docs'], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', baseBranch: 'develop', setup: 'RUN old', teardown: 'RUN old' }],
+}));

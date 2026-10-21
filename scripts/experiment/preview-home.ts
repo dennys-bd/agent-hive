@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { runConfig, runState } from './arm-config.js';
+import { runConfig, runState } from './harness-config.js';
 import { runBranch, runPrefix } from './plan.js';
 import type { SeedTask, StagesSeed } from './seed.js';
 import type { Arm } from './types.js';

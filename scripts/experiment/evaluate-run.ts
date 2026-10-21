@@ -1,7 +1,7 @@
 import { copyFile, cp, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import type { DaemonAddress } from '../../src/daemon.js';
-import { evalConfig } from './arm-config.js';
+import { evalConfig } from './harness-config.js';
 import { assertBlind, bundleFiles, writeBundle } from './blind.js';
 import { type Cookie, dashboardCookie, type Launch, MCP_BIN, mcpConfig, smokeDashboard, storageState } from './browser.js';
 import { extractJson, JUDGE_TIMEOUT_MS, judgeArgs, parseClicks, parseJudge, runClaude, TESTER_TIMEOUT_MS, testerArgs } from './claude.js';

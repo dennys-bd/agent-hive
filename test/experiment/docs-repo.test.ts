@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { WORKSPACE_TEARDOWN, workspaceSetup } from '../../scripts/experiment/arm-config.js';
+import { WORKSPACE_TEARDOWN, workspaceSetup } from '../../scripts/experiment/harness-config.js';
 import { cleanEnv, execRun, inDir, type Run } from '../../src/benchmark/exec.js';
 import { nestedBaseline } from '../../src/benchmark/git.js';
 import { runDocs } from '../../scripts/experiment/docs-git.js';

@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { loadState } from '../../src/state-store.js';
-import { armStages } from '../../scripts/experiment/arm-config.js';
+import { armStages } from '../../scripts/experiment/harness-config.js';
 import { runBranch } from '../../scripts/experiment/plan.js';
 import { assertWorkerText, deliverySection, forbiddenWords, loadSeed, materializeSample, parseArtboards, parseScenarios, parseStagesSeed, parseTasks, SEED_DIR, screenPath, seedHash } from '../../scripts/experiment/seed.js';
 import { assertClean, missingStates } from '../../scripts/experiment/snapshot.js';

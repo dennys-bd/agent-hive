@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { runConfig } from '../../scripts/experiment/arm-config.js';
+import { runConfig } from '../../scripts/experiment/harness-config.js';
 import { runBranch, runPrefix } from '../../scripts/experiment/plan.js';
 import { PREVIEW_TOKENS, previewHome } from '../../scripts/experiment/preview-home.js';
 import { STAGES, TASKS, WORKSPACE } from './fixtures.js';

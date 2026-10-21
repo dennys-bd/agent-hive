@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { PR_STATES } from '../../src/pull-requests.js';
-import { EXPERIMENT_PREFIX, stateBase, WORKSPACE_NAME } from './arm-config.js';
+import { EXPERIMENT_PREFIX, stateBase, WORKSPACE_NAME } from './harness-config.js';
 import { WORKTREE_MARK } from './seed.js';
 
 export interface SnapshotOptions { liveStages: readonly string[]; seedStages: readonly string[]; username: string; home: string }
