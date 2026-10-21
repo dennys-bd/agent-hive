@@ -87,3 +87,12 @@ test('with no lists (no workspace configured yet) a saved skill and specialized 
   expect(menu('skill')).toHaveTextContent('hive:new-plan');
   expect(menu('agente especializado')).toHaveTextContent('hive:planner');
 });
+
+test('the first stage cannot continue a previous session: the option is disabled', () => {
+  setup(stage({ prompt: '/x' }));
+  openSelect(screen.getByLabelText(t('settings.stages.session')));
+  const option = screen.getByRole('option', { name: new RegExp(`^${t('settings.stages.session.continue')}`) });
+  expect(option).toHaveAttribute('aria-disabled', 'true');
+  expect(option).toHaveTextContent(t('settings.stages.session.continue.none', { agent: 'claude' }));
+  expect(screen.getByRole('option', { name: t('settings.stages.session.new') })).not.toHaveAttribute('aria-disabled');
+});

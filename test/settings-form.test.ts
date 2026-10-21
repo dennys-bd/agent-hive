@@ -672,6 +672,16 @@ test('a renamed stage sends stageRenames and its stage rules under the new name;
   assert.deepEqual(body.usageRules, [{ source: 'hour', percent: 50, maxWorkers: 1, stage: 'build' }]);
 });
 
+test('validateSettings refuses a stage that continues a session no earlier stage of its agent opened, on flow (#710)', () => {
+  setLanguage('pt');
+  const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
+  const first = { ...valid.stages[0], action: '' as const, prompt: '/x', agent: '' as const, session: 'continue' as const };
+  assert.deepEqual(validateSettings({ ...valid, stages: [first] }), { section: 'flow', message: t('settings.stages.error.continue', { n: 1, agent: 'claude' }) });
+  const second = { ...first, id: 'second', name: 'second' };
+  assert.equal(validateSettings({ ...valid, stages: [{ ...first, session: 'new' }, second] }), undefined);
+  assert.deepEqual(validateSettings({ ...valid, stages: [{ ...first, session: 'new' }, { ...second, agent: 'codex' }] }), { section: 'flow', message: t('settings.stages.error.continue', { n: 2, agent: 'codex' }) });
+});
+
 test('validateSettings refuses a skill stage with no skill, on flow (#710)', () => {
   setLanguage('pt');
   const valid = { ...draftFrom(info(CONFIG)), transitions: [] };

@@ -111,6 +111,21 @@ export const isGateDraft = (stage: StageDraft): boolean => stage.action === '' &
  * fields, the verdicts editor and the handoff, and what a transition's session may continue. */
 export const isAgentDraft = (stage: StageDraft): boolean => stage.action === 'skill' || (stage.action === '' && !isGateDraft(stage));
 
+const agentOfDraft = (stage: StageDraft, defaultAgent: AgentId): AgentId => (stage.agent === '' ? defaultAgent : stage.agent);
+
+/** Whether a stage may continue the previous session (#710): some earlier stage in the fill order runs an agent, the same one, so a task
+ * reaches it with a session of that agent to resume. Never the first stage, never the first stage of its agent. */
+export function canContinueSession(stages: readonly StageDraft[], index: number, defaultAgent: AgentId): boolean {
+  const stage = stages[index];
+  if (stage === undefined || !isAgentDraft(stage)) return false;
+  const agent = agentOfDraft(stage, defaultAgent);
+  return stages.slice(0, index).some((s) => isAgentDraft(s) && agentOfDraft(s, defaultAgent) === agent);
+}
+
+/** The first agent stage left on continue with no session to resume (canContinueSession), or -1. */
+export const orphanContinue = (stages: readonly StageDraft[], defaultAgent: AgentId): number =>
+  stages.findIndex((s, i) => isAgentDraft(s) && s.session === 'continue' && !canContinueSession(stages, i, defaultAgent));
+
 /** A stage chip's second line (#515): what the stage does, or the agent it runs (#516) and the prompt's first word. */
 export function stageMeta(s: StageDraft, defaultAgent: AgentId): string {
   if (s.action === 'deleteActivity') return t('settings.stages.meta.deleteActivity');

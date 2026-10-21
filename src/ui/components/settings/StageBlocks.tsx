@@ -90,12 +90,14 @@ function ActionSelect({ id, stage, onUpdate }: BlockProps) {
 
 /** The agents found on boot and the default a stage without its own pick runs (#516), and the lists of the config's first workspace (#710). */
 export interface AgentProps { agents: readonly AgentAvailability[]; defaultAgent: AgentId; launchOptions?: LaunchOptions }
+/** Whether the stage may continue the previous session (#710): canContinueSession, from the stage's place in the fill order. */
+export interface ContinueProps { canContinue: boolean }
 
 type Menu = 'agent' | 'model' | 'specialized';
 
 /** Who runs the stage (#710, the handoff's 2×2 grid): the Start dialog's agent with no default row (a stage with none shows the default picked),
  * model, session and specialized agent. Another agent clears the model and the specialized agent: both are named per agent (decision 8). */
-function WorkerFields({ id, stage, onUpdate, agents, defaultAgent, launchOptions }: BlockProps & AgentProps) {
+function WorkerFields({ id, stage, onUpdate, agents, defaultAgent, launchOptions, canContinue }: BlockProps & AgentProps & ContinueProps) {
   const [menu, setMenu] = useState<Menu>();
   const toggle = (which: Menu) => (isOpen: boolean): void => setMenu(isOpen ? which : undefined);
   const agent = stage.agent === '' ? defaultAgent : stage.agent;
@@ -113,7 +115,13 @@ function WorkerFields({ id, stage, onUpdate, agents, defaultAgent, launchOptions
           <SelectTrigger id={`${id}-session`} className="w-full"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="new">{t('settings.stages.session.new')}</SelectItem>
-            <SelectItem value="continue">{t('settings.stages.session.continue')}</SelectItem>
+            {/* #710: the first stage of its agent has no session of that agent to resume */}
+            <SelectItem value="continue" disabled={!canContinue}>
+              <span className="flex min-w-0 flex-col">
+                <span>{t('settings.stages.session.continue')}</span>
+                {!canContinue && <span className="truncate text-muted-foreground text-xs">{t('settings.stages.session.continue.none', { agent })}</span>}
+              </span>
+            </SelectItem>
           </SelectContent>
         </Select>
       </Field>
@@ -173,14 +181,14 @@ export interface CommandsProps { commands: readonly Command[]; workspaces: reado
 
 /** Executa: the action; on a prompt or skill stage (#710) the run fields, the prompt or the skill, the approval switch (#268) and the handoff
  * switch (#692); on a commands stage its commands block (#755), on a wait for CI its block (#834). */
-export function StageRun({ id, stage, onUpdate, agents, defaultAgent, launchOptions, commands, workspaces }: BlockProps & AgentProps & CommandsProps) {
+export function StageRun({ id, stage, onUpdate, agents, defaultAgent, launchOptions, canContinue, commands, workspaces }: BlockProps & AgentProps & ContinueProps & CommandsProps) {
   const isGate = isGateDraft(stage);
   const runsAgent = isAgentDraft(stage);
   const agent = stage.agent === '' ? defaultAgent : stage.agent;
   return (
     <div className="flex flex-col gap-3">
       <div className="md:w-56"><ActionSelect id={id} stage={stage} onUpdate={onUpdate} /></div>
-      {runsAgent && <WorkerFields id={id} stage={stage} onUpdate={onUpdate} agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} />}
+      {runsAgent && <WorkerFields id={id} stage={stage} onUpdate={onUpdate} agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} canContinue={canContinue} />}
       {stage.action === 'commands' && <StageCommands id={id} stage={stage} options={commands} workspaces={workspaces} onUpdate={onUpdate} />}
       {stage.action === 'waitForCi' && <StageCi id={id} stage={stage} onUpdate={onUpdate} />}
       {isGate && (

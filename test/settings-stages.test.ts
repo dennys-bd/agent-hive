@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import {
-  actionLabel, addableActions, deletionMoves, emptyStage, entryKey, entryKeys, entryLabel, fromKeys, stageDraft, stageFrom, stageMeta, stageRenamesFrom, withAction, withEntry, withoutAction,
+  actionLabel, addableActions, canContinueSession, deletionMoves, emptyStage, entryKey, entryKeys, entryLabel, fromKeys, stageDraft, stageFrom, stageMeta, stageRenamesFrom, withAction, withEntry, withoutAction,
 } from '../src/ui/lib/settings-stages.js';
 import { draftVerdicts } from '../src/ui/lib/settings-transitions.js';
 import type { SourceAction, Stage, Task } from '../src/types.js';
@@ -166,4 +166,12 @@ test('a prompt stage sends its specialized agent only with a prompt to run, a Hi
   assert.equal('specializedAgent' in commands || 'skill' in commands, false);
   assert.equal(stageMeta({ ...draft, action: 'skill', skill: 'new-plan' }, 'claude'), 'claude · new-plan');
   assert.equal(stageMeta({ ...draft, action: 'skill', agent: 'codex' }, 'claude'), 'codex · hive skill');
+});
+
+test('a stage may continue the previous session only when an earlier stage runs the same agent: never the first, never the first with its agent (#710)', () => {
+  const run = (extra: Partial<ReturnType<typeof emptyStage>>) => ({ ...emptyStage(), name: 'x', prompt: '/x', ...extra });
+  const stages = [run({}), { ...emptyStage(), name: 'gate', gate: true, approval: true }, run({ agent: 'codex' }), run({}), run({ agent: 'codex' }), run({ action: 'skill', skill: 'new-plan' })];
+  assert.deepEqual(stages.map((_, i) => canContinueSession(stages, i, 'claude')), [false, false, false, true, true, true]);
+  assert.equal(canContinueSession(stages, 2, 'codex'), true, "the default agent is codex: the first stage's agent");
+  assert.equal(canContinueSession([{ ...emptyStage(), name: 'c', action: 'commands' }, run({})], 1, 'claude'), false, 'a commands stage opens no session');
 });

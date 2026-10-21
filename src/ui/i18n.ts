@@ -1432,6 +1432,7 @@ const en = {
   'settings.stages.session': 'session',
   'settings.stages.session.new': 'new',
   'settings.stages.session.continue': 'continue the previous one',
+  'settings.stages.session.continue.none': 'no earlier stage runs {agent}',
   'settings.stages.model': 'model',
   'settings.stages.prompt': 'prompt',
   'settings.stages.action': 'action',
@@ -1585,6 +1586,7 @@ const en = {
   'settings.transitions.sources.pass': 'on passing',
   'settings.stages.error.ci': 'stage {n}: pick at least one check under only these, and a wait like 30s, 10m or 1h, up to 24h', // #834
   'settings.stages.error.skill': 'stage {n}: choose a skill', // #710
+  'settings.stages.error.continue': 'stage {n}: no earlier stage runs {agent}, so there is no session to continue', // #710
   'settings.stages.loadHint': '"load" fills the selects below with the source columns.',
   'main.confirm.quit.one': '1 worker is running and will be stopped. Quit anyway?',
   'main.confirm.quit.other': '{n} workers are running and will be stopped. Quit anyway?',
@@ -3685,6 +3687,7 @@ const pt: Record<MessageKey, string> = {
   'settings.stages.session': 'sessão',
   'settings.stages.session.new': 'nova',
   'settings.stages.session.continue': 'continua a anterior',
+  'settings.stages.session.continue.none': 'nenhuma etapa anterior executa o {agent}',
   'settings.stages.model': 'modelo',
   'settings.stages.prompt': 'prompt',
   'settings.stages.action': 'ação',
@@ -3838,6 +3841,7 @@ const pt: Record<MessageKey, string> = {
   'settings.transitions.sources.pass': 'ao passar',
   'settings.stages.error.ci': 'etapa {n}: escolha ao menos um check em só estes, e uma espera como 30s, 10m ou 1h, até 24h',
   'settings.stages.error.skill': 'etapa {n}: escolha uma skill',
+  'settings.stages.error.continue': 'etapa {n}: nenhuma etapa anterior executa o {agent}, então não há sessão para continuar',
   'settings.stages.loadHint': '"carregar" preenche os selects abaixo com as colunas da source.',
   'main.confirm.quit.one': '1 worker está executando e será parado. Sair mesmo assim?',
   'main.confirm.quit.other': '{n} workers estão executando e serão parados. Sair mesmo assim?',
