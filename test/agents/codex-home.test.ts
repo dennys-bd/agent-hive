@@ -1,11 +1,11 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { type AgentRole, agentRoles, codexHome, marketplaceName, pluginCacheDir, prepareCodexWorkspace, readAgent, removeCodexWorkspace, renderRole, roleFile, rolesDir, tomlString } from '../../src/agents/codex-home.js';
-import { pluginSource } from '../../src/hooks-settings.js';
+import { renderedPlugin } from '../rendered-plugin.js';
 import { tempDir } from '../temp-dir.js';
 
 // The Hive's plugin in Codex's shape (#934): where Codex reads it, and the role file each agent becomes.
@@ -39,6 +39,7 @@ test('renderRole writes the instructions as one TOML string, and sandbox_mode on
 });
 
 const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
+const RENDERED = await renderedPlugin({ after }); // #416: assets/plugin holds designer.md.liquid; a run reads the delivered designer.md
 
 test('readAgent keeps name, description and the body verbatim, a --- line in the body included; it stops at the second --- (#934)', () => {
   const text = ['---', 'name: fixer', 'description: Fixes: the build.', 'tools: Read, Write', 'model: sonnet', '---', '', 'Body.', '', '---', '', 'After the rule.', ''].join('\n');
@@ -66,8 +67,8 @@ test('readAgent refuses a name that would escape the roles folder or split a -c 
   assert.equal(readAgent('x.md', '---\r\nname: x\r\ndescription: d.\r\n---\r\nbody').name, 'x');
 });
 
-test('agentRoles reads the eleven agents of assets/plugin in name order: four read-only, every body whole (#934)', () => {
-  const roles = agentRoles(pluginSource());
+test('agentRoles reads the eleven agents of the delivered plugin in name order: four read-only, every body whole (#934, #416)', () => {
+  const roles = agentRoles(RENDERED);
   assert.deepEqual(roles.map((r) => r.name), AGENT_NAMES);
   assert.deepEqual(roles.filter((r) => r.readOnly).map((r) => r.name), ['architect', 'plan-reviewer', 'spec-reviewer', 'template-reviewer']);
   for (const name of ['build-fixer', 'security-reviewer']) {
@@ -78,7 +79,7 @@ test('agentRoles reads the eleven agents of assets/plugin in name order: four re
 });
 
 test('renderRole: architect gets sandbox_mode, tdd none (#934)', () => {
-  const roles = agentRoles(pluginSource());
+  const roles = agentRoles(RENDERED);
   const role = (name: string): AgentRole => roles.find((r) => r.name === name) ?? assert.fail(name);
   assert.ok(renderRole(role('architect')).endsWith('\nsandbox_mode = "read-only"\n'));
   assert.equal(renderRole(role('tdd')).includes('sandbox_mode'), false);
@@ -100,7 +101,7 @@ async function userCodexHome(t: Parameters<typeof tempDir>[0]): Promise<string> 
 // A workspace's plugin folder as the render leaves it: here the shipped plugin, under <home>/plugins/<name>
 async function workspaceFolder(home: string, name: string): Promise<string> {
   const dir = join(home, 'plugins', name);
-  await cp(pluginSource(), dir, { recursive: true });
+  await cp(RENDERED, dir, { recursive: true });
   return dir;
 }
 
@@ -111,7 +112,7 @@ test('prepareCodexWorkspace copies the folder into its marketplace\'s cache and 
   const cache = pluginCacheDir(codex, dir);
   assert.deepEqual((await readdir(join(cache, 'skills'))).sort(), SKILLS);
   for (const skill of SKILLS) {
-    assert.equal(await readFile(join(cache, 'skills', skill, 'SKILL.md.liquid'), 'utf8'), await readFile(join(dir, 'skills', skill, 'SKILL.md.liquid'), 'utf8'), skill);
+    assert.equal(await readFile(join(cache, 'skills', skill, 'SKILL.md'), 'utf8'), await readFile(join(dir, 'skills', skill, 'SKILL.md'), 'utf8'), skill);
   }
   assert.deepEqual((await readdir(rolesDir(dir))).sort(), AGENT_NAMES.map((name) => `${name}.toml`));
   for (const role of agentRoles(dir)) assert.equal(await readFile(roleFile(dir, role.name), 'utf8'), renderRole(role), role.name);

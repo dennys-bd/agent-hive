@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ARM_LEAK, assertBlind, bundleFiles, hasTell, PLUGIN_SUBAGENTS, REDACTED, scrub, writeBundle } from '../../scripts/experiment/blind.js';
+import { deliveredName } from '../../src/template.js';
 import type { Metrics } from '../../scripts/experiment/types.js';
 import { tempDir } from '../temp-dir.js';
 
@@ -23,7 +24,7 @@ test('scrub turns every arm tell into [redacted], and the scrubbed text holds no
 });
 
 test('PLUGIN_SUBAGENTS is every agent of the plugin (#105)', async () => {
-  const names = (await readdir(new URL('../../../assets/plugin/agents/', import.meta.url))).filter((n) => n.endsWith('.md')).map((n) => n.slice(0, -3)).sort();
+  const names = (await readdir(new URL('../../../assets/plugin/agents/', import.meta.url))).map(deliveredName).filter((n) => n.endsWith('.md')).map((n) => n.slice(0, -3)).sort();
   assert.deepEqual([...PLUGIN_SUBAGENTS].sort(), names);
 });
 

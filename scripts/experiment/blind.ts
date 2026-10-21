@@ -3,7 +3,7 @@ import { basename, dirname, join } from 'node:path';
 import type { Click, Metrics } from './types.js';
 
 export const REDACTED = '[redacted]';
-/** The Hive plugin's subagents (assets/plugin/agents/*.md); a test keeps this in step. */
+/** The Hive plugin's subagents (assets/plugin/agents/*.md, *.md.liquid); a test keeps this in step. */
 export const PLUGIN_SUBAGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'] as const;
 /** Every arm tell (#105, the user): both arms' commands and skills, their namespaces, the plugin's subagents. Namespaced forms first. */
 export const TELLS: readonly RegExp[] = [

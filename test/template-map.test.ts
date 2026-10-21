@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { parseTemplate } from '../src/template.js';
+import { deliveredName, parseTemplate } from '../src/template.js';
 import type { Condition } from '../src/template-condition.js';
 import { buildMap, type Catalogue, findReferences, type MapBlock } from '../src/template-map.js';
 
@@ -208,8 +208,8 @@ test('unbalanced markers answer the blocks built plus an error at the marker\'s 
 const REPO = new URL('../../', import.meta.url);
 const NEW_BUILD = readFileSync(fileURLToPath(new URL('assets/plugin/skills/new-build/SKILL.md.liquid', REPO)), 'utf8');
 const SHIPPED_AGENTS = readdirSync(fileURLToPath(new URL('assets/plugin/agents/', REPO)))
-  .filter((file) => file.endsWith('.md'))
-  .map((file) => `hive:${file.slice(0, -'.md'.length)}`);
+  .filter((file) => deliveredName(file).endsWith('.md'))
+  .map((file) => `hive:${deliveredName(file).slice(0, -'.md'.length)}`);
 
 type HeadingBlock = Extract<MapBlock, { kind: 'heading' }>;
 

@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -8,6 +8,7 @@ import { codexRunner } from '../../src/agents/codex.js';
 import { agentRoles, marketplaceName, roleFile, tomlString } from '../../src/agents/codex-home.js';
 import type { AgentRun, HeadlessRun, RunMcpServer } from '../../src/agents/runner.js';
 import { hookCommand, pluginSource, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
+import { renderedPlugin } from '../rendered-plugin.js';
 import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
 import type { HookPayload, LaunchArg } from '../../src/types.js';
@@ -22,7 +23,7 @@ const ID = '01a12d45-1dff-7000-8000-000000000001';
 const CWD = '/repo/.hive/worktrees/hive-1-task';
 const PROMPT = '/h/prompts/hive-1-task.md';
 const PROTOCOL = 'Call hive_done when "done".\nA path: C:\\work\\x\tand a tab.';
-const PLUGIN_FOLDER = pluginSource(); // #316: a run's roles are read from its own plugin folder, so the fixture's folder must hold agents
+const PLUGIN_FOLDER = await renderedPlugin({ after }); // #316, #416: a run's roles are read from its own rendered folder, never from assets/plugin
 const RUN: AgentRun = { ptyId: PTY, cwd: CWD, port: 4242, withHive: true, hooksPath: '/h/hooks.json', pluginDir: PLUGIN_FOLDER, extraArgs: [], external: [] };
 
 const hook = (event: string): LaunchArg => ['-c', `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(hookCommand(4242))}}]}]`];
