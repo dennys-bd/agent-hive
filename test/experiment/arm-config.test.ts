@@ -75,5 +75,9 @@ test('runState holds local tasks under the run prefix in the first stage, auto o
   assert.deepEqual([state.localCount, state.activities, state.activityRecords], [3, [], []], 'no activity yet: the Hive makes a task\'s slug and worktree when it starts');
   assert.deepEqual(state.workers.map((w) => w.status), ['empty', 'empty', 'empty'], 'one free worker per MAX_CONCURRENT: a saved empty list would leave the daemon none to start a task with');
   assert.equal('auto' in state, false);
-  assert.deepEqual(watchTasks(TASKS), [{ itemId: 'local:1', blockedBy: [] }, { itemId: 'local:2', blockedBy: ['local:1'] }, { itemId: 'local:3', blockedBy: [] }]);
+  assert.deepEqual(watchTasks(TASKS), [
+    { itemId: 'local:1', key: 'grid', title: 'Monitor View 1', blockedBy: [] },
+    { itemId: 'local:2', key: 'pins', title: 'Monitor View 2', blockedBy: ['local:1'] },
+    { itemId: 'local:3', key: 'health', title: 'Monitor View 8', blockedBy: [] },
+  ]);
 });

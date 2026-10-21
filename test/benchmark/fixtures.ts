@@ -1,4 +1,4 @@
-import type { Snapshot } from '../../src/benchmark/watcher.js';
+import type { Snapshot, WatchTask } from '../../src/benchmark/watcher.js';
 import type { TestContext } from 'node:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -116,3 +116,7 @@ export function clock(start: Date): { now(): Date; sleep(ms: number): Promise<vo
   const slept: number[] = [];
   return { now: () => new Date(at), sleep: async (ms) => { slept.push(ms); at += ms; }, slept };
 }
+
+/** A task of the run's graph: item id local:<n>, the seed's key and title (#473), blockers by number. */
+export const watchTask = (n: number, blockedBy: number[] = [], key = `T${n}`, title = `Task ${n}`): WatchTask =>
+  ({ itemId: `local:${n}`, key, title, blockedBy: blockedBy.map((b) => `local:${b}`) });

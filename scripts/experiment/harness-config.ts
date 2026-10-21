@@ -103,5 +103,5 @@ export function runState(tasks: readonly SeedTask[], firstStage: string, prefix:
 
 export function watchTasks(tasks: readonly SeedTask[]): WatchTask[] {
   const idOf = (key: string): string => `local:${tasks.findIndex((t) => t.key === key) + 1}`;
-  return tasks.map((task, i) => ({ itemId: `local:${i + 1}`, blockedBy: task.blockedBy.map(idOf) }));
+  return tasks.map((task, i) => ({ itemId: `local:${i + 1}`, key: task.key, title: task.title, blockedBy: task.blockedBy.map(idOf) }));
 }

@@ -13,10 +13,12 @@ export function stageSpans(entries: readonly StageEntry[], endedAt: string): Sta
   return entries.flatMap((entry, i) => (entry.stage === DONE_STAGE ? [] : [{ stage: entry.stage, ms: between(entry.at, entries[i + 1]?.at ?? endedAt) }]));
 }
 
+// #473: a restart in any stage, as the benchmark counts it
+const restartsOf = (runs: Record<string, string[]> = {}): number => Object.values(runs).reduce((n, ids) => n + Math.max(0, ids.length - 1), 0);
+
 export function taskMetrics(itemId: string, task: Task | undefined, usage: TaskUsage | undefined, watch: WatchState, endedAt: string): TaskMetrics {
   const { tokens, ms, waitingMs } = usage ?? NO_USAGE;
-  const runs = watch.buildRuns[itemId]?.length ?? 0;
-  return { itemId, id: task?.item.id ?? itemId, tokens, ms, waitingMs, stages: stageSpans(watch.entries[itemId] ?? [], endedAt), buildRestarts: Math.max(0, runs - 1) };
+  return { itemId, id: task?.item.id ?? itemId, tokens, ms, waitingMs, stages: stageSpans(watch.entries[itemId] ?? [], endedAt), buildRestarts: restartsOf(watch.stageRuns[itemId]) };
 }
 
 export function parseShortstat(text: string): DiffSize {

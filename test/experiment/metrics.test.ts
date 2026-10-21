@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { failedMetrics, parseShortstat, runMetrics, stageSpans } from '../../scripts/experiment/metrics.js';
 import type { ActivityRecord, TaskUsage } from '../../src/types.js';
-import { snap, task } from '../benchmark/fixtures.js';
+import { snap, task, watchTask } from '../benchmark/fixtures.js';
 
 const T0 = '2026-10-01T22:00:00.000Z';
 // #629: usage and the reported result live on the task's activity record, not on the task
@@ -27,9 +27,9 @@ test('parseShortstat reads git diff --shortstat, with either count missing and w
 
 test('runMetrics sums usage, counts Build restarts, keeps outcome, the last Done report, and an unpaired rerun (#105)', () => {
   const watch = {
-    tasks: [{ itemId: 'local:1', blockedBy: [] }, { itemId: 'local:2', blockedBy: ['local:1'] }], released: ['local:1', 'local:2'],
+    tasks: [watchTask(1), watchTask(2, [1])], released: ['local:1', 'local:2'],
     entries: { 'local:1': [{ stage: 'Spec', at: T0 }, { stage: 'Done', at: plus(60) }], 'local:2': [{ stage: 'Spec', at: plus(60) }, { stage: 'Build', at: plus(90) }] },
-    buildRuns: { 'local:1': ['r1'], 'local:2': ['r2', 'r3', 'r4'] },
+    stageRuns: { 'local:1': { Build: ['r1'] }, 'local:2': { Build: ['r2', 'r3', 'r4'] } },
   };
   const usage: TaskUsage = { tokens: 1000, ms: 3_000_000, waitingMs: 0, parts: [] };
   const state = withRecord(snap([task(1, 'Done'), task(2, 'Build')]), 1, { usage, result: { testsGreen: false } });
