@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadState } from '../../src/state-store.js';
 import { runConfig, runState, watchTasks } from './arm-config.js';
-import type { RunningDaemon } from './daemon-runner.js';
+import type { RunningDaemon } from '../../src/benchmark/daemon.js';
 import type { Run } from '../../src/benchmark/exec.js';
 import { writeJson } from './files.js';
 import { createRunBranch, diffShortstat, dropRunWorktrees, fetchBranch } from '../../src/benchmark/git.js';

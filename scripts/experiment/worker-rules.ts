@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
 import { PLUGINS_DIR } from '../../src/plugin-render.js';
-import { DAEMON_OUT } from './daemon-runner.js';
+import { DAEMON_OUT } from '../../src/benchmark/daemon.js';
 
 export interface RunPaths { state: string; home: string }
 export interface RunRules { allow: string[]; deny: string[] }

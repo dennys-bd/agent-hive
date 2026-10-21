@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { launchChromium } from './browser.js';
-import { bootDaemon, type RunningDaemon, stopRunDaemon } from './daemon-runner.js';
+import { bootDaemon, type RunningDaemon, stopRunDaemon } from '../../src/benchmark/daemon.js';
 import type { EvalDeps } from './evaluate-run.js';
 import type { Run } from '../../src/benchmark/exec.js';
 
@@ -18,7 +18,7 @@ async function tracked(booting: Promise<RunningDaemon>): Promise<RunningDaemon> 
 }
 
 export const boot = (home: string, runJs: string): Promise<RunningDaemon> => tracked(bootDaemon(home, runJs));
-/** The evaluation's daemon runs the run branch's own build: it gets the toolchain env only (daemon-runner.ts). */
+/** The evaluation's daemon runs the run branch's own build: it gets the toolchain env only (src/benchmark/daemon.ts). */
 export const bootEvaluated = (home: string, runJs: string): Promise<RunningDaemon> => tracked(bootDaemon(home, runJs, { isWorkerCode: true }));
 
 export async function stop(daemon: RunningDaemon): Promise<void> {

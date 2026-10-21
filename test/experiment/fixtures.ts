@@ -1,6 +1,5 @@
 import { writeFile } from 'node:fs/promises';
 import type { Cookie, Launch } from '../../scripts/experiment/browser.js';
-import type { ChildLike } from '../../scripts/experiment/daemon-runner.js';
 import type { Seed, SeedTask, StagesSeed } from '../../scripts/experiment/seed.js';
 import type { Snapshot } from '../../scripts/experiment/watcher.js';
 import type { Activity, Task, Worker } from '../../src/types.js';
@@ -68,12 +67,7 @@ export function clock(start: Date): { now(): Date; sleep(ms: number): Promise<vo
   return { now: () => new Date(at), sleep: async (ms) => { slept.push(ms); at += ms; }, slept };
 }
 
-export { type Call, fakeRun, line } from '../benchmark/fixtures.js';
-
-export function fakeChild(exitCode: number | null = null): { child: ChildLike; kills: string[] } {
-  const kills: string[] = [];
-  return { kills, child: { pid: 7, exitCode, kill: (signal?: NodeJS.Signals): boolean => { kills.push(signal ?? 'SIGTERM'); return true; } } };
-}
+export { type Call, fakeChild, fakeRun, line } from '../benchmark/fixtures.js';
 
 export function fakeBrowser(ok = true): { launch: Launch; seen: { gotos: string[]; shots: string[]; cookies: Cookie[]; closed: number } } {
   const seen = { gotos: [] as string[], shots: [] as string[], cookies: [] as Cookie[], closed: 0 };

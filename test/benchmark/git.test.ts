@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { inDir } from '../../src/benchmark/exec.js';
 import { assertBaselineClean, BASELINE_MESSAGE, createRunBranch, dropRunWorktrees, EXPERIMENT_MENTION, EXPERIMENT_PATHS, experimentBaseline, nestedBaseline, resolveBaseline, sandboxPaths, strippedPackageJson, unsignedCommits } from '../../src/benchmark/git.js';
 import { tempDir } from '../temp-dir.js';
-import { fakeRun, line } from './fixtures.js';
+import { fakeChild, fakeRun, line } from './fixtures.js';
+import { stopRun } from '../../src/benchmark/daemon.js';
 
 const BRANCH = 'feat/monitor-view-abc123';
 const PKG = JSON.stringify({ name: 'agent-hive', scripts: { test: 'x', 'test:node': 'node --test "dist/test/*.test.js" "dist/test/experiment/*.test.js"', 'experiment:skills': 'y', 'run:experiment-a': 'pnpm build && node dist/scripts/experiment/preview.js a', start: 'node bin/hive.js' } }, null, 2);
@@ -129,4 +130,15 @@ test('dropRunWorktrees clears each nested clone before the clone, and never touc
   const cwds = calls.filter((c) => c.args[0] === 'worktree' && c.args[1] === 'remove').map((c) => c.cwd);
   assert.deepEqual(cwds, ['/e/clone/docs', '/e/clone'], 'a nested worktree sits inside its task worktree: its repo forgets it first');
   assert.ok(!calls.map(line).some((l) => l.includes('work/abcd1234') || l.endsWith(' main')));
+});
+
+test('stopRun stops the daemon, then removes the run\'s worktrees and task branches in the nested clones and the clone, never work/<token> (#471)', async () => {
+  const home = '/hive/benchmark/exp-1/runs/abcd1234';
+  const stopped: string[] = [];
+  const { run, calls } = fakeRun((call) => (call.args[0] === 'branch' && call.args[1] === '--list' ? 'hive/ABCD1234-1-x\n' : ''));
+  await stopRun({ token: 'abcd1234', daemon: { home, address: { port: 1, secret: 'x' }, child: fakeChild().child } }, { exec: run, nestedRepos: ['docs'], stop: async (h) => { stopped.push(h); return true; } });
+  assert.deepEqual(stopped, [home]);
+  assert.deepEqual([...new Set(calls.map((c) => c.cwd))], ['/hive/benchmark/exp-1/clone/docs', '/hive/benchmark/exp-1/clone']);
+  assert.ok(calls.map(line).includes('git branch -D hive/ABCD1234-1-x'));
+  assert.ok(!calls.map(line).some((l) => l.includes('work/')));
 });

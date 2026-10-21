@@ -1,3 +1,4 @@
+import type { ChildLike } from '../../src/benchmark/daemon.js';
 import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
 import type { Arm, ArmSetup, BenchIsolation, BenchStagePick, BenchRun, Experiment, State } from '../../src/types.js';
@@ -56,3 +57,8 @@ export function fakeRun(answer: (call: Call) => string | Error = () => ''): { ru
 }
 
 export const line = (call: Call): string => [call.file, ...call.args].join(' ');
+
+export function fakeChild(exitCode: number | null = null): { child: ChildLike; kills: string[] } {
+  const kills: string[] = [];
+  return { kills, child: { pid: 7, exitCode, kill: (signal?: NodeJS.Signals): boolean => { kills.push(signal ?? 'SIGTERM'); return true; } } };
+}

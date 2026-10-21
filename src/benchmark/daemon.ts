@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
-import { join } from 'node:path';
-import { type DaemonAddress, ourDaemon, stopDaemon } from '../../src/daemon.js';
-import { buildEnv, cleanEnv } from '../../src/benchmark/exec.js';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { type DaemonAddress, ourDaemon, stopDaemon } from '../daemon.js';
+import { buildEnv, cleanEnv, inDir, type Run } from './exec.js';
+import { CLONE_DIR, dropRunWorktrees, runPrefix } from './git.js';
 
 export const DAEMON_OUT = 'daemon.out'; // run.js's stdout/stderr: a boot failure prints there before hive.log exists
 const BOOT_WAIT_MS = 60_000;
@@ -15,6 +17,7 @@ export interface DaemonDeps {
   /** run.js is the run branch's build, the evaluation's: it boots with the toolchain env only, as its install, build and test do. */
   isWorkerCode?: boolean;
   baseEnv?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
 }
 export interface RunningDaemon { home: string; address: DaemonAddress; child: ChildLike }
 
@@ -43,6 +46,10 @@ export async function bootDaemon(home: string, runJs: string, deps: DaemonDeps =
   const child = spawnWithOut(home, runJs, deps);
   const waitMs = deps.waitMs ?? BOOT_WAIT_MS;
   for (let waited = 0; waited < waitMs; waited += BOOT_POLL_MS) {
+    if (deps.signal?.aborted) {
+      child.kill('SIGTERM');
+      throw new Error('the daemon boot was aborted');
+    }
     if (child.exitCode !== null) throw new Error(`the daemon exited with ${child.exitCode} (see ${join(home, DAEMON_OUT)})`);
     const address = await (deps.address ?? ourDaemon)(home);
     if (address) return { home, address, child };
@@ -58,4 +65,25 @@ export async function stopRunDaemon(daemon: RunningDaemon, deps: Pick<DaemonDeps
   } catch {
     daemon.child.kill('SIGTERM'); // run.ts handles SIGTERM as a stop
   }
+}
+
+/** The Hive's own build, which is what a run boots: the run daemon renders its plugin from the run home, so it needs no other code. */
+export const RUN_JS: string = fileURLToPath(new URL('../run.js', import.meta.url));
+
+export async function bootRun(home: string, deps: DaemonDeps = {}): Promise<RunningDaemon> {
+  const daemon = await bootDaemon(home, RUN_JS, deps);
+  // After the boot, an abort stops the daemon once
+  deps.signal?.addEventListener('abort', () => void stopRunDaemon(daemon, deps), { once: true });
+  return daemon;
+}
+
+export interface RunningRun { daemon: RunningDaemon; token: string }
+export interface StopRunDeps extends Pick<DaemonDeps, 'stop'> { exec: Run; nestedRepos: readonly string[] }
+
+/** Stops the daemon, then drops the run's worktrees and task branches. The run branch stays: it is the run's result. */
+export async function stopRun(run: RunningRun, deps: StopRunDeps): Promise<void> {
+  await stopRunDaemon(run.daemon, deps);
+  // A home is <experiment>/runs/<token>; the clone sits beside runs/
+  const clone = join(dirname(dirname(run.daemon.home)), CLONE_DIR);
+  await dropRunWorktrees(inDir(deps.exec, clone), runPrefix(run.token), deps.nestedRepos.map((path) => join(clone, path)));
 }

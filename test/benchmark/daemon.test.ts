@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { bootDaemon, stopRunDaemon } from '../../scripts/experiment/daemon-runner.js';
+import { bootDaemon, bootRun, RUN_JS, stopRunDaemon } from '../../src/benchmark/daemon.js';
 import { tempDir } from '../temp-dir.js';
 import { fakeChild } from './fixtures.js';
 
@@ -52,4 +52,26 @@ test('stopRunDaemon stops through POST /stop and falls back to SIGTERM (#105)', 
   const refused = fakeChild();
   await stopRunDaemon({ home: '/h', address: { port: 1, secret: 'x' }, child: refused.child }, { stop: async () => { throw new Error('HTTP 500'); } });
   assert.deepEqual(refused.kills, ['SIGTERM']);
+});
+
+test('bootRun spawns the Hive\'s own run.js on the run home and resolves its address (#471)', async (t) => {
+  const home = await tempDir(t, 'run-');
+  const seen: string[][] = [];
+  const daemon = await bootRun(home, { spawn: (_f, args) => { seen.push(args); return fakeChild().child; }, address: async () => ({ port: 9, secret: 's' }), sleep });
+  assert.equal(daemon.address.port, 9);
+  assert.ok(seen[0][0].endsWith(join('src', 'run.js')) && seen[0][0] === RUN_JS);
+});
+
+test('an abort during the boot kills the child and rejects; an abort after it stops the daemon (#471)', async (t) => {
+  const home = await tempDir(t, 'run-');
+  const early = new AbortController();
+  const slow = fakeChild();
+  await assert.rejects(bootRun(home, { spawn: () => slow.child, address: async () => { early.abort(); return undefined; }, sleep, signal: early.signal }), /aborted/);
+  assert.deepEqual(slow.kills, ['SIGTERM']);
+  const late = new AbortController();
+  const stopped: string[] = [];
+  await bootRun(home, { spawn: () => fakeChild().child, address: async () => ({ port: 1, secret: 'x' }), sleep, signal: late.signal, stop: async (h) => { stopped.push(h); return true; } });
+  late.abort();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(stopped, [home]);
 });
