@@ -28,7 +28,8 @@ export function FlowChart({ stages, transitions, loops, zoom, pan, fitRequest, o
     return i !== undefined && j !== undefined && j < i;
   };
   const pills = new Set(transitions.filter((t) => showsPill(t, isBack(t))).map(transitionKey));
-  const edges = transitions.map((t) => ({ id: transitionKey(t), from: t.from, to: t.to, automatic: isAutomatic(t.when) }));
+  // unlabelled: an arrow with no pill needs no room for one, so its neighbours sit closer (#480)
+  const edges = transitions.map((t) => ({ id: transitionKey(t), from: t.from, to: t.to, automatic: isAutomatic(t.when), unlabelled: !pills.has(transitionKey(t)) }));
   // top reads the edges alone (#908): a first pass at NODE_MIN gives it, and is the chart fit must show (#910)
   const sized = (height: number) => layoutFlow(stages.map((s) => ({ id: s.name, height })), edges, NODE_WIDTH, { loops });
   const least = sized(NODE_MIN);
