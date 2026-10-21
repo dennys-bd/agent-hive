@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { WorkspaceBase } from '../src/fork.js';
 import type { Exec } from '../src/types.js';
 import { ensureCheckout, worktreePath } from '../src/worktree.js';
-import { ensureNestedWorktrees, nestedBaseName, type NestedWorkspace, switchNested } from '../src/worktree-nested.js';
+import { ensureNestedWorktrees, nestedBaseName, type NestedWorkspace, prepareNested, switchNested } from '../src/worktree-nested.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 // #653 with the real git: an outer repo that ignores docs/, with docs cloned from a bare origin, and each task's worktree of docs.
@@ -135,4 +135,21 @@ test('a checkout respawn already on the branch keeps a dirty nested repo\'s work
   await writeFile(join(f.docs, 'draft.md'), 'wip');
   assert.deepEqual(await ensureCheckout(f.outer, BRANCH, ORIGIN, undefined, exec, f.workspace.nestedRepos), { path: f.outer });
   assert.deepEqual(await switchNested(f.workspace, BRANCH, 'main', exec), []);
+});
+
+test('prepareNested starts a nested branch from the outer branch\'s upstream when the outer start is unknown, from the decided start otherwise; no nested repo runs no git (#653)', async (t) => {
+  const f = await fixture(t, ['main', 'devtest']);
+  const outerOrigin = await tempDir(t, 'outer-origin-');
+  await git(outerOrigin, 'init', '--quiet', '--bare', '-b', 'main');
+  await git(f.outer, 'remote', 'add', 'origin', outerOrigin);
+  await git(f.outer, 'push', '--quiet', 'origin', 'main', 'main:devtest');
+  await git(f.outer, 'fetch', '--quiet', 'origin');
+  const reused = worktreePath(f.outer, SLUG);
+  await git(f.outer, 'worktree', 'add', '--quiet', '--track', '-b', BRANCH, '--', reused, 'origin/devtest'); // a branch reused as it is: its upstream is where it started
+  assert.deepEqual(await prepareNested(f.workspace, { path: reused }, BRANCH, false, 'origin', exec), ['docs: origin/devtest']);
+  const other = { slug: 'hive-653-other', branch: 'hive/653-other' };
+  const made = await outerWorktree(f.outer, other.slug, other.branch);
+  assert.deepEqual(await prepareNested(f.workspace, { path: made, start: 'origin/main' }, other.branch, false, 'origin', exec), ['docs: origin/main']);
+  const none: Exec = async () => { throw new Error('no git for a workspace without nested repos'); };
+  assert.deepEqual(await prepareNested({ path: f.outer, nestedRepos: [] }, { path: made }, other.branch, false, 'origin', none), []);
 });

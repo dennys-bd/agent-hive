@@ -44,7 +44,8 @@ export const workDir = (repo: string, task: Task, activity: Activity | undefined
 /** What a spawn needs from the worktree step: where the worker runs, the `base: …` line to log when one was decided, and a fork's sync when
  * one ran for a worktree just made (#854). `reused` is the existing branch the worktree was added on as it was (#267); absent when the branch
  * was created, recreated or set aside. */
-export interface PreparedWorktree { path: string; line?: string; sync?: ForkSyncResult; reused?: string }
+// start (#653): the start a new branch was made from, which a nested repo's branch starts from too; absent when the branch was reused or adopted, or no base was decided
+export interface PreparedWorktree { path: string; line?: string; sync?: ForkSyncResult; reused?: string; start?: string }
 
 const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
 
@@ -136,7 +137,8 @@ export async function ensureWorktree(
   await addWorktree(git, add, { path, branch, start: decided.start }, () => hasBranch(repo, branch, exec));
   const sync = await settleSync(decided, reused ? undefined : (...args) => gitOrWords(path, args, exec)); // #854: the local merge in the new tree only
   const line = kept?.note === undefined ? withSync(decided.line, sync) : `${withSync(decided.line, sync)} · ${kept.note}`;
-  return { path, line, ...(sync === undefined ? {} : { sync }), ...(reused ? { reused: branch } : {}) };
+  const started = reused || decided.start === undefined ? {} : { start: decided.start }; // #653: a reused branch's start is its upstream, prepareNested reads it
+  return { path, line, ...started, ...(sync === undefined ? {} : { sync }), ...(reused ? { reused: branch } : {}) };
 }
 
 // A lost config lock means git made the branch, and maybe the worktree, but not its upstream: the add is never repeated as it was (the
@@ -186,7 +188,7 @@ export async function ensureCheckout(
   if (start?.startsWith('-')) throw new Error(`${start}: a base cannot start with "-"`); // no `--` for switch's start point; a saved base skips checkBase
   await git('switch', '-c', branch, ...(start === undefined ? [] : [start]));
   const sync = await settleSync(decided, git); // #854: the local mode merges into the new branch, here in the checkout
-  return { path: repo, line: withSync(decided.line, sync), ...(sync === undefined ? {} : { sync }) };
+  return { path: repo, line: withSync(decided.line, sync), ...(start === undefined ? {} : { start }), ...(sync === undefined ? {} : { sync }) };
 }
 
 /** What runs in a worktree once git's checks passed and before it goes (#654): the workspace's teardown. present: git lists the worktree

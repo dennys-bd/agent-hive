@@ -3,7 +3,8 @@ import { access, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Exec, Workspace } from './types.js';
-import { branchAt, type Git, gitAnswers, gitOrWords, refuseDirty, remoteHead } from './worktree-base.js';
+import type { PreparedWorktree } from './worktree.js';
+import { branchAt, type Git, gitAnswers, gitOrWords, refuseDirty, remoteHead, upstreamOf } from './worktree-base.js';
 
 // A workspace's nested repos (#653): other git repositories inside its folder that its git ignores. Each task gets a worktree of each one at
 // <task worktree>/<path>, on the task's branch, made right after the task's own and removed right before it. Every call goes through
@@ -110,4 +111,16 @@ export async function refuseDirtyNested(workspace: NestedWorkspace, root: string
     const dir = join(root, path);
     if (await hasGit(dir)) await refuseDirty(dir, exec);
   }
+}
+
+/** The nested step of a task's preparation (#653): right after ensureWorktree (the worktrees) or ensureCheckout (a checkout task's switch),
+ * in the same console run, before the setup. The base branch is the outer start's, else, for a branch reused or adopted, its upstream's;
+ * neither: each nested repo's origin/HEAD. A workspace with no nested repo runs no git at all. */
+export async function prepareNested(
+  workspace: NestedWorkspace, prepared: Pick<PreparedWorktree, 'path' | 'start'>, branch: string, local: boolean, remote: string, exec: Exec,
+): Promise<string[]> {
+  if (workspace.nestedRepos.length === 0) return [];
+  const start = prepared.start ?? (await upstreamOf(workspace.path, branch, exec));
+  const baseName = nestedBaseName(start, [remote, ORIGIN]);
+  return local ? switchNested(workspace, branch, baseName, exec) : ensureNestedWorktrees(workspace, prepared.path, branch, baseName, exec);
 }

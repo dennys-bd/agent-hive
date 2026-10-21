@@ -38,7 +38,7 @@ test('ensureWorktree keeps the worktree a concurrent git left without its upstre
   const repo = await tempDir(t, 'lock-');
   const path = worktreePath(repo, SLUG);
   const { exec, calls } = racingGit(path, 2);
-  assert.deepEqual(await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec), { path, line: 'base: origin/main (a1b2c3d)' });
+  assert.deepEqual(await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec), { path, line: 'base: origin/main (a1b2c3d)' , start: 'origin/main' });
   const upstream = calls.filter((c) => c.startsWith('branch --set-upstream-to='));
   assert.deepEqual(upstream, Array(3).fill(`branch --set-upstream-to=origin/main ${BRANCH}`), 'two lost the lock, the third recorded it');
   assert.equal(calls.filter((c) => c.startsWith('worktree add')).length, 1, 'the worktree is adopted, never added twice');
@@ -54,7 +54,7 @@ test('ensureWorktree adds the worktree on the branch git made when the config lo
   const repo = await tempDir(t, 'lock-');
   const path = worktreePath(repo, SLUG);
   const { exec, calls } = racingGit(path, 1, false);
-  assert.deepEqual(await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec), { path, line: 'base: origin/main (a1b2c3d)' });
+  assert.deepEqual(await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec), { path, line: 'base: origin/main (a1b2c3d)' , start: 'origin/main' });
   assert.deepEqual(calls.filter((c) => c.startsWith('worktree add')), [`worktree add -b ${BRANCH} -- ${path} origin/main`, `worktree add -- ${path} ${BRANCH}`]);
   assert.equal(calls.filter((c) => c.startsWith('branch --set-upstream-to=')).length, 2, 'one lost the lock, the next recorded it');
 });
