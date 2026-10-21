@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { attrOf, enclosingStart, matchingEnd, scanTags, topLevelStarts } from '../src/design-markup.js';
+import { attrOf, enclosingStart, matchingEnds, scanTags, topLevelStarts } from '../src/design-markup.js';
 
 const shape = (html: string): string[] =>
   scanTags(html).map(({ name, isEnd, isSelfClosing }) => `${isEnd ? '/' : ''}${name}${isSelfClosing ? '/' : ''}`);
@@ -20,11 +20,11 @@ test('attrOf reads a value in double, single or no quotes, in any case, and neve
   );
 });
 
-test('topLevelStarts skips what nests, void and self-closing elements included; enclosingStart names the innermost open element; matchingEnd counts nesting (#421)', () => {
+test('topLevelStarts skips what nests, void and self-closing elements included; enclosingStart names the innermost open element; matchingEnds counts nesting (#421)', () => {
   const html = '<div><div><img><p>x</p></div></div><hr><span/><nav>y</nav>';
   const tags = scanTags(html);
   assert.deepEqual(topLevelStarts(tags).map((tag) => tag.name), ['div', 'hr', 'span', 'nav']);
   assert.equal(enclosingStart(tags, html.indexOf('x'))?.name, 'p');
   assert.equal(enclosingStart(tags, html.indexOf('<hr>')), undefined);
-  assert.equal(matchingEnd(tags, 0)?.start, html.indexOf('</div></div>') + '</div>'.length);
+  assert.equal(matchingEnds(tags, 'div').get(tags[0])?.start, html.indexOf('</div></div>') + '</div>'.length);
 });

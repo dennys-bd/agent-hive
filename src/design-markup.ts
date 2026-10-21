@@ -56,34 +56,50 @@ export function attrOf(attrs: string, name: string): string | undefined {
   return match === null ? undefined : (match[1] ?? match[2] ?? match[3]);
 }
 
-/** The end tag closing tags[index], counting the same name nested inside it; undefined when it is never closed. */
-export function matchingEnd(tags: readonly Tag[], index: number): Tag | undefined {
-  const { name } = tags[index];
-  let depth = 0;
-  for (let at = index; at < tags.length; at += 1) {
-    const tag = tags[at];
+/** The end tag closing each start tag of `name` that is ever closed, keyed by the start tag, counting the same name nested inside: one pass
+ *  with a stack, so an unclosed marker costs nothing more (#421). */
+export function matchingEnds(tags: readonly Tag[], name: string): Map<Tag, Tag> {
+  const ends = new Map<Tag, Tag>();
+  const open: Tag[] = [];
+  for (const tag of tags) {
     if (tag.name !== name || (!tag.isEnd && tag.isSelfClosing)) continue;
-    depth += tag.isEnd ? -1 : 1;
-    if (depth === 0) return tag;
+    if (!tag.isEnd) open.push(tag);
+    else {
+      const start = open.pop();
+      if (start !== undefined) ends.set(start, tag);
+    }
   }
-  return undefined;
+  return ends;
 }
 
-/** The innermost element still open at `at`: an end tag closes the latest open element of its name and every one opened after it. */
+// One step of the open-element stack: an end tag closes the latest open element of its name and every one opened after it
+function step(open: Tag[], tag: Tag): void {
+  if (tag.isEnd) {
+    let index = open.length - 1;
+    while (index >= 0 && open[index].name !== tag.name) index -= 1;
+    if (index !== -1) open.length = index;
+  } else if (holdsContent(tag)) {
+    open.push(tag);
+  }
+}
+
+/** The innermost element still open at `at`. The stack is local and truncated in place, so a call is linear in the tags before `at` (#421). */
 export function enclosingStart(tags: readonly Tag[], at: number): Tag | undefined {
-  let open: Tag[] = [];
+  const open: Tag[] = [];
   for (const tag of tags) {
     if (tag.start >= at) break;
-    if (tag.isEnd) {
-      const index = open.map((held) => held.name).lastIndexOf(tag.name);
-      if (index !== -1) open = open.slice(0, index);
-    } else if (holdsContent(tag)) {
-      open = [...open, tag];
-    }
+    step(open, tag);
   }
   return open.at(-1);
 }
 
-/** The start tags no element holds: a part's or a fill's own top-level elements.
- *  ponytail: quadratic; it only runs on parts and fills, which are small, never on a whole screen */
-export const topLevelStarts = (tags: readonly Tag[]): Tag[] => tags.filter((tag) => !tag.isEnd && enclosingStart(tags, tag.start) === undefined);
+/** The start tags no element holds: a part's or a fill's own top-level elements, found in one pass (#421). */
+export function topLevelStarts(tags: readonly Tag[]): Tag[] {
+  const open: Tag[] = [];
+  const top: Tag[] = [];
+  for (const tag of tags) {
+    if (!tag.isEnd && open.length === 0) top.push(tag);
+    step(open, tag);
+  }
+  return top;
+}

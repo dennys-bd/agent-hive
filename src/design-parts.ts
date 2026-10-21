@@ -4,13 +4,17 @@
 import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
 import { posix, resolve } from 'node:path';
-import { attrOf, enclosingStart, matchingEnd, scanTags, type Tag, topLevelStarts } from './design-markup.js';
+import { attrOf, enclosingStart, matchingEnds, scanTags, type Tag, topLevelStarts } from './design-markup.js';
 
 /** How deep includes nest, counted from the screen: a header inside a shell is a real case, and the bound caps the work. */
 export const PART_DEPTH_MAX = 4;
 
 /** How many includes one assembly expands: a wide fan-out nested four deep would otherwise grow as N^4 (#421). */
 export const INCLUDES_MAX = 256;
+/** How many `<hv-slot>` markers one file fills: a part of tens of thousands of slots given a fill would multiply it, level after level (#421). */
+export const SLOTS_MAX = 64;
+/** The most one assembly may grow to, in bytes: every part read and every slot fill counts, so includes and fills multiplying stop here (#421). */
+export const OUTPUT_MAX = 8 * 1024 * 1024;
 /** The most a part may weigh, in bytes: a screen's pieces are markup, and the route holds the whole assembly in memory. */
 export const PART_BYTES_MAX = 1024 * 1024;
 
@@ -29,6 +33,7 @@ export const PART_REASONS = {
   tweaks: 'hv-tweaks belongs to the screen',
   tooMany: 'too many includes',
   tooLarge: 'too large',
+  tooManySlots: 'too many slots',
 } as const;
 export type PartReason = (typeof PART_REASONS)[keyof typeof PART_REASONS];
 
@@ -49,7 +54,7 @@ interface Edit { from: number; to: number; insert: string }
 interface Marker { tag: Tag; end?: Tag; to: number }
 interface At { file: string; depth: number; stack: readonly string[] }
 // One assembly's reader, the parts it asked for and the reads made, filled as includes are met; `expanded` counts against INCLUDES_MAX
-interface Run { read: ReadPart; parts: Set<string>; reads: Map<string, Promise<PartRead>>; expanded: number }
+interface Run { read: ReadPart; parts: Set<string>; reads: Map<string, Promise<PartRead>>; expanded: number; size: number }
 
 const escapeHtml = (text: string): string =>
   text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -58,9 +63,17 @@ const escapeHtml = (text: string): string =>
 export const partNotice = (reason: PartReason, src: string): string =>
   `<div data-hv-notice style="${NOTICE_STYLE}">hv-include: ${reason}: ${escapeHtml(src)}</div>`;
 
-// From the last, so each edit's offsets still hold; the edits of one pass never overlap
-const applyEdits = (text: string, edits: readonly Edit[]): string =>
-  [...edits].sort((a, b) => b.from - a.from).reduce((out, { from, to, insert }) => `${out.slice(0, from)}${insert}${out.slice(to)}`, text);
+// Spliced in one pass, so many edits cost the text once, not once each; the edits of one pass never overlap (#421)
+function applyEdits(text: string, edits: readonly Edit[]): string {
+  const pieces: string[] = [];
+  let at = 0;
+  for (const { from, to, insert } of [...edits].sort((a, b) => a.from - b.from)) {
+    pieces.push(text.slice(at, from), insert);
+    at = to;
+  }
+  pieces.push(text.slice(at));
+  return pieces.join('');
+}
 
 // Right after the tag's name: no wrapper element is added, so a child selector (.shell > .sidebar) still matches
 function attrEdit(tag: Tag, name: string, value: string): Edit {
@@ -74,14 +87,26 @@ const withSource = (html: string, file: string): string =>
 
 // The file's own markers of `name` with their end tags; one nested inside another belongs to the outer one
 function markersOf(tags: readonly Tag[], name: string): Marker[] {
+  const ends = matchingEnds(tags, name);
   let covered = 0;
-  return tags.flatMap((tag, index) => {
+  return tags.flatMap((tag) => {
     if (tag.name !== name || tag.isEnd || tag.start < covered) return [];
-    const end = tag.isSelfClosing ? undefined : matchingEnd(tags, index);
+    const end = ends.get(tag);
     covered = end?.end ?? tag.end;
     return [{ tag, end, to: covered }];
   });
 }
+
+// Counts `bytes` against the run's budget before the string is built (#421): 'fits', or 'crossed' for the one piece that passes OUTPUT_MAX
+// and gets the notice, or 'spent' for everything after it, which gets nothing so notices cannot grow the output either
+type Budget = 'fits' | 'crossed' | 'spent';
+function spend(run: Run, bytes: number): Budget {
+  if (run.size > OUTPUT_MAX) return 'spent';
+  run.size += bytes;
+  return run.size > OUTPUT_MAX ? 'crossed' : 'fits';
+}
+
+const overBudget = (budget: Budget, name: string): string => (budget === 'crossed' ? partNotice(PART_REASONS.tooLarge, name) : '');
 
 /** The include's target from the including file's folder, or why it is refused: decided on the text alone, so nothing outside is probed. */
 export function partPath(file: string, src: string | undefined): { path: string } | { refused: PartReason } {
@@ -98,7 +123,7 @@ export function partPath(file: string, src: string | undefined): { path: string 
 
 /** `screenPath`'s markup with every include in place: slots filled, origins marked, each broken include as its notice. */
 export async function assemble(screenPath: string, text: string, read: ReadPart): Promise<Assembled> {
-  const run: Run = { read, parts: new Set(), reads: new Map(), expanded: 0 };
+  const run: Run = { read, parts: new Set(), reads: new Map(), expanded: 0, size: text.length };
   const html = await assembleFile(text, new Map(), { file: screenPath, depth: 0, stack: [screenPath] }, run);
   return { html, parts: [...run.parts].sort() };
 }
@@ -106,7 +131,7 @@ export async function assemble(screenPath: string, text: string, read: ReadPart)
 // Slots first, so a slot a part passes down into an include's fill is filled as its own; then the includes
 async function assembleFile(text: string, fills: ReadonlyMap<string, string>, at: At, run: Run): Promise<string> {
   const own = at.depth === 0 ? text : withoutTweaks(text, at.file);
-  return expandIncludes(fillSlots(own, fills), at, run);
+  return expandIncludes(fillSlots(own, fills, run), at, run);
 }
 
 // A part declares no tweak: the pane reads one block per screen. The block is dropped and the notice says why
@@ -118,15 +143,18 @@ function withoutTweaks(text: string, file: string): string {
 const hasElement = (markup: string): boolean => scanTags(markup).some((tag) => !tag.isEnd);
 
 // Each slot replaced by its fill, else its default: no hv-slot is left. A fill of text alone has no element to mark, so the element holding
-// the slot gets data-hv-fill, once
-function fillSlots(text: string, fills: ReadonlyMap<string, string>): string {
+// the slot gets data-hv-fill, once. Slots past SLOTS_MAX are a notice, and a fill that would pass the run's budget is too (#421)
+function fillSlots(text: string, fills: ReadonlyMap<string, string>, run: Run): string {
   const tags = scanTags(text);
   const holders = new Set<Tag>();
-  const edits = markersOf(tags, 'hv-slot').flatMap(({ tag, end, to }) => {
+  const edits = markersOf(tags, 'hv-slot').flatMap(({ tag, end, to }, index) => {
     const name = attrOf(tag.attrs, 'name') ?? '';
+    if (index >= SLOTS_MAX) return [{ from: tag.start, to, insert: run.size > OUTPUT_MAX ? '' : partNotice(PART_REASONS.tooManySlots, name) }];
     const fill = fills.get(name);
-    const slot: Edit = { from: tag.start, to, insert: fill ?? (end === undefined ? '' : text.slice(tag.end, end.start)) };
-    const holder = fill === undefined || hasElement(fill) ? undefined : enclosingStart(tags, tag.start);
+    const chosen = fill ?? (end === undefined ? '' : text.slice(tag.end, end.start));
+    const budget = spend(run, chosen.length);
+    const slot: Edit = { from: tag.start, to, insert: budget === 'fits' ? chosen : overBudget(budget, name) };
+    const holder = budget !== 'fits' || fill === undefined || hasElement(fill) ? undefined : enclosingStart(tags, tag.start);
     if (holder === undefined || holders.has(holder) || attrOf(holder.attrs, FILL) !== undefined) return [slot];
     holders.add(holder);
     return [slot, attrEdit(holder, FILL, name)];
@@ -142,19 +170,27 @@ async function expandIncludes(text: string, at: At, run: Run): Promise<string> {
   return applyEdits(text, edits);
 }
 
+// A refusal's notice, counted against the budget like any other growth: a part of thousands of bad includes would otherwise swell the output
+function refusal(reason: PartReason, shown: string, run: Run): string {
+  const notice = partNotice(reason, shown);
+  return spend(run, notice.length) === 'spent' ? '' : notice;
+}
+
 // One include: its notice when refused, else the part assembled with the include's fills and marked with its own path
 async function includeOne(src: string | undefined, inner: string, at: At, run: Run): Promise<string> {
   const shown = src ?? '';
   const target = partPath(at.file, src);
-  if ('refused' in target) return partNotice(target.refused, shown);
+  if ('refused' in target) return refusal(target.refused, shown, run);
   const { path } = target;
   run.parts.add(path);
-  if (at.stack.includes(path)) return partNotice(PART_REASONS.cycle, shown);
-  if (at.depth >= PART_DEPTH_MAX) return partNotice(PART_REASONS.depth, shown);
+  if (at.stack.includes(path)) return refusal(PART_REASONS.cycle, shown, run);
+  if (at.depth >= PART_DEPTH_MAX) return refusal(PART_REASONS.depth, shown, run);
   run.expanded += 1;
-  if (run.expanded > INCLUDES_MAX) return partNotice(PART_REASONS.tooMany, shown);
+  if (run.expanded > INCLUDES_MAX) return refusal(PART_REASONS.tooMany, shown, run);
   const [read, fills] = await Promise.all([readOnce(path, run), fillsOf(inner, at, run)]);
-  if ('refused' in read) return partNotice(read.refused, shown);
+  if ('refused' in read) return refusal(read.refused, shown, run);
+  const budget = spend(run, read.text.length);
+  if (budget !== 'fits') return overBudget(budget, shown);
   const body = await assembleFile(read.text, fills, { file: path, depth: at.depth + 1, stack: [...at.stack, path] }, run);
   return withSource(body, path);
 }
@@ -190,13 +226,14 @@ export function readPartFrom(folder: string): ReadPart {
     const real = await realpath(asked).catch(() => undefined);
     if (real === undefined) return { refused: PART_REASONS.missing };
     if (real !== asked) return { refused: PART_REASONS.symlink };
-    const handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW).catch((err: NodeJS.ErrnoException) => err);
+    const handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch((err: NodeJS.ErrnoException) => err);
     if (handle instanceof Error) return { refused: handle.code === 'ELOOP' ? PART_REASONS.symlink : PART_REASONS.missing };
     try {
       const info = await handle.stat();
-      if (!info.isFile()) return { refused: PART_REASONS.missing };
+      if (!info.isFile()) return { refused: PART_REASONS.missing }; // a FIFO or a device is no part
       if (info.size > PART_BYTES_MAX) return { refused: PART_REASONS.tooLarge };
-      return { text: await handle.readFile('utf8') };
+      const bytes = await handle.readFile();
+      return bytes.length > PART_BYTES_MAX ? { refused: PART_REASONS.tooLarge } : { text: bytes.toString('utf8') };
     } catch {
       return { refused: PART_REASONS.missing };
     } finally {

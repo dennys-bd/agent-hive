@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { mkdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { assemble, PART_BYTES_MAX, PART_REASONS, type PartReason, partNotice, type ReadPart, readPartFrom } from '../src/design-parts.js';
+import { promisify } from 'node:util';
+import { assemble, OUTPUT_MAX, PART_BYTES_MAX, PART_REASONS, SLOTS_MAX, type PartReason, partNotice, type ReadPart, readPartFrom } from '../src/design-parts.js';
 import { tempDir } from './temp-dir.js';
 
 // An in-memory design folder: a path it does not hold is not found, and every path asked for is recorded
@@ -152,4 +154,49 @@ test('a slot already marked with data-hv-fill on its holder is not marked twice 
   const { read } = memory({ 'p.html': '<h2 data-hv-fill="mine"><hv-slot name="t">T</hv-slot></h2>' });
   const { html } = await assemble('s.hv.html', '<hv-include src="p.html"><template data-hv-slot="t">Hi</template></hv-include>', read);
   assert.equal(html, '<h2 data-hv-source="p.html" data-hv-fill="mine">Hi</h2>');
+});
+
+test('slots past SLOTS_MAX in a file become a notice and are not filled (#421)', async () => {
+  const slots = Array.from({ length: SLOTS_MAX + 5 }, () => '<hv-slot name="a"></hv-slot>').join('');
+  const { read } = memory({ 'p.html': `<div>${slots}</div>` });
+  const { html } = await assemble('s.hv.html', '<hv-include src="p.html"><template data-hv-slot="a">FILL</template></hv-include>', read);
+  assert.equal(html.split('FILL').length - 1, SLOTS_MAX);
+  assert.equal(html.split(PART_REASONS.tooManySlots).length - 1, 5);
+  assert.doesNotMatch(html, /hv-slot/);
+});
+
+test('slot fills multiplied across levels stop at OUTPUT_MAX before the huge string is built (#421)', async () => {
+  const fill = 'x'.repeat(200 * 1024);
+  const slots = Array.from({ length: SLOTS_MAX }, () => '<hv-slot name="a"></hv-slot>').join('');
+  const { read } = memory({
+    'l1.html': `<div>${slots}</div>`,
+    'l2.html': `<div><hv-include src="l1.html"><template data-hv-slot="a"><hv-slot name="a"></hv-slot></template></hv-include></div>`,
+  });
+  const screen = `<hv-include src="l2.html"><template data-hv-slot="a">${fill}</template></hv-include>`;
+  const { html } = await assemble('s.hv.html', screen, read);
+  assert.equal(html.length < OUTPUT_MAX * 1.5, true);
+  assert.equal(html.includes(PART_REASONS.tooLarge), true);
+});
+
+test('many parts together past OUTPUT_MAX get the too-large notice (#421)', async () => {
+  const part = `<p>${'y'.repeat(PART_BYTES_MAX / 2)}</p>`;
+  const files = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`p${i}.html`, part]));
+  const { read } = memory(files);
+  const screen = Object.keys(files).map((f) => `<hv-include src="${f}"></hv-include>`).join('');
+  const { html } = await assemble('s.hv.html', screen, read);
+  assert.equal(html.length < OUTPUT_MAX * 1.5, true);
+  assert.equal(html.includes(PART_REASONS.tooLarge), true);
+});
+
+test('a file of thousands of unclosed hv-slot markers is scanned in linear time (#421)', async () => {
+  const { read } = memory({ 'p.html': '<hv-slot name="a">'.repeat(40000) });
+  const started = Date.now();
+  await assemble('s.hv.html', '<hv-include src="p.html"></hv-include>', read);
+  assert.equal(Date.now() - started < 2000, true);
+});
+
+test('readPartFrom does not hang on a FIFO named .html and refuses it (#421)', async (t) => {
+  const folder = await realpath(await tempDir(t, 'parts-'));
+  await promisify(execFile)('mkfifo', [join(folder, 'x.html')]);
+  assert.deepEqual(await readPartFrom(folder)('x.html'), { refused: PART_REASONS.missing });
 });
