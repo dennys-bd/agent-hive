@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { WorkspaceBase } from '../src/fork.js';
 import type { Exec } from '../src/types.js';
 import { cleanWorktree, ensureCheckout, removeWorktree, worktreePath } from '../src/worktree.js';
-import { ensureNestedWorktrees, nestedBaseName, type NestedWorkspace, prepareNested, switchNested } from '../src/worktree-nested.js';
+import { ensureNestedWorktrees, nestedBaseName, type NestedObserver, type NestedWorkspace, prepareNested, switchNested } from '../src/worktree-nested.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 // #653 with the real git: an outer repo that ignores docs/, with docs cloned from a bare origin, and each task's worktree of docs.
@@ -231,4 +231,57 @@ test('the forced removal still removes the task\'s worktree when a nested repo\'
   const broken: Exec = (file, args, options) => (args[0] === '-C' && args[1] === f.docs ? Promise.reject(new Error('fatal: bad object HEAD')) : exec(file, args, options));
   await removeWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, await tempDir(t, 'prompts-'), broken, ['docs']);
   assert.equal(await exists(task), false);
+});
+
+// What the observer heard, in order (#450)
+function recorder(): { calls: unknown[][]; observer: NestedObserver } {
+  const calls: unknown[][] = [];
+  return {
+    calls,
+    observer: {
+      started: (path) => { calls.push(['started', path]); },
+      ended: (path, end) => { calls.push(['ended', path, end]); },
+      failed: (path) => { calls.push(['failed', path]); },
+    },
+  };
+}
+
+test('prepareNested tells the observer each repo\'s start and end in order, from a base or reused; the log lines stay as they were (#450)', async (t) => {
+  const f = await fixture(t);
+  const wiki = join(f.outer, 'wiki');
+  await run('git', ['clone', '--quiet', f.docs, wiki]); // its origin is docs: origin/main resolves
+  await git(wiki, 'branch', BRANCH); // a resume: checked out as it is
+  const task = await outerWorktree(f.outer);
+  const { calls, observer } = recorder();
+  const lines = await prepareNested({ path: f.outer, nestedRepos: ['docs', 'wiki'] }, { path: task, start: 'origin/main' }, BRANCH, false, 'origin', exec, observer);
+  assert.deepEqual(lines, ['docs: origin/main', `wiki: reused ${BRANCH}`]);
+  assert.deepEqual(calls, [['started', 'docs'], ['ended', 'docs', { base: 'origin/main' }], ['started', 'wiki'], ['ended', 'wiki', { reused: true }]]);
+});
+
+test('a nested repo whose git fails is started and never ended: the run\'s failure fails its row (#450)', async (t) => {
+  const f = await fixture(t);
+  const task = await outerWorktree(f.outer);
+  const dir = join(task, 'docs');
+  await git(f.docs, 'worktree', 'add', '--quiet', '-b', 'other', '--', dir, 'main');
+  const { calls, observer } = recorder();
+  await assert.rejects(ensureNestedWorktrees(f.workspace, task, BRANCH, 'main', exec, observer), { message: `${dir} is checked out on other, not on ${BRANCH}` });
+  assert.deepEqual(calls, [['started', 'docs']]);
+});
+
+test('switchNested\'s dirty refusal names the repo that refused, before any starts (#450)', async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.docs, 'draft.md'), 'wip');
+  const { calls, observer } = recorder();
+  await assert.rejects(switchNested(f.workspace, BRANCH, 'main', exec, observer), { message: `${f.docs} has changes that are not committed:\n?? draft.md` });
+  assert.deepEqual(calls, [['failed', 'docs']]);
+});
+
+test('a checkout task\'s nested repo switches from a base; already on the branch it ends at once as reused, with no line (#450)', async (t) => {
+  const f = await fixture(t);
+  const first = recorder();
+  assert.deepEqual(await prepareNested(f.workspace, { path: f.outer, start: 'origin/main' }, BRANCH, true, 'origin', exec, first.observer), ['docs: origin/main']);
+  assert.deepEqual(first.calls, [['started', 'docs'], ['ended', 'docs', { base: 'origin/main' }]]);
+  const again = recorder();
+  assert.deepEqual(await switchNested(f.workspace, BRANCH, 'main', exec, again.observer), []);
+  assert.deepEqual(again.calls, [['started', 'docs'], ['ended', 'docs', { reused: true }]]);
 });
