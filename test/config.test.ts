@@ -1172,6 +1172,14 @@ test('parseConfig refuses a transition naming no stage, a bad trigger or verdict
   assert.deepEqual(withFlow([...FULL, { from: 'Clean', to: 'end', when: 'done' }], [...FLOW_STAGES, clean]).comb.transitions.at(-1), { from: 'Clean', to: 'end', when: 'done' }, 'a delete activity ends with done');
 });
 
+test('a transition from an evaluate stage takes verdict passed or failed with maxTries, and never done (#877)', () => {
+  const evaluate = { name: 'eval', from: {}, action: 'evaluate', reviewers: [], judge: { agent: 'claude' }, threshold: 7, rubric: 'a' };
+  const flow = (transitions: unknown[]) => () => withFlow(transitions, [...FLOW_STAGES, evaluate]);
+  assert.doesNotThrow(flow([{ from: 'eval', when: 'verdict', verdict: 'failed', to: 'Build', maxTries: 3 }, { from: 'eval', when: 'verdict', verdict: 'passed', to: 'PR' }]));
+  assert.throws(flow([{ from: 'eval', when: 'done', to: 'PR' }]), /"done" cannot leave "eval", which ends with a verdict/);
+  assert.throws(flow([{ from: 'eval', when: 'verdict', verdict: 'approved', to: 'PR' }]), /must be one of "eval"'s verdicts: passed, failed/);
+});
+
 test('a stage\'s verdicts: prompt stages only, a non-empty list of distinct trimmed names; no stage may be named end (#134)', () => {
   const one = (stage: Record<string, unknown>) => () => parseConfig(github({ stages: [{ name: 'Build', from: { board: ['Ready'] }, ...stage }], transitions: [] }));
   const v = 'hive.config.json: "comb.stages[0].verdicts" ';

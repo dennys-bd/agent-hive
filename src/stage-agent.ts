@@ -41,3 +41,11 @@ export const SCORE_MAX = 10;
 /** An evaluate stage's dimensions (#877): every non-blank line of its rubric, trimmed, in order. The parser, the judge's score count
  * and the form read the same lines. */
 export const rubricLines = (rubric: string): string[] => rubric.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+
+type ActionOf = { action?: StageAction | '' }; // a Stage, or a StageDraft whose '' is no action
+
+/** A stage whose verdicts are FIXED_VERDICTS (#134, #877): a commands stage, a wait for CI and an evaluation end passed or failed, editable nowhere. */
+export const hasFixedVerdicts = ({ action }: ActionOf): boolean => action === 'commands' || action === 'waitForCi' || action === 'evaluate';
+
+/** A stage the Hive runs itself while holding a worker for its whole length (#727, #877): the fill's, as a prompt stage is, never a due action. */
+export const holdsWorker = (stage: ActionOf | undefined): boolean => stage?.action === 'commands' || stage?.action === 'evaluate';

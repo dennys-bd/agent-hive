@@ -1,8 +1,8 @@
 import { stageAgentIn } from './agents.js';
 import { stageSession } from './task-runs.js';
 import { sessionsOf } from './tasks.js';
-import { agentPrompt, commandFirst, hiveAction, runsAgent } from './stage-agent.js';
-import { FIXED_VERDICTS, TRIES_OUT, type Activity, type AgentId, type Stage, type State, type Task, type Transition, type Trigger } from './types.js';
+import { agentPrompt, commandFirst, hasFixedVerdicts, hiveAction, runsAgent } from './stage-agent.js';
+import { FIXED_VERDICTS, TRIES_OUT, type Activity, type AgentId, type Stage, type StageAction, type State, type Task, type Transition, type Trigger } from './types.js';
 
 // The flow as a graph (#134): which transition a stage end fires, the session and the prompt it hands its destination, and the tries an
 // automatic one counts. Pure and free of node modules, since the page reads it too; no state is written here, transit.ts applies the answers.
@@ -54,9 +54,9 @@ export function retryTransition(state: Pick<State, 'transitions'>, task: Task, e
   });
 }
 
-/** The verdicts a stage may give (#134): its own on a prompt stage, the fixed ones on commands and wait for CI, none on any other. */
+/** The verdicts a stage may give (#134): its own on a prompt stage, the fixed ones on commands, wait for CI and evaluate (#877), none on any other. */
 export function verdictsOf(stage: Pick<Stage, 'action' | 'prompt' | 'skill' | 'verdicts'>): readonly string[] {
-  if (stage.action === 'commands' || stage.action === 'waitForCi') return FIXED_VERDICTS;
+  if (hasFixedVerdicts(stage)) return FIXED_VERDICTS;
   return runsAgent(stage) ? stage.verdicts ?? [] : []; // #710: a skill stage's own, as a prompt stage's
 }
 
@@ -117,9 +117,13 @@ export function takeTry(activity: Pick<Activity, 'tries'> | undefined, transitio
   return taken >= transition.maxTries ? undefined : { ...tries, [key]: taken + 1 };
 }
 
-/** What {verdict} renders (#134): a commands or wait-for-CI verdict's output, an agent verdict's evidence, empty otherwise. */
+// The record key each Hive action's verdict sits under (#755, #834, #877)
+const RESULT_KEY: Partial<Record<StageAction, string>> = { commands: 'commands', waitForCi: 'ci', evaluate: 'evaluate' };
+
+/** What {verdict} renders (#134): a Hive action's verdict's output, an agent verdict's evidence, empty otherwise. */
 export function verdictText(origin: Pick<Stage, 'action'> | undefined, result: Record<string, unknown> | undefined): string {
-  const field = origin?.action === 'commands' ? result?.commands : origin?.action === 'waitForCi' ? result?.ci : result?.verdict;
+  const own = origin?.action === undefined ? undefined : RESULT_KEY[origin.action];
+  const field = own === undefined ? result?.verdict : result?.[own];
   const key = hiveAction(origin) === undefined ? 'evidence' : 'output';
   const value = typeof field === 'object' && field !== null ? (field as Record<string, unknown>)[key] : undefined;
   return typeof value === 'string' ? value : '';

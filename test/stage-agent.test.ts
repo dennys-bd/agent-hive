@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agentPrompt, commandFirst, hiveAction, rubricLines, runsAgent } from '../src/stage-agent.js';
+import { agentPrompt, commandFirst, hasFixedVerdicts, hiveAction, holdsWorker, rubricLines, runsAgent } from '../src/stage-agent.js';
 import type { Stage } from '../src/types.js';
 
 const stage = (extra: Partial<Stage>): Stage => ({ name: 's', from: {}, ...extra });
@@ -30,4 +30,11 @@ test('commandFirst splits a prompt opening on a slash command into its command l
 test('rubricLines: every non-blank line, trimmed, in order; a blank rubric has none (#877)', () => {
   assert.deepEqual(rubricLines(' a \n\n\tb\r\n  \nc'), ['a', 'b', 'c']);
   assert.deepEqual(rubricLines(' \n '), []);
+});
+
+test('hasFixedVerdicts: commands, a wait for CI and an evaluation; holdsWorker: commands and an evaluation (#877)', () => {
+  const actions = ['', 'commands', 'waitForCi', 'evaluate', 'skill', 'deleteActivity'] as const;
+  assert.deepEqual(actions.map((action) => hasFixedVerdicts({ action })), [false, true, true, true, false, false]);
+  assert.deepEqual(actions.map((action) => holdsWorker({ action })), [false, true, false, true, false, false]);
+  assert.equal(holdsWorker(undefined), false);
 });

@@ -139,3 +139,10 @@ test('a skill stage reads as a prompt stage: its own verdicts, done for an unrou
   assert.equal(verdictText(plan, { verdict: { evidence: 'why', output: 'no' } }), 'why');
   assert.equal(transitionPrompt({ when: 'feedback' }, plan, 'new'), `/hive:new-plan\n\n${FEEDBACK_TEMPLATE}`);
 });
+
+test('an evaluate stage gives the fixed verdicts and {verdict} renders its output (#877)', () => {
+  const evaluate: Stage = { name: 'eval', from: {}, action: 'evaluate', reviewers: [], judge: { agent: 'claude' }, threshold: 7, rubric: 'a' };
+  assert.deepEqual(verdictsOf(evaluate), ['passed', 'failed']);
+  assert.equal(verdictText(evaluate, { evaluate: { verdict: 'failed', scores: [], output: 'a (3/7): missing' } }), 'a (3/7): missing');
+  assert.equal(verdictText({ action: 'commands' }, { evaluate: { output: 'x' } }), '', 'a commands origin reads result.commands only');
+});
