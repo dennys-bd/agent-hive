@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { testWorktrees } from '../test-home.js';
-import { cleanEnv, inDir, type Run } from './exec.js';
+import { cleanEnv, inDir, type Run } from '../../src/benchmark/exec.js';
 import { EXPERIMENT_MENTION, EXPERIMENT_PATHS } from './seed.js';
 
 /** Neutral, as any handoff commit of the repository (#105, the user: the workers must not know). */

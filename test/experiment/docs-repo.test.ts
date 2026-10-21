@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { WORKSPACE_TEARDOWN, workspaceSetup } from '../../scripts/experiment/arm-config.js';
-import { cleanEnv, execRun, inDir, type Run } from '../../scripts/experiment/exec.js';
+import { cleanEnv, execRun, inDir, type Run } from '../../src/benchmark/exec.js';
 import { docsBaseline, runDocs } from '../../scripts/experiment/git.js';
 import { tempDir } from '../temp-dir.js';
 

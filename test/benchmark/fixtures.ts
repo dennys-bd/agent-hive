@@ -1,3 +1,4 @@
+import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
 import type { Arm, ArmSetup, BenchIsolation, BenchStagePick, BenchRun, Experiment, State } from '../../src/types.js';
 
@@ -39,3 +40,19 @@ export function deepFreeze<T>(value: T): T {
   if (typeof value === 'object' && value !== null) for (const child of Object.values(value)) deepFreeze(child);
   return Object.freeze(value);
 }
+
+export interface Call { file: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv }
+
+export function fakeRun(answer: (call: Call) => string | Error = () => ''): { run: Run; calls: Call[] } {
+  const calls: Call[] = [];
+  const run: Run = async (file, args, opts = {}) => {
+    const call: Call = { file, args, ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }), ...(opts.env === undefined ? {} : { env: opts.env }) };
+    calls.push(call);
+    const out = answer(call);
+    if (out instanceof Error) throw out;
+    return { stdout: out };
+  };
+  return { run, calls };
+}
+
+export const line = (call: Call): string => [call.file, ...call.args].join(' ');

@@ -2,7 +2,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseEvaluateArgs } from './args.js';
 import { evaluateRun } from './evaluate-run.js';
-import { execRun, serialGit } from './exec.js';
+import { execRun, serialGit } from '../../src/benchmark/exec.js';
 import { readJson } from './files.js';
 import { docsClone, repoRoot } from './git.js';
 import { experimentDir, isMeasured, latest, parseManifest, runOrder, seedDrift, stateRoot } from './plan.js';

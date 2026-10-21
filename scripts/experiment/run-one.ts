@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { loadState } from '../../src/state-store.js';
 import { runConfig, runState, watchTasks } from './arm-config.js';
 import type { RunningDaemon } from './daemon-runner.js';
-import type { Run } from './exec.js';
+import type { Run } from '../../src/benchmark/exec.js';
 import { writeJson } from './files.js';
 import { createRunBranch, diffShortstat, dropRunWorktrees, fetchBranch, pruneDocs } from './git.js';
 import { failedMetrics, parseShortstat, runMetrics } from './metrics.js';

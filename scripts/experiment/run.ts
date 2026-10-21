@@ -9,7 +9,7 @@ import { DEFAULT_BASELINE, DEFAULT_RUNS, type ExperimentOptions, parseExperiment
 import { createDaemonClient } from './daemon-client.js';
 import { untilDeadline } from './deadline.js';
 import { evaluateRun } from './evaluate-run.js';
-import { execRun, type Run, serialGit } from './exec.js';
+import { execRun, type Run, serialGit } from '../../src/benchmark/exec.js';
 import { readJson, type Store, serialStore, writeJson } from './files.js';
 import { docsBaseline, docsClone, dropRunWorktrees, experimentBaseline, pruneDocs, repoRoot, resolveBaseline, sandboxPaths, unsignedCommits } from './git.js';
 import { installSandbox, type RepoPaths, sandboxSettings } from './sandbox.js';

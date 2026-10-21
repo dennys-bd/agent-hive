@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 import { type DaemonAddress, ourDaemon, stopDaemon } from '../../src/daemon.js';
-import { buildEnv, cleanEnv } from './exec.js';
+import { buildEnv, cleanEnv } from '../../src/benchmark/exec.js';
 
 export const DAEMON_OUT = 'daemon.out'; // run.js's stdout/stderr: a boot failure prints there before hive.log exists
 const BOOT_WAIT_MS = 60_000;

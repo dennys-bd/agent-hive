@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { hasTell } from '../../scripts/experiment/blind.js';
 import type { Launch } from '../../scripts/experiment/browser.js';
 import { type EvalDeps, evaluateRun } from '../../scripts/experiment/evaluate-run.js';
-import type { Run } from '../../scripts/experiment/exec.js';
+import type { Run } from '../../src/benchmark/exec.js';
 import { readJson, writeJson } from '../../scripts/experiment/files.js';
 import { failedMetrics } from '../../scripts/experiment/metrics.js';
 import type { Click, Judge } from '../../scripts/experiment/types.js';

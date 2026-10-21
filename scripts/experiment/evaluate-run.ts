@@ -6,7 +6,7 @@ import { assertBlind, bundleFiles, writeBundle } from './blind.js';
 import { type Cookie, dashboardCookie, type Launch, MCP_BIN, mcpConfig, smokeDashboard, storageState } from './browser.js';
 import { extractJson, JUDGE_TIMEOUT_MS, judgeArgs, parseClicks, parseJudge, runClaude, TESTER_TIMEOUT_MS, testerArgs } from './claude.js';
 import type { RunningDaemon } from './daemon-runner.js';
-import { buildEnv, type Run } from './exec.js';
+import { buildEnv, type Run } from '../../src/benchmark/exec.js';
 import { pngsIn, readJson, writeJson } from './files.js';
 import { addWorktree, fetchBranch, fullDiff, remoteSha, removeWorktree, runDocs } from './git.js';
 import { runBranch, runPrefix } from './plan.js';

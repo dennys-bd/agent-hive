@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { realpath } from 'node:fs/promises';
-import { buildEnv, cleanEnv, execRun, type Run, serialGit } from '../../scripts/experiment/exec.js';
+import { buildEnv, cleanEnv, execRun, type Run, serialGit } from '../../src/benchmark/exec.js';
 import { tempDir } from '../temp-dir.js';
 
 test('cleanEnv drops what would stop or misroute a nested claude or test runner and keeps the rest (#105)', () => {

@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 import { launchChromium } from './browser.js';
 import { bootDaemon, type RunningDaemon, stopRunDaemon } from './daemon-runner.js';
 import type { EvalDeps } from './evaluate-run.js';
-import type { Run } from './exec.js';
+import type { Run } from '../../src/benchmark/exec.js';
 
 // Never the daemon's secret: addresses are passed on, never printed
 export const log = (line: string): void => console.log(`${new Date().toISOString()} ${line}`);
