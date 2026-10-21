@@ -16,7 +16,7 @@ const task = (extra: Partial<WithWork> = {}): WithWork => ({
 });
 const session: Worker = { id: 'm1', status: 'working', activityId: activityIdOf('I1'), runId: 'W2', freeSession: true, sessionId: 'bbbbbbbb-0000-4000-8000-000000000002' };
 const state = (c: Task, workers: Worker[] = [session]): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages, tasks: [c], sourceOrder: [], localCount: 0, activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions }], // #629: the record's
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages, tasks: [c], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions }], // #629: the record's
   usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
   workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: { hive: ['Run API'] }, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });

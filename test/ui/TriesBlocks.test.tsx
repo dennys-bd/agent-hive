@@ -25,7 +25,7 @@ const THREE = [record(1), record(2), record(3)];
 const session = (id: string): Session => ({ id, startedAt: '', stages: ['build'], agent: 'claude' as const, lastUsedAt: '' });
 const taskIn = (stage: string): Task => ({ item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage, boardColumn: '', auto: true });
 const at = (work: Partial<Activity>, { stage = 'checks', transitions = [BACK] }: { stage?: string; transitions?: Transition[] } = {}): State => withWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: STAGES, transitions, tasks: [taskIn(stage)], sourceOrder: [], localCount: 0,
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: STAGES, transitions, tasks: [taskIn(stage)], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
   activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 }, 'I1', work, { sessions: S.map(session) });

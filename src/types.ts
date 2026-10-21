@@ -769,6 +769,7 @@ export interface State {
   shutdownIdleMinutes: number; // copied from Config.shutdownIdleMinutes wherever the live state is created and by setShutdownIdle on a save that changes it (#233)
   approvalMinutes: number; // copied from Config.approvalMinutes wherever the live state is created and by setApprovalMinutes on a save that changes it (#268)
   rateLimitWaitMinutes: number; // copied from Config.rateLimitWaitMinutes wherever the live state is created and by setRateLimitWait on a save that changes it (#805)
+  benchmark: BenchmarkState; // #458: the experiments, saved in state.json and loaded through benchmark-guards.ts; initialState gives { experiments: [] }
   defaultAgent?: AgentId; // #925: copied from Config.defaultAgent wherever the live state is created and by setDefaultAgent on a save that changes it; absent only on a state built by hand (a test's): liveDefaultAgent reads DEFAULT_AGENT then
   shutdown?: { armedAt: string }; // shutdown when done (#233): absent = off; set and cleared by setShutdown, cleared with the shutdown effect and by boot
   keepAwake?: true; // keep awake (#226): absent = off. Set and cleared by setKeepAwake, cleared at boot and with the shutdown effect.
@@ -799,6 +800,82 @@ export type AgentId = (typeof AGENT_IDS)[number];
 export interface EvaluateRow { agent: AgentId; model?: string; specializedAgent?: string; focus?: string }
 /** What a new form offers as the default agent and what a file from before #516 reads as. */
 export const DEFAULT_AGENT: AgentId = 'claude';
+
+// ── Benchmark (#458): the contract types.benchmark of docs/agent/hive/specs/2026-10-21-benchmark-view-decomposition.md, "Data model".
+// Experiments live in State so the UI reads them from the one /events stream; the heavy artifacts stay files under the experiment folder.
+export type ExperimentStatus = 'draft' | 'running' | 'sleeping' | 'done';
+export type BenchStageRole = 'spec' | 'plan' | 'build' | 'pr';
+/** What a stage of a run is: the agent, its model and the skill or command the stage prompt calls (`/hive:new-build`, `/hive-build`). */
+export interface BenchStagePick { agent: AgentId; model?: string; skill: string }
+export interface BenchTask { key: string; title: string; body: string; blockedBy: string[] }
+export interface BenchRules { allow: string[]; deny: string[] }
+/** The base, and what an arm overrides of it: the same shape, every field optional on the arm. */
+export interface ArmSetup { stages: Record<BenchStageRole, BenchStagePick>; plugins: string[]; rules: BenchRules; tasks: BenchTask[] }
+export interface Arm { id: string; letter: string; name: string; overrides: Partial<ArmSetup> }
+export interface BenchScenario { id: string; title: string; text: string }
+/** The seed: the problem, the same for every arm. Its hash covers every field; a change forks the experiment (1.2). */
+export interface BenchSeed { workspace: string; commit: string; reference: string[]; sample: { command: string; url: string; files: string[] }; scenarios: BenchScenario[] }
+export interface BenchPace { pairs: number; until?: string; runTimeoutMs: number; workersPerArm: number; cap: { tokens?: number; planPercent?: number } }
+/** One isolation row: the value every arm gets, or a value per arm id when the row varies. */
+export interface IsolationRow<T> { all: T; perArm?: Record<string, T> }
+export interface BenchIsolation {
+  environment: IsolationRow<'local'>; network: IsolationRow<string[]>; permissionMode: IsolationRow<string>;
+  allowedTools: IsolationRow<string[]>; deniedTools: IsolationRow<string[]>; limits: IsolationRow<{ turns?: number; ms?: number }>;
+  env: IsolationRow<Record<string, string>>; betweenRounds: IsolationRow<'fresh-worktree'>;
+}
+export interface BenchBlindness { on: boolean; forbiddenWords: string[] }
+/** Static collectors and the judge are #877's EvaluateRow (agent, model?, specializedAgent?, focus?); the rubric is one criterion per non-blank line, scored 1–5. */
+export interface BenchEvaluation { collectors: EvaluateRow[]; dynamic: boolean; judge: EvaluateRow; rubric: string }
+export interface Experiment {
+  id: string; name: string; status: ExperimentStatus; archived?: true; createdAt: string; createdBy: { kind: 'user' } | { kind: 'mcp'; agent: AgentId; model?: string };
+  workspace: string; plugin: { version: string; hash: string }; seedHash: string; tasksHash: string;
+  base: ArmSetup; arms: Arm[]; seed: BenchSeed; pace: BenchPace; isolation: BenchIsolation; blindness: BenchBlindness; evaluation: BenchEvaluation;
+  rounds: BenchRound[]; sleeps: BenchSleep[]; stopAfterRound?: true;
+}
+export interface BenchRound { n: number; startedAt?: string; endedAt?: string; evaluatedAt?: string; runs: BenchRun[] }
+export type BenchRunStatus = 'queued' | 'running' | 'waiting' | 'sleeping' | 'done' | 'timeout' | 'error' | 'interrupted';
+export interface BenchRun {
+  token: string; armId: string; round: number; status: BenchRunStatus; reason?: string; home: string; branch: string;
+  startedAt?: string; endedAt?: string; sleptMs: number; delivered: number; total: number;
+  metrics?: BenchMetrics; evaluation?: BenchRunEvaluation; interventions: Intervention[]; inMedian?: boolean;
+}
+export interface BenchTaskMetrics { key: string; title: string; tokens: number; ms: number; waitingMs: number; stages: { stage: string; ms: number }[]; restarts: number }
+export interface BenchMetrics { tokens: number; costUsd: number; ms: number; waitingMs: number; restarts: { count: number; where: string[] }; diff: { files: number; insertions: number; deletions: number }; tests: { green: number; total: number }; tasks: BenchTaskMetrics[] }
+export interface CollectorResult { name: string; status: 'ok' | 'warn' | 'error'; summary: string; findings: ReviewFinding[] }
+export interface ScenarioResult { id: string; passed: number; total: number; screenshots: string[] }
+export interface BenchRunEvaluation { at: string; collectors: CollectorResult[]; scenarios: ScenarioResult[]; judge: { agent: AgentId; model?: string; rubricHash: string; scores: JudgeScore[] } }
+export interface Intervention { at: string; action: string; detail: string; by: 'user' }
+export interface BenchSleep { round: number; at: string; wokeAt?: string; reason: string }
+
+export interface BenchmarkState { experiments: Experiment[] }
+export const EXPERIMENT_STATUSES: readonly ExperimentStatus[] = ['draft', 'running', 'sleeping', 'done'];
+export const BENCH_RUN_STATUSES: readonly BenchRunStatus[] = ['queued', 'running', 'waiting', 'sleeping', 'done', 'timeout', 'error', 'interrupted'];
+/** An experiment id and a run token as 1.2 and 3.1 must generate them: they name folders and, upper-cased, a task prefix. */
+export const EXPERIMENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export const BENCH_TOKEN = /^[a-z0-9]{4,16}$/;
+
+export type ExperimentPatch = Partial<Pick<Experiment, 'name' | 'base' | 'seed' | 'seedHash' | 'tasksHash' | 'pace' | 'isolation' | 'blindness' | 'evaluation'>>;
+export type BenchRunPatch = Partial<Pick<BenchRun, 'status' | 'reason' | 'delivered' | 'total' | 'sleptMs' | 'metrics' | 'evaluation' | 'interventions' | 'inMedian'>>;
+/** An experiment's life (#458): the routes build what needs I/O and check the transitions; benchmark-reducer.ts only applies. */
+export type BenchmarkEvent =
+  | { type: 'benchmarkCreated'; experiment: Experiment } // empty and duplicate alike
+  | { type: 'benchmarkEdited'; id: string; patch: ExperimentPatch }
+  | { type: 'benchmarkForked'; from: string; experiment: Experiment } // `from` is left untouched
+  | { type: 'benchmarkArchived'; id: string; archived: boolean }
+  | { type: 'benchmarkDeleted'; id: string }
+  | { type: 'benchmarkArmAdded'; id: string; arm: Arm }
+  | { type: 'benchmarkArmEdited'; id: string; armId: string; patch: Partial<Pick<Arm, 'name' | 'overrides'>> }
+  | { type: 'benchmarkArmRemoved'; id: string; armId: string }
+  | { type: 'benchmarkArmsCopied'; id: string; from: string; what: 'overrides' | 'tasks'; to: string[] }
+  | { type: 'benchmarkRunStarted'; id: string; run: BenchRun }
+  | { type: 'benchmarkRunChanged'; id: string; token: string; patch: BenchRunPatch }
+  | { type: 'benchmarkRunEnded'; id: string; token: string; status: 'done' | 'timeout' | 'error'; at: string; reason?: string }
+  | { type: 'benchmarkRoundEnded'; id: string; round: number; at: string }
+  | { type: 'benchmarkRoundEvaluated'; id: string; round: number; at: string }
+  | { type: 'benchmarkSlept'; id: string; sleep: Omit<BenchSleep, 'wokeAt'> }
+  | { type: 'benchmarkWoken'; id: string; at: string }
+  | { type: 'benchmarkStopAfterRound'; id: string; on: boolean }
+  | { type: 'benchmarkFinished'; id: string };
 
 /** Whether an agent's CLI is on this machine, checked once on boot (#516). */
 export interface AgentAvailability {

@@ -51,7 +51,7 @@ const task = (id: string, workerId?: string): WithWork => ({
   stage: 'dev', boardColumn: 'Ready', auto: true, workerId,
 });
 const worker = (taskId?: string): Worker => ({ id: 's1', status: taskId ? 'working' : 'empty', ...(taskId ? { activityId: activityIdOf(taskId) } : {}) });
-const state = (tasks: WithWork[], s: Worker): State => withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [s], stages, tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
+const state = (tasks: WithWork[], s: Worker): State => withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [s], stages, tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 
 // window.hive as the preload exposes it (#192): the returned function delivers what main's window:select carries, inside act
 function stubBridge(): (selection: unknown) => void {

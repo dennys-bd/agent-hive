@@ -16,7 +16,7 @@ const task = (id: string, extra: Partial<WithWork> = {}): WithWork => ({
 });
 const empty: Worker = { id: 's1', status: 'empty' };
 const state = (tasks: Task[], activityRecords: ActivityRecord[] = []): State =>
-  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [empty], stages, tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
+  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [empty], stages, tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 const sessions = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-25T10:00:00.000Z' }];
 
 const WITH_WORKTREE: BaseOptions = { hasWorktree: true, defaultRef: 'origin/main', tasks: [], local: [], remote: [] };

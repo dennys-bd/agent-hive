@@ -54,6 +54,7 @@ export function initialState(maxConcurrent: number): State {
     signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent, workers: Array.from({ length: maxConcurrent }, emptyWorker), terminals: [], stages: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, tasks: [], activities: [], activityRecords: [], sourceOrder: [], usage: [], budget: {},
     usageRules: [], disabledRules: [], localCount: 0, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT,
     rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, // #805
+    benchmark: { experiments: [] }, // #458
   };
 }
 

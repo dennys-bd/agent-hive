@@ -14,7 +14,7 @@ const task = (itemId: string, id: string, title: string, project: string, extra:
   item: { itemId, id, title, body: '', url: '' }, stage: 'dev', boardColumn: 'dev', auto: true, workspace: project, worktree: `/w/${id}`, branch: `hive/${id}`, ...extra,
 });
 const state: State = movedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [], localCount: 0, activities: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], sourceOrder: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [], localCount: 0, benchmark: { experiments: [] }, activities: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], sourceOrder: [],
   activityRecords: [{ id: 'a-I11', taskIds: ['I11'], sessions: [{ id: S, startedAt: '', stages: ['dev'], agent: 'claude', lastUsedAt: '' }] }], // #629: the source's session is its record's
   tasks: [task('I11', '11', 'source', 'hive'), task('I542', '542', 'Redesign 10 · Board', 'hive'), task('I7', '7', 'elsewhere', 'site')],
   workspaces: ['hive', 'site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,

@@ -13,7 +13,7 @@ const task = (itemId: string, extra: Partial<WithWork> = {}): WithWork => ({
 });
 const source = task('I11', { worktree: '/w/11' });
 const stateWith = (awaited?: Task): State => movedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [], localCount: 0, activities: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], sourceOrder: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [], localCount: 0, benchmark: { experiments: [] }, activities: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], sourceOrder: [],
   activityRecords: [{ id: 'a-I11', taskIds: ['I11'], sessions: [{ id: S, startedAt: '', stages: ['dev'], agent: 'claude', lastUsedAt: '' }] }], // #629: the source's session is its record's
   tasks: awaited ? [source, awaited] : [source], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });

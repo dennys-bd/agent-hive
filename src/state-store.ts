@@ -8,6 +8,7 @@ import { savedAgent } from './agents.js';
 import { isCount, isDate, isJsonObject, isStringArray, loadActivity, loadRecord, SLUG } from './state-guards.js';
 import { MOVED_TASK_KEYS, migrateLocals, migrateWork, migrateWorker } from './state-migrate.js';
 import type { WorkspaceNames } from './tasks.js';
+import { loadBenchmark } from './benchmark-guards.js';
 import { copyDisabledRule, isDisabledRule } from './usage-rules.js';
 import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type Item, type Task, type Terminal, type Signal, type Worker, type WorkerEvent, type WorkerEventKind, type State, type Status, type UsageRule, type UsageSample } from './types.js';
 
@@ -214,6 +215,7 @@ function normalize(parsed: State, scope?: WorkspaceNames): State {
     rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, // overwritten by the config on boot (#805)
     signals: SIGNALS_DEFAULTS, // overwritten by the config on boot (#727)
     terminals: Array.isArray(terminals) ? terminals.filter((x) => isTerminal(x) && loadedIds.has(x.activityId)).map(loadTerminal) : [], // #283, #292, #378; on a loaded activity (#629)
+    benchmark: loadBenchmark(parsed.benchmark), // #458: through its own guard and boot rule; a file from before it has no experiment
     ...(cleanStop === true ? { cleanStop } : {}), ...(isCrash(crash) ? { crash: { at: crash.at, tasks: crash.tasks } } : {}), // #283
     ...(readings === undefined ? {} : { rateLimits: readings }), // #929: per agent; a wrong shape or a pre-#929 file is no key
   };
