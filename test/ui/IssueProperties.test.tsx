@@ -14,7 +14,7 @@ const ISSUE: IssuePage = {
 };
 const TASK: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: '', url: URL12, source: 'roadmap' }, stage: 'dev', boardColumn: 'In review', auto: true };
 const STATE: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], tasks: [TASK], sourceOrder: [], localCount: 0,
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
   stages: [{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }, { name: 'review', from: { roadmap: ['In review'] }, prompt: 'y' }],
   activities: [{ id: 'A1', kind: 'task', workspace: 'site', branch: 'hive/12-pager' }], activityRecords: [{ id: 'A1', taskIds: [TASK.item.itemId], sessions: [] }],
   usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['site'], sourceWorkspaces: { roadmap: 'site' }, workspaceColors: {}, commands: {}, syncs: {},

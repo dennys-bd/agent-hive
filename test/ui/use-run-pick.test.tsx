@@ -11,7 +11,7 @@ const session = (id: string, agent: Session['agent']): Session => ({ id, started
 const stages: Stage[] = [{ name: 'spec', from: {}, prompt: 'x' }, { name: 'build', from: {}, prompt: 'x', session: 'continue', model: 'opus' }];
 const TASK: Task = { item: { itemId: 'I1', id: 'SITE-1', title: 'one', body: '', url: '' }, stage: 'build', boardColumn: '', auto: true, workspace: 'site' };
 const stateWith = (sessions: Session[]): State => withWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages, tasks: [TASK], sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages, tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
   workspaces: ['site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 }, 'I1', {}, { sessions });
 

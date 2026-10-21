@@ -21,7 +21,7 @@ const workerB: Worker = { id: 's2', status: 'working', activityId: activityIdOf(
 const state: State = withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 2, workers: [workerA, workerB],
   stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }],
-  tasks: [taskA, taskB, taskC], sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {},
+  tasks: [taskA, taskB, taskC], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {},
   syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
 

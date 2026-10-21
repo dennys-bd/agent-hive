@@ -1,10 +1,11 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { isBenchmarkEvent } from './benchmark-reducer.js';
 import { taskId, sessionsOf } from './tasks.js';
 import { activityOf, activityOfWorker, isLocalActivityId, localWorkspaceOf, taskOfWorker } from './activities.js';
 import { localSessionsOf } from './local-sessions.js';
 import { prNumber } from './pull-requests.js';
-import type { Stage, Effect, HiveEvent, Worker, State } from './types.js';
+import type { BenchmarkEvent, Stage, Effect, HiveEvent, Worker, State } from './types.js';
 
 export type LogLevel = 'warn' | 'info' | 'debug'; // the threshold logLevel sets (#742: warn added)
 export type RecordLevel = 'error' | LogLevel; // what a line or a record carries: error passes every threshold
@@ -147,6 +148,7 @@ export const describeStages = (stages: Stage[]): string => stages.map((c) => c.n
 
 /** A one-line summary of a reducer event: names, ids and counts, never a payload (tool_input, question, message). */
 export function describeEvent(event: HiveEvent): string {
+  if (isBenchmarkEvent(event)) return describeBenchmark(event); // #458
   switch (event.type) {
     case 'boot': return 'boot';
     case 'poll': return `poll source=${event.source ?? '-'} items=${event.items.length} ids=${event.items.slice(0, POLL_IDS_MAX).map((c) => c.item.id).join(',')}`;
@@ -364,4 +366,16 @@ export function describeChanges(prev: State, next: State): string[] {
     return [`worker ${i + 1}: free session ${kind} on ${local === undefined ? `#${task?.item.id ?? '-'}` : `workspace=${local}`}`];
   });
   return [...statuses, ...sessions, ...freeSessions, ...taskLines(prev, next)];
+}
+
+// #458: the experiment and the run's token; never a name, a patch or a reason, which are the user's words
+function describeBenchmark(event: BenchmarkEvent): string {
+  const id = 'experiment' in event ? event.experiment.id : event.id;
+  const token = tokenOf(event);
+  return `${event.type} experiment=${id}${token === undefined ? '' : ` run=${token}`}`;
+}
+
+function tokenOf(event: BenchmarkEvent): string | undefined {
+  if ('token' in event) return event.token;
+  return 'run' in event ? event.run.token : undefined;
 }

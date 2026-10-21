@@ -4,8 +4,8 @@ import type { OperationId } from './types.js';
 import type { MessageKey } from './ui/i18n.js';
 
 /** Where a key acts (#585), the atalhos section's cards in order: everywhere, with an activity shown, with the focus in the files tree (#818),
- * with the flow shown, with the plugins view shown (#313), in a dialog, on the Settings page (#689). */
-export const SHORTCUT_SCOPES = ['global', 'activities', 'files', 'flow', 'plugins', 'dialogs', 'settings'] as const;
+ * with the flow shown, with the plugins view shown (#313), with the benchmark view shown (#458), in a dialog, on the Settings page (#689). */
+export const SHORTCUT_SCOPES = ['global', 'activities', 'files', 'flow', 'plugins', 'benchmark', 'dialogs', 'settings'] as const;
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number];
 
 /** A default per platform (#585): macOS's, and the one Linux and Windows share, where Ctrl alone would take a key the terminal reads. null:
@@ -41,6 +41,7 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('viewActivities', both('CmdOrCtrl+1'), 'global'), // the header's first view takes Cmd+1 (#746)
   row('viewFlow', both('CmdOrCtrl+2'), 'global'),
   row('viewPlugins', both('CmdOrCtrl+3'), 'global'), // #313: the rail's third view
+  row('viewBenchmark', both('CmdOrCtrl+4'), 'global', SOON), // #458: the rail's fourth view; soon until 2.1 builds it, so the key is reserved
   row('search', { mac: 'CmdOrCtrl+P', other: 'CmdOrCtrl+Shift+P' }, 'global'),
   row('searchOperations', { mac: 'CmdOrCtrl+Shift+P', other: 'F1' }, 'global'),
   row('newActivity', { mac: 'CmdOrCtrl+N', other: 'CmdOrCtrl+Shift+N' }, 'global'),
@@ -123,6 +124,7 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('searchPlugins', both('CmdOrCtrl+F'), 'plugins'), // #313: the plugins sidebar's search; it acts only with that view shown, so it meets no other ⌘F
   // #331: the editor footer's field. From the capture phase it wins over Monaco's own ⌘I (trigger suggest), which stays on Ctrl+Space
   row('askAgent', both('CmdOrCtrl+I'), 'plugins'),
+  row('benchmarkSearch', both('CmdOrCtrl+F'), 'benchmark', SOON), // #458: the benchmark sidebar's search; acts only with that view shown, as searchPlugins does
   row('confirm', both('CmdOrCtrl+Enter'), 'dialogs'),
   row('feedbackQueue', both('CmdOrCtrl+Shift+Enter'), 'dialogs'),
   row('switchStartMode', both('CmdOrCtrl+Shift+M'), 'dialogs'),

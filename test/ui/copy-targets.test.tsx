@@ -14,7 +14,7 @@ const ONE = task('local:1', 'HIVE-1', 'hive', { created: true });
 const ONE_RECORD: ActivityRecord = { id: 'a-local:1', taskIds: ['local:1'], sessions: [{ id: S, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '', name: 'revisão' }] };
 const LOCAL_HIVE: ActivityRecord = { id: 'local:hive', taskIds: [], sessions: [{ id: S, startedAt: '', stages: [], agent: 'claude' as const, lastUsedAt: '' }] };
 const state = (tasks: Task[], workers: Worker[] = [], activityRecords: ActivityRecord[] = [ONE_RECORD]): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages: [], tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages: [], tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
   workspaces: ['hive', 'site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 beforeEach(() => setLanguage('pt'));

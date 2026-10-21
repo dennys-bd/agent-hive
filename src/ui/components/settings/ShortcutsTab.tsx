@@ -104,7 +104,7 @@ function ShortcutRow({ def, binding, onSet }: ShortcutRowProps) {
 }
 
 const SCOPE_KEY: Record<ShortcutScope, MessageKey> = {
-  global: 'shortcuts.scope.global', activities: 'shortcuts.scope.activities', files: 'shortcuts.scope.files', flow: 'shortcuts.scope.flow', plugins: 'shortcuts.scope.plugins', dialogs: 'shortcuts.scope.dialogs', settings: 'shortcuts.scope.settings',
+  global: 'shortcuts.scope.global', activities: 'shortcuts.scope.activities', files: 'shortcuts.scope.files', flow: 'shortcuts.scope.flow', plugins: 'shortcuts.scope.plugins', benchmark: 'shortcuts.scope.benchmark', dialogs: 'shortcuts.scope.dialogs', settings: 'shortcuts.scope.settings',
 };
 
 /** Settings › atalhos (#513, #585): one flush SettingsGroup per scope with every row of the map in its order, a live shortcut recordable, a

@@ -120,17 +120,18 @@ test('confirm and feedbackQueue keep one default on every platform, never in a t
   assert.throws(() => parseShortcuts({ feedbackStart: 'Alt+Enter' }, MAC), { message: `hive.config.json: "shortcuts" names "feedbackStart", which is no shortcut (${IDS})` });
 });
 
-test('the registry is the map: the seven scopes in order, every row in its scope, the soon ones marked, and inTerminal for the global and activity keys (#585)', () => {
+test('the registry is the map: the eight scopes in order, every row in its scope, the soon ones marked, and inTerminal for the global and activity keys (#585)', () => {
   assert.deepEqual([...new Set(SHORTCUT_MAP.map((row) => row.scope))], [...SHORTCUT_SCOPES], 'contiguous, in scope order');
   const rows = (scope: ShortcutScope): string[] => SHORTCUT_MAP.filter((row) => row.scope === scope).map((row) => ('keys' in row ? `fixed:${row.id}` : row.id));
-  assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'viewPlugins', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'problems', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
+  assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'viewPlugins', 'viewBenchmark', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'problems', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
   assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'newSessionDialog', 'openDiff', 'newFile', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'findInTerminal', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
   assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'treeCopyCheckoutPath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
   assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'goBack', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
   assert.deepEqual(rows('plugins'), ['searchPlugins', 'askAgent']);
+  assert.deepEqual(rows('benchmark'), ['benchmarkSearch']);
   assert.deepEqual(rows('dialogs'), ['confirm', 'feedbackQueue', 'switchStartMode', 'fixed:cancel']);
   assert.deepEqual(rows('settings'), ['searchSettings']);
-  assert.deepEqual(SHORTCUTS.filter((s) => s.soon).map((s) => s.id), ['nextTab', 'prevTab', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity']);
+  assert.deepEqual(SHORTCUTS.filter((s) => s.soon).map((s) => s.id), ['viewBenchmark', 'nextTab', 'prevTab', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'benchmarkSearch']);
   assert.deepEqual(FIXED_SHORTCUTS.filter((f) => f.soon).map((f) => f.id), ['goToTab']);
   for (const def of SHORTCUTS) assert.equal(def.inTerminal, def.scope === 'global' || def.scope === 'activities', def.id);
   assert.deepEqual([pair('fullScreen'), pair('closeWindow'), pair('refreshFlow'), pair('nextActivity')], [['CmdOrCtrl+Shift+F', 'F11'], ['CmdOrCtrl+Shift+W', 'CmdOrCtrl+Alt+Shift+W'], ['CmdOrCtrl+Alt+R', 'F5'], ['CmdOrCtrl+Alt+Down', 'CmdOrCtrl+Shift+PageDown']]);
@@ -154,7 +155,7 @@ test('sleepSession and sleepAll keep stopSession\'s and stopAll\'s keys; the old
 test('two keys collide only when both act in one scope or one of them is global, a fixed key of a scope included (#585)', () => {
   assert.deepEqual(collisions({ searchTasks: 'CmdOrCtrl+K' }, MAC), [], 'the flow\'s key and an activity\'s: never both live');
   assert.deepEqual(collisions({ confirm: 'CmdOrCtrl+Shift+K' }, OTHER), [], 'a dialog\'s key and an activity\'s');
-  assert.deepEqual(collisions({ toggleConsole: 'CmdOrCtrl+F' }, MAC), [['toggleConsole', 'findInTerminal'], ['toggleConsole', 'searchTasks'], ['toggleConsole', 'searchPlugins'], ['toggleConsole', 'searchSettings']], 'a global key meets the flow, the activities, plugins and Settings');
+  assert.deepEqual(collisions({ toggleConsole: 'CmdOrCtrl+F' }, MAC), [['toggleConsole', 'findInTerminal'], ['toggleConsole', 'searchTasks'], ['toggleConsole', 'searchPlugins'], ['toggleConsole', 'benchmarkSearch'], ['toggleConsole', 'searchSettings']], 'a global key meets the flow, the activities, plugins, the benchmark and Settings');
   assert.deepEqual(collisions({ refreshFlow: 'Alt+3' }, OTHER), [['refreshFlow', fixedShortcut('pickSource')]], 'a fixed key of the flow');
   assert.deepEqual(collisions({ clear: 'Alt+3' }, MAC), [], 'go to tab is Ctrl+1–9 on macOS');
 });
@@ -305,6 +306,14 @@ test("viewPlugins is CmdOrCtrl+3, a global key; searchPlugins is CmdOrCtrl+F in 
   assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
   assert.deepEqual(collisions({ searchPlugins: 'CmdOrCtrl+K' }, MAC), [], "an activity's key: never both live");
   assert.deepEqual(collisions({ searchPlugins: 'CmdOrCtrl+J' }, MAC), [['toggleConsole', 'searchPlugins']], 'a global key reaches the plugins view');
+});
+
+test("viewBenchmark is CmdOrCtrl+4, a global key; benchmarkSearch is CmdOrCtrl+F in the benchmark scope; both soon until the view exists (#458)", () => {
+  assert.deepEqual([pair('viewBenchmark'), pair('benchmarkSearch')], [['CmdOrCtrl+4', 'CmdOrCtrl+4'], ['CmdOrCtrl+F', 'CmdOrCtrl+F']]);
+  assert.deepEqual([shortcutDef('viewBenchmark').scope, shortcutDef('benchmarkSearch').scope], ['global', 'benchmark']);
+  assert.deepEqual([shortcutDef('viewBenchmark').soon, shortcutDef('benchmarkSearch').soon], [true, true]);
+  assert.equal(shortcutDef('benchmarkSearch').inTerminal, false);
+  assert.deepEqual(collisions({ searchPlugins: 'CmdOrCtrl+4' }, MAC), [['viewBenchmark', 'searchPlugins']], 'the reserved key blocks a change onto it');
 });
 
 test('askAgent is CmdOrCtrl+I on both platforms in the plugins scope, out of the terminal, colliding with no default (#331)', () => {

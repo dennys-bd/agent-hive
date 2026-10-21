@@ -42,7 +42,7 @@ const A: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Task A', body
 const B: Task = { item: { itemId: 'local:2', id: 'HIVE-2', title: 'Fix it', body: '', url: '' }, stage: 'dev', boardColumn: '', auto: false, created: true };
 const state: State = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], tasks: [T12, A, B],
-  sourceOrder: [], localCount: 0, activities: [], activityRecords: [{ id: 'r-B', taskIds: [B.item.itemId], sessions: [], prs: [{ url: PR_PAGE.url, state: 'open' }] }],
+  sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [{ id: 'r-B', taskIds: [B.item.itemId], sessions: [], prs: [{ url: PR_PAGE.url, state: 'open' }] }],
   usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };

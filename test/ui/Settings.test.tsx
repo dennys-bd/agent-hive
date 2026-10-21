@@ -31,7 +31,7 @@ const info: SettingsInfo = {
 
 // The fields a limits-tab test does not care about (#512): spread and override boards / usage / rateLimits.
 const BASE_STATE: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 0, workers: [], stages: [], tasks: [], sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 0, workers: [], stages: [], tasks: [], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
   workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [], syncs: {},
 };
 

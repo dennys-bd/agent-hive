@@ -23,7 +23,7 @@ const task = (id: string, stage: string, facets?: Partial<ItemFacets>, extra: Pa
 });
 const worker = (id: string, taskId?: string): Worker => ({ id, status: taskId ? 'working' : 'empty', ...(taskId ? { activityId: activityIdOf(taskId), ptyId: `w-${id}` } : {}) });
 const state = (tasks: WithWork[], workers: Worker[], cols: Stage[] = stages): State =>
-  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, stages: cols, tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
+  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, stages: cols, tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
 const saved = (): unknown => readView('stageFilters') ?? null;
 const save = (value: unknown): void => resetViewState({ stageFilters: value });

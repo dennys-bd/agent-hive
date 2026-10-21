@@ -50,7 +50,7 @@ function savedUsage(value: unknown): Pick<ActivityRecord, 'usage'> {
 }
 
 // #283: a starting commit reaches git's argv as Restart's target, so only a hex sha is kept.
-const COMMIT = /^[0-9a-f]{7,64}$/;
+export const COMMIT = /^[0-9a-f]{7,64}$/;
 export const isStageStart = (value: unknown): value is StageStart =>
   isJsonObject(value) && typeof value.stage === 'string' && typeof value.commit === 'string' && COMMIT.test(value.commit);
 // #580: the stage that ended there, only as text

@@ -16,7 +16,7 @@ const task = (extra: Partial<WithWork> = {}): WithWork => ({
 });
 const workers: Worker[] = [{ id: 's1', status: 'empty' }];
 const state = (tasks: WithWork[]): State =>
-  movedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages, tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT }); // #629: the worktree and the mark on the task's activity
+  movedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages, tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT }); // #629: the worktree and the mark on the task's activity
 const BASES = { hasWorktree: true, defaultRef: 'origin/main', tasks: [], local: [], remote: [] };
 const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
   new Response(JSON.stringify(String(input).endsWith('/bases') ? BASES : { ok: true, ptyId: 'W1' }), { status: 200, headers: { 'content-type': 'application/json' } }));

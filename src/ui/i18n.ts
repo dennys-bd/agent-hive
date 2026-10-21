@@ -1667,6 +1667,7 @@ const en = {
   'shortcuts.findInTerminal': 'find in terminal', // #12
   'shortcuts.viewFlow': 'go to flow', // #533
   'shortcuts.viewPlugins': 'go to plugins', // #313
+  'shortcuts.viewBenchmark': 'go to benchmark', // #458
   'shortcuts.viewActivities': 'go to activities',
   'shortcuts.newActivity': 'new activity', // redesign 08
   'shortcuts.search': 'search',
@@ -1674,6 +1675,7 @@ const en = {
   'shortcuts.searchTasks': 'search tasks', // #542
   'shortcuts.searchSettings': 'search settings', // #689
   'shortcuts.searchPlugins': 'search plugins', // #313
+  'shortcuts.benchmarkSearch': 'search experiments', // #458
   'shortcuts.askAgent': 'ask the agent', // #331
   'shortcuts.newTerminal': 'new terminal',
   'shortcuts.splitSame': 'split with the same type', // #536
@@ -1751,6 +1753,7 @@ const en = {
   'shortcuts.scope.files': 'files tree',
   'shortcuts.scope.flow': 'flow',
   'shortcuts.scope.plugins': 'plugins',
+  'shortcuts.scope.benchmark': 'benchmark', // #458
   'shortcuts.scope.dialogs': 'dialogs and feedback',
   'shortcuts.scope.settings': 'settings',
   'shortcuts.soon': '(soon)', // #585: an operation that does not exist yet
@@ -3979,6 +3982,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.findInTerminal': 'buscar no terminal', // #12
   'shortcuts.viewFlow': 'ir para fluxo',
   'shortcuts.viewPlugins': 'ir para plugins', // #313
+  'shortcuts.viewBenchmark': 'ir para benchmark', // #458
   'shortcuts.viewActivities': 'ir para atividades',
   'shortcuts.newActivity': 'nova atividade',
   'shortcuts.search': 'buscar',
@@ -3986,6 +3990,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.searchTasks': 'buscar tarefas', // #542
   'shortcuts.searchSettings': 'buscar configuração', // #689
   'shortcuts.searchPlugins': 'buscar nos plugins', // #313
+  'shortcuts.benchmarkSearch': 'buscar nos experimentos', // #458
   'shortcuts.askAgent': 'pedir ao agente', // #331
   'shortcuts.newTerminal': 'novo terminal',
   'shortcuts.splitSame': 'dividir com o mesmo tipo', // #536
@@ -4063,6 +4068,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.scope.files': 'árvore de arquivos',
   'shortcuts.scope.flow': 'fluxo',
   'shortcuts.scope.plugins': 'plugins',
+  'shortcuts.scope.benchmark': 'benchmark', // #458
   'shortcuts.scope.dialogs': 'diálogos e feedback',
   'shortcuts.scope.settings': 'configurações',
   'shortcuts.soon': '(em breve)',

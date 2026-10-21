@@ -14,7 +14,7 @@ export const FIRED: EffectiveLimits = {
 
 export const STATE = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 5, workers: [{ id: 's1', status: 'working' }, { id: 's2', status: 'working', freeSession: true }, { id: 's3', status: 'empty' }],
-  tasks: [], sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
+  tasks: [], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [], stages: [],
   rateLimits: { claude: { at: '2026-09-28T10:00:00Z', windows: { seven_day: { usedPercent: 91, resetsAt: new Date(Date.now() + (4 * 24 + 10) * 3_600_000 + 60_000).toISOString() } } } },
 } as unknown as State;
