@@ -1546,6 +1546,7 @@ export interface WorktreeRow {
   branch: string | null; // what git lists checked out there; null = detached
   task?: { id: string; activityId: string; title: string; error?: string; removable: boolean }; // the owning task and its live activity, what its removal posts to (#629); removable = canDeleteActivity(task, workers)
   orphan?: 'noTask' | 'deleteActivityFailed' | 'kept'; // kept (#861): a task activity that outlived its tasks, kept while its worktree exists
+  nested: { path: string; uncommitted: number }[]; // #653: the nested worktrees present in this one; [] = none
 }
 
 /** Why a path cannot be a workspace's nested repo (#653): its shape, then git's answers, in order. root: the top level, for notTopLevel. */

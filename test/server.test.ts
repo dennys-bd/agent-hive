@@ -1719,8 +1719,8 @@ test('GET /worktrees lists what git lists under .hive/worktrees with the owning 
   const { base, repo, server } = await ranOnce(t, { exec: git.exec }); // I1 stopped with its worktree
   const activityId = workId(server.getState()!, 'board:I1'); // #629: the route its removal posts to
   assert.deepEqual(await json(hiveFetch(`${base}/worktrees`)), [
-    { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, task: { id: 'board:I1', activityId, title: '#1 from Ready', removable: true } },
-    { workspace: 'hive', slug: ORPHAN_SLUG, path: worktreePath(repo, ORPHAN_SLUG), branch: ORPHAN_BRANCH, orphan: 'noTask' },
+    { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, task: { id: 'board:I1', activityId, title: '#1 from Ready', removable: true }, nested: [] },
+    { workspace: 'hive', slug: ORPHAN_SLUG, path: worktreePath(repo, ORPHAN_SLUG), branch: ORPHAN_BRANCH, orphan: 'noTask', nested: [] },
   ]);
   const broken = await start(t, BODY, undefined, {}, { exec: listedGit('list', 'fatal: not a git repository').exec });
   const res = await hiveFetch(`${broken.base}/worktrees`);
@@ -2887,7 +2887,7 @@ test('a task that leaves with its worktree keeps its activity: GET /worktrees li
   await server.dispatch({ type: 'closeTask', taskId: 'board:I1' });
   assert.deepEqual([server.getState()!.tasks.length, server.getState()!.activities.filter((a) => a.kind === 'task').length], [0, 1]);
   const rows = await json<WorktreeRow[]>(hiveFetch(`${base}/worktrees`));
-  assert.deepEqual(rows.find((r) => r.slug === TASK_SLUG), { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, orphan: 'kept' });
+  assert.deepEqual(rows.find((r) => r.slug === TASK_SLUG), { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, orphan: 'kept', nested: [] });
   await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
   assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${TASK_SLUG}/remove`)), { removed: true });
   assert.equal(server.getState()!.activities.some((a) => a.kind === 'task'), false, 'worktreeGone let it go');

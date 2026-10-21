@@ -244,8 +244,8 @@ test('POST /tasks/:id/open on a manual task with no workspace is 400 choose a wo
 test('GET /worktrees lists every workspace\'s worktrees, each row tagged with its workspace; the removal route takes the workspace, runs git there, and answers 404 for an unknown one (#179)', async (t) => {
   const two = await startTwo(t, {}, 0);
   assert.deepEqual(await json(hiveFetch(`${two.base}/worktrees`)), [
-    { workspace: 'hive', slug: ORPHAN, path: worktreePath(two.hive.path, ORPHAN), branch: 'hive/9-gone', orphan: 'noTask' },
-    { workspace: 'site', slug: ORPHAN, path: worktreePath(two.site.path, ORPHAN), branch: 'hive/9-gone', orphan: 'noTask' },
+    { workspace: 'hive', slug: ORPHAN, path: worktreePath(two.hive.path, ORPHAN), branch: 'hive/9-gone', orphan: 'noTask', nested: [] },
+    { workspace: 'site', slug: ORPHAN, path: worktreePath(two.site.path, ORPHAN), branch: 'hive/9-gone', orphan: 'noTask', nested: [] },
   ]);
   const unknown = await postJson(`${two.base}/worktrees/nope/${ORPHAN}/remove`, { force: true });
   assert.equal(unknown.status, 404);

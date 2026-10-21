@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { access, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import type { Exec, Workspace } from './types.js';
+import type { Exec, Workspace, WorktreeRow } from './types.js';
 import type { PreparedWorktree } from './worktree.js';
 import { branchAt, type Git, gitAnswers, gitOrWords, refuseDirty, remoteHead, upstreamOf } from './worktree-base.js';
 
@@ -150,4 +150,17 @@ export async function prepareNested(
   const start = prepared.start ?? (await upstreamOf(workspace.path, branch, exec));
   const baseName = nestedBaseName(start, [remote, ORIGIN]);
   return local ? switchNested(workspace, branch, baseName, exec) : ensureNestedWorktrees(workspace, prepared.path, branch, baseName, exec);
+}
+
+/** Each nested worktree present in a task's worktree with its count of uncommitted files (#653), for Maintenance › worktrees.
+ * core.fsmonitor=false, as worktreeState: a worktree's config could name a monitor command a status would run. A read git refuses leaves
+ * that one out rather than failing the list. */
+export async function nestedStatus(workspace: NestedWorkspace, taskPath: string, exec: Exec = execFileAsync): Promise<WorktreeRow['nested']> {
+  const rows = await Promise.all(workspace.nestedRepos.map(async (path) => {
+    const dir = join(taskPath, path);
+    if (!(await hasGit(dir))) return [];
+    const status = await gitOrWords(dir, ['-c', 'core.fsmonitor=false', 'status', '--porcelain'], exec).catch(() => undefined);
+    return status === undefined ? [] : [{ path, uncommitted: status.split('\n').filter((line) => line !== '').length }];
+  }));
+  return rows.flat();
 }

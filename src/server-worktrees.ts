@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { canDiff } from './task-runs.js';
 import { worktreeRows } from './tasks.js';
+import { nestedStatus } from './worktree-nested.js';
 import { taskWorkspace, workspaceByName } from './config.js';
 import { diffBase } from './diff.js';
 import { workspaceBase } from './fork.js';
@@ -43,7 +44,10 @@ export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): v
     if (!current) return;
     try {
       // every workspace, in config order (#179); a failure in any of them is the 500 with git's words
-      const perWorkspace = await Promise.all(current.runtime.config.comb.workspaces.map(async ({ name, path }) => worktreeRows(await listWorktrees(path, exec), current.state, name)));
+      const perWorkspace = await Promise.all(current.runtime.config.comb.workspaces.map(async (workspace) => {
+        const rows = worktreeRows(await listWorktrees(workspace.path, exec), current.state, workspace.name);
+        return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, exec) }))); // #653
+      }));
       res.json(perWorkspace.flat());
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) }); // git's own words: not a repo, a broken listing
