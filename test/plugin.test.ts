@@ -11,7 +11,7 @@ const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 
 
 const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
 // #416: an agent that reads a Hive convention is a template; the rest stay plain Markdown
-const TEMPLATE_AGENTS: readonly string[] = [];
+const TEMPLATE_AGENTS: readonly string[] = ['designer'];
 const agentPath = (agent: string): string => `agents/${agent}${TEMPLATE_AGENTS.includes(agent) ? '.md.liquid' : '.md'}`;
 const agentText = (agent: string): Promise<string> => readFile(join(PLUGIN, agentPath(agent)), 'utf8');
 
@@ -29,6 +29,7 @@ const NO_VALUE: Record<string, string> = {
   specsDir: '`docs/hive/specs`', plansDir: '`docs/hive/plans`', walkthroughsDir: '`docs/hive/walkthroughs`', designsDir: '`docs/hive/designs`',
   docsLanguage: '`English`', chatLanguage: 'the Hive\'s `hiveLanguage`, else the language the user writes in',
   delivery: '`single`', sliceMin: '`300`', sliceMax: '`550`', featureFlags: '`none`',
+  designSystem: 'none: no design system',
   uiCheck: 'none: no automatic visual check', testCommand: 'the test gate the repository\'s agent instructions file names', decompositionLabel: '`decomposed`',
 };
 
@@ -69,7 +70,7 @@ const CREDITED: Record<string, string[]> = {
   'agents/build-fixer.md': ['ecc:build-error-resolver'],
   'agents/code-reviewer.md': ['ecc:code-reviewer'],
   'agents/design-reviewer.md': ['impeccable', 'ecc:frontend-design-direction'],
-  'agents/designer.md': ['impeccable', 'ecc:frontend-design-direction'],
+  'agents/designer.md.liquid': ['impeccable', 'ecc:frontend-design-direction'],
   'agents/plan-reviewer.md': ['superpowers:writing-plans'],
   'agents/planner.md': ['ecc:planner', 'superpowers:writing-plans'],
   'agents/security-reviewer.md': ['ecc:security-reviewer'],
@@ -178,6 +179,36 @@ test('new-build rendered with delivery stacked and testCommand pnpm test for its
   assert.ok(mine.includes('\n- `delivery`: `stacked`\n'), mine);
   assert.ok(mine.includes('\n- `testCommand`: `pnpm test`\n'), mine);
   assert.ok(renderedFor(text, 'b').includes(`\n- \`delivery\`: ${NO_VALUE.delivery}\n`));
+});
+
+// #416: the designer's conventions, and neutral values for one workspace
+const DESIGNER_VARIABLES = ['docsRepo', 'designsDir', 'docsLanguage', 'chatLanguage', 'designSystem'];
+const DESIGNER_VALUES: Record<string, string> = { docsRepo: 'site-docs', designsDir: 'design/screens', docsLanguage: 'Spanish', chatLanguage: 'Portuguese', designSystem: 'docs/design-system.md' };
+const listed = (text: string, name: string, value: string): boolean => text.includes(`\n- \`${name}\`: ${value}\n`);
+
+test('hive:designer is a template: it declares its five conventions, and a workspace with no value gets each default, no Liquid and no variables in its header (#416)', async () => {
+  const text = await agentText('designer');
+  const parsed = parseTemplate(text);
+  assert.deepEqual(parsed.errors, []);
+  assert.deepEqual(parsed.variables.map((v) => v.name), DESIGNER_VARIABLES);
+  const rendered = renderedFor(text);
+  for (const name of DESIGNER_VARIABLES) assert.ok(listed(rendered, name, NO_VALUE[name]), name);
+  assert.doesNotMatch(rendered, /\{\{|\{%/, 'no Liquid is left');
+  const delivered = parseTemplate(rendered);
+  assert.deepEqual([Object.hasOwn(delivered.header, 'variables'), Object.hasOwn(delivered.header, 'basedOn')], [false, false]);
+  assert.equal(delivered.header.name, 'designer');
+  assert.ok(rendered.includes('`docs/hive/designs/<folder>/handoff.md`'), 'the report names the handoff under the default designsDir');
+});
+
+test('hive:designer rendered with a value for each convention carries each in its list and its paths; another workspace keeps the defaults (#416)', async () => {
+  const text = valued(await agentText('designer'), DESIGNER_VALUES);
+  const mine = renderedFor(text);
+  for (const [name, value] of Object.entries(DESIGNER_VALUES)) assert.ok(listed(mine, name, `\`${value}\``), `${name}: ${value}`);
+  assert.ok(mine.includes('`design/screens/<YYYY-MM-DD>-<slug>/<screen>.hv.html` in the docs repository (`site-docs`)'), 'the screens go under designsDir of docsRepo');
+  assert.ok(mine.includes('`site-docs/design/screens/<folder>/handoff.md`'), 'the report joins docsRepo and designsDir');
+  assert.ok(mine.includes('the design system\'s path for its prompt (`docs/design-system.md`)'), 'a subagent\'s report names the design system for the reviewer');
+  const other = renderedFor(text, 'b');
+  for (const name of DESIGNER_VARIABLES) assert.ok(listed(other, name, NO_VALUE[name]), `b: ${name}`);
 });
 
 test('no shipped skill, raw or rendered, resolves a convention through hive_conventions or the agent instructions file (#317)', async () => {

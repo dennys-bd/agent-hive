@@ -185,6 +185,7 @@ test('every shipped skill and agent lints clean against a catalogue of the plugi
   const agents = readdirSync(new URL('agents/', PLUGIN))
     .filter((file) => deliveredName(file).endsWith('.md'))
     .map((file) => ({ kind: 'specialist' as const, name: deliveredName(file).slice(0, -'.md'.length), path: `agents/${file}` }));
+  assert.ok(agents.some((agent) => agent.path === 'agents/designer.md.liquid' && agent.name === 'designer'), 'the designer template is linted (#416)');
   const shipped = [...skills, ...agents].map((item) => ({ ...item, parsed: read(item.path) }));
   const catalogue: LintItem[] = shipped.map(({ kind, name, parsed }) => ({ origin: 'hive', kind, name, variables: parsed.variables }));
   const scripts = readdirSync(new URL('scripts/', PLUGIN)).map((file) => `scripts/${file}`);
