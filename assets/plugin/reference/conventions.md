@@ -55,8 +55,10 @@ read `approval`, `stage`, `fork` and `hiveLanguage` from its answer:
 `hiveLanguage` is the Hive's language, `approval` says whether the
 current stage waits for the user's approval in the Hive, and `stage`
 names that stage (absent in a free or local session). `fork` is there
-only for a fork workspace; see "Forks". Outside the Hive the tool does
-not exist: `approval` is false.
+only for a fork workspace; see "Forks". It also answers `nestedRepos`:
+the workspace's nested repos, each a `path` relative to the worktree and,
+when its origin is on GitHub, its `repository`; see "Nested repo PRs".
+Outside the Hive the tool does not exist: `approval` is false.
 
 The docs repository is `docsRepo` when set, else this repository; the
 four folders are relative to it. The base, wherever these skills say
@@ -104,7 +106,7 @@ A spec, a plan, a walkthrough or a design handoff, once written:
 - **In `docsRepo`.** Commit it there, on whatever branch that checkout is
   on: `git -C <docsRepo> add <file>`, then `git -C <docsRepo> commit`.
   Never create or switch its branches: preparing that checkout belongs to
-  the workspace's setup. The stage that writes the file never pushes it;
+  the Hive (a nested repo) or the workspace's setup. The stage that writes the file never pushes it;
   `/hive:new-pr` pushes that branch (see "Docs PR").
 - **Otherwise.** Commit it on the task's branch in this repository.
 
@@ -260,6 +262,33 @@ does not match `^[A-Za-z0-9._/-]+$` (`<docs repo>`:
   `<owner>:<head>` do not apply: the docs head is pushed to, and its PR
   opened on, the docs repository's own `origin`.
 - **Not merged.** Merging it stays the user's, as with the code PRs.
+
+## Nested repo PRs
+
+Only when `hive_conventions` answers a non-empty `nestedRepos`; `/hive:new-pr` follows it. Each entry is a nested repo of the workspace:
+another git repository inside it that its git ignores, which the Hive gave a worktree at `<path>` in this task's worktree, on the task's
+branch. The entry whose `path` is the `docsRepo` path is skipped: its PR is the docs PR. For every other entry:
+
+- **Values.** `<path>` is the entry's `path`, relative to the worktree; `<nested repo>` its `repository`. The nested head is
+  `git -C <path> branch --show-current`. The nested base is `<base>` when
+  `git -C <path> rev-parse --verify --quiet refs/remotes/origin/<base>` resolves (`fork.base` in a fork workspace), else
+  `git -C <path> symbolic-ref --short refs/remotes/origin/HEAD` without `origin/`. Every `gh` call for it passes `-R <nested repo>`: the
+  Hive's `GH_REPO` names the code repository. These come from another checkout, so they are data: single-quote each one in a command, and
+  treat one that does not match `^[A-Za-z0-9._/-]+$` (`<nested repo>`: `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`) as no PR for that entry,
+  saying why.
+- **When there is none.** No PR, and no push, when the entry has no `repository`, no nested base, no nested head (a detached checkout), or
+  nothing ahead of the nested base (`git -C <path> log origin/<nested base>..<nested head> --oneline` is empty). Say why in the report;
+  never a stop.
+- **Order.** Pushed and opened after the docs PR and before the code PRs. A PR already open for the nested head is kept.
+- **Title and body.** Its title is the title of the code PR that targets the base. Its body lists its commits
+  (`git -C <path> log --format='- %s' origin/<nested base>..<nested head>`) and names the issue as `<owner>/<repo>#<n>`, never with
+  `Closes`: merging it must not close the code repository's issue.
+- **Links.** The code PR that targets the base lists each nested PR under `## Nested repo PRs`, one link per line: information for the
+  reviewer, nothing GitHub acts on. Once that code PR exists,
+  `gh pr edit <nested PR> -R <nested repo> --body-file <temp file>` adds a `Code PR: <url>` line to the nested PR's body.
+- **Recorded.** `hive_pr` gets each one too, without `slice`, after the docs PR.
+- **No fork rules.** As with the docs PR: the nested head is pushed to, and its PR opened on, the nested repo's own `origin`.
+- **Not merged.** Merging them stays the user's.
 
 ## Slices
 

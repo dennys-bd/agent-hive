@@ -13,7 +13,7 @@ import { MCP_ROUTE } from './hooks-settings.js';
 import { isPrUrl } from './orchestrator.js';
 import { appendMessage, markAgentResolved } from './review-store.js';
 import { workerReview } from './mcp-review.js';
-import { conventionsAnswer, forkConventions, workerWorkspace } from './mcp-conventions.js';
+import { conventionsAnswer, forkConventions, nestedConventions, workerWorkspace } from './mcp-conventions.js';
 import { type Answer, livePtyId, type McpDeps, OK, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
 import { registerOptionalTools } from './mcp-optional.js';
 import { SOURCE_ACTIONS, type Stage, type SourceConfig, type CloseReason, REVIEW_TEXT_MAX, type ReviewMessage, type State, type Task, type Worker } from './types.js';
@@ -222,15 +222,17 @@ function registerReplyTool(server: McpServer, deps: McpDeps, header: string | un
 // hive_conventions (#692, #318): the Hive's language, the stage's approval and a fork's PR target, which the plugin's skills read. Any skill may call it; it only reads.
 function registerConventionsTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_conventions', {
-    description: 'Read the Hive\'s language (hiveLanguage), whether your stage waits for the user\'s approval in the Hive (approval) and the stage\'s name (stage, absent in a free or local session), and, for a fork workspace, fork: where the PRs go (pr: original, fork or ask), the original and fork repositories, the base remote and the base branch. Answers a JSON object.',
+    description: 'Read the Hive\'s language (hiveLanguage), whether your stage waits for the user\'s approval in the Hive (approval) and the stage\'s name (stage, absent in a free or local session), and, for a fork workspace, fork: where the PRs go (pr: original, fork or ask), the original and fork repositories, the base remote and the base branch, and nestedRepos: the workspace\'s nested repos, each path with its GitHub repository when it has one. Answers a JSON object.',
     inputSchema: {},
   }, async () => recorded(deps, header, 'hive_conventions', async () => {
     const ptyId = livePtyId(deps, header);
     const current = deps.live();
     const worker = ptyId === undefined ? undefined : current?.state.workers.find((s) => s.runId === ptyId);
     if (!current || !worker) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
-    const fork = await forkConventions(deps.exec, workerWorkspace(current.state, current.config, worker), current.config); // #854
-    return reply(JSON.stringify(conventionsAnswer(current.state, current.config, worker, fork)));
+    const workspace = workerWorkspace(current.state, current.config, worker);
+    const fork = await forkConventions(deps.exec, workspace, current.config); // #854
+    const nested = await nestedConventions(deps.exec, workspace); // #653
+    return reply(JSON.stringify(conventionsAnswer(current.state, current.config, worker, fork, nested)));
   }));
 }
 

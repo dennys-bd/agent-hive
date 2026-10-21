@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ASK_REPLY, canCloseTask, mountMcp, NO_SESSION_MESSAGE, NOT_PARTICIPANT_MESSAGE, REPLY_TEXT_MESSAGE, THREAD_RESOLVED_MESSAGE, UNKNOWN_THREAD_MESSAGE, UNKNOWN_WORKER_MESSAGE } from '../src/mcp.js';
-import { conventionsAnswer, forkConventions } from '../src/mcp-conventions.js';
+import { conventionsAnswer, forkConventions, nestedConventions } from '../src/mcp-conventions.js';
 import { noCreateMessage } from '../src/create-task.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
 import { MEMORY_FULL_MESSAGE, MEMORY_SECRET_MESSAGE, MEMORY_TEXT_MESSAGE, memoryPath, memoryUsed, WHY_MESSAGE } from '../src/memory.js';
@@ -310,7 +310,7 @@ test('hive_conventions answers the Hive\'s language, the stage\'s approval and i
   assert.match(description, /approval/);
   assert.doesNotMatch(description, /conventions set|docs folders|delivery|slice size|feature flags|UI check|test command|decomposition label/);
   const answer = await call(client, 'hive_conventions');
-  assert.deepEqual([answer.isError, JSON.parse(answer.text)], [false, { hiveLanguage: systemLanguage(), approval: false, stage: 'fila' }]);
+  assert.deepEqual([answer.isError, JSON.parse(answer.text)], [false, { hiveLanguage: systemLanguage(), approval: false, stage: 'fila', nestedRepos: [] }]);
 });
 
 test('conventionsAnswer: a stage run reads its stage\'s approval; a free session has no stage; a local session neither (#692, #318)', () => {
@@ -325,10 +325,10 @@ test('conventionsAnswer: a stage run reads its stage\'s approval; a free session
     activityRecords: [{ id: 'a1', taskIds: ['local:1'], sessions: [] }],
   };
   const run: Worker = { id: 'w1', runId: 'r1', activityId: 'a1', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, config, run), { hiveLanguage: 'pt', approval: true, stage: 'spec' });
-  assert.deepEqual(conventionsAnswer(state, config, { ...run, freeSession: true }), { hiveLanguage: 'pt', approval: false });
+  assert.deepEqual(conventionsAnswer(state, config, run), { hiveLanguage: 'pt', approval: true, stage: 'spec', nestedRepos: [] });
+  assert.deepEqual(conventionsAnswer(state, config, { ...run, freeSession: true }), { hiveLanguage: 'pt', approval: false, nestedRepos: [] });
   const local: Worker = { id: 'w2', runId: 'r2', activityId: 'local:hive', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, { ...config, language: undefined }, local), { hiveLanguage: systemLanguage(), approval: false });
+  assert.deepEqual(conventionsAnswer(state, { ...config, language: undefined }, local), { hiveLanguage: systemLanguage(), approval: false, nestedRepos: [] });
 });
 
 // Each mcp.call without its latency, which only has to be a number
@@ -484,7 +484,7 @@ test('forkConventions answers a fork\'s PR target, both repositories, the base r
   const config = { language: 'pt' as const, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [app] } };
   const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
   const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, config, local, { ...original, pr: 'original' }), { hiveLanguage: 'pt', approval: false, fork: original });
+  assert.deepEqual(conventionsAnswer(state, config, local, { ...original, pr: 'original' }), { hiveLanguage: 'pt', approval: false, fork: original, nestedRepos: [] });
   assert.equal('fork' in conventionsAnswer(state, config, local), false);
 });
 
@@ -549,4 +549,17 @@ test('a tool turned off in mcp.off leaves tools/list and a call to it gets the S
   const answer = await call(client, 'hive_remember', { kind: 'fact', text: 'x' });
   assert.equal(answer.isError, true);
   assert.match(answer.text, /Tool hive_remember not found/);
+});
+
+test('nestedConventions answers each nested repo with its GitHub repository, none for one off GitHub; conventionsAnswer carries the list, [] without one (#653)', async () => {
+  const urls: Record<string, string> = { '/app/docs': 'https://github.com/acme/docs.git\n', '/app/ee': 'https://gitlab.com/acme/ee.git\n' };
+  const exec: Exec = async (_file, args) => ({ stdout: urls[args[1]] ?? '' });
+  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: null, nestedRepos: ['docs', 'ee'], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' };
+  const nested = await nestedConventions(exec, app);
+  assert.deepEqual(nested, [{ path: 'docs', repository: 'acme/docs' }, { path: 'ee' }]);
+  assert.deepEqual(await nestedConventions(exec, undefined), []);
+  const config = { language: 'pt' as const, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [app] } };
+  const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
+  const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
+  assert.deepEqual(conventionsAnswer(state, config, local, undefined, nested), { hiveLanguage: 'pt', approval: false, nestedRepos: nested });
 });

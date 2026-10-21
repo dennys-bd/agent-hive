@@ -352,3 +352,13 @@ test('the design rules describe parts, their markers and the check\'s findings; 
   const reviewer = await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8');
   assert.match(reviewer, /should be a part/, 'the reviewer flags repeated markup');
 });
+
+test('/hive:new-pr opens each nested repo\'s PR on that repository: every gh call for it passes -R <nested repo>, and the reference skips the docsRepo path (#653)', async () => {
+  const text = await skillText('new-pr');
+  const calls = text.match(/gh pr \w+[^`\n]*<nested (?:PR|head)>[^`\n]*/g) ?? [];
+  assert.ok(calls.length >= 4, 'new-pr lists, creates, edits and views the nested repo PRs');
+  for (const call of calls) assert.match(call, /-R <nested repo>/, `${call} does not pass -R <nested repo>`);
+  const reference = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
+  assert.ok(reference.includes('## Nested repo PRs'), 'the rule sits next to Docs PR');
+  assert.match(reference, /whose `path` is the `docsRepo` path is skipped/);
+});
