@@ -83,6 +83,7 @@ export interface FactFields {
   'pr.checks': { pr: number; sha: string; check_run_id: number; name: string; conclusion: string; duration_ms?: number };
   'ci.ended': Timed & { verdict: 'passed' | 'failed' }; // #834: a wait for CI ended with a verdict; duration_ms from the stage's start
   'ci.fallback': Record<never, never>; // #834: a required wait read a base branch with no required checks: every check counts
+  'evaluate.ended': Timed & { verdict: 'passed' | 'failed' | 'broken' }; // #877: an evaluation ended; broken: a run broke, no verdict; duration_ms from the stage's start
   'workers.changed': { active: number; max: number };
   'signal.changed': { from: Signal; to: Signal; rule?: string; usage_percent?: number };
   'source.action': { action: string; outcome: 'ok' | 'failed'; latency_ms: number };

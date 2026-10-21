@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf, resultOf, withActivity } from '../src/activities.js';
+import { deriveFacts } from '../src/fact-derive.js';
+import { describeEffect, describeEvent } from '../src/log.js';
 import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
-import type { Activity, Effect, Item, JudgeScore, SourceItem, Stage, State, Transition } from '../src/types.js';
+import type { Activity, Effect, HiveEvent, Item, JudgeScore, SourceItem, Stage, State, Transition } from '../src/types.js';
 
 // An evaluate stage (#877): the reducer's side, end to end through reduce. The task is polled into the stage under green: the fill starts the
 // evaluation in the one worker, and every effect below is the stage's own.
@@ -145,4 +147,27 @@ test('a save that removes the stage halts the evaluation at once and aborts it (
   assert.equal(live(saved.state)?.evaluate, undefined);
   assert.ok(saved.effects.some((e) => e.type === 'abortEvaluate'));
   assert.equal(saved.state.workers.filter((w) => w.status !== 'empty').length, 0);
+});
+
+test('evaluate.ended says passed, failed or broken with how long the stage took; a Stop writes none (#877)', () => {
+  const s = polled().state;
+  const facts = (event: HiveEvent) => deriveFacts(s, reduce(s, event).state, event, Date.now()).filter((r) => r.event === 'evaluate.ended');
+  const end = (n: number[]): HiveEvent => ({ type: 'evaluateEnded', ...ids(s), scores: scores(...n), findings: [] });
+  assert.deepEqual(facts(end([9, 9, 9])).map((r) => [r.verdict, r.level]), [['passed', 'info']]);
+  assert.deepEqual(facts(end([9, 2, 9])).map((r) => [r.verdict, r.level]), [['failed', 'warn']]);
+  assert.deepEqual(facts({ type: 'evaluateBroken', ...ids(s), message: 'x' }).map((r) => [r.verdict, r.level]), [['broken', 'warn']]);
+  assert.deepEqual(facts({ type: 'stopEvaluate', activityId: ids(s).activityId }), []);
+  assert.ok(Number(facts(end([9, 9, 9]))[0].duration_ms) >= 0);
+});
+
+test('hive.log names the evaluation by ids and numbers, never a finding\'s text (#877)', () => {
+  const s = polled();
+  const effect = evaluateOf(s.effects);
+  assert.ok(effect);
+  assert.match(describeEffect(effect), /^evaluate #1 stage="eval" run=\S+ reviewers=2$/);
+  assert.match(describeEvent({ type: 'evaluateJudging', ...ids(s.state) }), /^evaluateJudging activity=\S+ run=\S+$/);
+  const line = describeEvent({ type: 'evaluateEnded', ...ids(s.state), scores: scores(8, 3, 9), findings: [{ file: 'a.ts', finding: 'SECRET TEXT' }] });
+  assert.match(line, /scores=8,3,9 findings=1$/);
+  assert.equal(line.includes('SECRET TEXT'), false);
+  assert.match(describeEvent({ type: 'evaluateBroken', ...ids(s.state), message: 'judge (claude): no answer\nmore' }), /: judge \(claude\): no answer$/);
 });
