@@ -1,6 +1,6 @@
-import { type DaemonAddress, recordedDaemon } from '../../src/daemon.js';
-import { SECRET_HEADER } from '../../src/secret.js';
-import { sseFrames } from '../../src/tray-signal.js';
+import { type DaemonAddress, recordedDaemon } from '../daemon.js';
+import { SECRET_HEADER } from '../secret.js';
+import { sseFrames } from '../tray-signal.js';
 import type { Snapshot, WatchClient } from './watcher.js';
 
 const UI_HEADER = 'x-hive-ui'; // mirrors server.ts's UI_HEADER, which pulls Express in

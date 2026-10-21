@@ -1,8 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import type { Cookie, Launch } from '../../scripts/experiment/browser.js';
 import type { Seed, SeedTask, StagesSeed } from '../../scripts/experiment/seed.js';
-import type { Snapshot } from '../../scripts/experiment/watcher.js';
-import type { Activity, Task, Worker } from '../../src/types.js';
 
 export const BRANCH = 'feat/monitor-view-abc123';
 export const WORKSPACE = '/repo/top';
@@ -44,28 +42,6 @@ export const SEED: Seed = {
     activityRecords: [{ id: 'act-1', taskIds: ['local:1'], sessions: [] }],
   },
 };
-
-export function task(n: number, stage: string, extra: Partial<Task> = {}): Task {
-  return { item: { itemId: `local:${n}`, id: `MON-${n}`, title: `Task ${n}`, body: '', url: '' }, stage, boardColumn: '', auto: n === 1, created: true, ...extra };
-}
-const activityId = (itemId: string): string => `act-${itemId.replace('local:', '')}`;
-/** Each task gets its activity and record (#629: error, stopped and the slug live there, not on the task); `acts[i]` adds to the i-th task's activity. */
-export function snap(tasks: Task[], workers: Worker[] = [], acts: Partial<Activity>[] = []): Snapshot {
-  const ids = tasks.map((t) => activityId(t.item.itemId));
-  return {
-    tasks, workers,
-    activities: ids.map((id, i): Activity => ({ id, kind: 'task', workspace: 'agent-hive', slug: `hive-mon-${i + 1}-task-${i + 1}`, ...acts[i] })),
-    activityRecords: ids.map((id, i) => ({ id, taskIds: [tasks[i].item.itemId], sessions: [] })),
-  };
-}
-export const worker = (n: number, runId: string, extra: Partial<Worker> = {}): Worker => ({ id: `w-${runId}`, runId, activityId: `act-${n}`, status: 'working', ...extra });
-
-/** A clock that moves only when slept on. */
-export function clock(start: Date): { now(): Date; sleep(ms: number): Promise<void>; slept: number[] } {
-  let at = start.getTime();
-  const slept: number[] = [];
-  return { now: () => new Date(at), sleep: async (ms) => { slept.push(ms); at += ms; }, slept };
-}
 
 export { type Call, fakeChild, fakeRun, line } from '../benchmark/fixtures.js';
 

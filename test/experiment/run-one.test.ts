@@ -6,10 +6,11 @@ import { loadConfig } from '../../src/config.js';
 import { readJson, writeJson } from '../../scripts/experiment/files.js';
 import { runHome } from '../../scripts/experiment/plan.js';
 import { executeRun, recordFailure, type RunDeps } from '../../scripts/experiment/run-one.js';
-import type { Snapshot, WatchClient } from '../../scripts/experiment/watcher.js';
+import type { Snapshot, WatchClient } from '../../src/benchmark/watcher.js';
 import { failedMetrics } from '../../scripts/experiment/metrics.js';
 import { tempDir } from '../temp-dir.js';
-import { BRANCH, clock, fakeChild, fakeRun, line, PREFIX, SEED, snap, task, TOKEN } from './fixtures.js';
+import { BRANCH, fakeChild, fakeRun, line, PREFIX, SEED, TOKEN } from './fixtures.js';
+import { clock, snap, task } from '../benchmark/fixtures.js';
 
 const NIGHT = new Date('2026-10-01T22:00:00.000Z');
 

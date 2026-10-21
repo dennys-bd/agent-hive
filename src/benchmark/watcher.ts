@@ -1,5 +1,5 @@
-import { activityOf, resultOf, taskOfWorker } from '../../src/activities.js';
-import type { State, Task } from '../../src/types.js';
+import { activityOf, resultOf, taskOfWorker } from '../activities.js';
+import type { State, Task } from '../types.js';
 
 export const DONE_STAGE = 'Done';
 export const BUILD_STAGE = 'Build';

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { type LoopDeps, runLoop } from '../../scripts/experiment/run-loop.js';
 import type { RunRef } from '../../scripts/experiment/types.js';
-import { clock } from './fixtures.js';
+import { clock } from '../benchmark/fixtures.js';
 
 const NIGHT = new Date('2026-10-01T22:00:00.000Z');
 const HOUR = 3_600_000;

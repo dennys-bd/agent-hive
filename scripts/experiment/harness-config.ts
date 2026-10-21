@@ -3,7 +3,7 @@ import { MCP_DEFAULTS, MEMORY_CAP_DEFAULT, SIGNALS_DEFAULTS, WORKSPACE_PRESET_CO
 import { SANDBOX_FILE } from '../../src/benchmark/sandbox.js';
 import type { SeedTask, StageRole, StagesSeed } from './seed.js';
 import type { Arm } from './types.js';
-import type { WatchTask } from './watcher.js';
+import type { WatchTask } from '../../src/benchmark/watcher.js';
 import { type RunPaths, runClaudeArgs } from '../../src/benchmark/worker-rules.js';
 
 export const EXPERIMENT_PREFIX = 'MON'; // the sample and the evaluation; a run uses its own prefix (plan.ts runPrefix)

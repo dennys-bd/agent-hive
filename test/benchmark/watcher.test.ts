@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Activity, Task, Worker } from '../../src/types.js';
-import { observe, type Snapshot, startWatch, type WatchClient, watchRun } from '../../scripts/experiment/watcher.js';
+import { observe, type Snapshot, startWatch, type WatchClient, watchRun } from '../../src/benchmark/watcher.js';
 import { clock, snap, task, worker } from './fixtures.js';
 
 // 1 and 4 free; 2 after 1; 3 after 1 and 2 (the shape of the seed's 4 after 3 and 2)

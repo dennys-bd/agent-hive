@@ -13,7 +13,7 @@ import { runBranch, runHome, runPrefix } from './plan.js';
 import { writeHome } from '../../src/benchmark/run-home.js';
 import type { Seed } from './seed.js';
 import { type Arm, FILES, type Metrics } from './types.js';
-import { type WatchClient, type WatchResult, watchRun } from './watcher.js';
+import { type WatchClient, type WatchResult, watchRun } from '../../src/benchmark/watcher.js';
 
 export interface RunContext { dir: string; root: string; state: string; baseline: string; docsBaseline: string; token: string; arm: Arm; seed: Seed; runJs: string; timeoutMs: number; unpaired?: boolean }
 export interface RunDeps {

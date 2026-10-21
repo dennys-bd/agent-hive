@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { failedMetrics, parseShortstat, runMetrics, stageSpans } from '../../scripts/experiment/metrics.js';
 import type { ActivityRecord, TaskUsage } from '../../src/types.js';
-import { snap, task } from './fixtures.js';
+import { snap, task } from '../benchmark/fixtures.js';
 
 const T0 = '2026-10-01T22:00:00.000Z';
 // #629: usage and the reported result live on the task's activity record, not on the task

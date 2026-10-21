@@ -1,7 +1,7 @@
 import { resultOf, usageOf } from '../../src/activities.js';
 import type { State, Task, TaskUsage } from '../../src/types.js';
 import type { DiffSize, Metrics, StageSpan, TaskMetrics } from './types.js';
-import { DONE_STAGE, type StageEntry, type WatchEnd, type WatchState } from './watcher.js';
+import { DONE_STAGE, type StageEntry, type WatchEnd, type WatchState } from '../../src/benchmark/watcher.js';
 
 const NO_USAGE: TaskUsage = { tokens: 0, ms: 0, waitingMs: 0, parts: [] };
 const NO_DIFF: DiffSize = { files: 0, insertions: 0, deletions: 0 };
