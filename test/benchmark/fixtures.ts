@@ -1,3 +1,8 @@
+import type { TestContext } from 'node:test';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { RunDeps } from '../../src/benchmark/run-home.js';
+import { tempDir } from '../temp-dir.js';
 import type { ChildLike } from '../../src/benchmark/daemon.js';
 import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
@@ -71,3 +76,20 @@ export const mainConfig = (): Config => parseConfig(combConfig({
   path: WS_PATH, branch: 'feat/{id}', stages: [{ name: 'Todo', from: {} }],
   workspaces: [{ name: 'hive', path: WS_PATH, env: { A: '1' }, fork: null, nestedRepos: ['docs'], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', baseBranch: 'develop', setup: 'RUN old', teardown: 'RUN old' }],
 }));
+
+// A Hive home with the custom store (two versions of hive:new-spec, only `terse` mapped by the tests) and one seed file
+export async function benchHome(t: TestContext): Promise<{ hiveDir: string; calls: Call[]; lines: string[]; deps: RunDeps }> {
+  const hiveDir = await tempDir(t, 'bench-');
+  for (const version of ['terse', 'long']) {
+    const dir = join(hiveDir, 'custom', 'hive', 'new-spec', version);
+    await mkdir(join(dir, 'files'), { recursive: true });
+    await writeFile(join(dir, 'version.json'), JSON.stringify({ name: version, from: null, workspaces: ['other'] }));
+    await writeFile(join(dir, 'files', 'SKILL.md'), `Spec skill for this arm, ${version}.`);
+  }
+  await mkdir(join(hiveDir, 'benchmark', 'exp-1', 'seed'), { recursive: true });
+  await writeFile(join(hiveDir, 'benchmark', 'exp-1', 'seed', 'ref.md'), 'Reference.');
+  const { run, calls } = fakeRun();
+  const lines: string[] = [];
+  let i = 0;
+  return { hiveDir, calls, lines, deps: { hiveDir, config: mainConfig(), exec: run, random: () => ((i++ * 7) % 36) / 36, log: (l) => lines.push(l) } };
+}
