@@ -510,7 +510,7 @@ export interface StageCi {
   rerunAt?: string; // when the last re-run was asked (ISO): a failure on a re-run head completed by then is the old one, still read as pending
   done?: number; total?: number; waitingPr?: true; // the last read, for the card
   collecting?: true; // the failed logs are being fetched; dropped on boot
-  fellBack?: true; // required fell back to all and the event log said so, once
+  fellBack?: true; // required fell back to all and the fact log said so, once
   awaiting?: number; // #854: workflows awaiting a maintainer's approval at the last read, for the card; dropped by a read without any
   noRerun?: true; // #854: a failure rerunOnce could not re-run (no push rights): the wait holds for a new push or a maintainer
   checks?: StageCiCheck[]; // #914: the last read's considered checks, ordered for the running block; not persisted, the next read writes them
@@ -641,7 +641,7 @@ export interface ActivityRecord {
   result?: Record<string, unknown>; // merged from every hive_done
   prs?: TaskPr[];
   usage?: TaskUsage;
-  stageRuns?: Record<string, number>; // #742: stage name → stage runs started there (spawn, restart, continue, feedback); absent = none. events.jsonl's attempt
+  stageRuns?: Record<string, number>; // #742: stage name → stage runs started there (spawn, restart, continue, feedback); absent = none. facts.jsonl's attempt
 }
 
 /** A task as the adapter lists it: which source column it is in, in source order. */
@@ -1881,7 +1881,7 @@ export const WORKSPACE_HEX_COLOR = /^#[0-9a-f]{6}$/; // #78: a custom colour as 
 export const MEMORY_TEXT_MAX = 300; // characters per lesson; a candidate setting in docs/agent/settings-candidates.md
 export const MEMORY_REFUSALS = ['bad_memory', 'memory_full', 'memory_secret', 'unknown_memory'] as const;
 export type MemoryRefusalCode = (typeof MEMORY_REFUSALS)[number];
-/** GET /workspaces/:name/memory/stats (#797): the last MEMORY_STATS_DAYS days of events.jsonl for the workspace. */
+/** GET /workspaces/:name/memory/stats (#797): the last MEMORY_STATS_DAYS days of facts.jsonl for the workspace. */
 export interface MemoryStats {
   runs: number; // run.spawned with this workspace's memory
   cited: number; // distinct ids of current entries named by memory.applied

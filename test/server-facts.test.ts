@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SCHEMA_VERSION, ZERO_TOKENS, type EventRecord, type RecordInput } from '../src/events.js';
+import { SCHEMA_VERSION, ZERO_TOKENS, type FactRecord, type RecordInput } from '../src/facts.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { memoryPath, renderMemory } from '../src/memory.js';
 import { editorDir } from '../src/editor-install.js';
-import { createServerEvents } from '../src/server-events.js';
+import { createServerFacts } from '../src/server-facts.js';
 import type { MemoryFile } from '../src/types.js';
 import type { HookPayload, SettingsBody, State, Worker } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, STAGES, fakeEvents, fakeLog, fakeSourceFactory, fakeSpawn, tempHive, WORKSPACE, workspacesAt } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, tempHive, WORKSPACE, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { withWork, withLocal } from './fixtures/work.js';
 import { tempDir } from './temp-dir.js';
@@ -33,8 +33,8 @@ interface Hive { server: HiveServer; records: RecordInput[]; base: string; ptyId
 async function start(t: TestContext, seed?: (home: string) => Promise<void>, body: Omit<SettingsBody, 'workspaces'> = BODY): Promise<Hive> {
   const { home, repo } = await tempHive(t, 1); // one worker: the fake source's task starts
   await seed?.(home);
-  const { events, records } = fakeEvents();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, events, exec: async () => ({ stdout: '' }) });
+  const { facts, records } = fakeFacts();
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, facts, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const saved = await hiveFetch(`http://127.0.0.1:${port}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...body, workspaces: workspacesAt(repo) }) });
@@ -69,10 +69,10 @@ test('close writes hive.quit with its reason once; hive.booted is timed from the
   assert.deepEqual(records.filter((r) => r.event === 'hive.quit'), [{ event: 'hive.quit', level: 'info', reason: 'stop' }]);
 });
 
-test('createServerEvents writes the signal on its first reduction, then nothing for a reduction that kept the state (#742)', () => {
-  const { events, records } = fakeEvents();
+test('createServerFacts writes the signal on its first reduction, then nothing for a reduction that kept the state (#742)', () => {
+  const { facts, records } = fakeFacts();
   const state = initialState(1);
-  const wiring = createServerEvents(events, fakeLog().log, () => 0);
+  const wiring = createServerFacts(facts, fakeLog().log, () => 0);
   wiring.afterDispatch(state, state, { type: 'tick' });
   wiring.afterDispatch(state, state, { type: 'tick' });
   assert.deepEqual(records, [{ event: 'signal.changed', level: 'info', from: state.signal, to: state.signal }]);
@@ -159,7 +159,7 @@ test('no record holds a path, the home, a link, or the text of a prompt, a quest
 test('a throw inside any recorder is one error line and never reaches dispatch, the hook route, the effects or the source call (#742)', async () => {
   const { log, lines } = fakeLog();
   const throwing = { write: (): void => { throw new Error('disk'); }, setLevel: () => undefined };
-  const wiring = createServerEvents(throwing, log, () => 0);
+  const wiring = createServerFacts(throwing, log, () => 0);
   const bad = { ...initialState(1), get workers(): never { throw new Error('derive'); } } as State;
   assert.doesNotThrow(() => wiring.afterDispatch(initialState(1), bad, { type: 'tick' }));
   assert.doesNotThrow(() => wiring.beforeHook(bad, 'p1', { hook_event_name: 'Stop' }));
@@ -169,14 +169,14 @@ test('a throw inside any recorder is one error line and never reaches dispatch, 
   assert.equal(await wiring.sourceAction(undefined, 'board:I1', 'move', Promise.resolve('done')), 'done');
   await assert.rejects(wiring.sourceAction(undefined, 'board:I1', 'move', Promise.reject(new Error('gh'))), { message: 'gh' });
   assert.deepEqual(await wiring.polled('board', Promise.resolve([])), []);
-  assert.ok(lines.filter((l) => l.startsWith('ERROR events: ')).length >= 8, 'at least one line per failing recorder; afterDispatch guards each of its steps');
+  assert.ok(lines.filter((l) => l.startsWith('ERROR facts: ')).length >= 8, 'at least one line per failing recorder; afterDispatch guards each of its steps');
   assert.ok(lines.every((l) => !l.includes('derive') && !l.includes('disk')), 'a fixed context, never the message');
 });
 
 test('a writer that throws leaves the Hive working: the task spawns, a hook is answered, a refused request is answered (#742)', async (t) => {
   const { home, repo } = await tempHive(t, 1); // one worker: the fake source's task starts
-  const events = { write: (): void => { throw new Error('disk'); }, setLevel: () => undefined };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, events, exec: async () => ({ stdout: '' }) });
+  const facts = { write: (): void => { throw new Error('disk'); }, setLevel: () => undefined };
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, facts, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -191,8 +191,8 @@ test('a writer that throws leaves the Hive working: the task spawns, a hook is a
 });
 
 test('an input effect counts as the Hive\'s prompt only once its write went through (typed); onEffect leaves it alone (#742)', () => {
-  const { events, records } = fakeEvents();
-  const wiring = createServerEvents(events, fakeLog().log, () => 0);
+  const { facts, records } = fakeFacts();
+  const wiring = createServerFacts(facts, fakeLog().log, () => 0);
   const state = { ...initialState(1), workers: [{ id: 'w1', runId: 'p1', status: 'working' }] } as State;
   wiring.onEffect({ type: 'input', ptyId: 'p1', text: 'x' });
   wiring.beforeHook(state, 'p1', { hook_event_name: 'UserPromptSubmit' });
@@ -211,17 +211,17 @@ test('a gate refusal is no http.error; a request no route matched is written at 
 });
 
 test('a throwing derivation step still runs the other steps, so a later stage.ended is not lost (#742)', () => {
-  const { events } = fakeEvents();
+  const { facts } = fakeFacts();
   const { log, lines } = fakeLog();
-  const wiring = createServerEvents(events, log);
+  const wiring = createServerFacts(facts, log);
   const broken = new Proxy({} as State, { get: () => { throw new Error('boom'); } });
   assert.doesNotThrow(() => wiring.afterDispatch(broken, broken, { type: 'tick' }));
-  assert.ok(lines.filter((l) => l.startsWith('ERROR events:')).length >= 2, 'each step is guarded on its own: one failing step does not skip the rest');
+  assert.ok(lines.filter((l) => l.startsWith('ERROR facts:')).length >= 2, 'each step is guarded on its own: one failing step does not skip the rest');
 });
 
 test('a UI write answered 2xx is ui.action with the route\'s pattern, the method and the correlation of the :id it names; a pty\'s id names its run\'s; never a GET, a hook, a redirect, a refusal, a layout write, a request without the UI header, nor the body (#742)', async (t) => {
-  const { events, records } = fakeEvents();
-  const wiring = createServerEvents(events, fakeLog().log);
+  const { facts, records } = fakeFacts();
+  const wiring = createServerFacts(facts, fakeLog().log);
   const task = { item: { itemId: 'board:I1', id: '1', title: 'SECRET-TITLE', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
   const worker = { id: 'w1', runId: 'pty-1', status: 'working' as const, activityId: 'a-board:I1' };
   let state: State = withLocal(withWork({ ...initialState(1), tasks: [task], workers: [worker] }, 'board:I1'), 'ws');
@@ -328,9 +328,9 @@ test('a Codex Stop naming its own rollout adds the turn\'s tokens to the usage a
 
 test('a free session\'s end carries its worker, its agent and the last turn end\'s usage counted from its start, for a Claude and a Codex run; no takeover, no stage.ended (#271)', () => {
   for (const agent of ['claude', 'codex'] as const) {
-    const { events, records } = fakeEvents();
+    const { facts, records } = fakeFacts();
     let clock = 1000;
-    const wiring = createServerEvents(events, fakeLog().log, () => clock);
+    const wiring = createServerFacts(facts, fakeLog().log, () => clock);
     const task = { item: { itemId: 'board:I1', id: '1', title: 'SECRET-TITLE', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
     const idle = withWork({ ...initialState(1), tasks: [task] }, 'board:I1');
     const free: Worker = { id: 'w1', runId: 'pty-1', status: 'working', activityId: 'a-board:I1', freeSession: true, agent, startedAt: new Date(1000).toISOString() };
@@ -351,9 +351,9 @@ test('a free session\'s end carries its worker, its agent and the last turn end\
 
 test('the server hands its usage store every record its event log writes, and closes it once however often it closes (#271)', async (t) => {
   const { home, repo } = await tempHive(t, 1);
-  const kept: EventRecord[] = [];
+  const kept: FactRecord[] = [];
   let closed = 0;
-  const usage = { write: (record: EventRecord): void => { kept.push(record); }, close: (): void => { closed += 1; } };
+  const usage = { write: (record: FactRecord): void => { kept.push(record); }, close: (): void => { closed += 1; } };
   const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, usage, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());

@@ -32,7 +32,7 @@ import { type ConsoleStore, teardownRunId } from './console.js';
 import type { PtyHost } from './pty-host.js';
 import { removeInRun, type WorktreeRunDeps } from './task-setup.js';
 import { removeTranscripts } from './transcript.js';
-import type { EventLog } from './events.js';
+import type { FactLog } from './facts.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 
 const HTTP_NOT_FOUND = 404;
@@ -85,7 +85,7 @@ export interface TaskRouteDeps {
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
   poll(names: string[], manual?: string[]): Promise<void>; // #846: the poll loop's one-source path, after a task is created on a source; manual: items born with auto off
   latest(): State | undefined; // #846: the state after that poll
-  events?: Pick<EventLog, 'write'>; // #742: a delete's teardown steps and a first open's setup steps to worktree.step
+  facts?: Pick<FactLog, 'write'>; // #742: a delete's teardown steps and a first open's setup steps to worktree.step
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: each workspace's plugin folder: a session's specialized agents are read from its workspace's
 }
 

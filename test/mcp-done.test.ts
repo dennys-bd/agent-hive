@@ -9,10 +9,10 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { activityOf, resultOf } from '../src/activities.js';
 import { mountMcp } from '../src/mcp.js';
 import { initialState, reduce } from '../src/orchestrator.js';
-import type { RecordInput } from '../src/events.js';
+import type { RecordInput } from '../src/facts.js';
 import { MCP_DEFAULTS } from '../src/types.js';
 import type { Config, HiveEvent, Stage, State, Task, Transition, Worker } from '../src/types.js';
-import { fakeEvents } from './fakes.js';
+import { fakeFacts } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
 
 // hive_done on a task in a wait for CI whose only exit is passed (#339). dispatch runs the real reducer, so the test reads what the call left
@@ -31,13 +31,13 @@ async function harness(t: TestContext, freeSession = true): Promise<Harness> {
   const workers: Worker[] = [{ id: 'w1', runId: 'p1', status: 'working', activityId: activityIdOf(ITEM_ID), ...(freeSession ? { freeSession: true } : {}) }];
   let state: State = withWork({ ...initialState(1), stages: STAGES, transitions: TRANSITIONS, tasks: [TASK], workers }, ITEM_ID);
   const dispatched: HiveEvent[] = [];
-  const { events, records } = fakeEvents();
+  const { facts, records } = fakeFacts();
   const unused = async (): Promise<never> => { throw new Error('unused'); };
   const app = express().use(express.json());
   mountMcp(app, {
     exec: async () => ({ stdout: '' }), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
     dispatch: async (event) => { dispatched.push(event); state = reduce(state, event).state; return []; }, canClose: () => true, relate: unused, canRelate: () => false,
-    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, events, memory: { read: unused, update: unused },
+    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused },
   });
   const http = app.listen(0);
   t.after(() => http.close());

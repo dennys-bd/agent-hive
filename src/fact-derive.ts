@@ -1,6 +1,6 @@
 import { apiErrorOf, decideStopFailure } from './api-errors.js';
 import { activityOf, activityOfWorker, recordOf, resultOf, taskOfActivity, taskOfWorker } from './activities.js';
-import { textRef, type Correlation, type FinishVia, type GoneReason, type MoveBy, type RecordInput, type RunKind, type StageOutcome } from './events.js';
+import { textRef, type Correlation, type FinishVia, type GoneReason, type MoveBy, type RecordInput, type RunKind, type StageOutcome } from './facts.js';
 import type { StageRunEnd } from './human-signals.js';
 import { effectiveLimits } from './orchestrator.js';
 import { prNumber } from './pull-requests.js';
@@ -11,7 +11,7 @@ import { outgoing } from './transitions.js';
 import { END, isLeaving, type AgentId, type EffectiveLimits, type SourceAction, type HiveEvent, type Signal, type State, type Task, type TaskPr, type Worker } from './types.js';
 import { rulePercents } from './usage-rules.js';
 
-// The facts of one reduction for events.jsonl (#742), derived from the two states and the event as describeChanges derives hive.log's lines:
+// The facts of one reduction for facts.jsonl (#742), derived from the two states and the event as describeChanges derives hive.log's lines:
 // one place covers every reducer rule, current or future, and the reducer stays pure. Pure: `now` is the caller's clock.
 
 /** A stage run this reduction started, with the pty it runs in: what the server's tracker opens (#742). */
@@ -35,7 +35,7 @@ const occupied = (worker: Worker): boolean => worker.runId !== undefined && work
 const agentOf = (worker: Worker): { agent?: AgentId } => (worker.agent === undefined ? {} : { agent: worker.agent });
 
 /** A task's visible id as a record's `task` (#742). A visible id can name a client (a Jira key like ACME-123): fine in this local file, but it
- * must be reconsidered before any report or telemetry built on events.jsonl leaves the machine. */
+ * must be reconsidered before any report or telemetry built on facts.jsonl leaves the machine. */
 export const visibleId = (task: Task | undefined): { task?: string } => (task === undefined ? {} : { task: task.item.id });
 
 /** The ids that join a record to the rest (#742): the task, its activity, its stage with the attempt there, and the session. Whatever the
@@ -306,7 +306,7 @@ export function endedStageRuns(prev: State, next: State, event: HiveEvent, now: 
 }
 
 // A turn that ended on an API error (#805): the reducer's decision, asked again of the state it decided on; the error class only, never the
-// payload's details or the agent's last message. A child's StopFailure leaves the state as it was, so deriveEvents never gets here for it;
+// payload's details or the agent's last message. A child's StopFailure leaves the state as it was, so deriveFacts never gets here for it;
 // after hive_done the failure is the run's Stop, no API error
 function apiErrorRecords(prev: State, event: HiveEvent, now: number): RecordInput[] {
   if (event.type !== 'hook' || event.payload.hook_event_name !== 'StopFailure') return [];
@@ -337,7 +337,7 @@ function ciRecords(prev: State, next: State, event: HiveEvent, now: number): Rec
 
 /** Every record one reduction yields (#742): tasks, approvals, runs, stage starts, capacity, PRs, a crash, an API error (#805), a wait for CI (#834). Nothing when the reducer returned
  * the state it was given. */
-export function deriveEvents(prev: State, next: State, event: HiveEvent, now: number): RecordInput[] {
+export function deriveFacts(prev: State, next: State, event: HiveEvent, now: number): RecordInput[] {
   if (prev === next) return [];
   const stageStarts = startedRuns(prev, next, event, now).map((run): RecordInput => ({ event: 'stage.started', level: 'info', ...run.correlation }));
   return [

@@ -11,7 +11,7 @@ import type { PtyHost } from './pty-host.js';
 import { removeInRun } from './task-setup.js';
 import type { Activity, Task, Config, Effect, Exec, HiveEvent, State, Workspace, WorktreeRow } from './types.js';
 import { taskDir, cleanWorktree, listWorktrees, removeWorktree } from './worktree.js';
-import type { EventLog } from './events.js';
+import type { FactLog } from './facts.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
@@ -29,7 +29,7 @@ export interface WorktreeRouteDeps {
   ptys: Pick<PtyHost, 'adopt' | 'subscribe'>; // the teardown's console run (#654)
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
   dispatch(event: HiveEvent): Promise<Effect[]>; // #861: a removed worktree's kept activity is marked gone, so pruneWork lets it go
-  events?: Pick<EventLog, 'write'>; // #742: the teardown's worktree.step
+  facts?: Pick<FactLog, 'write'>; // #742: the teardown's worktree.step
 }
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));

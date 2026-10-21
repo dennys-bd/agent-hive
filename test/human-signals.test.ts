@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ZERO_TOKENS, type Correlation } from '../src/events.js';
+import { ZERO_TOKENS, type Correlation } from '../src/facts.js';
 import { createHumanSignals } from '../src/human-signals.js';
 import type { HookPayload, Worker } from '../src/types.js';
 

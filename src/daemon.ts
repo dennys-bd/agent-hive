@@ -50,7 +50,7 @@ const POLL_MS = 200;
 const LOG_TAIL_LINES = 20;
 const NOT_RUNNING = 'Agent Hive não está em execução';
 const HTTP_FORBIDDEN = 403;
-const UI_HEADER = 'x-hive-ui'; // mirrors UI_HEADER in server-events.ts, which cannot be imported here (it pulls Express into the CLI)
+const UI_HEADER = 'x-hive-ui'; // mirrors UI_HEADER in server-facts.ts, which cannot be imported here (it pulls Express into the CLI)
 const HOME_MODE = 0o700; // the home holds the log, the prompts and the credentials
 // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control characters is the point
 const CONTROL_CHARACTERS = /[\x00-\x1f\x7f]/g;

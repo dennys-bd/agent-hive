@@ -13,7 +13,7 @@ import { saveState } from '../src/state-store.js';
 import type { Logger } from '../src/log.js';
 import type { KeepAwakeSpawn } from '../src/keep-awake.js';
 import type { GqlJson } from '../src/sources/github-gql.js';
-import type { EventLog, RecordInput } from '../src/events.js';
+import type { FactLog, RecordInput } from '../src/facts.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
 import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, TaskFilter, Stage, Transition, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
@@ -269,10 +269,10 @@ export function fakeLog(): { log: Logger; lines: string[] } {
   return { lines, log: { error: at('ERROR'), record: (level, message) => at(level.toUpperCase())(message), warn: at('WARN'), info: at('INFO'), debug: at('DEBUG'), setLevel: at('LEVEL') } };
 }
 
-/** An EventLog that keeps every record it is given, whatever its level (#742). */
-export function fakeEvents(): { events: EventLog; records: RecordInput[] } {
+/** A FactLog that keeps every record it is given, whatever its level (#742). */
+export function fakeFacts(): { facts: FactLog; records: RecordInput[] } {
   const records: RecordInput[] = [];
-  return { records, events: { write: (record) => { records.push(record); }, setLevel: () => undefined } };
+  return { records, facts: { write: (record) => { records.push(record); }, setLevel: () => undefined } };
 }
 
 /** Reserves a free localhost port and releases it at once: the caller binds it right after. */

@@ -22,8 +22,8 @@ import { createServer, type HiveServer } from '../src/server.js';
 import type { Activity, Config, Exec, SourceConfig, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
 import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
-import { AUTH, STAGES, fakeEvents, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
-import type { RecordInput } from '../src/events.js';
+import { AUTH, STAGES, fakeFacts, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
+import type { RecordInput } from '../src/facts.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { reviewEventDuring, send } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -49,8 +49,8 @@ async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], w
   const { home, repo } = await tempHive(t, 1);
   const { log, lines } = fakeLog();
   const { factory, actions } = fakeSourceFactory();
-  const { events, records } = fakeEvents();
-  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, events, exec: async () => ({ stdout: '' }) });
+  const { facts, records } = fakeFacts();
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, facts, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -386,7 +386,7 @@ test('result_keys keeps at most 20 keys of a safe shape and counts the ones left
 });
 
 test('a handler that throws still writes mcp.call with outcome error at error, and the agent still gets the failure (#742)', async (t) => {
-  const { events, records } = fakeEvents();
+  const { facts, records } = fakeFacts();
   const state = { ...initialState(1), workers: [{ id: 'w1', runId: 'p1', status: 'working' }] } as State;
   const app = express().use(express.json());
   const unused = async (): Promise<never> => { throw new Error('unused'); };
@@ -394,7 +394,7 @@ test('a handler that throws still writes mcp.call with outcome error at error, a
     exec: async () => ({ stdout: '' }),
     live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined, dispatch: async () => { throw new Error('reducer'); }, canClose: () => false,
     relate: unused, canRelate: () => false,
-    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, events, memory: { read: unused, update: unused },
+    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused },
   });
   const http = app.listen(0);
   t.after(() => http.close());

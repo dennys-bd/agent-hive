@@ -119,7 +119,7 @@ function UsageBlock({ workspace, view, onCapSaved, onView }: UsageBlockProps) {
   );
 }
 
-// The last 7 days of the local event log; dashes without a run carrying memory
+// The last 7 days of the local fact log; dashes without a run carrying memory
 function TelemetryBlock({ stats, total }: { stats?: MemoryStats; total: number }) {
   const numbers = statNumbers(stats, total);
   const cells = [[numbers.runs, 'settings.memory.runs'], [numbers.cited, 'settings.memory.cited'], [numbers.tokens, 'settings.memory.tokens']] as const;

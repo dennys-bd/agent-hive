@@ -1,4 +1,4 @@
-import type { Correlation, RecordInput } from './events.js';
+import type { Correlation, RecordInput } from './facts.js';
 import type { ActivityRecord, PrState, SliceDelivery, TaskPr } from './types.js';
 
 export const PR_STATES: readonly PrState[] = ['open', 'merged', 'closed'];
@@ -68,7 +68,7 @@ export function parsePrStates(urls: string[], data: unknown): TaskPr[] {
 
 /** A concluded check run on a PR's head commit (#742): its id, its raw name, its conclusion, the commit's sha (8 chars) and how long it ran. */
 export interface CheckRunRead { id: number; name: string; conclusion: string; sha: string; durationMs?: number }
-/** What the PR query read for the event log beyond the state (#742). */
+/** What the PR query read for the fact log beyond the state (#742). */
 // afterOpen: the commits GitHub dates after the PR's creation, so it holds across restarts
 // recent: the last commits read, each as its sha (8 chars) and GitHub's committedDate: what pr.commit writes once per commit
 export interface CommitRead { sha: string; committedAt: string }

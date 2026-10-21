@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
-import { createAppender, type Logger, type LoggerOptions, type LogLevel, passes, type RecordLevel, shortId, UNSAFE_CHARS } from './log.js';
+import { existsSync, renameSync } from 'node:fs';
+import { join } from 'node:path';
+import { createAppender, generations, type Logger, type LoggerOptions, type LogLevel, passes, type RecordLevel, shortId, UNSAFE_CHARS } from './log.js';
 import type { AgentId, MemoryKind, MemoryRefusalCode, Signal } from './types.js';
 
-// events.jsonl (#742): one JSON object per line beside hive.log, for statistics over the Hive's facts. Never a prompt, an output, a title, a
+// facts.jsonl (#742): the fact log, one JSON object per line beside hive.log, for statistics over the Hive's facts. Never a prompt, an output, a title, a
 // path, a link, an account or a token: a user's or an agent's text only as its length and the head of its sha256.
 
-export const EVENTS_FILE = 'events.jsonl';
+export const FACTS_FILE = 'facts.jsonl';
 export const SCHEMA_VERSION = 1;
 export const RAW_TEXT_MAX = 100; // characters of a raw outside text a record carries: a check's name, a hook's tool, a source's name
 const HASH_CHARS = 16;
@@ -39,7 +41,7 @@ interface Timed { duration_ms: number }
 interface Gone { reason: GoneReason; via?: FinishVia } // via: on finished only
 
 /** Each event's own fields (#742), by name: what `write` checks a record against, so a misspelled field fails tsc. */
-export interface EventFields {
+export interface FactFields {
   // unresolved: the wait was still open when its stage run ended, its run exited or the Hive quit
   'question.answered': Timed & { kind: 'ask' | 'elicitation'; outcome: 'answered' | 'unresolved' };
   'permission.answered': Timed & { outcome: 'granted' | 'denied' | 'unresolved'; tool: string };
@@ -62,7 +64,7 @@ export interface EventFields {
   // lsp_servers (#803): the entries of its workspace's language-server plugin, [] for none; the server's, so the derivation never sets it
   'run.spawned': { worker: number; model?: string; memory_ids?: string[]; memory_chars?: number; workspace?: string; lsp_servers?: string[] };
   'run.started': { spawn_latency_ms: number };
-  'run.spawn_failed': { code: string }; // event-derive's closed set, never the message
+  'run.spawn_failed': { code: string }; // fact-derive's closed set, never the message
   'run.exited': Timed;
   // #805: failure is the failure's number when it counts one (never the stage run's attempt, a correlation field); wait_ms on a backoff
   'run.api_error': { error: string; action: 'backoff' | 'stopped'; failure?: number; wait_ms?: number };
@@ -94,20 +96,20 @@ export interface EventFields {
   'hive.crash_recovered': { workers: number };
 }
 
-export type EventName = keyof EventFields;
+export type FactName = keyof FactFields;
 /** What a caller writes (#742): the event, its level, its correlation and its own fields; the writer stamps schema_version and ts. */
-export type RecordInput = { [E in EventName]: { event: E; level: RecordLevel } & Correlation & EventFields[E] }[EventName];
-/** A line of events.jsonl. */
-export type EventRecord = RecordInput & { schema_version: typeof SCHEMA_VERSION; ts: string };
+export type RecordInput = { [E in FactName]: { event: E; level: RecordLevel } & Correlation & FactFields[E] }[FactName];
+/** A line of facts.jsonl. */
+export type FactRecord = RecordInput & { schema_version: typeof SCHEMA_VERSION; ts: string };
 
-export interface EventLog {
+export interface FactLog {
   write(record: RecordInput): void;
   setLevel(level: LogLevel): void;
 }
 
-export interface EventLogOptions extends LoggerOptions {
+export interface FactLogOptions extends LoggerOptions {
   log: Pick<Logger, 'record'>; // where each record's text line goes: hive.log stays the file humans read
-  keep?: (record: EventRecord) => void; // #271: the usage store's write; it gets every record, whatever the level, and keeps its own events
+  keep?: (record: FactRecord) => void; // #271: the usage store's write; it gets every record, whatever the level, and keeps its own events
 }
 
 export const ZERO_TOKENS: Tokens = { input: 0, output: 0, cache_write: 0, cache_read: 0 };
@@ -131,7 +133,7 @@ function bounded(record: RecordInput): Record<string, unknown> {
 const SHORT_IDS: readonly string[] = ['activity_id', 'session_id'];
 // The facts hive.log already writes in a richer line of its own (server.ts: the effect's `ok` with its column, fail()'s error, the poll's
 // count): mirroring them would write the same fact twice
-const OWN_LINE: readonly EventName[] = ['source.action', 'source.polled', 'source.poll_failed'];
+const OWN_LINE: readonly FactName[] = ['source.action', 'source.polled', 'source.poll_failed'];
 const HIDDEN: readonly string[] = ['schema_version', 'ts', 'level', 'event'];
 
 /** A record's hive.log line (#742): the event, then key=value; the uuids through shortId, a list joined, an object as JSON. */
@@ -144,12 +146,12 @@ export function describeRecord(record: Record<string, unknown>): string {
   return [String(record.event), ...pairs].join(' ');
 }
 
-/** events.jsonl in `dir` (#742), the same shape as createLogger: sync appends, one rotation at maxBytes, a broken disk disables the file with
+/** facts.jsonl in `dir` (#742), the same shape as createLogger: sync appends, one rotation at maxBytes, a broken disk disables the file with
  * one stderr line and never throws. A record under the level reaches neither file; error always passes. `keep` (#271) gets every record,
  * stamped and bounded as its line is, under any level and with the file disabled. */
-export function createEventLog(dir: string, level: LogLevel, options: EventLogOptions): EventLog {
+export function createFactLog(dir: string, level: LogLevel, options: FactLogOptions): FactLog {
   const { log, keep, ...fileOptions } = options;
-  const append = createAppender(dir, EVENTS_FILE, fileOptions);
+  const append = createAppender(dir, FACTS_FILE, fileOptions);
   let current = level;
   return {
     write: (record) => {
@@ -160,10 +162,25 @@ export function createEventLog(dir: string, level: LogLevel, options: EventLogOp
         append(`${JSON.stringify(line)}\n`);
         if (!OWN_LINE.includes(record.event)) log.record(record.level, describeRecord(fields)); // never error's stderr echo: its failure had its own
       }
-      keep?.(line as EventRecord); // bounded keeps each field's type: a string stays a string, a list a list
+      keep?.(line as FactRecord); // bounded keeps each field's type: a string stays a string, a list a list
     },
     setLevel: (next) => {
       current = next;
     },
   };
+}
+
+/** Before #93 the fact log was events.jsonl: each of its generations moves to the same generation of facts.jsonl, before the usage store's
+ * first import reads them and before the writer appends. A target already there is never overwritten, and its source is left as it is. Never
+ * throws: a rename that fails is one hive.log line, never a failed boot. */
+export function moveEventsFiles(home: string, log: Pick<Logger, 'error'>): void {
+  for (const to of generations(FACTS_FILE)) {
+    const from = `events.jsonl${to.slice(FACTS_FILE.length)}`; // the same generation: '' or '.<n>'
+    if (!existsSync(join(home, from)) || existsSync(join(home, to))) continue;
+    try {
+      renameSync(join(home, from), join(home, to));
+    } catch (err) {
+      log.error(`facts: ${from} not moved to ${to} (${(err as NodeJS.ErrnoException).code ?? 'unknown'})`); // the code only: the message holds the home path
+    }
+  }
 }

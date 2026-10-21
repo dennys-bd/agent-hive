@@ -4,8 +4,10 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { readDaemonSecret } from '../src/daemon-files.js';
 import { bootHive } from '../src/hive.js';
+import { FACTS_FILE } from '../src/facts.js';
 import { initialState } from '../src/orchestrator.js';
 import { READ_MODEL_FILE } from '../src/read-model/db.js';
 import type { ItemStore } from '../src/read-model/items.js';
@@ -484,7 +486,7 @@ test('bootHive keeps its own files in the home: the repo gets only the exclude l
   assert.equal(server.getState()?.signal, 'yellow', 'the repo\'s state.json (red) was not read');
   // WAL keeps a -wal and a -shm beside each database while it is open (#180, #271): its side files, not files of their own
   const own = (await readdir(home)).filter((name) => !/^(read-model|usage)\.sqlite-(wal|shm)$/.test(name)).sort();
-  assert.deepEqual(own, ['bin', 'events.jsonl', 'hive.config.json', 'hive.lock', 'hive.log', 'hive.port', 'hive.secret', 'hooks.json', 'lsp', 'plugins', 'prompts', 'protocol', 'read-model.sqlite', 'shell', 'state.json', 'usage.sqlite']);
+  assert.deepEqual(own, ['bin', 'facts.jsonl', 'hive.config.json', 'hive.lock', 'hive.log', 'hive.port', 'hive.secret', 'hooks.json', 'lsp', 'plugins', 'prompts', 'protocol', 'read-model.sqlite', 'shell', 'state.json', 'usage.sqlite']);
   assert.deepEqual((await readdir(repo)).sort(), ['.git', '.hive', 'hive.config.json']);
   assert.deepEqual(await readdir(join(repo, '.hive')), ['state.json'], 'nothing new under the repo\'s .hive/: no log, no hooks, no prompts');
   assert.equal(await readFile(join(repo, 'hive.config.json'), 'utf8'), leftover, 'never rewritten, never deleted');
@@ -583,6 +585,22 @@ test('bootHive opens usage.sqlite in the home in hive mode and in setup mode, si
   const setup = await bootHive(empty);
   t.after(() => setup.server.close());
   assert.deepEqual([existsSync(join(home, USAGE_FILE)), existsSync(join(empty, USAGE_FILE))], [true, true]);
+});
+
+test('bootHive moves events.jsonl and its generations to facts.jsonl before the usage store imports them, and appends to facts.jsonl (#93)', async (t) => {
+  const { home } = await hiveWithConfig(t, {});
+  const moved = JSON.stringify({ schema_version: 1, ts: '2026-10-20T12:00:00.000Z', event: 'task.moved', level: 'info', task_id: 'board:I1', from: 'dev', to: 'review', by: 'hand' });
+  await writeFile(join(home, 'events.jsonl.1'), `${moved}\n`);
+  await writeFile(join(home, 'events.jsonl'), 'current\n');
+  const { server } = await bootHive(home);
+  t.after(() => server.close());
+  assert.deepEqual([existsSync(join(home, 'events.jsonl')), existsSync(join(home, 'events.jsonl.1'))], [false, false]);
+  assert.equal(await readFile(join(home, `${FACTS_FILE}.1`), 'utf8'), `${moved}\n`);
+  assert.ok((await readFile(join(home, FACTS_FILE), 'utf8')).startsWith('current\n'), 'the Hive appends after the moved content');
+  const db = new DatabaseSync(join(home, USAGE_FILE));
+  t.after(() => db.close());
+  const rows = db.prepare("SELECT event, task_id FROM records WHERE task_id = 'board:I1'").all().map((row) => ({ ...row }));
+  assert.deepEqual(rows, [{ event: 'task.moved', task_id: 'board:I1' }], 'the first import found the moved generation');
 });
 
 test('a read model that cannot be opened is logged, and the daemon boots without its sync (#180)', async (t) => {

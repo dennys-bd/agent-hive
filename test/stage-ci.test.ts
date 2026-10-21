@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf, resultOf, withActivity } from '../src/activities.js';
-import { deriveEvents } from '../src/event-derive.js';
+import { deriveFacts } from '../src/fact-derive.js';
 import { describeEffect, describeEvent } from '../src/log.js';
 import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
 import { savedWork } from '../src/state-guards.js';
@@ -146,7 +146,7 @@ test('ciClock, when no read came, fails a wait past its timeout with the last co
   assert.equal(outputOf(clock(read(s, []).state, 61).state), 'CI did not finish in 60m · pending: no open PR');
   assert.equal(clock(polled().state, 48 * 60).state.activities[0]?.ci?.stage, 'ci', 'no timeout, no end');
   const ticked = { type: 'ciClock', activityId: live(s)?.id ?? '', at: new Date(since + 61 * 60_000).toISOString() } as const;
-  assert.ok(deriveEvents(s, reduce(s, ticked).state, ticked, Date.now()).some((r) => r.event === 'ci.ended' && r.verdict === 'failed'));
+  assert.ok(deriveFacts(s, reduce(s, ticked).state, ticked, Date.now()).some((r) => r.event === 'ci.ended' && r.verdict === 'failed'));
   assert.equal(describeEvent({ type: 'ciClock', activityId: 'abcdef123456', at: 'x' }), 'ciClock activity=abcdef12');
   reduce(deepFreeze(polled({ timeout: '1m' }).state), { ...ticked, at: '2100-01-01T00:00:00.000Z' });
 });
@@ -249,16 +249,16 @@ test('the event log writes a required wait\'s fallback once, a wait\'s end with 
   const s = polled({ ciChecks: 'required' }).state;
   const first = readOf(s, [pr([check('build', 'pending')])]); // no required list: every check counts
   const fell = reduce(s, first).state;
-  assert.equal(deriveEvents(s, fell, first, Date.now()).filter((r) => r.event === 'ci.fallback').length, 1);
+  assert.equal(deriveFacts(s, fell, first, Date.now()).filter((r) => r.event === 'ci.fallback').length, 1);
   const second = readOf(fell, [pr([check('build', 'pending'), check('lint', 'pending')])]);
-  assert.equal(deriveEvents(fell, reduce(fell, second).state, second, Date.now()).some((r) => r.event === 'ci.fallback'), false, 'once per wait');
+  assert.equal(deriveFacts(fell, reduce(fell, second).state, second, Date.now()).some((r) => r.event === 'ci.fallback'), false, 'once per wait');
   const pass = readOf(fell, [pr([check('build', 'success')])]);
-  const passed = deriveEvents(fell, reduce(fell, pass).state, pass, Date.now());
+  const passed = deriveFacts(fell, reduce(fell, pass).state, pass, Date.now());
   assert.ok(passed.some((r) => r.event === 'ci.ended' && r.verdict === 'passed' && r.level === 'info' && r.duration_ms >= 0));
   assert.match(JSON.stringify(passed), /"event":"task.moved"[^}]*"by":"on_finish"/);
   const collecting = read(polled().state, [pr([check('build', 'failure')])]).state;
   const fail: HiveEvent = { type: 'ciFailed', activityId: live(collecting)?.id ?? '', names: ['build'], output: 'x' };
-  assert.ok(deriveEvents(collecting, reduce(collecting, fail).state, fail, Date.now()).some((r) => r.event === 'ci.ended' && r.verdict === 'failed' && r.level === 'warn'));
+  assert.ok(deriveFacts(collecting, reduce(collecting, fail).state, fail, Date.now()).some((r) => r.event === 'ci.ended' && r.verdict === 'failed' && r.level === 'warn'));
 });
 
 test('stopCi ends the wait, stopped, with no verdict, and is ignored where nothing waits; a read after it does nothing; the log names the activity (#834)', () => {
@@ -374,7 +374,7 @@ test('without a failed transition a conflict stops the task with CI failed: conf
 test('ci.ended says failed for a failure a transition routes and for one that stops the task, and passed for a pass (#264)', () => {
   const ended = (s: State, prs: CiPrRead[]): unknown[] => {
     const event = readOf(s, prs);
-    return deriveEvents(s, reduce(s, event).state, event, Date.now()).flatMap((r) => (r.event === 'ci.ended' ? [[r.verdict, r.level]] : []));
+    return deriveFacts(s, reduce(s, event).state, event, Date.now()).flatMap((r) => (r.event === 'ci.ended' ? [[r.verdict, r.level]] : []));
   };
   const back: Transition = { from: 'ci', to: 'review', when: 'verdict', verdict: 'failed' };
   const routing = polled({}, { transitions: [...chained([ci(), REVIEW]).transitions, back] }).state;

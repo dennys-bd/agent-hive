@@ -27,7 +27,7 @@ import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stag
 import type { PtyPool } from './ptys.js';
 import type { TerminalSize } from './terminal-wire.js';
 import { taskDir, ensureCheckout, ensureWorktree } from './worktree.js';
-import type { EventLog } from './events.js';
+import type { FactLog } from './facts.js';
 
 // How a run starts (#283, #251), out of server.ts, which was over 900 lines: the stage run and the user's own session.
 
@@ -68,7 +68,7 @@ export interface SpawnerDeps {
   agents: readonly AgentAvailability[]; // the agent CLIs found on boot (#516): a stage whose agent is missing never reaches its worktree
   secret: string; // this boot's secret (#467): the MCP config's header
   home: string; // #696: where a terminal's history and ring live
-  events?: Pick<EventLog, 'write'>; // #742: the worktree setup's worktree.step
+  facts?: Pick<FactLog, 'write'>; // #742: the worktree setup's worktree.step
   lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin as the last write left it; every agent launch loads it
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, once the renders queued so far have landed
   externalMcp(config: Config, workspace: string): Promise<readonly RunMcpServer[]>; // #333: the external MCP servers a run of this workspace gets, header values resolved
@@ -143,7 +143,7 @@ function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], 
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
-  const { pool, exec, log, dispatch, fail, isLive, ptys, consoleStore, agents, secret, home, events, lspDir, plugin, externalMcp } = deps;
+  const { pool, exec, log, dispatch, fail, isLive, ptys, consoleStore, agents, secret, home, facts, lspDir, plugin, externalMcp } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
   // What the pool answers for any run: the exit frees it, a kill / focus failure reaches the bar, a start that never happened frees it too.
   const handlers = (ptyId: string, slug: string) => ({
@@ -190,7 +190,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const controller = new AbortController();
     setups.set(ptyId, controller);
     try {
-      return await runTaskSetup({ exec, log, dispatch, ptys, consoleStore, events }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
+      return await runTaskSetup({ exec, log, dispatch, ptys, consoleStore, facts }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
     } catch (err) {
       throw controller.signal.aborted ? err : withReused(err, reused); // a Stop is no failure the branch could explain
     } finally {

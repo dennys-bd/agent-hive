@@ -10,7 +10,7 @@ import { SETUP_MARKER } from '../src/worktree-setup.js';
 import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
 import { RunFailure, type RunShell } from '../src/worktree-steps.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
-import { fakeEvents } from './fakes.js';
+import { fakeFacts } from './fakes.js';
 
 const TASK: Task = {
   item: { itemId: 'board:I1', id: '1', title: 'Task 1', body: '', url: 'https://github.com/acme/r/issues/1' }, stage: 'dev', boardColumn: 'Ready', auto: true,
@@ -248,8 +248,8 @@ test('a task\'s setup writes worktree.step for each step with its activity and p
     throw new RunFailure(1, 'TOKEN=secret');
   };
   const h = await harness(t, 'RUN pnpm install', failing);
-  const { events, records } = fakeEvents();
-  await assert.rejects(runTaskSetup({ ...h.deps, events }, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH));
+  const { facts, records } = fakeFacts();
+  await assert.rejects(runTaskSetup({ ...h.deps, facts }, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH));
   assert.deepEqual(records.map((r) => ({ ...(r as unknown as Record<string, unknown>), duration_ms: 0 })),
     [{ event: 'worktree.step', level: 'error', activity_id: ACTIVITY, phase: 'setup', index: 0, kind: 'RUN', duration_ms: 0, outcome: 'failed' }]);
   assert.ok(!JSON.stringify(records).includes('pnpm'));

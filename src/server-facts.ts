@@ -1,6 +1,6 @@
-import { correlationOf, deriveEvents, endedStageRuns, prCorrelation, signalRecords, startedFreeRuns, startedRuns, visibleId } from './event-derive.js';
+import { correlationOf, deriveFacts, endedStageRuns, prCorrelation, signalRecords, startedFreeRuns, startedRuns, visibleId } from './fact-derive.js';
 import type { NextFunction, Request, Response } from 'express';
-import type { Correlation, EventLog, RecordInput } from './events.js';
+import type { Correlation, FactLog, RecordInput } from './facts.js';
 import { createHumanSignals, type HumanSignals } from './human-signals.js';
 import type { Logger } from './log.js';
 import { taskOfActivity } from './activities.js';
@@ -9,11 +9,11 @@ import { NO_PR_SEEN, parsePrActivity, prActivityQuery, prActivityRecords, type P
 import type { Effect, Gql, HiveEvent, HookPayload, Signal, SourceItem, State, Worker } from './types.js';
 import type { TurnUsage } from './usage.js';
 
-/** The server's side of events.jsonl (#742): what server.ts calls, so it does not grow. The derivation runs after every dispatch, beside
+/** The server's side of facts.jsonl (#742): what server.ts calls, so it does not grow. The derivation runs after every dispatch, beside
  * describeChanges; the human signals are fed by the hook route and the effects; the rest are facts only the server sees. Every method is
  * isolated: a throw inside one is one error line in hive.log, never a failed dispatch, hook answer, effect or source call. */
-export interface ServerEvents {
-  readonly events: EventLog; // the writer itself: the MCP handlers and the worktree steps write their own records through it
+export interface ServerFacts {
+  readonly facts: FactLog; // the writer itself: the MCP handlers and the worktree steps write their own records through it
   afterDispatch(prev: State, next: State, event: HiveEvent): void;
   beforeHook(state: State | undefined, ptyId: string, payload: HookPayload, usage?: TurnUsage): void; // before the hook's dispatch: the worker as it stood
   onEffect(effect: Effect): void; // before the effect runs: a stage spawn's or a copy's prompt is counted as the Hive's own
@@ -36,7 +36,7 @@ type ErrorLog = Pick<Logger, 'error'>;
 const HTTP_ERROR = 400; // a status at or above it is a refusal or a failure
 const HTTP_OK = 200;
 const HTTP_REDIRECT = 300; // ui.action is 2xx only
-// Layout and filter writes (#484): the UI's, but no intervention, and frequent enough to crowd events.jsonl's rotation
+// Layout and filter writes (#484): the UI's, but no intervention, and frequent enough to crowd facts.jsonl's rotation
 const NOT_ACTIONS: readonly string[] = ['/view-state/:key'];
 export const HOOKS_PREFIX = '/hooks/';
 export const UI_HEADER = 'x-hive-ui'; // every dashboard write carries it; the value is irrelevant
@@ -50,7 +50,7 @@ function guard<A extends unknown[], R>(log: ErrorLog, name: string, fn: (...args
     try {
       return fn(...args);
     } catch (err) {
-      log.error(`events: ${name} failed (${err instanceof Error ? err.name : typeof err})`);
+      log.error(`facts: ${name} failed (${err instanceof Error ? err.name : typeof err})`);
       return fallback;
     }
   };
@@ -64,8 +64,8 @@ function hivePrompt(effect: Effect): string | undefined {
 }
 
 // The facts of the layers around the reducer: a source's writes and listings, and the HTTP answers
-function outsideRecorders(events: EventLog, log: ErrorLog, now: () => number): Pick<ServerEvents, 'sourceAction' | 'polled'> {
-  const written = (name: string) => guard(log, name, (record: RecordInput): void => events.write(record), undefined);
+function outsideRecorders(facts: FactLog, log: ErrorLog, now: () => number): Pick<ServerFacts, 'sourceAction' | 'polled'> {
+  const written = (name: string) => guard(log, name, (record: RecordInput): void => facts.write(record), undefined);
   return {
     sourceAction: async (state, id, action, work) => {
       const began = now();
@@ -111,25 +111,25 @@ const isUiWrite = (req: Request): boolean => WRITE_METHODS.includes(req.method) 
 
 // The HTTP answers: the route's pattern, never the URL (a path or a query can carry a task's text), and never a body. A request no route
 // matched is a probe or a typo, not a refusal of the Hive's: debug. A UI write is a human's action; which ones are intervention is analysis's
-function httpRecorder(events: EventLog, log: ErrorLog): ServerEvents['httpRecords'] {
+function httpRecorder(facts: FactLog, log: ErrorLog): ServerFacts['httpRecords'] {
   return (state) => (req, res, next) => {
     const found = guard(log, 'httpRecords', state, undefined)();
     res.on('finish', guard(log, 'httpRecords', (): void => {
       const route: unknown = req.route?.path;
       const matched = typeof route === 'string';
       if (res.statusCode >= HTTP_ERROR) {
-        events.write({ event: 'http.error', level: matched ? 'warn' : 'debug', route: matched ? route : UNMATCHED, status: res.statusCode });
+        facts.write({ event: 'http.error', level: matched ? 'warn' : 'debug', route: matched ? route : UNMATCHED, status: res.statusCode });
         return;
       }
       if (!matched || res.statusCode < HTTP_OK || res.statusCode >= HTTP_REDIRECT || NOT_ACTIONS.includes(route) || !isUiWrite(req)) return;
-      events.write({ event: 'ui.action', level: 'info', ...idCorrelation(found, req.params.id), route, method: req.method });
+      facts.write({ event: 'ui.action', level: 'info', ...idCorrelation(found, req.params.id), route, method: req.method });
     }, undefined));
     next();
   };
 }
 
 // The PR poll's activity: its second query, and the check runs and commit counts already written, in memory like the tracker
-function prRecorders(log: ErrorLog, write: Write): Pick<ServerEvents, 'prActivity' | 'pollPrActivity'> {
+function prRecorders(log: ErrorLog, write: Write): Pick<ServerFacts, 'prActivity' | 'pollPrActivity'> {
   let seenPrs: PrSeen = NO_PR_SEEN;
   const prActivity = guard(log, 'prActivity', (state: State | undefined, reads: PrActivity[], open: readonly string[] = reads.map((r) => r.url)): void => {
     const { records, seen } = prActivityRecords(reads, seenPrs, (url) => (state ? prCorrelation(state, url) : {}), open);
@@ -180,7 +180,7 @@ function withRunFields(record: RecordInput, prev: State, next: State, fieldsOf: 
 }
 
 // What every dispatch writes. A stage run ends before the next one opens in the same pty: a continue in place reads as ended, then started
-function dispatchRecorder(signals: HumanSignals, write: Write, log: ErrorLog, now: () => number, fieldsOf: RunFields): ServerEvents['afterDispatch'] {
+function dispatchRecorder(signals: HumanSignals, write: Write, log: ErrorLog, now: () => number, fieldsOf: RunFields): ServerFacts['afterDispatch'] {
   let signal: Signal | undefined; // the last signal.changed written: the clock moves the signal with no state change
   return (prev, next, event) => {
     const at = now();
@@ -196,7 +196,7 @@ function dispatchRecorder(signals: HumanSignals, write: Write, log: ErrorLog, no
         if (record) write([record]);
       }
     }, undefined)();
-    guard(log, 'transitions', () => write(deriveEvents(prev, next, event, at).map((record) => withRunFields(record, prev, next, fieldsOf, signals))), undefined)();
+    guard(log, 'transitions', () => write(deriveFacts(prev, next, event, at).map((record) => withRunFields(record, prev, next, fieldsOf, signals))), undefined)();
     guard(log, 'signalRecords', () => {
       const signalled = signalRecords(signal, prev, next, at);
       signal = signalled.signal;
@@ -210,13 +210,13 @@ function dispatchRecorder(signals: HumanSignals, write: Write, log: ErrorLog, no
   };
 }
 
-export function createServerEvents(events: EventLog, log: ErrorLog, now: () => number = Date.now, fieldsOf: RunFields = () => ({})): ServerEvents {
+export function createServerFacts(facts: FactLog, log: ErrorLog, now: () => number = Date.now, fieldsOf: RunFields = () => ({})): ServerFacts {
   const signals = createHumanSignals();
   const write: Write = (records) => {
-    for (const record of records) events.write(record);
+    for (const record of records) facts.write(record);
   };
   return {
-    events,
+    facts,
     afterDispatch: guard(log, 'afterDispatch', dispatchRecorder(signals, write, log, now, fieldsOf), undefined),
     beforeHook: guard(log, 'beforeHook', (state: State | undefined, ptyId: string, payload: HookPayload, usage?: TurnUsage): void => {
       const worker = state?.workers.find((w) => w.runId === ptyId && w.status !== 'empty');
@@ -229,12 +229,12 @@ export function createServerEvents(events: EventLog, log: ErrorLog, now: () => n
     typed: guard(log, 'typed', (ptyId: string): void => signals.expectPrompt(ptyId), undefined),
     usageSince: guard(log, 'usageSince', (ptyId: string): number | undefined => signals.usageSince(ptyId), undefined),
     ...prRecorders(log, write),
-    ...outsideRecorders(events, log, now),
-    httpRecords: httpRecorder(events, log),
-    booted: guard(log, 'booted', (startedAt: number): void => events.write({ event: 'hive.booted', level: 'info', duration_ms: now() - startedAt }), undefined),
+    ...outsideRecorders(facts, log, now),
+    httpRecords: httpRecorder(facts, log),
+    booted: guard(log, 'booted', (startedAt: number): void => facts.write({ event: 'hive.booted', level: 'info', duration_ms: now() - startedAt }), undefined),
     quit: guard(log, 'quit', (state: State, reason: string): void => {
       flushWaits(signals, write, state, livePtys(state), now()); // approvals are not flushed: approval.since is in the State and resolves after a restart
-      events.write({ event: 'hive.quit', level: 'info', reason });
+      facts.write({ event: 'hive.quit', level: 'info', reason });
     }, undefined),
   };
 }

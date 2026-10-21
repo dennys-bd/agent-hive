@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
-import type { Tokens } from '../events.js';
+import type { Tokens } from '../facts.js';
 import { cleanTitle, type TranscriptTurn } from '../usage.js';
 import { eachLine, finite, isRealDir, newTally, tally, turnUsage, type UsageEntry, writtenSince } from './jsonl.js';
 

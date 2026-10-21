@@ -11,6 +11,7 @@ export type RecordLevel = 'error' | LogLevel; // what a line or a record carries
 export const LOG_LEVELS: readonly LogLevel[] = ['warn', 'info', 'debug'];
 export const LOG_FILE = 'hive.log';
 export const LOG_MAX_BYTES = 5 * 1024 * 1024;
+export const LOG_GENERATIONS = 5; // <file>.1 (newest) to <file>.5 (oldest), hive.log's and facts.jsonl's alike (#93): about 7 weeks of facts.jsonl
 export const MESSAGE_MAX = 1000; // chars per line: a gh stderr blob or a crafted hook name must not become one unbounded entry
 const TAG_WIDTH = 5; // ERROR / WARN  / INFO  / DEBUG
 const ID_WIDTH = 8; // enough of a uuid to grep for
@@ -22,7 +23,7 @@ export const passes = (level: RecordLevel, threshold: LogLevel): boolean => LEVE
 
 export interface Logger {
   error(message: string): void; // file + stderr
-  record(level: RecordLevel, message: string): void; // file only, at its level (#742): an events.jsonl record's text line, whose failure already had its own stderr line
+  record(level: RecordLevel, message: string): void; // file only, at its level (#742): a facts.jsonl record's text line, whose failure already had its own stderr line
   warn(message: string): void; // refused or degraded (#742): an MCP refusal, a failed poll or source action, an HTTP 4xx/5xx
   info(message: string): void; // what the Hive did
   debug(message: string): void; // what it received; written only at level debug
@@ -49,8 +50,29 @@ function fileSize(path: string): number {
   }
 }
 
-/** One file in `dir`, sync appends, rotated once to `<file>.1` past `maxBytes`: hive.log's and events.jsonl's (#742). Never throws: a broken disk
- * disables the file with one stderr line, not the Hive. */
+/** A rotated file's names, oldest first: `<file>.5` … `<file>.1`, then `<file>` itself (#93). Every reader of the history walks them in this order. */
+export const generations = (file: string): string[] =>
+  [...Array.from({ length: LOG_GENERATIONS }, (_, i) => `${file}.${LOG_GENERATIONS - i}`), file];
+
+// A generation not there yet (a young home, or one removed by hand) is normal: the shift goes on past it
+function renameIfThere(from: string, to: string): void {
+  try {
+    renameSync(from, to);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+}
+
+// Each generation one step older, .4 → .5 first and the current file → .1 last, so no rename lands on a generation not yet moved; the rename
+// onto .5 drops the oldest. ponytail: two processes past maxBytes at once (only hive.log has several writers: the main process, run.ts,
+// hive login) may both shift, dropping one 5 MB generation early; a lock across processes if that loss ever matters
+function shift(path: string): void {
+  const names = generations(path);
+  for (let i = 0; i < LOG_GENERATIONS; i += 1) renameIfThere(names[i + 1], names[i]);
+}
+
+/** One file in `dir`, sync appends, rotated past `maxBytes` into LOG_GENERATIONS generations: hive.log's and facts.jsonl's (#742, #93). Never
+ * throws: a broken disk disables the file with one stderr line, not the Hive. */
 export function createAppender(dir: string, file: string, options: LoggerOptions = {}): (line: string) => void {
   const { maxBytes = LOG_MAX_BYTES, stderr = console.error } = options;
   const path = join(dir, file);
@@ -75,7 +97,7 @@ export function createAppender(dir: string, file: string, options: LoggerOptions
       // decides, so a stale count never rotates away a .1 another process just made
       if (size + bytes > maxBytes) size = fileSize(path);
       if (size > 0 && size + bytes > maxBytes) {
-        renameSync(path, `${path}.1`); // one rotation: the previous .1 is gone
+        shift(path); // five generations kept: the oldest is dropped (#93)
         size = 0;
       }
       appendFileSync(path, line, { mode: FILE_MODE });
@@ -86,7 +108,7 @@ export function createAppender(dir: string, file: string, options: LoggerOptions
   };
 }
 
-/** One file per home, `<ISO> <LEVEL> <message>` per line, rotated once at `maxBytes`. A line under the level is dropped; error always passes. */
+/** One file per home, `<ISO> <LEVEL> <message>` per line, rotated at `maxBytes` into LOG_GENERATIONS generations. A line under the level is dropped; error always passes. */
 export function createLogger(dir: string, level: LogLevel = 'info', options: LoggerOptions = {}): Logger {
   const { stderr = console.error } = options;
   const append = createAppender(dir, LOG_FILE, options);
@@ -295,7 +317,7 @@ const workerDetail = (state: State, worker: Worker): string => {
 };
 
 // A task's own transitions, matched by item id: the worktree vanished from disk, the auto switch flipped, or its worktree became ready (#164,
-// only when no automatic worker holds the task: a SessionStart already has its own line). A move is task.moved in events.jsonl (#742).
+// only when no automatic worker holds the task: a SessionStart already has its own line). A move is task.moved in facts.jsonl (#742).
 const taskLines = (prev: State, next: State): string[] => {
   const before = new Map(prev.tasks.map((c) => [taskId(c), c]));
   return next.tasks.flatMap((task) => {
@@ -312,7 +334,7 @@ const taskLines = (prev: State, next: State): string[] => {
   });
 };
 
-/** Worker transitions between two states: one line per worker whose status changed, in grid order, matched by id; then the sessions that appeared; then the task lines (worktree gone, auto switch, worktree ready). The signal and a move are events.jsonl's (#742). */
+/** Worker transitions between two states: one line per worker whose status changed, in grid order, matched by id; then the sessions that appeared; then the task lines (worktree gone, auto switch, worktree ready). The signal and a move are facts.jsonl's (#742). */
 export function describeChanges(prev: State, next: State): string[] {
   // A worker missing from prev appeared in this reduce: empty (setMax: no line) or already occupied (a start over the cap: one line).
   const before = (worker: Worker): Worker => prev.workers.find((s) => s.id === worker.id) ?? { id: worker.id, status: 'empty' };

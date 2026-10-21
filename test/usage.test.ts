@@ -9,7 +9,7 @@ import {
   cleanTitle, DAY_MS, HOUR_MS, hasBudget, isTranscriptIn, isTranscriptPath, isWorkerTranscript, pruneUsage, usageTotals,
 } from '../src/usage.js';
 import { parseUsageLine, readTranscript, transcriptDir } from '../src/agents/claude-transcript.js';
-import { ZERO_TOKENS } from '../src/events.js';
+import { ZERO_TOKENS } from '../src/facts.js';
 import type { UsageSample } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 

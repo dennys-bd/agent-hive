@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { detectAgents } from './agents.js';
+import { moveEventsFiles } from './facts.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { parseConfig, predatesComb, readConfig, unnamedWorkspacePath, workspaceScope } from './config.js';
 import { acquireLock, readDaemonPort, releaseLock, removeDaemonSecret, writeDaemonPort, writeDaemonSecret } from './daemon-files.js';
@@ -67,6 +68,9 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
   const agents = given.agents ?? (await detectAgents(execFileAsync));
   // #271: one store for both modes, since a setup saved in place runs workers too. It never rejects: one that cannot open keeps nothing and says
   // so in hive.log. ponytail: a config that fails to parse leaves it open until the process exits, which it then does
+  // #93: the fact log was events.jsonl. Its generations move first, so the usage store's first import below reads them and the server's
+  // writer appends to the moved file; under hive.lock, so no other daemon writes them meanwhile
+  moveEventsFiles(home, log);
   const usage = await openUsageStore(home, log);
   const deps: BootDeps = { ...given, agents, secret, usage };
   // #190: the model opens before the boot adapters, so each one stores its items there, a reused one included. #401: setup mode gets it too,

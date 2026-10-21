@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { commandLine, okLine } from './console.js';
-import type { StepKind } from './events.js';
+import type { StepKind } from './facts.js';
 import type { Logger } from './log.js';
 import { checkRelativePath, describeStep, parseSetup, type SetupStep } from './setup-script.js';
 import { timeoutMs as timeoutMsOf } from './timeout.js';
@@ -68,7 +68,7 @@ export interface StepDeps {
   signal?: AbortSignal; // a stop (#351): the running RUN's group is killed and it fails with `stopped`; no later step starts
   run?: RunShell; // runShell unless a test injects one
   home?: string; // where ~ expands in a COPY destination (#654): os.homedir() unless a test injects one
-  onStepEnd?(report: StepReport): void; // #742: events.jsonl's worktree.step
+  onStepEnd?(report: StepReport): void; // #742: facts.jsonl's worktree.step
   onPlan?(steps: string[], skipped: number): void; // #390: the expanded steps as describeStep writes them, once before the first; skipped: what a resume skips
   resume?: Resume; // #390: runSetup's; a teardown never resumes
 }

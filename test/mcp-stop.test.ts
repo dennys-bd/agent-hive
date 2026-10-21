@@ -9,10 +9,10 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BLOCK_MESSAGE, BLOCK_WITH_REASON_MESSAGE, CANNOT_BLOCK_MESSAGE, mountMcp, NOT_BLOCKED_MESSAGE } from '../src/mcp.js';
 import { initialState } from '../src/orchestrator.js';
 import type { RelateOutcome } from '../src/server-blockers.js';
-import type { RecordInput } from '../src/events.js';
+import type { RecordInput } from '../src/facts.js';
 import { MCP_DEFAULTS } from '../src/types.js';
 import type { BlockerChange, Config, HiveEvent, State, Task, Worker } from '../src/types.js';
-import { fakeEvents } from './fakes.js';
+import { fakeFacts } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
 
 // hive_stop with block (#294) over a fake relate: a ref in `refused` is refused, one in `closed` is written closed, any other is written open
@@ -29,7 +29,7 @@ async function harness(t: TestContext, { refused = [], closed = [], canRelate = 
   let state: State = withWork({ ...initialState(1), tasks: [TASK], workers }, ITEM_ID, { workerId: 'w1' });
   const asked: BlockerChange[] = [];
   const dispatched: HiveEvent[] = [];
-  const { events, records } = fakeEvents();
+  const { facts, records } = fakeFacts();
   const unused = async (): Promise<never> => { throw new Error('unused'); };
   const relate = async (_itemId: string, change: BlockerChange): Promise<RelateOutcome> => {
     asked.push(change);
@@ -42,7 +42,7 @@ async function harness(t: TestContext, { refused = [], closed = [], canRelate = 
   mountMcp(app, {
     exec: async () => ({ stdout: '' }), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
     dispatch: async (event) => { dispatched.push(event); return []; }, canClose: () => true, relate, canRelate: () => canRelate,
-    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, events, memory: { read: unused, update: unused },
+    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused },
   });
   const http = app.listen(0);
   t.after(() => http.close());
