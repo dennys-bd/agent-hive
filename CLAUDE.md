@@ -30,6 +30,8 @@ In the main checkout, clone the docs repository at `docs/`, which this repositor
 
 A task's spec, plan and walkthrough are committed in its docs worktree and reach the docs repository through their own PR, which `/hive:new-pr` opens before the code PR.
 
+A task's design folder (`docs/agent/hive/design/<date>-<slug>/`) is committed there too, run from inside the folder so git addresses the nested worktree (`git -C <folder> add <files>`, `git -C <folder> commit`): `docs: design for #<n>` for the folder's first commit, `docs: update design for #<n>` after; without an issue, name the slug.
+
 ## What counts as bounded here
 
 Bounded: one or two files, no new type in `src/types.ts`, no new source adapter, no new UI panel, no new rule in the orchestrator's reducer. Everything else is architectural and gets a spec: a new `Board` adapter, a change to `Task` / `Config` / `State` / `Card`, a new reducer rule, a new panel or route.

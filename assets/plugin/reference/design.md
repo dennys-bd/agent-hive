@@ -162,48 +162,6 @@ The design review, with a review checklist folded in as questions.
 - Return strengths, then the three to five issues that matter most, each with
   why it matters and a concrete fix.
 
-## Polish
-
-Refine, part 1. Preserve the visual world; never a hidden redesign.
-
-- Fix in order: blocked tasks and misleading state, missing states, flow and
-  hierarchy drift, visual inconsistency, leftovers.
-- Match neighbouring screens' terms, disclosure and save behaviour.
-- Align to the spacing scale, optically as well as mathematically.
-- Keep same-role type identical across screens; test wrapping and long copy.
-- Use semantic tokens with the same colour meaning in every theme.
-- Keep icon family, stroke and size coherent.
-- Give each control its states and a visible focus.
-- Test long, missing and empty content.
-- Keep terms, capitalisation and punctuation consistent; do not change claims.
-- Remove debug leftovers, dead styles and duplicated blocks.
-
-## Distill
-
-Refine, part 2. Remove what does not earn its place.
-
-- Name the one goal of the screen and keep only what serves it.
-- Remove repeated information and headings that restate their text.
-- Allow one primary action, few secondary, the rest hidden or tertiary.
-- Hide the rarely needed behind a clear entry point.
-- Cut borders, shadows and backgrounds that serve neither hierarchy nor function.
-- Flatten nesting; use spacing and alignment instead of cards.
-- Use one or two colours plus neutrals, and few type sizes and weights.
-- Cut copy in half; use the active voice and plain words.
-- Never drop a needed function, a label, or the hierarchy.
-
-## Normalize
-
-Align screens to the design system and to the patterns earlier designs set.
-
-- Read the design system and the other designs' handoffs first.
-- Replace one-off values and shapes with the system's tokens and components.
-- Unify variations of the same concept; keep apart things that differ in intent.
-- Extract a pattern only when it repeats three times with the same intent.
-- When a screen settles a pattern the design system lacks or contradicts,
-  change the design-system file and list it in the handoff.
-- Never change code.
-
 ## The .hv.html format
 
 A screen is one HTML document the Hive's design pane renders in a sandboxed
@@ -228,8 +186,10 @@ frame, with no network.
   size, in its section: no card, border or padding around it, no `overflow`
   that clips or scrolls it. The design pane shows it at its own size; only
   its canvas scrolls.
-- Theme tokens live under `:root` (dark) and `:root[data-theme="light"]`; a
-  new screen starts from the skeleton ("The skeleton" below).
+- Theme tokens live under `:root` (dark) and `:root[data-theme="light"]` in
+  the folder's `hv-tokens.css`, beside its `hv-kit.js`: one copy of each per
+  folder, shared by its screens, the kit never edited. A token one screen
+  alone needs stays in that screen's `<style>`.
 - An alternative direction the user asked for is its own file,
   `<screen>.<variant>.hv.html` (`a`, `b`…).
 - Declares `viewports` ("Tweaks" below) only when it lays out at 1280, 768
@@ -275,20 +235,6 @@ A screen declares its tweaks in one block in `<head>`:
   A script listens to `hv:tweak` and also reads the attribute at load.
 - The default state needs no attribute: without the pane (a screenshot)
   nothing sets them.
-
-### The skeleton
-
-`${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` holds the required tags,
-an `hv-tweaks` block declaring only the three `viewports` (a responsive
-page: drop the key for a window screen), the links to the folder's
-`hv-tokens.css` and `hv-kit.js`, and one section. Copy it for a new screen.
-Every design folder holds one copy of
-`${CLAUDE_PLUGIN_ROOT}/reference/hv-tokens.css` (the theme tokens under
-`:root` and `:root[data-theme="light"]`) and of
-`${CLAUDE_PLUGIN_ROOT}/reference/hv-kit.js`, shared by all its screens:
-copy both in with the folder's first screen, never edit the kit, and with a
-design system, its tokens replace those of `hv-tokens.css`. A token one
-screen alone needs stays in that screen's `<style>`.
 
 ### Interactions
 
