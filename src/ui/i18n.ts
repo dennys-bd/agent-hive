@@ -1939,7 +1939,7 @@ const en = {
   'pr.error.notFound': 'This PR was not found on GitHub.', 'pr.error.moved': 'The PR changed while it was read. Refresh.', // #849: the PR page's reads
   'pr.error.tooLarge': "This PR's diff is too large to show.", 'pr.error.github': "Couldn't read this PR from GitHub. Try again in a moment.",
   'pr.error.unexpected': 'Unexpected error.',
-  'repos.original': 'original', 'repos.fork': 'fork', 'repos.forkOf': 'fork of', // #854: a fork workspace's pair
+  'repos.original': 'original', 'repos.fork': 'fork', 'repos.nested': 'nested repo', 'repos.forkOf': 'fork of', // #854: a fork workspace's pair
   'repos.fork.noPrs': "no PRs on {fork}. in this workspace, the agents' PRs go to the original.",
   'repos.fork.noIssues': "issues are disabled on {fork}. this workspace's issues live on the original.",
   'repos.fork.openOriginal': 'open {original} ›',
@@ -4247,7 +4247,7 @@ const pt: Record<MessageKey, string> = {
   'pr.error.notFound': 'Este PR não foi encontrado no GitHub.', 'pr.error.moved': 'O PR mudou durante a leitura. Atualize.',
   'pr.error.tooLarge': 'O diff deste PR é grande demais para mostrar.', 'pr.error.github': 'Não foi possível ler este PR no GitHub. Tente de novo em instantes.',
   'pr.error.unexpected': 'Erro inesperado.',
-  'repos.original': 'original', 'repos.fork': 'fork', 'repos.forkOf': 'fork de',
+  'repos.original': 'original', 'repos.fork': 'fork', 'repos.nested': 'repo aninhado', 'repos.forkOf': 'fork de',
   'repos.fork.noPrs': 'nenhum PR em {fork}. neste workspace, os PRs dos agentes vão para o original.',
   'repos.fork.noIssues': 'as issues estão desativadas em {fork}. as issues deste workspace ficam no original.',
   'repos.fork.openOriginal': 'abrir {original} ›',

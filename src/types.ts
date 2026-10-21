@@ -1797,7 +1797,7 @@ export interface RepoSummary {
   openIssues: number;
   closedIssues: number;
   lastActivity?: string; // ISO: latest of pushedAt, last updated issue, last updated PR
-  role?: 'original' | 'fork'; // #854: a fork workspace's pair; absent for any other repository
+  role?: 'original' | 'fork' | 'nested'; // #854: a fork workspace's pair; #653: a workspace's nested repo, paired with its repository
   pr?: PrTarget; // #854: the pair's workspace's PR target, what the fork's empty states read
   fork?: { parent: string }; // #854: GitHub says it is a fork of `parent` (owner/name)
   pair?: string; // #886: the other repository of a fork workspace's pair (owner/name as listed), what the sidebar pairs by

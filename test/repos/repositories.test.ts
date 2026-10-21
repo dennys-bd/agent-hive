@@ -68,3 +68,26 @@ test('a fork workspace lists its original then its fork where its origin stood, 
     { repository: 'me/half', workspace: 'half' },
   ]);
 });
+
+test('a nested repo on GitHub follows its workspace\'s repositories, role nested, paired with the workspace\'s repository (a fork\'s original); one off GitHub or with no checkout adds none (#653)', async () => {
+  const urls: Record<string, string> = {
+    '/code/hive origin': 'git@github.com:acme/hive.git\n', '/code/hive/docs origin': 'https://github.com/acme/docs.git\n', '/code/hive/ee origin': 'https://gitlab.com/acme/ee.git\n',
+    '/code/ex upstream': 'https://github.com/ex/excalidraw.git\n', '/code/ex origin': 'git@github.com:me/excalidraw.git\n', '/code/ex/docs origin': 'https://github.com/me/ex-docs.git\n',
+  };
+  const remotes: Exec = async (_file, args) => {
+    const url = urls[`${args[1]} ${args.at(-1)}`];
+    if (url === undefined) throw new Error('no such remote');
+    return { stdout: url };
+  };
+  const comb: CombConfig = {
+    ...COMB,
+    workspaces: [{ ...workspace('hive'), nestedRepos: ['docs', 'ee', 'gone'] }, { ...workspace('ex'), fork: { remote: 'upstream', pr: 'original' }, nestedRepos: ['docs'] }],
+  };
+  assert.deepEqual(await listRepositories({ comb }, initialState(0), remotes), [
+    { repository: 'acme/hive', workspace: 'hive' },
+    { repository: 'acme/docs', workspace: 'hive', role: 'nested', pair: 'acme/hive' },
+    { repository: 'ex/excalidraw', workspace: 'ex', role: 'original', pr: 'original', pair: 'me/excalidraw' },
+    { repository: 'me/excalidraw', workspace: 'ex', role: 'fork', pr: 'original', pair: 'ex/excalidraw' },
+    { repository: 'me/ex-docs', workspace: 'ex', role: 'nested', pair: 'ex/excalidraw' },
+  ]);
+});
