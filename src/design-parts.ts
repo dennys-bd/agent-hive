@@ -1,12 +1,18 @@
 // Shared parts of design screens (#421): a screen includes markup fragments of its folder, and the design frame route assembles it before
 // serving, so the frame still gets one document and its policy stays as it is. assets/plugin/scripts/check-hv.mjs keeps a copy of these
 // rules, since the plugin is copied out of the repository; test/plugin-scripts.test.ts keeps the two in step.
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open, realpath } from 'node:fs/promises';
 import { posix, resolve } from 'node:path';
 import { attrOf, enclosingStart, matchingEnd, scanTags, type Tag, topLevelStarts } from './design-markup.js';
 
 /** How deep includes nest, counted from the screen: a header inside a shell is a real case, and the bound caps the work. */
 export const PART_DEPTH_MAX = 4;
+
+/** How many includes one assembly expands: a wide fan-out nested four deep would otherwise grow as N^4 (#421). */
+export const INCLUDES_MAX = 256;
+/** The most a part may weigh, in bytes: a screen's pieces are markup, and the route holds the whole assembly in memory. */
+export const PART_BYTES_MAX = 1024 * 1024;
 
 /** Why an include renders as its notice: the words the notice and check-hv's finding both carry. */
 export const PART_REASONS = {
@@ -21,6 +27,8 @@ export const PART_REASONS = {
   cycle: 'a cycle',
   depth: 'deeper than 4 levels', // PART_DEPTH_MAX
   tweaks: 'hv-tweaks belongs to the screen',
+  tooMany: 'too many includes',
+  tooLarge: 'too large',
 } as const;
 export type PartReason = (typeof PART_REASONS)[keyof typeof PART_REASONS];
 
@@ -40,8 +48,8 @@ const NOTICE_STYLE = 'display:block;box-sizing:border-box;margin:4px 0;padding:4
 interface Edit { from: number; to: number; insert: string }
 interface Marker { tag: Tag; end?: Tag; to: number }
 interface At { file: string; depth: number; stack: readonly string[] }
-// One assembly's reader and the parts it asked for, filled as includes are met
-interface Run { read: ReadPart; parts: Set<string> }
+// One assembly's reader, the parts it asked for and the reads made, filled as includes are met; `expanded` counts against INCLUDES_MAX
+interface Run { read: ReadPart; parts: Set<string>; reads: Map<string, Promise<PartRead>>; expanded: number }
 
 const escapeHtml = (text: string): string =>
   text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -90,7 +98,7 @@ export function partPath(file: string, src: string | undefined): { path: string 
 
 /** `screenPath`'s markup with every include in place: slots filled, origins marked, each broken include as its notice. */
 export async function assemble(screenPath: string, text: string, read: ReadPart): Promise<Assembled> {
-  const run: Run = { read, parts: new Set() };
+  const run: Run = { read, parts: new Set(), reads: new Map(), expanded: 0 };
   const html = await assembleFile(text, new Map(), { file: screenPath, depth: 0, stack: [screenPath] }, run);
   return { html, parts: [...run.parts].sort() };
 }
@@ -119,7 +127,7 @@ function fillSlots(text: string, fills: ReadonlyMap<string, string>): string {
     const fill = fills.get(name);
     const slot: Edit = { from: tag.start, to, insert: fill ?? (end === undefined ? '' : text.slice(tag.end, end.start)) };
     const holder = fill === undefined || hasElement(fill) ? undefined : enclosingStart(tags, tag.start);
-    if (holder === undefined || holders.has(holder)) return [slot];
+    if (holder === undefined || holders.has(holder) || attrOf(holder.attrs, FILL) !== undefined) return [slot];
     holders.add(holder);
     return [slot, attrEdit(holder, FILL, name)];
   });
@@ -143,10 +151,21 @@ async function includeOne(src: string | undefined, inner: string, at: At, run: R
   run.parts.add(path);
   if (at.stack.includes(path)) return partNotice(PART_REASONS.cycle, shown);
   if (at.depth >= PART_DEPTH_MAX) return partNotice(PART_REASONS.depth, shown);
-  const [read, fills] = await Promise.all([run.read(path), fillsOf(inner, at, run)]);
+  run.expanded += 1;
+  if (run.expanded > INCLUDES_MAX) return partNotice(PART_REASONS.tooMany, shown);
+  const [read, fills] = await Promise.all([readOnce(path, run), fillsOf(inner, at, run)]);
   if ('refused' in read) return partNotice(read.refused, shown);
   const body = await assembleFile(read.text, fills, { file: path, depth: at.depth + 1, stack: [...at.stack, path] }, run);
   return withSource(body, path);
+}
+
+// A part is read once per assembly, whatever the number of includes naming it
+function readOnce(path: string, run: Run): Promise<PartRead> {
+  const held = run.reads.get(path);
+  if (held !== undefined) return held;
+  const read = run.read(path);
+  run.reads.set(path, read);
+  return read;
 }
 
 // The include's fills by slot name: its <template data-hv-slot> children, each with its includes resolved from the including file and its
@@ -163,15 +182,25 @@ async function fillsOf(inner: string, at: At, run: Run): Promise<Map<string, str
 }
 
 /** The route's reader: a regular file whose realpath is its own path under `folder`, itself a real path, so a symbolic link anywhere on the
- *  way is refused, one to a file inside included, as check-hv refuses every link. */
+ *  way is refused, one to a file inside included, as check-hv refuses every link. The file is opened with O_NOFOLLOW and sized through the
+ *  handle, so a link swapped in after the realpath check is refused as well, and a part over PART_BYTES_MAX is not read (#421). */
 export function readPartFrom(folder: string): ReadPart {
   return async (path) => {
     const asked = resolve(folder, path);
     const real = await realpath(asked).catch(() => undefined);
     if (real === undefined) return { refused: PART_REASONS.missing };
     if (real !== asked) return { refused: PART_REASONS.symlink };
-    const isFile = await stat(real).then((info) => info.isFile(), () => false);
-    if (!isFile) return { refused: PART_REASONS.missing };
-    return readFile(real, 'utf8').then((text): PartRead => ({ text }), (): PartRead => ({ refused: PART_REASONS.missing }));
+    const handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW).catch((err: NodeJS.ErrnoException) => err);
+    if (handle instanceof Error) return { refused: handle.code === 'ELOOP' ? PART_REASONS.symlink : PART_REASONS.missing };
+    try {
+      const info = await handle.stat();
+      if (!info.isFile()) return { refused: PART_REASONS.missing };
+      if (info.size > PART_BYTES_MAX) return { refused: PART_REASONS.tooLarge };
+      return { text: await handle.readFile('utf8') };
+    } catch {
+      return { refused: PART_REASONS.missing };
+    } finally {
+      await handle.close();
+    }
   };
 }

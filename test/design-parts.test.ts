@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { assemble, PART_REASONS, type PartReason, partNotice, type ReadPart, readPartFrom } from '../src/design-parts.js';
+import { assemble, PART_BYTES_MAX, PART_REASONS, type PartReason, partNotice, type ReadPart, readPartFrom } from '../src/design-parts.js';
 import { tempDir } from './temp-dir.js';
 
 // An in-memory design folder: a path it does not hold is not found, and every path asked for is recorded
@@ -130,4 +130,26 @@ test('a marker inside a script, a style or a comment is left alone and nothing i
   const { read, reads } = memory({ 'a.html': '<b>a</b>' });
   assert.deepEqual(await assemble('s.hv.html', text, read), { html: text, parts: [] });
   assert.deepEqual(reads, []);
+});
+
+test('a wide fan-out reads each part once and expands at most 256 includes; the rest get the notice, so the work stays bounded (#421)', async () => {
+  const fan = (target: string): string => Array.from({ length: 20 }, () => `<hv-include src="${target}"></hv-include>`).join('');
+  const { read, reads } = memory({ 'a.html': fan('b.html'), 'b.html': fan('c.html'), 'c.html': fan('d.html'), 'd.html': '<i>d</i>' });
+  const { html } = await assemble('s.hv.html', fan('a.html'), read);
+  assert.equal(reads.length, new Set(reads).size);
+  assert.equal(html.split(PART_REASONS.tooMany).length - 1 > 0, true);
+  assert.equal(html.split('<i data-hv-source="d.html">d</i>').length - 1 <= 256, true);
+});
+
+test('a part over the size cap gets the too-large notice (#421)', async (t) => {
+  const folder = await realpath(await tempDir(t, 'parts-'));
+  await writeFile(join(folder, 'big.html'), `<p>${'x'.repeat(PART_BYTES_MAX)}</p>`);
+  const { html } = await assemble('s.hv.html', '<hv-include src="big.html"></hv-include>', readPartFrom(folder));
+  assert.equal(html, partNotice(PART_REASONS.tooLarge, 'big.html'));
+});
+
+test('a slot already marked with data-hv-fill on its holder is not marked twice (#421)', async () => {
+  const { read } = memory({ 'p.html': '<h2 data-hv-fill="mine"><hv-slot name="t">T</hv-slot></h2>' });
+  const { html } = await assemble('s.hv.html', '<hv-include src="p.html"><template data-hv-slot="t">Hi</template></hv-include>', read);
+  assert.equal(html, '<h2 data-hv-source="p.html" data-hv-fill="mine">Hi</h2>');
 });

@@ -60,7 +60,8 @@ export function attrOf(attrs: string, name: string): string | undefined {
 export function matchingEnd(tags: readonly Tag[], index: number): Tag | undefined {
   const { name } = tags[index];
   let depth = 0;
-  for (const tag of tags.slice(index)) {
+  for (let at = index; at < tags.length; at += 1) {
+    const tag = tags[at];
     if (tag.name !== name || (!tag.isEnd && tag.isSelfClosing)) continue;
     depth += tag.isEnd ? -1 : 1;
     if (depth === 0) return tag;
