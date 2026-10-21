@@ -107,3 +107,11 @@ test('+ adicionar opens the add row with the field focused; a refused add keeps 
   ]);
   expect(screen.getByRole('button', { name: '+ adicionar' })).toBeInTheDocument();
 });
+
+test('an inherited blocker reads as one line under the task\'s own rows, with its ancestor and no remove button (#424)', () => {
+  const held: Task = { ...TASK, item: { ...TASK.item, inheritedBlockedBy: [{ id: '40', via: '7' }] } };
+  render(<BlockersSection task={held} state={stateOf(held)} />);
+  expect(cells()).toHaveLength(3); // the editable rows stay the task's own relations
+  expect(within(section()).getByText('bloqueada por #40 (via #7)')).toHaveClass('text-muted-foreground');
+  expect(screen.queryByRole('button', { name: /#40/ })).not.toBeInTheDocument();
+});

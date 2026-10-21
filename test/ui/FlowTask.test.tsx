@@ -160,6 +160,16 @@ test('a blocked task shows every blocker once, on its own ⊘ line with the full
   expect(within(tile()).getByText('⊘ bloqueada por 274')).toBeInTheDocument();
 });
 
+test('a task held by an ancestor shows its own blockers, then each inherited one with the ancestor that holds it, and no start button, in both languages (#424)', () => {
+  const held = task({ item: { ...task().item, blockedBy: ['274'], inheritedBlockedBy: [{ id: '12', via: '7' }, { id: '15', via: '3' }] } });
+  const { rerender } = render(<Flow state={state(held)} />);
+  expect(within(tile()).getByText('⊘ bloqueada por 274, #12 (via #7), #15 (via #3)')).toHaveClass('text-muted-foreground');
+  expect(within(tile()).queryByRole('button', { name: 'iniciar' })).not.toBeInTheDocument();
+  setLanguage('en');
+  rerender(<Flow state={state(task({ item: { ...task().item, inheritedBlockedBy: [{ id: '12', via: '7' }] } }))} />);
+  expect(within(tile()).getByText('⊘ blocked by #12 (via #7)')).toBeInTheDocument();
+});
+
 test('an epic hides the ⊘ line when its blockers are only its children, and names only the others when there are (#54)', () => {
   const child = (n: string): Task => ({ ...task(), item: { ...task().item, itemId: `C${n}`, id: n, title: `Child ${n}` } });
   const epic = (blockedBy: string[]): Task => task({ item: { ...task().item, blockedBy, children: ['C2', 'C3'], epic: { follows: 'behind', switchAt: 'dev' } } });
