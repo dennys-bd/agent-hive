@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agentPrompt, commandFirst, hiveAction, runsAgent } from '../src/stage-agent.js';
+import { agentPrompt, commandFirst, hiveAction, rubricLines, runsAgent } from '../src/stage-agent.js';
 import type { Stage } from '../src/types.js';
 
 const stage = (extra: Partial<Stage>): Stage => ({ name: 's', from: {}, ...extra });
@@ -25,4 +25,9 @@ test('commandFirst splits a prompt opening on a slash command into its command l
   assert.equal(commandFirst('Run /hive:new-plan'), undefined);
   assert.equal(commandFirst('/ alone'), undefined);
   assert.equal(commandFirst('docs/x.md'), undefined);
+});
+
+test('rubricLines: every non-blank line, trimmed, in order; a blank rubric has none (#877)', () => {
+  assert.deepEqual(rubricLines(' a \n\n\tb\r\n  \nc'), ['a', 'b', 'c']);
+  assert.deepEqual(rubricLines(' \n '), []);
 });

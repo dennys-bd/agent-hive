@@ -1446,6 +1446,7 @@ const en = {
   'settings.stages.action.deleteActivity': 'delete activity',
   'settings.stages.action.deleteActivity.hint': 'never uses force; if git refuses, it shows on the task',
   'settings.stages.action.commands': 'run commands', // #755: the stage runs a list of the workspace's commands and ends with a verdict
+  'settings.stages.action.evaluate': 'evaluate', // #877: reviewers and a judge score the work against the rubric
   'settings.stages.action.waitForCi': 'wait for CI', // #834: the stage waits for its PRs' checks and ends with a verdict
   'settings.stages.commands': 'commands',
   'settings.stages.commands.add': '+ command',
@@ -3701,6 +3702,7 @@ const pt: Record<MessageKey, string> = {
   'settings.stages.action.deleteActivity': 'excluir atividade',
   'settings.stages.action.deleteActivity.hint': 'nunca usa force; se o git recusar, aparece na tarefa',
   'settings.stages.action.commands': 'executar comandos',
+  'settings.stages.action.evaluate': 'avaliar',
   'settings.stages.action.waitForCi': 'aguardar CI',
   'settings.stages.commands': 'comandos',
   'settings.stages.commands.add': '+ comando',

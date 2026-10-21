@@ -328,8 +328,9 @@ export const SOURCE_ACTIONS: Record<SourceFields['type'], SourceAction['type'][]
 
 /** What a stage does with a stopped task instead of running a prompt (#573: was cleanup): deleteActivity deletes the task's activity; commands
  * runs a list of the workspace's commands in its worktree and ends with a verdict (#755); waitForCi waits for the checks of the task's open PRs
- * and ends with a verdict (#834); skill (#710) runs one of the Hive's skills as its agent's prompt, /hive:<skill>: an agent stage, unlike the others. */
-export type StageAction = 'deleteActivity' | 'commands' | 'waitForCi' | 'skill';
+ * and ends with a verdict (#834); skill (#710) runs one of the Hive's skills as its agent's prompt, /hive:<skill>: an agent stage, unlike the others.
+ * evaluate (#877) runs reviewers and a judge read-only in the task's worktree and ends with a verdict from the judge's scores against the stage's threshold. */
+export type StageAction = 'deleteActivity' | 'commands' | 'waitForCi' | 'skill' | 'evaluate';
 
 /** What a commands stage does with a command that has no line in the task's workspace (#755): fail the stage before anything runs, or skip it.
  * A name the Comb no longer has fails it either way. */
@@ -361,7 +362,11 @@ export interface Stage {
   checks?: string[]; // #834: with ciChecks list only, required there: names or patterns (* = any run of characters), case-insensitive
   rerunOnce?: boolean; // #834: with action waitForCi only, required there: re-run the failed Actions jobs once per head commit before failing
   timeout?: string; // #834: with action waitForCi only: how long the wait may take from the stage's start (TIMEOUT); absent = no limit
-  verdicts?: string[]; // #134: prompt stages only: the verdicts hive_done may give here, each routed by its own transition; commands and waitForCi have FIXED_VERDICTS
+  reviewers?: EvaluateRow[]; // #877: with action evaluate only, required there (may be empty): each runs read-only in parallel with its focus
+  judge?: EvaluateRow; // #877: with action evaluate only, required there; no focus
+  threshold?: number; // #877: with action evaluate only, required there: 0..10, every dimension's score must reach it
+  rubric?: string; // #877: with action evaluate only, required there: a template, one dimension per non-blank line
+  verdicts?: string[]; // #134: prompt stages only: the verdicts hive_done may give here, each routed by its own transition; commands, waitForCi and evaluate have FIXED_VERDICTS
   after?: string; // delay from the task's entry into the stage before its prompt or action may run: "30m", "12h", "5d"; absent = right away
   approval?: true; // a stage end here waits for the user's approve or feedback (#268); prompt stages only: the parser refuses it next to action
   handoff?: true; // #692: the previous stage's session writes a handoff before the task enters here; the parser refuses it next to action or session continue
@@ -772,6 +777,8 @@ export const SWITCH_AT_DEFAULT = 'Build';
 /** The coding agents a stage can run (#516): ids only, their per-agent facts live in agents.ts. #101 adds codex here and there. */
 export const AGENT_IDS = ['claude', 'codex'] as const; // #927: codex runs flow stages; its free sessions are #931
 export type AgentId = (typeof AGENT_IDS)[number];
+/** One headless run of an evaluate stage (#877): its agent and launch picks; focus on a reviewer only. */
+export interface EvaluateRow { agent: AgentId; model?: string; specializedAgent?: string; focus?: string }
 /** What a new form offers as the default agent and what a file from before #516 reads as. */
 export const DEFAULT_AGENT: AgentId = 'claude';
 

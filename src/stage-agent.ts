@@ -34,3 +34,10 @@ export function commandFirst(prompt: string): { command: string; rest: string } 
   const command = first.trimEnd();
   return COMMAND_LINE.test(command) ? { command, rest: rest.join('\n').trim() } : undefined;
 }
+
+/** The highest score a judge gives a dimension (#877); the lowest is 0. The parser and the form bound the threshold by it. */
+export const SCORE_MAX = 10;
+
+/** An evaluate stage's dimensions (#877): every non-blank line of its rubric, trimmed, in order. The parser, the judge's score count
+ * and the form read the same lines. */
+export const rubricLines = (rubric: string): string[] => rubric.split('\n').map((line) => line.trim()).filter((line) => line !== '');

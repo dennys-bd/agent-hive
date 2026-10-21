@@ -1,4 +1,4 @@
-import { BotIcon, ListChecksIcon, type LucideIcon, Trash2Icon, UserCheckIcon, WorkflowIcon } from 'lucide-react';
+import { BotIcon, ListChecksIcon, type LucideIcon, ScaleIcon, Trash2Icon, UserCheckIcon, WorkflowIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { AgentField, ModelMenu, SkillMenu, SpecializedAgentMenu } from '@/components/LaunchMenus';
 import { MultiSelect } from '@/components/settings/MultiSelect';
@@ -61,9 +61,9 @@ type ActionValue = 'prompt' | 'gate' | StageAction;
 const ACTION_LABEL: Record<ActionValue, MessageKey> = {
   prompt: 'settings.stages.action.prompt', commands: 'settings.stages.action.commands', waitForCi: 'settings.stages.action.waitForCi',
   gate: 'settings.stages.action.gate', deleteActivity: 'settings.stages.action.deleteActivity',
-  skill: 'settings.stages.action.skill',
+  skill: 'settings.stages.action.skill', evaluate: 'settings.stages.action.evaluate',
 };
-const ACTION_ICON: Record<ActionValue, LucideIcon> = { prompt: BotIcon, commands: ListChecksIcon, waitForCi: WorkflowIcon, gate: UserCheckIcon, deleteActivity: Trash2Icon, skill: BotIcon };
+const ACTION_ICON: Record<ActionValue, LucideIcon> = { prompt: BotIcon, commands: ListChecksIcon, waitForCi: WorkflowIcon, gate: UserCheckIcon, deleteActivity: Trash2Icon, skill: BotIcon, evaluate: ScaleIcon };
 const ACTIONS: readonly ActionValue[] = ['prompt', 'skill', 'commands', 'waitForCi', 'gate', 'deleteActivity'];
 // #134: só aprovação is a prompt stage that runs nothing, so it is the draft's gate with approval locked on
 const picked = (value: string): Partial<StageDraft> =>

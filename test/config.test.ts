@@ -42,7 +42,7 @@ test('parseConfig reads stages[].action and after, keeps them absent when unset 
   const plain = parsed({});
   assert.deepEqual(['action' in plain, 'after' in plain], [false, false], 'absent stays absent: the file stays clean');
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
-  assert.throws(bad({ action: 'other' }), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands", "waitForCi" or "skill"' });
+  assert.throws(bad({ action: 'other' }), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands", "waitForCi", "skill" or "evaluate"' });
   assert.throws(bad({ action: 1 }), /comb\.stages\[0\]\.action/);
   assert.throws(bad({ action: 'deleteActivity', prompt: '/x' }), { message: 'hive.config.json: "comb.stages[0].action" cannot be combined with "prompt"' });
   for (const after of ['5', '0d', '5 d', '1w', '', '05d', '1.5h', '1H', 5, null]) {
@@ -52,7 +52,7 @@ test('parseConfig reads stages[].action and after, keeps them absent when unset 
 
 test('parseConfig refuses a stage whose action is still delete activity, naming deleteActivity, and reads deleteActivity (#573)', () => {
   const stage = (action: string) => ({ name: 'done', from: { board: ['Done'] }, action });
-  assert.throws(() => parseConfig(github({ stages: [stage('cleanup')] })), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands", "waitForCi" or "skill"' }); // #573: the old name, on purpose
+  assert.throws(() => parseConfig(github({ stages: [stage('cleanup')] })), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands", "waitForCi", "skill" or "evaluate"' }); // #573: the old name, on purpose
   assert.equal(parseConfig(github({ stages: [stage('deleteActivity')] })).comb.stages[0].action, 'deleteActivity');
 });
 
@@ -1039,6 +1039,52 @@ test('parseConfig reads a wait-for-CI stage: which checks, the list only with li
     [{ ...ok, commands: ['build'] }, '"comb.stages[0].commands" needs "action": "commands"'],
     [{ ...ok, stopOnFailure: true }, '"comb.stages[0].stopOnFailure" needs "action": "commands"'],
     [{ ...ok, onMissing: 'fail' }, '"comb.stages[0].onMissing" needs "action": "commands"'],
+  ];
+  for (const [extra, message] of refused) assert.throws(bad(extra), { message: `hive.config.json: ${message}` }, JSON.stringify(extra));
+});
+
+test('parseConfig reads an evaluate stage: reviewers with a focus, a judge with none, a 0..10 threshold and a rubric with a line; refuses each key without the action, a bad row and every other key beside it (#877)', () => {
+  const stage = (extra: Record<string, unknown>) => ({ name: 'eval', from: { board: ['Eval'] }, ...extra });
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
+  const ok = {
+    action: 'evaluate',
+    reviewers: [{ agent: 'claude', specializedAgent: 'hive:security-reviewer', focus: ' security and data ' }, { agent: 'codex', model: 'gpt-5.6-terra', focus: 'the spec' }],
+    judge: { agent: 'claude', model: 'opus' }, threshold: 7, rubric: 'Meets {result.spec}?\n\n  Tests cover it?  ',
+  };
+  assert.deepEqual(parsed(ok), {
+    name: 'eval', from: { board: ['Eval'] }, action: 'evaluate',
+    reviewers: [{ agent: 'claude', specializedAgent: 'hive:security-reviewer', focus: 'security and data' }, { agent: 'codex', model: 'gpt-5.6-terra', focus: 'the spec' }],
+    judge: { agent: 'claude', model: 'opus' }, threshold: 7, rubric: 'Meets {result.spec}?\n\n  Tests cover it?  ',
+  }, 'the rubric is kept as typed: rubricLines reads it');
+  assert.deepEqual(parsed({ ...ok, reviewers: [], threshold: 0 }).reviewers, [], 'no reviewer: the judge reads the work alone');
+  const f = (key: string) => `"comb.stages[0].${key}"`;
+  const refused: [Record<string, unknown>, string][] = [
+    [{ reviewers: [] }, `${f('reviewers')} needs "action": "evaluate"`],
+    [{ judge: { agent: 'claude' } }, `${f('judge')} needs "action": "evaluate"`],
+    [{ threshold: 7 }, `${f('threshold')} needs "action": "evaluate"`],
+    [{ rubric: 'x' }, `${f('rubric')} needs "action": "evaluate"`],
+    [{ ...ok, reviewers: undefined }, `${f('reviewers')} must be an array of reviewers`],
+    [{ ...ok, judge: undefined }, `${f('judge')} must be an object`],
+    [{ ...ok, reviewers: [{ agent: 'gemini', focus: 'x' }] }, `${f('reviewers[0].agent')} must be one of: claude, codex`],
+    [{ ...ok, reviewers: [{ agent: 'claude', focus: '  ' }] }, `${f('reviewers[0].focus')} must be a non-empty string`],
+    [{ ...ok, reviewers: [{ agent: 'claude', focus: 'x', model: '-rf' }] }, `${f('reviewers[0].model')} must be a model name`],
+    [{ ...ok, reviewers: [{ agent: 'claude', focus: 'x', specializedAgent: 'reviewer' }] }, `${f('reviewers[0].specializedAgent')} must be hive:<name>, lowercase letters, digits and hyphens`],
+    [{ ...ok, judge: { agent: 'claude', focus: 'x' } }, `${f('judge.focus')} is a reviewer's: the judge has none`],
+    [{ ...ok, threshold: 11 }, `${f('threshold')} must be an integer from 0 to 10`],
+    [{ ...ok, threshold: 6.5 }, `${f('threshold')} must be an integer from 0 to 10`],
+    [{ ...ok, threshold: undefined }, `${f('threshold')} must be an integer from 0 to 10`],
+    [{ ...ok, rubric: ' \n\t\n' }, `${f('rubric')} must hold at least one dimension: a non-blank line`],
+    [{ ...ok, model: 'opus' }, `${f('model')} cannot be combined with "action": "evaluate"`],
+    [{ ...ok, session: 'new' }, `${f('session')} cannot be combined with "action": "evaluate"`],
+    [{ ...ok, prompt: '/x' }, `${f('action')} cannot be combined with "prompt"`],
+    [{ ...ok, approval: true }, `${f('approval')} cannot be combined with "action"`],
+    [{ ...ok, agent: 'claude' }, `${f('agent')} cannot be combined with "action"`],
+    [{ ...ok, handoff: true }, `${f('handoff')} cannot be combined with "action"`],
+    [{ ...ok, verdicts: ['x'] }, `${f('verdicts')} cannot be combined with "action": its verdicts are fixed`],
+    [{ ...ok, specializedAgent: 'hive:x' }, `${f('specializedAgent')} needs a stage that runs an agent: a "prompt" or "action": "skill"`],
+    [{ ...ok, commands: ['build'] }, `${f('commands')} needs "action": "commands"`],
+    [{ ...ok, timeout: '1h' }, `${f('timeout')} needs "action": "waitForCi"`],
   ];
   for (const [extra, message] of refused) assert.throws(bad(extra), { message: `hive.config.json: ${message}` }, JSON.stringify(extra));
 });
