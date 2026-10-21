@@ -205,3 +205,30 @@ test('a nested worktree the teardown already removed counts as done (#653)', asy
   assert.equal(await exists(task), false);
   assert.equal((await git(f.docs, 'worktree', 'list', '--porcelain')).includes(task), false);
 });
+
+test('a resumed nested branch needs no fetch: an unreachable origin adds no note (#653)', async (t) => {
+  const f = await fixture(t);
+  await git(f.docs, 'branch', BRANCH);
+  await git(f.docs, 'remote', 'set-url', 'origin', join(f.outer, 'no-such-origin'));
+  const task = await outerWorktree(f.outer);
+  assert.deepEqual(await ensureNestedWorktrees(f.workspace, task, BRANCH, 'main', exec), [`docs: reused ${BRANCH}`]);
+});
+
+test('a checkout switch refuses only the nested repos that would move: one already on the branch keeps its work (#653)', async (t) => {
+  const f = await fixture(t);
+  await git(f.docs, 'checkout', '--quiet', '-b', BRANCH);
+  await writeFile(join(f.docs, 'draft.md'), 'wip');
+  await ensureCheckout(f.outer, BRANCH, ORIGIN, undefined, exec, f.workspace.nestedRepos);
+  assert.deepEqual(await switchNested(f.workspace, BRANCH, 'main', exec), []);
+  assert.equal(await git(f.outer, 'branch', '--show-current'), BRANCH);
+});
+
+test('the forced removal still removes the task\'s worktree when a nested repo\'s git fails (#653)', async (t) => {
+  const f = await fixture(t);
+  const task = await outerWorktree(f.outer);
+  await ensureNestedWorktrees(f.workspace, task, BRANCH, 'main', exec);
+  // every git call into the nested repo fails, as a corrupted one would
+  const broken: Exec = (file, args, options) => (args[0] === '-C' && args[1] === f.docs ? Promise.reject(new Error('fatal: bad object HEAD')) : exec(file, args, options));
+  await removeWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, await tempDir(t, 'prompts-'), broken, ['docs']);
+  assert.equal(await exists(task), false);
+});

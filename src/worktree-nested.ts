@@ -58,11 +58,11 @@ async function ensureOne(workspace: NestedWorkspace, taskPath: string, path: str
     return `${path}: reused ${branch}`;
   }
   if (listed !== undefined) await git('worktree', 'prune'); // a stale entry for a folder gone from disk would refuse the add
-  const note = await fetchNote(git);
   if (await hasBranch(repo, branch, exec)) {
-    await git('worktree', 'add', '--', dir, branch);
-    return `${path}: reused ${branch}${note}`;
+    await git('worktree', 'add', '--', dir, branch); // a resume: checked out as it is, so no fetch and no network
+    return `${path}: reused ${branch}`;
   }
+  const note = await fetchNote(git);
   const base = await nestedBase(repo, baseName, exec);
   await git('worktree', 'add', '--no-track', '-b', branch, '--', dir, base);
   return `${path}: ${base}${note}`;
@@ -90,7 +90,7 @@ async function switchOne(repo: string, path: string, branch: string, baseName: s
 
 /** The checkout task's version (#653, #444): each nested checkout onto the task's branch, after ensureCheckout. One already on it is left alone,
  * work in progress included. Any one that would switch with uncommitted changes refuses before any of them moves. ensureCheckout already
- * refused the outer switch while one was dirty. */
+ * refused the outer switch while one that would switch was dirty. */
 export async function switchNested(workspace: NestedWorkspace, branch: string, baseName: string | undefined, exec: Exec = execFileAsync): Promise<string[]> {
   const current = await Promise.all(workspace.nestedRepos.map(async (path) => {
     const repo = join(workspace.path, path);
@@ -105,11 +105,14 @@ export async function switchNested(workspace: NestedWorkspace, branch: string, b
 }
 
 /** What `worktree remove` and a switch would lose, checked first (#653): every nested worktree under `root` (a task's worktree), or every nested
- * checkout (`root` = the workspace, for a checkout task), with refuseDirty's words. A nested folder that is not there is skipped. */
-export async function refuseDirtyNested(workspace: NestedWorkspace, root: string, exec: Exec = execFileAsync): Promise<void> {
+ * checkout (`root` = the workspace, for a checkout task), with refuseDirty's words. A nested folder that is not there is skipped. `onBranch`, for a
+ * switch: a nested checkout already on it does not move, so its work in progress is kept, not refused. */
+export async function refuseDirtyNested(workspace: NestedWorkspace, root: string, exec: Exec = execFileAsync, onBranch?: string): Promise<void> {
   for (const path of workspace.nestedRepos) {
     const dir = join(root, path);
-    if (await hasGit(dir)) await refuseDirty(dir, exec);
+    if (!(await hasGit(dir))) continue;
+    if (onBranch !== undefined && (await gitOrWords(dir, ['branch', '--show-current'], exec)).trim() === onBranch) continue;
+    await refuseDirty(dir, exec);
   }
 }
 
@@ -136,7 +139,12 @@ async function removeOne(repo: string, dir: string, branch: string | undefined, 
 export async function removeNested(workspace: NestedWorkspace, taskPath: string, branch: string | undefined, force: boolean, exec: Exec = execFileAsync): Promise<void> {
   for (const path of workspace.nestedRepos) {
     const repo = join(workspace.path, path);
-    if (await hasGit(repo)) await removeOne(repo, join(taskPath, path), branch, force, exec);
+    if (!(await hasGit(repo))) continue;
+    // forced is forced: a nested repo git cannot answer never keeps the task's worktree; the outer --force --force deletes the folder, and that
+    // repo's next `worktree prune` drops the entry. A normal removal still rejects with git's words
+    await removeOne(repo, join(taskPath, path), branch, force, exec).catch((err: unknown) => {
+      if (!force) throw err;
+    });
   }
 }
 

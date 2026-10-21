@@ -179,7 +179,7 @@ export async function ensureCheckout(
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   if ((await git('branch', '--show-current')).trim() === branch) return { path: repo }; // no switch: the task's own work in progress stays
   await refuseDirty(repo, exec);
-  await refuseDirtyNested({ path: repo, nestedRepos: nested }, repo, exec); // #653: no half-switched state, so a dirty nested checkout refuses first
+  await refuseDirtyNested({ path: repo, nestedRepos: nested }, repo, exec, branch); // #653: no half-switched state; one already on the branch stays as it is
   if (branch.startsWith('-')) throw new Error(`${branch}: a branch cannot start with "-"`); // switch would read it as an option
   if (await hasBranch(repo, branch, exec)) {
     await git('switch', branch);
