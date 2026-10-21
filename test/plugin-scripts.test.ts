@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { copyFile, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { assemble, partPath, readPartFrom } from '../src/design-parts.js';
 import { parseTweaks } from '../src/design-tweaks.js';
 import { pluginSource } from '../src/hooks-settings.js';
 import { tempDir } from './temp-dir.js';
@@ -14,7 +15,7 @@ import { tempDir } from './temp-dir.js';
 // run: CI has no Chrome.
 const run = promisify(execFile);
 const SCRIPTS = join(pluginSource(), 'scripts');
-interface CheckHv { parseTweaks(raw: unknown): unknown; checkFolder(folder: string): Promise<string[]> }
+interface CheckHv { parseTweaks(raw: unknown): unknown; checkFolder(folder: string): Promise<string[]>; partPath(file: string, src: string | undefined): unknown }
 const load = async <T>(name: string): Promise<T> => (await import(pathToFileURL(join(SCRIPTS, name)).href)) as T;
 
 const screen = (body = '<section id="state-default"><h2>default</h2></section>', tweaks = '{}'): string => [
@@ -94,6 +95,49 @@ test('check-hv.mjs prints one line per finding and exits 1: a URL, a parent path
 test('check-hv.mjs\'s tweak rules answer as src/design-tweaks.ts does on the same blocks, reasons included (#241)', async () => {
   const script = await load<CheckHv>('check-hv.mjs');
   for (const raw of BLOCKS) assert.deepEqual(script.parseTweaks(raw), parseTweaks(raw), JSON.stringify(raw)?.slice(0, 80));
+});
+
+// The same broken includes through the route's assembly and through check-hv: each reason for each src, from both (#421)
+const SRCS = ['parts/a.html', './b.html', '/x.html', 'https://x.test/a.html', 'a\\b.html', '../x.html', 'p/../x.html', '.git/x.html', 'p/.x.html', 'x.hv.html', 'X.HV.HTML', 'x.css', '', ' ', undefined];
+
+test('check-hv.mjs reports each broken include in the words of the route\'s notice for it, on the same folder; its path rules answer as src/design-parts.ts does (#421)', async (t) => {
+  const script = await load<CheckHv>('check-hv.mjs');
+  for (const src of SRCS) assert.deepEqual(script.partPath('parts/shell.html', src), partPath('parts/shell.html', src), String(src));
+  const folder = await realpath(await tempDir(t, 'hv-'));
+  await mkdir(join(folder, 'parts'));
+  const broken = ['/abs.html', '../up.html', '.hidden/x.html', 'other.hv.html', 'style.css', 'parts/nope.html', 'parts/out.html', 'parts/a.html', 'parts/p1.html'];
+  await writeFile(join(folder, 'home.hv.html'), screen([...broken.map((src) => `<hv-include src="${src}"></hv-include>`), '<hv-include></hv-include>'].join('\n')));
+  await writeFile(join(folder, 'parts', 'a.html'), '<p>a</p><hv-include src="b.html"></hv-include>');
+  await writeFile(join(folder, 'parts', 'b.html'), '<p>b</p><hv-include src="a.html"></hv-include>');
+  await symlink(join(folder, 'parts', 'a.html'), join(folder, 'parts', 'out.html'));
+  for (let i = 1; i <= 5; i += 1) await writeFile(join(folder, 'parts', `p${i}.html`), `<i>${i}</i>${i < 5 ? `<hv-include src="p${i + 1}.html"></hv-include>` : ''}`);
+  const { html } = await assemble('home.hv.html', await readFile(join(folder, 'home.hv.html'), 'utf8'), readPartFrom(folder));
+  const notices = [...html.matchAll(/hv-include: ([^<]*)<\/div>/g)].map(([, said]) => said).sort();
+  const marker = ': hv-include: ';
+  const findings = (await script.checkFolder(folder)).flatMap((line) => (line.includes(marker) ? [line.slice(line.indexOf(marker) + marker.length)] : [])).sort();
+  assert.equal(notices.length, 10, html);
+  assert.deepEqual(findings, notices);
+});
+
+test('check-hv.mjs exits 0 on screens that include valid parts; it reports a slot fill the part does not declare, a part that is a document or holds hv-tweaks, and a mark written by hand (#421)', async (t) => {
+  const folder = await tempDir(t, 'hv-');
+  await mkdir(join(folder, 'parts'));
+  await writeFile(join(folder, 'parts', 'sidebar.html'), '<nav class="sidebar"><a>Issues</a></nav>\n');
+  await writeFile(join(folder, 'parts', 'detail.html'), '<aside><h2><hv-slot name="title">Title</hv-slot></h2></aside>\n');
+  await writeFile(join(folder, 'issue.hv.html'), screen('<hv-include src="parts/sidebar.html"></hv-include>\n<hv-include src="parts/detail.html"><template data-hv-slot="title">Fix login</template></hv-include>'));
+  await writeFile(join(folder, 'board.hv.html'), screen('<hv-include src="parts/sidebar.html"></hv-include>'));
+  assert.deepEqual(await check(folder), { code: 0, stdout: '' });
+  await writeFile(join(folder, 'bad.hv.html'), screen('<hv-include src="parts/detail.html"><template data-hv-slot="body"><p>x</p></template></hv-include>\n<p data-hv-source="x.html">hand</p>'));
+  await writeFile(join(folder, 'parts', 'doc.html'), '<!doctype html><html><body><p>x</p></body></html>\n');
+  await writeFile(join(folder, 'parts', 'tweaked.html'), '<script type="application/json" id="hv-tweaks">{}</script>\n<p>t</p>\n');
+  const { code, stdout } = await check(folder);
+  assert.equal(code, 1);
+  assert.deepEqual(stdout.trim().split('\n').sort(), [
+    'bad.hv.html: data-hv-source and data-hv-fill are written by the Hive, never by hand',
+    'bad.hv.html: hv-include: fills slot body, which the part does not declare: parts/detail.html',
+    'parts/doc.html: a part is a fragment, with no <!doctype, <html, <head or <body',
+    'parts/tweaked.html: hv-tweaks belongs to the screen, not a part',
+  ].sort());
 });
 
 test('the tweak rules refuse a name past 64, more than 64 options, and an option or group past 200, and take the limits themselves (#241)', () => {
