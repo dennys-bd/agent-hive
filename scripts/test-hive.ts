@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { CONFIG_FILE } from '../src/config.js';
-import { LOG_FILE } from '../src/log.js';
+import { generations, LOG_FILE } from '../src/log.js';
 import { type BoardEnv, FIXTURE_DIR, materializeTestConfig, readBoardEnv, readFixture, stopTestHive, testWorktrees } from './test-home.js';
 
 const execFileAsync = promisify(execFile);
@@ -26,7 +26,7 @@ async function resetHome(home: string, workspace: string, board: BoardEnv): Prom
   const config = materializeTestConfig(await readFixture(CONFIG_FILE), { workspace, ...board });
   await writeFile(join(home, CONFIG_FILE), `${JSON.stringify(config, null, 2)}\n`);
   await copyFile(join(FIXTURE_DIR, STATE_FILE), join(home, STATE_FILE));
-  await Promise.all([LOG_FILE, `${LOG_FILE}.1`].map((name) => rm(join(home, name), { force: true })));
+  await Promise.all(generations(LOG_FILE).map((name) => rm(join(home, name), { force: true })));
 }
 
 // The fresh state knows no task, so every test worktree and branch left from an earlier run, in this worktree or another, is stale.

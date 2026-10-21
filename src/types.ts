@@ -510,7 +510,7 @@ export interface StageCi {
   rerunAt?: string; // when the last re-run was asked (ISO): a failure on a re-run head completed by then is the old one, still read as pending
   done?: number; total?: number; waitingPr?: true; // the last read, for the card
   collecting?: true; // the failed logs are being fetched; dropped on boot
-  fellBack?: true; // required fell back to all and the event log said so, once
+  fellBack?: true; // required fell back to all and the fact log said so, once
   awaiting?: number; // #854: workflows awaiting a maintainer's approval at the last read, for the card; dropped by a read without any
   noRerun?: true; // #854: a failure rerunOnce could not re-run (no push rights): the wait holds for a new push or a maintainer
   checks?: StageCiCheck[]; // #914: the last read's considered checks, ordered for the running block; not persisted, the next read writes them

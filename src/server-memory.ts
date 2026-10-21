@@ -140,7 +140,7 @@ async function saveCap(deps: MemoryRouteDeps, req: Request, res: Response): Prom
   });
 }
 
-// GET /workspaces/:name/memory and …/stats: the view, and the last 7 days of the local event log
+// GET /workspaces/:name/memory and …/stats: the view, and the last 7 days of the local fact log
 function registerReads(app: Express, deps: MemoryRouteDeps): void {
   app.get('/workspaces/:name/memory', async (req: Request, res: Response) => {
     const workspace = workspaceParam(deps, req, res);

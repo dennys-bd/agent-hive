@@ -148,7 +148,7 @@ function conflictOf(prs: readonly CiPrRead[]): { names: string[]; output: string
 }
 
 /** One read of the wait's PRs (#834): a conflict first (#264), then the timeout, then the verdict. With no open PR, a task whose PRs are all merged passes (#304). A wait fetching its logs, an unknown
- * activity and a Quit ignore it. The first read whose required fell back marks it, so the event log says so once. */
+ * activity and a Quit ignore it. The first read whose required fell back marks it, so the fact log says so once. */
 export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent, { type: 'ciRead' }>): Reduced {
   const wait = waitOf(state, activityId);
   const stage = wait && stageOf(state.stages, wait.ci.stage);

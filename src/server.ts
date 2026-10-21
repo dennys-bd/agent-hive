@@ -174,7 +174,7 @@ export interface ServerDeps {
   settingsGql?: (auth: GithubAuth) => Gql;
   /** #180: hive mode's read model, opened by bootHive; absent (setup mode, a failed open, every server test) no read sync runs. */
   readModel?: ReadModel;
-  /** #271: the usage store bootHive opened; the event log hands it every record, and close() closes it. Absent (every server test but one): nothing is kept. */
+  /** #271: the usage store bootHive opened; the fact log hands it every record, and close() closes it. Absent (every server test but one): nothing is kept. */
   usage?: UsageStore;
   /** #187: the read sync's login and transports; tests inject a fake, the default is accessFor with auth.github's transport. */
   readAccess?: () => Promise<ReadAccess | undefined>;
