@@ -58,6 +58,14 @@ export function parseAnchor(raw: unknown): ReviewAnchor | undefined {
 const SELECTOR_MAX = 1000; // characters
 const ELEMENT_TEXT_MAX = 500; // characters, stored as sent
 const isCoord = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const PART_MAX = 1000; // characters: a path in a design folder, from the activity
+const SLOT_NAME = /^[a-z][a-z0-9-]{0,63}$/;
+// A part's path (#421): data the agent opens from the activity, so relative and never through ..
+const isPartPath = (value: unknown): value is string => typeof value === 'string' && value !== '' && value.length <= PART_MAX
+  && !value.startsWith('/') && !value.includes('\\') && !value.split('/').includes('..');
+// Where an element came from (#421): each field dropped alone when invalid, so the comment still reaches its element
+const originOf = ({ part, slot }: Record<string, unknown>): { part?: string; slot?: string } =>
+  ({ ...(isPartPath(part) ? { part } : {}), ...(typeof slot === 'string' && SLOT_NAME.test(slot) ? { slot } : {}) });
 const isViewport = (value: unknown): value is DesignViewport => DESIGN_VIEWPORTS.includes(value as DesignViewport);
 
 function rectOf(raw: unknown): DesignRect | undefined {
@@ -73,7 +81,7 @@ function targetOf(raw: Record<string, unknown>): DesignTarget | undefined {
   if (raw.kind === 'area') return { kind: 'area', rect };
   const { selector, text } = raw;
   if (raw.kind !== 'element' || typeof selector !== 'string' || selector === '' || selector.length > SELECTOR_MAX) return undefined;
-  return typeof text === 'string' && text.length <= ELEMENT_TEXT_MAX ? { kind: 'element', selector, text, rect } : undefined;
+  return typeof text === 'string' && text.length <= ELEMENT_TEXT_MAX ? { kind: 'element', selector, text, rect, ...originOf(raw) } : undefined;
 }
 
 const isTweakValue = (value: unknown): value is DesignTweakValue =>

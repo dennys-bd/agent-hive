@@ -23,3 +23,15 @@ test('parseDesignAnchor takes a viewport by name, natural included, and refuses 
   for (const viewport of ['natural', 'desktop', 'tablet', 'mobile']) assert.equal(parseDesignAnchor({ ...AREA, viewport, tweaks: {} })?.viewport, viewport);
   for (const viewport of [1280, 390, 'wide', undefined]) assert.equal(parseDesignAnchor({ ...AREA, viewport, tweaks: {} }), undefined, String(viewport));
 });
+
+const ELEMENT = { ...AREA, kind: 'element', selector: 'nav > a', text: 'Issues', tweaks: {} };
+
+test('parseDesignAnchor keeps an element\'s part and slot, drops either alone when invalid, never the comment, and gives an area neither (#421)', () => {
+  const part = 'agent/hive/designs/x/parts/sidebar.html';
+  assert.deepEqual(parseDesignAnchor({ ...ELEMENT, part, slot: 'title' }), { ...ELEMENT, part, slot: 'title' });
+  for (const bad of ['', '/etc/x.html', '../x.html', 'a/../../x.html', 'a\\b.html', 'p'.repeat(1001), 7, null]) {
+    assert.deepEqual(parseDesignAnchor({ ...ELEMENT, part: bad, slot: 'title' }), { ...ELEMENT, slot: 'title' }, String(bad).slice(0, 20));
+  }
+  for (const bad of ['Title', '1st', 'a b', 's'.repeat(65), 3]) assert.deepEqual(parseDesignAnchor({ ...ELEMENT, part, slot: bad }), { ...ELEMENT, part }, String(bad));
+  assert.deepEqual(parseDesignAnchor({ ...AREA, tweaks: {}, part, slot: 'title' }), { ...AREA, tweaks: {} });
+});

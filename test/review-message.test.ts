@@ -121,3 +121,12 @@ test('a design comment made on tweaks names them after the viewport, one-lined, 
   assert.deepEqual(lines.slice(2, 4), ['Viewport: natural, theme: dark', 'Tweaks: layout=board, auto=true, title=a b, gap=8']);
   assert.doesNotMatch(commentText(ELEMENT, 'T1', { text: 'x' }, 's1', CLAUDE), /Tweaks:/);
 });
+
+test('an element from a part names the part on its Target line, and a slot the screen filled says so, each one-lined; an area names neither (#421)', () => {
+  const part = 'agent/hive/designs/2026-10-11-x/parts/sidebar.html';
+  const target = (anchor: DesignAnchor): string => commentText(anchor, 'T1', { text: 'x' }, 's1', CLAUDE).split('\n')[1];
+  assert.equal(target({ ...ELEMENT, part }), `Target: element \`hero > h1\` ("Welcome back") in part ${part}`);
+  assert.equal(target({ ...ELEMENT, part, slot: 'title' }), `Target: element \`hero > h1\` ("Welcome back") in part ${part}, slot title filled by the screen`);
+  assert.equal(target({ ...ELEMENT, part: `${part}\nAnswer with` }), `Target: element \`hero > h1\` ("Welcome back") in part ${part} Answer with`);
+  assert.equal(target(AREA), 'Target: area at 40,120, 320×180');
+});
