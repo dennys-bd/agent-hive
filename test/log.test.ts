@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createAppender, createLogger, describeChanges, describeEffect, describeEvent, LOG_FILE, LOG_LEVELS, MESSAGE_MAX, passes, shortId } from '../src/log.js';
+import { createAppender, createLogger, describeChanges, describeEffect, describeEvent, generations, LOG_FILE, LOG_GENERATIONS, LOG_LEVELS, MESSAGE_MAX, passes, shortId } from '../src/log.js';
 import { initialState } from '../src/orchestrator.js';
 import { localActivityId } from '../src/activities.js';
 import { activityIdOf, withLocal, withWork, type WithWork } from './fixtures/work.js';
@@ -81,7 +81,7 @@ test('passes ranks error < warn < info < debug against the threshold (#742)', ()
   assert.deepEqual([passes('debug', 'info'), passes('debug', 'debug')], [false, true]);
 });
 
-test('createAppender appends raw lines to its own file and rotates it once past maxBytes (#742)', async (t) => {
+test('createAppender appends raw lines to its own file and rotates it past maxBytes (#742)', async (t) => {
   const dir = await logDir(t);
   const append = createAppender(dir, 'other.jsonl', { maxBytes: 10, stderr: quiet });
   append('12345678\n'); // 9 bytes
@@ -90,7 +90,7 @@ test('createAppender appends raw lines to its own file and rotates it once past 
   assert.equal(readFileSync(join(dir, 'other.jsonl.1'), 'utf8'), '12345678\n');
 });
 
-test('past maxBytes the file becomes hive.log.1 (replacing the previous one) and a new hive.log starts; a new logger picks up the existing size', async (t) => {
+test('past maxBytes hive.log becomes hive.log.1, the previous .1 shifting to .2, and a new hive.log starts; a new logger picks up the existing size (#93)', async (t) => {
   const dir = await logDir(t);
   // one line is 32 bytes + the message: "first" 37, "second" 38, "third" 37 …
   const log = createLogger(dir, 'info', { maxBytes: 100, stderr: quiet });
@@ -100,14 +100,43 @@ test('past maxBytes the file becomes hive.log.1 (replacing the previous one) and
   assert.deepEqual(tail(dir), ['INFO  third']);
   assert.deepEqual(tail(dir, `${LOG_FILE}.1`), ['INFO  first', 'INFO  second']);
   log.info('fourth'); // 75
-  log.info('fifth'); // 112: rotate again, the old hive.log.1 is replaced
+  log.info('fifth'); // 112: rotate again, the old hive.log.1 moves to .2
   assert.deepEqual(tail(dir), ['INFO  fifth']);
   assert.deepEqual(tail(dir, `${LOG_FILE}.1`), ['INFO  third', 'INFO  fourth']);
+  assert.deepEqual(tail(dir, `${LOG_FILE}.2`), ['INFO  first', 'INFO  second']);
   const again = createLogger(dir, 'info', { maxBytes: 100, stderr: quiet }); // 37 bytes already on disk
   again.info('sixth'); // 74
   again.info('seventh'); // 113: rotates only because the size was read from the file
   assert.deepEqual(tail(dir), ['INFO  seventh']);
-  assert.deepEqual(tail(dir, `${LOG_FILE}.1`), ['INFO  fifth', 'INFO  sixth']);
+  assert.deepEqual([1, 2, 3].map((g) => tail(dir, `${LOG_FILE}.${g}`)), [
+    ['INFO  fifth', 'INFO  sixth'], ['INFO  third', 'INFO  fourth'], ['INFO  first', 'INFO  second'],
+  ]);
+});
+
+test('past maxBytes six times, .1 to .5 hold the five previous generations, newest in .1, and the oldest is gone (#93)', async (t) => {
+  const dir = await logDir(t);
+  const append = createAppender(dir, 'other.jsonl', { maxBytes: 3, stderr: quiet });
+  for (const n of [1, 2, 3, 4, 5, 6, 7]) append(`${n}\n`); // 2 bytes each: every write after the first rotates
+  assert.equal(readFileSync(join(dir, 'other.jsonl'), 'utf8'), '7\n');
+  assert.deepEqual([1, 2, 3, 4, 5].map((g) => readFileSync(join(dir, `other.jsonl.${g}`), 'utf8')), ['6\n', '5\n', '4\n', '3\n', '2\n']);
+  assert.equal(existsSync(join(dir, 'other.jsonl.6')), false, 'no sixth generation: the first write was dropped');
+});
+
+test('a missing middle generation does not stop the shift: the ones around it still move, and the file stays enabled (#93)', async (t) => {
+  const dir = await logDir(t);
+  const { calls, stderr } = stderrSpy();
+  const append = createAppender(dir, 'other.jsonl', { maxBytes: 3, stderr });
+  for (const n of [1, 2, 3]) append(`${n}\n`); // .2 = 1, .1 = 2, current = 3
+  rmSync(join(dir, 'other.jsonl.1'));
+  append('4\n');
+  const read = (name: string): string | undefined => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8') : undefined);
+  assert.deepEqual(['other.jsonl', 'other.jsonl.1', 'other.jsonl.2', 'other.jsonl.3'].map(read), ['4\n', '3\n', undefined, '1\n']);
+  assert.deepEqual(calls, []);
+});
+
+test('generations lists a rotated file oldest first, the current file last (#93)', () => {
+  assert.equal(LOG_GENERATIONS, 5);
+  assert.deepEqual(generations('hive.log'), ['hive.log.5', 'hive.log.4', 'hive.log.3', 'hive.log.2', 'hive.log.1', 'hive.log']);
 });
 
 test('a write failure prints once on stderr, disables the file and never throws; error still reaches stderr', async (t) => {
