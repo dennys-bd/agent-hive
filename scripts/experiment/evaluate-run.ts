@@ -8,7 +8,8 @@ import { extractJson, JUDGE_TIMEOUT_MS, judgeArgs, parseClicks, parseJudge, runC
 import type { RunningDaemon } from './daemon-runner.js';
 import { buildEnv, type Run } from '../../src/benchmark/exec.js';
 import { pngsIn, readJson, writeJson } from './files.js';
-import { addWorktree, fetchBranch, fullDiff, remoteSha, removeWorktree, runDocs } from './git.js';
+import { addWorktree, fetchBranch, fullDiff, remoteSha, removeWorktree } from '../../src/benchmark/git.js';
+import { runDocs } from './docs-git.js';
 import { runBranch, runPrefix } from './plan.js';
 import { judgePrompt, testerPrompt } from './prompts.js';
 import { writeHome } from './run-home.js';

@@ -11,7 +11,8 @@ import { untilDeadline } from './deadline.js';
 import { evaluateRun } from './evaluate-run.js';
 import { execRun, type Run, serialGit } from '../../src/benchmark/exec.js';
 import { readJson, type Store, serialStore, writeJson } from './files.js';
-import { docsBaseline, docsClone, dropRunWorktrees, experimentBaseline, pruneDocs, repoRoot, resolveBaseline, sandboxPaths, unsignedCommits } from './git.js';
+import { dropRunWorktrees, experimentBaseline, nestedBaseline, repoRoot, resolveBaseline, sandboxPaths, unsignedCommits } from '../../src/benchmark/git.js';
+import { docsClone, pruneDocs } from './docs-git.js';
 import { installSandbox, type RepoPaths, sandboxSettings } from './sandbox.js';
 import { endAttempt, experimentDir, isMeasured, latest, newExperimentId, newManifest, newToken, openAttempts, parseManifest, resumeManifest, runHome, runPrefix, startAttempt, stateRoot } from './plan.js';
 import { writeReport } from './report.js';
@@ -52,7 +53,7 @@ async function openStore(state: string, dir: string, id: string, opts: Experimen
   const baseline = await experimentBaseline(git, { source, scratch: dir });
   // The docs always start from the docs clone's origin/main: --baseline names a ref of the code repository
   const docsSource = await resolveBaseline(docs, DEFAULT_BASELINE);
-  const docsBase = await docsBaseline(docs, { source: docsSource, files: await handoffFiles(), scratch: dir });
+  const docsBase = await nestedBaseline(docs, { source: docsSource, files: await handoffFiles(), scratch: dir });
   const created = newManifest({ id, source, baseline, docsSource, docsBaseline: docsBase, seedHash: hash, runs: opts.runs ?? DEFAULT_RUNS, now: new Date() });
   await writeJson(path, created);
   return serialStore(path, created);

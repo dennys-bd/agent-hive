@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
-import { isPlainRef } from './git.js';
+import { isPlainRef } from '../../src/benchmark/git.js';
 import { ARMS, type Arm, type Attempt, type Manifest, type Outcome, type RunRef } from './types.js';
 
 const TOKEN = /^[0-9a-f]{6}$/;

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { assertBaselineClean, BASELINE_MESSAGE, createRunBranch, docsClone, dropRunWorktrees, experimentBaseline, resolveBaseline, sandboxPaths, strippedPackageJson, unsignedCommits } from '../../scripts/experiment/git.js';
-import { EXPERIMENT_PATHS } from '../../scripts/experiment/seed.js';
+import { inDir } from '../../src/benchmark/exec.js';
+import { assertBaselineClean, BASELINE_MESSAGE, createRunBranch, dropRunWorktrees, EXPERIMENT_MENTION, EXPERIMENT_PATHS, experimentBaseline, nestedBaseline, resolveBaseline, sandboxPaths, strippedPackageJson, unsignedCommits } from '../../src/benchmark/git.js';
 import { tempDir } from '../temp-dir.js';
 import { fakeRun, line } from './fixtures.js';
 
@@ -34,17 +34,18 @@ test('experimentBaseline builds an orphan commit of the source tree without the 
     if (cmd === 'show') return PKG;
     if (cmd === 'hash-object') return `blob-${call.args.at(-1)?.split('/').at(-1)}\n`;
     if (cmd === 'write-tree') return 'tree1\n';
-    if (cmd === 'ls-tree') return 'src/a.ts\n';
+    if (cmd === 'ls-tree') return call.args.includes('-r') ? 'src/a.ts\n' : 'package.json\n';
     return cmd === 'commit-tree' ? 'base1234567890\n' : '';
   });
   assert.equal(await experimentBaseline(run, { source: 'src1', scratch }), 'base1234567890');
   const lines = calls.map(line);
-  assert.equal(lines[0], 'git read-tree src1');
-  assert.equal(lines[1], `git rm -r -q --cached --ignore-unmatch -- ${EXPERIMENT_PATHS.join(' ')}`);
+  assert.equal(lines[0], 'git ls-tree --name-only src1 -- package.json');
+  assert.equal(lines[1], 'git read-tree src1');
+  assert.equal(lines[2], `git rm -r -q --cached --ignore-unmatch -- ${EXPERIMENT_PATHS.join(' ')}`);
   assert.ok(lines.includes('git update-index --add --cacheinfo 100644,blob-package.json,package.json'));
   assert.equal(lines.filter((l) => l.startsWith('git update-index')).length, 1, 'only package.json is added');
   assert.ok(lines.includes(`git commit-tree tree1 -m ${BASELINE_MESSAGE}`), 'no -p: an orphan commit');
-  assert.ok(lines.includes('git update-ref refs/bases/monitor-view-base12345678 base1234567890'));
+  assert.ok(lines.includes('git update-ref refs/bases/base12345678 base1234567890'));
   const indexed = calls.filter((c) => ['read-tree', 'rm', 'update-index', 'write-tree'].includes(c.args[0]));
   for (const c of indexed) assert.equal(c.env?.GIT_INDEX_FILE, join(scratch, 'baseline.index'), line(c));
   await assert.rejects(readFile(join(scratch, 'package.json')), /ENOENT/, 'scratch files removed');
@@ -93,15 +94,39 @@ test('unsignedCommits turns signing off in the clone only: a sandboxed worker ca
   assert.deepEqual(calls.map(line), ['git config --local commit.gpgsign false', 'git config --local tag.gpgsign false']);
 });
 
-test('docsClone runs git in docs/ and returns its paths; a missing clone, or one whose origin is not local, is refused (#79)', async (t) => {
-  const root = await tempDir(t, 'lab-');
-  const answer = (origin: string) => fakeRun((call) => (call.args[0] === 'remote' ? `${origin}\n` : `${join(root, 'docs', '.git')}\n`));
-  await assert.rejects(docsClone(answer('/lab/hive-docs.git').run, root), /no docs clone/);
-  await mkdir(join(root, 'docs', '.git'), { recursive: true });
-  const local = answer('/lab/hive-docs.git');
-  const { docs, paths } = await docsClone(local.run, root);
-  assert.deepEqual(paths, { gitDir: join(root, 'docs', '.git'), origin: '/lab/hive-docs.git' });
-  await docs('git', ['status']);
-  assert.ok(local.calls.every((c) => c.cwd === join(root, 'docs')), 'every call runs in the docs clone');
-  await assert.rejects(docsClone(answer('git@github.com:someone/docs.git').run, root), /must be a local repository/);
+test('experimentBaseline on a tree with no package.json drops the harness paths and adds no blob (#471)', async (t) => {
+  const scratch = await tempDir(t, 'base-');
+  const { run, calls } = fakeRun((call) => ({ 'write-tree': 'tree1\n', 'commit-tree': 'base1234567890\n', 'ls-tree': call.args.includes('-r') ? 'lib/a.py\n' : '' })[call.args[0]] ?? '');
+  assert.equal(await experimentBaseline(run, { source: 'src1', scratch }), 'base1234567890');
+  const lines = calls.map(line);
+  assert.ok(lines.includes(`git rm -r -q --cached --ignore-unmatch -- ${EXPERIMENT_PATHS.join(' ')}`));
+  assert.ok(!lines.some((l) => l.startsWith('git show') || l.startsWith('git update-index')));
+  assert.ok(lines.includes(`git commit-tree tree1 -m ${BASELINE_MESSAGE}`));
+});
+
+test('nestedBaseline drops every file naming the harness or the decomposition, adds no file when given none, and refuses a tree that still names them (#471)', async (t) => {
+  const scratch = await tempDir(t, 'nested-');
+  let tree = false;
+  const { run, calls } = fakeRun((call) => {
+    if (call.args[0] === 'grep') return tree ? '' : 'src1:agent/x.md\nsrc1:agent/hive/specs/2026-10-21-benchmark-view-decomposition.md\n';
+    if (call.args[0] === 'write-tree') { tree = true; return 'tree1\n'; }
+    return call.args[0] === 'commit-tree' ? 'nest12345678ab\n' : '';
+  });
+  assert.equal(await nestedBaseline(run, { source: 'src1', scratch }), 'nest12345678ab');
+  const lines = calls.map(line);
+  assert.ok(lines.includes(`git grep -l -I -E ${EXPERIMENT_MENTION} src1 --`));
+  assert.ok(EXPERIMENT_MENTION.includes('benchmark-view-decomposition'));
+  assert.ok(lines.includes('git rm -q --cached -- agent/x.md agent/hive/specs/2026-10-21-benchmark-view-decomposition.md'));
+  assert.ok(!lines.some((l) => l.startsWith('git update-index')));
+  const leaking = fakeRun((call) => (call.args[0] === 'grep' ? 'tree1:a.md\n' : call.args[0] === 'write-tree' ? 'tree1\n' : ''));
+  await assert.rejects(nestedBaseline(leaking.run, { source: 'src1', scratch }), /names the experiment/);
+});
+
+test('dropRunWorktrees clears each nested clone before the clone, and never touches another prefix or the run branch (#471)', async () => {
+  const porcelain = (root: string): string => [`worktree ${root}\nHEAD a\nbranch refs/heads/main`, `worktree ${root}/.hive/worktrees/x\nHEAD b\nbranch refs/heads/hive/ABCD1234-1-x`, `worktree ${root}/w\nHEAD c\nbranch refs/heads/work/abcd1234`].join('\n\n');
+  const { run, calls } = fakeRun((call) => (call.args[1] === 'list' && call.args[0] === 'worktree' ? `${porcelain(call.cwd ?? '')}\n` : ''));
+  await dropRunWorktrees(inDir(run, '/e/clone'), 'ABCD1234', ['/e/clone/docs']);
+  const cwds = calls.filter((c) => c.args[0] === 'worktree' && c.args[1] === 'remove').map((c) => c.cwd);
+  assert.deepEqual(cwds, ['/e/clone/docs', '/e/clone'], 'a nested worktree sits inside its task worktree: its repo forgets it first');
+  assert.ok(!calls.map(line).some((l) => l.includes('work/abcd1234') || l.endsWith(' main')));
 });

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stopTestHive } from '../test-home.js';
 import { execRun } from '../../src/benchmark/exec.js';
-import { repoRoot } from './git.js';
+import { repoRoot } from '../../src/benchmark/git.js';
 import { stateRoot } from './plan.js';
 import { previewHome } from './preview-home.js';
 import { prepareState, writeHome } from './run-home.js';

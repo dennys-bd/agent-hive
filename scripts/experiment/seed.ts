@@ -11,11 +11,6 @@ export const SEED_PATH = 'scripts/experiment/seeds/monitor-view';
 export const SEED_DIR = join(REPO_FILES, SEED_PATH);
 /** Where the docs baseline carries the handoff, inside the docs repository (#79); a worker reads it at docs/agent/handoff_monitor/. */
 export const HANDOFF_DIR = 'agent/handoff_monitor';
-/** What the code baseline drops (#105, the user): the harness and its tests. */
-export const EXPERIMENT_PATHS = ['scripts/experiment', 'test/experiment'] as const;
-/** What the docs baseline drops (#79): every doc naming the harness, as git grep -E reads it. The #105 spec and plan are among them, and
- *  so is any plan of another delivery that lists a harness file it touched: a worker reading it would learn of the experiment. */
-export const EXPERIMENT_MENTION = 'scripts/experiment|test/experiment|skills-ab-experiment|experiment:skills';
 
 export type StageRole = 'spec' | 'plan' | 'build';
 export const STAGE_ROLES: readonly StageRole[] = ['spec', 'plan', 'build'];
