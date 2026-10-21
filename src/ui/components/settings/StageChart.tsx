@@ -1,4 +1,4 @@
-import { BotIcon, ListChecksIcon, type LucideIcon, Trash2Icon, UserCheckIcon, WorkflowIcon } from 'lucide-react';
+import { BotIcon, ListChecksIcon, type LucideIcon, ScaleIcon, Trash2Icon, UserCheckIcon, WorkflowIcon } from 'lucide-react';
 import { isAutomatic } from '../../../transitions';
 import type { AgentId } from '../../../types';
 import { FlowEdges } from '@/components/FlowEdges';
@@ -15,9 +15,9 @@ const NODE_HEIGHT = 64; // 6b's node (#887)
 // 6b's canvas (#887): 1px dots of --border on a 16px grid, inline so they follow the theme's token
 const CANVAS = { backgroundImage: 'radial-gradient(color-mix(in srgb, var(--border) 90%, transparent) 1px, transparent 1px)', backgroundSize: '16px 16px' };
 
-/** The action's icon (#134, 6b's table): bot, list-checks, workflow, user-check, trash-2. */
+/** The action's icon (#134, 6b's table): bot, list-checks, workflow, scale, user-check, trash-2. */
 export const actionIcon = (s: StageDraft): LucideIcon =>
-  (s.action === 'commands' ? ListChecksIcon : s.action === 'waitForCi' ? WorkflowIcon : s.action === 'deleteActivity' ? Trash2Icon : isGateDraft(s) ? UserCheckIcon : BotIcon);
+  (s.action === 'commands' ? ListChecksIcon : s.action === 'waitForCi' ? WorkflowIcon : s.action === 'evaluate' ? ScaleIcon : s.action === 'deleteActivity' ? Trash2Icon : isGateDraft(s) ? UserCheckIcon : BotIcon);
 
 interface StageChartProps { stages: StageDraft[]; transitions: TransitionDraft[]; selection: ChartSelection; defaultAgent: AgentId; onSelect(selection: ChartSelection): void }
 
@@ -26,7 +26,7 @@ interface StageChartProps { stages: StageDraft[]; transitions: TransitionDraft[]
  * sideways when the chart is wider; the chart is centred. */
 export function StageChart({ stages, transitions, selection, defaultAgent, onSelect }: StageChartProps) {
   const layout = layoutFlow(stages.map((s) => ({ id: s.id, height: NODE_HEIGHT })), transitions.map((d) => ({ id: d.id, from: d.from, to: d.to, automatic: isAutomatic(d.when) })), NODE_WIDTH, { end: true });
-  const labels = Object.fromEntries(transitions.map((d) => [d.id, draftLabel(d)]));
+  const labels = Object.fromEntries(transitions.map((d) => [d.id, draftLabel(d, stages)]));
   // -mx-5 undoes SettingsGroup's body p-5, so the canvas reaches the card's edges as in 6b
   return (
     <div className="-mx-5 overflow-x-auto py-4" style={CANVAS}>

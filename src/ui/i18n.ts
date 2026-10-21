@@ -1390,6 +1390,8 @@ const en = {
   'flow.trigger.feedback': 'feedback',
   'flow.verdict.passed': 'passed',
   'flow.verdict.failed': 'failed',
+  'flow.verdict.approved': 'approved',
+  'flow.verdict.rejected': 'rejected',
   'flow.end': 'end',
   'flow.tries': '{label} · {n}x',
   'flow.node.waiting': '{n} awaiting you',
@@ -1545,6 +1547,9 @@ const en = {
   'settings.stages.meta.deleteActivity': 'deletes the activity',
   'settings.stages.meta.show': 'only shows the task',
   'settings.stages.meta.gate': 'waits for approval',
+  'settings.stages.meta.evaluate.one': '{n} reviewer and a judge',
+  'settings.stages.meta.evaluate.other': '{n} reviewers and a judge',
+  'settings.stages.meta.judge': 'judge only',
   'settings.stages.none': 'none',
   'settings.stages.error': 'stage {n}: enter a name and, if set, max. workers ≥ 0 and an after like "30m", "12h" or "5d"',
   'settings.transitions.error.ends': '{name}: pick a destination', // #918: one per reason the parser refuses, named as the chart names the transition
@@ -3652,6 +3657,8 @@ const pt: Record<MessageKey, string> = {
   'flow.trigger.feedback': 'feedback',
   'flow.verdict.passed': 'passou',
   'flow.verdict.failed': 'falhou',
+  'flow.verdict.approved': 'aprovou',
+  'flow.verdict.rejected': 'reprovou',
   'flow.end': 'fim',
   'flow.tries': '{label} · {n}x',
   'flow.node.waiting': '{n} aguardando você',
@@ -3807,6 +3814,9 @@ const pt: Record<MessageKey, string> = {
   'settings.stages.meta.deleteActivity': 'exclui a atividade',
   'settings.stages.meta.show': 'só mostra a tarefa',
   'settings.stages.meta.gate': 'aguarda aprovação',
+  'settings.stages.meta.evaluate.one': '{n} revisor e um juiz',
+  'settings.stages.meta.evaluate.other': '{n} revisores e um juiz',
+  'settings.stages.meta.judge': 'só o juiz',
   'settings.stages.none': 'nenhum',
   'settings.stages.error': 'etapa {n}: informe nome e, se preenchidos, máx. workers inteiro ≥ 0 e depois de como "30m", "12h" ou "5d"',
   'settings.transitions.error.ends': '{name}: escolha o destino',
@@ -4564,7 +4574,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff';
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

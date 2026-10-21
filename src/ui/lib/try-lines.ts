@@ -1,4 +1,5 @@
 import { activityOf } from '../../activities.js';
+import { stageOf } from '../../tasks.js';
 import { retryTransition } from '../../transitions.js';
 import type { Activity, State, Task, Transition, TryRecord } from '../../types.js';
 import { triggerLabel } from './flow-labels.js';
@@ -11,10 +12,10 @@ import { triggerLabel } from './flow-labels.js';
 export type Exhausted = { transition: Transition; trigger: string; max: number; destination: string };
 
 /** The transition the task's tries ran out on, as POST /tasks/:id/retry finds it; undefined for any other stop, or once it was removed or renamed. */
-export function exhaustedOf(state: Pick<State, 'transitions' | 'activities' | 'activityRecords'>, task: Task): Exhausted | undefined {
+export function exhaustedOf(state: Pick<State, 'transitions' | 'activities' | 'activityRecords' | 'stages'>, task: Task): Exhausted | undefined {
   const transition = retryTransition(state, task, activityOf(state, task.item.itemId)?.error);
   if (transition === undefined) return undefined;
-  return { transition, trigger: triggerLabel(transition.when, transition.verdict), max: transition.maxTries ?? 0, destination: transition.to };
+  return { transition, trigger: triggerLabel(transition.when, transition.verdict, stageOf(state.stages, transition.from)?.action), max: transition.maxTries ?? 0, destination: transition.to };
 }
 
 /** The try log newest first (by at, then by n), only `key`'s records when given; a new array, the log untouched. */

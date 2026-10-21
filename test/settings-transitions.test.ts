@@ -13,6 +13,14 @@ const back: Transition = {
   from: 'Checks', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 3, prompt: 'Fix:\n\n{verdict}', session: { continueOf: 'Build' }, label: 'falhou', sources: { board: [{ type: 'move', column: 'In progress' }] },
 };
 
+test('an evaluate draft gives the fixed verdicts, fires verdict only, and its pills read aprovou / reprovou (#877)', () => {
+  setLanguage('pt');
+  const evaluate: StageDraft = { ...emptyStage(), id: 'e', name: 'eval', action: 'evaluate' };
+  assert.deepEqual([draftVerdicts(evaluate), triggersOf(evaluate)], [['passed', 'failed'], ['verdict']]);
+  const failed = { ...emptyTransition(evaluate, [evaluate]), verdict: 'failed', maxTries: '3' };
+  assert.equal(draftLabel(failed, [evaluate]), 'reprovou · 3x');
+});
+
 test('a transition round-trips through its draft, keyed by stage ids, so a stage renamed while edited keeps its arrows (#134)', () => {
   const draft = transitionDraft(back, STAGES, ROWS);
   assert.deepEqual([draft.from, draft.to, draft.session, draft.maxTries, draft.sources], [STAGES[1].id, STAGES[0].id, { continueOf: STAGES[0].id }, '3', { r1: back.sources?.board }]);
@@ -36,7 +44,7 @@ test('the verdicts and triggers a stage offers, a pill\'s words, and the form\'s
   assert.deepEqual([[...draftVerdicts(stage('a', { prompt: '/x', verdicts: ['ok'] }))], [...draftVerdicts(STAGES[1])], [...draftVerdicts(STAGES[2])]], [['ok'], ['passed', 'failed'], []]);
   assert.deepEqual([triggersOf(stage('a', { prompt: '/x', verdicts: ['ok'] })), triggersOf(STAGES[1]), triggersOf(STAGES[2])], [['done', 'verdict'], ['verdict'], ['approved', 'feedback']]);
   const draft = transitionDraft(back, STAGES, ROWS);
-  assert.equal(draftLabel({ ...draft, label: '' }), 'falhou · 3x');
+  assert.equal(draftLabel({ ...draft, label: '' }, STAGES), 'falhou · 3x');
   assert.equal(transitionsProblem([draft], STAGES), undefined);
 });
 

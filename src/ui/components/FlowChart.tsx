@@ -37,7 +37,7 @@ export function FlowChart({ stages, transitions, loops, zoom, pan, fitRequest, o
   // #910: the viewport at the zoom's scale, so a node zoomed out still reaches the canvas's bottom and shows more of its tasks
   const maxHeight = maxNodeHeight(size.height / zoom, least);
   const layout = sized(maxHeight);
-  const labels = Object.fromEntries(transitions.map((t) => [transitionKey(t), transitionLabel(t)]));
+  const labels = Object.fromEntries(transitions.map((t) => [transitionKey(t), transitionLabel(t, stages.find((s) => s.name === t.from)?.action)]));
   return (
     <div ref={pane} data-flow-stages onScroll={onScroll} className="absolute inset-0 flex overflow-auto [scrollbar-width:none]">
       <div className="m-auto shrink-0" style={{ width: layout.width * zoom, height: layout.height * zoom }}>

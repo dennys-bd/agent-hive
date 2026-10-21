@@ -3,6 +3,7 @@ import type { BlockProps } from '@/components/settings/StageBlocks';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { t } from '@/i18n';
+import { hasFixedVerdicts } from '../../../stage-agent';
 import { verdictLabel } from '@/lib/flow-labels';
 import { isAgentDraft } from '@/lib/settings-stages';
 import { draftVerdicts } from '@/lib/settings-transitions';
@@ -11,7 +12,7 @@ import { draftVerdicts } from '@/lib/settings-transitions';
  * etapa só termina when there are none. A name is trimmed and kept once. */
 export function StageVerdicts({ id, stage, onUpdate }: BlockProps) {
   const [text, setText] = useState('');
-  const fixed = stage.action === 'commands' || stage.action === 'waitForCi';
+  const fixed = hasFixedVerdicts(stage);
   const verdicts = draftVerdicts(stage);
   const add = (): void => {
     const name = text.trim();
@@ -25,7 +26,7 @@ export function StageVerdicts({ id, stage, onUpdate }: BlockProps) {
         {verdicts.length === 0 && <span className="text-muted-foreground text-xs">{t('settings.stages.verdicts.none')}</span>}
         {verdicts.map((v) => (
           <Badge key={v} variant="secondary" className="gap-1">
-            {verdictLabel(v)}
+            {verdictLabel(v, stage.action)}
             {!fixed && (
               <button type="button" className="text-muted-foreground hover:text-foreground" aria-label={t('settings.stages.verdicts.remove', { name: v })} onClick={() => onUpdate({ verdicts: stage.verdicts.filter((x) => x !== v) })}>×</button>
             )}

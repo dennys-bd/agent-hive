@@ -1,3 +1,4 @@
+import { hasFixedVerdicts } from '../../stage-agent.js';
 import { isAutomatic, transitionKey } from '../../transitions.js';
 import { END, FIXED_VERDICTS, type SourceAction, type Transition, type TransitionSession, type Trigger } from '../../types.js';
 import { t } from '../i18n.js';
@@ -14,6 +15,7 @@ export interface TransitionDraft {
   session: '' | 'previous' | 'new' | { continueOf: string }; maxTries: string; sources: Record<string, SourceAction[]>;
 }
 
+const actionOf = (stages: readonly StageDraft[], id: string): StageDraft['action'] => stages.find((s) => s.id === id)?.action ?? '';
 const idOf = (stages: readonly StageDraft[], name: string): string => stages.find((s) => s.name.trim() === name)?.id ?? '';
 const nameOf = (stages: readonly StageDraft[], id: string): string => stages.find((s) => s.id === id)?.name.trim() ?? '';
 
@@ -22,7 +24,7 @@ const shownName = (stages: readonly StageDraft[], id: string): string => (id ===
 
 /** A transition as the chart names it (#134): `Plan → Review · terminou`, the editor's title and the form's messages (#918). */
 export const draftTitle = (d: TransitionDraft, stages: readonly StageDraft[]): string =>
-  `${shownName(stages, d.from)} → ${shownName(stages, d.to)} · ${triggerLabel(d.when, d.verdict)}`;
+  `${shownName(stages, d.from)} → ${shownName(stages, d.to)} · ${triggerLabel(d.when, d.verdict, actionOf(stages, d.from))}`;
 
 export function transitionDraft(t: Transition, stages: readonly StageDraft[], rows: readonly StageRow[]): TransitionDraft {
   const session = t.session === undefined ? '' : typeof t.session === 'string' ? t.session : { continueOf: idOf(stages, t.session.continueOf) };
@@ -45,7 +47,7 @@ export function transitionFrom(d: TransitionDraft, stages: readonly StageDraft[]
 
 /** The verdicts a stage draft gives (#134): the fixed ones on commands and wait for CI, its own on a prompt stage, none otherwise. */
 export function draftVerdicts(stage: StageDraft): readonly string[] {
-  if (stage.action === 'commands' || stage.action === 'waitForCi') return FIXED_VERDICTS;
+  if (hasFixedVerdicts(stage)) return FIXED_VERDICTS;
   return isAgentDraft(stage) ? stage.verdicts : []; // #710: a skill stage's own too
 }
 
@@ -54,7 +56,7 @@ export function draftVerdicts(stage: StageDraft): readonly string[] {
 export function triggersOf(stage: StageDraft): Trigger[] {
   const verdict: Trigger[] = draftVerdicts(stage).length > 0 ? ['verdict'] : [];
   if (stage.approval || isGateDraft(stage)) return ['approved', 'feedback', ...verdict];
-  return stage.action === 'commands' || stage.action === 'waitForCi' ? verdict : ['done', ...verdict];
+  return hasFixedVerdicts(stage) ? verdict : ['done', ...verdict];
 }
 
 /** A new arrow from `from` (#134): to the next stage in the array, or end after the last, by the trigger its end fires first. */
@@ -85,8 +87,8 @@ export function withApproval(transitions: readonly TransitionDraft[], stageId: s
 }
 
 /** A transition's pill (#134): its own label, else its trigger's, with its tries on an automatic one. */
-export function draftLabel(d: TransitionDraft): string {
-  const label = d.label.trim() || triggerLabel(d.when, d.verdict);
+export function draftLabel(d: TransitionDraft, stages: readonly StageDraft[]): string {
+  const label = d.label.trim() || triggerLabel(d.when, d.verdict, actionOf(stages, d.from));
   return isAutomatic(d.when) && /^[1-9]\d*$/.test(d.maxTries.trim()) ? t('flow.tries', { label, n: d.maxTries.trim() }) : label;
 }
 

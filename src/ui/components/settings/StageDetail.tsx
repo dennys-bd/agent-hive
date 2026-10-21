@@ -39,7 +39,7 @@ function Exits({ stage, stages, transitions, sources, onUpdate, onSelect, onAdd 
         {transitions.filter((d) => d.from === stage.id).map((d) => (
           <li key={d.id}>
             <button type="button" onClick={() => onSelect(d.id)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent">
-              <span>{`${triggerLabel(d.when, d.verdict)} → ${nameOf(d.to)}`}</span>
+              <span>{`${triggerLabel(d.when, d.verdict, stage.action)} → ${nameOf(d.to)}`}</span>
               {tagsOf(d).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
               <ChevronRightIcon aria-hidden="true" className="ml-auto size-4 text-muted-foreground" />
             </button>
