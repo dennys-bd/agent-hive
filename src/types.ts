@@ -804,6 +804,7 @@ export interface AgentLaunchOptions {
   aliases: LaunchOption[]; // Codex: []
   versions: LaunchOption[];
   specializedAgents: { name: string; description: string }[]; // hive:<name>, sorted by file
+  skills: { name: string; description: string }[]; // #710: the folder's skills, bare names (shown hive:<name>), sorted by name
   args: string[]; // config.agentArgs[agent]: the dialog's "added to the global ones" and "runs" lines
 }
 

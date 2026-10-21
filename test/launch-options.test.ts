@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import express from 'express';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from '../src/agents/claude-models.js';
 import { pluginSource } from '../src/hooks-settings.js';
-import { launchRun, parseCodexModels, registerLaunchOptionsRoute, specializedAgents } from '../src/launch-options.js';
+import { hasSkill, launchRun, parseCodexModels, pluginSkills, registerLaunchOptionsRoute, specializedAgents } from '../src/launch-options.js';
 import { createPluginRender, type PluginRender } from '../src/plugin-render.js';
 import type { TaskRouteDeps } from '../src/server-tasks.js';
 import { MESSAGES } from '../src/ui/i18n.js';
@@ -56,6 +56,8 @@ test('GET /launch-options lists Claude\'s hand-kept models, Codex\'s in visible-
   const agents = specializedAgents(pluginSource()).map(({ name, description }) => ({ name, description }));
   assert.deepEqual([options.claude.specializedAgents, options.codex.specializedAgents], [agents, agents]);
   assert.deepEqual([options.claude.args, options.codex.args], [agentArgs.claude, agentArgs.codex]);
+  assert.ok(options.claude.skills.some((s) => s.name === 'new-plan'), '#710: the workspace\'s skills');
+  assert.deepEqual(options.codex.skills, options.claude.skills);
 });
 
 test('a codex debug models that fails or prints no JSON gives Codex no models and still answers 200 (#257)', async (t) => {
@@ -135,4 +137,12 @@ test('launchRun over a workspace folder\'s agents gives Codex the delivered body
   assert.deepEqual('refusal' in edited ? edited : edited.specializedAgent, { name: 'hive:designer', instructions: 'Edited.\n' });
   const shipped = launchRun({ specializedAgent: 'hive:designer' }, [], () => specializedAgents(render.dir('b')));
   assert.notEqual('refusal' in shipped ? undefined : shipped.specializedAgent?.instructions, 'Edited.\n');
+});
+
+test('pluginSkills lists a rendered folder\'s skills by bare name, sorted, with their header\'s description; hasSkill answers one by name (#710)', async (t) => {
+  const { render } = await renderedHome(t);
+  const skills = pluginSkills(render.dir('a'));
+  assert.ok(skills.some((s) => s.name === 'new-plan' && s.description.startsWith('Plan stage for one task: read the workspace\'s conventions')));
+  assert.deepEqual(skills.map((s) => s.name), [...skills.map((s) => s.name)].sort());
+  assert.deepEqual([hasSkill(render.dir('a'), 'new-plan'), hasSkill(render.dir('a'), 'gone'), hasSkill(render.dir('a'), '../agents')], [true, false, false]);
 });

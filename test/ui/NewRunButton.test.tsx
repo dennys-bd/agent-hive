@@ -255,8 +255,8 @@ function Center({ c }: { c: WithWork }) {
   return <><NewRunButton activity={target} />{dialog}</>;
 }
 const OPTIONS: LaunchOptions = {
-  claude: { aliases: [], versions: [], specializedAgents: [], args: [] },
-  codex: { aliases: [], versions: [], specializedAgents: [], args: [] },
+  claude: { aliases: [], versions: [], specializedAgents: [], skills: [], args: [] },
+  codex: { aliases: [], versions: [], specializedAgents: [], skills: [], args: [] },
 };
 
 test('every + item has its icon, the agents their mark in their own colour, padrão on the default one; arquivo and nova sessão… show their keys; no PR item (#257)', async () => {
