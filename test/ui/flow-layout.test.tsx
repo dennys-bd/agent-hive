@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { DEPTH, END_SIZE, FORWARD_Y, GAP, hiddenBelow, type LayoutOptions, layoutFlow, LOOP_RISE, MARGIN, maxNodeHeight, NODE_MIN, SPREAD, TOP_LOOPS } from '@/lib/flow-layout';
+import { DEPTH, END_SIZE, FORWARD_Y, GAP, GAP_BARE, hiddenBelow, layoutFlow, LOOP_RISE, MARGIN, maxNodeHeight, NODE_MIN, SPREAD, TOP_LOOPS } from '@/lib/flow-layout';
 
 // The flowchart's geometry (#134, #887, #908), with no DOM.
 const W = 190;
@@ -102,16 +102,12 @@ test('maxNodeHeight is the viewport less top and MARGIN, never under NODE_MIN; h
   expect(hiddenBelow(300, 300, 0, 5)).toBe(0);
 });
 
-test('with loops off only arrows forward stay, to the next node or a labelled skip; back edges, loops and unlabelled skips go, labelled or not, and top falls with them (#909)', () => {
-  const skip = { ...edge('s', 'build', 'pr'), labelled: true };
-  const edges = [edge('f', 'spec', 'build'), { ...edge('b', 'checks', 'build'), labelled: true }, edge('l', 'spec', 'spec'), edge('u', 'spec', 'checks'), skip];
-  const ids = (options?: LayoutOptions): string[] => layoutFlow(NODES, edges, W, options).edges.map((e) => e.id);
-  expect(ids()).toEqual(['f', 'b', 'l', 'u', 's']);
+test('with loops off no arrow is drawn, not even to the next node, so no pill either; top falls to MARGIN and the nodes sit GAP_BARE apart (#909, #480)', () => {
+  const edges = [edge('f', 'spec', 'build'), edge('b', 'checks', 'build'), edge('l', 'spec', 'spec'), edge('u', 'spec', 'checks'), edge('s', 'build', 'pr')];
+  expect(layoutFlow(NODES, edges, W).edges.map((e) => e.id)).toEqual(['f', 'b', 'l', 'u', 's']);
   expect(layoutFlow(NODES, edges, W, { loops: true })).toEqual(layoutFlow(NODES, edges, W)); // the default is loops on: today's output
   const hidden = layoutFlow(NODES, edges, W, { loops: false });
-  expect(hidden.edges.map((e) => e.id)).toEqual(['f', 's']);
-  expect([hidden.levels, hidden.top]).toEqual([1, DEPTH + MARGIN]);
-  const bare = layoutFlow(NODES, edges.filter((e) => e !== skip), W, { loops: false });
-  expect([bare.edges.map((e) => e.id), bare.levels, bare.top]).toEqual([['f'], 0, MARGIN]);
-  expect(bare.nodes.every((n) => n.y === MARGIN)).toBe(true);
+  expect([hidden.edges, hidden.levels, hidden.top]).toEqual([[], 0, MARGIN]);
+  expect(hidden.nodes.map((n) => [n.x, n.y])).toEqual(NODES.map((_, i) => [MARGIN + i * (W + GAP_BARE), MARGIN]));
+  expect(hidden.width).toBe(MARGIN + 3 * (W + GAP_BARE) + W + MARGIN);
 });

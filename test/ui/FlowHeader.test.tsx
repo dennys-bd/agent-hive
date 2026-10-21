@@ -167,7 +167,7 @@ test('↺ voltas shows only with onLoops, after the spacer and before the search
   const loops = within(header()).getByRole('button', { name: '↺ voltas' });
   expect(loops.nextElementSibling).toBe(screen.getByRole('textbox', { name: 'buscar tarefas' }).closest('label'));
   expect(loops).toHaveAttribute('aria-pressed', 'true');
-  expect(loops).toHaveAttribute('title', 'esconder as voltas · ficam só as setas entre as etapas');
+  expect(loops).toHaveAttribute('title', 'esconder as setas · as etapas ficam mais juntas');
   expect(loops).toHaveClass('bg-muted', 'text-foreground');
   await user.click(loops);
   expect(onLoops).toHaveBeenCalledOnce();
@@ -179,7 +179,7 @@ test('↺ voltas shows only with onLoops, after the spacer and before the search
   rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops={false} onLoops={onLoops} />);
   expect(screen.getByRole('button', { name: '↺ loops' })).toHaveAttribute('title', 'show the loops');
   rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops onLoops={onLoops} />);
-  expect(screen.getByRole('button', { name: '↺ loops' })).toHaveAttribute('title', 'hide the loops · only the arrows between stages stay');
+  expect(screen.getByRole('button', { name: '↺ loops' })).toHaveAttribute('title', 'hide the arrows · the stages sit closer');
 });
 
 const BACK_KEY = { key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }; // goBack off macOS: jsdom is not macOS

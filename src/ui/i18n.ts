@@ -68,7 +68,7 @@ const en = {
   'flow.updated': 'updated {time}',
   'flow.refresh': 'refresh',
   'flow.loops': '↺ loops', // #909: the flow header's toggle of the back edges and loops
-  'flow.loops.hide': 'hide the loops · only the arrows between stages stay',
+  'flow.loops.hide': 'hide the arrows · the stages sit closer',
   'flow.loops.show': 'show the loops',
   'flow.tree': '⑂ tree', // #34: the flow header's toggle of the tree grouping in the stage nodes
   'flow.tree.ungroup': 'grouped by tree · click to ungroup',
@@ -2383,7 +2383,7 @@ const pt: Record<MessageKey, string> = {
   'flow.updated': 'atualizado {time}',
   'flow.refresh': 'atualizar',
   'flow.loops': '↺ voltas',
-  'flow.loops.hide': 'esconder as voltas · ficam só as setas entre as etapas',
+  'flow.loops.hide': 'esconder as setas · as etapas ficam mais juntas',
   'flow.loops.show': 'mostrar as voltas',
   'flow.tree': '⑂ árvore',
   'flow.tree.ungroup': 'agrupado por árvore · clique para desagrupar',

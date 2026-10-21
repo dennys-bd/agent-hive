@@ -11,7 +11,7 @@ export const NODE_WIDTH = 220; // #54: room for a task's ⊘ blocked line and it
 
 interface FlowChartProps {
   stages: readonly Stage[]; transitions: readonly Transition[];
-  loops: boolean; // #909: false draws only the arrows forward
+  loops: boolean; // #909, #480: false draws no arrow
   zoom: number; pan: FlowView['pan']; fitRequest: number; // #910: the stored pan is set once; a new fitRequest fits the chart
   onPan(pan: FlowView['pan']): void; onFit(zoom: number): void; onZoom(zoom: number): void;
   renderNode(stage: Stage, maxHeight: number): ReactNode;
@@ -28,8 +28,7 @@ export function FlowChart({ stages, transitions, loops, zoom, pan, fitRequest, o
     return i !== undefined && j !== undefined && j < i;
   };
   const pills = new Set(transitions.filter((t) => showsPill(t, isBack(t))).map(transitionKey));
-  // labelled: a skip forward that carries a pill says why it skips, so it stays with the loops hidden (#909)
-  const edges = transitions.map((t) => ({ id: transitionKey(t), from: t.from, to: t.to, automatic: isAutomatic(t.when), labelled: pills.has(transitionKey(t)) }));
+  const edges = transitions.map((t) => ({ id: transitionKey(t), from: t.from, to: t.to, automatic: isAutomatic(t.when) }));
   // top reads the edges alone (#908): a first pass at NODE_MIN gives it, and is the chart fit must show (#910)
   const sized = (height: number) => layoutFlow(stages.map((s) => ({ id: s.name, height })), edges, NODE_WIDTH, { loops });
   const least = sized(NODE_MIN);

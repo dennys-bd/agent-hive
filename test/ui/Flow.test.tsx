@@ -392,7 +392,7 @@ const LOOPED: Transition[] = [
 ];
 const kinds = (canvas: HTMLElement): (string | null)[] => [...canvas.querySelectorAll('path[data-kind]')].map((p) => p.getAttribute('data-kind'));
 
-test('↺ voltas hides every back edge, loop and unlabelled skip with their pills, the row falling to the margin, keeps it in flowView, and brings them back (#909)', async () => {
+test('↺ voltas hides every arrow with its pill, the row falling to the margin, keeps it in flowView, and brings them back (#909)', async () => {
   resetViewState();
   onTestFinished(() => resetViewState()); // drops the pending post
   const user = userEvent.setup();
@@ -405,7 +405,7 @@ test('↺ voltas hides every back edge, loop and unlabelled skip with their pill
   for (const pill of ['falhou · 3x', 'feedback']) expect(within(canvas).getByText(pill)).toBeInTheDocument();
   expect(row()).not.toBe(`${MARGIN}px`);
   await user.click(loops);
-  expect(kinds(canvas)).toEqual(['forward']);
+  expect(kinds(canvas)).toEqual([]);
   for (const pill of ['falhou · 3x', 'feedback']) expect(within(canvas).queryByText(pill)).not.toBeInTheDocument();
   expect(row()).toBe(`${MARGIN}px`);
   expect(readView('flowView')).toEqual({ loops: false, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
@@ -420,7 +420,7 @@ test('a stored flowView with loops off draws the flow without them on the first 
   render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(screen.getByRole('button', { name: '↺ voltas' })).toHaveAttribute('aria-pressed', 'false');
-  expect(kinds(canvas)).toEqual(['forward']);
+  expect(kinds(canvas)).toEqual([]);
   expect(within(canvas).queryByText('falhou · 3x')).not.toBeInTheDocument();
 });
 
