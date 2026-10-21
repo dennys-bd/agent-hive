@@ -151,7 +151,8 @@ function attrOf(attrs, name) {
 function matchingEnd(tags, index) {
   const { name } = tags[index];
   let depth = 0;
-  for (const tag of tags.slice(index)) {
+  for (let at = index; at < tags.length; at += 1) {
+    const tag = tags[at];
     if (tag.name !== name || (!tag.isEnd && tag.isSelfClosing)) continue;
     depth += tag.isEnd ? -1 : 1;
     if (depth === 0) return tag;
@@ -261,7 +262,7 @@ async function readPart(root, path) {
 }
 
 // One file's includes, followed as the route assembles them: a broken one in its notice's words, on the file whose include it replaces
-async function walkIncludes(root, file, text, depth, stack, findings) {
+async function walkIncludes(root, file, text, depth, stack, findings, reached) {
   for (const { src, fills } of includesOf(text)) {
     const say = (reason) => findings.add(`${file}: hv-include: ${reason}: ${src ?? ''}`);
     const target = partPath(file, src);
@@ -272,7 +273,8 @@ async function walkIncludes(root, file, text, depth, stack, findings) {
     if ('refused' in read) { say(read.refused); continue; }
     const declared = slotsOf(read.text);
     for (const name of fills.filter((fill) => !declared.includes(fill))) say(`fills slot ${name}, which the part does not declare`);
-    await walkIncludes(root, target.path, read.text, depth + 1, [...stack, target.path], findings);
+    reached.add(target.path);
+    await walkIncludes(root, target.path, read.text, depth + 1, [...stack, target.path], findings, reached);
   }
 }
 
@@ -287,11 +289,13 @@ export async function checkFolder(folder) {
   const found = screens.map((name, i) => [
     ...lineFindings(name, texts[i]), ...tagFindings(name, texts[i]), ...tweakFindings(name, texts[i]), ...assetFindings(name, texts[i], present), ...markFindings(name, texts[i]),
   ]);
-  const parts = [...present].filter((path) => path.endsWith('.html') && !path.endsWith('.hv.html') && !path.split('/').some((s) => s.startsWith('.'))).sort();
-  const ofParts = await Promise.all(parts.map(async (path) => partFindings(path, await readFile(join(folder, path), 'utf8'))));
   const root = await realpath(folder); // the reads compare realpaths: macOS's tmpdir is itself a link
   const includes = new Set();
-  for (const [i, name] of screens.entries()) await walkIncludes(root, name, texts[i], 0, [name], includes);
+  const reached = new Set();
+  for (const [i, name] of screens.entries()) await walkIncludes(root, name, texts[i], 0, [name], includes, reached);
+  // Only a part a screen includes is held to a part's rules: a standalone .html asset of the folder is not one
+  const parts = [...present].filter((path) => reached.has(path)).sort();
+  const ofParts = await Promise.all(parts.map(async (path) => partFindings(path, await readFile(join(folder, path), 'utf8'))));
   return [...links, ...found.flat(), ...ofParts.flat(), ...includes];
 }
 

@@ -127,7 +127,7 @@ test('check-hv.mjs exits 0 on screens that include valid parts; it reports a slo
   await writeFile(join(folder, 'issue.hv.html'), screen('<hv-include src="parts/sidebar.html"></hv-include>\n<hv-include src="parts/detail.html"><template data-hv-slot="title">Fix login</template></hv-include>'));
   await writeFile(join(folder, 'board.hv.html'), screen('<hv-include src="parts/sidebar.html"></hv-include>'));
   assert.deepEqual(await check(folder), { code: 0, stdout: '' });
-  await writeFile(join(folder, 'bad.hv.html'), screen('<hv-include src="parts/detail.html"><template data-hv-slot="body"><p>x</p></template></hv-include>\n<p data-hv-source="x.html">hand</p>'));
+  await writeFile(join(folder, 'bad.hv.html'), screen('<hv-include src="parts/detail.html"><template data-hv-slot="body"><p>x</p></template></hv-include>\n<p data-hv-source="x.html">hand</p>\n<hv-include src="parts/doc.html"></hv-include><hv-include src="parts/tweaked.html"></hv-include>'));
   await writeFile(join(folder, 'parts', 'doc.html'), '<!doctype html><html><body><p>x</p></body></html>\n');
   await writeFile(join(folder, 'parts', 'tweaked.html'), '<script type="application/json" id="hv-tweaks">{}</script>\n<p>t</p>\n');
   const { code, stdout } = await check(folder);
@@ -138,6 +138,16 @@ test('check-hv.mjs exits 0 on screens that include valid parts; it reports a slo
     'parts/doc.html: a part is a fragment, with no <!doctype, <html, <head or <body',
     'parts/tweaked.html: hv-tweaks belongs to the screen, not a part',
   ].sort());
+});
+
+test('check-hv.mjs holds only the .html files a screen reaches to the rules of a part, in any case of the extension (#421)', async (t) => {
+  const folder = await tempDir(t, 'hv-');
+  await mkdir(join(folder, 'parts'));
+  await writeFile(join(folder, 'a.hv.html'), screen('<hv-include src="parts/Doc.HTML"></hv-include>'));
+  await writeFile(join(folder, 'parts', 'Doc.HTML'), '<!doctype html><p>x</p>\n');
+  await writeFile(join(folder, 'standalone.html'), '<!doctype html><html><body>asset</body></html>\n');
+  const { stdout } = await check(folder);
+  assert.deepEqual(stdout.trim().split('\n').filter((line) => line.includes('a part is a fragment')), ['parts/Doc.HTML: a part is a fragment, with no <!doctype, <html, <head or <body']);
 });
 
 test('the tweak rules refuse a name past 64, more than 64 options, and an option or group past 200, and take the limits themselves (#241)', () => {
