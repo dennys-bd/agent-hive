@@ -211,6 +211,13 @@ test('hive:designer rendered with a value for each convention carries each in it
   for (const name of DESIGNER_VARIABLES) assert.ok(listed(other, name, NO_VALUE[name]), `b: ${name}`);
 });
 
+test('hive:designer with a design system but no docsRepo keeps its screens and handoff in this repository (#416)', async () => {
+  const mine = renderedFor(valued(await agentText('designer'), { designsDir: 'design/screens', designSystem: 'docs/design-system.md' }));
+  assert.ok(mine.includes('`design/screens/<YYYY-MM-DD>-<slug>/<screen>.hv.html` in the docs repository (this repository)'), mine);
+  assert.ok(mine.includes('from the worktree: `design/screens/<folder>/handoff.md`;'), 'no docsRepo prefix on the handoff');
+  assert.ok(mine.includes('the design system\'s path for its prompt (`docs/design-system.md`)'));
+});
+
 test('no shipped skill, raw or rendered, resolves a convention through hive_conventions or the agent instructions file (#317)', async () => {
   for (const skill of SKILLS) {
     const raw = await skillText(skill);
