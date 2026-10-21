@@ -11,7 +11,8 @@ const keysOf = (sections: MapSection[], label: MessageKey): string | undefined =
 
 test('the four scopes come in Settings\' order; the global one lists its live shortcuts and fixed keys in the map\'s order (#639)', () => {
   const sections = shortcutMapSections({}, MAC);
-  expect(sections.map((s) => s.scope)).toEqual([...SHORTCUT_SCOPES]);
+  // #458: the benchmark scope's one row is soon until 2.1 builds the view, so the map shows no section for it
+  expect(sections.map((s) => s.scope)).toEqual(SHORTCUT_SCOPES.filter((scope) => scope !== 'benchmark'));
   expect(labels(sections.slice(0, 1))).toEqual([
     'shortcuts.viewActivities', 'shortcuts.viewFlow', 'shortcuts.viewPlugins', 'shortcuts.search', 'shortcuts.searchOperations', 'shortcuts.newActivity', 'shortcuts.runCommand',
     'shortcuts.toggleConsole', 'shortcuts.problems', 'shortcuts.fixed.signal', 'shortcuts.toggleLeft', 'shortcuts.toggleRight', 'shortcuts.fixed.settings',

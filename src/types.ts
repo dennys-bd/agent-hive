@@ -1313,7 +1313,7 @@ export type OperationId =
   | 'splitTerminalHorizontal' | 'clear' | 'findInTerminal' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
   | 'searchTasks' | 'refreshFlow' | 'goBack' | 'zoomOut' | 'zoomIn' | 'zoomReset' // #911: back from a page; #910: the flow canvas's zoom
   | 'treeNewFile' | 'treeNewFolder' | 'treeRename' | 'treeDelete' | 'treeReveal' | 'treeOpenTerminal' | 'treeCopyPath' | 'treeCopyRelativePath' | 'treeCopyCheckoutPath' // #818, #131
-  | 'confirm' | 'feedbackQueue' | 'switchStartMode' | 'searchSettings' | 'searchPlugins' | 'askAgent'; // #689, #313, #331
+  | 'confirm' | 'feedbackQueue' | 'switchStartMode' | 'searchSettings' | 'searchPlugins' | 'askAgent' | 'viewBenchmark' | 'benchmarkSearch'; // #689, #313, #331, #458
 /** Only the user's changes (#449): a normalized Electron accelerator rebinds, null turns off, a missing id is the registry's default. */
 export type Shortcuts = Partial<Record<OperationId, string | null>>;
 
