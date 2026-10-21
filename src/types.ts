@@ -1201,6 +1201,8 @@ export interface Workspace {
   memoryCap: number; // #73: required, no default; the sum of this workspace's lesson texts, MEMORY_CAP_MIN..MEMORY_CAP_MAX
   color: string; // #78: required; one of WORKSPACE_PRESET_COLORS or a lowercase #rrggbb
   fork: WorkspaceFork | false | null; // #854: required; null = never decided (Settings may suggest one), false = not a fork, never suggested again
+  nestedRepos: string[]; // #653: required; relative paths of nested repos, each a git top level this workspace's git ignores (POST /settings checks it); [] = none
+  notNestedRepos: string[]; // #653: required; paths the user said are not nested repos: never suggested again
   baseBranch?: string; // #854: this workspace's base branch, over config.baseBranch; absent = the general default
   setup?: string; // the worktree setup (#299): COPY / RUN / LOAD lines, run once in each new worktree; absent = none
   setupTimeout?: string; // #511: per RUN step, a TIMEOUT text ("5m"); absent = no limit

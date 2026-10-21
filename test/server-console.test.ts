@@ -42,7 +42,7 @@ async function start(t: TestContext, command: Command = TEST): Promise<{ base: s
     await server.close();
   });
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: [{ name: WORKSPACE, path: repo, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }], commands: [command] })).status, 200);
+  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: [{ name: WORKSPACE, path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }], commands: [command] })).status, 200);
   await server.poll();
   assert.equal((await postJson(`${base}/tasks/${TASK}/open`, { kind: 'terminal' })).status, 200);
   return { base, ptys, server };

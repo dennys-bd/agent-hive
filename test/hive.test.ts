@@ -279,6 +279,19 @@ test('a hive.config.json without rateLimitWaitMinutes opens setup mode with the 
   await assert.rejects(bootHive(wrong.home), { message: 'hive.config.json: "rateLimitWaitMinutes" must be an integer from 1 to 10080' }, 'a key that is there but wrong is no file from before the key');
 });
 
+test('a hive.config.json whose workspace has no nestedRepos opens setup mode with the parse error, prefilled with none (#653)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const before = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }; // a workspace from before #653
+  await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, workspaces: [before] })));
+  const { server, port } = await bootHive(home);
+  t.after(() => server.close());
+  const info = await settingsInfo(home, port);
+  assert.equal(info.configured, false);
+  assert.equal(info.error, 'hive.config.json: "comb.workspaces[0].nestedRepos" must be a list of relative paths');
+  const [workspace] = info.config?.comb.workspaces ?? [];
+  assert.deepEqual([workspace?.nestedRepos, workspace?.notNestedRepos], [[], []], 'the form opens with no nested repo');
+});
+
 test('a hive.config.json without sidebarsPerView opens setup mode with the parse error, prefilled with the defaults; a field that is not a boolean still fails the boot (#821)', async (t) => {
   const { home } = await hiveWithConfig(t, { prefix: 'OLD', sidebarsPerView: undefined });
   const { server, port } = await bootHive(home);

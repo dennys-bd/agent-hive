@@ -129,7 +129,7 @@ test('POST /settings takes the workspace folder from the body and refuses, writi
 
 test('POST /settings refuses, writing nothing, two workspaces whose paths resolve to the same folder', async (t) => {
   const { base, home, repo } = await start(t);
-  const same: Workspace[] = [{ name: 'a', path: repo, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'b', path: `${repo}/`, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }];
+  const same: Workspace[] = [{ name: 'a', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'b', path: `${repo}/`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }];
   const res = await postSettings(base, { ...BODY, workspaces: same, sources: [{ ...GITHUB_ENTRY, taskProps: { defaults: { workspace: 'a', auto: true }, rules: [] } }] });
   assert.equal(res.status, 400);
   assert.deepEqual(await json<{ error: string }>(res), { error: 'workspaces a and b point at the same folder' });
@@ -1205,7 +1205,7 @@ test('the rate-limit wait reaches the state from the config: the first save boot
 test('POST /settings keeps each workspace\'s setup and timeout, and answers 400 naming the workspace and the line of the first setup line it cannot parse, saving nothing (#299)', async (t) => {
   const { base, home, repo } = await start(t);
   const saved = async (): Promise<Config> => JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
-  const workspace = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: '# the worktree\nCOPY .env\nRUN pnpm install', setupTimeout: '10m' };
+  const workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: '# the worktree\nCOPY .env\nRUN pnpm install', setupTimeout: '10m' };
   assert.equal((await postSettings(base, { ...BODY, workspaces: [workspace] })).status, 200);
   assert.deepEqual((await saved()).comb.workspaces, [workspace]);
   const bad = await postSettings(base, { ...BODY, workspaces: [{ ...workspace, setup: 'COPY .env\nRUN\nCOPY ../x' }] });
@@ -1217,7 +1217,7 @@ test('POST /settings keeps each workspace\'s setup and timeout, and answers 400 
 test('POST /settings keeps each workspace\'s teardown and its timeout, and answers 400 naming the workspace and the teardown line it cannot parse, saving nothing (#654)', async (t) => {
   const { base, home, repo } = await start(t);
   const saved = async (): Promise<Config> => JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
-  const workspace = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', teardown: 'RUN docker compose down\nDEL tmp/', teardownTimeout: '2m' };
+  const workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', teardown: 'RUN docker compose down\nDEL tmp/', teardownTimeout: '2m' };
   assert.equal((await postSettings(base, { ...BODY, workspaces: [workspace] })).status, 200);
   assert.deepEqual((await saved()).comb.workspaces, [workspace]);
   const bad = await postSettings(base, { ...BODY, workspaces: [{ ...workspace, teardown: 'RUN true\nCOPY a b c' }] });

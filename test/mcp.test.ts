@@ -316,7 +316,7 @@ test('hive_conventions answers the Hive\'s language, the stage\'s approval and i
 test('conventionsAnswer: a stage run reads its stage\'s approval; a free session has no stage; a local session neither (#692, #318)', () => {
   const config = {
     language: 'pt' as const,
-    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }] },
+    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }] },
   };
   const task: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'T', body: '', url: '' }, stage: 'spec', boardColumn: '', auto: true, workspace: 'site' };
   const state = {
@@ -473,7 +473,7 @@ test('forkConventions answers a fork\'s PR target, both repositories, the base r
     if (args.includes('get-url')) return { stdout: urls[args.at(-1) ?? ''] ?? '' };
     return { stdout: args.includes('symbolic-ref') ? 'upstream/master\n' : '' };
   };
-  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' };
+  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' };
   const original = { pr: 'original', original: 'acme/app', fork: 'me/app', baseRemote: 'upstream', base: 'master' };
   assert.deepEqual(await forkConventions(exec, app, {}), original);
   assert.deepEqual(await forkConventions(exec, { ...app, baseBranch: 'devtest' }, { baseBranch: 'main' }), { ...original, base: 'devtest' });
