@@ -1,6 +1,7 @@
 import { activityOf, holdsSlug, keptActivity, recordsOf, taskOfActivity, terminalsIn, worktreeOwner, workersIn, type WorkState } from './activities.js';
 import { staleRead } from './column-write.js';
 import { parentOf } from './task-tree.js';
+import { runsAgent } from './stage-agent.js';
 import type { Activity, SourceAction, SourceItem, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
 
 /** What a task's workers are read from (#629): the workers point at the activity, the activity's record lists the task. */
@@ -152,11 +153,11 @@ export function isDue(task: Task, stage: Stage, now: number): boolean {
 }
 
 /** A manual gate (#315): approval with nothing to run. A task awaits Aprovar from the moment it enters; the server and the UI share this rule. */
-export const isGate = (stage: Stage | undefined): boolean => stage?.approval === true && stage.prompt === undefined && stage.action === undefined;
+export const isGate = (stage: Stage | undefined): boolean => stage?.approval === true && stage.action === undefined && !runsAgent(stage); // #710: a skill stage with approval waits after its run
 
 /** What a stage run of the task has to tell its worker: the stage's prompt (#134: a gate runs nothing, its feedback goes to another stage). The
  * fill and a start by hand share this rule. */
-export const canRunIn = (stage: Pick<Stage, 'prompt'>): boolean => stage.prompt !== undefined;
+export const canRunIn = (stage: Pick<Stage, 'action' | 'prompt' | 'skill'>): boolean => runsAgent(stage); // #710: a skill stage runs too
 /** The only way a task changes stage: `after` counts from this moment, and the pin goes with the old stage (a new queue is a new claim). What
  * the stage left behind on the work (a stopped mark, an awaited approval, queued feedback) is settleEntries' (#629). */
 export const enter = ({ pinned: _pinned, ...task }: Task, stage: Stage): Task => ({ ...task, stage: stage.name, enteredAt: new Date().toISOString() });

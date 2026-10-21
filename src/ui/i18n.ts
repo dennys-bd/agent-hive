@@ -1436,6 +1436,7 @@ const en = {
   'settings.stages.prompt': 'prompt',
   'settings.stages.action': 'action',
   'settings.stages.action.prompt': 'run a prompt',
+  'settings.stages.action.skill': 'hive skill', // #710
   'settings.stages.action.deleteActivity': 'delete activity',
   'settings.stages.action.deleteActivity.hint': 'never uses force; if git refuses, it shows on the task',
   'settings.stages.action.commands': 'run commands', // #755: the stage runs a list of the workspace's commands and ends with a verdict
@@ -3685,6 +3686,7 @@ const pt: Record<MessageKey, string> = {
   'settings.stages.prompt': 'prompt',
   'settings.stages.action': 'ação',
   'settings.stages.action.prompt': 'executar um prompt',
+  'settings.stages.action.skill': 'hive skill',
   'settings.stages.action.deleteActivity': 'excluir atividade',
   'settings.stages.action.deleteActivity.hint': 'nunca usa force; se o git recusar, aparece na tarefa',
   'settings.stages.action.commands': 'executar comandos',
