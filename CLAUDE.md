@@ -26,18 +26,9 @@ For the length of the #212 experiment, every checkout has a Graphify graph of th
 
 ## The docs repository
 
-In the main checkout, clone the docs repository at `docs/`. Each task's worktree gets a worktree of it at its own `docs/`, on a branch named after the task's branch, from these lines in the workspace's Settings:
+In the main checkout, clone the docs repository at `docs/`, which this repository's git ignores. In the workspace's Settings, list `docs` under **nested repos** (#653): every task's worktree then gets a worktree of it at its own `docs/`, on the task's branch, started from `origin/main`, before the worktree setup runs. No setup or teardown line is needed. The Hive removes it before the task's worktree, and a normal delete is refused while it holds uncommitted work, so a doc left uncommitted is never lost; only the forced removal deletes it.
 
-- worktree setup:
-  ```
-  RUN main="$(git rev-parse --path-format=absolute --git-common-dir)/.." && branch="$(git branch --show-current)" && git -C "$main/docs" fetch -q origin && if git -C "$main/docs" show-ref --verify -q "refs/heads/$branch"; then git -C "$main/docs" worktree add "$PWD/docs" "$branch"; else git -C "$main/docs" worktree add --no-track -b "$branch" "$PWD/docs" origin/main; fi
-  ```
-- worktree teardown, before anything else:
-  ```
-  RUN git -C "$(git rev-parse --path-format=absolute --git-common-dir)/../docs" worktree remove "$PWD/docs"
-  ```
-
-The teardown has no `--force` on purpose: a doc left uncommitted fails it instead of being lost. A task's spec, plan and walkthrough are committed in its docs worktree and reach the docs repository through their own PR.
+A task's spec, plan and walkthrough are committed in its docs worktree and reach the docs repository through their own PR, which `/hive:new-pr` opens before the code PR.
 
 ## What counts as bounded here
 
