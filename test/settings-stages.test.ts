@@ -4,6 +4,7 @@ import { setLanguage, t } from '../src/ui/i18n.js';
 import {
   actionLabel, addableActions, deletionMoves, emptyStage, entryKey, entryKeys, entryLabel, fromKeys, stageDraft, stageFrom, stageMeta, stageRenamesFrom, withAction, withEntry, withoutAction,
 } from '../src/ui/lib/settings-stages.js';
+import { draftVerdicts } from '../src/ui/lib/settings-transitions.js';
 import type { SourceAction, Stage, Task } from '../src/types.js';
 
 const move = (column: string): SourceAction => ({ type: 'move', column });
@@ -145,4 +146,24 @@ test('deletionMoves counts the tasks of the deleted stages by destination, under
   const at = (n: number, stage: string, column: string): Task => ({ item: { itemId: `work:${n}`, id: String(n), title: '', body: '', url: '', source: 'work' }, stage, boardColumn: column, auto: true });
   assert.deepEqual(deletionMoves(drafts, saved, next, [at(1, 'dev', 'Ready'), at(2, 'qa', 'QA'), at(3, 'done', 'Done'), at(4, 'qa', 'Done')]), [{ stage: 'Spec', n: 2 }, { stage: 'done', n: 1 }]);
   assert.deepEqual(deletionMoves(drafts, saved, next, [at(3, 'done', 'Done')]), [], 'no deleted stage holds a task');
+});
+
+test('a skill stage keeps its skill, its specialized agent and every prompt key through the draft, and sends no prompt (#710)', () => {
+  const stage: Stage = { name: 'plan', from: { work: ['Plan'] }, action: 'skill', skill: 'new-plan', agent: 'codex', model: 'gpt-5.6-terra', specializedAgent: 'hive:planner', session: 'continue', approval: true, verdicts: ['redo'], maxWorkers: 2 };
+  const draft = stageDraft(stage, ROWS);
+  assert.deepEqual([draft.action, draft.skill, draft.specializedAgent, draftVerdicts(draft)], ['skill', 'new-plan', 'hive:planner', ['redo']]);
+  assert.deepEqual(stageFrom(draft, ROWS), stage);
+  assert.equal('prompt' in stageFrom({ ...draft, prompt: 'left over' }, ROWS), false);
+  assert.deepEqual([emptyStage().skill, emptyStage().specializedAgent], ['', '']);
+});
+
+test('a prompt stage sends its specialized agent only with a prompt to run, a Hive action sends neither key, and a skill stage\'s chip names its skill (#710)', () => {
+  setLanguage('pt');
+  const draft = { ...emptyStage(), name: 'dev', specializedAgent: 'hive:designer' };
+  assert.equal(stageFrom({ ...draft, prompt: '/x' }, ROWS).specializedAgent, 'hive:designer');
+  assert.equal('specializedAgent' in stageFrom(draft, ROWS), false, 'a blank prompt runs nothing: the parser refuses it there');
+  const commands = stageFrom({ ...draft, prompt: '/x', skill: 'new-plan', action: 'commands', commands: ['lint'] }, ROWS);
+  assert.equal('specializedAgent' in commands || 'skill' in commands, false);
+  assert.equal(stageMeta({ ...draft, action: 'skill', skill: 'new-plan' }, 'claude'), 'claude · new-plan');
+  assert.equal(stageMeta({ ...draft, action: 'skill', agent: 'codex' }, 'claude'), 'codex · hive skill');
 });

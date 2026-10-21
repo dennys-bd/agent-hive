@@ -2,7 +2,7 @@ import { isAutomatic, transitionKey } from '../../transitions.js';
 import { END, FIXED_VERDICTS, type SourceAction, type Transition, type TransitionSession, type Trigger } from '../../types.js';
 import { t } from '../i18n.js';
 import { triggerLabel } from './flow-labels.js';
-import { byRow, isGateDraft, named, optional, type StageDraft, type StageRow } from './settings-stages.js';
+import { byRow, isAgentDraft, isGateDraft, named, optional, type StageDraft, type StageRow } from './settings-stages.js';
 
 // Settings › fluxo's transitions (#134): the draft ↔ Transition edges, keyed by the stage drafts' ids so a stage renamed while it is edited keeps
 // its arrows, the choices the editor offers, and the form's own check before the server's.
@@ -46,7 +46,7 @@ export function transitionFrom(d: TransitionDraft, stages: readonly StageDraft[]
 /** The verdicts a stage draft gives (#134): the fixed ones on commands and wait for CI, its own on a prompt stage, none otherwise. */
 export function draftVerdicts(stage: StageDraft): readonly string[] {
   if (stage.action === 'commands' || stage.action === 'waitForCi') return FIXED_VERDICTS;
-  return stage.action === '' && !isGateDraft(stage) ? stage.verdicts : [];
+  return isAgentDraft(stage) ? stage.verdicts : []; // #710: a skill stage's own too
 }
 
 /** The triggers a stage draft may fire, as the parser allows them (#134): approved and feedback on approval; done on any other stage that ends

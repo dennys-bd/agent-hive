@@ -212,6 +212,8 @@ function stagesProblem(stages: StageDraft[]): SettingsProblem | undefined {
   if (stages.length === 0) return { section: 'flow', message: t('settings.stages.none') };
   const bad = stages.findIndex((c) => c.name.trim() === '' || !isEmptyOrDuration(c.after) || !isEmptyOrNonNegativeInt(c.maxWorkers) || (c.action === 'commands' && c.commands.length === 0)); // #755: the parser refuses an empty list
   if (bad !== -1) return { section: 'flow', message: t('settings.stages.error', { n: bad + 1 }) };
+  const unpicked = stages.findIndex((c) => c.action === 'skill' && c.skill === ''); // #710: a skill stage with none runs nothing; the parser refuses it
+  if (unpicked !== -1) return { section: 'flow', message: t('settings.stages.error.skill', { n: unpicked + 1 }) };
   const wait = stages.findIndex(badWait);
   return wait === -1 ? undefined : { section: 'flow', message: t('settings.stages.error.ci', { n: wait + 1 }) };
 }

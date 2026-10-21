@@ -1582,6 +1582,7 @@ const en = {
   'settings.transitions.sources': 'on the sources',
   'settings.transitions.sources.pass': 'on passing',
   'settings.stages.error.ci': 'stage {n}: pick at least one check under only these, and a wait like 30s, 10m or 1h, up to 24h', // #834
+  'settings.stages.error.skill': 'stage {n}: choose a skill', // #710
   'settings.stages.loadHint': '"load" fills the selects below with the source columns.',
   'main.confirm.quit.one': '1 worker is running and will be stopped. Quit anyway?',
   'main.confirm.quit.other': '{n} workers are running and will be stopped. Quit anyway?',
@@ -3832,6 +3833,7 @@ const pt: Record<MessageKey, string> = {
   'settings.transitions.sources': 'nas sources',
   'settings.transitions.sources.pass': 'ao passar',
   'settings.stages.error.ci': 'etapa {n}: escolha ao menos um check em só estes, e uma espera como 30s, 10m ou 1h, até 24h',
+  'settings.stages.error.skill': 'etapa {n}: escolha uma skill',
   'settings.stages.loadHint': '"carregar" preenche os selects abaixo com as colunas da source.',
   'main.confirm.quit.one': '1 worker está executando e será parado. Sair mesmo assim?',
   'main.confirm.quit.other': '{n} workers estão executando e serão parados. Sair mesmo assim?',
