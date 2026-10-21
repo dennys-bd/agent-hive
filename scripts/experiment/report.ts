@@ -9,9 +9,11 @@ export interface Rate { passed: number; total: number }
 interface Measure { label: string; of(record: RunRecord): number | undefined }
 
 const minutes = (ms: number): number => Math.round(ms / 60_000);
+// BenchMetrics.ms is the run's clock less its sleep (#473); the worker minutes stay what #105 measured, the tasks' own times summed
+const workerMs = (m: Metrics): number => m.tasks.reduce((total, t) => total + t.ms, 0);
 const percent = (part: number, whole: number): number => Math.round((100 * part) / whole);
 const ARM_LINES = ['- Arm A: the repository commands, `/hive-spec`, `/hive-plan`, `/hive-build`.', '- Arm B: the plugin skills, `/hive:new-spec`, `/hive:new-plan`, `/hive:new-build`.'];
-const RUN_HEAD = ['run', 'token', 'status', 'tests', 'tokens', 'worker minutes', 'Build restarts', 'diff lines', 'clicks', ...CRITERIA];
+const RUN_HEAD = ['run', 'token', 'status', 'tests', 'tokens', 'worker minutes', 'restarts', 'diff lines', 'clicks', ...CRITERIA];
 
 export function stat(values: readonly number[]): Stat | undefined {
   if (values.length === 0) return undefined;
@@ -21,10 +23,10 @@ export function stat(values: readonly number[]): Stat | undefined {
 /** A value a run lacks is skipped, never read as 0. */
 export const MEASURES: readonly Measure[] = [
   { label: 'tokens', of: (r) => r.metrics?.tokens },
-  { label: 'worker minutes', of: (r) => (r.metrics ? minutes(r.metrics.ms) : undefined) },
+  { label: 'worker minutes', of: (r) => (r.metrics ? minutes(workerMs(r.metrics)) : undefined) },
   { label: 'waiting minutes', of: (r) => (r.metrics ? minutes(r.metrics.waitingMs) : undefined) },
   { label: 'wall clock minutes', of: (r) => (r.metrics ? minutes(Date.parse(r.metrics.endedAt) - Date.parse(r.metrics.startedAt)) : undefined) },
-  { label: 'Build restarts', of: (r) => r.metrics?.buildRestarts },
+  { label: 'restarts', of: (r) => r.metrics?.restarts.count },
   { label: 'diff lines', of: (r) => (r.metrics ? r.metrics.diff.insertions + r.metrics.diff.deletions : undefined) },
   { label: 'tests green (1/0)', of: (r) => (r.evaluation ? Number(r.evaluation.testsGreen) : undefined) },
   { label: 'clicks passed (%)', of: (r) => (r.clicks && r.clicks.length > 0 ? percent(r.clicks.filter((c) => c.passed).length, r.clicks.length) : undefined) },
@@ -67,7 +69,7 @@ function runRow(r: RunRecord): string[] {
   const m = r.metrics;
   const tests = r.evaluation ? (r.evaluation.testsGreen ? 'green' : 'red') : '–';
   const clicks = r.clicks ? `${r.clicks.filter((c) => c.passed).length}/${r.clicks.length}` : '–';
-  const numbers = m ? [String(m.tokens), String(minutes(m.ms)), String(m.buildRestarts), String(m.diff.insertions + m.diff.deletions)] : ['–', '–', '–', '–'];
+  const numbers = m ? [String(m.tokens), String(minutes(workerMs(m))), String(m.restarts.count), String(m.diff.insertions + m.diff.deletions)] : ['–', '–', '–', '–'];
   return [r.ref.id.toUpperCase(), r.token ? `\`${r.token}\`` : '–', runStatus(r), tests, ...numbers, clicks, ...CRITERIA.map((c) => String(r.judge?.scores[c].score ?? '–'))];
 }
 

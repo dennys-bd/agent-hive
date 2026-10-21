@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { writeJson } from '../../scripts/experiment/files.js';
 import { endAttempt, newManifest, runRef, startAttempt } from '../../scripts/experiment/plan.js';
+import { NO_METRICS } from '../../src/benchmark/metrics.js';
 import { aggregate, clickRates, renderReport, type RunRecord, stat, writeReport } from '../../scripts/experiment/report.js';
 import type { Judge, Metrics, Outcome } from '../../scripts/experiment/types.js';
 import { tempDir } from '../temp-dir.js';
@@ -14,8 +15,8 @@ const judge = (fidelity: number | null, behaviour: number | null, code: number):
   model: 'm', scores: { fidelity: { score: fidelity, reason: '' }, behaviour: { score: behaviour, reason: '' }, code: { score: code, reason: '' }, specAndPlan: { score: 5, reason: '' }, tests: { score: 5, reason: '' } },
 });
 const metrics = (token: string, outcome: Outcome, tokens: number, reason?: string): Metrics => ({
-  token, outcome, ...(reason ? { reason } : {}), startedAt: T0, endedAt: '2026-10-01T23:00:00.000Z',
-  tasks: [], tokens, ms: 600_000, waitingMs: 0, buildRestarts: 1, diff: { files: 1, insertions: 10, deletions: 5 },
+  ...NO_METRICS, token, outcome, ...(reason ? { reason } : {}), startedAt: T0, endedAt: '2026-10-01T23:00:00.000Z',
+  tokens, ms: 600_000, restarts: { count: 1, where: ['build · grid'] }, diff: { files: 1, insertions: 10, deletions: 5 },
 });
 const click = (scenario: string, passed: boolean) => ({ scenario, passed, notes: '', screenshots: [] });
 const RECORDS: RunRecord[] = [
@@ -54,7 +55,7 @@ test('renderReport maps every token to its arm and slot, flags unpaired, and lis
   const manifest = { ...interrupted, attempts: interrupted.attempts.map((a) => ({ ...a, outcome: 'interrupted' as const })) };
   const report = renderReport(manifest, RECORDS);
   for (const part of [
-    '# Skills A/B experiment skills-x', 'Arm A: the repository commands', 'Arm B: the plugin skills', '| tokens | 200 | 100–300 | 125 | 50–200 |', '| S1 | 1/1 | 0/1 |',
+    '# Skills A/B experiment skills-x', '| run | token | status | tests | tokens | worker minutes | restarts | diff lines |', 'Arm A: the repository commands', 'Arm B: the plugin skills', '| tokens | 200 | 100–300 | 125 | 50–200 |', '| S1 | 1/1 | 0/1 |',
     '| A2 | `aaaaa2` | timeout, unpaired, did not boot |', '| B2 | `bbbbb2` | error (MBBBBB2-1: spawn failed), not evaluated |',
     '[S1-1.png](aaaaa1/screens/S1-1.png)', '- A2 `dead01`', '`feat/monitor-view-dead01`',
   ]) assert.ok(report.includes(part), part);

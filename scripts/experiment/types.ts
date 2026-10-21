@@ -1,4 +1,5 @@
 // Shared shapes of the skills A/B experiment (#105). Written under <state>/experiments/<id>/ (plan.ts stateRoot); the Hive never reads them.
+import type { BenchMetrics } from '../../src/types.js';
 
 export type Arm = 'a' | 'b';
 export const ARMS: readonly Arm[] = ['a', 'b'];
@@ -21,16 +22,8 @@ export interface Manifest {
   attempts: Attempt[];
 }
 
-export interface StageSpan { stage: string; ms: number }
-export interface TaskMetrics { itemId: string; id: string; tokens: number; ms: number; waitingMs: number; stages: StageSpan[]; buildRestarts: number }
-export interface DiffSize { files: number; insertions: number; deletions: number }
-
-export interface Metrics {
-  token: string; outcome: Outcome; reason?: string; startedAt: string; endedAt: string;
-  tasks: TaskMetrics[]; tokens: number; ms: number; waitingMs: number; buildRestarts: number; diff: DiffSize;
-  reportedTestsGreen?: boolean;
-  unpaired?: true;
-}
+/** metrics.json: the benchmark's metrics (#473) in the envelope only the harness reads. */
+export interface Metrics extends BenchMetrics { token: string; outcome: Outcome; reason?: string; startedAt: string; endedAt: string; unpaired?: true }
 
 export interface EvalResult { booted: boolean; testsGreen: boolean; reason?: string }
 export interface Click { scenario: string; passed: boolean; notes: string; screenshots: string[] }
