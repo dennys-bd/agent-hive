@@ -1229,7 +1229,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const customStore = createCustomStore({ home, pluginSource: shippedPlugin, workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: (workspaces) => { if (live) void pluginRender.write(live.runtime.config, workspaces); }, log });
   registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: shippedPlugin, log });
   // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
-  registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, log, evaluator: benchEvaluator, runner: benchRunner, version: async () => (await pluginVersion(shippedPlugin)) ?? '', now: () => new Date() });
+  const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, log, evaluator: benchEvaluator, runner: benchRunner, version: async () => (await pluginVersion(shippedPlugin)) ?? '', now: () => new Date() });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
   registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written
@@ -1424,6 +1424,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (planLimitsTimer) clearInterval(planLimitsTimer);
     evaluator.abortAll(); // #877: a Quit ignores what its aborts cause (cleanStop)
     await benchRunner.abortAll(); // #472: every loop aborted and its run daemons stopped; the boot guard marks the runs interrupted
+    await benchRuns.close(); // #475: the frozen run daemon this Hive booted never outlives it
     await benchEvaluator.abortAll(); // #474: a Quit drops the running evaluations and waits (bounded) for their cleanup (sample, eval worktree)
     await readLoop?.stop(); // #180: the running round and every refetch settle first: the database never closes under a transaction
     readModel?.close();
