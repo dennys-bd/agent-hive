@@ -6,6 +6,7 @@ import { HIVE_SOURCE } from '../tasks.js';
 import { MCP_DEFAULTS, type Arm, type ArmSetup, type BenchStageRole, type BenchTask, type CombConfig, type Config, type Experiment, type IsolationRow, type Stage, type State, type Task, type Workspace } from '../types.js';
 import { runBranch, runPrefix } from './git.js';
 import { RUN_SANDBOX_FILE, SANDBOX_FILE } from './sandbox.js';
+import type { WatchTask } from './watcher.js';
 import { type RunPaths, runClaudeArgs } from './worker-rules.js';
 
 export const RUN_STAGES: readonly { role: BenchStageRole; name: string }[] = [
@@ -75,4 +76,10 @@ export function runState(tasks: readonly BenchTask[], token: string, workspace: 
   const prefix = runPrefix(token);
   const local = tasks.map((task, i): Task => ({ item: { itemId: `local:${i + 1}`, id: `${prefix}-${i + 1}`, title: task.title, body: task.body, url: '' }, stage: RUN_STAGES[0].name, boardColumn: '', auto: task.blockedBy.length === 0, created: true, workspace }));
   return { ...initialState(maxConcurrent), tasks: local, localCount: tasks.length };
+}
+
+/** The run's blocker graph for the watcher (#473, the harness's): task n is local:<n> in seed order, as runState seeds it. */
+export function watchTasks(tasks: readonly Pick<BenchTask, 'key' | 'title' | 'blockedBy'>[]): WatchTask[] {
+  const idOf = (key: string): string => `local:${tasks.findIndex((t) => t.key === key) + 1}`;
+  return tasks.map((task, i) => ({ itemId: `local:${i + 1}`, key: task.key, title: task.title, blockedBy: task.blockedBy.map(idOf) }));
 }
