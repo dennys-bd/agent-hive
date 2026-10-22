@@ -2000,6 +2000,7 @@ const en = {
   'settings.signal.footnote': 'the most restrictive of the manual signal and usage rules wins · starting by hand, continue and free sessions bypass the signal · "shut down when done" follows the flow\'s signal',
   // #313: the plugins view
   'dock.plugins': 'Plugins',
+  'dock.benchmark': 'Benchmark',
   'plugins.search': 'search',
   'plugins.loadFailed': 'could not read the plugins; see hive.log',
   'plugins.legend': 'states',
@@ -2398,6 +2399,9 @@ const en = {
   'benchmark.header.failed.gone': 'the experiment or its workspace no longer exists',
   'benchmark.header.failed.running': 'the experiment is running or sleeping',
   'benchmark.header.failed.unknown': 'the change could not be saved; see hive.log',
+  'benchmark.header.duplicate': 'duplicate',
+  'benchmark.header.duplicateTitle': 'Duplicate experiment',
+  'benchmark.header.duplicateText': 'creates a draft with the same arms, tasks and config, without the rounds. the plugin and the seed stay pinned with the same hash.',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4393,6 +4397,7 @@ const pt: Record<MessageKey, string> = {
   'settings.signal.footnote': 'vale o sinal mais restritivo entre o manual e as regras de uso · iniciar à mão, continuar e sessões livres passam por cima do sinal · "desligar quando terminar" segue o sinal do fluxo',
   // #313: the plugins view
   'dock.plugins': 'Plugins',
+  'dock.benchmark': 'Benchmark',
   'plugins.search': 'buscar',
   'plugins.loadFailed': 'não foi possível ler os plugins; veja o hive.log',
   'plugins.legend': 'estados',
@@ -4791,6 +4796,9 @@ const pt: Record<MessageKey, string> = {
   'benchmark.header.failed.gone': 'o experimento ou o workspace dele não existe mais',
   'benchmark.header.failed.running': 'o experimento está executando ou dormindo',
   'benchmark.header.failed.unknown': 'não foi possível salvar a mudança; veja o hive.log',
+  'benchmark.header.duplicate': 'duplicar',
+  'benchmark.header.duplicateTitle': 'Duplicar experimento',
+  'benchmark.header.duplicateText': 'cria um rascunho com os mesmos braços, tarefas e config, sem as rodadas. o plugin e o seed continuam fixados com o mesmo hash.',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
