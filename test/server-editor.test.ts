@@ -188,6 +188,7 @@ test('a deleted activity\'s file is refused with a 409 on every route, the file 
   const answers = [
     await get(e, 'docs/spec.md', 'file', record),
     await get(e, 'docs/spec.md', 'file-version', record),
+    await get(e, 'docs/spec.md', 'image', record),
     await put(e, { path: 'docs/spec.md', text: 'x', version: sha('# merged'), format: false }, record),
   ];
   for (const res of answers) {
@@ -264,4 +265,33 @@ test('GET /settings/formatters answers each supported formatter with the workspa
   assert.deepEqual(states.find((s) => s.id === 'prettier')?.found, ['hive']);
   const sent = await put(e, { path: 'docs/spec.md', text: 'as typed\n', version: sha(SPEC), format: true });
   assert.deepEqual(await sent.json(), { version: sha('as typed\n') });
+});
+
+test('GET image answers the file\'s bytes with its extension\'s type, in any case, no-store, nosniff and a sandbox CSP, over 1 MB too (#498)', async (t) => {
+  const e = await startEditor(t); // the worktree sits under .hive/: sendFile must allow dotfiles
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';
+  const big = Buffer.concat([PNG, Buffer.alloc(EDITOR_FILE_MAX)]);
+  await writeFile(join(e.worktree, 'shot.PNG'), PNG);
+  await writeFile(join(e.worktree, 'logo.svg'), svg);
+  await writeFile(join(e.worktree, 'big.webp'), big);
+  const png = await get(e, 'shot.PNG', 'image');
+  assert.equal(png.status, 200);
+  const headers = ['content-type', 'cache-control', 'x-content-type-options', 'content-security-policy'].map((name) => png.headers.get(name));
+  assert.deepEqual(headers, ['image/png', 'no-store', 'nosniff', 'sandbox']);
+  assert.deepEqual(Buffer.from(await png.arrayBuffer()), PNG);
+  const vector = await get(e, 'logo.svg', 'image');
+  assert.deepEqual([vector.headers.get('content-type'), await vector.text()], ['image/svg+xml', svg]);
+  const large = await get(e, 'big.webp', 'image');
+  assert.deepEqual([large.status, large.headers.get('content-type'), (await large.arrayBuffer()).byteLength], [200, 'image/webp', big.length]);
+});
+
+test('GET image refuses a file that is not an image with a 415, a missing one with a 404 and no path with a 400 (#498)', async (t) => {
+  const e = await startEditor(t);
+  await writeFile(join(e.worktree, 'notes.txt'), 'notes\n');
+  const cases: [string, number, string][] = [['notes.txt', 415, BINARY], ['docs/spec.md', 415, BINARY], ['nope.png', 404, MISSING], ['', 400, NO_PATH]];
+  for (const [path, status, error] of cases) {
+    const res = await get(e, path, 'image');
+    assert.equal(res.status, status, path);
+    assert.deepEqual(await res.json(), { error }, path);
+  }
 });

@@ -1,10 +1,10 @@
-// The editor pane's routes (#717): a file as text, its version, and a save that writes only over the version the pane last read. The
+// The editor pane's routes (#717): a file as text, its version (of any bytes, #498), an image's bytes (#498), and a save that writes only over the version the pane last read. The
 // folders are activityFolders'; the path resolves with resolveActivityPath (#697): any existing file, absolute or relative to the
 // worktree (the workspace once it is gone), a symlink to its target. A deleted activity has no activity space to hold the pane: refused.
-// UTF-8 text only, up to EDITOR_FILE_MAX bytes: a lossy decode would corrupt the file on save.
+// The text routes: UTF-8 text only, up to EDITOR_FILE_MAX bytes: a lossy decode would corrupt the file on save.
 import { createHash, randomBytes } from 'node:crypto';
 import { chmod, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { activityParam, keptTarget } from './activity-routes.js';
 import { decodeText } from './decode-text.js';
@@ -15,7 +15,7 @@ import { resolveActivityPath } from './ide.js';
 import { inScope } from './languages.js';
 import { activityFolders, DISK, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
-import { type Activity, type Config, EDITOR_FILE_MAX, type EditorConfig, type FileSaved, type FileText, FORMATTER_IDS, type FormatterState, type Task, type Workspace } from './types.js';
+import { type Activity, type Config, EDITOR_FILE_MAX, type EditorConfig, type FileSaved, type FileText, FORMATTER_IDS, IMAGE_TYPES, type FormatterState, type Task, type Workspace } from './types.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
@@ -94,6 +94,22 @@ async function fileVersion(req: Request, res: Response, current: Live): Promise<
   const located = await locate(current, activityParam(req), req.query.path);
   if ('status' in located) return refuse(res, located);
   res.json({ version: sha256(await readFile(located.file)) });
+}
+
+// decision 10 of #498: an <img> never runs an SVG's scripts, and sandbox keeps them from running if the URL is ever opened as a page
+const IMAGE_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox' };
+
+// The image's bytes (#498), any size: they go to an <img>, never into a JSON body or a Monaco model, so the 1 MB cap's reason does not
+// apply. The type comes from the path the tab asked with, the one the page chose the view by. dotfiles: worktrees sit under .hive/
+async function sendImage(req: Request, res: Response, current: Live): Promise<void> {
+  const located = await locate(current, activityParam(req), req.query.path);
+  if ('status' in located) return refuse(res, located);
+  const type = IMAGE_TYPES[extname(String(req.query.path)).toLowerCase()];
+  if (type === undefined) return refuse(res, { status: HTTP_UNSUPPORTED, message: BINARY_MESSAGE });
+  await new Promise<void>((resolve, reject) => {
+    // an error once the bytes started cannot become route's 500 any more: the stream just ends
+    res.sendFile(located.file, { dotfiles: 'allow', headers: { ...IMAGE_HEADERS, 'Content-Type': type } }, (err) => (err && !res.headersSent ? reject(err) : resolve()));
+  });
 }
 
 // The text in a temp file beside the original, with the original's mode, then renamed over it: a reader never sees half a file, and a
@@ -186,6 +202,7 @@ export function registerEditorRoutes(app: Express, { requireLive, consoleStore }
     res.json(body);
   })));
   app.get('/activities/:id/file-version', route(fileVersion));
+  app.get('/activities/:id/image', route(sendImage));
   app.get('/settings/formatters', route(formatterStates));
   app.put(EDITOR_FILE_ROUTE, route((req, res, current) => saveFile(res, current, activityParam(req), req.body, consoleStore)));
 }
