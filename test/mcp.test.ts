@@ -509,6 +509,14 @@ test('hive_done strips control characters from the evidence and checks the size 
   assert.deepEqual(resultOf(server.getState()!, task0(server).item.itemId)?.verdict, { name: 'redo', evidence: 'a[31mb' });
 });
 
+test('hive_done refuses a verdict passed inside result, naming the stage\'s and its own field, and dispatches nothing (#493)', async (t) => {
+  const { base, server, ptyId } = await start(t, [GITHUB_ENTRY], undefined, [{ ...STAGES[0], verdicts: ['leaf', 'split'] }, { name: 'later', from: {} }]);
+  const client = await connect(t, base, ptyId);
+  assert.deepEqual(await call(client, 'hive_done', { result: { verdict: 'leaf' } }), { text: 'verdict is missing: pass one of this stage\'s: leaf, split, in its own verdict field, not inside result', isError: true });
+  assert.equal(worker0(server).done, undefined, 'the run goes on');
+  assert.deepEqual(await call(client, 'hive_done', { verdict: 'leaf' }), { text: 'ok', isError: false });
+});
+
 test('hive_done in a stage with no verdicts refuses one (#134)', async (t) => {
   const { base, ptyId } = await start(t);
   const client = await connect(t, base, ptyId);
