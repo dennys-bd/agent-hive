@@ -64,3 +64,18 @@ test('without a secondary, Ctrl+Enter does nothing and the dialog stays (#75)', 
   expect(onConfirm).not.toHaveBeenCalled();
   expect(dialog()).toBeInTheDocument();
 });
+
+test('danger paints the primary red, the destructive variant; without it the primary is the default one (#461)', async () => {
+  const user = userEvent.setup();
+  await show(user, { danger: true, confirmLabel: 'excluir' });
+  expect(within(dialog()).getByRole('button', { name: 'excluir' })).toHaveClass('bg-destructive');
+  await user.keyboard('{Escape}');
+  await reopen(user);
+  expect(within(dialog()).getByRole('button', { name: 'excluir' })).toHaveClass('bg-destructive'); // the same Confirm, still danger
+});
+
+test('a plain confirmation keeps the default primary (#461)', async () => {
+  const user = userEvent.setup();
+  await show(user);
+  expect(within(dialog()).getByRole('button', { name: 'fechar' })).not.toHaveClass('bg-destructive');
+});
