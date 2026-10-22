@@ -71,3 +71,19 @@ test('state() rejects a frame that does not parse with a fixed message that quot
   const err = await createDaemonClient('/home', { address: () => ADDRESS, fetch: f.fn }).state().catch((e: Error) => e);
   assert.equal((err as Error).message, 'GET /events: the first frame does not parse');
 });
+
+test('sleepRuns POSTs the pty ids to /ptys/sleep and continueActivity POSTs /activities/:id/continue, with the secret and the dashboard header; a refusal names the route (#472)', async () => {
+  const f = fakeFetch((url) => new Response('{}', { status: url.includes('act%2F9') ? 409 : 200 }));
+  const client = createDaemonClient('/home', { address: () => ADDRESS, fetch: f.fn });
+  await client.sleepRuns(['r1', 'r2']);
+  await client.continueActivity('act-1');
+  assert.deepEqual(f.seen.map(({ url, init }) => [url, init.method, JSON.parse(String(init.body))]), [
+    ['http://127.0.0.1:4321/ptys/sleep', 'POST', { ptyIds: ['r1', 'r2'] }],
+    ['http://127.0.0.1:4321/activities/act-1/continue', 'POST', {}],
+  ]);
+  for (const { init } of f.seen) {
+    const headers = init.headers as Record<string, string>;
+    assert.deepEqual([headers['x-hive-secret'], headers['x-hive-ui'], headers['content-type']], [SECRET, '1', 'application/json']);
+  }
+  await assert.rejects(client.continueActivity('act/9'), /^Error: POST \/activities\/act\/9\/continue: HTTP 409$/);
+});
