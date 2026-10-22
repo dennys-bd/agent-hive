@@ -9,8 +9,10 @@ import { type ArmRefusal, armFrom, checkArm, checkRemove, checkTargets, isArmRef
 import { seedHash, tasksHash, treeHash } from './benchmark/hash.js';
 import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, forkName, forkOf, newId } from './benchmark/new-experiment.js';
 import { pluginTrees } from './benchmark/pin.js';
+import { execRun } from './benchmark/exec.js';
 import { ARM_PATCH, COPY, CREATE, NEW_ARM, PATCH, type PatchBody, UPLOAD } from './benchmark/schemas.js';
 import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, SeedFileMissing, seedCommit, seedEntries, syncSeed, UPLOAD_NAME, UPLOAD_NAME_MESSAGE, UPLOAD_PREFIX, writeUpload } from './benchmark/store.js';
+import { registerBenchmarkPrRoutes } from './server-benchmark-pr.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
 import { type BenchmarkEvent, type BenchSeed, type Config, type Exec, EXPERIMENT_ID, type Experiment, type ExperimentPatch, type State, type Workspace } from './types.js';
@@ -29,11 +31,12 @@ const ID_CHARS = 8;
 
 export interface BenchmarkRouteDeps {
   requireLive(res: Response): { runtime: { config: Config }; state: State } | undefined;
+  getLive(): { runtime: { config: Config }; state: State } | undefined; // the PR routes' own 404s answer when the Hive is not live (#477)
   dispatch(event: BenchmarkEvent): Promise<unknown>;
   home: string;
   pluginSource: string;
   exec: Exec;
-  log: Pick<Logger, 'error'>;
+  log: Logger; // the PR routes also warn (#477)
   version(): Promise<string>; // the Hive's version: the shipped plugin's (pluginVersion), as custom-store's hiveVersion
   now(): Date;
 }
@@ -291,4 +294,5 @@ export function registerBenchmarkRoutes(app: Express, deps: BenchmarkRouteDeps):
   const queue = serial();
   registerExperimentRoutes(app, deps, queue);
   registerArmRoutes(app, deps, queue);
+  registerBenchmarkPrRoutes(app, { getState: () => deps.getLive()?.state, getConfig: () => deps.getLive()?.runtime.config, hiveDir: deps.home, exec: execRun, gh: execRun, now: Date.now, log: deps.log }); // #477: GET and POST …/runs/:token/pr
 }
