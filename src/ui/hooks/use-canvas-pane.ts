@@ -7,8 +7,8 @@ type Pan = FlowView['pan'];
 interface CanvasPaneOptions { zoom: number; pan: Pan; fitRequest: number; graph: Size; onPan(pan: Pan): void; onFit(zoom: number): void; onZoom(zoom: number): void }
 interface CanvasPane { pane: RefObject<HTMLDivElement | null>; size: Size; onScroll(): void }
 
-// The pane's size, read on mount and on every resize; 0, 0 until then and while the flow is hidden under Atividades (#596)
-function usePaneSize(pane: RefObject<HTMLDivElement | null>): Size {
+// The pane's size, read on mount and on every resize; 0, 0 until then and while the pane is hidden (#596, #498)
+export function usePaneSize(pane: RefObject<HTMLDivElement | null>): Size {
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
   useLayoutEffect(() => {
     const el = pane.current;

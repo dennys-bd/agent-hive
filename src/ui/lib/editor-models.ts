@@ -2,7 +2,7 @@
 // (another activity shown) and go only when their tab closes or their activity does. Monaco itself loads with the first file opened (import()),
 // so a test that opens none never loads it.
 import type { editor } from 'monaco-editor';
-import type { FileSaved, FileText, FormatLog } from '../../types';
+import { type FileSaved, type FileText, type FormatLog, IMAGE_TYPES } from '../../types';
 import { moved as moveBase } from './file-base.js';
 import { renamedPath } from './file-tree.js';
 
@@ -66,30 +66,53 @@ export function nextUntitled(): number {
 const keyOf = (activityId: string, path: string): string => `${activityId}:${path}`;
 const entryOf = (activityId: string, path: string): Entry | undefined => entries.get(keyOf(activityId, path));
 const isEntryDirty = (entry: Entry): boolean => entry.model.getAlternativeVersionId() !== entry.savedVersionId;
-const activityRoute = (activityId: string, name: 'file' | 'file-version'): string => `/activities/${encodeURIComponent(activityId)}/${name}`;
+type Route = 'file' | 'file-version' | 'image';
+const activityRoute = (activityId: string, name: Route): string => `/activities/${encodeURIComponent(activityId)}/${name}`;
 const notify = (): void => {
   for (const listener of listeners) listener();
 };
 
-/** A file's read or version route (#717), the path in the query. */
-export const fileUrl = (activityId: string, path: string, name: 'file' | 'file-version' = 'file'): string =>
+/** A file's read, version or image route (#717, #498), the path in the query. */
+export const fileUrl = (activityId: string, path: string, name: Route = 'file'): string =>
   `${activityRoute(activityId, name)}?${new URLSearchParams({ path })}`;
+
+// A refused read (#717): the route's status and the server's words, its status text when the body has none
+async function refusal(res: Response): Promise<FileError> {
+  const { error } = (await res.json().catch(() => ({}))) as { error?: string };
+  return new FileError(res.status, error ?? res.statusText);
+}
 
 /** A file's text and version from the disk (#717); a refused read rejects with a FileError. The preview pane reads through it too (#697). */
 export async function readFile(activityId: string, path: string): Promise<FileText> {
   const res = await fetch(fileUrl(activityId, path));
   if (res.ok) return (await res.json()) as FileText;
-  const { error } = (await res.json().catch(() => ({}))) as { error?: string };
-  throw new FileError(res.status, error ?? res.statusText);
+  throw await refusal(res);
+}
+
+/** An image's bytes from the disk (#498), for the image view's object URL; a refused read rejects with a FileError. */
+export async function readImage(activityId: string, path: string): Promise<Blob> {
+  const res = await fetch(fileUrl(activityId, path, 'image'));
+  if (res.ok) return res.blob();
+  throw await refusal(res);
 }
 
 type Languages = ReadonlyArray<{ id: string; extensions?: string[]; filenames?: string[] }>;
 
+const nameOf = (path: string): string => path.split('/').at(-1) ?? path;
+// The name's extension, lower case with its dot; none for a name that only starts with one (.gitignore)
+function extensionOf(path: string): string {
+  const name = nameOf(path);
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot).toLowerCase() : '';
+}
+
+/** Whether the file tab shows the file as an image (#498): by its extension, as the image route answers it. */
+export const isImagePath = (path: string): boolean => Object.hasOwn(IMAGE_TYPES, extensionOf(path));
+
 // Monaco's language for the file: by its name (Dockerfile), else by its extension; plaintext for neither (#319: the skill editor's files too)
 export function languageOf(languages: Languages, path: string): string {
-  const name = path.split('/').at(-1) ?? path;
-  const dot = name.lastIndexOf('.');
-  const extension = dot > 0 ? name.slice(dot).toLowerCase() : '';
+  const name = nameOf(path);
+  const extension = extensionOf(path);
   return languages.find((l) => l.filenames?.includes(name) || (extension !== '' && l.extensions?.includes(extension)))?.id ?? 'plaintext';
 }
 

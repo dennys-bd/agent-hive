@@ -1,20 +1,19 @@
 import type { editor } from 'monaco-editor';
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { useEditorLanguages } from '@/components/editor-languages';
+import { ImageView } from '@/components/ImageView';
 import { useOpenFile } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { useOpenConsole } from '@/hooks/use-console';
 import { type DiskVersion, useFileVersion } from '@/hooks/use-file-version';
-import { type MessageKey, t } from '@/i18n';
+import { t } from '@/i18n';
 import * as models from '@/lib/editor-models';
+import { messageOf } from '@/lib/read-error';
 import * as fileBase from '@/lib/file-base';
 import * as checks from '@/lib/check-session';
 import * as lsp from '@/lib/lsp-session';
 import type { OpenEditor } from '@/lib/monaco';
 import type { FormatLog } from '../../types';
-
-// The reads the pane names in its own words (#717); any other refusal shows as the server said it
-const READ_ERROR: Partial<Record<number, MessageKey>> = { 404: 'editor.missing', 413: 'editor.tooLarge', 415: 'editor.binary' };
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; model: editor.ITextModel };
 // What the strip says (#717): the disk holds another version than the buffer's base, or no file at all
@@ -29,14 +28,6 @@ interface File { activityId: string; path: string }
  * tree's key of the activity, what a definition in another file opens with (#780). */
 export interface EditorPaneProps { activityId: string; path: string; label: string; active: boolean; fontFamily: string; workspace: string; openKey: string }
 
-/** A refused read in the pane's own words (#717), shared with the preview pane (#697): 404, 413 and 415 named, any other as the server said. */
-export function messageOf(err: unknown): string {
-  if (err instanceof models.FileError) {
-    const key = READ_ERROR[err.status];
-    return key === undefined ? err.message : t(key);
-  }
-  return err instanceof Error ? err.message : String(err);
-}
 
 // The file's model from the store, read on its first open (#717), shared with the changes pane (#668)
 export function useModel({ activityId, path }: File): Load {
@@ -154,7 +145,7 @@ function useChecks({ activityId, path }: File, workspace: string, load: Load): v
   useEffect(() => (model === undefined || key === '' ? undefined : checks.attachChecks({ activityId, workspace, path, model, editor: editorRef.current })), [model, activityId, workspace, path, key]);
 }
 
-interface BarProps { file: File; error?: string; formatFailure?: FormatFailure; onViewLog?(log: FormatLog): void }
+interface BarProps { file: File; error?: string; formatFailure?: FormatFailure; onViewLog?(log: FormatLog): void; onViewImage?(): void }
 
 // formatação falhou (#749): the reason in its title; ver log opens the run in the console, and with no console (outside a Dashboard) the words stand alone
 export function FormatFailed({ failure, onViewLog }: { failure: FormatFailure; onViewLog?(log: FormatLog): void }) {
@@ -168,12 +159,13 @@ export function FormatFailed({ failure, onViewLog }: { failure: FormatFailure; o
 
 // The bar (#717, #749, #225): the path left, a save's refusal or a failed format beside it; the checkers and the problems are the footer's.
 // One row 24px tall, the pane's only header (#850). ⌘S and ⌥⌘S save from the editor
-function EditorBar({ file, error, formatFailure, onViewLog }: BarProps) {
+function EditorBar({ file, error, formatFailure, onViewLog, onViewImage }: BarProps) {
   return (
     <div className="flex h-6 shrink-0 items-center gap-2 border-b px-2.5 text-muted-foreground text-xs leading-none">
       <span title={file.path} className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
       {error !== undefined && <span role="alert" className="min-w-0 truncate text-destructive">{error}</span>}
       {formatFailure !== undefined && <FormatFailed failure={formatFailure} onViewLog={onViewLog} />}
+      {onViewImage && <Button type="button" variant="link" size="xs" className="h-5 p-0 text-review" onClick={onViewImage}>{t('image.viewImage')}</Button>}
     </div>
   );
 }
@@ -209,10 +201,8 @@ export function useDiskStrip({ activityId, path }: File, view: View): DiskStripS
   return { strip, setStrip, reload, keep };
 }
 
-/** The editor pane (#717): one of an activity's files in Monaco, its bar, and the strip when the disk moved on. Collapsed like PtyTab while
- * another tab shows; the buffer lives in editor-models.ts, so it survives the pane. Its root names its activity and file for the search's
- * focus (#697). */
-export function EditorPane({ activityId, path, label, active, fontFamily, workspace, openKey }: EditorPaneProps) {
+// The editor's body (#717): its bar, the strip, the loading or error line and the Monaco host; an SVG's source view adds ver imagem (#498)
+function TextBody({ activityId, path, active, fontFamily, workspace, openKey, onViewImage }: EditorPaneProps & { onViewImage?(): void }) {
   const file = { activityId, path };
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<editor.IStandaloneCodeEditor | undefined>(undefined);
@@ -224,15 +214,34 @@ export function EditorPane({ activityId, path, label, active, fontFamily, worksp
   useChecks(file, workspace, load);
   useDiskWatch(file, active && load.status === 'ready', view, disk.setStrip);
   const openConsole = useOpenConsole();
-  const viewLog =openConsole && ((log: FormatLog): void => openConsole(log.channel, log.run, true));
+  const viewLog = openConsole && ((log: FormatLog): void => openConsole(log.channel, log.run, true));
   useEffect(() => { if (active) view.current?.focus(); }, [active]);
   return (
-    <section aria-label={label} data-file-activity={activityId} data-file-path={path} style={{ flex: active ? '1 1 0%' : '0 0 0%', opacity: active ? 1 : 0, pointerEvents: active ? 'auto' : 'none' }} className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-      <EditorBar file={file} error={saving.error} formatFailure={saving.formatFailure} onViewLog={viewLog} />
+    <>
+      <EditorBar file={file} error={saving.error} formatFailure={saving.formatFailure} onViewLog={viewLog} onViewImage={onViewImage} />
       {disk.strip && <DiskStrip strip={disk.strip} onReload={disk.reload} onKeep={disk.keep} />}
       {load.status === 'loading' && <p className="p-3 text-muted-foreground text-xs">{t('files.loading')}</p>}
       {load.status === 'error' && <p role="alert" className="p-3 text-destructive text-xs">{load.message}</p>}
       <div ref={host} hidden={load.status !== 'ready'} className="min-h-0 flex-1" />
+    </>
+  );
+}
+
+const isSvgPath = (path: string): boolean => path.toLowerCase().endsWith('.svg');
+
+/** The editor pane (#717): one of an activity's files in Monaco, its bar, and the strip when the disk moved on; an image file shows as the
+ * image instead (#498), an SVG switching to its source and back, a state of the pane, not of the layout. Collapsed like PtyTab while
+ * another tab shows; the buffer lives in editor-models.ts, so it survives the pane. Its root names its activity and file for the search's
+ * focus (#697). */
+export function EditorPane(props: EditorPaneProps) {
+  const { activityId, path, label, active } = props;
+  const [showSource, setShowSource] = useState(false);
+  const isImage = models.isImagePath(path);
+  return (
+    <section aria-label={label} data-file-activity={activityId} data-file-path={path} style={{ flex: active ? '1 1 0%' : '0 0 0%', opacity: active ? 1 : 0, pointerEvents: active ? 'auto' : 'none' }} className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      {isImage && !showSource
+        ? <ImageView key={`${activityId}:${path}`} activityId={activityId} path={path} active={active} onViewSource={isSvgPath(path) ? () => setShowSource(true) : undefined} />
+        : <TextBody {...props} onViewImage={isImage ? () => setShowSource(false) : undefined} />}
     </section>
   );
 }

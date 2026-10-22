@@ -932,6 +932,11 @@ export interface FileText { path: string; text: string; version: string }
 
 /** The largest file the editor pane opens or saves (#717), in bytes. */
 export const EDITOR_FILE_MAX = 1_048_576;
+
+/** The image files the file tab shows as images (#498): extension (lower case, with the dot) to the type the image route answers with. */
+export const IMAGE_TYPES: Readonly<Record<string, string>> = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+};
 /** Where a failed format run is in the console (#749): its channel's id and the run's, what the editor pane's ver log opens. */
 export interface FormatLog { channel: string; run: string }
 

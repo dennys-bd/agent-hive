@@ -30,11 +30,13 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
   if (init?.method === 'PUT') return saved?.() ?? jsonResponse({ version: 'v2' });
   if (init?.method === 'POST') return new Response(null, { status: 204 });
   if (url.includes('/file-base')) return jsonResponse(base);
+  if (url.includes('/image?')) return new Response(new Uint8Array(4));
   if (url.includes('/file-version')) return version === null ? jsonResponse({ error: 'file not found' }, 404) : jsonResponse({ version });
   return jsonResponse(read.body, read.status);
 });
 const sent = (method: 'PUT' | 'POST'): string[] => fetchMock.mock.calls.flatMap(([url, init]) => (init?.method === method ? [`${url} ${String(init.body)}`] : []));
 const pane = () => <EditorPane activityId={A} path={PATH} label="#1 Task 1 · a.ts" active fontFamily="ui-monospace, monospace" workspace="hive" openKey="I1" />;
+const paneAt = (path: string) => <EditorPane activityId={A} path={path} label={`#1 Task 1 · ${path}`} active fontFamily="ui-monospace, monospace" workspace="hive" openKey="I1" />;
 const ready = async (): Promise<FakeModel> => {
   await waitFor(() => expect(FakeEditor.all).toHaveLength(1));
   return FakeModel.all[0];
@@ -48,6 +50,7 @@ beforeEach(() => {
   base = { against: 'head', label: 'HEAD', oid: 'o1', text: 'one\n' };
   fetchMock.mockClear();
   vi.stubGlobal('fetch', fetchMock);
+  Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:1'), revokeObjectURL: vi.fn() }); // jsdom has neither
 });
 afterEach(() => {
   models.closeExcept(new Set());
@@ -226,4 +229,27 @@ test('the bar holds the file path alone: no server state, checker or problems, w
   expect(screen.queryByRole('button', { name: 'ver log' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'problemas' })).not.toBeInTheDocument();
   expect(screen.queryByText('bad')).not.toBeInTheDocument();
+});
+
+test('a .png opens as an image in its section: no /file read, no model, no ver código (#498)', async () => {
+  render(paneAt('shots/home.PNG'));
+  expect(await screen.findByAltText('shots/home.PNG')).toHaveAttribute('src', 'blob:1');
+  const region = screen.getByRole('region', { name: '#1 Task 1 · shots/home.PNG' });
+  expect([region.dataset.fileActivity, region.dataset.filePath]).toEqual([A, 'shots/home.PNG']);
+  expect(fetchMock.mock.calls.map(([url]) => url).filter((url) => url.includes('/file?'))).toEqual([]);
+  expect(FakeModel.all).toHaveLength(0);
+  expect(screen.queryByRole('button', { name: 'ver código' })).not.toBeInTheDocument();
+});
+
+test('an .svg opens as an image; ver código shows its source in the editor, read on that first switch, and ver imagem goes back (#498)', async () => {
+  const user = userEvent.setup();
+  render(paneAt('logo.svg'));
+  await screen.findByAltText('logo.svg');
+  expect(FakeModel.all).toHaveLength(0);
+  await user.click(screen.getByRole('button', { name: 'ver código' }));
+  await ready();
+  expect(screen.queryByAltText('logo.svg')).not.toBeInTheDocument();
+  expect(fetchMock.mock.calls.map(([url]) => url)).toContain('/activities/a-I1/file?path=logo.svg');
+  await user.click(screen.getByRole('button', { name: 'ver imagem' }));
+  expect(await screen.findByAltText('logo.svg')).toBeInTheDocument();
 });

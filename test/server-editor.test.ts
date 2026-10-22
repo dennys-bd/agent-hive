@@ -27,6 +27,7 @@ const SAVE_BODY = 'path must be a non-empty string, text and version strings, fo
 const TOO_LARGE = 'arquivo grande demais para o editor';
 const READ_ONLY = 'arquivo somente leitura';
 const BINARY = 'arquivo binário ou fora de UTF-8';
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]); // a PNG's signature and NULs: no UTF-8 text (#498)
 const sha = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
 interface Editor { base: string; repo: string; worktree: string; server: HiveServer }
@@ -54,7 +55,7 @@ async function startEditor(t: TestContext, { isDeleted = false, editor = EDITOR_
 
 const taskActivity = (e: Editor): string => workPath(e.server, 'local:1');
 const localActivity = `/activities/${encodeURIComponent(localActivityId('hive'))}`;
-const get = (e: Editor, path: string, route: 'file' | 'file-version' = 'file', activity = taskActivity(e)): Promise<Response> =>
+const get = (e: Editor, path: string, route: 'file' | 'file-version' | 'image' = 'file', activity = taskActivity(e)): Promise<Response> =>
   hiveFetch(`${e.base}${activity}/${route}?${new URLSearchParams({ path })}`);
 const put = (e: Editor, body: unknown, activity = taskActivity(e)): Promise<Response> =>
   hiveFetch(`${e.base}${activity}/file`, { method: 'PUT', headers: UI_HEADERS, body: JSON.stringify(body) });
@@ -100,21 +101,33 @@ test('a file outside the activity\'s folder reads, versions and saves by its abs
   assert.equal((await get(e, '../../../big.md')).status, 413);
 });
 
-test('a file over 1 MB is a 413; a NUL in its first 8 KB or bytes that are not UTF-8 a 415; exactly 1 MB opens (#717)', async (t) => {
+test('GET file: a file over 1 MB is a 413; a NUL in its first 8 KB or bytes that are not UTF-8 a 415; exactly 1 MB opens (#717, #498)', async (t) => {
   const e = await startEditor(t);
   await writeFile(join(e.worktree, 'big.txt'), 'a'.repeat(EDITOR_FILE_MAX + 1));
   await writeFile(join(e.worktree, 'nul.bin'), Buffer.from([0x61, 0x00, 0x62]));
   await writeFile(join(e.worktree, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9])); // "café" in Latin-1
   await writeFile(join(e.worktree, 'edge.txt'), 'a'.repeat(EDITOR_FILE_MAX));
   const cases: [string, number, string][] = [['big.txt', 413, TOO_LARGE], ['nul.bin', 415, BINARY], ['latin1.txt', 415, BINARY]];
-  for (const route of ['file', 'file-version'] as const) {
-    for (const [path, status, error] of cases) {
-      const res = await get(e, path, route);
-      assert.equal(res.status, status, `${route} ${path}`);
-      assert.deepEqual(await res.json(), { error }, `${route} ${path}`);
-    }
+  for (const [path, status, error] of cases) {
+    const res = await get(e, path);
+    assert.equal(res.status, status, path);
+    assert.deepEqual(await res.json(), { error }, path);
   }
   assert.equal((await get(e, 'edge.txt')).status, 200);
+});
+
+test('file-version answers an image\'s sha256 whatever its bytes and size; a text path keeps the read\'s 413 / 415 and its version (#498)', async (t) => {
+  const e = await startEditor(t);
+  const big = Buffer.concat([PNG, Buffer.alloc(EDITOR_FILE_MAX)]);
+  await writeFile(join(e.worktree, 'shot.png'), PNG);
+  await writeFile(join(e.worktree, 'big.PNG'), big);
+  await writeFile(join(e.worktree, 'big.txt'), 'a'.repeat(EDITOR_FILE_MAX + 1));
+  await writeFile(join(e.worktree, 'nul.bin'), PNG);
+  assert.deepEqual(await (await get(e, 'shot.png', 'file-version')).json(), { version: sha(PNG) });
+  assert.deepEqual(await (await get(e, 'big.PNG', 'file-version')).json(), { version: sha(big) });
+  assert.deepEqual([(await get(e, 'big.txt', 'file-version')).status, (await get(e, 'nul.bin', 'file-version')).status], [413, 415]);
+  const read = (await (await get(e, 'docs/spec.md')).json()) as FileText;
+  assert.deepEqual(await (await get(e, 'docs/spec.md', 'file-version')).json(), { version: read.version });
 });
 
 test('PUT with the version read writes the text, the file\'s mode kept and no temp file left, and answers the new version; a symlink inside writes its target (#717)', async (t) => {
@@ -178,6 +191,7 @@ test('a deleted activity\'s file is refused with a 409 on every route, the file 
   const answers = [
     await get(e, 'docs/spec.md', 'file', record),
     await get(e, 'docs/spec.md', 'file-version', record),
+    await get(e, 'docs/spec.md', 'image', record),
     await put(e, { path: 'docs/spec.md', text: 'x', version: sha('# merged'), format: false }, record),
   ];
   for (const res of answers) {
@@ -254,4 +268,33 @@ test('GET /settings/formatters answers each supported formatter with the workspa
   assert.deepEqual(states.find((s) => s.id === 'prettier')?.found, ['hive']);
   const sent = await put(e, { path: 'docs/spec.md', text: 'as typed\n', version: sha(SPEC), format: true });
   assert.deepEqual(await sent.json(), { version: sha('as typed\n') });
+});
+
+test('GET image answers the file\'s bytes with its extension\'s type, in any case, no-store, nosniff and a sandbox CSP, over 1 MB too (#498)', async (t) => {
+  const e = await startEditor(t); // the worktree sits under .hive/: sendFile must allow dotfiles
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';
+  const big = Buffer.concat([PNG, Buffer.alloc(EDITOR_FILE_MAX)]);
+  await writeFile(join(e.worktree, 'shot.PNG'), PNG);
+  await writeFile(join(e.worktree, 'logo.svg'), svg);
+  await writeFile(join(e.worktree, 'big.webp'), big);
+  const png = await get(e, 'shot.PNG', 'image');
+  assert.equal(png.status, 200);
+  const headers = ['content-type', 'cache-control', 'x-content-type-options', 'content-security-policy'].map((name) => png.headers.get(name));
+  assert.deepEqual(headers, ['image/png', 'no-store', 'nosniff', 'sandbox']);
+  assert.deepEqual(Buffer.from(await png.arrayBuffer()), PNG);
+  const vector = await get(e, 'logo.svg', 'image');
+  assert.deepEqual([vector.headers.get('content-type'), await vector.text()], ['image/svg+xml', svg]);
+  const large = await get(e, 'big.webp', 'image');
+  assert.deepEqual([large.status, large.headers.get('content-type'), (await large.arrayBuffer()).byteLength], [200, 'image/webp', big.length]);
+});
+
+test('GET image refuses a file that is not an image with a 415, a missing one with a 404 and no path with a 400 (#498)', async (t) => {
+  const e = await startEditor(t);
+  await writeFile(join(e.worktree, 'notes.txt'), 'notes\n');
+  const cases: [string, number, string][] = [['notes.txt', 415, BINARY], ['docs/spec.md', 415, BINARY], ['nope.png', 404, MISSING], ['', 400, NO_PATH]];
+  for (const [path, status, error] of cases) {
+    const res = await get(e, path, 'image');
+    assert.equal(res.status, status, path);
+    assert.deepEqual(await res.json(), { error }, path);
+  }
 });

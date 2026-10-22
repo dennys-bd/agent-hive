@@ -1,6 +1,5 @@
 import { type RefObject, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { DocMarkdown } from '@/components/DocMarkdown';
-import { messageOf } from '@/components/EditorPane';
 import { useOpenFile } from '@/components/terminal-tabs';
 import { useFileVersion } from '@/hooks/use-file-version';
 import { t } from '@/i18n';
@@ -8,6 +7,7 @@ import { type Activity, activityKey } from '@/lib/activities';
 import { fileRefPath } from '@/lib/center-layout';
 import { docLink } from '@/lib/doc-links';
 import * as models from '@/lib/editor-models';
+import { messageOf } from '@/lib/read-error';
 
 type Read = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; text: string; version?: string };
 
