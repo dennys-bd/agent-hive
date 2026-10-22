@@ -660,7 +660,7 @@ const en = {
   'editor.formatFailed': 'format failed', 'editor.viewLog': 'view log',
   'editor.lsp.starting': '{server} · starting', 'editor.lsp.failed': '{server} failed', 'editor.lsp.none': 'no language server', 'editor.lsp.install': 'install {server}…',
   // #498: an image in the file tab
-  'image.fit': 'fit', 'image.actualSize': 'back to 100%', 'image.zoomIn': 'zoom in', 'image.zoomOut': 'zoom out', 'image.viewSource': 'view source', 'image.invalid': 'invalid image',
+  'image.fit': 'fit', 'image.actualSize': 'back to 100%', 'image.zoomIn': 'zoom in', 'image.zoomOut': 'zoom out', 'image.viewSource': 'view source', 'image.viewImage': 'view image', 'image.invalid': 'invalid image',
   'checker.openLog': 'click to open the {server} channel in the console', 'checker.running': '{checker} · running',
   'editor.diag.errors.one': '{n} error', 'editor.diag.errors.other': '{n} errors', 'editor.diag.warnings.one': '{n} warning', 'editor.diag.warnings.other': '{n} warnings',
   'editor.diag.infos.one': '{n} info', 'editor.diag.infos.other': '{n} info',
@@ -3026,7 +3026,7 @@ const pt: Record<MessageKey, string> = {
   'editor.tooLarge': 'arquivo grande demais para o editor', 'editor.binary': 'arquivo binário ou fora de UTF-8', 'editor.missing': 'arquivo não encontrado',
   'editor.formatFailed': 'formatação falhou', 'editor.viewLog': 'ver log',
   'editor.lsp.starting': '{server} · iniciando', 'editor.lsp.failed': '{server} falhou', 'editor.lsp.none': 'sem language server', 'editor.lsp.install': 'instalar {server}…',
-  'image.fit': 'ajustar', 'image.actualSize': 'voltar a 100%', 'image.zoomIn': 'aumentar zoom', 'image.zoomOut': 'diminuir zoom', 'image.viewSource': 'ver código', 'image.invalid': 'imagem inválida',
+  'image.fit': 'ajustar', 'image.actualSize': 'voltar a 100%', 'image.zoomIn': 'aumentar zoom', 'image.zoomOut': 'diminuir zoom', 'image.viewSource': 'ver código', 'image.viewImage': 'ver imagem', 'image.invalid': 'imagem inválida',
   'checker.openLog': 'clique para abrir o canal {server} no console', 'checker.running': '{checker} · executando',
   'editor.diag.errors.one': '{n} erro', 'editor.diag.errors.other': '{n} erros', 'editor.diag.warnings.one': '{n} aviso', 'editor.diag.warnings.other': '{n} avisos',
   'editor.diag.infos.one': '{n} info', 'editor.diag.infos.other': '{n} info',
