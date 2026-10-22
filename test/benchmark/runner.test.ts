@@ -193,3 +193,15 @@ test('run rejects when the lock cannot be taken for an I/O reason, and the exper
   await assert.rejects(r.runner.run('exp-1'));
   assert.equal(r.runner.isLive('exp-1'), false);
 });
+
+test('a wake whose deadline dispatch throws still reopens the gate, so a later sleep works (#472)', async (t) => {
+  const r = await rig(t, ONE_PAIR);
+  await r.runner.run('exp-1');
+  await until(() => r.io.watching.size === 2);
+  await r.runner.sleep('exp-1', 'night');
+  r.failing.on = (event) => event.type === 'benchmarkStopAfterRound';
+  await assert.rejects(r.runner.wake('exp-1', 'finish-round'), /dispatch failed/);
+  r.failing.on = () => false;
+  await r.runner.sleep('exp-1', 'again');
+  assert.equal(r.events.filter((e) => e.type === 'benchmarkSlept').length, 2);
+});

@@ -201,15 +201,22 @@ async function wakeOnce(rt: Runtime, id: string, deadline?: WakeDeadline): Promi
   const asleep = experimentOf(rt, id);
   if (asleep?.status !== 'sleeping') return; // a wakeAt timer that fires after a manual wake
   const entry = rt.live.get(id);
+  try {
+    await wakeSteps(rt, id, asleep, entry, deadline);
+  } finally {
+    entry?.ctx.gate.open(); // a dispatch that throws must not leave the live loop waiting for ever
+  }
+  if (entry === undefined) return resume(rt, id);
+}
+
+async function wakeSteps(rt: Runtime, id: string, asleep: Experiment, entry: LiveExperiment | undefined, deadline?: WakeDeadline): Promise<void> {
   // After a restart the sleep's daemons died with the Hive (#458 left it sleeping): every unfinished run is rerun
   if (entry === undefined) await dispatchAll(rt, interruptedEvents(asleep));
   await dispatchAll(rt, wokenEvents(experimentOf(rt, id) ?? asleep, rt.deps.now()));
   if (entry !== undefined) await wakeRuns(rt, entry);
   await dispatchAll(rt, deadlineEvents(experimentOf(rt, id) ?? asleep, deadline));
-  if (entry === undefined) return resume(rt, id);
   const current = rt.live.get(id);
   if (current !== undefined) rt.live.set(id, { ...current, deadline: nextDeadline(current.deadline, deadline, rt.deps.now()) });
-  entry.ctx.gate.open();
 }
 
 async function blindness(rt: Runtime, experiment: Experiment): Promise<string | undefined> {
