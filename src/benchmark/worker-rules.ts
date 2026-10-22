@@ -55,3 +55,25 @@ export function runClaudeArgs(claudeArgs: readonly string[], runBranch: string, 
   const rules = runRules(runBranch, paths);
   return withRules(withRules(claudeArgs, ALLOW_FLAG, rules.allow), DENY_FLAG, rules.deny);
 }
+
+/** A permission list as Claude reads it: rules split on spaces or commas, except inside a rule's parentheses (`Bash(npm run x *)`). */
+export function splitRules(text: string): string[] {
+  const rules: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of text) {
+    depth = ch === '(' ? depth + 1 : ch === ')' ? Math.max(0, depth - 1) : depth;
+    if (depth === 0 && /[\s,]/.test(ch)) {
+      if (current !== '') rules.push(current);
+      current = '';
+    } else current += ch;
+  }
+  return current === '' ? rules : [...rules, current];
+}
+
+// The harness's worker lists, as scripts/experiment/seeds/monitor-view/stages.json writes them (src/ never imports scripts/): the isolation
+// rows' defaults of a new experiment (#459). worker-rules.test.ts keeps them equal to the seed until #479 retires it
+const WORKER_ALLOW_TEXT = 'Read(./**) Edit(./**) Write(./**) Glob Grep Task Skill TodoWrite mcp__hive__* Bash(git status:*) Bash(git diff:*) Bash(git log:*) Bash(git show:*) Bash(git add:*) Bash(git commit:*) Bash(git merge:*) Bash(git rebase:*) Bash(git fetch:*) Bash(git switch:*) Bash(git checkout:*) Bash(git branch:*) Bash(git rev-parse:*) Bash(git symbolic-ref:*) Bash(git check-ignore:*) Bash(git -C:*) Bash(pnpm install:*) Bash(pnpm test:*) Bash(pnpm build:*) Bash(pnpm lint:*) Bash(pnpm exec tsc:*) Bash(pnpm exec vitest:*) Bash(pnpm exec biome:*) Bash(pnpm audit:*) Bash(npm test:*) Bash(npm run build:*) Bash(npm run typecheck:*) Bash(npm run test:coverage *) Bash(npm audit:*) Bash(npx tsc:*) Bash(tsc:*) Bash(mkdir:*) Bash(grep:*) Bash(rg:*) Bash(head:*) Bash(tail:*) Bash(sed -n:*) Bash(wc:*) Bash(cat:*) Bash(ls:*) Bash(echo:*) Bash(tr:*) Bash(sort:*) Bash(uniq:*) Bash(cut:*) Bash(diff:*) Bash(git ls-tree:*) Bash(git ls-files:*) Bash(git grep:*) Bash(cd:*) Bash(pwd:*) Bash(printf:*) Bash(basename:*) Bash(dirname:*) Bash(stat:*) Bash(du:*) Bash(which:*) Bash(date:*) Bash(jq:*)';
+const WORKER_DENY_TEXT = 'Bash(git push) Bash(git push origin) Bash(git push -*) Bash(git push * -*) Bash(git push * +*) Bash(git push *main*) Bash(git push *refs/*) Bash(git push * HEAD) Bash(git push * feat/*) Bash(git push * hive/*) Bash(git push *:hive/*) Bash(git -* push*) Bash(git -C * -c *) Bash(git -C * --config-env*) Bash(git -C * --exec-path*) Bash(git -C * config*) Bash(gh:*) Bash(npx eslint:*) Bash(eslint:*) Bash(npx prettier:*) Bash(prettier:*) Bash(git * send-pack*) Bash(git send-pack*) Bash(git * http-push*) Bash(git http-push*) Bash(git *--upload-pack*) Bash(git *--receive-pack*) Bash(git *--no-index*) Bash(find * -exec*) Bash(find * -execdir*) Bash(find * -ok*) Bash(find * -delete*) Bash(find * -fprint*)';
+export const WORKER_ALLOW: readonly string[] = splitRules(WORKER_ALLOW_TEXT);
+export const WORKER_DENY: readonly string[] = splitRules(WORKER_DENY_TEXT);

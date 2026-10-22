@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runClaudeArgs, runRules } from '../../src/benchmark/worker-rules.js';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { runClaudeArgs, runRules, splitRules, WORKER_ALLOW, WORKER_DENY } from '../../src/benchmark/worker-rules.js';
 
 const PATHS = { home: '/hive/benchmark/e/runs/abcd1234', homes: ['/hive', '/hive/benchmark/*/runs/*'], denied: ['/hive/benchmark/*/seed', '/hive/benchmark/*/report.md'] };
 
@@ -17,4 +19,16 @@ test('a `*` stands only as a whole segment, and a path a rule cannot hold is ref
 
 test('no push rule ends in a wildcard: a second refspec cannot follow the run\'s own, only the 2>&1 redirect the workers write (#471)', () => {
   for (const rule of runRules('work/abcd1234', PATHS).allow.filter((r) => r.startsWith('Bash(git push'))) assert.match(rule, /work\/abcd1234( 2>&1)?\)$/, rule);
+});
+
+test('splitRules splits on spaces and commas outside parentheses (#459)', () => {
+  assert.deepEqual(splitRules('Read, Bash(git log:*)  Bash(npm run test:coverage *)'), ['Read', 'Bash(git log:*)', 'Bash(npm run test:coverage *)']);
+});
+
+// The harness seed is the lists' source until #479 retires it; that issue drops this test with the seed
+test("WORKER_ALLOW and WORKER_DENY are the harness seed's worker lists (#459)", async () => {
+  const seed = JSON.parse(await readFile(join(process.cwd(), 'scripts', 'experiment', 'seeds', 'monitor-view', 'stages.json'), 'utf8')) as { claudeArgs: string[] };
+  const after = (flag: string): string[] => splitRules(seed.claudeArgs[seed.claudeArgs.indexOf(flag) + 1]);
+  assert.deepEqual([WORKER_ALLOW, WORKER_DENY], [after('--allowedTools'), after('--disallowedTools')]);
+  assert.ok(WORKER_ALLOW.includes('Bash(npm run test:coverage *)'));
 });
