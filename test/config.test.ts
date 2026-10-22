@@ -132,6 +132,13 @@ test('parseConfig reads stages[].clearSession as a boolean kept only when true, 
   assert.throws(bad({ prompt: '/x', clearSession: 'yes' }), { message: 'hive.config.json: "comb.stages[0].clearSession" must be true or false' });
 });
 
+test('parseConfig refuses a transition that resumes the session of a stage with clearSession; a new session out of it parses (#494)', () => {
+  const stages = [{ name: 'spec', from: { board: ['Ready'] }, prompt: '/spec', clearSession: true }, { name: 'plan', from: {}, prompt: '/plan' }];
+  const config = (session: unknown) => github({ stages, transitions: [{ from: 'spec', to: 'plan', when: 'done', session }] });
+  assert.throws(() => parseConfig(config('previous')), { message: 'hive.config.json: "comb.transitions[0].session" resumes the session of "spec", which clears it when it ends (#494)' });
+  assert.doesNotThrow(() => parseConfig(config('new')));
+});
+
 test('parseConfig reads no terminal key: a file that still holds one parses as if it had none, and the config carries none (#378)', () => {
   const leftover = parseConfig({ ...GITHUB, terminal: 'internal' });
   assert.equal('terminal' in leftover, false);

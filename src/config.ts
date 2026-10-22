@@ -9,7 +9,7 @@ import { REPOSITORY } from './task-refs.js';
 import { parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
 import { checkStageModels, parseAgentArgs } from './config-agent-args.js';
-import { checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
+import { checkClearedResumes, checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
 import { hiveActionRaw, parseStageAgent, runsAgentRaw } from './config-stage-agent.js';
 import { parseFork } from './fork.js';
 import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseStageEvaluate, parseTimeout } from './run-commands.js';
@@ -647,6 +647,7 @@ function parseFields(raw: unknown): Config {
 export function parseConfig(raw: unknown): Config {
   const config = parseFields(raw);
   checkResumedAgents(config.comb.stages, config.comb.transitions, config.defaultAgent); // #925: needs defaultAgent, which the fields parse last
+  checkClearedResumes(config.comb.stages, config.comb.transitions); // #494: a POST /settings save goes through here too
   checkStageModels(config.comb.stages, config.defaultAgent); // #927: the same
   return config;
 }
