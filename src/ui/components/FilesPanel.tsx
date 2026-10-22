@@ -17,6 +17,7 @@ import { type FileIconsView, useFileIcons } from '@/hooks/use-file-icons';
 import { useDiagnostics } from '@/hooks/use-diagnostics';
 import { useIgnoredFolders } from '@/hooks/use-ignored-folders';
 import { type TreeState, useTaskTree } from '@/hooks/use-task-tree';
+import { useTreeLease } from '@/hooks/use-tree-lease';
 import { t, tPlural } from '@/i18n';
 import { activityCounts, type Counts } from '@/lib/diagnostics-store';
 import { type Activity, activityKey, isTask } from '@/lib/activities';
@@ -239,6 +240,7 @@ interface FilesBodyProps { target: Activity; view: FilesView; isShown: boolean; 
 function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   const { activity } = target;
   const tree = useTaskTree(activity.id, isShown);
+  useTreeLease(activity.id, isShown); // #502: the daemon watches this tree while it shows
   const ready = tree.status === 'ready' ? tree.tree : undefined;
   const { loaded, marks: nestedMarks } = useIgnoredFolders(activity.id, isShown, view.expanded, ready?.ignored.folders);
   const root = ready?.root;

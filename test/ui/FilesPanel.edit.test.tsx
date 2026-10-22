@@ -10,6 +10,7 @@ import type { TaskActivity } from '@/lib/activities';
 import { taskPairOf } from '../fixtures/work';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('@/hooks/use-tree-lease', () => ({ useTreeLease: () => undefined })); // #502: the lease's POST is none of this file's requests
 
 // The inline name (#818): new file, new folder and rename in the row; and the tree's keys, live only with the focus in the tree (jsdom runs
 // as off macOS: rename F2, delete Delete)

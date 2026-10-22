@@ -10,6 +10,7 @@ import { runShortcut } from '@/lib/dock-layout';
 import { localPairOf, taskPairOf } from '../fixtures/work';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('@/hooks/use-tree-lease', () => ({ useTreeLease: () => undefined })); // #502: the lease's POST is none of this file's requests
 
 // The tree's right-click menus (#818): a file's, a folder's and the empty area's, each item with its key (jsdom runs as off macOS)
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
