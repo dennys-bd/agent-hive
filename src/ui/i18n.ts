@@ -2612,6 +2612,20 @@ const en = {
   'benchmark.config.pace.now': 'now {tokens} · {percent}',
   'benchmark.config.pace.tokensField': 'tokens',
   'benchmark.config.pace.planField': '% of the plan',
+  'benchmark.config.blind.title': 'blindness',
+  'benchmark.config.blind.sub': 'the worker does not know it is in a benchmark',
+  'benchmark.config.blind.switch': 'blindness',
+  'benchmark.config.blind.on': 'on',
+  'benchmark.config.blind.off': 'off',
+  'benchmark.config.blind.files': 'benchmark files',
+  'benchmark.config.blind.files.hint': 'taken out of the worktree',
+  'benchmark.config.blind.branches': 'branch names',
+  'benchmark.config.blind.branches.hint': 'neutral',
+  'benchmark.config.blind.token': '<token>',
+  'benchmark.config.blind.insteadOf': 'instead of …/a/…',
+  'benchmark.config.blind.words': 'forbidden words',
+  'benchmark.config.blind.words.hint': 'checked in what the worker reads',
+  'benchmark.config.blind.perLine': 'one word per line',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5218,6 +5232,20 @@ const pt: Record<MessageKey, string> = {
   'benchmark.config.pace.now': 'agora {tokens} · {percent}',
   'benchmark.config.pace.tokensField': 'tokens',
   'benchmark.config.pace.planField': '% do plano',
+  'benchmark.config.blind.title': 'cegueira',
+  'benchmark.config.blind.sub': 'o worker não sabe que está num benchmark',
+  'benchmark.config.blind.switch': 'cegueira',
+  'benchmark.config.blind.on': 'ligada',
+  'benchmark.config.blind.off': 'desligada',
+  'benchmark.config.blind.files': 'arquivos do benchmark',
+  'benchmark.config.blind.files.hint': 'tirados da worktree',
+  'benchmark.config.blind.branches': 'nomes de branch',
+  'benchmark.config.blind.branches.hint': 'neutros',
+  'benchmark.config.blind.token': '<token>',
+  'benchmark.config.blind.insteadOf': 'em vez de …/a/…',
+  'benchmark.config.blind.words': 'palavras proibidas',
+  'benchmark.config.blind.words.hint': 'checadas no que o worker lê',
+  'benchmark.config.blind.perLine': 'uma palavra por linha',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
