@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { COALESCE_MS, createTreeWatch, FALLBACK_MS, gitDirOf, LEASE_TTL_MS, MIN_PUSH_MS, pathKind, PATHS_CAP, type WatchFn } from '../src/tree-watch.js';
+import { COALESCE_MS, createTreeWatch, FALLBACK_MS, gitDirOf, LEASE_TTL_MS, MAX_LEASES, MIN_PUSH_MS, pathKind, PATHS_CAP, TooManyLeasesError, type WatchFn } from '../src/tree-watch.js';
 import type { Exec, TreeChange } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
 
@@ -54,10 +54,10 @@ test('two leases on one root share one watcher, which closes once both are relea
   await tree.lease('a-1', '/wt', 'L1', false);
   await tree.lease('a-2', '/wt', 'L2', false);
   assert.deepEqual(fs.open(true).map((w) => w.path), ['/wt']);
-  tree.release('L1');
+  tree.release('a-1', 'L1');
   assert.equal(fs.open(true).length, 1);
-  tree.release('L2');
-  tree.release('L2'); // an unknown lease is a no-op
+  tree.release('a-2', 'L2');
+  tree.release('a-2', 'L2'); // an unknown lease is a no-op
   assert.deepEqual(fs.open(), []);
 });
 
@@ -164,7 +164,7 @@ test('a worktree\'s gitdir is watched, not recursively: its index and HEAD go ou
   git.emit('rename', 'HEAD');
   tick(COALESCE_MS);
   assert.equal(changes.length, 2);
-  tree.release('L1');
+  tree.release('a-1', 'L1');
   assert.deepEqual(fs.open(), []);
 });
 
@@ -185,7 +185,7 @@ test('watchNested watches a leased root\'s nested repository\'s gitdir, its own 
   fs.open(false).find((w) => w.path === docsGitdir)?.emit('rename', 'index');
   tick(COALESCE_MS);
   assert.deepEqual(changes, [{ type: 'tree', activityId: 'a-1', paths: ['docs'] }]);
-  tree.release('L1');
+  tree.release('a-1', 'L1');
   assert.deepEqual(fs.open(), []);
 });
 
@@ -222,8 +222,70 @@ test('a watcher\'s error closes the root\'s watchers and falls back to the poll,
   await tree.lease('a-1', root, 'L1', false);
   fs.open(true)[0].fail(new Error('EMFILE: too many open files'));
   assert.deepEqual(fs.open(), [], 'the tree\'s and the gitdir\'s watchers are closed');
-  tree.release('L1');
+  tree.release('a-1', 'L1');
   await tree.lease('a-1', root, 'L2', false); // a fresh watcher on the same root
   fs.open(true)[0].fail(new Error('EMFILE: too many open files'));
   assert.equal(warnings.length, 1);
+});
+
+test('release removes only a lease of the activity that holds it: another activity\'s id, or an unknown one, is a no-op (#502)', async (t) => {
+  const { tree, fs } = setup(t);
+  await tree.lease('a-1', '/wt', 'L1', false);
+  tree.release('a-2', 'L1');
+  tree.release('a-1', 'never');
+  assert.equal(fs.open(true).length, 1, 'still leased');
+  tree.release('a-1', 'L1');
+  assert.deepEqual(fs.open(), []);
+});
+
+test('at MAX_LEASES leases a new id is refused with TooManyLeasesError, a renewal of a held id always succeeds, and a release makes room (#502)', async (t) => {
+  const { tree, fs } = setup(t);
+  for (let i = 0; i < MAX_LEASES; i++) await tree.lease('a-1', '/wt', `L${i}`, false);
+  await assert.rejects(tree.lease('a-1', '/wt', 'extra', false), TooManyLeasesError);
+  await tree.lease('a-1', '/wt', 'L0', false);
+  assert.equal(fs.watchers.length, 1);
+  tree.release('a-1', 'L0');
+  await tree.lease('a-1', '/wt', 'extra', false);
+});
+
+test('the push spacing runs on a monotonic clock: the wall clock stepping back an hour delays no push (#502)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const fs = fakeFs();
+  const changes: TreeChange[] = [];
+  const tree = createTreeWatch({ log: { warn: () => undefined, debug: () => undefined }, notify: (change) => changes.push(change), exec: NO_GIT, watch: fs.watch });
+  t.after(() => tree.close());
+  t.mock.timers.tick(3_600_000);
+  await tree.lease('a-1', '/wt', 'L1', false);
+  const [root] = fs.open(true);
+  root.emit('change', 'a.txt');
+  t.mock.timers.tick(COALESCE_MS);
+  assert.equal(changes.length, 1);
+  t.mock.timers.setTime(0);
+  root.emit('change', 'b.txt');
+  t.mock.timers.tick(MIN_PUSH_MS);
+  assert.equal(changes.length, 2);
+});
+
+test('a pending batch is pushed, with no paths, when the root falls back to the poll (#502)', async (t) => {
+  const { tree, fs, changes } = setup(t, { exec: async () => ({ stdout: '' }) });
+  await tree.lease('a-1', '/wt', 'L1', false);
+  const [root] = fs.open(true);
+  root.emit('change', 'a.txt');
+  root.fail(new Error('EMFILE: too many open files'));
+  assert.deepEqual(changes, [{ type: 'tree', activityId: 'a-1' }]);
+});
+
+test('a checkout whose .git is a file (a worktree used as the checkout) watches the gitdir it names; one with a .git folder watches no more than the recursive watch (#502)', async (t) => {
+  const { root, gitdir } = await worktreeRoot(t);
+  const { tree, fs, changes, tick } = setup(t);
+  await tree.lease('local:hive', root, 'L1', true);
+  const git = fs.open(false).find((w) => w.path === gitdir);
+  assert.ok(git, 'the gitdir is watched');
+  git.emit('rename', 'index');
+  tick(COALESCE_MS);
+  assert.deepEqual(changes, [{ type: 'tree', activityId: 'local:hive' }]);
+  const plain = await tempDir(t, 'plain-');
+  await mkdir(join(plain, '.git'));
+  await tree.lease('local:other', plain, 'L2', true);
+  assert.deepEqual(fs.open(false), [git], 'a .git folder is inside the recursive watch');
 });

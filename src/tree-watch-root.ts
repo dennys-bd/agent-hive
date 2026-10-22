@@ -49,7 +49,7 @@ export interface RootWatch { ready: Promise<void>; watchNested(repo: string): Pr
 
 /** The changes gathered for one push (#502): COALESCE_MS after the first, never sooner than MIN_PUSH_MS after the last push; past PATHS_CAP,
  *  or with an undefined path (anything), the push carries no paths. */
-export function createBatch(now: () => number, push: (paths: string[] | undefined) => void): { add(path: string | undefined): void; close(): void } {
+export function createBatch(now: () => number, push: (paths: string[] | undefined) => void): { add(path: string | undefined): void; flush(): void; close(): void } {
   let pending: Set<string> | 'all' | undefined; // the batch's own scratch, never handed out: flush sorts a copy
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastPush = Number.NEGATIVE_INFINITY;
@@ -69,6 +69,13 @@ export function createBatch(now: () => number, push: (paths: string[] | undefine
         pending = paths.size > PATHS_CAP ? 'all' : paths;
       }
       timer ??= setTimeout(flush, Math.max(COALESCE_MS, lastPush + MIN_PUSH_MS - now()));
+    },
+    // Whatever is waiting goes out now with no paths: the caller is about to stop watching, so which paths changed is no longer known
+    flush() {
+      if (pending === undefined) return;
+      clearTimeout(timer);
+      pending = 'all';
+      flush();
     },
     close() {
       clearTimeout(timer);
@@ -132,6 +139,7 @@ export function createRootWatch(root: string, isCheckout: boolean, deps: RootDep
   // Any failure of the tree's or the root gitdir's watch: one git status for the whole root instead, nested repositories included
   const rootFailed = (err: unknown): void => {
     if (!isWatching()) return;
+    batch.flush(); // a change already seen is not lost to the switch
     closeAll();
     deps.onFail(wordsOf(err));
     poll = startFallback(root, deps);
@@ -150,9 +158,9 @@ export function createRootWatch(root: string, isCheckout: boolean, deps: RootDep
     if (filename === null || GIT_FILES.has(filename)) batch.add(as);
   };
   open('', root, true, treeListener(batch, isCheckout), rootFailed);
-  // A checkout's own .git is already inside the recursive watch
-  const ready = isCheckout ? Promise.resolve() : gitDirFor(root).then(
-    (dir) => { if (dir !== undefined && isWatching()) open(ROOT_GITDIR, dir, false, onGitDir(undefined), rootFailed); },
+  // A checkout's own .git folder is already inside the recursive watch; a .git file (a worktree used as the checkout) names a gitdir outside it
+  const ready = gitDirFor(root).then(
+    (dir) => { if (dir !== undefined && isWatching() && !(isCheckout && dir === join(root, '.git'))) open(ROOT_GITDIR, dir, false, onGitDir(undefined), rootFailed); },
     (err: unknown) => deps.log.debug(`tree watch: ${root}: no gitdir read: ${wordsOf(err)}`),
   );
   // Only an expanded nested repository is watched: #289's marks of a folder never opened stay as last read

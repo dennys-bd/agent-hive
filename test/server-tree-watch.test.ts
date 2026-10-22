@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { localActivityId } from '../src/activities.js';
 import { LEASE_BODY_MESSAGE } from '../src/server-tree-watch.js';
-import type { TreeWatch } from '../src/tree-watch.js';
+import { TooManyLeasesError, type TreeWatch } from '../src/tree-watch.js';
 import { worktreePath } from '../src/worktree.js';
 import { startTree, task } from './fixtures/tree-server.js';
 import { workPath } from './fixtures/work.js';
@@ -21,7 +21,7 @@ function recordingWatch(): { treeWatch: TreeWatch; calls: string[][] } {
   const calls: string[][] = [];
   const treeWatch: TreeWatch = {
     lease: async (activityId, root, id, isCheckout) => { calls.push(['lease', activityId, root, id, String(isCheckout)]); },
-    release: (id) => { calls.push(['release', id]); },
+    release: (activityId, id) => { calls.push(['release', activityId, id]); },
     watchNested: async (root, repo) => { calls.push(['watchNested', root, repo]); },
     close: () => { calls.push(['close']); },
   };
@@ -38,7 +38,7 @@ test('POST /activities/:id/tree/watch leases the root, a task\'s worktree as no 
   assert.deepEqual(fake.calls, [
     ['lease', idOf(path), worktreePath(f.repo, 'hive-1-task'), 'L1', 'false'],
     ['lease', localActivityId('hive'), f.repo, 'L2', 'true'],
-    ['release', 'L1'],
+    ['release', idOf(path), 'L1'],
   ]);
   await f.server.close();
   assert.deepEqual(fake.calls.at(-1), ['close']);
@@ -70,7 +70,7 @@ test('DELETE /activities/:id/tree/watch/:lease answers 204 for a lease it never 
   const fake = recordingWatch();
   const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })], { treeWatch: fake.treeWatch });
   assert.equal((await send(f.base, 'DELETE', `${workPath(f.server, 'local:1')}/tree/watch/never`)).status, 204);
-  assert.deepEqual(fake.calls, [['release', 'never']]);
+  assert.deepEqual(fake.calls, [['release', idOf(workPath(f.server, 'local:1')), 'never']]);
 });
 
 test('GET /activities/:id/tree/folder registers the nested repository a folder lies in with watchNested; a folder outside any registers nothing (#502, #1)', async (t) => {
@@ -98,4 +98,13 @@ test('a change in a leased worktree reaches /events as a named tree event for it
   })) as { type: string; activityId: string; paths?: string[] };
   assert.deepEqual([change.type, change.activityId], ['tree', idOf(path)]);
   assert.ok(change.paths === undefined || change.paths.includes('new.txt'), JSON.stringify(change));
+});
+
+test('POST /activities/:id/tree/watch answers 429 when the daemon holds too many leases, for a new id only (#502)', async (t) => {
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })], {
+    treeWatch: { lease: async () => { throw new TooManyLeasesError(); }, release: () => undefined, watchNested: async () => undefined, close: () => undefined },
+  });
+  const res = await send(f.base, 'POST', `${workPath(f.server, 'local:1')}/tree/watch`, { lease: 'L1' });
+  assert.equal(res.status, 429);
+  assert.deepEqual(await res.json(), { error: new TooManyLeasesError().message });
 });
