@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useEffectEvent, useState } from 'react';
-import type { Task, EffectiveLimits, SidebarsPerView, Terminal, Worker, Stage, State } from '../../types';
+import type { Task, EffectiveLimits, Experiment, SidebarsPerView, Terminal, Worker, Stage, State } from '../../types';
 import { ActivitiesPanel, type ActivitiesNav, PlusMenu } from '@/components/ActivitiesPanel';
 import { ActivityCenter } from '@/components/ActivityCenter';
 import { useConfirmLoss } from '@/components/AgentLossConfirm';
@@ -17,6 +17,7 @@ import { type SearchHost, useQuickActions } from '@/components/quick-actions';
 import { useSleptNotices } from '@/components/sleep-notice';
 import { DockBody } from '@/components/ViewRail';
 import { Openers } from '@/components/DockOpeners';
+import { useBenchmarkDock } from '@/components/benchmark/benchmark-dock';
 import { usePluginsDock } from '@/components/plugins/plugins-dock';
 import { dockedTab, type OpenDiff, type OpenFileHow, type OpenPr, type OpenRun } from '@/components/terminal-tabs';
 import { type ConsoleChannels, ConsoleChannelsContext, type OpenStageOutput, shownChannel, useConsoleOpener } from '@/hooks/use-console';
@@ -44,6 +45,7 @@ export interface MainDockProps {
   showTask?(taskId: string): void; // #229: ver no fluxo lands on the task's source flow, not just the tab; absent: the selection alone
   selected?: Selection; onSelect(selection: Selection): void; // the app's task selection: a picked activity selects its task for Detalhes (#457)
   detail(view: DetailView): ReactNode; children: ReactNode;
+  experiments?: Experiment[]; // #461: state.benchmark.experiments, the benchmark view's list; absent (the terminal's harness): none
   consoleChannels?: ConsoleChannels; // the daemon's console channels (#353), read by the Dashboard; absent (the terminal's harness): no console
   // the chip that opens its drawer lives in the Dashboard's footer (redesign 05)
   // The Automação tab's body (#456), from the Dashboard, handed what its worker chips call (#457); absent (the terminal's harness): no such tab
@@ -102,6 +104,7 @@ function useDockedRuns(open: OpenRun): void {
 const NO_STAGES: Stage[] = [];
 const NO_RECORDS: State['activityRecords'] = [];
 const NO_ACTIVITIES: State['activities'] = [];
+const NO_EXPERIMENTS: Experiment[] = [];
 
 interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; workspaces: string[]; sourceWorkspaces?: Record<string, string>; stages: Stage[]; workers: Worker[]; nav: ActivitiesNav; isShown: boolean }
 
@@ -129,7 +132,7 @@ const shownIdOf = (selection: ActivitySelection): string | undefined => (selecti
 interface CenterArgs {
   selection: ActivitySelection; layouts: CenterLayouts; fileLinks: boolean; fontFamily: string; flow: ReactNode; home: ReactNode; console?: ConsoleChannels; pane?: PaneContext;
   openProblem?(activityId: string, path: string, at: FileAt): void; // #225: a problem of the drawer's list, opened in its activity
-  plugins?: ReactNode; // #313: the plugins view's centre, null under the other views
+  views?: ReactNode; // #313, #461: the plugins and benchmark views' centres, null under the others
 }
 
 // Whether the flow is what the center shows (#596): the flow and its sidebar stay mounted under Atividades, so what they must not do while
@@ -142,7 +145,7 @@ export const useIsFlowShown = (): boolean => useContext(FlowShownContext);
 // What the center shows (#458): the flow always, hidden and inert under Atividades so it keeps its stages' pages, scroll and search
 // (#596); beside it, under Atividades, the picked activity's layout or Home with none picked. Keyed by task, so another activity starts
 // with fresh drag state and its own terminals. The wrapper swaps `hidden` for `flex` because Tailwind's display class beats [hidden].
-function centerView({ selection, layouts, fileLinks, fontFamily, flow, home, pane, plugins }: CenterArgs): ReactNode {
+function centerView({ selection, layouts, fileLinks, fontFamily, flow, home, pane, views }: CenterArgs): ReactNode {
   const { current } = selection;
   const isFlow = selection.center === 'automation';
   const flowView = (
@@ -154,7 +157,7 @@ function centerView({ selection, layouts, fileLinks, fontFamily, flow, home, pan
   const activityView = selection.center !== 'activities' ? null : current === undefined
     ? home
     : <ActivityCenter key={activityKey(current)} activity={current} layout={layouts.layout} ops={layouts} fileLinks={fileLinks} fontFamily={fontFamily} pane={pane} onOpenRun={(ptyId) => selection.openRun(activityKey(current), ptyId)} />;
-  return <>{flowView}{activityView}{plugins}</>;
+  return <>{flowView}{activityView}{views}</>;
 }
 
 // The center with the console's drawer over it (redesign 05), positioned on DockFrame's center column. abrir como aba needs an activity's
@@ -329,12 +332,14 @@ export function MainDock(props: MainDockProps) {
     id: 'automation', title: t('dock.automation'), ownHeader: true, body: <FlowShownContext.Provider value={isFlow}>{automation(open)}</FlowShownContext.Provider>,
   }];
   const plugins = usePluginsDock({ isShown: selection.center === 'plugins', workspaces, activate, fontFamily }); // #313: the third view, wired beside MainDock
+  const benchmark = useBenchmarkDock({ isShown: selection.center === 'benchmark', experiments: props.experiments ?? NO_EXPERIMENTS, workspaces, activate }); // #461: the fourth view
+  const viewRight = selection.center === 'plugins' ? plugins.right : selection.center === 'benchmark' ? benchmark.right : undefined;
   const panels: DockPanel[] = [
     // First in the list, as in PANELS: the tab a shared side opens on (#457, #746)
     activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities' }),
     ...automationPanel,
-    ...(hasHeader ? [plugins.panel] : []), // #313: reached only through the rail and ⌘3, which only a window with a header has
-    selection.center === 'plugins' ? plugins.right : detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, detail, onClose: closeDetail, nav }),
+    ...(hasHeader ? [plugins.panel, benchmark.panel] : []), // #313, #461: reached only through the rail and ⌘3 / ⌘4, which only a window with a header has
+    viewRight ?? detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, detail, onClose: closeDetail, nav }),
   ];
   // #220: the rail's dot reads every workspace, as the window shows them all; the map opens through ⌘/'s own listener (search.openShortcuts is Settings › atalhos)
   const hasWaiting = hasHeader && pendingSessions({ tasks, workers, activityRecords: activityRecords ?? NO_RECORDS }).length > 0;
@@ -345,7 +350,7 @@ export function MainDock(props: MainDockProps) {
       <DockBody rail={hasHeader ? { center: selection.center, onView: activateTab, hasWaiting, onOpenShortcuts: () => runShortcut('shortcutMap'), onOpenSettings: search?.openSettings } : undefined}>
         <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onResize={dock.resize} onClose={close}>
           <ConsoleChannelsContext.Provider value={consoleChannels}>
-            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} openProblem={openFileOf} plugins={plugins.center} />
+            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} openProblem={openFileOf} views={<>{plugins.center}{benchmark.center}</>} />
           </ConsoleChannelsContext.Provider>
         </DockFrame>
       </DockBody>

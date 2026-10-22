@@ -16,7 +16,7 @@ vi.mock('@/hooks/use-task-tree', () => ({ useTaskTree: () => ({ status: 'loading
 
 const taskA: WithWork = { item: { itemId: 'A', id: '1', title: 'Task A', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true, worktree: '/w/a' };
 const shellA: Terminal = { terminalId: 'W2', activityId: activityIdOf('A'), startedAt: '2026-09-27T10:00:00.000Z', cwd: '/repo' };
-const DETAIL_RIGHT: DockLayout = { docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' }, sizes: inEveryView({ left: 30, right: 30 }), open: inEveryView({ left: true, right: true }) };
+const DETAIL_RIGHT: DockLayout = { docks: { automation: 'left', activities: 'left', plugins: 'left', benchmark: 'left', detail: 'right' }, sizes: inEveryView({ left: 30, right: 30 }), open: inEveryView({ left: true, right: true }) };
 
 // What MainDock hands the header (#221), laid out for the queries: the center's slot, the shell's facts and a picker per pane
 function Probe({ shell }: { shell: HeaderShell }) {
@@ -120,4 +120,14 @@ test("in plugins the shell's pane is variáveis alone: arquivos and detalhes off
   expect(shell()).toMatchObject({ rightShown: false });
   fireEvent.click(railButton('fluxo'));
   expect(shell()).toMatchObject({ active: 'details', enabled: { variables: false } });
+});
+
+test('in benchmark the shell enables no pane and shows none, the right side still opening empty with its key (#461)', () => {
+  render(<Window />);
+  fireEvent.click(railButton('benchmark'));
+  expect(shell()).toMatchObject({ active: null, enabled: { files: false, details: false, variables: false }, canOpenRight: true });
+  sideKey('right');
+  expect(shell()).toMatchObject({ active: null, rightShown: true });
+  fireEvent.click(railButton('atividades'));
+  expect(shell()).toMatchObject({ enabled: { variables: false } });
 });

@@ -24,15 +24,17 @@ interface ShellArgs {
   setSideTab(tab: SidePane): void; activateTab(id: PanelId): void; close(side: Side): void;
 }
 
-/** The tooltip of a pane the shown view never has (#313): the others in plugins, variáveis outside it; undefined while the pane is the view's. */
+/** The tooltip of a pane the shown view never has (#313, #461): every pane in benchmark, the others in plugins, variáveis outside plugins;
+ * undefined while the pane is the view's. */
 export function paneHint(center: CenterMode, pane: RightPane): MessageKey | undefined {
-  if (center === 'plugins') return pane === 'variables' ? undefined : 'header.pane.unavailable';
-  return pane === 'variables' ? 'header.pane.onlyPlugins' : undefined;
+  if (pane === 'variables') return center === 'plugins' ? undefined : 'header.pane.onlyPlugins';
+  return center === 'plugins' || center === 'benchmark' ? 'header.pane.unavailable' : undefined;
 }
 
 // The pane the right group shows today: variáveis in plugins (#313), Detalhes under the flow; under atividades the side's tab on a task's
 // activity and arquivos alone on a local one (#633); none on the home, which hides the side
 function activePane(center: CenterMode, current: Activity | undefined, sideTab: SidePane): RightPane | undefined {
+  if (center === 'benchmark') return undefined; // #461: the right column has no pane yet; panel-right opens it empty
   if (center === 'plugins') return 'variables';
   if (center === 'automation') return 'details';
   if (current === undefined) return undefined;

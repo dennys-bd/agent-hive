@@ -16,7 +16,7 @@ afterEach(() => setShortcuts({}));
 
 test('activities, flow and monitor at the top, a spacer, then the shortcut map and Settings at the bottom; no feedback button (#220)', () => {
   render(<ViewRail {...props()} />);
-  expect(buttons().map((b) => b.getAttribute('aria-label'))).toEqual(['atividades', 'fluxo', 'plugins', 'monitor · em breve', 'mapa de atalhos', 'configurações']);
+  expect(buttons().map((b) => b.getAttribute('aria-label'))).toEqual(['atividades', 'fluxo', 'plugins', 'benchmark', 'monitor · em breve', 'mapa de atalhos', 'configurações']);
   expect(button('monitor · em breve').nextElementSibling?.tagName).toBe('DIV'); // the spacer that pushes the last two down
 });
 
@@ -79,7 +79,7 @@ test('the keyboard and settings buttons call their openers; each title is the na
   const onOpenSettings = vi.fn();
   const { rerender } = render(<ViewRail {...props({ onOpenShortcuts, onOpenSettings })} />);
   // jsdom runs as off macOS: CmdOrCtrl reads Ctrl
-  expect(buttons().map((b) => b.title)).toEqual(['atividades Ctrl+1', 'fluxo Ctrl+2', 'plugins Ctrl+3', 'monitor · em breve', 'mapa de atalhos Ctrl+/', 'configurações Ctrl+,']);
+  expect(buttons().map((b) => b.title)).toEqual(['atividades Ctrl+1', 'fluxo Ctrl+2', 'plugins Ctrl+3', 'benchmark Ctrl+4', 'monitor · em breve', 'mapa de atalhos Ctrl+/', 'configurações Ctrl+,']);
   await user.click(button('mapa de atalhos'));
   await user.click(button('configurações'));
   expect(onOpenShortcuts).toHaveBeenCalledOnce();
@@ -92,5 +92,5 @@ test('the keyboard and settings buttons call their openers; each title is the na
 
 test('without an opener its button does not render (#220)', () => {
   render(<ViewRail center="activities" onView={vi.fn()} hasWaiting={false} />);
-  expect(buttons().map((b) => b.getAttribute('aria-label'))).toEqual(['atividades', 'fluxo', 'plugins', 'monitor · em breve']);
+  expect(buttons().map((b) => b.getAttribute('aria-label'))).toEqual(['atividades', 'fluxo', 'plugins', 'benchmark', 'monitor · em breve']);
 });

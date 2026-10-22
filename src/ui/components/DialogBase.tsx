@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import { isMac } from '@/lib/shortcut-bindings';
 
-/** One confirming action of a dialog (#75): its button's text and what it runs. A returned promise holds the dialog open until it settles. */
-export interface DialogAction { label: string; onConfirm(): void | Promise<void>; disabled?: boolean; pending?: boolean }
+/** One confirming action of a dialog (#75): its button's text and what it runs. A returned promise holds the dialog open until it settles.
+ * danger (#461): the primary of an action that destroys, red, the one place colour marks a status in a dialog. */
+export interface DialogAction { label: string; onConfirm(): void | Promise<void>; disabled?: boolean; pending?: boolean; danger?: boolean }
 
 export interface DialogBaseProps {
   title: string; children: ReactNode; primary: DialogAction;
@@ -78,14 +79,15 @@ function DialogHeader({ title, context, closeLabel, closeRef }: HeaderProps) {
 
 interface FooterProps { cancelLabel: string; actions: Record<Slot, DialogAction | undefined>; isBusy: boolean; primaryRef: Ref<HTMLButtonElement>; run(action: DialogAction): void }
 
-// cancel, then the tertiary, the secondary and the primary at the right edge; no destructive variant, since colour stays for status
+// cancel, then the tertiary, the secondary and the primary at the right edge; the primary is red only when it destroys (#461)
 function DialogFooter({ cancelLabel, actions, isBusy, primaryRef, run }: FooterProps) {
   const button = (slot: Slot): ReactNode => {
     const action = actions[slot];
     if (action === undefined) return null;
+    const variant = slot !== 'primary' ? 'outline' : action.danger === true ? 'destructive' : 'default';
     return (
       <Button
-        key={slot} ref={slot === 'primary' ? primaryRef : undefined} type="button" size="sm" variant={slot === 'primary' ? 'default' : 'outline'}
+        key={slot} ref={slot === 'primary' ? primaryRef : undefined} type="button" size="sm" variant={variant}
         className={FOOTER_BUTTON} disabled={action.disabled === true || action.pending === true || isBusy} onClick={() => run(action)}
       >
         {action.label}

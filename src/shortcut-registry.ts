@@ -41,7 +41,7 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('viewActivities', both('CmdOrCtrl+1'), 'global'), // the header's first view takes Cmd+1 (#746)
   row('viewFlow', both('CmdOrCtrl+2'), 'global'),
   row('viewPlugins', both('CmdOrCtrl+3'), 'global'), // #313: the rail's third view
-  row('viewBenchmark', both('CmdOrCtrl+4'), 'global', SOON), // #458: the rail's fourth view; soon until 2.1 builds it, so the key is reserved
+  row('viewBenchmark', both('CmdOrCtrl+4'), 'global'), // #458, #461: the rail's fourth view
   row('search', { mac: 'CmdOrCtrl+P', other: 'CmdOrCtrl+Shift+P' }, 'global'),
   row('searchOperations', { mac: 'CmdOrCtrl+Shift+P', other: 'F1' }, 'global'),
   row('newActivity', { mac: 'CmdOrCtrl+N', other: 'CmdOrCtrl+Shift+N' }, 'global'),
@@ -124,7 +124,7 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('searchPlugins', both('CmdOrCtrl+F'), 'plugins'), // #313: the plugins sidebar's search; it acts only with that view shown, so it meets no other ⌘F
   // #331: the editor footer's field. From the capture phase it wins over Monaco's own ⌘I (trigger suggest), which stays on Ctrl+Space
   row('askAgent', both('CmdOrCtrl+I'), 'plugins'),
-  row('benchmarkSearch', both('CmdOrCtrl+F'), 'benchmark', SOON), // #458: the benchmark sidebar's search; acts only with that view shown, as searchPlugins does
+  row('benchmarkSearch', both('CmdOrCtrl+F'), 'benchmark'), // #458, #461: the benchmark sidebar's search; acts only with that view shown, as searchPlugins does
   row('confirm', both('CmdOrCtrl+Enter'), 'dialogs'),
   row('feedbackQueue', both('CmdOrCtrl+Shift+Enter'), 'dialogs'),
   row('switchStartMode', both('CmdOrCtrl+Shift+M'), 'dialogs'),

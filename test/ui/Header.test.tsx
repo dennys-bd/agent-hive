@@ -11,7 +11,7 @@ import type { EffectiveLimits, Signal, State } from '../../src/types';
 import { activityIdOf } from '../fixtures/work';
 import { stateOf } from './search-fixtures';
 
-const LAYOUT: ViewLayout = { docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' }, sizes: { left: 30, right: 30 }, open: { left: true, right: true } };
+const LAYOUT: ViewLayout = { docks: { automation: 'left', activities: 'left', plugins: 'left', benchmark: 'left', detail: 'right' }, sizes: { left: 30, right: 30 }, open: { left: true, right: true } };
 const LEFT_CLOSED: ViewLayout = { ...LAYOUT, open: { left: false, right: true } };
 const shellOf = (extra: Partial<HeaderShell> = {}): HeaderShell => ({
   center: 'activities', layout: LAYOUT, rightShown: true, canOpenRight: true,
@@ -239,4 +239,16 @@ test('the right column ends on variáveis: in plugins arquivos and detalhes are 
   expect(within(right()).getByRole('button', { name: 'variáveis' })).toBeDisabled();
   expect(within(right()).getByRole('button', { name: 'variáveis' })).toHaveAttribute('title', 'variáveis · só em plugins');
   expect(within(right()).getByRole('button', { name: 'arquivos' })).toHaveAttribute('title', 'arquivos');
+});
+
+test('in benchmark every pane is disabled at .35: arquivos and detalhes unavailable in benchmark, variáveis only in plugins; plugins still names itself (#461)', () => {
+  const { rerender } = render(header(shellOf({ center: 'benchmark', panes: { active: undefined, enabled: { files: false, details: false, variables: false }, pick: vi.fn() } })));
+  const buttons = (): HTMLElement[] => within(column('right') as HTMLElement).getAllByRole('button');
+  expect(buttons().map((b) => b.getAttribute('title'))).toEqual(['arquivos · indisponível em benchmark', 'detalhes · indisponível em benchmark', 'variáveis · só em plugins']);
+  for (const button of buttons()) {
+    expect(button).toBeDisabled();
+    expect(button).toHaveClass('disabled:opacity-35');
+  }
+  rerender(header(shellOf({ center: 'plugins', panes: { active: 'variables', enabled: { files: false, details: false, variables: true }, pick: vi.fn() } })));
+  expect(buttons()[0]).toHaveAttribute('title', 'arquivos · indisponível em plugins');
 });

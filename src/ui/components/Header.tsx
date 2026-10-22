@@ -3,7 +3,7 @@ import type { EffectiveLimits, State } from '../../types.js';
 import { HeaderBrand } from '@/components/HeaderBrand';
 import { useHeaderSlotRef } from '@/components/HeaderSlot';
 import { Button } from '@/components/ui/button';
-import { keyTitle } from '@/components/ViewRail';
+import { keyTitle, viewLabel } from '@/components/ViewRail';
 import { useIsFullScreen } from '@/hooks/use-full-screen';
 import type { CenterMode } from '@/hooks/use-activity';
 import { type HeaderShell, paneHint, type RightPane } from '@/hooks/use-header-shell';
@@ -68,7 +68,7 @@ function LeftColumn({ width, isOpen, isFullScreen, state, effective }: BrandProp
 }
 
 // The right column: one icon per pane, the shown one on --accent, then the shown pane's name at the column's end. A pane the view never has
-// says so in its title (#313)
+// says so in its title and sits at .35 (#313, #461)
 function RightColumn({ width, center, panes }: { width?: string; center: CenterMode; panes: HeaderShell['panes'] }) {
   return (
     <div data-header-column="right" style={{ width }} className="flex shrink-0 items-center gap-1 overflow-hidden border-l px-2">
@@ -78,8 +78,8 @@ function RightColumn({ width, center, panes }: { width?: string; center: CenterM
         const hint = paneHint(center, pane);
         return (
           <Button
-            key={pane} type="button" variant="ghost" size="icon" aria-label={label} title={hint === undefined ? label : t(hint, { pane: label })} aria-pressed={isActive}
-            disabled={!panes.enabled[pane]} onClick={() => panes.pick(pane)} className={`${ICON_BUTTON} ${isActive ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}
+            key={pane} type="button" variant="ghost" size="icon" aria-label={label} title={hint === undefined ? label : t(hint, { pane: label, view: viewLabel(center) })} aria-pressed={isActive}
+            disabled={!panes.enabled[pane]} onClick={() => panes.pick(pane)} className={`${ICON_BUTTON} disabled:opacity-35 ${isActive ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}
           >
             <Icon aria-hidden="true" className="size-4" />
           </Button>
