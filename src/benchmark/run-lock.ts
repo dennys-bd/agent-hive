@@ -15,15 +15,16 @@ const uniqueName = (path: string, kind: string): string => `${path}.${kind}.${ra
 // for a stale one, and link() fails with EEXIST when the lock is there already
 async function create(path: string, pid: number): Promise<boolean> {
   const temp = uniqueName(path, 'tmp');
-  await writeFile(temp, `${pid}\n`, { flag: 'wx', mode: 0o600 });
   try {
+    await writeFile(temp, `${pid}\n`, { flag: 'wx', mode: 0o600 });
     await link(temp, path);
     return true;
   } catch (err) {
     if (codeOf(err) === 'EEXIST') return false;
     throw err;
   } finally {
-    await rm(temp, { force: true });
+    // best effort: a leftover temp file must not turn a lock that was linked into place into a failure
+    await rm(temp, { force: true }).catch(() => undefined);
   }
 }
 
