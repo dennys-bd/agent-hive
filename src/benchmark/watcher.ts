@@ -139,10 +139,18 @@ async function retried(call: () => Promise<void>, deps: WatchDeps): Promise<stri
 
 const turnGreen = (deps: WatchDeps): Promise<string | undefined> => retried(() => deps.client.setGreen(), deps);
 
+// The poll's sleep, cut short by an abort: a Stop must not wait out a poll
+function napOf(deps: WatchDeps): (ms: number) => Promise<void> {
+  const { signal } = deps;
+  if (!signal) return (ms) => deps.sleep(ms);
+  const aborted = new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+  return (ms) => Promise.race([deps.sleep(ms), aborted]);
+}
+
 const sameProgress = (a: Progress | undefined, b: Progress): boolean => a !== undefined && JSON.stringify(a) === JSON.stringify(b);
 
 /** Polls one run's daemon until every task is in Done, the timeout passes (slept time off the clock), a task fails or the signal aborts.
- *  Never writes state.json. An abort is seen between reads: a release being retried finishes its tries first. */
+ *  Never writes state.json. An abort ends the poll's sleep; a release being retried finishes its tries first. */
 export async function watchRun(tasks: WatchTask[], deps: WatchDeps): Promise<WatchResult> {
   const startedAt = deps.now().getTime();
   const awakeMs = (): number => deps.now().getTime() - startedAt - (deps.sleptMs?.() ?? 0);
@@ -152,6 +160,7 @@ export async function watchRun(tasks: WatchTask[], deps: WatchDeps): Promise<Wat
   if (refused !== undefined) return { end: { outcome: 'error', reason: `could not turn the daemon green: ${refused}` }, watch };
   let misses = 0;
   let reported: Progress | undefined;
+  const nap = napOf(deps);
   while (awakeMs() < deps.timeoutMs && !deps.signal?.aborted) {
     const step = await readStep(watch, deps);
     misses = step ? 0 : misses + 1;
@@ -165,7 +174,7 @@ export async function watchRun(tasks: WatchTask[], deps: WatchDeps): Promise<Wat
       const end = step.end ?? (await releaseAll(step.release, deps));
       if (end) return { end, watch };
     }
-    await deps.sleep(deps.pollMs ?? POLL_MS);
+    await nap(deps.pollMs ?? POLL_MS);
   }
   return { end: deps.signal?.aborted ? { outcome: 'aborted' } : { outcome: 'timeout' }, watch };
 }

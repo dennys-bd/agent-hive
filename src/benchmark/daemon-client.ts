@@ -9,6 +9,15 @@ const REQUEST_TIMEOUT_MS = 10_000;
 export interface DaemonClient extends WatchClient { payload(): Promise<Record<string, unknown>> }
 export interface ClientDeps { address?: (home: string) => DaemonAddress | undefined; fetch?: typeof fetch }
 
+// A SyntaxError quotes a snippet of its input, and the frame is the whole State: the watcher logs this message, so it names nothing of it
+function parsedFrame(frame: string): Record<string, unknown> {
+  try {
+    return JSON.parse(frame) as Record<string, unknown>;
+  } catch {
+    throw new Error('GET /events: the first frame does not parse');
+  }
+}
+
 // The first /events frame is the whole State (server.ts writes it on connect); the stream is cancelled once read
 async function firstFrame(res: Response): Promise<Record<string, unknown>> {
   if (!res.ok || !res.body) {
@@ -23,7 +32,7 @@ async function firstFrame(res: Response): Promise<Record<string, unknown>> {
       const { done, value } = await reader.read();
       if (done) throw new Error('GET /events: the stream ended before a frame');
       const { frames, rest } = sseFrames(buffer + decoder.decode(value, { stream: true }));
-      if (frames.length > 0) return JSON.parse(frames[0]) as Record<string, unknown>;
+      if (frames.length > 0) return parsedFrame(frames[0]);
       buffer = rest;
     }
   } finally {

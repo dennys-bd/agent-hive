@@ -92,6 +92,15 @@ test('readInterventions drops what is not an intervention, with one line that ne
   assert.deepEqual(await readInterventions(home, log), [DONE]);
   await writeFile(join(home, 'interventions.json'), JSON.stringify({ at: DONE.at }));
   assert.deepEqual(await readInterventions(home, log), []);
-  assert.equal(lines.length, 2);
+  // A lone object is not the file's shape, even a valid intervention: it is dropped whole
+  await writeFile(join(home, 'interventions.json'), JSON.stringify(DONE));
+  assert.deepEqual(await readInterventions(home, log), []);
+  assert.equal(lines.length, 3);
   for (const line of lines) assert.ok(line.includes(home) && !line.includes('denied') && !line.includes(DONE.at), line);
+});
+
+test('readInterventions keeps only the four fields of each intervention (#473)', async (t) => {
+  const home = await tempDir(t, 'bench-');
+  await writeFile(join(home, 'interventions.json'), JSON.stringify([{ ...DONE, extra: 'x' }]));
+  assert.deepEqual(await readInterventions(home, () => undefined), [DONE]);
 });

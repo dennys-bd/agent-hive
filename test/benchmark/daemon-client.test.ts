@@ -65,3 +65,9 @@ test('setGreen POSTs the green signal with the secret and the dashboard header: 
   const refusing = createDaemonClient('/home', { address: () => ADDRESS, fetch: fakeFetch(() => new Response('{}', { status: 503 })).fn });
   await assert.rejects(refusing.setGreen(), /^Error: POST \/signal: HTTP 503$/);
 });
+
+test('state() rejects a frame that does not parse with a fixed message that quotes none of it (#473)', async () => {
+  const f = fakeFetch(() => new Response(stream('data: {"tasks":[{"title":"private words"\n\n')));
+  const err = await createDaemonClient('/home', { address: () => ADDRESS, fetch: f.fn }).state().catch((e: Error) => e);
+  assert.equal((err as Error).message, 'GET /events: the first frame does not parse');
+});

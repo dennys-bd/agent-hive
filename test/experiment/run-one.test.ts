@@ -7,7 +7,7 @@ import { readJson, writeJson } from '../../scripts/experiment/files.js';
 import { runHome } from '../../scripts/experiment/plan.js';
 import { executeRun, failedMetrics, recordFailure, type RunDeps } from '../../scripts/experiment/run-one.js';
 import type { Snapshot, WatchClient } from '../../src/benchmark/watcher.js';
-import { NO_METRICS } from '../../src/benchmark/metrics.js';
+import { noMetrics } from '../../src/benchmark/metrics.js';
 import { tempDir } from '../temp-dir.js';
 import { BRANCH, fakeChild, fakeRun, line, PREFIX, SEED, TOKEN } from './fixtures.js';
 import { clock, snap, task } from '../benchmark/fixtures.js';
@@ -89,5 +89,5 @@ test('recordFailure writes error metrics for a run that left none, and keeps the
 
 test('failedMetrics records an attempt that failed before anything ran: the benchmark zeros in the harness envelope (#105, #473)', () => {
   const at = NIGHT.toISOString();
-  assert.deepEqual(failedMetrics('aaaaaa', at, 'git push refused', true), { ...NO_METRICS, token: 'aaaaaa', outcome: 'error', reason: 'git push refused', startedAt: at, endedAt: at, unpaired: true });
+  assert.deepEqual(failedMetrics('aaaaaa', at, 'git push refused', true), { ...noMetrics(), token: 'aaaaaa', outcome: 'error', reason: 'git push refused', startedAt: at, endedAt: at, unpaired: true });
 });

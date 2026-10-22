@@ -172,3 +172,13 @@ test('watchRun ends aborted once its signal aborts, and reads nothing after (#47
   const result = await watchRun(GRAPH, { ...depsOf(c, clock(AT)), signal: controller.signal });
   assert.deepEqual([result.end, reads], [{ outcome: 'aborted' }, 2]);
 });
+
+test('watchRun ends aborted while it sleeps between reads, without waiting out the poll (#473)', async () => {
+  const controller = new AbortController();
+  const c: WatchClient = { state: async () => four(['Spec', 'Spec', 'Spec', 'Spec']), setAuto: async () => undefined, setGreen: async () => undefined };
+  // A sleep that never ends: only the abort can end the watch
+  const deps = { ...depsOf(c, clock(AT)), sleep: () => new Promise<void>(() => undefined), signal: controller.signal };
+  const watching = watchRun(GRAPH, deps);
+  setImmediate(() => controller.abort());
+  assert.deepEqual((await watching).end, { outcome: 'aborted' });
+});

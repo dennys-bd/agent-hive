@@ -15,8 +15,9 @@ const SHORTSTAT = /(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) 
 const between = (from: string, to: string): number => Math.max(0, Date.parse(to) - Date.parse(from));
 const sum = (values: number[]): number => values.reduce((a, b) => a + b, 0);
 
-/** A run that failed before anything ran (#473): every count 0. */
-export const NO_METRICS: BenchMetrics = { tokens: 0, costUsd: 0, ms: 0, waitingMs: 0, restarts: { count: 0, where: [] }, diff: NO_DIFF, tests: { green: 0, total: 0 }, tasks: [] };
+/** A run that failed before anything ran (#473): every count 0, in new objects each call, since every failed run spreads it. */
+export const noMetrics = (): BenchMetrics =>
+  ({ tokens: 0, costUsd: 0, ms: 0, waitingMs: 0, restarts: { count: 0, where: [] }, diff: { ...NO_DIFF }, tests: { green: 0, total: 0 }, tasks: [] });
 
 export function stageSpans(entries: readonly StageEntry[], endedAt: string): { stage: string; ms: number }[] {
   return entries.flatMap((entry, i) => (entry.stage === DONE_STAGE ? [] : [{ stage: entry.stage, ms: between(entry.at, entries[i + 1]?.at ?? endedAt) }]));
@@ -57,7 +58,7 @@ export interface RunFacts {
   modelTokens: Record<string, Tokens>; // readModelTokens(home)
 }
 
-/** One run's BenchMetrics (#473), and the models the price table lacks, which 3.2 logs: types.benchmark keeps no such field. */
+/** One run's BenchMetrics (#473), and the models the price table lacks, which 3.2 stores in BenchRun.unpriced. */
 export function runMetrics(f: RunFacts): { metrics: BenchMetrics; unpriced: string[] } {
   const tasks = f.watch.tasks.map((t) => taskMetrics(t, usageOf(f.state, t.itemId), f.watch, f.endedAt));
   const { usd, unpriced } = costOf(f.modelTokens);
@@ -100,8 +101,13 @@ export async function readInterventions(home: string, log: (line: string) => voi
     log(`${home}: ${INTERVENTIONS_FILE} does not parse, read as none`);
     return [];
   }
-  const entries: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
-  const kept = entries.filter(isIntervention);
+  if (!Array.isArray(parsed)) {
+    log(`${home}: ${INTERVENTIONS_FILE} is not a list, read as none`);
+    return [];
+  }
+  const entries: unknown[] = parsed;
+  // Rebuilt from the four fields: whatever else an entry carries never reaches the run's state
+  const kept = entries.filter(isIntervention).map(({ at, action, detail, by }) => ({ at, action, detail, by }));
   if (kept.length < entries.length) log(`${home}: ${entries.length - kept.length} entries of ${INTERVENTIONS_FILE} dropped`);
   return kept;
 }

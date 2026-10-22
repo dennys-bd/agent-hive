@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { writeJson } from '../../scripts/experiment/files.js';
 import { endAttempt, newManifest, runRef, startAttempt } from '../../scripts/experiment/plan.js';
-import { NO_METRICS } from '../../src/benchmark/metrics.js';
+import { noMetrics } from '../../src/benchmark/metrics.js';
 import { aggregate, clickRates, renderReport, type RunRecord, stat, writeReport } from '../../scripts/experiment/report.js';
 import type { Judge, Metrics, Outcome } from '../../scripts/experiment/types.js';
 import { tempDir } from '../temp-dir.js';
@@ -15,7 +15,7 @@ const judge = (fidelity: number | null, behaviour: number | null, code: number):
   model: 'm', scores: { fidelity: { score: fidelity, reason: '' }, behaviour: { score: behaviour, reason: '' }, code: { score: code, reason: '' }, specAndPlan: { score: 5, reason: '' }, tests: { score: 5, reason: '' } },
 });
 const metrics = (token: string, outcome: Outcome, tokens: number, reason?: string): Metrics => ({
-  ...NO_METRICS, token, outcome, ...(reason ? { reason } : {}), startedAt: T0, endedAt: '2026-10-01T23:00:00.000Z',
+  ...noMetrics(), token, outcome, ...(reason ? { reason } : {}), startedAt: T0, endedAt: '2026-10-01T23:00:00.000Z',
   tokens, ms: 600_000, restarts: { count: 1, where: ['build · grid'] }, diff: { files: 1, insertions: 10, deletions: 5 },
 });
 const click = (scenario: string, passed: boolean) => ({ scenario, passed, notes: '', screenshots: [] });

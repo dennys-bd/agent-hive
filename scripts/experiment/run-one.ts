@@ -8,7 +8,7 @@ import type { Run } from '../../src/benchmark/exec.js';
 import { writeJson } from './files.js';
 import { createRunBranch, diffShortstat, dropRunWorktrees, fetchBranch, repoRoot } from '../../src/benchmark/git.js';
 import { pruneDocs } from './docs-git.js';
-import { NO_METRICS, parseShortstat, runMetrics } from '../../src/benchmark/metrics.js';
+import { noMetrics, parseShortstat, runMetrics } from '../../src/benchmark/metrics.js';
 import { readModelTokens } from '../../src/benchmark/prices.js';
 import { runBranch, runHome, runPrefix } from './plan.js';
 import { writeHome } from '../../src/benchmark/run-home.js';
@@ -33,7 +33,7 @@ function outcomeOf(end: WatchEnd): Pick<Metrics, 'outcome' | 'reason'> {
 }
 
 export const failedMetrics = (token: string, at: string, reason: string, unpaired = false): Metrics => ({
-  ...NO_METRICS, token, outcome: 'error', reason, startedAt: at, endedAt: at, ...(unpaired ? { unpaired: true as const } : {}),
+  ...noMetrics(), token, outcome: 'error', reason, startedAt: at, endedAt: at, ...(unpaired ? { unpaired: true as const } : {}),
 });
 
 async function watched(home: string, ctx: RunContext, deps: RunDeps): Promise<WatchResult> {
