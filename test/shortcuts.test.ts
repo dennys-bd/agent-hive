@@ -131,7 +131,7 @@ test('the registry is the map: the eight scopes in order, every row in its scope
   assert.deepEqual(rows('benchmark'), ['benchmarkSearch']);
   assert.deepEqual(rows('dialogs'), ['confirm', 'feedbackQueue', 'switchStartMode', 'fixed:cancel']);
   assert.deepEqual(rows('settings'), ['searchSettings']);
-  assert.deepEqual(SHORTCUTS.filter((s) => s.soon).map((s) => s.id), ['viewBenchmark', 'nextTab', 'prevTab', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'benchmarkSearch']);
+  assert.deepEqual(SHORTCUTS.filter((s) => s.soon).map((s) => s.id), ['nextTab', 'prevTab', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity']);
   assert.deepEqual(FIXED_SHORTCUTS.filter((f) => f.soon).map((f) => f.id), ['goToTab']);
   for (const def of SHORTCUTS) assert.equal(def.inTerminal, def.scope === 'global' || def.scope === 'activities', def.id);
   assert.deepEqual([pair('fullScreen'), pair('closeWindow'), pair('refreshFlow'), pair('nextActivity')], [['CmdOrCtrl+Shift+F', 'F11'], ['CmdOrCtrl+Shift+W', 'CmdOrCtrl+Alt+Shift+W'], ['CmdOrCtrl+Alt+R', 'F5'], ['CmdOrCtrl+Alt+Down', 'CmdOrCtrl+Shift+PageDown']]);
@@ -308,12 +308,13 @@ test("viewPlugins is CmdOrCtrl+3, a global key; searchPlugins is CmdOrCtrl+F in 
   assert.deepEqual(collisions({ searchPlugins: 'CmdOrCtrl+J' }, MAC), [['toggleConsole', 'searchPlugins']], 'a global key reaches the plugins view');
 });
 
-test("viewBenchmark is CmdOrCtrl+4, a global key; benchmarkSearch is CmdOrCtrl+F in the benchmark scope; both soon until the view exists (#458)", () => {
+test("viewBenchmark is CmdOrCtrl+4, a global key; benchmarkSearch is CmdOrCtrl+F in the benchmark scope, out of the terminal; both live since the view exists (#458, #461)", () => {
   assert.deepEqual([pair('viewBenchmark'), pair('benchmarkSearch')], [['CmdOrCtrl+4', 'CmdOrCtrl+4'], ['CmdOrCtrl+F', 'CmdOrCtrl+F']]);
   assert.deepEqual([shortcutDef('viewBenchmark').scope, shortcutDef('benchmarkSearch').scope], ['global', 'benchmark']);
-  assert.deepEqual([shortcutDef('viewBenchmark').soon, shortcutDef('benchmarkSearch').soon], [true, true]);
+  assert.deepEqual([shortcutDef('viewBenchmark').soon, shortcutDef('benchmarkSearch').soon], [undefined, undefined]);
   assert.equal(shortcutDef('benchmarkSearch').inTerminal, false);
-  assert.deepEqual(collisions({ searchPlugins: 'CmdOrCtrl+4' }, MAC), [['viewBenchmark', 'searchPlugins']], 'the reserved key blocks a change onto it');
+  assert.deepEqual(collisions({ searchPlugins: 'CmdOrCtrl+4' }, MAC), [['viewBenchmark', 'searchPlugins']], 'a global key reaches the plugins view');
+  assert.deepEqual(parseShortcuts({ viewBenchmark: 'CmdOrCtrl+Alt+4' }, MAC), { viewBenchmark: 'CmdOrCtrl+Alt+4' }, 'a live row may be rebound');
 });
 
 test('askAgent is CmdOrCtrl+I on both platforms in the plugins scope, out of the terminal, colliding with no default (#331)', () => {

@@ -15,7 +15,7 @@ test('one section per scope under its title; each row its name and keys, a saved
   setShortcuts({ toggleConsole: 'CmdOrCtrl+Shift+Y', clear: null });
   render(<ShortcutMapDialog open onClose={vi.fn()} />);
   const dialog = screen.getByRole('dialog', { name: 'atalhos' });
-  expect(within(dialog).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['global', 'atividades', 'árvore de arquivos', 'fluxo', 'plugins', 'diálogos e feedback', 'configurações']);
+  expect(within(dialog).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['global', 'atividades', 'árvore de arquivos', 'fluxo', 'plugins', 'benchmark', 'diálogos e feedback', 'configurações']);
   const global = within(dialog).getByRole('region', { name: 'global' });
   expect(rowOf(global, t('shortcuts.toggleConsole'))).toHaveTextContent('Ctrl+Shift+Y');
   expect(rowOf(global, t('shortcuts.shortcutMap'))).toHaveTextContent('Ctrl+/');
