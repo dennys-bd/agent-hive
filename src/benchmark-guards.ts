@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { isVersionName } from './custom-versions.js';
 import { parseItemId } from './item-sources.js';
 import { COMMIT, isJsonObject } from './state-guards.js';
-import { BENCH_RUN_STATUSES, BENCH_TOKEN, EXPERIMENT_ID, EXPERIMENT_STATUSES, isBranchName, type Arm, type BenchmarkState, type BenchRound, type BenchRun, type BenchRunStatus, type BenchStageRole, type Experiment, type ExperimentStatus } from './types.js';
+import { AGENT_IDS, BENCH_RUN_STATUSES, BENCH_TOKEN, EXPERIMENT_ID, EXPERIMENT_STATUSES, isBranchName, type AgentId, type Arm, type BenchmarkState, type BenchRound, type BenchRun, type BenchRunStatus, type BenchStageRole, type Experiment, type ExperimentStatus } from './types.js';
 
 const STRINGS = ['name', 'createdAt', 'workspace', 'seedHash', 'tasksHash'] as const;
 const OBJECTS = ['base', 'seed', 'pace', 'isolation', 'blindness', 'evaluation', 'createdBy', 'plugin'] as const;
@@ -60,7 +60,7 @@ const isSeedCommit = (seed: unknown): boolean => isJsonObject(seed) && isText(se
 
 // The tester and the number of walks reach a headless run's argv and a loop's bound (#474): checked here, not only by shape
 const isEvaluation = (value: unknown): boolean =>
-  isJsonObject(value) && isJsonObject(value.tester) && Number.isInteger(value.scenarioWalks) && (value.scenarioWalks as number) >= 1;
+  isJsonObject(value) && isJsonObject(value.tester) && AGENT_IDS.includes(value.tester.agent as AgentId) && Number.isInteger(value.scenarioWalks) && (value.scenarioWalks as number) >= 1;
 
 function isExperimentHead(value: unknown): value is Record<string, unknown> & { id: string; arms: unknown[]; rounds: unknown[] } {
   if (!isJsonObject(value) || !isText(value.id) || !EXPERIMENT_ID.test(value.id)) return false;

@@ -110,7 +110,7 @@ test('an arm whose overrides carry a malformed items, worktree or stages is drop
 test('an experiment whose evaluation has no tester object or no integer scenarioWalks of at least 1 is dropped whole (#474)', () => {
   const good = experiment({ id: 'keep' });
   const bad: Record<string, unknown>[] = [
-    { tester: undefined }, { tester: 'claude' }, { tester: null },
+    { tester: undefined }, { tester: 'claude' }, { tester: null }, { tester: {} }, { tester: { agent: 'gemini' } }, { tester: { agent: 42 } },
     { scenarioWalks: undefined }, { scenarioWalks: 0 }, { scenarioWalks: 1.5 }, { scenarioWalks: '2' },
   ];
   for (const patch of bad) {
