@@ -220,3 +220,13 @@ test('a run whose end throws is ended error with a reason, so its round still en
   assert.ok(runs[0].reason);
   assert.equal(h.latest()?.status, 'done');
 });
+
+test('a run interrupted while its end fails stays interrupted: no benchmarkRunEnded error overwrites it (#472)', async () => {
+  const h = harness(ONE_PAIR, {
+    failEnd: ['tok1'],
+    watch: async (token, _signal, dispatch) => { await dispatch({ type: 'benchmarkRunChanged', id: 'exp-1', token, patch: { status: 'interrupted' } }); return { outcome: 'done' }; },
+  });
+  await runExperiment('exp-1', h.deps);
+  assert.ok(!h.events.some((e) => e.type === 'benchmarkRunEnded' && e.token === 'tok1'));
+  assert.equal(h.latest()?.rounds[0].runs.find((r) => r.token === 'tok1')?.status, 'interrupted');
+});

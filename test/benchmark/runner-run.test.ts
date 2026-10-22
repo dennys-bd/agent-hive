@@ -151,3 +151,18 @@ test('a progress dispatch still in flight when the run ends lands before the end
   await tick();
   assert.deepEqual([c.latest()?.rounds[0].runs[0].status, c.latest()?.rounds[0].runs[0].delivered], ['done', 1]);
 });
+
+test('a progress report after the run was interrupted does not set it back to running (#472)', async () => {
+  const c = context(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('tok1', { status: 'interrupted' })] }] }));
+  void watchOne(c.ctx, liveRun('tok1'));
+  await until(() => c.rig.watchDeps.has('tok1'));
+  c.rig.watchDeps.get('tok1')?.onProgress?.({ delivered: 1, total: 2, waiting: false, tasks: [] });
+  await tick();
+  assert.deepEqual([c.events, c.latest()?.rounds[0].runs[0].status], [[], 'interrupted']);
+});
+
+test('endRun on a run interrupted meanwhile dispatches no end, yet stops its daemon (#472)', async () => {
+  const c = context(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('tok1', { status: 'interrupted' })] }] }));
+  await endRun(c.ctx, liveRun('tok1'), { outcome: 'error', reason: 'the daemon is gone' });
+  assert.deepEqual([c.events, c.latest()?.rounds[0].runs[0].status, c.rig.calls], [[], 'interrupted', ['stop tok1']]);
+});

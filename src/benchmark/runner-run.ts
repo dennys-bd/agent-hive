@@ -16,7 +16,7 @@ import type { RunHandle } from './scheduler.js';
 import { type Progress, startWatch, type WatchEnd, type WatchState } from './watcher.js';
 
 export const TOKENS_EVERY_MS = 60_000; // a running run's tokens, for the cap: read at most once a minute
-const ENDED: readonly BenchRunStatus[] = ['done', 'timeout', 'error'];
+const ENDED: readonly BenchRunStatus[] = ['done', 'timeout', 'error', 'interrupted']; // interrupted: a wake found the daemon gone; only a new run replaces it
 const NO_DIFF = { files: 0, insertions: 0, deletions: 0 };
 
 export interface LiveRun extends RunHandle {
@@ -78,7 +78,7 @@ export async function startRun(ctx: RunContext, experiment: Experiment, arm: Arm
 
 async function reportProgress(ctx: RunContext, handle: LiveRun, progress: Progress): Promise<void> {
   if (ctx.latest()?.status === 'sleeping') return; // the sleep's status stays until the wake
-  if (ENDED.includes(runOf(ctx.latest(), handle.token)?.status ?? 'queued')) return; // a late progress must not reopen an ended run
+  if (ENDED.includes(runOf(ctx.latest(), handle.token)?.status ?? 'queued')) return; // a late progress must not reopen an ended or interrupted run
   const status: BenchRunStatus = progress.waiting ? 'waiting' : 'running';
   await ctx.dispatch({ type: 'benchmarkRunChanged', id: ctx.id, token: handle.token, patch: { delivered: progress.delivered, total: progress.total, status } });
   const at = ctx.now().getTime();
@@ -135,6 +135,8 @@ export async function endRun(ctx: RunContext, handle: LiveRun, end: WatchEnd): P
   if (end.outcome === 'aborted') return;
   try {
     await ctx.progress.get(handle.token);
+    // a wake interrupted this run while its watch ended: an end now would overwrite that (the stop below still runs)
+    if (runOf(ctx.latest(), handle.token)?.status === 'interrupted') return;
     const at = ctx.now().toISOString();
     const patch: BenchRunPatch = handle.failed === undefined ? await measured(ctx, handle, at) : { metrics: noMetrics() };
     await ctx.dispatch({ type: 'benchmarkRunChanged', id: ctx.id, token: handle.token, patch });

@@ -91,6 +91,8 @@ async function oneRun<H extends RunHandle>(experiment: Experiment, arm: Arm, n: 
     // a run that cannot be watched or ended must not stay running: its round would wait on it for ever. The reason is fixed: an error can carry a path
     deps.log(`benchmark ${experiment.id} ${handle.token}: round ${n}: the run could not be ended`);
     if (deps.signal.aborted) return;
+    // interrupted by a wake meanwhile: the run is rerun, an error end would overwrite that
+    if (deps.latest()?.rounds.flatMap((r) => r.runs).find((r) => r.token === handle.token)?.status === 'interrupted') return;
     await deps.dispatch({ type: 'benchmarkRunEnded', id: experiment.id, token: handle.token, status: 'error', at: deps.now().toISOString(), reason: 'the run could not be ended' }).catch(() => undefined);
   }
 }
