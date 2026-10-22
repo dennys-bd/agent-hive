@@ -3,7 +3,7 @@ import { workspaceByName } from '../config.js';
 import { initialState } from '../orchestrator.js';
 import { shellQuote } from '../shell-init.js';
 import { HIVE_SOURCE } from '../tasks.js';
-import type { Arm, ArmSetup, BenchStageRole, BenchTask, CombConfig, Config, Experiment, IsolationRow, Stage, State, Task, Workspace } from '../types.js';
+import { MCP_DEFAULTS, type Arm, type ArmSetup, type BenchStageRole, type BenchTask, type CombConfig, type Config, type Experiment, type IsolationRow, type Stage, type State, type Task, type Workspace } from '../types.js';
 import { runBranch, runPrefix } from './git.js';
 import { RUN_SANDBOX_FILE, SANDBOX_FILE } from './sandbox.js';
 import { type RunPaths, runClaudeArgs } from './worker-rules.js';
@@ -61,12 +61,13 @@ function claudeArgs(experiment: Experiment, arm: Arm, setup: ArmSetup, token: st
 }
 
 /** The main Hive's current config with the run's comb: every required settings key comes along without a hand-kept list. `branch` goes
- *  so task branches are hive/<PREFIX>-*, which stopRun removes. limits.ms is 3.2's timeout. */
+ *  so task branches are hive/<PREFIX>-*, which stopRun removes. The MCP servers do not come along. limits.ms is 3.2's timeout. */
 export function runConfig(main: Config, experiment: Experiment, arm: Arm, token: string, paths: RunConfigPaths): Config {
   const setup = mergeArm(experiment.base, arm.overrides);
   const { comb: _comb, baseBranch: _base, branch: _template, agentArgs, ...rest } = main;
   const comb = { prefix: runPrefix(token), workspaces: [runWorkspace(main, experiment, arm, setup, paths)], sources: [], ...runStages(setup.stages), commands: [], hiveSource: true, createIn: HIVE_SOURCE };
-  return { ...rest, comb, baseBranch: runBranch(token), agentArgs: { ...agentArgs, claude: claudeArgs(experiment, arm, setup, token, paths.rules) } };
+  // mcp: the user's own servers (and their tokens) are not the run's to hand to a worker
+  return { ...rest, comb, mcp: MCP_DEFAULTS, baseBranch: runBranch(token), agentArgs: { ...agentArgs, claude: claudeArgs(experiment, arm, setup, token, paths.rules) } };
 }
 
 /** The arm's tasks as local tasks in the first stage; only the unblocked ones auto, since the watcher (3.3) releases the others. */

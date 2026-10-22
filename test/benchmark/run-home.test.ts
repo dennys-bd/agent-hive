@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadBenchmark } from '../../src/benchmark-guards.js';
-import { prepareRun } from '../../src/benchmark/run-home.js';
+import { prepareExperiment, prepareRun } from '../../src/benchmark/run-home.js';
 import { parseConfig } from '../../src/config.js';
 import { shellQuote } from '../../src/shell-init.js';
 import { loadState } from '../../src/state-store.js';
-import { BENCH_TOKEN, type ArmSetup } from '../../src/types.js';
-import { arm, benchHome, experiment, ISOLATION, line, SETUP } from './fixtures.js';
+import { BENCH_TOKEN, type ArmSetup, type Experiment } from '../../src/types.js';
+import { mainConfig, arm, benchHome, experiment, ISOLATION, line, SETUP } from './fixtures.js';
 
 const OVERRIDES: Partial<ArmSetup> = {
   stages: { ...SETUP.stages, build: { agent: 'claude', skill: '/x', prompt: 'ARM-BUILD {title}' } },
@@ -42,8 +43,10 @@ test('prepareRun writes the tasks with the right auto and cap, only the mapped v
   assert.deepEqual((await readJson(join(run.home, 'custom', 'hive', 'new-spec', 'terse', 'version.json'))).workspaces, ['hive']);
   const sandbox = (await readJson(join(run.home, 'sandbox.json'))).sandbox as { network: { allowedDomains: string[] }; filesystem: { denyRead: string[]; allowRead: string[] } };
   assert.deepEqual(sandbox.network.allowedDomains, ['example.org']);
-  assert.ok(sandbox.filesystem.denyRead.includes(join(hiveDir, 'benchmark', 'exp-1')));
-  assert.ok(sandbox.filesystem.allowRead.includes(join(run.home, 'plugins', 'hive')));
+  assert.ok(sandbox.filesystem.denyRead.includes(hiveDir), 'the whole Hive home is denied, the run\'s paths re-allowed');
+  assert.deepEqual(sandbox.filesystem.allowRead, [join(hiveDir, 'benchmark', 'exp-1', 'clone'), join(hiveDir, 'benchmark', 'exp-1', 'repo.git'), join(hiveDir, 'benchmark', 'exp-1', 'nested', 'docs.git'), join(run.home, 'plugins', 'hive')]);
+  const denyWrite = (sandbox.filesystem as unknown as { denyWrite: string[] }).denyWrite;
+  for (const dir of [join('clone', '.git'), join('clone', 'docs', '.git'), 'repo.git', join('nested', 'docs.git')]) for (const f of ['hooks', 'config']) assert.ok(denyWrite.includes(join(hiveDir, 'benchmark', 'exp-1', dir, f)), `${dir}/${f}`);
   assert.deepEqual(await readJson(join(run.home, 'benchmark.json')), { experiment: { id: 'exp-1', name: 'Skills' }, arm: { letter: 'B', name: 'arm B' }, round: 2, pairs: 3, token: run.token, frozen: false });
   assert.equal((await stat(run.home)).mode & 0o777, 0o700);
 });
@@ -60,4 +63,56 @@ test('the token is drawn, not derived: two arms on the same draw get the same na
   const loaded = loadBenchmark({ experiments: [{ ...EXP, rounds: [{ n: 1, runs: [b] }] }] }, env.hiveDir);
   assert.equal(loaded.experiments[0].rounds[0].runs.length, 1);
   assert.ok(env.lines.every((l) => !l.includes(env.hiveDir) && l.startsWith(`benchmark exp-1 ${b.token}:`)), env.lines.join('\n'));
+});
+
+test('a run\'s mcp setting is the default: the user\'s servers and their tokens do not reach a worker (#471)', async (t) => {
+  const { deps } = await benchHome(t);
+  const server = { name: 'private', workspace: null, on: true, url: 'https://mcp.example', authHeader: 'Bearer secret' };
+  const run = await prepareRun(EXP, EXP.arms[0], 1, { ...deps, config: { ...deps.config, mcp: { off: [], servers: [server] } } });
+  assert.deepEqual(parseConfig(await readJson(join(run.home, 'hive.config.json'))).mcp, { off: [], servers: [] });
+});
+
+test('a symlink in a custom version folder is not copied into the run home (#471)', async (t) => {
+  const { hiveDir, deps } = await benchHome(t);
+  const files = join(hiveDir, 'custom', 'hive', 'new-spec', 'terse', 'files');
+  await writeFile(join(hiveDir, 'outside.txt'), 'outside');
+  await symlink(join(hiveDir, 'outside.txt'), join(files, 'link.txt'));
+  const run = await prepareRun(EXP, EXP.arms[1], 1, deps);
+  assert.deepEqual(await readdir(join(run.home, 'custom', 'hive', 'new-spec', 'terse', 'files')), ['SKILL.md']);
+});
+
+test('the blindness check also reads the worktree setup and teardown and the resolved env values (#471)', async (t) => {
+  const { deps } = await benchHome(t);
+  for (const [patch, where] of [
+    [{ arms: [arm('a1', 'A', { worktree: { setup: 'RUN echo benchmark', teardown: '' } })] }, 'worktree setup'],
+    [{ arms: [arm('a1', 'A', { worktree: { setup: '', teardown: 'RUN echo benchmark' } })] }, 'worktree teardown'],
+    [{ isolation: { ...ISOLATION, env: { all: { CI: '1' }, perArm: { a1: { LABEL: 'benchmark' } } } } }, 'env LABEL'],
+  ] as [Partial<Experiment>, string][]) {
+    const exp = experiment(patch);
+    await assert.rejects(prepareRun(exp, exp.arms[0], 1, deps), (err: Error) => /blindness: "benchmark"/.test(err.message) && err.message.includes(where), where);
+  }
+});
+
+test('a home that fails after the branches were pushed takes the run branch off every origin and removes the partial home (#471)', async (t) => {
+  const { hiveDir, calls, deps } = await benchHome(t);
+  await writeFile(join(hiveDir, 'custom', 'hive', 'new-spec', 'terse', 'version.json'), '{ not json');
+  await assert.rejects(prepareRun(EXP, EXP.arms[1], 1, deps));
+  const clone = join(hiveDir, 'benchmark', 'exp-1', 'clone');
+  const deleted = calls.filter((c) => c.args[0] === 'push' && c.args.includes('--delete'));
+  assert.deepEqual(deleted.map((c) => c.cwd), [clone, join(clone, 'docs')]);
+  assert.ok(deleted.every((c) => /^work\/[a-z0-9]{8}$/.test(c.args[3])));
+  assert.deepEqual(await readdir(join(hiveDir, 'benchmark', 'exp-1', 'runs')).catch(() => []), []);
+});
+
+test('a nested repo path that is absolute, empty, dashed or climbs out is refused before anything is made (#471)', async (t) => {
+  const { hiveDir, calls, deps } = await benchHome(t);
+  for (const bad of ['../x', '/abs', '-flag', '', 'a/../../b']) {
+    const [ws] = deps.config.comb.workspaces;
+    const config = { ...deps.config, comb: { ...deps.config.comb, workspaces: [{ ...ws, nestedRepos: [bad] }] } };
+    await assert.rejects(prepareRun(EXP, EXP.arms[0], 1, { ...deps, config }), /nested repo path/, bad);
+    await assert.rejects(prepareExperiment(experiment(), { ...deps, config }), /nested repo path/, bad);
+  }
+  assert.equal(calls.length, 0);
+  assert.ok(!existsSync(join(hiveDir, 'benchmark', 'exp-1', 'repo.git')));
+  assert.equal(mainConfig().comb.workspaces[0].nestedRepos[0], 'docs');
 });
