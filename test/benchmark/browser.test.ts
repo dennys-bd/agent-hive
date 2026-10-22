@@ -70,7 +70,8 @@ test("startSample runs the seed's command through $SHELL -c in the worktree, det
 test('stopSample sends SIGTERM to the process group, then SIGKILL after the grace when the shell has not exited (#474)', async () => {
   const kills: [number, string | 0][] = [];
   await stopSample(fakeChild(4242), { kill: (pid, signal) => { kills.push([pid, signal]); }, graceMs: 20 });
-  assert.deepEqual(kills, [[-4242, 'SIGTERM'], [-4242, 'SIGKILL']]);
+  assert.deepEqual([kills[0], kills.at(-1)], [[-4242, 'SIGTERM'], [-4242, 'SIGKILL']]);
+  assert.ok(kills.slice(1, -1).every(([, signal]) => signal === 0));
   const polite = fakeChild(4343);
   const politeKills: [number, string][] = [];
   await stopSample(polite, { kill: (pid, signal) => { if (signal === 0) throw Object.assign(new Error('gone'), { code: 'ESRCH' }); politeKills.push([pid, signal]); if (signal === 'SIGTERM') polite.exit(); }, graceMs: 60_000 });
@@ -82,7 +83,17 @@ test('stopSample still sends SIGKILL to the group after the grace when the shell
   const shell = fakeChild(4444);
   const kills: [number, string | 0][] = [];
   await stopSample(shell, { kill: (pid, signal) => { kills.push([pid, signal]); if (signal === 'SIGTERM') shell.exit(); }, graceMs: 20 });
-  assert.deepEqual(kills, [[-4444, 'SIGTERM'], [-4444, 0], [-4444, 'SIGKILL']]);
+  assert.deepEqual([kills[0], kills[1], kills.at(-1)], [[-4444, 'SIGTERM'], [-4444, 0], [-4444, 'SIGKILL']]);
+});
+
+test('stopSample skips SIGKILL once the group is gone before the grace ends, and never throws on EPERM or other errors (#474)', async () => {
+  let probes = 0;
+  const kills: (string | 0)[] = [];
+  await stopSample(fakeChild(5), { kill: (_pid, signal) => { kills.push(signal); if (signal === 0) probes += 1; if (signal === 0 && probes >= 2) throw Object.assign(new Error('gone'), { code: 'ESRCH' }); }, graceMs: 60_000 });
+  assert.deepEqual(kills, ['SIGTERM', 0, 0]);
+  const eperm = (): never => { throw Object.assign(new Error('zombie'), { code: 'EPERM' }); };
+  await stopSample(fakeChild(6), { kill: eperm, graceMs: 10 });
+  await stopSample(fakeChild(7), { kill: (_pid, signal) => { if (signal === 'SIGKILL') throw new Error('boom'); }, graceMs: 10 });
 });
 
 test('a walk whose headless run rejects counts its scenarios failed and the other walks still count (#474)', async (t) => {

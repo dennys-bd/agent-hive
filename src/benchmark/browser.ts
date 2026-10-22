@@ -78,6 +78,7 @@ export async function keepShots(from: string, to: string, prefix = ''): Promise<
 export const SAMPLE_READY_MS = 5 * 60_000;
 export const SAMPLE_POLL_MS = 1_000;
 export const SAMPLE_STOP_GRACE_MS = 5_000;
+export const SAMPLE_STOP_POLL_MS = 100;
 export interface SampleChild { readonly pid?: number; readonly exitCode: number | null; once(event: 'exit' | 'error', listener: () => void): unknown }
 export type SpawnSample = (file: string, args: readonly string[], options: SpawnOptions) => SampleChild;
 export interface StopDeps { kill(pid: number, signal: NodeJS.Signals | 0): void; graceMs: number }
@@ -89,30 +90,30 @@ export function startSample(command: string, cwd: string, spawnSample: SpawnSamp
   return spawnSample(env.SHELL ?? '/bin/sh', ['-c', command], { cwd, detached: true, stdio: 'ignore', env: { ...withoutHiveEnv(env), CI: '1' } });
 }
 
-const isGone = (err: unknown): boolean => (err as { code?: unknown }).code === 'ESRCH';
-
-// A stubborn child can outlive the shell in the group: signal 0 asks whether the group still has a member, and one that does gets SIGKILL after the grace
+// A stubborn child can outlive the shell in the group: signal 0 asks whether the group still has a member. The stop polls it until the group is
+// gone or the grace runs out, and only a group still alive then gets SIGKILL. Never throws: it runs in a finally and must not replace the walk's results.
 export async function stopSample(child: SampleChild, deps: StopDeps = { kill: (pid, signal) => process.kill(pid, signal), graceMs: SAMPLE_STOP_GRACE_MS }): Promise<void> {
   if (child.pid === undefined) return;
   const group = -child.pid;
-  const exited = new Promise<boolean>((resolve) => child.once('exit', () => resolve(true)));
-  if (!(await signalGroup(group, 'SIGTERM', deps))) return;
-  const shellGone = child.exitCode !== null || (await Promise.race([exited, delay(deps.graceMs, false, { ref: false })]));
-  if (shellGone) {
-    if (!(await signalGroup(group, 0, deps))) return;
-    await delay(deps.graceMs, undefined, { ref: false });
+  if (!signalGroup(group, 'SIGTERM', deps)) return;
+  const until = Date.now() + deps.graceMs;
+  while (signalGroup(group, 0, deps)) { // ref'd waits: a headless process must not exit mid-stop (close() bounds them)
+    const left = until - Date.now();
+    if (left <= 0) {
+      signalGroup(group, 'SIGKILL', deps);
+      return;
+    }
+    await delay(Math.min(SAMPLE_STOP_POLL_MS, left));
   }
-  await signalGroup(group, 'SIGKILL', deps);
 }
 
-// false: the group is gone (ESRCH), which is what every stop wants
-async function signalGroup(group: number, signal: NodeJS.Signals | 0, deps: StopDeps): Promise<boolean> {
+// false: the group is gone (ESRCH), unreachable (EPERM, a zombie group on macOS) or the signal failed otherwise: every stop gives up then
+function signalGroup(group: number, signal: NodeJS.Signals | 0, deps: StopDeps): boolean {
   try {
     deps.kill(group, signal);
     return true;
-  } catch (err) {
-    if (isGone(err)) return false;
-    throw err;
+  } catch {
+    return false;
   }
 }
 
