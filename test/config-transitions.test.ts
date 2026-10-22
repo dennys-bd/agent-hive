@@ -61,3 +61,16 @@ test('a new session out of a clearing stage, a move into a stage that starts its
     T('Gate', 'Build', { session: 'new' }), T('Gate', 'Plan'),
   ]));
 });
+
+test('a clearing stage\'s loop to itself keeps its session, so its resume parses (#494)', () => {
+  const stages = [stage('Spec', { clearSession: true, session: 'continue' }), stage('Plan')];
+  assert.doesNotThrow(() => checkClearedResumes(stages, [T('Spec', 'Spec', { when: 'feedback', session: 'previous' }), T('Spec', 'Spec', { when: 'verdict', verdict: 'again' })]));
+});
+
+test('a handoff asked past a stage that runs no agent after a clearing stage is refused; asked right out of it, it parses (#494)', () => {
+  const gate: Stage = { name: 'Gate', from: {}, approval: true };
+  const stages = [stage('Spec', { clearSession: true }), gate, stage('Plan', { handoff: true })];
+  assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'Plan')]),
+    { message: 'hive.config.json: "comb.transitions[1].to" "Plan" asks for a handoff from the session of "Spec", which clears it when it ends (#494)' });
+  assert.doesNotThrow(() => checkClearedResumes(stages, [T('Spec', 'Plan')]));
+});
