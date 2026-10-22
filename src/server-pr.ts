@@ -14,7 +14,7 @@ import { prDataOf, type StoredPr } from './read-model/views.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
 import { isHash, isPath, parseLineAnchor } from './review-bodies.js';
 import { readingOf, type Reading, type RepoReadModel } from './server-repos.js';
-import { changesReaderOf, dropStale, HeadMoved } from './server-pr-changes.js';
+import { type ChangesReader, changesReaderOf, dropStale, HeadMoved } from './server-pr-changes.js';
 import { badRequest, errorMessage, refuse } from './server-review.js';
 import type { LiveView, Refusal, TaskRouteDeps } from './server-tasks.js';
 import type { Exec as GhExec, GqlJson } from './sources/github-gql.js';
@@ -155,7 +155,7 @@ const bodyOf = (req: Request): Record<string, unknown> => (req.body ?? {}) as Re
 
 // GET …/pulls/:number (the fields, from the model), …/changes (the diff and the rest, GitHub's) and the review file. Only the latest changes
 // read of a PR drops marks: an older one finishing late would drop a mark made against a newer diff.
-function registerReadRoutes(app: Express, deps: PrRouteDeps): void {
+function registerReadRoutes(app: Express, deps: PrRouteDeps): ChangesReader {
   const changes = changesReaderOf(deps);
   app.get(PR_ROUTE, async (req: Request, res: Response) => {
     const found = await prTarget(deps, req, res);
@@ -189,6 +189,7 @@ function registerReadRoutes(app: Express, deps: PrRouteDeps): void {
     const file = await readPrFile(deps, res, found.url);
     if (file) res.json(file);
   });
+  return changes;
 }
 
 // revisado and adicionar à revisão (#592); the review's summary is sent with it, never stored (#758)
@@ -252,9 +253,10 @@ function registerChecksRoute(app: Express, deps: PrRouteDeps): void {
 }
 
 /** The PR page's reads, its review file and its checks (#592, #758, #187): every route names the PR by its repository and number. */
-export function registerPrRoutes(app: Express, deps: PrRouteDeps): void {
-  registerReadRoutes(app, deps);
+export function registerPrRoutes(app: Express, deps: PrRouteDeps): ChangesReader {
+  const changes = registerReadRoutes(app, deps);
   registerFileRoutes(app, deps);
   registerDraftEdits(app, deps);
   registerChecksRoute(app, deps);
+  return changes;
 }

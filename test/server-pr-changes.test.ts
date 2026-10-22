@@ -2,7 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { DIFF_MAX_BYTES, fileHash, parseDiff } from '../src/diff.js';
+import { openReadModel } from '../src/read-model/db.js';
 import type { PullChangesRow } from '../src/read-model/rows.js';
+import { type ChangesDeps, changesReaderOf, preloaderOf } from '../src/server-pr-changes.js';
+import type { RepoReadModel } from '../src/server-repos.js';
 import type { PrChanges } from '../src/types.js';
 import { fakeLog } from './fakes.js';
 import { AT, DIFF, fakeGh, type FakeGh, HEAD, PR, PR_PAGE_ROW, namedEventDuring, PR_SOURCE, prKey, reviewFileOf, seedPr, startPrs, thread, until } from './pr-server.js';
@@ -206,4 +209,69 @@ test('a second open within the cooldown makes no GitHub call; fresh=1, the page\
   assert.deepEqual(reads(gh, after), []);
   await changesOf(base, 7, '?fresh=1');
   await until(async () => reads(gh, after).includes('threads'));
+});
+
+// A reader over its own model (#497): gh answers the diff (or throws), the threads one at HEAD, every compare `{}`
+function preloadRig(failWith?: string) {
+  const diffs: string[][] = [];
+  const lines: string[] = [];
+  const deps: ChangesDeps = {
+    gh: async (args) => {
+      if (args.at(-1) === 'Accept: application/vnd.github.diff') {
+        diffs.push(args);
+        if (failWith !== undefined) throw new Error(failWith);
+        return DIFF;
+      }
+      return '{}';
+    },
+    gql: async () => ({ viewer: { login: 'ana' }, resource: { headRefOid: HEAD, reviewThreads: { totalCount: 0, nodes: [] } } }),
+    log: { debug: (line) => lines.push(line), error: (line) => lines.push(line) },
+    prReviews: { read: async () => ({ reviewed: [], drafts: [] }), update: async (_url, change) => change({ reviewed: [], drafts: [] }) },
+    notifyPrReview: () => undefined,
+  };
+  return { deps, diffs, lines, reader: changesReaderOf(deps) };
+}
+
+async function preloadModel(refetches: number[] = []): Promise<RepoReadModel> {
+  const { db } = await openReadModel(':memory:');
+  seedPr(db, 7);
+  return { db, source: async () => PR_SOURCE, refetch: async (_repository, number) => { refetches.push(number); return 'unchanged'; }, notify: () => undefined };
+}
+
+test('the preload refetches the PR, then stores its row by the full read; a second report of the same PR preloads nothing (#497)', async () => {
+  const refetches: number[] = [];
+  const model = await preloadModel(refetches);
+  const { diffs, reader } = preloadRig();
+  const preload = preloaderOf({ readModel: model, isListed: async (repository: string) => repository === 'acme/app', log: { debug: () => undefined } }, reader);
+  await preload(PR);
+  assert.equal(refetches[0], 7);
+  assert.equal(rowOf(model.db)?.head, HEAD);
+  const [refetched, read] = [refetches.length, diffs.length];
+  await preload(PR);
+  assert.deepEqual([refetches.length, diffs.length], [refetched, read], 'once per PR');
+});
+
+test('a preload and the route\'s read of the same PR share one full read (#497)', async () => {
+  const model = await preloadModel();
+  const { diffs, reader } = preloadRig();
+  const reading = { model, source: PR_SOURCE };
+  await Promise.all([reader.preload(reading, PR), reader.read(reading, PR, false)]);
+  assert.equal(diffs.length, 1);
+  assert.equal(rowOf(model.db)?.head, HEAD);
+});
+
+test('the preload stores nothing and leaves a debug line by number for no read model, an unlisted repository or a failed read (#497)', async () => {
+  const model = await preloadModel();
+  const { lines, reader } = preloadRig('gh api: HTTP 502');
+  const log = { debug: (line: string) => lines.push(line) };
+  await preloaderOf({ isListed: async () => true, log }, reader)(PR);
+  await preloaderOf({ readModel: model, isListed: async () => false, log }, reader)(PR);
+  await preloaderOf({ readModel: model, isListed: async () => true, log }, reader)(PR);
+  assert.deepEqual(lines, [
+    'pr #7: the changes were not preloaded (no read model)',
+    'pr #7: the changes were not preloaded (its repository is not listed)',
+    'pr #7: the changes were not preloaded (Error)',
+  ]);
+  assert.ok(lines.every((line) => !line.includes(PR)));
+  assert.equal(rowOf(model.db), undefined);
 });

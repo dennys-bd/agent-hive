@@ -18,7 +18,7 @@ import { localReviewPath, reviewPath } from '../src/review-store.js';
 import { activityOf, localActivityId, prsOf, recordOf, resultOf } from '../src/activities.js';
 import { systemLanguage } from '../src/language.js';
 import { initialState } from '../src/orchestrator.js';
-import { createServer, type HiveServer } from '../src/server.js';
+import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import type { Activity, Config, Exec, SourceConfig, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
 import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
@@ -45,12 +45,12 @@ const work0 = (server: HiveServer): Activity | undefined => activityOf(server.ge
 // dispatch logs every event it reduces at debug; the fake log keeps every level
 const dispatched = (lines: string[]): string[] => lines.filter((line) => EVENT_TYPES.some((type) => line.startsWith(`DEBUG ${type} `)));
 
-async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], workspace: Partial<Workspace> = {}, stages: unknown[] = BODY.stages ?? []): Promise<Hive> {
+async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], workspace: Partial<Workspace> = {}, stages: unknown[] = BODY.stages ?? [], extra: Partial<ServerDeps> = {}): Promise<Hive> {
   const { home, repo } = await tempHive(t, 1);
   const { log, lines } = fakeLog();
   const { factory, actions } = fakeSourceFactory();
   const { facts, records } = fakeFacts();
-  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, facts, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, facts, exec: async () => ({ stdout: '' }), ...extra });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -562,4 +562,32 @@ test('nestedConventions answers each nested repo with its GitHub repository, non
   const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
   const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
   assert.deepEqual(conventionsAnswer(state, config, local, undefined, nested), { hiveLanguage: 'pt', approval: false, nestedRepos: nested });
+});
+
+const PR9 = 'https://github.com/acme/r/pull/9';
+
+test('hive_pr answers without waiting for its preload, which it starts with the url; a refused call preloads nothing (#497)', async (t) => {
+  const urls: string[] = [];
+  const pending = (url: string): Promise<void> => { urls.push(url); return new Promise<void>(() => undefined); }; // never settles
+  const { base, ptyId } = await start(t, [GITHUB_ENTRY], {}, BODY.stages ?? [], { preloadPr: pending });
+  const client = await connect(t, base, ptyId);
+  assert.deepEqual(await call(client, 'hive_pr', { url: PR9 }), { text: 'ok', isError: false });
+  assert.deepEqual(urls, [PR9]);
+  await call(client, 'hive_pr', { url: 'not a url' });
+  assert.deepEqual(urls, [PR9]);
+});
+
+test('a rejected preload changes nothing in hive_pr\'s answer or its record (#497)', async (t) => {
+  const { base, server, ptyId } = await start(t, [GITHUB_ENTRY], {}, BODY.stages ?? [], { preloadPr: async () => { throw new Error('boom'); } });
+  const client = await connect(t, base, ptyId);
+  assert.deepEqual(await call(client, 'hive_pr', { url: PR9 }), { text: 'ok', isError: false });
+  assert.deepEqual(prsOf(server.getState()!, task0(server).item.itemId), [{ url: PR9, state: 'open' }]);
+});
+
+test('the default preload of a Hive with no read model is a debug line by number (#497)', async (t) => {
+  const { base, lines, ptyId } = await start(t);
+  const client = await connect(t, base, ptyId);
+  await call(client, 'hive_pr', { url: PR9 });
+  for (let i = 0; i < 100 && !lines.includes('DEBUG pr #9: the changes were not preloaded (no read model)'); i += 1) await new Promise((r) => setTimeout(r, 10));
+  assert.ok(lines.includes('DEBUG pr #9: the changes were not preloaded (no read model)'), lines.join('\n'));
 });

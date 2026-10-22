@@ -126,6 +126,9 @@ function registerStageTools(server: McpServer, deps: McpDeps, header: string | u
     if (!ptyId) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
     if (!isPrUrl(url)) return refuse('bad_url', URL_MESSAGE);
     await deps.dispatch({ type: 'pr', ptyId, url, ...(slice ? { slice } : {}) });
+    // #497: the PR's changes read and stored before its page opens. Never awaited, so the answer never waits on GitHub. The preload logs its own
+    // failures; this catch only keeps a rejection off the process
+    deps.preloadPr?.(url).catch(() => undefined);
     return reply(OK);
   }));
 }

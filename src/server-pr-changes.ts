@@ -4,11 +4,11 @@ import { DIFF_MAX_BYTES, DiffTooLarge, parseDiff, withHash } from './diff.js';
 import type { Logger } from './log.js';
 import { parseThreads, PR_THREADS_QUERY, prDiffArgs, PrNotFound, requestTimesOf, timelineArgs, withRequestTimes } from './pr-github.js';
 import { dropStalePrMarks, type PrReviewStore } from './pr-review-store.js';
-import { prNumber, prRepo } from './pull-requests.js';
+import { prLink, prNumber, prRepo } from './pull-requests.js';
 import { REFETCH_COOLDOWN_MS } from './read-model/loop.js';
 import { type PrPage, type PullChangesRow, sourceLogin } from './read-model/rows.js';
 import { prDataOf, type StoredPr } from './read-model/views.js';
-import type { Reading } from './server-repos.js';
+import type { Reading, RepoReadModel } from './server-repos.js';
 import type { Exec as GhExec } from './sources/github-gql.js';
 import type { FileDiff, Gql, PrChanges } from './types.js';
 
@@ -116,7 +116,13 @@ export function changesOf(stored: Pick<StoredPr, 'reviewRequests'>, row: PullCha
   };
 }
 
-export interface ChangesReader { read(reading: Reading, url: string, fresh: boolean): Promise<{ changes: PrChanges; isLatest(): boolean }> }
+export interface ChangesReader {
+  read(reading: Reading, url: string, fresh: boolean): Promise<{ changes: PrChanges; isLatest(): boolean }>;
+  preload(reading: Reading, url: string): Promise<void>; // #497: the full read, stored; the route's own read when one is in flight
+}
+
+/** What the preload needs beyond the reader (#497): the model (absent: setup mode or a failed open), whether the Hive lists a repository, the log. */
+export interface PreloadDeps { readModel?: RepoReadModel; isListed(repository: string): Promise<boolean>; log: Pick<Logger, 'debug'> }
 
 // A moved head's diff (#497): the model refetched first, so the next fields read names the head the diff was read at
 async function movedDiff(deps: ChangesDeps, reading: Reading, url: string): Promise<string> {
@@ -181,7 +187,21 @@ export function changesReaderOf(deps: ChangesDeps, now: () => number = Date.now)
   const latest = new Map<string, number>();
   const latestOf = (url: string): number => latest.get(url) ?? 0;
   const revalidations = revalidationsOf(deps, now, latestOf);
+  // One full read per PR in flight, shared by the route and hive_pr's preload (#497), so the two never read GitHub twice for one head
+  const fulls = new Map<string, Promise<{ stored: StoredPr; row: PullChangesRow }>>();
+  const fullRead = (reading: Reading, url: string): Promise<{ stored: StoredPr; row: PullChangesRow }> => {
+    const running = fulls.get(url);
+    if (running !== undefined) return running;
+    revalidations.stamp(url); // a full read counts as the PR's last read for the cooldown
+    const promise = readFresh(deps, reading, url).then((read) => {
+      reading.model.db.setPrChanges(reading.source, prRepo(url), Number(prNumber(url)), read.row); // the table takes only an open PR's
+      return read;
+    }).finally(() => fulls.delete(url));
+    fulls.set(url, promise);
+    return promise;
+  };
   return {
+    preload: async (reading, url) => { await fullRead(reading, url); },
     read: async (reading, url, fresh) => {
       const mine = latestOf(url) + 1;
       latest.set(url, mine);
@@ -194,10 +214,34 @@ export function changesReaderOf(deps: ChangesDeps, now: () => number = Date.now)
         void revalidations.start(reading, url, fresh); // never rejects: revalidate logs its own failure
         return { changes: changesOf(prDataOf(page, sourceLogin(reading.source)), kept), isLatest };
       }
-      revalidations.stamp(url); // a full read counts as the PR's last read for the cooldown
-      const { stored, row } = await readFresh(deps, reading, url);
-      reading.model.db.setPrChanges(reading.source, repository, number, row);
+      const { stored, row } = await fullRead(reading, url);
       return { changes: changesOf(stored, row), isLatest };
     },
+  };
+}
+
+/** hive_pr's preload (#497): once per PR, its refetch, then the changes' full read, stored, so a task's PR opens fast the first time. Later heads
+ * are read when the page opens. No model, an unlisted repository, no login or a failed read is a debug line by number, and nothing is stored.
+ * ponytail: the once-set lives in memory, one entry per PR reported since the start */
+export function preloaderOf(deps: PreloadDeps, reader: ChangesReader): (url: string) => Promise<void> {
+  const preloaded = new Set<string>();
+  return async (reported) => {
+    const repository = prRepo(reported);
+    const number = Number(prNumber(reported));
+    const url = prLink(repository, number); // the route's own key, so the two share their full read
+    if (preloaded.has(url)) return;
+    preloaded.add(url);
+    const skip = (why: string): void => deps.log.debug(`pr #${number}: the changes were not preloaded (${why})`);
+    try {
+      const model = deps.readModel;
+      if (model === undefined) return skip('no read model');
+      if (!(await deps.isListed(repository))) return skip('its repository is not listed');
+      const source = await model.source();
+      if (source === undefined) return skip('no GitHub login');
+      await model.refetch(repository, number);
+      await reader.preload({ model, source }, url);
+    } catch (err) {
+      skip(errorName(err));
+    }
   };
 }

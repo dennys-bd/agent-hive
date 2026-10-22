@@ -71,6 +71,7 @@ import type { UsageStore } from './usage-store.js';
 import { createReadModelLoop, readModelEvent } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
+import { preloaderOf } from './server-pr-changes.js';
 import { registerPrGithubRoutes } from './server-pr-github.js';
 import { recordCheckpoint } from './server-checkpoints.js';
 import { registerRunRoutes } from './server-runs.js';
@@ -147,6 +148,7 @@ export interface Runtime {
 
 export interface ServerDeps {
   credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
+  preloadPr?: (url: string) => Promise<void>; // #497: hive_pr's preload; tests inject a fake, the default reads the PR's changes
   probeMcp?: Probe; // #333: GET /api/mcp's probe; tests inject a fake, the default spawns or calls the server
   home: string; // the Hive's own directory (#202): hive.config.json, state.json, hive.log, hooks.json, prompts/
   /** This boot's secret (#467): what every request and pty upgrade must carry, and what the workers get in their MCP config (their env gets only the path of hive.secret).
@@ -971,10 +973,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.send(formatRateLimits(rateLimits, effectiveLanguage())); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
     await dispatch({ type: 'rateLimits', agent, ptyId, rateLimits }); // #929: the worker's agent's reading
   });
+  let preloadPr = deps.preloadPr; // #497: bound after the PR routes, which own the changes' reader
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
   mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
     relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
-    reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory }); // #344: a local session's hive_reply
+    reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory, preloadPr: (url) => preloadPr?.(url) ?? Promise.resolve() }); // #344: a local session's hive_reply
 
   app.get('/events', (req: Request, res: Response) => {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
@@ -1259,7 +1262,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The PR page (#592, #758): its read and review file, then its writes to GitHub; its reads answer from the read model and its writes upsert
   // their answer (#187), so it registers after the read loop
   const prDeps = { requireLive, dispatch, log, exec, prReviews, notifyPrReview, gql: prGql, gqlJson: cliGqlJson(gh), gh, ...repoModel };
-  registerPrRoutes(app, prDeps);
+  const changesReader = registerPrRoutes(app, prDeps);
+  // #497: hive_pr's preload, over the repositories the Hive lists now (a Settings change takes the next call)
+  preloadPr ??= preloaderOf({
+    ...repoModel, log,
+    isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, exec)).some((r) => r.repository === repository),
+  }, changesReader);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, exec }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
   registerNestedRoute(app, { config: () => live?.runtime.config }); // GET /settings/nested-repos (#653): also in setup mode, as /settings/remotes
