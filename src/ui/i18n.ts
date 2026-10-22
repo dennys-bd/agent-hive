@@ -2325,6 +2325,42 @@ const en = {
   'plugins.protocol.rendered': 'protocol for {workspace}',
   'plugins.protocol.viewAsHint': 'shows the text the session receives in this workspace',
   'plugins.protocol.selectHint': 'select a passage to see its variables',
+  // #477: the benchmark PR dialog, dlg-pr
+  'benchmark.pr.title': 'Open a PR with arm {letter}',
+  'benchmark.pr.context': 'brings the code of one of arm {letter}\'s runs from the isolated origin into the real repository and opens the PR. it is the only way out of the isolation.',
+  'benchmark.pr.run': 'run',
+  'benchmark.pr.workspace': 'workspace',
+  'benchmark.pr.branch': 'branch',
+  'benchmark.pr.commits': 'commits',
+  'benchmark.pr.description': 'description',
+  'benchmark.pr.option': 'pair {round} · {token} · {delivered}/{total}',
+  'benchmark.pr.best': 'best score',
+  'benchmark.pr.status.timeout': 'timeout',
+  'benchmark.pr.status.error': 'error',
+  'benchmark.pr.status.interrupted': 'interrupted',
+  'benchmark.pr.noRuns': 'no run has ended yet',
+  'benchmark.pr.loading': 'reading the run…',
+  'benchmark.pr.commitsLine.one': '1 commit of the {tasks} tasks · rebase onto {sha}',
+  'benchmark.pr.commitsLine.other': '{n} commits of the {tasks} tasks · rebase onto {sha}',
+  'benchmark.pr.summary': 'include the report\'s summary',
+  'benchmark.pr.inCheckout': 'uses the workspace\'s checkout: it must be clean, and goes back to its branch at the end',
+  'benchmark.pr.note': 'neutral branch names and the benchmark\'s files are removed before the push.',
+  'benchmark.pr.open': 'open PR',
+  'benchmark.pr.branchInvalid': 'not a valid branch name',
+  'benchmark.pr.branchExists': 'a branch with this name is already on origin',
+  'benchmark.pr.conflict': 'the rebase conflicts in these files:',
+  'benchmark.pr.dirty': 'the workspace\'s checkout has uncommitted changes:',
+  'benchmark.pr.busy': 'another PR of this workspace is being opened',
+  'benchmark.pr.noCommits': 'this run has no commit to open a PR with',
+  'benchmark.pr.notEnded': 'this run has not ended',
+  'benchmark.pr.failed.preview': 'the run could not be read',
+  'benchmark.pr.failed.fetch': 'the run could not be fetched',
+  'benchmark.pr.failed.branch': 'the branch could not be created',
+  'benchmark.pr.failed.rebase': 'the rebase failed',
+  'benchmark.pr.failed.files': 'the benchmark\'s files could not be removed',
+  'benchmark.pr.failed.push': 'the push failed',
+  'benchmark.pr.failed.pr': 'the PR could not be created on GitHub',
+  'benchmark.pr.failed.unknown': 'the PR could not be opened',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4645,6 +4681,42 @@ const pt: Record<MessageKey, string> = {
   'plugins.protocol.rendered': 'protocolo de {workspace}',
   'plugins.protocol.viewAsHint': 'mostra o texto que a sessão recebe neste workspace',
   'plugins.protocol.selectHint': 'selecione um trecho para ver as variáveis dele',
+  // #477: o diálogo de PR do benchmark, dlg-pr
+  'benchmark.pr.title': 'Abrir PR com o braço {letter}',
+  'benchmark.pr.context': 'traz o código de um run do braço {letter} do origin isolado para o repositório real e abre o PR. é a única saída do isolamento.',
+  'benchmark.pr.run': 'run',
+  'benchmark.pr.workspace': 'workspace',
+  'benchmark.pr.branch': 'branch',
+  'benchmark.pr.commits': 'commits',
+  'benchmark.pr.description': 'descrição',
+  'benchmark.pr.option': 'par {round} · {token} · {delivered}/{total}',
+  'benchmark.pr.best': 'melhor nota',
+  'benchmark.pr.status.timeout': 'timeout',
+  'benchmark.pr.status.error': 'erro',
+  'benchmark.pr.status.interrupted': 'interrompido',
+  'benchmark.pr.noRuns': 'nenhum run terminou ainda',
+  'benchmark.pr.loading': 'lendo o run…',
+  'benchmark.pr.commitsLine.one': '1 commit das {tasks} tarefas · rebase sobre {sha}',
+  'benchmark.pr.commitsLine.other': '{n} commits das {tasks} tarefas · rebase sobre {sha}',
+  'benchmark.pr.summary': 'incluir o resumo do relatório',
+  'benchmark.pr.inCheckout': 'usa o checkout do workspace: ele não pode ter mudanças pendentes e volta ao seu branch no fim',
+  'benchmark.pr.note': 'nomes de branch neutros e arquivos do benchmark são tirados antes do push.',
+  'benchmark.pr.open': 'abrir PR',
+  'benchmark.pr.branchInvalid': 'não é um nome de branch válido',
+  'benchmark.pr.branchExists': 'já existe um branch com esse nome no origin',
+  'benchmark.pr.conflict': 'o rebase conflita nestes arquivos:',
+  'benchmark.pr.dirty': 'o checkout do workspace tem mudanças não commitadas:',
+  'benchmark.pr.busy': 'outro PR deste workspace está sendo aberto',
+  'benchmark.pr.noCommits': 'este run não tem commit para abrir um PR',
+  'benchmark.pr.notEnded': 'este run não terminou',
+  'benchmark.pr.failed.preview': 'não foi possível ler o run',
+  'benchmark.pr.failed.fetch': 'não foi possível buscar o run',
+  'benchmark.pr.failed.branch': 'não foi possível criar o branch',
+  'benchmark.pr.failed.rebase': 'o rebase falhou',
+  'benchmark.pr.failed.files': 'não foi possível tirar os arquivos do benchmark',
+  'benchmark.pr.failed.push': 'o push falhou',
+  'benchmark.pr.failed.pr': 'não foi possível criar o PR no GitHub',
+  'benchmark.pr.failed.unknown': 'não foi possível abrir o PR',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
@@ -4682,7 +4754,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff';
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
