@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ActivitySide } from '@/components/FilesPanel';
 import { FileOpenerContext, type OpenFile } from '@/components/terminal-tabs';
@@ -33,9 +33,10 @@ test('a tree event naming its activity and a new path redraws the tree with that
   render(side());
   await screen.findByTitle('README.md');
   const treeReads = (): number => requests().filter(([method, url]) => method === 'GET' && url === '/activities/a-I1/tree').length;
+  await waitFor(() => expect(treeReads()).toBe(2)); // the first read, and the one the lease's first post asks for
   tree = { ...TREE, files: ['README.md', 'new.ts'], marks: { 'new.ts': 'A' } };
   act(() => emitTreeEvent({ type: 'tree', activityId: 'a-other', paths: ['new.ts'] }));
-  expect(treeReads()).toBe(1);
+  expect(treeReads()).toBe(2);
   act(() => emitTreeEvent({ type: 'tree', activityId: 'a-I1', paths: ['new.ts'] }));
   expect(await screen.findByTitle('new.ts')).toBeInTheDocument();
 });
