@@ -1,10 +1,15 @@
-import { test } from 'node:test';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import { test, type TestContext } from 'node:test';
+import { setTimeout as sleep } from 'node:timers/promises';
+import express from 'express';
+import { SECRET_HEADER } from '../../src/secret.js';
 import assert from 'node:assert/strict';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { INTERVENTIONS_FILE } from '../../src/benchmark/metrics.js';
 import { MARKER_FILE } from '../../src/benchmark/run-home.js';
-import { createRecorder, readMarker, TERMINAL_INPUT, writeMarker } from '../../src/benchmark/run-mode.js';
+import { createRecorder, type InterventionRecorder, readMarker, registerRunMode, TERMINAL_INPUT, writeMarker } from '../../src/benchmark/run-mode.js';
 import { tempDir } from '../temp-dir.js';
 import { runMarker } from './fixtures.js';
 
@@ -59,4 +64,66 @@ test('a broken interventions.json is left as it is: the record resolves, logs on
   assert.equal(lines.length, 1);
   assert.match(lines[0], /interventions\.json not written/);
   assert.ok(!lines[0].includes('/tasks'), 'the log never quotes what the user did');
+});
+
+// The gate in server.ts already ran: what tells the viewer's page from a worker is only the missing x-hive-secret
+const VIEWER = { 'x-hive-ui': '1' };
+const WORKER = { [SECRET_HEADER]: 'w'.repeat(64), 'x-hive-ui': '1' };
+
+interface Harness { base: string; recorder: InterventionRecorder; approved: string[] }
+async function runApp(t: TestContext, frozen = false): Promise<Harness> {
+  const recorder = createRecorder(await tempDir(t, 'run-home-'), () => new Date(AT), () => undefined);
+  const approved: string[] = [];
+  const app = express();
+  registerRunMode(app, { marker: runMarker({ frozen }), recorder });
+  app.post('/tasks/:id/approve', (req, res) => {
+    approved.push(String(req.params.id));
+    res.status(req.params.id === 'nope' ? 404 : 200).json({ ok: true });
+  });
+  app.post('/view-state/:key', (_req, res) => void res.json({ ok: true }));
+  app.post('/hooks/event', (_req, res) => void res.status(204).end());
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, recorder, approved };
+}
+
+async function post(base: string, path: string, headers: Record<string, string>): Promise<number> {
+  const res = await fetch(`${base}${path}?tab=2`, { method: 'POST', headers });
+  await res.body?.cancel();
+  return res.status;
+}
+
+// 'finish' fires as the answer leaves, so a read right after the response may come first: wait for the one that counts, then compare everything
+async function settled(recorder: InterventionRecorder, count: number) {
+  for (let i = 0; i < 100 && (await recorder.list()).length < count; i += 1) await sleep(5);
+  return recorder.list();
+}
+
+test('a viewer write answered below 400 records the method and route pattern with the path and no query; a worker\'s, a refused one, view-state and hooks record nothing (#475)', async (t) => {
+  const h = await runApp(t);
+  assert.equal(await post(h.base, '/tasks/RUN-AB12-3/approve', WORKER), 200);
+  assert.equal(await post(h.base, '/tasks/nope/approve', VIEWER), 404);
+  assert.equal(await post(h.base, '/view-state/consoleHeight', VIEWER), 200);
+  assert.equal(await post(h.base, '/hooks/event', VIEWER), 204);
+  assert.equal(await post(h.base, '/tasks/RUN-AB12-3/approve', VIEWER), 200); // the one that counts, last: the others had their chance
+  assert.deepEqual(await settled(h.recorder, 1), [entry('POST /tasks/:id/approve', '/tasks/RUN-AB12-3/approve')]);
+});
+
+test('frozen: a viewer write is refused with 409 frozen before its route runs; view-state, hooks and a worker\'s write pass, and nothing is recorded (#475)', async (t) => {
+  const h = await runApp(t, true);
+  const res = await fetch(`${h.base}/tasks/RUN-AB12-3/approve`, { method: 'POST', headers: VIEWER });
+  assert.deepEqual([res.status, await res.json()], [409, { error: 'frozen' }]);
+  assert.deepEqual(h.approved, [], 'the route never ran');
+  assert.equal(await post(h.base, '/view-state/consoleHeight', VIEWER), 200);
+  assert.equal(await post(h.base, '/hooks/event', VIEWER), 204);
+  assert.equal(await post(h.base, '/tasks/RUN-AB12-3/approve', WORKER), 200, 'the main Hive and the run\'s own clients still reach it');
+  assert.deepEqual(await settled(h.recorder, 1), []);
+});
+
+test('GET /benchmark-run answers the marker and the interventions so far (#475)', async (t) => {
+  const h = await runApp(t);
+  await h.recorder.record('POST /signal', '/signal');
+  const res = await fetch(`${h.base}/benchmark-run`, { headers: WORKER });
+  assert.deepEqual([res.status, await res.json()], [200, { marker: runMarker(), interventions: [entry('POST /signal', '/signal')] }]);
 });

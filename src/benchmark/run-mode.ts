@@ -3,10 +3,13 @@
 // refuses them and starts no run. hive.ts reads the marker before createServer.
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { Express, NextFunction, Request, Response } from 'express';
 import { createJsonStore } from '../json-store.js';
+import { SECRET_HEADER } from '../secret.js';
+import { HOOKS_PREFIX, WRITE_METHODS } from '../server-facts.js';
 import { isJsonObject } from '../state-guards.js';
 import { BENCH_TOKEN, EXPERIMENT_ID, type Intervention } from '../types.js';
-import { INTERVENTIONS_FILE, interventionsOf } from './metrics.js';
+import { INTERVENTIONS_FILE, interventionsOf, RUN_ROUTE } from './metrics.js';
 import { MARKER_FILE, type RunMarker } from './run-home.js';
 
 const isText = (value: unknown): value is string => typeof value === 'string';
@@ -90,4 +93,36 @@ export function createRecorder(home: string, now: () => Date, log: (line: string
     },
     list: () => store.update(STORE_KEY, (list) => list), // queued behind the writes in flight; the same list writes nothing
   };
+}
+
+const HTTP_CONFLICT = 409;
+const HTTP_ERROR = 400; // a refused request changed nothing
+const VIEW_STATE_PREFIX = '/view-state/';
+
+export interface RunMode { marker: RunMarker; recorder: InterventionRecorder }
+
+// What the user did in the run's window. The viewer's page authenticates with its HttpOnly cookie and cannot send x-hive-secret, which a
+// worker, the CLI, the menu bar and the main Hive always send. The view state is the window's layout and the hooks are the workers', so
+// neither is the user's act
+const isViewerWrite = (req: Request): boolean =>
+  WRITE_METHODS.includes(req.method) && req.header(SECRET_HEADER) === undefined && !req.path.startsWith(HOOKS_PREFIX) && !req.path.startsWith(VIEW_STATE_PREFIX);
+
+/** Mounted right after server.ts's secret gate, before the body parser: GET /benchmark-run (2.9's shell and the main Hive's watcher), and
+ *  each viewer write refused when frozen (the run branch must not change after its evaluation) or recorded once it answered below 400. */
+export function registerRunMode(app: Express, mode: RunMode): void {
+  app.get(RUN_ROUTE, async (_req: Request, res: Response) => {
+    res.json({ marker: mode.marker, interventions: await mode.recorder.list() });
+  });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (!isViewerWrite(req)) return next();
+    if (mode.marker.frozen) return void res.status(HTTP_CONFLICT).json({ error: 'frozen' });
+    const detail = req.path; // the concrete path without the query; never the body, which can carry the user's own text
+    res.on('finish', () => {
+      if (res.statusCode >= HTTP_ERROR) return;
+      // The matched route's pattern, read on finish as httpRecords reads it; a write that matched no route never answers below 400
+      const route: unknown = req.route?.path;
+      void mode.recorder.record(`${req.method} ${typeof route === 'string' ? route : detail}`, detail);
+    });
+    next();
+  });
 }
