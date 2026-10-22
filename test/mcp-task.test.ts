@@ -96,6 +96,8 @@ test('taskComments reads the comments by the task\'s itemId, leaves them out for
   assert.deepEqual(await taskComments(undefined, LEAF), {});
   const failing = { comments: async (): Promise<TaskComment[]> => { throw new Error('API rate limit exceeded'); } };
   assert.deepEqual(await taskComments(failing, LEAF), { commentsError: 'API rate limit exceeded' });
+  const dumping = { comments: async (): Promise<TaskComment[]> => { throw new Error('HTTP 500\nrequest: GET /x'); } };
+  assert.deepEqual(await taskComments(dumping, LEAF), { commentsError: 'HTTP 500' });
 });
 
 type Sources = ReadonlyMap<string, Pick<Source, 'create' | 'comments'>>;

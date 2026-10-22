@@ -73,7 +73,7 @@ export async function taskComments(source: Pick<Source, 'comments'> | undefined,
   try {
     return { comments: await source.comments(task.item.itemId) };
   } catch (err) {
-    return { commentsError: errorMessage(err) };
+    return { commentsError: errorMessage(err).split('\n')[0] ?? '' }; // the first line only: a request dump below it never reaches the model
   }
 }
 
