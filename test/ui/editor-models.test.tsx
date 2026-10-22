@@ -224,3 +224,13 @@ test('renamed carries the file\'s base pick to the new path, as it does the view
   expect([fileBase.chosenBase(A, 'lib/a.ts'), fileBase.chosenBase(A, 'src/a.ts')]).toEqual(['task', 'head']);
   fileBase.choose(A, 'lib/a.ts', 'head');
 });
+
+test('isImagePath reads IMAGE_TYPES by the extension, in any case; readImage reads the image route, a refusal rejecting with its status and words (#498)', async () => {
+  expect(['a.png', 'b/C.JPG', 'd.jpeg', 'e.gif', 'f.webp', 'g.SVG'].map((path) => models.isImagePath(path))).toEqual(new Array<boolean>(6).fill(true));
+  expect(['a.ico', 'png', '.png', 'a.png.txt', 'src/a.ts'].map((path) => models.isImagePath(path))).toEqual(new Array<boolean>(5).fill(false));
+  expect(models.fileUrl(A, 'shots/a.png', 'image')).toBe('/activities/a-I1/image?path=shots%2Fa.png');
+  fetchMock.mockImplementationOnce(async () => new Response(new Uint8Array(3)));
+  expect((await models.readImage(A, 'a.png')).size).toBe(3);
+  expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/activities/a-I1/image?path=a.png');
+  await expect(models.readImage(A, 'missing.png')).rejects.toMatchObject({ status: 415, message: 'arquivo binário ou fora de UTF-8' });
+});
