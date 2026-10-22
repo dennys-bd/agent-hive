@@ -43,7 +43,8 @@ const scopeText = (varies: boolean): string => t(varies ? 'benchmark.config.iso.
 
 function ReadRow({ k, row, arms, risky }: { k: IsoKey; row: IsolationRow<string[]>; arms: readonly Arm[]; risky: readonly Arm[] }) {
   const isRisky = (armId?: string): boolean => k === 'permissionMode' && (armId === undefined ? risky.length > 0 : risky.some((a) => a.id === armId));
-  const shared = row.all.length === 0 ? <None /> : row.all.map((value) => <Pill key={value} isMono isRisk={isRisky()}>{value}</Pill>);
+  // biome-ignore lint/suspicious/noArrayIndexKey: a list row can repeat an entry, so the value alone is no key
+  const shared = row.all.length === 0 ? <None /> : row.all.map((value, i) => <Pill key={`${i}:${value}`} isMono isRisk={isRisky()}>{value}</Pill>);
   const perArm = arms.map((arm) => <Pill key={arm.id} isMono arm={arm.letter} isRisk={isRisky(arm.id)}>{resolve(row, arm.id).join(', ') || '—'}</Pill>);
   return (
     <Row label={label(k)} hint={hint(k)} isIsolation side={isFixed(k) ? undefined : scopeText(row.perArm !== undefined)}>

@@ -65,7 +65,8 @@ export const None = () => <span className="text-muted-foreground text-xs">{t('be
 
 export function Values({ texts, isMono = false }: { texts: readonly string[]; isMono?: boolean }) {
   if (texts.length === 0) return <None />;
-  return <>{texts.map((text) => <Pill key={text} isMono={isMono}>{text}</Pill>)}</>;
+  // biome-ignore lint/suspicious/noArrayIndexKey: read-only pills can repeat (two collectors alike, a repeated rubric line), so the text alone is no key
+  return <>{texts.map((text, i) => <Pill key={`${i}:${text}`} isMono={isMono}>{text}</Pill>)}</>;
 }
 
 export const FieldError = ({ children }: { children: ReactNode }) => <p role="alert" className="w-full text-destructive text-xs">{children}</p>;
