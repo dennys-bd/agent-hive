@@ -5,20 +5,13 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listFiles } from '../item-sources.js';
 import type { BenchSeed, BenchTask } from '../types.js';
+import { byCodePoint, canonicalJson } from './canonical.js';
 import { isUpload, seedEntries, seedFilePath, seedRepo } from './store.js';
 
 export interface TreeReads { list(dir: string): Promise<string[]>; read(path: string): Promise<Buffer> }
 export const FS_READS: TreeReads = { list: listFiles, read: (path) => readFile(path) };
 
-const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const sorted = (paths: readonly string[]): string[] => [...paths].sort(byCodePoint);
-
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (typeof value !== 'object' || value === null) return JSON.stringify(value);
-  const entries = Object.entries(value).filter(([, v]) => v !== undefined).sort(([a], [b]) => byCodePoint(a, b));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
-}
 
 // path\0content\0: a path never runs into the bytes of the file before it
 function addFile(hash: Hash, path: string, bytes: Buffer): void {
