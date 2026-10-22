@@ -1129,6 +1129,9 @@ const en = {
   'settings.workspaces.step.run': 'RUN command',
   'settings.workspaces.step.load': 'LOAD file',
   'settings.workspaces.step.del': 'DEL path',
+  'settings.workspaces.benchmarkPrIn': 'Benchmark PRs', // #477: where a benchmark run's PR is rebased and pushed from
+  'settings.workspaces.benchmarkPrIn.worktree': 'in a temporary worktree',
+  'settings.workspaces.benchmarkPrIn.checkout': "in the workspace's checkout",
   'settings.commands.name': 'name of command {n}',
   'settings.commands.command': 'command line {n} · {workspace}', // #755: one per line of the command
   'settings.commands.env': 'variables of "{name}" · only for this command, and they win over the workspace\'s',
@@ -3449,6 +3452,9 @@ const pt: Record<MessageKey, string> = {
   'settings.workspaces.step.run': 'RUN comando',
   'settings.workspaces.step.load': 'LOAD arquivo',
   'settings.workspaces.step.del': 'DEL caminho',
+  'settings.workspaces.benchmarkPrIn': 'PRs de benchmark',
+  'settings.workspaces.benchmarkPrIn.worktree': 'numa worktree temporária',
+  'settings.workspaces.benchmarkPrIn.checkout': 'no checkout do workspace',
   'settings.commands.name': 'nome do comando {n}',
   'settings.commands.command': 'linha de comando {n} · {workspace}',
   'settings.commands.env': 'variáveis de "{name}" · valem só para este comando e vencem as do workspace',

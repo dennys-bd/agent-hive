@@ -3,6 +3,7 @@ import { type ReactNode, useId } from 'react';
 import { toast } from 'sonner';
 import { EnvEditor } from '@/components/settings/EnvEditor';
 import { MemorySection } from '@/components/settings/MemorySection';
+import { WorkspaceBenchmarkPr } from '@/components/settings/WorkspaceBenchmarkPr';
 import { WorkspaceColorPicker } from '@/components/settings/WorkspaceColorPicker';
 import { WorkspaceFork } from '@/components/settings/WorkspaceFork';
 import { WorkspaceNestedRepos } from '@/components/settings/WorkspaceNestedRepos';
@@ -122,6 +123,8 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
         script="teardown" n={n} context={row.id} text={row.teardown} timeout={row.teardownTimeout} placeholder="RUN docker compose down" timeoutPlaceholder="2m"
         onText={(teardown) => onChange({ teardown })} onTimeout={(teardownTimeout) => onChange({ teardownTimeout })}
       />
+      {/* #477: where a benchmark run's PR is rebased and pushed from */}
+      <WorkspaceBenchmarkPr row={row} onChange={onChange} />
       {/* #348: exported before every command run in it, under a command's own */}
       <CardGroup title={t('settings.env.group')} hint={t('settings.env.hint')} anchor={settingAnchor('settings.env.group', row.id)}>
         <EnvEditor label={t('settings.workspaceEnv', { workspace: row.name.trim() })} rows={row.env} onChange={(env) => onChange({ env })} />

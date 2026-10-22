@@ -328,3 +328,18 @@ test('a picked colour is part of the draft and the save sends it (#78)', async (
   await save(user, onSaved);
   expect(posted().workspaces.map((w) => w.color)).toEqual([PRESETS[3], PRESETS[1]]);
 });
+
+test('the workspace card\'s PRs de benchmark select shows the saved value and sends the one picked (#477)', async () => {
+  const user = userEvent.setup();
+  const onSaved = vi.fn();
+  render(<Settings info={info} onSaved={onSaved} />);
+  await open(user, 'workspaces');
+  const card = within(screen.getByRole('region', { name: 'hive' }));
+  const select = card.getByRole('combobox', { name: 'PRs de benchmark' });
+  expect(select).toHaveTextContent('numa worktree temporária');
+  await user.click(select);
+  await user.click(screen.getByRole('option', { name: 'no checkout do workspace' }));
+  expect(select).toHaveTextContent('no checkout do workspace');
+  await save(user, onSaved);
+  expect(posted().workspaces.map((w) => w.benchmarkPrIn)).toEqual(['checkout', 'worktree']);
+});

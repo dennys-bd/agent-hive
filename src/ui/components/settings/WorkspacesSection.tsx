@@ -27,7 +27,7 @@ function workspaceEntries(row: SettingsDraft['workspaces'][number], i: number): 
     'settings.workspaces.color', 'settings.workspaces.name', 'settings.workspaces.path', 'settings.fork.group', 'settings.fork.isFork',
     ...(row.fork ? (['settings.fork.remote', 'settings.fork.pr'] as const) : []),
     ...(row.fork && row.fork.pr !== 'original' ? (['settings.fork.sync'] as const) : []),
-    'settings.nested.group', 'settings.workspaces.setup', 'settings.workspaces.teardown', 'settings.env.group', 'settings.memory.group',
+    'settings.nested.group', 'settings.workspaces.setup', 'settings.workspaces.teardown', 'settings.workspaces.benchmarkPrIn', 'settings.env.group', 'settings.memory.group',
   ] as const;
   const timeouts = (['setup', 'teardown'] as const).map((script): SettingEntry => ({
     label: 'settings.workspaces.stepTimeout', path: [...path, `settings.workspaces.${script}`], view, anchor: settingAnchor('settings.workspaces.stepTimeout', `${row.id}-${script}`),
