@@ -1246,7 +1246,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
-  const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { exec, log }));
+  const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
   const itemStore: ItemStore | undefined = deps.readModel && { db: deps.readModel, source: async () => (await readAccess())?.source, notify: notifyReadModel };
   const readLoop = deps.readModel && createReadModelLoop({
@@ -1254,7 +1254,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
   });
   registerProjectRoutes(app, { requireLive, dispatch, log, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
-  // #181: the reads answer from the model, as the login the sync reads with (ponytail: one gh config get per read in cli mode); the writes
+  // #181: the reads answer from the model, as the login the sync reads with (ponytail: a stat of gh's hosts.yml per read in cli mode); the writes
   // go to GitHub with the Hive's own login (#757), and their answer is upserted and named by the sync's own readModel event (#183)
   const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : {
     readModel: { db: deps.readModel, source: async () => (await readAccess())?.source, refetch: readLoop.refetch, notify: notifyReadModel },

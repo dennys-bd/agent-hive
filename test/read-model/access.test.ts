@@ -1,56 +1,69 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { createGhToken, type GhToken } from '../../src/github-token.js';
 import { accessFor } from '../../src/read-model/access.js';
-import type { GhRun } from '../../src/read-model/rest.js';
 import type { Exec } from '../../src/types.js';
 import { SOURCE } from './fixtures.js';
 
-const NOT_MODIFIED = 'HTTP/2.0 304 Not Modified\n\r\n';
 const PATH = 'repos/acme/hive/issues';
-const noGh: Exec = async () => {
-  throw new Error('spawn gh ENOENT');
-};
+const TOKEN_RUN = ['gh', 'auth', 'token', '--hostname', 'github.com'];
+const NO_HOLDER: GhToken = { login: async () => { throw new Error('api read the holder'); }, token: async () => { throw new Error('api read gh'); }, invalidate: () => undefined };
 
-test('cli: the source is gh\'s github.com login, read from its config with no request, and gh runs as is (#180)', async () => {
-  const calls: string[][] = [];
-  const exec: Exec = async (file, args) => {
-    calls.push([file, ...args]);
-    return { stdout: 'bia\n' };
-  };
-  const envs: (NodeJS.ProcessEnv | undefined)[] = [];
-  const run: GhRun = async (_args, env) => {
-    envs.push(env);
-    return NOT_MODIFIED;
-  };
-  const access = await accessFor('cli', { exec, run });
-  assert.equal(access?.source, SOURCE);
-  assert.deepEqual(calls, [['gh', 'config', 'get', 'user', '--host', 'github.com']]);
-  await access?.rest(PATH, 'W/"e"');
-  assert.deepEqual(envs, [{ GH_HOST: 'github.com', GH_TOKEN: undefined, GITHUB_TOKEN: undefined, GH_ENTERPRISE_TOKEN: undefined }],
-    'gh reads as its own login: the inherited tokens are dropped and the host is github.com');
-});
+/** A fetch answering `status` to every call, recording the headers. */
+function answering(status: number): { doFetch: typeof fetch; headers: Record<string, string>[] } {
+  const headers: Record<string, string>[] = [];
+  const doFetch = (async (_url: string | URL | Request, init: RequestInit = {}) => {
+    headers.push(init.headers as Record<string, string>);
+    return new Response(null, { status });
+  }) as unknown as typeof fetch;
+  return { doFetch, headers };
+}
 
-test('cli: gh with no login, or no gh at all, is no access (#180)', async () => {
-  assert.equal(await accessFor('cli', { exec: async () => ({ stdout: '\n' }) }), undefined);
-  assert.equal(await accessFor('cli', { exec: noGh }), undefined);
-});
-
-test('api: the source is the stored login, and gh gets the stored token as GH_TOKEN, never in its argv (#180)', async () => {
+/** The real holder over a fake hosts.yml naming `login`, and a gh that only answers the token. */
+function holderOf(login: string): { ghToken: GhToken; runs: string[][]; token: string } {
   const token = `test-${randomUUID()}`; // built at runtime: no token in a fixture
-  const seen: { args: string[]; env?: NodeJS.ProcessEnv }[] = [];
-  const run: GhRun = async (args, env) => {
-    seen.push({ args, env });
-    return NOT_MODIFIED;
+  const runs: string[][] = [];
+  const exec: Exec = async (file, args) => {
+    runs.push([file, ...args]);
+    return { stdout: `${token}\n` };
   };
-  const access = await accessFor('api', { exec: noGh, credentials: async () => ({ github: { token, login: 'bia' } }), run });
+  const text = login === '' ? '' : `github.com:\n    user: ${login}\n`;
+  return { ghToken: createGhToken({ exec, env: { GH_CONFIG_DIR: '/cfg/gh' }, stat: async () => ({ mtimeMs: 1 }), readFile: async () => text }), runs, token };
+}
+
+test('cli: the source is hosts.yml\'s login with no gh run, and REST carries the token gh answered (#503)', async () => {
+  const { ghToken, runs, token } = holderOf('bia');
+  const { doFetch, headers } = answering(304);
+  const access = await accessFor('cli', { ghToken, fetch: doFetch });
+  assert.equal(access?.source, SOURCE);
+  assert.deepEqual(runs, [], 'no gh config get');
+  assert.deepEqual(await access?.rest(PATH, 'W/"e"'), { status: 304 });
+  assert.deepEqual(runs, [TOKEN_RUN]);
+  assert.equal(headers[0]?.Authorization, `Bearer ${token}`);
+});
+
+test('cli: a 401 drops the token, so the next request reads it again (#503)', async () => {
+  const { ghToken, runs } = holderOf('bia');
+  const access = await accessFor('cli', { ghToken, fetch: answering(401).doFetch });
+  await assert.rejects(access!.rest(PATH), { message: 'github rest: HTTP 401' });
+  await assert.rejects(access!.rest(PATH), { message: 'github rest: HTTP 401' });
+  assert.deepEqual(runs, [TOKEN_RUN, TOKEN_RUN]);
+});
+
+test('cli: no login in hosts.yml is no access (#503)', async () => {
+  assert.equal(await accessFor('cli', { ghToken: holderOf('').ghToken }), undefined);
+});
+
+test('api: the source is the stored login, and REST sends the stored token as the bearer; the holder is never read (#503)', async () => {
+  const token = `test-${randomUUID()}`;
+  const { doFetch, headers } = answering(304);
+  const access = await accessFor('api', { ghToken: NO_HOLDER, credentials: async () => ({ github: { token, login: 'bia' } }), fetch: doFetch });
   assert.equal(access?.source, SOURCE);
   await access?.rest(PATH, 'W/"e"');
-  assert.equal(seen[0]?.env?.GH_TOKEN, token);
-  assert.equal(seen[0]?.env?.GH_HOST, 'github.com', 'an inherited GH_HOST never receives the token');
-  assert.ok(!seen[0]?.args.some((arg) => arg.includes(token)));
+  assert.equal(headers[0]?.Authorization, `Bearer ${token}`);
 });
 
 test('api: nothing stored is no access (#180)', async () => {
-  assert.equal(await accessFor('api', { exec: noGh, credentials: async () => ({}) }), undefined);
+  assert.equal(await accessFor('api', { ghToken: NO_HOLDER, credentials: async () => ({}) }), undefined);
 });

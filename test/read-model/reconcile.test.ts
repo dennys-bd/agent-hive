@@ -2,14 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SyncStopped } from '../../src/read-model/sync.js';
 import { reconcile, refetchIssue } from '../../src/read-model/reconcile.js';
-import { ghRest } from '../../src/read-model/rest.js';
+import { httpRest } from '../../src/read-model/rest.js';
 import type { Gql } from '../../src/types.js';
 import {
   CLOSING_PRS, commentRow, fakeLinks, fakeRest, GQL_CLOSING_PRS, issueRow, NOW, ok, REPO, restComment, restIssue, SOURCE, SYNCED, T1, T2, tempModel,
 } from './fixtures.js';
-
-// gh's -i output as rest.test.ts writes it: the status line ends in \n, the headers in \r\n
-const http = (headers: string[], body: unknown): string => `HTTP/2.0 200 OK\n${[...headers, '', JSON.stringify(body)].join('\r\n')}`;
 
 test('the full listing removes the issues and comments GitHub no longer lists, reports their kinds and stamps the reconcile scope (#180)', async (t) => {
   const db = await tempModel(t);
@@ -40,7 +37,8 @@ test('a Link outside the repository aborts the full listing before its delete: n
   const db = await tempModel(t);
   db.upsertIssue(issueRow(1, T1), 'sync');
   db.upsertIssue(issueRow(2, T1), 'sync');
-  const rest = ghRest(async () => http(['Link: <https://api.github.com/repos/acme/elsewhere/issues?page=2>; rel="next"'], [restIssue(1, T1)]));
+  const page = new Response(JSON.stringify([restIssue(1, T1)]), { status: 200, headers: { Link: '<https://api.github.com/repos/acme/elsewhere/issues?page=2>; rel="next"' } });
+  const rest = httpRest({ token: async () => 'test-token', fetch: (async () => page) as unknown as typeof fetch });
   await assert.rejects(reconcile({ db, rest, source: SOURCE, now: NOW }, REPO), { message: 'github rest: next page outside the repository' });
   assert.deepEqual(db.nodeIds(SOURCE, REPO, 'issues').sort(), ['I_1', 'I_2']);
   assert.equal(db.scope(SOURCE, REPO, 'reconcile'), undefined);

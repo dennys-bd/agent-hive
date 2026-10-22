@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type SourceFactory } from '../src/server.js';
+import type { GhToken } from '../src/github-token.js';
 import type { Exec, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive } from './fakes.js';
@@ -20,8 +21,9 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
 const postJson = (url: string, body: unknown): Promise<Response> =>
   hiveFetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body) });
 
-// gh's login is bia and every workspace's origin is acme/hive
+// gh's login is bia (its hosts.yml, #503) and every workspace's origin is acme/hive
 const exec: Exec = async (file) => ({ stdout: file === 'gh' ? 'bia\n' : `git@github.com:${REPO}.git\n` });
+const ghToken: GhToken = { login: async () => 'bia', token: async () => { throw new Error('no token in this test'); }, invalidate: () => undefined };
 
 test('GET /repositories answers from the read model as the login gh names, with no GraphQL call (#181)', async (t: TestContext) => {
   const { db } = await openReadModel(join(await tempDir(t, 'read-model-'), READ_MODEL_FILE)); // the server's close() closes it
@@ -46,7 +48,7 @@ test('a Settings save builds the GitHub adapters with the item store: the daemon
     stores.push(items);
     return fake.factory(spec);
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: fakeSpawn().spawn, exec, readModel: db });
+  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: fakeSpawn().spawn, exec, readModel: db, ghToken });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY })).status, 200);
