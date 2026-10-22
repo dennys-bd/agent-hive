@@ -842,6 +842,7 @@ export interface BenchRun {
   token: string; armId: string; round: number; status: BenchRunStatus; reason?: string; home: string; branch: string;
   startedAt?: string; endedAt?: string; sleptMs: number; delivered: number; total: number;
   metrics?: BenchMetrics; evaluation?: BenchRunEvaluation; interventions: Intervention[]; inMedian?: boolean;
+  unpriced?: string[]; // #473: models off the price table, costed 0
 }
 export interface BenchTaskMetrics { key: string; title: string; tokens: number; ms: number; waitingMs: number; stages: { stage: string; ms: number }[]; restarts: number }
 export interface BenchMetrics { tokens: number; costUsd: number; ms: number; waitingMs: number; restarts: { count: number; where: string[] }; diff: { files: number; insertions: number; deletions: number }; tests: { green: number; total: number }; tasks: BenchTaskMetrics[] }
@@ -859,7 +860,7 @@ export const EXPERIMENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const BENCH_TOKEN = /^[a-z0-9]{4,16}$/;
 
 export type ExperimentPatch = Partial<Pick<Experiment, 'name' | 'base' | 'seed' | 'seedHash' | 'tasksHash' | 'pace' | 'isolation' | 'blindness' | 'evaluation'>>;
-export type BenchRunPatch = Partial<Pick<BenchRun, 'status' | 'reason' | 'delivered' | 'total' | 'sleptMs' | 'metrics' | 'evaluation' | 'interventions' | 'inMedian'>>;
+export type BenchRunPatch = Partial<Pick<BenchRun, 'status' | 'reason' | 'delivered' | 'total' | 'sleptMs' | 'metrics' | 'evaluation' | 'interventions' | 'inMedian' | 'unpriced'>>;
 /** An experiment's life (#458): the routes build what needs I/O and check the transitions; benchmark-reducer.ts only applies. */
 export type BenchmarkEvent =
   | { type: 'benchmarkCreated'; experiment: Experiment } // empty and duplicate alike

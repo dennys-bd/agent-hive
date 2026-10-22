@@ -170,3 +170,9 @@ test("a benchmark event's log line names the experiment and the run's token only
   assert.equal(describeEvent({ type: 'benchmarkRunStarted', id: 'exp-1', run: run('bbbb1') }), 'benchmarkRunStarted experiment=exp-1 run=bbbb1');
   assert.equal(describeEvent({ type: 'benchmarkEdited', id: 'exp-1', patch: { name: 'secret' } }), 'benchmarkEdited experiment=exp-1');
 });
+
+test('benchmarkRunChanged stores the models off the price table (#473)', () => {
+  const before = deepFreeze(stateWith(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('aaaa')] }] })));
+  const after = benchmarkReduce(before, { type: 'benchmarkRunChanged', id: 'exp-1', token: 'aaaa', patch: { unpriced: ['model-z'] } });
+  assert.deepEqual(after.benchmark.experiments[0].rounds[0].runs[0].unpriced, ['model-z']);
+});
