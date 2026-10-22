@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { Express, Request, Response } from 'express';
 import type { z } from 'zod';
 import { type ArmRefusal, armFrom, checkArm, checkRemove, checkTargets, isArmRefusal, isLocked } from './benchmark/arms.js';
+import type { BenchEvaluator } from './benchmark/evaluate-service.js';
 import { seedHash, tasksHash, treeHash } from './benchmark/hash.js';
 import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, forkName, forkOf, newId } from './benchmark/new-experiment.js';
 import { pluginTrees } from './benchmark/pin.js';
@@ -16,6 +17,7 @@ import { registerBenchmarkPrRoutes } from './server-benchmark-pr.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
 import { type BenchmarkEvent, type BenchSeed, type Config, type Exec, EXPERIMENT_ID, type Experiment, type ExperimentPatch, type State, type Workspace } from './types.js';
+import { registerBenchmarkEvaluateRoutes } from './server-benchmark-evaluate.js';
 import { type Git, gitOrWords } from './worktree-base.js';
 
 const HTTP_CREATED = 201;
@@ -37,6 +39,7 @@ export interface BenchmarkRouteDeps {
   pluginSource: string;
   exec: Exec;
   log: Logger; // the PR routes also warn (#477)
+  evaluator: BenchEvaluator; // #474
   version(): Promise<string>; // the Hive's version: the shipped plugin's (pluginVersion), as custom-store's hiveVersion
   now(): Date;
 }
@@ -295,4 +298,5 @@ export function registerBenchmarkRoutes(app: Express, deps: BenchmarkRouteDeps):
   registerExperimentRoutes(app, deps, queue);
   registerArmRoutes(app, deps, queue);
   registerBenchmarkPrRoutes(app, { getState: () => deps.getLive()?.state, getConfig: () => deps.getLive()?.runtime.config, hiveDir: deps.home, exec: execRun, gh: execRun, now: Date.now, log: deps.log }); // #477: GET and POST …/runs/:token/pr
+  registerBenchmarkEvaluateRoutes(app, { requireLive: deps.requireLive, evaluator: deps.evaluator, log: deps.log }); // #474
 }
