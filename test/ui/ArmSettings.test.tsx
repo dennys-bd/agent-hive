@@ -105,3 +105,20 @@ test('base mode: every field plain, no igual à base, closing posts the whole ba
   const base = { ...ARMS.base, stages: { ...ARMS.base.stages, spec: { ...ARMS.base.stages.spec, skill: '/x' } } };
   await waitFor(() => expect(posts(calls)).toEqual([{ method: 'PATCH', path: ARMS_PATH, body: { base } }]));
 });
+
+const PINNED = [{ id: 'hive:new-build', name: 'new-build', kind: 'skill', versions: ['tdd', 'terse'] }, { id: 'hive:new-spec', name: 'new-spec', kind: 'skill', versions: [] }];
+
+test('items lists the pinned items, each original or a pinned version; a pick is an items override (#462)', async () => {
+  const user = userEvent.setup();
+  const calls = stubBenchmarkFetch(undefined, PINNED);
+  const onClose = open(ARMS, 'a2');
+  const build = await screen.findByRole('combobox', { name: 'versão de hive:new-build' });
+  expect(build).toHaveTextContent('original');
+  await user.click(build);
+  await user.click(await screen.findByRole('option', { name: 'terse' }));
+  expect(screen.getByText('1 sobreposição')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { items: { 'hive:new-build': 'terse' } } } }]);
+  expect(calls).toContainEqual({ method: 'GET', path: `${ARMS_PATH}/items` });
+});

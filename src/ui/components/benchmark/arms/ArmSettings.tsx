@@ -4,6 +4,7 @@ import { canonicalJson } from '../../../../benchmark/canonical.js';
 import type { Arm, ArmSetup, Experiment, LaunchOptions } from '../../../../types';
 import { editArm, patchBase } from '@/components/benchmark/arms/arm-api';
 import { armRows, cleanSetup, countText, diffOverrides, readRow, type RowKey, rowLabel, type RowValues, writeRow } from '@/components/benchmark/arms/arm-rows';
+import { ItemsField } from '@/components/benchmark/arms/ItemsField';
 import { ListField, RulesField, WorktreeField } from '@/components/benchmark/arms/ListFields';
 import { RowGroup } from '@/components/benchmark/arms/RowGroup';
 import { StageFields } from '@/components/benchmark/arms/StageFields';
@@ -41,7 +42,7 @@ async function save(experiment: Experiment, arm: Arm | undefined, draft: Draft):
   return arm === undefined ? patchBase(experiment.id, setup) : editArm(experiment.id, arm.id, { overrides: diffOverrides(experiment.base, setup) });
 }
 
-function SettingsBody({ draft, options }: { draft: Draft; options?: LaunchOptions }) {
+function SettingsBody({ draft, options, experimentId }: { draft: Draft; options?: LaunchOptions; experimentId: string }) {
   const group = (key: RowKey, children: ReactNode): ReactNode => (
     <RowGroup key={key} label={t(rowLabel(key))} isArm={draft.isArm} isOverridden={draft.isOverridden(key)} onReset={() => draft.reset(key)}>{children}</RowGroup>
   );
@@ -50,6 +51,7 @@ function SettingsBody({ draft, options }: { draft: Draft; options?: LaunchOption
     <>
       <StageFields draft={draft} options={options} group={group} />
       {group('plugins', <ListField id="arm-plugins" label={t('benchmark.arms.settings.listHint')} value={setup.plugins} onChange={(v) => draft.edit('plugins', v)} />)}
+      {group('items', <ItemsField experimentId={experimentId} value={setup.items} onChange={(v) => draft.edit('items', v)} />)}
       {group('tasks', <TasksField value={setup.tasks} onChange={(v) => draft.edit('tasks', v)} />)}
       {group('rules', <RulesField value={setup.rules} onChange={(v) => draft.edit('rules', v)} />)}
       {group('worktree', <WorktreeField value={setup.worktree} onChange={(v) => draft.edit('worktree', v)} />)}
@@ -81,7 +83,7 @@ export function ArmSettings({ experiment, armId, onClose }: ArmSettingsProps) {
       <DialogContent size="wide" showCloseButton={false} className="max-h-[85vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription className="text-[13px]">{context}</DialogDescription></DialogHeader>
         <fieldset disabled={isLocked} className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
-          <SettingsBody draft={draft} options={options} />
+          <SettingsBody draft={draft} options={options} experimentId={experiment.id} />
         </fieldset>
         <DialogFooter><Button type="button" size="sm" onClick={() => void close()}>{t('benchmark.arms.settings.close')}</Button></DialogFooter>
       </DialogContent>

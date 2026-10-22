@@ -2500,6 +2500,11 @@ const en = {
   'benchmark.arms.add': '+ arm',
   'benchmark.arms.addHint': 'starts from the base, or copies what another arm overrides, tasks included',
   'benchmark.arms.addFromBase': 'from the base',
+  'benchmark.arms.settings.original': 'original',
+  'benchmark.arms.settings.versionOf': '{item} version',
+  'benchmark.arms.settings.itemsLoading': 'reading the pinned items…',
+  'benchmark.arms.settings.itemsFailed': 'the pinned items could not be read',
+  'benchmark.arms.settings.itemsNone': 'no item in the pin',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4994,6 +4999,11 @@ const pt: Record<MessageKey, string> = {
   'benchmark.arms.add': '+ braço',
   'benchmark.arms.addHint': 'parte da base, ou copia o que outro braço sobrepõe, inclusive as tarefas',
   'benchmark.arms.addFromBase': 'da base',
+  'benchmark.arms.settings.original': 'original',
+  'benchmark.arms.settings.versionOf': 'versão de {item}',
+  'benchmark.arms.settings.itemsLoading': 'lendo os itens fixados…',
+  'benchmark.arms.settings.itemsFailed': 'não foi possível ler os itens fixados',
+  'benchmark.arms.settings.itemsNone': 'nenhum item no pin',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

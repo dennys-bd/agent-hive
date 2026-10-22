@@ -30,13 +30,14 @@ export const EXPERIMENTS: Experiment[] = [DONE_OLD, ARCHIVED, DRAFT, RUNNING, MC
 export const WORKSPACES = ['agent-hive', 'hive-site'];
 
 export interface Call { method: string; path: string; body?: unknown }
-/** fetch for the experiments' routes: POST answers a new draft `new-1` (201), PATCH `{ id }`, DELETE 204; with `status` every call is refused. */
-export function stubBenchmarkFetch(status?: number): Call[] {
+/** fetch for the experiments' routes: POST answers a new draft `new-1` (201), PATCH `{ id }`, DELETE 204, GET …/items answers `items`; with `status` every call is refused. */
+export function stubBenchmarkFetch(status?: number, items: unknown[] = []): Call[] {
   const calls: Call[] = [];
   vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     const method = init?.method ?? 'GET';
     calls.push({ method, path, ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) as unknown }) });
     if (status !== undefined) return json({ error: 'refused', message: 'the raw words' }, status);
+    if (method === 'GET' && path.endsWith('/items')) return json({ items });
     if (method === 'POST') return json(experiment({ id: 'new-1', name: 'novo' }), 201);
     if (method === 'DELETE') return new Response(null, { status: 204 });
     return json({ id: path.split('/').at(-1) });
