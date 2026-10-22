@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RunDeps } from '../../src/benchmark/run-home.js';
 import { tempDir } from '../temp-dir.js';
+import type { DaemonClient } from '../../src/benchmark/daemon-client.js';
 import type { ChildLike } from '../../src/benchmark/daemon.js';
 import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
@@ -161,4 +162,36 @@ export function prAnswers(overrides: Record<string, string | Error> = {}): (call
     const hit = Object.entries(overrides).find(([prefix]) => text.startsWith(prefix)) ?? defaults.find(([prefix]) => text.startsWith(prefix));
     return hit === undefined ? '' : hit[1];
   };
+}
+
+export type StubClient = DaemonClient & { posts: string[] };
+
+/** A run daemon's client (#472) over a fixed snapshot: posts are recorded, and `down` makes every call reject as an unreachable daemon. */
+export function stubClient(snapshot: Snapshot, o: { down?: () => boolean } = {}): StubClient {
+  const posts: string[] = [];
+  const reach = async (): Promise<void> => { if (o.down?.()) throw new TypeError('fetch failed'); };
+  return {
+    posts,
+    payload: async () => { await reach(); return JSON.parse(JSON.stringify(snapshot)) as Record<string, unknown>; },
+    state: async () => { await reach(); return snapshot; },
+    setAuto: async (itemId) => { await reach(); posts.push(`auto ${itemId}`); },
+    setGreen: async () => { await reach(); posts.push('green'); },
+    sleepRuns: async (ptyIds) => { await reach(); posts.push(`sleep ${ptyIds.join(',')}`); },
+    continueActivity: async (activityId) => { await reach(); posts.push(`continue ${activityId}`); },
+  };
+}
+
+// Two activities with live stage runs, both stopped by a sleep; a third with nothing a sleep all lists (an empty worker, a free session)
+export const SLEEP_SNAP: Snapshot = snap(
+  [task(1, 'Build'), task(2, 'Build'), task(3, 'Spec')],
+  [worker(1, 'r1'), worker(1, 'r2'), worker(2, 'r3'), worker(3, 'r4', { status: 'empty' }), worker(3, 'r5', { freeSession: true })],
+  [{ stopped: true }, { stopped: true }, {}],
+);
+
+/** Waits a macrotask at a time until the check holds: the runner's loops run in the background. Fails instead of hanging. */
+export async function until(check: () => boolean, tries = 1_000): Promise<void> {
+  for (let i = 0; !check(); i += 1) {
+    if (i >= tries) throw new Error('until: the condition never held');
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
