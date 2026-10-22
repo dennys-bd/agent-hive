@@ -92,12 +92,14 @@ export function sleptSoFar(experiment: Experiment | undefined, token: string, no
   return open === undefined ? run.sleptMs : run.sleptMs + spanOf(open, run, now);
 }
 
-/** The wake's events (spec "Wake"): benchmarkWoken, then the open sleep's span added to every slept run's sleptMs. Read before the dispatch. */
+/** The wake's events (spec "Wake"): the open sleep's span added to every slept run's sleptMs, then benchmarkWoken. Read before the dispatch.
+ *  The patches go first: while the sleep is open the timeout clock adds its span, so the gap between the two can only count slept time twice
+ *  (a later timeout), never leave it out (an early one). */
 export function wokenEvents(experiment: Experiment, at: Date): BenchmarkEvent[] {
   const open = openSleep(experiment);
   const patches = open === undefined ? [] : runsOf(experiment).filter((r) => SLEPT.includes(r.status)).map((r): BenchmarkEvent =>
     ({ type: 'benchmarkRunChanged', id: experiment.id, token: r.token, patch: { sleptMs: r.sleptMs + spanOf(open, r, at) } }));
-  return [{ type: 'benchmarkWoken', id: experiment.id, at: at.toISOString() }, ...patches];
+  return [...patches, { type: 'benchmarkWoken', id: experiment.id, at: at.toISOString() }];
 }
 
 /** The wake dialog's options (2.8): absent keeps the deadline, and the cap stays as it is. */

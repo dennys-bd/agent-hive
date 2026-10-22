@@ -41,11 +41,11 @@ test('sleptSoFar is the recorded sleep, plus the open sleep while the experiment
   assert.equal(sleptSoFar(undefined, 'aaaa1', LATER), 0);
 });
 
-test("wokenEvents: benchmarkWoken, then each running, waiting or sleeping run gains the open sleep's span; an ended run none (#472)", () => {
+test("wokenEvents: each running, waiting or sleeping run gains the open sleep's span, then benchmarkWoken; an ended run none (#472)", () => {
   assert.deepEqual(wokenEvents(SLEEPING, LATER), [
-    { type: 'benchmarkWoken', id: 'exp-1', at: LATER.toISOString() },
     { type: 'benchmarkRunChanged', id: 'exp-1', token: 'aaaa1', patch: { sleptMs: 3_600_000 + 30 * 60_000 } },
     { type: 'benchmarkRunChanged', id: 'exp-1', token: 'aaaa2', patch: { sleptMs: 20 * 60_000 } },
+    { type: 'benchmarkWoken', id: 'exp-1', at: LATER.toISOString() },
   ]);
 });
 

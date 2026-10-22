@@ -56,8 +56,8 @@ test('sleep records the sleep and posts /ptys/sleep once per activity of every l
   r.advance(60_000);
   await r.runner.wake('exp-1', 'finish-round');
   for (const client of r.io.clients.values()) assert.deepEqual(client.posts.slice(2), ['continue act-1', 'continue act-2']);
-  const woken = r.events.slice(r.events.findIndex((e) => e.type === 'benchmarkWoken'));
-  assert.deepEqual(woken.map((e) => e.type), ['benchmarkWoken', 'benchmarkRunChanged', 'benchmarkRunChanged', 'benchmarkStopAfterRound']);
+  const woken = r.events.slice(r.events.findIndex((e) => e.type === 'benchmarkSlept') + 1);
+  assert.deepEqual(woken.map((e) => e.type).slice(0, 4), ['benchmarkRunChanged', 'benchmarkRunChanged', 'benchmarkWoken', 'benchmarkStopAfterRound']);
   assert.deepEqual(r.latest()?.rounds[0].runs.map((x) => [x.status, x.sleptMs]), [['running', 60_000], ['running', 60_000]]);
   assert.equal(r.cancelled(), 1, "the wake clears the sleep's wakeAt timer");
   endAll(r);
