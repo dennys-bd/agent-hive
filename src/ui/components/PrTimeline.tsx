@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { FileDiff, LineAnchor, PrData, PrIssueComment, PrReviewEvent, PrThread } from '../../types';
+import type { FileDiff, LineAnchor, PrIssueComment, PrReviewEvent, PrThread } from '../../types';
 import { Conversation } from '@/components/Conversation';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
 import { AssigneeCell } from '@/components/ProjectRow';
@@ -7,6 +7,7 @@ import { type MessageKey, t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
 import { timelineItems } from '@/lib/pr-timeline';
 import { prConversation } from '@/lib/surface';
+import type { PrView } from '@/lib/pr-view';
 
 const MUTED = 'text-muted-foreground';
 const VERDICT: Record<PrReviewEvent['kind'], { key: MessageKey; tone: string }> = {
@@ -54,7 +55,7 @@ function CommentItem({ comment }: { comment: PrIssueComment }) {
 
 // A review thread (handoff 03): its path and open in diff (the conversation already names line N), the anchored code line, then its comments with reply and resolve as the
 // diff draws them
-function ThreadItem({ thread, pr, onOpenInDiff }: { thread: PrThread; pr: PrData; onOpenInDiff(path: string): void }) {
+function ThreadItem({ thread, pr, onOpenInDiff }: { thread: PrThread; pr: PrView; onOpenInDiff(path: string): void }) {
   const code = thread.subject === 'line' ? codeLine(pr.files, thread.anchor) : undefined;
   return (
     <article className="flex flex-col rounded-lg border">
@@ -70,7 +71,7 @@ function ThreadItem({ thread, pr, onOpenInDiff }: { thread: PrThread; pr: PrData
 }
 
 /** timeline (#758, handoff 03): 680px wide, oldest first: reviews with their verdict and body, review threads at their line, general comments. */
-export function PrTimeline({ pr, onOpenInDiff }: { pr: PrData; onOpenInDiff(path: string): void }) {
+export function PrTimeline({ pr, onOpenInDiff }: { pr: PrView; onOpenInDiff(path: string): void }) {
   return (
     <section aria-label={t('pr.tab.conversation')} className="flex max-w-[680px] flex-col gap-4">
       {timelineItems(pr).map((item) => {

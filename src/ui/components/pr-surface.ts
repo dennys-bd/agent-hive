@@ -1,18 +1,20 @@
 // The PR's review surface (#592, #758): GitHub's conversations and the PR's review file, through the PR routes. No session takes part; reviews go from the page's popover (#758).
-import type { FileDiff, PrData, PrReviewFile } from '../../types';
+import type { FileDiff, PrReviewFile } from '../../types';
 import { prAddDraft, prComment, prDropDraft, prEditDraft, prReply, prResolve } from '@/components/pr-actions';
 import type { CommentTarget, ReviewSurface } from '@/components/review-surface';
 import { t } from '@/i18n';
 import { prConversation } from '@/lib/surface';
+import type { PrView } from '@/lib/pr-view';
 
 /** What a PR view hands its surface (#592). reread: the file read again (a local write); after: the PR and the file (a write to GitHub). */
 export interface PrSurfaceInput {
-  pr: PrData; review: PrReviewFile;
+  pr: PrView; review: PrReviewFile;
   reviewed(file: FileDiff): boolean; mark(file: FileDiff, reviewed: boolean): void; edit(target: CommentTarget): void; reread(): void; after(): void;
 }
 
 export function prSurface({ pr, review, reviewed, mark, edit, reread, after }: PrSurfaceInput): ReviewSurface {
-  const { url, head } = pr;
+  const { url } = pr;
+  const head = pr.changesHead ?? pr.head; // a line comment goes with the diff's head
   const toGithub = (request: Promise<unknown>): Promise<void> => request.then(after);
   const toFile = (request: Promise<unknown>): Promise<void> => request.then(reread);
   return {

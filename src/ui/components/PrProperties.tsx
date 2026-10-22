@@ -1,12 +1,13 @@
-import type { PrData, State, Task } from '../../types';
+import type { State, Task } from '../../types';
 import { PrBlock } from '@/components/PrBlock';
 import { PrWithoutActivity } from '@/components/PrWithoutActivity';
 import { TaskPrList } from '@/components/TaskPrList';
+import type { PrView } from '@/lib/pr-view';
 
 const BLOCK = 'flex flex-col gap-4 text-xs'; // #64: a block of the details panel's slot, which draws the frame
 
 export interface PrPropertiesProps {
-  pr: PrData; task?: Task; state: State;
+  pr: PrView; task?: Task; state: State;
   drafts: number; // #68: the review popover's pending drafts, as the tab bar's
   onGoTo(taskId: string): void; // #68: in the flow's task ›
   onReloaded(): void; // #68: the page reads the PR again after a review is sent

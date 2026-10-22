@@ -1,7 +1,7 @@
 import { prsOf } from '../../activities';
 import { prRepo } from '../../pull-requests';
 import { taskId } from '../../tasks';
-import type { PrData, State, Task } from '../../types';
+import type { State, Task } from '../../types';
 import { IssueCommentBox } from '@/components/IssueCommentBox';
 import { PrChecks } from '@/components/PrChecks';
 import { PrDescription } from '@/components/PrDescription';
@@ -10,13 +10,14 @@ import { PrStack } from '@/components/PrStack';
 import { PrTimeline } from '@/components/PrTimeline';
 import { prPath } from '@/hooks/use-pr';
 import { t, tPlural } from '@/i18n';
+import type { PrView } from '@/lib/pr-view';
 
 const BADGE: Record<'open' | 'draft' | 'merged' | 'closed', string> = {
   open: 'border-review text-review', draft: 'text-muted-foreground', merged: 'text-muted-foreground', closed: 'text-muted-foreground',
 };
 
 // The PR line (handoff 03): its state as a badge, head → base in mono, the commit count, and the lines it adds and removes
-function PrLine({ pr }: { pr: PrData }) {
+function PrLine({ pr }: { pr: PrView }) {
   const badge = pr.state === 'open' && pr.isDraft ? 'draft' : pr.state;
   const across = pr.headOwner !== pr.baseOwner; // #854: a fork's PR names both owners
   return (
@@ -32,12 +33,12 @@ function PrLine({ pr }: { pr: PrData }) {
   );
 }
 
-export interface PrConversationProps { pr: PrData; task?: Task; state: State; onChanged(): Promise<void>; onOpenPr(url: string): void; onOpenInDiff(path: string): void;
+export interface PrConversationProps { pr: PrView; task?: Task; state: State; onChanged(): Promise<void>; onOpenPr(url: string): void; onOpenInDiff(path: string): void;
   onMerged?(): void; // #69: a merge GitHub accepted leaves the page; absent, the PR is read again
 }
 
 // The Claude session that opened this PR (#62), as the task's records hold it: none for a PR with no task, or one recorded before #62
-const openerOf = (pr: PrData, state: State, task?: Task): string | undefined =>
+const openerOf = (pr: PrView, state: State, task?: Task): string | undefined =>
   task && prsOf(state, taskId(task)).find((p) => p.url === pr.url)?.sessionId;
 
 /** conversation (#758, #62, handoff 6): 16px 24px, gap 16, beside the properties, with no visible scrollbar. A merged or closed PR says first

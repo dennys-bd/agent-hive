@@ -3,8 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { PrWithoutActivity } from '@/components/PrWithoutActivity';
 import { setLanguage } from '@/i18n';
-import type { PrData, State, Task } from '../../src/types';
+import type { State, Task } from '../../src/types';
 import { fakePrHive, prData, STATE } from './pr-harness';
+import type { PrView } from '@/lib/pr-view';
 
 beforeEach(() => { setLanguage('pt'); localStorage.clear(); fakePrHive(); });
 afterEach(() => vi.unstubAllGlobals());
@@ -17,7 +18,7 @@ const CLOSES = [{ repository: 'acme/app', number: 458, url: ISSUE }, { repositor
 const NOTE = 'criar tarefa liga este PR a uma tarefa nova na source hive, sem sync com o GitHub.';
 const follows = (a: Element, b: Element): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
-function renderVariant(pr: PrData, state: State = STATE) {
+function renderVariant(pr: PrView, state: State = STATE) {
   const spies = { onReloaded: vi.fn(), onGoTo: vi.fn(), onOpenIssue: vi.fn() };
   return { ...render(<PrWithoutActivity pr={pr} state={state} drafts={0} {...spies} />), ...spies };
 }

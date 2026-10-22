@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { ANCHOR, AT, fakePrHive, type FakePrHive, HEAD, prCalls, prData, renderPage, ROUTE, thread } from './pr-harness';
+import { ANCHOR, AT, fakePrHive, type FakePrHive, HEAD, prCalls, prChanges, prData, renderPage, ROUTE, thread } from './pr-harness';
 
 let hive: FakePrHive;
 beforeEach(() => { setLanguage('pt'); localStorage.clear(); hive = fakePrHive(); });
@@ -19,7 +19,7 @@ async function showFiles(): Promise<ReturnType<typeof userEvent.setup>> {
 }
 
 test('files draws the PR\'s files and conversations, a GitHub author by login and the viewer as você (#592, #758)', async () => {
-  hive.pr = prData({ threads: [thread({ comments: [{ id: 'C1', author: 'bia', at: AT, text: 'why?' }, { id: 'C2', author: 'ana', at: AT, text: 'because' }] })] });
+  hive.changes = prChanges({ threads: [thread({ comments: [{ id: 'C1', author: 'bia', at: AT, text: 'why?' }, { id: 'C2', author: 'ana', at: AT, text: 'because' }] })] });
   await showFiles();
   const conversation = await within(await section()).findByRole('group', { name: 'conversa' });
   expect(within(conversation).getByText('bia')).toHaveClass('font-medium');
@@ -39,7 +39,7 @@ test('a merged PR\'s files are read only: its conversations show, with no +, no 
 });
 
 test('an outdated conversation sits at the top of its file; one whose file left the diff sits in fora do diff at the top (#592, #758)', async () => {
-  hive.pr = prData({ threads: [thread({ outdated: true }), thread({ id: 'T2', anchor: { path: 'gone.ts', side: 'new', start: 1, end: 1 } })] });
+  hive.changes = prChanges({ threads: [thread({ outdated: true }), thread({ id: 'T2', anchor: { path: 'gone.ts', side: 'new', start: 1, end: 1 } })] });
   await showFiles();
   const outdated = await within(await section()).findByRole('group', { name: 'conversa' });
   expect(outdated).toHaveTextContent('desatualizado');
@@ -50,7 +50,7 @@ test('an outdated conversation sits at the top of its file; one whose file left 
 });
 
 test('a comment sent now posts its lines with the head the page showed and reads the PR again; adicionar à revisão posts a draft (#592, #758)', async () => {
-  hive.pr = prData({ threads: [] });
+  hive.changes = prChanges({ threads: [] });
   const user = await showFiles();
   await user.click(within(await section()).getByRole('button', { name: 'comentar linha 2' }));
   const box = screen.getByRole('group', { name: 'linha 2' });

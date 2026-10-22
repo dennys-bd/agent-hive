@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { prsOf } from '../../activities';
 import { mergeOrderBlocker, type PrLine, prGroups, prNumber, prRepo } from '../../pull-requests';
-import type { PrCheck, PrChecks as Checks, PrClosingIssue, PrData, State, Task, TaskPr } from '../../types';
+import type { PrCheck, PrChecks as Checks, PrClosingIssue, State, Task, TaskPr } from '../../types';
 import { awaitsReview, mergeOffReason } from '@/components/MergeButton';
 import { MARK, worstOf } from '@/components/PrChecks';
 import { AssigneeCell } from '@/components/ProjectRow';
@@ -9,6 +9,7 @@ import { t, tPlural } from '@/i18n';
 import { relativeTime } from '@/lib/home';
 import { pickMethod } from '@/lib/merge-method';
 import { type ReviewerState, reviewersOf } from '@/lib/pr-reviewers';
+import type { PrView } from '@/lib/pr-view';
 
 const MUTED = 'text-muted-foreground';
 const REVIEWER_TONE: Record<ReviewerState, string> = {
@@ -41,7 +42,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 // One row per person (reviewersOf): an avatar for a user, the login, "team" for a team, the state in its colour. #68: on a PR no task holds
 // the viewer's own row reads "you", as the handoff's variant draws it; a task's PR keeps the login
-function ReviewValue({ pr, shouldSayYou }: { pr: PrData; shouldSayYou: boolean }) {
+function ReviewValue({ pr, shouldSayYou }: { pr: PrView; shouldSayYou: boolean }) {
   const reviewers = reviewersOf(pr);
   if (reviewers.length === 0) return <span className={MUTED}>{t('pr.block.none')}</span>;
   return (
@@ -76,7 +77,7 @@ function ChecksValue({ checks }: { checks: Checks }) {
 // (#68), then no push rights, then the stack's order
 // or GitHub's blocker, else ready with the merge button's method. ponytail: the method is read at render, so a new pick in the button's menu
 // shows on the next read of the PR; lift the pick into shared state if that lag ever matters
-function mergeLine(pr: PrData, task: Task | undefined, orderBlocker: string | undefined): { tone: string; text: string } {
+function mergeLine(pr: PrView, task: Task | undefined, orderBlocker: string | undefined): { tone: string; text: string } {
   if (pr.mergeState === 'conflicts') return { tone: 'text-destructive', text: t('pr.block.merge.conflicts') };
   if (awaitsReview(pr, task)) return { tone: MUTED, text: t('pr.merge.awaitsReview') };
   if (!pr.canPush) return { tone: MUTED, text: t('pr.block.merge.noPermission') };
@@ -86,7 +87,7 @@ function mergeLine(pr: PrData, task: Task | undefined, orderBlocker: string | un
   return { tone: 'text-working', text: method === undefined ? t('pr.merge.ready') : t('pr.block.merge.ready', { method: t(`pr.method.${method}`) }) };
 }
 
-function MergeValue({ pr, task, orderBlocker }: { pr: PrData; task?: Task; orderBlocker?: string }) {
+function MergeValue({ pr, task, orderBlocker }: { pr: PrView; task?: Task; orderBlocker?: string }) {
   if (pr.state !== 'open') return <span className={pr.state === 'merged' ? 'text-review' : MUTED}>{t(`detail.pr.${pr.state}`)}</span>;
   const { tone, text } = mergeLine(pr, task, orderBlocker);
   return <span className={tone}>{`● ${text}`}</span>;
@@ -104,7 +105,7 @@ function BaseValue({ baseRef, merged, waits }: { baseRef: string; merged: string
 }
 
 // A PR no task holds (#68): the author's branch → the base, owner:ref on both sides for a fork's PR, as the conversation's PR line writes it
-function BranchValue({ pr }: { pr: PrData }) {
+function BranchValue({ pr }: { pr: PrView }) {
   const across = pr.headOwner !== '' && pr.headOwner !== pr.baseOwner; // a deleted fork reads no owner
   return (
     <span className="block truncate font-mono">
@@ -119,7 +120,7 @@ export const closingLabel = (issue: PrClosingIssue, prUrl: string): string =>
   (issue.repository.toLowerCase() === prRepo(prUrl).toLowerCase() ? `#${issue.number}` : `${issue.repository}#${issue.number}`);
 
 // Each issue the PR closes: #N in the PR's own repository, owner/repo#N in another; "on merge" while it can still merge
-function ClosesValue({ pr, onOpenIssue }: { pr: PrData; onOpenIssue(url: string): void }) {
+function ClosesValue({ pr, onOpenIssue }: { pr: PrView; onOpenIssue(url: string): void }) {
   return (
     <span className="flex flex-wrap items-baseline gap-x-1.5">
       {pr.closes.map((issue) => (
@@ -132,11 +133,11 @@ function ClosesValue({ pr, onOpenIssue }: { pr: PrData; onOpenIssue(url: string)
   );
 }
 
-export interface PrBlockProps { pr: PrData; task?: Task; state: State; onOpenIssue(url: string): void }
+export interface PrBlockProps { pr: PrView; task?: Task; state: State; onOpenIssue(url: string): void }
 
 /** this PR (#66, handoff section 7): a PR's box in the details panel's slot, its header with the stack position, then review, checks, merge,
  * base and closes. A PR no task holds (#68) has no stack: #N alone, the author's branch in base's place, "you" on the viewer's row. Drawn from
- * the page's PrData, so the header's refresh, the checks' poll and every write update it. */
+ * the page's PrView, so the header's refresh, the checks' poll and every write update it. */
 export function PrBlock({ pr, task, state, onOpenIssue }: PrBlockProps) {
   const prs = task === undefined ? [] : prsOf(state, task.item.itemId);
   const { position, before } = stackOf(prs, pr.url);

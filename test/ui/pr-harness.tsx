@@ -2,7 +2,8 @@ import { render } from '@testing-library/react';
 import { vi } from 'vitest';
 import { PrPage, type PrPageProps } from '@/components/PrPage';
 import { WithSlot } from './detail-slot-harness';
-import type { TaskPr, FileDiff, PrData, PrReviewFile, PrThread, State } from '../../src/types';
+import type { TaskPr, FileDiff, PrChanges, PrReviewFile, PrThread, State } from '../../src/types';
+import type { PrView } from '@/lib/pr-view';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { jsonResponse } from '../fakes';
 import type { Call } from './diff-harness';
@@ -23,23 +24,25 @@ export const thread = (extra: Partial<PrThread> = {}): PrThread => ({
   id: 'T1', anchor: { path: 'src/a.ts', side: 'new', start: 2, end: 2 }, outdated: false, resolved: false, subject: 'line', more: false,
   comments: [{ id: 'C1', author: 'bia', at: AT, text: 'why?' }], ...extra,
 });
-export const prData = (extra: Partial<PrData> = {}): PrData => ({
+export const prChanges = (extra: Partial<PrChanges> = {}): PrChanges => ({ head: HEAD, files: [FILE], threads: [thread()], truncated: false, reviewRequests: [], ...extra });
+export const prData = (extra: Partial<PrView> = {}): PrView => ({
   url: PR, id: 'PR_1', number: 7, title: 'The PR', state: 'open', isDraft: false, mergeState: 'clean', head: HEAD, methods: ['merge', 'squash'], viewer: 'ana',
   files: [FILE], threads: [thread()], truncated: false, body: 'The description', author: 'bia', createdAt: AT, updatedAt: AT, headRef: 'feature', baseRef: 'main',
   commits: 2, additions: 1, deletions: 1, approvals: 0, reviews: [], comments: [], canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviewRequests: [], closes: [], ...extra,
 });
 
 /** The page's fetch for a PR (#592, #758): GET …/pulls/:number answers `pr`, GET …/review `review`, `answers[method url]` override, the rest ok. */
-export interface FakePrHive { calls: Call[]; pr: PrData; review: PrReviewFile; answers: Record<string, { status: number; body: unknown }> }
+export interface FakePrHive { calls: Call[]; pr: PrView; changes: PrChanges; changesGate?: Promise<void>; review: PrReviewFile; answers: Record<string, { status: number; body: unknown }> }
 
 export function fakePrHive(): FakePrHive {
-  const hive: FakePrHive = { calls: [], pr: prData(), review: { reviewed: [], drafts: [] }, answers: {} };
+  const hive: FakePrHive = { calls: [], pr: prData(), changes: prChanges(), review: { reviewed: [], drafts: [] }, answers: {} };
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     const url = String(input);
     hive.calls.push({ method, url, body: init?.body === undefined ? undefined : JSON.parse(String(init.body)) });
     const answer = hive.answers[`${method} ${url}`];
     if (answer !== undefined) return jsonResponse(answer.body, answer.status);
+    if (method === 'GET' && /\/pulls\/\d+\/changes(\?fresh=1)?$/.test(url)) { await hive.changesGate; return jsonResponse(hive.changes); }
     if (method === 'GET' && /\/pulls\/\d+\/review$/.test(url)) return jsonResponse(hive.review);
     if (method === 'GET' && /\/pulls\/\d+$/.test(url)) return jsonResponse(hive.pr);
     return jsonResponse({ ok: true });

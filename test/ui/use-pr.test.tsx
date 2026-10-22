@@ -2,9 +2,9 @@ import { act as run, renderHook, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { prPath, prReadError, UNKNOWN_RETRY_MS, usePr } from '@/hooks/use-pr';
-import { emitPrReviewEvent } from '@/lib/review-events';
-import type { PrData } from '../../src/types';
-import { fakePrHive, type FakePrHive, PR, PR2, prData, ROUTE } from './pr-harness';
+import { emitPrReviewEvent, emitReadModelEvent } from '@/lib/review-events';
+import type { PrChanges, PrData } from '../../src/types';
+import { fakePrHive, type FakePrHive, PR, PR2, prChanges, prData, ROUTE } from './pr-harness';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } })); // the toasts are observable without a Toaster
 
@@ -104,4 +104,44 @@ test('a failed read of the review file toasts the human copy (#849)', async () =
   hive.answers[`GET ${ROUTE}/review`] = { status: 500, body: { error: 'EACCES: permission denied' } };
   renderHook(() => usePr(PR, true));
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Unexpected error.'));
+});
+
+const CHANGES = `${ROUTE}/changes`;
+
+test('usePr reads the changes beside the PR; a pullChanges event of its repository reads them again, another repository does not (#497)', async () => {
+  const { result } = renderHook(() => usePr(PR, true));
+  await waitFor(() => expect(result.current.changes).toEqual({ status: 'ready', changes: hive.changes }));
+  expect(gets(CHANGES)).toBe(1);
+  run(() => { emitReadModelEvent({ repository: 'acme/other', kinds: ['pullChanges'] }); });
+  run(() => { emitReadModelEvent({ repository: 'acme/app', kinds: ['pullChanges'] }); });
+  await waitFor(() => expect(gets(CHANGES)).toBe(2));
+});
+
+test('a failed changes read is the changes\' error with the human copy, never a toast; the PR stays read (#497)', async () => {
+  hive.answers[`GET ${CHANGES}`] = { status: 413, body: { error: 'diff grande demais para o visualizador' } };
+  const { result } = renderHook(() => usePr(PR, true));
+  await waitFor(() => expect(result.current.changes).toEqual({ status: 'error', message: "This PR's diff is too large to show." }));
+  expect(result.current.load.status).toBe('ready');
+  expect(toast.error).not.toHaveBeenCalled();
+});
+
+test('an answer that is no changes reads as an error (#497)', async () => {
+  hive.changes = { head: 1 } as unknown as PrChanges;
+  const { result } = renderHook(() => usePr(PR, true));
+  await waitFor(() => expect(result.current.changes).toEqual({ status: 'error', message: 'invalid answer from the server' }));
+});
+
+test('fields naming a head the changes were not read at read the changes once more, once per head (#497)', async () => {
+  hive.changes = prChanges({ head: 'e'.repeat(40) });
+  renderHook(() => usePr(PR, true));
+  await waitFor(() => expect(gets(CHANGES)).toBe(2));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(gets(CHANGES)).toBe(2);
+});
+
+test('refresh reads the PR and its changes, the changes past the server\'s cooldown (#497)', async () => {
+  const { result } = renderHook(() => usePr(PR, true));
+  await waitFor(() => expect(result.current.changes.status).toBe('ready'));
+  await run(async () => { await result.current.refresh(); });
+  expect([gets(ROUTE), gets(`${CHANGES}?fresh=1`)]).toEqual([2, 1]);
 });

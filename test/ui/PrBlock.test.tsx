@@ -6,6 +6,7 @@ import { setLanguage } from '@/i18n';
 import { rememberMethod } from '@/lib/merge-method';
 import type { PrData, PrReviewEvent, State, TaskPr } from '../../src/types';
 import { AT, PR, prData, STATE, thread, WITH_TASK } from './pr-harness';
+import type { PrView } from '@/lib/pr-view';
 
 const APP = 'https://github.com/acme/app/pull/';
 beforeEach(() => { setLanguage('pt'); localStorage.clear(); });
@@ -18,7 +19,7 @@ const stack = (second: TaskPr['state']): State => withPrs([
 const CLOSES = [
   { repository: 'acme/app', number: 458, url: 'https://github.com/acme/app/issues/458' }, { repository: 'acme/docs', number: 3, url: 'https://github.com/acme/docs/issues/3' },
 ];
-function renderBlock(pr: PrData, state: State = WITH_TASK) {
+function renderBlock(pr: PrView, state: State = WITH_TASK) {
   const onOpenIssue = vi.fn();
   const view = render(<PrBlock pr={pr} task={state.tasks[0]} state={state} onOpenIssue={onOpenIssue} />);
   return { ...view, onOpenIssue };
