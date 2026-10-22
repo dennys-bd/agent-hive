@@ -238,8 +238,9 @@ A screen declares its tweaks in one block in `<head>`:
 
 ### Interactions
 
-A screen's clicks are declared in its markup and run by `hv-kit.js`; a
-screen writes no click script of its own. The kit's attributes:
+A screen's clicks and hovers are declared in its markup and run by
+`hv-kit.js`; a screen writes no script of its own for them. The kit's
+attributes:
 
 - `data-hv-set="<name>=<value>"` on a control sets `data-<name>` on
   `<html>`: the screen's state, such as the section a sidebar picks, which
@@ -256,9 +257,14 @@ screen writes no click script of its own. The kit's attributes:
   group's `data-hv-label="<id>"` writes the pick's text into `#<id>`, as a
   select shows its value.
 - `data-hv-switch` flips a switch's `aria-checked` and `data-state`.
+- `data-hv-hover="<id>"` shows `#<id>` while the pointer is over the
+  control or over `#<id>`, or focus is inside either, so a card the user
+  moves into stays open; it hides shortly after both are left, or on
+  Escape. `#<id>` starts `hidden`, and the control gets `aria-expanded`.
 
 A state the user picks from the pane is a tweak; a state the screen's own
-controls reach is `data-hv-set`, never both. Behaviour the kit cannot
+controls reach is `data-hv-set`, never both. What the product reveals on hover is
+`data-hv-hover`, never a tweak. Behaviour the kit cannot
 express, such as text typed into a filter that narrows a list, goes in a
 short `<script>` of the screen, and the handoff names it.
 
