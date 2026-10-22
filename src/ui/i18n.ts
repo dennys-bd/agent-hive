@@ -2506,6 +2506,10 @@ const en = {
   'benchmark.arms.settings.itemsLoading': 'reading the pinned items…',
   'benchmark.arms.settings.itemsFailed': 'the pinned items could not be read',
   'benchmark.arms.settings.itemsNone': 'no item in the pin',
+  // #463: the benchmark config tab, benchmark.hv.html's #s-config
+  'benchmark.config.scenarios.one': '1 scenario {range}',
+  'benchmark.config.scenarios.other': '{n} scenarios {range}',
+  'benchmark.config.scenarios.none': 'no scenario',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5006,6 +5010,10 @@ const pt: Record<MessageKey, string> = {
   'benchmark.arms.settings.itemsLoading': 'lendo os itens fixados…',
   'benchmark.arms.settings.itemsFailed': 'não foi possível ler os itens fixados',
   'benchmark.arms.settings.itemsNone': 'nenhum item no pin',
+  // #463: the benchmark config tab, benchmark.hv.html's #s-config
+  'benchmark.config.scenarios.one': '1 cenário {range}',
+  'benchmark.config.scenarios.other': '{n} cenários {range}',
+  'benchmark.config.scenarios.none': 'nenhum cenário',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
@@ -5043,7 +5051,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine';
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
