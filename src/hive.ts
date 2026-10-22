@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { detectAgents } from './agents.js';
+import { createGhToken } from './github-token.js';
 import { moveEventsFiles } from './facts.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { parseConfig, predatesComb, readConfig, unnamedWorkspacePath, workspaceScope } from './config.js';
@@ -36,7 +37,7 @@ export interface BootOptions extends Pick<ServerDeps, 'readPlanLimits' | 'launch
 }
 
 /** What both modes' createServer get: the options plus this boot's secret (#467). */
-type BootDeps = Omit<BootOptions, 'locale'> & Pick<ServerDeps, 'secret' | 'usage'>;
+type BootDeps = Omit<BootOptions, 'locale'> & Pick<ServerDeps, 'secret' | 'usage' | 'ghToken'>;
 
 export async function bootHive(home: string, options: BootOptions = {}): Promise<BootedHive> {
   const log = createLogger(home); // before anything else: it creates the home, and a config that fails to parse and setup mode log too
@@ -72,7 +73,7 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
   // writer appends to the moved file; under hive.lock, so no other daemon writes them meanwhile
   moveEventsFiles(home, log);
   const usage = await openUsageStore(home, log);
-  const deps: BootDeps = { ...given, agents, secret, usage };
+  const deps: BootDeps = { ...given, agents, secret, usage, ghToken: createGhToken() };
   // #190: the model opens before the boot adapters, so each one stores its items there, a reused one included. #401: setup mode gets it too,
   // since the server wires it once: the first Settings save leaves setup mode in place, and its adapters and the read routes need it
   const readModel = await openModel(home, log);
@@ -94,7 +95,7 @@ async function bootMode(home: string, log: Logger, language: Language, deps: Boo
   const relay: { notify: ItemStore['notify'] } = { notify: () => undefined };
   const items = readModel && bootItemStore(readModel, config, log, (repository, kinds) => relay.notify(repository, kinds));
   // A test injects a source that needs no gh (#740); the daemon builds the real adapters
-  const build: SourceFactory = deps.sourceFactory ?? ((spec, store) => createSource(spec, { log, ...(store === undefined ? {} : { items: store }) }));
+  const build: SourceFactory = deps.sourceFactory ?? ((spec, store) => createSource(spec, { log, ghToken: deps.ghToken, ...(store === undefined ? {} : { items: store }) }));
   const sources = createSources(config, (spec) => build(spec, items));
   let resolved: Map<string, Source>;
   try {
