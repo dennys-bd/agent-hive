@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mayStart, parseRunTimeout, untilDeadline } from '../../scripts/experiment/deadline.js';
+import { HH_MM, mayStart, parseRunTimeout, untilDeadline } from '../../src/benchmark/deadline.js';
 
 test('untilDeadline is the next HH:MM in local time: later today, or tomorrow once passed (#105)', () => {
   const evening = new Date(2026, 9, 1, 22, 0);
@@ -22,4 +22,9 @@ test('parseRunTimeout reads the timeout grammar of the Hive, up to 24h (#105)', 
   assert.equal(parseRunTimeout('20h'), 72_000_000);
   assert.equal(parseRunTimeout('90m'), 5_400_000);
   for (const bad of ['6', '25h', '1d', 'x']) assert.throws(() => parseRunTimeout(bad), /--run-timeout/, bad);
+});
+
+test('HH_MM takes a 24 h local time with two digits each, nothing else (#472)', () => {
+  for (const good of ['00:00', '07:00', '23:59']) assert.ok(HH_MM.test(good), good);
+  for (const bad of ['7:00', '24:00', '07:60', '0700', '', ' 07:00']) assert.equal(HH_MM.test(bad), false, bad);
 });
