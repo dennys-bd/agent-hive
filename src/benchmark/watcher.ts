@@ -1,5 +1,5 @@
 import { activityOf, resultOf, taskOfWorker } from '../activities.js';
-import type { State, Status, Task } from '../types.js';
+import type { Intervention, State, Status, Task } from '../types.js';
 
 export const DONE_STAGE = 'Done';
 export const POLL_MS = 15_000;
@@ -22,10 +22,11 @@ export interface TaskProgress { key: string; state: 'done' | 'waiting' | 'open' 
 export interface Progress { delivered: number; total: number; waiting: boolean; tasks: TaskProgress[] }
 export type WatchEnd = { outcome: 'done' } | { outcome: 'timeout' } | { outcome: 'aborted' } | { outcome: 'error'; reason: string };
 export interface Step { watch: WatchState; release: string[]; progress: Progress; end?: WatchEnd }
-export interface WatchClient { state(): Promise<Snapshot>; setAuto(itemId: string): Promise<void>; setGreen(): Promise<void> }
+export interface WatchClient { state(): Promise<Snapshot>; setAuto(itemId: string): Promise<void>; setGreen(): Promise<void>; interventions(): Promise<Intervention[]> }
 export interface WatchDeps {
   client: WatchClient; now(): Date; sleep(ms: number): Promise<void>; log(line: string): void; timeoutMs: number; pollMs?: number;
   onProgress?(progress: Progress): void; // 3.2 turns it into benchmarkRunChanged
+  onInterventions?(interventions: Intervention[]): void; // 3.2 turns it into benchmarkRunChanged { interventions }
   sleptMs?(): number; // the run's time asleep so far (3.2): the user's time, not the run's
   signal?: AbortSignal; // 3.2's stop
 }
@@ -157,9 +158,24 @@ function napOf(deps: WatchDeps): (ms: number) => Promise<void> {
 
 const sameProgress = (a: Progress | undefined, b: Progress): boolean => a !== undefined && JSON.stringify(a) === JSON.stringify(b);
 
-/** Polls one run's daemon until every task is in Done, the timeout passes (slept time off the clock), a task fails or the signal aborts.
- *  Never writes state.json. An abort ends the poll's sleep; a release being retried finishes its tries first. */
-export async function watchRun(tasks: WatchTask[], deps: WatchDeps): Promise<WatchResult> {
+// The live count (#475): the run's interventions after each read, reported when their count moved. A failed read is skipped and the next
+// poll reads again: the count is the report's, never a reason to end a run
+function interventionReporter(deps: WatchDeps): () => Promise<void> {
+  let last = 0;
+  return async () => {
+    if (!deps.onInterventions) return;
+    try {
+      const list = await deps.client.interventions();
+      if (list.length === last) return;
+      last = list.length;
+      deps.onInterventions(list);
+    } catch (err) {
+      deps.log(`interventions read failed: ${message(err)}`);
+    }
+  };
+}
+
+async function watchLoop(tasks: WatchTask[], deps: WatchDeps, report: () => Promise<void>): Promise<WatchResult> {
   const startedAt = deps.now().getTime();
   const awakeMs = (): number => deps.now().getTime() - startedAt - (deps.sleptMs?.() ?? 0);
   let watch = startWatch(tasks);
@@ -179,10 +195,21 @@ export async function watchRun(tasks: WatchTask[], deps: WatchDeps): Promise<Wat
         reported = step.progress;
         deps.onProgress?.(step.progress);
       }
+      await report();
       const end = step.end ?? (await releaseAll(step.release, deps));
       if (end) return { end, watch };
     }
     await nap(deps.pollMs ?? POLL_MS);
   }
   return { end: deps.signal?.aborted ? { outcome: 'aborted' } : { outcome: 'timeout' }, watch };
+}
+
+/** Polls one run's daemon until every task is in Done, the timeout passes (slept time off the clock), a task fails or the signal aborts.
+ *  Never writes state.json. An abort ends the poll's sleep; a release being retried finishes its tries first. The interventions are read
+ *  once more after the end, so the count reported is the run's last. */
+export async function watchRun(tasks: WatchTask[], deps: WatchDeps): Promise<WatchResult> {
+  const report = interventionReporter(deps);
+  const result = await watchLoop(tasks, deps, report);
+  await report();
+  return result;
 }

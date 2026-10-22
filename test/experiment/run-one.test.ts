@@ -29,7 +29,7 @@ function sequence(snapshots: Snapshot[], events: string[]): WatchClient {
   return {
     state: async () => { const next = snapshots[Math.min(i, snapshots.length - 1)]; i += 1; return next; },
     setAuto: async (id) => { events.push(`auto ${id}`); },
-    setGreen: async () => { events.push('green'); },
+    interventions: async () => [], setGreen: async () => { events.push('green'); },
   };
 }
 
@@ -63,7 +63,7 @@ test('executeRun branches at the baseline, writes the home under <state>/homes/<
 test('executeRun stops the daemon and records an error when the daemon stops answering; a run made alone is unpaired (#105)', async (t) => {
   const root = await tempDir(t, 'run-');
   const events: string[] = [];
-  const dead: WatchClient = { state: async () => { throw new Error('ECONNREFUSED'); }, setAuto: async () => undefined, setGreen: async () => undefined };
+  const dead: WatchClient = { state: async () => { throw new Error('ECONNREFUSED'); }, setAuto: async () => undefined, interventions: async () => [], setGreen: async () => undefined };
   const metrics = await executeRun(context(root, 'a', true), depsWith(fakeRun(), dead, events));
   assert.deepEqual([metrics.outcome, metrics.reason, metrics.unpaired], ['error', 'the daemon stopped answering', true]);
   assert.deepEqual(events, ['boot /dist/src/run.js', 'stop']);

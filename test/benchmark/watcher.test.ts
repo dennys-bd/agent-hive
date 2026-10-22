@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Activity, SleptRun, Task, Worker } from '../../src/types.js';
+import type { Activity, Intervention, SleptRun, Task, Worker } from '../../src/types.js';
 import { observe, type Progress, type Snapshot, startWatch, type WatchClient, watchRun } from '../../src/benchmark/watcher.js';
 import { clock, snap, task, watchTask, worker } from './fixtures.js';
 
@@ -70,7 +70,7 @@ function client(snapshots: (Snapshot | Error)[]): WatchClient & { released: stri
       return next;
     },
     setAuto: async (id) => { released.push(id); },
-    setGreen: async () => { released.push('green'); },
+    interventions: async () => [], setGreen: async () => { released.push('green'); },
   };
 }
 const depsOf = (c: WatchClient, time: ReturnType<typeof clock>, timeoutMs = 3_600_000) => ({ client: c, now: time.now, sleep: time.sleep, log: () => undefined, timeoutMs, pollMs: 1000 });
@@ -96,7 +96,7 @@ test('watchRun goes on after a failed read and ends with an error after four in 
 });
 
 test('watchRun ends with an error naming the task when its release is refused (#105)', async () => {
-  const refusing: WatchClient = { state: async () => four(['Done', 'Spec', 'Spec', 'Build']), setAuto: async () => { throw new Error('POST /tasks/local:2/auto: HTTP 409'); }, setGreen: async () => undefined };
+  const refusing: WatchClient = { state: async () => four(['Done', 'Spec', 'Spec', 'Build']), setAuto: async () => { throw new Error('POST /tasks/local:2/auto: HTTP 409'); }, interventions: async () => [], setGreen: async () => undefined };
   assert.deepEqual((await watchRun(GRAPH, depsOf(refusing, clock(AT)))).end, { outcome: 'error', reason: 'could not release local:2: POST /tasks/local:2/auto: HTTP 409' });
 });
 
@@ -107,7 +107,7 @@ test('watchRun turns the daemon green before it releases anything: the boot open
 });
 
 test('watchRun ends with an error when the daemon refuses green, since no task would ever start (#105)', async () => {
-  const yellow: WatchClient = { state: async () => four(['Spec', 'Spec', 'Spec', 'Spec']), setAuto: async () => undefined, setGreen: async () => { throw new Error('POST /signal: HTTP 503'); } };
+  const yellow: WatchClient = { state: async () => four(['Spec', 'Spec', 'Spec', 'Spec']), setAuto: async () => undefined, interventions: async () => [], setGreen: async () => { throw new Error('POST /signal: HTTP 503'); } };
   assert.deepEqual((await watchRun(GRAPH, depsOf(yellow, clock(AT)))).end, { outcome: 'error', reason: 'could not turn the daemon green: POST /signal: HTTP 503' });
 });
 
@@ -117,7 +117,7 @@ test('watchRun tries green again while a daemon just booted beside another is to
   const slow: WatchClient = {
     state: async () => four(['Done', 'Done', 'Done', 'Done']),
     setAuto: async () => undefined,
-    setGreen: async () => { greens.push(1); if (refusals-- > 0) throw new Error('The operation was aborted due to timeout'); },
+    interventions: async () => [], setGreen: async () => { greens.push(1); if (refusals-- > 0) throw new Error('The operation was aborted due to timeout'); },
   };
   const time = clock(AT);
   assert.deepEqual((await watchRun(GRAPH, depsOf(slow, time))).end, { outcome: 'done' });
@@ -167,7 +167,7 @@ test('watchRun ends aborted once its signal aborts, and reads nothing after (#47
   let reads = 0;
   const c: WatchClient = {
     state: async () => { reads += 1; if (reads === 2) controller.abort(); return four(['Spec', 'Spec', 'Spec', 'Spec']); },
-    setAuto: async () => undefined, setGreen: async () => undefined,
+    setAuto: async () => undefined, interventions: async () => [], setGreen: async () => undefined,
   };
   const result = await watchRun(GRAPH, { ...depsOf(c, clock(AT)), signal: controller.signal });
   assert.deepEqual([result.end, reads], [{ outcome: 'aborted' }, 2]);
@@ -175,7 +175,7 @@ test('watchRun ends aborted once its signal aborts, and reads nothing after (#47
 
 test('watchRun ends aborted while it sleeps between reads, without waiting out the poll (#473)', async () => {
   const controller = new AbortController();
-  const c: WatchClient = { state: async () => four(['Spec', 'Spec', 'Spec', 'Spec']), setAuto: async () => undefined, setGreen: async () => undefined };
+  const c: WatchClient = { state: async () => four(['Spec', 'Spec', 'Spec', 'Spec']), setAuto: async () => undefined, interventions: async () => [], setGreen: async () => undefined };
   // A sleep that never ends: only the abort can end the watch
   const deps = { ...depsOf(c, clock(AT)), sleep: () => new Promise<void>(() => undefined), signal: controller.signal };
   const watching = watchRun(GRAPH, deps);
@@ -201,4 +201,26 @@ test('observe counts no restart for the run a wake continues: the run it follows
 test('observe still counts a restart when the run before slept for another cause, or did not sleep (#472)', () => {
   assert.deepEqual(stageRunsAfter([sleptRun('manual')]), ['r1', 'r2']);
   assert.deepEqual(stageRunsAfter(undefined), ['r1', 'r2']);
+});
+
+test('watchRun calls onInterventions after a read whose count changed and once more at the end, never for an unchanged count; without it nothing is read (#475)', async () => {
+  const A: Intervention = { at: AT.toISOString(), action: 'POST /signal', detail: '/signal', by: 'user' };
+  const B: Intervention = { ...A, action: 'POST /tasks/:id/auto', detail: '/tasks/local:1/auto' };
+  const answers = [[], [A], [A], [A, B], [A, B, B]];
+  let reads = 0;
+  const counted = (c: WatchClient): WatchClient => ({ ...c, interventions: async () => answers[Math.min(reads++, answers.length - 1)] });
+  const idle = four(['Spec', 'Spec', 'Spec', 'Spec']);
+  const seen: number[] = [];
+  await watchRun(GRAPH, { ...depsOf(counted(client([idle, idle, idle, four(['Done', 'Done', 'Done', 'Done'])])), clock(AT)), onInterventions: (list) => { seen.push(list.length); } });
+  assert.deepEqual([seen, reads], [[1, 2, 3], 5], 'four polls and the read at the end; the late one is caught there');
+
+  reads = 0;
+  await watchRun(GRAPH, depsOf(counted(client([four(['Done', 'Done', 'Done', 'Done'])])), clock(AT)));
+  assert.equal(reads, 0, 'no listener, no read: the harness is unchanged');
+
+  const failing: WatchClient = { ...client([four(['Done', 'Done', 'Done', 'Done'])]), interventions: async () => { throw new Error('GET /benchmark-run: HTTP 404'); } };
+  const lines: string[] = [];
+  const result = await watchRun(GRAPH, { ...depsOf(failing, clock(AT)), log: (line: string) => { lines.push(line); }, onInterventions: () => assert.fail('nothing to report') });
+  assert.deepEqual(result.end, { outcome: 'done' }, 'a failed read never ends the run');
+  assert.ok(lines.includes('interventions read failed: GET /benchmark-run: HTTP 404'));
 });
