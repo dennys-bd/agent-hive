@@ -10,8 +10,9 @@ import { tempDir } from '../temp-dir.js';
 const T0 = '2026-10-01T22:00:00.000Z';
 const METRICS: Metrics = {
   token: 'abc123', outcome: 'done', startedAt: T0, endedAt: T0,
-  tasks: [{ itemId: 'local:1', id: 'MABC123-1', tokens: 5, ms: 6, waitingMs: 0, stages: [{ stage: 'Spec', ms: 6 }], buildRestarts: 1 }],
-  tokens: 5, ms: 6, waitingMs: 0, buildRestarts: 1, diff: { files: 1, insertions: 2, deletions: 0 }, reportedTestsGreen: true, unpaired: true,
+  costUsd: 1.5,
+  tasks: [{ key: 'grid', title: 'Monitor View 1', tokens: 5, ms: 6, waitingMs: 0, stages: [{ stage: 'Spec', ms: 6 }], restarts: 1 }],
+  tokens: 5, ms: 6, waitingMs: 0, restarts: { count: 1, where: ['spec · grid'] }, diff: { files: 1, insertions: 2, deletions: 0 }, tests: { green: 1, total: 1 }, unpaired: true,
 };
 const TELL_TEXT = 'Ran /hive-spec, then /hive:new-plan with superpowers:brainstorming and ecc:tdd-workflow; the code-reviewer and the planner agreed; docs/superpowers/specs/x.md; new-build, hive-pr.';
 
@@ -40,7 +41,8 @@ test('the bundle has harness-made names, scrubbed texts, numbers-only metrics, a
   assert.deepEqual(files.map((f) => f.name), ['handoff/4a-padrao.png', 'run/screen-4a.png', 'run/S1-1.png', 'run/shot-03.png', 'clicks.json', 'docs/spec-1.md', 'docs/plan-1.md', 'diff.patch', 'metrics.json']);
   for (const f of files) assert.ok(!hasTell(f.text ?? '') && !ARM_LEAK.test(f.name), f.name);
   const metrics = JSON.parse(files.find((f) => f.name === 'metrics.json')?.text ?? '{}') as Record<string, unknown>;
-  for (const key of ['token', 'reason', 'reportedTestsGreen', 'unpaired']) assert.equal(metrics[key], undefined, key);
+  for (const key of ['token', 'reason', 'tests', 'costUsd', 'unpaired']) assert.equal(metrics[key], undefined, key);
+  assert.equal(metrics.restarts, 1);
 });
 
 test('assertBlind refuses a tell in a name or in a text (#105)', () => {

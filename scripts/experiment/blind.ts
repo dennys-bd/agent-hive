@@ -25,11 +25,11 @@ export interface BundleFile { name: string; copyFrom?: string; text?: string }
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 const shotName = (path: string, i: number): string => `run/${KEPT_SHOT.test(basename(path)) ? basename(path) : `shot-${String(i + 1).padStart(2, '0')}.png`}`;
 
-/** The numbers and the outcome only: no token, no reason, no flag. */
+/** The numbers and the outcome only: no token, no reason, no flag, no cost (#473: an arm that differs by model would show in its price). */
 export function blindMetrics(m: Metrics): Record<string, unknown> {
   return {
-    outcome: m.outcome, tokens: m.tokens, ms: m.ms, waitingMs: m.waitingMs, buildRestarts: m.buildRestarts, diff: m.diff,
-    tasks: m.tasks.map((t, i) => ({ task: i + 1, tokens: t.tokens, ms: t.ms, waitingMs: t.waitingMs, stages: t.stages, buildRestarts: t.buildRestarts })),
+    outcome: m.outcome, tokens: m.tokens, ms: m.ms, waitingMs: m.waitingMs, restarts: m.restarts.count, diff: m.diff,
+    tasks: m.tasks.map((t, i) => ({ task: i + 1, tokens: t.tokens, ms: t.ms, waitingMs: t.waitingMs, stages: t.stages, restarts: t.restarts })),
   };
 }
 

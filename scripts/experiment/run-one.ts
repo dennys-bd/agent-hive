@@ -8,12 +8,13 @@ import type { Run } from '../../src/benchmark/exec.js';
 import { writeJson } from './files.js';
 import { createRunBranch, diffShortstat, dropRunWorktrees, fetchBranch, repoRoot } from '../../src/benchmark/git.js';
 import { pruneDocs } from './docs-git.js';
-import { failedMetrics, parseShortstat, runMetrics } from './metrics.js';
+import { noMetrics, parseShortstat, runMetrics } from '../../src/benchmark/metrics.js';
+import { readModelTokens } from '../../src/benchmark/prices.js';
 import { runBranch, runHome, runPrefix } from './plan.js';
 import { writeHome } from '../../src/benchmark/run-home.js';
 import type { Seed } from './seed.js';
 import { type Arm, FILES, type Metrics } from './types.js';
-import { type WatchClient, type WatchResult, watchRun } from './watcher.js';
+import { type WatchClient, type WatchEnd, type WatchResult, watchRun } from '../../src/benchmark/watcher.js';
 
 export interface RunContext { dir: string; root: string; state: string; baseline: string; docsBaseline: string; token: string; arm: Arm; seed: Seed; runJs: string; timeoutMs: number; unpaired?: boolean }
 export interface RunDeps {
@@ -23,6 +24,17 @@ export interface RunDeps {
   boot(home: string, runJs: string): Promise<RunningDaemon>; stop(daemon: RunningDaemon): Promise<void>;
   client(home: string): WatchClient;
 }
+
+// The harness passes no signal, so its watch never ends aborted; the harness has three outcomes
+function outcomeOf(end: WatchEnd): Pick<Metrics, 'outcome' | 'reason'> {
+  if (end.outcome === 'error') return { outcome: 'error', reason: end.reason };
+  if (end.outcome === 'aborted') return { outcome: 'error', reason: 'aborted' }; // no signal is passed here; were one, the harness has no fourth outcome
+  return { outcome: end.outcome };
+}
+
+export const failedMetrics = (token: string, at: string, reason: string, unpaired = false): Metrics => ({
+  ...noMetrics(), token, outcome: 'error', reason, startedAt: at, endedAt: at, ...(unpaired ? { unpaired: true as const } : {}),
+});
 
 async function watched(home: string, ctx: RunContext, deps: RunDeps): Promise<WatchResult> {
   const daemon = await deps.boot(home, ctx.runJs);
@@ -52,7 +64,9 @@ export async function executeRun(ctx: RunContext, deps: RunDeps): Promise<Metric
   const diff = parseShortstat(await diffShortstat(deps.run, ctx.baseline, branch));
   // The state the daemon saved on stop: its activity records hold the usage and the result of each task (#629)
   const state = await loadState(home);
-  const metrics = runMetrics({ token: ctx.token, startedAt, endedAt, end, watch, state, diff, unpaired: ctx.unpaired });
+  const measured = runMetrics({ startedAt, endedAt, sleptMs: 0, watch, state, diff, modelTokens: await readModelTokens(home) });
+  if (measured.unpriced.length > 0) deps.log(`${ctx.token}: no price for ${measured.unpriced.join(', ')}`);
+  const metrics: Metrics = { ...measured.metrics, token: ctx.token, ...outcomeOf(end), startedAt, endedAt, ...(ctx.unpaired ? { unpaired: true as const } : {}) };
   await mkdir(join(ctx.dir, ctx.token), { recursive: true });
   await writeJson(join(ctx.dir, ctx.token, FILES.metrics), metrics);
   await dropRunWorktrees(deps.run, prefix, await repoRoot(deps.run));

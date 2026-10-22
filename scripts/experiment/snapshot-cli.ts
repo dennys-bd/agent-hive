@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { hiveHome } from '../../src/home.js';
-import { createDaemonClient } from './daemon-client.js';
+import { createDaemonClient } from '../../src/benchmark/daemon-client.js';
 import { writeText } from './files.js';
 import { parseStagesSeed, SEED_DIR } from './seed.js';
 import { assertClean, missingStates, sanitizeState } from './snapshot.js';

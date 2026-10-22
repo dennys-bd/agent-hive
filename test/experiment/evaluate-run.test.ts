@@ -8,7 +8,7 @@ import type { Launch } from '../../scripts/experiment/browser.js';
 import { type EvalDeps, evaluateRun } from '../../scripts/experiment/evaluate-run.js';
 import type { Run } from '../../src/benchmark/exec.js';
 import { readJson, writeJson } from '../../scripts/experiment/files.js';
-import { failedMetrics } from '../../scripts/experiment/metrics.js';
+import { failedMetrics } from '../../scripts/experiment/run-one.js';
 import type { Click, Judge } from '../../scripts/experiment/types.js';
 import { tempDir } from '../temp-dir.js';
 import { fakeBrowser, fakeChild, fakeRun, line, SEED } from './fixtures.js';

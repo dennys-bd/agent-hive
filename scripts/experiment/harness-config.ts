@@ -3,7 +3,7 @@ import { MCP_DEFAULTS, MEMORY_CAP_DEFAULT, SIGNALS_DEFAULTS, WORKSPACE_PRESET_CO
 import { SANDBOX_FILE } from '../../src/benchmark/sandbox.js';
 import type { SeedTask, StageRole, StagesSeed } from './seed.js';
 import type { Arm } from './types.js';
-import type { WatchTask } from './watcher.js';
+import type { WatchTask } from '../../src/benchmark/watcher.js';
 import { type RunPaths, runClaudeArgs } from '../../src/benchmark/worker-rules.js';
 
 export const EXPERIMENT_PREFIX = 'MON'; // the sample and the evaluation; a run uses its own prefix (plan.ts runPrefix)
@@ -103,5 +103,5 @@ export function runState(tasks: readonly SeedTask[], firstStage: string, prefix:
 
 export function watchTasks(tasks: readonly SeedTask[]): WatchTask[] {
   const idOf = (key: string): string => `local:${tasks.findIndex((t) => t.key === key) + 1}`;
-  return tasks.map((task, i) => ({ itemId: `local:${i + 1}`, blockedBy: task.blockedBy.map(idOf) }));
+  return tasks.map((task, i) => ({ itemId: `local:${i + 1}`, key: task.key, title: task.title, blockedBy: task.blockedBy.map(idOf) }));
 }

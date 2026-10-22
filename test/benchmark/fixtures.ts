@@ -1,3 +1,4 @@
+import type { Snapshot, WatchTask } from '../../src/benchmark/watcher.js';
 import type { TestContext } from 'node:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,7 +9,7 @@ import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
 import { parseConfig } from '../../src/config.js';
 import { combConfig } from '../fakes.js';
-import type { Arm, ArmSetup, Config, BenchIsolation, BenchStagePick, BenchRun, Experiment, State } from '../../src/types.js';
+import type { Activity, Arm, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, State, Task, Worker } from '../../src/types.js';
 
 const pick = (skill: string): BenchStagePick => ({ agent: 'claude', skill, prompt: `${skill} {title}\n\n{body}` });
 export const SETUP: ArmSetup = {
@@ -93,3 +94,29 @@ export async function benchHome(t: TestContext): Promise<{ hiveDir: string; call
   let i = 0;
   return { hiveDir, calls, lines, deps: { hiveDir, config: mainConfig(), exec: run, random: () => ((i++ * 7) % 36) / 36, log: (l) => lines.push(l) } };
 }
+
+export function task(n: number, stage: string, extra: Partial<Task> = {}): Task {
+  return { item: { itemId: `local:${n}`, id: `MON-${n}`, title: `Task ${n}`, body: '', url: '' }, stage, boardColumn: '', auto: n === 1, created: true, ...extra };
+}
+const activityId = (itemId: string): string => `act-${itemId.replace('local:', '')}`;
+/** Each task gets its activity and record (#629: error, stopped and the slug live there, not on the task); `acts[i]` adds to the i-th task's activity. */
+export function snap(tasks: Task[], workers: Worker[] = [], acts: Partial<Activity>[] = []): Snapshot {
+  const ids = tasks.map((t) => activityId(t.item.itemId));
+  return {
+    tasks, workers,
+    activities: ids.map((id, i): Activity => ({ id, kind: 'task', workspace: 'agent-hive', slug: `hive-mon-${i + 1}-task-${i + 1}`, ...acts[i] })),
+    activityRecords: ids.map((id, i) => ({ id, taskIds: [tasks[i].item.itemId], sessions: [] })),
+  };
+}
+export const worker = (n: number, runId: string, extra: Partial<Worker> = {}): Worker => ({ id: `w-${runId}`, runId, activityId: `act-${n}`, status: 'working', ...extra });
+
+/** A clock that moves only when slept on. */
+export function clock(start: Date): { now(): Date; sleep(ms: number): Promise<void>; slept: number[] } {
+  let at = start.getTime();
+  const slept: number[] = [];
+  return { now: () => new Date(at), sleep: async (ms) => { slept.push(ms); at += ms; }, slept };
+}
+
+/** A task of the run's graph: item id local:<n>, the seed's key and title (#473), blockers by number. */
+export const watchTask = (n: number, blockedBy: number[] = [], key = `T${n}`, title = `Task ${n}`): WatchTask =>
+  ({ itemId: `local:${n}`, key, title, blockedBy: blockedBy.map((b) => `local:${b}`) });

@@ -1,14 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Activity, Task, Worker } from '../../src/types.js';
-import { observe, type Snapshot, startWatch, type WatchClient, watchRun } from '../../scripts/experiment/watcher.js';
-import { clock, snap, task, worker } from './fixtures.js';
+import { observe, type Progress, type Snapshot, startWatch, type WatchClient, watchRun } from '../../src/benchmark/watcher.js';
+import { clock, snap, task, watchTask, worker } from './fixtures.js';
 
 // 1 and 4 free; 2 after 1; 3 after 1 and 2 (the shape of the seed's 4 after 3 and 2)
-const GRAPH = [
-  { itemId: 'local:1', blockedBy: [] }, { itemId: 'local:2', blockedBy: ['local:1'] },
-  { itemId: 'local:3', blockedBy: ['local:1', 'local:2'] }, { itemId: 'local:4', blockedBy: [] },
-];
+const GRAPH = [watchTask(1), watchTask(2, [1]), watchTask(3, [1, 2]), watchTask(4)];
 const AT = new Date('2026-10-01T22:00:00.000Z');
 const four = (stages: string[], acts: Partial<Activity>[] = []): Snapshot => snap(stages.map((s, i) => task(i + 1, s)), [], acts);
 
@@ -26,7 +23,7 @@ test('startWatch counts the free tasks as released; observe frees each task once
 });
 
 test('observe releases every task freed by the same read at once, in seed order (#105)', () => {
-  const graph = [{ itemId: 'local:1', blockedBy: [] }, { itemId: 'local:2', blockedBy: [] }, { itemId: 'local:3', blockedBy: ['local:1'] }, { itemId: 'local:4', blockedBy: ['local:2'] }];
+  const graph = [watchTask(1), watchTask(2), watchTask(3, [1]), watchTask(4, [2])];
   assert.deepEqual(observe(startWatch(graph), four(['Done', 'Done', 'Spec', 'Spec']), AT).release, ['local:3', 'local:4']);
 });
 
@@ -37,17 +34,28 @@ test('observe ends with an error on a task error, a run that ended without hive_
   assert.deepEqual(observe(start, snap([task(1, 'Spec'), task(2, 'Spec'), task(3, 'Spec')]), AT).end, { outcome: 'error', reason: 'local:4 left the Hive' });
 });
 
-test('observe records one stage entry per change, at the task enteredAt or when first seen, and the distinct Build runs (#105)', () => {
-  let watch = startWatch([{ itemId: 'local:1', blockedBy: [] }, { itemId: 'local:2', blockedBy: ['local:1'] }]);
+test('observe records one stage entry per change, at the task enteredAt or when first seen, and the distinct runs of every stage (#105, #473)', () => {
+  let watch = startWatch([watchTask(1), watchTask(2, [1])]);
   const step = (tasks: Task[], workers: Worker[], at: Date): void => { watch = observe(watch, snap(tasks, workers), at).watch; };
   step([task(1, 'Spec'), task(2, 'Spec')], [worker(1, 'r0')], AT);
-  step([task(1, 'Spec'), task(2, 'Spec')], [], new Date(AT.getTime() + 60_000));
+  step([task(1, 'Spec'), task(2, 'Spec')], [worker(1, 'r5')], new Date(AT.getTime() + 60_000));
   step([task(1, 'Build', { enteredAt: '2026-10-01T23:00:00.000Z' }), task(2, 'Spec')], [worker(1, 'r1')], new Date(AT.getTime() + 7_200_000));
   step([task(1, 'Build'), task(2, 'Spec')], [worker(1, 'r1'), worker(1, 'r9', { freeSession: true })], AT);
   step([task(1, 'Build'), task(2, 'Spec')], [worker(1, 'r2')], AT);
   assert.deepEqual(watch.entries['local:1'], [{ stage: 'Spec', at: AT.toISOString() }, { stage: 'Build', at: '2026-10-01T23:00:00.000Z' }]);
-  assert.deepEqual(watch.buildRuns['local:1'], ['r1', 'r2']);
+  assert.deepEqual(watch.stageRuns, { 'local:1': { Spec: ['r0', 'r5'], Build: ['r1', 'r2'] }, 'local:2': {} });
   assert.deepEqual(watch.entries['local:2'], [{ stage: 'Spec', at: AT.toISOString() }]);
+});
+
+test('observe reports the progress: tasks in Done, and a task waiting on an approval or on a waiting or approval worker (#473)', () => {
+  const tasks = [task(1, 'Done'), task(2, 'Build'), task(3, 'Spec'), task(4, 'Spec')];
+  const held = snap(tasks, [worker(2, 'r2', { status: 'waiting' })], [{}, {}, { approval: { since: AT.toISOString() } }]);
+  assert.deepEqual(observe(startWatch(GRAPH), held, AT).progress, {
+    delivered: 1, total: 4, waiting: true,
+    tasks: [{ key: 'T1', state: 'done' }, { key: 'T2', state: 'waiting' }, { key: 'T3', state: 'waiting' }, { key: 'T4', state: 'open' }],
+  });
+  assert.equal(observe(startWatch(GRAPH), snap(tasks, [worker(2, 'r2')]), AT).progress.waiting, false, 'a working worker waits on no one');
+  assert.equal(observe(startWatch(GRAPH), snap(tasks, [worker(4, 'r4', { status: 'approval' })]), AT).progress.tasks[3].state, 'waiting');
 });
 
 function client(snapshots: (Snapshot | Error)[]): WatchClient & { released: string[] } {
@@ -135,4 +143,42 @@ test('watchRun tries a release again while the daemon is too busy starting the l
   };
   assert.deepEqual((await watchRun(GRAPH, depsOf(slow, clock(AT)))).end, { outcome: 'done' });
   assert.deepEqual(tries.slice(0, 3), ['local:2', 'local:2', 'local:2']);
+});
+
+test('watchRun calls onProgress after each read whose progress changed, never twice for the same one (#473)', async () => {
+  const idle = four(['Spec', 'Spec', 'Spec', 'Spec']);
+  const c = client([idle, idle, four(['Done', 'Spec', 'Spec', 'Build']), four(['Done', 'Done', 'Done', 'Done'])]);
+  const seen: Progress[] = [];
+  await watchRun(GRAPH, { ...depsOf(c, clock(AT)), onProgress: (progress) => { seen.push(progress); } });
+  assert.deepEqual(seen.map((p) => p.delivered), [0, 1, 4]);
+});
+
+test('watchRun keeps slept time off the timeout: with 3 s asleep, a 5 s timeout reads for 8 s (#473)', async () => {
+  const stuck = (): WatchClient => client([four(['Build', 'Spec', 'Spec', 'Build'])]);
+  const awake = clock(AT);
+  await watchRun(GRAPH, depsOf(stuck(), awake, 5000));
+  const asleep = clock(AT);
+  const result = await watchRun(GRAPH, { ...depsOf(stuck(), asleep, 5000), sleptMs: () => 3000 });
+  assert.deepEqual([awake.slept.length, asleep.slept.length, result.end], [5, 8, { outcome: 'timeout' }]);
+});
+
+test('watchRun ends aborted once its signal aborts, and reads nothing after (#473)', async () => {
+  const controller = new AbortController();
+  let reads = 0;
+  const c: WatchClient = {
+    state: async () => { reads += 1; if (reads === 2) controller.abort(); return four(['Spec', 'Spec', 'Spec', 'Spec']); },
+    setAuto: async () => undefined, setGreen: async () => undefined,
+  };
+  const result = await watchRun(GRAPH, { ...depsOf(c, clock(AT)), signal: controller.signal });
+  assert.deepEqual([result.end, reads], [{ outcome: 'aborted' }, 2]);
+});
+
+test('watchRun ends aborted while it sleeps between reads, without waiting out the poll (#473)', async () => {
+  const controller = new AbortController();
+  const c: WatchClient = { state: async () => four(['Spec', 'Spec', 'Spec', 'Spec']), setAuto: async () => undefined, setGreen: async () => undefined };
+  // A sleep that never ends: only the abort can end the watch
+  const deps = { ...depsOf(c, clock(AT)), sleep: () => new Promise<void>(() => undefined), signal: controller.signal };
+  const watching = watchRun(GRAPH, deps);
+  setImmediate(() => controller.abort());
+  assert.deepEqual((await watching).end, { outcome: 'aborted' });
 });

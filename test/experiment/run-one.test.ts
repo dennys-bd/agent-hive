@@ -5,11 +5,12 @@ import { join } from 'node:path';
 import { loadConfig } from '../../src/config.js';
 import { readJson, writeJson } from '../../scripts/experiment/files.js';
 import { runHome } from '../../scripts/experiment/plan.js';
-import { executeRun, recordFailure, type RunDeps } from '../../scripts/experiment/run-one.js';
-import type { Snapshot, WatchClient } from '../../scripts/experiment/watcher.js';
-import { failedMetrics } from '../../scripts/experiment/metrics.js';
+import { executeRun, failedMetrics, recordFailure, type RunDeps } from '../../scripts/experiment/run-one.js';
+import type { Snapshot, WatchClient } from '../../src/benchmark/watcher.js';
+import { noMetrics } from '../../src/benchmark/metrics.js';
 import { tempDir } from '../temp-dir.js';
-import { BRANCH, clock, fakeChild, fakeRun, line, PREFIX, SEED, snap, task, TOKEN } from './fixtures.js';
+import { BRANCH, fakeChild, fakeRun, line, PREFIX, SEED, TOKEN } from './fixtures.js';
+import { clock, snap, task } from '../benchmark/fixtures.js';
 
 const NIGHT = new Date('2026-10-01T22:00:00.000Z');
 
@@ -84,4 +85,9 @@ test('recordFailure writes error metrics for a run that left none, and keeps the
   await writeJson(join(dir, 'bbbbbb', 'metrics.json'), failedMetrics('bbbbbb', NIGHT.toISOString(), 'real', false));
   await recordFailure(dir, 'bbbbbb', 'later failure', false);
   assert.equal((await readJson<{ reason: string }>(join(dir, 'bbbbbb', 'metrics.json')))?.reason, 'real');
+});
+
+test('failedMetrics records an attempt that failed before anything ran: the benchmark zeros in the harness envelope (#105, #473)', () => {
+  const at = NIGHT.toISOString();
+  assert.deepEqual(failedMetrics('aaaaaa', at, 'git push refused', true), { ...noMetrics(), token: 'aaaaaa', outcome: 'error', reason: 'git push refused', startedAt: at, endedAt: at, unpaired: true });
 });

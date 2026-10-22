@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { stopDaemon } from '../../src/daemon.js';
 import { PLUGINS_DIR } from '../../src/plugin-render.js';
 import { DEFAULT_BASELINE, DEFAULT_RUNS, type ExperimentOptions, parseExperimentArgs } from './args.js';
-import { createDaemonClient } from './daemon-client.js';
+import { createDaemonClient } from '../../src/benchmark/daemon-client.js';
 import { untilDeadline } from './deadline.js';
 import { evaluateRun } from './evaluate-run.js';
 import { execRun, type Run, serialGit } from '../../src/benchmark/exec.js';
