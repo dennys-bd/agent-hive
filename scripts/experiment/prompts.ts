@@ -1,31 +1,21 @@
+import { testerPrompt as walkPrompt } from '../../src/benchmark/browser.js';
 import type { Artboard, Scenario } from './seed.js';
 
-const renderScenarios = (scenarios: readonly Scenario[]): string => scenarios.map((s) => `## ${s.id} · ${s.title}\n${s.text}`).join('\n\n');
 const renderArtboards = (artboards: readonly Artboard[]): string => artboards.map((a) => `- ${a.id}: ${a.title}${a.live ? ' (live: skip it)' : ''}`).join('\n');
 
-/** The tester's prompt. The browser is signed in through the MCP's storage state: no secret here. */
+/** The harness's tester prompt (#105): the dashboard, its sign-in and its artboards around the moved prompt; no secret here. */
 export function testerPrompt(o: { url: string; handoff: string; scenarios: readonly Scenario[]; artboards: readonly Artboard[] }): string {
-  return `You are testing the dashboard of a desktop app, in a browser, through the Playwright tools only. Open ${o.url} first: the browser is already signed in to it.
-
-Never edit, create or delete a file, and never run a shell command. Do not click a control that approves a stage, stops a session, resumes or starts a run unless a scenario tells you to.
+  const intro = `This is the dashboard of a desktop app: the browser is already signed in to it. Do not click a control that approves a stage, stops a session, resumes or starts a run unless a scenario tells you to.
 
 No agent is running, so a screen that needs one (an agent working or waiting, a live terminal, an agent's / commands) cannot be shown.
 
 First, for each artboard below, reach its screen the way the handoff says and take one screenshot named screen-<artboard>.png (screen-4a.png for 4a). Skip the artboards marked live and any you cannot reach, and say which in the notes of S1:
 ${renderArtboards(o.artboards)}
 
-Then follow each scenario in order, exactly as written, and judge it only by its Expected part. Take a screenshot after every step, named <scenario id>-<step number>.png (S2-3.png is step 3 of S2). A scenario you cannot start counts as failed: say why in its notes.
-
-Your final message is only a JSON array with one entry per scenario, in order, like:
-[{"scenario": "S1", "passed": true, "notes": "what you saw", "screenshots": ["S1-1.png"]}]
-
 The handoff:
 
-${o.handoff}
-
-The scenarios:
-
-${renderScenarios(o.scenarios)}`;
+${o.handoff}`;
+  return walkPrompt({ url: o.url, scenarios: o.scenarios, intro });
 }
 
 // Every word here passes blind.ts's ARM_LEAK

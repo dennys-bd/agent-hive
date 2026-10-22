@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractJson, judgeArgs, parseClicks, parseJudge, resultText, TESTER_MODEL, testerArgs } from '../../scripts/experiment/claude.js';
+import { extractJson, judgeArgs, parseJudge, resultText, TESTER_MODEL, testerArgs } from '../../scripts/experiment/claude.js';
 import { testerPrompt } from '../../scripts/experiment/prompts.js';
 import { CRITERIA } from '../../scripts/experiment/types.js';
 import { SEED } from './fixtures.js';
@@ -43,14 +43,6 @@ test('resultText answers the claude -p json result and rejects an error; extract
   assert.deepEqual(extractJson('Here:\n```json\n[{"a": 1}]\n```\nThat is all.', '['), [{ a: 1 }]);
   assert.deepEqual(extractJson('{"x": {"y": 2}}', '{'), { x: { y: 2 } });
   assert.throws(() => extractJson('no json', '{'), /no JSON/);
-});
-
-test('parseClicks keeps one entry per seed scenario: a missing one fails, passed only when true, strings only (#105)', () => {
-  assert.deepEqual(parseClicks([{ scenario: 'S2', passed: 'yes', notes: 7, screenshots: ['S2-1.png', 3] }, { scenario: 'S9', passed: true }], SEED.scenarios), [
-    { scenario: 'S1', passed: false, notes: 'not reported by the tester', screenshots: [] },
-    { scenario: 'S2', passed: false, notes: '', screenshots: ['S2-1.png'] },
-  ]);
-  assert.deepEqual(parseClicks('nothing', SEED.scenarios).map((c) => c.passed), [false, false]);
 });
 
 test('parseJudge needs a 1 to 10 score per criterion, and nulls fidelity and behaviour when not booted (#105)', () => {

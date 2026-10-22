@@ -5,7 +5,9 @@ import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ensureChromium, keepShots, mcpBinary, mcpConfig, type SampleChild, startSample, stopSample, waitReady } from '../../src/benchmark/browser.js';
+import { ensureChromium, keepShots, mcpBinary, mcpConfig, parseClicks, type SampleChild, scenarioResults, TESTER_SCHEMA, TESTER_TIMEOUT_MS, TESTER_TOOLS, testerPrompt, testerRefusal, walkScenarios, startSample, stopSample, waitReady } from '../../src/benchmark/browser.js';
+import type { HeadlessInput, HeadlessResult } from '../../src/headless-run.js';
+import type { BenchScenario } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
 
 test("mcpConfig runs the Playwright MCP's bin with this Node, headless and isolated on the sample's origin, its shots in the output dir; no storage state unless given (#105, #474)", () => {
@@ -86,4 +88,75 @@ test('waitReady answers once the URL gives a status below 500, and gives up at t
   const refused = async (): Promise<{ status: number }> => { throw new Error('ECONNREFUSED'); };
   assert.equal(await waitReady(url, { fetch: refused, now: () => clock, sleep: tick, exited: () => false, deadlineMs: 3_000 }), `the sample did not start: no answer from ${url} in 3 s`);
   assert.equal(await waitReady(url, { fetch: refused, now: () => 0, sleep: async () => undefined, exited: () => true, deadlineMs: 3_000 }), 'the sample did not start: its command exited');
+});
+
+const SCENARIOS: BenchScenario[] = [{ id: 'S1', title: 'Sign in', text: 'Open it. Expected: the list shows.' }, { id: 'S2', title: 'Add an item', text: 'Click add. Expected: a row appears.' }];
+
+test('testerPrompt opens the URL, lists every scenario, forbids edits and asks for every result; the intro goes before the scenarios (#474)', () => {
+  const prompt = testerPrompt({ url: 'http://127.0.0.1:5173/', scenarios: SCENARIOS, intro: 'INTRO' });
+  for (const part of ['http://127.0.0.1:5173/', '## S1 · Sign in', '## S2 · Add an item', 'Never edit', '"scenarios"', '<scenario id>-<step number>.png', 'INTRO']) assert.ok(prompt.includes(part), part);
+  assert.ok(prompt.indexOf('INTRO') < prompt.indexOf('## S1'));
+});
+
+test('parseClicks keeps one entry per seed scenario: a missing one fails, passed only when true, strings only (#105, #474)', () => {
+  assert.deepEqual(parseClicks([{ scenario: 'S2', passed: 'yes', notes: 7, screenshots: ['S2-1.png', 3] }, { scenario: 'S9', passed: true }], SCENARIOS), [
+    { scenario: 'S1', passed: false, notes: 'not reported by the tester', screenshots: [] },
+    { scenario: 'S2', passed: false, notes: '', screenshots: ['S2-1.png'] },
+  ]);
+  assert.deepEqual(parseClicks('nothing', SCENARIOS).map((c) => c.passed), [false, false]);
+});
+
+test('the tester is refused for an agent whose headless run takes no MCP config (#474)', () => {
+  assert.equal(testerRefusal('claude'), undefined);
+  assert.equal(testerRefusal('codex'), 'codex cannot run the tester (no MCP config in a headless run)');
+});
+
+test("walkScenarios runs one tester per walk in a bare temp folder holding only the MCP config, keeps each walk's shots under its number and counts the walks per scenario (#474)", async (t) => {
+  const dir = await tempDir(t, 'walk-');
+  const tmpRoot = join(dir, 'tmp');
+  await mkdir(tmpRoot);
+  const screens = join(dir, 'screens');
+  const inputs: HeadlessInput[] = [];
+  const headless = async (input: HeadlessInput): Promise<HeadlessResult> => {
+    inputs.push(input);
+    assert.deepEqual((await readdir(input.cwd ?? '')).sort(), ['mcp.json', 'screens']);
+    await writeFile(join(input.cwd ?? '', 'S1-1.png'), 'png');
+    const second = inputs.length === 2;
+    return { answer: JSON.stringify({ scenarios: [{ scenario: 'S1', passed: true, notes: 'ok', screenshots: ['S1-1.png'] }, { scenario: 'S2', passed: second, notes: '', screenshots: [] }] }) };
+  };
+  const walks = await walkScenarios(
+    { tester: { agent: 'claude', model: 'sonnet' }, scenarios: SCENARIOS, walks: 2, url: 'http://127.0.0.1:5173/', screens, chromiumPath: '/pw/chrome', mcpBin: '/pkg/cli.js' },
+    { headless, log: () => undefined, signal: new AbortController().signal, tmpRoot },
+  );
+  assert.deepEqual(scenarioResults(SCENARIOS, walks), [
+    { id: 'S1', passed: 2, total: 2, screenshots: ['1-S1-1.png', '2-S1-1.png'] },
+    { id: 'S2', passed: 1, total: 2, screenshots: [] },
+  ]);
+  assert.deepEqual((await readdir(screens)).sort(), ['1-S1-1.png', '2-S1-1.png']);
+  assert.deepEqual(await readdir(tmpRoot), [], "every walk's temp folder is gone");
+  for (const input of inputs) {
+    assert.deepEqual([input.agent, input.model, input.schema, input.allowedTools, input.timeoutMs, input.readOnlyTools], ['claude', 'sonnet', TESTER_SCHEMA, TESTER_TOOLS, TESTER_TIMEOUT_MS, undefined]);
+    assert.ok(input.mcpConfig?.startsWith(tmpRoot) && input.mcpConfig.endsWith('mcp.json'));
+  }
+  assert.ok(TESTER_TOOLS.every((name) => name.startsWith('mcp__playwright__browser_')) && !TESTER_TOOLS.some((name) => /evaluate|run_code|file_upload|install|cookie|storage|network/.test(name)));
+});
+
+test('a walk that fails or answers no JSON counts each of its scenarios failed with the reason; the other walks still count (#474)', async (t) => {
+  const dir = await tempDir(t, 'walk-');
+  const lines: string[] = [];
+  let n = 0;
+  const headless = async (): Promise<HeadlessResult> => {
+    n += 1;
+    if (n === 1) return { failure: 'timed out after 7200000 ms', detail: 'x' };
+    if (n === 2) return { answer: 'not json' };
+    return { answer: JSON.stringify({ scenarios: [{ scenario: 'S1', passed: true, notes: '', screenshots: [] }, { scenario: 'S2', passed: true, notes: '', screenshots: [] }] }) };
+  };
+  const walks = await walkScenarios(
+    { tester: { agent: 'claude' }, scenarios: SCENARIOS, walks: 3, url: 'http://127.0.0.1:5173/', screens: join(dir, 'screens'), chromiumPath: '/pw/chrome', mcpBin: '/pkg/cli.js' },
+    { headless, log: (line) => lines.push(line), signal: new AbortController().signal, tmpRoot: dir },
+  );
+  assert.deepEqual(walks[0]?.map((c) => [c.scenario, c.passed, c.notes]), [['S1', false, "the tester's walk 1 failed: timed out after 7200000 ms"], ['S2', false, "the tester's walk 1 failed: timed out after 7200000 ms"]]);
+  assert.deepEqual(walks[1]?.map((c) => c.passed), [false, false]);
+  assert.deepEqual(scenarioResults(SCENARIOS, walks).map((r) => [r.passed, r.total]), [[1, 3], [1, 3]]);
+  assert.deepEqual(lines, ['tester walk 1: timed out after 7200000 ms', 'tester walk 2: no JSON answer']);
 });

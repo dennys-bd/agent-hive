@@ -26,7 +26,7 @@ export interface Manifest {
 export interface Metrics extends BenchMetrics { token: string; outcome: Outcome; reason?: string; startedAt: string; endedAt: string; unpaired?: true }
 
 export interface EvalResult { booted: boolean; testsGreen: boolean; reason?: string }
-export interface Click { scenario: string; passed: boolean; notes: string; screenshots: string[] }
+export type { Click } from '../../src/benchmark/browser.js';
 export const CRITERIA = ['fidelity', 'behaviour', 'code', 'specAndPlan', 'tests'] as const;
 export type Criterion = (typeof CRITERIA)[number];
 export interface Score { score: number | null; reason: string }
