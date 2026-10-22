@@ -20,9 +20,9 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 // Checked at the boundary (#592): anything else never reaches the view
 const isPrData = (value: unknown): value is PrData =>
   isObject(value) && typeof value.url === 'string' && typeof value.head === 'string' && typeof value.body === 'string' && typeof value.approvals === 'number'
-  && Array.isArray(value.files) && Array.isArray(value.threads) && Array.isArray(value.methods) && Array.isArray(value.reviews) && Array.isArray(value.comments);
+  && Array.isArray(value.methods) && Array.isArray(value.reviews) && Array.isArray(value.comments);
 // The status tells a read's failures apart (#849); the server's text, GitHub's own, never reaches the page
-const READ_ERRORS: Record<number, MessageKey> = { 404: 'pr.error.notFound', 409: 'pr.error.moved', 413: 'pr.error.tooLarge', 502: 'pr.error.github' };
+const READ_ERRORS: Record<number, MessageKey> = { 404: 'pr.error.notFound', 409: 'pr.error.moved', 413: 'pr.error.tooLarge', 502: 'pr.error.github', 503: 'pr.error.github' };
 
 /** A failed read's copy (#849), by the status src/ui/lib/api.ts puts on the error: anything unforeseen, a network failure included, is
  * unexpected, so the user always learns an error happened. */

@@ -10,11 +10,11 @@ import { conflictedFiles } from './pr-conflicts.js';
 import { addPrDraft, markPrReviewed, type PrReviewStore, removePrDraft, updatePrDraft } from './pr-review-store.js';
 import { prLink, prNumber, prRepo } from './pull-requests.js';
 import { sourceLogin } from './read-model/rows.js';
-import { prDataOf } from './read-model/views.js';
+import { prDataOf, type StoredPr } from './read-model/views.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
 import { isHash, isPath, parseLineAnchor } from './review-bodies.js';
 import { readingOf, type Reading, type RepoReadModel } from './server-repos.js';
-import { changesOf, changesReaderOf, dropStale, HeadMoved, readFresh } from './server-pr-changes.js';
+import { changesReaderOf, dropStale, HeadMoved } from './server-pr-changes.js';
 import { badRequest, errorMessage, refuse } from './server-review.js';
 import type { LiveView, Refusal, TaskRouteDeps } from './server-tasks.js';
 import type { Exec as GhExec, GqlJson } from './sources/github-gql.js';
@@ -26,10 +26,12 @@ const HTTP_CONFLICT = 409;
 const HTTP_TOO_LARGE = 413;
 const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
+const HTTP_SERVICE_UNAVAILABLE = 503;
 // the raw text, as #757's issue number: 1e2, 0x10 and 07 all parse to a number yet name no PR the URL spells
 const PR_NUMBER = /^[1-9]\d{0,9}$/;
 const NUMBER_MESSAGE = 'number must be a PR number';
 const UNKNOWN_REPOSITORY_MESSAGE = 'repository is not one the Hive lists';
+const UNREACHABLE_MESSAGE = 'could not reach GitHub'; // the issue page's words (#181)
 const HEAD_MOVED_MESSAGE = 'o PR mudou durante a leitura, atualize';
 const TOO_LARGE_MESSAGE = 'diff grande demais para o visualizador'; // #270's words
 const MARK_MESSAGE = 'path um texto não vazio, hash um sha256 e reviewed true ou false';
@@ -99,14 +101,26 @@ export async function prTarget(deps: Pick<PrRouteDeps, 'requireLive' | 'exec'>, 
   return { url, state: listed.state, config: listed.config, ...(task === undefined ? {} : { task }) };
 }
 
-/** The fields and the changes in one answer, until the page reads them apart (#497). */
-export async function readPr(deps: Pick<PrRouteDeps, 'gql' | 'gh' | 'log' | 'prReviews' | 'notifyPrReview'>, reading: Reading, url: string): Promise<PrData> {
-  const { stored, row } = await readFresh(deps, reading, url);
-  return { ...stored, ...changesOf(stored, row) };
+// The PR's fields from the model (#497), as #181's issue page: a stored PR at once, its refetch started and not awaited (the loop logs a failure,
+// a change comes back as a readModel event); a PR the model lacks waits for the refetch, so one the sync has not reached yet is no 404
+async function prFields(reading: Reading, url: string): Promise<{ data: StoredPr } | { refusal: Refusal }> {
+  const repository = prRepo(url);
+  const number = Number(prNumber(url));
+  const login = sourceLogin(reading.source);
+  const page = reading.model.db.prPage(reading.source, repository, number);
+  if (page !== undefined) {
+    void reading.model.refetch(repository, number); // never rejects: the loop logs its failure
+    return { data: prDataOf(page, login) };
+  }
+  const outcome = await reading.model.refetch(repository, number);
+  const late = outcome === 'gone' ? undefined : reading.model.db.prPage(reading.source, repository, number);
+  if (late !== undefined) return { data: prDataOf(late, login) };
+  if (outcome === 'failed' || outcome === 'skipped') return { refusal: { status: HTTP_SERVICE_UNAVAILABLE, message: UNREACHABLE_MESSAGE } };
+  return { refusal: githubFailure(new PrNotFound()) };
 }
 
 // The conflicted files of a PR in conflict (#758), from its task's worktree; none on any other PR, without a task or without a worktree
-async function conflictsOf(deps: PrRouteDeps, found: PrTarget, data: PrData): Promise<string[] | undefined> {
+async function conflictsOf(deps: PrRouteDeps, found: PrTarget, data: Pick<PrData, 'mergeState' | 'baseRef' | 'head'>): Promise<string[] | undefined> {
   if (data.mergeState !== 'conflicts' || found.task === undefined) return undefined;
   const live = activityOf(found.state, found.task.item.itemId);
   if (live?.worktree === undefined || live.worktreeGone) return undefined;
@@ -139,22 +153,19 @@ export async function writePrFile(deps: Pick<PrRouteDeps, 'prReviews' | 'notifyP
 
 const bodyOf = (req: Request): Record<string, unknown> => (req.body ?? {}) as Record<string, unknown>;
 
-// GET …/pulls/:number and its review file. Only the latest read of a PR drops marks: an older one finishing late would drop a mark made against
-// a newer diff. ponytail: one entry per link, never pruned
+// GET …/pulls/:number (the fields, from the model), …/changes (the diff and the rest, GitHub's) and the review file. Only the latest changes
+// read of a PR drops marks: an older one finishing late would drop a mark made against a newer diff.
 function registerReadRoutes(app: Express, deps: PrRouteDeps): void {
-  const latest = new Map<string, number>();
   const changes = changesReaderOf(deps);
   app.get(PR_ROUTE, async (req: Request, res: Response) => {
     const found = await prTarget(deps, req, res);
     const reading = found && (await readingOf(deps, res));
     if (!found || !reading) return;
-    const mine = (latest.get(found.url) ?? 0) + 1;
-    latest.set(found.url, mine);
+    const read = await prFields(reading, found.url);
+    if ('refusal' in read) return refuse(res, read.refusal);
     try {
-      const data = await readPr(deps, reading, found.url);
-      const conflicts = await conflictsOf(deps, found, data);
-      res.json(conflicts === undefined ? data : { ...data, conflicts });
-      if (latest.get(found.url) === mine) await dropStale(deps, found.url, data.files);
+      const conflicts = await conflictsOf(deps, found, read.data);
+      res.json(conflicts === undefined ? read.data : { ...read.data, conflicts });
     } catch (err) {
       githubRefusal(deps, res, err, `pr #${prNumber(found.url)}`);
     }

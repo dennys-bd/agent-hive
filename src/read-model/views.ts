@@ -88,8 +88,8 @@ const NO_PULL: Omit<PullRow, 'source' | 'nodeId' | 'repository' | 'number'> = {
   headRef: '', baseRef: '', headOwner: '', baseOwner: '', commits: 0, additions: 0, deletions: 0, requested: [], closes: [], awaiting: [],
 };
 
-/** What the model holds of a PR's page (#187): every PrData field but the ones read on open. */
-export type StoredPr = Omit<PrData, 'files' | 'threads' | 'truncated' | 'conflicts' | 'behindBy'>;
+/** What the model holds of a PR's page (#187): every PrData field but the conflicts, computed per read. */
+export type StoredPr = Omit<PrData, 'conflicts'>;
 
 // GitHub logins ignore case
 const sameLogin = (a: string | null, b: string): boolean => a !== null && a.toLowerCase() === b.toLowerCase();

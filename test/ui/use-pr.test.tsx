@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { prPath, prReadError, UNKNOWN_RETRY_MS, usePr } from '@/hooks/use-pr';
 import { emitPrReviewEvent, emitReadModelEvent } from '@/lib/review-events';
-import type { PrChanges, PrData } from '../../src/types';
+import type { PrView } from '@/lib/pr-view';
+import type { PrChanges } from '../../src/types';
 import { fakePrHive, type FakePrHive, PR, PR2, prChanges, prData, ROUTE } from './pr-harness';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } })); // the toasts are observable without a Toaster
@@ -32,7 +33,7 @@ test('usePr reads the PR and its file; a refresh keeps the PR shown until its an
 });
 
 test('an answer that is no PR reads as an error, never as a PR (#592)', async () => {
-  hive.pr = { ok: true } as unknown as PrData;
+  hive.pr = { ok: true } as unknown as PrView;
   const { result } = renderHook(() => usePr(PR, true));
   await waitFor(() => expect(result.current.load).toEqual({ status: 'error', message: 'invalid answer from the server' }));
 });
@@ -50,7 +51,7 @@ test('GitHub still computing mergeability: the PR is read once more after 3 s, a
 
 test('a PR answer whose reviews, comments, body or approvals are malformed reads as an error, never a crash (#758)', async () => {
   for (const bad of [{ reviews: null }, { comments: 'x' }, { body: null }, { approvals: '1' }]) {
-    hive.pr = { ...prData(), ...bad } as unknown as PrData;
+    hive.pr = { ...prData(), ...bad } as unknown as PrView;
     const { result, unmount } = renderHook(() => usePr(PR, true));
     await waitFor(() => expect(result.current.load).toEqual({ status: 'error', message: 'invalid answer from the server' }));
     unmount();
@@ -75,9 +76,9 @@ test('the unknown-mergeability retry is armed again for another PR: a new url is
 const failed = (status?: number): Error => Object.assign(new Error('gh api graphql: raw GitHub text'), status === undefined ? {} : { status });
 const GITHUB = "Couldn't read this PR from GitHub. Try again in a moment.";
 
-test('prReadError names a failed read by its status alone: 404, 409, 413 and 502 their own copy; anything else, a network failure included, unexpected (#849)', () => {
-  expect([404, 409, 413, 502].map((status) => prReadError(failed(status)))).toEqual([
-    'This PR was not found on GitHub.', 'The PR changed while it was read. Refresh.', "This PR's diff is too large to show.", GITHUB,
+test('prReadError names a failed read by its status alone: 404, 409, 413, 502 and 503 their own copy; anything else, a network failure included, unexpected (#849)', () => {
+  expect([404, 409, 413, 502, 503].map((status) => prReadError(failed(status)))).toEqual([
+    'This PR was not found on GitHub.', 'The PR changed while it was read. Refresh.', "This PR's diff is too large to show.", GITHUB, GITHUB,
   ]);
   expect([prReadError(failed(500)), prReadError(failed(400)), prReadError(failed()), prReadError(new TypeError('Failed to fetch')), prReadError('boom')])
     .toEqual(Array(5).fill('Unexpected error.'));
