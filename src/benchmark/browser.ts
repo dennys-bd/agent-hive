@@ -78,9 +78,9 @@ export async function keepShots(from: string, to: string, prefix = ''): Promise<
 export const SAMPLE_READY_MS = 5 * 60_000;
 export const SAMPLE_POLL_MS = 1_000;
 export const SAMPLE_STOP_GRACE_MS = 5_000;
-export interface SampleChild { readonly pid?: number; readonly exitCode: number | null; once(event: 'exit', listener: () => void): unknown }
+export interface SampleChild { readonly pid?: number; readonly exitCode: number | null; once(event: 'exit' | 'error', listener: () => void): unknown }
 export type SpawnSample = (file: string, args: readonly string[], options: SpawnOptions) => SampleChild;
-export interface StopDeps { kill(pid: number, signal: NodeJS.Signals): void; graceMs: number }
+export interface StopDeps { kill(pid: number, signal: NodeJS.Signals | 0): void; graceMs: number }
 export interface ReadyDeps { fetch(url: string, init: { signal: AbortSignal }): Promise<{ status: number }>; now(): number; sleep(ms: number): Promise<void>; exited(): boolean; deadlineMs?: number }
 
 /** The seed's sample app (#474), the fourth deliberate shell string (CLAUDE.md): `command` is the user's own line from the seed, run whole
@@ -91,23 +91,28 @@ export function startSample(command: string, cwd: string, spawnSample: SpawnSamp
 
 const isGone = (err: unknown): boolean => (err as { code?: unknown }).code === 'ESRCH';
 
-// ponytail: waits on the shell alone; a child that ignores SIGTERM in a group whose shell already exited gets no SIGKILL
+// A stubborn child can outlive the shell in the group: signal 0 asks whether the group still has a member, and one that does gets SIGKILL after the grace
 export async function stopSample(child: SampleChild, deps: StopDeps = { kill: (pid, signal) => process.kill(pid, signal), graceMs: SAMPLE_STOP_GRACE_MS }): Promise<void> {
   if (child.pid === undefined) return;
+  const group = -child.pid;
   const exited = new Promise<boolean>((resolve) => child.once('exit', () => resolve(true)));
-  try {
-    deps.kill(-child.pid, 'SIGTERM');
-  } catch (err) {
-    if (isGone(err)) return;
-    throw err;
+  if (!(await signalGroup(group, 'SIGTERM', deps))) return;
+  const shellGone = child.exitCode !== null || (await Promise.race([exited, delay(deps.graceMs, false, { ref: false })]));
+  if (shellGone) {
+    if (!(await signalGroup(group, 0, deps))) return;
+    await delay(deps.graceMs, undefined, { ref: false });
   }
-  if (child.exitCode !== null) return;
-  const late = await Promise.race([exited, delay(deps.graceMs, false, { ref: false })]);
-  if (late) return;
+  await signalGroup(group, 'SIGKILL', deps);
+}
+
+// false: the group is gone (ESRCH), which is what every stop wants
+async function signalGroup(group: number, signal: NodeJS.Signals | 0, deps: StopDeps): Promise<boolean> {
   try {
-    deps.kill(-child.pid, 'SIGKILL');
+    deps.kill(group, signal);
+    return true;
   } catch (err) {
-    if (!isGone(err)) throw err;
+    if (isGone(err)) return false;
+    throw err;
   }
 }
 
@@ -196,7 +201,7 @@ async function walkOnce(n: number, input: WalkInput, deps: WalkDeps): Promise<Cl
     const result = await deps.headless({
       agent: tester.agent, ...(tester.model === undefined ? {} : { model: tester.model }), prompt: testerPrompt({ url: input.url, scenarios: input.scenarios }),
       schema: TESTER_SCHEMA, signal: deps.signal, cwd: review, mcpConfig: config, allowedTools: TESTER_TOOLS, timeoutMs: TESTER_TIMEOUT_MS,
-    });
+    }).catch((): HeadlessResult => ({ failure: 'could not start', detail: '' })); // a rejection must not lose the run's other results
     const kept = await keepShots(review, input.screens, `${n}-`);
     const failure = 'failure' in result ? result.failure : undefined;
     const clicks = failure === undefined && 'answer' in result ? clicksOf(result.answer, input, kept, n) : undefined;
@@ -212,7 +217,10 @@ async function walkOnce(n: number, input: WalkInput, deps: WalkDeps): Promise<Cl
 /** `walks` separate tester runs, each over every scenario (#474): a fresh tester per walk is what makes a walk independent. */
 export async function walkScenarios(input: WalkInput, deps: WalkDeps): Promise<Click[][]> {
   const walks: Click[][] = [];
-  for (let n = 1; n <= input.walks; n += 1) walks.push(await walkOnce(n, input, deps));
+  for (let n = 1; n <= input.walks; n += 1) {
+    deps.signal.throwIfAborted(); // a Quit stops before the next walk
+    walks.push(await walkOnce(n, input, deps));
+  }
   return walks;
 }
 

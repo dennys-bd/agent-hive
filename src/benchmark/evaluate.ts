@@ -24,7 +24,7 @@ export interface EvaluateDeps {
   headless(input: HeadlessInput): Promise<HeadlessResult>;
   browser: { ensureChromium(): Promise<{ path: string } | { reason: string }>; mcpBinary(): Promise<string> };
   spawnSample: SpawnSample;
-  kill(pid: number, signal: NodeJS.Signals): void;
+  kill(pid: number, signal: NodeJS.Signals | 0): void;
   fetch: ReadyDeps['fetch'];
   now(): number;
   sleep(ms: number): Promise<void>;
@@ -81,6 +81,7 @@ async function walkSample(ctx: EvaluateContext, paths: EvalPaths, chromiumPath: 
   const child = startSample(sample.command, paths.worktree, deps.spawnSample, buildEnv(process.env));
   let exited = false;
   child.once('exit', () => { exited = true; });
+  child.once('error', () => { exited = true; deps.log('sample: spawn failed'); }); // a failed spawn emits error and never exit
   try {
     const unready = await waitReady(sample.url, { fetch: deps.fetch, now: deps.now, sleep: deps.sleep, exited: () => exited });
     if (unready !== undefined) return fill(unready, 'scenarios: the sample did not start');
@@ -131,9 +132,12 @@ async function evaluateWorktree(ctx: EvaluateContext, paths: EvalPaths, git: Run
   // The run branch was cut from the clone's origin/main (createRunBranches): that is the baseline the diff is against
   const baseline = await resolveBaseline(git, `origin/${BASELINE_BRANCH}`);
   const work: Work = { id: ctx.run.token, title: 'The tasks of the run', body: tasksText(ctx), base: 'the baseline', stat: await diffShortstat(git, baseline, branch), patch: cutPatch(await fullDiff(git, baseline, branch)) };
+  deps.signal.throwIfAborted();
   const collectors = await runCollectors(evaluation.collectors, work, paths.worktree, pluginTrees(ctx.folder).source, { headless: deps.headless, signal: deps.signal, log: deps.log });
+  deps.signal.throwIfAborted();
   const walks = evaluation.dynamic ? await dynamicStep(ctx, paths, deps) : [];
   await writeFile(paths.clicks, json(walks), { mode: FILE_MODE });
+  deps.signal.throwIfAborted();
   const scenarios = scenarioResults(scenariosOf(ctx), walks);
   const judge = await judgeStep(ctx, paths, { work, collectors, scenarios, walks }, deps);
   if (judge === undefined) return undefined;
@@ -143,6 +147,7 @@ async function evaluateWorktree(ctx: EvaluateContext, paths: EvalPaths, git: Run
 
 /** undefined: the judge failed, and the run keeps the evaluation it had. */
 export async function evaluateRun(ctx: EvaluateContext, deps: EvaluateDeps): Promise<BenchRunEvaluation | undefined> {
+  deps.signal.throwIfAborted();
   const paths = evalPaths(ctx.run.home);
   const git = inDir(deps.exec, join(ctx.folder, CLONE_DIR));
   const at = new Date(deps.now()).toISOString();

@@ -50,10 +50,10 @@ test('keepShots copies every PNG under the folder, a nested one named by its pat
   assert.deepEqual((await readdir(join(dir, 'to'))).sort(), ['2-S1-1.png', '2-screens-page.png']);
 });
 
-type FakeChild = SampleChild & { exitCode: number | null; exit(): void };
+type FakeChild = SampleChild & { exitCode: number | null; exit(): void; fail(): void };
 function fakeChild(pid = 4242): FakeChild {
   const events = new EventEmitter();
-  const child: FakeChild = { pid, exitCode: null, once: (event, listener) => events.once(event, listener), exit: () => { child.exitCode = 0; events.emit('exit'); } };
+  const child: FakeChild = { pid, exitCode: null, once: (event, listener) => events.once(event, listener), exit: () => { child.exitCode = 0; events.emit('exit'); }, fail: () => { events.emit('error', new Error('spawn ENOENT')); } };
   return child;
 }
 
@@ -68,14 +68,46 @@ test("startSample runs the seed's command through $SHELL -c in the worktree, det
 });
 
 test('stopSample sends SIGTERM to the process group, then SIGKILL after the grace when the shell has not exited (#474)', async () => {
-  const kills: [number, string][] = [];
+  const kills: [number, string | 0][] = [];
   await stopSample(fakeChild(4242), { kill: (pid, signal) => { kills.push([pid, signal]); }, graceMs: 20 });
   assert.deepEqual(kills, [[-4242, 'SIGTERM'], [-4242, 'SIGKILL']]);
   const polite = fakeChild(4343);
   const politeKills: [number, string][] = [];
-  await stopSample(polite, { kill: (pid, signal) => { politeKills.push([pid, signal]); if (signal === 'SIGTERM') polite.exit(); }, graceMs: 60_000 });
+  await stopSample(polite, { kill: (pid, signal) => { if (signal === 0) throw Object.assign(new Error('gone'), { code: 'ESRCH' }); politeKills.push([pid, signal]); if (signal === 'SIGTERM') polite.exit(); }, graceMs: 60_000 });
   assert.deepEqual(politeKills, [[-4343, 'SIGTERM']]);
   await stopSample(fakeChild(), { kill: () => { throw Object.assign(new Error('gone'), { code: 'ESRCH' }); }, graceMs: 10 }); // a group already gone
+});
+
+test('stopSample still sends SIGKILL to the group after the grace when the shell exited on SIGTERM (a stubborn child outlives it) (#474)', async () => {
+  const shell = fakeChild(4444);
+  const kills: [number, string | 0][] = [];
+  await stopSample(shell, { kill: (pid, signal) => { kills.push([pid, signal]); if (signal === 'SIGTERM') shell.exit(); }, graceMs: 20 });
+  assert.deepEqual(kills, [[-4444, 'SIGTERM'], [-4444, 0], [-4444, 'SIGKILL']]);
+});
+
+test('a walk whose headless run rejects counts its scenarios failed and the other walks still count (#474)', async (t) => {
+  const dir = await tempDir(t, 'walk-');
+  const lines: string[] = [];
+  const headless = async (): Promise<HeadlessResult> => { throw new Error('spawn claude ENOENT /secret/path'); };
+  const walks = await walkScenarios(
+    { tester: { agent: 'claude' }, scenarios: SCENARIOS, walks: 2, url: 'http://127.0.0.1:5173/', screens: join(dir, 'screens'), chromiumPath: '/pw/chrome', mcpBin: '/pkg/cli.js' },
+    { headless, log: (line) => lines.push(line), signal: new AbortController().signal, tmpRoot: dir },
+  );
+  assert.equal(walks.length, 2);
+  assert.ok(walks.flat().every((c) => !c.passed && c.notes.startsWith("the tester's walk")));
+  assert.equal(lines.some((l) => l.includes('/secret/path')), false);
+});
+
+test('walkScenarios stops between walks once the signal aborted (#474)', async (t) => {
+  const dir = await tempDir(t, 'walk-');
+  const controller = new AbortController();
+  let calls = 0;
+  const headless = async (): Promise<HeadlessResult> => { calls += 1; controller.abort(); return { answer: '{}' }; };
+  await assert.rejects(walkScenarios(
+    { tester: { agent: 'claude' }, scenarios: SCENARIOS, walks: 3, url: 'http://127.0.0.1:5173/', screens: join(dir, 'screens'), chromiumPath: '/pw/chrome', mcpBin: '/pkg/cli.js' },
+    { headless, log: () => undefined, signal: controller.signal, tmpRoot: dir },
+  ));
+  assert.equal(calls, 1);
 });
 
 test('waitReady answers once the URL gives a status below 500, and gives up at the deadline or when the command exits first (#474)', async () => {

@@ -73,7 +73,11 @@ function depsOf(folder: string, exec: Run, headless: EvaluateDeps['headless'], o
     exec, headless, log: (line) => lines.push(line), signal: new AbortController().signal, tmpRoot: join(folder, 'tmp'), now: () => AT, sleep: async () => undefined,
     browser: { ensureChromium: async () => { chromiumAsked += 1; return o.chromium ?? { path: '/pw/chrome' }; }, mcpBinary: async () => '/pkg/mcp/cli.js' },
     spawnSample: (file, args) => { spawned.push([file, ...args]); return { pid: 4242, exitCode: null, once: (event, listener) => events.once(event, listener) }; },
-    kill: (pid, signal) => { kills.push([pid, signal]); events.emit('exit'); },
+    kill: (pid, signal) => {
+      if (signal === 0) throw Object.assign(new Error('gone'), { code: 'ESRCH' }); // the group is empty once the shell exited
+      kills.push([pid, signal]);
+      events.emit('exit');
+    },
     fetch: async () => ({ status: 200 }),
   };
   return { deps, kills, spawned, lines, chromiumAsked: () => chromiumAsked };
@@ -150,6 +154,35 @@ test('a run branch missing from repo.git gets the no-branch evaluation: every co
   assert.equal(agents.inputs.length, 0);
   assert.equal(git.calls.some((c) => c.line.startsWith('git worktree add') || c.line.startsWith('git fetch')), false);
   assert.ok(existsSync(join(home, 'eval', 'judge.json')));
+});
+
+test('a sample whose spawn emits error counts as not started: every walk fails with the reason, no crash, the judge still runs (#474)', async (t) => {
+  const { folder, home, ctx } = await setup(t);
+  const git = fakeGit();
+  const agents = fakeAgents();
+  const d = depsOf(folder, git.exec, agents.headless);
+  const events = new EventEmitter();
+  d.deps.fetch = async () => { throw new Error('ECONNREFUSED'); };
+  d.deps.spawnSample = () => { queueMicrotask(() => events.emit('error', new Error('spawn ENOENT'))); return { exitCode: null, once: (event, listener) => events.once(event, listener) }; };
+  const result = await evaluateRun(ctx, d.deps);
+  assert.deepEqual(result?.scenarios.map((s) => s.passed), [0, 0]);
+  const clicks = JSON.parse(await readFile(join(home, 'eval', 'clicks.json'), 'utf8')) as Click[][];
+  assert.ok(clicks.flat().every((c) => c.notes === 'the sample did not start: its command exited'));
+  assert.equal(result?.judge.scores.length, 2);
+  assert.ok(removed(git.calls, home));
+});
+
+test('an aborted signal stops the remaining steps and still removes the worktree (#474)', async (t) => {
+  const { folder, home, ctx } = await setup(t);
+  const git = fakeGit();
+  const agents = fakeAgents();
+  const controller = new AbortController();
+  const d = depsOf(folder, git.exec, async (input) => { controller.abort(); return agents.headless(input); });
+  d.deps.signal = controller.signal;
+  await assert.rejects(evaluateRun(ctx, d.deps));
+  assert.equal(agents.inputs.some((i) => i.schema === JUDGE_SCHEMA || i.schema === TESTER_SCHEMA), false);
+  assert.equal(d.spawned.length, 0);
+  assert.ok(removed(git.calls, home));
 });
 
 test('a judge that fails answers undefined, writes no judge.json and still removes the worktree (#474)', async (t) => {
