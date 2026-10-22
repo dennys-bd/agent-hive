@@ -77,3 +77,18 @@ test('with a stage to go back to, a voltar para <stage> button leads the editor 
   setup(emptyTransition(STAGES[1], STAGES));
   expect(screen.queryByRole('button', { name: /^voltar para/ })).not.toBeInTheDocument();
 });
+
+test('the prompt hint offers only what the trigger fills: {verdict} on a verdict, {feedback} on a feedback, the stage\'s placeholders on done and approved (#411)', () => {
+  const hints: [TransitionDraft['when'], string][] = [
+    ['verdict', 'use {verdict} (a evidência ou a saída do veredito) e as variáveis da etapa'],
+    ['feedback', 'use {feedback} (o seu texto) e as variáveis da etapa'],
+    ['done', 'use as variáveis da etapa'],
+    ['approved', 'use as variáveis da etapa'],
+  ];
+  for (const [when, hint] of hints) {
+    const { unmount } = render(<TransitionEditor transition={{ ...emptyTransition(STAGES[1], STAGES), when }} stages={STAGES} sources={[]} onUpdate={() => {}} onRemove={() => {}} />);
+    expect(screen.getByText(hint)).toBeInTheDocument();
+    if (when !== 'feedback') expect(screen.queryByText(/\{feedback\}/)).not.toBeInTheDocument();
+    unmount();
+  }
+});

@@ -82,7 +82,7 @@ function Handover({ id, transition, stages, onUpdate }: Omit<TransitionEditorPro
     ? t(`settings.transitions.session.${value}`) : t('settings.transitions.session.continueOf', { stage: nameOf(stages, value.slice('of:'.length)) }));
   return (
     <>
-      <Field id={`${id}-prompt`} label={t('settings.transitions.prompt')} hint={t('settings.transitions.prompt.hint')}>
+      <Field id={`${id}-prompt`} label={t('settings.transitions.prompt')} hint={t(`settings.transitions.prompt.hint.${transition.when}`)}>
         <Textarea
           id={`${id}-prompt`} rows={3} spellCheck={false} defaultValue={transition.prompt} onChange={(e) => onUpdate({ prompt: e.target.value })}
           placeholder={t(transition.when === 'feedback' ? 'settings.transitions.prompt.feedbackPlaceholder' : 'settings.transitions.prompt.placeholder')}
