@@ -73,8 +73,13 @@ const isGitEntry = (entry: string): boolean => entry.split('/').some((part) => p
 
 // --untracked-files=normal names an untracked folder once (`dir/`, #502): every listed entry under it is new, as -uall's per-file `??` marked
 // it, a nested repository's `dir/` entry included
-function untrackedMarks(entries: readonly string[], untracked: readonly string[]): Record<string, GitMark> {
-  const isUntracked = (entry: string): boolean => untracked.some((folder) => entry.startsWith(folder));
+export function untrackedMarks(entries: readonly string[], untracked: readonly string[]): Record<string, GitMark> {
+  const folders = new Set(untracked);
+  // Each `/` of an entry ends one ancestor folder (the entry itself for a `dir/`): a set lookup per level, not a scan of every folder
+  const isUntracked = (entry: string): boolean => {
+    for (let at = entry.indexOf('/'); at !== -1; at = entry.indexOf('/', at + 1)) if (folders.has(entry.slice(0, at + 1))) return true;
+    return false;
+  };
   return Object.fromEntries(entries.filter(isUntracked).map((entry) => [entry, 'A'] as const));
 }
 

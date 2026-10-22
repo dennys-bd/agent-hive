@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
-import { FOLDER_QUERY_MESSAGE, nestedRepoOf, repoViewOf, REVEAL_BODY_MESSAGE, taskTree, treeRoot } from '../src/server-tree.js';
+import { FOLDER_QUERY_MESSAGE, nestedRepoOf, repoViewOf, REVEAL_BODY_MESSAGE, taskTree, treeRoot, untrackedMarks } from '../src/server-tree.js';
 import { revealCommand } from '../src/platform-commands.js';
 import { FOLDER_MISSING_MESSAGE, GIT_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { localActivityId } from '../src/activities.js';
@@ -203,4 +203,13 @@ test('POST /activities/:id/reveal with a path shows that item, by its real path;
   assert.deepEqual(f.calls, []);
   assert.equal((await reveal({ path: 'src/b.ts' })).status, 204);
   assert.deepEqual(f.calls, [revealCommand(process.platform, join(await realpath(wt), 'src', 'b.ts'), true)]);
+});
+
+test('untrackedMarks marks every entry under an untracked folder, a nested repository\'s own `dir/` included, and stays linear in the entries (#502)', () => {
+  const folders = Array.from({ length: 2_000 }, (_, i) => `untracked-${i}/`);
+  const entries = ['tracked/a.ts', 'untracked-0x/a.ts', 'untracked-0/', 'untracked-1/deep/er/f.ts', ...Array.from({ length: 50_000 }, (_, i) => `tracked/${i}.ts`)];
+  const started = performance.now();
+  const marks = untrackedMarks(entries, folders);
+  assert.deepEqual(marks, { 'untracked-0/': 'A', 'untracked-1/deep/er/f.ts': 'A' });
+  assert.ok(performance.now() - started < 300, 'entries x folders scan');
 });
