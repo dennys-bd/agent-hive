@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { isLocked as isLockedExperiment, mergeArm } from '../../../../benchmark/arms.js';
 import { canonicalJson } from '../../../../benchmark/canonical.js';
 import type { Arm, ArmSetup, Experiment, LaunchOptions } from '../../../../types';
@@ -19,16 +19,17 @@ export interface Draft {
   isOverridden(key: RowKey): boolean; edit<K extends RowKey>(key: K, value: RowValues[K]): void; reset(key: RowKey): void;
 }
 
-// Opening copies the arm's merged setup (or the base) into local state; every edit changes only the draft
-function useDraft(experiment: Experiment, arm: Arm | undefined): Draft {
-  const { base } = experiment;
+// Opening copies the base and the arm's merged setup (or the base) into local state; every edit changes only the draft. The base is frozen
+// with it, so a base edited elsewhere meanwhile never turns the fields the arm left alone into overrides
+function useDraft(experiment: Experiment, arm: Arm | undefined, isArm: boolean): Draft {
+  const [base] = useState(() => experiment.base);
   const [start] = useState(() => (arm === undefined ? base : mergeArm(base, arm.overrides)));
   const [setup, setSetup] = useState(start);
   // An arm's draft stays the merge of its overrides, so a field set back to the base's value stops counting at once
-  const settle = (next: ArmSetup): ArmSetup => (arm === undefined ? next : mergeArm(base, diffOverrides(base, next)));
+  const settle = (next: ArmSetup): ArmSetup => (!isArm ? next : mergeArm(base, diffOverrides(base, next)));
   const rows = armRows(base, diffOverrides(base, setup));
   return {
-    base, setup, start, isArm: arm !== undefined, count: rows.filter((r) => r.overridden).length,
+    base, setup, start, isArm, count: rows.filter((r) => r.overridden).length,
     isOverridden: (key) => rows.some((r) => r.key === key && r.overridden),
     edit: (key, value) => setSetup((s) => settle(writeRow(s, key, value))),
     reset: (key) => setSetup((s) => settle(writeRow(s, key, readRow(base, key)))),
@@ -39,7 +40,7 @@ function useDraft(experiment: Experiment, arm: Arm | undefined): Draft {
 async function save(experiment: Experiment, arm: Arm | undefined, draft: Draft): Promise<boolean> {
   const setup = cleanSetup(draft.setup);
   if (canonicalJson(setup) === canonicalJson(cleanSetup(draft.start))) return true;
-  return arm === undefined ? patchBase(experiment.id, setup) : editArm(experiment.id, arm.id, { overrides: diffOverrides(experiment.base, setup) });
+  return arm === undefined ? patchBase(experiment.id, setup) : editArm(experiment.id, arm.id, { overrides: diffOverrides(draft.base, setup) });
 }
 
 function SettingsBody({ draft, options, experimentId }: { draft: Draft; options?: LaunchOptions; experimentId: string }) {
@@ -65,17 +66,20 @@ export interface ArmSettingsProps { experiment: Experiment; armId?: string; onCl
  *  refused post keeps it open behind the toast. While the experiment runs or sleeps it opens read only. */
 export function ArmSettings({ experiment, armId, onClose }: ArmSettingsProps) {
   const arm = experiment.arms.find((a) => a.id === armId);
-  const draft = useDraft(experiment, arm);
+  const isGone = armId !== undefined && arm === undefined; // removed elsewhere while open: never fall back to editing the base
+  const draft = useDraft(experiment, arm, armId !== undefined);
   const isLocked = isLockedExperiment(experiment);
   const options = useLaunchOptions(experiment.workspace);
   const isSaving = useRef(false); // Esc and the button together must not post twice
+  useEffect(() => { if (isGone) onClose(); }, [isGone, onClose]);
   const close = async (): Promise<void> => {
-    if (isSaving.current) return;
+    if (isSaving.current || isGone) return;
     isSaving.current = true;
     const isSaved = isLocked || (await save(experiment, arm, draft));
     isSaving.current = false;
     if (isSaved) onClose();
   };
+  if (isGone) return null;
   const title = arm === undefined ? t('benchmark.arms.settings.baseTitle') : t('benchmark.arms.settings.title', { letter: arm.letter, name: arm.name });
   const context = isLocked ? t('benchmark.arms.settings.locked') : arm === undefined ? t('benchmark.arms.base.hint') : countText(draft.count);
   return (

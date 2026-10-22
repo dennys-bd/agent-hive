@@ -31,7 +31,7 @@ function CopySub({ experiment, arm, what, disabled }: CopySubProps) {
           </DropdownMenuCheckboxItem>
         ))}
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={to.length === 0} onSelect={() => void copyArm(experiment.id, arm.id, what, to)}>{t('benchmark.arms.menu.copy')}</DropdownMenuItem>
+        <DropdownMenuItem disabled={to.length === 0} onSelect={() => { setPicked([]); void copyArm(experiment.id, arm.id, what, to); }}>{t('benchmark.arms.menu.copy')}</DropdownMenuItem>
       </DropdownMenuSubContent>
     </DropdownMenuSub>
   );

@@ -16,7 +16,6 @@ export const RUN_STAGES: readonly { role: BenchStageRole; name: string }[] = [
 export const DONE_STAGE = 'Done';
 export { mergeArm }; // runner-run.ts, run-home.ts and pr.ts keep importing it from here
 
-
 // hasOwn: an arm id like `constructor` must not reach Object.prototype
 export const resolveRow = <T>(row: IsolationRow<T>, armId: string): T => (row.perArm !== undefined && Object.hasOwn(row.perArm, armId) ? row.perArm[armId] : row.all);
 

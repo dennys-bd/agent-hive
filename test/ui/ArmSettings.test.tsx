@@ -122,3 +122,26 @@ test('items lists the pinned items, each original or a pinned version; a pick is
   expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { items: { 'hive:new-build': 'terse' } } } }]);
   expect(calls).toContainEqual({ method: 'GET', path: `${ARMS_PATH}/items` });
 });
+
+test('an arm removed elsewhere while open closes the dialog without posting, never editing the base (#462)', async () => {
+  const calls = stubBenchmarkFetch();
+  const onClose = vi.fn();
+  const view = render(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={ARMS} armId="a2" onClose={onClose} /></AgentsContext.Provider>);
+  const without = { ...ARMS, arms: ARMS.arms.filter((a) => a.id !== 'a2') };
+  view.rerender(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={without} armId="a2" onClose={onClose} /></AgentsContext.Provider>);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts(calls)).toEqual([]);
+});
+
+test('a base edited elsewhere while open does not turn the fields the arm left alone into overrides (#462)', async () => {
+  const user = userEvent.setup();
+  const calls = stubBenchmarkFetch();
+  const onClose = vi.fn();
+  const view = render(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={ARMS} armId="a2" onClose={onClose} /></AgentsContext.Provider>);
+  const edited = { ...ARMS, base: { ...ARMS.base, plugins: [...ARMS.base.plugins, 'elsewhere'] } };
+  view.rerender(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={edited} armId="a2" onClose={onClose} /></AgentsContext.Provider>);
+  await pickAgent(user, 'build', /codex/i);
+  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { stages: { build: { agent: 'codex', model: null } } } } }]);
+});
