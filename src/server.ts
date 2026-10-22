@@ -7,6 +7,7 @@ import { isDeepStrictEqual, promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createBenchEvaluator, benchRunDeps } from './benchmark/evaluate-service.js';
 import { execRun } from './benchmark/exec.js';
+import { registerRunMode, type RunMode, viewerInput } from './benchmark/run-mode.js';
 import { experimentFolder } from './benchmark/store.js';
 import { renderSource } from './benchmark/run-home.js';
 import { createBenchRunner } from './benchmark/runner.js';
@@ -196,6 +197,8 @@ export interface ServerDeps {
   readAccess?: () => Promise<ReadAccess | undefined>;
   /** #503: the daemon's gh credential holder (login and token, in memory). Absent (tests, an embedded server): the server builds its own. */
   ghToken?: GhToken;
+  /** #475: a benchmark run's home (benchmark.json): GET /benchmark-run, the viewer's writes and first terminal input recorded or, frozen, refused. */
+  runMode?: RunMode;
 }
 
 export interface HiveServer {
@@ -941,6 +944,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
     next();
   });
+  if (deps.runMode) registerRunMode(app, deps.runMode); // #475: after the gate (both callers authenticated), before the parser (a frozen refusal reads no body)
   app.use(wiring.httpRecords(() => live?.state)); // #742: after the gate, so a refusal there stays its debug line, not a flood of http.error
   // After the gate: a request refused above is never parsed (#467)
   app.use(express.json({ limit: '2mb' }));
@@ -1401,7 +1405,9 @@ export function createServer(deps: ServerDeps): HiveServer {
     const bound = typeof address === 'object' && address !== null ? address.port : 0;
     httpServer = server;
     // The terminals ride this port too (#407). The socket reads boundPort per upgrade, so nothing is admitted before the line below
-    ptySocket = attachPtySocket(server, { ptys, port: () => boundPort, isConfigured: () => live !== undefined, secret: deps.secret, lsp, log });
+    // #475: a run's terminal input is recorded under the task the pty's worker runs, or the pty id for a plain terminal
+    const ptyDetail = (ptyId: string): string => { const worker = workerOf(ptyId); return (worker && live ? taskOfWorker(live.state, worker)?.item.id : undefined) ?? ptyId; };
+    ptySocket = attachPtySocket(server, { ptys, port: () => boundPort, isConfigured: () => live !== undefined, secret: deps.secret, lsp, log, ...(deps.runMode === undefined ? {} : { onViewerInput: viewerInput(deps.runMode, ptyDetail) }) });
     boundPort = bound;
     log.info(`listening port=${bound}`);
     // Hive mode (#466): the Runtime is built on the bound port, hooks.json included, before the first dispatch

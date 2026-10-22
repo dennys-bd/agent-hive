@@ -5,10 +5,11 @@ import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { createJsonStore } from '../json-store.js';
+import type { Logger } from '../log.js';
 import { SECRET_HEADER } from '../secret.js';
 import { HOOKS_PREFIX, WRITE_METHODS } from '../server-facts.js';
 import { isJsonObject } from '../state-guards.js';
-import { BENCH_TOKEN, EXPERIMENT_ID, type Intervention } from '../types.js';
+import { BENCH_TOKEN, EXPERIMENT_ID, type Intervention, type State } from '../types.js';
 import { INTERVENTIONS_FILE, interventionsOf, RUN_ROUTE } from './metrics.js';
 import { MARKER_FILE, type RunMarker } from './run-home.js';
 
@@ -135,4 +136,20 @@ export function viewerInput(mode: RunMode, detailOf: (ptyId: string) => string):
     void mode.recorder.recordInput(ptyId, detailOf(ptyId));
     return true;
   };
+}
+
+/** A frozen run's booted state (#475): no worker and a cap of 0, as setMax(0) leaves it. The fill starts a run in any free worker and never
+ *  reads maxConcurrent itself, so the workers state.json kept must go too. */
+export const frozenState = (state: State): State => ({ ...state, maxConcurrent: 0, workers: [] });
+
+/** The run mode of a home, read before createServer: none without benchmark.json, a boot error naming the file for a broken one. */
+export async function readRunMode(home: string, log: Pick<Logger, 'error'>): Promise<RunMode | undefined> {
+  let marker: RunMarker | undefined;
+  try {
+    marker = await readMarker(home);
+  } catch (err) {
+    log.error(`benchmark: ${err instanceof Error ? err.message : String(err)}`);
+    throw err;
+  }
+  return marker === undefined ? undefined : { marker, recorder: createRecorder(home, () => new Date(), (line) => log.error(line)) };
 }

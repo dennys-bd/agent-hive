@@ -3,7 +3,14 @@ import type { AddressInfo } from 'node:net';
 import { test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import express from 'express';
-import { SECRET_HEADER } from '../../src/secret.js';
+import { readDaemonSecret } from '../../src/daemon-files.js';
+import { bootHive } from '../../src/hive.js';
+import { initialState } from '../../src/orchestrator.js';
+import { saveState } from '../../src/state-store.js';
+import { SECRET_HEADER, secretCookie } from '../../src/secret.js';
+import { type Intervention, SIGNALS_DEFAULTS, type Task } from '../../src/types.js';
+import type { RunMarker } from '../../src/benchmark/run-home.js';
+import { combConfig, fakeSpawn, LOCAL_STAGES, tempHive, WORKSPACE } from '../fakes.js';
 import assert from 'node:assert/strict';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -136,4 +143,61 @@ test('viewerInput records a pty\'s first input once, under its detail, and deliv
   const still = createRecorder(await tempDir(t, 'run-home-'), () => new Date(AT), () => undefined);
   assert.equal(viewerInput({ marker: runMarker({ frozen: true }), recorder: still }, (id) => id)('pty-1'), false);
   assert.deepEqual(await still.list(), []);
+});
+
+const LOCAL_TASK: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'One', body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: WORKSPACE };
+
+// A run home as prepareRun leaves one, on a temp repo: no source, the flow opening green (a run's watcher turns it green), `cap` workers and
+// `tasks`. Its pinned plugin folder is missing: the plugin render logs that and the boot goes on
+async function runHomeWith(t: TestContext, marker: RunMarker | undefined, cap = 0, tasks: Task[] = []): Promise<string> {
+  const { home, repo } = await tempHive(t, cap);
+  await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, signals: { ...SIGNALS_DEFAULTS, onOpen: 'green' } })));
+  await saveState(home, { ...initialState(cap), tasks });
+  if (marker !== undefined) await writeMarker(home, marker);
+  return home;
+}
+
+test('a daemon booted on a run home answers GET /benchmark-run with its marker and records a viewer\'s write through the real gate; one without benchmark.json answers 404 (#475)', async (t) => {
+  const home = await runHomeWith(t, runMarker(), 0, [{ ...LOCAL_TASK, auto: false }]);
+  const { server, port } = await bootHive(home);
+  t.after(() => server.close());
+  const secret = readDaemonSecret(home) ?? '';
+  const viewer = { cookie: `${secretCookie(port)}=${secret}`, 'x-hive-ui': '1', 'content-type': 'application/json' };
+  const write = await fetch(`http://127.0.0.1:${port}/tasks/local:1/auto`, { method: 'POST', headers: viewer, body: JSON.stringify({ auto: false }) });
+  assert.equal(write.status, 200);
+  const read = async () => (await (await fetch(`http://127.0.0.1:${port}/benchmark-run`, { headers: { [SECRET_HEADER]: secret } })).json()) as { marker: RunMarker; interventions: Intervention[] };
+  let body = await read();
+  for (let i = 0; i < 100 && body.interventions.length === 0; i += 1) {
+    await sleep(5);
+    body = await read();
+  }
+  assert.deepEqual(body.marker, runMarker());
+  assert.deepEqual(body.interventions.map((e) => [e.action, e.detail, e.by]), [['POST /tasks/:id/auto', '/tasks/local:1/auto', 'user']]);
+
+  const plain = await runHomeWith(t, undefined);
+  const normal = await bootHive(plain);
+  t.after(() => normal.server.close());
+  assert.equal((await fetch(`http://127.0.0.1:${normal.port}/benchmark-run`, { headers: { [SECRET_HEADER]: readDaemonSecret(plain) ?? '' } })).status, 404);
+});
+
+test('frozen, the daemon boots with no worker and a cap of 0 and the fill starts no run; the same home unfrozen starts its auto task (#475)', async (t) => {
+  for (const frozen of [true, false]) {
+    const home = await runHomeWith(t, runMarker({ frozen }), 2, [LOCAL_TASK]);
+    const spawned = fakeSpawn();
+    const { server } = await bootHive(home, { launchPty: spawned.spawn });
+    t.after(() => server.close());
+    const state = server.getState();
+    // The workspace's local activity exists either way; the fill's start shows as the task's own activity (this home has no plugin folder, so
+    // that start fails and leaves no worker occupied)
+    const started = state?.activities.filter((x) => x.kind === 'task').length;
+    if (frozen) assert.deepEqual([state?.maxConcurrent, state?.workers.length, started, spawned.workers.length], [0, 0, 0, 0]);
+    else assert.equal(started, 1, 'the control: an unfrozen run home starts the task');
+  }
+});
+
+test('a malformed benchmark.json fails the boot naming the file, and hive.log says so (#475)', async (t) => {
+  const home = await runHomeWith(t, undefined);
+  await writeFile(join(home, MARKER_FILE), '{"frozen":');
+  await assert.rejects(bootHive(home), /benchmark\.json: does not parse/);
+  assert.match(await readFile(join(home, 'hive.log'), 'utf8'), /ERROR benchmark: benchmark\.json: does not parse/);
 });
