@@ -34,14 +34,18 @@ const refuse = (res: Response, experiment: Experiment, action: string): void =>
   fail(res, HTTP_CONFLICT, 'status', `${action} is refused while the experiment is ${experiment.status}`);
 const isRunning = (experiment: Experiment): boolean => experiment.status === 'running' || experiment.status === 'sleeping';
 
+// current reads the experiment again from the live state, without touching the response
+interface Found { experiment: Experiment; current(): Experiment | undefined }
+
 // requireLive answers the response itself when the Hive is not live, so it is called once per request
-function found(deps: BenchControlRouteDeps, req: Request, res: Response): Experiment | undefined {
+function found(deps: BenchControlRouteDeps, req: Request, res: Response): Found | undefined {
   const live = deps.requireLive(res);
   if (live === undefined) return undefined;
   const id = String(req.params.id);
-  const experiment = live.state.benchmark.experiments.find((e) => e.id === id);
+  const current = (): Experiment | undefined => live.state.benchmark.experiments.find((e) => e.id === id);
+  const experiment = current();
   if (experiment === undefined) fail(res, HTTP_NOT_FOUND, 'unknown_experiment', `no experiment ${id}`);
-  return experiment;
+  return experiment === undefined ? undefined : { experiment, current };
 }
 
 // server-benchmark.ts keeps its own copy: importing it from there would close an import cycle
@@ -70,26 +74,25 @@ async function start(deps: BenchControlRouteDeps, res: Response, experiment: Exp
 
 function registerStartRoutes(app: Express, deps: BenchControlRouteDeps): void {
   app.post(`${E}/run`, async (req, res) => {
-    const experiment = found(deps, req, res);
+    const experiment = found(deps, req, res)?.experiment;
     if (experiment === undefined) return;
     if (isRunning(experiment)) return refuse(res, experiment, 'run');
     if (missingRuns(experiment).length === 0) return fail(res, HTTP_CONFLICT, 'nothing_missing', 'every run of every round has run');
     await start(deps, res, experiment);
   });
   app.post(`${E}/more-rounds`, async (req, res) => {
-    const experiment = found(deps, req, res);
-    const body = experiment === undefined ? undefined : parsed(MORE, req, res);
-    if (experiment === undefined || body === undefined) return;
+    const hit = found(deps, req, res);
+    const body = hit === undefined ? undefined : parsed(MORE, req, res);
+    if (hit === undefined || body === undefined) return;
+    const { experiment } = hit;
     if (experiment.status === 'draft') return refuse(res, experiment, 'more-rounds');
-    // the pace is read again where it is edited: the request's own read can be older than a concurrent more-rounds
-    let before = experiment.pace;
-    const edit: PairsEdit = {
-      apply: async () => {
-        before = deps.requireLive(res)?.state.benchmark.experiments.find((e) => e.id === experiment.id)?.pace ?? before;
-        return deps.dispatch({ type: 'benchmarkEdited', id: experiment.id, patch: { pace: { ...before, pairs: before.pairs + body.pairs } } });
-      },
-      undo: () => deps.dispatch({ type: 'benchmarkEdited', id: experiment.id, patch: { pace: before } }),
+    // the pace is read again where it is edited, undo included: the request's own read can be older than a concurrent edit, which an undo
+    // must not clobber, so it takes back its pairs only
+    const pairsBy = async (delta: number): Promise<unknown> => {
+      const pace = hit.current()?.pace ?? experiment.pace;
+      return deps.dispatch({ type: 'benchmarkEdited', id: experiment.id, patch: { pace: { ...pace, pairs: pace.pairs + delta } } });
     };
+    const edit: PairsEdit = { apply: () => pairsBy(body.pairs), undo: () => pairsBy(-body.pairs) };
     if (isRunning(experiment)) { // the live loop reads pace.pairs before each round
       await edit.apply();
       return ok(res, HTTP_OK);
@@ -100,14 +103,14 @@ function registerStartRoutes(app: Express, deps: BenchControlRouteDeps): void {
 
 function registerPaceRoutes(app: Express, deps: BenchControlRouteDeps): void {
   app.post(`${E}/stop-after-round`, async (req, res) => {
-    const experiment = found(deps, req, res);
+    const experiment = found(deps, req, res)?.experiment;
     if (experiment === undefined) return;
     if (!isRunning(experiment)) return refuse(res, experiment, 'stop-after-round');
     await deps.dispatch({ type: 'benchmarkStopAfterRound', id: experiment.id, on: true });
     ok(res, HTTP_OK);
   });
   app.post(`${E}/sleep`, async (req, res) => {
-    const experiment = found(deps, req, res);
+    const experiment = found(deps, req, res)?.experiment;
     const body = experiment === undefined ? undefined : parsed(SLEEP, req, res);
     if (experiment === undefined || body === undefined) return;
     if (experiment.status !== 'running') return refuse(res, experiment, 'sleep');
@@ -115,7 +118,7 @@ function registerPaceRoutes(app: Express, deps: BenchControlRouteDeps): void {
     ok(res, HTTP_OK);
   });
   app.post(`${E}/wake`, (req, res) => {
-    const experiment = found(deps, req, res);
+    const experiment = found(deps, req, res)?.experiment;
     const body = experiment === undefined ? undefined : parsed(WAKE, req, res);
     if (experiment === undefined || body === undefined) return;
     if (experiment.status !== 'sleeping') return refuse(res, experiment, 'wake');

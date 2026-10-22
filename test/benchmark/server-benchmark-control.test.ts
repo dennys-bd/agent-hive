@@ -2,6 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
+import { benchmarkReduce } from '../../src/benchmark-reducer.js';
 import type { StartAnswer } from '../../src/benchmark/runner.js';
 import type { WakeDeadline } from '../../src/benchmark/runner-sleep.js';
 import { registerBenchmarkControlRoutes } from '../../src/server-benchmark-control.js';
@@ -9,16 +10,30 @@ import type { BenchmarkEvent, Experiment, ExperimentStatus } from '../../src/typ
 import { fakeLog } from '../fakes.js';
 import { experiment, run, stateWith } from './fixtures.js';
 
-function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?: StartAnswer; leak?: string; later?: Experiment } = {}) {
+function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?: StartAnswer; leak?: string; later?: Experiment; concurrentTimeoutMs?: number } = {}) {
+  let lives = 0;
   let reads = 0; // the first read is the request's own; `later` is what a read at dispatch time finds
+  let state = stateWith(exp);
   const calls: unknown[][] = [];
   const events: BenchmarkEvent[] = [];
   const app = express();
   app.use(express.json());
   registerBenchmarkControlRoutes(app, {
-    requireLive: () => ({ state: stateWith(reads++ === 0 ? exp : stub.later ?? exp) }), dispatch: async (event) => { events.push(event); }, log: fakeLog().log,
+    requireLive: () => {
+      lives += 1;
+      return { get state() { if (reads++ === 1 && stub.later !== undefined) state = stateWith(stub.later); return state; } };
+    },
+    dispatch: async (event) => { events.push(event); state = benchmarkReduce(state, event); }, log: fakeLog().log,
     runner: {
-      run: async (id) => { calls.push(['run', id]); return stub.answer ?? 'started'; },
+      run: async (id) => {
+        calls.push(['run', id]);
+        // a pace edit that lands while the runner decides
+        if (stub.concurrentTimeoutMs !== undefined) {
+          const pace = state.benchmark.experiments[0].pace;
+          state = benchmarkReduce(state, { type: 'benchmarkEdited', id, patch: { pace: { ...pace, runTimeoutMs: stub.concurrentTimeoutMs } } });
+        }
+        return stub.answer ?? 'started';
+      },
       sleep: async (id, reason, wakeAt) => { calls.push(['sleep', id, reason, wakeAt]); },
       wake: async (id, deadline) => { calls.push(['wake', id, deadline]); },
       isLive: () => stub.live ?? false,
@@ -32,7 +47,7 @@ function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?
     const res = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     return [res.status, await res.json()];
   };
-  return { post, calls, events };
+  return { post, calls, events, lives: () => lives };
 }
 const codeOf = ([status, body]: [number, unknown]): [number, string] => [status, (body as { error: string }).error];
 const NOTHING_MISSING = experiment({ status: 'done', pace: { ...experiment().pace, pairs: 1 }, rounds: [
@@ -135,4 +150,12 @@ test('more-rounds on a done experiment puts the pace back when the runner does n
     assert.equal((await h.post('/exp-1/more-rounds', { pairs: 2 }))[0], 409, answer);
     assert.deepEqual(h.events.map((e) => e.type === 'benchmarkEdited' && e.patch.pace?.pairs), [3, 1], answer);
   }
+});
+
+test('more-rounds undo takes back only its pairs: a pace edited meanwhile keeps its other fields (#472)', async (t) => {
+  const h = routes(t, NOTHING_MISSING, { answer: 'locked', concurrentTimeoutMs: 999 });
+  assert.equal((await h.post('/exp-1/more-rounds', { pairs: 2 }))[0], 409);
+  assert.equal(h.lives(), 1, 'requireLive answers the response itself, so it is asked once per request');
+  const paces = h.events.flatMap((e) => (e.type === 'benchmarkEdited' && e.patch.pace !== undefined ? [e.patch.pace] : []));
+  assert.deepEqual(paces.map((p) => [p.pairs, p.runTimeoutMs]), [[3, NOTHING_MISSING.pace.runTimeoutMs], [1, 999]]);
 });
