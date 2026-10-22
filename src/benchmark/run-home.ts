@@ -154,10 +154,10 @@ async function copyVersions(home: string, versions: readonly ArmVersion[], works
   }
 }
 
-interface RunInputs { experiment: Experiment; arm: Arm; setup: ArmSetup; round: number; token: string; versions: readonly ArmVersion[]; nested: readonly string[] }
+interface RunInputs { experiment: Experiment; arm: Arm; setup: ArmSetup; round: number; token: string; versions: readonly ArmVersion[]; nested: readonly string[]; checkout: string }
 
 async function writeRunHome(inputs: RunInputs, deps: RunDeps): Promise<void> {
-  const { experiment, arm, setup, token, versions, nested } = inputs;
+  const { experiment, arm, setup, token, versions, nested, checkout } = inputs;
   const home = runHome(deps.hiveDir, experiment.id, token);
   const dir = experimentDir(deps.hiveDir, experiment.id);
   const clone = join(dir, CLONE_DIR);
@@ -167,8 +167,8 @@ async function writeRunHome(inputs: RunInputs, deps: RunDeps): Promise<void> {
   const sandbox = sandboxSettings({
     repos: [{ gitDir: join(clone, '.git'), origin: origins[0] }, ...nested.map((p, i) => ({ gitDir: join(clone, p, '.git'), origin: origins[i + 1] }))],
     // the whole Hive home (config, state, port, secret, custom, prompts, every experiment); the clone with its nested clones, the origins and
-    // the run's own rendered plugin are re-allowed by exact path
-    denied: [deps.hiveDir],
+    // the run's own rendered plugin are re-allowed by exact path. The user's checkout still holds the harness and the experiment's own docs
+    denied: [deps.hiveDir, checkout],
     allowRead: [clone, ...origins, pluginRenderPath(home, experiment.seed.workspace)],
     allowedDomains: resolveRow(experiment.isolation.network, arm.id),
   });
@@ -204,7 +204,7 @@ export async function prepareRun(experiment: Experiment, arm: Arm, round: number
   const token = newToken(deps.random ?? Math.random, await takenTokens(experiment, dir));
   try {
     await createRunBranches(deps.exec, dir, nested, token);
-    await writeRunHome({ experiment, arm, setup, round, token, versions, nested }, deps);
+    await writeRunHome({ experiment, arm, setup, round, token, versions, nested, checkout: workspace.path }, deps);
   } catch (err) {
     await undoRun(deps, dir, nested, token, runHome(deps.hiveDir, experiment.id, token));
     throw err;

@@ -1,5 +1,5 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
-import { join, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { cleanEnv, inDir, type Run } from './exec.js';
 
 /** Neutral, as the first commit of any repository: the workers must not know (#105). */
@@ -168,8 +168,9 @@ export async function createRunBranch(run: Run, branch: string, sha: string): Pr
   await run('git', ['push', '-u', 'origin', branch]);
 }
 
-// A forged .git/worktrees entry names any path: only what sits inside the clone folder is removed (the worker can write that folder's git data)
-const isInside = (root: string, path: string): boolean => path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+// A forged .git/worktrees entry names any path: only what sits inside the clone folder is removed (the worker can write that folder's git data).
+// Resolved first, so a `<clone>/../elsewhere` entry does not pass as inside
+const isInside = (root: string, path: string): boolean => resolve(path).startsWith(`${resolve(root)}${sep}`);
 
 async function dropIn(run: Run, prefix: string, root: string): Promise<void> {
   const branches = taskBranchPrefix(prefix);

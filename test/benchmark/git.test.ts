@@ -196,7 +196,7 @@ test('a preparation that fails leaves no origin behind, so the next call prepare
 });
 
 test('dropRunWorktrees removes only worktrees inside the clone folder: a forged .git/worktrees entry cannot aim it elsewhere (#471)', async () => {
-  const porcelain = ['worktree /e/clone/.hive/worktrees/x\nHEAD b\nbranch refs/heads/hive/ABCD1234-1-x', 'worktree /home/u/precious\nHEAD c\nbranch refs/heads/hive/ABCD1234-2-y', 'worktree /e/clone-evil/w\nHEAD d\nbranch refs/heads/hive/ABCD1234-3-z'].join('\n\n');
+  const porcelain = ['worktree /e/clone/.hive/worktrees/x\nHEAD b\nbranch refs/heads/hive/ABCD1234-1-x', 'worktree /home/u/precious\nHEAD c\nbranch refs/heads/hive/ABCD1234-2-y', 'worktree /e/clone-evil/w\nHEAD d\nbranch refs/heads/hive/ABCD1234-3-z', 'worktree /e/clone/../precious\nHEAD e\nbranch refs/heads/hive/ABCD1234-4-w'].join('\n\n');
   const { run, calls } = fakeRun((call) => (call.args[0] === 'worktree' && call.args[1] === 'list' ? `${porcelain}\n` : ''));
   await dropRunWorktrees(run, 'ABCD1234', '/e/clone');
   const removed = calls.filter((c) => c.args[0] === 'worktree' && c.args[1] === 'remove').map((c) => c.args[3]);

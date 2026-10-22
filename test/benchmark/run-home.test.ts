@@ -9,7 +9,7 @@ import { parseConfig } from '../../src/config.js';
 import { shellQuote } from '../../src/shell-init.js';
 import { loadState } from '../../src/state-store.js';
 import { BENCH_TOKEN, type ArmSetup, type Experiment } from '../../src/types.js';
-import { mainConfig, arm, benchHome, experiment, ISOLATION, line, SETUP } from './fixtures.js';
+import { WS_PATH, mainConfig, arm, benchHome, experiment, ISOLATION, line, SETUP } from './fixtures.js';
 
 const OVERRIDES: Partial<ArmSetup> = {
   stages: { ...SETUP.stages, build: { agent: 'claude', skill: '/x', prompt: 'ARM-BUILD {title}' } },
@@ -44,6 +44,7 @@ test('prepareRun writes the tasks with the right auto and cap, only the mapped v
   const sandbox = (await readJson(join(run.home, 'sandbox.json'))).sandbox as { network: { allowedDomains: string[] }; filesystem: { denyRead: string[]; allowRead: string[] } };
   assert.deepEqual(sandbox.network.allowedDomains, ['example.org']);
   assert.ok(sandbox.filesystem.denyRead.includes(hiveDir), 'the whole Hive home is denied, the run\'s paths re-allowed');
+  assert.ok(sandbox.filesystem.denyRead.includes(WS_PATH), 'the user\'s checkout, which holds the harness, is denied');
   assert.deepEqual(sandbox.filesystem.allowRead, [join(hiveDir, 'benchmark', 'exp-1', 'clone'), join(hiveDir, 'benchmark', 'exp-1', 'repo.git'), join(hiveDir, 'benchmark', 'exp-1', 'nested', 'docs.git'), join(run.home, 'plugins', 'hive')]);
   const denyWrite = (sandbox.filesystem as unknown as { denyWrite: string[] }).denyWrite;
   for (const dir of [join('clone', '.git'), join('clone', 'docs', '.git'), 'repo.git', join('nested', 'docs.git')]) for (const f of ['hooks', 'config']) assert.ok(denyWrite.includes(join(hiveDir, 'benchmark', 'exp-1', dir, f)), `${dir}/${f}`);
