@@ -648,7 +648,8 @@ function setKeepAwake(state: State, on: boolean): State {
 
 // Shut down when done (#233), after every reduction while armed: a worker waiting for the user past its window is closed as by Stop (#283)
 // (the kill; the worker frees on the exit), and once no worker is occupied the mode ends with the shutdown effect, emitted once.
-// Tasks in flight with no worker (budget, cap) hold nothing: nothing runs, so nothing would finish.
+// Tasks in flight with no worker (budget, cap) hold nothing: nothing runs, so nothing would finish. A stage action in flight (a wait for CI holds no
+// worker) holds it: it finishes on its own, and a Hive off meanwhile would cut it short (#515).
 function drainForShutdown(reduced: Reduced, now: number): Reduced {
   if (!reduced.state.shutdown) return reduced;
   const due = reduced.state.workers.filter((s) => (closesAt(s, reduced.state) ?? Number.POSITIVE_INFINITY) <= now);
@@ -657,7 +658,7 @@ function drainForShutdown(reduced: Reduced, now: number): Reduced {
     const next = stop(r.state, worker.runId, undefined, 'idle'); // #672: its exit records an idle sleep
     return { state: next.state, effects: [...r.effects, ...next.effects] };
   }, reduced);
-  if (occupiedCount(closed.state.workers) > 0) return closed;
+  if (occupiedCount(closed.state.workers) > 0 || closed.state.activities.some(inAction)) return closed;
   const { shutdown: _shutdown, keepAwake: _keepAwake, ...off } = closed.state; // #226: keep awake ends with the shutdown it was waiting for
   return { state: off, effects: [...closed.effects, { type: 'shutdown' }] };
 }
