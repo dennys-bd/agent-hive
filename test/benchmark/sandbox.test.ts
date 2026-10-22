@@ -45,10 +45,16 @@ test('a run\'s plugin copy is re-allowed for reading by its exact path inside th
 test('the hosts and the denied folders are the caller\'s: a run passes its network row and its experiment folder (#471)', async (t) => {
   const { sandbox } = sandboxSettings({ repos: [CODE], denied: ['/hive/benchmark/e'], allowRead: ['/hive/benchmark/e/clone'], allowedDomains: ['example.org'] }) as { sandbox: { filesystem: { denyRead: string[]; allowRead: string[] }; network: { allowedDomains: string[] } } };
   assert.deepEqual(sandbox.network.allowedDomains, ['example.org']);
-  assert.deepEqual(sandbox.filesystem.denyRead, ['~/.ssh', '~/.aws', '~/.config/gh', '~/.gnupg', '/hive/benchmark/e']);
+  assert.deepEqual(sandbox.filesystem.denyRead, ['~/.ssh', '~/.aws', '~/.config/gh', '~/.gnupg', '~/.npmrc', '~/.netrc', '~/.docker', '~/.kube', '~/Library/Keychains', '/hive/benchmark/e']);
   assert.deepEqual(sandbox.filesystem.allowRead, ['/hive/benchmark/e/clone']);
   const git = await tempDir(t, 'excl-');
   await excludeSandbox(git);
   await excludeSandbox(git);
   assert.equal(await readFile(join(git, 'info', 'exclude'), 'utf8'), `${SANDBOX_FILE}\n`);
+});
+
+test('the harness\'s later git cannot be steered: hooks and config of every clone git folder and local origin are write-denied inside the writable paths (#471)', () => {
+  const { sandbox } = sandboxSettings(PATHS) as { sandbox: { filesystem: { denyWrite: string[]; denyRead: string[] } } };
+  assert.deepEqual(sandbox.filesystem.denyWrite, ['/lab/hive/.git/hooks', '/lab/hive/.git/config', '/lab/hive.git/hooks', '/lab/hive.git/config', '/lab/hive/docs/.git/hooks', '/lab/hive/docs/.git/config', '/lab/hive-docs.git/hooks', '/lab/hive-docs.git/config']);
+  for (const own of ['~/.claude', '~/.claude.json']) assert.ok(!sandbox.filesystem.denyRead.includes(own), `${own}: the worker's claude logs in from it`);
 });

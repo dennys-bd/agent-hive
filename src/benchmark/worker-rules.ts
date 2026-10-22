@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
 import { PLUGINS_DIR } from '../plugin-render.js';
-import { DAEMON_OUT } from './daemon.js';
+import { DAEMON_OUT } from './daemon-files.js';
 
 /** home: this run's home (its plugins/ readable); homes: Hive homes whose daemon files no worker reads; denied: files or folders no worker
  *  reads. Absolute paths; a whole `*` segment stands for any one folder. */
@@ -27,13 +27,16 @@ function rooted(path: string): string {
   return `/${path.split('/').map((segment) => (segment === '*' ? segment : checked(segment, 'path'))).join('/')}`;
 }
 
+const pushForms = (branch: string): string[] => ['HEAD', '*'].flatMap((from) => [`Bash(git push origin ${from}:${branch})`, `Bash(git push origin ${from}:${branch} 2>&1)`]);
+
 /** What one run adds to the seed's lists. The push is the Merge prompt's own, exact: an allow can never carve an exception out of a
  *  deny, so the seed denies every other push form and none of its denies matches this one. Read rules also bind Glob and Grep. */
 export function runRules(runBranch: string, { home, homes, denied }: RunPaths): RunRules {
   return {
-    // Its own branch only, as a worker writes the push: with a trailing redirect or pipe, or naming the merge commit by its sha; the seed's
-    // denials still refuse an option, a forced refspec or main, and the sandbox keeps any push on the local origin
-    allow: [`Bash(git push origin HEAD:${checked(runBranch, 'branch')}*)`, `Bash(git push origin *:${runBranch}*)`, `Read(${rooted(home)}/${PLUGINS_DIR}/**)`],
+    // Its own branch only, anchored at the end: a trailing `*` would let a second refspec follow, so the one redirect workers write
+    // (`2>&1`, seen in the smokes) is a rule of its own. The sha form's leading `*` cannot be narrower (a rule has no character classes);
+    // the seed's denials still refuse an option, a forced refspec or main, and the sandbox keeps any push on the local origin
+    allow: [...pushForms(checked(runBranch, 'branch')), `Read(${rooted(home)}/${PLUGINS_DIR}/**)`],
     deny: [
       ...denied.flatMap((path) => [`Read(${rooted(path)})`, `Read(${rooted(path)}/**)`]),
       ...homes.flatMap((dir) => HOME_FILES.map((file) => `Read(${rooted(dir)}/${file})`)),

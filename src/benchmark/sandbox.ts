@@ -6,8 +6,8 @@ import { dirname, isAbsolute, join } from 'node:path';
 export const SANDBOX_FILE = '.claude/settings.local.json';
 /** In a run's home: the run's worktree setup copies it to SANDBOX_FILE (`COPY` reads only inside the main checkout). */
 export const RUN_SANDBOX_FILE = 'sandbox.json';
-// What a worker's Bash must never read: the user's keys and logins; the caller adds the folders that name the arms
-const SECRET_READS = ['~/.ssh', '~/.aws', '~/.config/gh', '~/.gnupg'];
+// What a worker's Bash must never read: the user's keys and logins (never ~/.claude or ~/.claude.json: the worker's claude logs in from them); the caller adds the folders that name the arms
+const SECRET_READS = ['~/.ssh', '~/.aws', '~/.config/gh', '~/.gnupg', '~/.npmrc', '~/.netrc', '~/.docker', '~/.kube', '~/Library/Keychains'];
 // pnpm install runs in the setup, outside the sandbox; the registry is for a worker adding a package, localhost for the Hive's own tests.
 // The harness's hosts, the network row's default (#459)
 export const SANDBOX_DOMAINS: readonly string[] = ['registry.npmjs.org', 'localhost', '127.0.0.1'];
@@ -26,7 +26,10 @@ export function sandboxSettings(p: SandboxPaths): Record<string, unknown> {
     sandbox: {
       enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, failIfUnavailable: true,
       filesystem: {
-        allowWrite: p.repos.flatMap((r) => [r.gitDir, ...(isAbsolute(r.origin) ? [r.origin] : [])]), denyRead: [...SECRET_READS, ...p.denied],
+        allowWrite: p.repos.flatMap((r) => [r.gitDir, ...(isAbsolute(r.origin) ? [r.origin] : [])]),
+        // hooks/ and config run or steer the harness's own unsandboxed git later (core.hooksPath, core.fsmonitor, a hook): denyWrite wins inside an allowWrite path
+        denyWrite: p.repos.flatMap((r) => [r.gitDir, ...(isAbsolute(r.origin) ? [r.origin] : [])].flatMap((dir) => [join(dir, 'hooks'), join(dir, 'config')])),
+        denyRead: [...SECRET_READS, ...p.denied],
         ...(p.allowRead && p.allowRead.length > 0 ? { allowRead: [...p.allowRead] } : {}),
       },
       network: { allowedDomains: [...p.allowedDomains], allowLocalBinding: true }, // the Hive's own tests listen on localhost ports

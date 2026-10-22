@@ -70,8 +70,8 @@ const OWN_PUSHES = [PUSH, `${PUSH} 2>&1`, `git push origin 310e0a61:${BRANCH}`, 
 test('a run allows its own push in the forms a worker writes it (a redirect, the merge commit by sha), and nothing in the seed allows another (#105)', async () => {
   const { allow, deny } = await workerRules();
   for (const command of OWN_PUSHES) assert.equal(bashDecision(allow, deny, command), 'allow', command);
-  assert.deepEqual(allow.filter((r) => r.startsWith('Bash(git push')), [`Bash(git push origin HEAD:${BRANCH}*)`, `Bash(git push origin *:${BRANCH}*)`]);
-  assert.deepEqual(runRules(BRANCH, harnessRulePaths({ state: STATE, home: HOME })).allow.filter((r) => r.includes('push')), [`Bash(git push origin HEAD:${BRANCH}*)`, `Bash(git push origin *:${BRANCH}*)`]);
+  assert.deepEqual(allow.filter((r) => r.startsWith('Bash(git push')), [`Bash(git push origin HEAD:${BRANCH})`, `Bash(git push origin HEAD:${BRANCH} 2>&1)`, `Bash(git push origin *:${BRANCH})`, `Bash(git push origin *:${BRANCH} 2>&1)`]);
+  assert.deepEqual(runRules(BRANCH, harnessRulePaths({ state: STATE, home: HOME })).allow.filter((r) => r.includes('push')), [`Bash(git push origin HEAD:${BRANCH})`, `Bash(git push origin HEAD:${BRANCH} 2>&1)`, `Bash(git push origin *:${BRANCH})`, `Bash(git push origin *:${BRANCH} 2>&1)`]);
 });
 
 test('every other push form a worker could write is denied: options, refspecs to main or another branch, git -C and -c, options after the refspec (#105)', async () => {

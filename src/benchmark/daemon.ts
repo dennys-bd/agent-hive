@@ -3,10 +3,10 @@ import { closeSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type DaemonAddress, ourDaemon, stopDaemon } from '../daemon.js';
+import { DAEMON_OUT } from './daemon-files.js';
 import { buildEnv, cleanEnv, inDir, type Run } from './exec.js';
 import { CLONE_DIR, dropRunWorktrees, runPrefix } from './git.js';
 
-export const DAEMON_OUT = 'daemon.out'; // run.js's stdout/stderr: a boot failure prints there before hive.log exists
 const BOOT_WAIT_MS = 60_000;
 const BOOT_POLL_MS = 500;
 
@@ -85,5 +85,5 @@ export async function stopRun(run: RunningRun, deps: StopRunDeps): Promise<void>
   await stopRunDaemon(run.daemon, deps);
   // A home is <experiment>/runs/<token>; the clone sits beside runs/
   const clone = join(dirname(dirname(run.daemon.home)), CLONE_DIR);
-  await dropRunWorktrees(inDir(deps.exec, clone), runPrefix(run.token), deps.nestedRepos.map((path) => join(clone, path)));
+  await dropRunWorktrees(inDir(deps.exec, clone), runPrefix(run.token), clone, deps.nestedRepos.map((path) => join(clone, path)));
 }

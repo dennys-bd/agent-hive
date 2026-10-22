@@ -44,7 +44,7 @@ test('runConfig fills {runBranch}, drops the roles, and parses as three workers,
 
 test('runConfig gives the workers the seed\'s rules plus the run\'s own: its push, its plugin copy, and the state folder denied (#105)', () => {
   const { agentArgs: { claude: claudeArgs } } = runConfig(STAGES, 'a', BRANCH, WORKSPACE, PREFIX, PATHS) as { agentArgs: { claude: string[] } };
-  assert.deepEqual(rulesOf(claudeArgs, '--allowedTools'), ['Bash(git:*)', 'Read', 'Edit', 'Write', 'mcp__hive__*', `Bash(git push origin HEAD:${BRANCH}*)`, `Bash(git push origin *:${BRANCH}*)`, 'Read(//state/homes/abc123/plugins/**)']);
+  assert.deepEqual(rulesOf(claudeArgs, '--allowedTools'), ['Bash(git:*)', 'Read', 'Edit', 'Write', 'mcp__hive__*', `Bash(git push origin HEAD:${BRANCH})`, `Bash(git push origin HEAD:${BRANCH} 2>&1)`, `Bash(git push origin *:${BRANCH})`, `Bash(git push origin *:${BRANCH} 2>&1)`, 'Read(//state/homes/abc123/plugins/**)']);
   assert.ok(rulesOf(claudeArgs, '--disallowedTools').includes('Read(//state/experiments/**)'));
   assert.deepEqual(STAGES.claudeArgs, ['--permission-mode', 'acceptEdits', '--allowedTools', 'Bash(git:*) Read Edit Write mcp__hive__*'], 'the seed is left as it was');
 });
