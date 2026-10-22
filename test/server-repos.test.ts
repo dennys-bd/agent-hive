@@ -8,7 +8,7 @@ import { ADD_COMMENT, ADD_LABELS, REPO_LABELS, UPDATE_ISSUE } from '../src/repos
 import type { CombConfig, Exec, State, Task } from '../src/types.js';
 import { fakeGqlJson } from './fakes.js';
 
-const COMB: CombConfig = { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/code/hive', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }], sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' };
+const COMB: CombConfig = { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/code/hive', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' };
 const exec: Exec = async () => ({ stdout: 'git@github.com:acme/hive.git\n' }); // the one workspace's origin: acme/hive
 const RATE = { limit: 5000, remaining: 4000, resetAt: '2999-01-01T00:00:00Z' };
 type Answer = (query: string, variables: Record<string, unknown>) => unknown;

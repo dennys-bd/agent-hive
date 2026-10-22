@@ -208,7 +208,7 @@ test('deleteActivityOnDisk on a local task runs no git whatever the scope and de
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${SESSION}.jsonl`), '{}\n');
   const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [{ id: SESSION, startedAt: AT, stages: ['fila'], agent: 'claude', lastUsedAt: AT }], branch: BRANCH, scope: ALL }, deps);
+  await deleteActivityOnDisk({ workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [{ id: SESSION, startedAt: AT, stages: ['fila'], agent: 'claude', lastUsedAt: AT }], branch: BRANCH, scope: ALL }, deps);
   assert.deepEqual(calls, [], 'no worktree, no branch -d, no left-behind branches, no stage-start ref');
   assert.deepEqual(await readdir(dir), []);
 });

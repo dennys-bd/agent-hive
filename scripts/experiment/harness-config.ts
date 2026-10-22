@@ -66,7 +66,7 @@ export const harnessRulePaths = ({ state, home }: HarnessPaths): RunPaths => ({ 
 export function runConfig(seed: StagesSeed, arm: Arm, runBranch: string, workspace: string, prefix: string, paths: HarnessPaths): Record<string, unknown> {
   return {
     comb: {
-      prefix, workspaces: [{ name: WORKSPACE_NAME, path: workspace, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: MEMORY_CAP_DEFAULT, color: WORKSPACE_PRESET_COLORS[0], setup: workspaceSetup(runBranch), setupTimeout: SETUP_TIMEOUT, teardown: WORKSPACE_TEARDOWN }],
+      prefix, workspaces: [{ name: WORKSPACE_NAME, path: workspace, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: MEMORY_CAP_DEFAULT, benchmarkPrIn: 'worktree', color: WORKSPACE_PRESET_COLORS[0], setup: workspaceSetup(runBranch), setupTimeout: SETUP_TIMEOUT, teardown: WORKSPACE_TEARDOWN }],
       sources: [], stages: armStages(seed, arm, runBranch), commands: [], hiveSource: true, createIn: 'hive',
     },
     baseBranch: runBranch, agentArgs: { claude: runClaudeArgs(seed.claudeArgs, runBranch, harnessRulePaths(paths)), codex: [] }, ...SETTINGS,
@@ -76,7 +76,7 @@ export function runConfig(seed: StagesSeed, arm: Arm, runBranch: string, workspa
 export function evalConfig(seed: StagesSeed, workspace: string): Record<string, unknown> {
   const stages = seed.stages.map(({ name, from }) => ({ name, from, maxWorkers: 0 }));
   return {
-    comb: { prefix: EXPERIMENT_PREFIX, workspaces: [{ name: WORKSPACE_NAME, path: workspace, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: MEMORY_CAP_DEFAULT, color: WORKSPACE_PRESET_COLORS[0] }], sources: [], stages, commands: EVAL_COMMANDS, hiveSource: true, createIn: 'hive' },
+    comb: { prefix: EXPERIMENT_PREFIX, workspaces: [{ name: WORKSPACE_NAME, path: workspace, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: MEMORY_CAP_DEFAULT, benchmarkPrIn: 'worktree', color: WORKSPACE_PRESET_COLORS[0] }], sources: [], stages, commands: EVAL_COMMANDS, hiveSource: true, createIn: 'hive' },
     language: 'pt', agentArgs: { claude: [], codex: [] }, ...SETTINGS,
   };
 }

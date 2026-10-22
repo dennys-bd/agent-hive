@@ -16,7 +16,7 @@ import {
 
 const SITE = 'acme/site';
 const LATER = '2026-10-06T00:00:00Z';
-const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' });
+const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' });
 const COMB: CombConfig = { prefix: 'HIVE', workspaces: [workspace('hive'), workspace('site')], sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' };
 // each workspace's origin: /code/hive is acme/hive, /code/site is acme/site
 const exec: Exec = async (_file, args) => ({ stdout: `git@github.com:acme/${args[1] === '/code/site' ? 'site' : 'hive'}.git\n` });

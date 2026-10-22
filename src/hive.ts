@@ -20,7 +20,7 @@ import { loadState } from './state-store.js';
 import { hydrate } from './hydrate.js';
 import { openUsageStore } from './usage-store.js';
 import { workspacePathProblem } from './worktree.js';
-import { MCP_DEFAULTS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type SourceItem, type Config, type Exec, type Language } from './types.js';
+import { BENCHMARK_PR_IN_NEW, MCP_DEFAULTS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type SourceItem, type Config, type Exec, type Language } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 
@@ -208,7 +208,7 @@ function withCommands(raw: unknown): unknown {
   const comb = typeof raw === 'object' && raw !== null ? (raw as { comb?: unknown }).comb : undefined;
   const workspaces = typeof comb === 'object' && comb !== null ? (comb as { workspaces?: unknown }).workspaces : undefined;
   if (!Array.isArray(workspaces)) return raw;
-  const filled = workspaces.map((p: unknown) => (typeof p === 'object' && p !== null ? { env: {}, fork: null, nestedRepos: [], notNestedRepos: [], ...p } : p)); // #854: a file from before fork, undecided; #653: before nested repos, none
+  const filled = workspaces.map((p: unknown) => (typeof p === 'object' && p !== null ? { env: {}, fork: null, nestedRepos: [], notNestedRepos: [], benchmarkPrIn: BENCHMARK_PR_IN_NEW, ...p } : p)); // #854: a file from before fork, undecided; #653: before nested repos, none; #477: before benchmark PRs, a temporary worktree
   return { ...(raw as object), comb: { commands: [], ...(comb as object), workspaces: filled } };
 }
 

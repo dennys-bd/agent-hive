@@ -119,12 +119,12 @@ test('the routes answer and enforce the workspace\'s own memoryCap: the view car
 test('PUT …/memory/cap saves the workspace\'s new memoryCap to hive.config.json through the settings save, every other workspace and key as it was, and the view answers it; the same cap answers ok and writes nothing (#115)', async (t) => {
   const other = await tempDir(t, 'other-');
   await promisify(execFile)('git', ['init', '--quiet', other]);
-  const web: Workspace = { name: 'web', path: other, env: { PORT: '8' }, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 9000, color: 'oklch(0.72 0.12 25)' };
+  const web: Workspace = { name: 'web', path: other, env: { PORT: '8' }, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 9000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' };
   const { url, home } = await start(t, 4000, [web]);
   const before = await saved(home);
   assert.deepEqual(await answer(send('PUT', `${url}/cap`, { cap: 6000 })), [200, { ok: true }]);
   const [hive, rest] = before.comb.workspaces;
-  assert.deepEqual(await saved(home), { ...before, comb: { ...before.comb, workspaces: [{ ...hive, memoryCap: 6000, color: 'oklch(0.72 0.12 25)' }, rest] } });
+  assert.deepEqual(await saved(home), { ...before, comb: { ...before.comb, workspaces: [{ ...hive, memoryCap: 6000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, rest] } });
   assert.equal(((await (await hiveFetch(url)).json()) as MemoryView).cap, 6000, 'the live config has it: the view and the next write use it');
   const text = await compact(home);
   assert.deepEqual(await answer(send('PUT', `${url}/cap`, { cap: 6000 })), [200, { ok: true }]);

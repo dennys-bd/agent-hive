@@ -75,7 +75,7 @@ export const WS_PATH = '/work/hive';
 // The main Hive's config: the workspace has a nested repo, its own env, base branch, setup and teardown, and the Hive a branch template
 export const mainConfig = (): Config => parseConfig(combConfig({
   path: WS_PATH, branch: 'feat/{id}', stages: [{ name: 'Todo', from: {} }],
-  workspaces: [{ name: 'hive', path: WS_PATH, env: { A: '1' }, fork: null, nestedRepos: ['docs'], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', baseBranch: 'develop', setup: 'RUN old', teardown: 'RUN old' }],
+  workspaces: [{ name: 'hive', path: WS_PATH, env: { A: '1' }, fork: null, nestedRepos: ['docs'], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', baseBranch: 'develop', setup: 'RUN old', teardown: 'RUN old' }],
 }));
 
 // A Hive home whose experiment pinned two versions of hive:new-spec (only `terse` mapped by the tests) and one seed file. The current store
@@ -139,7 +139,7 @@ export const CLAUDE_ARGS = ['--plugin-dir', '/plugins/extra', '--allowedTools', 
 
 /** A parsed config around one workspace `bench` at `repo`; its stages and agent args are replaced after the parse (the routes only read them). */
 export function benchConfig(repo: string): Config {
-  const parsed = parseConfig(combConfig({ stages: [{ name: 'Todo', from: {} }], workspaces: [{ name: 'bench', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN pnpm install' }] }));
+  const parsed = parseConfig(combConfig({ stages: [{ name: 'Todo', from: {} }], workspaces: [{ name: 'bench', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', setup: 'RUN pnpm install' }] }));
   return { ...parsed, defaultAgent: 'claude', agentArgs: { ...parsed.agentArgs, claude: CLAUDE_ARGS }, comb: { ...parsed.comb, stages: BENCH_STAGES } };
 }
 
