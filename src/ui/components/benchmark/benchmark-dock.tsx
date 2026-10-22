@@ -16,7 +16,7 @@ import type { PanelId } from '@/lib/dock-layout';
 export interface BenchmarkSlots { askAgent?(): void; exportReport?(experiment: Experiment): void; sleep?(experiment: Experiment): void }
 
 export interface Benchmark {
-  experiments: readonly Experiment[]; sidebar: SidebarGroups; isEmpty: boolean; // isEmpty: no live (non-archived) experiment
+  experiments: readonly Experiment[]; sidebar: SidebarGroups;
   selected?: Experiment; select(id: string): void;
   tab: TabId; setTab(tab: TabId): void;
   query: string; setQuery(query: string): void;
@@ -67,7 +67,7 @@ export function useBenchmark(experiments: readonly Experiment[], slots: Benchmar
     if ((await send('DELETE', pathOf(id))) !== undefined) setSelectedId(next?.id);
   };
   return {
-    experiments, sidebar: groupExperiments(experiments, query), isEmpty: rows.length === 0, selected, select: setSelectedId, tab, setTab, query, setQuery,
+    experiments, sidebar: groupExperiments(experiments, query), selected, select: setSelectedId, tab, setTab, query, setQuery,
     isArchivedOpen, toggleArchived: () => setArchivedOpen((open) => !open),
     createEmpty: (workspace) => create({ kind: 'empty', workspace }), duplicate: (of) => create({ kind: 'duplicate', of }),
     rename: (id, name) => patch(id, { name }), setArchived: (id, archived) => patch(id, { archived }), remove, slots,

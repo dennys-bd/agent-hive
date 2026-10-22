@@ -14,8 +14,14 @@ const hook = (experiments: Experiment[]) => renderHook(({ list }) => useBenchmar
 
 test('first open selects the first row of the first group, on braços; no live experiment is the empty state (#461)', () => {
   const { result } = hook(EXPERIMENTS);
-  expect([result.current.selected?.id, result.current.tab, result.current.isEmpty]).toEqual([RUNNING.id, 'arms', false]);
-  expect(hook([ARCHIVED]).result.current.isEmpty).toBe(true);
+  expect([result.current.selected?.id, result.current.tab]).toEqual([RUNNING.id, 'arms']);
+  expect(hook([ARCHIVED]).result.current.selected).toBeUndefined();
+});
+
+test('with only archived experiments, picking one in the archived group selects it, so it can be unarchived (#461)', () => {
+  const { result } = hook([ARCHIVED]);
+  act(() => result.current.select(ARCHIVED.id));
+  expect(result.current.selected?.id).toBe(ARCHIVED.id);
 });
 
 test('experimento vazio and duplicar post kind empty / duplicate and select the answer once the state holds it (#461)', async () => {

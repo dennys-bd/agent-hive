@@ -92,3 +92,13 @@ test('with no live experiment the centre shows the empty state and its experimen
   expect(screen.queryByRole('navigation', { name: 'experimento' })).not.toBeInTheDocument();
   await waitFor(() => expect(within(sidebar()).getByRole('button', { name: 'arquivados · 1' })).toBeInTheDocument());
 });
+
+test('with only archived experiments, picking one in the archived group shows its head, so it can be unarchived (#461)', async () => {
+  const user = userEvent.setup();
+  render(<Window experiments={[ARCHIVED]} />);
+  key('4');
+  await user.click(within(sidebar()).getByRole('button', { name: 'arquivados · 1' }));
+  await user.click(within(sidebar()).getByRole('button', { name: new RegExp(`^${ARCHIVED.name}`) }));
+  expect(head()).toHaveTextContent(ARCHIVED.name);
+  expect(screen.queryByText('nenhum experimento ainda')).not.toBeInTheDocument();
+});

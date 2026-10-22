@@ -23,10 +23,10 @@ function EmptyExperiment({ benchmark, workspaces }: { benchmark: Benchmark; work
 }
 
 /** The benchmark view's centre (#461): the tab bar and the selected tab's body, the experiment's head portalled into the header; or, with no
- * live experiment, the empty state with no head and no tabs. Mounted only while the view is shown, so the slot holds no other view's head. */
+ * live experiment and no archived one picked, the empty state with no head and no tabs. Mounted only while the view is shown, so the slot holds no other view's head. */
 export function BenchmarkView({ benchmark, workspaces }: { benchmark: Benchmark; workspaces: readonly string[] }) {
   const { selected } = benchmark;
-  if (benchmark.isEmpty || selected === undefined) {
+  if (selected === undefined) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 text-muted-foreground text-sm">
         <p>{t('benchmark.header.empty')}</p>
