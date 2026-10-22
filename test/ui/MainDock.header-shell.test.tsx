@@ -121,3 +121,13 @@ test("in plugins the shell's pane is variáveis alone: arquivos and detalhes off
   fireEvent.click(railButton('fluxo'));
   expect(shell()).toMatchObject({ active: 'details', enabled: { variables: false } });
 });
+
+test('in benchmark the shell enables no pane and shows none, the right side still opening empty with its key (#461)', () => {
+  render(<Window />);
+  fireEvent.click(railButton('benchmark'));
+  expect(shell()).toMatchObject({ active: null, enabled: { files: false, details: false, variables: false }, canOpenRight: true });
+  sideKey('right');
+  expect(shell()).toMatchObject({ active: null, rightShown: true });
+  fireEvent.click(railButton('atividades'));
+  expect(shell()).toMatchObject({ enabled: { variables: false } });
+});
