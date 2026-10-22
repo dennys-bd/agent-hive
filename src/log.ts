@@ -304,6 +304,7 @@ export function describeEffect(effect: Effect): string {
       return `spawnSession worker=${shortId(worker.id)} ${owner} session=${copy ? 'copy' : continues ? 'continue' : 'new'} pty=${shortId(worker.runId)}`;
     }
     case 'dropCopiedTranscript': return `dropCopiedTranscript ${shortId(effect.sessionId)}`; // never the dir: it holds the home path
+    case 'removeTranscripts': return `removeTranscripts #${effect.task.item.id} slug=${effect.activity.slug ?? '-'} ${shortId(effect.session.id)}`; // #494: never the dir: it holds the home path
     case 'forgetScrollback': return `forgetScrollback pty=${shortId(effect.ptyId)}`; // #672
     case 'readCwd': return `readCwd pty=${shortId(effect.terminalId)}`; // #696
     case 'dropTerminalFiles': return `dropTerminalFiles pty=${shortId(effect.terminalId)}`;

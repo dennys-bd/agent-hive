@@ -10,7 +10,8 @@ import { AWAITING_MESSAGE } from './server-approval.js';
 import { recordCheckpoint, registerCheckpointRoutes } from './server-checkpoints.js';
 import { type TaskRouteDeps, type LiveView, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { removeTranscripts } from './transcript.js';
-import type { Activity, ActivityRecord, HiveEvent, Task, State, Worker } from './types.js';
+import type { Logger } from './log.js';
+import type { Activity, ActivityRecord, HiveEvent, Session, Task, State, Worker } from './types.js';
 import { liveShell } from './terminal-runs.js';
 import { sizeIn } from './terminal-wire.js';
 import { workDir } from './worktree.js';
@@ -212,14 +213,22 @@ async function clearTaskSession({ dispatch, log }: TaskRouteDeps, current: LiveV
   const taskId = task.item.itemId;
   const session = continuable(task, current.state).find((s) => s.id === sessionId);
   if (!session || !record.sessions.some((s) => s.id === sessionId)) return refuse(res, { status: HTTP_CONFLICT, message: SESSION_UNAVAILABLE_MESSAGE });
-  const workspace = current.state.deleteActivity.transcripts ? taskWorkspace(current.runtime.config, task) : undefined;
-  // read before the clear, which takes the session off its record
-  const dir = workspace && workDir(workspace.path, task, activityOf(current.state, taskId), record);
+  const repo = current.state.deleteActivity.transcripts ? taskWorkspace(current.runtime.config, task)?.path : undefined;
+  const activity = activityOf(current.state, taskId); // read before the clear, which takes the session off its record
   await dispatch({ type: 'clearSessions', activityId: record.id, sessionId: session.id });
-  if (workspace && dir) {
-    await removeTranscripts(dir, workspace.path, [session], log).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
-  }
+  await removeTaskTranscript(repo, task, activity, record, session, log);
   res.json({ ok: true });
+}
+
+/** A forgotten session's transcript removed where its task works (#304, #494): `repo` is the task's workspace path, none when the scope keeps
+ * transcripts or the workspace is gone; the dir comes from the activity and record as they stood before the clear. A failure is logged, never
+ * thrown: the session is already forgotten. */
+export async function removeTaskTranscript(
+  repo: string | undefined, task: Task, activity: Activity | undefined, record: Pick<ActivityRecord, 'id' | 'slug'> | undefined, session: Session,
+  log: Pick<Logger, 'debug' | 'error'>, env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  if (repo === undefined) return;
+  await removeTranscripts(workDir(repo, task, activity, record), repo, [session], log, env).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
 }
 
 async function clearLocal({ dispatch, log }: TaskRouteDeps, current: LiveView, activityId: string, sessionId: string, res: Response): Promise<void> {
