@@ -4,7 +4,7 @@ import { readdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadBenchmark } from '../../src/benchmark-guards.js';
-import { prepareExperiment, prepareRun } from '../../src/benchmark/run-home.js';
+import { prepareExperiment, prepareRun, renderSource } from '../../src/benchmark/run-home.js';
 import { parseConfig } from '../../src/config.js';
 import { shellQuote } from '../../src/shell-init.js';
 import { loadState } from '../../src/state-store.js';
@@ -75,7 +75,7 @@ test('a run\'s mcp setting is the default: the user\'s servers and their tokens 
 
 test('a symlink in a custom version folder is not copied into the run home (#471)', async (t) => {
   const { hiveDir, deps } = await benchHome(t);
-  const files = join(hiveDir, 'custom', 'hive', 'new-spec', 'terse', 'files');
+  const files = join(hiveDir, 'benchmark', 'exp-1', 'plugin', 'custom', 'hive', 'new-spec', 'terse', 'files');
   await writeFile(join(hiveDir, 'outside.txt'), 'outside');
   await symlink(join(hiveDir, 'outside.txt'), join(files, 'link.txt'));
   const run = await prepareRun(EXP, EXP.arms[1], 1, deps);
@@ -96,7 +96,8 @@ test('the blindness check also reads the worktree setup and teardown and the res
 
 test('a home that fails after the branches were pushed takes the run branch off every origin and removes the partial home (#471)', async (t) => {
   const { hiveDir, calls, deps } = await benchHome(t);
-  await writeFile(join(hiveDir, 'custom', 'hive', 'new-spec', 'terse', 'version.json'), '{ not json');
+  // The pin holds the versions a run copies (#459), so the corrupt one is the pin's
+  await writeFile(join(hiveDir, 'benchmark', 'exp-1', 'plugin', 'custom', 'hive', 'new-spec', 'terse', 'version.json'), '{ not json');
   await assert.rejects(prepareRun(EXP, EXP.arms[1], 1, deps));
   const clone = join(hiveDir, 'benchmark', 'exp-1', 'clone');
   const deleted = calls.filter((c) => c.args[0] === 'push' && c.args.includes('--delete'));
@@ -116,4 +117,19 @@ test('a nested repo path that is absolute, empty, dashed or climbs out is refuse
   assert.equal(calls.length, 0);
   assert.ok(!existsSync(join(hiveDir, 'benchmark', 'exp-1', 'repo.git')));
   assert.equal(mainConfig().comb.workspaces[0].nestedRepos[0], 'docs');
+});
+
+test("prepareRun copies the arm's versions from the experiment's pin, never the current store; a version only the current store holds refuses the run (#459)", async (t) => {
+  const { deps } = await benchHome(t);
+  const run = await prepareRun(EXP, EXP.arms[1], 1, deps);
+  assert.equal(await readFile(join(run.home, 'custom', 'hive', 'new-spec', 'terse', 'files', 'SKILL.md'), 'utf8'), 'Spec skill for this arm, terse.');
+  const fresh = experiment({ arms: [arm('a1', 'A', { items: { 'hive:new-spec': 'fresh' } })] });
+  await assert.rejects(prepareRun(fresh, fresh.arms[0], 1, (await benchHome(t)).deps), /has no version fresh/);
+});
+
+test("a run home renders from its experiment's pinned plugin source; any other home from the shipped plugin (#459)", async (t) => {
+  const { hiveDir, deps } = await benchHome(t);
+  const run = await prepareRun(EXP, EXP.arms[0], 1, deps);
+  assert.equal(renderSource(run.home, '/shipped/plugin'), join(hiveDir, 'benchmark', 'exp-1', 'plugin', 'source'));
+  assert.equal(renderSource(hiveDir, '/shipped/plugin'), '/shipped/plugin');
 });

@@ -67,7 +67,7 @@ export async function stopRunDaemon(daemon: RunningDaemon, deps: Pick<DaemonDeps
   }
 }
 
-/** The Hive's own build, which is what a run boots: the run daemon renders its plugin from the run home, so it needs no other code. */
+/** The Hive's own build, which is what a run boots: the run daemon renders its plugin from its experiment's pin (renderSource), so it needs no other code. */
 export const RUN_JS: string = fileURLToPath(new URL('../run.js', import.meta.url));
 
 export async function bootRun(home: string, deps: DaemonDeps = {}): Promise<RunningDaemon> {

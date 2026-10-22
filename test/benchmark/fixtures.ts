@@ -9,7 +9,7 @@ import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
 import { parseConfig } from '../../src/config.js';
 import { combConfig } from '../fakes.js';
-import type { Activity, Arm, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, State, Task, Worker } from '../../src/types.js';
+import type { Activity, Arm, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, Stage, State, Task, Worker } from '../../src/types.js';
 
 const pick = (skill: string): BenchStagePick => ({ agent: 'claude', skill, prompt: `${skill} {title}\n\n{body}` });
 export const SETUP: ArmSetup = {
@@ -78,15 +78,20 @@ export const mainConfig = (): Config => parseConfig(combConfig({
   workspaces: [{ name: 'hive', path: WS_PATH, env: { A: '1' }, fork: null, nestedRepos: ['docs'], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', baseBranch: 'develop', setup: 'RUN old', teardown: 'RUN old' }],
 }));
 
-// A Hive home with the custom store (two versions of hive:new-spec, only `terse` mapped by the tests) and one seed file
+// A Hive home whose experiment pinned two versions of hive:new-spec (only `terse` mapped by the tests) and one seed file. The current store
+// holds another text for `terse` and a version `fresh` the pin lacks: a run must read the pin, never the current store (#459)
 export async function benchHome(t: TestContext): Promise<{ hiveDir: string; calls: Call[]; lines: string[]; deps: RunDeps }> {
   const hiveDir = await tempDir(t, 'bench-');
-  for (const version of ['terse', 'long']) {
-    const dir = join(hiveDir, 'custom', 'hive', 'new-spec', version);
+  const writeVersion = async (home: string, version: string, text: string): Promise<void> => {
+    const dir = join(home, 'custom', 'hive', 'new-spec', version);
     await mkdir(join(dir, 'files'), { recursive: true });
     await writeFile(join(dir, 'version.json'), JSON.stringify({ name: version, from: null, workspaces: ['other'] }));
-    await writeFile(join(dir, 'files', 'SKILL.md'), `Spec skill for this arm, ${version}.`);
-  }
+    await writeFile(join(dir, 'files', 'SKILL.md'), text);
+  };
+  const pin = join(hiveDir, 'benchmark', 'exp-1', 'plugin');
+  for (const version of ['terse', 'long']) await writeVersion(pin, version, `Spec skill for this arm, ${version}.`);
+  await writeVersion(hiveDir, 'terse', 'Current text, edited after the pin.');
+  await writeVersion(hiveDir, 'fresh', 'Made after the pin.');
   await mkdir(join(hiveDir, 'benchmark', 'exp-1', 'seed'), { recursive: true });
   await writeFile(join(hiveDir, 'benchmark', 'exp-1', 'seed', 'ref.md'), 'Reference.');
   const { run, calls } = fakeRun();
@@ -120,3 +125,23 @@ export function clock(start: Date): { now(): Date; sleep(ms: number): Promise<vo
 /** A task of the run's graph: item id local:<n>, the seed's key and title (#473), blockers by number. */
 export const watchTask = (n: number, blockedBy: number[] = [], key = `T${n}`, title = `Task ${n}`): WatchTask =>
   ({ itemId: `local:${n}`, key, title, blockedBy: blockedBy.map((b) => `local:${b}`) });
+
+export const SHA = 'c'.repeat(40);
+// spec by prompt (codex, a model), plan by a skill stage, build by a /hive-build prompt after a /hive-pr-review decoy; pr unmatched
+export const BENCH_STAGES: Stage[] = [
+  { name: 'Spec', from: {}, prompt: '/hive:new-spec {id}', agent: 'codex', model: 'gpt-5' },
+  { name: 'Plan', from: {}, action: 'skill', skill: 'new-plan' },
+  { name: 'Check', from: {}, prompt: '/hive-pr-review {id}' },
+  { name: 'Build', from: {}, prompt: '/hive-build {title}' },
+  { name: 'Done', from: {} },
+];
+export const CLAUDE_ARGS = ['--plugin-dir', '/plugins/extra', '--allowedTools', 'Read Bash(npm run test:coverage *)', '--disallowedTools', 'Bash(gh:*)', '--plugin-dir', '/plugins/two'];
+
+/** A parsed config around one workspace `bench` at `repo`; its stages and agent args are replaced after the parse (the routes only read them). */
+export function benchConfig(repo: string): Config {
+  const parsed = parseConfig(combConfig({ stages: [{ name: 'Todo', from: {} }], workspaces: [{ name: 'bench', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN pnpm install' }] }));
+  return { ...parsed, defaultAgent: 'claude', agentArgs: { ...parsed.agentArgs, claude: CLAUDE_ARGS }, comb: { ...parsed.comb, stages: BENCH_STAGES } };
+}
+
+export const benchExperiment = (patch: Partial<Experiment> = {}): Experiment =>
+  experiment({ workspace: 'bench', seed: { ...experiment().seed, workspace: 'bench', commit: SHA }, ...patch });

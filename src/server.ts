@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { renderSource } from './benchmark/run-home.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
 import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFor } from './sources/github-gql.js';
@@ -24,6 +25,7 @@ import { createMemoryStore } from './memory.js';
 import { createPassageStore, protocolRenderer } from './passage-store.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
 import { registerProtocolRoutes } from './server-protocol.js';
+import { pluginVersion } from './item-sources.js';
 import { excludeFromGit, pluginSource, prepareHome, type ProtocolPaths } from './hooks-settings.js';
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
@@ -90,6 +92,7 @@ import { createCustomStore } from './custom-store.js';
 import { createPluginRender } from './plugin-render.js';
 import { registerAssistRoutes } from './server-assist.js';
 import { registerTemplateReviewRoutes } from './server-template-review.js';
+import { registerBenchmarkRoutes } from './server-benchmark.js';
 import { registerPluginRoutes } from './server-plugins.js';
 import { registerViewStateRoutes } from './server-view-state.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
@@ -249,7 +252,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   const protocolFor = protocolRenderer(passages, log);
   const memory = createMemoryStore(home, (name) => live !== undefined && workspaceByName(live.runtime.config, name) !== undefined, log, protocolFor);
   const workerLsp = createWorkerLsp({ home, log }); // #803: one language-server plugin per workspace, for every claude run in it
-  const pluginRender = createPluginRender({ home, pluginSource: pluginSource(), log }); // #316: one plugin folder per workspace, which every agent run of it loads
+  // #459: a run home's daemon renders from its experiment's pinned plugin, the main Hive from its own shipped one
+  const shippedPlugin = renderSource(home, pluginSource());
+  const pluginRender = createPluginRender({ home, pluginSource: shippedPlugin, log }); // #316: one plugin folder per workspace, which every agent run of it loads
   // run.spawned's server-side fields (#797, #803): the workspace memory and the language servers its launch read
   const memoryFields = runMemory(memory, () => live?.runtime.config);
   const lspFields = runLspServers(workerLsp, () => live?.runtime.config);
@@ -1185,12 +1190,14 @@ export function createServer(deps: ServerDeps): HiveServer {
   // GET /view-state and POST /view-state/:key (#484): the dashboard's layout in the home, so a new port keeps it; loaded once, here
   registerViewStateRoutes(app, { store: createViewStore(home, readViewState(home)), log });
   // The plugins view's items (#315): the catalogue and the custom store under <home>/custom/. onChange is #316's per-workspace render, a no-op until it lands
-  const customStore = createCustomStore({ home, pluginSource: pluginSource(), workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: (workspaces) => { if (live) void pluginRender.write(live.runtime.config, workspaces); }, log });
-  registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: pluginSource(), log });
+  const customStore = createCustomStore({ home, pluginSource: shippedPlugin, workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: (workspaces) => { if (live) void pluginRender.write(live.runtime.config, workspaces); }, log });
+  registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: shippedPlugin, log });
+  // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
+  registerBenchmarkRoutes(app, { requireLive, dispatch, home, pluginSource: shippedPlugin, exec, log, version: async () => (await pluginVersion(shippedPlugin)) ?? '', now: () => new Date() });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
-  registerAssistRoutes(app, { requireLive, home, pluginSource: pluginSource(), log, agents });
+  registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written
-  registerTemplateReviewRoutes(app, { requireLive, home, pluginSource: pluginSource(), log, agents });
+  registerTemplateReviewRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings
   registerMemoryRoutes(app, { requireLive, memory, facts: wiring.facts, log, home, queueSave, saveSettings });
