@@ -46,9 +46,9 @@ async function firstFrame(res: Response): Promise<Record<string, unknown>> {
 
 // #629: a task's work (slug, error, stopped, usage, result) lives on the activities and their records, so the snapshot carries all four lists
 function snapshotOf(payload: Record<string, unknown>): Snapshot {
-  const { tasks, workers, activities, activityRecords } = payload as Partial<Snapshot>;
+  const { tasks, workers, activities, activityRecords, slept } = payload as Partial<Snapshot>;
   if (!Array.isArray(tasks) || !Array.isArray(workers) || !Array.isArray(activities) || !Array.isArray(activityRecords)) throw new Error('GET /events: the daemon is not configured');
-  return { tasks, workers, activities, activityRecords };
+  return { tasks, workers, activities, activityRecords, ...(Array.isArray(slept) ? { slept } : {}) };
 }
 
 /** One home's daemon over HTTP, at that home's port and secret: the two daemons of a pair never mix. No message carries the secret. */

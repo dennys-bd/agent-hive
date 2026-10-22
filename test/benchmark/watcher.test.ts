@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Activity, Task, Worker } from '../../src/types.js';
+import type { Activity, SleptRun, Task, Worker } from '../../src/types.js';
 import { observe, type Progress, type Snapshot, startWatch, type WatchClient, watchRun } from '../../src/benchmark/watcher.js';
 import { clock, snap, task, watchTask, worker } from './fixtures.js';
 
@@ -181,4 +181,24 @@ test('watchRun ends aborted while it sleeps between reads, without waiting out t
   const watching = watchRun(GRAPH, deps);
   setImmediate(() => controller.abort());
   assert.deepEqual((await watching).end, { outcome: 'aborted' });
+});
+
+// The wake (#472): a run that slept with the sleep all is continued, so the run after it takes its place in the stage
+function stageRunsAfter(slept: SleptRun[] | undefined): string[] | undefined {
+  let watch = startWatch([watchTask(1)]);
+  const read = (workers: Worker[], extra: Partial<Snapshot> = {}): void => { watch = observe(watch, { ...snap([task(1, 'Build')], workers), ...extra }, AT).watch; };
+  read([worker(1, 'r1')]);
+  read([], slept === undefined ? {} : { slept });
+  read([worker(1, 'r2')]);
+  return watch.stageRuns['local:1']?.Build;
+}
+const sleptRun = (cause: SleptRun['cause']): SleptRun => ({ ptyId: 'r1', agent: 'claude', kind: 'stage', stage: 'Build', taskId: 'local:1', cause, at: 1 });
+
+test('observe counts no restart for the run a wake continues: the run it follows slept with cause all (#472)', () => {
+  assert.deepEqual(stageRunsAfter([sleptRun('all')]), ['r2']);
+});
+
+test('observe still counts a restart when the run before slept for another cause, or did not sleep (#472)', () => {
+  assert.deepEqual(stageRunsAfter([sleptRun('manual')]), ['r1', 'r2']);
+  assert.deepEqual(stageRunsAfter(undefined), ['r1', 'r2']);
 });

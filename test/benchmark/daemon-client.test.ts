@@ -87,3 +87,12 @@ test('sleepRuns POSTs the pty ids to /ptys/sleep and continueActivity POSTs /act
   }
   await assert.rejects(client.continueActivity('act/9'), /^Error: POST \/activities\/act\/9\/continue: HTTP 409$/);
 });
+
+test('state() carries the daemon\'s slept list when the frame has one, and none when it does not (#472)', async () => {
+  const frame = { tasks: [], workers: [], activities: [], activityRecords: [] };
+  const slept = [{ ptyId: 'r1', agent: 'claude', kind: 'stage', cause: 'all', at: 1 }];
+  const read = async (body: object) => createDaemonClient('/home', { address: () => ADDRESS, fetch: fakeFetch(() => new Response(stream(`data: ${JSON.stringify(body)}\n\n`))).fn }).state();
+  assert.deepEqual((await read({ ...frame, slept })).slept, slept);
+  assert.equal((await read(frame)).slept, undefined);
+  assert.equal((await read({ ...frame, slept: 'x' })).slept, undefined);
+});

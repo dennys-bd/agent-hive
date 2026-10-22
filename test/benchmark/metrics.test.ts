@@ -16,7 +16,7 @@ const withRecord = (state: ReturnType<typeof snap>, n: number, extra: Partial<Ac
 });
 const plus = (min: number): string => new Date(Date.parse(T0) + min * 60_000).toISOString();
 const usage = (tokens: number, minutes: number, waitingMinutes = 0): TaskUsage => ({ tokens, ms: minutes * 60_000, waitingMs: waitingMinutes * 60_000, parts: [] });
-const watchOf = (tasks: WatchTask[], stageRuns: WatchState['stageRuns']): WatchState => ({ tasks, released: [], entries: {}, stageRuns });
+const watchOf = (tasks: WatchTask[], stageRuns: WatchState['stageRuns']): WatchState => ({ tasks, released: [], entries: {}, stageRuns, sleptRuns: [] });
 const FACTS = { startedAt: T0, endedAt: plus(60), sleptMs: 0, diff: { files: 0, insertions: 0, deletions: 0 }, modelTokens: {} };
 // Run B · par 1 of benchmark.hv.html's result screen: three of its tasks, HIV-415 restarted in Build, 30 minutes asleep, two models
 const SCREEN_TASKS = [watchTask(1, [], 'HIV-413', 'cor do workspace no card'), watchTask(2, [], 'HIV-414', 'menu da source'), watchTask(3, [], 'HIV-415', 'paginação na coluna de concluídas')];
