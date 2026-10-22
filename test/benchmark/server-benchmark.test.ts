@@ -237,3 +237,13 @@ test("registerBenchmarkRoutes mounts the control routes: run on an unknown exper
   const bench = await serve(t);
   assert.deepEqual(errorOf(await call(bench, 'POST', `${E}/nope/run`, {})), [404, 'unknown_experiment']);
 });
+
+test('an arm PATCH accepts a partial stage with a null model and refuses an unknown role or agent (#462)', async (t) => {
+  const bench = await serve(t, { experiments: [benchExperiment()] });
+  const overrides = { stages: { build: { agent: 'codex', model: null } } };
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides }))[0], 204);
+  assert.deepEqual(bench.state().benchmark.experiments[0].arms[0].overrides, overrides);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { review: { agent: 'codex' } } } }))[0], 400);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { build: { agent: 'gemini' } } } }))[0], 400);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { build: { model: '' } } } }))[0], 400);
+});

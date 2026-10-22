@@ -6,7 +6,7 @@ import { loadBenchmark } from '../../src/benchmark-guards.js';
 import { initialState } from '../../src/orchestrator.js';
 import { loadState } from '../../src/state-store.js';
 import { tempDir } from '../temp-dir.js';
-import type { ArmSetup } from '../../src/types.js';
+import type { ArmOverrides, ArmSetup } from '../../src/types.js';
 import { arm, experiment, run, SETUP } from './fixtures.js';
 
 const AT = '2026-10-21T11:00:00.000Z';
@@ -117,4 +117,13 @@ test('an experiment whose evaluation has no tester object or no integer scenario
     const drop = { ...experiment({ id: 'drop' }), evaluation: { ...good.evaluation, ...patch } };
     assert.deepEqual(ids(saved({ experiments: [drop, good] })), ['keep'], JSON.stringify(patch));
   }
+});
+
+test('an arm whose stages hold only some roles and fields, or a null model, loads; an unknown role or a non-string field drops it (#462)', () => {
+  const partial = arm('a2', 'B', { stages: { build: { agent: 'codex', model: null } } });
+  const badRole = arm('a3', 'C', { stages: { review: { agent: 'codex' } } } as unknown as ArmOverrides);
+  const badField = arm('a4', 'D', { stages: { build: { model: 5 } } } as unknown as ArmOverrides);
+  const nullAgent = arm('a5', 'E', { stages: { build: { agent: null } } } as unknown as ArmOverrides);
+  const [loaded] = load(saved({ experiments: [experiment({ arms: [arm('a1', 'A'), partial, badRole, badField, nullAgent] })] })).experiments;
+  assert.deepEqual(loaded.arms.map((a) => [a.id, a.overrides]), [['a1', {}], ['a2', { stages: { build: { agent: 'codex', model: null } } }]]);
 });

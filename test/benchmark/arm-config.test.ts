@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeArm, resolveRow, runConfig, runStages, runState, watchTasks } from '../../src/benchmark/arm-config.js';
 import { parseConfig } from '../../src/config.js';
+import type { ArmOverrides } from '../../src/types.js';
 import { arm, experiment, ISOLATION, mainConfig, SETUP } from './fixtures.js';
 
 const PATHS = { clone: '/hive/benchmark/exp-1/clone', home: '/hive/benchmark/exp-1/runs/abcd1234', rules: { home: '/hive/benchmark/exp-1/runs/abcd1234', homes: ['/hive'], denied: [] } };
@@ -40,4 +41,21 @@ test("watchTasks is the run's blocker graph as runState seeds it: local:<n> in s
     { itemId: 'local:1', key: 'A', title: 'a', blockedBy: [] },
     { itemId: 'local:2', key: 'B', title: 'b', blockedBy: ['local:1'] },
   ]);
+});
+
+test('mergeArm merges stages per role and field: a build-only agent keeps the build model and the other stages, and a later base edit of spec reaches the arm (#462)', () => {
+  const base = { ...SETUP, stages: { ...SETUP.stages, build: { ...SETUP.stages.build, model: 'sonnet' } } };
+  const overrides: ArmOverrides = { stages: { build: { agent: 'codex' } } };
+  assert.deepEqual(mergeArm(base, overrides).stages, { ...base.stages, build: { ...base.stages.build, agent: 'codex' } });
+  const edited = { ...base, stages: { ...base.stages, spec: { ...base.stages.spec, model: 'opus' } } };
+  assert.equal(mergeArm(edited, overrides).stages.spec.model, 'opus');
+  assert.equal(mergeArm(edited, overrides).stages.build.model, 'sonnet');
+  assert.deepEqual(mergeArm(base, { plugins: ['/p'] }).stages, base.stages);
+});
+
+test("mergeArm reads a null model as the agent's own default: the merged build has no model, the base's dropped (#462)", () => {
+  const base = { ...SETUP, stages: { ...SETUP.stages, build: { ...SETUP.stages.build, model: 'sonnet' } } };
+  const build = mergeArm(base, { stages: { build: { agent: 'codex', model: null } } }).stages.build;
+  assert.deepEqual(build, { agent: 'codex', skill: base.stages.build.skill, prompt: base.stages.build.prompt });
+  assert.equal('model' in build, false);
 });

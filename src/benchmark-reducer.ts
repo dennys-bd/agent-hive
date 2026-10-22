@@ -1,7 +1,7 @@
 // The reducer of state.benchmark (#458): an experiment's life, pure and immutable as orchestrator.ts's. The routes build what needs I/O
 // (ids, hashes, the plugin pin) and refuse a wrong transition (3.2 answers 409), so an event here only applies. One that names an unknown
 // experiment, arm, token or round returns the state itself, so none() in step leaves everything as it was.
-import type { Arm, ArmSetup, BenchIsolation, BenchmarkEvent, BenchRound, BenchRun, BenchRunStatus, BenchSleep, Experiment, HiveEvent, IsolationRow, State } from './types.js';
+import type { Arm, ArmOverrides, BenchIsolation, BenchmarkEvent, BenchRound, BenchRun, BenchRunStatus, BenchSleep, Experiment, HiveEvent, IsolationRow, State } from './types.js';
 
 // A Record, so tsc refuses a BenchmarkEvent the delegation would miss
 const BENCHMARK_EVENTS: Record<BenchmarkEvent['type'], true> = {
@@ -62,7 +62,7 @@ const armRemoved = (experiment: Experiment, armId: string): Experiment =>
     : experiment;
 
 // overrides: the source's setup without its tasks, the target keeping its own; tasks: only the tasks, absent when the source has none
-function copied(source: Partial<ArmSetup>, target: Partial<ArmSetup>, what: 'overrides' | 'tasks'): Partial<ArmSetup> {
+function copied(source: ArmOverrides, target: ArmOverrides, what: 'overrides' | 'tasks'): ArmOverrides {
   const { tasks: sourceTasks, ...sourceSetup } = source;
   const { tasks: targetTasks, ...targetSetup } = target;
   if (what === 'overrides') return targetTasks === undefined ? sourceSetup : { ...sourceSetup, tasks: targetTasks };

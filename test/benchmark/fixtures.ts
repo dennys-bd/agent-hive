@@ -12,7 +12,7 @@ import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
 import { parseConfig } from '../../src/config.js';
 import { combConfig } from '../fakes.js';
-import type { Activity, Arm, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, Stage, State, Task, Worker } from '../../src/types.js';
+import type { Activity, Arm, ArmOverrides, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, Stage, State, Task, Worker } from '../../src/types.js';
 
 const pick = (skill: string): BenchStagePick => ({ agent: 'claude', skill, prompt: `${skill} {title}\n\n{body}` });
 export const SETUP: ArmSetup = {
@@ -26,7 +26,7 @@ export const ISOLATION: BenchIsolation = {
   limits: { all: { turns: 200 } }, env: { all: { CI: '1' } }, betweenRounds: { all: 'fresh-worktree' },
 };
 
-export const arm = (id: string, letter: string, overrides: Partial<ArmSetup> = {}): Arm => ({ id, letter, name: `arm ${letter}`, overrides });
+export const arm = (id: string, letter: string, overrides: ArmOverrides = {}): Arm => ({ id, letter, name: `arm ${letter}`, overrides });
 
 // The home under the fake Hive home /hive: the guard wants exactly <hiveDir>/benchmark/<id>/runs/<token>
 export const run = (token: string, patch: Partial<BenchRun> = {}): BenchRun => ({
