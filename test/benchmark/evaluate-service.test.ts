@@ -14,11 +14,11 @@ const STATE: State = stateWith(experiment({ rounds: [
   { n: 2, runs: [run('bbbb1', { round: 2, status: 'done' }), run('bbbb2', { round: 2, armId: 'a2', status: 'running' })] },
 ] }));
 
-function service(evaluateRun: (token: string, deps: EvaluateDeps) => Promise<BenchRunEvaluation | undefined>) {
+function service(evaluateRun: (token: string, deps: EvaluateDeps) => Promise<BenchRunEvaluation | undefined>, abortWaitMs?: number) {
   const events: HiveEvent[] = [];
   const { log, lines } = fakeLog();
   const evaluator = createBenchEvaluator({
-    latest: () => STATE, dispatch: async (event) => { events.push(event); }, folderOf: (id) => `/hive/benchmark/${id}`, log, now: () => Date.parse(AT),
+    latest: () => STATE, dispatch: async (event) => { events.push(event); }, folderOf: (id) => `/hive/benchmark/${id}`, log, now: () => Date.parse(AT), ...(abortWaitMs === undefined ? {} : { abortWaitMs }),
     runDeps: (signal) => ({ signal }) as EvaluateDeps, evaluateRun: (ctx, deps) => evaluateRun(ctx.run.token, deps),
   });
   return { evaluator, events, lines };
@@ -70,6 +70,17 @@ test('abortAll waits for the cleanup of an aborted evaluation (#474)', async () 
   await evaluator.abortAll();
   assert.equal(cleaned, true);
   await done;
+});
+
+test('abortAll stops waiting after the bound and logs one fixed line; evaluate starts nothing once it was called (#474)', async () => {
+  let starts = 0;
+  const { evaluator, lines } = service(() => { starts += 1; return new Promise(() => undefined); }, 20); // ignores the signal, never settles
+  void evaluator.evaluate('exp-1', ['aaaa1']);
+  await evaluator.abortAll();
+  assert.deepEqual(lines.filter((l) => l.startsWith('WARN')), ['WARN benchmark evaluations did not stop in time']);
+  await evaluator.evaluate('exp-1', ['aaaa2']); // resolves at once: closing
+  assert.equal(starts, 1);
+  assert.equal(evaluator.isEvaluating('aaaa2'), false);
 });
 
 test('a single-run evaluation dispatches its run but no benchmarkRoundEvaluated; only the experiment route asks for it (#474)', async () => {

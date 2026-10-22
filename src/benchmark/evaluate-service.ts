@@ -10,6 +10,7 @@ import { ensureChromium, mcpBinary } from './browser.js';
 import { type EvaluateContext, type EvaluateDeps, evaluateRun } from './evaluate.js';
 import { type Run, serialGit } from './exec.js';
 
+export const ABORT_WAIT_MS = 10_000; // some awaits ignore the signal (the Chromium install, a git fetch): a Quit cannot wait for them forever
 const ENDED: readonly BenchRunStatus[] = ['done', 'timeout', 'error'];
 
 export interface BenchEvaluatorDeps {
@@ -18,6 +19,7 @@ export interface BenchEvaluatorDeps {
   folderOf(experimentId: string): string;
   log: Pick<Logger, 'info' | 'warn'>;
   now(): number;
+  abortWaitMs?: number; // tests' seam
   runDeps(signal: AbortSignal, log: (line: string) => void): EvaluateDeps;
   evaluateRun?: (ctx: EvaluateContext, deps: EvaluateDeps) => Promise<BenchRunEvaluation | undefined>; // tests' seam
 }
@@ -25,6 +27,7 @@ export interface BenchEvaluatorDeps {
 export interface BenchEvaluator { evaluate(experimentId: string, tokens: readonly string[], markRounds?: boolean): Promise<void>; isEvaluating(token: string): boolean; abortAll(): Promise<void> }
 
 export function createBenchEvaluator(deps: BenchEvaluatorDeps): BenchEvaluator {
+  let closing = false; // once a Quit aborted, nothing new starts
   const evaluating = new Set<string>();
   const controllers = new Set<AbortController>();
   const inFlight = new Set<Promise<void>>(); // a Quit awaits them: their finally blocks stop the sample and remove the eval worktree
@@ -76,6 +79,7 @@ export function createBenchEvaluator(deps: BenchEvaluatorDeps): BenchEvaluator {
   }
 
   function evaluate(id: string, tokens: readonly string[], markRound = false): Promise<void> {
+    if (closing) return Promise.resolve();
     const promise = run(id, tokens, markRound);
     inFlight.add(promise);
     const forget = (): void => { inFlight.delete(promise); };
@@ -84,8 +88,13 @@ export function createBenchEvaluator(deps: BenchEvaluatorDeps): BenchEvaluator {
   }
 
   async function abortAll(): Promise<void> {
+    closing = true;
     for (const c of controllers) c.abort();
-    await Promise.allSettled([...inFlight]);
+    const timer = new AbortController();
+    const timedOut = sleep(deps.abortWaitMs ?? ABORT_WAIT_MS, true, { signal: timer.signal }).catch(() => false);
+    const settled = Promise.allSettled([...inFlight]).then(() => false);
+    if (await Promise.race([settled, timedOut])) deps.log.warn('benchmark evaluations did not stop in time'); // fixed line: no free text
+    timer.abort();
   }
 
   return { evaluate, isEvaluating: (token) => evaluating.has(token), abortAll };

@@ -1402,10 +1402,10 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   async function close(reason = 'close'): Promise<void> {
     closing = true;
-    evaluator.abortAll(); // #877: a Quit ignores what its aborts cause (cleanStop)
-    await benchEvaluator.abortAll(); // #474: a Quit drops the running evaluations and waits for their cleanup (sample, eval worktree)
     if (pollTimer) clearInterval(pollTimer);
     if (planLimitsTimer) clearInterval(planLimitsTimer);
+    evaluator.abortAll(); // #877: a Quit ignores what its aborts cause (cleanStop)
+    await benchEvaluator.abortAll(); // #474: a Quit drops the running evaluations and waits (bounded) for their cleanup (sample, eval worktree)
     await readLoop?.stop(); // #180: the running round and every refetch settle first: the database never closes under a transaction
     readModel?.close();
     readModel = undefined; // a second close() closes nothing twice
