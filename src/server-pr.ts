@@ -14,7 +14,7 @@ import { prDataOf, type StoredPr } from './read-model/views.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
 import { isHash, isPath, parseLineAnchor } from './review-bodies.js';
 import { readingOf, type Reading, type RepoReadModel } from './server-repos.js';
-import { type ChangesReader, changesReaderOf, dropStale, HeadMoved } from './server-pr-changes.js';
+import { type ChangesReader, changesReaderOf, dropStale, GitHubUnreachable, HeadMoved } from './server-pr-changes.js';
 import { badRequest, errorMessage, refuse } from './server-review.js';
 import type { LiveView, Refusal, TaskRouteDeps } from './server-tasks.js';
 import type { Exec as GhExec, GqlJson } from './sources/github-gql.js';
@@ -58,6 +58,7 @@ export interface PrRouteDeps extends Pick<TaskRouteDeps, 'requireLive' | 'dispat
  * no token, so the message carries none. */
 export function githubFailure(err: unknown): Refusal {
   if (err instanceof PrNotFound) return { status: HTTP_NOT_FOUND, message: err.message };
+  if (err instanceof GitHubUnreachable) return { status: HTTP_SERVICE_UNAVAILABLE, message: UNREACHABLE_MESSAGE };
   if (err instanceof HeadMoved) return { status: HTTP_CONFLICT, message: HEAD_MOVED_MESSAGE };
   if (err instanceof DiffTooLarge) return { status: HTTP_TOO_LARGE, message: TOO_LARGE_MESSAGE };
   return { status: HTTP_BAD_GATEWAY, message: errorMessage(err) };

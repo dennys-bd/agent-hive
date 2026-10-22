@@ -60,16 +60,23 @@ function useChecksReload(url: string, active: boolean, apply: (read: PrChecksRea
 
 // The diff and the threads (#497). They are read when the page turns active, on fresh() (the page's refresh, after every write: the server
 // revalidates past its cooldown and a change comes back as the event), on a pullChanges event of the repository, and once more when the fields
-// name another head. Only the latest answer lands. A failure is the files tab's message, never a toast: the tab shows it
+// name another head. Only the latest answer lands. A first failure is the files tab's message; a failed re-read of a shown diff is a toast
 function usePrChanges(url: string, active: boolean, head: string | undefined): { changes: ChangesLoad; readChanges(fresh?: boolean): Promise<void> } {
   const [changes, setChanges] = useState<ChangesLoad>({ status: 'loading' });
+  const shown = useRef(changes);
+  shown.current = changes;
   const latest = useRef(0);
   const readChanges = useCallback((fresh = false): Promise<void> => {
     latest.current += 1;
     const mine = latest.current;
     return getJson<unknown>(prPath(url, fresh ? '/changes?fresh=1' : '/changes')).then(
       (read) => { if (latest.current === mine) setChanges(isPrChanges(read) ? { status: 'ready', changes: read } : { status: 'error', message: t('pr.badAnswer') }); },
-      (err: unknown) => { if (latest.current === mine) setChanges({ status: 'error', message: prReadError(err) }); },
+      (err: unknown) => {
+        if (latest.current !== mine) return;
+        const message = prReadError(err);
+        if (shown.current.status === 'ready') toast.error(message); // a diff on screen outlives a failed re-read, as the fields do
+        else setChanges({ status: 'error', message });
+      },
     );
   }, [url]);
   useEffect(() => { if (active) void readChanges(); }, [active, readChanges]);

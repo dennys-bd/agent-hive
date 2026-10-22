@@ -70,23 +70,37 @@ export async function dropStale(deps: ChangesDeps, url: string, files: FileDiff[
   }
 }
 
-// The four reads (#497), in parallel: the diff, the threads with the head they were read at, the compare and the times
+// The diff, then the threads with the head they were read at: a push between the two moves the threads' head, which the head guard catches;
+// the other order could store a newer diff under older threads
+async function diffAndThreads(deps: ChangesDeps, url: string): Promise<[string, unknown]> {
+  const diff = await deps.gh(prDiffArgs(url));
+  return [diff, await deps.gql(PR_THREADS_QUERY, { url })];
+}
+
+// The four reads (#497): the diff then the threads, in parallel with the compare and the times
 async function readAll(deps: ChangesDeps, url: string, stored: StoredPr): Promise<PullChangesRow> {
-  const [diff, threads, behind, requestTimes] = await Promise.all([
-    deps.gh(prDiffArgs(url)), deps.gql(PR_THREADS_QUERY, { url }), behindOf(deps, url, stored), timesOf(deps, url, stored),
-  ]);
+  const [[diff, threads], behind, requestTimes] = await Promise.all([diffAndThreads(deps, url), behindOf(deps, url, stored), timesOf(deps, url, stored)]);
   const read = parseThreads(threads, skipOf(deps, url));
   return { head: read.head, diff: capped(diff), threads: read.threads, truncated: read.truncated, ...behind, requestTimes };
 }
 
-// The PR's page. One the model lacks waits for the refetch, the same promise the fields' read awaits; none after it is PrNotFound
+/** A PR the model lacks while the refetch could not reach GitHub (#497): the route's 503, not a 404 for a PR that may exist. */
+export class GitHubUnreachable extends Error {
+  constructor() {
+    super('could not reach GitHub');
+    this.name = 'GitHubUnreachable';
+  }
+}
+
+// The PR's page. One the model lacks waits for the refetch, the same promise the fields' read awaits; none after it is PrNotFound, or
+// GitHubUnreachable when the refetch did not read GitHub (as prFields)
 async function pageOf(reading: Reading, repository: string, number: number): Promise<PrPage> {
   const page = reading.model.db.prPage(reading.source, repository, number);
   if (page !== undefined) return page;
-  await reading.model.refetch(repository, number);
-  const late = reading.model.db.prPage(reading.source, repository, number);
-  if (late === undefined) throw new PrNotFound();
-  return late;
+  const outcome = await reading.model.refetch(repository, number);
+  const late = outcome === 'gone' ? undefined : reading.model.db.prPage(reading.source, repository, number);
+  if (late !== undefined) return late;
+  throw outcome === 'failed' || outcome === 'skipped' ? new GitHubUnreachable() : new PrNotFound();
 }
 
 /** No row at the model's head (#497): the four reads. The diff carries no oid, so a threads head other than the model's is refetched and read
@@ -157,26 +171,41 @@ async function revalidate(deps: ChangesDeps, reading: Reading, url: string, late
 interface Revalidations { start(reading: Reading, url: string, fresh: boolean): Promise<void>; stamp(url: string): void }
 
 // One revalidation per PR in flight, its promise shared, and REFETCH_COOLDOWN_MS from its last start, as the refetch's: reopening a page within
-// it makes no GitHub call. fresh goes past the cooldown, as the refetch's `again`
+// it makes no GitHub call. fresh goes past the cooldown, as the refetch's `again`; with one in flight it chains one more run after it (the
+// running one may have read the threads before the write), shared by every fresh read that arrives meanwhile
 function revalidationsOf(deps: ChangesDeps, now: () => number, latestOf: (url: string) => number): Revalidations {
   const inFlight = new Map<string, Promise<void>>();
+  const rerun = new Map<string, Promise<void>>();
   const started = new Map<string, number>();
   const stamp = (url: string): void => {
     const at = now();
     for (const [other, start] of started) if (at - start >= REFETCH_COOLDOWN_MS) started.delete(other); // pruned on each call: only the last 10 s
     started.set(url, at);
   };
+  const run = (reading: Reading, url: string): Promise<void> => {
+    const promise = revalidate(deps, reading, url, latestOf).finally(() => { if (inFlight.get(url) === promise) inFlight.delete(url); });
+    inFlight.set(url, promise);
+    return promise;
+  };
+  const chain = (reading: Reading, url: string, after: Promise<void>): Promise<void> => {
+    const next = after.then(() => {
+      rerun.delete(url);
+      stamp(url);
+      return run(reading, url);
+    });
+    rerun.set(url, next);
+    return next;
+  };
   return {
     stamp,
     start: (reading, url, fresh) => {
       const running = inFlight.get(url);
-      if (running !== undefined) return running;
+      if (running !== undefined && !fresh) return running;
+      if (running !== undefined) return rerun.get(url) ?? chain(reading, url, running);
       const last = started.get(url);
       if (!fresh && last !== undefined && now() - last < REFETCH_COOLDOWN_MS) return Promise.resolve();
       stamp(url);
-      const promise = revalidate(deps, reading, url, latestOf).finally(() => inFlight.delete(url));
-      inFlight.set(url, promise);
-      return promise;
+      return run(reading, url);
     },
   };
 }

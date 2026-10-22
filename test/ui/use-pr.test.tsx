@@ -146,3 +146,12 @@ test('refresh reads the PR and its changes, the changes past the server\'s coold
   await run(async () => { await result.current.refresh(); });
   expect([gets(ROUTE), gets(`${CHANGES}?fresh=1`)]).toEqual([2, 1]);
 });
+
+test('a failed re-read of the changes keeps the diff shown and toasts the human copy; the tab\'s error is only for a first read (#497)', async () => {
+  const { result } = renderHook(() => usePr(PR, true));
+  await waitFor(() => expect(result.current.changes).toEqual({ status: 'ready', changes: hive.changes }));
+  hive.answers[`GET ${CHANGES}?fresh=1`] = { status: 502, body: { error: 'gh api graphql: raw' } };
+  await run(async () => { await result.current.refresh(); });
+  expect(result.current.changes).toEqual({ status: 'ready', changes: hive.changes });
+  expect(vi.mocked(toast.error).mock.calls).toEqual([[GITHUB]]);
+});

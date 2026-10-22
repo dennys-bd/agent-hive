@@ -275,3 +275,70 @@ test('the preload stores nothing and leaves a debug line by number for no read m
   assert.ok(lines.every((line) => !line.includes(PR)));
   assert.equal(rowOf(model.db), undefined);
 });
+
+test('GET …/changes of a PR the model lacks is 503 when the refetch could not reach GitHub, 404 only when GitHub has none (#497)', async (t) => {
+  const gh = fakeGh();
+  const { base } = await startPrs(t, gh);
+  const missing = await changesOf(base, 10);
+  assert.deepEqual([missing.status, await missing.json()], [404, { error: 'PR não encontrado' }]);
+  gh.rest = async () => { throw new Error('gh api: HTTP 502'); };
+  const unreachable = await changesOf(base, 11);
+  assert.deepEqual([unreachable.status, await unreachable.json()], [503, { error: 'could not reach GitHub' }]);
+});
+
+// Gates a promise the test settles by hand
+function gate(): { wait: Promise<void>; open(): void } {
+  let open = (): void => undefined;
+  const wait = new Promise<void>((resolve) => { open = resolve; });
+  return { wait, open };
+}
+
+test('a fresh read during a revalidation in flight chains exactly one more run after it, so the write is read; more fresh reads join that one (#497)', async () => {
+  const model = await preloadModel();
+  model.db.setPrChanges(PR_SOURCE, 'acme/app', 7, STORED);
+  const first = gate();
+  let threadReads = 0;
+  const { deps } = preloadRig();
+  const reader = changesReaderOf({
+    ...deps,
+    gql: async (...args) => {
+      threadReads += 1;
+      if (threadReads === 1) await first.wait;
+      return deps.gql(...args);
+    },
+  });
+  const reading = { model, source: PR_SOURCE };
+  await reader.read(reading, PR, false);
+  await reader.read(reading, PR, true);
+  await reader.read(reading, PR, true);
+  await sleep(30);
+  assert.equal(threadReads, 1, 'the chained run waits for the first');
+  first.open();
+  await until(async () => threadReads === 2);
+  await sleep(50);
+  assert.equal(threadReads, 2, 'one pending re-run, not one per fresh read');
+});
+
+test('the full read asks the threads after the diff resolved, so a push between them never stores a newer diff under older threads (#497)', async () => {
+  const model = await preloadModel();
+  const diff = gate();
+  const events: string[] = [];
+  const { deps } = preloadRig();
+  const reader = changesReaderOf({
+    ...deps,
+    gh: async (args) => {
+      if (args.at(-1) !== 'Accept: application/vnd.github.diff') return deps.gh(args);
+      events.push('diff:start');
+      await diff.wait;
+      events.push('diff:end');
+      return DIFF;
+    },
+    gql: async (...args) => { events.push('threads:start'); return deps.gql(...args); },
+  });
+  const read = reader.preload({ model, source: PR_SOURCE }, PR);
+  await sleep(30);
+  assert.deepEqual(events, ['diff:start']);
+  diff.open();
+  await read;
+  assert.deepEqual(events, ['diff:start', 'diff:end', 'threads:start']);
+});
