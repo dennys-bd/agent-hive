@@ -164,14 +164,16 @@ function interventionReporter(deps: WatchDeps): () => Promise<void> {
   let last = 0;
   return async () => {
     if (!deps.onInterventions) return;
+    let list: Intervention[];
     try {
-      const list = await deps.client.interventions();
-      if (list.length === last) return;
-      last = list.length;
-      deps.onInterventions(list);
+      list = await deps.client.interventions();
     } catch (err) {
       deps.log(`interventions read failed: ${message(err)}`);
+      return;
     }
+    if (list.length === last) return;
+    last = list.length;
+    deps.onInterventions(list); // outside the try: a listener's throw is not a failed read
   };
 }
 
