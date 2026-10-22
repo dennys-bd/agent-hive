@@ -6,7 +6,8 @@ import { MainDock } from '@/components/MainDock';
 import type { HeaderShell } from '@/hooks/use-header-shell';
 import { setLanguage } from '@/i18n';
 import { resetViewState } from '@/lib/view-state';
-import type { Experiment } from '../../src/types';
+import type { Experiment, PlanReadings } from '../../src/types';
+import { READINGS } from './benchmark-config-fixtures';
 import { ARCHIVED, EXPERIMENTS, RUNNING, stubBenchmarkFetch, WORKSPACES } from './benchmark-fixtures';
 import { FakeWebSocket, resetFakes } from './xterm-fakes';
 
@@ -23,11 +24,11 @@ function SlotHeader({ shell }: { shell: HeaderShell }) {
   );
 }
 
-function Window({ experiments = EXPERIMENTS }: { experiments?: Experiment[] }) {
+function Window({ experiments = EXPERIMENTS, rateLimits }: { experiments?: Experiment[]; rateLimits?: PlanReadings }) {
   return (
     <HeaderSlotProvider>
       <MainDock
-        fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={WORKSPACES} tasks={[]} workers={[]} terminals={[]} experiments={experiments}
+        fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={WORKSPACES} tasks={[]} workers={[]} terminals={[]} experiments={experiments} rateLimits={rateLimits}
         onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>} header={(shell) => <SlotHeader shell={shell} />}
       >
         <main>fluxo</main>
@@ -110,4 +111,12 @@ test('the config tab draws its own body, not the placeholder; the running experi
   await user.click(within(tabs()).getByRole('button', { name: 'config' }));
   expect(screen.queryByText('em breve')).not.toBeInTheDocument();
   expect(screen.getByText('a config trava enquanto o experimento executa')).toBeInTheDocument();
+});
+
+test("the cap row's spend reads the window's rate limits through the dock (#463)", async () => {
+  const user = userEvent.setup();
+  render(<Window rateLimits={READINGS} />);
+  key('4');
+  await user.click(within(tabs()).getByRole('button', { name: 'config' }));
+  expect(screen.getByText('agora 0 · 40%')).toBeInTheDocument();
 });
