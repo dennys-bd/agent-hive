@@ -98,7 +98,7 @@ export function useActivity(activities: Activity[], onSelect: (selection: Select
   // Every view switches the center (#533, #821, #313): its panel becomes its side's tab without opening it, so the view's own state decides
   // whether the left side shows. A view other than Atividades quiets a pending start. Any other tab is clicked on an open side: it activates (#452)
   const activateTab = useCallback((panel: PanelId) => {
-    if (panel === 'automation' || panel === 'plugins') setPicked(quiet);
+    if (isView(panel) && panel !== 'activities') setPicked(quiet); // #461: every view but Atividades quiets a pending start
     if (!isView(panel)) {
       activate(panel);
       return;

@@ -114,3 +114,16 @@ test("the rail's third view is plugins, Ctrl+3 as its click; Ctrl+1 and Ctrl+2 s
   fireEvent.click(railButton('plugins'));
   expect(railButton('plugins')).toHaveAttribute('aria-current', 'page');
 });
+
+test("the rail's fourth view is benchmark, Ctrl+4 as its click; Ctrl+1 to Ctrl+3 still reach theirs (#461)", () => {
+  render(<Window />);
+  fireEvent.keyDown(window, { key: '4', code: 'Digit4', ctrlKey: true });
+  expect(railButton('benchmark')).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('main', { hidden: true })).not.toBeVisible();
+  for (const [digit, name] of [['3', 'plugins'], ['2', 'fluxo'], ['1', 'atividades']] as const) {
+    fireEvent.keyDown(window, { key: digit, code: `Digit${digit}`, ctrlKey: true });
+    expect(railButton(name)).toHaveAttribute('aria-current', 'page');
+  }
+  fireEvent.click(railButton('benchmark'));
+  expect(railButton('benchmark')).toHaveAttribute('aria-current', 'page');
+});

@@ -37,7 +37,7 @@ test('the dock starts on the activities view (#746); with the left kept per view
   expect(result.current.layout.open.left).toBe(true);
   act(() => result.current.setView('activities'));
   expect(result.current.layout.open.left).toBe(false);
-  expect(readDockLayout().open).toEqual({ activities: { left: false, right: false }, automation: { left: true, right: false }, plugins: { left: true, right: false } });
+  expect(readDockLayout().open).toEqual({ activities: { left: false, right: false }, automation: { left: true, right: false }, plugins: { left: true, right: false }, benchmark: { left: true, right: false } });
 });
 
 test('with the left shared, a toggle changes both views (#821)', () => {

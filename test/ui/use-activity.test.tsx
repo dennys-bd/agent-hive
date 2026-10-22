@@ -50,3 +50,12 @@ test("plugins is a view as the other two: its tab sets the center and the dock's
   expect(result.current.dock.layout.open.left).toBe(false);
   expect(result.current.dock.active).toEqual({ left: 'plugins' });
 });
+
+test("benchmark is a view as the others: its tab sets the center and the dock's view without opening a closed left side (#461)", () => {
+  resetViewState({ dockLayout: { ...DEFAULT_DOCK_LAYOUT, open: inEveryView({ left: false, right: false }) } });
+  const { result } = renderHook(() => useBoth(PER_VIEW));
+  act(() => result.current.selection.activateTab('benchmark'));
+  expect([result.current.selection.center, result.current.dock.view]).toEqual(['benchmark', 'benchmark']);
+  expect(result.current.dock.layout.open.left).toBe(false);
+  expect(result.current.dock.active).toEqual({ left: 'benchmark' });
+});

@@ -4,8 +4,8 @@
 // included: there is one user, so no migration. Which tab each group shows is not stored: it follows what the user last opened. The panel keys
 // live here too (#452): they name a side, not a panel. There is no bottom side since redesign 05: a layout that docks a panel there reads as
 // the defaults. There is no terminal panel since redesign 07: a run is a tab of its activity's center. Each view keeps its own sizes and open
-// flags (#821), the docks shared; a layout from before #821 reads as the defaults whole. plugins (#313) is the third view; a layout from before
-// it reads with its defaults, the other two views kept.
+// flags (#821), the docks shared; a layout from before #821 reads as the defaults whole. plugins (#313) and benchmark (#461) are the third and fourth views; a layout from before
+// either reads with that view's defaults, the others kept.
 import { isEditorKey } from '@/lib/monaco-keys';
 import { isRecording, pressed, pressedFixed } from '@/lib/shortcut-bindings';
 import { readView, writeView } from '@/lib/view-state';
@@ -13,10 +13,10 @@ import type { FixedShortcutId } from '../../shortcut-registry';
 import type { OperationId } from '../../types';
 
 export type Side = 'left' | 'right';
-export type PanelId = 'automation' | 'activities' | 'plugins' | 'detail';
+export type PanelId = 'automation' | 'activities' | 'plugins' | 'benchmark' | 'detail';
 /** The dashboard's three views (#533, #821, #313); use-activity's CenterMode is an alias of it. */
-export type ViewId = 'activities' | 'automation' | 'plugins';
-export const VIEWS: readonly ViewId[] = ['activities', 'automation', 'plugins'];
+export type ViewId = 'activities' | 'automation' | 'plugins' | 'benchmark';
+export const VIEWS: readonly ViewId[] = ['activities', 'automation', 'plugins', 'benchmark'];
 /** Whether a dock tab is a view's (#313): its click switches the center instead of opening its side. */
 export const isView = (panel: PanelId): panel is ViewId => (VIEWS as readonly PanelId[]).includes(panel);
 /** One view's sides as DockFrame draws them (#821). sizes: percent of the frame's width. open: whether each side's panel shows (#452). */
@@ -31,19 +31,19 @@ export type ActiveTabs = Partial<Record<Side, PanelId>>;
 
 export const SIDES: readonly Side[] = ['left', 'right'];
 /** Also the order of the tabs in a shared group: Activities first, the tab its side opens on (#457, #746), Automação right after it (#456). */
-export const PANELS: readonly PanelId[] = ['activities', 'automation', 'plugins', 'detail'];
+export const PANELS: readonly PanelId[] = ['activities', 'automation', 'plugins', 'benchmark', 'detail'];
 /** The tabs that decide the center (#458), locked to the left panel: "the center follows the left tab" then has one meaning. */
-export const LOCKED_PANELS: readonly PanelId[] = ['activities', 'automation', 'plugins'];
+export const LOCKED_PANELS: readonly PanelId[] = ['activities', 'automation', 'plugins', 'benchmark'];
 export const isLocked = (panel: PanelId): boolean => LOCKED_PANELS.includes(panel);
 // A group has one edge to drag, so the size belongs to the side. The bounds keep a column (or a strip) of the view visible.
 export const SIDE_BOUNDS: Record<Side, { min: number; max: number }> = { left: { min: 15, max: 70 }, right: { min: 15, max: 70 } };
 // The left panel starts open on Activities (#457, #746), with Automação (#456) beside it; the first task or session opens its own panel
 // through activation (#452).
 /** The same value for every view (#821). */
-export const inEveryView = <T>(value: T): Record<ViewId, T> => ({ activities: value, automation: value, plugins: value });
+export const inEveryView = <T>(value: T): Record<ViewId, T> => ({ activities: value, automation: value, plugins: value, benchmark: value });
 
 export const DEFAULT_DOCK_LAYOUT: DockLayout = {
-  docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' },
+  docks: { automation: 'left', activities: 'left', plugins: 'left', benchmark: 'left', detail: 'right' },
   sizes: inEveryView({ left: 30, right: 30 }),
   open: inEveryView({ left: true, right: false }),
 };
@@ -66,7 +66,7 @@ export const sideOf = (layout: DockLayout, view: ViewId): ViewLayout => ({ docks
 // `value` on `side` in the `targets` views; every other view and side kept as it is
 function setIn<T>(byView: Record<ViewId, Record<Side, T>>, targets: readonly ViewId[], side: Side, value: T): Record<ViewId, Record<Side, T>> {
   const at = (view: ViewId): Record<Side, T> => (targets.includes(view) ? { ...byView[view], [side]: value } : byView[view]);
-  return { activities: at('activities'), automation: at('automation'), plugins: at('plugins') };
+  return { activities: at('activities'), automation: at('automation'), plugins: at('plugins'), benchmark: at('benchmark') };
 }
 
 /** `change` on `side` (#821): in `view` alone while the side is kept per view, else in every view, so the two stay equal and the side behaves as
@@ -102,25 +102,27 @@ function sidesOf<T>(value: unknown, isValue: SideCheck<T>): Record<Side, T> | un
 }
 
 // Every view's sides (#821); undefined when activities or automation is missing, which the flat shape from before #821 always is. A layout
-// from before #313 has no plugins: it takes `pluginsDefault`; one that has it must have it right
-function viewsOf<T>(value: unknown, isValue: SideCheck<T>, pluginsDefault: Record<Side, T>): Record<ViewId, Record<Side, T>> | undefined {
+// from before #313 or #461 lacks plugins or benchmark: that view takes its defaults; one that has it must have it right
+function viewsOf<T>(value: unknown, isValue: SideCheck<T>, defaults: Record<ViewId, Record<Side, T>>): Record<ViewId, Record<Side, T>> | undefined {
   if (!isObject(value)) return undefined;
+  const later = (view: 'plugins' | 'benchmark'): Record<Side, T> | undefined => (value[view] === undefined ? defaults[view] : sidesOf(value[view], isValue));
   const activities = sidesOf(value.activities, isValue);
   const automation = sidesOf(value.automation, isValue);
-  const plugins = value.plugins === undefined ? pluginsDefault : sidesOf(value.plugins, isValue);
-  return activities && automation && plugins ? { activities, automation, plugins } : undefined;
+  const plugins = later('plugins');
+  const benchmark = later('benchmark');
+  return activities && automation && plugins && benchmark ? { activities, automation, plugins, benchmark } : undefined;
 }
 
 // What writeDockLayout wrote, rebuilt from the known keys only; undefined for anything else, a layout from before #353, #456, #457 or #821 included.
 function parseLayout(value: unknown): DockLayout | undefined {
   if (!isObject(value) || !isObject(value.docks)) return undefined;
-  const { automation, activities, detail, plugins = 'left' } = value.docks; // a stored console (before redesign 05) or terminal side (before redesign 07) is ignored
-  // Every panel is fixed (#458, #295): the three views on the left, Detalhes on the right; a layout with one elsewhere is not one
+  const { automation, activities, detail, plugins = 'left', benchmark = 'left' } = value.docks; // a stored console (before redesign 05) or terminal side (before redesign 07) is ignored
+  // Every panel is fixed (#458, #295): the four views on the left, Detalhes on the right; a layout with one elsewhere is not one
   // writeDockLayout wrote since, and reads as the defaults whole (one user, no migration)
-  if (automation !== 'left' || activities !== 'left' || plugins !== 'left' || detail !== 'right') return undefined;
-  const sizes = viewsOf(value.sizes, isSize, DEFAULT_DOCK_LAYOUT.sizes.plugins);
-  const open = viewsOf(value.open, isFlag, DEFAULT_DOCK_LAYOUT.open.plugins);
-  return sizes && open ? { docks: { automation, activities, plugins, detail }, sizes, open } : undefined;
+  if (automation !== 'left' || activities !== 'left' || plugins !== 'left' || benchmark !== 'left' || detail !== 'right') return undefined;
+  const sizes = viewsOf(value.sizes, isSize, DEFAULT_DOCK_LAYOUT.sizes);
+  const open = viewsOf(value.open, isFlag, DEFAULT_DOCK_LAYOUT.open);
+  return sizes && open ? { docks: { automation, activities, plugins, benchmark, detail }, sizes, open } : undefined;
 }
 
 /** The saved layout, or the defaults when there is none or it is not what writeDockLayout wrote. */
@@ -181,8 +183,8 @@ export const runShortcut = (id: OperationId): void => {
 /** The toggleLeft and toggleRight shortcuts call `toggle` with their side (#452; rebindable, #449). */
 export const onPanelKey = (toggle: (side: Side) => void): (() => void) => onShortcutKey(SIDE_SHORTCUTS, toggle);
 
-// The header's views (#533), activities first (#746): Cmd+1 atividades, the Atividades tab; Cmd+2 fluxo, the Automação tab; Cmd+3 plugins (#313).
-export const VIEW_SHORTCUTS: ReadonlyArray<[PanelId, OperationId]> = [['activities', 'viewActivities'], ['automation', 'viewFlow'], ['plugins', 'viewPlugins']];
+// The header's views (#533), activities first (#746): Cmd+1 atividades, the Atividades tab; Cmd+2 fluxo, the Automação tab; Cmd+3 plugins (#313), Cmd+4 benchmark (#461).
+export const VIEW_SHORTCUTS: ReadonlyArray<[PanelId, OperationId]> = [['activities', 'viewActivities'], ['automation', 'viewFlow'], ['plugins', 'viewPlugins'], ['benchmark', 'viewBenchmark']];
 
 /** The viewActivities and viewFlow shortcuts call `go` with their tab. */
 export const onViewKey = (go: (panel: PanelId) => void): (() => void) => onShortcutKey(VIEW_SHORTCUTS, go);
