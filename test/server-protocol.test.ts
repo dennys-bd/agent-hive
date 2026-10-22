@@ -89,7 +89,8 @@ test('GET /api/protocol answers the blocks with their tool and off, and each pas
   await send('POST', `${base}/workspaces/${WORKSPACE}/memory`, { kind: 'fact', text: 'pnpm test is the gate' }); // a rewrite, and a memory section
   const [, view] = await answer(hiveFetch(`${base}/api/protocol`));
   const { blocks, passages } = view as { blocks: { id: string; off: boolean; tool?: string }[]; passages: { id: string; after: string; orphan: boolean; errors: Record<string, unknown[]> }[] };
-  assert.deepEqual(blocks.map((b) => [b.id, b.off, b.tool]), PROTOCOL_BLOCKS.map((id) => [id, false, id === 'remember' ? 'hive_remember' : undefined]));
+  const TOOL_OF: Record<string, string> = { task: 'hive_task', remember: 'hive_remember' };
+  assert.deepEqual(blocks.map((b) => [b.id, b.off, b.tool]), PROTOCOL_BLOCKS.map((id) => [id, false, TOOL_OF[id]]));
   assert.deepEqual(passages.map((p) => [p.id, p.after, p.orphan, Object.keys(p.errors)]), [['p1', 'done', false, [WORKSPACE]], ['p2', 'gone', true, []]]);
   const [stage] = await files(home, WORKSPACE);
   assert.ok(!stage.includes('Ask '), 'p1 fails for hive: left out of its files');

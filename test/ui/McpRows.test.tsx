@@ -21,7 +21,7 @@ test('a locked tool has a lock naming its reason and no switch; an optional tool
   expect(rowOf('hive_remember')).toHaveTextContent('desligada · tira 1 trecho do protocolo');
   expect(rowOf('hive_create_task')).toHaveTextContent(/cria uma tarefa na sourcedesligada$/);
   expect(rowOf('hive_applied')).not.toHaveTextContent('desligada');
-  expect(rowOf('hive_task')).toHaveTextContent(/lê a tarefa da própria sessãodesligada$/);
+  expect(rowOf('hive_task')).toHaveTextContent('lê a tarefa da própria sessãodesligada · tira 1 trecho do protocolo');
   expect(screen.getByRole('switch', { name: 'hive_applied' })).toBeChecked();
   await user.click(screen.getByRole('switch', { name: 'hive_remember' }));
   expect(onSwitch).toHaveBeenCalledWith(true);

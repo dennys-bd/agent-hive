@@ -14,6 +14,7 @@ test('STAGE_PROTOCOL tells a stage run to call hive_done only once everything is
   assert.ok(STAGE_PROTOCOL.startsWith(FROM_THE_HIVE), STAGE_PROTOCOL);
   assert.deepEqual(missing(STAGE_PROTOCOL, [
     'no subagent or background task still running',
+    'call `hive_task` first',
     'call the `hive_done` tool and end your turn. Never call it earlier.',
     'as `result`, e.g. `{ "spec": "docs/hive/specs/x-design.md" }`',
     'Every question for the user goes through `hive_ask`',
@@ -65,6 +66,7 @@ test('both protocols tell the worker to stop with block when another issue must 
 
 // Today's texts, byte for byte (#336): the blocks give them ids and change none of their words
 const INTRO = 'This text comes from the Hive, the app that runs this session. Its tools `hive_done`, `hive_ask` and `hive_stop` report to it.';
+const TASK = 'When you need to know what task you are working on (its issue, the stage, what earlier stages passed on), call `hive_task` first.';
 const RESULT = 'If the work produced something later stages need (a spec path, a plan path…), pass it to `hive_done` as `result`, e.g. `{ "spec": "docs/hive/specs/x-design.md" }`.';
 const ASK_LAST = 'Do this also while a subagent, a background shell or a scheduled job (cron) is still running: never ask in chat alone, or the Hive keeps showing this session as working until that work ends.';
 const STOP = 'with `reason` "wontDo" (or "duplicate", plus `duplicateOf`: the original issue number) the Hive closes the issue; without `reason` the task only stops. Never close the issue yourself. When the task cannot go on until another issue is done, call `hive_stop` with `block` (that issue\'s number) instead: the Hive records the blocker and starts the task again once it closes.';
@@ -72,7 +74,7 @@ const REMEMBER = 'When the user corrects you, or you learn a fact about this rep
 const WHY = 'To learn why code is the way it is, follow it back: `git blame` or `git log` on the lines, the PR the commit names (`gh pr view`), the issue it closes and the spec or plan it links.';
 const UNDO = 'Before a large or risky change, commit the work that passes, so the attempt can be thrown away with git; try an experiment you may discard in a separate worktree.';
 const TODAY_STAGE = [
-  INTRO, '',
+  INTRO, '', TASK,
   'When this command is completely finished (nothing left to do, no subagent or background task still running, no answer pending from the user), call the `hive_done` tool and end your turn. Never call it earlier.',
   RESULT,
   'Every question for the user goes through `hive_ask`: call it with the question, ask it in chat and end your turn without `hive_done`.', ASK_LAST,
@@ -80,7 +82,7 @@ const TODAY_STAGE = [
   REMEMBER, WHY, UNDO, '',
 ].join('\n');
 const TODAY_SESSION = [
-  INTRO, '',
+  INTRO, '', TASK,
   "The user drives this session. When you believe the task's work is finished, say so in chat and suggest moving the task to its next stage.",
   'Call `hive_done` only when the user confirms or asks for it: it moves the task to its next stage at once.',
   RESULT,
@@ -101,7 +103,17 @@ test('renderProtocol with no passage and nothing off is today\'s text for both k
   assert.equal(renderProtocol('stage', [], []), TODAY_STAGE);
   assert.equal(renderProtocol('session', [], []), TODAY_SESSION);
   assert.deepEqual(BLOCKS.map((b) => b.id), [...PROTOCOL_BLOCKS]);
-  assert.deepEqual(BLOCKS.filter((b) => b.tool !== undefined).map((b) => [b.id, b.tool]), [['remember', 'hive_remember']]);
+  assert.deepEqual(BLOCKS.filter((b) => b.tool !== undefined).map((b) => [b.id, b.tool]), [['task', 'hive_task'], ['remember', 'hive_remember']]);
+});
+
+test('stage and free sessions are told to call hive_task first, right after the intro; a local session is not; hive_task off drops the block (#7)', () => {
+  for (const kind of KINDS) {
+    const all = renderProtocol(kind, [], []);
+    assert.deepEqual(all.split('\n').slice(0, 3), [INTRO, '', TASK], kind);
+    assert.equal(renderProtocol(kind, ['hive_task'], []), all.replace(`${TASK}\n`, ''), kind);
+  }
+  assert.equal(LOCAL_PROTOCOL.includes('hive_task'), false);
+  assert.equal(renderProtocol('local', ['hive_task'], []), LOCAL_PROTOCOL);
 });
 
 test('hive_remember off drops the remember block from both kinds; hive_applied and hive_create_task have no block (#336)', () => {
@@ -139,7 +151,7 @@ test('the local protocol holds the task-independent blocks only: its own intro, 
   assert.equal(LOCAL_PROTOCOL, LOCAL_TEXT);
   assert.equal(renderProtocol('local', [], []), LOCAL_TEXT);
   for (const word of ['hive_done', 'hive_stop', '`result`']) assert.equal(LOCAL_PROTOCOL.includes(word), false, word);
-  assert.deepEqual(BLOCKS.filter((b) => b.local === undefined).map((b) => b.id), ['done', 'result', 'stop']);
+  assert.deepEqual(BLOCKS.filter((b) => b.local === undefined).map((b) => b.id), ['task', 'done', 'result', 'stop']);
   assert.deepEqual(protocolTexts([], []), { stage: TODAY_STAGE, session: TODAY_SESSION, local: LOCAL_TEXT });
 });
 

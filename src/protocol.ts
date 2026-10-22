@@ -19,6 +19,9 @@ const STOP_RULES =
   'with `reason` "wontDo" (or "duplicate", plus `duplicateOf`: the original issue number) the Hive closes the issue; without `reason` the task only stops. Never close the issue yourself.'
   + ' When the task cannot go on until another issue is done, call `hive_stop` with `block` (that issue\'s number) instead: the Hive records the blocker and starts the task again once it closes.';
 
+// #7: the worker reads its task from the Hive instead of guessing the issue number from the branch name
+const TASK_LINE = 'When you need to know what task you are working on (its issue, the stage, what earlier stages passed on), call `hive_task` first.';
+
 // #797: what makes the workspace's memory grow. hive_applied is told in the memory section itself, which exists only once a lesson does
 const REMEMBER_LINE = 'When the user corrects you, or you learn a fact about this repository that a later task would need, call `hive_remember` with it.';
 
@@ -31,7 +34,7 @@ const UNDO_LINE =
   'Before a large or risky change, commit the work that passes, so the attempt can be thrown away with git; try an experiment you may discard in a separate worktree.';
 
 // #336: one id per paragraph or rule of the text, the same in both kinds, so one anchor serves both files
-export const PROTOCOL_BLOCKS = ['intro', 'done', 'result', 'ask', 'stop', 'remember', 'why', 'undo'] as const;
+export const PROTOCOL_BLOCKS = ['intro', 'task', 'done', 'result', 'ask', 'stop', 'remember', 'why', 'undo'] as const;
 export type ProtocolBlockId = (typeof PROTOCOL_BLOCKS)[number];
 export const PROTOCOL_KINDS = ['stage', 'session', 'local'] as const;
 export type ProtocolKind = (typeof PROTOCOL_KINDS)[number];
@@ -49,6 +52,7 @@ const LOCAL_INTRO = 'This text comes from the Hive, the app that runs this sessi
 // A Record, so a block id without its text fails tsc
 const TEXTS: Record<ProtocolBlockId, Omit<ProtocolBlock, 'id'>> = {
   intro: { ...same(FROM_THE_HIVE), local: LOCAL_INTRO },
+  task: { ...same(TASK_LINE), tool: 'hive_task' }, // #7: no local text, since a local session has no task; mcp.off drops it
   done: {
     stage: 'When this command is completely finished (nothing left to do, no subagent or background task still running, no answer pending from the user), call the `hive_done` tool and end your turn. Never call it earlier.',
     session: [
