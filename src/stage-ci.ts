@@ -147,7 +147,7 @@ function conflictOf(prs: readonly CiPrRead[]): { names: string[]; output: string
   };
 }
 
-/** One read of the wait's PRs (#834): a conflict first (#264), then the timeout, then the verdict. With no open PR, a task whose PRs are all merged passes (#304). A wait fetching its logs, an unknown
+/** One read of the wait's PRs (#834): a conflict first (#264), then a final verdict, then the timeout for a wait still open (#515). With no open PR, a task whose PRs are all merged passes (#304). A wait fetching its logs, an unknown
  * activity and a Quit ignore it. The first read whose required fell back marks it, so the fact log says so once. */
 export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent, { type: 'ciRead' }>): Reduced {
   const wait = waitOf(state, activityId);
@@ -157,15 +157,17 @@ export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent,
   if (conflict) return failCi(state, wait, conflict.output, conflict.names);
   const verdict = ciVerdict(sinceRerun(wait.ci, prs, at), stage);
   const ci: StageCi = verdict.fellBack && !wait.ci.fellBack ? { ...wait.ci, fellBack: true } : wait.ci;
-  if (timedOut(stage, ci, at)) return failCi(state, wait, timeoutOutput(stage, pendingOf(verdict)), timeoutNames(stage));
   if (prs.length === 0 && mergedOnly(recordsOf(state, taskId(wait.task)))) return passCi(state, wait); // #304: every PR merged leaves CI nothing to decide
   if (verdict.kind === 'passed') return passCi(state, wait);
-  if (verdict.kind === 'awaiting') return awaited(state, wait.activity, ci, verdict.workflows, verdict.checks);
   if (verdict.kind === 'failed') {
     const shown: StageCi = { ...ci, checks: verdict.checks }; // #914: the ✕ lines stay on the block while a re-run is awaited
+    if (timedOut(stage, ci, at)) return failedRead(state, { activity: wait.activity, ci: shown, at }, { ...stage, rerunOnce: false }, verdict.failed, prs); // #515: no time left for a re-run
     if (stage.rerunOnce === true && cannotRerun(verdict.failed, prs)) return withoutRerun(state, wait.activity, shown);
     return failedRead(state, { activity: wait.activity, ci: shown, at }, stage, verdict.failed, prs);
   }
+  // #515: only a wait still open times out, so the first read after a boot judges the checks that finished while the Hive was off
+  if (timedOut(stage, ci, at)) return failCi(state, wait, timeoutOutput(stage, pendingOf(verdict)), timeoutNames(stage));
+  if (verdict.kind === 'awaiting') return awaited(state, wait.activity, ci, verdict.workflows, verdict.checks);
   return counted(state, wait.activity, ci, verdict);
 }
 
