@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeAll, expect, test } from 'vitest';
+import { afterEach, beforeAll, expect, test, vi } from 'vitest';
 
 // The plugin's interaction kit (#232): what a screen's data-hv-* markup does on a click, run as a design frame runs it, by delegation on
 // the document. It loads once per file, as a screen loads it once per page; each test mounts its own markup after the first.
@@ -105,4 +105,87 @@ test('data-hv-set never writes the pane\'s own attributes: a theme or a tweak na
   click('w');
   expect(root.getAttribute('data-theme')).toBe('dark');
   expect(root.hasAttribute('data-tweak-layout')).toBe(false);
+});
+
+// data-hv-hover: a card revealed while the pointer or focus is on its link or on the card, with a grace so the pointer can cross the gap.
+const GRACE_MS = 150;
+const HOVER_MARKUP = '<a id="link" href="#x" data-hv-hover="card">ref</a><div id="card" hidden><a id="card-link" href="#y">open</a></div><p id="away">away</p>';
+const move = (type: 'pointerover' | 'pointerout', id: string, to?: string): void => {
+  el(id).dispatchEvent(new MouseEvent(type, { bubbles: true, relatedTarget: to ? el(to) : null }));
+};
+const focus = (type: 'focusin' | 'focusout', id: string, to?: string): void => {
+  el(id).dispatchEvent(new FocusEvent(type, { bubbles: true, relatedTarget: to ? el(to) : null }));
+};
+const mountHover = (): void => {
+  vi.useFakeTimers();
+  document.body.innerHTML = HOVER_MARKUP;
+};
+
+afterEach(() => { vi.useRealTimers(); });
+
+test('data-hv-hover shows its element while the pointer is over the control and sets aria-expanded', () => {
+  mountHover();
+  expect(el('card')).toHaveAttribute('hidden');
+  move('pointerover', 'link', 'away');
+  expect(el('card')).not.toHaveAttribute('hidden');
+  expect(el('link')).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('the element stays open while the pointer crosses from the control into it, even past the grace', () => {
+  mountHover();
+  move('pointerover', 'link', 'away');
+  move('pointerout', 'link', 'card');
+  move('pointerover', 'card', 'link');
+  vi.advanceTimersByTime(GRACE_MS * 2);
+  expect(el('card')).not.toHaveAttribute('hidden');
+});
+
+test('once both are left the element hides after the grace, not before', () => {
+  mountHover();
+  move('pointerover', 'link', 'away');
+  move('pointerout', 'link', 'away');
+  vi.advanceTimersByTime(GRACE_MS - 1);
+  expect(el('card')).not.toHaveAttribute('hidden');
+  vi.advanceTimersByTime(1);
+  expect(el('card')).toHaveAttribute('hidden');
+  expect(el('link')).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('re-entering the control or the element before the grace cancels the hide', () => {
+  mountHover();
+  move('pointerover', 'link', 'away');
+  move('pointerout', 'link', 'away');
+  vi.advanceTimersByTime(GRACE_MS - 50);
+  move('pointerover', 'card', 'away');
+  vi.advanceTimersByTime(GRACE_MS * 2);
+  expect(el('card')).not.toHaveAttribute('hidden');
+  move('pointerout', 'card', 'away');
+  vi.advanceTimersByTime(GRACE_MS - 50);
+  move('pointerover', 'link', 'away');
+  vi.advanceTimersByTime(GRACE_MS * 2);
+  expect(el('card')).not.toHaveAttribute('hidden');
+});
+
+test('focus shows the element and keeps it while focus moves into a link inside it', () => {
+  mountHover();
+  focus('focusin', 'link');
+  expect(el('card')).not.toHaveAttribute('hidden');
+  focus('focusout', 'link', 'card-link');
+  focus('focusin', 'card-link', 'link');
+  vi.advanceTimersByTime(GRACE_MS * 2);
+  expect(el('card')).not.toHaveAttribute('hidden');
+  focus('focusout', 'card-link', 'away');
+  vi.advanceTimersByTime(GRACE_MS);
+  expect(el('card')).toHaveAttribute('hidden');
+});
+
+test('Escape hides a shown hover element at once and a pending hide does not reopen it', () => {
+  mountHover();
+  move('pointerover', 'link', 'away');
+  move('pointerout', 'link', 'away');
+  key('Escape');
+  expect(el('card')).toHaveAttribute('hidden');
+  expect(el('link')).toHaveAttribute('aria-expanded', 'false');
+  vi.advanceTimersByTime(GRACE_MS);
+  expect(el('card')).toHaveAttribute('hidden');
 });

@@ -1,14 +1,18 @@
-// hv-kit: a screen's clicks, declared in its markup ("Interactions" in design.md). One copy per design folder, loaded by every screen of
+// hv-kit: a screen's clicks and hovers, declared in its markup ("Interactions" in design.md). One copy per design folder, loaded by every screen of
 // it with <script src="hv-kit.js" defer>, so a screen's behaviour is attributes the designer edits, never a script of its own.
 //   data-hv-set="name=value"  sets data-name on <html>, the screen's state its CSS reacts to; the controls holding it get aria-current
 //   data-hv-toggle="id"       shows or hides #id; data-hv-open="id" shows it; data-hv-close hides #id, or the layer it sits in
 //   data-hv-layer             a dialog, or with ="popover" a menu that also closes on a click outside it; Escape closes either
 //   data-hv-pick              selects within its [data-hv-group]; the group's data-hv-label="id" takes the pick's text
 //   data-hv-switch            flips aria-checked and data-state
+//   data-hv-hover="id"        shows #id (starts hidden) while the pointer or focus is on the control or on #id; hides 150ms after both are left
 (() => {
   const root = document.documentElement;
   // The design pane owns data-theme and data-tweak-*: a screen's own state never overwrites them
   const RESERVED = /^(theme$|tweak-)/;
+  // Long enough for the pointer to cross the gap between a link and its card without the card closing under it
+  const HOVER_GRACE_MS = 150;
+  const hideTimers = new Map();
 
   const parse = (spec) => {
     const at = spec.indexOf('=');
@@ -27,7 +31,7 @@
   function show(target, open) {
     if (!target) return;
     target.hidden = !open;
-    for (const trigger of document.querySelectorAll(`[data-hv-toggle="${CSS.escape(target.id)}"]`)) {
+    for (const trigger of document.querySelectorAll(`[data-hv-toggle="${CSS.escape(target.id)}"], [data-hv-hover="${CSS.escape(target.id)}"]`)) {
       trigger.setAttribute('aria-expanded', String(open));
     }
   }
@@ -80,8 +84,40 @@
     closePopovers(opened ?? event.target);
     act(event.target);
   });
+  // The id of the hover pair (control or element) a node belongs to: either the control itself or the element a control points at
+  function hoverId(node) {
+    for (let at = node; at instanceof Element; at = at.parentElement) {
+      if (at.hasAttribute('data-hv-hover')) return at.getAttribute('data-hv-hover');
+      if (at.id && document.querySelector(`[data-hv-hover="${CSS.escape(at.id)}"]`)) return at.id;
+    }
+    return undefined;
+  }
+
+  function cancelHide(id) {
+    clearTimeout(hideTimers.get(id));
+    hideTimers.delete(id);
+  }
+
+  function hover(id, open) {
+    cancelHide(id);
+    if (open) show(document.getElementById(id), true);
+    else hideTimers.set(id, setTimeout(() => show(document.getElementById(id), false), HOVER_GRACE_MS));
+  }
+
+  // A move between the control and its element is not a leave: relatedTarget says where the pointer or focus went
+  for (const [type, open] of [['pointerover', true], ['focusin', true], ['pointerout', false], ['focusout', false]]) {
+    document.addEventListener(type, (event) => {
+      const id = hoverId(event.target);
+      if (id && (open || hoverId(event.relatedTarget) !== id)) hover(id, open);
+    });
+  }
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    for (const control of document.querySelectorAll('[data-hv-hover]')) {
+      const id = control.getAttribute('data-hv-hover');
+      cancelHide(id);
+      show(document.getElementById(id), false);
+    }
     for (const layer of document.querySelectorAll('[data-hv-layer]:not([hidden])')) show(layer, false);
   });
   mark();
