@@ -2,27 +2,24 @@
 // <home>/benchmark/<id>/ through benchmark/store.ts and dispatches one #458 event; the reducer only applies it. Later benchmark route files
 // export their own register…Routes and are mounted from registerBenchmarkRoutes, so server.ts mounts the benchmark once.
 import { type BenchmarkRunRoutes, registerBenchmarkRunRoutes } from './server-benchmark-run.js';
-import { randomInt } from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
 import type { Express, Request, Response } from 'express';
 import type { z } from 'zod';
 import { type ArmRefusal, armFrom, checkArm, checkRemove, checkTargets, isArmRefusal, isLocked } from './benchmark/arms.js';
 import { byCodePoint } from './benchmark/canonical.js';
 import type { BenchEvaluator } from './benchmark/evaluate-service.js';
 import type { BenchRunner } from './benchmark/runner.js';
-import { seedHash, tasksHash, treeHash } from './benchmark/hash.js';
-import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, forkName, forkOf, newId } from './benchmark/new-experiment.js';
+import { BENCHMARK_IO_MESSAGE, createEmptyExperiment, type DraftCtx, type DraftDeps, type DraftRefusal, draw, duplicateExperiment, editSections, errorCode, isRefusal, type Queue, serial } from './benchmark/drafts.js';
+import { newId } from './benchmark/new-experiment.js';
 import { pinHome, pluginTrees } from './benchmark/pin.js';
 import { execRun } from './benchmark/exec.js';
 import { ARM_PATCH, COPY, CREATE, NEW_ARM, PATCH, type PatchBody, UPLOAD } from './benchmark/schemas.js';
-import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, SeedFileMissing, seedCommit, seedEntries, syncSeed, UPLOAD_NAME, UPLOAD_NAME_MESSAGE, UPLOAD_PREFIX, writeUpload } from './benchmark/store.js';
-import { registerBenchmarkPrRoutes } from './server-benchmark-pr.js';
+import { experimentFolder, removeFolder, SeedFileMissing, seedEntries, UPLOAD_NAME, UPLOAD_NAME_MESSAGE, UPLOAD_PREFIX, writeUpload } from './benchmark/store.js';
 import { readCatalogue } from './items-catalogue.js';
+import { registerBenchmarkPrRoutes } from './server-benchmark-pr.js';
 import type { Logger } from './log.js';
-import { type BenchmarkEvent, type BenchSeed, type Config, type Exec, EXPERIMENT_ID, type Experiment, type ExperimentPatch, type State, type Workspace } from './types.js';
+import { type Config, EXPERIMENT_ID, type Experiment, type State } from './types.js';
 import { registerBenchmarkControlRoutes } from './server-benchmark-control.js';
 import { registerBenchmarkEvaluateRoutes } from './server-benchmark-evaluate.js';
-import { type Git, gitOrWords } from './worktree-base.js';
 
 const HTTP_CREATED = 201;
 const HTTP_NO_CONTENT = 204;
@@ -30,31 +27,19 @@ const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_SERVER_ERROR = 500;
-export const BENCHMARK_IO_MESSAGE = 'the experiment folder could not be read or written; see hive.log';
 const E = '/benchmark/experiments';
-const BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz';
-const ID_CHARS = 8;
 
-export interface BenchmarkRouteDeps {
+export interface BenchmarkRouteDeps extends DraftDeps {
   requireLive(res: Response): { runtime: { config: Config }; state: State } | undefined;
   getLive(): { runtime: { config: Config }; state: State } | undefined; // the PR routes' own 404s answer when the Hive is not live (#477)
-  dispatch(event: BenchmarkEvent): Promise<unknown>;
-  home: string;
-  pluginSource: string;
-  exec: Exec;
   log: Logger; // the PR routes also warn (#477)
   evaluator: BenchEvaluator; // #474
   runner: Pick<BenchRunner, 'run' | 'sleep' | 'wake' | 'isLive' | 'blindness'>; // #472
-  version(): Promise<string>; // the Hive's version: the shipped plugin's (pluginVersion), as custom-store's hiveVersion
-  now(): Date;
 }
-interface Ctx { deps: BenchmarkRouteDeps; config: Config; experiments: readonly Experiment[]; res: Response }
+interface Ctx extends DraftCtx { deps: BenchmarkRouteDeps; res: Response }
 type Handle = (req: Request, ctx: Ctx) => Promise<void>;
-type Queue = <T>(work: () => Promise<T>) => Promise<T>;
 
-const draw = (): string => Array.from({ length: ID_CHARS }, () => BASE36[randomInt(BASE36.length)]).join('');
 const fail = (res: Response, status: number, error: string, message: string): void => void res.status(status).json({ error, message });
-const errorCode = (err: unknown): string => (err as NodeJS.ErrnoException).code ?? (err instanceof Error ? err.constructor.name : typeof err);
 const idOf = (req: Request): string => String(req.params.id);
 
 function parsed<T>(schema: z.ZodType<T>, req: Request, res: Response): T | undefined {
@@ -63,17 +48,6 @@ function parsed<T>(schema: z.ZodType<T>, req: Request, res: Response): T | undef
   const issue = result.error.issues[0];
   fail(res, HTTP_BAD_REQUEST, 'bad_body', `${issue?.path.join('.') || 'body'}: ${issue?.message ?? 'invalid'}`);
   return undefined;
-}
-
-// One write at a time: two seed edits must not interleave their removals and writes under seed/, and each handler reads the state the
-// previous one's dispatch left
-function serial(): Queue {
-  let tail: Promise<unknown> = Promise.resolve();
-  return (work) => {
-    const next = tail.then(work);
-    tail = next.catch(() => undefined);
-    return next;
-  };
 }
 
 // A missing seed file is the request's 404; anything else the disk or git threw is a 500 whose code (never its message: it names paths
@@ -108,93 +82,7 @@ function unlocked(ctx: Ctx, id: string): Experiment | undefined {
   return undefined;
 }
 
-const workspaceOf = (config: Config, name: string): Workspace | undefined => config.comb.workspaces.find((w) => w.name === name);
-const repoGit = (deps: BenchmarkRouteDeps, workspace: Workspace): Git => (...args) => gitOrWords(workspace.path, args, deps.exec);
-const ids = (ctx: Ctx): string[] => ctx.experiments.map((e) => e.id);
 const folder = (ctx: Ctx, id: string): string => experimentFolder(ctx.deps.home, id);
-
-// A folder whose experiment never reached the state is removed: a failed creation leaves no orphan under <home>/benchmark
-async function inNewFolder(dir: string, fill: () => Promise<void>, from?: string): Promise<void> {
-  try {
-    await (from === undefined ? createFolder(dir) : copyFolder(from, dir));
-    await fill();
-  } catch (err) {
-    await removeFolder(dir);
-    throw err;
-  }
-}
-
-async function createEmpty(ctx: Ctx, body: { workspace: string; name?: string }): Promise<void> {
-  const { deps, config, experiments, res } = ctx;
-  const workspace = workspaceOf(config, body.workspace);
-  if (workspace === undefined) return fail(res, HTTP_NOT_FOUND, 'unknown_workspace', `no workspace ${body.workspace}`);
-  const git = repoGit(deps, workspace);
-  const seed = emptySeed(workspace.name, await seedCommit(config, workspace, git));
-  const id = newId(ids(ctx), draw);
-  const dir = folder(ctx, id);
-  await inNewFolder(dir, async () => {
-    await pinPlugin(dir, deps.pluginSource, deps.home);
-    await syncSeed(dir, seed, git);
-    const base = baseSnapshot(config, workspace, await readCatalogue({ home: deps.home, pluginSource: deps.pluginSource, workspaces: config.comb.workspaces }));
-    const experiment = emptyExperiment({
-      id, armId: newId([], draw), name: body.name ?? defaultName(experiments, workspace.name), createdAt: deps.now().toISOString(), seed, base,
-      judge: config.defaultAgent, plugin: { version: await deps.version(), hash: await treeHash(pluginTrees(dir)) }, seedHash: await seedHash(seed, dir), tasksHash: tasksHash(base.tasks),
-    });
-    await deps.dispatch({ type: 'benchmarkCreated', experiment });
-    res.status(HTTP_CREATED).json(experiment);
-  });
-}
-
-async function createDuplicate(ctx: Ctx, of: string): Promise<void> {
-  const source = found(ctx, of);
-  if (source === undefined) return;
-  const id = newId(ids(ctx), draw);
-  await inNewFolder(folder(ctx, id), async () => {
-    const experiment = duplicateOf(source, { id, name: copyName(source.name), createdAt: ctx.deps.now().toISOString() });
-    await ctx.deps.dispatch({ type: 'benchmarkCreated', experiment });
-    ctx.res.status(HTTP_CREATED).json(experiment);
-  }, folder(ctx, source.id));
-}
-
-type Sections = Omit<PatchBody, 'name' | 'archived'>;
-
-async function edit(ctx: Ctx, experiment: Experiment, sections: Sections, git: Git | undefined): Promise<string> {
-  const dir = folder(ctx, experiment.id);
-  const { seed, base } = sections;
-  if (seed !== undefined && git !== undefined) await syncSeed(dir, seed, git);
-  const patch: ExperimentPatch = {
-    ...sections, ...(base === undefined ? {} : { tasksHash: tasksHash(base.tasks) }), ...(seed === undefined ? {} : { seedHash: await seedHash(seed, dir) }),
-  };
-  await ctx.deps.dispatch({ type: 'benchmarkEdited', id: experiment.id, patch });
-  return experiment.id;
-}
-
-// A seed edit on an experiment with rounds: a new draft whose pin is copied (its hash kept) and whose seed/ is copied, then synced
-async function fork(ctx: Ctx, experiment: Experiment, sections: Sections & { seed: BenchSeed }, git: Git): Promise<string> {
-  const { deps, experiments } = ctx;
-  const id = newId(ids(ctx), draw);
-  const dir = folder(ctx, id);
-  await inNewFolder(dir, async () => {
-    await syncSeed(dir, sections.seed, git);
-    const copy = { id, name: forkName(experiment.name, experiments.map((e) => e.name)), createdAt: deps.now().toISOString(), seed: sections.seed, seedHash: await seedHash(sections.seed, dir) };
-    const tasks = sections.base === undefined ? {} : { tasksHash: tasksHash(sections.base.tasks) };
-    await deps.dispatch({ type: 'benchmarkForked', from: experiment.id, experiment: { ...forkOf(experiment, copy), ...sections, seedHash: copy.seedHash, ...tasks } });
-  }, folder(ctx, experiment.id));
-  return id;
-}
-
-// undefined: refused and answered
-async function applySections(ctx: Ctx, experiment: Experiment, sections: Sections): Promise<string | undefined> {
-  const { seed, ...others } = sections;
-  if (seed === undefined) return edit(ctx, experiment, sections, undefined);
-  if (seed.workspace !== experiment.workspace) return void fail(ctx.res, HTTP_BAD_REQUEST, 'bad_body', 'seed.workspace: an experiment keeps the workspace it was created in');
-  const workspace = workspaceOf(ctx.config, experiment.workspace);
-  if (workspace === undefined) return void fail(ctx.res, HTTP_NOT_FOUND, 'unknown_workspace', `no workspace ${experiment.workspace}`);
-  // The same seed is no edit: nothing to resync, and an experiment with rounds must not fork for it
-  if (isDeepStrictEqual(seed, experiment.seed)) return edit(ctx, experiment, others, undefined);
-  const git = repoGit(ctx.deps, workspace);
-  return experiment.rounds.length > 0 ? fork(ctx, experiment, { ...sections, seed }, git) : edit(ctx, experiment, sections, git);
-}
 
 async function patchExperiment(ctx: Ctx, id: string, body: PatchBody): Promise<void> {
   const experiment = found(ctx, id);
@@ -202,8 +90,8 @@ async function patchExperiment(ctx: Ctx, id: string, body: PatchBody): Promise<v
   const { name, archived, ...sections } = body;
   const hasSections = Object.keys(sections).length > 0;
   if (hasSections && isLocked(experiment)) return refuseLocked(ctx.res);
-  const answer = hasSections ? await applySections(ctx, experiment, sections) : id;
-  if (answer === undefined) return;
+  const answer = hasSections ? await editSections(ctx, experiment, sections) : id;
+  if (isRefusal(answer)) return refuse(ctx, answer);
   // A fork answers a new id: name and archived belong to it, the experiment that ran stays as it was
   if (name !== undefined) await ctx.deps.dispatch({ type: 'benchmarkEdited', id: answer, patch: { name } });
   if (archived !== undefined) await ctx.deps.dispatch({ type: 'benchmarkArchived', id: answer, archived });
@@ -237,11 +125,17 @@ async function pinnedItems(req: Request, ctx: Ctx): Promise<void> {
   ctx.res.json({ items });
 }
 
+const USER: Experiment['createdBy'] = { kind: 'user' };
+
 function registerExperimentRoutes(app: Express, deps: BenchmarkRouteDeps, queue: Queue): void {
   app.post(E, route(deps, queue, 'create', async (req, ctx) => {
     const body = parsed(CREATE, req, ctx.res);
     if (body === undefined) return;
-    await (body.kind === 'empty' ? createEmpty(ctx, body) : createDuplicate(ctx, body.of));
+    const made = body.kind === 'empty'
+      ? await createEmptyExperiment(ctx, { workspace: body.workspace, ...(body.name === undefined ? {} : { name: body.name }), createdBy: USER })
+      : await duplicateExperiment(ctx, body.of, USER);
+    if (isRefusal(made)) return refuse(ctx, made);
+    ctx.res.status(HTTP_CREATED).json(made);
   }));
   app.patch(`${E}/:id`, route(deps, queue, 'edit', async (req, ctx) => {
     const body = parsed(PATCH, req, ctx.res);
@@ -260,7 +154,7 @@ function registerExperimentRoutes(app: Express, deps: BenchmarkRouteDeps, queue:
 
 const ARM = `${E}/:id/arms/:armId`;
 const armIdOf = (req: Request): string => String(req.params.armId);
-const refuse = (ctx: Ctx, refused: ArmRefusal): void => fail(ctx.res, refused.status, refused.error, refused.message);
+const refuse = (ctx: Ctx, refused: ArmRefusal | DraftRefusal): void => fail(ctx.res, refused.status, refused.error, refused.message);
 
 async function addArm(req: Request, ctx: Ctx): Promise<void> {
   const experiment = unlocked(ctx, idOf(req));
