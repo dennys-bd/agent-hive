@@ -198,11 +198,13 @@ function missingVerdict(allowed: readonly string[], end: VerdictEnd): string | u
 /** Why hive_done's verdict is refused, or undefined (#134): one of the stage's verdicts, the list named when it is not or when it is missing
  * and nothing else takes the task (#493); an evidence only with a verdict, at most FEEDBACK_MAX characters. Here, beside withVerdict, rather
  * than in mcp.ts, which it would push past 400 lines. */
-export function verdictProblem(verdict: string | undefined, evidence: string | undefined, stage: Pick<Stage, 'action' | 'prompt' | 'skill' | 'verdicts'> | undefined, end: VerdictEnd): string | undefined {
+export function verdictProblem(verdict: string | undefined, evidence: string | undefined, stage: Pick<Stage, 'action' | 'approval' | 'prompt' | 'skill' | 'verdicts'> | undefined, end: VerdictEnd): string | undefined {
   const allowed = stage === undefined ? [] : verdictsOf(stage);
   // a stage whose verdicts are the Hive's own (CI, commands) keeps #339's answer: the agent was never asked for one
   const own = stage === undefined || hasFixedVerdicts(stage) ? [] : allowed;
-  if (verdict === undefined) return missingVerdict(own, end) ?? (evidence === undefined ? undefined : EVIDENCE_ALONE_MESSAGE);
+  // an approval stage never has a done exit (config-transitions): its end waits for the user, who needs no verdict
+  const taken = { ...end, hasDone: end.hasDone || stage?.approval === true };
+  if (verdict === undefined) return missingVerdict(own, taken) ?? (evidence === undefined ? undefined : EVIDENCE_ALONE_MESSAGE);
   if (!allowed.includes(verdict)) return allowed.length === 0 ? NO_VERDICT_MESSAGE : `verdict must be one of this stage's: ${allowed.join(', ')}`;
   return evidence !== undefined && evidence.length > FEEDBACK_MAX ? EVIDENCE_SIZE_MESSAGE : undefined;
 }

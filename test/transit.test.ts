@@ -231,6 +231,7 @@ test('the session stays on a feedback loop to the stage, a halt, a stage without
   assert.deepEqual(kept(pure(clearing(undefined, { stages: [keeping, PLAN] }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), both, 'no option');
   assert.deepEqual(kept(pure(clearing({ sessionId: RUN, workerId: 'w1' }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), both, 'a free session ended the stage while its stage run still runs');
   assert.deepEqual(kept(pure(clearing({ sessionId: FREE }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), [[RUN, FREE], FREE], 'the activity names a session that never ran spec');
+});
 
 test('a missing verdict is refused, naming the stage\'s, when the stage has no done exit or the result holds a verdict key; accepted otherwise (#493)', () => {
   const judge: Stage = { name: 'route', from: {}, prompt: '/route', verdicts: ['leaf', 'split'] };
@@ -247,4 +248,8 @@ test('a missing verdict is refused, naming the stage\'s, when the stage has no d
   assert.equal(verdictProblem(undefined, 'why', judge, { hasDone: true }), 'evidence needs a verdict');
   const ci: Stage = { name: 'CI', from: {}, action: 'waitForCi' };
   assert.equal(verdictProblem(undefined, undefined, ci, { hasDone: false }), undefined, 'the Hive\'s own verdicts are never asked of the agent');
+  for (const action of ['commands', 'evaluate'] as const) assert.equal(verdictProblem(undefined, undefined, { action }, { hasDone: false }), undefined, action);
+  const gate: Stage = { ...judge, approval: true };
+  assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false }), undefined, 'an approval stage waits for the user instead');
+  assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false, result: { verdict: 'leaf' } }), misplaced, 'a misplaced verdict is still caught there');
 });

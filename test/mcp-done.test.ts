@@ -27,9 +27,9 @@ const DOCS_PR = 'https://github.com/acme/d/pull/2';
 type McpCall = Extract<RecordInput, { event: 'mcp.call' }>;
 interface Harness { client: Client; dispatched: HiveEvent[]; records: RecordInput[]; state(): State }
 
-async function harness(t: TestContext, freeSession = true): Promise<Harness> {
+async function harness(t: TestContext, freeSession = true, stages: Stage[] = STAGES): Promise<Harness> {
   const workers: Worker[] = [{ id: 'w1', runId: 'p1', status: 'working', activityId: activityIdOf(ITEM_ID), ...(freeSession ? { freeSession: true } : {}) }];
-  let state: State = withWork({ ...initialState(1), stages: STAGES, transitions: TRANSITIONS, tasks: [TASK], workers }, ITEM_ID);
+  let state: State = withWork({ ...initialState(1), stages, transitions: TRANSITIONS, tasks: [TASK], workers }, ITEM_ID);
   const dispatched: HiveEvent[] = [];
   const { facts, records } = fakeFacts();
   const unused = async (): Promise<never> => { throw new Error('unused'); };
@@ -70,4 +70,14 @@ test('hive_done from a stage run in the same stage answers ok as before: #134 ha
   const { client, dispatched } = await harness(t, false);
   assert.deepEqual(await done(client), { text: 'ok', isError: false });
   assert.deepEqual(dispatched.map((e) => e.type), ['done']);
+});
+
+test('hive_done with no verdict in an agent stage with verdicts and no done exit is refused with bad_verdict, dispatching nothing, in a stage run and a free session (#493)', async (t) => {
+  const route: Stage[] = [{ name: 'CI', from: {}, prompt: '/route', verdicts: ['leaf', 'split'] }];
+  for (const freeSession of [false, true]) {
+    const { client, dispatched, records } = await harness(t, freeSession, route);
+    assert.deepEqual(await done(client), { text: 'verdict is missing: pass one of this stage\'s: leaf, split', isError: true });
+    assert.deepEqual(dispatched, [], 'the run goes on');
+    assert.deepEqual(records.filter((r): r is McpCall => r.event === 'mcp.call').map((c) => c.reason), ['bad_verdict']);
+  }
 });
