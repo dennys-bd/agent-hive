@@ -4,11 +4,13 @@ import { randomInt } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { readCatalogue } from '../items-catalogue.js';
 import type { BenchmarkEvent, BenchSeed, Config, Exec, Experiment, ExperimentPatch, Workspace } from '../types.js';
+import type { Logger } from '../log.js';
 import { type Git, gitOrWords } from '../worktree-base.js';
 import { seedHash, tasksHash, treeHash } from './hash.js';
+import { composeDraft, DRAFT, type DraftInput, resultIssues, zodIssues } from './draft-schema.js';
 import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, forkName, forkOf, newId } from './new-experiment.js';
 import { pluginTrees } from './pin.js';
-import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, seedCommit, syncSeed } from './store.js';
+import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, SeedFileMissing, seedCommit, syncSeed } from './store.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
@@ -162,4 +164,63 @@ export async function editSections(ctx: DraftCtx, experiment: Experiment, sectio
   if (isDeepStrictEqual(seed, experiment.seed)) return edit(ctx, experiment, others, undefined);
   const git = repoGit(ctx.deps, workspace);
   return experiment.rounds.length > 0 ? fork(ctx, experiment, { ...sections, seed }, git) : edit(ctx, experiment, sections, git);
+}
+
+const HTTP_CONFLICT = 409;
+const NO_CONFIG = 'the Hive has no config yet';
+const badBody = (lines: readonly string[]): DraftRefusal => ({ status: HTTP_BAD_REQUEST, error: 'bad_body', message: lines.join('\n') });
+const armId = (taken: readonly string[]): string => newId(taken, draw);
+
+// The composed result, or every issue it has; nothing is written yet
+function checked(start: Experiment, body: DraftInput): Experiment | DraftRefusal {
+  const composed = composeDraft(start, body, armId);
+  if (Array.isArray(composed)) return badBody(composed);
+  const issues = resultIssues(composed);
+  return issues.length > 0 ? badBody(issues) : composed;
+}
+
+// A replace (#478): only a draft no round has read; it keeps its id, createdBy and createdAt, and is one benchmarkEdited
+async function replaceDraft(ctx: DraftCtx, id: string, body: DraftInput): Promise<string | DraftRefusal> {
+  const draft = ctx.experiments.find((e) => e.id === id);
+  if (draft === undefined) return unknownExperiment(id);
+  if (draft.status !== 'draft' || draft.rounds.length > 0) return { status: HTTP_CONFLICT, error: 'not_draft', message: `${id} is not a draft without rounds: only such a draft can be replaced` };
+  const result = checked(draft, body);
+  if (isRefusal(result)) return result;
+  const { id: _id, from: _from, workspace: _workspace, arms, ...sections } = body;
+  return editSections(ctx, draft, { ...sections, ...(arms === undefined ? {} : { arms: result.arms }) });
+}
+
+/** benchmark_draft's write (#478): the start in memory, the sections and arms over it, the whole result checked, and only then one write. */
+export async function draftExperiment(ctx: DraftCtx, input: unknown, createdBy: Experiment['createdBy']): Promise<string | DraftRefusal> {
+  const parsed = DRAFT.safeParse(input);
+  if (!parsed.success) return badBody(zodIssues(parsed.error));
+  const body = parsed.data;
+  if (body.id !== undefined) return replaceDraft(ctx, body.id, body);
+  const start = body.from === undefined ? await emptyStart(ctx, body.workspace ?? '', undefined, createdBy) : duplicateStart(ctx, body.from, createdBy);
+  if (isRefusal(start)) return start;
+  if (body.workspace !== undefined && body.workspace !== start.experiment.workspace) return badBody([`workspace: ${body.from} belongs to ${start.experiment.workspace}`]);
+  const result = checked(start.experiment, body);
+  if (isRefusal(result)) return result;
+  const made = await writeNew(ctx, start, result);
+  return isRefusal(made) ? made : made.id;
+}
+
+export interface Drafter { draft(input: unknown, createdBy: Experiment['createdBy']): Promise<{ id: string } | { refused: string }> }
+
+/** benchmark_draft's side of McpDeps (#478): the routes' queue, the live state, and an answer the tool turns into its text. */
+export function drafter(deps: DraftDeps & { queue: Queue; log: Pick<Logger, 'error'>; live(): { config: Config; experiments: readonly Experiment[] } | undefined }): Drafter {
+  return {
+    draft: (input, createdBy) => deps.queue(async () => {
+      const live = deps.live();
+      if (live === undefined) return { refused: NO_CONFIG };
+      try {
+        const answer = await draftExperiment({ deps, config: live.config, experiments: live.experiments }, input, createdBy);
+        return isRefusal(answer) ? { refused: answer.message } : { id: answer };
+      } catch (err) {
+        if (err instanceof SeedFileMissing) return { refused: `${err.message} is not in the seed's commit or uploads` };
+        deps.log.error(`benchmark: draft failed: ${errorCode(err)}`); // the code only: a message names paths under the home
+        return { refused: BENCHMARK_IO_MESSAGE };
+      }
+    }),
+  };
 }
