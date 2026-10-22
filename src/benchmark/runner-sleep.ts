@@ -55,6 +55,7 @@ export function gatedClient(client: WatchClient, gate: SleepGate, signal: AbortS
     },
     setAuto: async (itemId) => { await awake(); await client.setAuto(itemId); },
     setGreen: async () => { await awake(); await client.setGreen(); },
+    interventions: async () => { await awake(); return client.interventions(); },
   };
 }
 

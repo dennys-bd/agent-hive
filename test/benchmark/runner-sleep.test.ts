@@ -69,7 +69,7 @@ test('interruptedEvents marks every queued, running, waiting or sleeping run int
 test('gatedClient holds every call while the gate is closed and reads again a state that came back after the gate closed (#472)', async () => {
   const gate = createGate();
   let reads = 0;
-  const inner: WatchClient = { state: async () => { reads += 1; if (reads === 1) gate.close(); return SLEEP_SNAP; }, setAuto: async () => undefined, setGreen: async () => undefined };
+  const inner: WatchClient = { state: async () => { reads += 1; if (reads === 1) gate.close(); return SLEEP_SNAP; }, setAuto: async () => undefined, setGreen: async () => undefined, interventions: async () => [] };
   const client = gatedClient(inner, gate, new AbortController().signal);
   const read = client.state();
   await tick();
@@ -83,7 +83,7 @@ test("gatedClient's held calls reject once the run's signal aborts, so the watch
   const gate = createGate();
   gate.close();
   const controller = new AbortController();
-  const client = gatedClient({ state: async () => SLEEP_SNAP, setAuto: async () => undefined, setGreen: async () => undefined }, gate, controller.signal);
+  const client = gatedClient({ state: async () => SLEEP_SNAP, setAuto: async () => undefined, setGreen: async () => undefined, interventions: async () => [] }, gate, controller.signal);
   const green = client.setGreen();
   controller.abort();
   await assert.rejects(green);

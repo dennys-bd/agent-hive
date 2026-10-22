@@ -90,6 +90,12 @@ async function reportProgress(ctx: RunContext, handle: LiveRun, progress: Progre
   await ctx.dispatch({ type: 'benchmarkRunChanged', id: ctx.id, token: handle.token, patch: { metrics: { ...metrics, tokens } } });
 }
 
+// The dispatches of one run land in the order the watch saw them
+function chained(ctx: RunContext, token: string, step: () => Promise<unknown>, failed: () => void): void {
+  const next = (ctx.progress.get(token) ?? Promise.resolve()).then(step).then(() => undefined, failed);
+  ctx.progress.set(token, next);
+}
+
 export async function watchOne(ctx: RunContext, handle: LiveRun): Promise<WatchEnd> {
   const experiment = ctx.latest();
   const arm = experiment?.arms.find((a) => a.id === handle.armId);
@@ -99,11 +105,9 @@ export async function watchOne(ctx: RunContext, handle: LiveRun): Promise<WatchE
   const result = await ctx.io.watch(handle.token, watchTasks(mergeArm(experiment.base, arm.overrides).tasks), {
     client: gatedClient(handle.client, ctx.gate, signal), now: ctx.now, sleep: (ms) => delay(ms), log, signal,
     timeoutMs: experiment.pace.runTimeoutMs, sleptMs: () => sleptSoFar(ctx.latest(), handle.token, ctx.now()),
-    onProgress: (progress) => {
-      // chained: the dispatches of one run land in the order the watch saw them
-      const next = (ctx.progress.get(handle.token) ?? Promise.resolve()).then(() => reportProgress(ctx, handle, progress)).catch(() => log('progress not recorded'));
-      ctx.progress.set(handle.token, next);
-    },
+    onProgress: (progress) => chained(ctx, handle.token, () => reportProgress(ctx, handle, progress), () => log('progress not recorded')),
+    // #475: the live count; the run's end reads interventions.json again (measured)
+    onInterventions: (interventions) => chained(ctx, handle.token, () => ctx.dispatch({ type: 'benchmarkRunChanged', id: ctx.id, token: handle.token, patch: { interventions } }), () => log('interventions not recorded')),
   });
   ctx.watched.set(handle.token, result.watch);
   return result.end;

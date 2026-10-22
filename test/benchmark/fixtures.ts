@@ -4,7 +4,7 @@ import type { Tokens } from '../../src/facts.js';
 import type { TestContext } from 'node:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { RunDeps } from '../../src/benchmark/run-home.js';
+import type { RunDeps, RunMarker } from '../../src/benchmark/run-home.js';
 import { tempDir } from '../temp-dir.js';
 import type { DaemonClient } from '../../src/benchmark/daemon-client.js';
 import type { ChildLike } from '../../src/benchmark/daemon.js';
@@ -46,6 +46,10 @@ export const experiment = (patch: Partial<Experiment> = {}): Experiment => ({
 });
 
 export const stateWith = (...experiments: Experiment[]): State => ({ ...initialState(0), benchmark: { experiments } });
+
+export const runMarker = (patch: Partial<RunMarker> = {}): RunMarker => ({
+  experiment: { id: 'exp-1', name: 'Skills' }, arm: { letter: 'A', name: 'arm A' }, round: 1, pairs: 3, token: 'aaaa1', frozen: false, ...patch,
+});
 
 // A write into a frozen object throws in an ES module, so a reducer that mutates fails the test where it writes
 export function deepFreeze<T>(value: T): T {
@@ -178,6 +182,7 @@ export function stubClient(snapshot: Snapshot, o: { down?: () => boolean } = {})
     state: async () => { await reach(); return snapshot; },
     setAuto: async (itemId) => { await reach(); posts.push(`auto ${itemId}`); },
     setGreen: async () => { await reach(); posts.push('green'); },
+    interventions: async () => { await reach(); return []; },
     sleepRuns: async (ptyIds) => { await reach(); posts.push(`sleep ${ptyIds.join(',')}`); },
     continueActivity: async (activityId) => { await reach(); posts.push(`continue ${activityId}`); },
   };

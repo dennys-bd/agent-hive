@@ -1,6 +1,7 @@
 // The experiments' routes (#459, api.benchmark.experiments): each validates its body, refuses what the experiment's state forbids, writes
 // <home>/benchmark/<id>/ through benchmark/store.ts and dispatches one #458 event; the reducer only applies it. Later benchmark route files
 // export their own register…Routes and are mounted from registerBenchmarkRoutes, so server.ts mounts the benchmark once.
+import { type BenchmarkRunRoutes, registerBenchmarkRunRoutes } from './server-benchmark-run.js';
 import { randomInt } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { Express, Request, Response } from 'express';
@@ -295,12 +296,13 @@ function registerArmRoutes(app: Express, deps: BenchmarkRouteDeps, queue: Queue)
   app.post(`${ARM}/copy`, route(deps, queue, 'copy arm', copyArm));
 }
 
-/** api.benchmark.experiments (#459), behind the server's host, secret and x-hive-ui gates; the later benchmark route files mount here. */
-export function registerBenchmarkRoutes(app: Express, deps: BenchmarkRouteDeps): void {
+/** api.benchmark.experiments (#459), behind the server's host, secret and x-hive-ui gates; the later benchmark route files mount here. Answers the run-hive routes' shutdown hook, which server.ts's close() calls. */
+export function registerBenchmarkRoutes(app: Express, deps: BenchmarkRouteDeps): BenchmarkRunRoutes {
   const queue = serial();
   registerExperimentRoutes(app, deps, queue);
   registerArmRoutes(app, deps, queue);
   registerBenchmarkPrRoutes(app, { getState: () => deps.getLive()?.state, getConfig: () => deps.getLive()?.runtime.config, hiveDir: deps.home, exec: execRun, gh: execRun, now: Date.now, log: deps.log }); // #477: GET and POST …/runs/:token/pr
   registerBenchmarkEvaluateRoutes(app, { requireLive: deps.requireLive, evaluator: deps.evaluator, log: deps.log }); // #474
   registerBenchmarkControlRoutes(app, { requireLive: deps.requireLive, runner: deps.runner, dispatch: deps.dispatch, log: deps.log }); // #472
+  return registerBenchmarkRunRoutes(app, { getState: () => deps.getLive()?.state, log: deps.log }); // #475: …/runs/:token/open, and its shutdown hook
 }

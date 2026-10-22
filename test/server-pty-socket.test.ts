@@ -55,7 +55,7 @@ function fakeHost(): FakeHost {
 
 // A bare http.Server on a free port with the pty socket attached. `configured: false` plays setup mode; `bound: false` a port() that
 // listen() has not set yet.
-async function serve(t: TestContext, { configured = true, bound = true, host }: { configured?: boolean; bound?: boolean; host?: PtyHost } = {}): Promise<{ port: number; fake: FakeHost; attached: string[]; debug: string[] }> {
+async function serve(t: TestContext, { configured = true, bound = true, host, onViewerInput }: { configured?: boolean; bound?: boolean; host?: PtyHost; onViewerInput?: (ptyId: string) => boolean } = {}): Promise<{ port: number; fake: FakeHost; attached: string[]; debug: string[] }> {
   const fake = fakeHost();
   const debug: string[] = [];
   const log = { debug: (message: string) => { debug.push(message); } };
@@ -65,7 +65,7 @@ async function serve(t: TestContext, { configured = true, bound = true, host }: 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : 0;
-  const socket = attachPtySocket(server, { ptys: host ?? fake.host, port: () => (bound ? port : undefined), isConfigured: () => configured, secret: SECRET, lsp, log });
+  const socket = attachPtySocket(server, { ptys: host ?? fake.host, port: () => (bound ? port : undefined), isConfigured: () => configured, secret: SECRET, lsp, log, ...(onViewerInput === undefined ? {} : { onViewerInput }) });
   t.after(async () => {
     socket.close();
     server.closeAllConnections();
@@ -290,4 +290,21 @@ test('a keys frame writes one debug line with the pty\'s short id and nothing to
   assert.deepEqual(fake.written, ['x']);
   assert.deepEqual(fake.sizes, []);
   ws.close();
+});
+
+test('input on a viewer\'s socket (the cookie, no x-hive-secret) asks onViewerInput, which may drop it; a worker\'s socket never asks (#475)', async (t) => {
+  const asked: string[] = [];
+  let deliver = true;
+  const { port, fake } = await serve(t, { onViewerInput: (ptyId) => { asked.push(ptyId); return deliver; } });
+  const viewer = await dial(port, PTY_PATH, { origin: `http://127.0.0.1:${port}`, cookie: `${secretCookie(port)}=${SECRET}` });
+  viewer.ws.send('{"type":"input","data":"a"}');
+  await until(() => fake.written.length === 1);
+  deliver = false; // a frozen run
+  viewer.ws.send('{"type":"input","data":"b"}');
+  const worker = await dial(port, PTY_PATH, fromBoard(port));
+  worker.ws.send('{"type":"input","data":"c"}');
+  await until(() => asked.length === 2 && fake.written.length === 2);
+  assert.deepEqual([fake.written, asked], [['a', 'c'], [WORKER, WORKER]]);
+  viewer.ws.close();
+  worker.ws.close();
 });

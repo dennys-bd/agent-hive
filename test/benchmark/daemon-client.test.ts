@@ -96,3 +96,14 @@ test('state() carries the daemon\'s slept list when the frame has one, and none 
   assert.equal((await read(frame)).slept, undefined);
   assert.equal((await read({ ...frame, slept: 'x' })).slept, undefined);
 });
+
+test('interventions() GETs /benchmark-run with the home secret and keeps the four fields of each intervention; a refusal rejects naming the route (#475)', async () => {
+  const done = { at: '2026-10-22T10:00:00.000Z', action: 'POST /tasks/:id/approve', detail: '/tasks/RUN-1/approve', by: 'user' };
+  const f = fakeFetch(() => Response.json({ marker: {}, interventions: [{ ...done, body: 'the user\'s words' }, { at: 1 }] }));
+  const client = createDaemonClient('/home', { address: () => ADDRESS, fetch: f.fn });
+  assert.deepEqual(await client.interventions(), [done]);
+  assert.equal(f.seen[0].url, 'http://127.0.0.1:4321/benchmark-run');
+  assert.equal((f.seen[0].init.headers as Record<string, string>)['x-hive-secret'], SECRET);
+  const plain = createDaemonClient('/home', { address: () => ADDRESS, fetch: fakeFetch(() => new Response('', { status: 404 })).fn });
+  await assert.rejects(plain.interventions(), /^Error: GET \/benchmark-run: HTTP 404$/);
+});

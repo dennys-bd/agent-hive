@@ -1,6 +1,8 @@
 import { type DaemonAddress, recordedDaemon } from '../daemon.js';
 import { SECRET_HEADER } from '../secret.js';
+import { isJsonObject } from '../state-guards.js';
 import { sseFrames } from '../tray-signal.js';
+import { interventionsOf, RUN_ROUTE } from './metrics.js';
 import type { Snapshot, WatchClient } from './watcher.js';
 
 const UI_HEADER = 'x-hive-ui'; // mirrors server.ts's UI_HEADER, which pulls Express in
@@ -63,6 +65,15 @@ export function createDaemonClient(home: string, deps: ClientDeps = {}): DaemonC
     const { port, secret } = target();
     return firstFrame(await fetchFn(`http://127.0.0.1:${port}/events`, { headers: { [SECRET_HEADER]: secret }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), redirect: 'error' }));
   };
+  const read = async (path: string): Promise<unknown> => {
+    const { port, secret } = target();
+    const res = await fetchFn(`http://127.0.0.1:${port}${path}`, { headers: { [SECRET_HEADER]: secret }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), redirect: 'error' });
+    if (!res.ok) {
+      await res.body?.cancel();
+      throw new Error(`GET ${path}: HTTP ${res.status}`);
+    }
+    return res.json();
+  };
   // `shown` names the route in an error without the encoding; neither carries the secret
   const post = async (path: string, shown: string, body: Record<string, unknown>): Promise<void> => {
     const { port, secret } = target();
@@ -81,5 +92,11 @@ export function createDaemonClient(home: string, deps: ClientDeps = {}): DaemonC
     // #472: a run daemon's own sleep all and Continue (server-runs.ts), with the run's secret: the run-mode recorder counts only the viewer's cookie
     sleepRuns: (ptyIds) => post('/ptys/sleep', '/ptys/sleep', { ptyIds: [...ptyIds] }),
     continueActivity: (activityId) => post(`/activities/${encodeURIComponent(activityId)}/continue`, `/activities/${activityId}/continue`, {}),
+    // The secret's header: the main Hive's read is no intervention (#475)
+    interventions: async () => {
+      const body = await read(RUN_ROUTE);
+      if (!isJsonObject(body) || !Array.isArray(body.interventions)) throw new Error(`GET ${RUN_ROUTE}: no interventions list`);
+      return interventionsOf(body.interventions);
+    },
   };
 }
