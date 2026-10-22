@@ -119,6 +119,8 @@ const focus = (type: 'focusin' | 'focusout', id: string, to?: string): void => {
 const mountHover = (): void => {
   vi.useFakeTimers();
   document.body.innerHTML = HOVER_MARKUP;
+  // the kit loads once per file, so Escape clears where the previous test left the pointer and focus
+  key('Escape');
 };
 
 afterEach(() => { vi.useRealTimers(); });
@@ -188,4 +190,26 @@ test('Escape hides a shown hover element at once and a pending hide does not reo
   expect(el('link')).toHaveAttribute('aria-expanded', 'false');
   vi.advanceTimersByTime(GRACE_MS);
   expect(el('card')).toHaveAttribute('hidden');
+});
+
+test('the pointer leaving keeps the element shown while focus is still on the control, and the other way round', () => {
+  mountHover();
+  focus('focusin', 'link', 'away');
+  move('pointerover', 'link', 'away');
+  move('pointerout', 'link', 'away');
+  vi.advanceTimersByTime(GRACE_MS);
+  expect(el('card')).not.toHaveAttribute('hidden');
+  focus('focusout', 'link', 'away');
+  vi.advanceTimersByTime(GRACE_MS);
+  expect(el('card')).toHaveAttribute('hidden');
+});
+
+test('a move over a child of the control counts as the control', () => {
+  mountHover();
+  el('link').innerHTML = '<span id="link-child">ref</span>';
+  move('pointerover', 'link-child', 'away');
+  expect(el('card')).not.toHaveAttribute('hidden');
+  move('pointerout', 'link-child', 'link');
+  vi.advanceTimersByTime(GRACE_MS);
+  expect(el('card')).not.toHaveAttribute('hidden');
 });

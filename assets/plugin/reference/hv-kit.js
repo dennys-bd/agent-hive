@@ -13,6 +13,8 @@
   // Long enough for the pointer to cross the gap between a link and its card without the card closing under it
   const HOVER_GRACE_MS = 150;
   const hideTimers = new Map();
+  // Pointer and focus are tracked apart: either one still inside the pair keeps the element shown
+  const inside = new Map();
 
   const parse = (spec) => {
     const at = spec.indexOf('=');
@@ -98,17 +100,20 @@
     hideTimers.delete(id);
   }
 
-  function hover(id, open) {
+  function hover(id, input, open) {
+    const state = { pointer: false, focus: false, ...inside.get(id), [input]: open };
+    inside.set(id, state);
     cancelHide(id);
     if (open) show(document.getElementById(id), true);
-    else hideTimers.set(id, setTimeout(() => show(document.getElementById(id), false), HOVER_GRACE_MS));
+    else if (!state.pointer && !state.focus) hideTimers.set(id, setTimeout(() => show(document.getElementById(id), false), HOVER_GRACE_MS));
   }
 
   // A move between the control and its element is not a leave: relatedTarget says where the pointer or focus went
-  for (const [type, open] of [['pointerover', true], ['focusin', true], ['pointerout', false], ['focusout', false]]) {
+  const HOVER_EVENTS = [['pointerover', 'pointer', true], ['focusin', 'focus', true], ['pointerout', 'pointer', false], ['focusout', 'focus', false]];
+  for (const [type, input, open] of HOVER_EVENTS) {
     document.addEventListener(type, (event) => {
       const id = hoverId(event.target);
-      if (id && (open || hoverId(event.relatedTarget) !== id)) hover(id, open);
+      if (id && (open || hoverId(event.relatedTarget) !== id)) hover(id, input, open);
     });
   }
   document.addEventListener('keydown', (event) => {
@@ -116,9 +121,14 @@
     for (const control of document.querySelectorAll('[data-hv-hover]')) {
       const id = control.getAttribute('data-hv-hover');
       cancelHide(id);
+      inside.delete(id);
       show(document.getElementById(id), false);
     }
     for (const layer of document.querySelectorAll('[data-hv-layer]:not([hidden])')) show(layer, false);
   });
   mark();
+  for (const control of document.querySelectorAll('[data-hv-hover]')) {
+    const target = document.getElementById(control.getAttribute('data-hv-hover'));
+    if (target) control.setAttribute('aria-expanded', String(!target.hidden));
+  }
 })();
