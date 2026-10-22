@@ -2510,6 +2510,7 @@ const en = {
   'benchmark.config.scenarios.one': '1 scenario {range}',
   'benchmark.config.scenarios.other': '{n} scenarios {range}',
   'benchmark.config.scenarios.none': 'no scenario',
+  'benchmark.config.locked': 'the config locks while the experiment runs',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5014,6 +5015,7 @@ const pt: Record<MessageKey, string> = {
   'benchmark.config.scenarios.one': '1 cenário {range}',
   'benchmark.config.scenarios.other': '{n} cenários {range}',
   'benchmark.config.scenarios.none': 'nenhum cenário',
+  'benchmark.config.locked': 'a config trava enquanto o experimento executa',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

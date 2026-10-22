@@ -1,7 +1,11 @@
+import { render, screen, within } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { BenchMetrics, BenchScenario, Experiment, PlanReadings } from '../../src/types';
 import { arm, experiment, ISOLATION, run } from '../benchmark/fixtures';
 import type { Call } from './benchmark-fixtures';
+import { ConfigTab } from '@/components/benchmark/config/ConfigTab';
+import type { TabContext } from '@/components/benchmark/tabs';
+import { WorkspaceColorsContext } from '@/lib/workspace-color';
 import { json } from './plugins-fixtures';
 
 const metrics = (tokens: number): BenchMetrics => ({
@@ -58,3 +62,19 @@ export function stubConfigFetch(answers: Record<string, Answer> = {}): Call[] {
   }));
   return calls;
 }
+
+const COLORS = { 'agent-hive': '#7c8cff' };
+const tab = (e: Experiment, context: TabContext) => <WorkspaceColorsContext.Provider value={COLORS}><ConfigTab experiment={e} context={context} /></WorkspaceColorsContext.Provider>;
+
+/** The config tab of `e` with the dock's select spied on; rerender keeps the tab mounted (same experiment, a new status). */
+export function renderConfig(e: Experiment, rateLimits?: PlanReadings) {
+  const select = vi.fn<(id: string) => void>();
+  const context: TabContext = { select, ...(rateLimits === undefined ? {} : { rateLimits }) };
+  const view = render(tab(e, context));
+  return { select, rerender: (next: Experiment) => view.rerender(tab(next, context)) };
+}
+export const region = (name: string): HTMLElement => screen.getByRole('region', { name });
+export const rowIn = (section: string, label: string): HTMLElement => within(region(section)).getByRole('group', { name: label });
+export const editIn = (section: string): HTMLElement => within(region(section)).getAllByRole('button', { name: 'editar' })[0] as HTMLElement;
+/** The pills' texts under `el`, in order (an arm's pill reads its letter then its value: `CbypassPermissions`). */
+export const pills = (el: HTMLElement): (string | null)[] => [...el.querySelectorAll('[data-slot="badge"]')].map((b) => b.textContent);

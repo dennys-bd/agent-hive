@@ -102,3 +102,12 @@ test('with only archived experiments, picking one in the archived group shows it
   expect(head()).toHaveTextContent(ARCHIVED.name);
   expect(screen.queryByText('nenhum experimento ainda')).not.toBeInTheDocument();
 });
+
+test('the config tab draws its own body, not the placeholder; the running experiment shows the locked note (#463)', async () => {
+  const user = userEvent.setup();
+  render(<Window />);
+  key('4');
+  await user.click(within(tabs()).getByRole('button', { name: 'config' }));
+  expect(screen.queryByText('em breve')).not.toBeInTheDocument();
+  expect(screen.getByText('a config trava enquanto o experimento executa')).toBeInTheDocument();
+});
