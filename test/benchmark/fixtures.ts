@@ -1,4 +1,6 @@
-import type { Snapshot, WatchTask } from '../../src/benchmark/watcher.js';
+import { type Snapshot, startWatch, type WatchDeps, type WatchEnd, type WatchTask } from '../../src/benchmark/watcher.js';
+import type { RunIo } from '../../src/benchmark/runner-io.js';
+import type { Tokens } from '../../src/facts.js';
 import type { TestContext } from 'node:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -194,4 +196,49 @@ export async function until(check: () => boolean, tries = 1_000): Promise<void> 
     if (i >= tries) throw new Error('until: the condition never held');
     await new Promise((resolve) => setImmediate(resolve));
   }
+}
+
+export interface IoRig {
+  io: RunIo; calls: string[]; clients: Map<string, StubClient>;
+  watching: Map<string, (end: WatchEnd) => void>; watchDeps: Map<string, WatchDeps>; tasksOf: Map<string, WatchTask[]>;
+}
+
+/** RunIo with no process, no git and no file (#472): runs are tok1, tok2, … in prepare order, every watch waits for the test's end() or its
+ *  signal, and every client answers `snapshot` unless `down` says its home is gone. */
+export function stubIo(hiveDir: string, o: { snapshot?: Snapshot; down?: (home: string) => boolean; modelTokens?: Record<string, Tokens> } = {}): IoRig {
+  const calls: string[] = [];
+  const clients = new Map<string, StubClient>();
+  const watching = new Map<string, (end: WatchEnd) => void>();
+  const watchDeps = new Map<string, WatchDeps>();
+  const tasksOf = new Map<string, WatchTask[]>();
+  let drawn = 0;
+  const io: RunIo = {
+    prepareExperiment: async () => { calls.push('prepareExperiment'); },
+    prepareRun: async (_experiment, arm, round) => {
+      drawn += 1;
+      const token = `tok${drawn}`;
+      calls.push(`prepareRun ${arm.id} r${round}`);
+      return run(token, { armId: arm.id, round, status: 'queued', home: join(hiveDir, 'benchmark', 'exp-1', 'runs', token), branch: `work/${token}` });
+    },
+    boot: async (home) => ({ home, address: { port: 1, secret: 's' }, child: fakeChild().child }),
+    stop: async (running) => { calls.push(`stop ${running.token}`); },
+    client: (home) => {
+      const client = stubClient(o.snapshot ?? snap([]), { down: () => o.down?.(home) ?? false });
+      clients.set(home, client);
+      return client;
+    },
+    watch: (token, tasks, deps) => new Promise((resolve) => {
+      watchDeps.set(token, deps);
+      tasksOf.set(token, tasks);
+      const end = (e: WatchEnd): void => { watching.delete(token); resolve({ end: e, watch: startWatch(tasks) }); };
+      watching.set(token, end);
+      deps.signal?.addEventListener('abort', () => end({ outcome: 'aborted' }), { once: true });
+    }),
+    savedState: async () => snap([]),
+    diff: async () => ({ files: 2, insertions: 10, deletions: 1 }),
+    modelTokens: async () => o.modelTokens ?? {},
+    interventions: async () => [],
+    report: async () => { calls.push('report'); },
+  };
+  return { io, calls, clients, watching, watchDeps, tasksOf };
 }
