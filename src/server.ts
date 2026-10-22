@@ -1015,7 +1015,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
     reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory, preloadPr: (url) => preloadPr?.(url) ?? Promise.resolve(),
     benchmark: drafter({ dispatch, home, pluginSource: shippedPlugin, exec, log, version: benchVersion, now: () => new Date(), queue: benchQueue,
-      live: () => (live ? { config: live.runtime.config, experiments: live.state.benchmark.experiments } : undefined) }) }); // #478 // #344: a local session's hive_reply
+      live: () => (live ? { config: live.runtime.config, experiments: live.state.benchmark.experiments } : undefined) }) }); // #478: the benchmark tools' drafter; #344: a local session's hive_reply
 
   app.get('/events', (req: Request, res: Response) => {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });

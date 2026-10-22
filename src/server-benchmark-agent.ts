@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { localActivityId } from './activities.js';
 import { knownAgent, liveDefaultAgent } from './agents.js';
 import { zodIssues } from './benchmark/draft-schema.js';
+import type { DraftRefusal } from './benchmark/drafts.js';
 import { workspaceByName } from './config.js';
 import { askedLaunch } from './launch-options.js';
 import type { Logger } from './log.js';
@@ -13,6 +14,9 @@ import { answerOpen, type TaskRouteDeps } from './server-tasks.js';
 import { sizeIn } from './terminal-wire.js';
 import { AGENT_IDS, type OptionalTool } from './types.js';
 
+const HTTP_BAD_REQUEST = 400;
+const HTTP_NOT_FOUND = 404;
+const HTTP_CONFLICT = 409;
 const DESCRIPTION_MAX = 4000;
 const ASK = z.object({ description: z.string().trim().min(1).max(DESCRIPTION_MAX), workspace: z.string(), from: z.string().optional() });
 type Ask = z.infer<typeof ASK>;
@@ -23,7 +27,7 @@ export const ASK_RULE = 'Nothing runs: never run, sleep or evaluate an experimen
 
 export type AskSessionDeps = Pick<TaskRouteDeps, 'dispatch' | 'started' | 'language' | 'plugin'>;
 export interface BenchmarkAgentDeps { requireLive: BenchmarkRouteDeps['requireLive']; log: Pick<Logger, 'warn'>; session: AskSessionDeps }
-interface AskRefusal { status: number; error: string; message: string }
+type AskRefusal = DraftRefusal;
 type Live = NonNullable<ReturnType<BenchmarkRouteDeps['requireLive']>>;
 
 /** The drafting session's first message. Lines joined, never a replace, so a `$` in the description stays as typed. */
@@ -38,11 +42,11 @@ export function askPrompt({ description, workspace, from }: Ask): string {
 // What the post may not open, in the spec's order; undefined: it may
 function askRefusal(live: Live, ask: Ask): AskRefusal | undefined {
   const { config } = live.runtime;
-  if (workspaceByName(config, ask.workspace) === undefined) return { status: 404, error: 'unknown_workspace', message: `no workspace ${ask.workspace}` };
+  if (workspaceByName(config, ask.workspace) === undefined) return { status: HTTP_NOT_FOUND, error: 'unknown_workspace', message: `no workspace ${ask.workspace}` };
   const from = ask.from === undefined ? undefined : live.state.benchmark.experiments.find((e) => e.id === ask.from);
-  if (ask.from !== undefined && from === undefined) return { status: 404, error: 'unknown_experiment', message: `no experiment ${ask.from}` };
-  if (from !== undefined && from.workspace !== ask.workspace) return { status: 400, error: 'other_workspace', message: `${from.id} belongs to ${from.workspace}` };
-  if (config.mcp.off.some((tool) => NEEDED.includes(tool))) return { status: 409, error: 'mcp_off', message: 'turn on benchmark_get and benchmark_draft in Plugins › MCP' };
+  if (ask.from !== undefined && from === undefined) return { status: HTTP_NOT_FOUND, error: 'unknown_experiment', message: `no experiment ${ask.from}` };
+  if (from !== undefined && from.workspace !== ask.workspace) return { status: HTTP_BAD_REQUEST, error: 'other_workspace', message: `${from.id} belongs to ${from.workspace}` };
+  if (config.mcp.off.some((tool) => NEEDED.includes(tool))) return { status: HTTP_CONFLICT, error: 'mcp_off', message: 'turn on benchmark_get and benchmark_draft in Plugins › MCP' };
   return undefined;
 }
 
@@ -55,10 +59,10 @@ export function registerBenchmarkAgentRoutes(app: Express, deps: BenchmarkAgentD
       res.status(r.status).json({ error: r.error, message: r.message });
     };
     const ask = ASK.safeParse(req.body ?? {});
-    if (!ask.success) return refuse({ status: 400, error: 'bad_body', message: zodIssues(ask.error).join('\n') });
+    if (!ask.success) return refuse({ status: HTTP_BAD_REQUEST, error: 'bad_body', message: zodIssues(ask.error).join('\n') });
     const { kind } = (req.body ?? {}) as { kind?: unknown };
     const agent = knownAgent(kind);
-    if (kind !== undefined && agent === undefined) return refuse({ status: 400, error: 'unknown_agent', message: `kind must be one of: ${AGENT_IDS.join(', ')}` });
+    if (kind !== undefined && agent === undefined) return refuse({ status: HTTP_BAD_REQUEST, error: 'unknown_agent', message: `kind must be one of: ${AGENT_IDS.join(', ')}` });
     const gate = askRefusal(live, ask.data);
     if (gate) return refuse(gate);
     await deps.session.plugin.ready();

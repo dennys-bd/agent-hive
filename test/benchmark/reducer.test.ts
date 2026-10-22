@@ -27,12 +27,18 @@ test('benchmarkCreated appends the experiment the route built; an id already hel
   assert.equal(benchmarkReduce(held, { type: 'benchmarkCreated', experiment: experiment({ name: 'again' }) }), held);
 });
 
-test('benchmarkEdited spreads its patch and never touches status or rounds; arms come only in a patch (#458, #478)', () => {
+test('benchmarkEdited spreads its patch and never touches status, rounds, or the arms of an experiment that ran (#458, #478)', () => {
   const start = stateWith(experiment({ status: 'done', rounds: [{ n: 1, runs: [] }] }));
   // a route's slip tsc would refuse: the reducer still keeps what only the run's own events may set
-  const patch = { name: 'Renamed', pace: { ...experiment().pace, pairs: 5 }, status: 'draft', rounds: [] } as unknown as ExperimentPatch;
+  const patch = { name: 'Renamed', pace: { ...experiment().pace, pairs: 5 }, status: 'draft', rounds: [], arms: [] } as unknown as ExperimentPatch;
   const edited = first(apply(start, { type: 'benchmarkEdited', id: 'exp-1', patch }));
   assert.deepEqual([edited.name, edited.pace.pairs, edited.status, edited.rounds.length, edited.arms.length], ['Renamed', 5, 'done', 1, 2]);
+});
+
+test('benchmarkEdited replaces the arms of a draft with no round (#478)', () => {
+  const draft = experiment({ status: 'draft', rounds: [] });
+  const edited = first(apply(stateWith(draft), { type: 'benchmarkEdited', id: 'exp-1', patch: { arms: draft.arms.slice(0, 1) } }));
+  assert.equal(edited.arms.length, 1);
 });
 
 test('benchmarkForked appends the fork and leaves its source as it was; an unknown source or a held id is ignored (#458)', () => {
