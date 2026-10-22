@@ -10,7 +10,7 @@ import type { TabId } from '@/components/benchmark/tabs';
 import { t } from '@/i18n';
 import type { PanelId } from '@/lib/dock-layout';
 
-/** What later leaves plug into the shell (#461): pedir ao agente (5), exportar report.md (2.7), dormir (2.8). Absent: the item is left out, or
+/** What later leaves plug into the shell (#461): pedir ao agente (filled by useBenchmarkDock, #478), exportar report.md (2.7), dormir (2.8). Absent: the item is left out, or
  * dormir sits disabled. */
 export interface BenchmarkSlots { askAgent?(): void; exportReport?(experiment: Experiment): void; sleep?(experiment: Experiment): void }
 
@@ -92,10 +92,11 @@ interface BenchmarkDockArgs { isShown: boolean; experiments: readonly Experiment
  * body while the view is shown (no health pane yet), and the centre. The state lives here, in the always-mounted dock, so the selection and the
  * tab survive a switch of view. */
 export function useBenchmarkDock({ isShown, experiments, workspaces, activate, slots, rateLimits }: BenchmarkDockArgs): BenchmarkDock {
-  const benchmark = useBenchmark(experiments, slots);
+  const [isAsking, setAsking] = useState(false); // #478: pedir ao agente's dialog, over whichever view state is shown
+  const benchmark = useBenchmark(experiments, { askAgent: () => setAsking(true), ...slots });
   return {
     panel: { id: 'benchmark', title: t('dock.benchmark'), ownHeader: true, body: <BenchmarkSidebar benchmark={benchmark} workspaces={workspaces} isShown={isShown} activate={activate} /> },
     right: { id: 'detail', title: t('dock.benchmark'), ownHeader: true, body: <section aria-label={t('dock.benchmark')} className="flex min-h-0 flex-1 flex-col" /> },
-    center: isShown ? <BenchmarkView benchmark={benchmark} workspaces={workspaces} rateLimits={rateLimits} /> : null,
+    center: isShown ? <BenchmarkView benchmark={benchmark} workspaces={workspaces} rateLimits={rateLimits} ask={isAsking ? { onClose: () => setAsking(false) } : undefined} /> : null,
   };
 }

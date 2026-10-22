@@ -1,4 +1,5 @@
 import type { PlanReadings } from '../../../types';
+import { AskAgentDialog } from '@/components/benchmark/ask/AskAgentDialog';
 import type { Benchmark } from '@/components/benchmark/benchmark-dock';
 import { ExperimentHeader } from '@/components/benchmark/ExperimentHeader';
 import { TABS } from '@/components/benchmark/tabs';
@@ -25,13 +26,15 @@ function EmptyExperiment({ benchmark, workspaces }: { benchmark: Benchmark; work
 
 /** The benchmark view's centre (#461): the tab bar and the selected tab's body, the experiment's head portalled into the header; or, with no
  * live experiment and no archived one picked, the empty state with no head and no tabs. Mounted only while the view is shown, so the slot holds no other view's head. */
-export function BenchmarkView({ benchmark, workspaces, rateLimits }: { benchmark: Benchmark; workspaces: readonly string[]; rateLimits?: PlanReadings }) {
+export function BenchmarkView({ benchmark, workspaces, rateLimits, ask }: { benchmark: Benchmark; workspaces: readonly string[]; rateLimits?: PlanReadings; ask?: { onClose(): void } }) {
   const { selected } = benchmark;
+  const dialog = ask && <AskAgentDialog experiments={benchmark.experiments} workspaces={workspaces} selected={selected} onClose={ask.onClose} />;
   if (selected === undefined) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 text-muted-foreground text-sm">
         <p>{t('benchmark.header.empty')}</p>
         <EmptyExperiment benchmark={benchmark} workspaces={workspaces} />
+        {dialog}
       </div>
     );
   }
@@ -52,6 +55,7 @@ export function BenchmarkView({ benchmark, workspaces, rateLimits }: { benchmark
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         {tab.render?.(selected, benchmark, { select: benchmark.select, ...(rateLimits === undefined ? {} : { rateLimits }) }) ?? <p className="p-6 text-muted-foreground text-sm">{t('benchmark.header.soon')}</p>}
       </div>
+      {dialog}
     </div>
   );
 }
