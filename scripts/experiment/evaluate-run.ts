@@ -1,9 +1,10 @@
-import { copyFile, cp, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
-import { join, sep } from 'node:path';
+import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { DaemonAddress } from '../../src/daemon.js';
 import { evalConfig } from './harness-config.js';
 import { assertBlind, bundleFiles, writeBundle } from './blind.js';
-import { type Cookie, dashboardCookie, type Launch, MCP_BIN, mcpConfig, smokeDashboard, storageState } from './browser.js';
+import { keepShots, mcpBinary, mcpConfig } from '../../src/benchmark/browser.js';
+import { type Cookie, dashboardCookie, type Launch, smokeDashboard, storageState } from './browser.js';
 import { extractJson, JUDGE_TIMEOUT_MS, judgeArgs, parseClicks, parseJudge, runClaude, TESTER_TIMEOUT_MS, testerArgs } from './claude.js';
 import type { RunningDaemon } from '../../src/benchmark/daemon.js';
 import { buildEnv, type Run } from '../../src/benchmark/exec.js';
@@ -42,14 +43,6 @@ function pathsOf(ctx: EvalContext): Paths {
 
 const reasonOf = (prefix: string, err: unknown): string => `${prefix}: ${(err instanceof Error ? err.message : String(err)).split('\n')[0]}`;
 
-// @playwright/mcp writes a screenshot the tester names into its workspace root, the review folder, and only an unnamed one
-// under --output-dir: every PNG in the folder is kept, one in a subfolder named by its path (screens/x.png is screens-x.png)
-async function keepShots(from: string, to: string): Promise<void> {
-  await mkdir(to, { recursive: true });
-  const shots = (await readdir(from, { recursive: true })).filter((name) => name.endsWith('.png')).sort();
-  for (const shot of shots) await copyFile(join(from, shot), join(to, shot.split(sep).join('-')));
-}
-
 // Its own checkout, installed and built; its pnpm test is the green / red the report trusts
 async function buildCheckout(paths: Paths, branch: string, deps: EvalDeps): Promise<{ testsGreen: boolean; reason?: string }> {
   await removeWorktree(deps.run, paths.worktree).catch(() => undefined); // left by a stopped evaluation
@@ -76,7 +69,7 @@ async function runTester(ctx: EvalContext, paths: Paths, url: string, cookie: Co
   try {
     await mkdir(shots);
     await writeFile(storage, JSON.stringify(storageState(cookie)), { mode: 0o600 });
-    await writeFile(config, JSON.stringify(mcpConfig(join(deps.repoRoot, MCP_BIN), storage, shots, new URL(url).origin, deps.chromiumPath, sockets)), { mode: 0o600 });
+    await writeFile(config, JSON.stringify(mcpConfig({ bin: await mcpBinary(), storage, outputDir: shots, origin: new URL(url).origin, chromiumPath: deps.chromiumPath, socketsDir: sockets })), { mode: 0o600 });
     const prompt = testerPrompt({ url, handoff: ctx.seed.handoff, scenarios: ctx.seed.scenarios, artboards: ctx.seed.artboards });
     answer = extractJson(await runClaude(deps.run, testerArgs(prompt, config), review, TESTER_TIMEOUT_MS), '[');
   } catch (err) {
