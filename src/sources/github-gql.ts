@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readCredentials } from '../credentials.js';
+import { bearer, type GhToken } from '../github-token.js';
 import type { Logger } from '../log.js';
 import type { GithubAuth, Gql } from '../types.js';
 
@@ -68,10 +69,13 @@ export async function githubLoginName(env?: NodeJS.ProcessEnv): Promise<string |
   return (await readGithubCredentials(env))?.login;
 }
 
+const UNAUTHORIZED = 401;
+
 export interface ApiGqlDeps {
   fetch?: typeof fetch;
   readToken?: () => Promise<string>; // the login binds a token it has not stored yet
   env?: NodeJS.ProcessEnv;
+  onUnauthorized?: () => void; // cli (#503): a 401 drops the held token; the next poll reads it again
 }
 
 async function storedToken(env?: NodeJS.ProcessEnv): Promise<string> {
@@ -91,11 +95,12 @@ export function apiGql(deps: ApiGqlDeps = {}): Gql {
     const token = await readToken();
     const res = await doFetch(API_URL, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'content-type': 'application/json' },
+      headers: { Authorization: bearer(token), Accept: 'application/vnd.github+json', 'content-type': 'application/json' },
       body: JSON.stringify({ query, variables: variables ?? {} }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), // no retry: the next poll is the retry
       redirect: 'manual', // the bearer never follows a redirect off the fixed host
     });
+    if (res.status === UNAUTHORIZED) deps.onUnauthorized?.();
     if (!res.ok) throw new Error(`github api: HTTP ${res.status}`);
     const body: unknown = await res.json().catch(() => {
       throw new Error('github api: invalid JSON body'); // res.json() would quote the body
@@ -124,8 +129,16 @@ export function loggedGql(gql: Gql, log: Logger): Gql {
   };
 }
 
+export interface GqlForOptions { log?: Logger; ghToken?: GhToken; fetch?: typeof fetch }
+
+// cli with the daemon's holder: gh is the credential only (#503). Without one (a caller that was not handed it) gh stays the transport
+function transportOf(auth: GithubAuth, { ghToken, fetch }: GqlForOptions): Gql {
+  if (auth === 'api') return apiGql({ fetch });
+  return ghToken ? apiGql({ fetch, readToken: ghToken.token, onUnauthorized: ghToken.invalidate }) : cliGql();
+}
+
 /** The transport `auth.github` names, logged when the caller has a logger. The one place the choice is made. */
-export function gqlFor(auth: GithubAuth, log?: Logger): Gql {
-  const gql = auth === 'cli' ? cliGql() : apiGql();
-  return log ? loggedGql(gql, log) : gql;
+export function gqlFor(auth: GithubAuth, options: GqlForOptions = {}): Gql {
+  const gql = transportOf(auth, options);
+  return options.log ? loggedGql(gql, options.log) : gql;
 }

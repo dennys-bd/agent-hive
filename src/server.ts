@@ -9,6 +9,7 @@ import { renderSource } from './benchmark/run-home.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
 import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFor } from './sources/github-gql.js';
+import { createGhToken, type GhToken } from './github-token.js';
 import { listFilterOptions, listProjects } from './sources/github.js';
 import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js';
 import { activityOfWorker, taskOfActivity, taskOfWorker } from './activities.js';
@@ -185,6 +186,8 @@ export interface ServerDeps {
   usage?: UsageStore;
   /** #187: the read sync's login and transports; tests inject a fake, the default is accessFor with auth.github's transport. */
   readAccess?: () => Promise<ReadAccess | undefined>;
+  /** #503: the daemon's gh credential holder (login and token, in memory). Absent (tests, an embedded server): the server builds its own. */
+  ghToken?: GhToken;
 }
 
 export interface HiveServer {
@@ -247,6 +250,7 @@ function authFromQuery(query: Request['query']): AuthConfig {
 export function createServer(deps: ServerDeps): HiveServer {
   const { home } = deps;
   const log = deps.log ?? createLogger(home);
+  const ghToken = deps.ghToken ?? createGhToken(); // #503: one holder for the poll, Settings and the read sync
   // A workspace's memory (#797): one file per workspace of the live config; its protocol files follow every change of its rendered text
   const passages = createPassageStore(home); // #336: the user's protocol passages, rendered into every workspace's protocol files
   const protocolFor = protocolRenderer(passages, log);
@@ -261,7 +265,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const wiring = createServerFacts(deps.facts ?? createFactLog(home, 'info', { log, ...(deps.usage === undefined ? {} : { keep: deps.usage.write }) }), log, Date.now, (state, worker) => ({ ...memoryFields(state, worker), ...lspFields(state, worker) })); // facts.jsonl (#742): activate sets its level with the log's
   const createdAt = Date.now(); // hive.booted's start (#742)
   const systemLanguage = deps.systemLanguage ?? 'en';
-  const sourceFactory: SourceFactory = deps.sourceFactory ?? ((spec, items) => createSource(spec, { log, ...(items === undefined ? {} : { items }) }));
+  const sourceFactory: SourceFactory = deps.sourceFactory ?? ((spec, items) => createSource(spec, { log, ghToken, ...(items === undefined ? {} : { items }) }));
   // The daemon's ptys (#251) reach every spawn.
   const ptys = createPtyHost(deps.spawnPty ?? NO_PTY, (message) => log.error(message)); // #696: a ring that cannot be written
   const reviews = createReviewStore(home, (itemId) => live?.state.tasks.some((c) => taskId(c) === itemId) === true); // one file per task (#591)
@@ -276,7 +280,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const pool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE) }));
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
-  const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, log));
+  const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
   const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later
@@ -1242,7 +1246,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
-  const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { exec, log }));
+  const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
   const itemStore: ItemStore | undefined = deps.readModel && { db: deps.readModel, source: async () => (await readAccess())?.source, notify: notifyReadModel };
   const readLoop = deps.readModel && createReadModelLoop({
@@ -1250,7 +1254,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
   });
   registerProjectRoutes(app, { requireLive, dispatch, log, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
-  // #181: the reads answer from the model, as the login the sync reads with (ponytail: one gh config get per read in cli mode); the writes
+  // #181: the reads answer from the model, as the login the sync reads with (ponytail: a stat of gh's hosts.yml per read in cli mode); the writes
   // go to GitHub with the Hive's own login (#757), and their answer is upserted and named by the sync's own readModel event (#183)
   const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : {
     readModel: { db: deps.readModel, source: async () => (await readAccess())?.source, refetch: readLoop.refetch, notify: notifyReadModel },

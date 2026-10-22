@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apiGql, cliGql, cliGqlJson, githubLoginName, loggedGql, NO_TOKEN_MESSAGE } from '../../src/sources/github-gql.js';
+import { randomUUID } from 'node:crypto';
+import { apiGql, cliGql, cliGqlJson, githubLoginName, gqlFor, loggedGql, NO_TOKEN_MESSAGE } from '../../src/sources/github-gql.js';
+import type { GhToken } from '../../src/github-token.js';
 import { PROJECT_FIELDS, VIEWER } from '../../src/sources/github-queries.js';
 import { writeCredentials } from '../../src/credentials.js';
 import { fakeLog } from '../fakes.js';
@@ -123,4 +125,28 @@ test('cliGql sends a boolean with -F, so gh sends JSON false and not the string 
   };
   await cliGql(exec)(VIEWER, { open: false, head: 'true' });
   assert.deepEqual(calls[0].slice(4), ['-F', 'open=false', '-f', 'head=true']);
+});
+
+test('apiGql calls onUnauthorized on a 401 only, then rejects with the status alone (#503)', async () => {
+  let dropped = 0;
+  const onUnauthorized = (): void => {
+    dropped += 1;
+  };
+  const over = (res: Response) => apiGql({ fetch: fakeFetch(res).doFetch, readToken: async () => TOKEN, onUnauthorized });
+  await assert.rejects(over(json({ message: 'Bad credentials' }, 401))(VIEWER), { message: 'github api: HTTP 401' });
+  await assert.rejects(over(json({}, 403))(VIEWER), { message: 'github api: HTTP 403' });
+  assert.equal(dropped, 1);
+});
+
+test('gqlFor cli with the daemon\'s holder posts over HTTP with its token, and a 401 drops it (#503)', async () => {
+  const token = `test-${randomUUID()}`;
+  let dropped = 0;
+  const ghToken: GhToken = { login: async () => 'ana', token: async () => token, invalidate: () => { dropped += 1; } };
+  const { doFetch, calls } = fakeFetch(json(OK_BODY), json({}, 401));
+  const gql = gqlFor('cli', { ghToken, fetch: doFetch });
+  assert.deepEqual(await gql(VIEWER), { viewer: { login: 'ana' } });
+  assert.equal(calls[0].url, 'https://api.github.com/graphql');
+  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, `Bearer ${token}`);
+  await assert.rejects(gql(VIEWER), { message: 'github api: HTTP 401' });
+  assert.equal(dropped, 1);
 });
