@@ -28,6 +28,7 @@ export interface RunDeps {
 // The harness passes no signal, so its watch never ends aborted; the harness has three outcomes
 function outcomeOf(end: WatchEnd): Pick<Metrics, 'outcome' | 'reason'> {
   if (end.outcome === 'error') return { outcome: 'error', reason: end.reason };
+  if (end.outcome === 'aborted') return { outcome: 'error', reason: 'aborted' }; // no signal is passed here; were one, the harness has no fourth outcome
   return { outcome: end.outcome };
 }
 

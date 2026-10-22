@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Activity, Task, Worker } from '../../src/types.js';
-import { observe, type Snapshot, startWatch, type WatchClient, watchRun } from '../../src/benchmark/watcher.js';
+import { observe, type Progress, type Snapshot, startWatch, type WatchClient, watchRun } from '../../src/benchmark/watcher.js';
 import { clock, snap, task, watchTask, worker } from './fixtures.js';
 
 // 1 and 4 free; 2 after 1; 3 after 1 and 2 (the shape of the seed's 4 after 3 and 2)
@@ -143,4 +143,32 @@ test('watchRun tries a release again while the daemon is too busy starting the l
   };
   assert.deepEqual((await watchRun(GRAPH, depsOf(slow, clock(AT)))).end, { outcome: 'done' });
   assert.deepEqual(tries.slice(0, 3), ['local:2', 'local:2', 'local:2']);
+});
+
+test('watchRun calls onProgress after each read whose progress changed, never twice for the same one (#473)', async () => {
+  const idle = four(['Spec', 'Spec', 'Spec', 'Spec']);
+  const c = client([idle, idle, four(['Done', 'Spec', 'Spec', 'Build']), four(['Done', 'Done', 'Done', 'Done'])]);
+  const seen: Progress[] = [];
+  await watchRun(GRAPH, { ...depsOf(c, clock(AT)), onProgress: (progress) => { seen.push(progress); } });
+  assert.deepEqual(seen.map((p) => p.delivered), [0, 1, 4]);
+});
+
+test('watchRun keeps slept time off the timeout: with 3 s asleep, a 5 s timeout reads for 8 s (#473)', async () => {
+  const stuck = (): WatchClient => client([four(['Build', 'Spec', 'Spec', 'Build'])]);
+  const awake = clock(AT);
+  await watchRun(GRAPH, depsOf(stuck(), awake, 5000));
+  const asleep = clock(AT);
+  const result = await watchRun(GRAPH, { ...depsOf(stuck(), asleep, 5000), sleptMs: () => 3000 });
+  assert.deepEqual([awake.slept.length, asleep.slept.length, result.end], [5, 8, { outcome: 'timeout' }]);
+});
+
+test('watchRun ends aborted once its signal aborts, and reads nothing after (#473)', async () => {
+  const controller = new AbortController();
+  let reads = 0;
+  const c: WatchClient = {
+    state: async () => { reads += 1; if (reads === 2) controller.abort(); return four(['Spec', 'Spec', 'Spec', 'Spec']); },
+    setAuto: async () => undefined, setGreen: async () => undefined,
+  };
+  const result = await watchRun(GRAPH, { ...depsOf(c, clock(AT)), signal: controller.signal });
+  assert.deepEqual([result.end, reads], [{ outcome: 'aborted' }, 2]);
 });

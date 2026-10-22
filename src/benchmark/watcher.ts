@@ -19,10 +19,15 @@ export interface WatchState {
 /** The execution bar (#473): a segment per task, green done, yellow waiting on the user, grey open. */
 export interface TaskProgress { key: string; state: 'done' | 'waiting' | 'open' }
 export interface Progress { delivered: number; total: number; waiting: boolean; tasks: TaskProgress[] }
-export type WatchEnd = { outcome: 'done' } | { outcome: 'timeout' } | { outcome: 'error'; reason: string };
+export type WatchEnd = { outcome: 'done' } | { outcome: 'timeout' } | { outcome: 'aborted' } | { outcome: 'error'; reason: string };
 export interface Step { watch: WatchState; release: string[]; progress: Progress; end?: WatchEnd }
 export interface WatchClient { state(): Promise<Snapshot>; setAuto(itemId: string): Promise<void>; setGreen(): Promise<void> }
-export interface WatchDeps { client: WatchClient; now(): Date; sleep(ms: number): Promise<void>; log(line: string): void; timeoutMs: number; pollMs?: number }
+export interface WatchDeps {
+  client: WatchClient; now(): Date; sleep(ms: number): Promise<void>; log(line: string): void; timeoutMs: number; pollMs?: number;
+  onProgress?(progress: Progress): void; // 3.2 turns it into benchmarkRunChanged
+  sleptMs?(): number; // the run's time asleep so far (3.2): the user's time, not the run's
+  signal?: AbortSignal; // 3.2's stop
+}
 export interface WatchResult { end: WatchEnd; watch: WatchState }
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -118,7 +123,6 @@ async function releaseAll(itemIds: readonly string[], deps: WatchDeps): Promise<
   return undefined;
 }
 
-/** Polls one run's daemon until every task is in Done, the timeout passes, or a task fails. Never writes state.json. */
 // A busy daemon (just booted beside its pair's, or starting the task a release just freed) can miss a request's timeout: both requests
 // are idempotent, so each is tried as often as a read may miss, a poll apart. Returns the last refusal, or undefined once one went through.
 async function retried(call: () => Promise<void>, deps: WatchDeps): Promise<string | undefined> {
@@ -135,23 +139,33 @@ async function retried(call: () => Promise<void>, deps: WatchDeps): Promise<stri
 
 const turnGreen = (deps: WatchDeps): Promise<string | undefined> => retried(() => deps.client.setGreen(), deps);
 
+const sameProgress = (a: Progress | undefined, b: Progress): boolean => a !== undefined && JSON.stringify(a) === JSON.stringify(b);
+
+/** Polls one run's daemon until every task is in Done, the timeout passes (slept time off the clock), a task fails or the signal aborts.
+ *  Never writes state.json. An abort is seen between reads: a release being retried finishes its tries first. */
 export async function watchRun(tasks: WatchTask[], deps: WatchDeps): Promise<WatchResult> {
-  const deadline = deps.now().getTime() + deps.timeoutMs;
+  const startedAt = deps.now().getTime();
+  const awakeMs = (): number => deps.now().getTime() - startedAt - (deps.sleptMs?.() ?? 0);
   let watch = startWatch(tasks);
   // A booted daemon opens yellow (runs.ts boot), and yellow starts no task: without green the released tasks would wait out the timeout
   const refused = await turnGreen(deps);
   if (refused !== undefined) return { end: { outcome: 'error', reason: `could not turn the daemon green: ${refused}` }, watch };
   let misses = 0;
-  while (deps.now().getTime() < deadline) {
+  let reported: Progress | undefined;
+  while (awakeMs() < deps.timeoutMs && !deps.signal?.aborted) {
     const step = await readStep(watch, deps);
     misses = step ? 0 : misses + 1;
     if (misses >= UNREACHABLE_MAX) return { end: { outcome: 'error', reason: 'the daemon stopped answering' }, watch };
     if (step) {
       watch = step.watch;
+      if (!sameProgress(reported, step.progress)) {
+        reported = step.progress;
+        deps.onProgress?.(step.progress);
+      }
       const end = step.end ?? (await releaseAll(step.release, deps));
       if (end) return { end, watch };
     }
     await deps.sleep(deps.pollMs ?? POLL_MS);
   }
-  return { end: { outcome: 'timeout' }, watch };
+  return { end: deps.signal?.aborted ? { outcome: 'aborted' } : { outcome: 'timeout' }, watch };
 }
