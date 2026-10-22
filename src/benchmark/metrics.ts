@@ -1,8 +1,11 @@
 // A benchmark run's metrics (#473, from #105's harness): per task its tokens, time, waiting, stage spans and restarts; per run the sums, the
-// clock less its sleep, the restarts with where, the diff, the tests the tasks reported, and the cost. Pure: the reads are the caller's.
+// clock less its sleep, the restarts with where, the diff, the tests the tasks reported, and the cost. Pure, except readInterventions.
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { resultOf, usageOf } from '../activities.js';
 import type { Tokens } from '../facts.js';
-import type { BenchMetrics, BenchTaskMetrics, State, TaskUsage } from '../types.js';
+import { isJsonObject } from '../state-guards.js';
+import type { BenchMetrics, BenchTaskMetrics, Intervention, State, TaskUsage } from '../types.js';
 import { costOf } from './prices.js';
 import { DONE_STAGE, type StageEntry, type WatchState, type WatchTask } from './watcher.js';
 
@@ -67,4 +70,38 @@ export function runMetrics(f: RunFacts): { metrics: BenchMetrics; unpriced: stri
     diff: f.diff, tests: testsOf(f.watch, f.state), tasks,
   };
   return { metrics, unpriced };
+}
+
+export const INTERVENTIONS_FILE = 'interventions.json'; // 3.5's run mode writes it in the run's home
+
+const isText = (value: unknown): value is string => typeof value === 'string';
+const isIntervention = (value: unknown): value is Intervention =>
+  isJsonObject(value) && isText(value.at) && isText(value.action) && isText(value.detail) && value.by === 'user';
+
+async function interventionsText(home: string, log: (line: string) => void): Promise<string | undefined> {
+  try {
+    return await readFile(join(home, INTERVENTIONS_FILE), 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') log(`${home}: ${INTERVENTIONS_FILE} unreadable (${code ?? 'unknown'}), read as none`);
+    return undefined;
+  }
+}
+
+/** A run's interventions (#473), for 3.2's BenchRun.interventions. The file may be read mid-write, which must not fail a run: what does not
+ *  parse, or is not { at, action, detail, by: 'user' }, is dropped with one line naming the home, never the content (the user's own words). */
+export async function readInterventions(home: string, log: (line: string) => void): Promise<Intervention[]> {
+  const text = await interventionsText(home, log);
+  if (text === undefined) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    log(`${home}: ${INTERVENTIONS_FILE} does not parse, read as none`);
+    return [];
+  }
+  const entries: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+  const kept = entries.filter(isIntervention);
+  if (kept.length < entries.length) log(`${home}: ${entries.length - kept.length} entries of ${INTERVENTIONS_FILE} dropped`);
+  return kept;
 }

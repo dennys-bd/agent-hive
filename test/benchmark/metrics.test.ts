@@ -1,9 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseShortstat, runMetrics, stageSpans } from '../../src/benchmark/metrics.js';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { parseShortstat, readInterventions, runMetrics, stageSpans } from '../../src/benchmark/metrics.js';
 import { costOf } from '../../src/benchmark/prices.js';
 import type { WatchState, WatchTask } from '../../src/benchmark/watcher.js';
-import type { ActivityRecord, TaskUsage } from '../../src/types.js';
+import type { ActivityRecord, Intervention, TaskUsage } from '../../src/types.js';
+import { tempDir } from '../temp-dir.js';
 import { snap, task, watchTask } from './fixtures.js';
 
 const T0 = '2026-10-21T22:00:00.000Z';
@@ -61,4 +64,34 @@ test('runMetrics counts restarts in every stage, one where entry per stage and t
   assert.deepEqual(metrics.restarts, { count: 4, where: ['spec · T1', 'build · T1', 'build · T2'] });
   assert.deepEqual(metrics.tasks.map((t) => t.restarts), [2, 2]);
   assert.deepEqual([metrics.tests, metrics.ms, metrics.costUsd], [{ green: 0, total: 1 }, 0, 0]);
+});
+
+const DONE: Intervention = { at: '2026-10-21T00:42:00.000Z', action: 'approve', detail: 'git push --force · denied by the arm rule', by: 'user' };
+const recorder = (): { log: (line: string) => void; lines: string[] } => {
+  const lines: string[] = [];
+  return { lines, log: (line) => { lines.push(line); } };
+};
+
+test('readInterventions reads interventions.json, a missing file as none, and a half-written one as none with one line naming the home (#473)', async (t) => {
+  const home = await tempDir(t, 'bench-');
+  const { log, lines } = recorder();
+  assert.deepEqual(await readInterventions(home, log), []);
+  assert.equal(lines.length, 0, 'a run without interventions logs nothing'); // not deepEqual: it would narrow lines to never
+  await writeFile(join(home, 'interventions.json'), JSON.stringify([DONE]));
+  assert.deepEqual(await readInterventions(home, log), [DONE]);
+  await writeFile(join(home, 'interventions.json'), JSON.stringify([DONE]).slice(0, 30));
+  assert.deepEqual(await readInterventions(home, log), []);
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].includes(home));
+});
+
+test('readInterventions drops what is not an intervention, with one line that never quotes it (#473)', async (t) => {
+  const home = await tempDir(t, 'bench-');
+  const { log, lines } = recorder();
+  await writeFile(join(home, 'interventions.json'), JSON.stringify([DONE, { ...DONE, by: 'worker' }, { ...DONE, detail: 1 }, 'x', null]));
+  assert.deepEqual(await readInterventions(home, log), [DONE]);
+  await writeFile(join(home, 'interventions.json'), JSON.stringify({ at: DONE.at }));
+  assert.deepEqual(await readInterventions(home, log), []);
+  assert.equal(lines.length, 2);
+  for (const line of lines) assert.ok(line.includes(home) && !line.includes('denied') && !line.includes(DONE.at), line);
 });
