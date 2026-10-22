@@ -115,6 +115,23 @@ test('parseConfig reads stages[].handoff as a boolean kept only when true, and r
   assert.throws(bad({ prompt: '/x', handoff: 'yes' }), { message: 'hive.config.json: "comb.stages[0].handoff" must be true or false' });
 });
 
+test('parseConfig reads stages[].clearSession as a boolean kept only when true, on a prompt or a skill stage, a continued session included; refused next to a Hive action and on a stage that runs no agent (#494)', () => {
+  const stage = (extra: Record<string, unknown>) => ({ name: 'spec', from: { board: ['Ready'] }, ...extra });
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  assert.equal(parsed({ prompt: '/x', clearSession: true }).clearSession, true);
+  assert.equal(parsed({ action: 'skill', skill: 'new-spec', clearSession: true }).clearSession, true);
+  assert.equal(parsed({ prompt: '/x', session: 'continue', clearSession: true }).clearSession, true, 'it resumes the previous session and clears it when done');
+  assert.equal('clearSession' in parsed({ prompt: '/x', clearSession: false }), false, 'false is no key: the file stays clean');
+  assert.equal('clearSession' in parsed({ prompt: '/x' }), false);
+  const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
+  for (const action of ['deleteActivity', 'commands', 'waitForCi', 'evaluate']) {
+    assert.throws(bad({ action, clearSession: true }), { message: 'hive.config.json: "comb.stages[0].clearSession" cannot be combined with "action"' }, action);
+  }
+  assert.throws(bad({ clearSession: true }), { message: 'hive.config.json: "comb.stages[0].clearSession" cannot be used without "prompt"' });
+  assert.throws(bad({ approval: true, clearSession: true }), { message: 'hive.config.json: "comb.stages[0].clearSession" cannot be used without "prompt"' }, 'a gate never spawns');
+  assert.throws(bad({ prompt: '/x', clearSession: 'yes' }), { message: 'hive.config.json: "comb.stages[0].clearSession" must be true or false' });
+});
+
 test('parseConfig reads no terminal key: a file that still holds one parses as if it had none, and the config carries none (#378)', () => {
   const leftover = parseConfig({ ...GITHUB, terminal: 'internal' });
   assert.equal('terminal' in leftover, false);

@@ -374,6 +374,7 @@ export interface Stage {
   after?: string; // delay from the task's entry into the stage before its prompt or action may run: "30m", "12h", "5d"; absent = right away
   approval?: true; // a stage end here waits for the user's approve or feedback (#268); prompt stages only: the parser refuses it next to action
   handoff?: true; // #692: the previous stage's session writes a handoff before the task enters here; the parser refuses it next to action or session continue
+  clearSession?: true; // #494: agent stages only (prompt or skill): the stage run's session leaves the task's list when a transition takes the task out
   maxWorkers?: number; // #475: the stage's own worker cap; 0 pauses its automation; absent = none. Starts by hand pass it, as they pass the global cap
 }
 
