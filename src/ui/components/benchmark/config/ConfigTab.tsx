@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { isLocked } from '../../../../benchmark/arms.js';
 import type { Experiment } from '../../../../types.js';
 import type { SectionId } from '@/components/benchmark/config/config-lib';
+import { IsolationSection } from '@/components/benchmark/config/IsolationSection';
 import { PaceSection } from '@/components/benchmark/config/PaceSection';
 import { SeedSection } from '@/components/benchmark/config/SeedSection';
 import { Note, type SectionEdit } from '@/components/benchmark/config/Section';
@@ -51,6 +52,7 @@ export function ConfigTab({ experiment, context }: ConfigTabProps) {
       {isLockedNow && <Note>{t('benchmark.config.locked')}</Note>}
       <SeedSection experiment={experiment} edit={editOf('seed')} />
       <PaceSection experiment={experiment} edit={editOf('pace')} rateLimits={context.rateLimits} />
+      <IsolationSection experiment={experiment} edit={editOf('isolation')} />
       <Confirm
         open={edits.asked !== undefined} onOpenChange={(open) => { if (!open) edits.dismiss(); }}
         title={t('benchmark.config.discardTitle')} message={t('benchmark.config.discardText')} confirmLabel={t('benchmark.config.discard')} onConfirm={edits.confirm}
