@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
 import { initialState, reduce } from '../src/orchestrator.js';
-import { advance, dismissError, type EndOf, follow, retry, take, unrouted } from '../src/transit.js';
+import { advance, dismissError, type EndOf, follow, retry, take, unrouted, verdictProblem } from '../src/transit.js';
 import { transitionKey } from '../src/transitions.js';
 import { END, FEEDBACK_MAX } from '../src/types.js';
 import type { Activity, Item, Session, Stage, State, Task, TaskUsage, Transition, TryRecord } from '../src/types.js';
@@ -231,4 +231,20 @@ test('the session stays on a feedback loop to the stage, a halt, a stage without
   assert.deepEqual(kept(pure(clearing(undefined, { stages: [keeping, PLAN] }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), both, 'no option');
   assert.deepEqual(kept(pure(clearing({ sessionId: RUN, workerId: 'w1' }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), both, 'a free session ended the stage while its stage run still runs');
   assert.deepEqual(kept(pure(clearing({ sessionId: FREE }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), [[RUN, FREE], FREE], 'the activity names a session that never ran spec');
+
+test('a missing verdict is refused, naming the stage\'s, when the stage has no done exit or the result holds a verdict key; accepted otherwise (#493)', () => {
+  const judge: Stage = { name: 'route', from: {}, prompt: '/route', verdicts: ['leaf', 'split'] };
+  const named = 'verdict is missing: pass one of this stage\'s: leaf, split';
+  const misplaced = `${named}, in its own verdict field, not inside result`;
+  assert.equal(verdictProblem(undefined, undefined, judge, { hasDone: false }), named);
+  assert.equal(verdictProblem(undefined, undefined, judge, { hasDone: true }), undefined, 'a done exit takes the task, as before');
+  assert.equal(verdictProblem(undefined, undefined, judge, { hasDone: false, result: { verdict: 'leaf' } }), misplaced);
+  assert.equal(verdictProblem(undefined, undefined, judge, { hasDone: true, result: { verdict: 'leaf' } }), misplaced, 'even with a done exit');
+  assert.equal(verdictProblem(undefined, undefined, judge, { hasDone: true, result: { spec: 'a.md' } }), undefined);
+  assert.equal(verdictProblem('leaf', undefined, judge, { hasDone: false, result: { verdict: 'x' } }), undefined, 'a verdict given is checked as before');
+  const plain: Stage = { name: 'build', from: {}, prompt: '/build' };
+  assert.equal(verdictProblem(undefined, undefined, plain, { hasDone: false, result: { verdict: 'x' } }), undefined, 'a stage with no verdicts is untouched');
+  assert.equal(verdictProblem(undefined, 'why', judge, { hasDone: true }), 'evidence needs a verdict');
+  const ci: Stage = { name: 'CI', from: {}, action: 'waitForCi' };
+  assert.equal(verdictProblem(undefined, undefined, ci, { hasDone: false }), undefined, 'the Hive\'s own verdicts are never asked of the agent');
 });

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { taskOfWorker } from './activities.js';
 import { liveRecord } from './record-kit.js';
 import { freeEndRefused } from './runs.js';
+import { exitOf } from './transitions.js';
 import { isBlocked, stageOf, taskId } from './tasks.js';
 import { refsOf } from './server-blockers.js';
 import { verdictProblem, withVerdict } from './transit.js';
@@ -110,9 +111,10 @@ function registerStageTools(server: McpServer, deps: McpDeps, header: string | u
     if (!ptyId) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
     const problem = resultProblem(withVerdict(result, verdict, evidence), taskResult(deps, ptyId)); // #134: as the record will hold it
     if (problem) return refuse('bad_result', problem);
-    const wrong = verdictProblem(verdict, evidence, workerStage(deps, ptyId));
-    if (wrong) return refuse('bad_verdict', wrong);
     const held = workerTask(deps, ptyId);
+    const hasDone = held !== undefined && exitOf(held.state, held.task.stage, 'done') !== undefined;
+    const wrong = verdictProblem(verdict, evidence, workerStage(deps, ptyId), { hasDone, ...(result ? { result } : {}) });
+    if (wrong) return refuse('bad_verdict', wrong);
     const exit = held && freeEndRefused(held.state, held.worker, held.task, verdict); // #339: the reducer re-checks, so a change in between never halts the task
     await deps.dispatch({ type: 'done', ptyId, ...(result ? { result } : {}), ...(verdict === undefined ? {} : { verdict }), ...(evidence === undefined ? {} : { evidence }) });
     return held && exit ? refuse('no_transition', noTransitionMessage(held.task.stage, exit, result !== undefined)) : reply(OK);
