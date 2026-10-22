@@ -1,4 +1,4 @@
-import type { MergeMethod, PrCheck, PrClosingIssue, PrMergeState, PrReviewDecision, PrRow, ProjectPr } from '../types.js';
+import type { MergeMethod, PrCheck, PrThread, PrClosingIssue, PrMergeState, PrReviewDecision, PrRow, ProjectPr } from '../types.js';
 
 // The read model's rows (#178): one per entity, keyed by the data's source and GitHub's node id, so the REST sync and a GraphQL write meet
 // on the same row. Not in src/types.ts: they are the module's own.
@@ -104,3 +104,9 @@ const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 /** Names in the order every view lists them (#282): by name, case-insensitive as SQLite's COLLATE NOCASE, a case-only tie by code unit, so the
  * REST and the GraphQL reader store the same list and neither rewrites the row the other just wrote. */
 export const sortedNames = (names: readonly string[]): string[] => [...names].sort((a, b) => order(a.toLowerCase(), b.toLowerCase()) || order(a, b));
+
+/** A PR's changes as read at `head` (#497): the raw diff and what the threads, the compare and the timeline told. One row per open PR. */
+export interface PullChangesRow {
+  head: string; diff: string; threads: PrThread[]; truncated: boolean; behindBy?: number;
+  requestTimes: { reviewer: string; team: boolean; at: string }[]; // the timeline's review_requested times, as requestTimesOf reads them
+}

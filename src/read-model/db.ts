@@ -2,11 +2,12 @@ import { chmodSync, closeSync, existsSync, openSync, rmSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
 import type { MergeMethod, PrClosingIssue, PrRow, PrState, ProjectPr, RepoPrs } from '../types.js';
+import { prChangesOf } from './pr-changes.js';
 import { prDetailsOf } from './pr-details.js';
 import { itemTablesOf } from './item-tables.js';
 import { optionTablesOf } from './option-tables.js';
 import { pullTablesOf } from './pull-tables.js';
-import type { CheckRow, CommentRow, FieldValueRow, IssueDetails, IssueRow, IssueView, ItemRow, OpenPull, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, ProjectFieldRow, RelationKind, RelationRow, RepoRow, ReviewRow, StoredItemRows, UpsertOrigin } from './rows.js';
+import type { CheckRow, CommentRow, FieldValueRow, IssueDetails, IssueRow, IssueView, ItemRow, OpenPull, PullChangesRow, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, ProjectFieldRow, RelationKind, RelationRow, RepoRow, ReviewRow, StoredItemRows, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
 import { inTransaction, issueOf, nullable, prOf, type Row, stamp, text, upsertSql, written } from './sql.js';
 
@@ -31,8 +32,8 @@ const COUNTS = `SELECT COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'open')
 const UPSERT_SCOPE = `INSERT INTO sync_scopes (source, repository, kind, cursor, etag, synced_at) VALUES ($source, $repository, $kind, $cursor, $etag, $syncedAt)
   ON CONFLICT (source, repository, kind) DO UPDATE SET cursor = excluded.cursor, etag = excluded.etag, synced_at = excluded.synced_at`;
 
-/** The `repo`, `labels`, `assignees`, `milestones` and `issueTypes` kinds keep only an ETag: each is replaced whole on a 200 (#181, #282). `pulls`: a PR's own fields changed (#186). */
-export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels' | 'assignees' | 'milestones' | 'issueTypes' | 'pulls';
+/** The `repo`, `labels`, `assignees`, `milestones` and `issueTypes` kinds keep only an ETag: each is replaced whole on a 200 (#181, #282). `pulls`: a PR's own fields changed (#186). `pullChanges`: a PR's stored changes, revalidated (#497). */
+export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels' | 'assignees' | 'milestones' | 'issueTypes' | 'pulls' | 'pullChanges';
 /** A part of a PR's poll (#186, #187): pulls/{n}, its head's check runs, combined status and check suites, and its reviews. */
 export type PullPart = 'pr' | 'runs' | 'status' | 'suites' | 'reviews';
 /** A row of sync_scopes (#180): the two incremental scopes, the full listing's, whose synced_at spaces it, and an open PR's poll parts (#186),
@@ -87,6 +88,9 @@ export interface ReadModel {
   upsertReview(row: ReviewRow, origin: UpsertOrigin): boolean;
   pullAt(source: string, repository: string, number: number): OpenPull | undefined; // a PR's, open or not
   prPage(source: string, repository: string, number: number): PrPage | undefined; // never an issue
+  // #497: the diff and threads read at a head; only an open PR's, whether it wrote
+  prChanges(source: string, repository: string, number: number): PullChangesRow | undefined;
+  setPrChanges(source: string, repository: string, number: number, row: PullChangesRow): boolean;
   upsertItem(row: ItemRow, origin: UpsertOrigin): boolean; // #190: a Project item's own columns; whether it wrote
   setItemValues(source: string, itemNodeId: string, values: FieldValueRow[]): void; // #282: replaces the item's set values
   setIssueRelations(source: string, issueNodeId: string, kinds: RelationKind[], rows: RelationRow[]): void; // replaces those kinds' rows
@@ -275,6 +279,7 @@ function modelOf(db: DatabaseSync, now: () => number): ReadModel {
   const repos = repoTablesOf(db);
   return {
     ...upsertsOf(db, now), ...removalsOf(db), ...reads, ...repos, ...countsOf(db), ...pullTablesOf(db), ...itemTablesOf(db, now), ...optionTablesOf(db),
+    ...prChangesOf(db, now),
     ...prDetailsOf(db, now, { comments: reads.comments, repo: repos.repo }),
     transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close(),
   };
