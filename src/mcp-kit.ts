@@ -31,7 +31,7 @@ export type Answer = CallToolResult & { [REFUSAL]?: RefusalCode };
 export const reply = (text: string): Answer => ({ content: [{ type: 'text', text }] });
 export const refuse = (code: RefusalCode, text: string): Answer => ({ content: [{ type: 'text', text }], isError: true, [REFUSAL]: code });
 // The header's worker, only while it holds a worker: a stale session or a forged call gets the tool error and touches nothing.
-export function livePtyId(deps: McpDeps, ptyId: string | undefined): string | undefined {
+export function livePtyId(deps: Pick<McpDeps, 'live'>, ptyId: string | undefined): string | undefined {
   const workers = deps.live()?.state.workers ?? [];
   return ptyId !== undefined && workers.some((s) => s.runId === ptyId && s.status !== 'empty') ? ptyId : undefined;
 }
@@ -51,7 +51,7 @@ interface CallFacts { keys?: string[]; kind?: MemoryKind }
 
 // Times one tool call and writes its mcp.call (#742): ok, refused with the refusal's code, or error when the handler threw (written, then
 // rethrown, so the agent's answer is the SDK's as before); an accepted hive_done names its result's keys only
-export async function recorded(deps: McpDeps, header: string | undefined, tool: string, call: () => Promise<Answer>, facts: CallFacts = {}): Promise<CallToolResult> {
+export async function recorded(deps: Pick<McpDeps, 'live' | 'facts'>, header: string | undefined, tool: string, call: () => Promise<Answer>, facts: CallFacts = {}): Promise<CallToolResult> {
   const began = Date.now();
   const state = deps.live()?.state;
   const worker = state?.workers.find((s) => s.runId === header && s.status !== 'empty');
