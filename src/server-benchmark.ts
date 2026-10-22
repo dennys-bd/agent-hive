@@ -4,11 +4,11 @@
 import { randomInt } from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import type { z } from 'zod';
-import { isLocked } from './benchmark/arms.js';
+import { type ArmRefusal, armFrom, checkArm, checkRemove, checkTargets, isArmRefusal, isLocked } from './benchmark/arms.js';
 import { seedHash, tasksHash, treeHash } from './benchmark/hash.js';
 import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, forkName, forkOf, newId } from './benchmark/new-experiment.js';
 import { pluginTrees } from './benchmark/pin.js';
-import { CREATE, PATCH, type PatchBody, UPLOAD } from './benchmark/schemas.js';
+import { ARM_PATCH, COPY, CREATE, NEW_ARM, PATCH, type PatchBody, UPLOAD } from './benchmark/schemas.js';
 import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, SeedFileMissing, seedCommit, seedEntries, syncSeed, UPLOAD_NAME, UPLOAD_NAME_MESSAGE, UPLOAD_PREFIX, writeUpload } from './benchmark/store.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
@@ -231,8 +231,60 @@ function registerExperimentRoutes(app: Express, deps: BenchmarkRouteDeps, queue:
   }));
 }
 
+const ARM = `${E}/:id/arms/:armId`;
+const armIdOf = (req: Request): string => String(req.params.armId);
+const refuse = (ctx: Ctx, refused: ArmRefusal): void => fail(ctx.res, refused.status, refused.error, refused.message);
+
+async function addArm(req: Request, ctx: Ctx): Promise<void> {
+  const experiment = unlocked(ctx, idOf(req));
+  const body = experiment && parsed(NEW_ARM, req, ctx.res);
+  if (experiment === undefined || body === undefined) return;
+  const arm = armFrom(experiment, body.from, newId(experiment.arms.map((a) => a.id), draw));
+  if (isArmRefusal(arm)) return refuse(ctx, arm);
+  await ctx.deps.dispatch({ type: 'benchmarkArmAdded', id: experiment.id, arm });
+  ctx.res.status(HTTP_CREATED).json(arm);
+}
+
+async function editArm(req: Request, ctx: Ctx): Promise<void> {
+  const experiment = unlocked(ctx, idOf(req));
+  const body = experiment && parsed(ARM_PATCH, req, ctx.res);
+  if (experiment === undefined || body === undefined) return;
+  const arm = checkArm(experiment, armIdOf(req));
+  if (isArmRefusal(arm)) return refuse(ctx, arm);
+  await ctx.deps.dispatch({ type: 'benchmarkArmEdited', id: experiment.id, armId: arm.id, patch: body });
+  ctx.res.status(HTTP_NO_CONTENT).end();
+}
+
+async function removeArm(req: Request, ctx: Ctx): Promise<void> {
+  const experiment = unlocked(ctx, idOf(req));
+  if (experiment === undefined) return;
+  const refused = checkRemove(experiment, armIdOf(req));
+  if (refused !== undefined) return refuse(ctx, refused);
+  await ctx.deps.dispatch({ type: 'benchmarkArmRemoved', id: experiment.id, armId: armIdOf(req) });
+  ctx.res.status(HTTP_NO_CONTENT).end();
+}
+
+async function copyArm(req: Request, ctx: Ctx): Promise<void> {
+  const experiment = unlocked(ctx, idOf(req));
+  const body = experiment && parsed(COPY, req, ctx.res);
+  if (experiment === undefined || body === undefined) return;
+  const source = checkArm(experiment, armIdOf(req));
+  const refused = isArmRefusal(source) ? source : checkTargets(experiment, body.to);
+  if (refused !== undefined) return refuse(ctx, refused);
+  await ctx.deps.dispatch({ type: 'benchmarkArmsCopied', id: experiment.id, from: armIdOf(req), what: body.what, to: body.to });
+  ctx.res.status(HTTP_NO_CONTENT).end();
+}
+
+function registerArmRoutes(app: Express, deps: BenchmarkRouteDeps, queue: Queue): void {
+  app.post(`${E}/:id/arms`, route(deps, queue, 'add arm', addArm));
+  app.patch(ARM, route(deps, queue, 'edit arm', editArm));
+  app.delete(ARM, route(deps, queue, 'remove arm', removeArm));
+  app.post(`${ARM}/copy`, route(deps, queue, 'copy arm', copyArm));
+}
+
 /** api.benchmark.experiments (#459), behind the server's host, secret and x-hive-ui gates; the later benchmark route files mount here. */
 export function registerBenchmarkRoutes(app: Express, deps: BenchmarkRouteDeps): void {
   const queue = serial();
   registerExperimentRoutes(app, deps, queue);
+  registerArmRoutes(app, deps, queue);
 }

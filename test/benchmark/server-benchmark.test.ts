@@ -137,7 +137,7 @@ test('an upload lands at seed/upload/<name>; a bad name is 400; a listed name on
   assert.deepEqual(errorOf(await call(bench, 'PATCH', `${E}/exp-1`, { seed: seedOf(e, { reference: ['docs/gone.md'] }) })), [404, 'unknown_path']);
   assert.equal(bench.state(), before);
 });
-test('every mutating route except name and archive answers 409 on a running or sleeping experiment (#459)', { todo: 'arm routes: Task 9' }, async (t) => {
+test('every mutating route except name and archive answers 409 on a running or sleeping experiment (#459)', async (t) => {
   const running = benchExperiment({ status: 'running', rounds: [{ n: 1, runs: [run('aaaa1')] }] });
   const bench = await serve(t, { experiments: [running, benchExperiment({ id: 'exp-2', status: 'sleeping' })] });
   const refused: [string, string, unknown][] = [
@@ -151,4 +151,44 @@ test('every mutating route except name and archive answers 409 on a running or s
   assert.equal((await call(bench, 'PATCH', `${E}/exp-1`, { name: 'Renamed' }))[0], 200);
   assert.equal((await call(bench, 'PATCH', `${E}/exp-1`, { archived: true }))[0], 200);
   assert.deepEqual([bench.state().benchmark.experiments[0].name, bench.state().benchmark.experiments[0].archived], ['Renamed', true]);
+});
+
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+test('each arm route changes the state as named: add from base or from an arm, rename, override, reset, copy, remove (#459)', async (t) => {
+  const tasks = [{ key: 'T1', title: 'One', body: '', blockedBy: [] }];
+  const bench = await serve(t, { experiments: [benchExperiment({ arms: [arm('a1', 'A', { plugins: ['p'], tasks }), arm('a2', 'B')] })] });
+  const arms = () => bench.state().benchmark.experiments[0].arms;
+  const [created, fromBase] = await call(bench, 'POST', `${E}/exp-1/arms`, { from: 'base' });
+  assert.deepEqual([created, fromBase], [201, { ...(fromBase as object), letter: 'C', name: 'Arm C', overrides: {} }]);
+  const fromArm = (await call(bench, 'POST', `${E}/exp-1/arms`, { from: 'a1' }))[1] as { id: string; overrides: object };
+  assert.deepEqual(fromArm.overrides, { plugins: ['p'], tasks });
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a2`, { name: 'skills off', overrides: { plugins: ['q'] } }))[0], 204);
+  assert.deepEqual(arms()[1], { id: 'a2', letter: 'B', name: 'skills off', overrides: { plugins: ['q'] } });
+  assert.equal((await call(bench, 'POST', `${E}/exp-1/arms/a1/copy`, { what: 'tasks', to: ['a2'] }))[0], 204);
+  assert.deepEqual(arms()[1].overrides, { plugins: ['q'], tasks });
+  for (const a of arms()) await call(bench, 'PATCH', `${E}/exp-1/arms/${a.id}`, { overrides: {} }); // reset all to base
+  assert.ok(arms().every((a) => Object.keys(a.overrides).length === 0));
+  assert.equal((await call(bench, 'DELETE', `${E}/exp-1/arms/${fromArm.id}`))[0], 204);
+  assert.deepEqual(arms().map((a) => a.letter), ['A', 'B', 'C']);
+});
+
+test('each arm route answers 404 for an unknown experiment or arm (#459)', async (t) => {
+  const bench = await serve(t, { experiments: [benchExperiment()] });
+  const cases: [string, string, unknown][] = [
+    ['POST', `${E}/nope/arms`, { from: 'base' }], ['POST', `${E}/exp-1/arms`, { from: 'nope' }],
+    ['PATCH', `${E}/nope/arms/a1`, { name: 'x' }], ['PATCH', `${E}/exp-1/arms/nope`, { name: 'x' }],
+    ['DELETE', `${E}/nope/arms/a1`, undefined], ['DELETE', `${E}/exp-1/arms/nope`, undefined],
+    ['POST', `${E}/nope/arms/a1/copy`, { what: 'tasks', to: ['a2'] }], ['POST', `${E}/exp-1/arms/nope/copy`, { what: 'tasks', to: ['a2'] }],
+    ['POST', `${E}/exp-1/arms/a1/copy`, { what: 'tasks', to: ['nope'] }],
+  ];
+  for (const [method, path, body] of cases) assert.equal((await call(bench, method, path, body))[0], 404, `${method} ${path} ${JSON.stringify(body)}`);
+});
+
+test('removing the last arm and a 27th arm answer 409 and change nothing (#459)', async (t) => {
+  const bench = await serve(t, { experiments: [benchExperiment({ arms: [arm('a1', 'A')] }), benchExperiment({ id: 'exp-2', arms: LETTERS.map((l, i) => arm(`a${i}`, l)) })] });
+  const before = bench.state();
+  assert.deepEqual(errorOf(await call(bench, 'DELETE', `${E}/exp-1/arms/a1`)), [409, 'last_arm']);
+  assert.deepEqual(errorOf(await call(bench, 'POST', `${E}/exp-2/arms`, { from: 'base' })), [409, 'no_letter']);
+  assert.equal(bench.state(), before);
 });
