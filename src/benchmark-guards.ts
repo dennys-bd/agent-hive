@@ -2,8 +2,10 @@
 // every enum is checked field by field; the deep config objects only by shape, since none reaches either before 1.2's routes validate them
 // on write. Then the boot rule. state.json is the user's file: a hand edit must not name a folder or a branch outside the experiment's own.
 import { join } from 'node:path';
+import { isVersionName } from './custom-versions.js';
+import { parseItemId } from './item-sources.js';
 import { COMMIT, isJsonObject } from './state-guards.js';
-import { BENCH_RUN_STATUSES, BENCH_TOKEN, EXPERIMENT_ID, EXPERIMENT_STATUSES, isBranchName, type Arm, type BenchmarkState, type BenchRound, type BenchRun, type BenchRunStatus, type Experiment, type ExperimentStatus } from './types.js';
+import { BENCH_RUN_STATUSES, BENCH_TOKEN, EXPERIMENT_ID, EXPERIMENT_STATUSES, isBranchName, type Arm, type BenchmarkState, type BenchRound, type BenchRun, type BenchRunStatus, type BenchStageRole, type Experiment, type ExperimentStatus } from './types.js';
 
 const STRINGS = ['name', 'createdAt', 'workspace', 'seedHash', 'tasksHash'] as const;
 const OBJECTS = ['base', 'seed', 'pace', 'isolation', 'blindness', 'evaluation', 'createdBy', 'plugin'] as const;
@@ -15,7 +17,8 @@ const isNumber = (value: unknown): value is number => typeof value === 'number' 
 
 // A run's home is booted as a Hive home and removed with the experiment (3.1, 3.5): only the folder 3.1 makes for this id and token under
 // this Hive's home, compared whole so no root, `..` or separator of any platform slips through
-export const runHome = (hiveDir: string, id: string, token: string): string => join(hiveDir, 'benchmark', id, 'runs', token);
+export const experimentDir = (hiveDir: string, id: string): string => join(hiveDir, 'benchmark', id);
+export const runHome = (hiveDir: string, id: string, token: string): string => join(experimentDir(hiveDir, id), 'runs', token);
 // The run branch is `<neutral>/<token>` (3.1): a hand edit naming `main` or any other branch is not this run's
 const isRunBranch = (branch: unknown, token: string): boolean => isText(branch) && isBranchName(branch) && branch.endsWith(`/${token}`);
 
@@ -40,13 +43,24 @@ const uniqueTokens = (rounds: BenchRound[]): BenchRound[] => {
   return rounds.map((round) => ({ ...round, runs: round.runs.filter((run) => all.find((other) => other.token === run.token) === run) }));
 };
 
+const ROLES: readonly BenchStageRole[] = ['spec', 'plan', 'build', 'pr'];
+const isPick = (v: unknown): boolean => isJsonObject(v) && isText(v.agent) && isText(v.skill) && isText(v.prompt);
+const isStages = (v: unknown): boolean => isJsonObject(v) && ROLES.every((role) => isPick(v[role]));
+// An item id and a version name become a folder under the run home's custom/ (3.1): one segment each, as the custom store names them
+const isItems = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([id, version]) => parseItemId(id) !== undefined && isVersionName(version));
+const isWorktree = (v: unknown): boolean => isJsonObject(v) && isText(v.setup) && isText(v.teardown);
+const SETUP_CHECKS: Record<string, (v: unknown) => boolean> = { stages: isStages, items: isItems, worktree: isWorktree };
+// The base holds every field; an arm's overrides only the ones it changes
+const isSetup = (v: unknown, partial: boolean): boolean =>
+  isJsonObject(v) && Object.entries(SETUP_CHECKS).every(([key, check]) => (partial && v[key] === undefined) || check(v[key]));
+
 // An arm id keys the isolation rows' perArm and may name a folder: the experiment id's shape, so no `__proto__` or `constructor` either
-const isArm = (value: unknown): value is Arm => isJsonObject(value) && isText(value.id) && EXPERIMENT_ID.test(value.id) && isText(value.letter);
+const isArm = (value: unknown): value is Arm => isJsonObject(value) && isText(value.id) && EXPERIMENT_ID.test(value.id) && isText(value.letter) && isSetup(value.overrides, true);
 const isSeedCommit = (seed: unknown): boolean => isJsonObject(seed) && isText(seed.commit) && COMMIT.test(seed.commit);
 
 function isExperimentHead(value: unknown): value is Record<string, unknown> & { id: string; arms: unknown[]; rounds: unknown[] } {
   if (!isJsonObject(value) || !isText(value.id) || !EXPERIMENT_ID.test(value.id)) return false;
-  if (!EXPERIMENT_STATUSES.includes(value.status as ExperimentStatus) || !isSeedCommit(value.seed)) return false;
+  if (!EXPERIMENT_STATUSES.includes(value.status as ExperimentStatus) || !isSeedCommit(value.seed) || !isSetup(value.base, false)) return false;
   return STRINGS.every((k) => isText(value[k])) && OBJECTS.every((k) => isJsonObject(value[k])) && ARRAYS.every((k) => Array.isArray(value[k]));
 }
 

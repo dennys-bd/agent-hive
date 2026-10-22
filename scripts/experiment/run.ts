@@ -9,13 +9,14 @@ import { DEFAULT_BASELINE, DEFAULT_RUNS, type ExperimentOptions, parseExperiment
 import { createDaemonClient } from './daemon-client.js';
 import { untilDeadline } from './deadline.js';
 import { evaluateRun } from './evaluate-run.js';
-import { execRun, type Run, serialGit } from './exec.js';
+import { execRun, type Run, serialGit } from '../../src/benchmark/exec.js';
 import { readJson, type Store, serialStore, writeJson } from './files.js';
-import { docsBaseline, docsClone, dropRunWorktrees, experimentBaseline, pruneDocs, repoRoot, resolveBaseline, sandboxPaths, unsignedCommits } from './git.js';
-import { installSandbox, type RepoPaths, sandboxSettings } from './sandbox.js';
+import { dropRunWorktrees, experimentBaseline, nestedBaseline, repoRoot, resolveBaseline, sandboxPaths, unsignedCommits } from '../../src/benchmark/git.js';
+import { docsClone, pruneDocs } from './docs-git.js';
+import { installSandbox, type RepoPaths, SANDBOX_DOMAINS, sandboxSettings } from '../../src/benchmark/sandbox.js';
 import { endAttempt, experimentDir, isMeasured, latest, newExperimentId, newManifest, newToken, openAttempts, parseManifest, resumeManifest, runHome, runPrefix, startAttempt, stateRoot } from './plan.js';
 import { writeReport } from './report.js';
-import { prepareState } from './run-home.js';
+import { prepareState } from './state-dir.js';
 import { runLoop } from './run-loop.js';
 import { executeRun, recordFailure } from './run-one.js';
 import { handoffFiles, loadSeed, type Seed, seedHash } from './seed.js';
@@ -31,7 +32,7 @@ interface Night { root: string; state: string; dir: string; store: Store<Manifes
 // An attempt the last call left open: its daemon stopped if still alive, its task worktrees and branches gone; its run branch stays
 async function dropInterrupted(state: string, token: string, git: Run, docs: Run): Promise<void> {
   await stopDaemon(runHome(state, token)).catch(() => false);
-  await dropRunWorktrees(git, runPrefix(token)).catch(() => undefined);
+  await dropRunWorktrees(git, runPrefix(token), await repoRoot(git)).catch(() => undefined);
   await pruneDocs(docs).catch(() => undefined);
   log(`${token} was interrupted: its slot starts over with a new token`);
 }
@@ -52,7 +53,7 @@ async function openStore(state: string, dir: string, id: string, opts: Experimen
   const baseline = await experimentBaseline(git, { source, scratch: dir });
   // The docs always start from the docs clone's origin/main: --baseline names a ref of the code repository
   const docsSource = await resolveBaseline(docs, DEFAULT_BASELINE);
-  const docsBase = await docsBaseline(docs, { source: docsSource, files: await handoffFiles(), scratch: dir });
+  const docsBase = await nestedBaseline(docs, { source: docsSource, files: await handoffFiles(), scratch: dir });
   const created = newManifest({ id, source, baseline, docsSource, docsBaseline: docsBase, seedHash: hash, runs: opts.runs ?? DEFAULT_RUNS, now: new Date() });
   await writeJson(path, created);
   return serialStore(path, created);
@@ -69,7 +70,7 @@ async function begin(night: Night, ref: RunRef, alone: boolean): Promise<string>
 let sandboxWrites = Promise.resolve();
 function allowPlugins(night: Night): Promise<void> {
   const plugins = openAttempts(night.store.get()).map((a) => join(runHome(night.state, a.token), PLUGINS_DIR));
-  sandboxWrites = sandboxWrites.then(() => installSandbox(night.root, night.repos[0].gitDir, sandboxSettings({ repos: night.repos, state: night.state, plugins })));
+  sandboxWrites = sandboxWrites.then(() => installSandbox(night.root, night.repos[0].gitDir, sandboxSettings({ repos: night.repos, denied: [night.state], allowRead: plugins, allowedDomains: SANDBOX_DOMAINS })));
   return sandboxWrites;
 }
 
@@ -87,7 +88,7 @@ async function execute(night: Night, ref: RunRef, alone: boolean): Promise<void>
   } catch (err) {
     log(`${ref.id} (${token}) failed: ${message(err)}`);
     await recordFailure(night.dir, token, message(err), alone);
-    await dropRunWorktrees(night.git, runPrefix(token)).catch(() => undefined);
+    await dropRunWorktrees(night.git, runPrefix(token), await repoRoot(night.git)).catch(() => undefined);
     await pruneDocs(night.docs).catch(() => undefined);
   }
   await night.store.update((value) => endAttempt(value, token, outcome));
@@ -105,7 +106,7 @@ async function main(): Promise<void> {
   // Every worker's Bash runs in Claude Code's sandbox: no prompt to stall a night on, no write outside the two clones (#105, #79)
   const { docs, paths: docsPaths } = await docsClone(git, root);
   const repos = [await sandboxPaths(git), docsPaths];
-  await installSandbox(root, repos[0].gitDir, sandboxSettings({ repos, state }));
+  await installSandbox(root, repos[0].gitDir, sandboxSettings({ repos, denied: [state], allowedDomains: SANDBOX_DOMAINS }));
   await unsignedCommits(git);
   await unsignedCommits(docs);
   const dir = experimentDir(state, id);

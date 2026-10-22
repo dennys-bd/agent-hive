@@ -1,12 +1,20 @@
+import type { TestContext } from 'node:test';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { RunDeps } from '../../src/benchmark/run-home.js';
+import { tempDir } from '../temp-dir.js';
+import type { ChildLike } from '../../src/benchmark/daemon.js';
+import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
-import type { Arm, ArmSetup, BenchIsolation, BenchRun, Experiment, State } from '../../src/types.js';
+import { parseConfig } from '../../src/config.js';
+import { combConfig } from '../fakes.js';
+import type { Arm, ArmSetup, Config, BenchIsolation, BenchStagePick, BenchRun, Experiment, State } from '../../src/types.js';
 
+const pick = (skill: string): BenchStagePick => ({ agent: 'claude', skill, prompt: `${skill} {title}\n\n{body}` });
 export const SETUP: ArmSetup = {
-  stages: {
-    spec: { agent: 'claude', skill: '/hive:new-spec' }, plan: { agent: 'claude', skill: '/hive:new-plan' },
-    build: { agent: 'claude', skill: '/hive:new-build' }, pr: { agent: 'claude', skill: '/hive:new-pr' },
-  },
+  stages: { spec: pick('/hive:new-spec'), plan: pick('/hive:new-plan'), build: pick('/hive:new-build'), pr: pick('/hive:new-pr') },
   plugins: [], rules: { allow: [], deny: [] }, tasks: [{ key: 'T1', title: 'One', body: 'b', blockedBy: [] }],
+  items: {}, worktree: { setup: 'RUN pnpm install', teardown: '' },
 };
 
 export const ISOLATION: BenchIsolation = {
@@ -39,4 +47,49 @@ export const stateWith = (...experiments: Experiment[]): State => ({ ...initialS
 export function deepFreeze<T>(value: T): T {
   if (typeof value === 'object' && value !== null) for (const child of Object.values(value)) deepFreeze(child);
   return Object.freeze(value);
+}
+
+export interface Call { file: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv }
+
+export function fakeRun(answer: (call: Call) => string | Error = () => ''): { run: Run; calls: Call[] } {
+  const calls: Call[] = [];
+  const run: Run = async (file, args, opts = {}) => {
+    const call: Call = { file, args, ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }), ...(opts.env === undefined ? {} : { env: opts.env }) };
+    calls.push(call);
+    const out = answer(call);
+    if (out instanceof Error) throw out;
+    return { stdout: out };
+  };
+  return { run, calls };
+}
+
+export const line = (call: Call): string => [call.file, ...call.args].join(' ');
+
+export function fakeChild(exitCode: number | null = null): { child: ChildLike; kills: string[] } {
+  const kills: string[] = [];
+  return { kills, child: { pid: 7, exitCode, kill: (signal?: NodeJS.Signals): boolean => { kills.push(signal ?? 'SIGTERM'); return true; } } };
+}
+
+export const WS_PATH = '/work/hive';
+// The main Hive's config: the workspace has a nested repo, its own env, base branch, setup and teardown, and the Hive a branch template
+export const mainConfig = (): Config => parseConfig(combConfig({
+  path: WS_PATH, branch: 'feat/{id}', stages: [{ name: 'Todo', from: {} }],
+  workspaces: [{ name: 'hive', path: WS_PATH, env: { A: '1' }, fork: null, nestedRepos: ['docs'], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', baseBranch: 'develop', setup: 'RUN old', teardown: 'RUN old' }],
+}));
+
+// A Hive home with the custom store (two versions of hive:new-spec, only `terse` mapped by the tests) and one seed file
+export async function benchHome(t: TestContext): Promise<{ hiveDir: string; calls: Call[]; lines: string[]; deps: RunDeps }> {
+  const hiveDir = await tempDir(t, 'bench-');
+  for (const version of ['terse', 'long']) {
+    const dir = join(hiveDir, 'custom', 'hive', 'new-spec', version);
+    await mkdir(join(dir, 'files'), { recursive: true });
+    await writeFile(join(dir, 'version.json'), JSON.stringify({ name: version, from: null, workspaces: ['other'] }));
+    await writeFile(join(dir, 'files', 'SKILL.md'), `Spec skill for this arm, ${version}.`);
+  }
+  await mkdir(join(hiveDir, 'benchmark', 'exp-1', 'seed'), { recursive: true });
+  await writeFile(join(hiveDir, 'benchmark', 'exp-1', 'seed', 'ref.md'), 'Reference.');
+  const { run, calls } = fakeRun();
+  const lines: string[] = [];
+  let i = 0;
+  return { hiveDir, calls, lines, deps: { hiveDir, config: mainConfig(), exec: run, random: () => ((i++ * 7) % 36) / 36, log: (l) => lines.push(l) } };
 }

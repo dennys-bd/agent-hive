@@ -1,9 +1,10 @@
+import { join } from 'node:path';
 import { MCP_DEFAULTS, MEMORY_CAP_DEFAULT, SIGNALS_DEFAULTS, WORKSPACE_PRESET_COLORS } from '../../src/types.js';
-import { SANDBOX_FILE } from './sandbox.js';
+import { SANDBOX_FILE } from '../../src/benchmark/sandbox.js';
 import type { SeedTask, StageRole, StagesSeed } from './seed.js';
 import type { Arm } from './types.js';
 import type { WatchTask } from './watcher.js';
-import { type RunPaths, runClaudeArgs } from './worker-rules.js';
+import { type RunPaths, runClaudeArgs } from '../../src/benchmark/worker-rules.js';
 
 export const EXPERIMENT_PREFIX = 'MON'; // the sample and the evaluation; a run uses its own prefix (plan.ts runPrefix)
 export const WORKSPACE_NAME = 'agent-hive';
@@ -56,15 +57,19 @@ export function armStages(seed: StagesSeed, arm: Arm, runBranch: string): Record
   });
 }
 
+export interface HarnessPaths { state: string; home: string }
+/** The harness's rules: every home under the state folder's homes/ keeps its daemon files from the workers, and its experiments/ folder is unread. */
+export const harnessRulePaths = ({ state, home }: HarnessPaths): RunPaths => ({ home, homes: [join(state, 'homes', '*')], denied: [join(state, 'experiments')] });
+
 /** One run's config: `prefix` keeps its task ids, branches and worktrees apart from the other arm's, running beside it; `paths` scope the
  *  workers' own rules to this run (worker-rules.ts). */
-export function runConfig(seed: StagesSeed, arm: Arm, runBranch: string, workspace: string, prefix: string, paths: RunPaths): Record<string, unknown> {
+export function runConfig(seed: StagesSeed, arm: Arm, runBranch: string, workspace: string, prefix: string, paths: HarnessPaths): Record<string, unknown> {
   return {
     comb: {
       prefix, workspaces: [{ name: WORKSPACE_NAME, path: workspace, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: MEMORY_CAP_DEFAULT, color: WORKSPACE_PRESET_COLORS[0], setup: workspaceSetup(runBranch), setupTimeout: SETUP_TIMEOUT, teardown: WORKSPACE_TEARDOWN }],
       sources: [], stages: armStages(seed, arm, runBranch), commands: [], hiveSource: true, createIn: 'hive',
     },
-    baseBranch: runBranch, agentArgs: { claude: runClaudeArgs(seed.claudeArgs, runBranch, paths), codex: [] }, ...SETTINGS,
+    baseBranch: runBranch, agentArgs: { claude: runClaudeArgs(seed.claudeArgs, runBranch, harnessRulePaths(paths)), codex: [] }, ...SETTINGS,
   };
 }
 

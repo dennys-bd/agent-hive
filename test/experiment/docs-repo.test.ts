@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { WORKSPACE_TEARDOWN, workspaceSetup } from '../../scripts/experiment/arm-config.js';
-import { cleanEnv, execRun, inDir, type Run } from '../../scripts/experiment/exec.js';
-import { docsBaseline, runDocs } from '../../scripts/experiment/git.js';
+import { WORKSPACE_TEARDOWN, workspaceSetup } from '../../scripts/experiment/harness-config.js';
+import { cleanEnv, execRun, inDir, type Run } from '../../src/benchmark/exec.js';
+import { nestedBaseline } from '../../src/benchmark/git.js';
+import { runDocs } from '../../scripts/experiment/docs-git.js';
 import { tempDir } from '../temp-dir.js';
 
 const RUN_BRANCH = 'feat/monitor-view-abc123';
@@ -42,7 +43,7 @@ test('docsBaseline drops every doc that names the harness and adds the handoff, 
   }, 'docs: history');
   await writeFile(join(dir, 'README.md'), '# Monitor\n');
   const docs = inDir(run, repo);
-  const base = await docsBaseline(docs, { source, files: [{ from: join(dir, 'README.md'), to: 'agent/handoff_monitor/README.md' }], scratch: dir });
+  const base = await nestedBaseline(docs, { source, files: [{ from: join(dir, 'README.md'), to: 'agent/handoff_monitor/README.md' }], scratch: dir });
   assert.deepEqual((await git(repo, 'ls-tree', '-r', '--name-only', base)).split('\n'), ['agent/handoff_monitor/README.md', 'glossary.md']);
   assert.equal(await git(repo, 'rev-list', '--parents', '-n', '1', base), base, 'an orphan: the source\'s history names the experiment');
   assert.ok(!existsSync(join(dir, 'baseline.index')), 'the private index is gone');

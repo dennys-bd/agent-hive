@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runBranch } from '../../scripts/experiment/plan.js';
 import { parseStagesSeed, SEED_DIR } from '../../scripts/experiment/seed.js';
-import { runClaudeArgs, runRules } from '../../scripts/experiment/worker-rules.js';
+import { harnessRulePaths } from '../../scripts/experiment/harness-config.js';
+import { runClaudeArgs, runRules } from '../../src/benchmark/worker-rules.js';
 import { bashDecision, readDecision, rulesOf } from './rules.js';
 
 const BRANCH = runBranch('abc123');
@@ -16,7 +17,7 @@ const PUSH = `git push origin HEAD:${BRANCH}`; // the Merge prompt's own push
 
 async function workerRules(): Promise<{ allow: string[]; deny: string[] }> {
   const seed = parseStagesSeed(JSON.parse(await readFile(join(SEED_DIR, 'stages.json'), 'utf8')));
-  const args = runClaudeArgs(seed.claudeArgs, BRANCH, { state: STATE, home: HOME });
+  const args = runClaudeArgs(seed.claudeArgs, BRANCH, harnessRulePaths({ state: STATE, home: HOME }));
   return { allow: rulesOf(args, '--allowedTools'), deny: rulesOf(args, '--disallowedTools') };
 }
 
@@ -69,8 +70,8 @@ const OWN_PUSHES = [PUSH, `${PUSH} 2>&1`, `git push origin 310e0a61:${BRANCH}`, 
 test('a run allows its own push in the forms a worker writes it (a redirect, the merge commit by sha), and nothing in the seed allows another (#105)', async () => {
   const { allow, deny } = await workerRules();
   for (const command of OWN_PUSHES) assert.equal(bashDecision(allow, deny, command), 'allow', command);
-  assert.deepEqual(allow.filter((r) => r.startsWith('Bash(git push')), [`Bash(git push origin HEAD:${BRANCH}*)`, `Bash(git push origin *:${BRANCH}*)`]);
-  assert.deepEqual(runRules(BRANCH, { state: STATE, home: HOME }).allow.filter((r) => r.includes('push')), [`Bash(git push origin HEAD:${BRANCH}*)`, `Bash(git push origin *:${BRANCH}*)`]);
+  assert.deepEqual(allow.filter((r) => r.startsWith('Bash(git push')), [`Bash(git push origin HEAD:${BRANCH})`, `Bash(git push origin HEAD:${BRANCH} 2>&1)`, `Bash(git push origin *:${BRANCH})`, `Bash(git push origin *:${BRANCH} 2>&1)`]);
+  assert.deepEqual(runRules(BRANCH, harnessRulePaths({ state: STATE, home: HOME })).allow.filter((r) => r.includes('push')), [`Bash(git push origin HEAD:${BRANCH})`, `Bash(git push origin HEAD:${BRANCH} 2>&1)`, `Bash(git push origin *:${BRANCH})`, `Bash(git push origin *:${BRANCH} 2>&1)`]);
 });
 
 test('every other push form a worker could write is denied: options, refspecs to main or another branch, git -C and -c, options after the refspec (#105)', async () => {
@@ -112,10 +113,10 @@ test('a worker reads its home\'s plugin folders and nothing else of the state fo
 
 test('runClaudeArgs adds to the seed\'s two lists, leaves the seed as it was, and refuses a path a rule cannot hold (#105)', () => {
   const seed = ['--permission-mode', 'acceptEdits', '--allowedTools', 'Glob', '--disallowedTools', 'Bash(git push)'];
-  const args = runClaudeArgs(seed, BRANCH, { state: STATE, home: HOME });
+  const args = runClaudeArgs(seed, BRANCH, harnessRulePaths({ state: STATE, home: HOME }));
   assert.deepEqual(seed, ['--permission-mode', 'acceptEdits', '--allowedTools', 'Glob', '--disallowedTools', 'Bash(git push)']);
   assert.deepEqual([args.length, rulesOf(args, '--allowedTools')[0], rulesOf(args, '--disallowedTools')[0]], [6, 'Glob', 'Bash(git push)']);
-  assert.deepEqual(rulesOf(runClaudeArgs([], BRANCH, { state: STATE, home: HOME }), '--allowedTools'), runRules(BRANCH, { state: STATE, home: HOME }).allow);
-  for (const state of ['relative/state', '/with space/s', '/glob*/s', '/paren(s)']) assert.throws(() => runRules(BRANCH, { state, home: `${state}/homes/abc123` }), /permission rule/, state);
-  assert.throws(() => runRules('feat/x *', { state: STATE, home: HOME }), /permission rule/);
+  assert.deepEqual(rulesOf(runClaudeArgs([], BRANCH, harnessRulePaths({ state: STATE, home: HOME })), '--allowedTools'), runRules(BRANCH, harnessRulePaths({ state: STATE, home: HOME })).allow);
+  for (const state of ['relative/state', '/with space/s', '/glob*/s', '/paren(s)']) assert.throws(() => runRules(BRANCH, harnessRulePaths({ state, home: `${state}/homes/abc123` })), /permission rule/, state);
+  assert.throws(() => runRules('feat/x *', harnessRulePaths({ state: STATE, home: HOME })), /permission rule/);
 });

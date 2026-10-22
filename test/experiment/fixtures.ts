@@ -1,7 +1,5 @@
 import { writeFile } from 'node:fs/promises';
 import type { Cookie, Launch } from '../../scripts/experiment/browser.js';
-import type { ChildLike } from '../../scripts/experiment/daemon-runner.js';
-import type { Run } from '../../scripts/experiment/exec.js';
 import type { Seed, SeedTask, StagesSeed } from '../../scripts/experiment/seed.js';
 import type { Snapshot } from '../../scripts/experiment/watcher.js';
 import type { Activity, Task, Worker } from '../../src/types.js';
@@ -69,26 +67,7 @@ export function clock(start: Date): { now(): Date; sleep(ms: number): Promise<vo
   return { now: () => new Date(at), sleep: async (ms) => { slept.push(ms); at += ms; }, slept };
 }
 
-export interface Call { file: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv }
-
-export function fakeRun(answer: (call: Call) => string | Error = () => ''): { run: Run; calls: Call[] } {
-  const calls: Call[] = [];
-  const run: Run = async (file, args, opts = {}) => {
-    const call: Call = { file, args, ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }), ...(opts.env === undefined ? {} : { env: opts.env }) };
-    calls.push(call);
-    const out = answer(call);
-    if (out instanceof Error) throw out;
-    return { stdout: out };
-  };
-  return { run, calls };
-}
-
-export const line = (call: Call): string => [call.file, ...call.args].join(' ');
-
-export function fakeChild(exitCode: number | null = null): { child: ChildLike; kills: string[] } {
-  const kills: string[] = [];
-  return { kills, child: { pid: 7, exitCode, kill: (signal?: NodeJS.Signals): boolean => { kills.push(signal ?? 'SIGTERM'); return true; } } };
-}
+export { type Call, fakeChild, fakeRun, line } from '../benchmark/fixtures.js';
 
 export function fakeBrowser(ok = true): { launch: Launch; seen: { gotos: string[]; shots: string[]; cookies: Cookie[]; closed: number } } {
   const seen = { gotos: [] as string[], shots: [] as string[], cookies: [] as Cookie[], closed: 0 };

@@ -1,21 +1,42 @@
-import { existsSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
-import { testWorktrees } from '../test-home.js';
+import { join, resolve, sep } from 'node:path';
 import { cleanEnv, inDir, type Run } from './exec.js';
-import { EXPERIMENT_MENTION, EXPERIMENT_PATHS } from './seed.js';
 
-/** Neutral, as any handoff commit of the repository (#105, the user: the workers must not know). */
-export const BASELINE_MESSAGE = 'docs: Monitor View design handoff';
+/** Neutral, as the first commit of any repository: the workers must not know (#105). */
+export const BASELINE_MESSAGE = 'chore: initial commit';
+export const BASELINE_BRANCH = 'main';
+export const ORIGIN_DIR = 'repo.git';
+export const NESTED_DIR = 'nested';
+export const CLONE_DIR = 'clone';
+// The harness's own files and mentions (#105, #79), out of every baseline until #479 retires the harness: constants, since they exist only in this repository
+/** What the code baseline drops (#105, the user): the harness and its tests. */
+export const EXPERIMENT_PATHS = ['scripts/experiment', 'test/experiment'] as const;
+/** What a nested baseline drops (#79): every doc naming the harness, as git grep -E reads it. The #105 spec and plan are among them, and
+ *  so is any plan of another delivery that lists a harness file it touched: a worker reading it would learn of the experiment. */
+export const EXPERIMENT_MENTION = 'scripts/experiment|test/experiment|skills-ab-experiment|experiment:skills|benchmark-view-decomposition';
 const EXPERIMENT_WORD = /experiment/i;
 const EXPERIMENT_GLOB = ' "dist/test/experiment/*.test.js"';
 const PLAIN_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/; // reaches git's argv: no leading -, no .., no revision syntax
-const DOC_DIRS = { spec: 'agent/hive/specs', plan: 'agent/hive/plans' } as const; // inside the docs repository (#79)
-export const DOCS_CLONE = 'docs';
 
 const lines = (text: string): string[] => text.split('\n').map((l) => l.trim()).filter((l) => l !== '');
 const range = (baseline: string, branch: string): string => `${baseline}...origin/${branch}`;
 export const taskBranchPrefix = (prefix: string): string => `hive/${prefix}-`;
+export const nestedOrigin = (dir: string, path: string): string => join(dir, NESTED_DIR, `${path}.git`);
+export const runBranch = (token: string): string => `work/${token}`;
+export const runPrefix = (token: string): string => token.toUpperCase();
+
+export interface PrefixedWorktree { path: string; branch: string }
+
+/** The worktrees holding a branch under `refPrefix`, from `git worktree list --porcelain`. Every worktree of the repo shares its branches,
+ *  so a run left behind by another worktree keeps the branch checked out and the next `git worktree add` refuses it. */
+export function worktreesOn(porcelain: string, refPrefix: string): PrefixedWorktree[] {
+  return porcelain.split('\n\n').flatMap((block) => {
+    const rows = block.split('\n');
+    const path = rows.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
+    const ref = rows.find((l) => l.startsWith('branch '))?.slice('branch '.length);
+    return path && ref?.startsWith(refPrefix) ? [{ path, branch: ref.slice('refs/heads/'.length) }] : [];
+  });
+}
 
 export const isPlainRef = (ref: string): boolean => PLAIN_REF.test(ref) && !ref.includes('..');
 
@@ -54,14 +75,14 @@ export function strippedPackageJson(text: string): string {
 }
 
 /** The last guard: the tree the workers start from holds no experiment file and no experiment script. */
-export function assertBaselineClean(lsTree: string, packageJson: string): void {
+export function assertBaselineClean(lsTree: string, packageJson?: string): void {
   const leak = lines(lsTree).find((path) => EXPERIMENT_PATHS.some((e) => path === e || path.startsWith(`${e}/`)));
   if (leak !== undefined) throw new Error(`the baseline would carry an experiment file: ${leak}`);
-  if (/experiment/i.test(packageJson)) throw new Error('the baseline package.json still names the experiment');
+  if (packageJson !== undefined && EXPERIMENT_WORD.test(packageJson)) throw new Error('the baseline package.json still names the experiment');
 }
 
 export interface BaselineInput { source: string; scratch: string }
-export interface DocsBaselineInput extends BaselineInput { files: readonly { from: string; to: string }[] }
+export interface NestedBaselineInput extends BaselineInput { files?: readonly { from: string; to: string }[] }
 interface OrphanSteps { edit(env: NodeJS.ProcessEnv): Promise<void>; check(tree: string): Promise<void> }
 
 async function addBlob(run: Run, env: NodeJS.ProcessEnv, from: string, to: string): Promise<void> {
@@ -80,7 +101,7 @@ async function orphanCommit(run: Run, input: BaselineInput, steps: OrphanSteps):
     const tree = (await run('git', ['write-tree'], { env })).stdout.trim();
     await steps.check(tree);
     const commit = (await run('git', ['commit-tree', tree, '-m', BASELINE_MESSAGE])).stdout.trim();
-    await run('git', ['update-ref', `refs/bases/monitor-view-${commit.slice(0, 12)}`, commit]);
+    await run('git', ['update-ref', `refs/bases/${commit.slice(0, 12)}`, commit]);
     return commit;
   } finally {
     await rm(index, { force: true });
@@ -90,14 +111,17 @@ async function orphanCommit(run: Run, input: BaselineInput, steps: OrphanSteps):
 /** The code baseline: the source's tree without the harness, its tests and its scripts. */
 export async function experimentBaseline(run: Run, input: BaselineInput): Promise<string> {
   const pkg = join(input.scratch, 'package.json');
+  // Any repository can be a seed (#471): one with no root package.json has no script to strip
+  const hasPkg = (await run('git', ['ls-tree', '--name-only', input.source, '--', 'package.json'])).stdout.trim() !== '';
   try {
     return await orphanCommit(run, input, {
       edit: async (env) => {
         await run('git', ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...EXPERIMENT_PATHS], { env });
+        if (!hasPkg) return;
         await writeFile(pkg, strippedPackageJson((await run('git', ['show', `${input.source}:package.json`])).stdout));
         await addBlob(run, env, pkg, 'package.json');
       },
-      check: async (tree) => assertBaselineClean((await run('git', ['ls-tree', '-r', '--name-only', tree])).stdout, await readFile(pkg, 'utf8')),
+      check: async (tree) => assertBaselineClean((await run('git', ['ls-tree', '-r', '--name-only', tree])).stdout, hasPkg ? await readFile(pkg, 'utf8') : undefined),
     });
   } finally {
     await rm(pkg, { force: true });
@@ -114,30 +138,19 @@ async function mentions(run: Run, treeish: string): Promise<string[]> {
   }
 }
 
-/** The docs baseline (#79), run in the docs clone: the source's tree without any doc that names the harness, with the handoff. */
-export async function docsBaseline(run: Run, input: DocsBaselineInput): Promise<string> {
+/** A nested repo's baseline (#79), run in its clone: the source's tree without any file that names the harness, plus the given files. */
+export async function nestedBaseline(run: Run, input: NestedBaselineInput): Promise<string> {
   return orphanCommit(run, input, {
     edit: async (env) => {
       const named = await mentions(run, input.source);
       if (named.length > 0) await run('git', ['rm', '-q', '--cached', '--', ...named], { env });
-      for (const file of input.files) await addBlob(run, env, file.from, file.to);
+      for (const file of input.files ?? []) await addBlob(run, env, file.from, file.to);
     },
     check: async (tree) => {
       const leak = (await mentions(run, tree))[0];
-      if (leak !== undefined) throw new Error(`the docs baseline would carry a doc that names the experiment: ${leak}`);
+      if (leak !== undefined) throw new Error(`the nested baseline would carry a file that names the experiment: ${leak}`);
     },
   });
-}
-
-/** The lab's docs clone, at docs/ as CLAUDE.md lays it out: its git calls and its paths for the sandbox. Its origin must be a local
- *  repository, as the code side's is, so the run branches and the workers' commits never reach the real docs repository (#79). */
-export async function docsClone(run: Run, root: string): Promise<{ docs: Run; paths: { gitDir: string; origin: string } }> {
-  const cwd = join(root, DOCS_CLONE);
-  if (!existsSync(join(cwd, '.git'))) throw new Error(`no docs clone at ${cwd}: clone the docs repository there, from a local origin (scripts/experiment/README.md)`);
-  const docs = inDir(run, cwd);
-  const paths = await sandboxPaths(docs);
-  if (!isAbsolute(paths.origin)) throw new Error(`the docs clone's origin must be a local repository, not ${paths.origin}: a run would push to it`);
-  return { docs, paths };
 }
 
 export async function remoteSha(run: Run, branch: string): Promise<string | undefined> {
@@ -155,37 +168,30 @@ export async function createRunBranch(run: Run, branch: string, sha: string): Pr
   await run('git', ['push', '-u', 'origin', branch]);
 }
 
-/** This run's task worktrees and branches, locally and on origin, as test-hive.ts does for TEST-. Never the other arm's: they have another prefix. */
-export async function dropRunWorktrees(run: Run, prefix: string): Promise<void> {
+// A forged .git/worktrees entry names any path: only what sits inside the clone folder is removed (the worker can write that folder's git data).
+// Resolved first, so a `<clone>/../elsewhere` entry does not pass as inside
+const isInside = (root: string, path: string): boolean => resolve(path).startsWith(`${resolve(root)}${sep}`);
+
+async function dropIn(run: Run, prefix: string, root: string): Promise<void> {
   const branches = taskBranchPrefix(prefix);
   const { stdout } = await run('git', ['worktree', 'list', '--porcelain']);
-  for (const { path } of testWorktrees(stdout, `refs/heads/${branches}`)) await run('git', ['worktree', 'remove', '--force', path]);
+  for (const { path } of worktreesOn(stdout, `refs/heads/${branches}`).filter((w) => isInside(root, w.path))) await run('git', ['worktree', 'remove', '--force', path]);
   await run('git', ['worktree', 'prune']);
   for (const branch of lines((await run('git', ['branch', '--list', `${branches}*`, '--format=%(refname:short)'])).stdout)) await run('git', ['branch', '-D', branch]);
   const remote = lines((await run('git', ['ls-remote', '--heads', 'origin', `refs/heads/${branches}*`])).stdout);
   for (const ref of remote.map((l) => l.split(/\s+/)[1] ?? '').filter((r) => r !== '')) await run('git', ['push', 'origin', '--delete', ref]);
 }
 
-/** A removed task worktree took its docs worktree with it: the docs clone forgets it, and keeps its branch (#79). */
-export async function pruneDocs(docs: Run): Promise<void> {
-  await docs('git', ['worktree', 'prune']);
+/** This run's task worktrees and branches, locally and on origin, in each nested clone first (`nested`: their absolute paths), then in
+ *  the clone `run` is bound to (`root`: its folder, which every worktree removed must sit in). Only `hive/<prefix>-*`: never another run's, never the run branch. */
+export async function dropRunWorktrees(run: Run, prefix: string, root: string, nested: readonly string[] = []): Promise<void> {
+  // A nested worktree lives inside its task's worktree: its repo forgets it before the outer removal takes the folder
+  for (const dir of nested) await dropIn(inDir(run, dir), prefix, root);
+  await dropIn(run, prefix, root);
 }
 
 export const diffShortstat = async (run: Run, baseline: string, branch: string): Promise<string> => (await run('git', ['diff', '--shortstat', range(baseline, branch)])).stdout;
 export const fullDiff = async (run: Run, baseline: string, branch: string): Promise<string> => (await run('git', ['diff', range(baseline, branch)])).stdout;
-
-/** The specs and plans a run's tasks added, specs first, each sorted by path: read in the docs clone, from each task's docs branch
- *  (named after its code branch by the worktree setup) against the docs baseline (#79). Those branches are never pushed. */
-export async function runDocs(docs: Run, baseline: string, prefix: string): Promise<{ kind: 'spec' | 'plan'; text: string }[]> {
-  const branches = lines((await docs('git', ['branch', '--list', `${taskBranchPrefix(prefix)}*`, '--format=%(refname:short)'])).stdout);
-  const added: { branch: string; path: string }[] = [];
-  for (const branch of branches) {
-    const paths = lines((await docs('git', ['diff', '--name-only', '--diff-filter=A', `${baseline}...${branch}`, '--', DOC_DIRS.spec, DOC_DIRS.plan])).stdout);
-    added.push(...paths.map((path) => ({ branch, path })));
-  }
-  const ordered = (['spec', 'plan'] as const).flatMap((kind) => added.filter((d) => d.path.startsWith(`${DOC_DIRS[kind]}/`)).sort((x, y) => x.path.localeCompare(y.path)).map((d) => ({ kind, ...d })));
-  return Promise.all(ordered.map(async ({ kind, branch, path }) => ({ kind, text: (await docs('git', ['show', `${branch}:${path}`])).stdout })));
-}
 
 export async function addWorktree(run: Run, path: string, ref: string, cwd?: string): Promise<void> {
   await run('git', ['worktree', 'add', '--detach', path, ref], cwd === undefined ? {} : { cwd });

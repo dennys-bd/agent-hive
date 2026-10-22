@@ -1,4 +1,4 @@
-import type { Run } from './exec.js';
+import type { Run } from '../../src/benchmark/exec.js';
 import type { Scenario } from './seed.js';
 import { type Click, CRITERIA, type Criterion, type Judge, type Score } from './types.js';
 

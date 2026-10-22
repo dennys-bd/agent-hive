@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_FILE } from '../src/config.js';
+import { type PrefixedWorktree, worktreesOn } from '../src/benchmark/git.js';
 import { stopDaemon } from '../src/daemon.js';
 
 /** The committed test home (HIVE-6). JSON is not copied to dist/, so this module, built into dist/scripts/, climbs back to the repo root;
@@ -63,17 +64,8 @@ export async function stopTestHive(home: string, stop: (home: string) => Promise
   return existsSync(join(home, CONFIG_FILE)) ? stop(home) : false;
 }
 
-export interface TestWorktree { path: string; branch: string }
+export type TestWorktree = PrefixedWorktree;
 const TEST_BRANCH_REF = 'refs/heads/hive/TEST-';
 
-/** The worktrees holding a branch under `refPrefix` (hive/TEST- by default), from `git worktree list --porcelain`. Every worktree of the repo
- * shares its branches, so a run left behind by another worktree keeps the branch checked out and the next `git worktree add` refuses it.
- * Other harnesses pass their own branch prefix. */
-export function testWorktrees(porcelain: string, refPrefix: string = TEST_BRANCH_REF): TestWorktree[] {
-  return porcelain.split('\n\n').flatMap((block) => {
-    const lines = block.split('\n');
-    const path = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
-    const ref = lines.find((l) => l.startsWith('branch '))?.slice('branch '.length);
-    return path && ref?.startsWith(refPrefix) ? [{ path, branch: ref.slice('refs/heads/'.length) }] : [];
-  });
-}
+/** The worktrees holding a branch under `refPrefix` (hive/TEST- by default). Other harnesses pass their own branch prefix. */
+export const testWorktrees = (porcelain: string, refPrefix: string = TEST_BRANCH_REF): TestWorktree[] => worktreesOn(porcelain, refPrefix);

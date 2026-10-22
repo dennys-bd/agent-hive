@@ -2,14 +2,15 @@ import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadState } from '../../src/state-store.js';
-import { runConfig, runState, watchTasks } from './arm-config.js';
-import type { RunningDaemon } from './daemon-runner.js';
-import type { Run } from './exec.js';
+import { runConfig, runState, watchTasks } from './harness-config.js';
+import type { RunningDaemon } from '../../src/benchmark/daemon.js';
+import type { Run } from '../../src/benchmark/exec.js';
 import { writeJson } from './files.js';
-import { createRunBranch, diffShortstat, dropRunWorktrees, fetchBranch, pruneDocs } from './git.js';
+import { createRunBranch, diffShortstat, dropRunWorktrees, fetchBranch, repoRoot } from '../../src/benchmark/git.js';
+import { pruneDocs } from './docs-git.js';
 import { failedMetrics, parseShortstat, runMetrics } from './metrics.js';
 import { runBranch, runHome, runPrefix } from './plan.js';
-import { writeHome } from './run-home.js';
+import { writeHome } from '../../src/benchmark/run-home.js';
 import type { Seed } from './seed.js';
 import { type Arm, FILES, type Metrics } from './types.js';
 import { type WatchClient, type WatchResult, watchRun } from './watcher.js';
@@ -40,7 +41,7 @@ export async function executeRun(ctx: RunContext, deps: RunDeps): Promise<Metric
   const prefix = runPrefix(ctx.token);
   await createRunBranch(deps.run, branch, ctx.baseline);
   await createRunBranch(deps.docs, branch, ctx.docsBaseline);
-  await dropRunWorktrees(deps.run, prefix);
+  await dropRunWorktrees(deps.run, prefix, await repoRoot(deps.run));
   const home = runHome(ctx.state, ctx.token);
   const firstStage = String(ctx.seed.stages.stages[0]?.name);
   await writeHome(home, runConfig(ctx.seed.stages, ctx.arm, branch, ctx.root, prefix, { state: ctx.state, home }), runState(ctx.seed.tasks, firstStage, prefix));
@@ -54,7 +55,7 @@ export async function executeRun(ctx: RunContext, deps: RunDeps): Promise<Metric
   const metrics = runMetrics({ token: ctx.token, startedAt, endedAt, end, watch, state, diff, unpaired: ctx.unpaired });
   await mkdir(join(ctx.dir, ctx.token), { recursive: true });
   await writeJson(join(ctx.dir, ctx.token, FILES.metrics), metrics);
-  await dropRunWorktrees(deps.run, prefix);
+  await dropRunWorktrees(deps.run, prefix, await repoRoot(deps.run));
   await pruneDocs(deps.docs);
   return metrics;
 }

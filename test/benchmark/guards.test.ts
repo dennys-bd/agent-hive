@@ -6,7 +6,8 @@ import { loadBenchmark } from '../../src/benchmark-guards.js';
 import { initialState } from '../../src/orchestrator.js';
 import { loadState } from '../../src/state-store.js';
 import { tempDir } from '../temp-dir.js';
-import { arm, experiment, run } from './fixtures.js';
+import type { ArmSetup } from '../../src/types.js';
+import { arm, experiment, run, SETUP } from './fixtures.js';
 
 const AT = '2026-10-21T11:00:00.000Z';
 const saved = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
@@ -83,4 +84,25 @@ test('loadState reads state.benchmark through the guard, and a file without it a
 test('a token saved twice keeps its first run only, so two runs never share a home and a branch (#458)', () => {
   const [loaded] = load(saved({ experiments: [{ ...experiment(), rounds: [{ n: 1, runs: [run('gggg1')] }, { n: 2, runs: [run('gggg1', { round: 2 }), run('gggg2', { round: 2 })] }] }] })).experiments;
   assert.deepEqual(loaded.rounds.map((r) => r.runs.map((x) => x.token)), [['gggg1'], ['gggg2']]);
+});
+
+test('an experiment whose base lacks a stage prompt, the items map or the worktree setup does not load (#471)', () => {
+  const { prompt: _p, ...noPrompt } = SETUP.stages.spec;
+  const bases = [{ ...SETUP, stages: { ...SETUP.stages, spec: noPrompt } }, { ...SETUP, items: undefined }, { ...SETUP, worktree: { setup: 'x' } }];
+  for (const base of bases) assert.deepEqual(ids(saved({ experiments: [experiment({ base: base as ArmSetup })] })), [], JSON.stringify(base));
+  assert.deepEqual(ids(saved({ experiments: [experiment()] })), ['exp-1']);
+});
+
+test('an items entry must name an item id of two segments and a version name: original, a path or a bad id drops the experiment (#471)', () => {
+  const malformed: Record<string, string>[] = [{ 'hive:new-spec': 'original' }, { 'hive:new-spec': '../x' }, { 'new-spec': 'terse' }, { 'a:b:c': 'terse' }];
+  for (const items of malformed) {
+    assert.deepEqual(ids(saved({ experiments: [experiment({ base: { ...SETUP, items } })] })), [], JSON.stringify(items));
+  }
+  assert.deepEqual(ids(saved({ experiments: [experiment({ base: { ...SETUP, items: { 'hive:new-spec': 'terse' } } })] })), ['exp-1']);
+});
+
+test('an arm whose overrides carry a malformed items, worktree or stages is dropped; one that omits them loads (#471)', () => {
+  const bad = arm('a3', 'C', { items: { 'hive:x': 'original' } });
+  const [loaded] = load(saved({ experiments: [experiment({ arms: [arm('a1', 'A'), bad, arm('a2', 'B', { worktree: { setup: '', teardown: '' } })] })] })).experiments;
+  assert.deepEqual(loaded.arms.map((a) => a.id), ['a1', 'a2']);
 });
