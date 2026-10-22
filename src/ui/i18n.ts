@@ -2386,6 +2386,18 @@ const en = {
   'benchmark.sidebar.mcpAt': 'via mcp · {time}',
   'benchmark.sidebar.rounds.one': '1 round',
   'benchmark.sidebar.rounds.other': '{n} rounds',
+  // #461: the benchmark header, tabs and toasts
+  'benchmark.header.tabs': 'experiment',
+  'benchmark.header.tab.arms': 'arms',
+  'benchmark.header.tab.config': 'config',
+  'benchmark.header.tab.compare': 'compare',
+  'benchmark.header.tab.execution': 'execution',
+  'benchmark.header.tab.report': 'report',
+  'benchmark.header.soon': 'coming soon',
+  'benchmark.header.failed.invalid': 'the change was refused',
+  'benchmark.header.failed.gone': 'the experiment or its workspace no longer exists',
+  'benchmark.header.failed.running': 'the experiment is running or sleeping',
+  'benchmark.header.failed.unknown': 'the change could not be saved; see hive.log',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4767,6 +4779,18 @@ const pt: Record<MessageKey, string> = {
   'benchmark.sidebar.mcpAt': 'via mcp · {time}',
   'benchmark.sidebar.rounds.one': '1 rodada',
   'benchmark.sidebar.rounds.other': '{n} rodadas',
+  // #461: the benchmark header, tabs and toasts
+  'benchmark.header.tabs': 'experimento',
+  'benchmark.header.tab.arms': 'braços',
+  'benchmark.header.tab.config': 'config',
+  'benchmark.header.tab.compare': 'comparar',
+  'benchmark.header.tab.execution': 'execução',
+  'benchmark.header.tab.report': 'relatório',
+  'benchmark.header.soon': 'em breve',
+  'benchmark.header.failed.invalid': 'a mudança foi recusada',
+  'benchmark.header.failed.gone': 'o experimento ou o workspace dele não existe mais',
+  'benchmark.header.failed.running': 'o experimento está executando ou dormindo',
+  'benchmark.header.failed.unknown': 'não foi possível salvar a mudança; veja o hive.log',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
