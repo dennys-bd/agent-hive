@@ -15,7 +15,7 @@ const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve)
 
 interface Stubs {
   watch?(token: string, signal: AbortSignal, dispatch: (event: BenchmarkEvent) => Promise<void>): Promise<WatchEnd>;
-  failBoot?: string[]; capReached?(calls: readonly string[]): boolean; deadline?: Date; awake?(): Promise<void>;
+  failBoot?: string[]; failEnd?: string[]; capReached?(calls: readonly string[]): boolean; deadline?: Date; awake?(): Promise<void>;
 }
 
 function harness(exp: Experiment, stubs: Stubs = {}) {
@@ -40,6 +40,7 @@ function harness(exp: Experiment, stubs: Stubs = {}) {
     watch: async ({ token }) => { calls.push(`watch ${token}`); return (await stubs.watch?.(token, controller.signal, dispatch)) ?? { outcome: 'done' }; },
     endRun: async ({ token }, end) => {
       calls.push(`end ${token} ${end.outcome}`);
+      if (stubs.failEnd?.includes(token)) throw new Error('metrics blew up');
       if (end.outcome === 'aborted') return;
       await dispatch({ type: 'benchmarkRunEnded', id: exp.id, token, status: end.outcome, at: AT, ...(end.outcome === 'error' ? { reason: end.reason } : {}) });
     },
@@ -181,4 +182,13 @@ test("missingRuns: per round up to pace.pairs and per arm, none yet or the arm's
   assert.equal(gateRefusal(exp, NOW, NOW, true), 'the until deadline passed');
   assert.equal(gateRefusal(exp, NOW, later, true), 'the spend cap is reached');
   assert.equal(gateRefusal(exp, NOW, undefined, false), undefined);
+});
+
+test('a run whose end throws is ended error with a reason, so its round still ends and nothing stays running (#472)', async () => {
+  const h = harness(ONE_PAIR, { failEnd: ['tok1'] });
+  await runExperiment('exp-1', h.deps);
+  const runs = h.latest()?.rounds[0].runs ?? [];
+  assert.deepEqual(runs.map((r) => [r.token, r.status]), [['tok1', 'error'], ['tok2', 'done']]);
+  assert.ok(runs[0].reason);
+  assert.equal(h.latest()?.status, 'done');
 });

@@ -56,7 +56,7 @@ function contextOf(rt: Runtime, experiment: Experiment, controller: AbortControl
     latest: () => experimentOf(rt, experiment.id), dispatch: rt.deps.dispatch, now: rt.deps.now, log: (line) => rt.deps.log.info(line),
     // once per loop, shared by a round's arms; a failure is each arm's error run, and the next round prepares again
     ready: () => (ready ??= rt.io.prepareExperiment(experiment).catch((err: unknown) => { ready = undefined; throw err; })),
-    handles: new Map(), watched: new Map(), tokensAt: new Map(),
+    handles: new Map(), watched: new Map(), tokensAt: new Map(), progress: new Map(),
   };
 }
 

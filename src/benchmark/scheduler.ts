@@ -81,11 +81,18 @@ async function evaluatePending(experiment: Experiment, before: number, done: Set
 
 async function oneRun<H extends RunHandle>(experiment: Experiment, arm: Arm, n: number, deps: SchedulerDeps<H>): Promise<void> {
   const handle = await deps.startRun(experiment, arm, n);
-  const end: WatchEnd = handle.failed === undefined ? await deps.watch(handle) : { outcome: 'error', reason: handle.failed };
-  // aborted: a Quit, or a run the wake found gone (marked interrupted by the runner); never an end
-  if (end.outcome === 'aborted' || deps.signal.aborted) return;
-  await deps.endRun(handle, end);
-  deps.log(`benchmark ${experiment.id} ${handle.token}: round ${n}: ${end.outcome}`);
+  try {
+    const end: WatchEnd = handle.failed === undefined ? await deps.watch(handle) : { outcome: 'error', reason: handle.failed };
+    // aborted: a Quit, or a run the wake found gone (marked interrupted by the runner); never an end
+    if (end.outcome === 'aborted' || deps.signal.aborted) return;
+    await deps.endRun(handle, end);
+    deps.log(`benchmark ${experiment.id} ${handle.token}: round ${n}: ${end.outcome}`);
+  } catch {
+    // a run that cannot be watched or ended must not stay running: its round would wait on it for ever. The reason is fixed: an error can carry a path
+    deps.log(`benchmark ${experiment.id} ${handle.token}: round ${n}: the run could not be ended`);
+    if (deps.signal.aborted) return;
+    await deps.dispatch({ type: 'benchmarkRunEnded', id: experiment.id, token: handle.token, status: 'error', at: deps.now().toISOString(), reason: 'the run could not be ended' }).catch(() => undefined);
+  }
 }
 
 async function runRound<H extends RunHandle>(experiment: Experiment, n: number, deps: SchedulerDeps<H>): Promise<void> {

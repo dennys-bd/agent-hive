@@ -11,18 +11,19 @@ import { experiment, fakeChild, run, snap, stateWith, stubClient, stubIo, until 
 const AT = '2026-10-22T22:00:00.000Z';
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-function context(exp: Experiment, o: { modelTokens?: Record<string, Tokens> } = {}) {
+function context(exp: Experiment, o: { modelTokens?: Record<string, Tokens>; failReads?: boolean } = {}) {
   let state = stateWith(exp);
   let now = Date.parse(AT);
   const events: BenchmarkEvent[] = [];
   const lines: string[] = [];
   const rig = stubIo('/hive', o);
+  if (o.failReads) rig.io.modelTokens = async () => { throw new Error('unreadable'); };
   const latest = (): Experiment | undefined => state.benchmark.experiments.find((e) => e.id === 'exp-1');
   const ctx: RunContext = {
     id: 'exp-1', workspace: 'hive', hiveDir: '/hive', signal: new AbortController().signal, io: rig.io, gate: createGate(), latest,
     dispatch: async (event) => { events.push(event); state = benchmarkReduce(state, event); },
     now: () => new Date(now), log: (line) => lines.push(line), ready: async () => undefined,
-    handles: new Map(), watched: new Map(), tokensAt: new Map(),
+    handles: new Map(), watched: new Map(), tokensAt: new Map(), progress: new Map(),
   };
   return { ctx, rig, events, lines, latest, advance: (ms: number) => { now += ms; } };
 }
@@ -114,4 +115,39 @@ test('progress becomes delivered, total and running or waiting; the tokens are r
   deps.onProgress({ delivered: 0, total: 2, waiting: false, tasks: [] });
   await tick();
   assert.equal(c.events.length, seen);
+});
+
+test('a metrics read that throws still ends the run with empty metrics and stops its daemon (#472)', async () => {
+  const c = context(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('tok1')] }] }), { failReads: true });
+  await endRun(c.ctx, liveRun('tok1'), { outcome: 'done' });
+  assert.deepEqual([c.latest()?.rounds[0].runs[0].status, c.latest()?.rounds[0].runs[0].metrics], ['done', noMetrics()]);
+  assert.deepEqual(c.rig.calls, ['stop tok1']);
+  assert.ok(c.lines.includes('benchmark exp-1 tok1: metrics unread, counted as none'));
+});
+
+test('endRun stops the daemon even when a dispatch throws (#472)', async () => {
+  const c = context(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('tok1')] }] }));
+  const ctx = { ...c.ctx, dispatch: async () => { throw new Error('reducer'); } };
+  await assert.rejects(endRun(ctx, liveRun('tok1'), { outcome: 'done' }));
+  assert.deepEqual(c.rig.calls, ['stop tok1']);
+});
+
+test('a progress dispatch still in flight when the run ends lands before the end, and a late one is dropped (#472)', async () => {
+  const c = context(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('tok1')] }] }));
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const inner = c.ctx.dispatch;
+  const ctx: RunContext = { ...c.ctx, dispatch: async (event) => { if (event.type === 'benchmarkRunChanged' && event.patch.status === 'waiting') await held; await inner(event); } };
+  void watchOne(ctx, liveRun('tok1'));
+  await until(() => c.rig.watchDeps.has('tok1'));
+  const deps = c.rig.watchDeps.get('tok1');
+  deps?.onProgress?.({ delivered: 1, total: 2, waiting: true, tasks: [] });
+  const ending = endRun(ctx, liveRun('tok1'), { outcome: 'done' });
+  await tick();
+  release();
+  await ending;
+  assert.equal(c.latest()?.rounds[0].runs[0].status, 'done');
+  deps?.onProgress?.({ delivered: 0, total: 2, waiting: false, tasks: [] });
+  await tick();
+  assert.deepEqual([c.latest()?.rounds[0].runs[0].status, c.latest()?.rounds[0].runs[0].delivered], ['done', 1]);
 });
