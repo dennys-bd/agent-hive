@@ -59,7 +59,7 @@ test('GET /api/mcp answers every tool, locked first, and each server with hasVal
   const text = await (await hiveFetch(`${base}/api/mcp`)).text();
   assert.equal(text.includes('t0k'), false);
   assert.deepEqual(JSON.parse(text), {
-    tools: [...LOCKED.map((name) => ({ name, locked: true, on: true })), ...['hive_remember', 'hive_applied', 'hive_create_task'].map((name) => ({ name, locked: false, on: true }))],
+    tools: [...LOCKED.map((name) => ({ name, locked: true, on: true })), ...['hive_remember', 'hive_applied', 'hive_create_task', 'hive_task'].map((name) => ({ name, locked: false, on: true }))],
     servers: [{ ...UP, hasValue: false, state: 'connected' }, { ...DOCS, hasValue: true, state: 'no_answer' }, { ...IDLE, hasValue: false, state: 'off' }],
   });
   assert.equal(probed.some((s) => s.includes('"idle"')), false, 'a server switched off is never probed');

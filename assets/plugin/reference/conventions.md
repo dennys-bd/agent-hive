@@ -72,6 +72,26 @@ branch, by the same command run there:
 `origin/`. When it fails (no `origin`, or `origin/HEAD` unset), there
 is no docs base. The fork base never applies to it.
 
+## The task
+
+When the Hive's `hive_task` tool exists, call it (no input) before
+anything that needs the issue: its `task` is the one this session works
+on, as the Hive holds it. Read from it the `title`, the `body`, the
+`comments` (oldest first), the `stage`, the `result` earlier stages
+passed to `hive_done`, and the tree: `parent`, `children` and
+`blockers`, each with its `stage` when it is a task of the Hive. The
+issue is the number at the end of `url` when `url` is a GitHub issue's
+(`https://github.com/<owner>/<repo>/issues/<n>`); any other `url` means
+the task has no issue: no `gh issue` call and no `Closes` line.
+
+Only when the tool does not exist (outside the Hive) or answers
+`task: null` (a session with no task), take the issue number from the
+arguments, else from the branch name (its first number: `hive/7-…` is
+`#7`), and read the issue with
+`gh issue view <n> --json number,title,body,url,comments`.
+A `commentsError` in the answer means the source failed to give the
+comments: read them with that same `gh issue view`.
+
 ## Forks
 
 When `hive_conventions` answers `fork`, the workspace is a fork: `origin` is the user's copy, where every branch is pushed, and
@@ -133,7 +153,8 @@ spec; `/hive:new-pr` for those and the walkthrough. Take the first place
 that answers, and say which file was taken and why:
 
 1. the path given as argument (a stage prompt may pass `{result.spec}` or
-   `{result.plan}`);
+   `{result.plan}`), else the same key of the `result` `hive_task` answers
+   (see "The task");
 2. the file under the convention's folder that the branch added against
    its base, the newest by name when there are several:
    - without `docsRepo`, the current branch:

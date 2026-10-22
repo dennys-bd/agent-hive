@@ -29,7 +29,8 @@ The arguments are the text typed after `/hive:new-spec`. They are one of:
 - anything else: a free-text idea, taken verbatim as the brainstorming
   input.
 
-With no arguments, list the repository's open issues
+With no arguments, read the task as `reference/conventions.md` says under
+"The task"; with no task there either, list the repository's open issues
 (`gh issue list --state open --limit 10`) and stop.
 
 ## Conventions
@@ -75,9 +76,12 @@ branch — is a stop.
 
 Skip this section for a free-text idea.
 
-1. Extract the issue number from a bare number, `#n`, or the last path
-   segment of a URL.
-2. Unless the title and body arrived inlined in the arguments, fetch them:
+1. Read the task as `reference/conventions.md` says under "The task":
+   with `hive_task`, the issue, its title, body and comments are its
+   answer's, and step 2 is skipped unless it answered `commentsError`.
+2. Without it, extract the issue number from a bare number, `#n`, or the
+   last path segment of a URL and, unless the title and body arrived
+   inlined in the arguments, fetch them:
 
    ```sh
    gh issue view <n> --json number,title,body,url,labels,comments

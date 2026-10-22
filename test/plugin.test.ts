@@ -169,7 +169,7 @@ test('every new-* skill resolves the conventions from the one reference text', a
 
 const DECOMPOSITION_VALUES: Record<string, string> = { specsDir: 'design/specs', docsLanguage: 'Spanish', chatLanguage: 'Portuguese', decompositionLabel: 'tree' };
 
-test('/hive:decomposition declares its own four variables, interpolated where used, and reads no reference, no Hive tool and no runner tool (#430)', async () => {
+test('/hive:decomposition declares its own four variables, interpolated where used, and reads no reference, no Hive tool but hive_task (#7) and no runner tool (#430)', async () => {
   const text = await skillText('decomposition');
   assert.doesNotMatch(text, /docsRepo|conventions\.md|CLAUDE\.md|AGENTS\.md|hiveLanguage/, 'no docsRepo (a nested docs repo is reached through specsDir), no reference, no agent instructions file by name');
   for (const tool of ['hive_done', 'hive_ask', 'hive_conventions', 'hive_stop', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);

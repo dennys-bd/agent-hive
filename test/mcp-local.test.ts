@@ -44,7 +44,7 @@ async function startLocal(t: TestContext, memoryCap = 4000): Promise<Local> {
 
 test('a local session is offered every tool but hive_done, hive_pr and hive_stop: its tools match its protocol, and it cannot stop a session the user drives (#256)', async (t) => {
   const { client } = await startLocal(t);
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_remember', 'hive_reply']);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_remember', 'hive_reply', 'hive_task']);
 });
 
 async function call(client: Client, name: string, args: Record<string, unknown> = {}): Promise<{ text: string; isError: boolean }> {

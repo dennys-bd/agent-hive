@@ -24,12 +24,12 @@ test('the first read shows a loading line; a failed one says so (#334)', async (
   expect(await screen.findByText('não foi possível ler as ferramentas e os servidores')).toBeInTheDocument();
 });
 
-test('the route lists the nine tools and the servers: a locked tool with its lock, an optional one with its switch, each server with its state (#334)', async () => {
+test('the route lists the ten tools and the servers: a locked tool with its lock, an optional one with its switch, each server with its state (#334)', async () => {
   stubMcp();
   render(<Screen />);
   const tools = await screen.findByRole('region', { name: 'ferramentas da hive' });
-  expect(within(tools).getAllByRole('listitem')).toHaveLength(9);
-  expect(within(tools).getAllByRole('switch').map((s) => s.getAttribute('aria-label'))).toEqual(['hive_remember', 'hive_applied', 'hive_create_task']);
+  expect(within(tools).getAllByRole('listitem')).toHaveLength(10);
+  expect(within(tools).getAllByRole('switch').map((s) => s.getAttribute('aria-label'))).toEqual(['hive_remember', 'hive_applied', 'hive_create_task', 'hive_task']);
   expect(within(tools).getByRole('img', { name: 'sem ela a sessão para sem avisar' })).toBeInTheDocument();
   const servers = screen.getByRole('region', { name: 'servidores externos' });
   expect(within(servers).getByRole('button', { name: 'editar playwright' })).toHaveTextContent('npx @playwright/mcp@latest');

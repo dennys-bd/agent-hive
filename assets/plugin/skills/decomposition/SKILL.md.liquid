@@ -35,7 +35,12 @@ of:
   and body are present, use them as-is and skip the fetch below;
 - anything else: the goal itself, as free text.
 
-With no arguments, ask the user for the goal and stop.
+Arguments, when given, are the goal. Without them, when the Hive's
+`hive_task` tool exists, call it (no input): its `task` is the goal, its
+`title`, `body` and `comments` the goal's text, and its issue the number
+at the end of `url` when `url` is a GitHub issue's. Without the tool, or
+when it answers `task: null`, take the issue whose number is the first
+in the branch name; with neither, ask the user for the goal and stop.
 
 ## Rules
 
@@ -68,7 +73,7 @@ committed.
 
 ## Read the goal
 
-1. For an issue, unless its title and body arrived inlined, fetch it:
+1. For an issue `hive_task` did not answer, unless its title and body arrived inlined, fetch it:
 
    ```sh
    gh issue view <n> --json number,title,body,url,comments

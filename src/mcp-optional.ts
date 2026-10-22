@@ -1,4 +1,4 @@
-// The tools the Hive's config may turn off (#333): hive_create_task, hive_remember, hive_applied. Registered per request, only those mcp.off leaves on.
+// The tools the Hive's config may turn off (#333): hive_create_task, hive_remember, hive_applied, hive_task. Registered per request, only those mcp.off leaves on.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { localWorkspaceOf, taskOfWorker } from './activities.js';
@@ -8,6 +8,7 @@ import { correlationOf } from './fact-derive.js';
 import type { Correlation } from './facts.js';
 import { isMemoryRefusal, lessonRefusal, looksLikeSecret, MEMORY_SECRET_MESSAGE, memoryCounts, whyProblem, withEntry, withUse } from './memory.js';
 import { livePtyId, type McpDeps, OK, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
+import { readTaskAnswer } from './mcp-task.js';
 import { MEMORY_KINDS, type MemoryOrigin, type MemoryUse, OPTIONAL_TOOLS, type OptionalTool } from './types.js';
 
 // hive_create_task: a new local task in the Comb (#132).
@@ -94,7 +95,20 @@ export function registerAppliedTool(server: McpServer, deps: McpDeps, header: st
 }
 
 type Register = (server: McpServer, deps: McpDeps, header: string | undefined) => void;
-const REGISTER: Record<OptionalTool, Register> = { hive_remember: registerRememberTool, hive_applied: registerAppliedTool, hive_create_task: registerCreateTaskTool };
+export const TASK_DESCRIPTION = 'Read the task this session works on, as the Hive holds it: id, itemId, title, body, url, source (absent on a task created in the Hive), workspace, repository (the workspace\'s GitHub origin, owner/name), stage, result (what earlier stages passed to hive_done, merged), parent and children (each with title and stage when the Hive holds it, closed: true on a child closed on its source), blockers (blockedBy and blocking, with stage when the blocker is a task of the Hive) and comments (the source\'s first 100, oldest first; commentsError when the source failed). task is null in a session with no task. Answers a JSON object.';
+
+// hive_task (#7): the worker's own task. A session with no task (#256) gets task: null, never an error; only an unknown worker is refused
+function registerTaskTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
+  server.registerTool('hive_task', { description: TASK_DESCRIPTION, inputSchema: {} }, async () => recorded(deps, header, 'hive_task', async () => {
+    const ptyId = livePtyId(deps, header);
+    const current = deps.live();
+    const worker = ptyId === undefined ? undefined : current?.state.workers.find((s) => s.runId === ptyId);
+    if (!current || !worker) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
+    return reply(JSON.stringify(await readTaskAnswer(deps.exec, current, worker)));
+  }));
+}
+
+const REGISTER: Record<OptionalTool, Register> = { hive_remember: registerRememberTool, hive_applied: registerAppliedTool, hive_create_task: registerCreateTaskTool, hive_task: registerTaskTool };
 
 /** The optional tools the Hive's config leaves on (#333): a tool in `off` is never registered, so tools/list lacks it and a call gets the SDK's unknown-tool answer. */
 export function registerOptionalTools(server: McpServer, deps: McpDeps, header: string | undefined, off: readonly OptionalTool[]): void {

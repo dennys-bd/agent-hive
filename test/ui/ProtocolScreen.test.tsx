@@ -33,17 +33,17 @@ test('the head, then the blocks in order, each locked, with + inserir trecho aqu
   const centre = await openProtocol(user);
   expect(screen.getByTestId('head')).toHaveTextContent('protocoloinjetado em toda sessão · trechos da hive travados · os seus entre eles');
   const blocks = await within(centre).findAllByRole('article');
-  expect(blocks.map((b) => b.getAttribute('aria-label'))).toEqual(['intro', 'done', 'result', 'ask', 'stop', 'remember', 'why', 'undo']);
+  expect(blocks.map((b) => b.getAttribute('aria-label'))).toEqual(['intro', 'task', 'done', 'result', 'ask', 'stop', 'remember', 'why', 'undo']);
   expect(centre.firstElementChild).toBe(blocks[0]);
   expect(blocks[0].nextElementSibling).toHaveTextContent(INSERT);
-  expect(within(centre).getAllByRole('button', { name: INSERT })).toHaveLength(8);
+  expect(within(centre).getAllByRole('button', { name: INSERT })).toHaveLength(9);
   expect(within(blocks[0]).getByText('da hive · atualiza sozinho')).toBeInTheDocument();
-  const remember = blocks[5];
+  const remember = blocks[6];
   expect(remember).toHaveClass('opacity-45');
-  expect(within(remember).getByText(PROTOCOL_READ.blocks[5].stage)).toHaveClass('line-through');
+  expect(within(remember).getByText(PROTOCOL_READ.blocks[6].stage)).toHaveClass('line-through');
   expect(within(remember).getByText('da hive · fora do protocolo')).toBeInTheDocument();
   expect(within(remember).getByText('hive_remember desligada em mcp')).toBeInTheDocument();
-  expect(blocks[4]).not.toHaveClass('opacity-45');
+  expect(blocks[5]).not.toHaveClass('opacity-45');
 });
 
 test('+ inserir trecho aqui after ask opens a draft there; typing and salvar POSTs the header and the body, and the saved passage shows after ask (#337)', async () => {
@@ -59,7 +59,7 @@ test('+ inserir trecho aqui after ask opens a draft there; typing and salvar POS
   render(<PluginsWindow />);
   const centre = await openProtocol(user);
   await within(centre).findAllByRole('article');
-  await user.click(within(centre).getAllByRole('button', { name: INSERT })[3]); // the fourth block is ask
+  await user.click(within(centre).getAllByRole('button', { name: INSERT })[4]); // the fifth block is ask
   const draft = within(centre).getByRole('article', { name: 'novo trecho' });
   expect(draft.previousElementSibling).toHaveAttribute('aria-label', 'ask');
   expect(within(draft).getByRole('button', { name: 'salvar' })).toBeDisabled();
