@@ -374,6 +374,7 @@ export interface Stage {
   after?: string; // delay from the task's entry into the stage before its prompt or action may run: "30m", "12h", "5d"; absent = right away
   approval?: true; // a stage end here waits for the user's approve or feedback (#268); prompt stages only: the parser refuses it next to action
   handoff?: true; // #692: the previous stage's session writes a handoff before the task enters here; the parser refuses it next to action or session continue
+  clearSession?: true; // #494: agent stages only (prompt or skill): the stage run's session leaves the task's list when a transition takes the task out
   maxWorkers?: number; // #475: the stage's own worker cap; 0 pauses its automation; absent = none. Starts by hand pass it, as they pass the global cap
 }
 
@@ -1664,6 +1665,7 @@ export type Effect =
   | { type: 'abortEvaluate'; runId: string } // #877: Stop, sleep, delete or a vanished stage: abort every run of that evaluation
   | { type: 'spawnSession'; worker: Worker; activity: Activity; task?: Task; sessionId?: string /* #931: absent on a new session of an agent that picks its own id (Codex): the first SessionStart names it */; continues: boolean; copy?: SessionCopy; repo?: true /* #208, #629: the session it continues is a repo one: it runs in the workspace's main repo */; prompt?: string /* #758: its first message */ } // the user's own session (#164, #283): task: on a task's activity; none on a local one (#587, #629); copy: a copy's first run
   | { type: 'dropCopiedTranscript'; dir: string; sessionId: string } // #587: the temporary <sessionId>.jsonl a copy put in `dir`, a transcript dir
+  | { type: 'removeTranscripts'; task: Task; activity: Activity; session: Session } // #494: the transcript of the run's session a clearSession stage forgot, removed where `activity` works; emitted only under deleteActivity.transcripts
   | { type: 'forgetScrollback'; ptyId: string } // #672: the pty host drops a sleeping run's kept transcript, or a live run's at its exit
   | { type: 'readCwd'; terminalId: string } // #696: the server reads the shell's cwd, then dispatches sleepTerminal with it
   | { type: 'dropTerminalFiles'; terminalId: string } // #696: a forgotten terminal's scrollback and history, and its ring in the pty host

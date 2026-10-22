@@ -128,7 +128,7 @@ export function stageEntries(stage: StageDraft): SettingEntry[] {
   const path = ['settings.section.flow', 'settings.stages', named(stage.name, 'settings.stages.unnamed')] as const;
   const gate = isGateDraft(stage);
   // #710: a prompt or skill stage's run fields, then its prompt or its skill
-  const agentFields = ['settings.stages.agent', 'settings.stages.model', 'settings.stages.session', 'settings.stages.specializedAgent', stage.action === 'skill' ? 'settings.stages.skill' : 'settings.stages.prompt', 'settings.stages.approval', 'settings.stages.handoff'] as const;
+  const agentFields = ['settings.stages.agent', 'settings.stages.model', 'settings.stages.session', 'settings.stages.specializedAgent', stage.action === 'skill' ? 'settings.stages.skill' : 'settings.stages.prompt', 'settings.stages.approval', 'settings.stages.handoff', 'settings.stages.clearSession'] as const;
   const itself = { label: path[2], path: path.slice(0, 2), view, anchor: settingAnchor('settings.stages.name', stage.id) };
   return [
     itself,

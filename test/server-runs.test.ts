@@ -1,11 +1,17 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { localActivityId } from '../src/activities.js';
+import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import type { OpenResult, SettingsBody } from '../src/types.js';
+import { removeTaskTranscript } from '../src/server-runs.js';
+import { worktreePath } from '../src/worktree.js';
+import type { Activity, OpenResult, Session, SettingsBody, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { tempDir } from './temp-dir.js';
 
 // The sleep routes of one flow (#672), end to end through the server: the route, the reducer and the record. No worker (maxConcurrent 0):
 // every run below is a local session the test opened
@@ -86,4 +92,22 @@ test('POST /ptys/sleep sleeps the activity\'s live terminals beside its agent ru
   assert.deepEqual([ending(server, ptyId), server.getState()?.terminals[0]?.asleep], ['all', true]);
   const again = await send(`${base}/ptys/sleep`, 'POST', { ptyIds: [shell] });
   assert.deepEqual([again.status, await again.json()], [404, { error: `nenhuma execução viva com esse id: ${shell}` }]);
+});
+
+test('removeTaskTranscript removes the session\'s transcript in its task\'s worktree and nothing else; with no workspace it removes nothing (#494)', async (t) => {
+  const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
+  const at = '2026-10-22T10:00:00.000Z';
+  const task: Task = { item: { itemId: 'board:1', id: '1', title: 'T', body: '', url: '', source: 'board' }, stage: 'plan', boardColumn: '', auto: true, workspace: 'hive' };
+  const activity: Activity = { id: 'a-board:1', kind: 'task', workspace: 'hive', slug: 'hive-1-t' };
+  const [run, other] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
+  const session: Session = { id: run, startedAt: at, stages: ['spec'], lastUsedAt: at, agent: 'claude' };
+  const dir = transcriptDir(worktreePath('/repo', 'hive-1-t'), env);
+  await mkdir(dir, { recursive: true });
+  for (const id of [run, other]) await writeFile(join(dir, `${id}.jsonl`), '{}\n');
+  const errors: string[] = [];
+  const log = { debug: () => undefined, error: (line: string) => { errors.push(line); } };
+  await removeTaskTranscript(undefined, task, activity, undefined, session, log, env);
+  assert.equal((await readdir(dir)).length, 2, 'no workspace: nothing goes');
+  await removeTaskTranscript('/repo', task, activity, undefined, session, log, env);
+  assert.deepEqual([await readdir(dir), errors], [[`${other}.jsonl`], []]);
 });

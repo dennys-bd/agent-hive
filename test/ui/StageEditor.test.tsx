@@ -193,6 +193,29 @@ test('executa: the handoff switch is disabled with its own hint on a stage witho
   expect(screen.getByText(t('settings.stages.handoff.noPrompt'))).toBeInTheDocument();
 });
 
+test('executa: the clear-session switch on a prompt stage writes clearSession, and stays on for a stage that continues the session (#494)', async () => {
+  const { user, last } = setup([stage('spec', { prompt: '/hive:new-spec {url}' }), stage('build', { prompt: '/hive:new-build {url}', session: 'continue' })]);
+  const clear = (): HTMLElement => screen.getByRole('switch', { name: t('settings.stages.clearSession') });
+  expect(clear()).toBeEnabled();
+  expect(screen.getByText(t('settings.stages.clearSession.hint'))).toBeInTheDocument();
+  await user.click(clear());
+  expect(last()[0].clearSession).toBe(true);
+  await user.click(chip('build'));
+  expect(clear()).toBeEnabled();
+});
+
+test('executa: the clear-session switch is disabled with its own hint on a stage without a prompt, and absent on a gate and an action stage (#494)', async () => {
+  const { user } = setup([stage('show', { prompt: '', clearSession: true }), stage('gate', { approval: true }), stage('clean', { action: 'deleteActivity' })]);
+  const clear = (): HTMLElement | null => screen.queryByRole('switch', { name: t('settings.stages.clearSession') });
+  expect(clear()).toBeDisabled();
+  expect(clear()).not.toBeChecked();
+  expect(screen.getByText(t('settings.stages.clearSession.noPrompt'))).toBeInTheDocument();
+  for (const name of ['gate', 'clean']) {
+    await user.click(chip(name));
+    expect(clear()).toBeNull();
+  }
+});
+
 test('executar comandos hides the agent, model, session, prompt and switches, disables the worker cap and shows the commands block with its switch on (#755)', async () => {
   const onChange = vi.fn();
   function Own() {

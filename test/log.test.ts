@@ -516,3 +516,11 @@ test('captureSession names a resume by its session\'s short id, and - while the 
   assert.equal(describeEvent({ ...base, resume: { sessionId: S, activityId: 'a-1' } }), `captureSession pty=${shortId(PTY)} run=${shortId(PTY)} resume=${shortId(S)}`);
   assert.equal(describeEvent({ ...base, resume: {} }), `captureSession pty=${shortId(PTY)} run=${shortId(PTY)} resume=-`);
 });
+
+test('describeEffect names a cleared run\'s transcript removal by task, slug and short session id, never its dir (#494)', () => {
+  const task = { item: { itemId: 'board:I1', id: '1', title: 't', body: '', url: '' }, stage: 'plan', boardColumn: 'x', auto: true };
+  const activity = { id: 'a', kind: 'task' as const, workspace: 'hive', slug: 'hive-1-x' };
+  const at = '2026-10-22T10:00:00.000Z';
+  const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: at, stages: ['spec'], lastUsedAt: at, agent: 'claude' as const };
+  assert.equal(describeEffect({ type: 'removeTranscripts', task, activity, session }), 'removeTranscripts #1 slug=hive-1-x a1b2c3d4');
+});

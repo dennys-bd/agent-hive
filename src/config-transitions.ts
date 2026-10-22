@@ -135,3 +135,50 @@ export function checkResumedAgents(stages: readonly Stage[], transitions: readon
     if (was !== now) fail(`comb.transitions[${i}].session`, `resumes a session of ${was} in a stage of ${now}: use "handoff" to switch agents (#692)`);
   });
 }
+
+// #494: the transitions into an agent stage a task can take after leaving `from` with no agent run in between: through gates and action
+// stages, which leave the activity's last session as it was. Breadth-first over the flow, each stage once, so a loop ends
+function passedOn(stages: readonly Stage[], transitions: readonly Transition[], from: string): Transition[] {
+  const seen = new Set([from]);
+  const queue = [from];
+  const out: Transition[] = [];
+  for (let at = queue.shift(); at !== undefined; at = queue.shift()) {
+    for (const transition of transitions.filter((t) => t.from === at)) {
+      const to = stages.find((s) => s.name === transition.to);
+      if (to === undefined) continue;
+      if (runsAgent(to)) out.push(transition);
+      else if (!seen.has(to.name)) { seen.add(to.name); queue.push(to.name); }
+    }
+  }
+  return out;
+}
+
+const clearedResume = (i: number, stage: string): never =>
+  fail(`comb.transitions[${i}].session`, `resumes the session of "${stage}", which clears it when it ends (#494)`);
+
+// A handoff asked past a stage that runs no agent is written by the task's last session (feedbackSession), the one the clear forgot
+const clearedHandoff = (i: number, stage: string, to: string): never =>
+  fail(`comb.transitions[${i}].to`, `"${to}" asks for a handoff from the session of "${stage}", which clears it when it ends (#494)`);
+
+/** #494: a resume of a session a stage clears as it ends is refused: it would find nothing and start a new session without a word. Two ways
+ * reach it: a transition whose resumedStage is the clearing stage, and a plain or previous move out of a stage that runs no agent, reached
+ * from the clearing stage through such stages only, since the cleared session was the task's last there; a handoff asked there, which that
+ * session would write, too. A stage's loop to itself keeps its session, so it resumes it. A destination that runs no agent resumes nothing,
+ * as in checkResumedAgents. */
+export function checkClearedResumes(stages: readonly Stage[], transitions: readonly Transition[]): void {
+  const clears = (name: string | undefined) => stages.find((s) => s.name === name)?.clearSession === true;
+  transitions.forEach((transition, i) => {
+    const to = stages.find((s) => s.name === transition.to);
+    const resumed = to === undefined || !runsAgent(to) ? undefined : resumedStage(transition, to);
+    const loop = transition.to === transition.from && resumed === transition.from; // a stage's own loop is no end: its session stays
+    if (resumed !== undefined && !loop && clears(resumed)) clearedResume(i, resumed);
+  });
+  stages.filter((s) => s.clearSession === true).forEach((clearing) => {
+    passedOn(stages, transitions, clearing.name).forEach((transition) => {
+      const to = stages.find((s) => s.name === transition.to);
+      if (transition.from === clearing.name || to === undefined) return;
+      if (resumedStage(transition, to) === transition.from) clearedResume(transitions.indexOf(transition), clearing.name);
+      if (to.handoff === true) clearedHandoff(transitions.indexOf(transition), clearing.name, to.name);
+    });
+  });
+}

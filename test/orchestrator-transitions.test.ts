@@ -196,3 +196,30 @@ test('a handoff whose transition loops to its own stage clears its pending mark 
   const looped = stageEnd(asked, { result: { handoff: 'h' } }).state;
   assert.deepEqual([taskOf(looped)?.stage, activityOf(looped, ID)?.handoffPending, activityOf(looped, ID)?.handoffFeedback], ['Build', undefined, undefined]);
 });
+
+test('a stage with clearSession ends through its transition: its run\'s session leaves the list, and its transcript removal follows the kill under deleteActivity.transcripts; a handoff the destination asks for comes first (#494)', () => {
+  const toReview: Transition = { from: 'Build', to: 'Review', when: 'done' };
+  const started = flow([toReview], [{ ...STAGES[0], clearSession: true }, STAGES[1], STAGES[2]]);
+  const run = activityOf(started, ID)?.sessionId;
+  assert.ok(run !== undefined && sessionsOf(started, ID).some((s) => s.id === run));
+  const { state, effects } = stageEnd({ ...started, deleteActivity: { ...started.deleteActivity, session: true, transcripts: true } });
+  assert.deepEqual([taskOf(state)?.stage, sessionsOf(state, ID).some((s) => s.id === run)], ['Review', false]);
+  assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' || e.type === 'removeTranscripts' ? [e.type] : [])), ['kill', 'removeTranscripts']);
+  const asking = flow([toReview], [{ ...STAGES[0], clearSession: true }, { ...STAGES[1], handoff: true }, STAGES[2]]);
+  const first = activityOf(asking, ID)?.sessionId;
+  const asked = stageEnd(asking).state;
+  assert.ok(sessionsOf(asked, ID).some((s) => s.id === first), 'the handoff request stays in the stage: its session writes the handoff');
+  const handed = stageEnd(asked).state;
+  assert.deepEqual([taskOf(handed)?.stage, sessionsOf(handed, ID).some((s) => s.id === first)], ['Review', false]);
+});
+
+test('an approval on a stage with clearSession: the run was killed at its end, the approve clears its session and removes its transcript (#494)', () => {
+  const approved: Transition = { from: 'Build', to: 'Review', when: 'approved' };
+  const started = flow([approved], [{ ...STAGES[0], approval: true, clearSession: true }, STAGES[1], STAGES[2]]);
+  const run = activityOf(started, ID)?.sessionId;
+  const ended = stageEnd({ ...started, deleteActivity: { ...started.deleteActivity, session: true, transcripts: true } });
+  assert.ok(ended.effects.some((e) => e.type === 'kill'), 'no Stop is held: the approved transition resumes nothing (checkClearedResumes)');
+  const { state, effects } = reduce(ended.state, { type: 'approve', activityId: workId(ended.state, ID) });
+  assert.deepEqual([taskOf(state)?.stage, sessionsOf(state, ID).some((s) => s.id === run)], ['Review', false]);
+  assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' || e.type === 'removeTranscripts' ? [e.type] : [])), ['removeTranscripts']);
+});

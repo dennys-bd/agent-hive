@@ -4,8 +4,8 @@ import { activityOf } from '../src/activities.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { advance, dismissError, type EndOf, follow, retry, take, unrouted } from '../src/transit.js';
 import { transitionKey } from '../src/transitions.js';
-import { FEEDBACK_MAX } from '../src/types.js';
-import type { Activity, Item, Stage, State, Task, Transition, TryRecord } from '../src/types.js';
+import { END, FEEDBACK_MAX } from '../src/types.js';
+import type { Activity, Item, Session, Stage, State, Task, TaskUsage, Transition, TryRecord } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
 
 // The try history (#915): take records each try an automatic transition with maxTries counts, and wherever the tries go the log goes.
@@ -186,4 +186,49 @@ test('a dismissError event in a wait-for-CI stage starts the wait on the same di
   const fix = pure(erredIn('fix'), (s) => reduce(s, { type: 'dismissError', taskId: ID }));
   const live = activityOf(fix.state, ID);
   assert.deepEqual([live?.error, live?.stopped, fix.effects.filter((e) => e.type === 'spawn')], [undefined, true, []]);
+});
+
+// #494: a stage that clears its run's session as a transition takes the task out
+const RUN = 'a1b2c3d4-0000-4000-8000-000000000001';
+const FREE = 'b1b2c3d4-0000-4000-8000-000000000002';
+const SPEC: Stage = { name: 'spec', from: { board: ['Todo'] }, prompt: '/spec {url}', clearSession: true };
+const PLAN: Stage = { name: 'plan', from: { board: ['Ready'] }, prompt: '/plan {url}' };
+const OUT: Transition = { from: 'spec', to: 'plan', when: 'done' };
+const USAGE: TaskUsage = { tokens: 1200, ms: 60_000, waitingMs: 0, parts: [] };
+const ran = (id: string, stages: string[], free?: true): Session => ({ id, startedAt: AT, stages, lastUsedAt: AT, agent: 'claude', ...(free ? { free } : {}) });
+
+interface Clearing { stages?: Stage[]; transitions?: Transition[]; transcripts?: boolean }
+// The task in spec, its activity naming `work`'s session, its record holding the stage run's session, a free one and the usage; frozen
+function clearing(work: Partial<Activity> = { sessionId: RUN }, { stages = [SPEC, PLAN], transitions = [OUT], transcripts = false }: Clearing = {}): State {
+  const task: Task = { item, stage: 'spec', boardColumn: '', auto: true, workspace: 'hive' };
+  const base = withWork({ ...initialState(0), workspaces: ['hive'], stages, transitions, tasks: [task] }, ID, work, { sessions: [ran(RUN, ['spec']), ran(FREE, [], true)], usage: USAGE });
+  return deepFreeze({ ...base, deleteActivity: { ...base.deleteActivity, session: transcripts, transcripts } });
+}
+const listed = (s: State): string[] => s.activityRecords.filter((r) => r.taskIds.includes(ID)).flatMap((r) => r.sessions.map((x) => x.id));
+const usageIn = (s: State): TaskUsage | undefined => s.activityRecords.find((r) => r.taskIds.includes(ID))?.usage;
+
+test('a transition out of a stage with clearSession forgets its run\'s session, off the record and the activity; the free session and the usage stay, the transcript too with transcripts off (#494)', () => {
+  const out = pure(clearing(), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' }));
+  assert.deepEqual([out.state.tasks[0].stage, listed(out.state), activityOf(out.state, ID)?.sessionId, usageIn(out.state)], ['plan', [FREE], undefined, USAGE]);
+  assert.deepEqual(out.effects.filter((e) => e.type === 'removeTranscripts'), []);
+});
+
+test('the same on a transition to end; with deleteActivity.transcripts on, the run\'s transcript removal is emitted for the activity it ran in (#494)', () => {
+  const toEnd: Transition = { from: 'spec', to: END, when: 'done' };
+  const out = pure(clearing(undefined, { transitions: [toEnd], transcripts: true }), (s) => take(s, s.tasks[0], toEnd, { trigger: 'done' }));
+  assert.deepEqual([out.state.tasks, listed(out.state), activityOf(out.state, ID)?.sessionId, usageIn(out.state)], [[], [FREE], undefined, USAGE]);
+  assert.deepEqual(out.effects.map((e) => (e.type === 'removeTranscripts' ? [e.type, e.task.item.itemId, e.activity.slug, e.session.id] : [e.type])), [['removeTranscripts', ID, 'hive-board-1', RUN]]);
+});
+
+test('the session stays on a feedback loop to the stage, a halt, a stage without the option, a stage run still holding the task, and a session that never ran the stage (#494)', () => {
+  const kept = (s: State): unknown[] => [listed(s), activityOf(s, ID)?.sessionId];
+  const both = [[RUN, FREE], RUN];
+  const back: Transition = { from: 'spec', to: 'spec', when: 'feedback' };
+  const asking = clearing(undefined, { stages: [{ ...SPEC, approval: true }, PLAN], transitions: [back] });
+  assert.deepEqual(kept(pure(asking, (s) => take(s, s.tasks[0], back, { trigger: 'feedback', feedback: 'again' })).state), both, 'a loop stays in the stage');
+  assert.deepEqual(kept(pure(clearing(undefined, { transitions: [] }), (s) => advance(s, s.tasks[0], { trigger: 'done' })).state), both, 'a halt keeps it for Continue');
+  const { clearSession: _clear, ...keeping } = SPEC;
+  assert.deepEqual(kept(pure(clearing(undefined, { stages: [keeping, PLAN] }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), both, 'no option');
+  assert.deepEqual(kept(pure(clearing({ sessionId: RUN, workerId: 'w1' }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), both, 'a free session ended the stage while its stage run still runs');
+  assert.deepEqual(kept(pure(clearing({ sessionId: FREE }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), [[RUN, FREE], FREE], 'the activity names a session that never ran spec');
 });

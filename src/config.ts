@@ -9,7 +9,7 @@ import { REPOSITORY } from './task-refs.js';
 import { parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
 import { checkStageModels, parseAgentArgs } from './config-agent-args.js';
-import { checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
+import { checkClearedResumes, checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
 import { hiveActionRaw, parseStageAgent, runsAgentRaw } from './config-stage-agent.js';
 import { parseFork } from './fork.js';
 import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseStageEvaluate, parseTimeout } from './run-commands.js';
@@ -269,6 +269,8 @@ function parseStage(raw: unknown, field: string, sources: SourceRef[]): Stage {
   if (raw.handoff !== undefined && hiveAction) throw new Error(`${CONFIG_FILE}: "${field}.handoff" cannot be combined with "action"`); // #692
   if (raw.handoff !== undefined && raw.session === 'continue') throw new Error(`${CONFIG_FILE}: "${field}.handoff" cannot be combined with "session": "continue"`); // #692: that session already holds the work
   if (raw.handoff !== undefined && !runsAgentRaw(raw)) throw new Error(`${CONFIG_FILE}: "${field}.handoff" cannot be used without "prompt"`); // #692: a gate never spawns, so no session reads the handoff
+  if (raw.clearSession !== undefined && hiveAction) throw new Error(`${CONFIG_FILE}: "${field}.clearSession" cannot be combined with "action"`); // #494
+  if (raw.clearSession !== undefined && !runsAgentRaw(raw)) throw new Error(`${CONFIG_FILE}: "${field}.clearSession" cannot be used without "prompt"`); // #494: a gate never spawns, so no run's session is there to clear
   const agent = raw.agent === undefined ? {} : { agent: requireAgent(raw.agent, `${field}.agent`) }; // absent = the default agent
   const after = raw.after === undefined ? {} : { after: requireDuration(raw.after, `${field}.after`) };
   const stageAgent = parseStageAgent(raw, field); // #710: after the action and its combinations, so a bad action names itself first
@@ -281,6 +283,7 @@ function parseStage(raw: unknown, field: string, sources: SourceRef[]): Stage {
     ...optionalString(raw.prompt, `${field}.prompt`), ...session, ...maxWorkers, ...optionalString(raw.model, `${field}.model`), ...agent, ...stageAgent,
     ...onStart, ...action, ...commands, ...ci, ...evaluate, ...verdicts, ...after, ...(raw.approval !== undefined && requireBoolean(raw.approval, `${field}.approval`) ? { approval: true as const } : {}),
     ...(raw.handoff !== undefined && requireBoolean(raw.handoff, `${field}.handoff`) ? { handoff: true as const } : {}),
+    ...(raw.clearSession !== undefined && requireBoolean(raw.clearSession, `${field}.clearSession`) ? { clearSession: true as const } : {}), // #494
   };
 }
 
@@ -644,6 +647,7 @@ function parseFields(raw: unknown): Config {
 export function parseConfig(raw: unknown): Config {
   const config = parseFields(raw);
   checkResumedAgents(config.comb.stages, config.comb.transitions, config.defaultAgent); // #925: needs defaultAgent, which the fields parse last
+  checkClearedResumes(config.comb.stages, config.comb.transitions); // #494: a POST /settings save goes through here too
   checkStageModels(config.comb.stages, config.defaultAgent); // #927: the same
   return config;
 }

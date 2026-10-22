@@ -74,7 +74,7 @@ import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
 import { registerPrGithubRoutes } from './server-pr-github.js';
 import { recordCheckpoint } from './server-checkpoints.js';
-import { registerRunRoutes } from './server-runs.js';
+import { registerRunRoutes, removeTaskTranscript } from './server-runs.js';
 import { registerTerminalRoutes } from './server-terminals.js';
 import { shellCwd } from './shell-procs.js';
 import { removeTerminalFiles, restoreScrollbacks } from './terminal-files.js';
@@ -521,6 +521,10 @@ export function createServer(deps: ServerDeps): HiveServer {
       case 'dropCopiedTranscript': // #587: the new session has its own transcript, or never opened; a failure only leaves a stray file
         log.info(describeEffect(effect));
         await dropCopiedTranscript(effect.dir, effect.sessionId, log).catch((err) => log.error(`transcript copy ${describeEffect(effect)}: ${errorMessage(err)}`));
+        return;
+      case 'removeTranscripts': // #494: the reducer already forgot the session; the dir is the activity's as the clear saw it
+        log.info(describeEffect(effect));
+        await removeTaskTranscript(taskWorkspace(runtime.config, effect.task)?.path, effect.task, effect.activity, undefined, effect.session, log);
         return;
       case 'forgetScrollback': // #672: a sleeping run's transcript, once its tab closed, its session continued or it fell out of the last SLEPT_MAX
         log.info(describeEffect(effect));
