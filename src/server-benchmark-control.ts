@@ -15,8 +15,10 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_UNPROCESSABLE = 422;
 const E = '/benchmark/experiments/:id';
-const MORE = z.object({ pairs: z.number().int().positive() });
-const SLEEP = z.object({ reason: z.string(), wakeAt: z.string().regex(HH_MM).optional() });
+const MAX_PAIRS = 100;
+const MAX_REASON = 500;
+const MORE = z.object({ pairs: z.number().int().positive().max(MAX_PAIRS) });
+const SLEEP = z.object({ reason: z.string().trim().min(1).max(MAX_REASON), wakeAt: z.string().regex(HH_MM).optional() });
 const WAKE = z.object({ deadline: z.union([z.literal('finish-round'), z.literal('none'), z.object({ until: z.string().regex(HH_MM) })]).optional() });
 
 export interface BenchControlRouteDeps {
@@ -51,14 +53,18 @@ function parsed<T>(schema: z.ZodType<T>, req: Request, res: Response): T | undef
   return undefined;
 }
 
-// The blindness of every arm that will run first, so a refusal starts and edits nothing (spec); then `before` (more-rounds' edit)
-async function start(deps: BenchControlRouteDeps, res: Response, experiment: Experiment, before?: () => Promise<unknown>): Promise<void> {
+// more-rounds' edit: the loop reads pace.pairs when it starts, so the edit comes before `run`; `undo` puts the pace back when run does not start
+interface PairsEdit { apply(): Promise<unknown>; undo(): Promise<unknown> }
+
+// The blindness of every arm that will run first, so a refusal starts and edits nothing (spec); then the edit
+async function start(deps: BenchControlRouteDeps, res: Response, experiment: Experiment, edit?: PairsEdit): Promise<void> {
   if (deps.runner.isLive(experiment.id)) return fail(res, HTTP_CONFLICT, 'live', 'the experiment is running in this Hive');
   const leak = await deps.runner.blindness(experiment);
   if (leak !== undefined) return fail(res, HTTP_UNPROCESSABLE, 'blindness', leak);
-  await before?.();
-  const answer = await deps.runner.run(experiment.id);
+  await edit?.apply();
+  const answer = await deps.runner.run(experiment.id).catch(async (err: unknown) => { await edit?.undo(); throw err; });
   if (answer === 'started') return ok(res, HTTP_ACCEPTED);
+  await edit?.undo();
   fail(res, HTTP_CONFLICT, answer, answer === 'live' ? 'the experiment is running in this Hive' : 'another Hive is running this experiment');
 }
 
@@ -75,13 +81,20 @@ function registerStartRoutes(app: Express, deps: BenchControlRouteDeps): void {
     const body = experiment === undefined ? undefined : parsed(MORE, req, res);
     if (experiment === undefined || body === undefined) return;
     if (experiment.status === 'draft') return refuse(res, experiment, 'more-rounds');
-    const pace = { ...experiment.pace, pairs: experiment.pace.pairs + body.pairs };
-    const edit = (): Promise<unknown> => deps.dispatch({ type: 'benchmarkEdited', id: experiment.id, patch: { pace } });
+    // the pace is read again where it is edited: the request's own read can be older than a concurrent more-rounds
+    let before = experiment.pace;
+    const edit: PairsEdit = {
+      apply: async () => {
+        before = deps.requireLive(res)?.state.benchmark.experiments.find((e) => e.id === experiment.id)?.pace ?? before;
+        return deps.dispatch({ type: 'benchmarkEdited', id: experiment.id, patch: { pace: { ...before, pairs: before.pairs + body.pairs } } });
+      },
+      undo: () => deps.dispatch({ type: 'benchmarkEdited', id: experiment.id, patch: { pace: before } }),
+    };
     if (isRunning(experiment)) { // the live loop reads pace.pairs before each round
-      await edit();
+      await edit.apply();
       return ok(res, HTTP_OK);
     }
-    await start(deps, res, { ...experiment, pace }, edit);
+    await start(deps, res, { ...experiment, pace: { ...experiment.pace, pairs: experiment.pace.pairs + body.pairs } }, edit);
   });
 }
 

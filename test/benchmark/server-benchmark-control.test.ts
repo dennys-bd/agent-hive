@@ -9,13 +9,14 @@ import type { BenchmarkEvent, Experiment, ExperimentStatus } from '../../src/typ
 import { fakeLog } from '../fakes.js';
 import { experiment, run, stateWith } from './fixtures.js';
 
-function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?: StartAnswer; leak?: string } = {}) {
+function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?: StartAnswer; leak?: string; later?: Experiment } = {}) {
+  let reads = 0; // the first read is the request's own; `later` is what a read at dispatch time finds
   const calls: unknown[][] = [];
   const events: BenchmarkEvent[] = [];
   const app = express();
   app.use(express.json());
   registerBenchmarkControlRoutes(app, {
-    requireLive: () => ({ state: stateWith(exp) }), dispatch: async (event) => { events.push(event); }, log: fakeLog().log,
+    requireLive: () => ({ state: stateWith(reads++ === 0 ? exp : stub.later ?? exp) }), dispatch: async (event) => { events.push(event); }, log: fakeLog().log,
     runner: {
       run: async (id) => { calls.push(['run', id]); return stub.answer ?? 'started'; },
       sleep: async (id, reason, wakeAt) => { calls.push(['sleep', id, reason, wakeAt]); },
@@ -73,7 +74,8 @@ test('run answers 409 with nothing missing, while this Hive runs the experiment,
 test('a bad body answers 400 and reaches nothing (#472)', async (t) => {
   const cases: [ExperimentStatus, string, unknown][] = [
     ['running', '/more-rounds', {}], ['running', '/more-rounds', { pairs: 0 }], ['running', '/more-rounds', { pairs: 1.5 }], ['running', '/more-rounds', { pairs: '2' }],
-    ['running', '/sleep', {}], ['running', '/sleep', { reason: 3 }], ['running', '/sleep', { reason: 'x', wakeAt: '7:00' }], ['running', '/sleep', { reason: 'x', wakeAt: '24:00' }],
+    ['running', '/more-rounds', { pairs: 101 }], ['running', '/sleep', {}], ['running', '/sleep', { reason: 3 }], ['running', '/sleep', { reason: '   ' }],
+    ['running', '/sleep', { reason: 'x'.repeat(501) }], ['running', '/sleep', { reason: 'x', wakeAt: '7:00' }], ['running', '/sleep', { reason: 'x', wakeAt: '24:00' }],
     ['sleeping', '/wake', { deadline: 'later' }], ['sleeping', '/wake', { deadline: { until: '25:00' } }],
   ];
   for (const [status, path, body] of cases) {
@@ -111,12 +113,26 @@ test('stop-after-round dispatches it: 200; more-rounds adds pairs to a live expe
 test('sleep hands the reason and wakeAt to the runner: 200; wake hands each deadline, absent included: 202 (#472)', async (t) => {
   const sleeping = routes(t, experiment({ status: 'running' }));
   assert.deepEqual(await sleeping.post('/exp-1/sleep', { reason: 'night', wakeAt: '07:00' }), [200, { ok: true }]);
-  assert.deepEqual(await sleeping.post('/exp-1/sleep', { reason: '' }), [200, { ok: true }]);
-  assert.deepEqual(sleeping.calls, [['sleep', 'exp-1', 'night', '07:00'], ['sleep', 'exp-1', '', undefined]]);
+  assert.deepEqual(await sleeping.post('/exp-1/sleep', { reason: '  lunch ' }), [200, { ok: true }]);
+  assert.deepEqual(sleeping.calls, [['sleep', 'exp-1', 'night', '07:00'], ['sleep', 'exp-1', 'lunch', undefined]]);
   const deadlines: (WakeDeadline | undefined)[] = ['finish-round', { until: '09:30' }, 'none', undefined];
   for (const deadline of deadlines) {
     const h = routes(t, experiment({ status: 'sleeping' }));
     assert.deepEqual(await h.post('/exp-1/wake', deadline === undefined ? {} : { deadline }), [202, { ok: true }]);
     assert.deepEqual(h.calls, [['wake', 'exp-1', deadline]]);
+  }
+});
+
+test('more-rounds adds its pairs to the pace the state has when it dispatches, not the one the request read (#472)', async (t) => {
+  const h = routes(t, experiment({ status: 'running' }), { later: experiment({ status: 'running', pace: { ...experiment().pace, pairs: 4 } }) });
+  assert.deepEqual(await h.post('/exp-1/more-rounds', { pairs: 2 }), [200, { ok: true }]);
+  assert.deepEqual(h.events, [{ type: 'benchmarkEdited', id: 'exp-1', patch: { pace: { ...experiment().pace, pairs: 6 } } }]);
+});
+
+test('more-rounds on a done experiment puts the pace back when the runner does not start it (#472)', async (t) => {
+  for (const answer of ['locked', 'live'] as StartAnswer[]) {
+    const h = routes(t, NOTHING_MISSING, { answer });
+    assert.equal((await h.post('/exp-1/more-rounds', { pairs: 2 }))[0], 409, answer);
+    assert.deepEqual(h.events.map((e) => e.type === 'benchmarkEdited' && e.patch.pace?.pairs), [3, 1], answer);
   }
 });
