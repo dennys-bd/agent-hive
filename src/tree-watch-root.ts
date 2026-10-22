@@ -1,6 +1,7 @@
 import { watch as fsWatch } from 'node:fs';
 import { lstat, readFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
+import { gitIn } from './git-status.js';
 import type { Logger } from './log.js';
 import type { Exec } from './types.js';
 import { wordsOf } from './worktree.js';
@@ -77,6 +78,33 @@ export function createBatch(now: () => number, push: (paths: string[] | undefine
   };
 }
 
+// The grouped poll's one run (#502): with -uall and matching, any change git can list changes a line; # branch.oid and # branch.head catch a
+// commit and a switch. An edit inside an ignored folder changes no line: in this mode it shows on window focus or after the sidebar's own
+// operations, and a nested repository's stage or commit only on focus (the outer status does not see it)
+export const FALLBACK_STATUS_ARGS = ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--ignored=matching'];
+
+function startFallback(root: string, { exec, log, push }: Pick<RootDeps, 'exec' | 'log' | 'push'>): { close(): void } {
+  let last: string | undefined;
+  let isRunning = false;
+  let isClosed = false;
+  const tick = async (): Promise<void> => {
+    if (isRunning) return; // a slow git never stacks runs
+    isRunning = true;
+    try {
+      const output = await gitIn(root, FALLBACK_STATUS_ARGS, exec);
+      if (!isClosed && last !== undefined && output !== last) push(undefined);
+      last = output;
+    } catch (err) {
+      log.debug(`tree watch: ${root}: status failed: ${wordsOf(err)}`); // the root may be gone: its lease ends with its activity
+    } finally {
+      isRunning = false;
+    }
+  };
+  void tick(); // the baseline the first tick compares with
+  const timer = setInterval(() => void tick(), FALLBACK_MS);
+  return { close: () => { isClosed = true; clearInterval(timer); } };
+}
+
 /** The gitdir of the repository at `folder` (#502): its .git folder, or the one its .git file names (a worktree's); undefined without either. */
 export async function gitDirFor(folder: string): Promise<string | undefined> {
   const dotGit = join(folder, '.git');
@@ -85,13 +113,29 @@ export async function gitDirFor(folder: string): Promise<string | undefined> {
   return stat.isDirectory() ? dotGit : gitDirOf(await readFile(dotGit, 'utf8'), folder);
 }
 
+function treeListener(batch: { add(path: string | undefined): void }, isCheckout: boolean): (filename: string | null) => void {
+  return (filename) => {
+    // a null name: the platform named nothing, so anything may have changed
+    const path = filename === null ? undefined : filename.split(sep).join('/');
+    const kind = path === undefined ? 'git' : pathKind(path, isCheckout);
+    if (kind !== 'drop') batch.add(kind === 'git' ? undefined : path);
+  };
+}
+
 export function createRootWatch(root: string, isCheckout: boolean, deps: RootDeps): RootWatch {
   const batch = createBatch(deps.now, deps.push);
   const watchers = new Map<string, Watcher>(); // '' the tree, ROOT_GITDIR the root's gitdir, a nested repository's path its gitdir
   let isClosed = false;
-  const isWatching = (): boolean => !isClosed;
+  let poll: { close(): void } | undefined;
+  const isWatching = (): boolean => !isClosed && poll === undefined;
   const closeAll = (): void => { for (const watcher of watchers.values()) watcher.close(); watchers.clear(); batch.close(); };
-  const rootFailed = (err: unknown): void => deps.log.debug(`tree watch: ${root}: ${wordsOf(err)}`); // Task 7 turns this into the fallback
+  // Any failure of the tree's or the root gitdir's watch: one git status for the whole root instead, nested repositories included
+  const rootFailed = (err: unknown): void => {
+    if (!isWatching()) return;
+    closeAll();
+    deps.onFail(wordsOf(err));
+    poll = startFallback(root, deps);
+  };
   const open = (key: string, path: string, recursive: boolean, onEvent: (filename: string | null) => void, onError: (err: unknown) => void): void => {
     try {
       const watcher = deps.watch(path, { recursive }, (_eventType, filename) => onEvent(filename));
@@ -101,17 +145,11 @@ export function createRootWatch(root: string, isCheckout: boolean, deps: RootDep
       onError(err);
     }
   };
-  const onTree = (filename: string | null): void => {
-    // a null name: the platform named nothing, so anything may have changed
-    const path = filename === null ? undefined : filename.split(sep).join('/');
-    const kind = path === undefined ? 'git' : pathKind(path, isCheckout);
-    if (kind !== 'drop') batch.add(kind === 'git' ? undefined : path);
-  };
   // git replaces index and HEAD by renaming a lock over them: a watch on the folder survives that, one on the file goes dead after the first
   const onGitDir = (as: string | undefined) => (filename: string | null): void => {
     if (filename === null || GIT_FILES.has(filename)) batch.add(as);
   };
-  open('', root, true, onTree, rootFailed);
+  open('', root, true, treeListener(batch, isCheckout), rootFailed);
   // A checkout's own .git is already inside the recursive watch
   const ready = isCheckout ? Promise.resolve() : gitDirFor(root).then(
     (dir) => { if (dir !== undefined && isWatching()) open(ROOT_GITDIR, dir, false, onGitDir(undefined), rootFailed); },
@@ -129,5 +167,5 @@ export function createRootWatch(root: string, isCheckout: boolean, deps: RootDep
       deps.log.debug(`tree watch: ${root}: ${repo}: ${wordsOf(err)}`);
     });
   };
-  return { ready, watchNested, close: () => { isClosed = true; closeAll(); } };
+  return { ready, watchNested, close: () => { isClosed = true; closeAll(); poll?.close(); } };
 }

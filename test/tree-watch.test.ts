@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { COALESCE_MS, createTreeWatch, gitDirOf, LEASE_TTL_MS, MIN_PUSH_MS, pathKind, PATHS_CAP, type WatchFn } from '../src/tree-watch.js';
+import { COALESCE_MS, createTreeWatch, FALLBACK_MS, gitDirOf, LEASE_TTL_MS, MIN_PUSH_MS, pathKind, PATHS_CAP, type WatchFn } from '../src/tree-watch.js';
 import type { Exec, TreeChange } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
 
@@ -187,4 +187,43 @@ test('watchNested watches a leased root\'s nested repository\'s gitdir, its own 
   assert.deepEqual(changes, [{ type: 'tree', activityId: 'a-1', paths: ['docs'] }]);
   tree.release('L1');
   assert.deepEqual(fs.open(), []);
+});
+
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve)); // a poll's git answer lands on the next turn
+const ENOSPC = Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' });
+
+test('a watch that throws switches its root to one git status every FALLBACK_MS, logged once; a tick matching the last output pushes nothing, one that differs pushes once per activity with no paths; close() stops it (#502)', async (t) => {
+  const outputs = ['# branch.head main\0', '# branch.head main\0', '# branch.head other\0'];
+  const calls: string[][] = [];
+  const exec: Exec = async (_file, args) => { calls.push(args); return { stdout: outputs[Math.min(calls.length, outputs.length) - 1] }; };
+  const { tree, changes, warnings, tick } = setup(t, { exec, watch: () => { throw ENOSPC; } });
+  await tree.lease('a-1', '/wt', 'L1', false);
+  await tree.lease('a-2', '/wt', 'L2', false); // one poll per root, shared
+  await settle();
+  assert.deepEqual(calls, [['--no-optional-locks', '-C', '/wt', '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=off', 'status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--ignored=matching']]);
+  tick(FALLBACK_MS);
+  await settle();
+  assert.deepEqual(changes, [], 'the same output: nothing changed');
+  tick(FALLBACK_MS);
+  await settle();
+  assert.deepEqual(changes, [{ type: 'tree', activityId: 'a-1' }, { type: 'tree', activityId: 'a-2' }]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /\/wt.*ENOSPC/);
+  await tree.watchNested('/wt', 'docs'); // the fallback watches no nested repository
+  tree.close();
+  tick(FALLBACK_MS * 3);
+  await settle();
+  assert.equal(calls.length, 3, 'close() stops the poll');
+});
+
+test('a watcher\'s error closes the root\'s watchers and falls back to the poll, logged once per root however often it fails (#502)', async (t) => {
+  const { root } = await worktreeRoot(t);
+  const { tree, fs, warnings } = setup(t, { exec: async () => ({ stdout: '' }) });
+  await tree.lease('a-1', root, 'L1', false);
+  fs.open(true)[0].fail(new Error('EMFILE: too many open files'));
+  assert.deepEqual(fs.open(), [], 'the tree\'s and the gitdir\'s watchers are closed');
+  tree.release('L1');
+  await tree.lease('a-1', root, 'L2', false); // a fresh watcher on the same root
+  fs.open(true)[0].fail(new Error('EMFILE: too many open files'));
+  assert.equal(warnings.length, 1);
 });
