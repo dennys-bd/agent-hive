@@ -2,33 +2,36 @@ import { randomUUID } from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import { activityOf, taskOfPr } from './activities.js';
 import { taskWorkspace } from './config.js';
-import { DIFF_MAX_BYTES, DiffTooLarge, parseDiff, withHash } from './diff.js';
+import { DiffTooLarge } from './diff.js';
 import { workspaceBase } from './fork.js';
 import { prTextOf } from './pr-bodies.js';
-import { parseThreads, PR_THREADS_QUERY, prDiffArgs, PrNotFound, requestTimesOf, timelineArgs, withRequestTimes } from './pr-github.js';
+import { PrNotFound } from './pr-github.js';
 import { conflictedFiles } from './pr-conflicts.js';
-import { addPrDraft, dropStalePrMarks, markPrReviewed, type PrReviewStore, removePrDraft, updatePrDraft } from './pr-review-store.js';
+import { addPrDraft, markPrReviewed, type PrReviewStore, removePrDraft, updatePrDraft } from './pr-review-store.js';
 import { prLink, prNumber, prRepo } from './pull-requests.js';
 import { sourceLogin } from './read-model/rows.js';
 import { prDataOf, type StoredPr } from './read-model/views.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
 import { isHash, isPath, parseLineAnchor } from './review-bodies.js';
 import { readingOf, type Reading, type RepoReadModel } from './server-repos.js';
+import { type ChangesReader, changesReaderOf, dropStale, GitHubUnreachable, HeadMoved } from './server-pr-changes.js';
 import { badRequest, errorMessage, refuse } from './server-review.js';
 import type { LiveView, Refusal, TaskRouteDeps } from './server-tasks.js';
 import type { Exec as GhExec, GqlJson } from './sources/github-gql.js';
 import type { Logger } from './log.js';
-import { type FileDiff, type Gql, type PrChecksRead, type PrData, type PrReviewFile, type PrReviewRequest, REVIEW_TEXT_MAX, type State, type Task } from './types.js';
+import { type Gql, type PrChecksRead, type PrData, type PrReviewFile, REVIEW_TEXT_MAX, type State, type Task } from './types.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_TOO_LARGE = 413;
 const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
+const HTTP_SERVICE_UNAVAILABLE = 503;
 // the raw text, as #757's issue number: 1e2, 0x10 and 07 all parse to a number yet name no PR the URL spells
 const PR_NUMBER = /^[1-9]\d{0,9}$/;
 const NUMBER_MESSAGE = 'number must be a PR number';
 const UNKNOWN_REPOSITORY_MESSAGE = 'repository is not one the Hive lists';
+const UNREACHABLE_MESSAGE = 'could not reach GitHub'; // the issue page's words (#181)
 const HEAD_MOVED_MESSAGE = 'o PR mudou durante a leitura, atualize';
 const TOO_LARGE_MESSAGE = 'diff grande demais para o visualizador'; // #270's words
 const MARK_MESSAGE = 'path um texto não vazio, hash um sha256 e reviewed true ou false';
@@ -51,18 +54,11 @@ export interface PrRouteDeps extends Pick<TaskRouteDeps, 'requireLive' | 'dispat
   readModel?: RepoReadModel; // #187: the page's reads and the writes' answers; absent (setup mode, a failed open): the reads answer 503
 }
 
-// A head that moved twice while GET …/pulls/:number read it (#592)
-class HeadMoved extends Error {
-  constructor() {
-    super('the head moved while the PR was read');
-    this.name = 'HeadMoved';
-  }
-}
-
 /** A failed GitHub read or write as its answer (#592): no PR, a moving head, an oversized diff, or GitHub's own message as a 502. gh prints
  * no token, so the message carries none. */
 export function githubFailure(err: unknown): Refusal {
   if (err instanceof PrNotFound) return { status: HTTP_NOT_FOUND, message: err.message };
+  if (err instanceof GitHubUnreachable) return { status: HTTP_SERVICE_UNAVAILABLE, message: UNREACHABLE_MESSAGE };
   if (err instanceof HeadMoved) return { status: HTTP_CONFLICT, message: HEAD_MOVED_MESSAGE };
   if (err instanceof DiffTooLarge) return { status: HTTP_TOO_LARGE, message: TOO_LARGE_MESSAGE };
   return { status: HTTP_BAD_GATEWAY, message: errorMessage(err) };
@@ -106,68 +102,26 @@ export async function prTarget(deps: Pick<PrRouteDeps, 'requireLive' | 'exec'>, 
   return { url, state: listed.state, config: listed.config, ...(task === undefined ? {} : { task }) };
 }
 
-// The diff GitHub holds, capped as #270's. ponytail: gh's own 20 MB buffer answers a larger one with its overflow, a 502
-function cappedFiles(text: string): FileDiff[] {
-  if (Buffer.byteLength(text, 'utf8') > DIFF_MAX_BYTES) throw new DiffTooLarge();
-  return parseDiff(text).map(withHash);
-}
-
-// An error's class only: its message may carry gh's output, and the log line names the PR by number
-const errorName = (err: unknown): string => (err instanceof Error ? err.name : typeof err);
-
-// How far the base moved past the head (#854, #187): REST's compare, for every open PR now that no GraphQL read asks it. A deleted fork has no
-// head to compare; a failure is no number
-async function behindOf(deps: Pick<PrRouteDeps, 'gh' | 'log'>, url: string, data: StoredPr): Promise<Pick<PrData, 'behindBy'>> {
-  if (data.state !== 'open' || data.headOwner === '') return {};
-  try {
-    const compare = JSON.parse(await deps.gh(['api', `repos/${prRepo(url)}/compare/${encodeURIComponent(data.baseRef)}...${encodeURIComponent(data.headOwner)}:${encodeURIComponent(data.headRef)}`])) as { behind_by?: unknown };
-    return typeof compare.behind_by === 'number' ? { behindBy: compare.behind_by } : {};
-  } catch (err) {
-    deps.log.debug(`pr #${prNumber(url)}: the compare was not read (${errorName(err)})`);
-    return {};
-  }
-}
-
-// When each pending request was made (#67, #187): the timeline's review_requested events, read only when a request is pending; a failure only
-// drops the times
-async function requestsOf(deps: Pick<PrRouteDeps, 'gh' | 'log'>, url: string, data: StoredPr): Promise<PrReviewRequest[]> {
-  if (data.reviewRequests.length === 0) return [];
-  try {
-    return withRequestTimes(data.reviewRequests, requestTimesOf(await deps.gh(timelineArgs(prRepo(url), Number(prNumber(url))))));
-  } catch (err) {
-    deps.log.debug(`pr #${prNumber(url)}: the timeline was not read (${errorName(err)})`);
-    return data.reviewRequests;
-  }
-}
-
-/** GET …/pulls/:number's read (#187): the refetch (conditional; its failure is the loop's log line, and the model answers), the page from the
- * model, the diff, then the threads with the head they were read at. The diff carries no oid, so a head that moved past the stored one is
- * refetched and read once more, and a second move is HeadMoved, unless that refetch did not succeed: then the model answers at the threads' head. Then the compare and the request times. An item the parser skips is a debug
- * line, by number, never the link. */
-export async function readPr(deps: Pick<PrRouteDeps, 'gql' | 'gh' | 'log'>, reading: Reading, url: string): Promise<PrData> {
+// The PR's fields from the model (#497), as #181's issue page: a stored PR at once, its refetch started and not awaited (the loop logs a failure,
+// a change comes back as a readModel event); a PR the model lacks waits for the refetch, so one the sync has not reached yet is no 404
+async function prFields(reading: Reading, url: string): Promise<{ data: StoredPr } | { refusal: Refusal }> {
   const repository = prRepo(url);
-  const number = Number(prNumber(url)); // prNumber is the text of a link a route checked: digits
-  const skip = (reason: string): void => deps.log.debug(`pr #${number}: an item skipped (${reason})`);
-  for (const again of [false, true]) {
-    const outcome = await reading.model.refetch(repository, number, { again });
-    const page = reading.model.db.prPage(reading.source, repository, number);
-    if (page === undefined) throw new PrNotFound();
-    const files = cappedFiles(await deps.gh(prDiffArgs(url)));
-    const read = parseThreads(await deps.gql(PR_THREADS_QUERY, { url }), skip);
-    const head = page.pull?.headSha ?? read.head; // never polled (its refetch failed): the threads' head is all there is
-    // A second mismatch is the PR moving again only when the refetch read GitHub; one that failed or was skipped left the model behind, and the
-    // diff just read matches the threads' head
-    const refetched = outcome !== 'failed' && outcome !== 'skipped';
-    if (read.head !== head && (!again || refetched)) continue;
-    const stored = { ...prDataOf(page, sourceLogin(reading.source)), head: read.head };
-    const [behind, reviewRequests] = await Promise.all([behindOf(deps, url, stored), requestsOf(deps, url, stored)]);
-    return { ...stored, ...behind, reviewRequests, threads: read.threads, truncated: read.truncated, files };
+  const number = Number(prNumber(url));
+  const login = sourceLogin(reading.source);
+  const page = reading.model.db.prPage(reading.source, repository, number);
+  if (page !== undefined) {
+    void reading.model.refetch(repository, number); // never rejects: the loop logs its failure
+    return { data: prDataOf(page, login) };
   }
-  throw new HeadMoved();
+  const outcome = await reading.model.refetch(repository, number);
+  const late = outcome === 'gone' ? undefined : reading.model.db.prPage(reading.source, repository, number);
+  if (late !== undefined) return { data: prDataOf(late, login) };
+  if (outcome === 'failed' || outcome === 'skipped') return { refusal: { status: HTTP_SERVICE_UNAVAILABLE, message: UNREACHABLE_MESSAGE } };
+  return { refusal: githubFailure(new PrNotFound()) };
 }
 
 // The conflicted files of a PR in conflict (#758), from its task's worktree; none on any other PR, without a task or without a worktree
-async function conflictsOf(deps: PrRouteDeps, found: PrTarget, data: PrData): Promise<string[] | undefined> {
+async function conflictsOf(deps: PrRouteDeps, found: PrTarget, data: Pick<PrData, 'mergeState' | 'baseRef' | 'head'>): Promise<string[] | undefined> {
   if (data.mergeState !== 'conflicts' || found.task === undefined) return undefined;
   const live = activityOf(found.state, found.task.item.itemId);
   if (live?.worktree === undefined || live.worktreeGone) return undefined;
@@ -198,36 +152,34 @@ export async function writePrFile(deps: Pick<PrRouteDeps, 'prReviews' | 'notifyP
   return true;
 }
 
-// The marks whose file changed or left the diff go once the answer is out (#592), broadcast only when some went; a fixed log line, since a
-// JSON error of the file quotes its content
-async function dropStale(deps: PrRouteDeps, url: string, files: FileDiff[]): Promise<void> {
-  try {
-    const current = await deps.prReviews.read(url);
-    if (dropStalePrMarks(current, files) === current) return;
-    await deps.prReviews.update(url, (file) => dropStalePrMarks(file, files));
-    deps.notifyPrReview(url);
-  } catch (err) {
-    deps.log.error(`pr review #${prNumber(url)}: the stale marks could not be dropped (${err instanceof Error ? err.name : 'error'})`);
-  }
-}
-
 const bodyOf = (req: Request): Record<string, unknown> => (req.body ?? {}) as Record<string, unknown>;
 
-// GET …/pulls/:number and its review file. Only the latest read of a PR drops marks: an older one finishing late would drop a mark made against
-// a newer diff. ponytail: one entry per link, never pruned
-function registerReadRoutes(app: Express, deps: PrRouteDeps): void {
-  const latest = new Map<string, number>();
+// GET …/pulls/:number (the fields, from the model), …/changes (the diff and the rest, GitHub's) and the review file. Only the latest changes
+// read of a PR drops marks: an older one finishing late would drop a mark made against a newer diff.
+function registerReadRoutes(app: Express, deps: PrRouteDeps): ChangesReader {
+  const changes = changesReaderOf(deps);
   app.get(PR_ROUTE, async (req: Request, res: Response) => {
     const found = await prTarget(deps, req, res);
     const reading = found && (await readingOf(deps, res));
     if (!found || !reading) return;
-    const mine = (latest.get(found.url) ?? 0) + 1;
-    latest.set(found.url, mine);
+    const read = await prFields(reading, found.url);
+    if ('refusal' in read) return refuse(res, read.refusal);
     try {
-      const data = await readPr(deps, reading, found.url);
-      const conflicts = await conflictsOf(deps, found, data);
-      res.json(conflicts === undefined ? data : { ...data, conflicts });
-      if (latest.get(found.url) === mine) await dropStale(deps, found.url, data.files);
+      const conflicts = await conflictsOf(deps, found, read.data);
+      res.json(conflicts === undefined ? read.data : { ...read.data, conflicts });
+    } catch (err) {
+      githubRefusal(deps, res, err, `pr #${prNumber(found.url)}`);
+    }
+  });
+  // #497: the diff, the threads, the compare and the times, apart from the fields. Only the latest read drops marks
+  app.get(`${PR_ROUTE}/changes`, async (req: Request, res: Response) => {
+    const found = await prTarget(deps, req, res);
+    const reading = found && (await readingOf(deps, res));
+    if (!found || !reading) return;
+    try {
+      const { changes: answer, isLatest } = await changes.read(reading, found.url, req.query.fresh === '1');
+      res.json(answer);
+      if (isLatest()) await dropStale(deps, found.url, answer.files);
     } catch (err) {
       githubRefusal(deps, res, err, `pr #${prNumber(found.url)}`);
     }
@@ -238,6 +190,7 @@ function registerReadRoutes(app: Express, deps: PrRouteDeps): void {
     const file = await readPrFile(deps, res, found.url);
     if (file) res.json(file);
   });
+  return changes;
 }
 
 // revisado and adicionar à revisão (#592); the review's summary is sent with it, never stored (#758)
@@ -301,9 +254,10 @@ function registerChecksRoute(app: Express, deps: PrRouteDeps): void {
 }
 
 /** The PR page's reads, its review file and its checks (#592, #758, #187): every route names the PR by its repository and number. */
-export function registerPrRoutes(app: Express, deps: PrRouteDeps): void {
-  registerReadRoutes(app, deps);
+export function registerPrRoutes(app: Express, deps: PrRouteDeps): ChangesReader {
+  const changes = registerReadRoutes(app, deps);
   registerFileRoutes(app, deps);
   registerDraftEdits(app, deps);
   registerChecksRoute(app, deps);
+  return changes;
 }

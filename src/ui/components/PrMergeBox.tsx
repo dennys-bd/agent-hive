@@ -2,18 +2,19 @@ import { useState } from 'react';
 import { activityOf, prsOf } from '../../activities';
 import { mergeOrderBlocker, prRepo } from '../../pull-requests';
 import { answerable } from '../../transitions';
-import type { PrData, State, Task } from '../../types';
+import type { State, Task } from '../../types';
 import { act } from '@/components/actions';
 import { awaitsReview, MergeButton, mergeOffReason } from '@/components/MergeButton';
 import { ResolveDialog } from '@/components/ResolveDialog';
 import { Button } from '@/components/ui/button';
 import { t, tPlural } from '@/i18n';
 import { viewerRequestOf } from '@/lib/pr-reviewers';
+import type { PrView } from '@/lib/pr-view';
 
 const MUTED = 'text-muted-foreground';
 
 // What holds of the PR, each only when true (handoff 03): its approvals, its checks passing, then the box's own facts
-function factsOf(pr: PrData, extra: string[]): string {
+function factsOf(pr: PrView, extra: string[]): string {
   return [
     ...(pr.approvals > 0 ? [tPlural('pr.merge.facts.approvals', pr.approvals, { n: pr.approvals })] : []),
     ...(pr.checks?.state === 'success' ? [t('pr.merge.facts.checks')] : []),
@@ -65,7 +66,7 @@ function ConflictFile({ path }: { path: string }) {
   );
 }
 
-interface BoxProps { pr: PrData; task?: Task; state: State; orderBlocker?: string; onSettled(): void; onMerged?(): void }
+interface BoxProps { pr: PrView; task?: Task; state: State; orderBlocker?: string; onSettled(): void; onMerged?(): void }
 
 // conflict (handoff 03): conflicts in N files and how far the base moved; resolve in the activity on a task's PR and the merge off in outline;
 // the conflicted files and the note
@@ -101,7 +102,7 @@ function ReadyBox({ pr, task, state, orderBlocker, onSettled, onMerged }: BoxPro
 }
 
 // What holds besides the approvals and checks ok (handoff item 9): the workflows awaiting approval or the failed checks, then no conflicts
-function permissionFacts(pr: PrData): string[] {
+function permissionFacts(pr: PrView): string[] {
   const failed = pr.checks?.items.filter((c) => c.state === 'failure').length ?? 0;
   if ((pr.checks?.awaiting?.length ?? 0) > 0) return [t('pr.merge.facts.awaiting'), t('pr.merge.facts.clean')];
   return failed > 0 ? [t('pr.merge.facts.failed', { n: failed }), t('pr.merge.facts.clean')] : [t('pr.merge.facts.clean')];
@@ -146,7 +147,7 @@ function Box(props: BoxProps) {
   return props.pr.canPush ? <ReadyBox {...props} /> : <NoPermissionBox {...props} />;
 }
 
-export interface PrMergeBoxProps { pr: PrData; task?: Task; state: State; onSettled(): void; onMerged?(): void }
+export interface PrMergeBoxProps { pr: PrView; task?: Task; state: State; onSettled(): void; onMerged?(): void }
 
 /** The merge box (#758, handoff 03): ready, in conflict, awaiting a review on a PR no task holds (#68), or held by another blocker. The merge keeps #592's rule, which the server applies; a
  * merged or closed PR has no box. */

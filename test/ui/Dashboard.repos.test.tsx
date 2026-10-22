@@ -26,9 +26,10 @@ const PRS: RepoPrs = {
   counts: { open: 2, merged: 0, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z',
   rows: [{ url: 'https://github.com/acme/site/pull/7', number: 7, title: 'Fix the pager', state: 'open', isDraft: false, mergeState: 'clean', updatedAt: '2026-10-05T09:00:00Z' }],
 };
+const PR_CHANGES = { head: 'f'.repeat(40), files: [], threads: [], truncated: false, reviewRequests: [] };
 const PR_PAGE: PrData = {
   url: 'https://github.com/acme/site/pull/7', id: 'PR_7', number: 7, title: 'Fix the pager', state: 'open', isDraft: false, mergeState: 'clean', head: 'f'.repeat(40),
-  methods: ['squash'], viewer: 'ana', files: [], threads: [], truncated: false, body: 'Fixes the pager.', author: 'bia', createdAt: '2026-10-05T09:00:00Z',
+  methods: ['squash'], viewer: 'ana', body: 'Fixes the pager.', author: 'bia', createdAt: '2026-10-05T09:00:00Z',
   updatedAt: '2026-10-05T09:00:00Z', headRef: 'fix-pager', baseRef: 'main', commits: 1, additions: 3, deletions: 1, approvals: 0, reviews: [], comments: [], canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviewRequests: [], closes: [],
 };
 const PR_8: PrData = { ...PR_PAGE, url: 'https://github.com/acme/site/pull/8', id: 'PR_8', number: 8, title: 'Second slice' };
@@ -49,8 +50,8 @@ const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.str
 // What each GET answers, by its path; anything else { ok: true }. Later tasks add entries
 const ANSWERS: Record<string, unknown> = {
   '/repositories': [SITE], '/repositories/acme/site/issues?state=open': OPEN, '/repositories/acme/site/pulls?state=open': PRS, '/repositories/acme/site/issues/12': PAGE, '/sources/roadmap/project': VIEW,
-  '/repositories/acme/site/pulls/7': PR_PAGE, '/repositories/acme/site/pulls/7/review': { reviewed: [], drafts: [] },
-  '/repositories/acme/site/pulls/8': PR_8, '/repositories/acme/site/pulls/8/review': { reviewed: [], drafts: [] },
+  '/repositories/acme/site/pulls/7': PR_PAGE, '/repositories/acme/site/pulls/7/changes': PR_CHANGES, '/repositories/acme/site/pulls/7/review': { reviewed: [], drafts: [] },
+  '/repositories/acme/site/pulls/8': PR_8, '/repositories/acme/site/pulls/8/changes': PR_CHANGES, '/repositories/acme/site/pulls/8/review': { reviewed: [], drafts: [] },
 };
 const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => jsonRes(Object.hasOwn(ANSWERS, String(input)) ? ANSWERS[String(input)] : { ok: true }));
 

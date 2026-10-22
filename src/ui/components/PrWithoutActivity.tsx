@@ -1,5 +1,5 @@
 import { taskOfIssue } from '../../repos/issue-task';
-import type { PrData, State } from '../../types';
+import type { State } from '../../types';
 import { PrBlock } from '@/components/PrBlock';
 import { PrTaskPopover } from '@/components/PrTaskPopover';
 import { AssigneeCell } from '@/components/ProjectRow';
@@ -8,11 +8,12 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
 import { viewerRequestOf } from '@/lib/pr-reviewers';
+import type { PrView } from '@/lib/pr-view';
 
 const MUTED = 'text-muted-foreground';
 
 // Topo (handoff 7): the author's avatar, PR by {author}, and how long ago it opened with nothing of the Hive's on it
-function AuthorTop({ pr }: { pr: PrData }) {
+function AuthorTop({ pr }: { pr: PrView }) {
   return (
     <div className="flex items-center gap-2">
       <AssigneeCell logins={[pr.author]} />
@@ -24,7 +25,7 @@ function AuthorTop({ pr }: { pr: PrData }) {
   );
 }
 
-interface NeutralProps { pr: PrData; state: State; drafts: number; onReloaded(): void }
+interface NeutralProps { pr: PrView; state: State; drafts: number; onReloaded(): void }
 
 // Bloco neutro (handoff 7), in the status block's place: the viewer's request only when GitHub holds one, so nothing false is said; review
 // on an open PR, as the tab bar's; create task…; the note
@@ -50,7 +51,7 @@ function NeutralBlock({ pr, state, drafts, onReloaded }: NeutralProps) {
 }
 
 // No fluxo (handoff 7): each issue the PR closes that is a task, with its stage and task ›; none, "no task in the flow"
-function InFlow({ pr, state, onGoTo }: { pr: PrData; state: State; onGoTo(taskId: string): void }) {
+function InFlow({ pr, state, onGoTo }: { pr: PrView; state: State; onGoTo(taskId: string): void }) {
   const rows = pr.closes.flatMap((issue) => {
     const task = taskOfIssue(state.tasks, issue.url);
     return task === undefined ? [] : [{ issue, task }];
@@ -75,7 +76,7 @@ function InFlow({ pr, state, onGoTo }: { pr: PrData; state: State; onGoTo(taskId
 }
 
 export interface PrWithoutActivityProps {
-  pr: PrData; state: State;
+  pr: PrView; state: State;
   drafts: number; // the page's pending review drafts, as the tab bar's review shows them
   onReloaded(): void; // the page reads the PR again after a review is sent
   onGoTo(taskId: string): void; // in the flow's task ›

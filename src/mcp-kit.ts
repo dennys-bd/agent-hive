@@ -21,6 +21,7 @@ export interface McpDeps extends ReplyReviews {
   canRelate(itemId: string): boolean; // hive_stop's block (#294): a hive task, or a task whose source relates
   facts: Pick<FactLog, 'write'>; // #742: each tool call's mcp.call
   memory: Pick<MemoryStore, 'read' | 'update'>; // #797: hive_remember and hive_applied write the worker's workspace's memory
+  preloadPr?(url: string): Promise<void>; // #497: hive_pr's PR read and stored ahead of its page; never awaited
   exec: Exec; // #854: the remotes behind a fork's hive_conventions
 }
 

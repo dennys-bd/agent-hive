@@ -22,7 +22,7 @@ test('the page reads the PR: its title, its line, conversation N and files N; fi
   expect(line.getByText('· 2 commits ·')).toBeInTheDocument();
   expect(line.getByText('+1')).toHaveClass('text-working');
   expect(line.getByText('−1')).toHaveClass('text-destructive');
-  expect(screen.getByRole('tab', { name: 'conversa 2' })).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('tab', { name: 'conversa 2' })).toHaveAttribute('aria-selected', 'true');
   await user.click(screen.getByRole('tab', { name: 'arquivos 1' }));
   expect(await screen.findByRole('region', { name: 'src/a.ts' })).toBeInTheDocument();
   expect(screen.getByRole('toolbar', { name: 'arquivos' })).toHaveTextContent('1 arquivo · +1 −1');
@@ -68,7 +68,7 @@ test('a task\'s PR fills the slot with este PR and the task\'s other PRs, never 
   expect(props.onOpenIssue).toHaveBeenCalledWith('https://github.com/acme/app/issues/1');
   await user.click(within(slot().getByRole('region', { name: 'outros PRs da tarefa' })).getByRole('button', { name: 'abrir' }));
   expect(props.onOpenPr).toHaveBeenCalledWith(PR2);
-  await user.click(screen.getByRole('tab', { name: 'arquivos 1' }));
+  await user.click(await screen.findByRole('tab', { name: 'arquivos 1' }));
   expect(slot().getByRole('region', { name: 'este PR' })).toBeInTheDocument();
 });
 
@@ -155,7 +155,7 @@ test('the header gets the PR\'s GitHub URL from the first frame, with /files whi
   renderPage(STATE, { header: (_reload, github) => <p>{`github ${github}`}</p> });
   expect(screen.getByText(`github ${PR}`)).toBeInTheDocument(); // before the read: prLink(ref)
   await screen.findByRole('heading', { name: 'The PR' });
-  await user.click(screen.getByRole('tab', { name: 'arquivos 1' }));
+  await user.click(await screen.findByRole('tab', { name: 'arquivos 1' }));
   expect(screen.getByText(`github ${PR}/files`)).toBeInTheDocument();
   await user.click(screen.getByRole('tab', { name: /^conversa/ }));
   expect(screen.getByText(`github ${PR}`)).toBeInTheDocument();

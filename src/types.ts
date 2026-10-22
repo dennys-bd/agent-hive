@@ -1083,18 +1083,22 @@ export interface PrReviewRequest { reviewer: string; team: boolean; viewer: bool
 /** An issue a PR closes on merge (#66), from GitHub's closingIssuesReferences. */
 export interface PrClosingIssue { repository: string; number: number; url: string }
 
-/** A PR as its page reads it (#592, #758): the PR as GitHub holds it, its diff and its conversations, and the page's fields. truncated:
- * GitHub holds more than 100 threads; behindBy: how far the base moved past the head, absent when GitHub cannot compare them; conflicts: the
+/** A PR as its page reads it (#592, #758): the PR as GitHub holds it, its conversations and the page's fields. The diff, the threads, behindBy
+ * and the request times are `PrChanges` (#497); reviewRequests carry no `at` here. conflicts: the
  * files a merge of the base would conflict in, only when computed; canEdit: GitHub lets the login edit the title and description; canPush: the
  * login may merge and re-run there (#854); headOwner / baseOwner: the two repositories' owners, which differ on a fork's PR. reviewRequests: who is asked to review, pending only (#67).
  * closes: the issues it closes on merge, in GitHub's order (#66); in a stack only the PR targeting the base carries them. */
 export interface PrData {
   url: string; id: string; number: number; title: string; state: PrState; isDraft: boolean; mergeState: PrMergeState; head: string;
-  methods: MergeMethod[]; viewer: string; files: FileDiff[]; threads: PrThread[]; truncated: boolean;
+  methods: MergeMethod[]; viewer: string;
   body: string; author: string; createdAt: string; updatedAt: string; headRef: string; baseRef: string; commits: number; additions: number; deletions: number;
-  decision?: PrReviewDecision; approvals: number; checks?: PrChecks; reviews: PrReviewEvent[]; comments: PrIssueComment[]; behindBy?: number;
+  decision?: PrReviewDecision; approvals: number; checks?: PrChecks; reviews: PrReviewEvent[]; comments: PrIssueComment[];
   conflicts?: string[]; canEdit: boolean; canPush: boolean; headOwner: string; baseOwner: string; reviewRequests: PrReviewRequest[]; closes: PrClosingIssue[];
 }
+/** GET …/pulls/:number/changes (#497): what GitHub alone holds of a PR, read at `head`, the head the diff and the threads were read at, which
+ * may trail the fields' head. truncated: GitHub holds more than 100 threads; behindBy: how far the base moved past the head, absent when GitHub
+ * cannot compare them; reviewRequests: the pending ones, each with the time the latest request was made when the timeline has it. */
+export interface PrChanges { head: string; files: FileDiff[]; threads: PrThread[]; truncated: boolean; behindBy?: number; reviewRequests: PrReviewRequest[] }
 /** GET …/pulls/:number/checks (#758): what the checks' poll reads, nothing else of the PR. */
 export type PrChecksRead = Pick<PrData, 'checks' | 'mergeState' | 'updatedAt'>;
 /** What the review popover sends (#758): a comment, an approval or a change request. */

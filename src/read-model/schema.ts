@@ -82,4 +82,13 @@ export const MIGRATIONS: readonly string[] = [
   ALTER TABLE issues ADD COLUMN parent_title TEXT;
   ALTER TABLE issues ADD COLUMN sub_issues_total INTEGER;
   ALTER TABLE issues ADD COLUMN sub_issues_completed INTEGER;`,
+  // #497: the PR page's changes, one row per open PR: the head they were read at, the raw diff, and the threads, the compare and the
+  // review-request times as JSON. Keyed by number, as the routes name a PR. A PR that stops being open, or leaves the model, takes its row
+  // with it. No refill: the table fills as pages open
+  `CREATE TABLE pull_changes (source TEXT NOT NULL, repository TEXT NOT NULL, number INTEGER NOT NULL, head TEXT NOT NULL,
+    diff TEXT NOT NULL, details TEXT NOT NULL, read_at TEXT NOT NULL, PRIMARY KEY (source, repository, number));
+  CREATE TRIGGER pull_changes_closed AFTER UPDATE OF state ON issues WHEN new.kind = 'pr' AND new.state <> 'open'
+    BEGIN DELETE FROM pull_changes WHERE source = new.source AND repository = new.repository AND number = new.number; END;
+  CREATE TRIGGER pull_changes_gone AFTER DELETE ON issues WHEN old.kind = 'pr'
+    BEGIN DELETE FROM pull_changes WHERE source = old.source AND repository = old.repository AND number = old.number; END;`,
 ];

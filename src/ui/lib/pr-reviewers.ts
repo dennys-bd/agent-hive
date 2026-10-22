@@ -1,6 +1,7 @@
 // The this PR block's review rows (#66): one per person, from what PrData already holds. Pure. ponytail: the reviews are the timeline's last
 // 100, so on a very long PR an old reviewer may be missing; read more of the timeline if that ever shows
 import type { PrData, PrReviewEvent, PrReviewRequest } from '../../types.js';
+import type { PrView } from './pr-view.js';
 
 export type ReviewerState = 'approved' | 'changes' | 'resolved' | 'commented' | 'requested';
 export interface Reviewer { login: string; team: boolean; state: ReviewerState }
@@ -16,7 +17,7 @@ function latestOf(reviews: PrReviewEvent[]): PrReviewEvent {
 
 // A change request reads resolved once every review thread its author opened (the thread's first comment is theirs) is resolved; with no
 // thread of theirs there is nothing to resolve
-function changesOf(pr: PrData, login: string): 'changes' | 'resolved' {
+function changesOf(pr: PrView, login: string): 'changes' | 'resolved' {
   const own = pr.threads.filter((thread) => thread.comments[0]?.author === login);
   return own.length > 0 && own.every((thread) => thread.resolved) ? 'resolved' : 'changes';
 }
@@ -24,7 +25,7 @@ function changesOf(pr: PrData, login: string): 'changes' | 'resolved' {
 /** Who reviews the PR (#66): every pending request first, in GitHub's order, a team by its slug; then each other person by their latest
  * submitted review, newest first. A person both requested and reviewed shows the request: GitHub asks them again. A team request hides no
  * user, since GitHub does not say who is in the team. */
-export function reviewersOf(pr: PrData): Reviewer[] {
+export function reviewersOf(pr: PrView): Reviewer[] {
   const requests = pr.reviewRequests.map((request): Reviewer => ({ login: request.reviewer, team: request.team, state: 'requested' }));
   const isRequested = (login: string): boolean => pr.reviewRequests.some((request) => !request.team && request.reviewer === login);
   const authors = [...new Set(pr.reviews.map((review) => review.author))].filter((login) => !isRequested(login));

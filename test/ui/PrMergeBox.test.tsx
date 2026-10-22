@@ -4,8 +4,9 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { PrMergeBox } from '@/components/PrMergeBox';
 import { RunOpenerContext } from '@/components/terminal-tabs';
 import { setLanguage } from '@/i18n';
-import type { PrData, State } from '../../src/types';
+import type { State } from '../../src/types';
 import { fakePrHive, type FakePrHive, HEAD, PR, prCalls, prData, ROUTE, STATE, WITH_TASK } from './pr-harness';
+import type { PrView } from '@/lib/pr-view';
 
 let hive: FakePrHive;
 beforeEach(() => { setLanguage('pt'); localStorage.clear(); hive = fakePrHive(); });
@@ -18,7 +19,7 @@ const SID = 'aaaaaaaa-1111-4111-8111-111111111111';
 const LIVE_WORKER = { id: 's1', status: 'working' as const, runId: 'W1', activityId: 'a-I1', freeSession: true as const, sessionId: SID };
 const FEEDBACK: State = { ...AWAITING, transitions: [{ from: 'dev', to: 'dev', when: 'feedback' }] }; // dev takes feedback
 // The box over `pr`, task I1's when `state` holds it; the run opener and onSettled spies; onMerged only when given (#69)
-function renderBox(pr: PrData, state: State = WITH_TASK, onMerged?: () => void) {
+function renderBox(pr: PrView, state: State = WITH_TASK, onMerged?: () => void) {
   const onSettled = vi.fn();
   const openRun = vi.fn();
   const view = render(<RunOpenerContext.Provider value={openRun}><PrMergeBox pr={pr} task={state.tasks[0]} state={state} onSettled={onSettled} onMerged={onMerged} /></RunOpenerContext.Provider>);

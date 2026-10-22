@@ -39,7 +39,7 @@ test('migration 4 on a version-3 file adds the review and check tables, the page
   const pull = after.prepare('SELECT read_at, head_ref, head_owner, commits, requested, closes, awaiting FROM pulls').get();
   assert.deepEqual({ ...pull }, { read_at: null, head_ref: '', head_owner: '', commits: 0, requested: '[]', closes: '[]', awaiting: '[]' });
   const tables = after.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'pull\\_%' ESCAPE '\\' ORDER BY name").all().map((row) => row.name);
-  assert.deepEqual(tables, ['pull_checks', 'pull_reviews']);
+  assert.deepEqual(tables, ['pull_changes', 'pull_checks', 'pull_reviews']);
 });
 
 test('the repos row carries the merge methods the repository allows; a flag GitHub answers null or omits is not allowed (#187)', async () => {
