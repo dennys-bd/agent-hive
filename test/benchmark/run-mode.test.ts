@@ -9,7 +9,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { INTERVENTIONS_FILE } from '../../src/benchmark/metrics.js';
 import { MARKER_FILE } from '../../src/benchmark/run-home.js';
-import { createRecorder, type InterventionRecorder, readMarker, registerRunMode, TERMINAL_INPUT, writeMarker } from '../../src/benchmark/run-mode.js';
+import { createRecorder, type InterventionRecorder, readMarker, registerRunMode, TERMINAL_INPUT, viewerInput, writeMarker } from '../../src/benchmark/run-mode.js';
 import { tempDir } from '../temp-dir.js';
 import { runMarker } from './fixtures.js';
 
@@ -126,4 +126,14 @@ test('GET /benchmark-run answers the marker and the interventions so far (#475)'
   await h.recorder.record('POST /signal', '/signal');
   const res = await fetch(`${h.base}/benchmark-run`, { headers: WORKER });
   assert.deepEqual([res.status, await res.json()], [200, { marker: runMarker(), interventions: [entry('POST /signal', '/signal')] }]);
+});
+
+test('viewerInput records a pty\'s first input once, under its detail, and delivers every input; frozen it delivers none and records none (#475)', async (t) => {
+  const recorder = createRecorder(await tempDir(t, 'run-home-'), () => new Date(AT), () => undefined);
+  const live = viewerInput({ marker: runMarker(), recorder }, (ptyId) => (ptyId === 'pty-1' ? 'RUN-AB12-3' : ptyId));
+  assert.deepEqual([live('pty-1'), live('pty-1'), live('pty-2')], [true, true, true]);
+  assert.deepEqual(await recorder.list(), [entry(TERMINAL_INPUT, 'RUN-AB12-3'), entry(TERMINAL_INPUT, 'pty-2')]);
+  const still = createRecorder(await tempDir(t, 'run-home-'), () => new Date(AT), () => undefined);
+  assert.equal(viewerInput({ marker: runMarker({ frozen: true }), recorder: still }, (id) => id)('pty-1'), false);
+  assert.deepEqual(await still.list(), []);
 });

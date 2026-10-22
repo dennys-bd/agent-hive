@@ -4,7 +4,7 @@ import { type WebSocket, WebSocketServer } from 'ws';
 import { type Logger, shortId } from './log.js';
 import type { LspHost } from './lsp-host.js';
 import type { PtyHost } from './pty-host.js';
-import { matchesSecret, presentedSecret } from './secret.js';
+import { matchesSecret, presentedSecret, SECRET_HEADER } from './secret.js';
 import { describeKeys, parsePtyMessage } from './terminal-wire.js';
 
 // The terminal over one WebSocket per viewer (#407): the pty's output goes out as text frames, keys and sizes come in as
@@ -24,6 +24,9 @@ export interface PtySocketDeps {
   secret: string; // this boot's secret (#467): the main window's cookie carries it on the upgrade
   lsp: Pick<LspHost, 'attach'>; // the language servers' sockets (#780)
   log: Pick<Logger, 'debug'>; // the dead-key probe's lines (#732); the logger drops them below debug
+  /** #475: run mode's hook on a viewer's input (an upgrade without x-hive-secret): false drops it (frozen); true delivers it, the first one
+   *  of each pty recorded as an intervention. A worker's or the CLI's socket never asks. */
+  onViewerInput?(ptyId: string): boolean;
 }
 
 export interface PtySocket {
@@ -81,7 +84,7 @@ function refuse(socket: Duplex, status: number): void {
 // starts. An ended run with no tail sends no frame, only its close.
 // Its keys and sizes, and the dead-key probe's batches (#732, written to hive.log at debug), come in as JSON on the same socket, so they keep the order typed. Anything else is dropped with the socket kept open:
 // a bad frame never kills a terminal.
-function connect(ws: WebSocket, ptyId: string, { ptys, log }: Pick<PtySocketDeps, 'ptys' | 'log'>): void {
+function connect(ws: WebSocket, ptyId: string, viewer: boolean, { ptys, log, onViewerInput }: Pick<PtySocketDeps, 'ptys' | 'log' | 'onViewerInput'>): void {
   let isReplayed = false;
   const stop = ptys.subscribe(ptyId, (data) => { isReplayed = true; ws.send(data); }, () => ws.close(NORMAL_CLOSURE));
   if (!stop) return void ws.close(NORMAL_CLOSURE); // the pty exited between the upgrade's check and the handshake
@@ -93,7 +96,9 @@ function connect(ws: WebSocket, ptyId: string, { ptys, log }: Pick<PtySocketDeps
     // node-pty throws (EBADF) on a pty whose fd closed before its exit landed; a throw in a ws listener is uncaught and would end the daemon
     // with every worker. The pty is going anyway: its exit closes this socket.
     try {
-      if (message?.type === 'input') ptys.write(ptyId, message.data);
+      if (message?.type === 'input') {
+        if (!viewer || onViewerInput?.(ptyId) !== false) ptys.write(ptyId, message.data);
+      }
       // the last resize of any viewer wins (#251); its redraw (#389) asks for a SIGWINCH even at the pty's own grid
       else if (message?.type === 'resize') ptys.resize(ptyId, message.cols, message.rows, message.redraw);
       else if (message?.type === 'keys') log.debug(`pty ${shortId(ptyId)} keys: ${describeKeys(message.events)}`); // #732: never reaches the pty
@@ -112,7 +117,9 @@ export function attachPtySocket(server: Server, deps: PtySocketDeps): PtySocket 
     socket.on('error', () => socket.destroy()); // a client that resets mid-handshake must not throw in the daemon
     const admitted = admit(req, deps);
     if ('status' in admitted) return refuse(socket, admitted.status);
-    wss.handleUpgrade(req, socket, head, (ws) => (admitted.kind === 'pty' ? connect(ws, admitted.ptyId, deps) : void deps.lsp.attach(ws, admitted.activityId, admitted.server, admitted.binary)));
+    // The viewer's page authenticates by its cookie and cannot set a header on a WebSocket; a worker or the CLI sends the header (#467, #475)
+    const viewer = req.headers[SECRET_HEADER] === undefined;
+    wss.handleUpgrade(req, socket, head, (ws) => (admitted.kind === 'pty' ? connect(ws, admitted.ptyId, viewer, deps) : void deps.lsp.attach(ws, admitted.activityId, admitted.server, admitted.binary)));
   });
   return {
     close: () => {

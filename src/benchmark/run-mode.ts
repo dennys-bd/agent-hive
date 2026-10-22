@@ -126,3 +126,13 @@ export function registerRunMode(app: Express, mode: RunMode): void {
     next();
   });
 }
+
+/** The pty socket's onViewerInput (#475). Frozen, the input is dropped. Otherwise a pty's first input is recorded under detailOf(ptyId): the
+ *  task the worker runs, or the pty id for a plain terminal. */
+export function viewerInput(mode: RunMode, detailOf: (ptyId: string) => string): (ptyId: string) => boolean {
+  return (ptyId) => {
+    if (mode.marker.frozen) return false;
+    void mode.recorder.recordInput(ptyId, detailOf(ptyId));
+    return true;
+  };
+}
