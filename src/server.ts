@@ -276,7 +276,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const pool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE) }));
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
-  const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, log));
+  const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
   const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later

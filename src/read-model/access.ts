@@ -27,7 +27,7 @@ async function ghLogin(exec: Exec): Promise<string> {
  * stored token as GH_TOKEN in its env only. GraphQL through gqlFor, the one place that choice is made. No login: undefined. */
 export async function accessFor(auth: GithubAuth, deps: AccessDeps): Promise<ReadAccess | undefined> {
   const run = deps.run ?? ghRun;
-  const gql = gqlFor(auth, deps.log);
+  const gql = gqlFor(auth, { log: deps.log });
   if (auth === 'cli') {
     const login = await ghLogin(deps.exec);
     return login === '' ? undefined : { source: sourceOf(GITHUB_HOST, login), rest: ghRest(run, cliEnv()), gql };
