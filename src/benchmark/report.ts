@@ -1,6 +1,6 @@
 // The report of an experiment (#476): medians and ranges per arm and metric over the runs that enter, the row's best, the intervention
 // filter and its per-run override, the sleeps and the unpaired runs. A route's answer, not state, so its types live here and the UI imports
-// them from here. New code beside scripts/experiment/report.ts, whose Manifest model shares nothing with Experiment. Pure, no I/O.
+// them from here. New code, not the retired #105 harness's Manifest report, which shared nothing with Experiment. Pure, no I/O.
 import type { AgentId, Arm, BenchMetrics, BenchRun, BenchRunStatus, Experiment } from '../types.js';
 import { bestOf, type Spread, spread } from './median.js';
 
