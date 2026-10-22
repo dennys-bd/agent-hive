@@ -105,7 +105,8 @@ async function start(rt: Runtime, id: string): Promise<StartAnswer> {
   const controller = new AbortController();
   const pending: LiveExperiment = { ctx: contextOf(rt, experiment, controller), controller, deadline: undefined, done: Promise.resolve() };
   rt.live.set(id, pending); // before the lock's await: a second click already reads live
-  const taken = await takeLock(experimentDir(rt.deps.hiveDir, id), rt.deps.lock).catch(() => false);
+  // an I/O error rejects (the route answers 500): it is not another Hive running
+  const taken = await takeLock(experimentDir(rt.deps.hiveDir, id), rt.deps.lock).catch((err: unknown) => { rt.live.delete(id); throw err; });
   if (!taken) {
     rt.live.delete(id);
     return 'locked';

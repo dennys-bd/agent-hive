@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { benchmarkReduce } from '../../src/benchmark-reducer.js';
 import type { LockDeps } from '../../src/benchmark/run-lock.js';
@@ -185,4 +185,11 @@ test('a sleep whose dispatch throws reopens the gate and rethrows, so a later sl
   r.failing.on = () => false;
   await r.runner.sleep('exp-1', 'night');
   assert.equal(r.latest()?.status, 'sleeping');
+});
+
+test('run rejects when the lock cannot be taken for an I/O reason, and the experiment does not read live (#472)', async (t) => {
+  const r = await rig(t, ONE_PAIR);
+  await rm(join(r.hiveDir, 'benchmark', 'exp-1'), { recursive: true });
+  await assert.rejects(r.runner.run('exp-1'));
+  assert.equal(r.runner.isLive('exp-1'), false);
 });
