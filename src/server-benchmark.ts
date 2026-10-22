@@ -6,13 +6,13 @@ import type { Express, Request, Response } from 'express';
 import type { z } from 'zod';
 import { isLocked } from './benchmark/arms.js';
 import { seedHash, tasksHash, treeHash } from './benchmark/hash.js';
-import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, newId } from './benchmark/new-experiment.js';
+import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, forkName, forkOf, newId } from './benchmark/new-experiment.js';
 import { pluginTrees } from './benchmark/pin.js';
-import { CREATE, PATCH, type PatchBody } from './benchmark/schemas.js';
-import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, SeedFileMissing, seedCommit, syncSeed } from './benchmark/store.js';
+import { CREATE, PATCH, type PatchBody, UPLOAD } from './benchmark/schemas.js';
+import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, SeedFileMissing, seedCommit, seedEntries, syncSeed, UPLOAD_NAME, UPLOAD_NAME_MESSAGE, UPLOAD_PREFIX, writeUpload } from './benchmark/store.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
-import { type BenchmarkEvent, type Config, type Exec, EXPERIMENT_ID, type Experiment, type State, type Workspace } from './types.js';
+import { type BenchmarkEvent, type BenchSeed, type Config, type Exec, EXPERIMENT_ID, type Experiment, type ExperimentPatch, type State, type Workspace } from './types.js';
 import { type Git, gitOrWords } from './worktree-base.js';
 
 const HTTP_CREATED = 201;
@@ -144,14 +144,71 @@ async function createDuplicate(ctx: Ctx, of: string): Promise<void> {
   }, folder(ctx, source.id));
 }
 
-// Name and archive are allowed while running (they change no run). Task 8 applies the sections first, so a refused one leaves both untouched
+type Sections = Omit<PatchBody, 'name' | 'archived'>;
+
+async function edit(ctx: Ctx, experiment: Experiment, sections: Sections, git: Git | undefined): Promise<string> {
+  const dir = folder(ctx, experiment.id);
+  const { seed, base } = sections;
+  if (seed !== undefined && git !== undefined) await syncSeed(dir, seed, git);
+  const patch: ExperimentPatch = {
+    ...sections, ...(base === undefined ? {} : { tasksHash: tasksHash(base.tasks) }), ...(seed === undefined ? {} : { seedHash: await seedHash(seed, dir) }),
+  };
+  await ctx.deps.dispatch({ type: 'benchmarkEdited', id: experiment.id, patch });
+  return experiment.id;
+}
+
+// A seed edit on an experiment with rounds: a new draft whose pin is copied (its hash kept) and whose seed/ is copied, then synced
+async function fork(ctx: Ctx, experiment: Experiment, sections: Sections & { seed: BenchSeed }, git: Git): Promise<string> {
+  const { deps, experiments } = ctx;
+  const id = newId(ids(ctx), draw);
+  const dir = folder(ctx, id);
+  await inNewFolder(dir, async () => {
+    await syncSeed(dir, sections.seed, git);
+    const copy = { id, name: forkName(experiment.name, experiments.map((e) => e.name)), createdAt: deps.now().toISOString(), seed: sections.seed, seedHash: await seedHash(sections.seed, dir) };
+    const tasks = sections.base === undefined ? {} : { tasksHash: tasksHash(sections.base.tasks) };
+    await deps.dispatch({ type: 'benchmarkForked', from: experiment.id, experiment: { ...forkOf(experiment, copy), ...sections, seedHash: copy.seedHash, ...tasks } });
+  }, folder(ctx, experiment.id));
+  return id;
+}
+
+// undefined: refused and answered
+async function applySections(ctx: Ctx, experiment: Experiment, sections: Sections): Promise<string | undefined> {
+  const { seed } = sections;
+  if (seed === undefined) return edit(ctx, experiment, sections, undefined);
+  if (seed.workspace !== experiment.workspace) return void fail(ctx.res, HTTP_BAD_REQUEST, 'bad_body', 'seed.workspace: an experiment keeps the workspace it was created in');
+  const workspace = workspaceOf(ctx.config, experiment.workspace);
+  if (workspace === undefined) return void fail(ctx.res, HTTP_NOT_FOUND, 'unknown_workspace', `no workspace ${experiment.workspace}`);
+  const git = repoGit(ctx.deps, workspace);
+  return experiment.rounds.length > 0 ? fork(ctx, experiment, { ...sections, seed }, git) : edit(ctx, experiment, sections, git);
+}
+
 async function patchExperiment(ctx: Ctx, id: string, body: PatchBody): Promise<void> {
   const experiment = found(ctx, id);
   if (experiment === undefined) return;
-  const { name, archived } = body;
+  const { name, archived, ...sections } = body;
+  const hasSections = Object.keys(sections).length > 0;
+  if (hasSections && isLocked(experiment)) return refuseLocked(ctx.res);
+  const answer = hasSections ? await applySections(ctx, experiment, sections) : id;
+  if (answer === undefined) return;
   if (name !== undefined) await ctx.deps.dispatch({ type: 'benchmarkEdited', id, patch: { name } });
   if (archived !== undefined) await ctx.deps.dispatch({ type: 'benchmarkArchived', id, archived });
-  ctx.res.json({ id });
+  ctx.res.json({ id: answer });
+}
+
+// Only writes the file: the seed lists it as upload:<name> through PATCH, which rehashes or forks. A name the seed of an experiment with
+// rounds lists is part of what those rounds ran: overwriting it would change a hashed seed without a fork
+async function upload(req: Request, ctx: Ctx): Promise<void> {
+  const name = String(req.params.name);
+  if (!UPLOAD_NAME.test(name)) return fail(ctx.res, HTTP_BAD_REQUEST, 'bad_name', UPLOAD_NAME_MESSAGE);
+  const experiment = unlocked(ctx, idOf(req));
+  if (experiment === undefined) return;
+  if (experiment.rounds.length > 0 && seedEntries(experiment.seed).includes(`${UPLOAD_PREFIX}${name}`)) {
+    return fail(ctx.res, HTTP_CONFLICT, 'seed_locked', `${name} is in a seed that has run: upload it under a new name`);
+  }
+  const body = parsed(UPLOAD, req, ctx.res);
+  if (body === undefined) return;
+  await writeUpload(folder(ctx, experiment.id), name, Buffer.from(body.content, 'base64'));
+  ctx.res.status(HTTP_NO_CONTENT).end();
 }
 
 function registerExperimentRoutes(app: Express, deps: BenchmarkRouteDeps, queue: Queue): void {
@@ -164,6 +221,7 @@ function registerExperimentRoutes(app: Express, deps: BenchmarkRouteDeps, queue:
     const body = parsed(PATCH, req, ctx.res);
     if (body !== undefined) await patchExperiment(ctx, idOf(req), body);
   }));
+  app.put(`${E}/:id/seed/files/:name`, route(deps, queue, 'upload', upload));
   app.delete(`${E}/:id`, route(deps, queue, 'delete', async (req, ctx) => {
     const experiment = unlocked(ctx, idOf(req));
     if (experiment === undefined) return;
