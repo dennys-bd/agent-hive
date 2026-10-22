@@ -78,13 +78,22 @@ async function readText(file: string): Promise<Text | Refusal> {
   return text === undefined ? { status: HTTP_UNSUPPORTED, message: BINARY_MESSAGE } : { bytes, text };
 }
 
-// GET's and file-version's steps: the file located, then read as text
+// GET's steps: the file located, then read as text
 async function withText(req: Request, res: Response, current: Live, answer: (read: Text, path: string) => void): Promise<void> {
   const located = await locate(current, activityParam(req), req.query.path);
   if ('status' in located) return refuse(res, located);
   const read = await readText(located.file);
   if ('status' in read) return refuse(res, read);
   answer(read, String(req.query.path));
+}
+
+// file-version (#498): the sha256 of the file's bytes, whatever they are and whatever their size, so an image has a version for its tab's
+// reload; a text pane compares the same hash of the same bytes and sees no change. ponytail: the whole file is read per poll, fine for
+// screenshots; hash a stream if a pane ever polls a file of hundreds of MB
+async function fileVersion(req: Request, res: Response, current: Live): Promise<void> {
+  const located = await locate(current, activityParam(req), req.query.path);
+  if ('status' in located) return refuse(res, located);
+  res.json({ version: sha256(await readFile(located.file)) });
 }
 
 // The text in a temp file beside the original, with the original's mode, then renamed over it: a reader never sees half a file, and a
@@ -176,9 +185,7 @@ export function registerEditorRoutes(app: Express, { requireLive, consoleStore }
     const body: FileText = { path, text, version: sha256(bytes) };
     res.json(body);
   })));
-  app.get('/activities/:id/file-version', route((req, res, current) => withText(req, res, current, ({ bytes }) => {
-    res.json({ version: sha256(bytes) });
-  })));
+  app.get('/activities/:id/file-version', route(fileVersion));
   app.get('/settings/formatters', route(formatterStates));
   app.put(EDITOR_FILE_ROUTE, route((req, res, current) => saveFile(res, current, activityParam(req), req.body, consoleStore)));
 }

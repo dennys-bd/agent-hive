@@ -27,6 +27,7 @@ const SAVE_BODY = 'path must be a non-empty string, text and version strings, fo
 const TOO_LARGE = 'arquivo grande demais para o editor';
 const READ_ONLY = 'arquivo somente leitura';
 const BINARY = 'arquivo binário ou fora de UTF-8';
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]); // a PNG's signature and NULs: no UTF-8 text (#498)
 const sha = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
 interface Editor { base: string; repo: string; worktree: string; server: HiveServer }
@@ -54,7 +55,7 @@ async function startEditor(t: TestContext, { isDeleted = false, editor = EDITOR_
 
 const taskActivity = (e: Editor): string => workPath(e.server, 'local:1');
 const localActivity = `/activities/${encodeURIComponent(localActivityId('hive'))}`;
-const get = (e: Editor, path: string, route: 'file' | 'file-version' = 'file', activity = taskActivity(e)): Promise<Response> =>
+const get = (e: Editor, path: string, route: 'file' | 'file-version' | 'image' = 'file', activity = taskActivity(e)): Promise<Response> =>
   hiveFetch(`${e.base}${activity}/${route}?${new URLSearchParams({ path })}`);
 const put = (e: Editor, body: unknown, activity = taskActivity(e)): Promise<Response> =>
   hiveFetch(`${e.base}${activity}/file`, { method: 'PUT', headers: UI_HEADERS, body: JSON.stringify(body) });
@@ -100,21 +101,30 @@ test('a file outside the activity\'s folder reads, versions and saves by its abs
   assert.equal((await get(e, '../../../big.md')).status, 413);
 });
 
-test('a file over 1 MB is a 413; a NUL in its first 8 KB or bytes that are not UTF-8 a 415; exactly 1 MB opens (#717)', async (t) => {
+test('GET file: a file over 1 MB is a 413; a NUL in its first 8 KB or bytes that are not UTF-8 a 415; exactly 1 MB opens (#717, #498)', async (t) => {
   const e = await startEditor(t);
   await writeFile(join(e.worktree, 'big.txt'), 'a'.repeat(EDITOR_FILE_MAX + 1));
   await writeFile(join(e.worktree, 'nul.bin'), Buffer.from([0x61, 0x00, 0x62]));
   await writeFile(join(e.worktree, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9])); // "café" in Latin-1
   await writeFile(join(e.worktree, 'edge.txt'), 'a'.repeat(EDITOR_FILE_MAX));
   const cases: [string, number, string][] = [['big.txt', 413, TOO_LARGE], ['nul.bin', 415, BINARY], ['latin1.txt', 415, BINARY]];
-  for (const route of ['file', 'file-version'] as const) {
-    for (const [path, status, error] of cases) {
-      const res = await get(e, path, route);
-      assert.equal(res.status, status, `${route} ${path}`);
-      assert.deepEqual(await res.json(), { error }, `${route} ${path}`);
-    }
+  for (const [path, status, error] of cases) {
+    const res = await get(e, path);
+    assert.equal(res.status, status, path);
+    assert.deepEqual(await res.json(), { error }, path);
   }
   assert.equal((await get(e, 'edge.txt')).status, 200);
+});
+
+test('file-version answers the sha256 of the bytes, whatever they are and whatever their size; a text file\'s version is its read\'s (#498)', async (t) => {
+  const e = await startEditor(t);
+  const big = 'a'.repeat(EDITOR_FILE_MAX + 1);
+  await writeFile(join(e.worktree, 'shot.png'), PNG);
+  await writeFile(join(e.worktree, 'big.txt'), big);
+  assert.deepEqual(await (await get(e, 'shot.png', 'file-version')).json(), { version: sha(PNG) });
+  assert.deepEqual(await (await get(e, 'big.txt', 'file-version')).json(), { version: sha(big) });
+  const read = (await (await get(e, 'docs/spec.md')).json()) as FileText;
+  assert.deepEqual(await (await get(e, 'docs/spec.md', 'file-version')).json(), { version: read.version });
 });
 
 test('PUT with the version read writes the text, the file\'s mode kept and no temp file left, and answers the new version; a symlink inside writes its target (#717)', async (t) => {
