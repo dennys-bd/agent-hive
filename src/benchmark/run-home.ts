@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs';
 import { chmod, cp, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { experimentDir, runHome } from '../benchmark-guards.js';
 import { CONFIG_FILE, workspaceByName } from '../config.js';
 import { type ItemKey, listFiles, childFolders, parseItemId, versionDir } from '../item-sources.js';
 import { pluginRenderPath } from '../plugin-render.js';
 import { VERSION_FILE, parseVersionJson, writeVersionJson } from '../custom-versions.js';
 import type { Arm, ArmSetup, BenchRun, Config, Experiment, Workspace } from '../types.js';
+import { pinHome, pluginTrees } from './pin.js';
 import { mergeArm, RUN_STAGES, resolveRow, runConfig, runState } from './arm-config.js';
 import { type BlindInput, blindLeak } from './blind-check.js';
 import { inDir, type Run } from './exec.js';
@@ -85,6 +86,11 @@ export async function prepareExperiment(experiment: Experiment, deps: Experiment
 }
 
 export const MARKER_FILE = 'benchmark.json';
+
+/** The shipped plugin a daemon renders from (#459): a run home's is its experiment's pin (<experiment>/runs/<token> → <experiment>/plugin/
+ *  source), so every run of an experiment renders the plugin as it was at creation; any other home's is the Hive's own. */
+export const renderSource = (home: string, shipped: string): string =>
+  existsSync(join(home, MARKER_FILE)) ? pluginTrees(dirname(dirname(home))).source : shipped;
 const TOKEN_LENGTH = 8;
 const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
 const ALPHABET = `${LETTERS}0123456789`;
@@ -103,13 +109,14 @@ export function newToken(random: () => number, taken: ReadonlySet<string>): stri
 
 interface ArmVersion { key: ItemKey; version: string; dir: string; files: string[] }
 
-// The custom store's versions the arm names, read before anything is written: an unknown one refuses the run
-async function armVersions(hiveDir: string, items: Record<string, string>): Promise<ArmVersion[]> {
+// The arm's versions as the experiment pinned them (#459), read before anything is written: a version made or edited after creation, or an
+// unknown one, refuses the run
+async function armVersions(storeHome: string, items: Record<string, string>): Promise<ArmVersion[]> {
   return Promise.all(Object.entries(items).map(async ([id, version]) => {
     const key = parseItemId(id);
     if (key === undefined) throw new Error(`benchmark: ${id} is not an item id`);
-    const dir = versionDir(hiveDir, key, version);
-    if (!existsSync(join(dir, VERSION_FILE))) throw new Error(`benchmark: ${id} has no version ${version}`);
+    const dir = versionDir(storeHome, key, version);
+    if (!existsSync(join(dir, VERSION_FILE))) throw new Error(`benchmark: ${id} has no version ${version} in the experiment's pin`);
     return { key, version, dir, files: await listFiles(dir) };
   }));
 }
@@ -198,7 +205,7 @@ export async function prepareRun(experiment: Experiment, arm: Arm, round: number
   const nested = nestedPaths(workspace);
   const dir = experimentDir(deps.hiveDir, experiment.id);
   const setup = mergeArm(experiment.base, arm.overrides);
-  const versions = await armVersions(deps.hiveDir, setup.items);
+  const versions = await armVersions(pinHome(dir), setup.items);
   if (experiment.blindness.on) await refuseLeak(experiment, arm, setup, versions, join(dir, 'seed'));
   // Math.random: the token names folders and is no secret
   const token = newToken(deps.random ?? Math.random, await takenTokens(experiment, dir));
