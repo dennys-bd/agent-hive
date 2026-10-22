@@ -9,7 +9,7 @@ import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
 import { parseConfig } from '../../src/config.js';
 import { combConfig } from '../fakes.js';
-import type { Activity, Arm, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, State, Task, Worker } from '../../src/types.js';
+import type { Activity, Arm, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, Stage, State, Task, Worker } from '../../src/types.js';
 
 const pick = (skill: string): BenchStagePick => ({ agent: 'claude', skill, prompt: `${skill} {title}\n\n{body}` });
 export const SETUP: ArmSetup = {
@@ -120,3 +120,23 @@ export function clock(start: Date): { now(): Date; sleep(ms: number): Promise<vo
 /** A task of the run's graph: item id local:<n>, the seed's key and title (#473), blockers by number. */
 export const watchTask = (n: number, blockedBy: number[] = [], key = `T${n}`, title = `Task ${n}`): WatchTask =>
   ({ itemId: `local:${n}`, key, title, blockedBy: blockedBy.map((b) => `local:${b}`) });
+
+export const SHA = 'c'.repeat(40);
+// spec by prompt (codex, a model), plan by a skill stage, build by a /hive-build prompt after a /hive-pr-review decoy; pr unmatched
+export const BENCH_STAGES: Stage[] = [
+  { name: 'Spec', from: {}, prompt: '/hive:new-spec {id}', agent: 'codex', model: 'gpt-5' },
+  { name: 'Plan', from: {}, action: 'skill', skill: 'new-plan' },
+  { name: 'Check', from: {}, prompt: '/hive-pr-review {id}' },
+  { name: 'Build', from: {}, prompt: '/hive-build {title}' },
+  { name: 'Done', from: {} },
+];
+export const CLAUDE_ARGS = ['--plugin-dir', '/plugins/extra', '--allowedTools', 'Read Bash(npm run test:coverage *)', '--disallowedTools', 'Bash(gh:*)', '--plugin-dir', '/plugins/two'];
+
+/** A parsed config around one workspace `bench` at `repo`; its stages and agent args are replaced after the parse (the routes only read them). */
+export function benchConfig(repo: string): Config {
+  const parsed = parseConfig(combConfig({ stages: [{ name: 'Todo', from: {} }], workspaces: [{ name: 'bench', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'RUN pnpm install' }] }));
+  return { ...parsed, defaultAgent: 'claude', agentArgs: { ...parsed.agentArgs, claude: CLAUDE_ARGS }, comb: { ...parsed.comb, stages: BENCH_STAGES } };
+}
+
+export const benchExperiment = (patch: Partial<Experiment> = {}): Experiment =>
+  experiment({ workspace: 'bench', seed: { ...experiment().seed, workspace: 'bench', commit: SHA }, ...patch });
