@@ -44,7 +44,7 @@ export function gateRefusal(experiment: Experiment, now: Date, deadline: Date | 
   return capped ? 'the spend cap is reached' : undefined;
 }
 
-const owedIn = (experiment: Experiment, n: number): number => missingRuns(experiment).filter((m) => m.round === n).length;
+const tokensOf = (experiment: Experiment | undefined): Set<string> => new Set(experiment?.rounds.flatMap((r) => r.runs.map((x) => x.token)));
 
 // The round's ended runs in arm order: evaluate-service marks the round once every one of them is in the call
 function endedTokens(experiment: Experiment, n: number): string[] {
@@ -107,7 +107,8 @@ async function runRound<H extends RunHandle>(experiment: Experiment, n: number, 
   await evaluateRound(experiment.id, n, deps);
 }
 
-async function finish(id: string, deps: Pick<SchedulerDeps, 'latest' | 'dispatch' | 'log'>): Promise<void> {
+async function finish(id: string, deps: Pick<SchedulerDeps, 'latest' | 'dispatch' | 'log' | 'awake'>): Promise<void> {
+  await deps.awake(); // a sleep that landed during the last evaluation: finishing now would leave an open sleep on a done experiment
   const experiment = deps.latest();
   const owed = experiment === undefined ? [] : missingRuns(experiment);
   const rounds = [...new Set(owed.map((m) => m.round))];
@@ -123,7 +124,13 @@ export async function runExperiment<H extends RunHandle>(id: string, deps: Sched
     if (experiment === undefined || deps.signal.aborted) return;
     const next = missingRuns(experiment)[0]?.round;
     await evaluatePending(experiment, next ?? Number.POSITIVE_INFINITY, evaluated, deps);
-    if (next === undefined) break;
+    if (next === undefined) {
+      await deps.awake();
+      // a more-rounds that landed during the evaluation or the sleep still runs
+      if (deps.signal.aborted) return;
+      if (missingRuns(deps.latest() ?? experiment).length > 0) continue;
+      break;
+    }
     await deps.awake();
     if (deps.signal.aborted) return;
     const current = deps.latest() ?? experiment;
@@ -132,12 +139,13 @@ export async function runExperiment<H extends RunHandle>(id: string, deps: Sched
       deps.log(`benchmark ${id}: no new round: ${refusal}`);
       break;
     }
-    const owed = owedIn(current, next);
+    const before = tokensOf(current);
     await runRound(current, next, deps);
     if (deps.signal.aborted) return;
     evaluated.add(next);
-    if (owedIn(deps.latest() ?? current, next) >= owed) {
-      deps.log(`benchmark ${id}: round ${next} owes as many runs as before it ran`);
+    // a wake that found every live run gone leaves the round owing as many runs, yet those are rerun with new tokens: progress is a new run
+    if ([...tokensOf(deps.latest())].every((token) => before.has(token))) {
+      deps.log(`benchmark ${id}: round ${next} started no run`);
       break;
     }
   }

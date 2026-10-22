@@ -4,7 +4,7 @@ import { benchmarkReduce } from '../../src/benchmark-reducer.js';
 import { gateRefusal, missingRuns, runExperiment, type SchedulerDeps } from '../../src/benchmark/scheduler.js';
 import type { WatchEnd } from '../../src/benchmark/watcher.js';
 import type { BenchmarkEvent, Experiment, State } from '../../src/types.js';
-import { experiment, run, stateWith } from './fixtures.js';
+import { experiment, run, stateWith, until } from './fixtures.js';
 
 const AT = '2026-10-22T22:00:00.000Z';
 const NOW = new Date(AT);
@@ -158,16 +158,44 @@ test('no round starts while the experiment sleeps: the gate waits for awake (#47
   assert.deepEqual(starts(h.calls), ['start a1 r1 tok1', 'start a2 r1 tok2']);
 });
 
-test('a run whose watch ends aborted while the loop is not (wake found it gone) is booted again after its round; the same again stops the loop (#472)', async () => {
+test('a run whose watch ends aborted while the loop is not (wake found it gone) is booted again after its round, as often as a wake finds it gone (#472)', async () => {
   const h = harness(ONE_PAIR, { watch: async (token, _signal, dispatch) => {
-    if (token === 'tok2') return { outcome: 'done' };
+    if (token === 'tok2' || token === 'tok4') return { outcome: 'done' };
     await dispatch({ type: 'benchmarkRunChanged', id: 'exp-1', token, patch: { status: 'interrupted' } });
     return { outcome: 'aborted' };
   } });
   await runExperiment('exp-1', h.deps);
-  assert.deepEqual(starts(h.calls), ['start a1 r1 tok1', 'start a2 r1 tok2', 'start a1 r1 tok3']);
-  assert.ok(h.lines.includes('benchmark exp-1: round 1 owes as many runs as before it ran'));
+  assert.deepEqual(starts(h.calls), ['start a1 r1 tok1', 'start a2 r1 tok2', 'start a1 r1 tok3', 'start a1 r1 tok4']);
   assert.equal(h.latest()?.status, 'done');
+});
+
+test('a wake that finds every live run of the round gone reruns all of them with new tokens instead of finishing (#472)', async () => {
+  const h = harness(ONE_PAIR, { watch: async (token, _signal, dispatch) => {
+    if (token !== 'tok1' && token !== 'tok2') return { outcome: 'done' };
+    await dispatch({ type: 'benchmarkRunChanged', id: 'exp-1', token, patch: { status: 'interrupted' } });
+    return { outcome: 'aborted' };
+  } });
+  await runExperiment('exp-1', h.deps);
+  assert.deepEqual(starts(h.calls), ['start a1 r1 tok1', 'start a2 r1 tok2', 'start a1 r1 tok3', 'start a2 r1 tok4']);
+  assert.deepEqual(missingRuns(h.latest() as Experiment), []);
+});
+
+test('the loop waits for the gate before finishing, and a more-rounds that lands meanwhile still runs (#472)', async () => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let hold = false;
+  const h = harness(ONE_PAIR, { awake: async () => { if (hold) await held; } });
+  h.deps.report = async () => { h.calls.push('report'); hold = true; }; // the sleep lands during the last evaluation
+  const loop = runExperiment('exp-1', h.deps);
+  await until(() => h.calls.includes('report'));
+  await tick();
+  assert.equal(h.events.some((e) => e.type === 'benchmarkFinished'), false);
+  hold = false;
+  await h.deps.dispatch({ type: 'benchmarkEdited', id: 'exp-1', patch: { pace: { ...ONE_PAIR.pace, pairs: 2 } } });
+  release();
+  await loop;
+  assert.deepEqual(starts(h.calls), ['start a1 r1 tok1', 'start a2 r1 tok2', 'start a1 r2 tok3', 'start a2 r2 tok4']);
+  assert.equal(h.events.filter((e) => e.type === 'benchmarkFinished').length, 1);
 });
 
 test("missingRuns: per round up to pace.pairs and per arm, none yet or the arm's latest interrupted; an error run is not missing. gateRefusal's order (#472)", () => {
