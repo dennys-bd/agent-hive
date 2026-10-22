@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { BenchRound, Experiment } from '../../src/types';
+import type { ArmSetup, BenchRound, BenchStagePick, BenchTask, Experiment } from '../../src/types';
 import { arm, experiment } from '../benchmark/fixtures';
 import { json } from './plugins-fixtures';
 
@@ -43,3 +43,23 @@ export function stubBenchmarkFetch(status?: number): Call[] {
   }));
   return calls;
 }
+
+const stagePick = (skill: string, model = 'sonnet'): BenchStagePick => ({ agent: 'claude', model, skill, prompt: `${skill} {id}` });
+const benchTask = (n: number, blockedBy: string[] = []): BenchTask => ({ key: `T${n}`, title: `Task ${n}`, body: '', blockedBy });
+/** benchmark.hv.html's #s-visao: the base and arms A (skills and plugins), B (none), C (build), D (own tasks). */
+export const ARMS_BASE: ArmSetup = {
+  stages: { spec: stagePick('/hive:new-spec'), plan: stagePick('/hive:new-plan'), build: stagePick('/hive:new-build'), pr: stagePick('/hive:new-pr', 'haiku') },
+  plugins: [], rules: { allow: Array.from({ length: 14 }, (_, i) => `Tool${i}`), deny: ['gh', 'push *'] },
+  tasks: [benchTask(1), benchTask(2, ['T1']), benchTask(3, ['T1']), benchTask(4, ['T2']), benchTask(5), benchTask(6), benchTask(7), benchTask(8)],
+  items: {}, worktree: { setup: '', teardown: '' },
+};
+export const ARMS = experiment({
+  id: 'exp-arms', name: 'skills: comandos × plugin', base: ARMS_BASE, tasksHash: '91d4'.padEnd(64, '0'),
+  arms: [
+    { id: 'a1', letter: 'A', name: 'comandos do repo', overrides: { stages: { spec: { skill: '/hive-spec' }, plan: { skill: '/hive-plan' }, build: { skill: '/hive-build' } }, plugins: ['/plugins/superpowers', '/plugins/ecc'] } },
+    { id: 'a2', letter: 'B', name: 'skills do plugin', overrides: {} },
+    { id: 'a3', letter: 'C', name: 'plugin + codex', overrides: { stages: { build: { agent: 'codex', model: 'gpt-5' } } } },
+    { id: 'a4', letter: 'D', name: 'tarefas juntas', overrides: { tasks: [benchTask(1), benchTask(2), benchTask(3)] } },
+  ],
+});
+export const ARMS_PATH = '/benchmark/experiments/exp-arms';
