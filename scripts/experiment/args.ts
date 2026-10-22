@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { parseRunTimeout, untilDeadline } from './deadline.js';
+import { parseRunTimeout, untilDeadline } from '../../src/benchmark/deadline.js';
 import { requireExperimentId } from './plan.js';
 
 export const DEFAULT_RUNS = 3; // pairs

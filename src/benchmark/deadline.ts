@@ -1,6 +1,6 @@
-import { timeoutMs } from '../../src/timeout.js';
+import { timeoutMs } from '../timeout.js';
 
-const HH_MM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+export const HH_MM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** The next local HH:MM after `now`: 07:00 given at 22:00 is tomorrow's, given at 06:00 today's. */
 export function untilDeadline(now: Date, hhmm: string): Date {

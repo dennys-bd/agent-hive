@@ -6,7 +6,11 @@ import type { Snapshot, WatchClient } from './watcher.js';
 const UI_HEADER = 'x-hive-ui'; // mirrors server.ts's UI_HEADER, which pulls Express in
 const REQUEST_TIMEOUT_MS = 10_000;
 
-export interface DaemonClient extends WatchClient { payload(): Promise<Record<string, unknown>> }
+export interface DaemonClient extends WatchClient {
+  payload(): Promise<Record<string, unknown>>;
+  sleepRuns(ptyIds: readonly string[]): Promise<void>; // #472: one activity's live runs, as POST /ptys/sleep wants them
+  continueActivity(activityId: string): Promise<void>; // #472: POST /activities/:id/continue, resuming a stage's session a sleep stopped
+}
 export interface ClientDeps { address?: (home: string) => DaemonAddress | undefined; fetch?: typeof fetch }
 
 // A SyntaxError quotes a snippet of its input, and the frame is the whole State: the watcher logs this message, so it names nothing of it
@@ -42,9 +46,9 @@ async function firstFrame(res: Response): Promise<Record<string, unknown>> {
 
 // #629: a task's work (slug, error, stopped, usage, result) lives on the activities and their records, so the snapshot carries all four lists
 function snapshotOf(payload: Record<string, unknown>): Snapshot {
-  const { tasks, workers, activities, activityRecords } = payload as Partial<Snapshot>;
+  const { tasks, workers, activities, activityRecords, slept } = payload as Partial<Snapshot>;
   if (!Array.isArray(tasks) || !Array.isArray(workers) || !Array.isArray(activities) || !Array.isArray(activityRecords)) throw new Error('GET /events: the daemon is not configured');
-  return { tasks, workers, activities, activityRecords };
+  return { tasks, workers, activities, activityRecords, ...(Array.isArray(slept) ? { slept } : {}) };
 }
 
 /** One home's daemon over HTTP, at that home's port and secret: the two daemons of a pair never mix. No message carries the secret. */
@@ -74,5 +78,8 @@ export function createDaemonClient(home: string, deps: ClientDeps = {}): DaemonC
     state: async () => snapshotOf(await payload()),
     setAuto: (itemId) => post(`/tasks/${encodeURIComponent(itemId)}/auto`, `/tasks/${itemId}/auto`, { auto: true }),
     setGreen: () => post('/signal', '/signal', { signal: 'green' }),
+    // #472: a run daemon's own sleep all and Continue (server-runs.ts), with the run's secret: the run-mode recorder counts only the viewer's cookie
+    sleepRuns: (ptyIds) => post('/ptys/sleep', '/ptys/sleep', { ptyIds: [...ptyIds] }),
+    continueActivity: (activityId) => post(`/activities/${encodeURIComponent(activityId)}/continue`, `/activities/${activityId}/continue`, {}),
   };
 }

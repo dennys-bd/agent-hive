@@ -1,4 +1,4 @@
-import { mayStart } from './deadline.js';
+import { mayStart } from '../../src/benchmark/deadline.js';
 import { runRef } from './plan.js';
 import { ARMS, type RunRef } from './types.js';
 

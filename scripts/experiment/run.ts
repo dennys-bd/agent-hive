@@ -7,7 +7,7 @@ import { stopDaemon } from '../../src/daemon.js';
 import { PLUGINS_DIR } from '../../src/plugin-render.js';
 import { DEFAULT_BASELINE, DEFAULT_RUNS, type ExperimentOptions, parseExperimentArgs } from './args.js';
 import { createDaemonClient } from '../../src/benchmark/daemon-client.js';
-import { untilDeadline } from './deadline.js';
+import { untilDeadline } from '../../src/benchmark/deadline.js';
 import { evaluateRun } from './evaluate-run.js';
 import { execRun, type Run, serialGit } from '../../src/benchmark/exec.js';
 import { readJson, type Store, serialStore, writeJson } from './files.js';

@@ -232,3 +232,8 @@ test('a PATCH of the evaluation refuses scenarioWalks 0 and saves a tester row w
   assert.equal((await call(bench, 'PATCH', `${E}/exp-1`, { evaluation: { ...evaluation, tester: { agent: 'claude' }, scenarioWalks: 3 } }))[0], 200);
   assert.deepEqual([bench.state().benchmark.experiments[0].evaluation.tester, bench.state().benchmark.experiments[0].evaluation.scenarioWalks], [{ agent: 'claude' }, 3]);
 });
+
+test("registerBenchmarkRoutes mounts the control routes: run on an unknown experiment answers the control route's own 404 (#472)", async (t) => {
+  const bench = await serve(t);
+  assert.deepEqual(errorOf(await call(bench, 'POST', `${E}/nope/run`, {})), [404, 'unknown_experiment']);
+});

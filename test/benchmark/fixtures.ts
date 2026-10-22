@@ -1,9 +1,12 @@
-import type { Snapshot, WatchTask } from '../../src/benchmark/watcher.js';
+import { type Snapshot, startWatch, type WatchDeps, type WatchEnd, type WatchTask } from '../../src/benchmark/watcher.js';
+import type { RunIo } from '../../src/benchmark/runner-io.js';
+import type { Tokens } from '../../src/facts.js';
 import type { TestContext } from 'node:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RunDeps } from '../../src/benchmark/run-home.js';
 import { tempDir } from '../temp-dir.js';
+import type { DaemonClient } from '../../src/benchmark/daemon-client.js';
 import type { ChildLike } from '../../src/benchmark/daemon.js';
 import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
@@ -161,4 +164,81 @@ export function prAnswers(overrides: Record<string, string | Error> = {}): (call
     const hit = Object.entries(overrides).find(([prefix]) => text.startsWith(prefix)) ?? defaults.find(([prefix]) => text.startsWith(prefix));
     return hit === undefined ? '' : hit[1];
   };
+}
+
+export type StubClient = DaemonClient & { posts: string[] };
+
+/** A run daemon's client (#472) over a fixed snapshot: posts are recorded, and `down` makes every call reject as an unreachable daemon. */
+export function stubClient(snapshot: Snapshot, o: { down?: () => boolean } = {}): StubClient {
+  const posts: string[] = [];
+  const reach = async (): Promise<void> => { if (o.down?.()) throw new TypeError('fetch failed'); };
+  return {
+    posts,
+    payload: async () => { await reach(); return JSON.parse(JSON.stringify(snapshot)) as Record<string, unknown>; },
+    state: async () => { await reach(); return snapshot; },
+    setAuto: async (itemId) => { await reach(); posts.push(`auto ${itemId}`); },
+    setGreen: async () => { await reach(); posts.push('green'); },
+    sleepRuns: async (ptyIds) => { await reach(); posts.push(`sleep ${ptyIds.join(',')}`); },
+    continueActivity: async (activityId) => { await reach(); posts.push(`continue ${activityId}`); },
+  };
+}
+
+// Two activities with live stage runs, both stopped by a sleep; a third with nothing a sleep all lists (an empty worker, a free session)
+export const SLEEP_SNAP: Snapshot = snap(
+  [task(1, 'Build'), task(2, 'Build'), task(3, 'Spec')],
+  [worker(1, 'r1'), worker(1, 'r2'), worker(2, 'r3'), worker(3, 'r4', { status: 'empty' }), worker(3, 'r5', { freeSession: true })],
+  [{ stopped: true }, { stopped: true }, {}],
+);
+
+/** Waits a macrotask at a time until the check holds: the runner's loops run in the background. Fails instead of hanging. */
+export async function until(check: () => boolean, tries = 1_000): Promise<void> {
+  for (let i = 0; !check(); i += 1) {
+    if (i >= tries) throw new Error('until: the condition never held');
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+export interface IoRig {
+  io: RunIo; calls: string[]; clients: Map<string, StubClient>;
+  watching: Map<string, (end: WatchEnd) => void>; watchDeps: Map<string, WatchDeps>; tasksOf: Map<string, WatchTask[]>;
+}
+
+/** RunIo with no process, no git and no file (#472): runs are tok1, tok2, … in prepare order, every watch waits for the test's end() or its
+ *  signal, and every client answers `snapshot` unless `down` says its home is gone. */
+export function stubIo(hiveDir: string, o: { snapshot?: Snapshot; down?: (home: string) => boolean; modelTokens?: Record<string, Tokens> } = {}): IoRig {
+  const calls: string[] = [];
+  const clients = new Map<string, StubClient>();
+  const watching = new Map<string, (end: WatchEnd) => void>();
+  const watchDeps = new Map<string, WatchDeps>();
+  const tasksOf = new Map<string, WatchTask[]>();
+  let drawn = 0;
+  const io: RunIo = {
+    prepareExperiment: async () => { calls.push('prepareExperiment'); },
+    prepareRun: async (_experiment, arm, round) => {
+      drawn += 1;
+      const token = `tok${drawn}`;
+      calls.push(`prepareRun ${arm.id} r${round}`);
+      return run(token, { armId: arm.id, round, status: 'queued', home: join(hiveDir, 'benchmark', 'exp-1', 'runs', token), branch: `work/${token}` });
+    },
+    boot: async (home) => ({ home, address: { port: 1, secret: 's' }, child: fakeChild().child }),
+    stop: async (running) => { calls.push(`stop ${running.token}`); },
+    client: (home) => {
+      const client = stubClient(o.snapshot ?? snap([]), { down: () => o.down?.(home) ?? false });
+      clients.set(home, client);
+      return client;
+    },
+    watch: (token, tasks, deps) => new Promise((resolve) => {
+      watchDeps.set(token, deps);
+      tasksOf.set(token, tasks);
+      const end = (e: WatchEnd): void => { watching.delete(token); resolve({ end: e, watch: startWatch(tasks) }); };
+      watching.set(token, end);
+      deps.signal?.addEventListener('abort', () => end({ outcome: 'aborted' }), { once: true });
+    }),
+    savedState: async () => snap([]),
+    diff: async () => ({ files: 2, insertions: 10, deletions: 1 }),
+    modelTokens: async () => o.modelTokens ?? {},
+    interventions: async () => [],
+    report: async () => { calls.push('report'); },
+  };
+  return { io, calls, clients, watching, watchDeps, tasksOf };
 }

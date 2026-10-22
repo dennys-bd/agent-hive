@@ -6,7 +6,7 @@ export const POLL_MS = 15_000;
 const UNREACHABLE_MAX = 4; // failed reads in a row before the run is an error: a daemon busy for a minute is not dead
 
 // #629: a task's error and stopped, and a worker's task, are read through its activity
-export type Snapshot = Pick<State, 'tasks' | 'workers' | 'activities' | 'activityRecords'>;
+export type Snapshot = Pick<State, 'tasks' | 'workers' | 'activities' | 'activityRecords' | 'slept'>; // slept is optional in State
 /** A task of the run (#473): its item id in the run's Hive, and the seed's key and title, which name it outside the run (no token in them). */
 export interface WatchTask { itemId: string; key: string; title: string; blockedBy: string[] }
 export interface StageEntry { stage: string; at: string }
@@ -15,6 +15,7 @@ export interface WatchState {
   released: string[]; // auto tasks: the free ones at boot, the others as their blockers reach Done
   entries: Record<string, StageEntry[]>; // every stage each task entered: the State keeps only the current one
   stageRuns: Record<string, Record<string, string[]>>; // item id → stage → every run id seen while the task sat there (#473: every stage)
+  sleptRuns: string[]; // run ids seen in the daemon's slept list with cause 'all': a continue resumes them, it never restarts them (#472)
 }
 /** The execution bar (#473): a segment per task, green done, yellow waiting on the user, grey open. */
 export interface TaskProgress { key: string; state: 'done' | 'waiting' | 'open' }
@@ -35,7 +36,7 @@ const taskOf = (snapshot: Snapshot, itemId: string): Task | undefined => snapsho
 const idsOf = (watch: WatchState): string[] => watch.tasks.map((t) => t.itemId);
 
 export const startWatch = (tasks: WatchTask[]): WatchState =>
-  ({ tasks, released: tasks.filter((t) => t.blockedBy.length === 0).map((t) => t.itemId), entries: {}, stageRuns: {} });
+  ({ tasks, released: tasks.filter((t) => t.blockedBy.length === 0).map((t) => t.itemId), entries: {}, stageRuns: {}, sleptRuns: [] });
 
 function withEntries(watch: WatchState, snapshot: Snapshot, now: Date): WatchState['entries'] {
   return Object.fromEntries(idsOf(watch).map((id) => {
@@ -51,7 +52,11 @@ const WAITING: readonly Status[] = ['waiting', 'approval']; // a worker held on 
 const runsOf = (snapshot: Snapshot, itemId: string): string[] =>
   snapshot.workers.flatMap((w) => (taskOfWorker(snapshot, w)?.item.itemId === itemId && w.runId !== undefined && !w.freeSession ? [w.runId] : []));
 
-// More than one run id in a stage means the task restarted there (a Continue, a respawn, a feedback): counted in every stage (#473)
+// The daemon drops a slept record once its session continues, so the ids are kept from the reads made while the experiment slept
+const sleptAll = (snapshot: Snapshot): string[] => (snapshot.slept ?? []).filter((s) => s.cause === 'all').map((s) => s.ptyId);
+
+// More than one run id in a stage means the task restarted there (a Continue, a respawn, a feedback): counted in every stage (#473).
+// A run that slept with the sleep all is continued by the wake (#472): the run after it takes its place, so the wake is no restart
 function withStageRuns(watch: WatchState, snapshot: Snapshot): WatchState['stageRuns'] {
   return Object.fromEntries(idsOf(watch).map((id) => {
     const seen = watch.stageRuns[id] ?? {};
@@ -59,7 +64,9 @@ function withStageRuns(watch: WatchState, snapshot: Snapshot): WatchState['stage
     if (stage === undefined) return [id, seen];
     const before = seen[stage] ?? [];
     const fresh = runsOf(snapshot, id).filter((r) => !before.includes(r));
-    return [id, fresh.length === 0 ? seen : { ...seen, [stage]: [...before, ...fresh] }];
+    if (fresh.length === 0) return [id, seen];
+    const woke = before.length > 0 && watch.sleptRuns.includes(before[before.length - 1]);
+    return [id, { ...seen, [stage]: woke ? [...before.slice(0, -1), ...fresh] : [...before, ...fresh] }];
   }));
 }
 
@@ -94,7 +101,8 @@ function failure(watch: WatchState, snapshot: Snapshot): string | undefined {
 
 /** One read of the State: its entries and runs, its progress, every task it frees (all blockers in Done), or the end it calls for. */
 export function observe(watch: WatchState, snapshot: Snapshot, now: Date): Step {
-  const next = { ...watch, entries: withEntries(watch, snapshot, now), stageRuns: withStageRuns(watch, snapshot) };
+  const sleptRuns = [...new Set([...watch.sleptRuns, ...sleptAll(snapshot)])]; // before the stage runs, so a slept record and its wake in one read still pair
+  const next = { ...watch, sleptRuns, entries: withEntries(watch, snapshot, now), stageRuns: withStageRuns({ ...watch, sleptRuns }, snapshot) };
   const progress = progressOf(watch, snapshot);
   const reason = failure(watch, snapshot);
   if (reason) return { watch: next, release: [], progress, end: { outcome: 'error', reason } };
