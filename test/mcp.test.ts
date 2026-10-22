@@ -76,10 +76,10 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
   return { text: first?.type === 'text' ? first.text : '', isError: result.isError === true };
 }
 
-test('the nine tools are listed; hive_done with a live worker marks the worker and merges its result into the task (#99)', async (t) => {
+test('the ten tools are listed; hive_done with a live worker marks the worker and merges its result into the task (#99)', async (t) => {
   const { base, server, lines, ptyId } = await start(t);
   const client = await connect(t, base, ptyId);
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_remember', 'hive_reply', 'hive_stop']);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_remember', 'hive_reply', 'hive_stop', 'hive_task']);
   assert.deepEqual(await call(client, 'hive_done', { result: { spec: 'docs/a.md', n: 1 } }), { text: 'ok', isError: false });
   assert.equal(worker0(server).done, true);
   await call(client, 'hive_done', { result: { n: 2 } });
@@ -103,7 +103,7 @@ test('an unknown or missing worker id gets a tool error from every tool and disp
   const calls: [string, Record<string, unknown>][] = [
     ['hive_done', {}], ['hive_pr', { url: 'https://github.com/acme/r/pull/9' }], ['hive_ask', { question: 'q?' }], ['hive_create_task', { title: 'x' }],
     ['hive_stop', { reason: 'wontDo' }], ['hive_reply', { thread: 'T1', text: 'x' }], ['hive_conventions', {}],
-    ['hive_remember', { kind: 'fact', text: 'x' }], ['hive_applied', { id: 'm-1', why: 'x' }],
+    ['hive_remember', { kind: 'fact', text: 'x' }], ['hive_applied', { id: 'm-1', why: 'x' }], ['hive_task', {}],
   ];
   for (const ptyId of ['ghost', undefined]) {
     const client = await connect(t, base, ptyId);
@@ -553,7 +553,7 @@ test('a tool turned off in mcp.off leaves tools/list and a call to it gets the S
   const off = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, workspaces: workspacesAt(repo), mcp: { off: ['hive_remember'], servers: [] } }) });
   assert.equal(off.status, 200);
   const client = await connect(t, base, ptyId);
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_reply', 'hive_stop']);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_reply', 'hive_stop', 'hive_task']);
   const answer = await call(client, 'hive_remember', { kind: 'fact', text: 'x' });
   assert.equal(answer.isError, true);
   assert.match(answer.text, /Tool hive_remember not found/);

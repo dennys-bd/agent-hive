@@ -1,7 +1,10 @@
 // hive_task's answer (#7): the calling worker's own task as the Hive holds it. Pure, but for the comments, read live on every call as the
 // panel's GET /tasks/:id/comments reads them; the registration lives in mcp-optional.ts with the other optional tools
 import { resultOf, taskOfWorker } from './activities.js';
-import type { BlockerRef, Item, Source, State, Task, TaskComment, Worker } from './types.js';
+import { workerWorkspace } from './mcp-conventions.js';
+import type { McpDeps } from './mcp-kit.js';
+import { originRepository } from './repos/repositories.js';
+import type { BlockerRef, Exec, Item, Source, State, Task, TaskComment, Worker } from './types.js';
 
 /** A task of the tree (#7): its display id, title and stage when the Hive holds it; its itemId alone when it does not. */
 export interface TaskRef { id: string; title?: string; stage?: string; closed?: true }
@@ -21,6 +24,7 @@ export interface HeldTask extends TaskComments {
 export interface TaskAnswer { task: HeldTask | null }
 
 type Tasks = readonly Task[];
+type Live = NonNullable<ReturnType<McpDeps['live']>>;
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -71,4 +75,15 @@ export async function taskComments(source: Pick<Source, 'comments'> | undefined,
   } catch (err) {
     return { commentsError: errorMessage(err) };
   }
+}
+
+/** hive_task's whole answer (#7): the pure part, then the workspace's GitHub repository and the task's comments, both read now. */
+export async function readTaskAnswer(exec: Exec, live: Live, worker: Worker): Promise<TaskAnswer> {
+  const task = taskOfWorker(live.state, worker);
+  const workspace = workerWorkspace(live.state, live.config, worker);
+  const answer = taskAnswer(live.state, worker, workspace?.name);
+  if (!task || answer.task === null) return answer;
+  const source = task.item.source === undefined ? undefined : live.sources.get(task.item.source); // the task's own source (#180)
+  const [repository, comments] = await Promise.all([originRepository(exec, workspace?.path), taskComments(source, task)]);
+  return { task: { ...answer.task, ...(repository === undefined ? {} : { repository }), ...comments } };
 }

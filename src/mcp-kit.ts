@@ -13,7 +13,7 @@ export const UNKNOWN_WORKER_MESSAGE = 'unknown worker';
 /** What the tools read and do: the live state with the config (undefined while the Hive has no config), and the server's dispatch. The
  * review files hive_reply answers in come with ReplyReviews (#591, #344). */
 export interface McpDeps extends ReplyReviews {
-  live(): { state: State; config: Config; sources: ReadonlyMap<string, Pick<Source, 'create'>> } | undefined; // config: the Comb's prefix and createIn (hive_create_task), the Hive's language and a fork's base (hive_conventions)
+  live(): { state: State; config: Config; sources: ReadonlyMap<string, Pick<Source, 'create' | 'comments'>> } | undefined; // hive_task's comments (#7); config: the Comb's prefix and createIn (hive_create_task), the Hive's language and a fork's base (hive_conventions)
   poll(names: string[], manual?: string[]): Promise<void>; // #846: hive_create_task on a source polls it through the route's own path
   dispatch(event: HiveEvent): Promise<Effect[]>;
   canClose(itemId: string): boolean; // hive_stop's reason (#314): whether the task's source can close its item

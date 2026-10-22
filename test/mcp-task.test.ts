@@ -1,9 +1,19 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import express from 'express';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import assert from 'node:assert/strict';
 import { localActivityId } from '../src/activities.js';
+import { mountMcp } from '../src/mcp.js';
+import { TASK_DESCRIPTION } from '../src/mcp-optional.js';
 import { taskAnswer, taskComments } from '../src/mcp-task.js';
 import { initialState } from '../src/orchestrator.js';
-import type { Item, State, Task, TaskComment, Worker } from '../src/types.js';
+import { MCP_DEFAULTS } from '../src/types.js';
+import type { Config, Exec, Item, OptionalTool, Source, State, Task, TaskComment, Worker, Workspace } from '../src/types.js';
+import { fakeFacts } from './fakes.js';
 import { activityIdOf, withKeptRecord, withLocal, withWork } from './fixtures/work.js';
 
 const ITEM_ID = 'gh:I7';
@@ -86,4 +96,65 @@ test('taskComments reads the comments by the task\'s itemId, leaves them out for
   assert.deepEqual(await taskComments(undefined, LEAF), {});
   const failing = { comments: async (): Promise<TaskComment[]> => { throw new Error('API rate limit exceeded'); } };
   assert.deepEqual(await taskComments(failing, LEAF), { commentsError: 'API rate limit exceeded' });
+});
+
+type Sources = ReadonlyMap<string, Pick<Source, 'create' | 'comments'>>;
+const NO_SOURCES: Sources = new Map();
+const APP: Workspace = { name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' };
+// git -C /repo remote get-url origin: the workspace's GitHub origin
+const exec: Exec = async (_file, args) => ({ stdout: args[1] === '/repo' ? 'https://github.com/acme/r.git\n' : '' });
+const configWith = (off: OptionalTool[]): Config =>
+  ({ mcp: { ...MCP_DEFAULTS, off }, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [APP] } }) as unknown as Config;
+
+async function harness(t: TestContext, state: State, sources: Sources, off: OptionalTool[] = [], ptyId = 'p1'): Promise<Client> {
+  const { facts } = fakeFacts();
+  const unused = async (): Promise<never> => { throw new Error('unused'); };
+  const app = express().use(express.json());
+  mountMcp(app, {
+    exec, live: () => ({ state, config: configWith(off), sources }), poll: async () => undefined, dispatch: async () => [],
+    canClose: () => false, relate: unused, canRelate: () => false, facts, memory: { read: unused, update: unused },
+    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined,
+  });
+  const http = app.listen(0);
+  t.after(() => http.close());
+  await once(http, 'listening');
+  const client = new Client({ name: 'hive-test', version: '0.0.0' });
+  const url = new URL(`http://127.0.0.1:${(http.address() as AddressInfo).port}/hooks/mcp`);
+  await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { 'x-hive-pty': ptyId } } }));
+  t.after(() => client.close());
+  return client;
+}
+
+async function call(client: Client): Promise<{ text: string; isError: boolean }> {
+  const result = (await client.callTool({ name: 'hive_task', arguments: {} })) as CallToolResult;
+  const [first] = result.content;
+  return { text: first?.type === 'text' ? first.text : '', isError: result.isError === true };
+}
+
+test('hive_task is listed by default and answers the stage worker\'s task as JSON, with the workspace\'s GitHub repository and the comments its source reads on the call (#7)', async (t) => {
+  const client = await harness(t, stateWith([LEAF]), new Map([['gh', { comments: async () => [COMMENT] }]]));
+  assert.equal((await client.listTools()).tools.find((tool) => tool.name === 'hive_task')?.description, TASK_DESCRIPTION);
+  const answer = await call(client);
+  assert.equal(answer.isError, false);
+  assert.deepEqual(JSON.parse(answer.text) as unknown, { task: { ...LEAF_ANSWER, repository: 'acme/r', comments: [COMMENT] } });
+});
+
+test('a source whose comments throw answers commentsError beside the rest of the task (#7)', async (t) => {
+  const failing = { comments: async (): Promise<TaskComment[]> => { throw new Error('boom'); } };
+  const answer = await call(await harness(t, stateWith([LEAF]), new Map([['gh', failing]])));
+  assert.deepEqual(JSON.parse(answer.text) as unknown, { task: { ...LEAF_ANSWER, repository: 'acme/r', commentsError: 'boom' } });
+});
+
+test('a local session has hive_task and gets task: null, no error (#7)', async (t) => {
+  const client = await harness(t, withLocal(stateWith([LEAF], [LOCAL_WORKER]), 'hive'), NO_SOURCES, [], 'p2');
+  assert.ok((await client.listTools()).tools.some((tool) => tool.name === 'hive_task'));
+  assert.deepEqual(await call(client), { text: '{"task":null}', isError: false });
+});
+
+test('mcp.off with hive_task leaves it out of tools/list, and a call gets the SDK\'s unknown-tool answer (#7)', async (t) => {
+  const client = await harness(t, stateWith([LEAF]), NO_SOURCES, ['hive_task']);
+  assert.equal((await client.listTools()).tools.some((tool) => tool.name === 'hive_task'), false);
+  const answer = await call(client);
+  assert.equal(answer.isError, true);
+  assert.match(answer.text, /Tool hive_task not found/);
 });

@@ -27,7 +27,7 @@ test('parseMcp accepts the spec\'s example as written, a command\'s args default
 });
 
 test('parseMcp refuses a locked or unknown tool in off, naming the key and listing the optional tools (#333)', () => {
-  const only = 'only hive_remember, hive_applied, hive_create_task can be turned off';
+  const only = 'only hive_remember, hive_applied, hive_create_task, hive_task can be turned off';
   assert.equal(at([], ['hive_done']), `"mcp.off" holds hive_done: ${only}`);
   assert.equal(at([], ['hive_nope']), `"mcp.off" holds hive_nope: ${only}`);
   assert.equal(at([], 'hive_remember'), '"mcp.off" must be an array of tool names');
