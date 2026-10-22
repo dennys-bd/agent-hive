@@ -152,7 +152,7 @@ function registerRevealRoute(app: Express, { exec, requireLive }: Pick<TaskRoute
 }
 
 // A directory is a folder; anything else, a symlink too, is a file: the tree opens it and never walks through it. ponytail: no cap on the
-// listing, and an expanded folder is re-read every poll; a truncated answer if a huge expanded folder (node_modules) ever slows the tree
+// listing, and an expanded folder is re-read on each tree event under it (#502); a truncated answer if a huge expanded folder (node_modules) ever slows the tree
 async function diskEntries(folder: string): Promise<FolderEntries> {
   const entries = (await readdir(folder, { withFileTypes: true })).filter((entry) => entry.name.toLowerCase() !== '.git');
   const namesOf = (isFolder: boolean): string[] => entries.filter((entry) => entry.isDirectory() === isFolder).map((entry) => entry.name).sort();
@@ -161,7 +161,7 @@ async function diskEntries(folder: string): Promise<FolderEntries> {
 
 // HIVE-22's listing, and inside a nested repository (#1) that repository's view of it. The walk up runs on the query's path as written,
 // normalized: `folder` is real, and on macOS a real path need not start with the root as written. ponytail: one pathspec-limited git status
-// per expanded folder inside a nested repository per poll (POLL_MS); one status per nested repository, shared by its expanded folders, if a
+// per read of an expanded folder inside a nested repository (on its own index or HEAD change, focus or a tree operation, #502); one status per nested repository, shared by its expanded folders, if a
 // big one ever slows the tree
 async function folderEntries(root: string, path: string, folder: string, exec: Exec, onNested: (repo: string) => void): Promise<FolderEntries> {
   const children = await diskEntries(folder);
@@ -196,7 +196,7 @@ function registerFolderRoute(app: Express, { exec, requireLive, treeWatch }: Pic
   });
 }
 
-/** GET /activities/:id/tree, what the files sidebar polls, POST /activities/:id/reveal and GET /activities/:id/tree/folder (HIVE-22). No value of the request picks the folder: it comes
+/** GET /activities/:id/tree, what the files sidebar reads, POST /activities/:id/reveal and GET /activities/:id/tree/folder (HIVE-22). No value of the request picks the folder: it comes
  *  from the task's slug and workspace, or the local activity's workspace (#633). */
 export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'treeWatch'>): void {
   app.get('/activities/:id/tree', async (req: Request, res: Response) => {

@@ -163,7 +163,7 @@ interface BodyProps {
   onToggle(path: string): void; onSelect(node: TreeNode, event: MouseEvent): void; onMenu(path: string): void;
 }
 
-// The tree as the latest poll has it, or why there is none
+// The tree as its latest read has it, or why there is none
 function TreeBody({ tree, marks, rows, activityId, expanded, drag, selection, actions, edit, onToggle, onSelect, onMenu }: BodyProps) {
   const icons = useFileIcons(); // once per tree: every row shares the loaded set
   useDiagnostics(); // #780: the counts follow the language servers

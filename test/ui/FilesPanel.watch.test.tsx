@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ActivitySide } from '@/components/FilesPanel';
 import { FileOpenerContext, type OpenFile } from '@/components/terminal-tabs';
 import { setLanguage } from '@/i18n';
+import { emitTreeEvent } from '@/lib/tree-events';
 import type { Task, TaskTree } from '../../src/types';
 import type { TaskActivity } from '@/lib/activities';
 import { taskPairOf } from '../fixtures/work';
@@ -26,4 +27,15 @@ test('the shown files sidebar posts a lease on its tree and deletes it when it u
   expect(requests()).toContainEqual(['POST', '/activities/a-I1/tree/watch']);
   unmount();
   expect(requests().some(([method, url]) => method === 'DELETE' && url.startsWith('/activities/a-I1/tree/watch/'))).toBe(true);
+});
+
+test('a tree event naming its activity and a new path redraws the tree with that file; one for another activity reads nothing (#502)', async () => {
+  render(side());
+  await screen.findByTitle('README.md');
+  const treeReads = (): number => requests().filter(([method, url]) => method === 'GET' && url === '/activities/a-I1/tree').length;
+  tree = { ...TREE, files: ['README.md', 'new.ts'], marks: { 'new.ts': 'A' } };
+  act(() => emitTreeEvent({ type: 'tree', activityId: 'a-other', paths: ['new.ts'] }));
+  expect(treeReads()).toBe(1);
+  act(() => emitTreeEvent({ type: 'tree', activityId: 'a-I1', paths: ['new.ts'] }));
+  expect(await screen.findByTitle('new.ts')).toBeInTheDocument();
 });
