@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { SpawnOptions } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ensureChromium, keepShots, mcpBinary, mcpConfig } from '../../src/benchmark/browser.js';
+import { ensureChromium, keepShots, mcpBinary, mcpConfig, type SampleChild, startSample, stopSample, waitReady } from '../../src/benchmark/browser.js';
 import { tempDir } from '../temp-dir.js';
 
 test("mcpConfig runs the Playwright MCP's bin with this Node, headless and isolated on the sample's origin, its shots in the output dir; no storage state unless given (#105, #474)", () => {
@@ -44,4 +46,44 @@ test('keepShots copies every PNG under the folder, a nested one named by its pat
   await writeFile(join(dir, 'from', 'mcp.json'), '{}');
   assert.deepEqual(await keepShots(join(dir, 'from'), join(dir, 'to'), '2-'), ['2-S1-1.png', '2-screens-page.png']);
   assert.deepEqual((await readdir(join(dir, 'to'))).sort(), ['2-S1-1.png', '2-screens-page.png']);
+});
+
+type FakeChild = SampleChild & { exitCode: number | null; exit(): void };
+function fakeChild(pid = 4242): FakeChild {
+  const events = new EventEmitter();
+  const child: FakeChild = { pid, exitCode: null, once: (event, listener) => events.once(event, listener), exit: () => { child.exitCode = 0; events.emit('exit'); } };
+  return child;
+}
+
+test("startSample runs the seed's command through $SHELL -c in the worktree, detached, without the Hive's env and with CI=1 (#474)", () => {
+  const calls: { file: string; args: readonly string[]; options: SpawnOptions }[] = [];
+  const child = fakeChild();
+  const started = startSample('pnpm i && pnpm start', '/eval/worktree', (file, args, options) => { calls.push({ file, args, options }); return child; }, { SHELL: '/bin/zsh', PATH: '/bin', HIVE_SECRET: 's' });
+  assert.equal(started, child);
+  assert.deepEqual(calls.map((c) => [c.file, c.args]), [['/bin/zsh', ['-c', 'pnpm i && pnpm start']]]);
+  assert.deepEqual([calls[0]?.options.cwd, calls[0]?.options.detached, calls[0]?.options.stdio], ['/eval/worktree', true, 'ignore']);
+  assert.deepEqual([calls[0]?.options.env?.CI, calls[0]?.options.env?.PATH, calls[0]?.options.env?.HIVE_SECRET], ['1', '/bin', undefined]);
+});
+
+test('stopSample sends SIGTERM to the process group, then SIGKILL after the grace when the shell has not exited (#474)', async () => {
+  const kills: [number, string][] = [];
+  await stopSample(fakeChild(4242), { kill: (pid, signal) => { kills.push([pid, signal]); }, graceMs: 20 });
+  assert.deepEqual(kills, [[-4242, 'SIGTERM'], [-4242, 'SIGKILL']]);
+  const polite = fakeChild(4343);
+  const politeKills: [number, string][] = [];
+  await stopSample(polite, { kill: (pid, signal) => { politeKills.push([pid, signal]); if (signal === 'SIGTERM') polite.exit(); }, graceMs: 60_000 });
+  assert.deepEqual(politeKills, [[-4343, 'SIGTERM']]);
+  await stopSample(fakeChild(), { kill: () => { throw Object.assign(new Error('gone'), { code: 'ESRCH' }); }, graceMs: 10 }); // a group already gone
+});
+
+test('waitReady answers once the URL gives a status below 500, and gives up at the deadline or when the command exits first (#474)', async () => {
+  const url = 'http://127.0.0.1:5173/';
+  let clock = 0;
+  const tick = async (ms: number): Promise<void> => { clock += ms; };
+  const statuses = [502, 404];
+  assert.equal(await waitReady(url, { fetch: async () => ({ status: statuses.shift() ?? 200 }), now: () => clock, sleep: tick, exited: () => false, deadlineMs: 5_000 }), undefined);
+  clock = 0;
+  const refused = async (): Promise<{ status: number }> => { throw new Error('ECONNREFUSED'); };
+  assert.equal(await waitReady(url, { fetch: refused, now: () => clock, sleep: tick, exited: () => false, deadlineMs: 3_000 }), `the sample did not start: no answer from ${url} in 3 s`);
+  assert.equal(await waitReady(url, { fetch: refused, now: () => 0, sleep: async () => undefined, exited: () => true, deadlineMs: 3_000 }), 'the sample did not start: its command exited');
 });
