@@ -14,12 +14,12 @@ const EXP = experiment({ rounds: [
 ] });
 
 function routes(t: TestContext, state: State, busy: string[] = []) {
-  const calls: [string, string[]][] = [];
+  const calls: [string, string[], boolean][] = [];
   const app = express();
   app.use(express.json());
   registerBenchmarkEvaluateRoutes(app, {
     requireLive: () => ({ state }), log: fakeLog().log,
-    evaluator: { evaluate: async (id, tokens) => { calls.push([id, [...tokens]]); }, isEvaluating: (token) => busy.includes(token) },
+    evaluator: { evaluate: async (id, tokens, markRounds = false) => { calls.push([id, [...tokens], markRounds]); }, isEvaluating: (token) => busy.includes(token) },
   });
   const server = app.listen(0);
   t.after(() => server.close());
@@ -33,7 +33,7 @@ const post = async (url: string): Promise<[number, unknown]> => {
 test('the run route answers 202 and starts the evaluation of an ended run (#474)', async (t) => {
   const h = routes(t, stateWith(EXP));
   assert.deepEqual(await post(`${h.base}/exp-1/runs/aaaa2/evaluate`), [202, { tokens: ['aaaa2'] }]);
-  assert.deepEqual(h.calls, [['exp-1', ['aaaa2']]]);
+  assert.deepEqual(h.calls, [['exp-1', ['aaaa2'], false]]);
 });
 
 test('the run route answers 409 while the run has not ended or is being evaluated, and 404 for an unknown experiment or token (#474)', async (t) => {
@@ -53,7 +53,7 @@ test('the experiment route evaluates every ended run in round then arm order, an
   assert.deepEqual(evaluableTokens(EXP), ['aaaa1', 'aaaa2', 'bbbb1', 'bbbb2']);
   const h = routes(t, stateWith(EXP));
   assert.deepEqual(await post(`${h.base}/exp-1/evaluate`), [202, { tokens: ['aaaa1', 'aaaa2', 'bbbb1', 'bbbb2'] }]);
-  assert.deepEqual(h.calls, [['exp-1', ['aaaa1', 'aaaa2', 'bbbb1', 'bbbb2']]]);
+  assert.deepEqual(h.calls, [['exp-1', ['aaaa1', 'aaaa2', 'bbbb1', 'bbbb2'], true]]);
   const busy = routes(t, stateWith(EXP), ['bbbb1']);
   assert.deepEqual(await post(`${busy.base}/exp-1/evaluate`), [409, { error: 'a run of this experiment is being evaluated' }]);
   assert.deepEqual(await post(`${busy.base}/nope/evaluate`), [404, { error: 'unknown experiment' }]);

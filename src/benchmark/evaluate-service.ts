@@ -8,7 +8,7 @@ import type { Logger } from '../log.js';
 import type { BenchmarkEvent, BenchRunEvaluation, BenchRunStatus, State } from '../types.js';
 import { ensureChromium, mcpBinary } from './browser.js';
 import { type EvaluateContext, type EvaluateDeps, evaluateRun } from './evaluate.js';
-import type { Run } from './exec.js';
+import { type Run, serialGit } from './exec.js';
 
 const ENDED: readonly BenchRunStatus[] = ['done', 'timeout', 'error'];
 
@@ -22,11 +22,12 @@ export interface BenchEvaluatorDeps {
   evaluateRun?: (ctx: EvaluateContext, deps: EvaluateDeps) => Promise<BenchRunEvaluation | undefined>; // tests' seam
 }
 /** The bench.evaluate contract 3.2 consumes. */
-export interface BenchEvaluator { evaluate(experimentId: string, tokens: readonly string[]): Promise<void>; isEvaluating(token: string): boolean; abortAll(): void }
+export interface BenchEvaluator { evaluate(experimentId: string, tokens: readonly string[], markRounds?: boolean): Promise<void>; isEvaluating(token: string): boolean; abortAll(): Promise<void> }
 
 export function createBenchEvaluator(deps: BenchEvaluatorDeps): BenchEvaluator {
   const evaluating = new Set<string>();
   const controllers = new Set<AbortController>();
+  const inFlight = new Set<Promise<void>>(); // a Quit awaits them: their finally blocks stop the sample and remove the eval worktree
   const evaluateOne = deps.evaluateRun ?? evaluateRun;
 
   async function one(id: string, token: string, signal: AbortSignal): Promise<boolean> {
@@ -57,7 +58,7 @@ export function createBenchEvaluator(deps: BenchEvaluatorDeps): BenchEvaluator {
     }
   }
 
-  async function evaluate(id: string, tokens: readonly string[]): Promise<void> {
+  async function run(id: string, tokens: readonly string[], markRound: boolean): Promise<void> {
     const controller = new AbortController();
     controllers.add(controller);
     for (const token of tokens) evaluating.add(token); // before the first await: the route's next POST already sees them
@@ -67,21 +68,42 @@ export function createBenchEvaluator(deps: BenchEvaluatorDeps): BenchEvaluator {
         if (controller.signal.aborted) return;
         if (await one(id, token, controller.signal)) done.add(token);
       }
-      if (!controller.signal.aborted) await markRounds(id, done);
+      if (markRound && !controller.signal.aborted) await markRounds(id, done); // only the experiment route, per the spec
     } finally {
       for (const token of tokens) evaluating.delete(token);
       controllers.delete(controller);
     }
   }
 
-  return { evaluate, isEvaluating: (token) => evaluating.has(token), abortAll: () => { for (const c of controllers) c.abort(); } };
+  function evaluate(id: string, tokens: readonly string[], markRound = false): Promise<void> {
+    const promise = run(id, tokens, markRound);
+    inFlight.add(promise);
+    const forget = (): void => { inFlight.delete(promise); };
+    promise.then(forget, forget);
+    return promise;
+  }
+
+  async function abortAll(): Promise<void> {
+    for (const c of controllers) c.abort();
+    await Promise.allSettled([...inFlight]);
+  }
+
+  return { evaluate, isEvaluating: (token) => evaluating.has(token), abortAll };
+}
+
+/** The readiness poll reads the status only: the body is cancelled so no socket stays held until the next poll. */
+export async function readyFetch(url: string, init: { signal: AbortSignal }, fetchImpl: typeof fetch = fetch): Promise<{ status: number }> {
+  const res = await fetchImpl(url, init);
+  await res.body?.cancel().catch(() => undefined);
+  return { status: res.status };
 }
 
 /** The real processes behind an evaluation; the git runner is the caller's (a test or the Hive's). */
 export function benchRunDeps(o: { exec: Run; headless?: HeadlessDeps }): BenchEvaluatorDeps['runDeps'] {
+  const exec = serialGit(o.exec); // one runner for every evaluation: concurrent ones share the clone
   return (signal, log) => ({
-    exec: o.exec, headless: (input) => runHeadless(input, o.headless), browser: { ensureChromium: () => ensureChromium(), mcpBinary },
-    spawnSample: spawn, kill: (pid, s) => process.kill(pid, s), fetch: (url, init) => fetch(url, init), now: Date.now,
+    exec, headless: (input) => runHeadless(input, o.headless), browser: { ensureChromium: () => ensureChromium(), mcpBinary },
+    spawnSample: spawn, kill: (pid, s) => process.kill(pid, s), fetch: (url, init) => readyFetch(url, init), now: Date.now,
     sleep: (ms) => sleep(ms, undefined, { signal }), log, signal, tmpRoot: tmpdir(),
   });
 }

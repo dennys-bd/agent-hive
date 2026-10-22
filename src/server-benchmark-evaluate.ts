@@ -25,8 +25,8 @@ export function evaluableTokens(experiment: Experiment): string[] {
 }
 
 // The evaluation can take hours (#474): the route answers at once and the service dispatches the result
-function start(deps: BenchEvaluateRouteDeps, res: Response, id: string, tokens: string[]): void {
-  void deps.evaluator.evaluate(id, tokens).catch(() => deps.log.warn(`benchmark ${id}: evaluation failed`));
+function start(deps: BenchEvaluateRouteDeps, res: Response, id: string, tokens: string[], markRounds = false): void {
+  void deps.evaluator.evaluate(id, tokens, markRounds).catch(() => deps.log.warn(`benchmark ${id}: evaluation failed`));
   res.status(HTTP_ACCEPTED).json({ tokens });
 }
 
@@ -45,7 +45,7 @@ export function registerBenchmarkEvaluateRoutes(app: Express, deps: BenchEvaluat
     if (experiment === undefined) return;
     const tokens = evaluableTokens(experiment);
     if (tokens.some((token) => deps.evaluator.isEvaluating(token))) return void res.status(HTTP_CONFLICT).json({ error: 'a run of this experiment is being evaluated' });
-    start(deps, res, experiment.id, tokens);
+    start(deps, res, experiment.id, tokens, true); // only this route marks rounds evaluated
   });
   app.post(`${E}/runs/:token/evaluate`, (req, res) => {
     const experiment = experimentOf(deps, req, res);

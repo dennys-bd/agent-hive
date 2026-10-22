@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { EvaluateDeps } from '../../src/benchmark/evaluate.js';
-import { createBenchEvaluator } from '../../src/benchmark/evaluate-service.js';
+import type { Run } from '../../src/benchmark/exec.js';
+import { benchRunDeps, createBenchEvaluator, readyFetch } from '../../src/benchmark/evaluate-service.js';
 import type { BenchRunEvaluation, HiveEvent, State } from '../../src/types.js';
 import { fakeLog } from '../fakes.js';
 import { experiment, run, stateWith } from './fixtures.js';
@@ -28,7 +29,7 @@ test("evaluate runs the tokens one at a time in order, dispatches each run's eva
   let open: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => { open = resolve; });
   const { evaluator, events } = service(async (token) => { order.push(token); await gate; return EVAL; });
-  const done = evaluator.evaluate('exp-1', ['aaaa1', 'aaaa2', 'bbbb1']);
+  const done = evaluator.evaluate('exp-1', ['aaaa1', 'aaaa2', 'bbbb1'], true);
   assert.deepEqual(['aaaa1', 'aaaa2', 'bbbb1', 'bbbb2'].map((token) => evaluator.isEvaluating(token)), [true, true, true, false]);
   open();
   await done;
@@ -56,8 +57,42 @@ test('a run whose judge failed or whose evaluation threw keeps its evaluation, l
 test('abortAll stops every evaluation: nothing is dispatched and the tokens are released (#474)', async () => {
   const { evaluator, events } = service((_token, deps) => new Promise((resolve) => deps.signal.addEventListener('abort', () => resolve(EVAL))));
   const done = evaluator.evaluate('exp-1', ['aaaa1', 'aaaa2']);
-  evaluator.abortAll();
+  await evaluator.abortAll();
+  assert.equal(evaluator.isEvaluating('aaaa1'), false, 'abortAll resolves only after the evaluation unwound');
   await done;
   assert.deepEqual(events, []);
-  assert.equal(evaluator.isEvaluating('aaaa1'), false);
+});
+
+test('abortAll waits for the cleanup of an aborted evaluation (#474)', async () => {
+  let cleaned = false;
+  const { evaluator } = service((_token, deps) => new Promise((_resolve, reject) => deps.signal.addEventListener('abort', () => { setTimeout(() => { cleaned = true; reject(new Error('aborted')); }, 20); })));
+  const done = evaluator.evaluate('exp-1', ['aaaa1']);
+  await evaluator.abortAll();
+  assert.equal(cleaned, true);
+  await done;
+});
+
+test('a single-run evaluation dispatches its run but no benchmarkRoundEvaluated; only the experiment route asks for it (#474)', async () => {
+  const { evaluator, events } = service(async () => EVAL);
+  await evaluator.evaluate('exp-1', ['aaaa1', 'aaaa2']);
+  assert.deepEqual(events.map((e) => e.type), ['benchmarkRunChanged', 'benchmarkRunChanged']);
+});
+
+test('benchRunDeps serializes git through one runner shared by every evaluation (#474)', async () => {
+  let running = 0;
+  let overlap = false;
+  const exec: Run = async () => { running += 1; overlap ||= running > 1; await new Promise((resolve) => setTimeout(resolve, 5)); running -= 1; return { stdout: '' }; };
+  const make = benchRunDeps({ exec });
+  const a = make(new AbortController().signal, () => undefined);
+  const b = make(new AbortController().signal, () => undefined);
+  await Promise.all([a.exec('git', ['x']), b.exec('git', ['y']), a.exec('git', ['z'])]);
+  assert.equal(overlap, false);
+});
+
+test('readyFetch answers the status and cancels the body so the poll holds no socket (#474)', async () => {
+  let cancelled = false;
+  const body = { cancel: async () => { cancelled = true; } };
+  const res = await readyFetch('http://127.0.0.1:1/', { signal: new AbortController().signal }, async () => ({ status: 200, body }) as Response);
+  assert.deepEqual(res, { status: 200 });
+  assert.equal(cancelled, true);
 });
