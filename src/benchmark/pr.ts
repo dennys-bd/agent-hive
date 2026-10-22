@@ -55,6 +55,9 @@ const PR_URL = /^https:\/\/\S+\/pull\/\d+$/;
 export const benchRef = (token: string): string => `refs/hive/bench/${token}`;
 /** What a log line may say of a failure (#477): its class, never git's or gh's words, which carry paths under the user's home. */
 export const errorClass = (err: unknown): string => (err instanceof Error ? err.name : typeof err);
+// The run's commits are untrusted worker output: no hook of the repo may fire on a step that could run one (the user's own hooks do not run here)
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null'];
+const hookless = (...args: string[]): string[] => [...NO_HOOKS, ...args];
 const lines = (text: string): string[] => text.split('\n').map((l) => l.trim()).filter((l) => l !== '');
 
 export interface FetchedRun { baseline: string; commits: number; baseSha: string }
@@ -63,7 +66,7 @@ export interface FetchedRun { baseline: string; commits: number; baseSha: string
  *  baseline the run started from, the run's own commits after it, and the base's short sha. */
 export async function fetchRun(git: Run, repoGit: string, token: string, base: string): Promise<FetchedRun> {
   const ref = benchRef(token);
-  await git('git', ['fetch', repoGit, `+refs/heads/${runBranch(token)}:${ref}`]);
+  await git('git', ['-c', 'transfer.fsckObjects=true', 'fetch', repoGit, `+refs/heads/${runBranch(token)}:${ref}`]);
   await git('git', ['fetch', 'origin', base]);
   const baseline = lines((await git('git', ['rev-list', '--max-parents=0', ref])).stdout).at(0);
   if (baseline === undefined) throw new Error('the run branch has no root commit');
@@ -76,11 +79,11 @@ export async function fetchRun(git: Run, repoGit: string, token: string, base: s
  *  its files; any other failure is thrown after the abort. */
 export async function rebaseRun(git: Run, branch: string, baseline: string, base: string): Promise<{ files: string[] } | undefined> {
   try {
-    await git('git', ['rebase', '--onto', `origin/${base}`, baseline, branch]);
+    await git('git', hookless('rebase', '--onto', `origin/${base}`, baseline, branch));
     return undefined;
   } catch (err) {
     const files = await git('git', ['diff', '--name-only', '--diff-filter=U']).then((r) => lines(r.stdout), () => []);
-    await git('git', ['rebase', '--abort']);
+    await git('git', hookless('rebase', '--abort')).catch(() => undefined); // the rebase's own error is the one to report
     if (files.length === 0) throw err;
     return { files };
   }
@@ -96,7 +99,7 @@ export async function dropRunFiles(git: Run, base: string): Promise<boolean> {
   const removed = files.filter((_, i) => !inBase[i]);
   if (restored.length > 0) await git('git', ['restore', '--source', `origin/${base}`, '--staged', '--worktree', '--', ...restored]);
   if (removed.length > 0) await git('git', ['rm', '-q', '--', ...removed]);
-  await git('git', ['commit', '-q', '-m', DROP_MESSAGE]);
+  await git('git', hookless('commit', '-q', '--no-verify', '-m', DROP_MESSAGE));
   return true;
 }
 
@@ -127,12 +130,15 @@ interface Place { dir: string; leave(pushed: boolean): Promise<void> }
 
 async function enterWorktree(git: Run, input: PrInput): Promise<Place> {
   const path = worktreePath(input.workspace.path, `${WORKTREE_PREFIX}${input.token}`);
-  await at('branch', () => git('git', ['worktree', 'add', '-b', input.branch, path, benchRef(input.token)]));
+  await at('branch', () => git('git', hookless('worktree', 'add', '-b', input.branch, path, benchRef(input.token))));
   return {
     dir: path,
     leave: async (pushed) => {
-      await removeWorktree(git, path);
-      if (!pushed) await git('git', ['branch', '-D', input.branch]);
+      try {
+        await removeWorktree(git, path);
+      } finally {
+        if (!pushed) await git('git', ['branch', '-D', input.branch]);
+      }
     },
   };
 }
@@ -155,12 +161,17 @@ async function enterCheckout(git: Run, input: PrInput): Promise<Place | BenchPrR
   const files = porcelainFiles((await at('branch', () => git('git', ['status', '--porcelain']))).stdout);
   if (files.length > 0) return { error: 'dirty', files };
   const previous = await at('branch', () => currentRef(git));
-  await at('branch', () => git('git', ['checkout', '-b', input.branch, benchRef(input.token)]));
+  await at('branch', () => git('git', hookless('checkout', '-b', input.branch, benchRef(input.token))));
   return {
     dir: input.workspace.path,
     leave: async (pushed) => {
-      await git('git', ['checkout', previous]);
-      if (!pushed) await git('git', ['branch', '-D', input.branch]);
+      try {
+        // A step that failed midway (the drop commit) leaves staged changes; enterCheckout required a clean tree, so nothing of the user's is lost
+        await git('git', hookless('reset', '--hard', 'HEAD'));
+        await git('git', hookless('checkout', previous));
+      } finally {
+        if (!pushed) await git('git', ['branch', '-D', input.branch]);
+      }
     },
   };
 }
@@ -180,13 +191,25 @@ async function createPr(gh: Run, input: PrInput): Promise<string> {
   }
 }
 
-async function publish(git: Run, gh: Run, input: PrInput, baseline: string, onPushed: () => void): Promise<BenchPrAnswer | BenchPrRefusal> {
+// gh failed after the push: the pushed branch goes too, so the same name can be retried; the delete failing is only a warning
+async function undoPush(deps: PrDeps, git: Run, input: PrInput): Promise<void> {
+  await git('git', hookless('push', '--no-verify', 'origin', '--delete', input.branch)).then(() => undefined, (err: unknown) =>
+    deps.log.warn(`benchmark PR of experiment ${input.experimentId}: deleting the pushed branch failed (${errorClass(err)})`));
+}
+
+async function publish(deps: PrDeps, git: Run, gh: Run, input: PrInput, baseline: string, mark: (pushed: boolean) => void): Promise<BenchPrAnswer | BenchPrRefusal> {
   const conflict = await at('rebase', () => rebaseRun(git, input.branch, baseline, input.base));
   if (conflict !== undefined) return { error: 'conflict', files: conflict.files };
   await at('files', () => dropRunFiles(git, input.base));
-  await at('push', () => git('git', ['push', '-u', 'origin', input.branch]));
-  onPushed();
-  return { url: await at('pr', () => createPr(gh, input)) };
+  await at('push', () => git('git', hookless('push', '--no-verify', '--set-upstream', 'origin', `HEAD:refs/heads/${input.branch}`)));
+  mark(true);
+  try {
+    return { url: await at('pr', () => createPr(gh, input)) };
+  } catch (err) {
+    await undoPush(deps, git, input);
+    mark(false);
+    throw err;
+  }
 }
 
 // The cleanup never replaces the answer: a failure here is logged by its class and what is left is the user's to look at. Before a push the
@@ -207,7 +230,7 @@ export async function openPr(deps: PrDeps, input: PrInput): Promise<BenchPrAnswe
   if ('error' in place) return place;
   let pushed = false;
   try {
-    return await publish(inDir(deps.exec, place.dir), inDir(deps.gh, place.dir), input, baseline, () => { pushed = true; });
+    return await publish(deps, inDir(deps.exec, place.dir), inDir(deps.gh, place.dir), input, baseline, (value) => { pushed = value; });
   } finally {
     await leave(deps, git, input, place, pushed);
   }

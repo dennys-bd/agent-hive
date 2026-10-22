@@ -7,8 +7,8 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { t, tPlural } from '@/i18n';
 import type { PrProblem } from '@/lib/benchmark-pr-api';
 import { runGroups, runLabel } from '@/lib/benchmark-pr';
-import { bestRun } from '../../../../benchmark/pr-pick';
-import type { Experiment } from '../../../../types';
+import { bestRun } from '../../../../benchmark/pr-pick.js';
+import type { Experiment } from '../../../../types.js';
 
 interface PrFieldsProps {
   experiment: Experiment; picked?: string; preview: PreviewState; branch: string; isBranchValid: boolean; withSummary: boolean; problem?: PrProblem;

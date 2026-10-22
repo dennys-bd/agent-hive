@@ -19,6 +19,7 @@ const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_BAD_GATEWAY = 502;
+const HTTP_INTERNAL = 500;
 const PATH = '/benchmark/experiments/:id/runs/:token/pr';
 const ORIGIN = 'origin';
 const NO_EXPERIMENT = 'no such experiment';
@@ -97,21 +98,39 @@ function failed(deps: BenchmarkPrDeps, res: Response, experiment: Experiment, st
   res.status(HTTP_BAD_GATEWAY).json({ error: step });
 }
 
+// Anything that is not a PrStepError: the class only, and a fixed answer, since Express's own handler can echo git's stderr and home paths
+async function guarded(deps: BenchmarkPrDeps, res: Response, experiment: Experiment, work: () => Promise<void>): Promise<void> {
+  try {
+    await work();
+  } catch (err) {
+    deps.log.error(`benchmark PR of experiment ${experiment.id} failed: ${errorClass(err)}`);
+    if (!res.headersSent) res.status(HTTP_INTERNAL).json({ error: 'internal' });
+  }
+}
+
 async function answerPreview(deps: BenchmarkPrDeps, target: Target, res: Response): Promise<void> {
   const git = inDir(deps.exec, target.workspace.path);
-  const base = await baseOf(git, target);
   try {
+    const base = await baseOf(git, target);
     res.json(previewOf(target, base, await fetchRun(git, repoGitOf(deps, target.experiment), target.run.token, base)));
   } catch (err) {
     failed(deps, res, target.experiment, 'fetch', err);
   }
 }
 
+async function at<T>(step: BenchPrStep, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    throw new PrStepError(step, err);
+  }
+}
+
 async function answerPr(deps: BenchmarkPrDeps, target: Target, request: PrRequest, res: Response): Promise<void> {
   const { experiment, run, workspace } = target;
-  const base = await baseOf(inDir(deps.exec, workspace.path), target);
-  const report = request.withSummary ? aggregate(experiment, 'in', deps.now()) : undefined;
   try {
+    const base = await at('fetch', () => baseOf(inDir(deps.exec, workspace.path), target));
+    const report = request.withSummary ? aggregate(experiment, 'in', deps.now()) : undefined;
     const answer = await openPr({ exec: deps.exec, gh: deps.gh, log: deps.log }, {
       experimentId: experiment.id, token: run.token, workspace, repoGit: repoGitOf(deps, experiment), base,
       branch: request.branch, title: prTitle(experiment.name), body: prBody(experiment, run, report),
@@ -129,7 +148,9 @@ export function registerBenchmarkPrRoutes(app: Express, deps: BenchmarkPrDeps): 
   const busy = new Set<string>(); // workspaces with a sequence running: two on one checkout or one ref would race
   app.get(PATH, async (req: Request, res: Response) => {
     const target = targetOf(deps, req, res);
-    if (target !== undefined) await answerPreview(deps, target, res);
+    if (target === undefined) return;
+    if (busy.has(target.workspace.name)) return refusal(res, { error: 'busy' });
+    await guarded(deps, res, target.experiment, () => answerPreview(deps, target, res));
   });
   app.post(PATH, async (req: Request, res: Response) => {
     const target = targetOf(deps, req, res);
@@ -141,7 +162,7 @@ export function registerBenchmarkPrRoutes(app: Express, deps: BenchmarkPrDeps): 
     if (busy.has(name)) return refusal(res, { error: 'busy' });
     busy.add(name);
     try {
-      await answerPr(deps, target, request, res);
+      await guarded(deps, res, target.experiment, () => answerPr(deps, target, request, res));
     } finally {
       busy.delete(name);
     }

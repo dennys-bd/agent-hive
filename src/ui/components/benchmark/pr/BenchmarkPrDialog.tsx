@@ -4,8 +4,8 @@ import { DialogBase } from '@/components/DialogBase';
 import { t } from '@/i18n';
 import { openBenchPr, type PrProblem, prProblemOf, readPrPreview } from '@/lib/benchmark-pr-api';
 import { initialRun, problemText } from '@/lib/benchmark-pr';
-import { type BenchPrPreview, endedRuns, suggestBranch } from '../../../../benchmark/pr-pick';
-import { type Experiment, isBranchName } from '../../../../types';
+import { type BenchPrPreview, endedRuns, suggestBranch } from '../../../../benchmark/pr-pick.js';
+import { type Experiment, isBranchName } from '../../../../types.js';
 
 export type PreviewState = { state: 'loading' } | { state: 'ready'; preview: BenchPrPreview } | { state: 'failed' };
 interface BenchmarkPrDialogProps { experiment: Experiment; token?: string; onClose(): void }

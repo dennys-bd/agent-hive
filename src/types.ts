@@ -1283,7 +1283,7 @@ export type ForkSyncAnswer = Omit<ForkSyncResult, 'sha' | 'at'>;
 /** Where a benchmark run's PR is rebased and pushed from (#477): a temporary worktree of the workspace's repository, or its own checkout. */
 export const BENCHMARK_PR_IN = ['worktree', 'checkout'] as const;
 export type BenchmarkPrIn = (typeof BENCHMARK_PR_IN)[number];
-/** A new workspace's, and the setup form's for a file from before the key (#477): the checkout is never touched unless asked. */
+/** The setup form's default for a new workspace (#477): the checkout is never touched unless asked. */
 export const BENCHMARK_PR_IN_NEW: BenchmarkPrIn = 'worktree';
 
 /** Where the code lives (#179): a named git repo on this machine. A Comb has one or more; the name is the key tasks and the source use. */
