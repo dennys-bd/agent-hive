@@ -1,10 +1,10 @@
 import { type RefObject, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
-import { messageOf } from '@/components/EditorPane';
 import { Button } from '@/components/ui/button';
 import { type Size, usePaneSize } from '@/hooks/use-canvas-pane';
 import { type DiskVersion, useFileVersion } from '@/hooks/use-file-version';
 import { t } from '@/i18n';
 import * as models from '@/lib/editor-models';
+import { messageOf } from '@/lib/read-error';
 import { anchoredScroll } from '@/lib/flow-zoom';
 
 // The file tab's image (#498): the disk's bytes as an object URL in an <img>, which never runs an SVG's scripts, zoomed from 10% to 800%

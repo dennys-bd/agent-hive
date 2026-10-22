@@ -6,16 +6,14 @@ import { useOpenFile } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { useOpenConsole } from '@/hooks/use-console';
 import { type DiskVersion, useFileVersion } from '@/hooks/use-file-version';
-import { type MessageKey, t } from '@/i18n';
+import { t } from '@/i18n';
 import * as models from '@/lib/editor-models';
+import { messageOf } from '@/lib/read-error';
 import * as fileBase from '@/lib/file-base';
 import * as checks from '@/lib/check-session';
 import * as lsp from '@/lib/lsp-session';
 import type { OpenEditor } from '@/lib/monaco';
 import type { FormatLog } from '../../types';
-
-// The reads the pane names in its own words (#717); any other refusal shows as the server said it
-const READ_ERROR: Partial<Record<number, MessageKey>> = { 404: 'editor.missing', 413: 'editor.tooLarge', 415: 'editor.binary' };
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; model: editor.ITextModel };
 // What the strip says (#717): the disk holds another version than the buffer's base, or no file at all
@@ -30,14 +28,6 @@ interface File { activityId: string; path: string }
  * tree's key of the activity, what a definition in another file opens with (#780). */
 export interface EditorPaneProps { activityId: string; path: string; label: string; active: boolean; fontFamily: string; workspace: string; openKey: string }
 
-/** A refused read in the pane's own words (#717), shared with the preview pane (#697): 404, 413 and 415 named, any other as the server said. */
-export function messageOf(err: unknown): string {
-  if (err instanceof models.FileError) {
-    const key = READ_ERROR[err.status];
-    return key === undefined ? err.message : t(key);
-  }
-  return err instanceof Error ? err.message : String(err);
-}
 
 // The file's model from the store, read on its first open (#717), shared with the changes pane (#668)
 export function useModel({ activityId, path }: File): Load {
@@ -250,7 +240,7 @@ export function EditorPane(props: EditorPaneProps) {
   return (
     <section aria-label={label} data-file-activity={activityId} data-file-path={path} style={{ flex: active ? '1 1 0%' : '0 0 0%', opacity: active ? 1 : 0, pointerEvents: active ? 'auto' : 'none' }} className="flex min-h-0 min-w-0 flex-col overflow-hidden">
       {isImage && !showSource
-        ? <ImageView activityId={activityId} path={path} active={active} onViewSource={isSvgPath(path) ? () => setShowSource(true) : undefined} />
+        ? <ImageView key={`${activityId}:${path}`} activityId={activityId} path={path} active={active} onViewSource={isSvgPath(path) ? () => setShowSource(true) : undefined} />
         : <TextBody {...props} onViewImage={isImage ? () => setShowSource(false) : undefined} />}
     </section>
   );

@@ -116,13 +116,16 @@ test('GET file: a file over 1 MB is a 413; a NUL in its first 8 KB or bytes that
   assert.equal((await get(e, 'edge.txt')).status, 200);
 });
 
-test('file-version answers the sha256 of the bytes, whatever they are and whatever their size; a text file\'s version is its read\'s (#498)', async (t) => {
+test('file-version answers an image\'s sha256 whatever its bytes and size; a text path keeps the read\'s 413 / 415 and its version (#498)', async (t) => {
   const e = await startEditor(t);
-  const big = 'a'.repeat(EDITOR_FILE_MAX + 1);
+  const big = Buffer.concat([PNG, Buffer.alloc(EDITOR_FILE_MAX)]);
   await writeFile(join(e.worktree, 'shot.png'), PNG);
-  await writeFile(join(e.worktree, 'big.txt'), big);
+  await writeFile(join(e.worktree, 'big.PNG'), big);
+  await writeFile(join(e.worktree, 'big.txt'), 'a'.repeat(EDITOR_FILE_MAX + 1));
+  await writeFile(join(e.worktree, 'nul.bin'), PNG);
   assert.deepEqual(await (await get(e, 'shot.png', 'file-version')).json(), { version: sha(PNG) });
-  assert.deepEqual(await (await get(e, 'big.txt', 'file-version')).json(), { version: sha(big) });
+  assert.deepEqual(await (await get(e, 'big.PNG', 'file-version')).json(), { version: sha(big) });
+  assert.deepEqual([(await get(e, 'big.txt', 'file-version')).status, (await get(e, 'nul.bin', 'file-version')).status], [413, 415]);
   const read = (await (await get(e, 'docs/spec.md')).json()) as FileText;
   assert.deepEqual(await (await get(e, 'docs/spec.md', 'file-version')).json(), { version: read.version });
 });

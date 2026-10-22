@@ -3,7 +3,9 @@
 // worktree (the workspace once it is gone), a symlink to its target. A deleted activity has no activity space to hold the pane: refused.
 // The text routes: UTF-8 text only, up to EDITOR_FILE_MAX bytes: a lossy decode would corrupt the file on save.
 import { createHash, randomBytes } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { chmod, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { activityParam, keptTarget } from './activity-routes.js';
@@ -87,13 +89,22 @@ async function withText(req: Request, res: Response, current: Live, answer: (rea
   answer(read, String(req.query.path));
 }
 
-// file-version (#498): the sha256 of the file's bytes, whatever they are and whatever their size, so an image has a version for its tab's
-// reload; a text pane compares the same hash of the same bytes and sees no change. ponytail: the whole file is read per poll, fine for
-// screenshots; hash a stream if a pane ever polls a file of hundreds of MB
+const imageType = (path: unknown): string | undefined => IMAGE_TYPES[extname(String(path)).toLowerCase()];
+
+// An image's version (#498): the sha256 of a stream of its bytes, any size, without holding the file in memory on every poll
+async function streamedSha256(file: string): Promise<string> {
+  const hash = createHash('sha256');
+  await pipeline(createReadStream(file), hash);
+  return hash.digest('hex');
+}
+
+// file-version: an image path's version is the hash of any bytes, any size, for its tab's reload (#498); a text path keeps the text read's
+// 413 / 415, so a text pane whose file grew past the cap or turned binary sees no new version it could never reload
 async function fileVersion(req: Request, res: Response, current: Live): Promise<void> {
+  if (imageType(req.query.path) === undefined) return withText(req, res, current, ({ bytes }) => { res.json({ version: sha256(bytes) }); });
   const located = await locate(current, activityParam(req), req.query.path);
   if ('status' in located) return refuse(res, located);
-  res.json({ version: sha256(await readFile(located.file)) });
+  res.json({ version: await streamedSha256(located.file) });
 }
 
 // decision 10 of #498: an <img> never runs an SVG's scripts, and sandbox keeps them from running if the URL is ever opened as a page
@@ -104,11 +115,12 @@ const IMAGE_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': '
 async function sendImage(req: Request, res: Response, current: Live): Promise<void> {
   const located = await locate(current, activityParam(req), req.query.path);
   if ('status' in located) return refuse(res, located);
-  const type = IMAGE_TYPES[extname(String(req.query.path)).toLowerCase()];
+  const type = imageType(req.query.path);
   if (type === undefined) return refuse(res, { status: HTTP_UNSUPPORTED, message: BINARY_MESSAGE });
   await new Promise<void>((resolve, reject) => {
-    // an error once the bytes started cannot become route's 500 any more: the stream just ends
-    res.sendFile(located.file, { dotfiles: 'allow', headers: { ...IMAGE_HEADERS, 'Content-Type': type } }, (err) => (err && !res.headersSent ? reject(err) : resolve()));
+    // an error once the bytes started cannot become route's 500 any more, and a closed tab has no one to answer: the stream just ends
+    const isAnswerable = (err: Error): boolean => !res.headersSent && (err as NodeJS.ErrnoException).code !== 'ECONNABORTED';
+    res.sendFile(located.file, { dotfiles: 'allow', headers: { ...IMAGE_HEADERS, 'Content-Type': type } }, (err) => (err && isAnswerable(err) ? reject(err) : resolve()));
   });
 }
 
