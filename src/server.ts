@@ -25,6 +25,7 @@ import { createMemoryStore } from './memory.js';
 import { createPassageStore, protocolRenderer } from './passage-store.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
 import { registerProtocolRoutes } from './server-protocol.js';
+import { pluginVersion } from './item-sources.js';
 import { excludeFromGit, pluginSource, prepareHome, type ProtocolPaths } from './hooks-settings.js';
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
@@ -91,6 +92,7 @@ import { createCustomStore } from './custom-store.js';
 import { createPluginRender } from './plugin-render.js';
 import { registerAssistRoutes } from './server-assist.js';
 import { registerTemplateReviewRoutes } from './server-template-review.js';
+import { registerBenchmarkRoutes } from './server-benchmark.js';
 import { registerPluginRoutes } from './server-plugins.js';
 import { registerViewStateRoutes } from './server-view-state.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
@@ -1190,6 +1192,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The plugins view's items (#315): the catalogue and the custom store under <home>/custom/. onChange is #316's per-workspace render, a no-op until it lands
   const customStore = createCustomStore({ home, pluginSource: shippedPlugin, workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: (workspaces) => { if (live) void pluginRender.write(live.runtime.config, workspaces); }, log });
   registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: shippedPlugin, log });
+  // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
+  registerBenchmarkRoutes(app, { requireLive, dispatch, home, pluginSource: shippedPlugin, exec, log, version: async () => (await pluginVersion(shippedPlugin)) ?? '', now: () => new Date() });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
   registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written
