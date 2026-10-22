@@ -596,3 +596,21 @@ test('the clear-session switch\'s copy reads as the spec writes it, in both lang
     ['limpa a sessão ao terminar', 'quando a tarefa sai desta etapa, a sessão dela sai da lista da tarefa, como o limpar faz', 'uma etapa sem prompt não inicia sessão: nada a limpar'],
   );
 });
+
+test("the benchmark config tab's copy exists in both languages, reads as the screen writes it, and never says rodar (#463)", () => {
+  const ours = (language: 'en' | 'pt'): [string, string][] => Object.entries(MESSAGES[language]).filter(([key]) => key.startsWith('benchmark.config.'));
+  assert.ok(ours('en').length > 100, `only ${ours('en').length} keys`);
+  assert.equal(ours('pt').some(([, text]) => /\brod(ar|ando|am|ou)\b/.test(text)), false);
+  const keys = ['benchmark.config.locked', 'benchmark.config.seed.forkNotice', 'benchmark.config.iso.risk', 'benchmark.config.pace.now', 'benchmark.config.eval.rejudge'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    'a config trava enquanto o experimento executa', 'salvar cria um experimento novo; as rodadas ficam neste', '{arms} sem pergunta e sem regra de negação',
+    'agora {tokens} · {percent}', 'julgar de novo sem executar',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    'the config locks while the experiment runs', 'saving creates a new experiment; the rounds stay in this one', '{arms} without prompts and without a deny rule',
+    'now {tokens} · {percent}', 'judge again without running',
+  ]);
+  for (const language of ['en', 'pt'] as const) {
+    for (const key of ['benchmark.config.discardTitle', 'benchmark.config.eval.rejudgeTitle'] as const) assert.match(MESSAGES[language][key], /^\p{Lu}[^?]*$/u, `${language}.${key}`);
+  }
+});
