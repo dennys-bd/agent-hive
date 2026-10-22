@@ -20,7 +20,7 @@ const COLUMNS = ['agent', 'model', 'specializedAgent', 'focus'] as const;
 
 const Hint = ({ text }: { text: string }) => <p className="text-muted-foreground text-xs">{text}</p>;
 
-interface RowProps {
+export interface RowProps {
   row: EvaluateRowDraft; agents: Props['agents']; options?: AgentLaunchOptions; menu: string | undefined; menuKey: string;
   labels: { agent: string; model: string; specializedAgent: string };
   heads?: readonly [string, string, string]; // the judge row has no column header, so each pick carries its own
@@ -28,7 +28,7 @@ interface RowProps {
 }
 
 // The three picks both a reviewer and the judge carry; another agent clears the model and the specialized agent, both named per agent (#710 decision 8)
-function Picks({ row, agents, options, menu, menuKey, labels, heads, onMenu, onChange }: RowProps) {
+export function Picks({ row, agents, options, menu, menuKey, labels, heads, onMenu, onChange }: RowProps) {
   const toggle = (which: string) => (isOpen: boolean): void => onMenu(isOpen ? `${menuKey}:${which}` : undefined);
   const head = (i: 0 | 1 | 2, node: ReactNode): ReactNode => (heads === undefined ? node : <Column label={heads[i]}>{node}</Column>);
   return (
@@ -45,7 +45,7 @@ function Picks({ row, agents, options, menu, menuKey, labels, heads, onMenu, onC
 
 const reviewerLabel = (field: string, n: number): string => t('settings.stages.evaluate.reviewerField', { field, n });
 
-function ReviewerRow({ n, onRemove, onChange, ...rest }: RowProps & { n: number; onRemove(): void }) {
+export function ReviewerRow({ n, onRemove, onChange, ...rest }: RowProps & { n: number; onRemove(): void }) {
   const { row } = rest;
   return (
     <fieldset aria-label={t('settings.stages.evaluate.reviewer', { n })} className={`grid ${REVIEWER_COLS} items-center gap-2 px-3 py-2`}>

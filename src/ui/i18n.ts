@@ -2626,6 +2626,29 @@ const en = {
   'benchmark.config.blind.words': 'forbidden words',
   'benchmark.config.blind.words.hint': 'checked in what the worker reads',
   'benchmark.config.blind.perLine': 'one word per line',
+  'benchmark.config.eval.title': 'evaluation',
+  'benchmark.config.eval.sub': 'how each run is measured',
+  'benchmark.config.eval.rejudge': 'judge again without running',
+  'benchmark.config.eval.rejudgeTitle': 'Judge again',
+  'benchmark.config.eval.rejudgeRuns.one': '1 ended run',
+  'benchmark.config.eval.rejudgeRuns.other': '{n} ended runs',
+  'benchmark.config.eval.rejudgeText': 'each ended run\'s evaluation is replaced by a new one, from the same diffs.',
+  'benchmark.config.eval.rejudgeConfirm': 'judge again',
+  'benchmark.config.eval.collectors': 'static collectors',
+  'benchmark.config.eval.collectors.hint': 'reviewers that read the diff',
+  'benchmark.config.eval.addCollector': '+ collector',
+  'benchmark.config.eval.dynamic': 'dynamic collector',
+  'benchmark.config.eval.dynamic.hint': 'boots the build, clicks and takes screenshots',
+  'benchmark.config.eval.dynamicLine': '{scenarios} · × {n} per scenario',
+  'benchmark.config.eval.walksField': 'walks per scenario',
+  'benchmark.config.eval.editScenarios': 'edit scenarios',
+  'benchmark.config.eval.tester': 'tester',
+  'benchmark.config.eval.tester.hint': 'walks the scenarios',
+  'benchmark.config.eval.testerField': '{field} of the tester',
+  'benchmark.config.eval.judge': 'judge',
+  'benchmark.config.eval.judge.hint': 'model that gives the scores',
+  'benchmark.config.eval.rubric': 'rubric',
+  'benchmark.config.eval.rubric.hint': 'one criterion per line, scored 1–5',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5246,6 +5269,29 @@ const pt: Record<MessageKey, string> = {
   'benchmark.config.blind.words': 'palavras proibidas',
   'benchmark.config.blind.words.hint': 'checadas no que o worker lê',
   'benchmark.config.blind.perLine': 'uma palavra por linha',
+  'benchmark.config.eval.title': 'avaliação',
+  'benchmark.config.eval.sub': 'como cada run é medida',
+  'benchmark.config.eval.rejudge': 'julgar de novo sem executar',
+  'benchmark.config.eval.rejudgeTitle': 'Julgar de novo',
+  'benchmark.config.eval.rejudgeRuns.one': '1 run encerrada',
+  'benchmark.config.eval.rejudgeRuns.other': '{n} runs encerradas',
+  'benchmark.config.eval.rejudgeText': 'a avaliação de cada run encerrada é substituída por uma nova, dos mesmos diffs.',
+  'benchmark.config.eval.rejudgeConfirm': 'julgar de novo',
+  'benchmark.config.eval.collectors': 'coletores estáticos',
+  'benchmark.config.eval.collectors.hint': 'revisores que leem o diff',
+  'benchmark.config.eval.addCollector': '+ coletor',
+  'benchmark.config.eval.dynamic': 'coletor dinâmico',
+  'benchmark.config.eval.dynamic.hint': 'sobe a build, clica e tira prints',
+  'benchmark.config.eval.dynamicLine': '{scenarios} · × {n} por cenário',
+  'benchmark.config.eval.walksField': 'passadas por cenário',
+  'benchmark.config.eval.editScenarios': 'editar cenários',
+  'benchmark.config.eval.tester': 'testador',
+  'benchmark.config.eval.tester.hint': 'percorre os cenários',
+  'benchmark.config.eval.testerField': '{field} do testador',
+  'benchmark.config.eval.judge': 'juiz',
+  'benchmark.config.eval.judge.hint': 'modelo que dá as notas',
+  'benchmark.config.eval.rubric': 'rubrica',
+  'benchmark.config.eval.rubric.hint': 'um critério por linha, nota 1–5',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
@@ -5283,7 +5329,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios';
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
