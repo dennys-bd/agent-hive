@@ -29,7 +29,7 @@ test('GET /repositories answers from the read model as the login gh names, with 
   const { db } = await openReadModel(join(await tempDir(t, 'read-model-'), READ_MODEL_FILE)); // the server's close() closes it
   db.setRepo(REPO_ROW);
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec, readModel: db });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec, readModel: db, ghToken });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY })).status, 200);
