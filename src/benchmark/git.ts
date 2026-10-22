@@ -1,6 +1,9 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { cleanEnv, inDir, type Run } from './exec.js';
+import { EXPERIMENT_PATHS, runBranch, runPrefix, taskBranchPrefix } from './names.js';
+
+export { EXPERIMENT_PATHS, runBranch, runPrefix, taskBranchPrefix }; // #463: moved to names.ts for the UI; server imports keep reading them here
 
 /** Neutral, as the first commit of any repository: the workers must not know (#105). */
 export const BASELINE_MESSAGE = 'chore: initial commit';
@@ -9,8 +12,6 @@ export const ORIGIN_DIR = 'repo.git';
 export const NESTED_DIR = 'nested';
 export const CLONE_DIR = 'clone';
 // The harness's own files and mentions (#105, #79), out of every baseline until #479 retires the harness: constants, since they exist only in this repository
-/** What the code baseline drops (#105, the user): the harness and its tests. */
-export const EXPERIMENT_PATHS = ['scripts/experiment', 'test/experiment'] as const;
 /** What a nested baseline drops (#79): every doc naming the harness, as git grep -E reads it. The #105 spec and plan are among them, and
  *  so is any plan of another delivery that lists a harness file it touched: a worker reading it would learn of the experiment. */
 export const EXPERIMENT_MENTION = 'scripts/experiment|test/experiment|skills-ab-experiment|experiment:skills|benchmark-view-decomposition';
@@ -20,10 +21,7 @@ const PLAIN_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/; // reaches git's argv: no lea
 
 const lines = (text: string): string[] => text.split('\n').map((l) => l.trim()).filter((l) => l !== '');
 const range = (baseline: string, branch: string): string => `${baseline}...origin/${branch}`;
-export const taskBranchPrefix = (prefix: string): string => `hive/${prefix}-`;
 export const nestedOrigin = (dir: string, path: string): string => join(dir, NESTED_DIR, `${path}.git`);
-export const runBranch = (token: string): string => `work/${token}`;
-export const runPrefix = (token: string): string => token.toUpperCase();
 
 export interface PrefixedWorktree { path: string; branch: string }
 

@@ -10,13 +10,14 @@ import { customRoot } from '../item-sources.js';
 import { COMMIT } from '../state-guards.js';
 import { type BenchScenario, type BenchSeed, type Config, EXPERIMENT_ID, type Workspace } from '../types.js';
 import { type Git, remoteHead } from '../worktree-base.js';
+import { UPLOAD_NAME, UPLOAD_PREFIX } from './names.js';
 import { pluginTrees } from './pin.js';
 import { privateDir } from './run-home.js';
 
+export { UPLOAD_NAME, UPLOAD_PREFIX }; // #463: node-free in names.ts, so the config tab checks a name against the route's own pattern
+
 // What duplicate and fork carry: repo.git, clone/ and runs/ belong to the source's rounds (3.1 makes a new experiment's on its first run)
 const COPIED = ['plugin', 'seed'] as const;
-export const UPLOAD_PREFIX = 'upload:'; // `:` never starts a repo path, so an upload never collides with one
-export const UPLOAD_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 export const UPLOAD_NAME_MESSAGE = 'an upload name is up to 128 letters, digits, dots, dashes and underscores, starting with a letter or a digit';
 
 /** A seed entry (a repo path, `upload:<name>` or the commit) that is not there: the route answers 404 naming it. */
