@@ -1,9 +1,11 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { canonicalJson, sha256Hex } from '../../../../benchmark/canonical.js';
 import type { Arm, BenchTask, Experiment } from '../../../../types';
+import { editArm } from '@/components/benchmark/arms/arm-api';
 import { type ArmRow, armRows, countText, sameRows } from '@/components/benchmark/arms/arm-rows';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { t } from '@/i18n';
 
 export const TASKS_HASH_CHARS = 4;
@@ -72,5 +74,26 @@ export function ArmCard({ experiment, arm, onOpen, name, menu }: ArmCardProps) {
       {hasOwnTasks && <p className="flex items-start gap-1.5 px-3.5 pb-2.5 text-waiting text-xs"><span aria-hidden="true">●</span><span>{t('benchmark.arms.tasksWarning')}</span></p>}
       <CardFooter text={sameRows(rows)} onOpen={onOpen} />
     </section>
+  );
+}
+
+// Enter posts a changed name; a blank one stays in the field, marked. Esc cancels. A blur commits a non-blank change and cancels anything
+// else. isDone: Enter and Esc unmount the field, and a late blur must not post again
+export function ArmName({ experimentId, arm, onDone }: { experimentId: string; arm: Arm; onDone(): void }) {
+  const [value, setValue] = useState(arm.name);
+  const isDone = useRef(false);
+  const next = value.trim();
+  const finish = (isCommit: boolean): void => {
+    if (isDone.current) return;
+    isDone.current = true;
+    if (isCommit && next !== '' && next !== arm.name) void editArm(experimentId, arm.id, { name: next });
+    onDone();
+  };
+  return (
+    <Input
+      autoFocus aria-label={t('benchmark.arms.nameLabel', { letter: arm.letter })} aria-invalid={next === '' || undefined} value={value}
+      className="h-6 px-1.5 text-[13px]" onChange={(e) => setValue(e.target.value)} onBlur={() => finish(next !== '')}
+      onKeyDown={(e) => { if (e.key === 'Enter' && next !== '') finish(true); if (e.key === 'Escape') finish(false); }}
+    />
   );
 }
