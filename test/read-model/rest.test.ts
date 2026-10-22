@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { childEnv, firstLineOf, ghRest, nextOf, parseHttp } from '../../src/read-model/rest.js';
+import { firstLineOf, ghRest, nextOf, parseHttp } from '../../src/read-model/rest.js';
 
 const RESET = 1_791_234_567;
 const QUOTA_HEADERS = ['X-Ratelimit-Limit: 5000', 'X-Ratelimit-Remaining: 4990', 'X-Ratelimit-Used: 10', `X-Ratelimit-Reset: ${RESET}`];
@@ -78,10 +78,6 @@ test('ghRest hands its env to every gh run and never puts it in the argv: the ap
     assert.equal(env, undefined, 'no env given: gh runs as today');
     return http('304 Not Modified', []);
   })(PATH);
-});
-
-test('childEnv lays env over the parent\'s and removes a key set to undefined (#180)', () => {
-  assert.deepEqual(childEnv({ A: '1', GH_TOKEN: 'x', GH_HOST: 'ghe.example.com' }, { GH_TOKEN: undefined, GH_HOST: 'github.com' }), { A: '1', GH_HOST: 'github.com' });
 });
 
 test('gh\'s stderr reaches an error as its first line, at most 200 characters (#180)', () => {

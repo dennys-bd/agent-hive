@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { childEnv } from '../github-token.js';
 
 const API_ORIGIN = 'https://api.github.com';
 const GH_MAX_BUFFER = 50 * 1024 * 1024; // a page of 100 issues with long bodies
@@ -23,11 +24,6 @@ export type RestGet = (path: string, etag?: string) => Promise<RestAnswer>;
 export type GhRun = (args: string[], env?: NodeJS.ProcessEnv) => Promise<string>;
 
 const MAX_STDERR_CHARS = 200;
-
-/** The child's environment: the parent's, then `env` over it; a key set to undefined is removed, not passed on. */
-export function childEnv(base: NodeJS.ProcessEnv, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries({ ...base, ...env }).filter(([, value]) => value !== undefined));
-}
 
 // gh's stderr can echo a request: its first line, cut short, is all an error message carries
 export const firstLineOf = (stderr: string): string => (stderr.trim().split(/\r?\n/)[0] ?? '').slice(0, MAX_STDERR_CHARS);

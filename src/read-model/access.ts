@@ -1,4 +1,5 @@
 import { readCredentials } from '../credentials.js';
+import { cliEnv } from '../github-token.js';
 import type { Logger } from '../log.js';
 import { gqlFor } from '../sources/github-gql.js';
 import type { Credentials, Exec, GithubAuth, Gql } from '../types.js';
@@ -6,8 +7,6 @@ import { ghRest, ghRun, type GhRun, type RestGet } from './rest.js';
 import { sourceOf } from './rows.js';
 
 const GITHUB_HOST = 'github.com'; // the repository routes know no other host
-// Inherited credentials would make gh read as another account than the login that stamps the rows (#180)
-const INHERITED_TOKENS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN'];
 
 /** Who reads, and through what (#180): the rows' source, the REST transport and the refetch's GraphQL, all as one login. */
 export interface ReadAccess { source: string; rest: RestGet; gql: Gql }
@@ -18,9 +17,6 @@ export interface AccessDeps {
   credentials?: () => Promise<Credentials>; // tests inject; default the credential store
   run?: GhRun; // tests inject; default gh
 }
-
-/** cli: gh reads as its logged-in account on github.com; an undefined value removes the variable from gh's environment. */
-export const cliEnv = (): NodeJS.ProcessEnv => ({ GH_HOST: GITHUB_HOST, ...Object.fromEntries(INHERITED_TOKENS.map((name) => [name, undefined])) });
 
 // gh's login from its own config: no request. No gh, or no login, reads as none
 async function ghLogin(exec: Exec): Promise<string> {
