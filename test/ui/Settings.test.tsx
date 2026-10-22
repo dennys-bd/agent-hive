@@ -421,7 +421,7 @@ test('the workspaces list opens the general tab with the saved rows, or one name
 
 test('each workspace row has its worktree setup and timeout per step: the saved ones load, an edit is sent as typed, an empty field sends no key (#299, #511)', async () => {
   const user = userEvent.setup();
-  const withSetup = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', setup: 'COPY .env', setupTimeout: '10m' }] } } };
+  const withSetup = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, color: 'oklch(0.72 0.12 25)', setup: 'COPY .env', setupTimeout: '10m' }] } } };
   render(<Settings info={withSetup} onSaved={vi.fn()} />);
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));
   await open(user, 'workspaces');
@@ -503,7 +503,7 @@ test('Choose… shows only inside the viewer, one per row, and fills that row\'s
 test('Settings › a source\'s default workspace is one of the workspaces or none, and is sent in taskProps.defaults (#179, #688)', async () => {
   const user = userEvent.setup();
   const onSaved = vi.fn();
-  const two = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }] } } };
+  const two = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, color: 'oklch(0.72 0.12 25)' }] } } };
   render(<Settings info={two} onSaved={onSaved} />);
   await openSource(user, 'board');
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));
@@ -522,7 +522,7 @@ test('Settings › a source\'s default workspace is one of the workspaces or non
 test('Settings › + regra adds a rule that sets workspace, sends the rules in order, and a rule without a value stops the save naming its source and its row (#293, #688)', async () => {
   const user = userEvent.setup();
   const onSaved = vi.fn();
-  const two = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }] } } };
+  const two = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, color: 'oklch(0.72 0.12 25)' }] } } };
   render(<Settings info={two} onSaved={onSaved} />);
   await openSource(user, 'board');
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));
