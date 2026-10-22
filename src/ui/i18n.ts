@@ -2421,6 +2421,7 @@ const en = {
   'benchmark.header.deleteTitle': 'Delete experiment',
   'benchmark.header.deleteText': 'the running runs stop, and the arms, the rounds, the results and the report are deleted. to keep the report, archive instead of deleting.',
   'benchmark.header.deleteConfirm': 'delete',
+  'benchmark.header.empty': 'no experiment yet',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4837,6 +4838,7 @@ const pt: Record<MessageKey, string> = {
   'benchmark.header.deleteTitle': 'Excluir experimento',
   'benchmark.header.deleteText': 'os runs em execução param, e os braços, as rodadas, os resultados e o relatório são apagados. para guardar o relatório, arquive em vez de excluir.',
   'benchmark.header.deleteConfirm': 'excluir',
+  'benchmark.header.empty': 'nenhum experimento ainda',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

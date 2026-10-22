@@ -281,7 +281,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         <MainDock
           showTask={goTo}
           sidebarsPerView={sidebarsPerView}
-          fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
+          fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} experiments={state.benchmark.experiments} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
           tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
           // redesign 02 and #225: the signal, the workers, the rules, the shown activity's checkers and problems, the console and shut down; the manual
           // signal and the worker cap stay in the flow sidebar (redesign 09)

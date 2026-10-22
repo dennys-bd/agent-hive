@@ -1,11 +1,15 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { toast } from 'sonner';
 import type { Experiment } from '../../../types';
+import { BenchmarkSidebar } from '@/components/benchmark/BenchmarkSidebar';
+import { BenchmarkView } from '@/components/benchmark/BenchmarkView';
+import type { DockPanel } from '@/components/DockGroup';
 import { groupExperiments, type SidebarGroups } from '@/components/benchmark/sidebar-groups';
 import type { TabId } from '@/components/benchmark/tabs';
 import { statusOf } from '@/hooks/use-plugins';
 import { type MessageKey, t } from '@/i18n';
 import { sendJson } from '@/lib/api';
+import type { PanelId } from '@/lib/dock-layout';
 
 /** What later leaves plug into the shell (#461): pedir ao agente (5), exportar report.md (2.7), dormir (2.8). Absent: the item is left out, or
  * dormir sits disabled. */
@@ -67,5 +71,20 @@ export function useBenchmark(experiments: readonly Experiment[], slots: Benchmar
     isArchivedOpen, toggleArchived: () => setArchivedOpen((open) => !open),
     createEmpty: (workspace) => create({ kind: 'empty', workspace }), duplicate: (of) => create({ kind: 'duplicate', of }),
     rename: (id, name) => patch(id, { name }), setArchived: (id, archived) => patch(id, { archived }), remove, slots,
+  };
+}
+
+export interface BenchmarkDock { panel: DockPanel; right: DockPanel; center: ReactNode }
+interface BenchmarkDockArgs { isShown: boolean; experiments: readonly Experiment[]; workspaces: readonly string[]; activate(id: PanelId): void; slots?: BenchmarkSlots }
+
+/** The benchmark view in the dock (#461), beside MainDock, which is at its line limit: the sidebar as the left column's panel, an empty right
+ * body while the view is shown (no health pane yet), and the centre. The state lives here, in the always-mounted dock, so the selection and the
+ * tab survive a switch of view. */
+export function useBenchmarkDock({ isShown, experiments, workspaces, activate, slots }: BenchmarkDockArgs): BenchmarkDock {
+  const benchmark = useBenchmark(experiments, slots);
+  return {
+    panel: { id: 'benchmark', title: t('dock.benchmark'), ownHeader: true, body: <BenchmarkSidebar benchmark={benchmark} workspaces={workspaces} isShown={isShown} activate={activate} /> },
+    right: { id: 'detail', title: t('dock.benchmark'), ownHeader: true, body: <section aria-label={t('dock.benchmark')} className="flex min-h-0 flex-1 flex-col" /> },
+    center: isShown ? <BenchmarkView benchmark={benchmark} workspaces={workspaces} /> : null,
   };
 }
