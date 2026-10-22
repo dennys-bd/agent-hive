@@ -163,11 +163,12 @@ async function diskEntries(folder: string): Promise<FolderEntries> {
 // normalized: `folder` is real, and on macOS a real path need not start with the root as written. ponytail: one pathspec-limited git status
 // per expanded folder inside a nested repository per poll (POLL_MS); one status per nested repository, shared by its expanded folders, if a
 // big one ever slows the tree
-async function folderEntries(root: string, path: string, folder: string, exec: Exec): Promise<FolderEntries> {
+async function folderEntries(root: string, path: string, folder: string, exec: Exec, onNested: (repo: string) => void): Promise<FolderEntries> {
   const children = await diskEntries(folder);
   const inTree = relative(root, resolve(root, path)); // '' is the root
   const repo = await nestedRepoOf(root, inTree, holdsGit);
   if (repo === undefined) return children;
+  onNested(repo);
   const inRepo = inTree === repo ? '' : inTree.slice(repo.length + 1);
   // A broken nested repository (a gitdir gone, dubious ownership) must not empty the folder: it reads as HIVE-22 showed it, dimmed
   const status = await gitIn(join(root, repo), [...NESTED_STATUS_ARGS, '--', inRepo === '' ? '.' : inRepo], exec).catch(() => undefined);
@@ -176,7 +177,7 @@ async function folderEntries(root: string, path: string, folder: string, exec: E
 
 // GET /activities/:id/tree/folder (HIVE-22): a folder's children from disk, what an expanded ignored folder shows. Any folder of the tree is
 // taken: the route reads names, and only a folder inside a nested repository costs a git run (#1)
-function registerFolderRoute(app: Express, { exec, requireLive }: Pick<TaskRouteDeps, 'exec' | 'requireLive'>): void {
+function registerFolderRoute(app: Express, { exec, requireLive, treeWatch }: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'treeWatch'>): void {
   app.get('/activities/:id/tree/folder', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -187,7 +188,8 @@ function registerFolderRoute(app: Express, { exec, requireLive }: Pick<TaskRoute
     try {
       const folder = await treeFolder(root, path);
       if (typeof folder !== 'string') return refuse(res, folder);
-      res.json(await folderEntries(root, path, folder, exec));
+      // #502: an expanded nested repository's stage, commit and switch push; the watch ignores an unleased root
+      res.json(await folderEntries(root, path, folder, exec, (repo) => void treeWatch.watchNested(root, repo)));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: wordsOf(err) });
     }
@@ -196,7 +198,7 @@ function registerFolderRoute(app: Express, { exec, requireLive }: Pick<TaskRoute
 
 /** GET /activities/:id/tree, what the files sidebar polls, POST /activities/:id/reveal and GET /activities/:id/tree/folder (HIVE-22). No value of the request picks the folder: it comes
  *  from the task's slug and workspace, or the local activity's workspace (#633). */
-export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive'>): void {
+export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'treeWatch'>): void {
   app.get('/activities/:id/tree', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
     if (!current) return;

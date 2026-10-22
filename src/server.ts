@@ -101,6 +101,7 @@ import { registerBenchmarkRoutes } from './server-benchmark.js';
 import { registerPluginRoutes } from './server-plugins.js';
 import { registerViewStateRoutes } from './server-view-state.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
+import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal } from './settings-save.js';
 import { killStray, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
@@ -115,7 +116,7 @@ import {
   CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
   type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
-  type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State,
+  type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State, type TreeChange,
 } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
@@ -151,6 +152,7 @@ export interface Runtime {
 }
 
 export interface ServerDeps {
+  treeWatch?: TreeWatch; // #502: the files sidebar's watches; tests inject a recording fake, the default watches with node:fs
   credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
   preloadPr?: (url: string) => Promise<void>; // #497: hive_pr's preload; tests inject a fake, the default reads the PR's changes
   probeMcp?: Probe; // #333: GET /api/mcp's probe; tests inject a fake, the default spawns or calls the server
@@ -285,6 +287,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const pool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE) }));
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
+  const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree, exec });
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
@@ -390,6 +393,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   // or a language server is no pty it could watch. A named event as review's; it carries nothing to read.
   function notifyConsole(): void {
     for (const res of clients) res.write('event: console\ndata: {"type":"console"}\n\n');
+  }
+
+  // A leased tree changed (#502): a named event as review's, one per activity on that root, so no State reader takes it for one
+  function notifyTree(change: TreeChange): void {
+    const data = `event: tree\ndata: ${JSON.stringify(change)}\n\n`;
+    for (const res of clients) res.write(data);
   }
 
   // An install's state changed (#780): a named event, as review's, so no State reader takes it for one. A server's settled state changes what
@@ -1226,7 +1235,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // create, start, bases, close, keep, session, session exit, delete-activity, move, reset-order, close-missing, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
-  const taskDeps = { exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
+  const taskDeps = { treeWatch, exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts });
@@ -1420,6 +1429,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
     held.releaseAll(); // #268: no timer outlives the server, no held Stop hangs
     backoffs.close(); // #805: no retry outlives the server
+    treeWatch.close(); // #502: no watcher, poll or lease timer outlives the server
     keepAwake.stop(); // #226: no power assertion outlives the server
     await pool.killAll(); // children of the Hive: none should outlive it; awaited so the sessions are gone before the process is
     await lsp.stopAll(); // #780: no language server outlives the Hive
