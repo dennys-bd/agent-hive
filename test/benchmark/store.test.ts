@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createFolder, copyFolder, experimentFolder, pinPlugin, SeedFileMissing, syncSeed, writeUpload } from '../../src/benchmark/store.js';
 import type { BenchSeed } from '../../src/types.js';
@@ -80,4 +80,35 @@ test('syncSeed throws SeedFileMissing for a path missing at the commit, an unkno
   assert.deepEqual(await snapshot(join(dir, 'seed')), before);
   assert.equal(await readFile(join(dir, 'seed', 'repo', 'a.md'), 'utf8'), 'a\n');
   assert.equal(await exists(join(dir, 'seed', 'upload', 'none.txt')), false);
+});
+
+test('syncSeed that fails midway leaves the old seed/repo intact and no temp folder (#459)', async (t) => {
+  const dir = experimentFolder(await tempDir(t, 'store-'), 'xseed0003');
+  const files = { 'a.md': 'a\n', 'b.md': 'b\n', 'c.md': 'c\n' };
+  await syncSeed(dir, seed({ reference: ['a.md'] }), fakeGit(files));
+  const before = await snapshot(join(dir, 'seed'));
+  const good = fakeGit(files);
+  let shows = 0;
+  const failing = async (...args: string[]): Promise<string> => {
+    if (args[0] === 'show' && ++shows === 2) throw new Error('boom');
+    return good(...args);
+  };
+  await assert.rejects(syncSeed(dir, seed({ reference: ['b.md', 'c.md'] }), failing), /boom/);
+  assert.deepEqual(await snapshot(join(dir, 'seed')), before);
+  assert.deepEqual((await readdir(join(dir, 'seed'))).sort(), ['repo', 'scenarios.md']);
+});
+
+test('a symlink in the custom store or the source folder is not carried into a pin or a copy (#459)', async (t) => {
+  const [home, plugin] = await Promise.all([tempDir(t, 'store-home-'), tempDir(t, 'store-plugin-')]);
+  await put(plugin, { 'skills/a': 'a' });
+  await put(home, { 'custom/real.txt': 'r' });
+  await symlink(join(home, 'custom', 'real.txt'), join(home, 'custom', 'link.txt'));
+  const dir = experimentFolder(home, 'xlink0001');
+  await pinPlugin(dir, plugin, home);
+  assert.deepEqual(await readdir(join(dir, 'plugin', 'custom')), ['real.txt']);
+  await put(dir, { 'seed/s.md': 's' });
+  await symlink(join(home, 'custom', 'real.txt'), join(dir, 'seed', 'link'));
+  const to = experimentFolder(home, 'xlink0002');
+  await copyFolder(dir, to);
+  assert.equal(await exists(join(to, 'seed', 'link')), false);
 });

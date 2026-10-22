@@ -1,7 +1,7 @@
 // The experiment folder (#459): <home>/benchmark/<id>/, mode 0700. Every path comes from an id that passed EXPERIMENT_ID, an upload name
 // that passed UPLOAD_NAME or a repo path that passed safeFilePath (ls-tree's too), so no request names a file outside the folder. Git goes
 // through the caller's Git, argv only.
-import { cp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { experimentDir } from '../benchmark-guards.js';
 import { safeFilePath } from '../custom-versions.js';
@@ -45,9 +45,13 @@ export function seedFilePath(dir: string, entry: string): string {
 export const createFolder = (dir: string): Promise<void> => privateDir(dir); // mkdir + chmod: mkdir's mode alone is cut by the umask
 export const removeFolder = (dir: string): Promise<void> => rm(dir, { recursive: true, force: true });
 
+// A link in a copied tree could point outside the folder: it is skipped, so a pin never carries one
+const notLink = async (src: string): Promise<boolean> => !(await lstat(src)).isSymbolicLink();
+const copyTree = (from: string, to: string): Promise<void> => cp(from, to, { recursive: true, filter: notLink });
+
 export async function copyFolder(from: string, to: string): Promise<void> {
   await createFolder(to);
-  for (const part of COPIED) await cp(join(from, part), join(to, part), { recursive: true });
+  for (const part of COPIED) await copyTree(join(from, part), join(to, part));
 }
 
 const onlyMissing = (err: unknown): void => {
@@ -58,9 +62,9 @@ const onlyMissing = (err: unknown): void => {
 export async function pinPlugin(dir: string, pluginSource: string, home: string): Promise<void> {
   const trees = pluginTrees(dir);
   await createFolder(dir);
-  await cp(pluginSource, trees.source, { recursive: true });
+  await copyTree(pluginSource, trees.source);
   await mkdir(trees.custom, { recursive: true });
-  await cp(customRoot(home), trees.custom, { recursive: true }).catch(onlyMissing); // no custom store yet: an empty pin
+  await copyTree(customRoot(home), trees.custom).catch(onlyMissing); // no custom store yet: an empty pin
 }
 
 /** The sha of <base remote>/<base> as normal tasks start from it (#119, #854): read-only, never set-head. */
@@ -108,19 +112,31 @@ async function pruneUploads(dir: string, seed: BenchSeed): Promise<void> {
 
 export const scenariosMarkdown = (scenarios: readonly BenchScenario[]): string => scenarios.map((s) => `## ${s.title}\n\n${s.text}\n`).join('\n');
 
-/** seed/ from the seed: the repo files read at its commit (a folder expanded), scenarios.md, and only the uploads it lists. */
-export async function syncSeed(dir: string, seed: BenchSeed, git: Git): Promise<void> {
-  const files = await resolveSeed(dir, seed, git);
-  await rm(seedRepo(dir), { recursive: true, force: true });
+async function writeRepoFiles(root: string, files: string[], seed: BenchSeed, git: Git): Promise<void> {
   for (const path of files) {
-    const target = join(seedRepo(dir), path);
+    const target = join(root, path);
     await mkdir(dirname(target), { recursive: true });
     // ponytail: exec answers utf8 text under its default maxBuffer, so a seed read from the repository is text only; a binary or very large
     // file goes through the upload route, an encoding option on Exec if the repository must supply one
     await writeFile(target, await git('show', `${seed.commit}:${path}`));
   }
-  await mkdir(seedDir(dir), { recursive: true });
-  await writeFile(join(seedDir(dir), 'scenarios.md'), scenariosMarkdown(seed.scenarios));
+}
+
+/** seed/ from the seed: the repo files read at its commit (a folder expanded), scenarios.md, and only the uploads it lists. */
+export async function syncSeed(dir: string, seed: BenchSeed, git: Git): Promise<void> {
+  const files = await resolveSeed(dir, seed, git);
+  // Built beside the old copy and renamed over it last: a failed write leaves the old seed intact
+  const temp = join(seedDir(dir), `.sync-${process.pid}-${Date.now()}`);
+  try {
+    await mkdir(join(temp, 'repo'), { recursive: true });
+    await writeRepoFiles(join(temp, 'repo'), files, seed, git);
+    await writeFile(join(temp, 'scenarios.md'), scenariosMarkdown(seed.scenarios));
+    await rm(seedRepo(dir), { recursive: true, force: true });
+    await rename(join(temp, 'repo'), seedRepo(dir));
+    await rename(join(temp, 'scenarios.md'), join(seedDir(dir), 'scenarios.md'));
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
   await pruneUploads(dir, seed);
 }
 

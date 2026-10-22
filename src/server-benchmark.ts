@@ -2,6 +2,7 @@
 // <home>/benchmark/<id>/ through benchmark/store.ts and dispatches one #458 event; the reducer only applies it. Later benchmark route files
 // export their own register…Routes and are mounted from registerBenchmarkRoutes, so server.ts mounts the benchmark once.
 import { randomInt } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { Express, Request, Response } from 'express';
 import type { z } from 'zod';
 import { type ArmRefusal, armFrom, checkArm, checkRemove, checkTargets, isArmRefusal, isLocked } from './benchmark/arms.js';
@@ -103,8 +104,8 @@ const folder = (ctx: Ctx, id: string): string => experimentFolder(ctx.deps.home,
 
 // A folder whose experiment never reached the state is removed: a failed creation leaves no orphan under <home>/benchmark
 async function inNewFolder(dir: string, fill: () => Promise<void>, from?: string): Promise<void> {
-  await (from === undefined ? createFolder(dir) : copyFolder(from, dir));
   try {
+    await (from === undefined ? createFolder(dir) : copyFolder(from, dir));
     await fill();
   } catch (err) {
     await removeFolder(dir);
@@ -173,11 +174,13 @@ async function fork(ctx: Ctx, experiment: Experiment, sections: Sections & { see
 
 // undefined: refused and answered
 async function applySections(ctx: Ctx, experiment: Experiment, sections: Sections): Promise<string | undefined> {
-  const { seed } = sections;
+  const { seed, ...others } = sections;
   if (seed === undefined) return edit(ctx, experiment, sections, undefined);
   if (seed.workspace !== experiment.workspace) return void fail(ctx.res, HTTP_BAD_REQUEST, 'bad_body', 'seed.workspace: an experiment keeps the workspace it was created in');
   const workspace = workspaceOf(ctx.config, experiment.workspace);
   if (workspace === undefined) return void fail(ctx.res, HTTP_NOT_FOUND, 'unknown_workspace', `no workspace ${experiment.workspace}`);
+  // The same seed is no edit: nothing to resync, and an experiment with rounds must not fork for it
+  if (isDeepStrictEqual(seed, experiment.seed)) return edit(ctx, experiment, others, undefined);
   const git = repoGit(ctx.deps, workspace);
   return experiment.rounds.length > 0 ? fork(ctx, experiment, { ...sections, seed }, git) : edit(ctx, experiment, sections, git);
 }
@@ -190,8 +193,9 @@ async function patchExperiment(ctx: Ctx, id: string, body: PatchBody): Promise<v
   if (hasSections && isLocked(experiment)) return refuseLocked(ctx.res);
   const answer = hasSections ? await applySections(ctx, experiment, sections) : id;
   if (answer === undefined) return;
-  if (name !== undefined) await ctx.deps.dispatch({ type: 'benchmarkEdited', id, patch: { name } });
-  if (archived !== undefined) await ctx.deps.dispatch({ type: 'benchmarkArchived', id, archived });
+  // A fork answers a new id: name and archived belong to it, the experiment that ran stays as it was
+  if (name !== undefined) await ctx.deps.dispatch({ type: 'benchmarkEdited', id: answer, patch: { name } });
+  if (archived !== undefined) await ctx.deps.dispatch({ type: 'benchmarkArchived', id: answer, archived });
   ctx.res.json({ id: answer });
 }
 

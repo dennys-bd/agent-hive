@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stat } from 'node:fs/promises';
+import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { seedHash, tasksHash, treeHash } from '../../src/benchmark/hash.js';
 import { pluginTrees } from '../../src/benchmark/pin.js';
@@ -111,6 +111,31 @@ test('a seed PATCH on an experiment with a round answers a fork: the old experim
   const pin = (snap: Record<string, string>) => Object.fromEntries(Object.entries(snap).filter(([p]) => p.startsWith('plugin/')));
   assert.deepEqual(pin(await snapshot(bench.dir(forkId))), pin(before));
   assert.equal(await exists(join(bench.dir(forkId), 'runs')), false);
+});
+
+test('a PATCH with name and a forking seed names the fork and leaves the old experiment untouched (#459)', async (t) => {
+  const old = benchExperiment({ status: 'done', rounds: [{ n: 1, runs: [run('aaaa1')] }] });
+  const bench = await serve(t, { experiments: [old], files: REPO });
+  const [, body] = await call(bench, 'PATCH', `${E}/exp-1`, { name: 'Renamed', seed: seedOf(old, { reference: ['docs/hand.md'] }) });
+  const [kept, fork] = bench.state().benchmark.experiments;
+  assert.equal(fork.id, (body as { id: string }).id);
+  assert.deepEqual([kept.name, fork.name], [old.name, 'Renamed']);
+});
+
+test('a PATCH whose seed equals the current one is no seed edit: no fork, the other sections land (#459)', async (t) => {
+  const old = benchExperiment({ status: 'done', rounds: [{ n: 1, runs: [run('aaaa1')] }] });
+  const bench = await serve(t, { experiments: [old], files: REPO });
+  const pace = { ...old.pace, pairs: 7 };
+  assert.deepEqual(await call(bench, 'PATCH', `${E}/exp-1`, { seed: structuredClone(old.seed), pace }), [200, { id: 'exp-1' }]);
+  const { experiments } = bench.state().benchmark;
+  assert.deepEqual([experiments.length, experiments[0].pace.pairs], [1, 7]);
+});
+
+test('a duplicate whose source folder cannot be copied answers 500 and leaves no folder behind (#459)', async (t) => {
+  const bench = await serve(t, { experiments: [benchExperiment()] });
+  await rm(join(bench.dir('exp-1'), 'seed'), { recursive: true });
+  assert.equal((await call(bench, 'POST', E, { kind: 'duplicate', of: 'exp-1' }))[0], 500);
+  assert.deepEqual(await readdir(join(bench.home, 'benchmark')), ['exp-1']);
 });
 
 test('a base PATCH rehashes the tasks; the other sections land as sent; a seed naming another workspace is 400 (#459)', async (t) => {
