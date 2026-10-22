@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { childEnv, cliEnv, createGhToken, hostsPath, loginFromHosts, NO_GH_TOKEN_MESSAGE } from '../src/github-token.js';
+import { bearer, childEnv, cliEnv, createGhToken, hostsPath, loginFromHosts, NO_GH_TOKEN_MESSAGE } from '../src/github-token.js';
 import type { Exec } from '../src/types.js';
 
 const TOKEN_RUN = ['gh', 'auth', 'token', '--hostname', 'github.com'];
@@ -98,4 +98,36 @@ test('an empty answer or a failed gh rejects with the instruction alone, and a f
 test('childEnv lays env over the parent\'s and removes a key set to undefined; cliEnv drops every inherited token (#180, #503)', () => {
   assert.deepEqual(childEnv({ A: '1', GH_TOKEN: 'x', GH_HOST: 'ghe.example.com' }, { GH_TOKEN: undefined, GH_HOST: 'github.com' }), { A: '1', GH_HOST: 'github.com' });
   assert.deepEqual(cliEnv(), { GH_HOST: 'github.com', GH_TOKEN: undefined, GITHUB_TOKEN: undefined, GH_ENTERPRISE_TOKEN: undefined });
+});
+
+test('a token with a control character never reaches a header nor an error message (#503)', async () => {
+  const secret = `test-${randomUUID()}`;
+  const { ghToken } = harness({ text: HOSTS, mtime: 1 }, async () => ({ stdout: `${secret}\nmore\n` }));
+  const err = await ghToken.token().then(() => undefined, (e: Error) => e);
+  assert.equal(err?.message, NO_GH_TOKEN_MESSAGE);
+  const thrown = (() => { try { bearer(`${secret}\nX`); return undefined; } catch (e) { return e as Error; } })();
+  assert.equal(thrown?.message, 'github: malformed token');
+  assert.equal(bearer(secret), `Bearer ${secret}`);
+});
+
+test('token() sees a gh auth switch with no login() call, and a trailing comment does not hide user: (#503)', async () => {
+  const file = { text: HOSTS, mtime: 1 };
+  const { ghToken, runs } = harness(file);
+  await ghToken.token();
+  file.text = HOSTS.replace('user: bia', 'user: caio # switched');
+  file.mtime = 2;
+  await ghToken.token();
+  assert.equal(runs.length, 2, 'the poll asks gh again after the switch');
+  assert.equal(await ghToken.login(), 'caio');
+});
+
+test('a failed hosts.yml read is retried on the next call, not cached (#503)', async () => {
+  let fail = true;
+  const ghToken = createGhToken({ exec: async () => ({ stdout: '' }), env: {}, stat: async () => ({ mtimeMs: 1 }), readFile: async () => {
+    if (fail) throw new Error('EBUSY');
+    return HOSTS;
+  } });
+  assert.equal(await ghToken.login(), '');
+  fail = false;
+  assert.equal(await ghToken.login(), 'bia');
 });

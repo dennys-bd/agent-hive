@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readCredentials } from '../credentials.js';
-import type { GhToken } from '../github-token.js';
+import { bearer, type GhToken } from '../github-token.js';
 import type { Logger } from '../log.js';
 import type { GithubAuth, Gql } from '../types.js';
 
@@ -95,7 +95,7 @@ export function apiGql(deps: ApiGqlDeps = {}): Gql {
     const token = await readToken();
     const res = await doFetch(API_URL, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'content-type': 'application/json' },
+      headers: { Authorization: bearer(token), Accept: 'application/vnd.github+json', 'content-type': 'application/json' },
       body: JSON.stringify({ query, variables: variables ?? {} }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), // no retry: the next poll is the retry
       redirect: 'manual', // the bearer never follows a redirect off the fixed host

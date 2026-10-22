@@ -10,6 +10,8 @@ export const NO_GH_TOKEN_MESSAGE = 'no GitHub token: run gh auth login';
 const TOKEN_ARGS = ['auth', 'token', '--hostname', GITHUB_HOST];
 const TOKEN_TIMEOUT_MS = 10_000;
 const MISSING = -1; // hosts.yml absent: a stat key no real mtime takes
+// A header value holds visible ASCII only: fetch would otherwise reject it quoting the whole value, bearer included, into a log line
+const TOKEN_CHARS = /^[\x21-\x7e]+$/;
 // Inherited credentials would make gh answer for another account than the login that stamps the rows (#180)
 const INHERITED_TOKENS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN'];
 const execFileAsync: Exec = promisify(execFile);
@@ -24,6 +26,12 @@ export const cliEnv = (): NodeJS.ProcessEnv => ({ GH_HOST: GITHUB_HOST, ...Objec
 /** The child's environment: the parent's, then `env` over it; a key set to undefined is removed, not passed on. */
 export function childEnv(base: NodeJS.ProcessEnv, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries({ ...base, ...env }).filter(([, value]) => value !== undefined));
+}
+
+/** The Authorization value for `token`; a token fetch would refuse throws a message that never quotes it. */
+export function bearer(token: string): string {
+  if (!TOKEN_CHARS.test(token)) throw new Error('github: malformed token');
+  return `Bearer ${token}`;
 }
 
 /** gh's own lookup: GH_CONFIG_DIR, else XDG_CONFIG_HOME/gh, else ~/.config/gh. */
@@ -42,7 +50,7 @@ export function loginFromHosts(text: string): string {
   const indent = /^(\s+)\S/.exec(block.find((line) => line.trim() !== '') ?? '')?.[1];
   if (indent === undefined) return '';
   const user = block.find((line) => line.startsWith(`${indent}user:`) && !/^\s/.test(line.slice(indent.length)));
-  return /^\s*user:\s*["']?([^"'\s]+)["']?\s*$/.exec(user ?? '')?.[1] ?? '';
+  return /^\s*user:\s*["']?([^"'\s#]+)["']?\s*(#.*)?$/.exec(user ?? '')?.[1] ?? '';
 }
 
 /** One holder per daemon: login() is a stat per call and a read only when hosts.yml changed (a logout or a switch rewrites it, and drops
@@ -60,21 +68,26 @@ export function createGhToken(given: Partial<GhTokenDeps> = {}): GhToken {
     // gh's words may echo a request: only the instruction travels
     const { stdout } = await deps.exec('gh', TOKEN_ARGS, { env: childEnv(deps.env, cliEnv()), timeout: TOKEN_TIMEOUT_MS }).catch(() => ({ stdout: '' }));
     const token = stdout.trim();
-    if (token === '') throw new Error(NO_GH_TOKEN_MESSAGE);
+    if (!TOKEN_CHARS.test(token)) throw new Error(NO_GH_TOKEN_MESSAGE);
     return token;
+  };
+  const readLogin = async (): Promise<string> => {
+    const mtime = await deps.stat(path).then((s) => s.mtimeMs, () => MISSING);
+    if (mtime !== seen) {
+      seen = mtime;
+      invalidate(); // the held token may be another account's now
+      login = mtime === MISSING ? Promise.resolve('') : deps.readFile(path).then(loginFromHosts, () => {
+        seen = undefined; // a failed read is retried on the next call, not cached until the file changes again
+        return '';
+      });
+    }
+    return login;
   };
   return {
     invalidate,
-    login: async () => {
-      const mtime = await deps.stat(path).then((s) => s.mtimeMs, () => MISSING);
-      if (mtime !== seen) {
-        seen = mtime;
-        invalidate(); // the held token may be another account's now
-        login = mtime === MISSING ? Promise.resolve('') : deps.readFile(path).then(loginFromHosts, () => '');
-      }
-      return login;
-    },
-    token: () => {
+    login: readLogin,
+    token: async () => {
+      await readLogin(); // a stat: the poll and Settings never call login(), yet must not keep a switched-away account's token
       if (held !== undefined) return held;
       const reading = readToken();
       held = reading;

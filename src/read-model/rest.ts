@@ -1,3 +1,4 @@
+import { bearer } from '../github-token.js';
 const API_ORIGIN = 'https://api.github.com';
 const MS_PER_SECOND = 1000;
 // The two forms GitHub gives one repository's listing: by name, and by id in the Links of its later pages
@@ -81,7 +82,7 @@ export function httpRest(deps: HttpRestDeps): RestGet {
   const doFetch = deps.fetch ?? globalThis.fetch;
   return async (path, etag) => {
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${await deps.token()}`, Accept: 'application/vnd.github+json', ...(etag === undefined ? {} : { 'If-None-Match': etag }),
+      Authorization: bearer(await deps.token()), Accept: 'application/vnd.github+json', ...(etag === undefined ? {} : { 'If-None-Match': etag }),
     };
     const res = await doFetch(`${API_ORIGIN}/${path}`, { headers, redirect: 'manual', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (res.status === UNAUTHORIZED) deps.onUnauthorized?.();
