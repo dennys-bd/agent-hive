@@ -1094,6 +1094,10 @@ export interface PrData {
   decision?: PrReviewDecision; approvals: number; checks?: PrChecks; reviews: PrReviewEvent[]; comments: PrIssueComment[]; behindBy?: number;
   conflicts?: string[]; canEdit: boolean; canPush: boolean; headOwner: string; baseOwner: string; reviewRequests: PrReviewRequest[]; closes: PrClosingIssue[];
 }
+/** GET …/pulls/:number/changes (#497): what GitHub alone holds of a PR, read at `head`, the head the diff and the threads were read at, which
+ * may trail the fields' head. truncated: GitHub holds more than 100 threads; behindBy: how far the base moved past the head, absent when GitHub
+ * cannot compare them; reviewRequests: the pending ones, each with the time the latest request was made when the timeline has it. */
+export interface PrChanges { head: string; files: FileDiff[]; threads: PrThread[]; truncated: boolean; behindBy?: number; reviewRequests: PrReviewRequest[] }
 /** GET …/pulls/:number/checks (#758): what the checks' poll reads, nothing else of the PR. */
 export type PrChecksRead = Pick<PrData, 'checks' | 'mergeState' | 'updatedAt'>;
 /** What the review popover sends (#758): a comment, an approval or a change request. */
