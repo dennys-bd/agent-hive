@@ -8,6 +8,7 @@ import { type ArmRefusal, armFrom, checkArm, checkRemove, checkTargets, isArmRef
 import { byCodePoint } from './benchmark/canonical.js';
 import type { BenchEvaluator } from './benchmark/evaluate-service.js';
 import type { BenchRunner } from './benchmark/runner.js';
+import { type AskSessionDeps, registerBenchmarkAgentRoutes } from './server-benchmark-agent.js';
 import { BENCHMARK_IO_MESSAGE, createEmptyExperiment, type DraftCtx, type DraftDeps, type DraftRefusal, draw, duplicateExperiment, editSections, errorCode, isRefusal, type Queue, serial } from './benchmark/drafts.js';
 import { newId } from './benchmark/new-experiment.js';
 import { pinHome, pluginTrees } from './benchmark/pin.js';
@@ -35,6 +36,7 @@ export interface BenchmarkRouteDeps extends DraftDeps {
   log: Logger; // the PR routes also warn (#477)
   evaluator: BenchEvaluator; // #474
   runner: Pick<BenchRunner, 'run' | 'sleep' | 'wake' | 'isLive' | 'blindness'>; // #472
+  session: AskSessionDeps; // #478: ask the agent's local session
   queue?: Queue; // #478: the one queue benchmark_draft shares, so a tool write and a route write never interleave; none: the routes' own
 }
 interface Ctx extends DraftCtx { deps: BenchmarkRouteDeps; res: Response }
@@ -211,6 +213,7 @@ export function registerBenchmarkRoutes(app: Express, deps: BenchmarkRouteDeps):
   registerArmRoutes(app, deps, queue);
   registerBenchmarkPrRoutes(app, { getState: () => deps.getLive()?.state, getConfig: () => deps.getLive()?.runtime.config, hiveDir: deps.home, exec: execRun, gh: execRun, now: Date.now, log: deps.log }); // #477: GET and POST …/runs/:token/pr
   registerBenchmarkEvaluateRoutes(app, { requireLive: deps.requireLive, evaluator: deps.evaluator, log: deps.log }); // #474
+  registerBenchmarkAgentRoutes(app, { requireLive: deps.requireLive, log: deps.log, session: deps.session }); // #478: POST /benchmark/agent
   registerBenchmarkControlRoutes(app, { requireLive: deps.requireLive, runner: deps.runner, dispatch: deps.dispatch, log: deps.log }); // #472
   return registerBenchmarkRunRoutes(app, { getState: () => deps.getLive()?.state, log: deps.log }); // #475: …/runs/:token/open, and its shutdown hook
 }

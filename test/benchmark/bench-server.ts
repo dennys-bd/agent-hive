@@ -6,7 +6,7 @@ import { benchmarkReduce } from '../../src/benchmark-reducer.js';
 import { registerBenchmarkRoutes } from '../../src/server-benchmark.js';
 import type { DraftCtx, DraftDeps } from '../../src/benchmark/drafts.js';
 import type { Logger } from '../../src/log.js';
-import type { BenchmarkEvent, Config, Exec, Experiment, State } from '../../src/types.js';
+import type { BenchmarkEvent, Config, Exec, Experiment, HiveEvent, OptionalTool, State } from '../../src/types.js';
 import { put } from '../custom-fixture.js';
 import { fakeLog } from '../fakes.js';
 import { tempDir } from '../temp-dir.js';
@@ -22,8 +22,8 @@ export interface BenchDeps {
   home: string; pluginSource: string; repo: string; calls: string[][]; lines: string[]; log: Logger; config: Config;
   events: BenchmarkEvent[]; deps: DraftDeps; state(): State; ctx(): DraftCtx; dir(id: string): string;
 }
-export interface Bench extends BenchDeps { base: string }
-interface BenchOpts { experiments?: Experiment[]; files?: Record<string, string> }
+export interface Bench extends BenchDeps { base: string; sessionEvents: HiveEvent[] }
+interface BenchOpts { experiments?: Experiment[]; files?: Record<string, string>; mcpOff?: OptionalTool[] }
 
 // git as the routes call it, after `-C <repo>`: the base's symref and sha, and the files `files` holds at SHA; anything else fails as git does
 function fakeGit(files: Record<string, string>): (args: string[]) => string {
@@ -55,7 +55,8 @@ export async function benchDeps(t: TestContext, opts: BenchOpts = {}): Promise<B
     return { stdout: git(args.slice(2)) };
   };
   const { log, lines } = fakeLog();
-  const config = benchConfig(repo);
+  const base = benchConfig(repo);
+  const config: Config = { ...base, mcp: { ...base.mcp, off: opts.mcpOff ?? [] } };
   const deps: DraftDeps = {
     dispatch: async (event) => { events.push(event); state = benchmarkReduce(state, event); },
     home, pluginSource, exec, version: async () => '0.1.0', now: () => new Date(AT),
@@ -71,15 +72,20 @@ export async function serve(t: TestContext, opts: BenchOpts = {}): Promise<Bench
   const app = express();
   app.use(express.json({ limit: '2mb' }));
   const live = () => ({ runtime: { config: bench.config }, state: bench.state() });
+  const sessionEvents: HiveEvent[] = [];
   registerBenchmarkRoutes(app, {
     ...bench.deps, requireLive: live, getLive: live, log: bench.log,
     runner: { run: async () => 'started', sleep: async () => undefined, wake: async () => undefined, isLive: () => false, blindness: async () => undefined },
+    session: {
+      dispatch: async (event: HiveEvent) => { sessionEvents.push(event); return []; },
+      started: async () => undefined, language: () => 'en', plugin: { ready: async () => undefined, dir: () => bench.pluginSource },
+    },
     evaluator: { evaluate: async () => undefined, isEvaluating: () => false, abortAll: async () => undefined },
   });
   const server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
-  return { ...bench, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  return { ...bench, sessionEvents, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
 }
 
 export async function call(bench: Bench, method: string, path: string, body?: unknown): Promise<[number, unknown]> {
