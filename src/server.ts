@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createBenchEvaluator, benchRunDeps } from './benchmark/evaluate-service.js';
+import { drafter, serial } from './benchmark/drafts.js';
 import { execRun } from './benchmark/exec.js';
 import { registerRunMode, type RunMode, viewerInput } from './benchmark/run-mode.js';
 import { experimentFolder } from './benchmark/store.js';
@@ -305,6 +306,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
   // #474: the benchmark's evaluations, in the background; a Quit aborts them beside the evaluate stage's. folderOf only sees ids the
   // service got from the State, but experimentFolder checks the shape anyway
+  const benchQueue = serial(); // #478: the experiment routes and benchmark_draft write <home>/benchmark/ one at a time
+  const benchVersion = async (): Promise<string> => (await pluginVersion(shippedPlugin)) ?? '';
   const benchEvaluator = createBenchEvaluator({
     latest: () => live?.state, dispatch, folderOf: (id) => experimentFolder(home, id), log, now: Date.now,
     runDeps: benchRunDeps({ exec: execRun, ...(deps.headless === undefined ? {} : { headless: deps.headless }) }),
@@ -1010,7 +1013,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
   mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
     relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
-    reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory, preloadPr: (url) => preloadPr?.(url) ?? Promise.resolve() }); // #344: a local session's hive_reply
+    reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory, preloadPr: (url) => preloadPr?.(url) ?? Promise.resolve(),
+    benchmark: drafter({ dispatch, home, pluginSource: shippedPlugin, exec, log, version: benchVersion, now: () => new Date(), queue: benchQueue,
+      live: () => (live ? { config: live.runtime.config, experiments: live.state.benchmark.experiments } : undefined) }) }); // #478 // #344: a local session's hive_reply
 
   app.get('/events', (req: Request, res: Response) => {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
@@ -1229,7 +1234,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const customStore = createCustomStore({ home, pluginSource: shippedPlugin, workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: (workspaces) => { if (live) void pluginRender.write(live.runtime.config, workspaces); }, log });
   registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: shippedPlugin, log });
   // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
-  const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, log, evaluator: benchEvaluator, runner: benchRunner, version: async () => (await pluginVersion(shippedPlugin)) ?? '', now: () => new Date() });
+  const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, log, evaluator: benchEvaluator, runner: benchRunner, version: benchVersion, queue: benchQueue, now: () => new Date() });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
   registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written

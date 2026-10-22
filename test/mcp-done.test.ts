@@ -37,7 +37,7 @@ async function harness(t: TestContext, freeSession = true, stages: Stage[] = STA
   mountMcp(app, {
     exec: async () => ({ stdout: '' }), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
     dispatch: async (event) => { dispatched.push(event); state = reduce(state, event).state; return []; }, canClose: () => true, relate: unused, canRelate: () => false,
-    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused },
+    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused }, benchmark: { draft: unused },
   });
   const http = app.listen(0);
   t.after(() => http.close());

@@ -1,6 +1,7 @@
 // The answer and record helpers every tool module shares, out of mcp.ts for #333 so the optional tools can live apart.
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { correlationOf } from './fact-derive.js';
+import type { Drafter } from './benchmark/drafts.js';
 import type { FactLog, RecordInput, RefusalCode } from './facts.js';
 import type { MemoryStore } from './memory.js';
 import type { ReplyReviews } from './mcp-review.js';
@@ -22,6 +23,7 @@ export interface McpDeps extends ReplyReviews {
   facts: Pick<FactLog, 'write'>; // #742: each tool call's mcp.call
   memory: Pick<MemoryStore, 'read' | 'update'>; // #797: hive_remember and hive_applied write the worker's workspace's memory
   preloadPr?(url: string): Promise<void>; // #497: hive_pr's PR read and stored ahead of its page; never awaited
+  benchmark: Drafter; // #478: benchmark_draft's write, the routes' cores through their queue
   exec: Exec; // #854: the remotes behind a fork's hive_conventions
 }
 

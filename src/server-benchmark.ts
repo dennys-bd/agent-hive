@@ -35,6 +35,7 @@ export interface BenchmarkRouteDeps extends DraftDeps {
   log: Logger; // the PR routes also warn (#477)
   evaluator: BenchEvaluator; // #474
   runner: Pick<BenchRunner, 'run' | 'sleep' | 'wake' | 'isLive' | 'blindness'>; // #472
+  queue?: Queue; // #478: the one queue benchmark_draft shares, so a tool write and a route write never interleave; none: the routes' own
 }
 interface Ctx extends DraftCtx { deps: BenchmarkRouteDeps; res: Response }
 type Handle = (req: Request, ctx: Ctx) => Promise<void>;
@@ -205,7 +206,7 @@ function registerArmRoutes(app: Express, deps: BenchmarkRouteDeps, queue: Queue)
 
 /** api.benchmark.experiments (#459), behind the server's host, secret and x-hive-ui gates; the later benchmark route files mount here. Answers the run-hive routes' shutdown hook, which server.ts's close() calls. */
 export function registerBenchmarkRoutes(app: Express, deps: BenchmarkRouteDeps): BenchmarkRunRoutes {
-  const queue = serial();
+  const queue = deps.queue ?? serial();
   registerExperimentRoutes(app, deps, queue);
   registerArmRoutes(app, deps, queue);
   registerBenchmarkPrRoutes(app, { getState: () => deps.getLive()?.state, getConfig: () => deps.getLive()?.runtime.config, hiveDir: deps.home, exec: execRun, gh: execRun, now: Date.now, log: deps.log }); // #477: GET and POST …/runs/:token/pr

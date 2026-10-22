@@ -1,4 +1,4 @@
-// The tools the Hive's config may turn off (#333): hive_create_task, hive_remember, hive_applied, hive_task. Registered per request, only those mcp.off leaves on.
+// The tools the Hive's config may turn off (#333): hive_create_task, hive_remember, hive_applied, hive_task, and the benchmark's three (#478). Registered per request, only those mcp.off leaves on.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { localWorkspaceOf, taskOfWorker } from './activities.js';
@@ -7,6 +7,7 @@ import { createTask } from './create-task.js';
 import { correlationOf } from './fact-derive.js';
 import type { Correlation } from './facts.js';
 import { isMemoryRefusal, lessonRefusal, looksLikeSecret, MEMORY_SECRET_MESSAGE, memoryCounts, whyProblem, withEntry, withUse } from './memory.js';
+import { registerBenchmarkDraftTool, registerBenchmarkGetTool, registerBenchmarkListTool } from './mcp-benchmark.js';
 import { livePtyId, type McpDeps, OK, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
 import { readTaskAnswer } from './mcp-task.js';
 import { MEMORY_KINDS, type MemoryOrigin, type MemoryUse, OPTIONAL_TOOLS, type OptionalTool } from './types.js';
@@ -108,7 +109,10 @@ function registerTaskTool(server: McpServer, deps: McpDeps, header: string | und
   }));
 }
 
-const REGISTER: Record<OptionalTool, Register> = { hive_remember: registerRememberTool, hive_applied: registerAppliedTool, hive_create_task: registerCreateTaskTool, hive_task: registerTaskTool };
+const REGISTER: Record<OptionalTool, Register> = {
+  hive_remember: registerRememberTool, hive_applied: registerAppliedTool, hive_create_task: registerCreateTaskTool, hive_task: registerTaskTool,
+  benchmark_list: registerBenchmarkListTool, benchmark_get: registerBenchmarkGetTool, benchmark_draft: registerBenchmarkDraftTool, // #478
+};
 
 /** The optional tools the Hive's config leaves on (#333): a tool in `off` is never registered, so tools/list lacks it and a call gets the SDK's unknown-tool answer. */
 export function registerOptionalTools(server: McpServer, deps: McpDeps, header: string | undefined, off: readonly OptionalTool[]): void {
