@@ -1,9 +1,10 @@
 import { activityOf, resultOf, withActivity } from './activities.js';
 import { withoutControls } from './pty-paste.js';
+import { forgetSession } from './record-kit.js';
 import { ensureActivity, type Reduced, settleEntries, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
 import { renderPrompt, verdictsLine } from './spawn.js';
 import { stageSession } from './task-runs.js';
-import { canDismissError, canMoveToStage, enter, onSource, stageOf, taskId } from './tasks.js';
+import { canDismissError, canMoveToStage, enter, onSource, sessionsOf, stageOf, taskId } from './tasks.js';
 import { hiveAction, runsAgent } from './stage-agent.js';
 import { exitName, exitOf, isAutomatic, needsHandover, resolveSession, retryTransition, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
 import {
@@ -126,13 +127,34 @@ function logged(advanced: Advanced, task: Task, record: TryRecord): Advanced {
   return { ...advanced, state: withActivity(advanced.state, { ...live, tryLog: [...(live.tryLog ?? []), entry] }) };
 }
 
+/** What a clearSession stage's end leaves (#494): the state with its run's session forgotten, and the removal of its transcript. */
+interface Cleared { state: State; effects: Effect[] }
+
+// The run's session a stage with clearSession forgets as `transition` takes the task out (#494): the activity's, only when it ran that stage
+// (a free session's end may leave an earlier stage's id there, #812) and no stage run still holds the task (a free session's end leaves a live
+// stage run running). A loop stays in the stage; a destination the state lacks holds the task. The transcript goes only under
+// deleteActivity.transcripts, as the panel's clear does (#304). The record's usage is never touched, so the totals stay
+function clearedRun(state: State, task: Task, transition: Transition): Cleared {
+  const live = activityOf(state, taskId(task));
+  const leaves = transition.to === END || (transition.to !== transition.from && stageOf(state.stages, transition.to) !== undefined);
+  const id = live?.workerId === undefined ? live?.sessionId : undefined;
+  const session = id === undefined ? undefined : sessionsOf(state, taskId(task)).find((s) => s.id === id);
+  if (!leaves || live === undefined || session === undefined || stageOf(state.stages, transition.from)?.clearSession !== true || !session.stages.includes(transition.from)) {
+    return { state, effects: [] };
+  }
+  const effects: Effect[] = state.deleteActivity.transcripts ? [{ type: 'removeTranscripts', task, activity: live, session }] : [];
+  return { state: forgetSession(state, task, session.id), effects };
+}
+
 // A transition past its count (#915: take's and a retry's): its sources written in order, as onFinish was (#286, #515), a leaving action
-// holding the task until the source answers; then the arrow and the tries on the activity, and the move. No end: an epic's (#213)
+// holding the task until the source answers; then the arrow and the tries on the activity, and the move. No end: an epic's (#213). A stage
+// with clearSession forgets its run's session on the way out (#494)
 function pass(state: State, task: Task, transition: Transition, end: EndOf | undefined, tries: Record<string, number>): Advanced {
   const { task: written, effects } = sourceWrites(task, onSource(transition.sources, task.item.source));
   const marked = routed(state, written, transition, tries);
   if (written.leaving) return { ...held(marked, written, effects), transition };
-  return moveOn(marked, written, transition, end, effects);
+  const cleared = clearedRun(marked, written, transition); // #494: before the move; by the config rule no destination resumes it
+  return moveOn(cleared.state, written, transition, end, [...effects, ...cleared.effects]);
 }
 
 /** The task through `transition` (#134): an automatic one with maxTries counts a try first, and out of them the task stops in its stage with
