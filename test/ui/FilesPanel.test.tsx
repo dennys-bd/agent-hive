@@ -14,6 +14,7 @@ import type { LocalActivity, TaskActivity } from '@/lib/activities';
 import { localPairOf, taskPairOf } from '../fixtures/work';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } })); // the no-bridge toast is observable without a Toaster
+vi.mock('@/hooks/use-tree-lease', () => ({ useTreeLease: () => undefined })); // #502: the lease's POST is none of this file's requests
 
 // Redesign 07: the activity sidebar's arquivos view, a tree of the worktree with its git marks.
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };

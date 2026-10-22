@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { fileUrl } from '@/lib/editor-models';
 
-// ponytail: a poll stands in for a watch, as the files sidebar's tree does (use-task-tree.ts); a push from the daemon when the lag matters
+// ponytail: a poll stands in for a watch, the files sidebar's lease and tree event (#502) are the push to reuse when the lag matters
 export const VERSION_POLL_MS = 2000;
 
 /** What a poll found (#717): the file's version on the disk, or null once the file is gone. */

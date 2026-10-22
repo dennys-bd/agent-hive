@@ -4,6 +4,7 @@ import { useHiveState } from '@/hooks/use-hive-state';
 import { onConsoleChange } from '@/lib/console-events';
 import { onEditorInstall } from '@/lib/editor-install-events';
 import { onPrReviewEvent, onReadModelEvent, onReviewEvent, taskReview } from '@/lib/review-events';
+import { onTreeEvent } from '@/lib/tree-events';
 
 class FakeSource {
   static last: FakeSource | undefined;
@@ -94,5 +95,21 @@ test('a readModel event whose repository is no string or whose kinds are no stri
   ];
   for (const data of malformed) FakeSource.last?.listeners.readModel?.(new MessageEvent('readModel', { data: JSON.stringify({ type: 'readModel', ...data }) }));
   expect(heard).not.toHaveBeenCalled();
+  stop();
+});
+
+test('a named tree event reaches the tree listeners with its activity and paths, or none; one with no activity or malformed paths is dropped (#502)', () => {
+  vi.stubGlobal('EventSource', FakeSource);
+  const heard = vi.fn();
+  const stop = onTreeEvent(heard);
+  const { result } = renderHook(() => useHiveState());
+  const tree = (data: unknown): void => FakeSource.last?.listeners.tree?.(new MessageEvent('tree', { data: JSON.stringify(data) }));
+  tree({ type: 'tree', activityId: 'a-I1', paths: ['src/a.ts'] });
+  tree({ type: 'tree', activityId: 'a-I1' });
+  tree({ type: 'tree', paths: ['x'] });
+  tree({ type: 'tree', activityId: 'a-I1', paths: 'x' });
+  tree({ type: 'tree', activityId: 'a-I1', paths: [3] });
+  expect(heard.mock.calls).toEqual([[{ type: 'tree', activityId: 'a-I1', paths: ['src/a.ts'] }], [{ type: 'tree', activityId: 'a-I1' }]]);
+  expect(result.current.state).toBeUndefined();
   stop();
 });

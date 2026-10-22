@@ -8,6 +8,7 @@ import * as models from '@/lib/editor-models';
 import type { Task, TaskTree } from '../../src/types';
 import type { TaskActivity } from '@/lib/activities';
 import { taskPairOf } from '../fixtures/work';
+vi.mock('@/hooks/use-tree-lease', () => ({ useTreeLease: () => undefined })); // #502: the lease's POST is none of this file's requests
 
 // The tree's selection (#818): a click selects one row, ⌘-click (Ctrl off macOS, as jsdom runs) toggles one, ⇧-click ranges; a drag takes it.
 // The tree lists docs and src as folders, docs first, then README.md

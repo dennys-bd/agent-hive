@@ -14,6 +14,8 @@ import type { ReviewStore } from './review-store.js';
 import { registerDiffRoutes } from './server-diff.js';
 import { registerReviewRoutes } from './server-review.js';
 import { registerTreeRoutes } from './server-tree.js';
+import { registerTreeWatchRoutes } from './server-tree-watch.js';
+import type { TreeWatch } from './tree-watch.js';
 import { registerMoveRoutes } from './server-move.js';
 import { registerTreeOpsRoutes } from './server-tree-ops.js';
 import { registerFileRoutes } from './server-files.js';
@@ -66,6 +68,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
 export interface Refusal { status: number; message: string }
 
 export interface TaskRouteDeps {
+  treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
   exec: Exec; // git for the base popup (#131) and the delete-activity route (#182, #573); tests inject a fake
   log: Pick<Logger, 'debug' | 'error' | 'info'>; // the transcripts' deletion (#236): a file already gone at debug, a failure at error; the worktree setup's steps at info (#299)
   /** The live runtime comes with the state: agentArgs, the branch template, the base branch and the Comb's prefix are read at
@@ -330,6 +333,7 @@ export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
   registerDiffRoutes(app, deps); // GET /activities/:id/diff (#270)
   registerReviewRoutes(app, deps); // GET /tasks/:id/review and the reviewed marks (#591)
   registerTreeRoutes(app, deps); // GET /activities/:id/tree, POST /activities/:id/reveal (redesign 07), GET /activities/:id/tree/folder (HIVE-22)
+  registerTreeWatchRoutes(app, deps); // POST, DELETE /activities/:id/tree/watch: the files sidebar's lease (#502)
   registerMoveRoutes(app, deps); // POST /activities/:id/tree/move, the file tree's drop (#594)
   registerTreeOpsRoutes(app, deps); // POST /activities/:id/tree/create, /rename, /trash, /file: the files tree's own operations (#818)
 }

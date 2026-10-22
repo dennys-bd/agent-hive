@@ -966,6 +966,9 @@ export interface TaskTree {
   ignored: IgnoredEntries;
 }
 
+/** The `tree` event on /events (#502): a leased root changed. `paths` relative to the root, `/`-separated; absent means anything. */
+export interface TreeChange { type: 'tree'; activityId: string; paths?: string[] }
+
 /** The worktree's entries git ignores, and its nested repositories (HIVE-22): relative, outermost only. A folder's children are not listed;
  *  GET /activities/:id/tree/folder reads them when it is expanded. */
 export interface IgnoredEntries {

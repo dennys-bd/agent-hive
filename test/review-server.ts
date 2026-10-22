@@ -62,14 +62,18 @@ export async function startReviews(t: TestContext, extra: Partial<ServerDeps> = 
 export const send = (base: string, method: string, path: string, body?: unknown, ui = true): Promise<Response> =>
   hiveFetch(`${base}${path}`, { method, headers: { 'content-type': 'application/json', ...(ui ? { 'x-hive-ui': '1' } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 
-/** The data of the first `review` event /events streams while `act` runs (#591). */
-export async function reviewEventDuring(base: string, act: () => Promise<unknown>): Promise<unknown> {
+/** The data of the first `name` event /events streams while `act` runs (#591, #502). */
+export async function eventDuring(base: string, name: string, act: () => Promise<unknown>): Promise<unknown> {
   const reader = (await hiveFetch(`${base}/events`, { signal: AbortSignal.timeout(5000) })).body!.getReader();
   const decoder = new TextDecoder();
+  const marker = `event: ${name}\n`;
   let text = decoder.decode((await reader.read()).value, { stream: true }); // the State every connection gets first
   await act();
-  while (!text.includes('event: review')) text += decoder.decode((await reader.read()).value, { stream: true });
+  while (!text.includes(marker)) text += decoder.decode((await reader.read()).value, { stream: true });
   await reader.cancel();
-  const frame = text.slice(text.indexOf('event: review')).split('\n\n')[0];
+  const frame = text.slice(text.indexOf(marker)).split('\n\n')[0];
   return JSON.parse(frame.split('\n').find((line) => line.startsWith('data: '))!.slice('data: '.length));
 }
+
+/** The data of the first `review` event /events streams while `act` runs (#591). */
+export const reviewEventDuring = (base: string, act: () => Promise<unknown>): Promise<unknown> => eventDuring(base, 'review', act);

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { emitConsoleChange } from '@/lib/console-events';
 import { emitEditorInstall } from '@/lib/editor-install-events';
 import { emitPrReviewEvent, emitReadModelEvent, emitReviewEvent, localReview, taskReview } from '@/lib/review-events';
+import { emitTreeEvent } from '@/lib/tree-events';
 import type { EditorInstallEvent, EffectiveLimits, EventsPayload, State } from '../../types.js';
 
 const RERENDER_MS = 30_000;
@@ -41,6 +42,12 @@ export function useHiveState(): { state: State | undefined; effective: Effective
       if (typeof parsed.kind === 'string' && typeof parsed.id === 'string' && typeof parsed.state === 'object') emitEditorInstall(parsed as EditorInstallEvent);
     });
     source.addEventListener('console', () => emitConsoleChange()); // a console channel or a run's status changed (#780): the channel list reads again
+    source.addEventListener('tree', (event) => { // a leased tree changed (#502): its activity's sidebar decides what to read again
+      const { activityId, paths } = JSON.parse((event as MessageEvent<string>).data) as { activityId?: unknown; paths?: unknown };
+      if (typeof activityId !== 'string') return;
+      if (paths === undefined) emitTreeEvent({ type: 'tree', activityId });
+      else if (isStrings(paths)) emitTreeEvent({ type: 'tree', activityId, paths });
+    });
     source.onerror = () => setConnected(false); // the browser reconnects by itself
     const timer = setInterval(() => setTick((n) => n + 1), RERENDER_MS);
     return () => { source.close(); clearInterval(timer); };

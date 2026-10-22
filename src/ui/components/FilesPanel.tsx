@@ -17,6 +17,7 @@ import { type FileIconsView, useFileIcons } from '@/hooks/use-file-icons';
 import { useDiagnostics } from '@/hooks/use-diagnostics';
 import { useIgnoredFolders } from '@/hooks/use-ignored-folders';
 import { type TreeState, useTaskTree } from '@/hooks/use-task-tree';
+import { useTreeLease } from '@/hooks/use-tree-lease';
 import { t, tPlural } from '@/i18n';
 import { activityCounts, type Counts } from '@/lib/diagnostics-store';
 import { type Activity, activityKey, isTask } from '@/lib/activities';
@@ -162,7 +163,7 @@ interface BodyProps {
   onToggle(path: string): void; onSelect(node: TreeNode, event: MouseEvent): void; onMenu(path: string): void;
 }
 
-// The tree as the latest poll has it, or why there is none
+// The tree as its latest read has it, or why there is none
 function TreeBody({ tree, marks, rows, activityId, expanded, drag, selection, actions, edit, onToggle, onSelect, onMenu }: BodyProps) {
   const icons = useFileIcons(); // once per tree: every row shares the loaded set
   useDiagnostics(); // #780: the counts follow the language servers
@@ -239,6 +240,7 @@ interface FilesBodyProps { target: Activity; view: FilesView; isShown: boolean; 
 function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   const { activity } = target;
   const tree = useTaskTree(activity.id, isShown);
+  useTreeLease(activity.id, isShown); // #502: the daemon watches this tree while it shows
   const ready = tree.status === 'ready' ? tree.tree : undefined;
   const { loaded, marks: nestedMarks } = useIgnoredFolders(activity.id, isShown, view.expanded, ready?.ignored.folders);
   const root = ready?.root;
