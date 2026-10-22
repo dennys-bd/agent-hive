@@ -107,6 +107,19 @@ test('stageFrom sends handoff only on a prompt stage that starts a new session; 
   assert.equal(emptyStage().handoff, false);
 });
 
+test('stageFrom sends clearSession on a prompt or a skill stage, a continued session included, never on a stage that runs nothing; stageDraft reads it back (#494)', () => {
+  const stage: Stage = { name: 'spec', from: {}, prompt: '/hive:new-spec {url}', clearSession: true };
+  const draft = stageDraft(stage, ROWS);
+  assert.equal(draft.clearSession, true);
+  assert.deepEqual(stageFrom(draft, ROWS), stage);
+  assert.equal(stageFrom({ ...draft, session: 'continue' }, ROWS).clearSession, true, 'the continued session is cleared when the stage ends');
+  assert.equal(stageFrom({ ...draft, action: 'skill', skill: 'new-spec', prompt: '' }, ROWS).clearSession, true);
+  for (const off of [{ prompt: '  ' }, { action: 'deleteActivity' as const }, { approval: true, prompt: '' }]) {
+    assert.equal('clearSession' in stageFrom({ ...draft, ...off }, ROWS), false, JSON.stringify(off));
+  }
+  assert.equal(emptyStage().clearSession, false);
+});
+
 test('a commands stage\'s meta lists its names, or the action with none (#755)', () => {
   setLanguage('pt');
   assert.equal(stageMeta({ ...emptyStage(), action: 'commands', commands: ['build', 'lint'] }, 'claude'), 'build, lint');

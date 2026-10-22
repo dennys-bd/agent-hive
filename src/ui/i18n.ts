@@ -1514,6 +1514,9 @@ const en = {
   'settings.stages.handoff.hint': "before a task enters here, the previous stage's session writes a handoff; this stage's new session reads it first",
   'settings.stages.handoff.continue': 'a stage that continues the session already has its context: no handoff',
   'settings.stages.handoff.noPrompt': 'a stage without a prompt starts no session: no handoff',
+  'settings.stages.clearSession': 'clears its session when it ends', // #494
+  'settings.stages.clearSession.hint': "when a task leaves this stage, its session leaves the task's list, as clear does",
+  'settings.stages.clearSession.noPrompt': 'a stage without a prompt starts no session: nothing to clear',
   'settings.stages.after': 'run after',
   'settings.stages.after.placeholder': 'start ignores it',
   'settings.stages.finish.move': 'move to {column}',
@@ -3832,6 +3835,9 @@ const pt: Record<MessageKey, string> = {
   'settings.stages.handoff.hint': 'antes de a tarefa entrar aqui, a sessão da etapa anterior escreve um handoff; a nova sessão desta etapa o lê primeiro',
   'settings.stages.handoff.continue': 'uma etapa que continua a sessão já tem o contexto: sem handoff',
   'settings.stages.handoff.noPrompt': 'uma etapa sem prompt não inicia sessão: sem handoff',
+  'settings.stages.clearSession': 'limpa a sessão ao terminar', // #494
+  'settings.stages.clearSession.hint': 'quando a tarefa sai desta etapa, a sessão dela sai da lista da tarefa, como o limpar faz',
+  'settings.stages.clearSession.noPrompt': 'uma etapa sem prompt não inicia sessão: nada a limpar',
   'settings.stages.after': 'executar depois de',
   'settings.stages.after.placeholder': 'iniciar ignora',
   'settings.stages.finish.move': 'mover para {column}',

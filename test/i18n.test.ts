@@ -171,8 +171,9 @@ test('the execution copy (#527)', () => {
 test('the glossary sweep (#573): no settings-screen setup. key and no limits, ladder or delete activity key; no string saying limits, queue / fila, delete activity / limpar / limpeza, remove worktree or a masculine worktree', () => {
   const keys = Object.keys(MESSAGES.en);
   assert.deepEqual(keys.filter((key) => key.startsWith('setup.') || /ladder|cleanup|removeWorktree|settings\.section\.limits/.test(key)), []);
-  // clearing, not deleting an activity: a session's limpar (#304), the console's and the terminal's, a stage's filter (#374), a field's value (#686)
-  const CLEAR: readonly string[] = ['detail.clearSession', 'console.clear', 'shortcuts.clear', 'stage.clearFilter', 'field.clear'];
+  // clearing, not deleting an activity: a session's limpar (#304), the console's and the terminal's, a stage's filter (#374), a field's value (#686),
+  // a stage's clear-session switch (#494)
+  const CLEAR: readonly string[] = ['detail.clearSession', 'console.clear', 'shortcuts.clear', 'stage.clearFilter', 'field.clear', 'settings.stages.clearSession.hint', 'settings.stages.clearSession.noPrompt'];
   const retired: Record<'en' | 'pt', RegExp[]> = {
     en: [/\blimits\b/, /\bqueue[ds]?\b/i, /\bclean(?:ing)? ?up\b/i, /\bremove (?:the )?worktree\b/i],
     pt: [
@@ -583,4 +584,15 @@ test('the evaluate stage\'s Settings copy reads as the spec writes it, in both l
     'one dimension per line · the judge reads the findings, scores each dimension, and every score must reach the threshold', 'approved', 'rejected']);
   const ours = Object.entries(MESSAGES.pt).filter(([key]) => key.startsWith('settings.stages.evaluate.'));
   assert.equal(ours.some(([, text]) => /\brod(ar|ando|am)\b/.test(text)), false);
+});
+
+test('the clear-session switch\'s copy reads as the spec writes it, in both languages (#494)', () => {
+  assert.deepEqual(
+    [MESSAGES.en['settings.stages.clearSession'], MESSAGES.en['settings.stages.clearSession.hint'], MESSAGES.en['settings.stages.clearSession.noPrompt']],
+    ['clears its session when it ends', "when a task leaves this stage, its session leaves the task's list, as clear does", 'a stage without a prompt starts no session: nothing to clear'],
+  );
+  assert.deepEqual(
+    [MESSAGES.pt['settings.stages.clearSession'], MESSAGES.pt['settings.stages.clearSession.hint'], MESSAGES.pt['settings.stages.clearSession.noPrompt']],
+    ['limpa a sessão ao terminar', 'quando a tarefa sai desta etapa, a sessão dela sai da lista da tarefa, como o limpar faz', 'uma etapa sem prompt não inicia sessão: nada a limpar'],
+  );
 });

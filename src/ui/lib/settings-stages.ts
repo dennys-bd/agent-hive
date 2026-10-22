@@ -16,7 +16,8 @@ import { t, tPlural } from '../i18n.js';
 // gate (#134): the draft's só aprovação, a stage that runs nothing and awaits approval; verdicts: a prompt stage's own, in order
 // skill (#710): a skill stage's bare skill name, '' = none picked yet; specializedAgent: hive:<name>, '' = none
 // reviewers / judge / threshold / rubric (#877): an evaluate stage's rows, its threshold as typed and its rubric
-export interface StageDraft { id: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; skill: string; specializedAgent: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; reviewers: EvaluateRowDraft[]; judge: EvaluateRowDraft; threshold: string; rubric: string; savedName?: string }
+// clearSession (#494): the stage forgets its run's session when a transition takes the task out; kept as typed, sent only on a stage that runs an agent
+export interface StageDraft { id: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; skill: string; specializedAgent: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; clearSession: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; reviewers: EvaluateRowDraft[]; judge: EvaluateRowDraft; threshold: string; rubric: string; savedName?: string }
 /** One reviewer or the judge as the form edits it (#877): '' = absent model / specialized agent; focus unused on the judge. id: a React key, never sent. */
 export interface EvaluateRowDraft { id: string; agent: AgentId; model: string; specializedAgent: string; focus: string }
 /** What a stage's maps are keyed against: a source row's id and its name as typed. */
@@ -30,7 +31,7 @@ const rowFrom = (r: EvaluateRowDraft): EvaluateRow => ({ agent: r.agent, ...opti
 // #475, #877: a stage holding a worker sends its cap: a prompt, a skill or an evaluate stage
 const capKey = (c: StageDraft): Partial<Stage> => (c.maxWorkers.trim() === '' ? {} : { maxWorkers: Number(c.maxWorkers.trim()) });
 
-export const emptyStage = (defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({ id: crypto.randomUUID(), name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: emptyRow(defaultAgent), threshold: '7', rubric: '' });
+export const emptyStage = (defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({ id: crypto.randomUUID(), name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: emptyRow(defaultAgent), threshold: '7', rubric: '' });
 
 /** A number field's text: 0 or absent = no limit = empty. */
 export const numberField = (n?: number): string => (n ? String(n) : '');
@@ -54,6 +55,7 @@ export const stageDraft = (c: Stage, rows: StageRow[], defaultAgent: AgentId = D
   id: crypto.randomUUID(), name: c.name, savedName: c.name, session: c.session ?? 'new', model: c.model ?? '', agent: c.agent ?? '', // '' = the default agent (#516)
   from: byRow(c.from, rows), onStart: byRow(c.onStart, rows), gate: isGate(c), verdicts: c.verdicts ?? [], prompt: c.prompt ?? '', skill: c.skill ?? '', specializedAgent: c.specializedAgent ?? '', // #710
   action: c.action ?? '', after: c.after ?? '', approval: c.approval === true, handoff: c.handoff === true, // #692
+  clearSession: c.clearSession === true, // #494
   maxWorkers: c.maxWorkers === undefined ? '' : String(c.maxWorkers), // #475: not numberField, which reads 0 as empty; 0 here is a cap
   commands: c.commands ?? [], stopOnFailure: c.stopOnFailure ?? true, onMissing: c.onMissing ?? 'fail', // #755: the form starts the switch on and onMissing on fail; the file has no default
   ciChecks: c.ciChecks ?? 'required', checks: c.checks ?? [], rerunOnce: c.rerunOnce ?? false, // #834: the form starts on required with the switch off
@@ -83,6 +85,7 @@ const agentKeys = (c: StageDraft, runs: boolean): Partial<Stage> => ({
   ...(c.session === 'continue' ? { session: 'continue' as const } : {}), ...optional('model', c.model), ...(c.agent === '' ? {} : { agent: c.agent }),
   ...(c.approval ? { approval: true as const } : {}), ...capKey(c), // #475: a delete activity stage runs no worker, so it sends no cap
   ...(c.handoff && c.session !== 'continue' && runs ? { handoff: true as const } : {}), // #692: off under continue or with nothing to run
+  ...(c.clearSession && runs ? { clearSession: true as const } : {}), // #494: a stage that runs nothing has no run's session to clear
   ...(runs ? optional('specializedAgent', c.specializedAgent) : {}),
   ...(c.verdicts.length === 0 ? {} : { verdicts: c.verdicts }),
 });

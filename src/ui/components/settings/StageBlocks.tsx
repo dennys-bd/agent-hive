@@ -146,8 +146,8 @@ function SkillField({ id, stage, onUpdate, options }: BlockProps & { options?: A
   );
 }
 
-// The approval switch (#268) and the handoff switch (#692) of a stage that runs an agent. A blank prompt is a gate that never spawns, so the parser
-// refuses a handoff there; a skill stage always runs one (#710)
+// The approval switch (#268), the handoff switch (#692) and the clear-session switch (#494) of a stage that runs an agent. A blank prompt is a gate
+// that never spawns, so the parser refuses a handoff or a clear there; a skill stage always runs one (#710)
 function AgentSwitches({ id, stage, onUpdate }: BlockProps) {
   const hasRun = stage.action === 'skill' || stage.prompt.trim() !== '';
   const handoffAllowed = stage.session !== 'continue' && hasRun;
@@ -159,6 +159,11 @@ function AgentSwitches({ id, stage, onUpdate }: BlockProps) {
       <StageSwitch
         id={`${id}-handoff`} anchor={settingAnchor('settings.stages.handoff', stage.id)} label={t('settings.stages.handoff')} checked={stage.handoff && handoffAllowed} disabled={!handoffAllowed}
         hint={t(handoffHint)} onChange={(handoff) => onUpdate({ handoff })}
+      />
+      {/* #494: a stage with nothing to run holds no session to clear, so the parser refuses it there */}
+      <StageSwitch
+        id={`${id}-clearSession`} anchor={settingAnchor('settings.stages.clearSession', stage.id)} label={t('settings.stages.clearSession')} checked={stage.clearSession && hasRun} disabled={!hasRun}
+        hint={t(hasRun ? 'settings.stages.clearSession.hint' : 'settings.stages.clearSession.noPrompt')} onChange={(clearSession) => onUpdate({ clearSession })}
       />
     </>
   );
@@ -180,8 +185,8 @@ function StageSwitch({ id, anchor, label, hint, checked, disabled = false, onCha
 /** The Comb's commands a commands stage offers (#755) and the workspaces its names are checked against. */
 export interface CommandsProps { commands: readonly Command[]; workspaces: readonly string[] }
 
-/** Executa: the action; on a prompt or skill stage (#710) the run fields, the prompt or the skill, the approval switch (#268) and the handoff
- * switch (#692); on a commands stage its commands block (#755), on a wait for CI its block (#834), on an evaluate stage its reviewers, judge and rubric (#877). */
+/** Executa: the action; on a prompt or skill stage (#710) the run fields, the prompt or the skill, the approval switch (#268), the handoff
+ * switch (#692) and the clear-session switch (#494); on a commands stage its commands block (#755), on a wait for CI its block (#834), on an evaluate stage its reviewers, judge and rubric (#877). */
 export function StageRun({ id, stage, onUpdate, agents, defaultAgent, launchOptions, canContinue, commands, workspaces }: BlockProps & AgentProps & ContinueProps & CommandsProps) {
   const isGate = isGateDraft(stage);
   const runsAgent = isAgentDraft(stage);
