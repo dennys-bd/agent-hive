@@ -28,7 +28,7 @@ export interface DraftDeps {
 }
 export interface DraftCtx { deps: DraftDeps; config: Config; experiments: readonly Experiment[] }
 export interface DraftRefusal { status: number; error: string; message: string }
-export type Sections = Pick<ExperimentPatch, 'name' | 'base' | 'seed' | 'pace' | 'isolation' | 'blindness' | 'evaluation'>;
+export type Sections = Pick<ExperimentPatch, 'name' | 'arms' | 'base' | 'seed' | 'pace' | 'isolation' | 'blindness' | 'evaluation'>;
 
 export const draw = (): string => Array.from({ length: ID_CHARS }, () => BASE36[randomInt(BASE36.length)]).join('');
 export const errorCode = (err: unknown): string => (err as NodeJS.ErrnoException).code ?? (err instanceof Error ? err.constructor.name : typeof err);

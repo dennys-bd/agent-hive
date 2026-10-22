@@ -129,7 +129,7 @@ function withArchived(experiment: Experiment, on: boolean): Experiment {
 function applied(experiment: Experiment, event: ExperimentEvent): Experiment {
   switch (event.type) {
     // status, rounds and arms are the run's and the arms' own events', even when a route's patch carries them
-    case 'benchmarkEdited': return { ...experiment, ...event.patch, status: experiment.status, rounds: experiment.rounds, arms: experiment.arms };
+    case 'benchmarkEdited': return { ...experiment, ...event.patch, status: experiment.status, rounds: experiment.rounds }; // #478: arms come with a draft's replace
     case 'benchmarkArchived': return withArchived(experiment, event.archived);
     case 'benchmarkArmAdded': return armAdded(experiment, event.arm);
     case 'benchmarkArmEdited': return withArm(experiment, event.armId, (a) => ({ ...a, ...event.patch }));

@@ -867,7 +867,7 @@ export const BENCH_RUN_STATUSES: readonly BenchRunStatus[] = ['queued', 'running
 export const EXPERIMENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const BENCH_TOKEN = /^[a-z0-9]{4,16}$/;
 
-export type ExperimentPatch = Partial<Pick<Experiment, 'name' | 'base' | 'seed' | 'seedHash' | 'tasksHash' | 'pace' | 'isolation' | 'blindness' | 'evaluation'>>;
+export type ExperimentPatch = Partial<Pick<Experiment, 'name' | 'arms' | 'base' | 'seed' | 'seedHash' | 'tasksHash' | 'pace' | 'isolation' | 'blindness' | 'evaluation'>>;
 export type BenchRunPatch = Partial<Pick<BenchRun, 'status' | 'reason' | 'delivered' | 'total' | 'progress' | 'sleptMs' | 'metrics' | 'evaluation' | 'interventions' | 'inMedian' | 'unpriced'>>;
 /** An experiment's life (#458): the routes build what needs I/O and check the transitions; benchmark-reducer.ts only applies. */
 export type BenchmarkEvent =

@@ -27,10 +27,10 @@ test('benchmarkCreated appends the experiment the route built; an id already hel
   assert.equal(benchmarkReduce(held, { type: 'benchmarkCreated', experiment: experiment({ name: 'again' }) }), held);
 });
 
-test('benchmarkEdited spreads its patch and never touches status, rounds or arms (#458)', () => {
+test('benchmarkEdited spreads its patch and never touches status or rounds; arms come only in a patch (#458, #478)', () => {
   const start = stateWith(experiment({ status: 'done', rounds: [{ n: 1, runs: [] }] }));
   // a route's slip tsc would refuse: the reducer still keeps what only the run's own events may set
-  const patch = { name: 'Renamed', pace: { ...experiment().pace, pairs: 5 }, status: 'draft', rounds: [], arms: [] } as unknown as ExperimentPatch;
+  const patch = { name: 'Renamed', pace: { ...experiment().pace, pairs: 5 }, status: 'draft', rounds: [] } as unknown as ExperimentPatch;
   const edited = first(apply(start, { type: 'benchmarkEdited', id: 'exp-1', patch }));
   assert.deepEqual([edited.name, edited.pace.pairs, edited.status, edited.rounds.length, edited.arms.length], ['Renamed', 5, 'done', 1, 2]);
 });
@@ -175,4 +175,11 @@ test('benchmarkRunChanged stores the models off the price table (#473)', () => {
   const before = deepFreeze(stateWith(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('aaaa')] }] })));
   const after = benchmarkReduce(before, { type: 'benchmarkRunChanged', id: 'exp-1', token: 'aaaa', patch: { unpriced: ['model-z'] } });
   assert.deepEqual(after.benchmark.experiments[0].rounds[0].runs[0].unpriced, ['model-z']);
+});
+
+test('benchmarkEdited applies arms as it applies the other sections; status and rounds stay (#478)', () => {
+  const state = deepFreeze(stateWith(experiment()));
+  const arms = [arm('a2', 'A', { plugins: ['x'] }), arm('a9', 'B')];
+  const [edited] = benchmarkReduce(state, { type: 'benchmarkEdited', id: 'exp-1', patch: { arms, name: 'N' } }).benchmark.experiments;
+  assert.deepEqual([edited.arms, edited.name, edited.status, edited.rounds], [arms, 'N', 'draft', []]);
 });
