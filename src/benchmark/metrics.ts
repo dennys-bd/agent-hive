@@ -74,10 +74,15 @@ export function runMetrics(f: RunFacts): { metrics: BenchMetrics; unpriced: stri
 }
 
 export const INTERVENTIONS_FILE = 'interventions.json'; // 3.5's run mode writes it in the run's home
+export const RUN_ROUTE = '/benchmark-run'; // 3.5's run-mode route, which the daemon client reads; here so the client never pulls Express in
 
 const isText = (value: unknown): value is string => typeof value === 'string';
 const isIntervention = (value: unknown): value is Intervention =>
   isJsonObject(value) && isText(value.at) && isText(value.action) && isText(value.detail) && value.by === 'user';
+
+/** The entries that are interventions, each rebuilt from its four fields: whatever else one carries never reaches a run's state. */
+export const interventionsOf = (entries: readonly unknown[]): Intervention[] =>
+  entries.filter(isIntervention).map(({ at, action, detail, by }) => ({ at, action, detail, by }));
 
 async function interventionsText(home: string, log: (line: string) => void): Promise<string | undefined> {
   try {
@@ -106,8 +111,7 @@ export async function readInterventions(home: string, log: (line: string) => voi
     return [];
   }
   const entries: unknown[] = parsed;
-  // Rebuilt from the four fields: whatever else an entry carries never reaches the run's state
-  const kept = entries.filter(isIntervention).map(({ at, action, detail, by }) => ({ at, action, detail, by }));
+  const kept = interventionsOf(entries);
   if (kept.length < entries.length) log(`${home}: ${entries.length - kept.length} entries of ${INTERVENTIONS_FILE} dropped`);
   return kept;
 }
