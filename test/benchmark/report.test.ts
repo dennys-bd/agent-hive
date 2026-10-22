@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aggregate, type ArmColumn, type SpreadCell } from '../../src/benchmark/report.js';
+import { renderReport } from '../../src/benchmark/report-md.js';
 import type { Arm, ArmSetup, BenchMetrics, BenchRun, BenchRunEvaluation, Experiment } from '../../src/types.js';
 import { arm, deepFreeze, experiment, run, SETUP } from './fixtures.js';
 
@@ -167,4 +168,30 @@ test('aggregate leaves a deep-frozen experiment as it was (#476)', () => {
   const before = JSON.stringify(frozen);
   for (const filter of ['in', 'out'] as const) aggregate(frozen, filter, NOW);
   assert.equal(JSON.stringify(frozen), before);
+});
+
+test("report.md names every run's arm and carries the aggregate's medians, ranges and its seven bold cells (#476)", () => {
+  const e = fixture();
+  const md = renderReport(e, aggregate(e, 'in', NOW));
+  const lines = md.split('\n');
+  for (const line of [
+    '# Skills',
+    'experiment exp-1 · seed ssssss · plugin pppppp · 3 rounds · judged by claude · fable',
+    '- A · repo commands: aaaa01, aaaa02, aaaa03', '- B · plugin skills: 7d03b2, bbbb02, bbbb03',
+    '- C · plugin + codex: e30b71, cccc02, cccc03', '- D · tasks together: dddd01, dddd02, dddd03',
+    'Runs with interventions (enter the median, per-run overrides applied): B 7d03b2 (in the median), C e30b71 (in the median)',
+    'Round 2 slept 1× for 2h05 (need the machine for something else).',
+    '| execution | A · repo commands | B · plugin skills | C · plugin + codex | D · tasks together (only per run) |',
+    '| tokens | 3.1M (2.8M–3.4M) | 2.5M (2.2M–2.7M) | 2.9M (2.7M–3.0M) | **2.2M** (2.0M–2.5M) |',
+    '| cost | $41 ($37–$45) | $33 ($29–$36) | $36 ($34–$38) | **$29** ($26–$33) |',
+    '| time | 5h32 (5h10–5h50) | 4h48 (4h30–5h05) | 6h00 (timeout ×2) | **4h20** (4h05–4h40) |',
+    '| waiting | 22m (14m–30m) | 18m (9m–25m) | 31m (20m–40m) | **12m** (8m–20m) |',
+    '| build restarts | 2 (1–3) | **1** (0–2) | 4 (3–5) | 2 (1–3) |',
+    '| diff | +4120 −610, 38 files | +3480 −540, 33 files | +3900 −700, 36 files | +3610 −590, 34 files |',
+    '| tests green | 3/3 | 3/3 | 1/3 | 2/3 |',
+    '| S1 · S6 | 16/18 | **17/18** | 11/18 | 15/18 |',
+    '| behavior | 4 (3–4) | **5** (4–5) | 3 (2–4) | 4 (3–5) |',
+    '| spec and plan | 3 (3–4) | 4 (4–5) | 4 (4–4) | 3 (2–3) |',
+  ]) assert.ok(lines.includes(line), line);
+  assert.equal(md.match(/\*\*[^*]+\*\*/g)?.length, 7, 'tokens, cost, time, waiting, restarts, clicks and behavior');
 });
