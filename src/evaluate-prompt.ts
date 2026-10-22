@@ -28,7 +28,12 @@ export const JUDGE_SCHEMA = {
 } as const;
 
 const FINDINGS = z.object({ findings: z.array(z.object({ file: z.string().min(1), line: z.number().int().positive().nullable(), finding: z.string().min(1) })) });
-const SCORES = z.object({ scores: z.array(z.object({ dimension: z.string(), score: z.number().int().min(0).max(10), evidence: z.string().min(1) })) });
+/** The judge's score bounds (#474): #877's stage scores 0..10, the benchmark 1..5. zod holds them; JUDGE_SCHEMA carries none (Codex's strict schema). */
+export interface ScoreRange { min: number; max: number }
+export const DEFAULT_SCORE_RANGE: ScoreRange = { min: 0, max: 10 };
+
+const scoresOf = ({ min, max }: ScoreRange) =>
+  z.object({ scores: z.array(z.object({ dimension: z.string(), score: z.number().int().min(min).max(max), evidence: z.string().min(1) })) });
 
 const cut = (text: string, max: number, marker: string): string => (text.length <= max ? text : `${text.slice(0, max)}\n[${marker}]`);
 const cutForFiles = (text: string, max: number, what: string): string => cut(text, max, `${what} cut at ${max} characters: read the files for the rest`);
@@ -62,7 +67,7 @@ export function reviewerPrompt(work: Work, focus: string, instructions?: string)
 const findingText = (f: ReviewFinding): string => `- ${f.file}${f.line === undefined ? '' : `:${f.line}`} ${f.finding}`;
 
 /** The judge's prompt (#877): the dimensions numbered in the rubric's order, every reviewer's findings, then the work. */
-export function judgePrompt(work: Work, dimensions: readonly string[], findings: readonly { who: string; findings: ReviewFinding[] }[], instructions?: string): string {
+export function judgePrompt(work: Work, dimensions: readonly string[], findings: readonly { who: string; findings: ReviewFinding[] }[], instructions?: string, range: ScoreRange = DEFAULT_SCORE_RANGE): string {
   const listed = findings.map((r) => [r.who, ...(r.findings.length === 0 ? ['- no finding'] : r.findings.map(findingText))].join('\n')).join('\n\n');
   const read = findings.length === 0 ? 'No reviewer ran: read the work yourself.' : block('findings', cut(listed, FINDINGS_MAX, `findings cut at ${FINDINGS_MAX} characters`));
   return withInstructions(instructions, [
@@ -70,7 +75,7 @@ export function judgePrompt(work: Work, dimensions: readonly string[], findings:
     RULES_LINE, DATA_LINE,
     `The rubric, one dimension per line:\n${dimensions.map((d, i) => `${i + 1}. ${d}`).join('\n')}`,
     `The reviewers' findings:\n\n${read}`, workText(work),
-    `Give exactly ${dimensions.length} scores, one per dimension in this order: an integer from 0 to 10 and the evidence for it (files and lines).`,
+    `Give exactly ${dimensions.length} scores, one per dimension in this order: an integer from ${range.min} to ${range.max} and the evidence for it (files and lines).`,
   ].join('\n\n'));
 }
 
@@ -82,8 +87,8 @@ export function parseFindings(answer: string): { findings: ReviewFinding[] } | {
 
 /** The judge's scores (#877, decision 4): one per dimension, each named by the rubric's rendered line, never by the judge's own words; each
  * evidence cut at EVIDENCE_MAX. */
-export function parseScores(answer: string, dimensions: readonly string[]): { scores: JudgeScore[] } | { reason: string } {
-  const parsed = parseAnswer(answer, SCORES);
+export function parseScores(answer: string, dimensions: readonly string[], range: ScoreRange = DEFAULT_SCORE_RANGE): { scores: JudgeScore[] } | { reason: string } {
+  const parsed = parseAnswer(answer, scoresOf(range));
   if ('reason' in parsed) return parsed;
   const { scores } = parsed.data;
   if (scores.length !== dimensions.length) return { reason: `${scores.length} scores for ${dimensions.length} dimensions` };
