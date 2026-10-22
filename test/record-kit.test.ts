@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { prsOf } from '../src/activities.js';
+import { activityOf, prsOf } from '../src/activities.js';
 import { initialState } from '../src/orchestrator.js';
-import { liveRecord, taskTotals, withPr, withRun, withTurn } from '../src/record-kit.js';
-import type { AgentId, State, Task, TaskUsage, UsagePart, Worker } from '../src/types.js';
+import { forgetSession, liveRecord, taskTotals, withPr, withRun, withTurn } from '../src/record-kit.js';
+import { sessionsOf } from '../src/tasks.js';
+import type { AgentId, Session, State, Task, TaskUsage, UsagePart, Worker } from '../src/types.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
 
 const URL = 'https://github.com/o/r/pull/7';
@@ -62,4 +63,16 @@ test('taskTotals counts a running commands stage\'s worker, which holds no activ
   const commands = { stage: 'checks', at: 0, ptyId: 'p1', runId: 'p1', failed: [], workerId: 'wc', started: [] };
   const state = { ...withWork({ ...initialState(0), tasks: [TASK] }, 'item1', { commands }), workers: [{ id: 'wc', status: 'working' as const, stage: 'checks', startedAt: ago(2 * MINUTE) }] };
   assert.deepEqual(taskTotals(state, TASK, NOW).parts, [part('checks', undefined, 0, 2 * MINUTE)]);
+});
+
+test('forgetSession takes the session off its record and off the activity\'s sessionId when it names it; forgetting another session keeps the sessionId (#304, #494)', () => {
+  const [run, other] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
+  const at = '2026-10-22T10:00:00.000Z';
+  const task: Task = { item: { itemId: 'board:1', id: '1', title: 'T', body: '', url: '', source: 'board' }, stage: 'spec', boardColumn: '', auto: true, workspace: 'hive' };
+  const session = (id: string): Session => ({ id, startedAt: at, stages: ['spec'], lastUsedAt: at, agent: 'claude' });
+  const state = withWork({ ...initialState(0), tasks: [task] }, 'board:1', { sessionId: run }, { sessions: [session(run), session(other)] });
+  const ran = forgetSession(state, task, run);
+  assert.deepEqual([sessionsOf(ran, 'board:1').map((s) => s.id), activityOf(ran, 'board:1')?.sessionId], [[other], undefined]);
+  const kept = forgetSession(state, task, other);
+  assert.deepEqual([sessionsOf(kept, 'board:1').map((s) => s.id), activityOf(kept, 'board:1')?.sessionId], [[run], run]);
 });

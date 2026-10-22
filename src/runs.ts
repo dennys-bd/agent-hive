@@ -4,7 +4,7 @@ import { withoutHold } from './approval.js';
 import { withLaunch } from './launch-pick.js';
 import { pendingEnd, withoutPending } from './handoff.js';
 import { activityOf, ensureLocal, localActivityId, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withLocalActivities } from './activities.js';
-import { markFreeRun, sessionBaseline, touchFreeSession, withoutSession, withResult } from './record-kit.js';
+import { markFreeRun, sessionBaseline, touchFreeSession, forgetSession, withResult } from './record-kit.js';
 import { canOpenSession, inAction, sessionsOf, taskId, runningFirst, stageOf, continuable } from './tasks.js';
 import { forgetTerminals, slept, terminalSlug } from './terminal-runs.js';
 import { capturable, liveRuns, stageSession, startMode } from './task-runs.js';
@@ -147,7 +147,6 @@ export function continueStage(state: State, itemId: string): Reduced {
 
 const unmarked = ({ deleting: _deleting, ...activity }: Activity): Activity => activity;
 const unqueued = ({ handover: _handover, handoffPending: _handoffPending, handoffFeedback: _handoffFeedback, ...activity }: Activity): Activity => activity;
-const unresumed = ({ sessionId: _sessionId, ...activity }: Activity): Activity => activity;
 
 /** Restart (#283): the stage's prompt in a new session, once the server brought the worktree back to the stage's starting commit; `branch` is
  * the new branch it checked out when the old one was published. Only while startMode offers it. */
@@ -240,9 +239,7 @@ export function clearSessions(state: State, { activityId, sessionId }: Extract<H
   const id = recordTaskId(state, activityId); // a record id: a deleted activity's kept session clears too (#629)
   const task = state.tasks.find((c) => taskId(c) === id);
   if (!task || !continuable(task, state).some((s) => s.id === sessionId)) return none(state);
-  const live = activityOf(state, id);
-  const forgot = live?.sessionId === sessionId ? withActivity(state, unresumed(live)) : state;
-  return none(withoutSession(forgot, task, sessionId));
+  return none(forgetSession(state, task, sessionId));
 }
 
 // Every run opened on a task puts it on top of its stage, last among the live tasks, as a stage start does (#117, #356). A task already

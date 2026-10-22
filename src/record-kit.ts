@@ -2,7 +2,7 @@ import { activityOf, addUsage, heldRun, recordOf, recordsOf, recordWithSession, 
 import { NO_USAGE, runTime, sessionsOf, taskId, titled, workersOf } from './tasks.js';
 import { recordedIssues } from './decomposition.js';
 import { withLaunch } from './launch-pick.js';
-import type { ActivityRecord, AgentId, DeleteActivityScope, LaunchPick, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
+import type { Activity, ActivityRecord, AgentId, DeleteActivityScope, LaunchPick, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
 
 // The record side of a task's runs (#629): its sessions, its usage, its result and its PRs, written to the records where tasks.ts wrote them
 // on the task. New work lands in the live activity's record; a session already listed is updated in the record that holds it. Pure.
@@ -112,6 +112,16 @@ export const keepRecord = (state: State, task: Task, scope: DeleteActivityScope)
 export function withoutSession(state: State, task: Task, sessionId: string): State {
   const holder = recordWithSession(state, taskId(task), sessionId);
   return holder ? withRecord(state, { ...holder, sessions: holder.sessions.filter((s) => s.id !== sessionId) }) : state;
+}
+
+const unresumed = ({ sessionId: _sessionId, ...activity }: Activity): Activity => activity;
+
+/** A session forgotten (#304, #494): off the record holding it, and off the activity's sessionId when it names it, so nothing resumes it. The
+ * panel's clear and a clearSession stage's end share it. */
+export function forgetSession(state: State, task: Task, sessionId: string): State {
+  const live = activityOf(state, taskId(task));
+  const forgot = live?.sessionId === sessionId ? withActivity(state, unresumed(live)) : state;
+  return withoutSession(forgot, task, sessionId);
 }
 
 /** A spawn that never started (#283): the session its `new` run appended is forgotten, so the stage reads as not run and the task offers Start
