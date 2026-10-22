@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { prBody } from '../../src/benchmark/pr.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { dropRunFiles, openPr, PrStepError, prBody, type PrInput } from '../../src/benchmark/pr.js';
+import { fakeLog } from '../fakes.js';
 import { aggregate } from '../../src/benchmark/report.js';
 import { bestRun, endedRuns, prTitle, suggestBranch } from '../../src/benchmark/pr-pick.js';
 import type { BenchRun, Experiment } from '../../src/types.js';
-import { experiment, run } from './fixtures.js';
+import { type Call, experiment, fakeRun, line, PR_ROOT, PR_URL, prAnswers, run } from './fixtures.js';
 
 const AT = '2026-10-22T08:00:00.000Z';
 // A run judged with these scores, done unless the patch says otherwise
@@ -62,4 +65,104 @@ test('prBody with the summary: the experiment, the arm, the run and its round, t
     '- tokens: 2.5M', '- cost: $33', '- time: 4h48', '- tests green: 1/1', '- fidelity: 4', '- behavior: 5', '',
     'seed ssssss · tasks tttttt · plugin pppppp', '',
   ].join('\n'));
+});
+
+const REPO = '/work/hive';
+const WT = '/work/hive/.hive/worktrees/bench-pr-aaaa1';
+const REF = 'refs/hive/bench/aaaa1';
+const INPUT: PrInput = {
+  experimentId: 'exp-1', token: 'aaaa1', workspace: { path: REPO, benchmarkPrIn: 'worktree' }, repoGit: '/hive/benchmark/exp-1/repo.git',
+  base: 'main', branch: 'feat/skills', title: 'feat: Skills', body: 'Opened from a benchmark run.\n\n- One\n',
+};
+const CHECKOUT: PrInput = { ...INPUT, workspace: { path: REPO, benchmarkPrIn: 'checkout' } };
+const FETCH = [
+  'git ls-remote --heads origin refs/heads/feat/skills', `git fetch /hive/benchmark/exp-1/repo.git +refs/heads/work/aaaa1:${REF}`, 'git fetch origin main',
+  `git rev-list --max-parents=0 ${REF}`, `git rev-list --count ${PR_ROOT}..${REF}`, 'git rev-parse --short origin/main',
+];
+const REBASE = `git rebase --onto origin/main ${PR_ROOT} feat/skills`;
+const DIFF = 'git diff --name-only origin/main HEAD -- .claude/settings.local.json scripts/experiment test/experiment';
+const PUSH = 'git push -u origin feat/skills';
+const GH = 'gh pr create --base main --head feat/skills --title feat: Skills --body-file BODY';
+const shown = (calls: Call[]): string[] => calls.map((c) => line(c).replace(/--body-file \S+/, '--body-file BODY'));
+
+// openPr over one recorded runner for git and gh, so both are on one ordered list; the body is read while gh runs, before its folder goes
+function sequence(answer = prAnswers()) {
+  const bodies: string[] = [];
+  const { run: exec, calls } = fakeRun((call) => {
+    if (call.file === 'gh') bodies.push(readFileSync(call.args[call.args.indexOf('--body-file') + 1], 'utf8'));
+    return answer(call);
+  });
+  const { log, lines } = fakeLog();
+  return { deps: { exec, gh: exec, log }, calls, bodies, lines };
+}
+
+test('openPr in a temporary worktree: fetch, branch, rebase, push and gh pr create in that order, then the worktree and the run ref go; it answers the URL (#477)', async () => {
+  const s = sequence();
+  assert.deepEqual(await openPr(s.deps, INPUT), { url: PR_URL });
+  assert.deepEqual(shown(s.calls), [
+    ...FETCH, `git worktree add -b feat/skills ${WT} ${REF}`, REBASE, DIFF, PUSH, GH,
+    `git worktree remove --force ${WT}`, 'git worktree prune', `git update-ref -d ${REF}`,
+  ]);
+  assert.equal(s.calls[0].cwd, REPO);
+  assert.deepEqual(s.calls.filter((c) => c.args[0] === 'rebase' || c.file === 'gh').map((c) => c.cwd), [WT, WT], 'the rebase and gh run in the worktree');
+  assert.deepEqual(s.bodies, [INPUT.body]);
+  assert.equal(existsSync(dirname(s.calls.find((c) => c.file === 'gh')?.args.at(-1) ?? '/')), false, 'the body file\'s folder is removed');
+});
+
+test('openPr in the workspace\'s checkout: clean, remembered, branched, rebased, pushed and opened, then back on its branch, or on its commit when detached (#477)', async () => {
+  const s = sequence();
+  assert.deepEqual(await openPr(s.deps, CHECKOUT), { url: PR_URL });
+  assert.deepEqual(shown(s.calls), [
+    ...FETCH, 'git status --porcelain', 'git symbolic-ref --short -q HEAD', `git checkout -b feat/skills ${REF}`, REBASE, DIFF, PUSH, GH,
+    'git checkout main', `git update-ref -d ${REF}`,
+  ]);
+  assert.ok(s.calls.every((c) => c.cwd === REPO), 'every call runs in the checkout');
+  const sha = 'c'.repeat(40);
+  const detached = sequence(prAnswers({ 'git symbolic-ref': Object.assign(new Error('not a symbolic ref'), { code: 1 }), 'git rev-parse HEAD': `${sha}\n` }));
+  assert.deepEqual(await openPr(detached.deps, CHECKOUT), { url: PR_URL });
+  assert.deepEqual(shown(detached.calls).slice(-2), [`git checkout ${sha}`, `git update-ref -d ${REF}`]);
+});
+
+test('a rebase conflict answers its files after the abort; the worktree is removed, or the checkout is back on its branch; the branch is deleted, the run ref kept (#477)', async () => {
+  const conflict = prAnswers({ 'git rebase --onto': new Error('CONFLICT (content)'), 'git diff --name-only --diff-filter=U': 'src/a.ts\nsrc/b.ts\n' });
+  const wt = sequence(conflict);
+  assert.deepEqual(await openPr(wt.deps, INPUT), { error: 'conflict', files: ['src/a.ts', 'src/b.ts'] });
+  assert.deepEqual(shown(wt.calls).slice(-6), [REBASE, 'git diff --name-only --diff-filter=U', 'git rebase --abort', `git worktree remove --force ${WT}`, 'git worktree prune', 'git branch -D feat/skills']);
+  const co = sequence(conflict);
+  assert.deepEqual(await openPr(co.deps, CHECKOUT), { error: 'conflict', files: ['src/a.ts', 'src/b.ts'] });
+  assert.deepEqual(shown(co.calls).slice(-5), [REBASE, 'git diff --name-only --diff-filter=U', 'git rebase --abort', 'git checkout main', 'git branch -D feat/skills']);
+  for (const s of [wt, co]) assert.equal(shown(s.calls).some((l) => l.startsWith('git push') || l.startsWith('gh') || l.startsWith('git update-ref')), false);
+});
+
+test('the run files: one chore commit restoring what the base has and removing what it lacks, only when a run file differs (#477)', async () => {
+  const s = sequence(prAnswers({ [DIFF]: 'scripts/experiment/run.ts\n.claude/settings.local.json\n', 'git cat-file -e origin/main:.claude/settings.local.json': new Error('missing') }));
+  assert.deepEqual(await openPr(s.deps, INPUT), { url: PR_URL });
+  const calls = shown(s.calls);
+  const from = calls.indexOf(DIFF);
+  assert.deepEqual(calls.slice(from, from + 7), [
+    DIFF, 'git cat-file -e origin/main:scripts/experiment/run.ts', 'git cat-file -e origin/main:.claude/settings.local.json',
+    'git restore --source origin/main --staged --worktree -- scripts/experiment/run.ts', 'git rm -q -- .claude/settings.local.json',
+    'git commit -q -m chore: drop run files', PUSH,
+  ]);
+  const { run: git, calls: clean } = fakeRun(prAnswers());
+  assert.equal(await dropRunFiles(git, 'main'), false);
+  assert.deepEqual(clean.map(line), [DIFF], 'no run file differs: no commit');
+});
+
+test('a refusal stops the sequence: a branch already on origin, a run with no commit after its baseline, a dirty checkout with its files (#477)', async () => {
+  const exists = sequence(prAnswers({ 'git ls-remote': `${'d'.repeat(40)}\trefs/heads/feat/skills\n` }));
+  assert.deepEqual(await openPr(exists.deps, INPUT), { error: 'branch-exists' });
+  assert.deepEqual(shown(exists.calls), [FETCH[0]]);
+  const empty = sequence(prAnswers({ 'git rev-list --count': '0\n' }));
+  assert.deepEqual(await openPr(empty.deps, INPUT), { error: 'no-commits' });
+  assert.deepEqual(shown(empty.calls), FETCH);
+  const dirty = sequence(prAnswers({ 'git status --porcelain': ' M src/x.ts\n?? notes.txt\nR  old.ts -> new.ts\n' }));
+  assert.deepEqual(await openPr(dirty.deps, CHECKOUT), { error: 'dirty', files: ['src/x.ts', 'notes.txt', 'new.ts'] });
+  assert.deepEqual(shown(dirty.calls), [...FETCH, 'git status --porcelain']);
+});
+
+test('a failed step rejects naming it, and the cleanup still runs: a push that fails leaves no worktree and no local branch (#477)', async () => {
+  const s = sequence(prAnswers({ 'git push': new Error('rejected') }));
+  await assert.rejects(openPr(s.deps, INPUT), (err: unknown) => err instanceof PrStepError && err.step === 'push');
+  assert.deepEqual(shown(s.calls).slice(-3), [`git worktree remove --force ${WT}`, 'git worktree prune', 'git branch -D feat/skills']);
 });

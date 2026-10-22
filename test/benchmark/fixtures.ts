@@ -145,3 +145,20 @@ export function benchConfig(repo: string): Config {
 
 export const benchExperiment = (patch: Partial<Experiment> = {}): Experiment =>
   experiment({ workspace: 'bench', seed: { ...experiment().seed, workspace: 'bench', commit: SHA }, ...patch });
+
+export const PR_ROOT = 'b'.repeat(40);
+export const PR_URL = 'https://github.com/owner/repo/pull/7';
+
+// The git and gh answers of a benchmark PR's sequence (#477): no branch on origin, three commits after the orphan root, a clean checkout on
+// main, gh answering the PR's URL. An override whose key starts a call's line answers that call instead; every other call answers ''.
+export function prAnswers(overrides: Record<string, string | Error> = {}): (call: Call) => string | Error {
+  const defaults: [string, string][] = [
+    ['git rev-list --max-parents=0', `${PR_ROOT}\n`], ['git rev-list --count', '3\n'], ['git rev-parse --short', 'a42b2fc\n'],
+    ['git symbolic-ref --short -q HEAD', 'main\n'], ['gh pr create', `${PR_URL}\n`],
+  ];
+  return (call) => {
+    const text = line(call);
+    const hit = Object.entries(overrides).find(([prefix]) => text.startsWith(prefix)) ?? defaults.find(([prefix]) => text.startsWith(prefix));
+    return hit === undefined ? '' : hit[1];
+  };
+}
