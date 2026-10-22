@@ -19,6 +19,7 @@ import { isTrustedHost } from './trusted-hosts.js';
 import { parseEditorConfig } from './editor-config.js';
 import { parseReviewer } from './reviewer-config.js';
 import { parseNestedRepos } from './config-nested.js';
+import { parseBenchmarkPrIn } from './config-benchmark-pr.js';
 import { parseSignals } from './signals-config.js';
 import { parseMcp } from './mcp-settings.js';
 import { MCP_DEFAULTS, type McpSettings, AGENT_IDS, END, REVIEWER_DEFAULTS, type ReviewerConfig, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, isPlanSource, PLAN_SOURCES, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
@@ -354,6 +355,7 @@ function parseWorkspace(raw: unknown, field: string): Workspace {
     memoryCap: requireIntFrom(raw.memoryCap, `${field}.memoryCap`, MEMORY_CAP_MIN, MEMORY_CAP_MAX), // #73: required, no migration; read last, so an older key's problem keeps its own message
     color: requireColor(raw.color, `${field}.color`), // #78: required
     ...parseNestedRepos(raw, field), // #653: required, read last, so an older key's problem keeps its own message
+    benchmarkPrIn: parseBenchmarkPrIn(raw.benchmarkPrIn, field), // #477: required, read last, so an older key's problem keeps its own message
   };
 }
 

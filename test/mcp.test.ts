@@ -316,7 +316,7 @@ test('hive_conventions answers the Hive\'s language, the stage\'s approval and i
 test('conventionsAnswer: a stage run reads its stage\'s approval; a free session has no stage; a local session neither (#692, #318)', () => {
   const config = {
     language: 'pt' as const,
-    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }] },
+    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }] },
   };
   const task: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'T', body: '', url: '' }, stage: 'spec', boardColumn: '', auto: true, workspace: 'site' };
   const state = {
@@ -431,7 +431,7 @@ test('hive_remember saves a lesson with its task and stage from a stage run and 
 });
 
 test('hive_remember refuses an unknown worker, a text that is not one line of 1 to 300 characters, a secret and a lesson that would pass the workspace\'s memoryCap, and writes nothing for them (#797, #73)', async (t) => {
-  const { base, home, records, ptyId } = await start(t, [GITHUB_ENTRY], { memoryCap: 500, color: 'oklch(0.72 0.12 25)' });
+  const { base, home, records, ptyId } = await start(t, [GITHUB_ENTRY], { memoryCap: 500, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' });
   const client = await connect(t, base, ptyId);
   assert.deepEqual(await call(await connect(t, base, 'ghost'), 'hive_remember', { kind: 'fact', text: 'x' }), { text: UNKNOWN_WORKER_MESSAGE, isError: true });
   assert.deepEqual(await call(client, 'hive_remember', { kind: 'fact', text: 'two\nlines' }), { text: MEMORY_TEXT_MESSAGE, isError: true });
@@ -473,7 +473,7 @@ test('forkConventions answers a fork\'s PR target, both repositories, the base r
     if (args.includes('get-url')) return { stdout: urls[args.at(-1) ?? ''] ?? '' };
     return { stdout: args.includes('symbolic-ref') ? 'upstream/master\n' : '' };
   };
-  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' };
+  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' };
   const original = { pr: 'original', original: 'acme/app', fork: 'me/app', baseRemote: 'upstream', base: 'master' };
   assert.deepEqual(await forkConventions(exec, app, {}), original);
   assert.deepEqual(await forkConventions(exec, { ...app, baseBranch: 'devtest' }, { baseBranch: 'main' }), { ...original, base: 'devtest' });
@@ -554,7 +554,7 @@ test('a tool turned off in mcp.off leaves tools/list and a call to it gets the S
 test('nestedConventions answers each nested repo with its GitHub repository, none for one off GitHub; conventionsAnswer carries the list, [] without one (#653)', async () => {
   const urls: Record<string, string> = { '/app/docs': 'https://github.com/acme/docs.git\n', '/app/ee': 'https://gitlab.com/acme/ee.git\n' };
   const exec: Exec = async (_file, args) => ({ stdout: urls[args[1]] ?? '' });
-  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: null, nestedRepos: ['docs', 'ee'], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' };
+  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: null, nestedRepos: ['docs', 'ee'], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' };
   const nested = await nestedConventions(exec, app);
   assert.deepEqual(nested, [{ path: 'docs', repository: 'acme/docs' }, { path: 'ee' }]);
   assert.deepEqual(await nestedConventions(exec, undefined), []);

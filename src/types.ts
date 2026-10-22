@@ -1281,6 +1281,12 @@ export interface ForkSyncResult {
 /** A sync before its start is known (#854): what syncFork and POST /workspaces/:name/sync answer. */
 export type ForkSyncAnswer = Omit<ForkSyncResult, 'sha' | 'at'>;
 
+/** Where a benchmark run's PR is rebased and pushed from (#477): a temporary worktree of the workspace's repository, or its own checkout. */
+export const BENCHMARK_PR_IN = ['worktree', 'checkout'] as const;
+export type BenchmarkPrIn = (typeof BENCHMARK_PR_IN)[number];
+/** The setup form's default for a new workspace (#477): the checkout is never touched unless asked. */
+export const BENCHMARK_PR_IN_NEW: BenchmarkPrIn = 'worktree';
+
 /** Where the code lives (#179): a named git repo on this machine. A Comb has one or more; the name is the key tasks and the source use. */
 export interface Workspace {
   name: string; // WORKSPACE_NAME: safe in a URL segment and a select value; unique in the Comb
@@ -1291,6 +1297,7 @@ export interface Workspace {
   fork: WorkspaceFork | false | null; // #854: required; null = never decided (Settings may suggest one), false = not a fork, never suggested again
   nestedRepos: string[]; // #653: required; relative paths of nested repos, each a git top level this workspace's git ignores (POST /settings checks it); [] = none
   notNestedRepos: string[]; // #653: required; paths the user said are not nested repos: never suggested again
+  benchmarkPrIn: BenchmarkPrIn; // #477: required; where a benchmark run's PR is rebased and pushed from
   baseBranch?: string; // #854: this workspace's base branch, over config.baseBranch; absent = the general default
   setup?: string; // the worktree setup (#299): COPY / RUN / LOAD lines, run once in each new worktree; absent = none
   setupTimeout?: string; // #511: per RUN step, a TIMEOUT text ("5m"); absent = no limit

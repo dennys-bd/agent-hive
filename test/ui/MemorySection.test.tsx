@@ -115,7 +115,7 @@ test('a workspace the live config does not have yet says so and keeps the dialog
 });
 
 test('typing the name of a workspace that is not saved never asks for /workspaces/<partial>/memory (#797)', async () => {
-  const row: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] };
+  const row: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] };
   const Editor = ({ name }: { name: string }) => <WorkspacesEditor workspaces={[{ ...row, name }]} savedNames={['hive']} onChange={vi.fn()} onCapSaved={vi.fn()} />;
   const { rerender } = render(<Editor name="hive" />);
   expect(await screen.findByText('87 de 4.000 caracteres')).toBeInTheDocument();
@@ -126,7 +126,7 @@ test('typing the name of a workspace that is not saved never asks for /workspace
 });
 
 test('the memory section closes each workspace card, after the environment, with its hint (#797)', async () => {
-  const row: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] };
+  const row: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] };
   render(<WorkspacesEditor workspaces={[row]} savedNames={['hive']} onChange={vi.fn()} onCapSaved={vi.fn()} />);
   const hive = within(screen.getByRole('region', { name: 'hive' }));
   expect(hive.getAllByRole('heading', { level: 3 }).map((h) => h.textContent).slice(-2)).toEqual(['ambiente', 'memória']);

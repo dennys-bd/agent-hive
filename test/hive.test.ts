@@ -281,7 +281,7 @@ test('a hive.config.json without rateLimitWaitMinutes opens setup mode with the 
 
 test('a hive.config.json whose workspace has no nestedRepos opens setup mode with the parse error, prefilled with none (#653)', async (t) => {
   const { home, repo } = await tempHive(t);
-  const before = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }; // a workspace from before #653
+  const before = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }; // a workspace from before #653
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, workspaces: [before] })));
   const { server, port } = await bootHive(home);
   t.after(() => server.close());
@@ -290,6 +290,18 @@ test('a hive.config.json whose workspace has no nestedRepos opens setup mode wit
   assert.equal(info.error, 'hive.config.json: "comb.workspaces[0].nestedRepos" must be a list of relative paths');
   const [workspace] = info.config?.comb.workspaces ?? [];
   assert.deepEqual([workspace?.nestedRepos, workspace?.notNestedRepos], [[], []], 'the form opens with no nested repo');
+});
+
+test('a hive.config.json whose workspace has no benchmarkPrIn opens setup mode with the parse error, prefilled with a temporary worktree (#477)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const before = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }; // a workspace from before #477
+  await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, workspaces: [before] })));
+  const { server, port } = await bootHive(home);
+  t.after(() => server.close());
+  const info = await settingsInfo(home, port);
+  assert.equal(info.configured, false);
+  assert.equal(info.error, 'hive.config.json: "comb.workspaces[0].benchmarkPrIn" must be one of: worktree, checkout');
+  assert.equal(info.config?.comb.workspaces[0]?.benchmarkPrIn, 'worktree', 'the form opens with a temporary worktree');
 });
 
 test('a hive.config.json without sidebarsPerView opens setup mode with the parse error, prefilled with the defaults; a field that is not a boolean still fails the boot (#821)', async (t) => {

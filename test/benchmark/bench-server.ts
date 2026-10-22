@@ -50,6 +50,7 @@ export async function serve(t: TestContext, opts: { experiments?: Experiment[]; 
   app.use(express.json({ limit: '2mb' }));
   registerBenchmarkRoutes(app, {
     requireLive: () => ({ runtime: { config: benchConfig(repo) }, state }),
+    getLive: () => ({ runtime: { config: benchConfig(repo) }, state }),
     dispatch: async (event: BenchmarkEvent) => { state = benchmarkReduce(state, event); },
     home, pluginSource, exec, log, version: async () => '0.1.0', now: () => new Date(AT),
   });

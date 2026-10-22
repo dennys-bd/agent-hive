@@ -217,3 +217,8 @@ test('removing the last arm and a 27th arm answer 409 and change nothing (#459)'
   assert.deepEqual(errorOf(await call(bench, 'POST', `${E}/exp-2/arms`, { from: 'base' })), [409, 'no_letter']);
   assert.equal(bench.state(), before);
 });
+
+test('registerBenchmarkRoutes mounts the PR routes: a preview of an unknown experiment answers the PR route\'s own 404 (#477)', async (t) => {
+  const bench = await serve(t);
+  assert.deepEqual(errorOf(await call(bench, 'GET', `${E}/nope/runs/aaaa1/pr`)), [404, 'no such experiment']);
+});
