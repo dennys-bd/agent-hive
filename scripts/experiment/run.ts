@@ -32,7 +32,7 @@ interface Night { root: string; state: string; dir: string; store: Store<Manifes
 // An attempt the last call left open: its daemon stopped if still alive, its task worktrees and branches gone; its run branch stays
 async function dropInterrupted(state: string, token: string, git: Run, docs: Run): Promise<void> {
   await stopDaemon(runHome(state, token)).catch(() => false);
-  await dropRunWorktrees(git, runPrefix(token)).catch(() => undefined);
+  await dropRunWorktrees(git, runPrefix(token), await repoRoot(git)).catch(() => undefined);
   await pruneDocs(docs).catch(() => undefined);
   log(`${token} was interrupted: its slot starts over with a new token`);
 }
@@ -88,7 +88,7 @@ async function execute(night: Night, ref: RunRef, alone: boolean): Promise<void>
   } catch (err) {
     log(`${ref.id} (${token}) failed: ${message(err)}`);
     await recordFailure(night.dir, token, message(err), alone);
-    await dropRunWorktrees(night.git, runPrefix(token)).catch(() => undefined);
+    await dropRunWorktrees(night.git, runPrefix(token), await repoRoot(night.git)).catch(() => undefined);
     await pruneDocs(night.docs).catch(() => undefined);
   }
   await night.store.update((value) => endAttempt(value, token, outcome));

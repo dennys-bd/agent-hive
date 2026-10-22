@@ -76,7 +76,7 @@ test('dropRunWorktrees removes only the worktrees and branches of this run prefi
     if (call.args[0] === 'ls-remote') return 'abc\trefs/heads/hive/MAAAAAA-2-z\n';
     return '';
   });
-  await dropRunWorktrees(run, 'MAAAAAA');
+  await dropRunWorktrees(run, 'MAAAAAA', '/repo');
   const done = calls.map(line);
   assert.ok(done.includes('git worktree remove --force /repo/.hive/worktrees/hive-maaaaaa-1-x'));
   assert.ok(done.includes('git branch --list hive/MAAAAAA-* --format=%(refname:short)'));
@@ -128,7 +128,7 @@ test('nestedBaseline drops every file naming the harness or the decomposition, a
 test('dropRunWorktrees clears each nested clone before the clone, and never touches another prefix or the run branch (#471)', async () => {
   const porcelain = (root: string): string => [`worktree ${root}\nHEAD a\nbranch refs/heads/main`, `worktree ${root}/.hive/worktrees/x\nHEAD b\nbranch refs/heads/hive/ABCD1234-1-x`, `worktree ${root}/w\nHEAD c\nbranch refs/heads/work/abcd1234`].join('\n\n');
   const { run, calls } = fakeRun((call) => (call.args[1] === 'list' && call.args[0] === 'worktree' ? `${porcelain(call.cwd ?? '')}\n` : ''));
-  await dropRunWorktrees(inDir(run, '/e/clone'), 'ABCD1234', ['/e/clone/docs']);
+  await dropRunWorktrees(inDir(run, '/e/clone'), 'ABCD1234', '/e/clone', ['/e/clone/docs']);
   const cwds = calls.filter((c) => c.args[0] === 'worktree' && c.args[1] === 'remove').map((c) => c.cwd);
   assert.deepEqual(cwds, ['/e/clone/docs', '/e/clone'], 'a nested worktree sits inside its task worktree: its repo forgets it first');
   assert.ok(!calls.map(line).some((l) => l.includes('work/abcd1234') || l.endsWith(' main')));
@@ -193,4 +193,12 @@ test('a preparation that fails leaves no origin behind, so the next call prepare
   const lines: string[] = [];
   await prepareExperiment(experiment(), { hiveDir, config: mainConfig(), exec: prepGit().run, log: (l) => lines.push(l) });
   assert.deepEqual(lines, ['benchmark exp-1: origins and clone ready']);
+});
+
+test('dropRunWorktrees removes only worktrees inside the clone folder: a forged .git/worktrees entry cannot aim it elsewhere (#471)', async () => {
+  const porcelain = ['worktree /e/clone/.hive/worktrees/x\nHEAD b\nbranch refs/heads/hive/ABCD1234-1-x', 'worktree /home/u/precious\nHEAD c\nbranch refs/heads/hive/ABCD1234-2-y', 'worktree /e/clone-evil/w\nHEAD d\nbranch refs/heads/hive/ABCD1234-3-z'].join('\n\n');
+  const { run, calls } = fakeRun((call) => (call.args[0] === 'worktree' && call.args[1] === 'list' ? `${porcelain}\n` : ''));
+  await dropRunWorktrees(run, 'ABCD1234', '/e/clone');
+  const removed = calls.filter((c) => c.args[0] === 'worktree' && c.args[1] === 'remove').map((c) => c.args[3]);
+  assert.deepEqual(removed, ['/e/clone/.hive/worktrees/x']);
 });

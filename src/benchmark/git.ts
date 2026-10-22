@@ -1,5 +1,5 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { cleanEnv, inDir, type Run } from './exec.js';
 
 /** Neutral, as the first commit of any repository: the workers must not know (#105). */
@@ -168,10 +168,13 @@ export async function createRunBranch(run: Run, branch: string, sha: string): Pr
   await run('git', ['push', '-u', 'origin', branch]);
 }
 
-async function dropIn(run: Run, prefix: string): Promise<void> {
+// A forged .git/worktrees entry names any path: only what sits inside the clone folder is removed (the worker can write that folder's git data)
+const isInside = (root: string, path: string): boolean => path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+
+async function dropIn(run: Run, prefix: string, root: string): Promise<void> {
   const branches = taskBranchPrefix(prefix);
   const { stdout } = await run('git', ['worktree', 'list', '--porcelain']);
-  for (const { path } of worktreesOn(stdout, `refs/heads/${branches}`)) await run('git', ['worktree', 'remove', '--force', path]);
+  for (const { path } of worktreesOn(stdout, `refs/heads/${branches}`).filter((w) => isInside(root, w.path))) await run('git', ['worktree', 'remove', '--force', path]);
   await run('git', ['worktree', 'prune']);
   for (const branch of lines((await run('git', ['branch', '--list', `${branches}*`, '--format=%(refname:short)'])).stdout)) await run('git', ['branch', '-D', branch]);
   const remote = lines((await run('git', ['ls-remote', '--heads', 'origin', `refs/heads/${branches}*`])).stdout);
@@ -179,11 +182,11 @@ async function dropIn(run: Run, prefix: string): Promise<void> {
 }
 
 /** This run's task worktrees and branches, locally and on origin, in each nested clone first (`nested`: their absolute paths), then in
- *  the clone `run` is bound to. Only `hive/<prefix>-*`: never another run's, never the run branch. */
-export async function dropRunWorktrees(run: Run, prefix: string, nested: readonly string[] = []): Promise<void> {
+ *  the clone `run` is bound to (`root`: its folder, which every worktree removed must sit in). Only `hive/<prefix>-*`: never another run's, never the run branch. */
+export async function dropRunWorktrees(run: Run, prefix: string, root: string, nested: readonly string[] = []): Promise<void> {
   // A nested worktree lives inside its task's worktree: its repo forgets it before the outer removal takes the folder
-  for (const dir of nested) await dropIn(inDir(run, dir), prefix);
-  await dropIn(run, prefix);
+  for (const dir of nested) await dropIn(inDir(run, dir), prefix, root);
+  await dropIn(run, prefix, root);
 }
 
 export const diffShortstat = async (run: Run, baseline: string, branch: string): Promise<string> => (await run('git', ['diff', '--shortstat', range(baseline, branch)])).stdout;
