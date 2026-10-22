@@ -99,7 +99,10 @@ async function resolveSeed(dir: string, seed: BenchSeed, git: Git): Promise<stri
 async function pruneUploads(dir: string, seed: BenchSeed): Promise<void> {
   const listed = new Set(seedEntries(seed).filter(isUpload).map((e) => e.slice(UPLOAD_PREFIX.length)));
   const uploads = join(seedDir(dir), 'upload');
-  const names = await readdir(uploads).catch((err: unknown) => (onlyMissing(err), [] as string[]));
+  const names = await readdir(uploads).catch((err: unknown) => {
+    onlyMissing(err);
+    return [] as string[];
+  });
   for (const name of names.filter((n) => !listed.has(n))) await rm(join(uploads, name), { force: true });
 }
 
