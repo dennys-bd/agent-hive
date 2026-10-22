@@ -27,7 +27,8 @@ export interface BenchmarkReportDeps {
   log: Logger;
 }
 
-const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+// The fs error's code only: its message carries the absolute path under the user's home
+const errorCode = (err: unknown): string => (err instanceof Error && 'code' in err && typeof err.code === 'string' ? err.code : 'error');
 const refuse = (res: Response, status: number, error: string): void => {
   res.status(status).json({ error });
 };
@@ -69,7 +70,7 @@ export function registerBenchmarkReportRoutes(app: Express, deps: BenchmarkRepor
       await deps.writeReport(join(deps.hiveDir, 'benchmark', experiment.id), experiment, now);
     } catch (err) {
       // The id and the fs error only: the report maps tokens to arms, so its text never reaches the log
-      deps.log.error(`report.md of experiment ${experiment.id} not written: ${errorMessage(err)}`);
+      deps.log.error(`report.md of experiment ${experiment.id} not written: ${errorCode(err)}`);
       return refuse(res, HTTP_SERVER_ERROR, WRITE_MESSAGE);
     }
     res.set({ 'Content-Type': 'text/markdown; charset=utf-8', 'Content-Disposition': 'attachment; filename="report.md"' })

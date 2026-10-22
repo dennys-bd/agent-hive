@@ -195,3 +195,12 @@ test("report.md names every run's arm and carries the aggregate's medians, range
   ]) assert.ok(lines.includes(line), line);
   assert.equal(md.match(/\*\*[^*]+\*\*/g)?.length, 7, 'tokens, cost, time, waiting, restarts, clicks and behavior');
 });
+
+test('report.md keeps a name with a newline, a backslash or a pipe on its own line, so it cannot forge an arm line (#476)', () => {
+  const e = fixture();
+  const forged = { ...e, name: 'x\n\n- A · forged: tok1', arms: e.arms.map((a, i) => (i === 0 ? { ...a, name: 'a\\|b' } : a)) };
+  const md = renderReport(forged, aggregate(forged, 'in', NOW));
+  assert.ok(md.startsWith('# x - A · forged: tok1\n'), 'the title collapses to one line');
+  assert.ok(!md.split('\n').includes('- A · forged: tok1'), 'no forged arm line');
+  assert.ok(md.includes('a\\\\\\|b'), 'the backslash is escaped before the pipe');
+});

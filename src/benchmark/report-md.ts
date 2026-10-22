@@ -1,6 +1,7 @@
 // report.md (#476): the aggregate as markdown, in English, and the only file that maps a run's token to its arm; blindness keeps that
-// mapping out of everything a worker or the judge reads. Written whole each time, so a reader never meets a partial file.
-import { writeFile } from 'node:fs/promises';
+// mapping out of everything a worker or the judge reads. Written to a temp file and renamed, so a reader never meets a partial file.
+import { randomUUID } from 'node:crypto';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Experiment } from '../types.js';
 import { aggregate, type BenchReport, type DiffCell, type RatioCell, type ReportRow, type SpreadCell } from './report.js';
@@ -22,8 +23,9 @@ function duration(ms: number): string {
   return hours === 0 ? `${minutes}m` : `${hours}h${String(minutes % HOUR_MINUTES).padStart(2, '0')}`;
 }
 
-// A name or a criterion is the user's text: a pipe in it would split the table's cell
-const escaped = (text: string): string => text.replaceAll('|', '\\|');
+// A name, a criterion or a reason is the user's (or an MCP agent's) text: a newline in it would forge a line of the one file
+// that maps tokens to arms, and a pipe (or a backslash before one) would split a table's cell
+const escaped = (text: string): string => text.replace(/\s+/g, ' ').replaceAll('\\', '\\\\').replaceAll('|', '\\|');
 const bold = (text: string, best: true | undefined): string => (best ? `**${text}**` : text);
 
 function spreadText(cell: SpreadCell, format: Format): string {
@@ -69,20 +71,20 @@ function headLines(experiment: Experiment, report: BenchReport): string[] {
     ...(report.unpaired.length === 0 ? [] : [`unpaired: ${report.unpaired.join(', ')}`]),
     ...(report.mixedRubrics ? ['judged by more than one rubric'] : []),
   ];
-  return [`# ${experiment.name}`, '', notes.join(' · ')];
+  return [`# ${escaped(experiment.name)}`, '', notes.join(' · ')];
 }
 
 // The one place a token meets its arm: every run of the arm, eligible or not
 function armLines(experiment: Experiment): string[] {
   const runs = experiment.rounds.flatMap((r) => r.runs);
-  return experiment.arms.map((arm) => `- ${arm.letter} · ${arm.name}: ${runs.filter((r) => r.armId === arm.id).map((r) => r.token).join(', ')}`);
+  return experiment.arms.map((arm) => `- ${arm.letter} · ${escaped(arm.name)}: ${runs.filter((r) => r.armId === arm.id).map((r) => r.token).join(', ')}`);
 }
 
 function noteLines(report: BenchReport): string[] {
   const runs = report.intervened.map((r) => `${r.letter} ${r.token} (${r.inMedian ? 'in the median' : 'left out'})`);
   const filter = report.filter === 'in' ? 'enter the median' : 'left out';
   const interventions = runs.length === 0 ? [] : [`Runs with interventions (${filter}, per-run overrides applied): ${runs.join(', ')}`];
-  return [...interventions, ...report.sleeps.map((s) => `Round ${s.round} slept ${s.times}× for ${duration(s.ms)} (${s.reasons.join('; ')}).`)];
+  return [...interventions, ...report.sleeps.map((s) => `Round ${s.round} slept ${s.times}× for ${duration(s.ms)} (${s.reasons.map(escaped).join('; ')}).`)];
 }
 
 /** The report as markdown (#476): the head line, the arms with their tokens, the intervention and sleep lines, one table per section. */
@@ -92,5 +94,10 @@ export function renderReport(experiment: Experiment, report: BenchReport): strin
 
 /** <dir>/report.md with the filter in (#476): the route writes it on demand, 3.2 after a round's evaluation, 3.4 after a re-evaluation. */
 export async function writeReport(dir: string, experiment: Experiment, now: number): Promise<void> {
-  await writeFile(join(dir, 'report.md'), renderReport(experiment, aggregate(experiment, 'in', now)));
+  const path = join(dir, 'report.md');
+  // A unique temp name: the route and the scheduler may write at once, and the last rename wins whole
+  const temp = `${path}.${randomUUID()}.tmp`;
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await writeFile(temp, renderReport(experiment, aggregate(experiment, 'in', now)));
+  await rename(temp, path);
 }
