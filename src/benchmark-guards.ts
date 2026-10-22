@@ -58,10 +58,14 @@ const isSetup = (v: unknown, partial: boolean): boolean =>
 const isArm = (value: unknown): value is Arm => isJsonObject(value) && isText(value.id) && EXPERIMENT_ID.test(value.id) && isText(value.letter) && isSetup(value.overrides, true);
 const isSeedCommit = (seed: unknown): boolean => isJsonObject(seed) && isText(seed.commit) && COMMIT.test(seed.commit);
 
+// The tester and the number of walks reach a headless run's argv and a loop's bound (#474): checked here, not only by shape
+const isEvaluation = (value: unknown): boolean =>
+  isJsonObject(value) && isJsonObject(value.tester) && Number.isInteger(value.scenarioWalks) && (value.scenarioWalks as number) >= 1;
+
 function isExperimentHead(value: unknown): value is Record<string, unknown> & { id: string; arms: unknown[]; rounds: unknown[] } {
   if (!isJsonObject(value) || !isText(value.id) || !EXPERIMENT_ID.test(value.id)) return false;
   if (!EXPERIMENT_STATUSES.includes(value.status as ExperimentStatus) || !isSeedCommit(value.seed) || !isSetup(value.base, false)) return false;
-  return STRINGS.every((k) => isText(value[k])) && OBJECTS.every((k) => isJsonObject(value[k])) && ARRAYS.every((k) => Array.isArray(value[k]));
+  return STRINGS.every((k) => isText(value[k])) && OBJECTS.every((k) => isJsonObject(value[k])) && ARRAYS.every((k) => Array.isArray(value[k])) && isEvaluation(value.evaluation);
 }
 
 function interrupted(run: BenchRun): BenchRun {

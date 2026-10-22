@@ -106,3 +106,15 @@ test('an arm whose overrides carry a malformed items, worktree or stages is drop
   const [loaded] = load(saved({ experiments: [experiment({ arms: [arm('a1', 'A'), bad, arm('a2', 'B', { worktree: { setup: '', teardown: '' } })] })] })).experiments;
   assert.deepEqual(loaded.arms.map((a) => a.id), ['a1', 'a2']);
 });
+
+test('an experiment whose evaluation has no tester object or no integer scenarioWalks of at least 1 is dropped whole (#474)', () => {
+  const good = experiment({ id: 'keep' });
+  const bad: Record<string, unknown>[] = [
+    { tester: undefined }, { tester: 'claude' }, { tester: null },
+    { scenarioWalks: undefined }, { scenarioWalks: 0 }, { scenarioWalks: 1.5 }, { scenarioWalks: '2' },
+  ];
+  for (const patch of bad) {
+    const drop = { ...experiment({ id: 'drop' }), evaluation: { ...good.evaluation, ...patch } };
+    assert.deepEqual(ids(saved({ experiments: [drop, good] })), ['keep'], JSON.stringify(patch));
+  }
+});

@@ -22,6 +22,8 @@ test("POST empty answers a draft with arm A, the workspace's base, the defaults,
   assert.deepEqual(e.base.stages.spec, { agent: 'codex', model: 'gpt-5', skill: '/hive:new-spec', prompt: '/hive:new-spec {id}' });
   assert.deepEqual([e.base.stages.pr.skill, e.base.items, e.base.worktree, e.base.plugins.length, e.base.rules.deny], ['/hive:new-pr', { 'hive:new-build': 'tdd' }, { setup: 'RUN pnpm install', teardown: '' }, 2, ['Bash(gh:*)']]);
   assert.deepEqual([e.pace.pairs, e.isolation.permissionMode.all, e.blindness.on, e.evaluation.dynamic], [3, 'dontAsk', true, true]);
+  assert.deepEqual(e.evaluation.tester, { agent: 'claude', model: 'sonnet' });
+  assert.equal(e.evaluation.scenarioWalks, 1);
   const dir = bench.dir(e.id);
   assert.equal((await stat(dir)).mode & 0o777, 0o700);
   assert.ok(await exists(join(dir, 'plugin', 'source', 'skills', 'new-build', 'SKILL.md')));
@@ -221,4 +223,12 @@ test('removing the last arm and a 27th arm answer 409 and change nothing (#459)'
 test('registerBenchmarkRoutes mounts the PR routes: a preview of an unknown experiment answers the PR route\'s own 404 (#477)', async (t) => {
   const bench = await serve(t);
   assert.deepEqual(errorOf(await call(bench, 'GET', `${E}/nope/runs/aaaa1/pr`)), [404, 'no such experiment']);
+});
+
+test('a PATCH of the evaluation refuses scenarioWalks 0 and saves a tester row with 3 walks (#474)', async (t) => {
+  const bench = await serve(t, { experiments: [benchExperiment()] });
+  const evaluation = benchExperiment().evaluation;
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1`, { evaluation: { ...evaluation, scenarioWalks: 0 } }))[0], 400);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1`, { evaluation: { ...evaluation, tester: { agent: 'claude' }, scenarioWalks: 3 } }))[0], 200);
+  assert.deepEqual([bench.state().benchmark.experiments[0].evaluation.tester, bench.state().benchmark.experiments[0].evaluation.scenarioWalks], [{ agent: 'claude' }, 3]);
 });
