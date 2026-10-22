@@ -49,7 +49,7 @@ export function BenchmarkView({ benchmark, workspaces }: { benchmark: Benchmark;
         ))}
       </nav>
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-        {tab.render?.(selected) ?? <p className="p-6 text-muted-foreground text-sm">{t('benchmark.header.soon')}</p>}
+        {tab.render?.(selected, benchmark) ?? <p className="p-6 text-muted-foreground text-sm">{t('benchmark.header.soon')}</p>}
       </div>
     </div>
   );

@@ -51,14 +51,14 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test('Ctrl+4 opens benchmark: the sidebar on the left, the first experiment selected, its head in the header and braços the shown tab with its placeholder (#461)', () => {
+test('Ctrl+4 opens benchmark: the sidebar on the left, the first experiment selected, its head in the header and braços the shown tab with its base card (#461, #462)', () => {
   render(<Window />);
   key('4');
   expect(within(sidebar()).getByRole('button', { name: new RegExp(`^${RUNNING.name}`) })).toHaveAttribute('aria-current', 'true');
   expect(head()).toHaveTextContent(RUNNING.name);
   expect(within(tabs()).getAllByRole('button').map((b) => b.textContent)).toEqual(['braços', 'config', 'comparar', 'execução', 'relatório']);
   expect(within(tabs()).getByRole('button', { name: 'braços' })).toHaveAttribute('aria-current', 'page');
-  expect(screen.getByText('em breve')).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'base' })).toBeInTheDocument(); // braços is live (#462): its base card, no placeholder
 });
 
 test('a click on another row selects it, a tab click switches the tab, and both survive a switch of view (#461)', async () => {

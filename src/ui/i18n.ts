@@ -2475,6 +2475,15 @@ const en = {
   'benchmark.arms.settings.taskBody': 'body',
   'benchmark.arms.settings.addTask': '+ task',
   'benchmark.arms.settings.removeTask': 'remove task {key}',
+  'benchmark.arms.base.title': 'base',
+  'benchmark.arms.base.note': 'plugin and seed pinned with a hash. changing either creates another benchmark; an arm can override the tasks.',
+  'benchmark.arms.base.plugin': 'plugin',
+  'benchmark.arms.base.seed': 'seed',
+  'benchmark.arms.base.pinned': 'pinned {when}',
+  'benchmark.arms.open': 'open settings',
+  'benchmark.arms.cardLabel': 'arm {letter}',
+  'benchmark.arms.none': 'no override · this arm is the base itself',
+  'benchmark.arms.tasksWarning': 'tasks differ from the base · comparison per run only',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4944,6 +4953,15 @@ const pt: Record<MessageKey, string> = {
   'benchmark.arms.settings.taskBody': 'corpo',
   'benchmark.arms.settings.addTask': '+ tarefa',
   'benchmark.arms.settings.removeTask': 'remover tarefa {key}',
+  'benchmark.arms.base.title': 'base',
+  'benchmark.arms.base.note': 'plugin e seed fixados com hash. mudar um deles cria outro benchmark; as tarefas o braço pode sobrepor.',
+  'benchmark.arms.base.plugin': 'plugin',
+  'benchmark.arms.base.seed': 'seed',
+  'benchmark.arms.base.pinned': 'fixado em {when}',
+  'benchmark.arms.open': 'abrir settings',
+  'benchmark.arms.cardLabel': 'braço {letter}',
+  'benchmark.arms.none': 'nenhuma sobreposição · este braço é a própria base',
+  'benchmark.arms.tasksWarning': 'tarefas diferentes da base · comparação só por run',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
