@@ -9,7 +9,7 @@ import { VERSION_FILE, parseVersionJson, writeVersionJson } from '../custom-vers
 import type { Arm, ArmSetup, BenchRun, Config, Experiment, Workspace } from '../types.js';
 import { pinHome, pluginTrees } from './pin.js';
 import { mergeArm, RUN_STAGES, resolveRow, runConfig, runState } from './arm-config.js';
-import { type BlindInput, blindLeak } from './blind-check.js';
+import { type BlindInput, type BlindLeak, blindLeak } from './blind-check.js';
 import { inDir, type Run } from './exec.js';
 import { BASELINE_BRANCH, CLONE_DIR, createRunBranch, experimentBaseline, nestedBaseline, nestedOrigin, NESTED_DIR, ORIGIN_DIR, resolveBaseline, runBranch, unsignedCommits } from './git.js';
 import { excludeSandbox, RUN_SANDBOX_FILE, sandboxSettings } from './sandbox.js';
@@ -127,7 +127,7 @@ async function fileInputs(root: string, files: readonly string[], label: string)
   return read.filter(({ buffer }) => !buffer.includes(0)).map(({ where, buffer }) => ({ where, text: buffer.toString('utf8') }));
 }
 
-async function refuseLeak(experiment: Experiment, arm: Arm, setup: ArmSetup, versions: readonly ArmVersion[], seedDir: string): Promise<void> {
+async function leakOf(experiment: Experiment, arm: Arm, setup: ArmSetup, versions: readonly ArmVersion[], seedDir: string): Promise<BlindLeak | undefined> {
   const inputs: BlindInput[] = [
     ...setup.tasks.map((task) => ({ where: `task ${task.key}`, text: `${task.title}\n${task.body}` })),
     ...RUN_STAGES.map(({ role }) => ({ where: `stage ${role}`, text: setup.stages[role].prompt })),
@@ -137,8 +137,19 @@ async function refuseLeak(experiment: Experiment, arm: Arm, setup: ArmSetup, ver
     ...(await fileInputs(seedDir, await listFiles(seedDir), 'seed')),
     ...(await Promise.all(versions.map((v) => fileInputs(v.dir, v.files, `custom/${v.key.origin}/${v.key.name}/${v.version}`)))).flat(),
   ];
-  const leak = blindLeak(inputs, experiment.blindness.forbiddenWords);
-  if (leak) throw new Error(`blindness: "${leak.word}" in ${leak.where}`);
+  return blindLeak(inputs, experiment.blindness.forbiddenWords);
+}
+
+/** `blindness: "<word>" in <where>`: prepareRun's error and the run route's 422. */
+export const blindnessMessage = (leak: BlindLeak): string => `blindness: "${leak.word}" in ${leak.where}`;
+
+/** The check prepareRun makes before any git or file (#471), for 3.2's `run` to refuse up front (#472): the first forbidden word the arm's
+ *  worker would read, or undefined when blindness is off or nothing leaks. Reads the experiment's pin and seed; writes nothing. */
+export async function blindnessLeak(experiment: Experiment, arm: Arm, deps: Pick<ExperimentDeps, 'hiveDir'>): Promise<BlindLeak | undefined> {
+  if (!experiment.blindness.on) return undefined;
+  const dir = experimentDir(deps.hiveDir, experiment.id);
+  const setup = mergeArm(experiment.base, arm.overrides);
+  return leakOf(experiment, arm, setup, await armVersions(pinHome(dir), setup.items), join(dir, 'seed'));
 }
 
 async function takenTokens(experiment: Experiment, dir: string): Promise<Set<string>> {
@@ -206,7 +217,9 @@ export async function prepareRun(experiment: Experiment, arm: Arm, round: number
   const dir = experimentDir(deps.hiveDir, experiment.id);
   const setup = mergeArm(experiment.base, arm.overrides);
   const versions = await armVersions(pinHome(dir), setup.items);
-  if (experiment.blindness.on) await refuseLeak(experiment, arm, setup, versions, join(dir, 'seed'));
+  // still checked here, the last guard: the route's check ran before a round that may start hours later (#472)
+  const leak = experiment.blindness.on ? await leakOf(experiment, arm, setup, versions, join(dir, 'seed')) : undefined;
+  if (leak) throw new Error(blindnessMessage(leak));
   // Math.random: the token names folders and is no secret
   const token = newToken(deps.random ?? Math.random, await takenTokens(experiment, dir));
   try {

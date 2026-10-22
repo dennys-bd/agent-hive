@@ -4,7 +4,7 @@ import { readdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadBenchmark } from '../../src/benchmark-guards.js';
-import { prepareExperiment, prepareRun, renderSource } from '../../src/benchmark/run-home.js';
+import { blindnessLeak, blindnessMessage, prepareExperiment, prepareRun, renderSource } from '../../src/benchmark/run-home.js';
 import { parseConfig } from '../../src/config.js';
 import { shellQuote } from '../../src/shell-init.js';
 import { loadState } from '../../src/state-store.js';
@@ -132,4 +132,15 @@ test("a run home renders from its experiment's pinned plugin source; any other h
   const run = await prepareRun(EXP, EXP.arms[0], 1, deps);
   assert.equal(renderSource(run.home, '/shipped/plugin'), join(hiveDir, 'benchmark', 'exp-1', 'plugin', 'source'));
   assert.equal(renderSource(hiveDir, '/shipped/plugin'), '/shipped/plugin');
+});
+
+test("blindnessLeak answers the first forbidden word an arm's worker would read and writes nothing; off, or with no hit, undefined (#472)", async (t) => {
+  const { deps, calls } = await benchHome(t);
+  const leaking = experiment({ arms: [arm('a1', 'A', { tasks: [{ key: 'T1', title: 'One', body: 'a benchmark task', blockedBy: [] }] })] });
+  const leak = await blindnessLeak(leaking, leaking.arms[0], deps);
+  assert.deepEqual(leak, { where: 'task T1', word: 'benchmark' });
+  assert.equal(leak && blindnessMessage(leak), 'blindness: "benchmark" in task T1');
+  assert.equal(await blindnessLeak({ ...leaking, blindness: { on: false, forbiddenWords: ['benchmark'] } }, leaking.arms[0], deps), undefined);
+  assert.equal(await blindnessLeak(EXP, EXP.arms[1], deps), undefined);
+  assert.deepEqual(calls, []);
 });
