@@ -36,7 +36,7 @@ export interface BenchRunnerDeps {
 }
 
 interface LiveExperiment { ctx: RunContext; controller: AbortController; deadline: Date | undefined; done: Promise<void> }
-interface Runtime { deps: BenchRunnerDeps; io: RunIo; live: Map<string, LiveExperiment>; timers: Map<string, () => void>; closing: boolean }
+interface Runtime { deps: BenchRunnerDeps; io: RunIo; live: Map<string, LiveExperiment>; timers: Map<string, () => void>; waking: Map<string, Promise<void>>; closing: boolean }
 
 const experimentOf = (rt: Runtime, id: string): Experiment | undefined => rt.deps.latest()?.benchmark.experiments.find((e) => e.id === id);
 const deadlineOf = (experiment: Experiment, now: Date): Date | undefined => (experiment.pace.until === undefined ? undefined : untilDeadline(now, experiment.pace.until));
@@ -144,8 +144,15 @@ async function sleep(rt: Runtime, id: string, reason: string, wakeAt?: string): 
   const experiment = experimentOf(rt, id);
   if (experiment === undefined) return;
   const entry = rt.live.get(id);
+  // already asleep (a double click, or one racing the other): a second sleep would record a second span. The gate is closed before the first await
+  if (experiment.status === 'sleeping' || entry?.ctx.gate.isClosed()) return;
   entry?.ctx.gate.close(); // before the dispatch: no watch reads a session the sleep is stopping
-  await rt.deps.dispatch({ type: 'benchmarkSlept', id, sleep: { round: currentRound(experiment), at: rt.deps.now().toISOString(), reason } });
+  try {
+    await rt.deps.dispatch({ type: 'benchmarkSlept', id, sleep: { round: currentRound(experiment), at: rt.deps.now().toISOString(), reason } });
+  } catch (err) {
+    entry?.ctx.gate.open(); // the experiment is not asleep: nothing else would reopen the gate
+    throw err;
+  }
   await Promise.all([...(entry?.ctx.handles.values() ?? [])].map((run) => sleepRun(rt, id, run)));
   if (wakeAt !== undefined) scheduleWake(rt, id, wakeAt);
 }
@@ -174,10 +181,20 @@ async function resume(rt: Runtime, id: string): Promise<void> {
   const answer = await start(rt, id);
   if (answer === 'started') return;
   rt.deps.log.warn(`benchmark ${id}: woken but not resumed (${answer})`);
+  if (answer === 'live') return; // its loop is running: it is not finished
   await rt.deps.dispatch({ type: 'benchmarkFinished', id });
 }
 
-async function wake(rt: Runtime, id: string, deadline?: WakeDeadline): Promise<void> {
+// One wake at a time per experiment: a second click, or the wakeAt timer racing a manual wake, gets the first one's promise
+function wake(rt: Runtime, id: string, deadline?: WakeDeadline): Promise<void> {
+  const inflight = rt.waking.get(id);
+  if (inflight !== undefined) return inflight;
+  const woken = wakeOnce(rt, id, deadline).finally(() => rt.waking.delete(id));
+  rt.waking.set(id, woken);
+  return woken;
+}
+
+async function wakeOnce(rt: Runtime, id: string, deadline?: WakeDeadline): Promise<void> {
   rt.timers.get(id)?.();
   rt.timers.delete(id);
   const asleep = experimentOf(rt, id);
@@ -226,7 +243,7 @@ async function abortAll(rt: Runtime): Promise<void> {
 export function createBenchRunner(deps: BenchRunnerDeps): BenchRunner {
   const exec = serialGit(deps.exec ?? execRun); // the runs of a round prepare on one clone at once
   const io: RunIo = { ...realIo({ hiveDir: deps.hiveDir, config: deps.config, exec, log: (line) => deps.log.info(line), now: deps.now }), ...deps.io };
-  const rt: Runtime = { deps, io, live: new Map(), timers: new Map(), closing: false };
+  const rt: Runtime = { deps, io, live: new Map(), timers: new Map(), waking: new Map(), closing: false };
   return {
     run: (id) => start(rt, id), sleep: (id, reason, wakeAt) => sleep(rt, id, reason, wakeAt), wake: (id, deadline) => wake(rt, id, deadline),
     isLive: (id) => rt.live.has(id), blindness: (experiment) => blindness(rt, experiment), abortAll: () => abortAll(rt),

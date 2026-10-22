@@ -14,26 +14,32 @@ const AT = '2026-10-22T22:00:00.000Z';
 const { until: _until, ...PACE } = experiment().pace;
 const ONE_PAIR = experiment({ pace: { ...PACE, pairs: 1 } });
 
-async function rig(t: TestContext, exp: Experiment, o: { down?: (home: string) => boolean; lock?: LockDeps } = {}) {
+async function rig(t: TestContext, exp: Experiment, o: { down?: (home: string) => boolean; lock?: LockDeps; slow?: boolean } = {}) {
   const hiveDir = await tempDir(t, 'runner-');
   await mkdir(join(hiveDir, 'benchmark', exp.id), { recursive: true });
   let state = stateWith(exp);
   let now = Date.parse(AT);
   let cancelled = 0;
+  const failing = { on: (_event: BenchmarkEvent): boolean => false }; // tests' switch: a dispatch that throws
   const events: BenchmarkEvent[] = [];
   const lines: string[] = [];
   const scheduled: { ms: number; wake: () => void }[] = [];
   const io = stubIo(hiveDir, { snapshot: SLEEP_SNAP, ...(o.down === undefined ? {} : { down: o.down }) });
   const runner = createBenchRunner({
     latest: () => state, config: () => undefined, hiveDir, now: () => new Date(now),
-    dispatch: async (event) => { events.push(event); state = benchmarkReduce(state, event); },
+    dispatch: async (event) => {
+      if (o.slow) await new Promise((resolve) => setImmediate(resolve)); // the real dispatch is async: a second click lands in this gap
+      if (failing.on(event)) throw new Error('dispatch failed');
+      events.push(event);
+      state = benchmarkReduce(state, event);
+    },
     evaluator: { evaluate: async (_id, tokens) => { io.calls.push(`evaluate ${tokens.join(',')}`); } },
     log: { info: (line) => lines.push(line), warn: (line) => lines.push(line) },
     io: io.io, schedule: (ms, wake) => { scheduled.push({ ms, wake }); return () => { cancelled += 1; }; }, lock: o.lock ?? {}, abortWaitMs: 200,
   });
   t.after(() => runner.abortAll());
   return {
-    runner, events, lines, io, scheduled, hiveDir, cancelled: () => cancelled, advance: (ms: number) => { now += ms; },
+    runner, events, lines, io, scheduled, failing, hiveDir, cancelled: () => cancelled, advance: (ms: number) => { now += ms; },
     latest: () => state.benchmark.experiments.find((e) => e.id === exp.id),
   };
 }
@@ -136,4 +142,47 @@ test('abortAll aborts every loop and dispatches nothing after it, cancels the wa
   assert.equal(r.cancelled(), 1);
   assert.equal(existsSync(join(r.hiveDir, 'benchmark', 'exp-1', 'run.lock')), false);
   assert.equal(await r.runner.run('exp-1'), 'locked');
+});
+
+test('two wakes at once wake once: the slept span is added once and benchmarkWoken is dispatched once (#472)', async (t) => {
+  const r = await rig(t, ONE_PAIR, { slow: true });
+  await r.runner.run('exp-1');
+  await until(() => r.io.watching.size === 2);
+  await r.runner.sleep('exp-1', 'night');
+  r.advance(60_000);
+  await Promise.all([r.runner.wake('exp-1'), r.runner.wake('exp-1')]);
+  assert.equal(r.events.filter((e) => e.type === 'benchmarkWoken').length, 1);
+  assert.deepEqual(r.latest()?.rounds[0].runs.map((x) => x.sleptMs), [60_000, 60_000]);
+});
+
+test('two wakes at once after a restart resume once and never finish the experiment (#472)', async (t) => {
+  const asleep = experiment({ status: 'sleeping', pace: { ...PACE, pairs: 1 }, sleeps: [{ round: 1, at: AT, reason: 'night' }], rounds: [
+    { n: 1, startedAt: AT, runs: [run('aaaa1', { status: 'sleeping' }), run('aaaa2', { armId: 'a2', status: 'done' })] },
+  ] });
+  const r = await rig(t, asleep, { slow: true });
+  await Promise.all([r.runner.wake('exp-1'), r.runner.wake('exp-1')]);
+  await until(() => r.io.watching.has('tok1'));
+  assert.equal(r.events.filter((e) => e.type === 'benchmarkFinished').length, 0);
+  endAll(r);
+  await until(() => r.latest()?.status === 'done');
+});
+
+test('a second sleep while the experiment sleeps does nothing, even raced with the first (#472)', async (t) => {
+  const r = await rig(t, ONE_PAIR, { slow: true });
+  await r.runner.run('exp-1');
+  await until(() => r.io.watching.size === 2);
+  await Promise.all([r.runner.sleep('exp-1', 'night'), r.runner.sleep('exp-1', 'night')]);
+  await r.runner.sleep('exp-1', 'again');
+  assert.equal(r.events.filter((e) => e.type === 'benchmarkSlept').length, 1);
+});
+
+test('a sleep whose dispatch throws reopens the gate and rethrows, so a later sleep still works (#472)', async (t) => {
+  const r = await rig(t, ONE_PAIR);
+  await r.runner.run('exp-1');
+  await until(() => r.io.watching.size === 2);
+  r.failing.on = (event) => event.type === 'benchmarkSlept';
+  await assert.rejects(r.runner.sleep('exp-1', 'night'), /dispatch failed/);
+  r.failing.on = () => false;
+  await r.runner.sleep('exp-1', 'night');
+  assert.equal(r.latest()?.status, 'sleeping');
 });
