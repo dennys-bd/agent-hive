@@ -114,7 +114,9 @@ function hookPayload(raw: HookPayload): HookPayload | undefined {
 // runs outside the sandbox, so the prompt's third-party text could reach the network through one. Auth still comes from CODEX_HOME.
 // #877: an evaluation runs it in the task's worktree (-C, no repo skip: it is one), read-only, so the repository's own AGENTS.md reaches it;
 // --ignore-rules only skips execpolicy .rules files, never AGENTS.md (checked: see the argv test), so it stays on every run
-const placeWords = (run: HeadlessRun): string[] => (run.cwd === undefined ? ['--skip-git-repo-check'] : ['-C', run.cwd]);
+// #474: the benchmark's judge reads a bundle folder that is no repository; only then is the skip added to #877's -C
+const placeWords = (run: HeadlessRun): string[] =>
+  (run.cwd === undefined ? ['--skip-git-repo-check'] : ['-C', run.cwd, ...(run.outsideRepo ? ['--skip-git-repo-check'] : [])]);
 const headless = (run: HeadlessRun): string[] => [
   'exec', '--sandbox', 'read-only', ...placeWords(run), '--ephemeral', '--ignore-user-config', '--ignore-rules', '--output-schema', run.schemaPath,
   '-o', run.answerPath, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), '-',
@@ -127,6 +129,7 @@ export const codexRunner: AgentRunner = {
   // Claude's passes none. No name: fork has no name flag, the Hive's entry carries it. Never the placeholder id: Codex has no --session-id (§3)
   copy: (run, from) => ['fork', from, ...overrides(run), TRUST_FLAG, ...run.extraArgs],
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear, §8), as Claude's
+  headlessMcp: false, // #474: exec has no flag that loads one MCP config file alone
   headless,
   headlessAnswer: (_stdout, answerFile) => (answerFile?.trim() ? answerFile.trim() : undefined), // stdout is exec's progress, never the answer
   // its shim (#932) and the roles' old folder (#316). Each workspace's plugin copy and roles are the render's (plugin-render.ts); the run

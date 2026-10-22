@@ -5,6 +5,9 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { createBenchEvaluator, benchRunDeps } from './benchmark/evaluate-service.js';
+import { execRun } from './benchmark/exec.js';
+import { experimentFolder } from './benchmark/store.js';
 import { renderSource } from './benchmark/run-home.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
@@ -292,6 +295,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   const evaluator = createEvaluateRunner({
     exec, agents, log, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.evaluate,
     pluginDir: async (workspace) => { await pluginRender.ready(); return pluginRender.dir(workspace); }, ...(deps.headless === undefined ? {} : { headless: deps.headless }),
+  });
+  // #474: the benchmark's evaluations, in the background; a Quit aborts them beside the evaluate stage's. folderOf only sees ids the
+  // service got from the State, but experimentFolder checks the shape anyway
+  const benchEvaluator = createBenchEvaluator({
+    latest: () => live?.state, dispatch, folderOf: (id) => experimentFolder(home, id), log, now: Date.now,
+    runDeps: benchRunDeps({ exec: execRun, ...(deps.headless === undefined ? {} : { headless: deps.headless }) }),
   });
   // The PR's transport (#207, #592): gh, the login the workers open their PRs with, source or no source. Through an injected exec, so no test runs
   // gh: a write's stdin reaches it as `input`. The real runner is ghExec, which pipes the input itself.
@@ -1204,7 +1213,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const customStore = createCustomStore({ home, pluginSource: shippedPlugin, workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: (workspaces) => { if (live) void pluginRender.write(live.runtime.config, workspaces); }, log });
   registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: shippedPlugin, log });
   // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
-  registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, log, version: async () => (await pluginVersion(shippedPlugin)) ?? '', now: () => new Date() });
+  registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, log, evaluator: benchEvaluator, version: async () => (await pluginVersion(shippedPlugin)) ?? '', now: () => new Date() });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
   registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written
@@ -1393,9 +1402,10 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   async function close(reason = 'close'): Promise<void> {
     closing = true;
-    evaluator.abortAll(); // #877: a Quit ignores what its aborts cause (cleanStop)
     if (pollTimer) clearInterval(pollTimer);
     if (planLimitsTimer) clearInterval(planLimitsTimer);
+    evaluator.abortAll(); // #877: a Quit ignores what its aborts cause (cleanStop)
+    await benchEvaluator.abortAll(); // #474: a Quit drops the running evaluations and waits (bounded) for their cleanup (sample, eval worktree)
     await readLoop?.stop(); // #180: the running round and every refetch settle first: the database never closes under a transaction
     readModel?.close();
     readModel = undefined; // a second close() closes nothing twice

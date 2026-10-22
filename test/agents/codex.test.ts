@@ -242,3 +242,10 @@ test('each external server follows the Hive\'s as -c overrides, with or without 
   assert.deepEqual(codexRunner.runEnv({ ...server, withHive: false }), { HIVE_MCP_TOKEN_1: 'Bearer t0k' });
   assert.equal(JSON.stringify(codexRunner.launch({ ...STAGE_RUN, external: EXTERNAL })).includes('t0k'), false);
 });
+
+test('a headless run outside a repository adds --skip-git-repo-check after -C and changes nothing else (#474)', () => {
+  const inRepo = codexRunner.headless({ ...HEADLESS, cwd: '/r' });
+  const outside = codexRunner.headless({ ...HEADLESS, cwd: '/r', outsideRepo: true });
+  const at = inRepo.indexOf('-C');
+  assert.deepEqual(outside, [...inRepo.slice(0, at + 2), '--skip-git-repo-check', ...inRepo.slice(at + 2)]);
+});

@@ -18,7 +18,7 @@ const ANSWER_FILE = 'answer.txt';
 const FILE_MODE = 0o600; // the schema; the folder's 0700 already keeps the answer this user's
 
 // timeoutMs: the run's own (#877); HeadlessDeps.timeoutMs, the tests' override, still wins over it
-export interface HeadlessInput { agent: AgentId; model?: string; prompt: string; schema: object; signal: AbortSignal; cwd?: string; readOnlyTools?: true; timeoutMs?: number }
+export interface HeadlessInput { agent: AgentId; model?: string; prompt: string; schema: object; signal: AbortSignal; cwd?: string; readOnlyTools?: true; mcpConfig?: string; allowedTools?: readonly string[]; outsideRepo?: true; timeoutMs?: number }
 export type HeadlessResult = { answer: string } | { failure: string; detail: string };
 /** Tests' seams: the env (a fake CLI first on its PATH), the folder the run's temp folder goes in, a shorter timeout. */
 export interface HeadlessDeps { env?: NodeJS.ProcessEnv; tmpRoot?: string; timeoutMs?: number }
@@ -39,6 +39,8 @@ export async function runHeadless(input: HeadlessInput, deps: HeadlessDeps = {})
     const run = {
       dir, schema, schemaPath: join(dir, SCHEMA_FILE), answerPath: join(dir, ANSWER_FILE), ...(input.model === undefined ? {} : { model: input.model }),
       ...(input.cwd === undefined ? {} : { cwd: input.cwd }), ...(input.readOnlyTools ? { readOnlyTools: true as const } : {}),
+      ...(input.mcpConfig === undefined ? {} : { mcpConfig: input.mcpConfig }), ...(input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools }),
+      ...(input.outsideRepo ? { outsideRepo: true as const } : {}),
     };
     await writeFile(run.schemaPath, schema, { mode: FILE_MODE });
     const proc = { command: AGENTS[input.agent].command, args: runner.headless(run), env: withoutHiveEnv(deps.env ?? process.env) };

@@ -148,3 +148,13 @@ test("headlessAnswer reads Claude's structured_output, else its result; an error
   assert.equal(answer('{"type":"result","is_error":false,"result":""}'), undefined);
   assert.equal(answer('not json'), undefined);
 });
+
+test('a headless run with an MCP config names it right after --strict-mcp-config and allows only the given tools; no built-in tool (#474)', () => {
+  const tools = ['mcp__playwright__browser_click', 'mcp__playwright__browser_navigate'];
+  const args = runners.claude.headless({ ...HEADLESS, cwd: '/r', mcpConfig: '/r/mcp.json', allowedTools: tools });
+  assert.deepEqual(args.slice(0, 7), ['-p', '--output-format', 'json', '--json-schema', '{"type":"object"}', '--tools', '']);
+  const at = args.indexOf('--strict-mcp-config');
+  assert.deepEqual(args.slice(at, at + 5), ['--strict-mcp-config', '--mcp-config', '/r/mcp.json', '--allowedTools', tools.join(' ')]);
+  assert.equal(runners.claude.headless(HEADLESS).includes('--mcp-config'), false);
+  assert.equal(runners.claude.headless(HEADLESS).includes('--allowedTools'), false);
+});

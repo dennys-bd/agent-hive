@@ -40,8 +40,13 @@ const READ_ONLY_TOOLS = 'Read,Grep,Glob'; // #877: an evaluation reads the workt
 // ANTHROPIC_BASE_URL) apply, so the work under evaluation would steer its judge. --restricted skips them and keeps the reads to the cwd; it
 // also loads no CLAUDE.md of the worktree's, which the evaluation's prompts point the agent at instead (--setting-sources user does the same)
 const toolWords = (run: HeadlessRun): string[] => (run.readOnlyTools ? ['--tools', READ_ONLY_TOOLS, '--restricted'] : ['--tools', '']);
+// #474: the tester's MCP config, right after --strict-mcp-config, so that flag keeps every other server out. --tools '' still offers no
+// built-in tool, so the file and shell tools stay denied
+const mcpWords = (run: HeadlessRun): string[] => (run.mcpConfig === undefined ? [] : [
+  '--mcp-config', run.mcpConfig, ...(run.allowedTools === undefined || run.allowedTools.length === 0 ? [] : ['--allowedTools', run.allowedTools.join(' ')]),
+]);
 const headless = (run: HeadlessRun): string[] => [
-  '-p', '--output-format', 'json', '--json-schema', run.schema, ...toolWords(run), '--strict-mcp-config', '--no-session-persistence',
+  '-p', '--output-format', 'json', '--json-schema', run.schema, ...toolWords(run), '--strict-mcp-config', ...mcpWords(run), '--no-session-persistence',
   '--disable-slash-commands', ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]),
 ];
 
@@ -67,6 +72,7 @@ export const claudeRunner: AgentRunner = {
   launch: (run) => [...hiveFlags(run), ...run.extraArgs, ...agentWords(run), ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), ...sessionWords(run.session)],
   copy: (run, from, name) => (run.session === undefined ? undefined : [...hiveFlags(run), ...run.extraArgs, ...copyWords(from, run.session.id, name)]),
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear): there is no argv to render
+  headlessMcp: true,
   headless,
   headlessAnswer: (stdout) => headlessAnswer(stdout),
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --mcp-config path holds the pty id (#696)

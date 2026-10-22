@@ -1,11 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { ARM_LEAK, assertBlind, bundleFiles, hasTell, PLUGIN_SUBAGENTS, REDACTED, scrub, writeBundle } from '../../scripts/experiment/blind.js';
+import { readdir } from 'node:fs/promises';
+import { ARM_LEAK, assertBlind, bundleFiles, hasTell, PLUGIN_SUBAGENTS, REDACTED, scrub } from '../../scripts/experiment/blind.js';
 import { deliveredName } from '../../src/template.js';
 import type { Metrics } from '../../scripts/experiment/types.js';
-import { tempDir } from '../temp-dir.js';
 
 const T0 = '2026-10-01T22:00:00.000Z';
 const METRICS: Metrics = {
@@ -48,13 +46,4 @@ test('the bundle has harness-made names, scrubbed texts, numbers-only metrics, a
 test('assertBlind refuses a tell in a name or in a text (#105)', () => {
   for (const name of ['run/x-b-y.png', 'docs/new-spec.md', 'arm.json']) assert.throws(() => assertBlind([{ name, text: '' }]), /would name the arm/, name);
   assert.throws(() => assertBlind([{ name: 'diff.patch', text: 'uses superpowers' }]), /would name the arm/);
-});
-
-test('writeBundle writes a fresh folder (#105)', async (t) => {
-  const dir = await tempDir(t, 'blind-');
-  await writeFile(join(dir, 'shot.png'), 'png');
-  await mkdir(join(dir, 'bundle', 'stale'), { recursive: true });
-  await writeBundle(join(dir, 'bundle'), [{ name: 'run/shot-01.png', copyFrom: join(dir, 'shot.png') }, { name: 'docs/spec-1.md', text: '# spec' }]);
-  assert.deepEqual((await readdir(join(dir, 'bundle'), { recursive: true })).sort(), ['docs', join('docs', 'spec-1.md'), 'run', join('run', 'shot-01.png')]);
-  assert.equal(await readFile(join(dir, 'bundle', 'docs', 'spec-1.md'), 'utf8'), '# spec');
 });

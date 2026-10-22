@@ -1,8 +1,8 @@
-import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename } from 'node:path';
+import { assertBlind as assertBlindWith, type BundleFile, hasTell as hasTellIn, REDACTED, scrub as scrubWith, writeBundle } from '../../src/benchmark/blind.js';
 import type { Click, Metrics } from './types.js';
 
-export const REDACTED = '[redacted]';
+export { type BundleFile, REDACTED, writeBundle };
 /** The Hive plugin's subagents (assets/plugin/agents/*.md, *.md.liquid); a test keeps this in step. */
 export const PLUGIN_SUBAGENTS = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'] as const;
 /** Every arm tell (#105, the user): both arms' commands and skills, their namespaces, the plugin's subagents. Namespaced forms first. */
@@ -16,11 +16,10 @@ export const TELLS: readonly RegExp[] = [
 export const ARM_LEAK = /-a-|-b-|arm|hive-spec|new-spec|hive-plan|new-plan|hive-build|new-build|hive-pr|new-pr/i;
 const KEPT_SHOT = /^(?:S\d+-\d+|screen-4[a-z]\d?)\.png$/;
 
-export const scrub = (text: string): string => TELLS.reduce((acc, pattern) => acc.replace(pattern, REDACTED), text);
-export const hasTell = (text: string): boolean => TELLS.some((pattern) => new RegExp(pattern.source, 'i').test(text));
+export const scrub = (text: string): string => scrubWith(text, TELLS);
+export const hasTell = (text: string): boolean => hasTellIn(text, TELLS);
 
 export interface BundleInput { handoffShots: string[]; runShots: string[]; clicks?: Click[]; docs: { kind: 'spec' | 'plan'; text: string }[]; diff: string; metrics: Metrics }
-export interface BundleFile { name: string; copyFrom?: string; text?: string }
 
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 const shotName = (path: string, i: number): string => `run/${KEPT_SHOT.test(basename(path)) ? basename(path) : `shot-${String(i + 1).padStart(2, '0')}.png`}`;
@@ -49,17 +48,9 @@ export function bundleFiles(input: BundleInput): BundleFile[] {
   ];
 }
 
+/** The harness's check (#105): its fixed name leaks first, then the shared check with its fixed tells; its arms have no letter to check. */
 export function assertBlind(files: readonly BundleFile[]): void {
-  const leak = files.find((f) => ARM_LEAK.test(f.name) || hasTell(f.name) || hasTell(f.text ?? ''));
+  const leak = files.find((f) => ARM_LEAK.test(f.name));
   if (leak) throw new Error(`the blind bundle would name the arm: ${leak.name}`);
-}
-
-export async function writeBundle(dir: string, files: readonly BundleFile[]): Promise<void> {
-  await rm(dir, { recursive: true, force: true });
-  for (const file of files) {
-    const path = join(dir, file.name);
-    await mkdir(dirname(path), { recursive: true });
-    if (file.copyFrom !== undefined) await copyFile(file.copyFrom, path);
-    else await writeFile(path, file.text ?? '');
-  }
+  assertBlindWith(files, TELLS, []);
 }

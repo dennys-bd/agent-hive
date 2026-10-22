@@ -35,7 +35,7 @@ test("emptyExperiment is a draft with arm A and the screens' defaults (#459)", (
   assert.deepEqual([e.isolation.permissionMode.all, e.isolation.limits.all, e.isolation.env.all], ['dontAsk', { turns: 200, ms: 7_200_000 }, { CI: '1' }]);
   assert.deepEqual(e.isolation, defaultIsolation());
   assert.deepEqual(e.blindness, { on: true, forbiddenWords: [...BLIND_WORDS] });
-  assert.deepEqual(e.evaluation, { collectors: [], dynamic: true, judge: { agent: 'codex' }, rubric: '' });
+  assert.deepEqual(e.evaluation, { collectors: [], dynamic: true, tester: { agent: 'claude', model: 'sonnet' }, scenarioWalks: 1, judge: { agent: 'codex' }, rubric: '' });
 });
 
 test('duplicateOf and forkOf keep arms, base and every section, drop rounds, sleeps, archived and stopAfterRound; the fork takes the new seed (#459)', () => {

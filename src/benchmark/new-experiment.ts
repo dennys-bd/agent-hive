@@ -23,7 +23,7 @@ export const defaultIsolation = (): BenchIsolation => ({
   env: { all: { CI: '1' } }, betweenRounds: { all: 'fresh-worktree' },
 });
 export const defaultBlindness = (): BenchBlindness => ({ on: true, forbiddenWords: [...BLIND_WORDS] });
-export const defaultEvaluation = (judge: AgentId): BenchEvaluation => ({ collectors: [], dynamic: true, judge: { agent: judge }, rubric: '' });
+export const defaultEvaluation = (judge: AgentId): BenchEvaluation => ({ collectors: [], dynamic: true, tester: { agent: 'claude', model: 'sonnet' }, scenarioWalks: 1, judge: { agent: judge }, rubric: '' });
 export const emptySeed = (workspace: string, commit: string): BenchSeed => ({ workspace, commit, reference: [], sample: { command: '', url: '', files: [] }, scenarios: [] });
 
 // The args after `flag` up to the next flag: Claude's tool lists are variadic

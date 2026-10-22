@@ -63,3 +63,15 @@ test('parseFindings reads null as no line and refuses what the schema would; par
   assert.ok('scores' in long && long.scores[0]?.evidence === 'e'.repeat(EVIDENCE_MAX), 'the evidence is cut at EVIDENCE_MAX');
   assert.ok('reason' in parseScores('{"scores":[{"dimension":"a","score":7.5,"evidence":"e"},{"dimension":"b","score":1,"evidence":"e"}]}', dims));
 });
+
+test('the range is a parameter: 1..5 refuses 0 and 6, the default still takes 0..10, and judgePrompt writes it into its last line (#474)', () => {
+  const two = (a: number, b: number): string => JSON.stringify({ scores: [{ dimension: 'a', score: a, evidence: 'e' }, { dimension: 'b', score: b, evidence: 'e' }] });
+  const dims = ['A', 'B'];
+  const range = { min: 1, max: 5 };
+  assert.deepEqual(parseScores(two(1, 5), dims, range), { scores: [{ dimension: 'A', score: 1, evidence: 'e' }, { dimension: 'B', score: 5, evidence: 'e' }] });
+  assert.ok('reason' in parseScores(two(0, 3), dims, range));
+  assert.ok('reason' in parseScores(two(3, 6), dims, range));
+  assert.ok('scores' in parseScores(two(0, 10), dims));
+  assert.match(judgePrompt(WORK, dims, [], undefined, range), /an integer from 1 to 5 and the evidence for it/);
+  assert.match(judgePrompt(WORK, dims, []), /an integer from 0 to 10 and the evidence for it/);
+});

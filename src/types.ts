@@ -829,8 +829,9 @@ export interface BenchIsolation {
   env: IsolationRow<Record<string, string>>; betweenRounds: IsolationRow<'fresh-worktree'>;
 }
 export interface BenchBlindness { on: boolean; forbiddenWords: string[] }
-/** Static collectors and the judge are #877's EvaluateRow (agent, model?, specializedAgent?, focus?); the rubric is one criterion per non-blank line, scored 1–5. */
-export interface BenchEvaluation { collectors: EvaluateRow[]; dynamic: boolean; judge: EvaluateRow; rubric: string }
+/** Static collectors, the tester and the judge are #877's EvaluateRow (agent, model?, specializedAgent?, focus?); the tester's focus is unused and
+ *  scenarioWalks (>= 1) is how many times it walks the seed's scenarios. The rubric is one criterion per non-blank line, scored 1–5. */
+export interface BenchEvaluation { collectors: EvaluateRow[]; dynamic: boolean; tester: EvaluateRow; scenarioWalks: number; judge: EvaluateRow; rubric: string }
 export interface Experiment {
   id: string; name: string; status: ExperimentStatus; archived?: true; createdAt: string; createdBy: { kind: 'user' } | { kind: 'mcp'; agent: AgentId; model?: string };
   workspace: string; plugin: { version: string; hash: string }; seedHash: string; tasksHash: string;

@@ -59,3 +59,7 @@ test('planLimitsReading reads only the listed agents, in AGENT_IDS order, never 
   assert.deepEqual(await planLimitsReading(undefined, table), both);
   assert.deepEqual(read, ['codex', 'claude', 'codex', 'claude', 'codex']);
 });
+
+test('only Claude Code takes an MCP config in a headless run (#474)', () => {
+  assert.deepEqual(AGENT_IDS.filter((id) => runners[id].headlessMcp), ['claude']);
+});

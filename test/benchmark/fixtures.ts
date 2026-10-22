@@ -38,7 +38,7 @@ export const experiment = (patch: Partial<Experiment> = {}): Experiment => ({
   seed: { workspace: 'hive', commit: 'a'.repeat(40), reference: [], sample: { command: 'pnpm dev', url: '', files: [] }, scenarios: [] },
   pace: { pairs: 3, until: '07:00', runTimeoutMs: 72_000_000, workersPerArm: 3, cap: {} },
   isolation: ISOLATION, blindness: { on: true, forbiddenWords: ['benchmark'] },
-  evaluation: { collectors: [], dynamic: true, judge: { agent: 'claude' }, rubric: '' },
+  evaluation: { collectors: [], dynamic: true, tester: { agent: 'claude', model: 'sonnet' }, scenarioWalks: 1, judge: { agent: 'claude' }, rubric: '' },
   rounds: [], sleeps: [], ...patch,
 });
 

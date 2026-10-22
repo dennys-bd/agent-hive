@@ -49,6 +49,9 @@ export interface HeadlessRun {
   model?: string;
   cwd?: string; // #877: the worktree the run reads; absent = dir
   readOnlyTools?: true; // #877: the agent may read files, never write
+  mcpConfig?: string; // #474: an MCP config file the run loads (the tester's Playwright MCP); only a runner with headlessMcp reads it
+  allowedTools?: readonly string[]; // #474: the MCP tools the run may call without a prompt; a headless run cannot answer one
+  outsideRepo?: true; // #474: cwd is no git repository (the judge's bundle); Codex adds its repo skip, Claude ignores it
 }
 
 export interface AgentRunner {
@@ -56,6 +59,7 @@ export interface AgentRunner {
   launch(run: AgentRun): LaunchArg[];
   copy(run: AgentRun, from: string, name?: string): LaunchArg[] | undefined;
   clear(run: AgentRun): LaunchArg[] | undefined;
+  headlessMcp: boolean; // #474: whether headless() passes HeadlessRun.mcpConfig on; the benchmark refuses a tester row whose agent cannot
   headless(run: HeadlessRun): string[]; // #330: the argv after the command; the prompt goes on stdin
   headlessAnswer(stdout: string, answerFile: string | undefined): string | undefined; // #330: the final message's text; answerFile: answerPath's content
   strayPattern(ptyId: string): string; // #927: what killStray / isStrayAlive match in this agent's argv for the run of ptyId

@@ -52,7 +52,7 @@ export async function serve(t: TestContext, opts: { experiments?: Experiment[]; 
     requireLive: () => ({ runtime: { config: benchConfig(repo) }, state }),
     getLive: () => ({ runtime: { config: benchConfig(repo) }, state }),
     dispatch: async (event: BenchmarkEvent) => { state = benchmarkReduce(state, event); },
-    home, pluginSource, exec, log, version: async () => '0.1.0', now: () => new Date(AT),
+    home, pluginSource, exec, log, evaluator: { evaluate: async () => undefined, isEvaluating: () => false, abortAll: async () => undefined }, version: async () => '0.1.0', now: () => new Date(AT),
   });
   const server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));

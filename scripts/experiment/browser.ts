@@ -1,8 +1,6 @@
-import { join } from 'node:path';
 import { secretCookie } from '../../src/secret.js';
+import { VIEWPORT } from '../../src/benchmark/browser.js';
 
-export const VIEWPORT = { width: 1440, height: 900 }; // the handoff's reference size (00-LEIA-ANTES.md)
-export const MCP_BIN = join('node_modules', '.bin', 'playwright-mcp'); // @playwright/mcp's bin, under the repo root
 const DASHBOARD_SETTLE_MS = 2000; // the dashboard's first /events frame
 
 export interface Cookie { name: string; value: string; domain: string; path: string; httpOnly: boolean; secure: boolean; sameSite: 'Strict' }
@@ -37,13 +35,3 @@ export async function smokeDashboard(launch: Launch, url: string, cookie: Cookie
 }
 
 export const storageState = (cookie: Cookie): { cookies: (Cookie & { expires: number })[]; origins: never[] } => ({ cookies: [{ ...cookie, expires: -1 }], origins: [] });
-
-export function mcpConfig(bin: string, storage: string, outputDir: string, origin: string, chromiumPath: string, socketsDir: string): Record<string, unknown> {
-  const args = [
-    '--executable-path', chromiumPath, // the Chromium the root playwright installed: --browser chromium would look for chrome-for-testing, which that install lacks
-    '--browser', 'chromium', '--headless', '--isolated', '--storage-state', storage, '--output-dir', outputDir, '--viewport-size', `${VIEWPORT.width},${VIEWPORT.height}`,
-    '--allowed-origins', origin, // the dashboard only: no file:// or other page the tester could learn the run from
-  ];
-  // A socket path caps at 104 bytes on macOS: under the long per-user TMPDIR the MCP's own socket folder overflows, so it gets a short one
-  return { mcpServers: { playwright: { command: bin, args, env: { PWTEST_SOCKETS_DIR: socketsDir } } } };
-}

@@ -106,3 +106,12 @@ test('with cwd the agent starts in that folder, gets the read-only tools and the
   assert.deepEqual('failure' in late && late.failure, 'timed out after 300 ms');
   assert.deepEqual(await readdir(slow.tmpRoot), []);
 });
+
+test("mcpConfig and allowedTools reach Claude's argv as --mcp-config <path> and --allowedTools (#474)", async (t) => {
+  const cli = await fakeCli(t, 'claude',
+    `while [ $# -gt 0 ]; do [ "$1" = --mcp-config ] && mcp="$2"; [ "$1" = --allowedTools ] && allowed="$2"; shift; done; cat > /dev/null; printf '{"type":"result","is_error":false,"structured_output":{"text":"%s|%s"}}' "$mcp" "$allowed"`);
+  const result = await runHeadless({ ...input('claude'), mcpConfig: '/r/mcp.json', allowedTools: ['mcp__playwright__browser_click'] }, { env: cli.env, tmpRoot: cli.tmpRoot });
+  assert.ok('answer' in result, JSON.stringify(result));
+  assert.equal((JSON.parse(result.answer) as { text: string }).text, '/r/mcp.json|mcp__playwright__browser_click');
+  assert.deepEqual(await readdir(cli.tmpRoot), []);
+});

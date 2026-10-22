@@ -44,7 +44,7 @@ export const PACE: z.ZodType<BenchPace> = z.strictObject({
 });
 export const BLINDNESS: z.ZodType<BenchBlindness> = z.strictObject({ on: z.boolean(), forbiddenWords: z.array(z.string().min(1)) });
 const EVALUATE_ROW: z.ZodType<EvaluateRow> = z.strictObject({ agent: z.enum(AGENT_IDS), model: z.string().min(1).optional(), specializedAgent: z.string().min(1).optional(), focus: z.string().optional() });
-export const EVALUATION: z.ZodType<BenchEvaluation> = z.strictObject({ collectors: z.array(EVALUATE_ROW), dynamic: z.boolean(), judge: EVALUATE_ROW, rubric: z.string() });
+export const EVALUATION: z.ZodType<BenchEvaluation> = z.strictObject({ collectors: z.array(EVALUATE_ROW), dynamic: z.boolean(), tester: EVALUATE_ROW, scenarioWalks: z.number().int().min(1), judge: EVALUATE_ROW, rubric: z.string() });
 
 export const CREATE = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('empty'), workspace: z.string(), name: NAME.optional() }),
