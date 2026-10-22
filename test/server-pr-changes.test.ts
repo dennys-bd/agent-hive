@@ -5,7 +5,7 @@ import { DIFF_MAX_BYTES, fileHash, parseDiff } from '../src/diff.js';
 import type { PullChangesRow } from '../src/read-model/rows.js';
 import type { PrChanges } from '../src/types.js';
 import { fakeLog } from './fakes.js';
-import { AT, DIFF, fakeGh, type FakeGh, HEAD, PR, PR_PAGE_ROW, PR_SOURCE, prKey, reviewFileOf, seedPr, startPrs, until } from './pr-server.js';
+import { AT, DIFF, fakeGh, type FakeGh, HEAD, PR, PR_PAGE_ROW, namedEventDuring, PR_SOURCE, prKey, reviewFileOf, seedPr, startPrs, thread, until } from './pr-server.js';
 import { send } from './review-server.js';
 import { hiveFetch } from './secret-client.js';
 
@@ -151,4 +151,59 @@ test('GET …/changes drops the marks whose file changed or left the diff; the m
   await changesOf(base);
   await sleep(50);
   assert.deepEqual((await reviewFileOf(base)).reviewed, [{ path: 'a.txt', hash }]);
+});
+
+const STORED: PullChangesRow = { head: HEAD, diff: DIFF, threads: [THREAD], truncated: false, requestTimes: [] };
+
+test('a row at the model\'s head answers with no diff call, then revalidates the threads and the compare behind it; an unchanged read leaves the row (#497)', async (t) => {
+  const gh = fakeGh();
+  const { base, db } = await startPrs(t, gh);
+  db.setPrChanges(PR_SOURCE, 'acme/app', 7, STORED);
+  const before = gh.calls.length;
+  const res = await changesOf(base);
+  assert.deepEqual((await res.json() as PrChanges).threads, [THREAD]);
+  await until(async () => reads(gh, before).length === 2);
+  assert.deepEqual(reads(gh, before), ['compare', 'threads'], 'no diff; no timeline, since no request is pending');
+  assert.deepEqual(rowOf(db), STORED);
+});
+
+test('a revalidation whose threads changed stores them and sends readModel with pullChanges; the diff is not read again (#497)', async (t) => {
+  const gh = fakeGh();
+  const { base, db } = await startPrs(t, gh);
+  db.setPrChanges(PR_SOURCE, 'acme/app', 7, STORED);
+  gh.pr = { ...gh.pr, reviewThreads: { totalCount: 1, nodes: [thread({ isResolved: true })] } };
+  const before = gh.calls.length;
+  const event = await namedEventDuring(base, 'readModel', () => changesOf(base));
+  assert.deepEqual(event, { type: 'readModel', repository: 'acme/app', kinds: ['pullChanges'] });
+  assert.equal(rowOf(db)?.threads[0]?.resolved, true);
+  assert.equal(reads(gh, before).includes('diff'), false);
+});
+
+test('a revalidation whose threads answer another head refetches and reads the diff before storing (#497)', async (t) => {
+  const gh = fakeGh();
+  const { base, db } = await startPrs(t, gh);
+  db.setPrChanges(PR_SOURCE, 'acme/app', 7, STORED);
+  const newer = 'c'.repeat(40);
+  gh.heads = [newer];
+  gh.diff = DIFF.replace('+two', '+three');
+  const before = gh.calls.length;
+  await changesOf(base);
+  await until(async () => rowOf(db)?.head === newer);
+  assert.equal(rowOf(db)?.diff, gh.diff);
+  assert.equal(reads(gh, before).filter((r) => r === 'diff').length, 1);
+});
+
+test('a second open within the cooldown makes no GitHub call; fresh=1, the page\'s refresh after a write, revalidates past it (#497)', async (t) => {
+  const gh = fakeGh();
+  const { base, db } = await startPrs(t, gh);
+  db.setPrChanges(PR_SOURCE, 'acme/app', 7, STORED);
+  await changesOf(base);
+  await until(async () => reads(gh).includes('threads'));
+  await sleep(50); // the first revalidation settles
+  const after = gh.calls.length;
+  assert.equal((await changesOf(base)).status, 200);
+  await sleep(50);
+  assert.deepEqual(reads(gh, after), []);
+  await changesOf(base, 7, '?fresh=1');
+  await until(async () => reads(gh, after).includes('threads'));
 });

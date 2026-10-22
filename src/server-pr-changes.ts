@@ -5,6 +5,7 @@ import type { Logger } from './log.js';
 import { parseThreads, PR_THREADS_QUERY, prDiffArgs, PrNotFound, requestTimesOf, timelineArgs, withRequestTimes } from './pr-github.js';
 import { dropStalePrMarks, type PrReviewStore } from './pr-review-store.js';
 import { prNumber, prRepo } from './pull-requests.js';
+import { REFETCH_COOLDOWN_MS } from './read-model/loop.js';
 import { type PrPage, type PullChangesRow, sourceLogin } from './read-model/rows.js';
 import { prDataOf, type StoredPr } from './read-model/views.js';
 import type { Reading } from './server-repos.js';
@@ -117,17 +118,86 @@ export function changesOf(stored: Pick<StoredPr, 'reviewRequests'>, row: PullCha
 
 export interface ChangesReader { read(reading: Reading, url: string, fresh: boolean): Promise<{ changes: PrChanges; isLatest(): boolean }> }
 
-/** GET …/pulls/:number/changes' reads (#497). Only the latest read of a PR drops marks: an older one finishing late would drop a mark made
- * against a newer diff. ponytail: one entry per link, never pruned */
-export function changesReaderOf(deps: ChangesDeps): ChangesReader {
-  const latest = new Map<string, number>();
+// A moved head's diff (#497): the model refetched first, so the next fields read names the head the diff was read at
+async function movedDiff(deps: ChangesDeps, reading: Reading, url: string): Promise<string> {
+  await reading.model.refetch(prRepo(url), Number(prNumber(url)), { again: true });
+  return capped(await deps.gh(prDiffArgs(url)));
+}
+
+// The revalidation (#497): the threads, the compare and the times in parallel, since threads change without the head moving. The diff is read
+// only when the threads' head left the row's, as the diff carries no oid. A changed row sends the pullChanges event, and a new diff drops the
+// stale marks unless a read began since. A failure is a debug line by number and leaves the row
+async function revalidate(deps: ChangesDeps, reading: Reading, url: string, latestOf: (url: string) => number): Promise<void> {
+  const seen = latestOf(url);
+  const repository = prRepo(url);
+  const number = Number(prNumber(url));
+  try {
+    const page = reading.model.db.prPage(reading.source, repository, number);
+    const kept = reading.model.db.prChanges(reading.source, repository, number);
+    if (page === undefined || kept === undefined) return; // closed or gone since the answer
+    const stored = prDataOf(page, sourceLogin(reading.source));
+    const [threads, behind, requestTimes] = await Promise.all([deps.gql(PR_THREADS_QUERY, { url }), behindOf(deps, url, stored), timesOf(deps, url, stored)]);
+    const read = parseThreads(threads, skipOf(deps, url));
+    const diff = read.head === kept.head ? kept.diff : await movedDiff(deps, reading, url);
+    const row: PullChangesRow = { head: read.head, diff, threads: read.threads, truncated: read.truncated, ...behind, requestTimes };
+    if (!reading.model.db.setPrChanges(reading.source, repository, number, row)) return;
+    reading.model.notify(repository, ['pullChanges']);
+    if (diff !== kept.diff && latestOf(url) === seen) await dropStale(deps, url, filesOf(diff));
+  } catch (err) {
+    deps.log.debug(`pr #${number}: the changes were not revalidated (${errorName(err)})`);
+  }
+}
+
+interface Revalidations { start(reading: Reading, url: string, fresh: boolean): Promise<void>; stamp(url: string): void }
+
+// One revalidation per PR in flight, its promise shared, and REFETCH_COOLDOWN_MS from its last start, as the refetch's: reopening a page within
+// it makes no GitHub call. fresh goes past the cooldown, as the refetch's `again`
+function revalidationsOf(deps: ChangesDeps, now: () => number, latestOf: (url: string) => number): Revalidations {
+  const inFlight = new Map<string, Promise<void>>();
+  const started = new Map<string, number>();
+  const stamp = (url: string): void => {
+    const at = now();
+    for (const [other, start] of started) if (at - start >= REFETCH_COOLDOWN_MS) started.delete(other); // pruned on each call: only the last 10 s
+    started.set(url, at);
+  };
   return {
-    read: async (reading, url) => {
-      const mine = (latest.get(url) ?? 0) + 1;
+    stamp,
+    start: (reading, url, fresh) => {
+      const running = inFlight.get(url);
+      if (running !== undefined) return running;
+      const last = started.get(url);
+      if (!fresh && last !== undefined && now() - last < REFETCH_COOLDOWN_MS) return Promise.resolve();
+      stamp(url);
+      const promise = revalidate(deps, reading, url, latestOf).finally(() => inFlight.delete(url));
+      inFlight.set(url, promise);
+      return promise;
+    },
+  };
+}
+
+/** GET …/pulls/:number/changes' reads (#497): a row at the model's head answers at once and is revalidated behind the answer; otherwise the full
+ * read, stored when the PR is open. Only the latest read of a PR drops marks. ponytail: one entry per link, never pruned */
+export function changesReaderOf(deps: ChangesDeps, now: () => number = Date.now): ChangesReader {
+  const latest = new Map<string, number>();
+  const latestOf = (url: string): number => latest.get(url) ?? 0;
+  const revalidations = revalidationsOf(deps, now, latestOf);
+  return {
+    read: async (reading, url, fresh) => {
+      const mine = latestOf(url) + 1;
       latest.set(url, mine);
+      const isLatest = (): boolean => latestOf(url) === mine;
+      const repository = prRepo(url);
+      const number = Number(prNumber(url));
+      const page = await pageOf(reading, repository, number);
+      const kept = reading.model.db.prChanges(reading.source, repository, number);
+      if (kept !== undefined && kept.head === page.pull?.headSha) {
+        void revalidations.start(reading, url, fresh); // never rejects: revalidate logs its own failure
+        return { changes: changesOf(prDataOf(page, sourceLogin(reading.source)), kept), isLatest };
+      }
+      revalidations.stamp(url); // a full read counts as the PR's last read for the cooldown
       const { stored, row } = await readFresh(deps, reading, url);
-      reading.model.db.setPrChanges(reading.source, prRepo(url), Number(prNumber(url)), row); // the table takes only an open PR's
-      return { changes: changesOf(stored, row), isLatest: () => latest.get(url) === mine };
+      reading.model.db.setPrChanges(reading.source, repository, number, row);
+      return { changes: changesOf(stored, row), isLatest };
     },
   };
 }
