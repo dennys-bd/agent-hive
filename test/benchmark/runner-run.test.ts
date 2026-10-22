@@ -117,6 +117,19 @@ test('progress becomes delivered, total and running or waiting; the tokens are r
   assert.equal(c.events.length, seen);
 });
 
+test('the watch\'s live interventions become a benchmarkRunChanged with the list (#475)', async () => {
+  const c = context(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('tok1')] }] }));
+  void watchOne(c.ctx, liveRun('tok1'));
+  await until(() => c.rig.watchDeps.has('tok1'));
+  const deps = c.rig.watchDeps.get('tok1');
+  assert.ok(deps?.onInterventions);
+  const list = [{ at: AT, action: 'POST /signal', detail: '/signal', by: 'user' as const }];
+  deps.onInterventions(list);
+  await until(() => c.events.length === 1);
+  assert.deepEqual(c.events[0], { type: 'benchmarkRunChanged', id: 'exp-1', token: 'tok1', patch: { interventions: list } });
+  assert.deepEqual(c.latest()?.rounds[0].runs[0].interventions, list);
+});
+
 test('a metrics read that throws still ends the run with empty metrics and stops its daemon (#472)', async () => {
   const c = context(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('tok1')] }] }), { failReads: true });
   await endRun(c.ctx, liveRun('tok1'), { outcome: 'done' });

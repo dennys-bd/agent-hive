@@ -182,6 +182,7 @@ export function stubClient(snapshot: Snapshot, o: { down?: () => boolean } = {})
     state: async () => { await reach(); return snapshot; },
     setAuto: async (itemId) => { await reach(); posts.push(`auto ${itemId}`); },
     setGreen: async () => { await reach(); posts.push('green'); },
+    interventions: async () => { await reach(); return []; },
     sleepRuns: async (ptyIds) => { await reach(); posts.push(`sleep ${ptyIds.join(',')}`); },
     continueActivity: async (activityId) => { await reach(); posts.push(`continue ${activityId}`); },
   };
