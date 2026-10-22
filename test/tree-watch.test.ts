@@ -1,7 +1,10 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { COALESCE_MS, createTreeWatch, gitDirOf, LEASE_TTL_MS, MIN_PUSH_MS, pathKind, PATHS_CAP, type WatchFn } from '../src/tree-watch.js';
 import type { Exec, TreeChange } from '../src/types.js';
+import { tempDir } from './temp-dir.js';
 
 test('pathKind drops a .git segment at any depth and in any case, keeps the root\'s own .git/index and .git/HEAD as git, and drops .hive/worktrees only under a checkout (#502)', () => {
   assert.equal(pathKind('src/a.ts', false), 'path');
@@ -135,4 +138,53 @@ test('close() closes every watcher and timer: a pending push and a lease\'s expi
   tree.close();
   tick(LEASE_TTL_MS);
   assert.deepEqual([fs.open(), changes], [[], []]);
+});
+
+// A task's worktree: its .git is a file naming its gitdir (#502 reads it with fs, no git)
+async function worktreeRoot(t: TestContext): Promise<{ root: string; gitdir: string }> {
+  const root = await tempDir(t, 'wt-');
+  const gitdir = await tempDir(t, 'gitdir-');
+  await writeFile(join(root, '.git'), `gitdir: ${gitdir}\n`);
+  return { root, gitdir };
+}
+
+test('a worktree\'s gitdir is watched, not recursively: its index and HEAD go out with no paths, its other files are dropped, and it closes with the root (#502)', async (t) => {
+  const { root, gitdir } = await worktreeRoot(t);
+  const { tree, fs, changes, tick } = setup(t);
+  await tree.lease('a-1', root, 'L1', false);
+  const git = fs.open(false).find((w) => w.path === gitdir);
+  assert.ok(git, 'the gitdir is watched');
+  for (const name of ['index.lock', 'HEAD.lock', 'ORIG_HEAD', 'FETCH_HEAD', 'logs']) git.emit('rename', name);
+  tick(MIN_PUSH_MS);
+  assert.deepEqual(changes, []);
+  git.emit('rename', 'index'); // git renames index.lock over index
+  tick(COALESCE_MS);
+  assert.deepEqual(changes, [{ type: 'tree', activityId: 'a-1' }]);
+  tick(MIN_PUSH_MS);
+  git.emit('rename', 'HEAD');
+  tick(COALESCE_MS);
+  assert.equal(changes.length, 2);
+  tree.release('L1');
+  assert.deepEqual(fs.open(), []);
+});
+
+test('watchNested watches a leased root\'s nested repository\'s gitdir, its own .git folder or the one its .git file names; its index goes out as paths [repo]; once per repo; ignored without a lease; closed with the root (#502, #1)', async (t) => {
+  const { root, gitdir } = await worktreeRoot(t);
+  const docsGitdir = await tempDir(t, 'docs-gitdir-');
+  await mkdir(join(root, 'docs'));
+  await writeFile(join(root, 'docs', '.git'), `gitdir: ${docsGitdir}\n`);
+  await mkdir(join(root, 'vendor', 'lib', '.git'), { recursive: true });
+  const { tree, fs, changes, tick } = setup(t);
+  await tree.watchNested(root, 'docs');
+  assert.equal(fs.watchers.length, 0, 'no lease: nothing is watched');
+  await tree.lease('a-1', root, 'L1', false);
+  await tree.watchNested(root, 'docs');
+  await tree.watchNested(root, 'docs');
+  await tree.watchNested(root, 'vendor/lib');
+  assert.deepEqual(fs.open(false).map((w) => w.path).sort(), [docsGitdir, gitdir, join(root, 'vendor', 'lib', '.git')].sort());
+  fs.open(false).find((w) => w.path === docsGitdir)?.emit('rename', 'index');
+  tick(COALESCE_MS);
+  assert.deepEqual(changes, [{ type: 'tree', activityId: 'a-1', paths: ['docs'] }]);
+  tree.release('L1');
+  assert.deepEqual(fs.open(), []);
 });
