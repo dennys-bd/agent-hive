@@ -167,3 +167,14 @@ export function aggregate(experiment: Experiment, filter: ReportFilter, now: num
     judgeRows: judgeRows(entering, byArm),
   };
 }
+
+// What POST …/evaluate takes (#474); here, beside the report and free of Node, so the report tab's confirmation counts the same runs (#467)
+const EVALUABLE: readonly BenchRunStatus[] = ['done', 'timeout', 'error'];
+
+/** The runs the experiment route evaluates (#474): every done, timeout or error run, in round then arm order. */
+export function evaluableTokens(experiment: Experiment): string[] {
+  const armIndex = (armId: string): number => experiment.arms.findIndex((a) => a.id === armId);
+  return [...experiment.rounds].sort((a, b) => a.n - b.n)
+    .flatMap((round) => round.runs.filter((r) => EVALUABLE.includes(r.status)).sort((a, b) => armIndex(a.armId) - armIndex(b.armId)))
+    .map((r) => r.token);
+}
