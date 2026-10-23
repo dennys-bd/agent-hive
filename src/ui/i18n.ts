@@ -2649,6 +2649,34 @@ const en = {
   'benchmark.config.eval.judge.hint': 'model that gives the scores',
   'benchmark.config.eval.rubric': 'rubric',
   'benchmark.config.eval.rubric.hint': 'one criterion per line, scored 1–5',
+  // #464: the benchmark compare tab, benchmark.hv.html's #s-comparar
+  'benchmark.compare.row.prompt': '{stage} · prompt',
+  'benchmark.compare.row.agent': '{stage} · agent',
+  'benchmark.compare.row.plugins': 'extra plugins',
+  'benchmark.compare.row.allow': 'rules · allow',
+  'benchmark.compare.row.deny': 'rules · deny',
+  'benchmark.compare.row.items': 'items',
+  'benchmark.compare.row.setup': 'worktree · setup',
+  'benchmark.compare.row.teardown': 'worktree · teardown',
+  'benchmark.compare.row.tasks': 'tasks',
+  'benchmark.compare.tasks.one': '{n} · {k} blocker',
+  'benchmark.compare.tasks.other': '{n} · {k} blockers',
+  'benchmark.compare.isolation.environment': 'environment',
+  'benchmark.compare.isolation.network': 'network',
+  'benchmark.compare.isolation.permissionMode': 'permission mode',
+  'benchmark.compare.isolation.allowedTools': 'allowed tools',
+  'benchmark.compare.isolation.deniedTools': 'denied tools',
+  'benchmark.compare.isolation.limits': 'caps',
+  'benchmark.compare.isolation.env': 'environment variables',
+  'benchmark.compare.isolation.betweenRounds': 'between rounds',
+  'benchmark.compare.lead': 'each arm compared with the base',
+  'benchmark.compare.diffOnly': 'differences only',
+  'benchmark.compare.config': 'config',
+  'benchmark.compare.base': 'base',
+  'benchmark.compare.hidden.one': '1 equal row hidden',
+  'benchmark.compare.hidden.other': '{n} equal rows hidden',
+  'benchmark.compare.legend': '· = same as the base · lighter background = the arm overrides · click a cell to copy the value to another arm',
+  'benchmark.compare.copyTo': 'copy to',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5292,6 +5320,34 @@ const pt: Record<MessageKey, string> = {
   'benchmark.config.eval.judge.hint': 'modelo que dá as notas',
   'benchmark.config.eval.rubric': 'rubrica',
   'benchmark.config.eval.rubric.hint': 'um critério por linha, nota 1–5',
+  // #464: the benchmark compare tab, benchmark.hv.html's #s-comparar
+  'benchmark.compare.row.prompt': '{stage} · prompt',
+  'benchmark.compare.row.agent': '{stage} · agente',
+  'benchmark.compare.row.plugins': 'plugins extras',
+  'benchmark.compare.row.allow': 'regras · allow',
+  'benchmark.compare.row.deny': 'regras · deny',
+  'benchmark.compare.row.items': 'itens',
+  'benchmark.compare.row.setup': 'worktree · setup',
+  'benchmark.compare.row.teardown': 'worktree · teardown',
+  'benchmark.compare.row.tasks': 'tarefas',
+  'benchmark.compare.tasks.one': '{n} · {k} bloqueio',
+  'benchmark.compare.tasks.other': '{n} · {k} bloqueios',
+  'benchmark.compare.isolation.environment': 'ambiente',
+  'benchmark.compare.isolation.network': 'rede',
+  'benchmark.compare.isolation.permissionMode': 'modo de permissão',
+  'benchmark.compare.isolation.allowedTools': 'ferramentas permitidas',
+  'benchmark.compare.isolation.deniedTools': 'ferramentas negadas',
+  'benchmark.compare.isolation.limits': 'tetos',
+  'benchmark.compare.isolation.env': 'variáveis de ambiente',
+  'benchmark.compare.isolation.betweenRounds': 'entre rodadas',
+  'benchmark.compare.lead': 'cada braço comparado com a base',
+  'benchmark.compare.diffOnly': 'só diferenças',
+  'benchmark.compare.config': 'config',
+  'benchmark.compare.base': 'base',
+  'benchmark.compare.hidden.one': '1 igual escondida',
+  'benchmark.compare.hidden.other': '{n} iguais escondidas',
+  'benchmark.compare.legend': '· = igual à base · fundo mais claro = o braço sobrepõe · clique numa célula para copiar o valor para outro braço',
+  'benchmark.compare.copyTo': 'copiar para',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
@@ -5329,7 +5385,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns';
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

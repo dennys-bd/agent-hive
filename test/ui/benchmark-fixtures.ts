@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
-import type { ArmSetup, BenchRound, BenchStagePick, BenchTask, Experiment } from '../../src/types';
-import { arm, experiment } from '../benchmark/fixtures';
+import type { AgentId, ArmSetup, BenchRound, BenchStagePick, BenchTask, Experiment } from '../../src/types';
+import { arm, experiment, SETUP } from '../benchmark/fixtures';
 import { json } from './plugins-fixtures';
 
 // Local times (no Z): the sub lines' HH:MM and d mmm read the same on any machine
@@ -64,3 +64,23 @@ export const ARMS = experiment({
   ],
 });
 export const ARMS_PATH = '/benchmark/experiments/exp-arms';
+
+const pickOf = (skill: string, agent: AgentId = 'claude', model?: string): BenchStagePick =>
+  ({ agent, ...(model === undefined ? {} : { model }), skill, prompt: `${skill} {title}\n\n{body}` });
+const compareTask = (n: number, blockedBy: string[] = []): BenchTask => ({ key: `T${n}`, title: `task ${n}`, body: '', blockedBy });
+const BASE_STAGES = { spec: pickOf('/hive:new-spec'), plan: pickOf('/hive:new-plan'), build: pickOf('/hive:new-build', 'claude', 'sonnet'), pr: pickOf('/hive:new-pr') };
+
+/** benchmark.hv.html's #s-comparar: A overrides three prompts and the plugins, B nothing, C build's agent and model, D its own tasks. An arm
+ *  sets only the stage fields it changes, as the arms tab writes them (#462). */
+export const COMPARE = experiment({
+  id: 'compare', name: 'skills: comandos × plugin', tasksHash: `91d4${'0'.repeat(60)}`,
+  base: { ...SETUP, stages: BASE_STAGES, tasks: [compareTask(1), compareTask(2, ['T1']), compareTask(3, ['T1', 'T2']), ...[4, 5, 6, 7, 8].map((n) => compareTask(n))] },
+  arms: [
+    { id: 'a1', letter: 'A', name: 'comandos do repo', overrides: {
+      stages: { spec: { skill: '/hive-spec' }, plan: { skill: '/hive-plan' }, build: { skill: '/hive-build' } }, plugins: ['superpowers', 'ecc'],
+    } },
+    { id: 'a2', letter: 'B', name: 'skills do plugin', overrides: {} },
+    { id: 'a3', letter: 'C', name: 'plugin + codex', overrides: { stages: { build: { agent: 'codex', model: 'gpt-5' } } } },
+    { id: 'a4', letter: 'D', name: 'tarefas juntas', overrides: { tasks: [compareTask(1), compareTask(2), compareTask(3)] } },
+  ],
+});

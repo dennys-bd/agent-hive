@@ -39,7 +39,7 @@ function ArmSlot({ experiment, arm, benchmark, onOpen, onRemove }: ArmSlotProps)
     <ArmCard
       experiment={experiment} arm={arm} onOpen={onOpen}
       name={isRenaming ? <ArmName experimentId={experiment.id} arm={arm} onDone={() => setRenaming(false)} /> : undefined}
-      menu={<ArmMenu experiment={experiment} arm={arm} overrideCount={count} onRename={() => setRenaming(true)} onRemove={onRemove} onCompare={() => benchmark.setTab('compare')} />}
+      menu={<ArmMenu experiment={experiment} arm={arm} overrideCount={count} onRename={() => setRenaming(true)} onRemove={onRemove} onCompare={() => benchmark.showInCompare(arm.id)} />}
     />
   );
 }

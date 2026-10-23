@@ -58,3 +58,21 @@ test("a refusal is a toast in the user's language, never the server's words, and
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('o experimento está executando ou dormindo'));
   expect(result.current.selected?.id).toBe(RUNNING.id);
 });
+
+test('só diferenças starts on and toggles; showInCompare opens comparar with the arm highlighted; another tab or experiment clears it, the same one keeps it (#464)', () => {
+  const { result } = hook(EXPERIMENTS);
+  expect(result.current.isDiffOnly).toBe(true);
+  act(() => result.current.toggleDiffOnly());
+  expect(result.current.isDiffOnly).toBe(false);
+  act(() => result.current.showInCompare('a2'));
+  expect([result.current.tab, result.current.highlightedArm]).toEqual(['compare', 'a2']);
+  act(() => result.current.setTab('compare'));
+  act(() => result.current.select(RUNNING.id)); // already selected
+  expect(result.current.highlightedArm).toBe('a2');
+  act(() => result.current.setTab('arms'));
+  expect(result.current.highlightedArm).toBeUndefined();
+  act(() => result.current.showInCompare('a2'));
+  act(() => result.current.select(DRAFT.id));
+  expect([result.current.tab, result.current.highlightedArm]).toEqual(['compare', undefined]);
+});
+

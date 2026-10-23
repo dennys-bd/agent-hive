@@ -11,7 +11,7 @@ import { ARMS, ARMS_PATH, stubBenchmarkFetch } from './benchmark-fixtures';
 type User = ReturnType<typeof userEvent.setup>;
 function Tab({ experiment = ARMS }: { experiment?: Experiment }) {
   const benchmark = useBenchmark([experiment]);
-  return <><ArmsTab experiment={experiment} benchmark={benchmark} /><output aria-label="aba">{benchmark.tab}</output></>;
+  return <><ArmsTab experiment={experiment} benchmark={benchmark} /><output aria-label="aba">{benchmark.tab}</output><output aria-label="destaque">{benchmark.highlightedArm}</output></>;
 }
 const card = (letter: string): HTMLElement => screen.getByRole('region', { name: `braço ${letter}` });
 // in jsdom a pointer click on a Radix trigger closes the menu again from the second test of a file on, so the trigger is focused and opened with Enter
@@ -42,7 +42,7 @@ test('copiar sobreposições para posts once with every checked arm, in arm orde
   await waitFor(() => expect(calls).toEqual([{ method: 'POST', path: `${ARMS_PATH}/arms/a1/copy`, body: { what: 'overrides', to: ['a2', 'a4'] } }]));
 });
 
-test('voltar tudo à base patches empty overrides, disabled with none; duplicar posts from the arm; ver em comparar selects compare (#462)', async () => {
+test('voltar tudo à base patches empty overrides, disabled with none; duplicar posts from the arm; ver em comparar selects compare with the arm highlighted (#462, #464)', async () => {
   const user = userEvent.setup();
   const calls = stubBenchmarkFetch();
   render(<Tab />);
@@ -60,6 +60,7 @@ test('voltar tudo à base patches empty overrides, disabled with none; duplicar 
     { method: 'POST', path: `${ARMS_PATH}/arms`, body: { from: 'a3' } },
   ]));
   expect(screen.getByLabelText('aba')).toHaveTextContent('compare');
+  expect(screen.getByLabelText('destaque')).toHaveTextContent('a3');
 });
 
 test('renomear turns the name into a field: a blank name stays refused in place, Enter posts the trimmed new one (#462)', async () => {

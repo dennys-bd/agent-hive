@@ -2,6 +2,7 @@ import { createElement, type ReactNode } from 'react';
 import type { Experiment, PlanReadings } from '../../../types';
 import { ArmsTab } from '@/components/benchmark/arms/ArmsTab';
 import type { Benchmark } from '@/components/benchmark/benchmark-dock';
+import { CompareTab } from '@/components/benchmark/compare/CompareTab';
 import { ConfigTab } from '@/components/benchmark/config/ConfigTab';
 import type { MessageKey } from '@/i18n';
 
@@ -17,7 +18,7 @@ export const TABS: readonly BenchmarkTab[] = [
   { id: 'arms', label: 'benchmark.header.tab.arms', render: (experiment, benchmark) => createElement(ArmsTab, { experiment, benchmark }) },
   // #463: keyed by the experiment, so another selection (a fork's included) starts with no section in edit; no primary action (node 2.5)
   { id: 'config', label: 'benchmark.header.tab.config', render: (experiment, _benchmark, context) => createElement(ConfigTab, { key: experiment.id, experiment, context }) },
-  { id: 'compare', label: 'benchmark.header.tab.compare' },
+  { id: 'compare', label: 'benchmark.header.tab.compare', render: (experiment, benchmark) => createElement(CompareTab, { experiment, benchmark }) },
   { id: 'execution', label: 'benchmark.header.tab.execution' },
   { id: 'report', label: 'benchmark.header.tab.report' },
 ];
