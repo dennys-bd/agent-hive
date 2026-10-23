@@ -28,10 +28,14 @@ export interface BenchControlRouteDeps {
   log: Pick<Logger, 'warn'>;
 }
 
-const fail = (res: Response, status: number, error: string, message: string): void => void res.status(status).json({ error, message });
+// A refusal answers the UI with a code its i18n copy maps; the code and the message also reach hive.log, the only place the raw text is kept (#465)
+const fail = (deps: Pick<BenchControlRouteDeps, 'log'>, req: Request, res: Response, status: number, error: string, message: string): void => {
+  deps.log.warn(`benchmark ${String(req.params.id)}: ${req.path.split('/').at(-1)} refused ${status} ${error}: ${message}`);
+  res.status(status).json({ error, message });
+};
 const ok = (res: Response, status: number): void => void res.status(status).json({ ok: true });
-const refuse = (res: Response, experiment: Experiment, action: string): void =>
-  fail(res, HTTP_CONFLICT, 'status', `${action} is refused while the experiment is ${experiment.status}`);
+const refuse = (deps: Pick<BenchControlRouteDeps, 'log'>, req: Request, res: Response, experiment: Experiment, action: string): void =>
+  fail(deps, req, res, HTTP_CONFLICT, 'status', `${action} is refused while the experiment is ${experiment.status}`);
 const isRunning = (experiment: Experiment): boolean => experiment.status === 'running' || experiment.status === 'sleeping';
 
 // current reads the experiment again from the live state, without touching the response
@@ -44,16 +48,16 @@ function found(deps: BenchControlRouteDeps, req: Request, res: Response): Found 
   const id = String(req.params.id);
   const current = (): Experiment | undefined => live.state.benchmark.experiments.find((e) => e.id === id);
   const experiment = current();
-  if (experiment === undefined) fail(res, HTTP_NOT_FOUND, 'unknown_experiment', `no experiment ${id}`);
+  if (experiment === undefined) fail(deps, req, res, HTTP_NOT_FOUND, 'unknown_experiment', `no experiment ${id}`);
   return experiment === undefined ? undefined : { experiment, current };
 }
 
 // server-benchmark.ts keeps its own copy: importing it from there would close an import cycle
-function parsed<T>(schema: z.ZodType<T>, req: Request, res: Response): T | undefined {
+function parsed<T>(deps: BenchControlRouteDeps, schema: z.ZodType<T>, req: Request, res: Response): T | undefined {
   const result = schema.safeParse(req.body ?? {});
   if (result.success) return result.data;
   const issue = result.error.issues[0];
-  fail(res, HTTP_BAD_REQUEST, 'bad_body', `${issue?.path.join('.') || 'body'}: ${issue?.message ?? 'invalid'}`);
+  fail(deps, req, res, HTTP_BAD_REQUEST, 'bad_body', `${issue?.path.join('.') || 'body'}: ${issue?.message ?? 'invalid'}`);
   return undefined;
 }
 
@@ -61,31 +65,31 @@ function parsed<T>(schema: z.ZodType<T>, req: Request, res: Response): T | undef
 interface PairsEdit { apply(): Promise<unknown>; undo(): Promise<unknown> }
 
 // The blindness of every arm that will run first, so a refusal starts and edits nothing (spec); then the edit
-async function start(deps: BenchControlRouteDeps, res: Response, experiment: Experiment, edit?: PairsEdit): Promise<void> {
-  if (deps.runner.isLive(experiment.id)) return fail(res, HTTP_CONFLICT, 'live', 'the experiment is running in this Hive');
+async function start(deps: BenchControlRouteDeps, req: Request, res: Response, experiment: Experiment, edit?: PairsEdit): Promise<void> {
+  if (deps.runner.isLive(experiment.id)) return fail(deps, req, res, HTTP_CONFLICT, 'live', 'the experiment is running in this Hive');
   const leak = await deps.runner.blindness(experiment);
-  if (leak !== undefined) return fail(res, HTTP_UNPROCESSABLE, 'blindness', leak);
+  if (leak !== undefined) return fail(deps, req, res, HTTP_UNPROCESSABLE, 'blindness', leak);
   await edit?.apply();
   const answer = await deps.runner.run(experiment.id).catch(async (err: unknown) => { await edit?.undo(); throw err; });
   if (answer === 'started') return ok(res, HTTP_ACCEPTED);
   await edit?.undo();
-  fail(res, HTTP_CONFLICT, answer, answer === 'live' ? 'the experiment is running in this Hive' : 'another Hive is running this experiment');
+  fail(deps, req, res, HTTP_CONFLICT, answer, answer === 'live' ? 'the experiment is running in this Hive' : 'another Hive is running this experiment');
 }
 
 function registerStartRoutes(app: Express, deps: BenchControlRouteDeps): void {
   app.post(`${E}/run`, async (req, res) => {
     const experiment = found(deps, req, res)?.experiment;
     if (experiment === undefined) return;
-    if (isRunning(experiment)) return refuse(res, experiment, 'run');
-    if (missingRuns(experiment).length === 0) return fail(res, HTTP_CONFLICT, 'nothing_missing', 'every run of every round has run');
-    await start(deps, res, experiment);
+    if (isRunning(experiment)) return refuse(deps, req, res, experiment, 'run');
+    if (missingRuns(experiment).length === 0) return fail(deps, req, res, HTTP_CONFLICT, 'nothing_missing', 'every run of every round has run');
+    await start(deps, req, res, experiment);
   });
   app.post(`${E}/more-rounds`, async (req, res) => {
     const hit = found(deps, req, res);
-    const body = hit === undefined ? undefined : parsed(MORE, req, res);
+    const body = hit === undefined ? undefined : parsed(deps, MORE, req, res);
     if (hit === undefined || body === undefined) return;
     const { experiment } = hit;
-    if (experiment.status === 'draft') return refuse(res, experiment, 'more-rounds');
+    if (experiment.status === 'draft') return refuse(deps, req, res, experiment, 'more-rounds');
     // the pace is read again where it is edited, undo included: the request's own read can be older than a concurrent edit, which an undo
     // must not clobber, so it takes back its pairs only
     const pairsBy = async (delta: number): Promise<unknown> => {
@@ -97,7 +101,7 @@ function registerStartRoutes(app: Express, deps: BenchControlRouteDeps): void {
       await edit.apply();
       return ok(res, HTTP_OK);
     }
-    await start(deps, res, { ...experiment, pace: { ...experiment.pace, pairs: experiment.pace.pairs + body.pairs } }, edit);
+    await start(deps, req, res, { ...experiment, pace: { ...experiment.pace, pairs: experiment.pace.pairs + body.pairs } }, edit);
   });
 }
 
@@ -105,23 +109,23 @@ function registerPaceRoutes(app: Express, deps: BenchControlRouteDeps): void {
   app.post(`${E}/stop-after-round`, async (req, res) => {
     const experiment = found(deps, req, res)?.experiment;
     if (experiment === undefined) return;
-    if (!isRunning(experiment)) return refuse(res, experiment, 'stop-after-round');
+    if (!isRunning(experiment)) return refuse(deps, req, res, experiment, 'stop-after-round');
     await deps.dispatch({ type: 'benchmarkStopAfterRound', id: experiment.id, on: true });
     ok(res, HTTP_OK);
   });
   app.post(`${E}/sleep`, async (req, res) => {
     const experiment = found(deps, req, res)?.experiment;
-    const body = experiment === undefined ? undefined : parsed(SLEEP, req, res);
+    const body = experiment === undefined ? undefined : parsed(deps, SLEEP, req, res);
     if (experiment === undefined || body === undefined) return;
-    if (experiment.status !== 'running') return refuse(res, experiment, 'sleep');
+    if (experiment.status !== 'running') return refuse(deps, req, res, experiment, 'sleep');
     await deps.runner.sleep(experiment.id, body.reason, body.wakeAt);
     ok(res, HTTP_OK);
   });
   app.post(`${E}/wake`, (req, res) => {
     const experiment = found(deps, req, res)?.experiment;
-    const body = experiment === undefined ? undefined : parsed(WAKE, req, res);
+    const body = experiment === undefined ? undefined : parsed(deps, WAKE, req, res);
     if (experiment === undefined || body === undefined) return;
-    if (experiment.status !== 'sleeping') return refuse(res, experiment, 'wake');
+    if (experiment.status !== 'sleeping') return refuse(deps, req, res, experiment, 'wake');
     // a wake after a restart reruns runs and resumes the loop: the answer does not wait for it
     void deps.runner.wake(experiment.id, body.deadline).catch(() => deps.log.warn(`benchmark ${experiment.id}: wake failed`));
     ok(res, HTTP_ACCEPTED);

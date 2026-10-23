@@ -7,10 +7,11 @@ import type { StartAnswer } from '../../src/benchmark/runner.js';
 import type { WakeDeadline } from '../../src/benchmark/runner-sleep.js';
 import { registerBenchmarkControlRoutes } from '../../src/server-benchmark-control.js';
 import type { BenchmarkEvent, Experiment, ExperimentStatus } from '../../src/types.js';
+import type { Logger } from '../../src/log.js';
 import { fakeLog } from '../fakes.js';
 import { experiment, run, stateWith } from './fixtures.js';
 
-function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?: StartAnswer; leak?: string; later?: Experiment; concurrentTimeoutMs?: number } = {}) {
+function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?: StartAnswer; leak?: string; later?: Experiment; concurrentTimeoutMs?: number; log?: Logger } = {}) {
   let lives = 0;
   let reads = 0; // the first read is the request's own; `later` is what a read at dispatch time finds
   let state = stateWith(exp);
@@ -23,7 +24,7 @@ function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?
       lives += 1;
       return { get state() { if (reads++ === 1 && stub.later !== undefined) state = stateWith(stub.later); return state; } };
     },
-    dispatch: async (event) => { events.push(event); state = benchmarkReduce(state, event); }, log: fakeLog().log,
+    dispatch: async (event) => { events.push(event); state = benchmarkReduce(state, event); }, log: stub.log ?? fakeLog().log,
     runner: {
       run: async (id) => {
         calls.push(['run', id]);
@@ -158,4 +159,13 @@ test('more-rounds undo takes back only its pairs: a pace edited meanwhile keeps 
   assert.equal(h.lives(), 1, 'requireLive answers the response itself, so it is asked once per request');
   const paces = h.events.flatMap((e) => (e.type === 'benchmarkEdited' && e.patch.pace !== undefined ? [e.patch.pace] : []));
   assert.deepEqual(paces.map((p) => [p.pairs, p.runTimeoutMs]), [[3, NOTHING_MISSING.pace.runTimeoutMs], [1, 999]]);
+});
+
+test('every refusal of the control routes reaches the log with its code and message (#465)', async (t) => {
+  const { log, lines } = fakeLog();
+  const h = routes(t, NOTHING_MISSING, { log });
+  assert.deepEqual(codeOf(await h.post('/exp-1/run')), [409, 'nothing_missing']);
+  assert.ok(lines.some((l) => l.startsWith('WARN benchmark exp-1: run refused 409 nothing_missing: every run of every round has run')), lines.join('\n'));
+  await h.post('/exp-1/more-rounds', { pairs: 0 });
+  assert.ok(lines.some((l) => l.includes('more-rounds refused 400 bad_body')), lines.join('\n'));
 });
