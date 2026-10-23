@@ -4,24 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Experiment } from '../types.js';
+import { type Format, HASH_SHOWN, millions, plain, usd, duration } from './format.js';
 import { aggregate, type BenchReport, type DiffCell, type RatioCell, type ReportRow, type SpreadCell } from './report.js';
 
-const MINUTE_MS = 60_000;
-const HOUR_MINUTES = 60;
-const MILLION = 1_000_000;
-export const HASH_SHOWN = 6; // the screens show a hash's first six characters
 const NO_VALUE = '-';
-type Format = (value: number) => string;
-
-// A median of two may be a half; more than two decimals is noise in a table
-export const plain: Format = (value) => String(Number(value.toFixed(2)));
-export const millions: Format = (value) => `${(value / MILLION).toFixed(1)}M`;
-export const usd: Format = (value) => `$${plain(value)}`;
-export function duration(ms: number): string {
-  const minutes = Math.round(ms / MINUTE_MS);
-  const hours = Math.floor(minutes / HOUR_MINUTES);
-  return hours === 0 ? `${minutes}m` : `${hours}h${String(minutes % HOUR_MINUTES).padStart(2, '0')}`;
-}
 
 // A name, a criterion or a reason is the user's (or an MCP agent's) text: a newline in it would forge a line of the one file
 // that maps tokens to arms, and a pipe (or a backslash before one) would split a table's cell
