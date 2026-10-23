@@ -28,11 +28,13 @@ function Option({ name, value, choice, title, hint, onPick }: OptionProps) {
 function DeadlineOptions({ experiment, choice, until, onChoice, onUntil }: DeadlineProps) {
   const name = useId();
   const field = useRef<HTMLInputElement>(null);
-  const { n } = roundOf(experiment);
+  const { n, m } = roundOf(experiment);
+  const deadline = experiment.pace.until ?? '';
+  // On the last round no next one was owed, so the notice names none
   return (
     <div className="flex flex-col gap-3 text-[13px]">
       <p className="flex items-center gap-2 text-waiting">
-        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-current" />{t('benchmark.sleep.passed', { until: experiment.pace.until ?? '', next: n + 1 })}
+        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-current" />{n >= m ? t('benchmark.sleep.passedLast', { until: deadline }) : t('benchmark.sleep.passed', { until: deadline, next: n + 1 })}
       </p>
       <div role="radiogroup" aria-label={t('benchmark.sleep.deadline')} className="flex flex-col gap-2">
         <Option name={name} value="finish-round" choice={choice} title={t('benchmark.sleep.finishRound', { n })} hint={t('benchmark.sleep.finishRoundHint')} onPick={onChoice} />

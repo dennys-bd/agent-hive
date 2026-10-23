@@ -15,10 +15,10 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-async function show(now: Date) {
+async function show(now: Date, experiment = ASLEEP) {
   vi.setSystemTime(now);
   const onClose = vi.fn();
-  render(<WakeDialog experiment={ASLEEP} onClose={onClose} />);
+  render(<WakeDialog experiment={experiment} onClose={onClose} />);
   return { dialog: within(await screen.findByRole('alertdialog', { name: 'Acordar experimento' })), onClose };
 }
 
@@ -40,6 +40,11 @@ test('past the deadline: the yellow notice and the three options, terminar a rod
   expect(dialog.getAllByRole('radio').map((r) => r.closest('label')?.querySelector('.font-medium')?.textContent)).toEqual(['terminar a rodada 2', 'novo horário limite', 'sem limite']);
   expect(dialog.getByRole('radio', { name: /^terminar a rodada 2/ })).toBeChecked();
   expect(dialog.getByText('dormiu 1 vez · 2h25 fora do tempo dos runs')).toBeInTheDocument();
+});
+
+test('past the deadline on the last round: the notice names no next round (#468)', async () => {
+  const { dialog } = await show(PASSED, { ...ASLEEP, pace: { ...ASLEEP.pace, pairs: 2 } });
+  expect(dialog.getByText('o horário limite de 07:00 passou enquanto dormia.')).toHaveClass('text-waiting');
 });
 
 test("each option posts its deadline: finish-round, { until }, none (#468)", async () => {

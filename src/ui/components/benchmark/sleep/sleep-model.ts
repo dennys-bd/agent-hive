@@ -15,9 +15,9 @@ const HOUR_MINUTES = 60;
 
 export const controlPath = (id: string, action: 'sleep' | 'wake'): string => `/benchmark/experiments/${encodeURIComponent(id)}/${action}`;
 
-/** The runs dormir sleeps: the current round's running and waiting ones, as the reducer's `slept` moves them. */
+/** The runs dormir sleeps: every round's running and waiting ones, as the reducer's `slept` moves them (a rerun of an earlier round too). */
 export const runsToSleep = (e: Experiment): BenchRun[] =>
-  (e.rounds.at(-1)?.runs ?? []).filter((r) => r.status === 'running' || r.status === 'waiting');
+  e.rounds.flatMap((r) => r.runs).filter((r) => r.status === 'running' || r.status === 'waiting');
 
 /** The runs a wake continues: every sleeping one, as the reducer's `woken` reads them. */
 export const sleepingRuns = (e: Experiment): BenchRun[] => e.rounds.flatMap((r) => r.runs).filter((r) => r.status === 'sleeping');

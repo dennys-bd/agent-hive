@@ -15,6 +15,12 @@ test("the runs that sleep are the current round's running and waiting ones; the 
   expect(sleepingRuns(SLEEPY)).toEqual([]);
 });
 
+test('a rerun of an earlier round still running sleeps too, as the reducer moves every round\'s runs (#468)', () => {
+  const [first, second] = SLEEPY.rounds;
+  const rerun = { ...first, runs: [run('aa11bb22', { armId: 'a1', status: 'running' })] };
+  expect(runsToSleep({ ...SLEEPY, rounds: [rerun, second] }).map((r) => r.token)).toEqual(['aa11bb22', ...TOKENS]);
+});
+
 test('tasks in progress: the tasks with a stage less the delivered ones, floored at 0; a run without metrics counts 0 (#468)', () => {
   expect(tasksInProgress(runsToSleep(SLEEPY))).toBe(7); // the screen's 7, not the 12 that total − delivered gives
   expect(tasksInProgress([run('nometric', { delivered: 2 }), run('ahead', { delivered: 9, metrics: metricsOf(1, 1) })])).toBe(0);
