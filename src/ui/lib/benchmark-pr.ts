@@ -4,7 +4,7 @@ import type { Arm, BenchRun, BenchRunStatus, Experiment } from '../../types.js';
 import { type MessageKey, t } from '../i18n.js';
 import type { PrProblem } from './benchmark-pr-api.js';
 
-export const TOKEN_SHOWN = 6; // the screens show a token's first six characters (the PR picker, the report's intervention line)
+export const TOKEN_SHOWN = 6; // the screens show a token's first six characters (the PR picker, the report's intervention line, the sleep dialog's pills)
 const STATUS_KEY: Partial<Record<BenchRunStatus, MessageKey>> = {
   timeout: 'benchmark.pr.status.timeout', error: 'benchmark.pr.status.error', interrupted: 'benchmark.pr.status.interrupted',
 };

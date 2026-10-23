@@ -5,7 +5,7 @@ import { type BenchmarkSlots, useBenchmark } from '@/components/benchmark/benchm
 import { ExperimentHeader } from '@/components/benchmark/ExperimentHeader';
 import { setLanguage } from '@/i18n';
 import type { Experiment } from '../../src/types';
-import { DONE, DRAFT, EXPERIMENTS, MCP_DRAFT, RUNNING, stubBenchmarkFetch } from './benchmark-fixtures';
+import { ASLEEP, DONE, DRAFT, EXPERIMENTS, MCP_DRAFT, RUNNING, SLEEPY, stubBenchmarkFetch } from './benchmark-fixtures';
 
 function Head({ experiment, list = EXPERIMENTS, slots, primary }: { experiment: Experiment; list?: Experiment[]; slots?: BenchmarkSlots; primary?: string }) {
   const benchmark = useBenchmark(list, slots);
@@ -30,19 +30,27 @@ test('the chip and the mono line per status and creator (#461)', () => {
   expect(screen.getByText('concluído')).toBeInTheDocument();
 });
 
-test('dormir: disabled at .35 while running with no handler, live with one, absent in every other status; the primary slot renders only when given (#461)', async () => {
+test('dormir sits only while running and opens Dormir experimento; awake, the tab primary renders (#461, #468)', async () => {
   const user = userEvent.setup();
-  const sleep = vi.fn();
-  const { rerender } = render(<Head experiment={RUNNING} />);
-  expect(screen.getByRole('button', { name: 'dormir' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'dormir' })).toHaveClass('disabled:opacity-35');
-  rerender(<Head experiment={RUNNING} slots={{ sleep }} primary="executar" />);
-  await user.click(screen.getByRole('button', { name: 'dormir' }));
-  expect(sleep).toHaveBeenCalledWith(RUNNING);
+  const { rerender } = render(<Head experiment={SLEEPY} primary="executar" />);
   expect(screen.getByRole('button', { name: 'executar' })).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'dormir' }));
+  expect(await screen.findByRole('alertdialog', { name: 'Dormir experimento' })).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
   rerender(<Head experiment={DRAFT} />);
   expect(screen.queryByRole('button', { name: 'dormir' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'executar' })).not.toBeInTheDocument();
+});
+
+test("asleep: the moon chip, no dormir, and acordar in the tab primary's place, opening Acordar experimento (#468)", async () => {
+  const user = userEvent.setup();
+  render(<Head experiment={ASLEEP} primary="executar" />);
+  expect(screen.getByText('dormindo · rodada 2/3')).toHaveClass('border-empty');
+  expect(screen.queryByRole('button', { name: 'dormir' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'executar' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'acordar' }));
+  expect(await screen.findByRole('alertdialog', { name: 'Acordar experimento' })).toBeInTheDocument();
 });
 
 test("the header's duplicar opens Duplicar experimento for this experiment (#461)", async () => {

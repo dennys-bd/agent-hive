@@ -8,7 +8,7 @@ import { ExecutionTab } from '@/components/benchmark/execution/ExecutionTab';
 import { TABS } from '@/components/benchmark/tabs';
 import { setLanguage } from '@/i18n';
 import { goToRunHive, runHiveUrl } from '@/lib/benchmark-run-api';
-import type { Experiment } from '../../src/types';
+import type { BenchRun, Experiment } from '../../src/types';
 import { NOW, SCREEN } from './benchmark-execution-fixtures';
 import { json } from './plugins-fixtures';
 
@@ -58,6 +58,14 @@ test("the screen's three rounds: the top line, the bands newest first, each card
   expect(within(band(3)).getByText('na fila · começa quando a 2 termina, se antes de 07:00')).toBeInTheDocument();
   expect(card(3, 'D')).toHaveTextContent('—na fila0/3 entregues');
   expect(within(card(3, 'D')).queryByRole('button')).toBeNull();
+});
+
+test('while the experiment sleeps, the runs it slept read dormindo with the sleeping chip\'s look (#468)', () => {
+  const sleep = (r: BenchRun): BenchRun => (r.status === 'running' || r.status === 'waiting' ? { ...r, status: 'sleeping' } : r);
+  const asleep: Experiment = { ...SCREEN, status: 'sleeping', rounds: SCREEN.rounds.map((r) => ({ ...r, runs: r.runs.map(sleep) })) };
+  render(<Tab experiment={asleep} />);
+  for (const letter of ['A', 'B']) expect(within(card(2, letter)).getByText('dormindo')).toHaveClass('text-muted-foreground');
+  expect(within(card(1, 'C')).getByText('timeout')).toBeInTheDocument();
 });
 
 test("abrir posts /open and sends the window to the answered port; a refusal is a toast and the window stays (#465)", async () => {
