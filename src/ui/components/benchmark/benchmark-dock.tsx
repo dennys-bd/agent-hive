@@ -23,6 +23,8 @@ export interface Benchmark {
   rename(id: string, name: string): Promise<void>; setArchived(id: string, archived: boolean): Promise<void>;
   remove(id: string): Promise<void>; // selects the next experiment in the sidebar, or none
   slots: BenchmarkSlots;
+  isDiffOnly: boolean; toggleDiffOnly(): void; // só diferenças (#464): on by default, kept like the tab
+  highlightedArm?: string; showInCompare(armId: string): void; // ver em comparar (#464): the compare tab with that arm's column marked
 }
 
 const E = '/benchmark/experiments';
@@ -31,31 +33,44 @@ const NO_SLOTS: BenchmarkSlots = {};
 // The live rows in the sidebar's order, unfiltered: what the first selection and "the next experiment" after a delete read
 const rowsOf = (experiments: readonly Experiment[]): Experiment[] => groupExperiments(experiments, '').groups.flatMap((g) => g.experiments);
 
-/** The benchmark view's state (#461): the selection, the tab, the search and the archived toggle, kept in the always-mounted dock so they survive a
+/** The benchmark view's state (#461): the selection, the tab, the search, the archived toggle, só diferenças and the highlighted arm (#464), kept in the always-mounted dock so they survive a
  * switch of view, not a restart. The experiments are the state's; every write posts its route and the /events stream brings the result. */
 export function useBenchmark(experiments: readonly Experiment[], slots: BenchmarkSlots = NO_SLOTS): Benchmark {
   const [selectedId, setSelectedId] = useState<string>();
   const [tab, setTab] = useState<TabId>('arms');
   const [query, setQuery] = useState('');
   const [isArchivedOpen, setArchivedOpen] = useState(false);
+  const [isDiffOnly, setDiffOnly] = useState(true);
+  const [highlightedArm, setHighlightedArm] = useState<string>();
   const rows = rowsOf(experiments);
   // A fresh draft is selected by id before the stream delivers it, so the first row shows for that moment
   const selected = experiments.find((e) => e.id === selectedId) ?? rows[0];
+  // The highlight marks an arm of one experiment on one tab (#464): leaving either clears it, staying keeps it
+  const choose = (id: string | undefined): void => {
+    if (id !== selected?.id) setHighlightedArm(undefined);
+    setSelectedId(id);
+  };
+  const pickTab = (next: TabId): void => {
+    if (next !== tab) setHighlightedArm(undefined);
+    setTab(next);
+  };
   const create = async (body: object): Promise<void> => {
     const answer = await send<Experiment>('POST', E, body);
-    if (answer !== undefined) setSelectedId(answer.id);
+    if (answer !== undefined) choose(answer.id);
   };
-  const patch = async (id: string, body: object): Promise<void> => void (await send('PATCH', pathOf(id), body));
+  const patch = async (path: string, body: object): Promise<void> => void (await send('PATCH', path, body));
   const remove = async (id: string): Promise<void> => {
     const at = rows.findIndex((e) => e.id === id);
     const next = at === -1 ? undefined : (rows[at + 1] ?? rows[at - 1]);
-    if ((await send('DELETE', pathOf(id))) !== undefined) setSelectedId(next?.id);
+    if ((await send('DELETE', pathOf(id))) !== undefined) choose(next?.id);
   };
   return {
-    experiments, sidebar: groupExperiments(experiments, query), selected, select: setSelectedId, tab, setTab, query, setQuery,
+    experiments, sidebar: groupExperiments(experiments, query), selected, select: choose, tab, setTab: pickTab, query, setQuery,
     isArchivedOpen, toggleArchived: () => setArchivedOpen((open) => !open),
     createEmpty: (workspace) => create({ kind: 'empty', workspace }), duplicate: (of) => create({ kind: 'duplicate', of }),
-    rename: (id, name) => patch(id, { name }), setArchived: (id, archived) => patch(id, { archived }), remove, slots,
+    rename: (id, name) => patch(pathOf(id), { name }), setArchived: (id, archived) => patch(pathOf(id), { archived }), remove, slots,
+    isDiffOnly, toggleDiffOnly: () => setDiffOnly((on) => !on), highlightedArm,
+    showInCompare: (armId) => { setTab('compare'); setHighlightedArm(armId); },
   };
 }
 
