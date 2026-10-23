@@ -2716,6 +2716,20 @@ const en = {
   'benchmark.execution.card.open': 'open',
   'benchmark.execution.card.result': 'result',
   'benchmark.execution.failed.open': 'could not open the run\'s Hive',
+  'benchmark.execution.action.run': 'run',
+  'benchmark.execution.action.stop': 'stop after the round',
+  'benchmark.execution.action.stopping': 'stops after this round',
+  'benchmark.execution.action.more': 'run more rounds',
+  'benchmark.execution.run.title': 'Run experiment',
+  'benchmark.execution.more.title': 'Run more rounds',
+  'benchmark.execution.more.pairs': 'pairs',
+  'benchmark.execution.more.text': 'runs {pairs} more, one run of each arm per pair.',
+  'benchmark.execution.failed.blindness': 'a forbidden word reaches the workers in {file}',
+  'benchmark.execution.failed.live': 'the experiment is already running in this Hive',
+  'benchmark.execution.failed.locked': 'another Hive is running this experiment',
+  'benchmark.execution.failed.nothingMissing': 'every run of every round has already run',
+  'benchmark.execution.failed.status': 'the experiment\'s state no longer allows it',
+  'benchmark.execution.failed.unknown': 'Unexpected error',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5426,6 +5440,20 @@ const pt: Record<MessageKey, string> = {
   'benchmark.execution.card.open': 'abrir',
   'benchmark.execution.card.result': 'resultado',
   'benchmark.execution.failed.open': 'não foi possível abrir o Hive do run',
+  'benchmark.execution.action.run': 'executar',
+  'benchmark.execution.action.stop': 'parar após a rodada',
+  'benchmark.execution.action.stopping': 'para após esta rodada',
+  'benchmark.execution.action.more': 'executar mais rodadas',
+  'benchmark.execution.run.title': 'Executar experimento',
+  'benchmark.execution.more.title': 'Executar mais rodadas',
+  'benchmark.execution.more.pairs': 'pares',
+  'benchmark.execution.more.text': 'executa {pairs} a mais, um run de cada braço por par.',
+  'benchmark.execution.failed.blindness': 'uma palavra proibida chega aos workers em {file}',
+  'benchmark.execution.failed.live': 'o experimento já está executando neste Hive',
+  'benchmark.execution.failed.locked': 'outro Hive está executando este experimento',
+  'benchmark.execution.failed.nothingMissing': 'todos os runs de todas as rodadas já foram executados',
+  'benchmark.execution.failed.status': 'o estado do experimento não permite mais isso',
+  'benchmark.execution.failed.unknown': 'Erro inesperado',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

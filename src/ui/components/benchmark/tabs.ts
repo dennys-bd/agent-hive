@@ -1,6 +1,7 @@
 import { createElement, type ReactNode } from 'react';
 import type { Experiment, PlanReadings } from '../../../types';
 import { ArmsTab } from '@/components/benchmark/arms/ArmsTab';
+import { primaryFor } from '@/components/benchmark/execution/RunControls';
 import { ExecutionTab } from '@/components/benchmark/execution/ExecutionTab';
 import type { Benchmark } from '@/components/benchmark/benchmark-dock';
 import { CompareTab } from '@/components/benchmark/compare/CompareTab';
@@ -24,13 +25,20 @@ export interface BenchmarkTab {
 const execution: BenchmarkTab = {
   id: 'execution', label: 'benchmark.header.tab.execution',
   render: (experiment, benchmark) => createElement(ExecutionTab, { experiment, benchmark, result: execution.result }),
+  primary: (experiment) => primaryFor('execution', experiment),
 };
 
 export const TABS: readonly BenchmarkTab[] = [
-  { id: 'arms', label: 'benchmark.header.tab.arms', render: (experiment, benchmark) => createElement(ArmsTab, { experiment, benchmark }) },
+  {
+    id: 'arms', label: 'benchmark.header.tab.arms',
+    render: (experiment, benchmark) => createElement(ArmsTab, { experiment, benchmark }), primary: (experiment) => primaryFor('arms', experiment),
+  },
   // #463: keyed by the experiment, so another selection (a fork's included) starts with no section in edit; no primary action (node 2.5)
   { id: 'config', label: 'benchmark.header.tab.config', render: (experiment, _benchmark, context) => createElement(ConfigTab, { key: experiment.id, experiment, context }) },
-  { id: 'compare', label: 'benchmark.header.tab.compare', render: (experiment, benchmark) => createElement(CompareTab, { experiment, benchmark }) },
+  {
+    id: 'compare', label: 'benchmark.header.tab.compare',
+    render: (experiment, benchmark) => createElement(CompareTab, { experiment, benchmark }), primary: (experiment) => primaryFor('compare', experiment),
+  },
   execution,
-  { id: 'report', label: 'benchmark.header.tab.report' },
+  { id: 'report', label: 'benchmark.header.tab.report', primary: (experiment) => primaryFor('report', experiment) },
 ];
