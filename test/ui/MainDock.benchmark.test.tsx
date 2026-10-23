@@ -123,6 +123,9 @@ test("the cap row's spend reads the window's rate limits through the dock (#463)
 
 test('a sleeping experiment: the moon chip, no dormir, and acordar as the primary on every tab (#468)', async () => {
   const user = userEvent.setup();
+  // The report tab reads /report (#467): left loading, since the generic stub's answer is no report
+  const fetch = globalThis.fetch;
+  vi.stubGlobal('fetch', (path: string, init?: RequestInit) => (/\/report(\?|$)/.test(String(path)) ? new Promise(() => {}) : fetch(path, init)));
   render(<Window experiments={[ASLEEP]} />);
   key('4');
   expect(within(head()).getByText('dormindo · rodada 2/3')).toBeInTheDocument();
