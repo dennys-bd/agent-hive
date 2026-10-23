@@ -50,3 +50,24 @@ test('the host re-reads GET /benchmark-run every 15 s, so terminal input the dae
     vi.useRealTimers();
   }
 });
+
+test('a write made while the popover is open waits on the same answer: approved, both go out; nothing is half applied (#469)', async () => {
+  const calls = stubRunFetch(RUN);
+  await bootRunHive();
+  const first = postJson('/tasks/A/approve');
+  const second = postJson('/tasks/A/move-to', { stage: 'plan' });
+  readPendingAsk()?.answer(true, false);
+  await Promise.all([first, second]);
+  expect([readPendingAsk(), writes(calls)]).toEqual([undefined, ['POST /tasks/A/approve', 'POST /tasks/A/move-to']]);
+});
+
+test('the host unmounting cancels an ask nobody can answer, so the next write asks again instead of waiting forever (#469)', async () => {
+  const calls = stubRunFetch(RUN);
+  await bootRunHive();
+  const view = render(<RunModeHost />);
+  const stuck = postJson('/tasks/A/approve');
+  view.unmount();
+  await expect(stuck).rejects.toThrow(t('benchmark.run.cancelled'));
+  void postJson('/tasks/A/approve');
+  expect([readPendingAsk() !== undefined, writes(calls)]).toEqual([true, []]);
+});

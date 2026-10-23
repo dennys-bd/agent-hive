@@ -58,27 +58,36 @@ export async function refreshRunHive(): Promise<void> {
 const cancelled = (): WriteCancelled => new WriteCancelled(t('benchmark.run.cancelled'));
 
 // What the gate asks before a write (spec decisions 3, 4, 7): frozen refuses with human copy (3.5 answers 409 anyway); a don't-ask-again lets
-// it go; else the popover, anchored at the control that was clicked. One ask at a time: a second write while one is open is cancelled
+// it go; else the popover, anchored at the control that was clicked. One ask at a time: a write made while one is open waits on that same
+// answer, so a click that fires two writes is never half applied
+let asking: Promise<void> | undefined;
 function ask(): Promise<void> {
   if (run === undefined) return Promise.resolve();
   if (run.marker.frozen) return Promise.reject(new Error(t('benchmark.run.frozen')));
   if (readView(NO_ASK_KEY) === true) return Promise.resolve();
-  if (pending !== undefined) return Promise.reject(cancelled());
+  if (asking !== undefined) return asking;
   const active = document.activeElement;
-  return new Promise<void>((resolve, reject) => {
-    pending = {
+  asking = new Promise<void>((resolve, reject) => {
+    const own: PendingAsk = {
       anchor: active instanceof HTMLElement && active !== document.body ? active : undefined,
       answer: (isApproved, isNoAsk) => {
+        if (pending !== own) return; // a late second answer (Escape after a click) must not settle a newer ask
         pending = undefined;
+        asking = undefined;
         notify();
         if (!isApproved) return reject(cancelled());
         if (isNoAsk) writeView(NO_ASK_KEY, true); // the run daemon's view state: a reload keeps it, and it is never an intervention
         resolve();
       },
     };
+    pending = own;
     notify();
   });
+  return asking;
 }
+
+/** RunModeHost's unmount: an ask nobody can answer any more is a cancel, or every later write would wait on it. */
+export const cancelPendingAsk = (): void => pending?.answer(false, false);
 
 const GATE: WriteGate = { ask, written: () => void refreshRunHive() };
 
@@ -98,6 +107,7 @@ export const usePendingAsk = (): PendingAsk | undefined => useSyncExternalStore(
 export function resetRunHive(): void {
   run = undefined;
   pending = undefined;
+  asking = undefined;
   setWriteGate(undefined);
   notify();
 }
