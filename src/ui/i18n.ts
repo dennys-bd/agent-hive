@@ -2891,6 +2891,20 @@ const en = {
   'benchmark.run.ask.noAsk': "don't ask again in this run",
   'benchmark.run.ask.cancel': 'cancel',
   'benchmark.run.ask.approve': 'approve and record',
+  'benchmark.run.brand': 'run {token}',
+  'benchmark.run.crumbs': 'path',
+  'benchmark.run.pair': 'pair {round}',
+  'benchmark.run.state.waiting': 'awaiting approval',
+  'benchmark.run.state.running': 'running',
+  'benchmark.run.state.frozen': 'frozen',
+  'benchmark.run.meta': '{time} · {tokens} tokens',
+  'benchmark.run.back': 'back to benchmark',
+  'benchmark.run.band': "this is the run's isolated hive. looking marks nothing. any action here (approve, release a session, change a permission, write in a session) goes into the run's intervention record.",
+  'benchmark.run.count': 'interventions · {n}',
+  'benchmark.run.home': 'isolated home · {home}',
+  'benchmark.run.origin': 'origin local',
+  'benchmark.run.environment': 'environment · local',
+  'benchmark.run.arm': 'arm {letter} · pair {round} of {pairs}',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5776,6 +5790,20 @@ const pt: Record<MessageKey, string> = {
   'benchmark.run.ask.noAsk': 'não perguntar de novo neste run',
   'benchmark.run.ask.cancel': 'cancelar',
   'benchmark.run.ask.approve': 'aprovar e registrar',
+  'benchmark.run.brand': 'run {token}',
+  'benchmark.run.crumbs': 'caminho',
+  'benchmark.run.pair': 'par {round}',
+  'benchmark.run.state.waiting': 'aguardando aprovação',
+  'benchmark.run.state.running': 'executando',
+  'benchmark.run.state.frozen': 'congelada',
+  'benchmark.run.meta': '{time} · {tokens} tokens',
+  'benchmark.run.back': 'voltar ao benchmark',
+  'benchmark.run.band': 'esta é a hive isolada do run. ver não marca nada. qualquer ação aqui (aprovar, liberar sessão, mudar permissão, escrever numa sessão) entra no registro de intervenção do run.',
+  'benchmark.run.count': 'intervenções · {n}',
+  'benchmark.run.home': 'home isolada · {home}',
+  'benchmark.run.origin': 'origin local',
+  'benchmark.run.environment': 'ambiente · local',
+  'benchmark.run.arm': 'braço {letter} · par {round} de {pairs}',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
