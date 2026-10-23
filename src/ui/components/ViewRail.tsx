@@ -1,5 +1,6 @@
 import { BoxesIcon, FlaskConicalIcon, KeyboardIcon, LayersIcon, type LucideIcon, PuzzleIcon, SettingsIcon, WaypointsIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useRunHive } from '@/components/benchmark/run-mode/run-hive';
 import type { CenterMode } from '@/hooks/use-activity';
 import { type MessageKey, t } from '@/i18n';
 import { type PanelId, VIEW_SHORTCUTS } from '@/lib/dock-layout';
@@ -31,23 +32,26 @@ const VIEW: Record<CenterMode, { Icon: LucideIcon; label: MessageKey }> = {
 export const viewLabel = (view: CenterMode): string => t(VIEW[view].label);
 const CELL = 'relative flex h-9 w-11 shrink-0 items-center justify-center';
 const ACTIVE = 'text-foreground shadow-[inset_2px_0_0_var(--foreground)]';
-const IDLE = 'text-muted-foreground enabled:hover:text-foreground disabled:opacity-50';
+// #469: plugins and benchmark live outside a run, so a run's Hive shows them at .35, inert (parts/activity-bar.html's data-run)
+// ponytail: keys still reach the views; gate VIEW_SHORTCUTS on useRunHive if that matters.
+const OUTSIDE_RUN: ReadonlySet<PanelId> = new Set(['plugins', 'benchmark']);
+const IDLE = 'text-muted-foreground enabled:hover:text-foreground';
 
 // Settings' ⌘, is a fixed key, not a rebindable shortcut, so binding() has no row for it: the title reads this platform's key
 const settingsKey = (): string | null => fixedKeys(fixedShortcut('settings'), isMac()).at(0) ?? null;
 
-interface RailButtonProps { Icon: LucideIcon; label: string; keys: string | null; isActive?: boolean; disabled?: boolean; onClick?(): void; children?: ReactNode }
+interface RailButtonProps { Icon: LucideIcon; label: string; keys: string | null; isActive?: boolean; isDimmed?: boolean; disabled?: boolean; onClick?(): void; children?: ReactNode }
 
 /** A control's title as the handoff writes it (#220, #221): the name, then its key as this platform reads it; the name alone when unbound. */
 export const keyTitle = (label: string, keys: string | null): string => (keys === null ? label : `${label} ${displayBinding(keys, isMac())}`);
 
 // A screen reader gets the name alone; the title carries the key
-function RailButton({ Icon, label, keys, isActive = false, disabled, onClick, children }: RailButtonProps) {
+function RailButton({ Icon, label, keys, isActive = false, isDimmed = false, disabled, onClick, children }: RailButtonProps) {
   const title = keyTitle(label, keys);
   return (
     <button
       type="button" aria-label={label} title={title} aria-current={isActive ? 'page' : undefined} disabled={disabled} onClick={onClick}
-      className={`${CELL} ${isActive ? ACTIVE : IDLE}`}
+      className={`${CELL} ${isActive ? ACTIVE : IDLE} ${isDimmed ? 'opacity-35' : 'disabled:opacity-50'}`}
     >
       <Icon aria-hidden="true" className="size-[18px]" />
       {children}
@@ -58,20 +62,22 @@ function RailButton({ Icon, label, keys, isActive = false, disabled, onClick, ch
 /** The window's view rail (#220): the views, the monitor to come, then the shortcut map and Settings at the bottom. One dot on activities
  * while any session needs the user, whatever its status: the home lists which. */
 export function ViewRail({ center, onView, hasWaiting, onOpenShortcuts, onOpenSettings }: ViewRailProps) {
+  const isRun = useRunHive() !== undefined;
   return (
     <nav aria-label={t('rail.label')} style={{ width: RAIL_WIDTH }} className="flex shrink-0 flex-col gap-1 border-r border-border py-1.5">
       {VIEW_SHORTCUTS.map(([panel, id]) => {
         const { Icon, label } = VIEW[panel as CenterMode];
+        const isOutside = isRun && OUTSIDE_RUN.has(panel);
         return (
-          <RailButton key={panel} Icon={Icon} label={t(label)} keys={binding(id)} isActive={center === panel} onClick={() => onView(panel)}>
+          <RailButton key={panel} Icon={Icon} label={t(label)} keys={binding(id)} isActive={center === panel} disabled={isOutside} isDimmed={isOutside} onClick={() => onView(panel)}>
             {panel === 'activities' && hasWaiting && <span data-waiting-dot="" aria-hidden="true" className="absolute top-2 right-2.5 size-1.5 rounded-full bg-waiting ring-2 ring-background" />}
           </RailButton>
         );
       })}
       <RailButton Icon={BoxesIcon} label={t('rail.monitor')} keys={null} disabled />
       <div aria-hidden="true" className="flex-1" />
-      {onOpenShortcuts && <RailButton Icon={KeyboardIcon} label={t('rail.shortcutMap')} keys={binding('shortcutMap')} onClick={onOpenShortcuts} />}
-      {onOpenSettings && <RailButton Icon={SettingsIcon} label={t('rail.settings')} keys={settingsKey()} onClick={onOpenSettings} />}
+      {!isRun && onOpenShortcuts && <RailButton Icon={KeyboardIcon} label={t('rail.shortcutMap')} keys={binding('shortcutMap')} onClick={onOpenShortcuts} />}
+      {!isRun && onOpenSettings && <RailButton Icon={SettingsIcon} label={t('rail.settings')} keys={settingsKey()} onClick={onOpenSettings} />}
     </nav>
   );
 }
