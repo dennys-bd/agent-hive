@@ -7,6 +7,8 @@ import type { Benchmark } from '@/components/benchmark/benchmark-dock';
 import { CompareTab } from '@/components/benchmark/compare/CompareTab';
 import { ConfigTab } from '@/components/benchmark/config/ConfigTab';
 import { ReportTab } from '@/components/benchmark/report/ReportTab';
+import { runOf } from '@/components/benchmark/result/result-view';
+import { RunResult } from '@/components/benchmark/result/RunResult';
 import type { MessageKey } from '@/i18n';
 
 export type TabId = 'arms' | 'config' | 'compare' | 'execution' | 'report';
@@ -27,6 +29,11 @@ const execution: BenchmarkTab = {
   id: 'execution', label: 'benchmark.header.tab.execution',
   render: (experiment, benchmark) => createElement(ExecutionTab, { experiment, benchmark, result: execution.result }),
   primary: (experiment) => primaryFor('execution', experiment),
+  // #466: a token no run of the experiment holds leaves the slot's placeholder
+  result: (experiment, token) => {
+    const run = runOf(experiment, token);
+    return run === undefined ? undefined : createElement(RunResult, { experiment, run });
+  },
 };
 
 export const TABS: readonly BenchmarkTab[] = [

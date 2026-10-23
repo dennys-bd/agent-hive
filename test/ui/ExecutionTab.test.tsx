@@ -76,12 +76,11 @@ test("abrir posts /open and sends the window to the answered port; a refusal is 
   expect(goToRunHive).toHaveBeenCalledTimes(1);
 });
 
-test('resultado opens the result slot under the back line, the placeholder until 2.6; back returns to the rounds; a filled slot gets the token (#465)', async () => {
+test("resultado opens the run's result (#466) under the back line; back returns to the rounds; a filled slot gets the token (#465)", async () => {
   const user = userEvent.setup();
   const { unmount } = render(<Tab />);
   await user.click(within(card(1, 'A')).getByRole('button', { name: 'resultado' }));
-  expect(screen.getByText('em breve')).toBeInTheDocument();
-  expect(screen.queryByRole('region')).toBeNull();
+  expect(screen.getByRole('region', { name: 'resultado do run' })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'execução' }));
   expect(screen.getAllByRole('region')).toHaveLength(3);
   unmount();

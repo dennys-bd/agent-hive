@@ -11,7 +11,7 @@ import { mergeArm } from './arm-config.js';
 import { inDir, type Run } from './exec.js';
 import { EXPERIMENT_PATHS, remoteSha, removeWorktree, runBranch } from './git.js';
 import type { BenchPrAnswer, BenchPrRefusal, BenchPrStep } from './pr-pick.js';
-import { duration, HASH_SHOWN, millions, plain, usd } from './report-md.js';
+import { duration, HASH_SHOWN, millions, plain, usd } from './format.js';
 import type { BenchReport, SpreadCell } from './report.js';
 
 export type { BenchPrAnswer, BenchPrPreview, BenchPrRefusal, BenchPrStep } from './pr-pick.js';
