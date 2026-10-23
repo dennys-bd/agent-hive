@@ -92,3 +92,11 @@ test('a live run carries its worker\'s picks, so its pane header can name them; 
   const plain = reduce(state, { type: 'openSession', activityId: workId(state, ITEM.itemId), agent: 'claude' }).state;
   assert.equal(liveRuns(plain.tasks[0], plain).some((r) => 'launch' in r), false);
 });
+
+test('newLocalSession carries its prompt to the spawnSession effect; none without one (#478)', () => {
+  const state = onDev();
+  const asked = spawnOf(reduce(state, { type: 'newLocalSession', activityId: localActivityId('hive'), prompt: 'Draft it' }).effects);
+  assert.equal(asked?.prompt, 'Draft it');
+  const plain = spawnOf(reduce(state, { type: 'newLocalSession', activityId: localActivityId('hive') }).effects);
+  assert.equal(plain !== undefined && 'prompt' in plain, false);
+});

@@ -127,3 +127,9 @@ test('an arm whose stages hold only some roles and fields, or a null model, load
   const [loaded] = load(saved({ experiments: [experiment({ arms: [arm('a1', 'A'), partial, badRole, badField, nullAgent] })] })).experiments;
   assert.deepEqual(loaded.arms.map((a) => [a.id, a.overrides]), [['a1', {}], ['a2', { stages: { build: { agent: 'codex', model: null } } }]]);
 });
+
+test('a loaded experiment keeps an mcp createdBy and drops an arm whose id is no id (#478)', () => {
+  const e = experiment({ createdBy: { kind: 'mcp', agent: 'claude', model: 'opus' }, arms: [arm('a1', 'A'), arm('../x', 'B')] });
+  const [loaded] = load(saved({ experiments: [e] })).experiments;
+  assert.deepEqual([loaded.createdBy, loaded.arms.map((a) => a.id)], [{ kind: 'mcp', agent: 'claude', model: 'opus' }, ['a1']]);
+});

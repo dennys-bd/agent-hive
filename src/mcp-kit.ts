@@ -1,6 +1,7 @@
 // The answer and record helpers every tool module shares, out of mcp.ts for #333 so the optional tools can live apart.
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { correlationOf } from './fact-derive.js';
+import type { Drafter } from './benchmark/drafts.js';
 import type { FactLog, RecordInput, RefusalCode } from './facts.js';
 import type { MemoryStore } from './memory.js';
 import type { ReplyReviews } from './mcp-review.js';
@@ -22,6 +23,7 @@ export interface McpDeps extends ReplyReviews {
   facts: Pick<FactLog, 'write'>; // #742: each tool call's mcp.call
   memory: Pick<MemoryStore, 'read' | 'update'>; // #797: hive_remember and hive_applied write the worker's workspace's memory
   preloadPr?(url: string): Promise<void>; // #497: hive_pr's PR read and stored ahead of its page; never awaited
+  benchmark: Drafter; // #478: benchmark_draft's write, the routes' cores through their queue
   exec: Exec; // #854: the remotes behind a fork's hive_conventions
 }
 
@@ -31,7 +33,7 @@ export type Answer = CallToolResult & { [REFUSAL]?: RefusalCode };
 export const reply = (text: string): Answer => ({ content: [{ type: 'text', text }] });
 export const refuse = (code: RefusalCode, text: string): Answer => ({ content: [{ type: 'text', text }], isError: true, [REFUSAL]: code });
 // The header's worker, only while it holds a worker: a stale session or a forged call gets the tool error and touches nothing.
-export function livePtyId(deps: McpDeps, ptyId: string | undefined): string | undefined {
+export function livePtyId(deps: Pick<McpDeps, 'live'>, ptyId: string | undefined): string | undefined {
   const workers = deps.live()?.state.workers ?? [];
   return ptyId !== undefined && workers.some((s) => s.runId === ptyId && s.status !== 'empty') ? ptyId : undefined;
 }
@@ -51,7 +53,7 @@ interface CallFacts { keys?: string[]; kind?: MemoryKind }
 
 // Times one tool call and writes its mcp.call (#742): ok, refused with the refusal's code, or error when the handler threw (written, then
 // rethrown, so the agent's answer is the SDK's as before); an accepted hive_done names its result's keys only
-export async function recorded(deps: McpDeps, header: string | undefined, tool: string, call: () => Promise<Answer>, facts: CallFacts = {}): Promise<CallToolResult> {
+export async function recorded(deps: Pick<McpDeps, 'live' | 'facts'>, header: string | undefined, tool: string, call: () => Promise<Answer>, facts: CallFacts = {}): Promise<CallToolResult> {
   const began = Date.now();
   const state = deps.live()?.state;
   const worker = state?.workers.find((s) => s.runId === header && s.status !== 'empty');

@@ -9,7 +9,7 @@ import { UPLOAD_NAME, UPLOAD_PREFIX } from './store.js';
 
 const NAME_MAX = 120;
 const MAX_PERCENT = 100;
-const NAME = z.string().trim().min(1).max(NAME_MAX);
+export const NAME = z.string().trim().min(1).max(NAME_MAX);
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const positive = z.number().int().positive();
 

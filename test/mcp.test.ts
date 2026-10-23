@@ -76,10 +76,10 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
   return { text: first?.type === 'text' ? first.text : '', isError: result.isError === true };
 }
 
-test('the ten tools are listed; hive_done with a live worker marks the worker and merges its result into the task (#99)', async (t) => {
+test('the thirteen tools are listed; hive_done with a live worker marks the worker and merges its result into the task (#99)', async (t) => {
   const { base, server, lines, ptyId } = await start(t);
   const client = await connect(t, base, ptyId);
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_remember', 'hive_reply', 'hive_stop', 'hive_task']);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_remember', 'hive_reply', 'hive_stop', 'hive_task']);
   assert.deepEqual(await call(client, 'hive_done', { result: { spec: 'docs/a.md', n: 1 } }), { text: 'ok', isError: false });
   assert.equal(worker0(server).done, true);
   await call(client, 'hive_done', { result: { n: 2 } });
@@ -394,7 +394,7 @@ test('a handler that throws still writes mcp.call with outcome error at error, a
     exec: async () => ({ stdout: '' }),
     live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined, dispatch: async () => { throw new Error('reducer'); }, canClose: () => false,
     relate: unused, canRelate: () => false,
-    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused },
+    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused }, benchmark: { draft: unused },
   });
   const http = app.listen(0);
   t.after(() => http.close());
@@ -553,7 +553,7 @@ test('a tool turned off in mcp.off leaves tools/list and a call to it gets the S
   const off = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, workspaces: workspacesAt(repo), mcp: { off: ['hive_remember'], servers: [] } }) });
   assert.equal(off.status, 200);
   const client = await connect(t, base, ptyId);
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_reply', 'hive_stop', 'hive_task']);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_reply', 'hive_stop', 'hive_task']);
   const answer = await call(client, 'hive_remember', { kind: 'fact', text: 'x' });
   assert.equal(answer.isError, true);
   assert.match(answer.text, /Tool hive_remember not found/);
@@ -598,4 +598,14 @@ test('the default preload of a Hive with no read model is a debug line by number
   await call(client, 'hive_pr', { url: PR9 });
   for (let i = 0; i < 100 && !lines.includes('DEBUG pr #9: the changes were not preloaded (no read model)'); i += 1) await new Promise((r) => setTimeout(r, 10));
   assert.ok(lines.includes('DEBUG pr #9: the changes were not preloaded (no read model)'), lines.join('\n'));
+});
+
+test('mcp.off with the three benchmark tools leaves them out of tools/list; the other tools stay (#478)', async (t) => {
+  const { base, ptyId, repo } = await start(t);
+  const off = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, workspaces: workspacesAt(repo), mcp: { off: ['benchmark_list', 'benchmark_get', 'benchmark_draft'], servers: [] } }) });
+  assert.equal(off.status, 200);
+  const client = await connect(t, base, ptyId);
+  const names = (await client.listTools()).tools.map((tool) => tool.name);
+  assert.deepEqual(names.filter((name) => name.startsWith('benchmark_')), []);
+  assert.ok(names.includes('hive_remember'));
 });

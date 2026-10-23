@@ -867,7 +867,7 @@ export const BENCH_RUN_STATUSES: readonly BenchRunStatus[] = ['queued', 'running
 export const EXPERIMENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const BENCH_TOKEN = /^[a-z0-9]{4,16}$/;
 
-export type ExperimentPatch = Partial<Pick<Experiment, 'name' | 'base' | 'seed' | 'seedHash' | 'tasksHash' | 'pace' | 'isolation' | 'blindness' | 'evaluation'>>;
+export type ExperimentPatch = Partial<Pick<Experiment, 'name' | 'arms' | 'base' | 'seed' | 'seedHash' | 'tasksHash' | 'pace' | 'isolation' | 'blindness' | 'evaluation'>>;
 export type BenchRunPatch = Partial<Pick<BenchRun, 'status' | 'reason' | 'delivered' | 'total' | 'progress' | 'sleptMs' | 'metrics' | 'evaluation' | 'interventions' | 'inMedian' | 'unpriced'>>;
 /** An experiment's life (#458): the routes build what needs I/O and check the transitions; benchmark-reducer.ts only applies. */
 export type BenchmarkEvent =
@@ -1233,7 +1233,7 @@ export const REVIEWER_DEFAULTS: ReviewerConfig = { on: true, when: 'save', agent
 /** The Hive's MCP tools no config can turn off (#333): the stages and the skills depend on them. */
 export const LOCKED_TOOLS = ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_reply', 'hive_conventions'] as const;
 /** The tools mcp.off may turn off for the whole Hive (#333, screen 11f). */
-export const OPTIONAL_TOOLS = ['hive_remember', 'hive_applied', 'hive_create_task', 'hive_task'] as const;
+export const OPTIONAL_TOOLS = ['hive_remember', 'hive_applied', 'hive_create_task', 'hive_task', 'benchmark_list', 'benchmark_get', 'benchmark_draft'] as const;
 export type OptionalTool = (typeof OPTIONAL_TOOLS)[number];
 interface McpServerBase { name: string; workspace: string | null; on: boolean }
 export type ExternalMcpServer =
@@ -1612,7 +1612,7 @@ export type HiveEvent =
   | { type: 'copySession'; from: SessionRef; to: SessionTarget; name?: string; notice?: string; copied?: string } // #587; name: the dialog's, as the route cleaned it; copied: the transcript dir the route put a temporary <from>.jsonl in
   | { type: 'openLocalSession'; activityId: string; sessionId: string } // continue a local session (#587)
   | { type: 'clearLocalSession'; activityId: string; sessionId: string } // its limpar (#587)
-  | { type: 'newLocalSession'; activityId: string; agent?: AgentId; launch?: LaunchPick } // a new session in a workspace's local activity (#590): kept from its start, as a copy into the local is; agent: the local route's kind (#925), absent = the live default; launch: the new session dialog's picks (#257)
+  | { type: 'newLocalSession'; activityId: string; agent?: AgentId; launch?: LaunchPick; prompt?: string /* #478: its first message */ } // a new session in a workspace's local activity (#590): kept from its start, as a copy into the local is; agent: the local route's kind (#925), absent = the live default; launch: the new session dialog's picks (#257)
   | { type: 'openSession'; activityId: string; continueId?: string; prompt?: string; agent?: AgentId; launch?: LaunchPick } // agent: a new session's, the open route's kind (#925); absent = the live default; a resume runs its session's own. Abrir sessão on any task (#283), or the sidebar's session (#208); continueId = one of continuable(task); a record id (#629): a kept session opens in the task's live activity, born when none; prompt: its first message, rendered by the open route (#758); launch: a new session's picks (#257): the routes refuse it with continueId, and the reducer ignores it then: a resume runs with its record's
   | { type: 'openTerminal'; activityId: string; command?: string; cwd?: string } // a terminal on a task, in its worktree (#283, #570): not a session; command = a workspace's command (#300); cwd = a folder of the worktree the shell route checked (#818)
   | { type: 'openProjectShell'; project: string; cwd: string } // the terminal panel's + (#292): a shell in that project's main checkout, `cwd` (#696)

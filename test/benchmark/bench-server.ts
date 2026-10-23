@@ -4,7 +4,9 @@ import type { TestContext } from 'node:test';
 import express from 'express';
 import { benchmarkReduce } from '../../src/benchmark-reducer.js';
 import { registerBenchmarkRoutes } from '../../src/server-benchmark.js';
-import type { BenchmarkEvent, Exec, Experiment, State } from '../../src/types.js';
+import type { DraftCtx, DraftDeps } from '../../src/benchmark/drafts.js';
+import type { Logger } from '../../src/log.js';
+import type { BenchmarkEvent, Config, Exec, Experiment, HiveEvent, OptionalTool, State } from '../../src/types.js';
 import { put } from '../custom-fixture.js';
 import { fakeLog } from '../fakes.js';
 import { tempDir } from '../temp-dir.js';
@@ -16,7 +18,12 @@ export const CUSTOM_FILES = { 'custom/hive/new-build/tdd/version.json': JSON.str
 // The folder of an experiment the state already holds: a pin, a seed, and a round's leftovers that no copy may carry
 export const FOLDER_FILES = { 'plugin/source/skills/new-build/SKILL.md': 'pinned\n', 'plugin/custom/hive/new-build/tdd/version.json': '{}', 'seed/scenarios.md': '', 'seed/upload/old.txt': 'old\n', 'runs/aaaa1/hive.log': 'x' };
 
-export interface Bench { base: string; home: string; repo: string; calls: string[][]; lines: string[]; state(): State; dir(id: string): string }
+export interface BenchDeps {
+  home: string; pluginSource: string; repo: string; calls: string[][]; lines: string[]; log: Logger; config: Config;
+  events: BenchmarkEvent[]; deps: DraftDeps; state(): State; ctx(): DraftCtx; dir(id: string): string;
+}
+export interface Bench extends BenchDeps { base: string; sessionEvents: HiveEvent[] }
+interface BenchOpts { experiments?: Experiment[]; files?: Record<string, string>; mcpOff?: OptionalTool[] }
 
 // git as the routes call it, after `-C <repo>`: the base's symref and sha, and the files `files` holds at SHA; anything else fails as git does
 function fakeGit(files: Record<string, string>): (args: string[]) => string {
@@ -33,12 +40,14 @@ function fakeGit(files: Record<string, string>): (args: string[]) => string {
   };
 }
 
-export async function serve(t: TestContext, opts: { experiments?: Experiment[]; files?: Record<string, string> } = {}): Promise<Bench> {
+/** A Hive home with the shipped plugin, one custom version, a folder per experiment, and git answering `files` at SHA; the dispatch reduces. */
+export async function benchDeps(t: TestContext, opts: BenchOpts = {}): Promise<BenchDeps> {
   const [home, pluginSource, repo] = await Promise.all(['bench-home-', 'bench-plugin-', 'bench-repo-'].map((prefix) => tempDir(t, prefix)));
   await put(pluginSource, PLUGIN_FILES);
   await put(home, CUSTOM_FILES);
   for (const e of opts.experiments ?? []) await put(join(home, 'benchmark', e.id), FOLDER_FILES);
   let state = stateWith(...(opts.experiments ?? []));
+  const events: BenchmarkEvent[] = [];
   const calls: string[][] = [];
   const git = fakeGit(opts.files ?? {});
   const exec: Exec = async (_file, args) => {
@@ -46,19 +55,37 @@ export async function serve(t: TestContext, opts: { experiments?: Experiment[]; 
     return { stdout: git(args.slice(2)) };
   };
   const { log, lines } = fakeLog();
+  const base = benchConfig(repo);
+  const config: Config = { ...base, mcp: { ...base.mcp, off: opts.mcpOff ?? [] } };
+  const deps: DraftDeps = {
+    dispatch: async (event) => { events.push(event); state = benchmarkReduce(state, event); },
+    home, pluginSource, exec, version: async () => '0.1.0', now: () => new Date(AT),
+  };
+  return {
+    home, pluginSource, repo, calls, lines, log, config, events, deps, state: () => state,
+    ctx: () => ({ deps, config, experiments: state.benchmark.experiments }), dir: (id) => join(home, 'benchmark', id),
+  };
+}
+
+export async function serve(t: TestContext, opts: BenchOpts = {}): Promise<Bench> {
+  const bench = await benchDeps(t, opts);
   const app = express();
   app.use(express.json({ limit: '2mb' }));
+  const live = () => ({ runtime: { config: bench.config }, state: bench.state() });
+  const sessionEvents: HiveEvent[] = [];
   registerBenchmarkRoutes(app, {
-    requireLive: () => ({ runtime: { config: benchConfig(repo) }, state }),
-    getLive: () => ({ runtime: { config: benchConfig(repo) }, state }),
-    dispatch: async (event: BenchmarkEvent) => { state = benchmarkReduce(state, event); },
+    ...bench.deps, requireLive: live, getLive: live, log: bench.log,
     runner: { run: async () => 'started', sleep: async () => undefined, wake: async () => undefined, isLive: () => false, blindness: async () => undefined },
-    home, pluginSource, exec, log, evaluator: { evaluate: async () => undefined, isEvaluating: () => false, abortAll: async () => undefined }, version: async () => '0.1.0', now: () => new Date(AT),
+    session: {
+      dispatch: async (event: HiveEvent) => { sessionEvents.push(event); return []; },
+      started: async () => undefined, language: () => 'en', plugin: { ready: async () => undefined, dir: () => bench.pluginSource },
+    },
+    evaluator: { evaluate: async () => undefined, isEvaluating: () => false, abortAll: async () => undefined },
   });
   const server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
-  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, home, repo, calls, lines, state: () => state, dir: (id) => join(home, 'benchmark', id) };
+  return { ...bench, sessionEvents, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
 }
 
 export async function call(bench: Bench, method: string, path: string, body?: unknown): Promise<[number, unknown]> {

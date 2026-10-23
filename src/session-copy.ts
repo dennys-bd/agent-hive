@@ -122,7 +122,7 @@ export function openLocalSession(state: State, { activityId, sessionId }: Extrac
 /** A new session in a workspace's local activity (#590): a free session of its own, past the signal, the cap and the budget, as a copy
  * into the local is (#587), minus the fork. Its entry is appended at the start, or at its first SessionStart for an agent that picks its own
  * id (#931, recordCapturedSession); forgetFailedLocal and forgetUnopenedLocal drop it if it never opens. */
-export function newLocalSession(state: State, { activityId, agent: asked, launch }: Extract<LocalEvent, { type: 'newLocalSession' }>): Reduced {
+export function newLocalSession(state: State, { activityId, agent: asked, launch, prompt }: Extract<LocalEvent, { type: 'newLocalSession' }>): Reduced {
   const workspace = localWorkspaceOf(activityId) ?? '';
   if (!state.workspaces.includes(workspace)) return none(state);
   const agent = asked ?? liveDefaultAgent(state); // #925: the local route's kind, else the default
@@ -133,7 +133,8 @@ export function newLocalSession(state: State, { activityId, agent: asked, launch
   const sessions = localSessionsOf(state, workspace);
   const created: Session[] = sessionId === undefined ? [] : [{ id: sessionId, startedAt, stages: [], lastUsedAt: startedAt, agent, ...withLaunch(launch) }];
   const next = withLocal({ ...state, workers: [...state.workers, worker] }, workspace, [...sessions, ...created]);
-  return { state: next, effects: [{ type: 'spawnSession', worker, activity: localActivity(next, workspace), ...held, continues: false }] };
+  const first = prompt === undefined ? {} : { prompt }; // #478: the ask-the-agent session starts on its prompt (#758's field)
+  return { state: next, effects: [{ type: 'spawnSession', worker, activity: localActivity(next, workspace), ...held, continues: false, ...first }] };
 }
 
 /** A local session's limpar (#587): one no run holds is forgotten; the route removes its transcript when the deleteActivity scope says so. */

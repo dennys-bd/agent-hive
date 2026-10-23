@@ -115,7 +115,7 @@ async function harness(t: TestContext, state: State, sources: Sources, off: Opti
   mountMcp(app, {
     exec, live: () => ({ state, config: configWith(off), sources }), poll: async () => undefined, dispatch: async () => [],
     canClose: () => false, relate: unused, canRelate: () => false, facts, memory: { read: unused, update: unused },
-    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined,
+    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, benchmark: { draft: unused },
   });
   const http = app.listen(0);
   t.after(() => http.close());

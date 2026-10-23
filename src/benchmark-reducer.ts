@@ -1,7 +1,7 @@
 // The reducer of state.benchmark (#458): an experiment's life, pure and immutable as orchestrator.ts's. The routes build what needs I/O
 // (ids, hashes, the plugin pin) and refuse a wrong transition (3.2 answers 409), so an event here only applies. One that names an unknown
 // experiment, arm, token or round returns the state itself, so none() in step leaves everything as it was.
-import type { Arm, ArmOverrides, BenchIsolation, BenchmarkEvent, BenchRound, BenchRun, BenchRunStatus, BenchSleep, Experiment, HiveEvent, IsolationRow, State } from './types.js';
+import type { Arm, ArmOverrides, BenchIsolation, BenchmarkEvent, BenchRound, BenchRun, BenchRunStatus, BenchSleep, Experiment, ExperimentPatch, HiveEvent, IsolationRow, State } from './types.js';
 
 // A Record, so tsc refuses a BenchmarkEvent the delegation would miss
 const BENCHMARK_EVENTS: Record<BenchmarkEvent['type'], true> = {
@@ -126,10 +126,16 @@ function withArchived(experiment: Experiment, on: boolean): Experiment {
   return rest;
 }
 
+// status, rounds and arms are the run's and the arms' own events', even when a route's patch carries them; #478: a draft's replace, the only
+// patch with arms, may set them while the draft has no round
+function edited(experiment: Experiment, patch: ExperimentPatch): Experiment {
+  const arms = experiment.status === 'draft' && experiment.rounds.length === 0 ? (patch.arms ?? experiment.arms) : experiment.arms;
+  return { ...experiment, ...patch, status: experiment.status, rounds: experiment.rounds, arms };
+}
+
 function applied(experiment: Experiment, event: ExperimentEvent): Experiment {
   switch (event.type) {
-    // status, rounds and arms are the run's and the arms' own events', even when a route's patch carries them
-    case 'benchmarkEdited': return { ...experiment, ...event.patch, status: experiment.status, rounds: experiment.rounds, arms: experiment.arms };
+    case 'benchmarkEdited': return edited(experiment, event.patch);
     case 'benchmarkArchived': return withArchived(experiment, event.archived);
     case 'benchmarkArmAdded': return armAdded(experiment, event.arm);
     case 'benchmarkArmEdited': return withArm(experiment, event.armId, (a) => ({ ...a, ...event.patch }));

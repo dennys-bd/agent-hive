@@ -2,7 +2,7 @@
 // not a real case, so the letters stop at Z.
 import type { Arm, ArmOverrides, ArmSetup, BenchStagePick, BenchStageRole, Experiment } from '../types.js';
 
-const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+export const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 

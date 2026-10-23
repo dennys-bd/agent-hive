@@ -13,15 +13,17 @@ const DESCRIPTION: Record<LockedTool | OptionalTool, MessageKey> = {
   hive_done: 'plugins.mcp.tool.hive_done', hive_ask: 'plugins.mcp.tool.hive_ask', hive_stop: 'plugins.mcp.tool.hive_stop',
   hive_pr: 'plugins.mcp.tool.hive_pr', hive_reply: 'plugins.mcp.tool.hive_reply', hive_conventions: 'plugins.mcp.tool.hive_conventions',
   hive_remember: 'plugins.mcp.tool.hive_remember', hive_applied: 'plugins.mcp.tool.hive_applied', hive_create_task: 'plugins.mcp.tool.hive_create_task', hive_task: 'plugins.mcp.tool.hive_task',
+  benchmark_list: 'plugins.mcp.tool.benchmark_list', benchmark_get: 'plugins.mcp.tool.benchmark_get', benchmark_draft: 'plugins.mcp.tool.benchmark_draft',
 };
 const LOCK_REASON: Record<LockedTool, MessageKey> = {
   hive_done: 'plugins.mcp.locked.hive_done', hive_ask: 'plugins.mcp.locked.hive_ask', hive_stop: 'plugins.mcp.locked.hive_stop',
   hive_pr: 'plugins.mcp.locked.hive_pr', hive_reply: 'plugins.mcp.locked.hive_reply', hive_conventions: 'plugins.mcp.locked.hive_conventions',
 };
 // What a tool turned off drops: a fixed count per tool, the passages src/protocol.ts gives it (REMEMBER_LINE, TASK_LINE, the memory section);
-// hive_create_task has none. #336 makes the protocol drop them
+// hive_create_task and the benchmark's three have none. #336 makes the protocol drop them
 const EFFECT: Record<OptionalTool, MessageKey> = {
   hive_remember: 'plugins.mcp.effect.passage', hive_applied: 'plugins.mcp.effect.passage', hive_create_task: 'plugins.mcp.effect.off', hive_task: 'plugins.mcp.effect.passage',
+  benchmark_list: 'plugins.mcp.effect.off', benchmark_get: 'plugins.mcp.effect.off', benchmark_draft: 'plugins.mcp.effect.off',
 };
 
 // A tool the UI has no copy for yet shows its name alone; hasOwn keeps a name like `constructor` off the prototype
