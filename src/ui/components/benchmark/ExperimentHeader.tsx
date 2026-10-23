@@ -4,6 +4,8 @@ import type { Experiment, ExperimentStatus } from '../../../types';
 import type { Benchmark } from '@/components/benchmark/benchmark-dock';
 import { DeleteConfirm, DuplicateConfirm } from '@/components/benchmark/confirms';
 import { roundOf } from '@/components/benchmark/sidebar-groups';
+import { SleepDialog } from '@/components/benchmark/sleep/SleepDialog';
+import { WakeDialog } from '@/components/benchmark/sleep/WakeDialog';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -11,7 +13,7 @@ import { type MessageKey, t } from '@/i18n';
 
 export interface ExperimentHeaderProps { benchmark: Benchmark; experiment: Experiment; primary?: ReactNode }
 
-// running and sleeping read the round; the sleeping chip is static text with the moon (2.8 owns the sleeping header)
+// running and sleeping read the round; the sleeping chip carries the moon (#468 owns the sleeping header)
 const CHIP: Record<ExperimentStatus, { key: MessageKey; className: string }> = {
   running: { key: 'benchmark.header.chip.running', className: 'text-working' },
   sleeping: { key: 'benchmark.header.chip.sleeping', className: 'text-muted-foreground border-empty' },
@@ -91,18 +93,25 @@ function MoreMenu({ benchmark, experiment, onRename, onDelete }: MoreMenuProps) 
   );
 }
 
+type HeaderDialog = 'duplicate' | 'delete' | 'sleep' | 'wake';
+
 /** The experiment's head in the window header's centre (#461, benchmark.hv.html's header slot): the name (renamed inline) and its chip, the mono
- * line, dormir while running, duplicar, the selected tab's primary action, the ⋯ menu, and the two confirmations. */
+ * line, dormir while running, duplicar, the selected tab's primary action (acordar in its place while asleep, #468), the ⋯ menu, and the
+ * confirmations and the sleep dialogs it opens. */
 export function ExperimentHeader({ benchmark, experiment, primary }: ExperimentHeaderProps) {
   const [isRenaming, setRenaming] = useState(false);
-  const [dialog, setDialog] = useState<'duplicate' | 'delete'>();
+  const [dialog, setDialog] = useState<HeaderDialog>();
   const finish = (next?: string): void => {
     setRenaming(false);
     const name = next?.trim();
     if (name && name !== experiment.name) void benchmark.rename(experiment.id, name);
   };
   const close = (open: boolean): void => { if (!open) setDialog(undefined); };
-  const sleep = benchmark.slots.sleep;
+  const done = (): void => setDialog(undefined);
+  // The screen's data-exp="dormindo": acordar is the only action, on every tab, in place of the tab's own
+  const action = experiment.status === 'sleeping'
+    ? <Button type="button" size="sm" onClick={() => setDialog('wake')}>{t('benchmark.sleep.wake')}</Button>
+    : primary;
   return (
     <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-3">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -113,15 +122,17 @@ export function ExperimentHeader({ benchmark, experiment, primary }: ExperimentH
         <span className="truncate font-mono text-[11px] text-muted-foreground">{monoLine(experiment)}</span>
       </div>
       {experiment.status === 'running' && (
-        <Button type="button" size="sm" variant="outline" title={t('benchmark.header.sleepTitle')} disabled={sleep === undefined} onClick={() => sleep?.(experiment)} className="disabled:opacity-35">
+        <Button type="button" size="sm" variant="outline" title={t('benchmark.header.sleepTitle')} onClick={() => setDialog('sleep')}>
           <MoonIcon aria-hidden="true" />{t('benchmark.header.sleep')}
         </Button>
       )}
       <Button type="button" size="sm" variant="outline" onClick={() => setDialog('duplicate')}>{t('benchmark.header.duplicate')}</Button>
-      {primary}
+      {action}
       <MoreMenu benchmark={benchmark} experiment={experiment} onRename={() => setRenaming(true)} onDelete={() => setDialog('delete')} />
       <DuplicateConfirm experiment={experiment} open={dialog === 'duplicate'} onOpenChange={close} onConfirm={() => benchmark.duplicate(experiment.id)} />
       <DeleteConfirm experiment={experiment} open={dialog === 'delete'} onOpenChange={close} onConfirm={() => benchmark.remove(experiment.id)} />
+      {dialog === 'sleep' && <SleepDialog experiment={experiment} onClose={done} />}
+      {dialog === 'wake' && <WakeDialog experiment={experiment} onClose={done} />}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { setLanguage } from '@/i18n';
 import { resetViewState } from '@/lib/view-state';
 import type { Experiment, PlanReadings } from '../../src/types';
 import { READINGS } from './benchmark-config-fixtures';
-import { ARCHIVED, EXPERIMENTS, RUNNING, stubBenchmarkFetch, WORKSPACES } from './benchmark-fixtures';
+import { ARCHIVED, ASLEEP, EXPERIMENTS, RUNNING, stubBenchmarkFetch, WORKSPACES } from './benchmark-fixtures';
 import { FakeWebSocket, resetFakes } from './xterm-fakes';
 
 vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./xterm-fakes')).FakeTerminal }));
@@ -119,4 +119,16 @@ test("the cap row's spend reads the window's rate limits through the dock (#463)
   key('4');
   await user.click(within(tabs()).getByRole('button', { name: 'config' }));
   expect(screen.getByText('agora 0 · 40%')).toBeInTheDocument();
+});
+
+test('a sleeping experiment: the moon chip, no dormir, and acordar as the primary on every tab (#468)', async () => {
+  const user = userEvent.setup();
+  render(<Window experiments={[ASLEEP]} />);
+  key('4');
+  expect(within(head()).getByText('dormindo · rodada 2/3')).toBeInTheDocument();
+  expect(within(head()).queryByRole('button', { name: 'dormir' })).not.toBeInTheDocument();
+  for (const name of ['braços', 'config', 'comparar', 'execução', 'relatório']) {
+    await user.click(within(tabs()).getByRole('button', { name }));
+    expect(within(head()).getByRole('button', { name: 'acordar' })).toBeInTheDocument();
+  }
 });
