@@ -9,7 +9,8 @@ const MILLION = 1_000_000;
 /** 1,9M / 1.9M, 4M, 850k: a run's tokens and the token cap, in the language's decimals (usage.ts's fmt writes 1.9M and 4.0M). */
 export function tokensText(n: number): string {
   const locale = LOCALE[currentLanguage()];
-  if (n < MILLION) return `${Math.round(n / THOUSAND).toLocaleString(locale)}k`;
+  // 999 600 rounds to 1 000k: a million already
+  if (Math.round(n / THOUSAND) < THOUSAND) return `${Math.round(n / THOUSAND).toLocaleString(locale)}k`;
   return `${(n / MILLION).toLocaleString(locale, { maximumFractionDigits: 1 })}M`;
 }
 

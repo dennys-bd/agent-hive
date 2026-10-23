@@ -43,16 +43,19 @@ export function elapsedMs(e: Experiment, now: number): number | undefined {
 export const segmentsOf = (run: BenchRun): TaskProgressState[] =>
   run.progress ?? Array.from({ length: run.total }, (): TaskProgressState => (run.status === 'done' ? 'done' : 'open'));
 
+// The experiment's sleep still open: sleptMs is only added at the wake (#472), so until then the card leaves it out here
+const openSleepMs = (e: Experiment, now: number): number => e.sleeps.reduce((sum, s) => sum + (s.wokeAt === undefined ? now - at(s.at) : 0), 0);
+
 // An ended run's measured time; a live run's metrics carry its tokens only (ms 0 until its end), so its clock runs here
-function msOf(run: BenchRun, now: number): number | undefined {
+function msOf(e: Experiment, run: BenchRun, now: number): number | undefined {
   if (ENDED.includes(run.status)) return run.metrics?.ms;
-  return run.startedAt === undefined ? undefined : now - at(run.startedAt) - run.sleptMs;
+  return run.startedAt === undefined ? undefined : now - at(run.startedAt) - run.sleptMs - openSleepMs(e, now);
 }
 
 function cardOf(e: Experiment, run: BenchRun, now: number): RunCardRow {
   return {
     key: run.token, letter: e.arms.find((a) => a.id === run.armId)?.letter ?? '', token: run.token, shortToken: run.token.slice(0, TOKEN_CHARS),
-    status: run.status, segments: segmentsOf(run), delivered: run.delivered, total: run.total, tokens: run.metrics?.tokens, ms: msOf(run, now),
+    status: run.status, segments: segmentsOf(run), delivered: run.delivered, total: run.total, tokens: run.metrics?.tokens, ms: msOf(e, run, now),
     action: ACTION[run.status],
   };
 }

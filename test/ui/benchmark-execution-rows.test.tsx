@@ -53,3 +53,9 @@ test("em execução há: now − the first round's start − the slept time, an 
   expect(hoursMinutes(elapsedMs(asleep, NOW) ?? 0)).toBe('8h59');
   expect(elapsedMs(experiment(), NOW)).toBeUndefined();
 });
+
+test("a live card's clock leaves out the experiment's open sleep, as the top line does (#465 review)", () => {
+  const live = (e: Experiment) => roundRows(e, NOW).find((r) => r.kind === 'running')?.cards[0]?.ms ?? 0;
+  const asleep: Experiment = { ...SCREEN, status: 'sleeping', sleeps: [...SCREEN.sleeps, { round: 2, at: new Date(NOW - HOUR).toISOString(), reason: 'quota' }] };
+  expect(live(SCREEN) - live(asleep)).toBe(HOUR);
+});

@@ -30,3 +30,8 @@ test("one arm and one pair read in the singular; tokens in the language's decima
   expect(runText(of())).toBe('runs 3 pairs, one run of each arm per pair, up to 3 workers per arm. no new pair starts after 07:00 nor above 4M tokens or 40% of the plan.');
   expect(tokensText(1_900_000)).toBe('1.9M');
 });
+
+test('just under a million rounds up to 1M, never 1.000k (#465 review)', () => {
+  setLanguage('pt');
+  expect(tokensText(999_600)).toBe('1M');
+});

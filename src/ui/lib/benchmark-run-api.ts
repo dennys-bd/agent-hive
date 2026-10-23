@@ -9,8 +9,13 @@ const pathOf = (id: string, rest: string): string => `/benchmark/experiments/${e
 export const openRunHive = (id: string, token: string): Promise<{ port: number }> =>
   postJson<{ port: number }>(pathOf(id, `runs/${encodeURIComponent(token)}/open`));
 
-/** The run's own Hive: this host, the answered port. */
-export const runHiveUrl = (port: number, { protocol, hostname }: Pick<Location, 'protocol' | 'hostname'>): string => `${protocol}//${hostname}:${port}/`;
+const PORT_MAX = 65_535;
+
+/** The run's own Hive: this host, the answered port. Anything but a port number throws, so a malformed answer never leaves this host. */
+export function runHiveUrl(port: number, { protocol, hostname }: Pick<Location, 'protocol' | 'hostname'>): string {
+  if (!Number.isInteger(port) || port < 1 || port > PORT_MAX) throw new Error(`not a port: ${String(port)}`);
+  return `${protocol}//${hostname}:${port}/`;
+}
 
 export function goToRunHive(port: number): void {
   window.location.assign(runHiveUrl(port, window.location));
@@ -25,14 +30,14 @@ const REFUSAL = new Map<string, MessageKey>([
   ['live', 'benchmark.execution.failed.live'], ['locked', 'benchmark.execution.failed.locked'],
   ['nothing_missing', 'benchmark.execution.failed.nothingMissing'], ['status', 'benchmark.execution.failed.status'],
 ]);
-const BLIND_WHERE = / in (.+)$/; // blindnessMessage (run-home.ts): `blindness: "<word>" in <where>`
+const BLIND_IN = ' in '; // blindnessMessage (run-home.ts): `blindness: "<word>" in <where>`; the last one, since the word may hold its own
 
 /** A refused control route's line: the blindness one names where the forbidden word sits, the others their own, else Erro inesperado. */
 export function refusalText(err: unknown): string {
   const body = (err as { body?: { error?: unknown; message?: unknown } } | undefined)?.body;
   const code = typeof body?.error === 'string' ? body.error : '';
-  if (code === 'blindness' && typeof body?.message === 'string') {
-    return t('benchmark.execution.failed.blindness', { file: BLIND_WHERE.exec(body.message)?.[1] ?? body.message });
-  }
+  const message = code === 'blindness' && typeof body?.message === 'string' ? body.message : '';
+  const cut = message.lastIndexOf(BLIND_IN);
+  if (cut >= 0) return t('benchmark.execution.failed.blindness', { file: message.slice(cut + BLIND_IN.length) });
   return t(REFUSAL.get(code) ?? 'benchmark.execution.failed.unknown');
 }
