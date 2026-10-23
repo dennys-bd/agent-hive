@@ -13,8 +13,9 @@ export async function setInMedian(id: string, token: string, inMedian: boolean):
   await send('PATCH', runPath(id, token), { inMedian });
 }
 
-/** The open route boots or finds the run's daemon and sets this host's cookie for its port (#467), so the window can move there. */
+/** The open route boots or finds the run's daemon and sets this host's cookie for its port (#475), so the window can move there. */
 export async function openRunHive(id: string, token: string): Promise<void> {
   const answer = await send<{ port: number }>('POST', `${runPath(id, token)}/open`);
-  if (answer !== undefined) location.assign(`${location.protocol}//${location.hostname}:${answer.port}/`);
+  const port = answer?.port;
+  if (port !== undefined && Number.isInteger(port) && port > 0 && port < 65536) location.assign(`${location.protocol}//${location.hostname}:${port}/`);
 }
