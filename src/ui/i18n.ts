@@ -2882,6 +2882,9 @@ const en = {
   'benchmark.result.inMedian': 'enters the report\'s median',
   'benchmark.result.tasks': 'tasks',
   'benchmark.result.delivered': '{delivered}/{total} delivered',
+  // #469: a benchmark run's own Hive, benchmark-run.hv.html
+  'benchmark.run.frozen': 'this run is frozen: its hive takes no more actions',
+  'benchmark.run.cancelled': 'intervention cancelled',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5758,6 +5761,9 @@ const pt: Record<MessageKey, string> = {
   'benchmark.result.inMedian': 'entra na mediana do relatório',
   'benchmark.result.tasks': 'tarefas',
   'benchmark.result.delivered': '{delivered}/{total} entregues',
+  // #469: a benchmark run's own Hive, benchmark-run.hv.html
+  'benchmark.run.frozen': 'este run está congelado: a hive dele não aceita mais ações',
+  'benchmark.run.cancelled': 'intervenção cancelada',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
