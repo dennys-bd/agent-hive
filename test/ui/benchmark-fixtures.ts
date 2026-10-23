@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
-import type { AgentId, ArmSetup, BenchRound, BenchStagePick, BenchTask, Experiment } from '../../src/types';
-import { arm, experiment, SETUP } from '../benchmark/fixtures';
+import type { AgentId, ArmSetup, BenchMetrics, BenchRound, BenchRun, BenchStagePick, BenchTask, Experiment } from '../../src/types';
+import { arm, experiment, run, SETUP } from '../benchmark/fixtures';
 import { json } from './plugins-fixtures';
 
 // Local times (no Z): the sub lines' HH:MM and d mmm read the same on any machine
@@ -97,3 +97,30 @@ export function stubDownload(): Download[] {
   });
   return clicks;
 }
+
+// One task per entry, with that many stages: a task with none has not started
+export const metricsOf = (...stages: number[]): BenchMetrics => ({
+  tokens: 0, costUsd: 0, ms: 0, waitingMs: 0, restarts: { count: 0, where: [] }, diff: { files: 0, insertions: 0, deletions: 0 }, tests: { green: 0, total: 0 },
+  tasks: stages.map((count, i) => ({ key: `T${i + 1}`, title: `task ${i + 1}`, tokens: 0, ms: 0, waitingMs: 0, restarts: 0, stages: Array.from({ length: count }, (_, s) => ({ stage: `s${s}`, ms: 1 })) })),
+});
+
+/** benchmark.hv.html's dlg-sleep: RUNNING in round 2 with A and B running and C waiting (7 tasks in progress: 2 + 3 + 2), round 1's run done. */
+export const SLEEPY: Experiment = {
+  ...RUNNING,
+  rounds: [
+    { n: 1, startedAt: '2026-10-01T22:00:00', endedAt: '2026-10-02T01:00:00', runs: [run('d0e1f2a3', { armId: 'a1', status: 'done', delivered: 8, total: 8, metrics: metricsOf(1, 1, 1, 1, 1, 1, 1, 1) })] },
+    { n: 2, startedAt: '2026-10-02T01:05:00', runs: [
+      run('c81e04aa', { armId: 'a1', round: 2, status: 'running', delivered: 5, total: 8, metrics: metricsOf(1, 2, 1, 1, 3, 1, 1, 0) }),
+      run('9f2a6dbb', { armId: 'a2', round: 2, status: 'running', delivered: 4, total: 8, metrics: metricsOf(1, 1, 1, 1, 1, 1, 1, 0) }),
+      run('e30b71cc', { armId: 'a3', round: 2, status: 'waiting', delivered: 3, total: 8, metrics: metricsOf(1, 1, 1, 1, 1, 0, 0, 0) }),
+    ] },
+  ],
+};
+
+const asleep = (r: BenchRun): BenchRun => (r.status === 'running' || r.status === 'waiting' ? { ...r, status: 'sleeping' } : r);
+/** dlg-wake: SLEEPY asleep since 04:40 (local) with the screen's reason; pace.until is the fixture's 07:00. */
+export const ASLEEP: Experiment = {
+  ...SLEEPY, status: 'sleeping',
+  rounds: SLEEPY.rounds.map((r): BenchRound => ({ ...r, runs: r.runs.map(asleep) })),
+  sleeps: [{ round: 2, at: '2026-10-02T04:40:00', reason: 'preciso da máquina para outra coisa' }],
+};
