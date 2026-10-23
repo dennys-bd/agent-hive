@@ -2690,6 +2690,12 @@ const en = {
   'benchmark.execution.run.tokens': '{n} tokens',
   'benchmark.execution.run.plan': '{p}% of the plan',
   'benchmark.execution.run.or': 'or',
+  'benchmark.execution.sub.started': 'started {time}',
+  'benchmark.execution.sub.evaluated': 'evaluated',
+  'benchmark.execution.sub.evaluating': 'evaluating…',
+  'benchmark.execution.sub.queued': 'queued',
+  'benchmark.execution.sub.queuedAfter': 'queued · starts when {n} ends',
+  'benchmark.execution.sub.ifBefore': ', if before {time}',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5374,6 +5380,12 @@ const pt: Record<MessageKey, string> = {
   'benchmark.execution.run.tokens': '{n} tokens',
   'benchmark.execution.run.plan': '{p}% do plano',
   'benchmark.execution.run.or': 'ou',
+  'benchmark.execution.sub.started': 'começou {time}',
+  'benchmark.execution.sub.evaluated': 'avaliada',
+  'benchmark.execution.sub.evaluating': 'avaliando…',
+  'benchmark.execution.sub.queued': 'na fila',
+  'benchmark.execution.sub.queuedAfter': 'na fila · começa quando a {n} termina',
+  'benchmark.execution.sub.ifBefore': ', se antes de {time}',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
