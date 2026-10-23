@@ -2677,6 +2677,19 @@ const en = {
   'benchmark.compare.hidden.other': '{n} equal rows hidden',
   'benchmark.compare.legend': '· = same as the base · lighter background = the arm overrides · click a cell to copy the value to another arm',
   'benchmark.compare.copyTo': 'copy to',
+  // #465: the execution tab and the run controls, benchmark.hv.html's #s-execucao, .act and dlg-run
+  'benchmark.execution.arms.one': '1 arm',
+  'benchmark.execution.arms.other': '{n} arms',
+  'benchmark.execution.pairs.one': '1 pair',
+  'benchmark.execution.pairs.other': '{n} pairs',
+  'benchmark.execution.run.text': 'runs {pairs}, one run of each arm per pair, up to {workers} workers per arm.',
+  'benchmark.execution.run.limit': 'no new pair starts',
+  'benchmark.execution.run.after': 'after {time}',
+  'benchmark.execution.run.nor': 'nor',
+  'benchmark.execution.run.above': 'above {limit}',
+  'benchmark.execution.run.tokens': '{n} tokens',
+  'benchmark.execution.run.plan': '{p}% of the plan',
+  'benchmark.execution.run.or': 'or',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5348,6 +5361,19 @@ const pt: Record<MessageKey, string> = {
   'benchmark.compare.hidden.other': '{n} iguais escondidas',
   'benchmark.compare.legend': '· = igual à base · fundo mais claro = o braço sobrepõe · clique numa célula para copiar o valor para outro braço',
   'benchmark.compare.copyTo': 'copiar para',
+  // #465: the execution tab and the run controls, benchmark.hv.html's #s-execucao, .act and dlg-run
+  'benchmark.execution.arms.one': '1 braço',
+  'benchmark.execution.arms.other': '{n} braços',
+  'benchmark.execution.pairs.one': '1 par',
+  'benchmark.execution.pairs.other': '{n} pares',
+  'benchmark.execution.run.text': 'executa {pairs}, um run de cada braço por par, até {workers} workers por braço.',
+  'benchmark.execution.run.limit': 'nenhum par novo começa',
+  'benchmark.execution.run.after': 'depois de {time}',
+  'benchmark.execution.run.nor': 'nem',
+  'benchmark.execution.run.above': 'acima de {limit}',
+  'benchmark.execution.run.tokens': '{n} tokens',
+  'benchmark.execution.run.plan': '{p}% do plano',
+  'benchmark.execution.run.or': 'ou',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
