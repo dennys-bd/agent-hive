@@ -50,9 +50,15 @@ const isStages = (v: unknown): boolean => isJsonObject(v) && ROLES.every((role) 
 const isItems = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([id, version]) => parseItemId(id) !== undefined && isVersionName(version));
 const isWorktree = (v: unknown): boolean => isJsonObject(v) && isText(v.setup) && isText(v.teardown);
 const SETUP_CHECKS: Record<string, (v: unknown) => boolean> = { stages: isStages, items: isItems, worktree: isWorktree };
+const PICK_FIELDS: readonly string[] = ['agent', 'model', 'skill', 'prompt'];
+// An arm's stage holds only the fields it changes (#462): each one present is a string, under a known role; model may be null (the agent's default)
+const isPickField = (key: string, field: unknown): boolean => PICK_FIELDS.includes(key) && (isText(field) || (key === 'model' && field === null));
+const isPartialPick = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([key, field]) => isPickField(key, field));
+const isPartialStages = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([role, pick]) => (ROLES as readonly string[]).includes(role) && isPartialPick(pick));
+const OVERRIDE_CHECKS: Record<string, (v: unknown) => boolean> = { ...SETUP_CHECKS, stages: isPartialStages };
 // The base holds every field; an arm's overrides only the ones it changes
 const isSetup = (v: unknown, partial: boolean): boolean =>
-  isJsonObject(v) && Object.entries(SETUP_CHECKS).every(([key, check]) => (partial && v[key] === undefined) || check(v[key]));
+  isJsonObject(v) && Object.entries(partial ? OVERRIDE_CHECKS : SETUP_CHECKS).every(([key, check]) => (partial && v[key] === undefined) || check(v[key]));
 
 // An arm id keys the isolation rows' perArm and may name a folder: the experiment id's shape, so no `__proto__` or `constructor` either
 const isArm = (value: unknown): value is Arm => isJsonObject(value) && isText(value.id) && EXPERIMENT_ID.test(value.id) && isText(value.letter) && isSetup(value.overrides, true);

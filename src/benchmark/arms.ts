@@ -1,6 +1,6 @@
 // The arm routes' rules (#459), pure: which letter a new arm takes, what it copies, and the 404 / 409 an arm route answers. A 27th arm is
 // not a real case, so the letters stop at Z.
-import type { Arm, Experiment } from '../types.js';
+import type { Arm, ArmOverrides, ArmSetup, BenchStagePick, BenchStageRole, Experiment } from '../types.js';
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const HTTP_NOT_FOUND = 404;
@@ -38,4 +38,20 @@ export function checkRemove(experiment: Experiment, armId: string): ArmRefusal |
 export function checkTargets(experiment: Experiment, to: readonly string[]): ArmRefusal | undefined {
   const missing = to.find((armId) => !experiment.arms.some((a) => a.id === armId));
   return missing === undefined ? undefined : unknownArm(missing);
+}
+
+type StageOverride = NonNullable<NonNullable<ArmOverrides['stages']>[BenchStageRole]>;
+
+/** An arm's setup (#462): each stage field the arm sets over the base's same field, every other key whole. An arm that changes build's agent
+ *  still follows a later base edit of spec, of build's model, or of any field it never set. A null model is the agent's own default: the
+ *  merged pick has none. Pure, so the dashboard merges as the runs do. */
+export function mergeArm(base: ArmSetup, overrides: ArmOverrides): ArmSetup {
+  const { stages, ...rest } = overrides;
+  const pick = (role: BenchStageRole): BenchStagePick => {
+    const { model, ...fields }: StageOverride = stages?.[role] ?? {};
+    const { model: baseModel, ...kept } = { ...base.stages[role], ...fields };
+    const merged = model === null ? undefined : (model ?? baseModel);
+    return merged === undefined ? kept : { ...kept, model: merged };
+  };
+  return { ...base, ...rest, stages: { spec: pick('spec'), plan: pick('plan'), build: pick('build'), pr: pick('pr') } };
 }

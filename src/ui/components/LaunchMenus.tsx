@@ -12,6 +12,7 @@ import { t } from '@/i18n';
 
 // cmdk values no model or agent name can take ('@' is outside both shapes): the default model's item and none's
 const DEFAULT_ITEM = '@default';
+const INHERIT_ITEM = '@inherit';
 const NONE_ITEM = '@none';
 const ONE_M = '[1m]';
 const PLUGIN = 'hive'; // the Hive plugin, the hive: of every specialized agent (codex-home's CODEX_PLUGIN, which the page cannot import)
@@ -48,13 +49,16 @@ function Row({ id, hint, isPicked }: { id: string; hint?: string; isPicked: bool
 // A [1m] alias names its context in the page's language; any other option its own hint
 const hintOf = ({ id, hint }: LaunchOption): string | undefined => (id.endsWith(ONE_M) ? t('newSession.model.context1m') : hint);
 
+/** A row under the default one (#462): the arms tab's "the base's model", which a field resets to. */
+export interface InheritRow { label: string; isPicked: boolean; onPick(): void }
+
 // #877: a grid row names its control with `label`, having no <Label>
-interface ModelMenuProps { id?: string; label?: string; agent: AgentId; options?: AgentLaunchOptions; value: string; disabled?: boolean; defaultLabel?: string; open: boolean; onOpenChange(open: boolean): void; onPick(model: string): void }
+interface ModelMenuProps { id?: string; label?: string; agent: AgentId; options?: AgentLaunchOptions; value: string; disabled?: boolean; defaultLabel?: string; inherit?: InheritRow; open: boolean; onOpenChange(open: boolean): void; onPick(model: string): void }
 
 /** modelo (#257): the agent's default (the Hive passes no flag), its aliases and its versions, most recent first, and a typed name the lists
  * lack, offered when it has a model's shape. '' is the default; defaultLabel names what '' runs when a stage gives it a model (#290): '' never
  * unsets it. */
-export function ModelMenu({ id, label, agent, options, value, disabled = false, defaultLabel, open, onOpenChange, onPick }: ModelMenuProps) {
+export function ModelMenu({ id, label, agent, options, value, disabled = false, defaultLabel, inherit, open, onOpenChange, onPick }: ModelMenuProps) {
   const [search, setSearch] = useState('');
   const toggle = (isOpen: boolean): void => { onOpenChange(isOpen); if (!isOpen) setSearch(''); };
   const pick = (model: string): void => { onPick(model); toggle(false); };
@@ -79,6 +83,11 @@ export function ModelMenu({ id, label, agent, options, value, disabled = false, 
               <span className="truncate text-muted-foreground text-xs">{t('newSession.model.defaultHint', { agent: name })}</span>
             </span>
           </CommandItem>
+          {inherit !== undefined && (
+            <CommandItem value={INHERIT_ITEM} keywords={[inherit.label]} onSelect={() => { inherit.onPick(); toggle(false); }}>
+              <CheckIcon className={inherit.isPicked ? 'opacity-100' : 'opacity-0'} /><span>{inherit.label}</span>
+            </CommandItem>
+          )}
           <CommandSeparator />
           {aliases.length > 0 && <CommandGroup heading={t('newSession.model.aliases')}>{aliases.map(item)}</CommandGroup>}
           {versions.length > 0 && <CommandGroup heading={t('newSession.model.versions')}>{versions.map(item)}</CommandGroup>}

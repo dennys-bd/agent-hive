@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { seedHash, tasksHash, treeHash } from '../../src/benchmark/hash.js';
 import { pluginTrees } from '../../src/benchmark/pin.js';
 import type { Experiment } from '../../src/types.js';
-import { snapshot } from '../custom-fixture.js';
+import { put, snapshot } from '../custom-fixture.js';
 import { AT, call, errorOf, serve } from './bench-server.js';
 import { arm, benchExperiment, ISOLATION, run, SHA } from './fixtures.js';
 
@@ -236,4 +236,23 @@ test('a PATCH of the evaluation refuses scenarioWalks 0 and saves a tester row w
 test("registerBenchmarkRoutes mounts the control routes: run on an unknown experiment answers the control route's own 404 (#472)", async (t) => {
   const bench = await serve(t);
   assert.deepEqual(errorOf(await call(bench, 'POST', `${E}/nope/run`, {})), [404, 'unknown_experiment']);
+});
+
+test('an arm PATCH accepts a partial stage with a null model and refuses an unknown role or agent (#462)', async (t) => {
+  const bench = await serve(t, { experiments: [benchExperiment()] });
+  const overrides = { stages: { build: { agent: 'codex', model: null } } };
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides }))[0], 204);
+  assert.deepEqual(bench.state().benchmark.experiments[0].arms[0].overrides, overrides);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { review: { agent: 'codex' } } } }))[0], 400);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { build: { agent: 'gemini' } } } }))[0], 400);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { build: { model: '' } } } }))[0], 400);
+});
+
+test("GET items lists the pin's items and versions, not the current store's; 404 for an unknown experiment (#462)", async (t) => {
+  const bench = await serve(t, { experiments: [benchExperiment()] });
+  const pinned = join(bench.dir('exp-1'), 'plugin', 'custom', 'hive', 'new-build');
+  await rm(join(pinned, 'tdd'), { recursive: true }); // the current store keeps tdd: the answer must not
+  await put(join(pinned, 'terse'), { 'version.json': JSON.stringify({ name: 'terse', from: 'original', workspaces: ['bench'] }), 'files/SKILL.md': 'terse\n' });
+  assert.deepEqual(await call(bench, 'GET', `${E}/exp-1/items`), [200, { items: [{ id: 'hive:new-build', name: 'new-build', kind: 'skill', versions: ['terse'] }] }]);
+  assert.deepEqual(errorOf(await call(bench, 'GET', `${E}/nope/items`)), [404, 'unknown_experiment']);
 });

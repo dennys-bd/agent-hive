@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { canonicalJson, FS_READS, seedHash, tasksHash, treeHash } from '../../src/benchmark/hash.js';
+import { FS_READS, seedHash, tasksHash, treeHash } from '../../src/benchmark/hash.js';
+import { canonicalJson, sha256Hex } from '../../src/benchmark/canonical.js';
 import type { BenchSeed } from '../../src/types.js';
 import { put } from '../custom-fixture.js';
 import { tempDir } from '../temp-dir.js';
@@ -40,4 +41,9 @@ test('seedHash covers the seed fields, the repo files and the listed uploads, by
   assert.equal(await seedHash(seed, dir), first, 'an unlisted upload is not the seed');
   await writeFile(join(dir, 'seed', 'repo', 'docs', 'a.md'), 'A');
   assert.notEqual(await seedHash(seed, dir), first);
+});
+
+test('sha256Hex over the tasks\' canonical JSON is tasksHash: the dashboard hashes an arm\'s tasks as the server hashes the base\'s (#462)', async () => {
+  const tasks = [{ key: 'T2', title: 'Two', body: 'b', blockedBy: ['T1'] }, { blockedBy: [], body: '', title: 'One', key: 'T1' }];
+  assert.equal(await sha256Hex(canonicalJson(tasks)), tasksHash(tasks));
 });

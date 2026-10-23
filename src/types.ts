@@ -816,7 +816,10 @@ export interface ArmSetup {
   items: Record<string, string>; // itemId (`origin:name`) → custom version name; an item absent runs its original
   worktree: { setup: string; teardown: string }; // the workspace's Settings syntax (COPY / RUN lines)
 }
-export interface Arm { id: string; letter: string; name: string; overrides: Partial<ArmSetup> }
+/** What an arm changes of the base (#462): each stage per role and per field, so overriding build's agent never freezes spec; the rest whole.
+ *  A stage's model null is the agent's own default over a base model; absent keeps the base's. */
+export type ArmOverrides = Partial<Omit<ArmSetup, 'stages'>> & { stages?: Partial<Record<BenchStageRole, Partial<Omit<BenchStagePick, 'model'>> & { model?: string | null }>> };
+export interface Arm { id: string; letter: string; name: string; overrides: ArmOverrides }
 export interface BenchScenario { id: string; title: string; text: string }
 /** The seed: the problem, the same for every arm. Its hash covers every field; a change forks the experiment (1.2). */
 export interface BenchSeed { workspace: string; commit: string; reference: string[]; sample: { command: string; url: string; files: string[] }; scenarios: BenchScenario[] }

@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { assertBlind, blindTells, bundleFiles, hasTell, pluginSubagents, REDACTED, scrub, writeBundle } from '../../src/benchmark/blind.js';
 import type { BenchMetrics } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
-import { arm, experiment, SETUP } from './fixtures.js';
+import { arm, experiment } from './fixtures.js';
 
 const EXP = experiment({
-  arms: [{ ...arm('a1', 'A'), name: 'Control' }, { ...arm('a2', 'B', { stages: { ...SETUP.stages, build: { agent: 'claude', skill: '/superpowers:executing-plans', prompt: 'p' } }, plugins: ['/plugins/superpowers'] }), name: 'Turbo' }],
+  arms: [{ ...arm('a1', 'A'), name: 'Control' }, { ...arm('a2', 'B', { stages: { build: { skill: '/superpowers:executing-plans' } }, plugins: ['/plugins/superpowers'] }), name: 'Turbo' }],
   blindness: { on: true, forbiddenWords: ['benchmark'] },
 });
 const TELLS = blindTells(EXP, ['code-reviewer']);

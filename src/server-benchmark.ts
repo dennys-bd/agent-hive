@@ -7,11 +7,12 @@ import { isDeepStrictEqual } from 'node:util';
 import type { Express, Request, Response } from 'express';
 import type { z } from 'zod';
 import { type ArmRefusal, armFrom, checkArm, checkRemove, checkTargets, isArmRefusal, isLocked } from './benchmark/arms.js';
+import { byCodePoint } from './benchmark/canonical.js';
 import type { BenchEvaluator } from './benchmark/evaluate-service.js';
 import type { BenchRunner } from './benchmark/runner.js';
 import { seedHash, tasksHash, treeHash } from './benchmark/hash.js';
 import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, forkName, forkOf, newId } from './benchmark/new-experiment.js';
-import { pluginTrees } from './benchmark/pin.js';
+import { pinHome, pluginTrees } from './benchmark/pin.js';
 import { execRun } from './benchmark/exec.js';
 import { ARM_PATCH, COPY, CREATE, NEW_ARM, PATCH, type PatchBody, UPLOAD } from './benchmark/schemas.js';
 import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, SeedFileMissing, seedCommit, seedEntries, syncSeed, UPLOAD_NAME, UPLOAD_NAME_MESSAGE, UPLOAD_PREFIX, writeUpload } from './benchmark/store.js';
@@ -225,6 +226,17 @@ async function upload(req: Request, ctx: Ctx): Promise<void> {
   ctx.res.status(HTTP_NO_CONTENT).end();
 }
 
+// The versions a run can find (#462): every run renders from the pin (#459), so the choices come from it, never from the current store.
+// A workspace's own items are listed from its checkout as the render reads them; their versions from the pin
+async function pinnedItems(req: Request, ctx: Ctx): Promise<void> {
+  const experiment = found(ctx, idOf(req));
+  if (experiment === undefined) return;
+  const dir = folder(ctx, experiment.id);
+  const catalogue = await readCatalogue({ home: pinHome(dir), pluginSource: pluginTrees(dir).source, workspaces: ctx.config.comb.workspaces });
+  const items = catalogue.map((i) => ({ id: i.id, name: i.name, kind: i.kind, versions: i.versions.map((v) => v.name) })).sort((a, b) => byCodePoint(a.id, b.id));
+  ctx.res.json({ items });
+}
+
 function registerExperimentRoutes(app: Express, deps: BenchmarkRouteDeps, queue: Queue): void {
   app.post(E, route(deps, queue, 'create', async (req, ctx) => {
     const body = parsed(CREATE, req, ctx.res);
@@ -236,6 +248,7 @@ function registerExperimentRoutes(app: Express, deps: BenchmarkRouteDeps, queue:
     if (body !== undefined) await patchExperiment(ctx, idOf(req), body);
   }));
   app.put(`${E}/:id/seed/files/:name`, route(deps, queue, 'upload', upload));
+  app.get(`${E}/:id/items`, route(deps, queue, 'items', pinnedItems));
   app.delete(`${E}/:id`, route(deps, queue, 'delete', async (req, ctx) => {
     const experiment = unlocked(ctx, idOf(req));
     if (experiment === undefined) return;

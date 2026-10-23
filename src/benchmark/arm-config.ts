@@ -4,6 +4,7 @@ import { initialState } from '../orchestrator.js';
 import { shellQuote } from '../shell-init.js';
 import { HIVE_SOURCE } from '../tasks.js';
 import { MCP_DEFAULTS, type Arm, type ArmSetup, type BenchStageRole, type BenchTask, type CombConfig, type Config, type Experiment, type IsolationRow, type Stage, type State, type Task, type Workspace } from '../types.js';
+import { mergeArm } from './arms.js';
 import { runBranch, runPrefix } from './git.js';
 import { RUN_SANDBOX_FILE, SANDBOX_FILE } from './sandbox.js';
 import type { WatchTask } from './watcher.js';
@@ -13,9 +14,7 @@ export const RUN_STAGES: readonly { role: BenchStageRole; name: string }[] = [
   { role: 'spec', name: 'Spec' }, { role: 'plan', name: 'Plan' }, { role: 'build', name: 'Build' }, { role: 'pr', name: 'PR' },
 ];
 export const DONE_STAGE = 'Done';
-
-// Shallow on purpose: the arm screens reset and copy per section, so an override key replaces the base's whole value
-export const mergeArm = (base: ArmSetup, overrides: Partial<ArmSetup>): ArmSetup => ({ ...base, ...overrides });
+export { mergeArm }; // runner-run.ts, run-home.ts and pr.ts keep importing it from here
 
 // hasOwn: an arm id like `constructor` must not reach Object.prototype
 export const resolveRow = <T>(row: IsolationRow<T>, armId: string): T => (row.perArm !== undefined && Object.hasOwn(row.perArm, armId) ? row.perArm[armId] : row.all);

@@ -2,8 +2,9 @@
 // Kept apart from server-benchmark.ts for the 400-line rule.
 import { z } from 'zod';
 import { isVersionName, safeFilePath } from '../custom-versions.js';
+import { parseItemId } from '../item-sources.js';
 import { COMMIT } from '../state-guards.js';
-import { AGENT_IDS, type ArmSetup, type BenchBlindness, type BenchEvaluation, type BenchIsolation, type BenchPace, type BenchSeed, ENV_NAME, type EvaluateRow } from '../types.js';
+import { AGENT_IDS, type ArmOverrides, type ArmSetup, type BenchBlindness, type BenchEvaluation, type BenchIsolation, type BenchPace, type BenchSeed, ENV_NAME, type EvaluateRow } from '../types.js';
 import { UPLOAD_NAME, UPLOAD_PREFIX } from './store.js';
 
 const NAME_MAX = 120;
@@ -17,10 +18,14 @@ const TASK = z.strictObject({ key: z.string().min(1), title: z.string(), body: z
 const SETUP_FIELDS = {
   stages: z.strictObject({ spec: PICK, plan: PICK, build: PICK, pr: PICK }), plugins: z.array(z.string().min(1)),
   rules: z.strictObject({ allow: z.array(z.string()), deny: z.array(z.string()) }), tasks: z.array(TASK),
-  items: z.record(z.string(), z.string().refine(isVersionName, 'a version name')), worktree: z.strictObject({ setup: z.string(), teardown: z.string() }),
+  items: z.record(z.string().refine((id) => parseItemId(id) !== undefined, 'an item id'), z.string().refine(isVersionName, 'a version name')), worktree: z.strictObject({ setup: z.string(), teardown: z.string() }),
 };
 export const ARM_SETUP: z.ZodType<ArmSetup> = z.strictObject(SETUP_FIELDS);
-export const ARM_OVERRIDES: z.ZodType<Partial<ArmSetup>> = z.strictObject(SETUP_FIELDS).partial();
+// An arm's stage holds only the fields it sets (#462); model null is the agent's own default over a base model. Strict, so an unknown role
+// or field is still a 400
+const PARTIAL_PICK = PICK.extend({ model: z.string().min(1).nullable() }).partial();
+const PARTIAL_STAGES = z.strictObject({ spec: PARTIAL_PICK, plan: PARTIAL_PICK, build: PARTIAL_PICK, pr: PARTIAL_PICK }).partial();
+export const ARM_OVERRIDES: z.ZodType<ArmOverrides> = z.strictObject({ ...SETUP_FIELDS, stages: PARTIAL_STAGES }).partial();
 
 // A repo path (a file or a folder at the commit, no trailing slash) or upload:<name>
 const isSeedEntry = (entry: string): boolean => (entry.startsWith(UPLOAD_PREFIX) ? UPLOAD_NAME.test(entry.slice(UPLOAD_PREFIX.length)) : safeFilePath(entry) !== undefined);

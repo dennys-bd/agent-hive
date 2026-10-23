@@ -1,14 +1,12 @@
 import { type ReactNode, useState } from 'react';
-import { toast } from 'sonner';
 import type { Experiment } from '../../../types';
 import { BenchmarkSidebar } from '@/components/benchmark/BenchmarkSidebar';
 import { BenchmarkView } from '@/components/benchmark/BenchmarkView';
+import { send } from '@/components/benchmark/send';
 import type { DockPanel } from '@/components/DockGroup';
 import { groupExperiments, type SidebarGroups } from '@/components/benchmark/sidebar-groups';
 import type { TabId } from '@/components/benchmark/tabs';
-import { statusOf } from '@/hooks/use-plugins';
-import { type MessageKey, t } from '@/i18n';
-import { sendJson } from '@/lib/api';
+import { t } from '@/i18n';
 import type { PanelId } from '@/lib/dock-layout';
 
 /** What later leaves plug into the shell (#461): pedir ao agente (5), exportar report.md (2.7), dormir (2.8). Absent: the item is left out, or
@@ -30,19 +28,6 @@ export interface Benchmark {
 const E = '/benchmark/experiments';
 const pathOf = (id: string): string => `${E}/${encodeURIComponent(id)}`;
 const NO_SLOTS: BenchmarkSlots = {};
-// A refusal's status as the copy the toast shows (root design, Routes): the route logs a 500's detail; its words never reach the screen
-const FAILED: Readonly<Record<number, MessageKey>> = { 400: 'benchmark.header.failed.invalid', 404: 'benchmark.header.failed.gone', 409: 'benchmark.header.failed.running' };
-
-// The answer, or undefined once the toast told why
-async function send<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T | undefined> {
-  try {
-    return await sendJson<T>(method, path, body);
-  } catch (err) {
-    toast.error(t(FAILED[statusOf(err)] ?? 'benchmark.header.failed.unknown'));
-    return undefined;
-  }
-}
-
 // The live rows in the sidebar's order, unfiltered: what the first selection and "the next experiment" after a delete read
 const rowsOf = (experiments: readonly Experiment[]): Experiment[] => groupExperiments(experiments, '').groups.flatMap((g) => g.experiments);
 
