@@ -1,5 +1,7 @@
+import { render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { bootRunHive, readPendingAsk, readRunHive, resetRunHive } from '@/components/benchmark/run-mode/run-hive';
+import { bootRunHive, readPendingAsk, readRunHive, resetRunHive, RUN_POLL_MS } from '@/components/benchmark/run-mode/run-hive';
+import { RunModeHost } from '@/components/benchmark/run-mode/RunModeHost';
 import { setLanguage, t } from '@/i18n';
 import { postJson } from '@/lib/api';
 import { resetViewState } from '@/lib/view-state';
@@ -32,4 +34,19 @@ test('frozen: every write is refused before its fetch with the frozen copy, and 
   await bootRunHive();
   await expect(postJson('/tasks/A/approve')).rejects.toThrow(t('benchmark.run.frozen'));
   expect([readPendingAsk(), writes(calls)]).toEqual([undefined, []]);
+});
+
+test('the host re-reads GET /benchmark-run every 15 s, so terminal input the daemon recorded reaches the count (#469)', async () => {
+  vi.useFakeTimers();
+  try {
+    const calls = stubRunFetch(RUN);
+    await bootRunHive();
+    render(<RunModeHost />);
+    const reads = (): number => calls.filter((c) => c.path === '/benchmark-run').length;
+    expect(reads()).toBe(1);
+    await vi.advanceTimersByTimeAsync(RUN_POLL_MS);
+    expect(reads()).toBe(2);
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -2885,6 +2885,12 @@ const en = {
   // #469: a benchmark run's own Hive, benchmark-run.hv.html
   'benchmark.run.frozen': 'this run is frozen: its hive takes no more actions',
   'benchmark.run.cancelled': 'intervention cancelled',
+  'benchmark.run.ask.first': 'first intervention in this run',
+  'benchmark.run.ask.next': 'new intervention in this run',
+  'benchmark.run.ask.text': 'this action marks run {token} as "with intervention". it stays in the report with the mark, and you choose there whether it counts in the median.',
+  'benchmark.run.ask.noAsk': "don't ask again in this run",
+  'benchmark.run.ask.cancel': 'cancel',
+  'benchmark.run.ask.approve': 'approve and record',
 };
 
 export type MessageKey = keyof typeof en;
@@ -5764,6 +5770,12 @@ const pt: Record<MessageKey, string> = {
   // #469: a benchmark run's own Hive, benchmark-run.hv.html
   'benchmark.run.frozen': 'este run está congelado: a hive dele não aceita mais ações',
   'benchmark.run.cancelled': 'intervenção cancelada',
+  'benchmark.run.ask.first': 'primeira intervenção neste run',
+  'benchmark.run.ask.next': 'nova intervenção neste run',
+  'benchmark.run.ask.text': 'esta ação marca o run {token} como "com intervenção". ele continua no relatório com a marca, e você escolhe lá se ele entra na mediana.',
+  'benchmark.run.ask.noAsk': 'não perguntar de novo neste run',
+  'benchmark.run.ask.cancel': 'cancelar',
+  'benchmark.run.ask.approve': 'aprovar e registrar',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
