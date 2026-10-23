@@ -19,7 +19,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 // Through TABS, so the execution entry's wiring is what renders
 function Tab({ experiment = SCREEN }: { experiment?: Experiment }) {
   const benchmark = useBenchmark([experiment]);
-  return <>{TABS.find((tab) => tab.id === 'execution')?.render?.(experiment, benchmark)}</>;
+  return <>{TABS.find((tab) => tab.id === 'execution')?.render?.(experiment, benchmark, { select: benchmark.select })}</>;
 }
 function WithResult({ result }: { result(experiment: Experiment, token: string): ReactNode }) {
   const benchmark = useBenchmark([SCREEN]);
