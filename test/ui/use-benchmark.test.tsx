@@ -76,3 +76,18 @@ test('só diferenças starts on and toggles; showInCompare opens comparar with t
   expect([result.current.tab, result.current.highlightedArm]).toEqual(['compare', undefined]);
 });
 
+test("the execution tab's picked run: openResult holds it, closeResult drops it, and a tab or experiment switch clears it (#465)", () => {
+  const { result } = hook(EXPERIMENTS);
+  act(() => result.current.setTab('execution'));
+  act(() => result.current.openResult('c81e04aa'));
+  expect(result.current.run).toBe('c81e04aa');
+  act(() => result.current.closeResult());
+  expect(result.current.run).toBeUndefined();
+  act(() => result.current.openResult('c81e04aa'));
+  act(() => result.current.setTab('report'));
+  act(() => result.current.setTab('execution'));
+  expect(result.current.run).toBeUndefined();
+  act(() => result.current.openResult('c81e04aa'));
+  act(() => result.current.select(DRAFT.id));
+  expect(result.current.run).toBeUndefined();
+});

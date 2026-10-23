@@ -22,6 +22,7 @@ export interface Benchmark {
   createEmpty(workspace: string): Promise<void>; duplicate(of: string): Promise<void>; // each selects the answer's draft
   rename(id: string, name: string): Promise<void>; setArchived(id: string, archived: boolean): Promise<void>;
   remove(id: string): Promise<void>; // selects the next experiment in the sidebar, or none
+  run?: string; openResult(token: string): void; closeResult(): void; // #465: the execution tab's picked run, whose result shows in place of the rounds
   slots: BenchmarkSlots;
   isDiffOnly: boolean; toggleDiffOnly(): void; // só diferenças (#464): on by default, kept like the tab
   highlightedArm?: string; showInCompare(armId: string): void; // ver em comparar (#464): the compare tab with that arm's column marked
@@ -38,6 +39,7 @@ const rowsOf = (experiments: readonly Experiment[]): Experiment[] => groupExperi
 export function useBenchmark(experiments: readonly Experiment[], slots: BenchmarkSlots = NO_SLOTS): Benchmark {
   const [selectedId, setSelectedId] = useState<string>();
   const [tab, setTab] = useState<TabId>('arms');
+  const [picked, setPicked] = useState<{ id: string; token: string }>();
   const [query, setQuery] = useState('');
   const [isArchivedOpen, setArchivedOpen] = useState(false);
   const [isDiffOnly, setDiffOnly] = useState(true);
@@ -45,15 +47,20 @@ export function useBenchmark(experiments: readonly Experiment[], slots: Benchmar
   const rows = rowsOf(experiments);
   // A fresh draft is selected by id before the stream delivers it, so the first row shows for that moment
   const selected = experiments.find((e) => e.id === selectedId) ?? rows[0];
-  // The highlight marks an arm of one experiment on one tab (#464): leaving either clears it, staying keeps it
+  // The highlight marks an arm of one experiment on one tab (#464): leaving either clears it, staying keeps it; a click on a row or a tab
+  // drops the execution tab's picked run (#465)
   const choose = (id: string | undefined): void => {
     if (id !== selected?.id) setHighlightedArm(undefined);
     setSelectedId(id);
+    setPicked(undefined);
   };
   const pickTab = (next: TabId): void => {
     if (next !== tab) setHighlightedArm(undefined);
     setTab(next);
+    setPicked(undefined);
   };
+  // Derived against the selection, so a delete or a create that moves it drops the run with no effect
+  const run = picked !== undefined && picked.id === selected?.id ? picked.token : undefined;
   const create = async (body: object): Promise<void> => {
     const answer = await send<Experiment>('POST', E, body);
     if (answer !== undefined) choose(answer.id);
@@ -66,11 +73,12 @@ export function useBenchmark(experiments: readonly Experiment[], slots: Benchmar
   };
   return {
     experiments, sidebar: groupExperiments(experiments, query), selected, select: choose, tab, setTab: pickTab, query, setQuery,
+    run, openResult: (token) => { if (selected !== undefined) setPicked({ id: selected.id, token }); }, closeResult: () => setPicked(undefined),
     isArchivedOpen, toggleArchived: () => setArchivedOpen((open) => !open),
     createEmpty: (workspace) => create({ kind: 'empty', workspace }), duplicate: (of) => create({ kind: 'duplicate', of }),
     rename: (id, name) => patch(pathOf(id), { name }), setArchived: (id, archived) => patch(pathOf(id), { archived }), remove, slots,
     isDiffOnly, toggleDiffOnly: () => setDiffOnly((on) => !on), highlightedArm,
-    showInCompare: (armId) => { setTab('compare'); setHighlightedArm(armId); },
+    showInCompare: (armId) => { pickTab('compare'); setHighlightedArm(armId); },
   };
 }
 
