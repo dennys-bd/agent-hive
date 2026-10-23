@@ -1,6 +1,9 @@
-// The run result's routes (#466): judge again (#474), the median override (#476) and the run's own Hive (#475). They go through the shell's
-// send (#461), so a refusal is its toast and never the server's words. 2.5's abrir reuses openRunHive, so both buttons move the window alike.
+// The run result's routes (#466): judge again (#474) and the median override (#476) go through the shell's send (#461), so a refusal is its
+// toast and never the server's words; the run's own Hive (#475) goes through the execution tab's helpers (#465), so both buttons move alike.
+import { toast } from 'sonner';
 import { send } from '@/components/benchmark/send';
+import { t } from '@/i18n';
+import { goToRunHive, openRunHive } from '@/lib/benchmark-run-api';
 
 const runPath = (id: string, token: string): string => `/benchmark/experiments/${encodeURIComponent(id)}/runs/${encodeURIComponent(token)}`;
 
@@ -13,9 +16,12 @@ export async function setInMedian(id: string, token: string, inMedian: boolean):
   await send('PATCH', runPath(id, token), { inMedian });
 }
 
-/** The open route boots or finds the run's daemon and sets this host's cookie for its port (#475), so the window can move there. */
-export async function openRunHive(id: string, token: string): Promise<void> {
-  const answer = await send<{ port: number }>('POST', `${runPath(id, token)}/open`);
-  const port = answer?.port;
-  if (port !== undefined && Number.isInteger(port) && port > 0 && port < 65536) location.assign(`${location.protocol}//${location.hostname}:${port}/`);
+/** abrir hive do run, as the execution tab's abrir (#465): the shared open route and the move to the answered port on this host. A refusal
+ *  is the execution tab's own toast line, since both buttons do the same thing. */
+export async function openHive(id: string, token: string): Promise<void> {
+  try {
+    goToRunHive((await openRunHive(id, token)).port);
+  } catch {
+    toast.error(t('benchmark.execution.failed.open'));
+  }
 }

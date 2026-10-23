@@ -21,7 +21,7 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit): Promise<Respons
 // The writes the screen sent: method, path and body
 const writes = () => fetchMock.mock.calls.filter(([, init]) => init?.method !== undefined)
   .map(([url, init]) => ({ method: init?.method, url, ...(init?.body === undefined || init.body === null ? {} : { body: JSON.parse(String(init.body)) as unknown }) }));
-const show = (run = RUN_B1) => render(<RunResult experiment={RESULT_EXP} run={run} onBack={vi.fn()} />);
+const show = (run = RUN_B1) => render(<RunResult experiment={RESULT_EXP} run={run} />);
 
 beforeEach(() => {
   setLanguage('pt');
@@ -81,7 +81,7 @@ test('julgar de novo posts the run\'s evaluate route and is disabled while it fl
   release();
   await waitFor(() => expect(screen.getByRole('button', { name: 'julgar de novo' })).toBeEnabled());
   const judge = { ...EVALUATION.judge, scores: [{ dimension: 'fidelidade', score: 2, evidence: 'o layout mudou.' }] };
-  rerender(<RunResult experiment={RESULT_EXP} run={{ ...RUN_B1, evaluation: { ...EVALUATION, judge } }} onBack={vi.fn()} />);
+  rerender(<RunResult experiment={RESULT_EXP} run={{ ...RUN_B1, evaluation: { ...EVALUATION, judge } }} />);
   expect(screen.getByText('o layout mudou.')).toBeInTheDocument();
   expect(screen.getByText('2/5')).toBeInTheDocument();
 });

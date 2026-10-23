@@ -1,4 +1,3 @@
-import { ArrowLeftIcon } from 'lucide-react';
 import { useState } from 'react';
 import { HASH_SHOWN } from '../../../../benchmark/format.js';
 import type { BenchRun, Experiment } from '../../../../types.js';
@@ -9,17 +8,17 @@ import { MetricsStrip } from '@/components/benchmark/result/MetricsStrip';
 import { RegistryCard } from '@/components/benchmark/result/RegistryCard';
 import { Chip } from '@/components/benchmark/result/ResultCard';
 import { runChip } from '@/components/benchmark/result/result-view';
-import { evaluateRun, openRunHive } from '@/components/benchmark/result/run-api';
+import { evaluateRun, openHive } from '@/components/benchmark/result/run-api';
 import { ScenariosCard } from '@/components/benchmark/result/ScenariosCard';
 import { TasksCard } from '@/components/benchmark/result/TasksCard';
 import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 
-export interface RunResultProps { experiment: Experiment; run: BenchRun; onBack(): void }
+export interface RunResultProps { experiment: Experiment; run: BenchRun }
 
-/** One run's result (#466, #s-resultado of benchmark.hv.html): the top line with its three actions, the metrics and the two columns. It
- *  owns the PR dialog's open state; the header has no primary action on this screen. */
-export function RunResult({ experiment, run, onBack }: RunResultProps) {
+/** One run's result (#466, #s-resultado of benchmark.hv.html): the top line with its three actions, the metrics and the two columns, in the
+ *  execution tab's result slot (#465), which draws the back line. It owns the PR dialog's open state. */
+export function RunResult({ experiment, run }: RunResultProps) {
   const [isJudging, setJudging] = useState(false);
   const [isPrOpen, setPrOpen] = useState(false);
   const arm = experiment.arms.find((a) => a.id === run.armId);
@@ -29,12 +28,8 @@ export function RunResult({ experiment, run, onBack }: RunResultProps) {
     try { await evaluateRun(experiment.id, run.token); } finally { setJudging(false); }
   };
   return (
-    <section aria-label={t('benchmark.result.title')} className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto px-6 pt-4 pb-6">
+    <section aria-label={t('benchmark.result.title')} className="flex flex-col gap-3.5">
       <div className="flex items-center gap-2.5 text-[13px]">
-        <button type="button" onClick={onBack} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-          <ArrowLeftIcon aria-hidden="true" className="size-3.5" />{t('benchmark.header.tab.execution')}
-        </button>
-        <span aria-hidden="true" className="text-muted-foreground">›</span>
         <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-accent font-mono font-semibold text-[11px]">{arm?.letter}</span>
         <b className="font-semibold">{`${arm?.name ?? ''} · ${t('benchmark.result.pair', { round: run.round })}`}</b>
         <span className="font-mono text-muted-foreground text-xs">{run.token.slice(0, HASH_SHOWN)}</span>
@@ -42,7 +37,7 @@ export function RunResult({ experiment, run, onBack }: RunResultProps) {
         {run.interventions.length > 0 && <Chip tone="yellow">{t('benchmark.result.intervened', { n: run.interventions.length })}</Chip>}
         <span className="flex-1" />
         <Button type="button" size="sm" variant="outline" disabled={isJudging} onClick={() => void judge()}>{t('benchmark.result.evaluate')}</Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => void openRunHive(experiment.id, run.token)}>{t('benchmark.result.openHive')}</Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => void openHive(experiment.id, run.token)}>{t('benchmark.result.openHive')}</Button>
         <Button type="button" size="sm" variant="outline" onClick={() => setPrOpen(true)}>{t('benchmark.result.openPr')}</Button>
       </div>
       <MetricsStrip experiment={experiment} run={run} />
