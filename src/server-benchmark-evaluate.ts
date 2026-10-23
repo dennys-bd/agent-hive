@@ -1,6 +1,7 @@
 // The benchmark's evaluate routes (#474), mounted from registerBenchmarkRoutes behind the server's host, secret and x-hive-ui gates.
 import type { Express, Request, Response } from 'express';
 import type { BenchEvaluator } from './benchmark/evaluate-service.js';
+import { evaluableTokens } from './benchmark/report.js';
 import type { Logger } from './log.js';
 import type { BenchRunStatus, Experiment, State } from './types.js';
 
@@ -14,14 +15,6 @@ export interface BenchEvaluateRouteDeps {
   requireLive(res: Response): { state: State } | undefined;
   evaluator: Pick<BenchEvaluator, 'evaluate' | 'isEvaluating'>;
   log: Pick<Logger, 'warn'>;
-}
-
-/** The runs the experiment route evaluates (#474): every done, timeout or error run, in round then arm order. */
-export function evaluableTokens(experiment: Experiment): string[] {
-  const armIndex = (armId: string): number => experiment.arms.findIndex((a) => a.id === armId);
-  return [...experiment.rounds].sort((a, b) => a.n - b.n)
-    .flatMap((round) => round.runs.filter((r) => ENDED.includes(r.status)).sort((a, b) => armIndex(a.armId) - armIndex(b.armId)))
-    .map((r) => r.token);
 }
 
 // The evaluation can take hours (#474): the route answers at once and the service dispatches the result

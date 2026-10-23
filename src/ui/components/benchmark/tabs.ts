@@ -6,6 +6,7 @@ import { ExecutionTab } from '@/components/benchmark/execution/ExecutionTab';
 import type { Benchmark } from '@/components/benchmark/benchmark-dock';
 import { CompareTab } from '@/components/benchmark/compare/CompareTab';
 import { ConfigTab } from '@/components/benchmark/config/ConfigTab';
+import { ReportTab } from '@/components/benchmark/report/ReportTab';
 import type { MessageKey } from '@/i18n';
 
 export type TabId = 'arms' | 'config' | 'compare' | 'execution' | 'report';
@@ -40,5 +41,9 @@ export const TABS: readonly BenchmarkTab[] = [
     render: (experiment, benchmark) => createElement(CompareTab, { experiment, benchmark }), primary: (experiment) => primaryFor('compare', experiment),
   },
   execution,
-  { id: 'report', label: 'benchmark.header.tab.report', primary: (experiment) => primaryFor('report', experiment) },
+  // #467: keyed by the experiment, so another one starts back on entram na mediana
+  {
+    id: 'report', label: 'benchmark.header.tab.report',
+    render: (experiment) => createElement(ReportTab, { key: experiment.id, experiment }), primary: (experiment) => primaryFor('report', experiment),
+  },
 ];

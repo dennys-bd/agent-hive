@@ -16,10 +16,10 @@ const more = (user: ReturnType<typeof userEvent.setup>): Promise<void> => user.c
 beforeEach(() => setLanguage('pt'));
 afterEach(() => vi.unstubAllGlobals());
 
-test('arquivar patches archived true and keeps the selection; an archived one offers desarquivar; the export slot shows only when filled (#461)', async () => {
+test('arquivar patches archived true and keeps the selection; an archived one offers desarquivar; the export item shows unless a caller clears its slot (#461, #467)', async () => {
   const user = userEvent.setup();
   const calls = stubBenchmarkFetch();
-  const { rerender } = render(<Head experiment={DRAFT} />);
+  const { rerender } = render(<Head experiment={DRAFT} slots={{ exportReport: undefined }} />);
   await more(user);
   expect(screen.queryByRole('menuitem', { name: 'exportar report.md' })).not.toBeInTheDocument();
   await user.click(await screen.findByRole('menuitem', { name: 'arquivar' }));

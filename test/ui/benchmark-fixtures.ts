@@ -84,3 +84,16 @@ export const COMPARE = experiment({
     { id: 'a4', letter: 'D', name: 'tarefas juntas', overrides: { tasks: [compareTask(1), compareTask(2), compareTask(3)] } },
   ],
 });
+
+export interface Download { href: string; download: string }
+/** jsdom has no blob URL and does not download (#467): createObjectURL answers blob:report, and an anchor's click is recorded, not followed.
+ *  Pair with vi.restoreAllMocks() in afterEach. */
+export function stubDownload(): Download[] {
+  const clicks: Download[] = [];
+  URL.createObjectURL = vi.fn(() => 'blob:report');
+  URL.revokeObjectURL = vi.fn();
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function record(this: HTMLAnchorElement) {
+    clicks.push({ href: this.href, download: this.download });
+  });
+  return clicks;
+}

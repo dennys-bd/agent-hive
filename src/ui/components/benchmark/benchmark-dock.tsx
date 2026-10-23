@@ -2,6 +2,7 @@ import { type ReactNode, useState } from 'react';
 import type { Experiment, PlanReadings } from '../../../types';
 import { BenchmarkSidebar } from '@/components/benchmark/BenchmarkSidebar';
 import { BenchmarkView } from '@/components/benchmark/BenchmarkView';
+import { downloadReport } from '@/components/benchmark/report/report-actions';
 import { send } from '@/components/benchmark/send';
 import type { DockPanel } from '@/components/DockGroup';
 import { groupExperiments, type SidebarGroups } from '@/components/benchmark/sidebar-groups';
@@ -30,6 +31,8 @@ export interface Benchmark {
 
 const E = '/benchmark/experiments';
 const pathOf = (id: string): string => `${E}/${encodeURIComponent(id)}`;
+// #467: exportar report.md is the report tab's download, so the ⋯ item needs no caller (MainDock is at its line limit); a caller's slot wins
+const DEFAULT_SLOTS: BenchmarkSlots = { exportReport: downloadReport };
 const NO_SLOTS: BenchmarkSlots = {};
 // The live rows in the sidebar's order, unfiltered: what the first selection and "the next experiment" after a delete read
 const rowsOf = (experiments: readonly Experiment[]): Experiment[] => groupExperiments(experiments, '').groups.flatMap((g) => g.experiments);
@@ -76,7 +79,7 @@ export function useBenchmark(experiments: readonly Experiment[], slots: Benchmar
     run, openResult: (token) => { if (selected !== undefined) setPicked({ id: selected.id, token }); }, closeResult: () => setPicked(undefined),
     isArchivedOpen, toggleArchived: () => setArchivedOpen((open) => !open),
     createEmpty: (workspace) => create({ kind: 'empty', workspace }), duplicate: (of) => create({ kind: 'duplicate', of }),
-    rename: (id, name) => patch(pathOf(id), { name }), setArchived: (id, archived) => patch(pathOf(id), { archived }), remove, slots,
+    rename: (id, name) => patch(pathOf(id), { name }), setArchived: (id, archived) => patch(pathOf(id), { archived }), remove, slots: { ...DEFAULT_SLOTS, ...slots },
     isDiffOnly, toggleDiffOnly: () => setDiffOnly((on) => !on), highlightedArm,
     showInCompare: (armId) => { pickTab('compare'); setHighlightedArm(armId); },
   };

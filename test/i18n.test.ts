@@ -616,3 +616,13 @@ test("the benchmark config tab's copy exists in both languages, reads as the scr
     for (const key of ['benchmark.config.discardTitle', 'benchmark.config.eval.rejudgeTitle'] as const) assert.match(MESSAGES[language][key], /^\p{Lu}[^?]*$/u, `${language}.${key}`);
   }
 });
+
+test("the report tab's copy reads as the spec writes it, in both languages, and never says rodar (#467)", () => {
+  const keys = ['benchmark.report.empty', 'benchmark.report.evaluateTitle', 'benchmark.report.evaluateConfirm', 'benchmark.report.mixedRubrics', 'benchmark.report.row.restarts'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['nenhum run terminado ainda', 'Avaliar de novo', 'avaliar', '· rubricas diferentes entre runs', 'restarts']);
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['no run has finished yet', 'Evaluate again', 'evaluate', '· different rubrics across runs', 'restarts']);
+  assert.equal(MESSAGES.pt['benchmark.report.evaluateText.other'], 'os coletores, os cenários de clique e o juiz executam de novo nos {n} runs terminados e o relatório é refeito. leva tempo e gasta tokens.');
+  const ours = Object.entries(MESSAGES.pt).filter(([key]) => key.startsWith('benchmark.report.'));
+  assert.ok(ours.length > 40, `only ${ours.length} report keys`);
+  assert.equal(ours.some(([, text]) => /\brod(ar|ando|am)\b/.test(text)), false);
+});
