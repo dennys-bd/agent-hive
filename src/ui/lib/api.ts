@@ -12,15 +12,34 @@ export function getJson<T>(path: string): Promise<T> {
   return fetch(path).then((res) => parseJson<T>(res));
 }
 
+/** A write's way through run mode (#469): ask before the fetch (a rejection stops it: the user's cancel, or a frozen run), written once it
+ * answered, so the band re-reads its count. */
+export interface WriteGate { ask(path: string): Promise<void>; written(): void }
+/** The user cancelled the write in the popover: act and the editor's save drop it without a word (m-11). */
+export class WriteCancelled extends Error { override readonly name = 'WriteCancelled'; }
+
+const VIEW_STATE_PREFIX = '/view-state/'; // the window's layout: never an intervention (3.5 skips it too)
+let writeGate: WriteGate | undefined;
+
+/** Set once by run mode's boot (#469); a normal Hive never sets it. */
+export const setWriteGate = (gate: WriteGate | undefined): void => { writeGate = gate; };
+
+/** `send` behind the gate (#469). No gate, or the view state: at once, in the same tick, as every write went out before run mode. */
+export function gated<T>(path: string, send: () => Promise<T>): Promise<T> {
+  const gate = writeGate;
+  if (gate === undefined || path.startsWith(VIEW_STATE_PREFIX)) return send();
+  return gate.ask(path).then(() => send().finally(() => gate.written()));
+}
+
 interface SendOptions { keepalive?: boolean; signal?: AbortSignal } // signal: a request its caller may abort (#329: a review no longer shown)
 
 /** `keepalive` lets the request outlive the page: the view state's flush on pagehide (#484). */
 export function sendJson<T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown, { keepalive, signal }: SendOptions = {}): Promise<T> {
-  return fetch(path, {
+  return gated(path, () => fetch(path, {
     // x-hive-ui is the CSRF gate of every dashboard write (see server.ts): a form on another site cannot set it
     method, headers: { 'content-type': 'application/json', 'x-hive-ui': '1' },
     body: body === undefined ? undefined : JSON.stringify(body), keepalive, signal,
-  }).then((res) => parseJson<T>(res));
+  }).then((res) => parseJson<T>(res)));
 }
 
 export const postJson = <T>(path: string, body?: unknown, opts: SendOptions = {}): Promise<T> => sendJson<T>('POST', path, body, opts);
