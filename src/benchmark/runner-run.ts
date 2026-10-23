@@ -80,7 +80,9 @@ async function reportProgress(ctx: RunContext, handle: LiveRun, progress: Progre
   if (ctx.latest()?.status === 'sleeping') return; // the sleep's status stays until the wake
   if (ENDED.includes(runOf(ctx.latest(), handle.token)?.status ?? 'queued')) return; // a late progress must not reopen an ended or interrupted run
   const status: BenchRunStatus = progress.waiting ? 'waiting' : 'running';
-  await ctx.dispatch({ type: 'benchmarkRunChanged', id: ctx.id, token: handle.token, patch: { delivered: progress.delivered, total: progress.total, status } });
+  // #465: the per-task states ride in the same patch, so the bar and the count never disagree
+  const patch: BenchRunPatch = { delivered: progress.delivered, total: progress.total, status, progress: progress.tasks.map((t) => t.state) };
+  await ctx.dispatch({ type: 'benchmarkRunChanged', id: ctx.id, token: handle.token, patch });
   const at = ctx.now().getTime();
   if (at - (ctx.tokensAt.get(handle.token) ?? Number.NEGATIVE_INFINITY) < TOKENS_EVERY_MS) return;
   ctx.tokensAt.set(handle.token, at);

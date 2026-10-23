@@ -101,7 +101,7 @@ test('progress becomes delivered, total and running or waiting; the tokens are r
   assert.ok(deps?.onProgress);
   deps.onProgress({ delivered: 1, total: 2, waiting: true, tasks: [] });
   await until(() => c.events.length === 2);
-  assert.deepEqual(c.events[0], { type: 'benchmarkRunChanged', id: 'exp-1', token: 'tok1', patch: { delivered: 1, total: 2, status: 'waiting' } });
+  assert.deepEqual(c.events[0], { type: 'benchmarkRunChanged', id: 'exp-1', token: 'tok1', patch: { delivered: 1, total: 2, status: 'waiting', progress: [] } });
   assert.equal(c.latest()?.rounds[0].runs[0].metrics?.tokens, 10);
   deps.onProgress({ delivered: 2, total: 2, waiting: false, tasks: [] });
   await until(() => c.events.length === 3);
@@ -178,4 +178,16 @@ test('endRun on a run interrupted meanwhile dispatches no end, yet stops its dae
   const c = context(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('tok1', { status: 'interrupted' })] }] }));
   await endRun(c.ctx, liveRun('tok1'), { outcome: 'error', reason: 'the daemon is gone' });
   assert.deepEqual([c.events, c.latest()?.rounds[0].runs[0].status, c.rig.calls], [[], 'interrupted', ['stop tok1']]);
+});
+
+test("a progress step carries each task's state in seed order, kept on the run for the execution tab's bar (#465)", async () => {
+  const c = context(experiment({ status: 'running', rounds: [{ n: 1, runs: [run('tok1')] }] }));
+  void watchOne(c.ctx, liveRun('tok1'));
+  await until(() => c.rig.watchDeps.has('tok1'));
+  c.rig.watchDeps.get('tok1')?.onProgress?.({
+    delivered: 1, total: 3, waiting: true, tasks: [{ key: 'T1', state: 'done' }, { key: 'T2', state: 'waiting' }, { key: 'T3', state: 'open' }],
+  });
+  await until(() => c.events.length >= 1);
+  assert.deepEqual(c.events[0], { type: 'benchmarkRunChanged', id: 'exp-1', token: 'tok1', patch: { delivered: 1, total: 3, status: 'waiting', progress: ['done', 'waiting', 'open'] } });
+  assert.deepEqual(c.latest()?.rounds[0].runs[0].progress, ['done', 'waiting', 'open']);
 });

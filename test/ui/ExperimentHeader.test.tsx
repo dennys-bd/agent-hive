@@ -54,3 +54,13 @@ test("the header's duplicar opens Duplicar experimento for this experiment (#461
   await user.click(within(dialog).getByRole('button', { name: 'duplicar' }));
   await waitFor(() => expect(calls[0]?.body).toEqual({ kind: 'duplicate', of: RUNNING.id }));
 });
+
+test('the running chip reads rodada 1/N once the first round started, and says it stops after this round once asked; sleeping keeps its own (#465)', () => {
+  const started: Experiment = { ...DRAFT, status: 'running', rounds: [{ n: 1, startedAt: '2026-10-22T10:30:00', runs: [] }] };
+  const { rerender } = render(<Head experiment={started} />);
+  expect(screen.getByText('executando · rodada 1/3')).toHaveClass('text-working');
+  rerender(<Head experiment={{ ...RUNNING, stopAfterRound: true }} />);
+  expect(screen.getByText('executando · rodada 2/3 · para após esta rodada')).toHaveClass('text-working');
+  rerender(<Head experiment={{ ...RUNNING, status: 'sleeping', stopAfterRound: true }} />);
+  expect(screen.getByText('dormindo · rodada 2/3')).toBeInTheDocument();
+});

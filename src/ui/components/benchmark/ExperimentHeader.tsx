@@ -29,10 +29,12 @@ const monoLine = (e: Experiment): string => `${e.id} · ${t('benchmark.header.ba
 
 function Chip({ experiment }: { experiment: Experiment }) {
   const look = CHIP[experiment.status];
+  // #465: parar após a rodada shows on the chip while the round runs out
+  const key = experiment.status === 'running' && experiment.stopAfterRound === true ? 'benchmark.header.chip.stopping' : look.key;
   return (
     <span className={`inline-flex items-center gap-1 rounded-lg border border-current px-1.5 text-[11px] whitespace-nowrap ${look.className}`}>
       {experiment.status === 'sleeping' && <MoonIcon aria-hidden="true" className="size-3" />}
-      {t(look.key, roundOf(experiment))}
+      {t(key, roundOf(experiment))}
     </span>
   );
 }

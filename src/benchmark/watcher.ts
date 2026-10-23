@@ -1,5 +1,5 @@
 import { activityOf, resultOf, taskOfWorker } from '../activities.js';
-import type { Intervention, State, Status, Task } from '../types.js';
+import type { Intervention, State, Status, Task, TaskProgressState } from '../types.js';
 
 export const DONE_STAGE = 'Done';
 export const POLL_MS = 15_000;
@@ -18,7 +18,7 @@ export interface WatchState {
   sleptRuns: string[]; // run ids seen in the daemon's slept list with cause 'all': a continue resumes them, it never restarts them (#472)
 }
 /** The execution bar (#473): a segment per task, green done, yellow waiting on the user, grey open. */
-export interface TaskProgress { key: string; state: 'done' | 'waiting' | 'open' }
+export interface TaskProgress { key: string; state: TaskProgressState }
 export interface Progress { delivered: number; total: number; waiting: boolean; tasks: TaskProgress[] }
 export type WatchEnd = { outcome: 'done' } | { outcome: 'timeout' } | { outcome: 'aborted' } | { outcome: 'error'; reason: string };
 export interface Step { watch: WatchState; release: string[]; progress: Progress; end?: WatchEnd }
