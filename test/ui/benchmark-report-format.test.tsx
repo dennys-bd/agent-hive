@@ -18,6 +18,7 @@ test('tokens: one decimal in millions with the unit once on the range, whole tho
   expect(text('tokens', s(3.1 * M, 2.8 * M, 3.4 * M))).toEqual(['3,1M', '2,8–3,4M']);
   expect(text('tokens', s(2.9 * M, 2.7 * M, 3 * M))).toEqual(['2,9M', '2,7–3,0M']);
   expect(text('tokens', s(640_000, 512_000, 980_000))).toEqual(['640k', '512–980k']);
+  expect(text('tokens', s(999_600, 999_600, 999_600))).toEqual(['1,0M', '1,0M']);
   setLanguage('en');
   expect(text('tokens', s(3.1 * M, 2.8 * M, 3.4 * M))).toEqual(['3.1M', '2.8–3.4M']);
 });

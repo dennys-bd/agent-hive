@@ -20,9 +20,10 @@ const WHOLE_DOLLARS_FROM = 10;
 const num = (n: number, digits: number, isFixed = false): string =>
   n.toLocaleString(LOCALE[currentLanguage()], { minimumFractionDigits: isFixed ? digits : 0, maximumFractionDigits: digits });
 
-// Millions with one decimal; under a million whole thousands, a tenth of a thousand tokens is noise. A range takes its max's unit
+// Millions with one decimal; under a million whole thousands, a tenth of a thousand tokens is noise. A range takes its max's unit.
+// The cut is where thousands would round up to 1000k, so 999.6k reads 1,0M
 const tokenUnit = (n: number): { size: number; unit: string; digits: number } =>
-  (n >= MILLION ? { size: MILLION, unit: 'M', digits: 1 } : { size: THOUSAND, unit: 'k', digits: 0 });
+  (n >= MILLION - THOUSAND / 2 ?{ size: MILLION, unit: 'M', digits: 1 } : { size: THOUSAND, unit: 'k', digits: 0 });
 const tokens = (n: number, max = n): Ends => {
   const { size, unit, digits } = tokenUnit(max);
   return [num(n / size, digits, true), '', unit];

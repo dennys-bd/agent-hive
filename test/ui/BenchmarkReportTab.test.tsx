@@ -167,6 +167,24 @@ test('ficam de fora refetches with filter=out and shows its medians; a new exper
   await waitFor(() => expect(gets().at(-1)).toBe('/benchmark/experiments/exp-2/report?filter=in'));
 });
 
+test("an answer that arrives after a newer one is dropped: entram na mediana's late report never replaces ficam de fora's (#467)", async () => {
+  const user = userEvent.setup();
+  let release = (): void => undefined;
+  const late = new Promise<void>((resolve) => { release = resolve; });
+  const { rerender } = render(reportTab(EXP));
+  await ready();
+  // A new experiment object asks again under entram na mediana; that answer is held until ficam de fora has answered
+  const plain = answers.in;
+  answers.in = () => { answers.in = plain; return late.then(plain) as unknown as Response; };
+  rerender(reportTab({ ...EXP }));
+  await waitFor(() => expect(gets()).toHaveLength(2));
+  await user.click(button('ficam de fora'));
+  await waitFor(() => expect(cells('tokens')[1]).toBe('2,4M 2,2–2,6M'));
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(cells('tokens')[1]).toBe('2,4M 2,2–2,6M');
+});
+
 test('with no run entered the body is one muted line, and the three buttons stay, disabled (#467)', async () => {
   answers.in = () => json({ ...REPORT, rounds: 0, intervened: [], sleeps: [] });
   render(reportTab(EXP));
