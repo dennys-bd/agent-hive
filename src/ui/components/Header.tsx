@@ -1,7 +1,10 @@
+import type { ReactNode } from 'react';
 import { BracesIcon, FolderTreeIcon, ListIcon, type LucideIcon, PanelLeftIcon, PanelRightIcon } from 'lucide-react';
 import type { EffectiveLimits, State } from '../../types.js';
 import { HeaderBrand } from '@/components/HeaderBrand';
 import { useHeaderSlotRef } from '@/components/HeaderSlot';
+import { RunBrand, RunHeader } from '@/components/benchmark/run-mode/RunChrome';
+import { useRunHive } from '@/components/benchmark/run-mode/run-hive';
 import { Button } from '@/components/ui/button';
 import { keyTitle, viewLabel } from '@/components/ViewRail';
 import { useIsFullScreen } from '@/hooks/use-full-screen';
@@ -13,7 +16,7 @@ import { headerColumns } from '@/lib/header-columns';
 import { binding } from '@/lib/shortcut-bindings';
 import { WINDOW_DRAG, WINDOW_INSET } from '@/lib/window-chrome';
 
-interface BrandProps { state: State; effective: EffectiveLimits }
+interface BrandProps { state: State; effective: EffectiveLimits; brand?: ReactNode }
 interface HeaderProps extends BrandProps { shell: HeaderShell }
 
 // The header drags the window: each of its own controls opts out to keep its clicks; the empty space and the bar's text keep dragging
@@ -43,12 +46,12 @@ function LeftToggle({ isOpen, className }: { isOpen: boolean; className?: string
 
 // The left side closed in a window (header-estados.md): panel-left, a divider the header's full height, then the ⬢ alone. The center has no
 // left border then: the divider is the only line. In full screen panel-left sits in the left column, over the rail, and the ⬢ leads alone
-function ClosedLead({ state, effective, isFullScreen }: BrandProps & { isFullScreen: boolean }) {
+function ClosedLead({ state, effective, brand, isFullScreen }: BrandProps & { isFullScreen: boolean }) {
   return (
     <>
       {!isFullScreen && <LeftToggle isOpen={false} />}
       {!isFullScreen && <span aria-hidden="true" className="mx-1.5 w-px self-stretch bg-border" />}
-      <HeaderBrand state={state} effective={effective} isCompact />
+      {brand ?? <HeaderBrand state={state} effective={effective} isCompact />}
     </>
   );
 }
@@ -56,12 +59,12 @@ function ClosedLead({ state, effective, isFullScreen }: BrandProps & { isFullScr
 // The left column (#221, #295): open, the brand and panel-left behind the window inset (84px, 12px in full screen). Closed in a window, the
 // block holding only the window buttons' space; closed in full screen, the rail's width with panel-left over the rail's icons and the rail's
 // border as the divider
-function LeftColumn({ width, isOpen, isFullScreen, state, effective }: BrandProps & { width: string; isOpen: boolean; isFullScreen: boolean }) {
+function LeftColumn({ width, isOpen, isFullScreen, state, effective, brand }: BrandProps & { width: string; isOpen: boolean; isFullScreen: boolean }) {
   if (!isOpen && !isFullScreen) return <div data-header-column="left" style={{ width }} className="shrink-0" />;
   if (!isOpen) return <div data-header-column="left" style={{ width }} className="flex shrink-0 items-center justify-center border-r"><LeftToggle isOpen={false} /></div>;
   return (
     <div data-header-column="left" style={{ width }} className={`flex shrink-0 items-center gap-2 overflow-hidden border-r pr-2 ${WINDOW_INSET}`}>
-      <HeaderBrand state={state} effective={effective} />
+      {brand ?? <HeaderBrand state={state} effective={effective} />}
       <LeftToggle isOpen className="ml-auto" />
     </div>
   );
@@ -69,6 +72,15 @@ function LeftColumn({ width, isOpen, isFullScreen, state, effective }: BrandProp
 
 // The right column: one icon per pane, the shown one on --accent, then the shown pane's name at the column's end. A pane the view never has
 // says so in its title and sits at .35 (#313, #461)
+function RightSide({ shell, width }: { shell: HeaderShell; width?: string }) {
+  if (shell.rightShown) return <RightColumn width={width} center={shell.center} panes={shell.panes} />;
+  return (
+    <div className="flex shrink-0 items-center pr-2">
+      <SideButton Icon={PanelRightIcon} label={t('header.openRight')} keys={binding('toggleRight')} disabled={!shell.canOpenRight} onClick={() => runShortcut('toggleRight')} />
+    </div>
+  );
+}
+
 function RightColumn({ width, center, panes }: { width?: string; center: CenterMode; panes: HeaderShell['panes'] }) {
   return (
     <div data-header-column="right" style={{ width }} className="flex shrink-0 items-center gap-1 overflow-hidden border-l px-2">
@@ -93,25 +105,23 @@ function RightColumn({ width, center, panes }: { width?: string; center: CenterM
 /** The window's top bar (#533, #221, #295): three columns whose borders fall on the panes' borders below, from the shown view's layout. Left,
  * per header-estados.md's four states: the brand and panel-left with the left side open; closed, the window buttons' block then panel-left, a divider and the ⬢
  * at the center's start; closed in full screen, panel-left over the rail, then the ⬢. Center, the activity's bar, empty without one; right, the right panes'
- * icons while the right group holds Detalhes, else panel-right. The view switch moved to the rail (#220), the agents' usage to the footer (#223). */
+ * icons while the right group holds Detalhes, else panel-right. In a benchmark run's Hive (#469) the run's brand, its centre (RunHeader) and no right column. The view switch moved to the rail (#220), the agents' usage to the footer (#223). */
 export function Header({ shell, state, effective }: HeaderProps) {
   const isFullScreen = useIsFullScreen();
   const widths = headerColumns(shell.layout, shell.rightShown, isFullScreen);
   const isLeftOpen = shell.layout.open.left;
   const registerSlot = useHeaderSlotRef();
+  const run = useRunHive();
+  const brand = run && <RunBrand run={run} />; // #469: a run's Hive names the run where the ⬢ and the workers sit
   return (
     <header className={`flex shrink-0 items-stretch border-b ${WINDOW_DRAG}`}>
-      <LeftColumn width={widths.left} isOpen={isLeftOpen} isFullScreen={isFullScreen} state={state} effective={effective} />
+      <LeftColumn width={widths.left} isOpen={isLeftOpen} isFullScreen={isFullScreen} state={state} effective={effective} brand={brand} />
       <div data-header-column="center" className={`flex min-w-0 flex-1 items-center ${!isLeftOpen && isFullScreen ? 'pl-3' : ''}`}>
-        {!isLeftOpen && <ClosedLead state={state} effective={effective} isFullScreen={isFullScreen} />}
+        {!isLeftOpen && <ClosedLead state={state} effective={effective} isFullScreen={isFullScreen} brand={brand} />}
         {/* #295: no activity bar, the slot the flow's bar portals into; an element of its own, so React keeps the closed lead before it */}
-        {shell.bar ?? <div ref={registerSlot} data-header-slot className="flex h-full min-w-0 flex-1 items-center" />}
+        {run ? <RunHeader run={run} state={state} /> : (shell.bar ?? <div ref={registerSlot} data-header-slot className="flex h-full min-w-0 flex-1 items-center" />)}
       </div>
-      {shell.rightShown ? <RightColumn width={widths.right} center={shell.center} panes={shell.panes} /> : (
-        <div className="flex shrink-0 items-center pr-2">
-          <SideButton Icon={PanelRightIcon} label={t('header.openRight')} keys={binding('toggleRight')} disabled={!shell.canOpenRight} onClick={() => runShortcut('toggleRight')} />
-        </div>
-      )}
+      {run === undefined && <RightSide shell={shell} width={widths.right} />} {/* #469: a run has no right sidebar */}
     </header>
   );
 }

@@ -100,7 +100,8 @@ const HTTP_CONFLICT = 409;
 const HTTP_ERROR = 400; // a refused request changed nothing
 const VIEW_STATE_PREFIX = '/view-state/';
 
-export interface RunMode { marker: RunMarker; recorder: InterventionRecorder }
+/** home (#469): the daemon's own home, which the run window's footer names as its isolated home. */
+export interface RunMode { marker: RunMarker; recorder: InterventionRecorder; home: string }
 
 // What the user did in the run's window. The viewer's page authenticates with its HttpOnly cookie and cannot send x-hive-secret, which a
 // worker, the CLI, the menu bar and the main Hive always send. The view state is the window's layout and the hooks are the workers', so
@@ -112,7 +113,7 @@ const isViewerWrite = (req: Request): boolean =>
  *  each viewer write refused when frozen (the run branch must not change after its evaluation) or recorded once it answered below 400. */
 export function registerRunMode(app: Express, mode: RunMode): void {
   app.get(RUN_ROUTE, async (_req: Request, res: Response) => {
-    res.json({ marker: mode.marker, interventions: await mode.recorder.list() });
+    res.json({ marker: mode.marker, interventions: await mode.recorder.list(), home: mode.home });
   });
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (!isViewerWrite(req)) return next();
@@ -151,5 +152,5 @@ export async function readRunMode(home: string, log: Pick<Logger, 'error'>): Pro
     log.error(`benchmark: ${err instanceof Error ? err.message : String(err)}`);
     throw err;
   }
-  return marker === undefined ? undefined : { marker, recorder: createRecorder(home, () => new Date(), (line) => log.error(line)) };
+  return marker === undefined ? undefined : { marker, recorder: createRecorder(home, () => new Date(), (line) => log.error(line)), home };
 }

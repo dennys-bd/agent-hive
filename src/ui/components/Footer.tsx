@@ -3,9 +3,13 @@ import type { AgentId, EffectiveLimits, State } from '../../types';
 import { AgentUsage, PLAN_AGENTS } from '@/components/footer/AgentUsage';
 import { workersLine } from '@/components/HeaderBrand';
 import { PowerButtons } from '@/components/footer/PowerButtons';
+import { RunFooter } from '@/components/benchmark/run-mode/RunChrome';
+import { useRunHive } from '@/components/benchmark/run-mode/run-hive';
 import { RulesButton } from '@/components/footer/RulesButton';
 import { useFooterStep } from '@/lib/footer-steps';
 import { effectsInForce, rulesLabel } from '@/lib/rule-effects';
+
+const FOOTER = 'relative flex h-[30px] shrink-0 items-center border-t px-3 text-xs text-muted-foreground';
 
 // checkers, problems (#225): the shown activity's checkers and the problems button; console: its chip (redesign 05); agents: the tests' seam (#227)
 interface FooterProps {
@@ -20,8 +24,11 @@ export function Footer({ state, effective, locale, onEditRules, checkers, proble
   // What the content's width hangs on besides the window. Content that grows overflows and steps down by itself; an agent or a rule that
   // goes away frees room no resize reports, so a new key starts the descent over
   const step = useFooterStep(row, `${agents.length}|${rulesLabel(effectsInForce(effective), 'full').text}`);
+  const run = useRunHive();
+  // #469: a run's Hive fills the footer's slot with its own line (parts/footer.html); the hooks above run either way
+  if (run) return <footer className={FOOTER}><RunFooter run={run} /></footer>;
   return (
-    <footer data-usage={step.usage} data-rules={step.rules} className="relative flex h-[30px] shrink-0 items-center border-t px-3 text-xs text-muted-foreground">
+    <footer data-usage={step.usage} data-rules={step.rules} className={FOOTER}>
       {/* The row clips, not the footer: the usage panel hangs above the footer (absolute, bottom-full) and an overflow-hidden footer would cut it */}
       <div ref={row} className="flex h-full min-w-0 flex-1 items-center gap-3 overflow-hidden *:shrink-0 *:whitespace-nowrap">
         <AgentUsage state={state} form={step.usage} agents={agents} />

@@ -14,6 +14,8 @@ import { AutomationPanel } from '@/components/AutomationPanel';
 import { MainDock } from '@/components/MainDock';
 import { CopySessionHost } from '@/components/CopySession';
 import { ConsoleChip } from '@/components/ConsoleDrawer';
+import { RunBand } from '@/components/benchmark/run-mode/RunChrome';
+import { RunModeHost } from '@/components/benchmark/run-mode/RunModeHost';
 import { CrashDialog } from '@/components/CrashDialog';
 import { type DetailPage, DetailPanel, type Selection } from '@/components/DetailPanel';
 import { DetailSlotProvider } from '@/components/DetailSlot';
@@ -291,7 +293,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
               checkers={<Checkers activityId={shown} path={file} />} problems={<ProblemsButton activityId={shown} console={consoleChannels} />}
             />
           )}
-          header={(shell) => <Header shell={shell} state={state} effective={limits} />}
+          header={(shell) => <><Header shell={shell} state={state} effective={limits} /><RunBand /></>} // #469: the run's band under the header
           automation={() => (
             <AutomationPanel
               state={state} effective={effective} sources={sources ?? NO_SOURCES} source={picks.picked} onSource={picks.pick}
@@ -313,6 +315,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         </MainDock>
       </WorkerlessContext.Provider>
       <CrashDialog state={state} onSelect={(taskId) => onSelect({ taskId })} />
+      <RunModeHost />
     </div>
   );
 }

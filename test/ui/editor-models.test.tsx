@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import * as models from '@/lib/editor-models';
+import { setWriteGate, WriteCancelled } from '@/lib/api';
 import * as fileBase from '@/lib/file-base';
 import { jsonResponse } from '../fakes';
 import { FakeModel, resetMonacoFakes } from './monaco-fake';
@@ -27,6 +28,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => {
+  setWriteGate(undefined);
   models.closeExcept(new Set());
   resetMonacoFakes();
   vi.unstubAllGlobals();
@@ -233,4 +235,21 @@ test('isImagePath reads IMAGE_TYPES by the extension, in any case; readImage rea
   expect((await models.readImage(A, 'a.png')).size).toBe(3);
   expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/activities/a-I1/image?path=a.png');
   await expect(models.readImage(A, 'missing.png')).rejects.toMatchObject({ status: 415, message: 'arquivo binário ou fora de UTF-8' });
+});
+
+test('in run mode a save waits on the gate: a cancel PUTs nothing and the buffer stays dirty; an approve PUTs the text typed meanwhile (#469)', async () => {
+  const model = await fake();
+  model.type('two\n');
+  let answer: ((isApproved: boolean) => void) | undefined;
+  setWriteGate({ ask: () => new Promise<void>((resolve, reject) => { answer = (ok) => (ok ? resolve() : reject(new WriteCancelled('cancelled'))); }), written: () => undefined });
+  const cancelled = models.save(A, PATH, false);
+  answer?.(false);
+  await expect(cancelled).rejects.toBeInstanceOf(WriteCancelled);
+  expect([puts(), models.isDirty(A, PATH)]).toEqual([[], true]);
+  const approved = models.save(A, PATH, false);
+  model.type('three\n');
+  answer?.(true);
+  expect(await approved).toEqual({ status: 'saved' });
+  expect(puts()).toEqual([{ path: PATH, text: 'three\n', version: 'v1', format: false }]);
+  expect(state()).toEqual([false, 'v2']);
 });

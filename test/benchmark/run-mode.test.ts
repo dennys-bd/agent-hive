@@ -77,12 +77,13 @@ test('a broken interventions.json is left as it is: the record resolves, logs on
 const VIEWER = { 'x-hive-ui': '1' };
 const WORKER = { [SECRET_HEADER]: 'w'.repeat(64), 'x-hive-ui': '1' };
 
-interface Harness { base: string; recorder: InterventionRecorder; approved: string[] }
+interface Harness { base: string; recorder: InterventionRecorder; approved: string[]; home: string }
 async function runApp(t: TestContext, frozen = false): Promise<Harness> {
-  const recorder = createRecorder(await tempDir(t, 'run-home-'), () => new Date(AT), () => undefined);
+  const home = await tempDir(t, 'run-home-');
+  const recorder = createRecorder(home, () => new Date(AT), () => undefined);
   const approved: string[] = [];
   const app = express();
-  registerRunMode(app, { marker: runMarker({ frozen }), recorder });
+  registerRunMode(app, { marker: runMarker({ frozen }), recorder, home });
   app.post('/tasks/:id/approve', (req, res) => {
     approved.push(String(req.params.id));
     res.status(req.params.id === 'nope' ? 404 : 200).json({ ok: true });
@@ -92,7 +93,7 @@ async function runApp(t: TestContext, frozen = false): Promise<Harness> {
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => server.close());
-  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, recorder, approved };
+  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, recorder, approved, home };
 }
 
 async function post(base: string, path: string, headers: Record<string, string>): Promise<number> {
@@ -128,20 +129,20 @@ test('frozen: a viewer write is refused with 409 frozen before its route runs; v
   assert.deepEqual(await settled(h.recorder, 1), []);
 });
 
-test('GET /benchmark-run answers the marker and the interventions so far (#475)', async (t) => {
+test('GET /benchmark-run answers the marker, the interventions so far and the daemon\'s home (#475, #469)', async (t) => {
   const h = await runApp(t);
   await h.recorder.record('POST /signal', '/signal');
   const res = await fetch(`${h.base}/benchmark-run`, { headers: WORKER });
-  assert.deepEqual([res.status, await res.json()], [200, { marker: runMarker(), interventions: [entry('POST /signal', '/signal')] }]);
+  assert.deepEqual([res.status, await res.json()], [200, { marker: runMarker(), interventions: [entry('POST /signal', '/signal')], home: h.home }]);
 });
 
 test('viewerInput records a pty\'s first input once, under its detail, and delivers every input; frozen it delivers none and records none (#475)', async (t) => {
   const recorder = createRecorder(await tempDir(t, 'run-home-'), () => new Date(AT), () => undefined);
-  const live = viewerInput({ marker: runMarker(), recorder }, (ptyId) => (ptyId === 'pty-1' ? 'RUN-AB12-3' : ptyId));
+  const live = viewerInput({ marker: runMarker(), recorder, home: 'unused' }, (ptyId) => (ptyId === 'pty-1' ? 'RUN-AB12-3' : ptyId));
   assert.deepEqual([live('pty-1'), live('pty-1'), live('pty-2')], [true, true, true]);
   assert.deepEqual(await recorder.list(), [entry(TERMINAL_INPUT, 'RUN-AB12-3'), entry(TERMINAL_INPUT, 'pty-2')]);
   const still = createRecorder(await tempDir(t, 'run-home-'), () => new Date(AT), () => undefined);
-  assert.equal(viewerInput({ marker: runMarker({ frozen: true }), recorder: still }, (id) => id)('pty-1'), false);
+  assert.equal(viewerInput({ marker: runMarker({ frozen: true }), recorder: still, home: 'unused' }, (id) => id)('pty-1'), false);
   assert.deepEqual(await still.list(), []);
 });
 
@@ -165,13 +166,14 @@ test('a daemon booted on a run home answers GET /benchmark-run with its marker a
   const viewer = { cookie: `${secretCookie(port)}=${secret}`, 'x-hive-ui': '1', 'content-type': 'application/json' };
   const write = await fetch(`http://127.0.0.1:${port}/tasks/local:1/auto`, { method: 'POST', headers: viewer, body: JSON.stringify({ auto: false }) });
   assert.equal(write.status, 200);
-  const read = async () => (await (await fetch(`http://127.0.0.1:${port}/benchmark-run`, { headers: { [SECRET_HEADER]: secret } })).json()) as { marker: RunMarker; interventions: Intervention[] };
+  const read = async () => (await (await fetch(`http://127.0.0.1:${port}/benchmark-run`, { headers: { [SECRET_HEADER]: secret } })).json()) as { marker: RunMarker; interventions: Intervention[]; home: string };
   let body = await read();
   for (let i = 0; i < 100 && body.interventions.length === 0; i += 1) {
     await sleep(5);
     body = await read();
   }
   assert.deepEqual(body.marker, runMarker());
+  assert.equal(body.home, home, 'the run window\'s footer names the isolated home (#469)');
   assert.deepEqual(body.interventions.map((e) => [e.action, e.detail, e.by]), [['POST /tasks/:id/auto', '/tasks/local:1/auto', 'user']]);
 
   const plain = await runHomeWith(t, undefined);

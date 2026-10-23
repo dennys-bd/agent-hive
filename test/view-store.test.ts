@@ -10,8 +10,8 @@ import { tempDir } from './temp-dir.js';
 const LAYOUT = { docks: { automation: 'left', activities: 'left', detail: 'right' } };
 const onDisk = async (home: string): Promise<unknown> => JSON.parse(await readFile(join(home, VIEW_STATE_FILE), 'utf8'));
 
-test('the view state has thirteen keys, activitiesView (#779), projectViews (#756), changesBase (#668), repositories (#757), filesShowHidden (#947) flowView (#909) and repoLists (#59) among them, columnFilters and closeTabNotice not, and a 256 KiB cap per value (#484, #614)', () => {
-  assert.deepEqual([...VIEW_KEYS], ['dockLayout', 'stageFilters', 'centerLayouts', 'consoleHeight', 'splitEdge', 'lastWorkspace', 'activitiesView', 'projectViews', 'changesBase', 'repositories', 'filesShowHidden', 'flowView', 'repoLists']);
+test('the view state has fourteen keys, runNoAsk (#469), activitiesView (#779), projectViews (#756), changesBase (#668), repositories (#757), filesShowHidden (#947) flowView (#909) and repoLists (#59) among them, columnFilters and closeTabNotice not, and a 256 KiB cap per value (#484, #614)', () => {
+  assert.deepEqual([...VIEW_KEYS], ['dockLayout', 'stageFilters', 'centerLayouts', 'consoleHeight', 'splitEdge', 'lastWorkspace', 'activitiesView', 'projectViews', 'changesBase', 'repositories', 'filesShowHidden', 'flowView', 'repoLists', 'runNoAsk']);
   assert.equal(VIEW_VALUE_MAX_BYTES, 262_144);
   assert.deepEqual(['splitEdge', 'flowView', 'columnFilters', 'toString', 42].map((value) => isViewKey(value)), [true, true, false, false, false]);
 });

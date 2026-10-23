@@ -3,6 +3,7 @@
 // so a test that opens none never loads it.
 import type { editor } from 'monaco-editor';
 import { type FileSaved, type FileText, type FormatLog, IMAGE_TYPES } from '../../types';
+import { gated } from './api.js';
 import { moved as moveBase } from './file-base.js';
 import { renamedPath } from './file-tree.js';
 
@@ -191,9 +192,9 @@ function settleSaved(entry: Entry, sent: number, answer: FileSaved, view?: KeptV
   }
 }
 
-/** Writes the buffer over the version it stands on (#717), formatted on the server when `format` (#749). fetch itself, not sendJson, whose error
- * would drop the 409's version; the headers are sendJson's, x-hive-ui being the CSRF gate. What is typed while the PUT flies stays dirty. */
-export async function save(activityId: string, path: string, format: boolean, view?: KeptView): Promise<SaveResult> {
+/** fetch itself, not sendJson, whose error would drop the 409's version; the headers are sendJson's, x-hive-ui being the CSRF gate. What is
+ * typed while the PUT flies stays dirty. */
+async function put(activityId: string, path: string, format: boolean, view?: KeptView): Promise<SaveResult> {
   const sending = entryOf(activityId, path);
   if (sending === undefined) return { status: 'saved' }; // closed meanwhile: nothing left to write
   const sent = sending.model.getAlternativeVersionId();
@@ -209,6 +210,11 @@ export async function save(activityId: string, path: string, format: boolean, vi
   const { formatError, formatLog } = body;
   return formatError !== undefined && formatLog !== undefined ? { status: 'saved', formatError, formatLog } : { status: 'saved' };
 }
+
+/** Writes the buffer over the version it stands on (#717), formatted on the server when `format` (#749), behind run mode's gate (#469): the
+ * buffer is read once the write is allowed, so what the user typed while asked is what goes out. */
+export const save = (activityId: string, path: string, format: boolean, view?: KeptView): Promise<SaveResult> =>
+  gated(activityRoute(activityId, 'file'), () => put(activityId, path, format, view));
 
 /** A reload's outcome (#717): the buffer took the disk's text, or was typed in while the read flew and kept it (the disk's version to offer). */
 export type ReloadResult = { status: 'reloaded' } | { status: 'changed'; version: string };

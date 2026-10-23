@@ -8,6 +8,7 @@ import { useOpenConsole } from '@/hooks/use-console';
 import { type DiskVersion, useFileVersion } from '@/hooks/use-file-version';
 import { t } from '@/i18n';
 import * as models from '@/lib/editor-models';
+import { WriteCancelled } from '@/lib/api';
 import { messageOf } from '@/lib/read-error';
 import * as fileBase from '@/lib/file-base';
 import * as checks from '@/lib/check-session';
@@ -100,7 +101,7 @@ export function useSave({ activityId, path }: File, setStrip: SetStrip, view: Vi
         checks.notifyChecksSaved(activityId, path); // #782: the command-line checkers read the saved disk
         if (result.formatError !== undefined && result.formatLog !== undefined) setFormatFailure({ error: result.formatError, log: result.formatLog });
       }
-    }, (err: unknown) => setError(messageOf(err))).finally(() => setIsSaving(false));
+    }, (err: unknown) => { if (!(err instanceof WriteCancelled)) setError(messageOf(err)); }).finally(() => setIsSaving(false)); // #469: a cancel says nothing
   };
   return { save, isSaving, error, formatFailure };
 }

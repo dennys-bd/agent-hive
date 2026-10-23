@@ -7,15 +7,18 @@ import { commandChannel } from '../../console';
 import type { Task, OpenResult, SessionRef, State } from '../../types';
 import type { OpenConsole } from '@/hooks/use-console';
 import type { OpenRun, RunTab } from './terminal-tabs';
-import { sendJson } from '../lib/api.js';
+import { sendJson, WriteCancelled } from '../lib/api.js';
 import { sessionPath } from '../lib/copy-targets.js';
 import { shownSize } from '../lib/xterm-setup.js';
 
-/** The answer's body on success, undefined (never a rejection) on failure: the toast already carries the error. Most callers ignore the
+/** The answer's body on success, undefined (never a rejection) on failure: the toast already carries the error; a cancelled intervention (#469) says nothing. Most callers ignore the
  * body (`void act(path)`); POST /open's caller reads it to attach the run it started (#249). */
 export function act<T = void>(path: string, body?: unknown, method: 'POST' | 'PUT' | 'DELETE' = 'POST'): Promise<T | undefined> {
   return sendJson<T>(method, path, body)
-    .catch((err: Error) => { toast.error(err.message); return undefined; });
+    .catch((err: Error) => {
+      if (!(err instanceof WriteCancelled)) toast.error(err.message); // #469: a cancel is the user's choice, not an error
+      return undefined;
+    });
 }
 
 /** act, then `done` only when the server took it: a refusal is act's toast and nothing more (#457). `body`: a continue's grid (#808). */
