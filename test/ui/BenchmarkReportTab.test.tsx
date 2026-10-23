@@ -1,8 +1,18 @@
-import { render, screen, within } from '@testing-library/react';
-import { beforeEach, expect, test } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ReportTable } from '@/components/benchmark/report/ReportTable';
+import type { Benchmark } from '@/components/benchmark/benchmark-dock';
+import { TABS } from '@/components/benchmark/tabs';
 import { setLanguage } from '@/i18n';
-import type { ArmColumn, BenchReport, DiffCell, RatioCell, ReportRow, SpreadCell } from '../../src/benchmark/report';
+import type { ArmColumn, BenchReport, DiffCell, RatioCell, ReportFilter, ReportRow, SpreadCell } from '../../src/benchmark/report';
+import type { BenchRunStatus, Experiment } from '../../src/types';
+import { arm, experiment, run } from '../benchmark/fixtures';
+import { stubDownload } from './benchmark-fixtures';
+import { json } from './plugins-fixtures';
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
 const M = 1_000_000;
 const MIN = 60_000;
@@ -84,4 +94,137 @@ test('the click row hides when no arm has a scenario total and the judge section
   expect(cells('tokens')).toHaveLength(6);
   expect(cells('tokens').slice(4)).toEqual(['—', '—']);
   expect(cells('diff').slice(4)).toEqual(['—', '—']);
+});
+
+const ARMS = ['A', 'B', 'C', 'D'].map((letter, i) => arm(`a${i + 1}`, letter));
+const roundWith = (n: number, statuses: BenchRunStatus[]) => ({ n, runs: statuses.map((status, i) => run(`r${n}${i}`, { round: n, armId: ARMS[i].id, status })) });
+// Ten runs POST …/evaluate takes: rounds 1 and 2 whole (one timeout), round 3 with A done and B in error. None judged, so the PR dialog opens on A's
+const EXP = experiment({
+  name: 'skills: comandos × plugin', status: 'done', arms: ARMS,
+  rounds: [roundWith(1, ['done', 'done', 'done', 'done']), roundWith(2, ['done', 'done', 'timeout', 'done']), roundWith(3, ['done', 'error'])],
+});
+const PATH = '/benchmark/experiments/exp-1';
+// ficam de fora: B's and C's intervened run leaves their medians
+const OUT: BenchReport = {
+  ...REPORT, filter: 'out',
+  intervened: REPORT.intervened.map((r) => ({ ...r, inMedian: false })),
+  arms: REPORT.arms.map((a) => (a.intervened > 0 ? { ...a, inMedian: 2, out: 1 } : a)),
+  execution: { ...REPORT.execution, tokens: row('tokens', s(3.1 * M, 2.8 * M, 3.4 * M), s(2.4 * M, 2.2 * M, 2.6 * M), s(2.8 * M, 2.7 * M, 2.9 * M), s(2.2 * M, 2 * M, 2.5 * M, BEST)) },
+};
+
+let answers: Record<ReportFilter, () => Response>;
+let evaluateAnswer: () => Response;
+let reportMd: () => Response;
+const fetchMock = vi.fn(async (path: string, _init?: RequestInit): Promise<Response> => {
+  if (path.endsWith('/report.md')) return reportMd();
+  if (path.endsWith('/evaluate')) return evaluateAnswer();
+  const filter = /\/report\?filter=(in|out)$/.exec(path)?.[1] as ReportFilter | undefined;
+  return filter === undefined ? json({ error: 'unknown' }, 404) : answers[filter]();
+});
+const gets = (): string[] => fetchMock.mock.calls.map(([path]) => path).filter((path) => path.includes('/report?'));
+const reportTab = (e: Experiment) => <>{TABS.find((tab) => tab.id === 'report')?.render?.(e, {} as Benchmark, { select: vi.fn() })}</>;
+const button = (name: string) => screen.getByRole('button', { name });
+const ACTIONS = ['abrir PR com um braço…', 'exportar report.md', 'avaliar de novo'];
+const ready = () => screen.findByText('3 rodadas · mediana e faixa');
+
+beforeEach(() => {
+  answers = { in: () => json(REPORT), out: () => json(OUT) };
+  evaluateAnswer = () => json({ tokens: [] }, 202);
+  reportMd = () => new Response('# report');
+  fetchMock.mockClear();
+  vi.stubGlobal('fetch', fetchMock);
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.mocked(toast.error).mockClear(); });
+
+test("the tab reads the report under entram na mediana and draws the screen's top line, intervention line, sleep line, table and legend (#467)", async () => {
+  render(reportTab(EXP));
+  expect(await ready()).toBeInTheDocument();
+  expect(gets()).toEqual([`${PATH}/report?filter=in`]);
+  expect(screen.getByText('a3 sem par · avaliado por claude · fable')).toBeInTheDocument();
+  for (const name of ACTIONS) expect(button(name)).toBeEnabled();
+  expect(screen.getByRole('group', { name: 'runs com intervenção' })).toBeInTheDocument();
+  expect(button('entram na mediana')).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByText('2 de 12 runs · B 7d03b2 · C e30b71')).toBeInTheDocument();
+  expect(screen.getByText('· o resultado de cada run pode trocar só aquele run')).toBeInTheDocument();
+  expect(screen.getByText('a rodada 2 dormiu 1× por 2h05 (preciso da máquina para outra coisa). o tempo dormindo já sai de tempo e timeout; os tokens para retomar o contexto ao acordar entram em tokens e custo.')).toBeInTheDocument();
+  expect(screen.getByRole('table', { name: 'relatório' })).toBeInTheDocument();
+  expect(screen.getByText('negrito = melhor da linha · cenários: passou / execuções · notas do juiz de 1 a 5')).toBeInTheDocument();
+});
+
+test('ficam de fora refetches with filter=out and shows its medians; a new experiment object refetches, another experiment starts back on in (#467)', async () => {
+  const user = userEvent.setup();
+  const { rerender } = render(reportTab(EXP));
+  await ready();
+  await user.click(button('ficam de fora'));
+  await waitFor(() => expect(cells('tokens')[1]).toBe('2,4M 2,2–2,6M'));
+  expect(button('ficam de fora')).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getAllByRole('columnheader')[1]).toHaveTextContent('B · skills do pluginmediana de 2 runs1 fora1 dormiu');
+  expect(gets()).toEqual([`${PATH}/report?filter=in`, `${PATH}/report?filter=out`]);
+  rerender(reportTab({ ...EXP }));
+  await waitFor(() => expect(gets()).toHaveLength(3));
+  expect(gets()[2]).toBe(`${PATH}/report?filter=out`);
+  rerender(reportTab({ ...EXP, id: 'exp-2' }));
+  await waitFor(() => expect(gets().at(-1)).toBe('/benchmark/experiments/exp-2/report?filter=in'));
+});
+
+test('with no run entered the body is one muted line, and the three buttons stay, disabled (#467)', async () => {
+  answers.in = () => json({ ...REPORT, rounds: 0, intervened: [], sleeps: [] });
+  render(reportTab(EXP));
+  expect(await screen.findByText('nenhum run terminado ainda')).toBeInTheDocument();
+  for (const name of ACTIONS) expect(button(name)).toBeDisabled();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(screen.queryByText(/mediana e faixa/)).not.toBeInTheDocument();
+});
+
+test('a failed read shows its line inline with the buttons live; mixed rubrics end the muted part in yellow (#467)', async () => {
+  answers.in = () => json({ error: 'boom' }, 500);
+  const { unmount } = render(reportTab(EXP));
+  expect(await screen.findByRole('alert')).toHaveTextContent('não foi possível carregar o relatório');
+  for (const name of ACTIONS) expect(button(name)).toBeEnabled();
+  expect(toast.error).not.toHaveBeenCalled();
+  unmount();
+  answers.in = () => json({ ...REPORT, mixedRubrics: true });
+  render(reportTab(EXP));
+  expect(await screen.findByText('· rubricas diferentes entre runs')).toHaveClass('text-waiting');
+});
+
+test('exportar report.md fetches report.md and clicks a download link; a failed one toasts (#467)', async () => {
+  const user = userEvent.setup();
+  const clicks = stubDownload();
+  render(reportTab(EXP));
+  await ready();
+  await user.click(button('exportar report.md'));
+  await waitFor(() => expect(clicks).toEqual([{ href: 'blob:report', download: 'report.md' }]));
+  expect(fetchMock).toHaveBeenCalledWith(`${PATH}/report.md`);
+  reportMd = () => json({ error: 'report.md could not be written' }, 500);
+  await user.click(button('exportar report.md'));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith('não foi possível exportar o report.md; veja o hive.log'));
+  expect(clicks).toHaveLength(1);
+});
+
+test('avaliar de novo confirms with the runs the route evaluates and posts /evaluate; a 409 keeps the dialog with the busy line, a 202 closes it (#467)', async () => {
+  const user = userEvent.setup();
+  evaluateAnswer = () => json({ error: 'a run of this experiment is being evaluated' }, 409);
+  render(reportTab(EXP));
+  await ready();
+  await user.click(button('avaliar de novo'));
+  const dialog = within(await screen.findByRole('alertdialog', { name: 'Avaliar de novo' }));
+  expect(dialog.getByText('skills: comandos × plugin · 10 runs')).toBeInTheDocument();
+  expect(dialog.getByText('os coletores, os cenários de clique e o juiz executam de novo nos 10 runs terminados e o relatório é refeito. leva tempo e gasta tokens.')).toBeInTheDocument();
+  await user.click(dialog.getByRole('button', { name: 'avaliar' }));
+  expect(await dialog.findByText('uma avaliação deste experimento já está em andamento')).toBeInTheDocument();
+  evaluateAnswer = () => json({ tokens: [] }, 202);
+  await user.click(dialog.getByRole('button', { name: 'avaliar' }));
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([path]) => path)).toEqual([`${PATH}/evaluate`, `${PATH}/evaluate`]);
+});
+
+test('abrir PR com um braço… mounts the PR dialog, which picks the run itself; closing unmounts it (#467)', async () => {
+  const user = userEvent.setup();
+  render(reportTab(EXP));
+  await ready();
+  await user.click(button('abrir PR com um braço…'));
+  expect(await screen.findByRole('alertdialog', { name: 'Abrir PR com o braço A' })).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
 });
