@@ -1,3 +1,4 @@
+import type { PlanReadings } from '../../../types';
 import type { Benchmark } from '@/components/benchmark/benchmark-dock';
 import { ExperimentHeader } from '@/components/benchmark/ExperimentHeader';
 import { TABS } from '@/components/benchmark/tabs';
@@ -24,7 +25,7 @@ function EmptyExperiment({ benchmark, workspaces }: { benchmark: Benchmark; work
 
 /** The benchmark view's centre (#461): the tab bar and the selected tab's body, the experiment's head portalled into the header; or, with no
  * live experiment and no archived one picked, the empty state with no head and no tabs. Mounted only while the view is shown, so the slot holds no other view's head. */
-export function BenchmarkView({ benchmark, workspaces }: { benchmark: Benchmark; workspaces: readonly string[] }) {
+export function BenchmarkView({ benchmark, workspaces, rateLimits }: { benchmark: Benchmark; workspaces: readonly string[]; rateLimits?: PlanReadings }) {
   const { selected } = benchmark;
   if (selected === undefined) {
     return (
@@ -49,7 +50,7 @@ export function BenchmarkView({ benchmark, workspaces }: { benchmark: Benchmark;
         ))}
       </nav>
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-        {tab.render?.(selected, benchmark) ?? <p className="p-6 text-muted-foreground text-sm">{t('benchmark.header.soon')}</p>}
+        {tab.render?.(selected, benchmark, { select: benchmark.select, ...(rateLimits === undefined ? {} : { rateLimits }) }) ?? <p className="p-6 text-muted-foreground text-sm">{t('benchmark.header.soon')}</p>}
       </div>
     </div>
   );

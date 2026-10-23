@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from 'react';
-import type { Experiment } from '../../../types';
+import type { Experiment, PlanReadings } from '../../../types';
 import { BenchmarkSidebar } from '@/components/benchmark/BenchmarkSidebar';
 import { BenchmarkView } from '@/components/benchmark/BenchmarkView';
 import { send } from '@/components/benchmark/send';
@@ -60,16 +60,16 @@ export function useBenchmark(experiments: readonly Experiment[], slots: Benchmar
 }
 
 export interface BenchmarkDock { panel: DockPanel; right: DockPanel; center: ReactNode }
-interface BenchmarkDockArgs { isShown: boolean; experiments: readonly Experiment[]; workspaces: readonly string[]; activate(id: PanelId): void; slots?: BenchmarkSlots }
+interface BenchmarkDockArgs { isShown: boolean; experiments: readonly Experiment[]; workspaces: readonly string[]; activate(id: PanelId): void; slots?: BenchmarkSlots; rateLimits?: PlanReadings }
 
 /** The benchmark view in the dock (#461), beside MainDock, which is at its line limit: the sidebar as the left column's panel, an empty right
  * body while the view is shown (no health pane yet), and the centre. The state lives here, in the always-mounted dock, so the selection and the
  * tab survive a switch of view. */
-export function useBenchmarkDock({ isShown, experiments, workspaces, activate, slots }: BenchmarkDockArgs): BenchmarkDock {
+export function useBenchmarkDock({ isShown, experiments, workspaces, activate, slots, rateLimits }: BenchmarkDockArgs): BenchmarkDock {
   const benchmark = useBenchmark(experiments, slots);
   return {
     panel: { id: 'benchmark', title: t('dock.benchmark'), ownHeader: true, body: <BenchmarkSidebar benchmark={benchmark} workspaces={workspaces} isShown={isShown} activate={activate} /> },
     right: { id: 'detail', title: t('dock.benchmark'), ownHeader: true, body: <section aria-label={t('dock.benchmark')} className="flex min-h-0 flex-1 flex-col" /> },
-    center: isShown ? <BenchmarkView benchmark={benchmark} workspaces={workspaces} /> : null,
+    center: isShown ? <BenchmarkView benchmark={benchmark} workspaces={workspaces} rateLimits={rateLimits} /> : null,
   };
 }

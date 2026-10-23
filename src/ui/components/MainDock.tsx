@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useEffectEvent, useState } from 'react';
-import type { Task, EffectiveLimits, Experiment, SidebarsPerView, Terminal, Worker, Stage, State } from '../../types';
+import type { Task, EffectiveLimits, Experiment, PlanReadings, SidebarsPerView, Terminal, Worker, Stage, State } from '../../types';
 import { ActivitiesPanel, type ActivitiesNav, PlusMenu } from '@/components/ActivitiesPanel';
 import { ActivityCenter } from '@/components/ActivityCenter';
 import { useConfirmLoss } from '@/components/AgentLossConfirm';
@@ -45,6 +45,7 @@ export interface MainDockProps {
   showTask?(taskId: string): void; // #229: ver no fluxo lands on the task's source flow, not just the tab; absent: the selection alone
   selected?: Selection; onSelect(selection: Selection): void; // the app's task selection: a picked activity selects its task for Detalhes (#457)
   detail(view: DetailView): ReactNode; children: ReactNode;
+  rateLimits?: PlanReadings; // #463: state.rateLimits, the config tab's current spend; absent: no reading
   experiments?: Experiment[]; // #461: state.benchmark.experiments, the benchmark view's list; absent (the terminal's harness): none
   consoleChannels?: ConsoleChannels; // the daemon's console channels (#353), read by the Dashboard; absent (the terminal's harness): no console
   // the chip that opens its drawer lives in the Dashboard's footer (redesign 05)
@@ -332,7 +333,7 @@ export function MainDock(props: MainDockProps) {
     id: 'automation', title: t('dock.automation'), ownHeader: true, body: <FlowShownContext.Provider value={isFlow}>{automation(open)}</FlowShownContext.Provider>,
   }];
   const plugins = usePluginsDock({ isShown: selection.center === 'plugins', workspaces, activate, fontFamily }); // #313: the third view, wired beside MainDock
-  const benchmark = useBenchmarkDock({ isShown: selection.center === 'benchmark', experiments: props.experiments ?? NO_EXPERIMENTS, workspaces, activate }); // #461: the fourth view
+  const benchmark = useBenchmarkDock({ isShown: selection.center === 'benchmark', experiments: props.experiments ?? NO_EXPERIMENTS, workspaces, activate, rateLimits: props.rateLimits }); // #461: the fourth view
   const viewRight = selection.center === 'plugins' ? plugins.right : selection.center === 'benchmark' ? benchmark.right : undefined;
   const panels: DockPanel[] = [
     // First in the list, as in PANELS: the tab a shared side opens on (#457, #746)
