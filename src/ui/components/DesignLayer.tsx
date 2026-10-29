@@ -74,13 +74,15 @@ export function DesignSlot({ slotKey, groupId, onFocus }: DesignSlotProps) {
 
 interface OpenDesign { key: string; activity: Activity; path: string }
 
-// Every design tab of every listed activity's stored layout: a pane lives as long as its tab, and goes with its activity (#533 decision 4)
+// Every design tab of every listed activity's stored layout: a pane lives as long as its tab, and goes with its activity (#533 decision 4).
+// Sorted by key, never in the tabs' order: React moves a keyed node whose place changes, and a moved iframe reloads. In key order a pane
+// that comes or goes never moves the others
 function openDesigns(activities: readonly Activity[], layouts: Readonly<Record<string, CenterLayout>>): OpenDesign[] {
   return activities.flatMap((activity) => {
     const layout = layouts[activityKey(activity)];
     const tabs = layout === undefined ? [] : groupsOf(layout.root).flatMap((group) => group.tabs);
     return tabs.flatMap((tab) => (tab.kind === 'design' ? [{ key: designKey(activity, tab.path), activity, path: tab.path }] : []));
-  });
+  }).sort((a, b) => a.key.localeCompare(b.key)); // flatMap's own new array: nothing shared is sorted
 }
 
 const anchored = (anchor: string): CSSProperties =>
