@@ -28,7 +28,8 @@ export interface CenterOps {
   replaceRun(from: string, to: string): void; // #672: the new run takes over the sleeping run's tab, in place
   releaseRun(ptyId: string): void; // #672: a refused continue: the sleeping tab's hold ends, or it would outlive its record
 }
-export interface CenterLayouts extends CenterOps { layout?: CenterLayout }
+// layouts (#533): every activity's stored layout, read-only, for the design layer, which keeps a pane per open design tab of any activity
+export interface CenterLayouts extends CenterOps { layout?: CenterLayout; layouts: Readonly<Record<string, CenterLayout>> }
 
 // layouts: every activity's, as stored, by activityKey (#590). emptied: the picked task whose last tab just closed, showing the empty line until the pick changes; its
 // entry is absent, so a later pick opens its main run again. holding (#672): the runs a continue is moving a sleeping tab to and from. The
@@ -174,6 +175,7 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
   });
   return {
     layout: current === undefined ? undefined : viewOf(store, current),
+    layouts: store.layouts,
     select: (group, index) => change((layout) => layout && selectRef(layout, group, index)),
     close: (key) => change((layout) => layout && closeRef(layout, key)),
     land: (key, landing) => change((layout) => layout && applyLanding(layout, key, landing)),

@@ -29,8 +29,6 @@ export interface DesignPaneProps { activity: Activity; path: string; label: stri
 const FRAME_ASPECT = 0.625; // the frame's height before the bridge's first size: 800 px at 1280 wide
 const FULL = 100;
 const MAX_FRAME_PX = 100_000; // a design may post any size: past this, the canvas's layout would choke
-const SHOWN: CSSProperties = { flex: '1 1 0%', opacity: 1, pointerEvents: 'auto' };
-const COLLAPSED: CSSProperties = { flex: '0 0 0%', opacity: 0, pointerEvents: 'none' }; // mounted: a tab switch never reloads the frame
 const DOTS: CSSProperties = { backgroundImage: 'radial-gradient(circle, var(--border) 1px, transparent 1px)', backgroundSize: '16px 16px' };
 const FRAME_SHADOW = '0 0 0 1px var(--border), 0 4px 12px rgb(0 0 0 / .45)';
 const WITH_PANEL = 'minmax(0,1fr) 300px'; // the handoff's §2: the canvas, then the 300 px comments panel
@@ -323,14 +321,14 @@ const hasTweaksRow = (block: TweakBlock): block is Exclude<TweakBlock, { status:
 
 // The pane itself (#109, #113): every activity's has its comments, a local one's in its workspace's review (#345)
 function DesignView({ comments, ...props }: DesignPaneProps & { comments: DesignCommentsModel }) {
-  const { path, label, active } = props;
+  const { path, label } = props;
   const view = useDesignView(props, comments);
   const { name, canvas, box, frame, viewport, theme, width, height, mint, reloads, reloadedAt, zoom, marks, pins } = view;
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (!takeCommentKey(event, marks) && !takeSendKey(event, comments, marks.isPanelShown)) zoom.onKeyDown(event);
   };
   return (
-    <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
+    <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
       <DesignBar
         path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} viewports={view.viewports} theme={theme} zoom={zoom} onViewport={view.pickViewport} onTheme={view.pickTheme}
         comments={{ count: comments.open.length, isShown: marks.isPanelShown, onToggle: () => marks.setPanelShown(!marks.isPanelShown), isCommenting: marks.isCommenting, onComment: marks.toggle }}
@@ -356,7 +354,7 @@ function DesignView({ comments, ...props }: DesignPaneProps & { comments: Design
 }
 
 /** The design pane (#109): the preview bar over the canvas, and the comments panel beside it (#113), a task's or a local activity's (#345).
- *  No PaneHeader above it: the bar names the path. Collapsed like PreviewPane while another tab shows. */
+ *  No PaneHeader above it: the bar names the path. Hidden by the design layer while its tab is not shown (#533). */
 export function DesignPane(props: DesignPaneProps) {
   const comments = useDesignComments(props.activity, props.path);
   return <DesignView {...props} comments={comments} />;

@@ -19,6 +19,7 @@ import { DockBody } from '@/components/ViewRail';
 import { Openers } from '@/components/DockOpeners';
 import { useBenchmarkDock } from '@/components/benchmark/benchmark-dock';
 import { usePluginsDock } from '@/components/plugins/plugins-dock';
+import { DesignLayer, DesignLayerProvider } from '@/components/DesignLayer';
 import { dockedTab, type OpenDiff, type OpenFileHow, type OpenPr, type OpenRun } from '@/components/terminal-tabs';
 import { type ConsoleChannels, ConsoleChannelsContext, type OpenStageOutput, shownChannel, useConsoleOpener } from '@/hooks/use-console';
 import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
@@ -131,7 +132,7 @@ function activitiesPanel({ activities, selection, layouts, nav, ...rest }: Activ
 const shownIdOf = (selection: ActivitySelection): string | undefined => (selection.center === 'activities' ? selection.current?.activity.id : undefined);
 
 interface CenterArgs {
-  selection: ActivitySelection; layouts: CenterLayouts; fileLinks: boolean; fontFamily: string; flow: ReactNode; home: ReactNode; console?: ConsoleChannels; pane?: PaneContext;
+  activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; fileLinks: boolean; fontFamily: string; flow: ReactNode; home: ReactNode; console?: ConsoleChannels; pane?: PaneContext;
   openProblem?(activityId: string, path: string, at: FileAt): void; // #225: a problem of the drawer's list, opened in its activity
   views?: ReactNode; // #313, #461: the plugins and benchmark views' centres, null under the others
 }
@@ -169,11 +170,13 @@ function CenterWithConsole(args: CenterArgs) {
   // #755: the tab takes the channel the drawer shows; from then on the two pick apart
   const shown = channels && shownChannel(channels.channels, channels.selection)?.id;
   const onOpenTab = selection.center === 'activities' && current !== undefined ? () => selection.openConsole(activityKey(current), shown) : undefined;
+  // #533: the design layer sits after the views, so its panes cover their slots, and before the drawer, which covers them in turn
   return (
-    <>
+    <DesignLayerProvider>
       {centerView(args)}
+      <DesignLayer activities={args.activities} layouts={args.layouts.layouts} />
       {channels && <ConsoleDrawer console={channels} fontFamily={fontFamily} onOpenTab={onOpenTab} activityId={shownIdOf(selection)} onOpenProblem={args.openProblem} />}
-    </>
+    </DesignLayerProvider>
   );
 }
 
@@ -351,7 +354,7 @@ export function MainDock(props: MainDockProps) {
       <DockBody rail={hasHeader ? { center: selection.center, onView: activateTab, hasWaiting, onOpenShortcuts: () => runShortcut('shortcutMap'), onOpenSettings: search?.openSettings } : undefined}>
         <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onResize={dock.resize} onClose={close}>
           <ConsoleChannelsContext.Provider value={consoleChannels}>
-            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} openProblem={openFileOf} views={<>{plugins.center}{benchmark.center}</>} />
+            <CenterWithConsole activities={activities} selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} openProblem={openFileOf} views={<>{plugins.center}{benchmark.center}</>} />
           </ConsoleChannelsContext.Provider>
         </DockFrame>
       </DockBody>

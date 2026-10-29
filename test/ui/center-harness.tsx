@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { LiveRun } from '../../src/task-runs';
 import { ActivityCenter } from '@/components/ActivityCenter';
+import { DesignLayer, DesignLayerProvider } from '@/components/DesignLayer';
 import type { PaneContext } from '@/components/PaneHeader';
 import type { TabRequest } from '@/hooks/use-activity';
 import { useCenterLayouts } from '@/hooks/use-center-layouts';
@@ -34,14 +35,19 @@ export const SIDE_BY_SIDE: CenterLayout = {
 };
 
 /** The center as MainDock drives it: the task's activity, or with `local` that workspace's local activity (#590), with these runs, sessions
- * and sleeping runs (#672), its layout from useCenterLayouts, a request to apply, and the pane context the Dashboard would hand it. */
+ * and sleeping runs (#672), its layout from useCenterLayouts, a request to apply, and the pane context the Dashboard would hand it, with the design layer MainDock mounts beside it (#533). */
 export function Center({ runs, request, sessions = [], slept = [], keptSessions = [], pane, local, onOpenRun = () => undefined }: { runs: LiveRun[]; request?: TabRequest; sessions?: ActivitySession[]; slept?: SleepingRun[]; keptSessions?: Session[]; pane?: PaneContext; local?: string; onOpenRun?: (ptyId: string) => void }) {
   const asleep = keptSessions.map((session): TaskActivitySession => ({ session, status: 'empty' })); // #696: kept sessions no run holds
   const activity: Activity = local === undefined
     ? { kind: 'task', ...taskPairOf('I1'), task, runs, sessions: [...sessions, ...asleep], slept, status: 'working', worker: true }
     : { kind: 'local', ...localPairOf(local), workspace: local, runs, sessions, kept: keptSessions.map((session) => ({ session, status: 'empty' as const })), slept };
   const layouts = useCenterLayouts([activity], activity, request);
-  return <ActivityCenter activity={activity} layout={layouts.layout} ops={layouts} fileLinks={false} fontFamily="ui-monospace, monospace" pane={pane} onOpenRun={onOpenRun} />;
+  return (
+    <DesignLayerProvider>
+      <ActivityCenter activity={activity} layout={layouts.layout} ops={layouts} fileLinks={false} fontFamily="ui-monospace, monospace" pane={pane} onOpenRun={onOpenRun} />
+      <DesignLayer activities={[activity]} layouts={layouts.layouts} />
+    </DesignLayerProvider>
+  );
 }
 
 /** Every group's tab strip in reading order, as the texts of its tabs. */
