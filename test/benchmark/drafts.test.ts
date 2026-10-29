@@ -122,3 +122,14 @@ test('benchmark_draft keeps the copied flow\'s structure: a base dropping a tran
   const replaced = await tool.draft({ id: made.id, base: { ...made.base, flow: { ...flow, copiedAt: '2020-01-01T00:00:00.000Z' } } }, MCP);
   assert.ok('refused' in replaced);
 });
+
+test('benchmark_draft refuses an arm override for a stage the flow lacks or a misfit field, naming the arm and the stage (#536)', async (t) => {
+  const bench = await benchDeps(t);
+  const tool = drafter({ ...bench.deps, queue: serial(), log: bench.log, live: () => ({ config: bench.config, experiments: bench.state().benchmark.experiments }) });
+  const bad = await tool.draft({ workspace: 'bench', arms: [{ name: 'Odd', overrides: { stages: { Nope: { agent: 'claude' } } } }] }, MCP);
+  assert.ok('refused' in bad);
+  assert.match(bad.refused, /arm Odd.*Nope/);
+  const misfit = await tool.draft({ workspace: 'bench', arms: [{ name: 'Odd', overrides: { stages: { Spec: { threshold: 3 } } } }] }, MCP);
+  assert.ok('refused' in misfit);
+  assert.match(misfit.refused, /arm Odd.*Spec/);
+});

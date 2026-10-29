@@ -159,7 +159,7 @@ test('PATCH base may change a stage\'s agent and prompt, never the flow\'s struc
   const renamed = stages.map((s) => (s.name === 'Spec' ? { ...s, name: 'Other' } : s));
   const answer = await call(bench, 'PATCH', `${E}/${e.id}`, { base: { ...e.base, flow: { ...e.base.flow, stages: renamed } } });
   assert.deepEqual(errorOf(answer), [400, 'bad_body']);
-  assert.match((answer[1] as { message: string }).message, /structure/);
+  assert.match((answer[1] as { message: string }).message, /structure|copied flow/);
   const missing = stages.map((s) => (s.name === 'Checks' ? { ...s, commands: ['deploy'] } : s));
   assert.match(((await call(bench, 'PATCH', `${E}/${e.id}`, { base: { ...e.base, flow: { ...e.base.flow, stages: missing } } }))[1] as { message: string }).message, /no line for command deploy/);
   assert.deepEqual(bench.state().benchmark.experiments[0].base.flow.stages[0].prompt, '/x {id}');
@@ -280,4 +280,16 @@ test("GET items lists the pin's items and versions, not the current store's; 404
   await put(join(pinned, 'terse'), { 'version.json': JSON.stringify({ name: 'terse', from: 'original', workspaces: ['bench'] }), 'files/SKILL.md': 'terse\n' });
   assert.deepEqual(await call(bench, 'GET', `${E}/exp-1/items`), [200, { items: [{ id: 'hive:new-build', name: 'new-build', kind: 'skill', versions: ['terse'] }] }]);
   assert.deepEqual(errorOf(await call(bench, 'GET', `${E}/nope/items`)), [404, 'unknown_experiment']);
+});
+
+test('PATCH an arm refuses an override for a stage the flow lacks or a field that does not fit the stage, naming both (#536)', async (t) => {
+  const bench = await serve(t, { experiments: [benchExperiment({ arms: [arm('a1', 'A')] })] });
+  const patch = (stages: object) => call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages } });
+  const unknown = await patch({ Nope: { agent: 'claude' } });
+  assert.deepEqual(errorOf(unknown), [400, 'bad_body']);
+  assert.match(JSON.stringify(unknown[1]), /arm A.*Nope/);
+  assert.deepEqual(errorOf(await patch({ Spec: { threshold: 3 } })), [400, 'bad_body']);
+  assert.deepEqual(errorOf(await patch({ Spec: { commands: ['x'] } })), [400, 'bad_body']);
+  assert.deepEqual(bench.state().benchmark.experiments[0].arms[0].overrides, {});
+  assert.equal((await patch({ Spec: { model: 'opus' } }))[0], 204);
 });

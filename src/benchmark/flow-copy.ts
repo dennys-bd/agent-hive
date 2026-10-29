@@ -1,9 +1,9 @@
 import { resolveCommand } from '../run-commands.js';
 import { runsAgent } from '../stage-agent.js';
-import type { BenchFlow, BenchStage, BenchTransition, Config, Stage, Transition } from '../types.js';
+import type { BenchFlow, BenchStage, BenchTransition, Config, Stage, StageOverride, Transition } from '../types.js';
 import { STAGE_OVERRIDE_FIELDS } from './arms.js';
 import { canonicalJson } from './canonical.js';
-import { STAGE_OVERRIDE } from './schemas.js';
+import { STAGE_NAME, STAGE_OVERRIDE } from './schemas.js';
 import { DONE_STAGE } from './watcher.js';
 
 export type FlowCopy = { flow: BenchFlow } | { refused: string };
@@ -17,14 +17,15 @@ function refusal(stages: readonly Stage[]): string | undefined {
   const waits = stages.find((s) => s.action === 'waitForCi');
   if (waits !== undefined) return `stage ${waits.name} waits for CI, and a run's local origin has none`;
   if (stages.some((s) => s.name === DONE_STAGE)) return `a stage is named ${DONE_STAGE}, the stage a run holds its finished tasks in`;
-  return undefined;
+  const unnamed = stages.find((s) => !STAGE_NAME.safeParse(s.name).success);
+  return unnamed === undefined ? undefined : `a stage is named ${unnamed.name}, a name an arm cannot override`;
 }
 
 // from/onStart talk to a source the run does not have. after is dropped too: a delayed deleteActivity ("Done · 5d") would hold every run
-// until its timeout. The agent is frozen here so a later change of the default agent in Settings cannot change the experiment.
+// until its timeout, and so is maxWorkers: 0, which would pause the run for as long. The agent is frozen here so a later change of the default agent in Settings cannot change the experiment.
 function benchStage(stage: Stage, defaultAgent: Config['defaultAgent']): { stage: BenchStage; dropped: string[] } {
-  const { from, onStart, after, ...kept } = stage;
-  const dropped = [isFilled(from) ? `${stage.name}.from` : '', isFilled(onStart) ? `${stage.name}.onStart` : '', after === undefined ? '' : `${stage.name}.after`].filter((d) => d !== '');
+  const { from, onStart, after, maxWorkers, ...kept } = stage;
+  const dropped = [isFilled(from) ? `${stage.name}.from` : '', isFilled(onStart) ? `${stage.name}.onStart` : '', after === undefined ? '' : `${stage.name}.after`, maxWorkers === undefined ? '' : `${stage.name}.maxWorkers`].filter((d) => d !== '');
   return { stage: runsAgent(kept) ? { ...kept, agent: kept.agent ?? defaultAgent } : kept, dropped };
 }
 
@@ -69,6 +70,14 @@ export function copyFlow(config: Comb, workspace: string, now: Date): FlowCopy {
 const frame = (flow: BenchFlow): string =>
   canonicalJson({ ...flow, stages: flow.stages.map((s) => Object.fromEntries(Object.entries(s).filter(([k]) => !(STAGE_OVERRIDE_FIELDS as readonly string[]).includes(k)))) });
 
+// Which stages a field means something on: the agent's fields on a stage that runs an agent, the rest on their own action
+const FITS: Record<keyof StageOverride, (stage: BenchStage) => boolean> = {
+  agent: runsAgent, model: runsAgent, prompt: runsAgent, skill: (s) => s.action === 'skill', commands: (s) => s.action === 'commands',
+  judge: (s) => s.action === 'evaluate', threshold: (s) => s.action === 'evaluate',
+};
+const misfits = (stage: BenchStage, fields: StageOverride, label: string): string[] =>
+  (Object.keys(fields) as (keyof StageOverride)[]).filter((k) => !FITS[k](stage)).map((k) => `${label}: ${k} does not fit a stage that ${stage.action ?? 'runs a prompt'}`);
+
 function fieldIssues(stage: BenchStage, commands: readonly { name: string }[]): string[] {
   const editable = Object.fromEntries(Object.entries(stage).filter(([k]) => (STAGE_OVERRIDE_FIELDS as readonly string[]).includes(k)));
   const parsed = STAGE_OVERRIDE.safeParse(editable);
@@ -76,7 +85,18 @@ function fieldIssues(stage: BenchStage, commands: readonly { name: string }[]): 
   // a base has a model or none: null (the agent's default) only means something on an arm
   const nullModel = editable.model === null ? [`base.flow.${stage.name}: model cannot be null on a base`] : [];
   const missing = (stage.commands ?? []).filter((c) => !commands.some((l) => l.name === c)).map((c) => `base.flow.${stage.name}: no line for command ${c}`);
-  return [...issues, ...nullModel, ...missing];
+  return [...issues, ...nullModel, ...missing, ...misfits(stage, editable, `base.flow.${stage.name}`)];
+}
+
+/** What an arm's stage overrides may not do (#536), against the flow they apply to: name a stage the flow lacks, a command it has no line
+ *  for, or a field the stage's action does not take. Shared by the arm route and benchmark_draft. */
+export function overrideIssues(flow: BenchFlow, stages: Record<string, StageOverride>): string[] {
+  return Object.entries(stages).flatMap(([name, fields]) => {
+    const stage = flow.stages.find((s) => s.name === name);
+    if (stage === undefined) return [`stage ${name}: no such stage in the flow`];
+    const missing = (fields.commands ?? []).filter((c) => !flow.commands.some((l) => l.name === c)).map((c) => `stage ${name}: no line for command ${c}`);
+    return [...misfits(stage, fields, `stage ${name}`), ...missing];
+  });
 }
 
 /** What a patched base's flow may not do (#536): change the copy's structure (every field but STAGE_OVERRIDE_FIELDS, the stage order, the

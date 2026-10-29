@@ -8,7 +8,7 @@ import type { Logger } from '../log.js';
 import { type Git, gitOrWords } from '../worktree-base.js';
 import { seedHash, tasksHash, treeHash } from './hash.js';
 import { composeDraft, DRAFT, type DraftInput, resultIssues, zodIssues } from './draft-schema.js';
-import { flowIssues } from './flow-copy.js';
+import { flowIssues, overrideIssues } from './flow-copy.js';
 import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, forkName, forkOf, newId } from './new-experiment.js';
 import { pluginTrees } from './pin.js';
 import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, SeedFileMissing, seedCommit, syncSeed } from './store.js';
@@ -181,7 +181,8 @@ const armId = (taken: readonly string[]): string => newId(taken, draw);
 function checked(start: Experiment, body: DraftInput): Experiment | DraftRefusal {
   const composed = composeDraft(start, body, armId);
   if (Array.isArray(composed)) return badBody(composed);
-  const issues = [...resultIssues(composed), ...flowIssues(start.base.flow, composed.base.flow)];
+  const armIssues = composed.arms.flatMap((a) => overrideIssues(composed.base.flow, a.overrides.stages ?? {}).map((i) => `arm ${a.name}: ${i}`));
+  const issues = [...resultIssues(composed), ...flowIssues(start.base.flow, composed.base.flow), ...armIssues];
   return issues.length > 0 ? badBody(issues) : composed;
 }
 
