@@ -15,7 +15,7 @@ export interface SettingsView { section: SettingsSection; source?: string; langu
 export const SECTION_OF: Record<keyof SettingsDraft, FormSection> = {
   workspaces: 'workspaces', commands: 'workspaces',
   prefix: 'flow', hiveSource: 'flow', createIn: 'flow', sources: 'flow', auth: 'flow', stages: 'flow', transitions: 'flow',
-  defaultAgent: 'execution', agentArgs: 'execution', branch: 'execution', baseBranch: 'execution', approvalMinutes: 'execution', rateLimitWaitMinutes: 'execution', shutdownIdleMinutes: 'execution', deleteActivity: 'execution',
+  defaultAgent: 'execution', agentArgs: 'execution', agentModels: 'execution', agentEnabled: 'execution',branch: 'execution', baseBranch: 'execution', approvalMinutes: 'execution', rateLimitWaitMinutes: 'execution', shutdownIdleMinutes: 'execution', deleteActivity: 'execution',
   closeSessionTab: 'execution', closeStageTab: 'execution', closeSessionTabNotice: 'execution', closeStageTabNotice: 'execution', // #614
   closeTerminalTab: 'execution', closeTerminalTabNotice: 'execution', // #696
   sleepNotice: 'execution', sleepAutoNotice: 'execution', sleepIdleNotice: 'execution', sleepAllNotice: 'execution', // #672

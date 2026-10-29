@@ -18,6 +18,7 @@ import { isMac } from './shortcut-bindings.js';
 import { type SourceTaskPropsDraft, emptyTaskProps, sourceTaskPropsProblem, taskPropsDraft, taskPropsFrom } from './setup-source-task-props.js';
 import { type CommandDraft, commandDraft, commandFrom, commandsProblem, type EnvRowDraft, envFrom, envRows } from './settings-commands.js';
 import { agentArgsDraft, agentArgsFrom } from './settings-agent-args.js';
+import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem } from './settings-agents.js';
 import { type RuleDraft, renamedRuleDrafts, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
 import { badEvaluation, limitFrom, numberField, optional, orphanContinue, type StageDraft, stageDraft, stageFrom, stageRenamesFrom } from './settings-stages.js';
 import { draftTitle, type TransitionDraft, transitionDraft, transitionFrom, transitionsProblem } from './settings-transitions.js';
@@ -55,7 +56,7 @@ export interface SettingsDraft {
   approvalMinutes: string;
   rateLimitWaitMinutes: string; // #805
   defaultAgent: AgentId; // #516
-  agentArgs: Record<AgentId, string>; // #924: each agent's arguments as typed, one per line
+  agentArgs: Record<AgentId, string>; agentModels: Record<AgentId, string>; agentEnabled: Record<AgentId, boolean>; // #924: arguments as typed, one per line; #482: each default model as typed ('' = none) and switch
   theme: Theme;
   fileIcons: FileIcons; // #754: the files tree's icons, edited on app › appearance
   sidebarsPerView: SidebarsPerView; // #821: which sidebar state each view keeps, edited on app
@@ -65,7 +66,7 @@ export interface SettingsDraft {
   consoleLines: string; // the Limits tab's field as typed (#353)
   shortcuts: Shortcuts; // only the user's changes, as the config holds them (#449): the atalhos tab edits the map itself
 }
-export interface SettingsProblem { section: SettingsSection; message: string; transition?: string } // transition (#918): the draft id Settings selects on the chart
+export interface SettingsProblem { section: SettingsSection; message: string; transition?: string; stage?: string } // transition (#918): the draft id Settings selects on the chart; stage (#482): the stage draft it selects
 
 const DEFAULT_OWNER = '@me';
 export const emptyWorkspace = (rows: readonly { color: string }[] = []): WorkspaceDraft => ({ id: crypto.randomUUID(), name: '', path: '', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: String(MEMORY_CAP_DEFAULT), color: nextWorkspaceColor(rows), nestedRepos: [], notNestedRepos: [], benchmarkPrIn: BENCHMARK_PR_IN_NEW });
@@ -153,7 +154,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     sleepIdleNotice: config?.sleepIdleNotice ?? SLEEP_NOTICE_DEFAULTS.sleepIdleNotice,
     sleepAllNotice: config?.sleepAllNotice ?? SLEEP_NOTICE_DEFAULTS.sleepAllNotice,
     defaultAgent: config?.defaultAgent ?? DEFAULT_AGENT, // #516: the parser still requires the key
-    agentArgs: agentArgsDraft(config?.agentArgs), // #924: the parser requires every agent's list
+    agentArgs: agentArgsDraft(config?.agentArgs), agentModels: agentModelsDraft(config?.agentModels), agentEnabled: agentEnabledDraft(config?.agentEnabled), // #924, #482: the parser requires every agent
     theme: config?.theme ?? 'system', // a new form follows macOS (#296); the parser still requires the key
     fileIcons: config?.fileIcons ?? FILE_ICONS_DEFAULTS, // Material on a new form (#754); the parser still requires the key
     terminalFont: config?.terminalFont ?? '', // a new form uses the system monospace (#376); the parser still requires the key
@@ -294,7 +295,7 @@ function silentSourceProblem(draft: SettingsDraft): SettingsProblem | undefined 
  * window, approval window, run commands, shortcuts, silent sources) with the section to reveal (#510); undefined when the server may judge the
  * rest. A bad trusted-domain host is refused inline by its own chip field (#513), so it is not in this chain. */
 export function validateSettings(draft: SettingsDraft): SettingsProblem | undefined {
-  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages, draft.defaultAgent) ?? transitionsDraftProblem(draft) ?? rulesProblem(renamedRuleDrafts(draft.rules, stageRenamesFrom(draft.stages)), draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
+  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages, draft.defaultAgent) ?? agentsProblem(draft) ?? transitionsDraftProblem(draft) ?? rulesProblem(renamedRuleDrafts(draft.rules, stageRenamesFrom(draft.stages)), draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
 }
 
 /** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the
@@ -364,7 +365,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     sleepIdleNotice: draft.sleepIdleNotice,
     sleepAllNotice: draft.sleepAllNotice,
     defaultAgent: draft.defaultAgent, // always sent (#516)
-    agentArgs: agentArgsFrom(draft.agentArgs), // always sent (#924)
+    agentArgs: agentArgsFrom(draft.agentArgs), agentModels: agentModelsFrom(draft.agentModels), agentEnabled: draft.agentEnabled, // always sent (#924, #482)
     theme: draft.theme, // always sent (#296)
     fileIcons: draft.fileIcons, // always sent (#754)
     sidebarsPerView: draft.sidebarsPerView, // always sent (#821)

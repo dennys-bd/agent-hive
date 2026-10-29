@@ -626,3 +626,8 @@ test("the report tab's copy reads as the spec writes it, in both languages, and 
   assert.ok(ours.length > 40, `only ${ours.length} report keys`);
   assert.equal(ours.some(([, text]) => /\brod(ar|ando|am)\b/.test(text)), false);
 });
+
+test('the agents\' save errors read in both languages, agent-neutral (#482)', () => {
+  assert.equal(MESSAGES.pt['settings.agents.error.stage'], 'a etapa {n} executa o {agent}, que está desabilitado: habilite-o em execução › agentes ou escolha outro agente');
+  assert.equal(MESSAGES.en['settings.agents.error.claudeModel'], '"{model}" is not a {agent} model');
+});
