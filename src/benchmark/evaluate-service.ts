@@ -3,9 +3,10 @@
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { disabledRefusal, withDefaultModel } from '../agents.js';
 import { type HeadlessDeps, runHeadless } from '../headless-run.js';
 import type { Logger } from '../log.js';
-import type { BenchmarkEvent, BenchRunEvaluation, BenchRunStatus, State } from '../types.js';
+import type { BenchmarkEvent, BenchRunEvaluation, BenchRunStatus, Config, EvaluateRow, Experiment, State } from '../types.js';
 import { ensureChromium, mcpBinary } from './browser.js';
 import { type EvaluateContext, type EvaluateDeps, evaluateRun } from './evaluate.js';
 import { type Run, serialGit } from './exec.js';
@@ -19,12 +20,28 @@ export interface BenchEvaluatorDeps {
   folderOf(experimentId: string): string;
   log: Pick<Logger, 'info' | 'warn'>;
   now(): number;
+  config(): Pick<Config, 'agentModels' | 'agentEnabled'> | undefined; // #482: the live config, read when an evaluation starts
   abortWaitMs?: number; // tests' seam
   runDeps(signal: AbortSignal, log: (line: string) => void): EvaluateDeps;
   evaluateRun?: (ctx: EvaluateContext, deps: EvaluateDeps) => Promise<BenchRunEvaluation | undefined>; // tests' seam
 }
 /** The bench.evaluate contract 3.2 consumes. */
 export interface BenchEvaluator { evaluate(experimentId: string, tokens: readonly string[], markRounds?: boolean): Promise<void>; isEvaluating(token: string): boolean; abortAll(): Promise<void> }
+
+const rowsOf = ({ evaluation }: Experiment): EvaluateRow[] => [...evaluation.collectors, evaluation.tester, evaluation.judge];
+
+// #482: why the evaluation cannot start (a row names a disabled agent, or no config is live to say), or undefined. Spec decision 11: refused loudly
+function startRefusal(experiment: Experiment, config: Pick<Config, 'agentEnabled'> | undefined): string | undefined {
+  if (config === undefined) return 'no live configuration to read the agents from';
+  return rowsOf(experiment).map((r) => disabledRefusal(r.agent, config.agentEnabled)).find((reason) => reason !== undefined);
+}
+
+// #482: a collector, the tester or the judge with no model runs the Hive's default for its agent, read as the evaluation starts
+function withDefaults(experiment: Experiment, config: Pick<Config, 'agentModels'>): Experiment {
+  const row = (r: EvaluateRow): EvaluateRow => withDefaultModel(r, config);
+  const { evaluation } = experiment;
+  return { ...experiment, evaluation: { ...evaluation, collectors: evaluation.collectors.map(row), tester: row(evaluation.tester), judge: row(evaluation.judge) } };
+}
 
 export function createBenchEvaluator(deps: BenchEvaluatorDeps): BenchEvaluator {
   let closing = false; // once a Quit aborted, nothing new starts
@@ -38,8 +55,14 @@ export function createBenchEvaluator(deps: BenchEvaluatorDeps): BenchEvaluator {
     const run = experiment?.rounds.flatMap((r) => r.runs).find((r) => r.token === token);
     if (experiment === undefined || run === undefined) return false;
     const log = (line: string): void => deps.log.info(`benchmark ${id} ${token}: ${line}`);
+    const config = deps.config();
+    const refused = startRefusal(experiment, config);
+    if (refused !== undefined || config === undefined) {
+      deps.log.warn(`benchmark ${id} ${token}: evaluation refused: ${refused}`); // a fixed reason: no path, no prompt
+      return false;
+    }
     try {
-      const evaluation = await evaluateOne({ experiment, run, folder: deps.folderOf(id) }, deps.runDeps(signal, log));
+      const evaluation = await evaluateOne({ experiment: withDefaults(experiment, config), run, folder: deps.folderOf(id) }, deps.runDeps(signal, log));
       if (signal.aborted) return false;
       if (evaluation !== undefined) {
         await deps.dispatch({ type: 'benchmarkRunChanged', id, token, patch: { evaluation } });

@@ -31,6 +31,7 @@ const scoresJson = (scores: number[]): string => JSON.stringify({ scores: scores
 
 // One script per agent: the prompt on stdin, branching on its focus line. Claude prints its result object; Codex writes the answer to -o
 const SCRIPT = `prompt="$(cat)"
+args="$*"
 out=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
 answer() { if [ -n "$out" ]; then printf '%s' "$1" > "$out"; else printf '{"type":"result","is_error":false,"result":"","structured_output":%s}' "$1"; fi; }
 focus="$(printf '%s\\n' "$prompt" | sed -n 's/^Your focus: //p')"
@@ -40,7 +41,7 @@ case "$focus" in
     answer "{\\"findings\\":[{\\"file\\":\\"a.ts\\",\\"line\\":3,\\"finding\\":\\"$focus\\"}]}" ;;
   broken) i=0; while [ ! -e "$LOG/hang.start" ]; do i=$((i+1)); [ $i -gt 600 ] && exit 1; sleep 0.1; done; answer 'not json' ;;
   hang*) echo $$ > "$LOG/$focus.pid"; touch "$LOG/$focus.start"; exec sleep 120 ;;
-  "") printf '%s' "$prompt" > "$LOG/judge.prompt"; answer "$SCORES" ;;
+  "") printf '%s' "$args" > "$LOG/judge.args"; printf '%s' "$prompt" > "$LOG/judge.prompt"; answer "$SCORES" ;;
 esac`;
 
 async function fakeClis(t: TestContext, extra: Record<string, string>): Promise<{ env: NodeJS.ProcessEnv; tmpRoot: string; log: string }> {
@@ -76,8 +77,8 @@ interface Harness {
   drop(): void; // current() answers no mark from now on
 }
 
-interface Options { env?: Record<string, string>; agents?: AgentAvailability[]; added?: string; onPrepare?: () => void }
-async function harness(t: TestContext, { env = {}, agents = ALL, added, onPrepare }: Options = {}): Promise<Harness> {
+interface Options { agentModels?: Record<AgentId, string | null>; env?: Record<string, string>; agents?: AgentAvailability[]; added?: string; onPrepare?: () => void }
+async function harness(t: TestContext, { env = {}, agents = ALL, added, onPrepare, agentModels }: Options = {}): Promise<Harness> {
   const { repo, worktree } = await worldOf(t, added);
   const cli = await fakeClis(t, env);
   const plugin = await tempDir(t, 'evaluate-plugin-');
@@ -96,7 +97,7 @@ async function harness(t: TestContext, { env = {}, agents = ALL, added, onPrepar
     headless: { env: cli.env, tmpRoot: cli.tmpRoot, timeoutMs: 60_000 }, // generous: the whole suite runs in parallel
   });
   const runtime: Runtime = {
-    config: parseConfig(combConfig({ stages: [stageOf([])], workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }] })),
+    config: parseConfig(combConfig({ ...(agentModels === undefined ? {} : { agentModels }), stages: [stageOf([])], workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }] })),
     sources: new Map(), hooksPath: '/hive/hooks.json', promptsDir: '/hive/prompts', protocol: { stage: '/hive/stage.md', session: '/hive/session.md', local: '/hive/local.md' }, port: 4321,
   };
   return {
@@ -244,4 +245,15 @@ test('POST /activities/:id/evaluate/stop ends the evaluation, stopped, with no v
   assert.ok(server.getState()!.workers.every((w) => w.status === 'empty'), 'its worker freed');
   const again = await send(base, 'POST', path);
   assert.deepEqual([again.status, await again.json()], [404, { error: 'nenhuma avaliação nessa atividade' }]);
+});
+
+test('a row with no model runs its agent\'s default model; a row naming a disabled agent breaks the stage before any git (#482)', async (t) => {
+  const h = await harness(t, { env: { SCORES: scoresJson([8, 9]) }, agentModels: { claude: 'opus', codex: null } });
+  await h.runner.run(h.runtime, h.effect([]));
+  assert.match(await h.read('judge.args'), /--model opus/);
+  const off = await harness(t);
+  const runtime = { ...off.runtime, config: { ...off.runtime.config, agentEnabled: { claude: true, codex: false } } };
+  await off.runner.run(runtime, off.effect([{ agent: 'codex', focus: 'slow' }]));
+  assert.equal(brokenText(off), 'reviewer 1 (codex): agent codex is disabled: enable it in Settings › execution › agents');
+  assert.deepEqual([off.prepared, off.events.length], [[], 1]);
 });

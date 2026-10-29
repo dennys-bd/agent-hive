@@ -1,9 +1,9 @@
 // Every load-time migration a hive.config.json may need: #511 (each workspace's run commands and its setup timeout in minutes), #513 (the
-// menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #924 (claudeArgs into agentArgs), #927 (agentArgs.codex), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list) and #727 (retired keys). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
+// menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #924 (claudeArgs into agentArgs), #927 (agentArgs.codex), #482 (each agent's default model and switch), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list) and #727 (retired keys). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
 // idempotent; malformed entries pass through untouched, so parseConfig still names their fault.
 
 import { hasFixedVerdicts } from './stage-agent.js';
-import { END, FILE_ICONS_DEFAULTS, type SourceAction, type Stage, type Transition } from './types.js';
+import { AGENT_IDS, END, FILE_ICONS_DEFAULTS, type SourceAction, type Stage, type Transition } from './types.js';
 
 type Entry = Record<string, unknown>;
 
@@ -93,6 +93,19 @@ export function migrateAgentArgs(raw: unknown): unknown {
   return rest.agentArgs !== undefined ? rest : { ...rest, agentArgs: { [LEGACY_AGENT]: claudeArgs ?? [] } };
 }
 
+const everyAgent = <T>(value: T): Record<string, T> => Object.fromEntries(AGENT_IDS.map((id) => [id, value]));
+
+/** A pre-#482 file gains agentModels with every agent at null (the CLI's own default: what it ran) and agentEnabled with every agent on,
+ * whichever it lacks; a present key, a wrong one included, is kept for the parser; a file with both comes back as the same reference. */
+export function migrateAgentDefaults(raw: unknown): unknown {
+  if (!isRecord(raw) || (raw.agentModels !== undefined && raw.agentEnabled !== undefined)) return raw;
+  return {
+    ...raw,
+    ...(raw.agentModels === undefined ? { agentModels: everyAgent(null) } : {}),
+    ...(raw.agentEnabled === undefined ? { agentEnabled: everyAgent(true) } : {}),
+  };
+}
+
 /** A pre-#927 file's agentArgs gains codex: [] (parseAgentArgs requires every agent). One that has it, or with no agentArgs record (the parser
  * names that), comes back as the same reference. */
 export const migrateCodexArgs = (raw: unknown): unknown =>
@@ -167,4 +180,4 @@ export function migrateCreateIn(raw: unknown): unknown {
 }
 
 /** Every load-time migration, oldest first: readConfig's one entry point. */
-export const migrateConfig = (raw: unknown): unknown => migrateCreateIn(migrateRetiredKeys(migrateTransitions(migrateFileIcons(migrateCodexArgs(migrateAgentArgs(migrateDefaultAgent(migrateStageActions(migrateOnClose(migrateWorkspaces(raw))))))))));
+export const migrateConfig = (raw: unknown): unknown => migrateAgentDefaults(migrateCreateIn(migrateRetiredKeys(migrateTransitions(migrateFileIcons(migrateCodexArgs(migrateAgentArgs(migrateDefaultAgent(migrateStageActions(migrateOnClose(migrateWorkspaces(raw)))))))))));

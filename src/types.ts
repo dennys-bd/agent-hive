@@ -817,7 +817,7 @@ export interface ArmSetup {
   worktree: { setup: string; teardown: string }; // the workspace's Settings syntax (COPY / RUN lines)
 }
 /** What an arm changes of the base (#462): each stage per role and per field, so overriding build's agent never freezes spec; the rest whole.
- *  A stage's model null is the agent's own default over a base model; absent keeps the base's. */
+ *  A stage's model null is the Hive's default for its agent (Config.agentModels, read when the run starts, #482) over a base model; absent keeps the base's. */
 export type ArmOverrides = Partial<Omit<ArmSetup, 'stages'>> & { stages?: Partial<Record<BenchStageRole, Partial<Omit<BenchStagePick, 'model'>> & { model?: string | null }>> };
 export interface Arm { id: string; letter: string; name: string; overrides: ArmOverrides }
 export interface BenchScenario { id: string; title: string; text: string }
@@ -1224,7 +1224,7 @@ export const EDITOR_DEFAULTS: EditorConfig = { formatOnSave: { enabled: true, wo
 /** When the template reviewer runs (#328, the menu's choice, 4.3): as the user types, on save, or only when asked. */
 export const REVIEW_WHEN = ['type', 'save', 'demand'] as const;
 export type ReviewWhen = (typeof REVIEW_WHEN)[number];
-/** The template reviewer (#328). agent null: the config's defaultAgent; model null: the CLI's default; version null: the shipped
+/** The template reviewer (#328). agent null: the config's defaultAgent; model null: the agent's default model, Config.agentModels (#482); version null: the shipped
  * template-reviewer, else the user's version of it by name (checked when a review runs, not on boot). */
 export interface ReviewerConfig { on: boolean; when: ReviewWhen; agent: AgentId | null; model: string | null; version: string | null }
 /** What a file without `reviewer`, or a field it leaves out, reads as (#328). */
@@ -1363,6 +1363,8 @@ export interface Config {
   /** Branch a new worker's worktree starts from (as origin/<branch>); absent = the remote's default (origin/HEAD), else main. */
   baseBranch?: string;
   agentArgs: Record<AgentId, string[]>; // #924: each agent's own arguments, after the Hive's flags and before the model and the session; required, every agent
+  agentModels: Record<AgentId, string | null>; // #482: each agent's default model, passed by every run that names none; null = the CLI's own default, no model flag; required, every agent
+  agentEnabled: Record<AgentId, boolean>; // #482: false = no menu offers the agent and a run that names it is refused; the default agent is always true; required, every agent
   budget: Budget; // copied to State.budget by setBudget on configure / reconfigure
   usageRules: UsageRule[]; // copied to State.usageRules by setUsageRules on configure / reconfigure
   /** What closing the last main window does (#513, was #198's menuBar + stopOnClose): menuBar = the viewer stays in the menu bar and the
@@ -1794,6 +1796,9 @@ export interface SettingsBody {
   defaultAgent?: AgentId;
   /** #924: the form always sends it; an API caller that omits it keeps the saved lists; a first setup without it starts with none. */
   agentArgs?: Record<AgentId, string[]>;
+  /** #482: the form always sends both; an API caller that omits one keeps the saved value; a first setup without them gets null / true for every agent. */
+  agentModels?: Record<AgentId, string | null>;
+  agentEnabled?: Record<AgentId, boolean>;
   /** Same rules as onClose (#754). */
   fileIcons?: FileIcons;
   /** Same rules as onClose (#821). */

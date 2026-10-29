@@ -13,7 +13,7 @@ import type { NewSource } from '@/lib/flow-sources';
 import { WorkspaceColorsContext } from '@/lib/workspace-color';
 import { withMemoryCap } from '@/lib/memory-cap';
 import { landOn } from '@/lib/settings-jump';
-import type { SettingEntry } from '@/lib/settings-search';
+import { type SettingEntry, settingAnchor } from '@/lib/settings-search';
 import { SETTINGS_SECTIONS, type SettingsView, unsavedKeys } from '@/lib/settings-sections';
 import { type SourceDraft, sourceColumnsUrl, draftFrom, filterOptionsUrl, projectsUrl, toSettingsBody, validateSettings, type SettingsDraft } from '@/lib/settings-form';
 import { deletionMessage, deletionMoves, type StageMove } from '@/lib/settings-stages';
@@ -175,9 +175,10 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
   async function save(confirmed = false): Promise<void> {
     const problem = validateSettings(draft);
     if (problem) {
-      setView({ section: problem.section });
       setSaveError(problem.message);
-      const { transition } = problem;
+      const { transition, stage } = problem;
+      setView({ section: problem.section, ...(stage === undefined ? {} : { stage }) }); // #482: a stage's problem selects it
+      if (stage !== undefined) setJump((j) => ({ anchor: settingAnchor('settings.stages.agent', stage), n: (j?.n ?? 0) + 1 }));
       if (transition !== undefined) setFocus((f) => ({ transition, n: (f?.n ?? 0) + 1 })); // a new n re-selects it after the user moved away
       return;
     }

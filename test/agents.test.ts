@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AGENTS, agentOf, agentRefusal, detectAgents, isAvailable, knownAgent, liveDefaultAgent, ranAgent, savedAgent, stageAgentIn } from '../src/agents.js';
+import { AGENTS, agentOf, agentRefusal, defaultModel, detectAgents, disabledRefusal, isAvailable, knownAgent, liveDefaultAgent, ranAgent, runModel, savedAgent, stageAgentIn, stageModelFor, withDefaultModel } from '../src/agents.js';
 import { runners } from '../src/agents/registry.js';
 import { AGENT_IDS, DEFAULT_AGENT, type AgentId, type Exec } from '../src/types.js';
 
@@ -27,10 +27,33 @@ test("agentOf answers the stage's own agent, else the config's default (#516)", 
   assert.equal(DEFAULT_AGENT, 'claude');
 });
 
-test('agentRefusal passes an available agent and names one that is unavailable or was never detected (#516)', () => {
-  assert.equal(agentRefusal('claude', [{ agent: 'claude', available: true }]), undefined);
-  assert.equal(agentRefusal('claude', [{ agent: 'claude', available: false }]), REFUSAL);
-  assert.equal(agentRefusal('claude', []), REFUSAL);
+const ON = { claude: true, codex: true } as const;
+
+test('agentRefusal passes an available, enabled agent; names one off PATH or never detected first, then a disabled one (#516, #482)', () => {
+  assert.equal(agentRefusal('claude', [{ agent: 'claude', available: true }], ON), undefined);
+  assert.equal(agentRefusal('claude', [{ agent: 'claude', available: false }], ON), REFUSAL);
+  assert.equal(agentRefusal('claude', [], { ...ON, claude: false }), REFUSAL, 'PATH first');
+  assert.equal(agentRefusal('codex', [{ agent: 'codex', available: true }], { ...ON, codex: false }), 'agent codex is disabled: enable it in Settings › execution › agents');
+  assert.equal(disabledRefusal('codex', ON), undefined);
+});
+
+test('runModel: a pick, else the stage\'s own on the stage\'s agent, else the agent\'s default model, else none; a stage of another agent skips to the default (#290, #482)', () => {
+  const config = { defaultAgent: 'claude' as const, agentModels: { claude: 'opus', codex: null } };
+  const build = { model: 'sonnet' };
+  assert.equal(runModel('haiku', build, 'claude', config), 'haiku');
+  assert.equal(runModel(undefined, build, 'claude', config), 'sonnet');
+  assert.equal(runModel(undefined, {}, 'claude', config), 'opus');
+  assert.equal(runModel(undefined, { model: 'gpt-5.6-terra', agent: 'codex' }, 'claude', config), 'opus', 'a codex stage\'s model is no claude name');
+  assert.equal(runModel(undefined, {}, 'codex', config), undefined, 'no default: no model flag');
+  assert.equal(stageModelFor(build, 'codex', 'claude'), undefined);
+  assert.equal(defaultModel(config, 'codex'), undefined);
+});
+
+test('withDefaultModel fills an absent model with the agent\'s default and keeps a named one or none (#482)', () => {
+  const config = { agentModels: { claude: 'opus', codex: null } };
+  assert.deepEqual(withDefaultModel({ agent: 'claude' as const, prompt: 'p' }, config), { agent: 'claude', prompt: 'p', model: 'opus' });
+  assert.deepEqual(withDefaultModel({ agent: 'claude' as const, model: 'haiku' }, config), { agent: 'claude', model: 'haiku' });
+  assert.deepEqual(withDefaultModel({ agent: 'codex' as const }, config), { agent: 'codex' });
 });
 
 test('every agent has a probe command, a label and its subcommands; Claude\'s protocol file rides --append-system-prompt-file (#516, #167, #924)', () => {

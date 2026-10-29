@@ -1,4 +1,4 @@
-import { AgentSelect } from '@/components/settings/AgentSelect';
+import { AgentsCard } from '@/components/settings/AgentsCard';
 import { CHILD, FIELD, FIELD_LABEL, FIELD_ROW } from '@/components/settings/field-row';
 import { SESSION_SYNONYMS, SessionsTable } from '@/components/settings/SessionsTable';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
@@ -7,14 +7,13 @@ import { WorkspaceBases } from '@/components/settings/WorkspaceBases';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import type { SettingsDraft } from '@/lib/settings-form';
 import { cardEntries, type SettingEntry, settingAnchor, settingEntry } from '@/lib/settings-search';
 import { agentName } from '../../../agents';
 import { AGENT_IDS, type AgentAvailability, type DeleteActivityScope } from '../../../types';
 
-interface ExecutionSectionProps { draft: SettingsDraft; agents: readonly AgentAvailability[]; onChange(patch: Partial<SettingsDraft>): void; onOpenFlow(): void }
+interface ExecutionSectionProps { draft: SettingsDraft; agents: readonly AgentAvailability[]; launchWorkspace?: string; onChange(patch: Partial<SettingsDraft>): void; onOpenFlow(): void }
 
 // Literal text, never through t(): its placeholder regex would read {id} as a placeholder.
 const BRANCH_TOKENS = ['{id}', '{title}', '{slug}'] as const;
@@ -47,49 +46,6 @@ function DeleteActivitySwitches({ scope, onChange }: DeleteActivitySwitchesProps
   );
 }
 
-// #516: the agent a stage runs when it picks none. One boot did not find stays selectable as saved, with a muted note: its runs are refused.
-// #778: a low full-width band, the select beside its hint, since one select does not deserve a tall card. flush and a padded grid, so
-// SettingsGroup gains no prop for it.
-// #924: each agent's own arguments under the default agent, one per line, so a value with spaces stays one argument
-function AgentArgsFields({ draft, onChange }: Pick<ExecutionSectionProps, 'draft' | 'onChange'>) {
-  return (
-    <div className="flex flex-col gap-3 border-t px-5 py-4">
-      {AGENT_IDS.map((agent) => (
-        <div key={agent} id={settingAnchor('settings.agentArgs', agent)} className={FIELD}>
-          <Label htmlFor={`settings-agent-args-${agent}`} className={FIELD_LABEL}>{t('settings.agentArgs', { agent: agentName(agent) })}</Label>
-          <Textarea
-            id={`settings-agent-args-${agent}`} rows={3} className="font-mono" value={draft.agentArgs[agent]}
-            onChange={(e) => onChange({ agentArgs: { ...draft.agentArgs, [agent]: e.target.value } })}
-          />
-          <p className="text-muted-foreground text-xs">{t('settings.agentArgs.hint')}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DefaultAgentGroup({ draft, agents, onChange, onOpenFlow }: ExecutionSectionProps) {
-  const missing = agents.some((a) => a.agent === draft.defaultAgent && !a.available);
-  return (
-    <SettingsGroup title="settings.defaultAgent" flush>
-      <div className="grid grid-cols-[20rem_minmax(0,1fr)] items-center gap-3 px-5 py-4">
-        <div>
-          <Label htmlFor="settings-default-agent" className="sr-only">{t('settings.defaultAgent')}</Label>
-          <AgentSelect id="settings-default-agent" value={draft.defaultAgent} agents={agents} onChange={(agent) => agent !== '' && onChange({ defaultAgent: agent })} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <p className="text-muted-foreground text-xs">
-            <span>{t('settings.defaultAgent.hint')}</span>{' '}
-            <button type="button" className="text-review" onClick={onOpenFlow}>{t('settings.section.flow')}</button>
-          </p>
-          {missing && <p className="text-muted-foreground text-xs">{t('settings.defaultAgent.missing', { agent: draft.defaultAgent })}</p>}
-        </div>
-      </div>
-      <AgentArgsFields draft={draft} onChange={onChange} />
-    </SettingsGroup>
-  );
-}
-
 // "sessões e espera": what closing a tab does (#614, #696), the sleep notices (#672), the idle (#233) and approval (#268) windows and the
 // rate-limit wait (#805), as a table by situation (#778).
 function SessionsGroup({ draft, onChange }: Pick<ExecutionSectionProps, 'draft' | 'onChange'>) {
@@ -101,10 +57,10 @@ function SessionsGroup({ draft, onChange }: Pick<ExecutionSectionProps, 'draft' 
 }
 
 // Settings › execution (#510): how each worker starts (#516), waits for you and what goes when its activity is deleted.
-export function ExecutionSection({ draft, agents, onChange, onOpenFlow }: ExecutionSectionProps) {
+export function ExecutionSection({ draft, agents, launchWorkspace, onChange, onOpenFlow }: ExecutionSectionProps) {
   return (
     <>
-      <DefaultAgentGroup draft={draft} agents={agents} onChange={onChange} onOpenFlow={onOpenFlow} />
+      <AgentsCard draft={draft} agents={agents} launchWorkspace={launchWorkspace} onChange={onChange} onOpenFlow={onOpenFlow} />
       <SessionsGroup draft={draft} onChange={onChange} />
       <SettingsGroup title="settings.group.branches" hint="settings.group.branches.hint">
         <div className={FIELD_ROW}>
@@ -134,11 +90,11 @@ export function ExecutionSection({ draft, agents, onChange, onOpenFlow }: Execut
 /** Settings › execution's entries of the Settings search (#689). */
 export function searchEntries(): SettingEntry[] {
   return [
-    settingEntry('settings.defaultAgent', 'execution'),
-    ...AGENT_IDS.map((agent): SettingEntry => ({
-      label: { key: 'settings.agentArgs', vars: { agent: agentName(agent) } }, path: ['settings.section.execution', 'settings.defaultAgent'],
-      view: { section: 'execution' }, anchor: settingAnchor('settings.agentArgs', agent),
-    })),
+    settingEntry('settings.agents', 'execution'),
+    ...AGENT_IDS.flatMap((agent) => (['settings.agents.model.of', 'settings.agentArgs', 'settings.agents.enabled.of'] as const).map((key): SettingEntry => ({
+      label: { key, vars: { agent: agentName(agent) } }, path: ['settings.section.execution', 'settings.agents'],
+      view: { section: 'execution' }, anchor: settingAnchor(key, agent),
+    }))),
     settingEntry('settings.group.waiting', 'execution'),
     ...SESSION_SYNONYMS.map(([row, keys]) => settingEntry(`settings.sessions.${row}`, 'execution', 'settings.group.waiting', keys)),
     ...cardEntries('execution', 'settings.group.branches', ['settings.branch', 'settings.baseBranch', 'settings.baseBranch.perWorkspace']),

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
-import { AGENTS, agentOf, agentRefusal, ranAgent, runModel } from './agents.js';
+import { AGENTS, agentOf, agentRefusal, defaultModel, disabledRefusal, ranAgent, runModel } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
@@ -138,15 +138,15 @@ const skillRefusal = (stage: Stage, pluginDir: string): string | undefined =>
 
 // What a stage run launches (#290): the worker's agent, which a manual start may have picked, else the stage's; the stage's specialized agent
 // (#710) under the picks' specialized agent and args, after the config's (launchRun), and the model runModel resolves. Or why it cannot start: an
-// agent boot did not find (#516), a skill (#710) or a specialized agent (#257) the plugin no longer has
+// agent boot did not find (#516) or the config disables (#482), a skill (#710) or a specialized agent (#257) the plugin no longer has
 function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], agents: readonly AgentAvailability[], pluginDir: string): { agent: AgentId; pluginDir: string; picked: Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> } | { refusal: string } {
   const agent = worker.agent ?? agentOf(stage, config);
-  const refusal = agentRefusal(agent, agents) ?? skillRefusal(stage, pluginDir);
+  const refusal = agentRefusal(agent, agents, config.agentEnabled) ?? skillRefusal(stage, pluginDir);
   if (refusal !== undefined) return { refusal };
   const launch = { ...(stage.specializedAgent === undefined ? {} : { specializedAgent: stage.specializedAgent }), ...worker.launch }; // #710: a manual pick wins
   const picked = launchRun(launch, config.agentArgs[agent], () => specializedAgents(pluginDir)); // #316: the agents its workspace's folder delivers
   if ('refusal' in picked) return picked;
-  return { agent, pluginDir, picked: { ...picked, model: runModel(picked.model, stage, agent, config.defaultAgent) } };
+  return { agent, pluginDir, picked: { ...picked, model: runModel(picked.model, stage, agent, config) } };
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
@@ -275,7 +275,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     }
     // #925: the worker carries its agent: a copy its source's, a resume its session's, a new session the one the route asked for
     const agent = ranAgent(effect.worker);
-    const picked = launchRun(copy ? undefined : effect.worker.launch, config.agentArgs[agent], () => specializedAgents(place.pluginDir)); // #257: a copy never runs with its source's picks
+    const refused = disabledRefusal(agent, config.agentEnabled); // #482: no menu offers it; an API caller's session is refused before its pty
+    const picked = refused !== undefined ? { refusal: refused } : launchRun(copy ? undefined : effect.worker.launch, config.agentArgs[agent], () => specializedAgents(place.pluginDir)); // #257: a copy never runs with its source's picks
     if ('refusal' in picked) {
       await dispatch({ type: 'spawnFailed', ptyId, message: picked.refusal });
       return;
@@ -300,8 +301,9 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (files === undefined) return;
     const [mcpPath, promptPath, protocolText] = files;
     await plugin.ready(); // #316: as spawn's, after the last await
+    const model = picked.model ?? defaultModel(config, agent); // #482: a session, a copy included, runs the default when it picked none
     const run: AgentRun = {
-      ptyId, cwd: place.cwd, port, withHive: true, external, hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
+      ptyId, cwd: place.cwd, port, withHive: true, external, hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked, ...(model === undefined ? {} : { model }),
       session: runSession(sessionId, continues ? 'continue' : 'new'), protocolPath, protocolText,
     };
     const argv = copy ? runner.copy(run, copy.from, copy.name) : runner.launch(run);

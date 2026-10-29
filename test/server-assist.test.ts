@@ -7,7 +7,7 @@ import { ASSIST_SCHEMA, type AssistAnswer } from '../src/assist.js';
 import type { HeadlessInput, HeadlessResult } from '../src/headless-run.js';
 import { createServer } from '../src/server.js';
 import { registerAssistRoutes } from '../src/server-assist.js';
-import type { AgentAvailability } from '../src/types.js';
+import type { AgentAvailability, Config } from '../src/types.js';
 import { ARCHITECT, assertUntouched, BUILD, type Fixture, fixture, SKILL, SPECIALIST } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -28,13 +28,15 @@ async function until(check: () => boolean): Promise<void> {
   while (!check()) await sleep(10);
 }
 
-async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH): Promise<{ base: string; lines: string[]; calls: HeadlessInput[] }> {
+const AGENT_CONFIG: Pick<Config, 'agentModels' | 'agentEnabled'> = { agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true } };
+
+async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH, agentConfig = AGENT_CONFIG): Promise<{ base: string; lines: string[]; calls: HeadlessInput[] }> {
   const app = express();
   app.use(express.json());
   const { log, lines } = fakeLog();
   const calls: HeadlessInput[] = [];
   registerAssistRoutes(app, {
-    requireLive: () => ({ runtime: { config: { defaultAgent: 'claude', comb: { workspaces: f.workspaces } } } }),
+    requireLive: () => ({ runtime: { config: { defaultAgent: 'claude', ...agentConfig, comb: { workspaces: f.workspaces } } } }),
     home: f.home, pluginSource: f.pluginSource, agents, log,
     runHeadless: (input) => { calls.push(input); return run(input); },
   });
@@ -143,4 +145,12 @@ test('the daemon registers the route behind its gates, waiting for a config like
   t.after(() => server.close());
   const res = await hiveFetch(`http://127.0.0.1:${port}${at(BUILD)}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: '{}' });
   assert.equal(res.status, 409, 'registered: requireLive answers, not a 404');
+});
+
+test('a request with no model runs the agent\'s default model; its own model wins (#482)', async (t) => {
+  const f = await fixture(t);
+  const { base, calls } = await serve(t, f, async () => answer(5, 5, '# x'), BOTH, { ...AGENT_CONFIG, agentModels: { claude: 'opus', codex: null } });
+  await ask(base, BUILD, BODY);
+  await ask(base, ARCHITECT, { version: null, path: 'architect.md', text: SPECIALIST, request: 'r', model: 'haiku' }); // another item: no busy
+  assert.deepEqual(calls.map((c) => c.model), ['opus', 'haiku']);
 });

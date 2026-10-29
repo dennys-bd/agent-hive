@@ -3,7 +3,7 @@
 // that goes away cancels its run. The agent's raw output and stderr reach hive.log only.
 import type { Express, Response } from 'express';
 import { z } from 'zod';
-import { agentRefusal } from './agents.js';
+import { agentRefusal, withDefaultModel } from './agents.js';
 import { applyProposal, ASSIST_SCHEMA, type AssistAnswer, assistPrompt, type AssistTarget, parseProposal, proposalHunk, targetOf } from './assist.js';
 import { isRefusal, mainFiles } from './custom-versions.js';
 import { type HeadlessInput, type HeadlessResult, runHeadless } from './headless-run.js';
@@ -13,7 +13,7 @@ import { readCatalogue, readItem } from './items-catalogue.js';
 import type { Logger } from './log.js';
 import { bodyOf, ITEMS_ERROR_MESSAGE } from './server-plugins.js';
 import { parseTemplate, type TemplateVariable } from './template.js';
-import { AGENT_IDS, type AgentAvailability, type AgentId, type ItemRead } from './types.js';
+import { AGENT_IDS, type AgentAvailability, type AgentId, type Config, type ItemRead } from './types.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
@@ -21,6 +21,8 @@ const HTTP_CONFLICT = 409;
 const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
 const DETAIL_MAX = 2048; // what of an agent's raw output a log line keeps (decision 14); hive.log clips a line further
+
+type AssistConfig = Pick<Config, 'defaultAgent' | 'agentModels' | 'agentEnabled'> & { comb: { workspaces: ItemSources['workspaces'] } };
 
 export type AssistCode = 'busy' | 'agent_unavailable' | 'bad_answer' | 'run_failed';
 // The page shows its own copy by code (#331); these only name the case for a reader of the raw answer
@@ -42,7 +44,7 @@ const ASSIST_BODY = z.object({
 type AssistBody = z.infer<typeof ASSIST_BODY>;
 
 export interface AssistRouteDeps {
-  requireLive(res: Response): { runtime: { config: { defaultAgent: AgentId; comb: { workspaces: ItemSources['workspaces'] } } } } | undefined;
+  requireLive(res: Response): { runtime: { config: AssistConfig } } | undefined;
   home: string;
   pluginSource: string;
   agents: readonly AgentAvailability[];
@@ -75,17 +77,17 @@ export function variablesOf(read: ItemRead, body: Pick<AssistBody, 'path' | 'tex
 }
 
 // Every check before the run, in the contract's order of causes; undefined once one has answered
-async function prepare(res: Response, deps: AssistRouteDeps, sources: ItemSources, id: string, body: AssistBody, defaultAgent: AgentId): Promise<Prepared | undefined> {
+async function prepare(res: Response, deps: AssistRouteDeps, sources: ItemSources, id: string, body: AssistBody, config: AssistConfig): Promise<Prepared | undefined> {
   const read = await openFile(res, sources, id, body);
   if (!read) return undefined;
   const target = targetOf(body.text, body.selection);
   if (!target) return void fail(res, HTTP_BAD_REQUEST, 'selection: outside the text');
-  const agent = body.agent ?? defaultAgent;
-  const refused = agentRefusal(agent, deps.agents);
+  const agent = body.agent ?? config.defaultAgent;
+  const refused = agentRefusal(agent, deps.agents, config.agentEnabled);
   if (refused !== undefined) return void fail(res, HTTP_CONFLICT, refused, 'agent_unavailable');
   const catalogue = await readCatalogue(sources);
   const prompt = assistPrompt({ request: body.request, path: body.path, kind: read.item.kind, text: body.text, target, variables: variablesOf(read, body), catalogue });
-  return { agent, ...(body.model === undefined ? {} : { model: body.model }), prompt, target, text: body.text };
+  return { ...withDefaultModel({ agent, ...(body.model === undefined ? {} : { model: body.model }) }, config), prompt, target, text: body.text }; // #482
 }
 
 // res, not req: req's close fires as soon as express.json has read the body; res's before the answer means the client went away. Listened
@@ -134,7 +136,7 @@ export function registerAssistRoutes(app: Express, deps: AssistRouteDeps): void 
     inFlight.add(id);
     const signal = cancelOnClose(res);
     try {
-      const run = await prepare(res, deps, { home: deps.home, pluginSource: deps.pluginSource, workspaces: config.comb.workspaces }, id, body, config.defaultAgent);
+      const run = await prepare(res, deps, { home: deps.home, pluginSource: deps.pluginSource, workspaces: config.comb.workspaces }, id, body, config);
       if (run) await runAndAnswer(res, deps, id, run, signal);
     } catch (err) {
       deps.log.error(`assist: ${id} failed: ${errorMessage(err)}`);

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NEW_SESSION, PREVIOUS_SESSION, type RunField, type RunPicks } from '@/hooks/use-run-pick';
 import { t } from '@/i18n';
+import { AgentModelsContext } from '@/lib/agent-settings';
 import { runsLine } from '@/lib/new-session';
 import { elapsed } from '@/lib/usage';
 
@@ -80,13 +81,14 @@ export interface RunFieldsProps {
  * the command line they make. Sessão livre shows them always; executar etapas inside personalizar. */
 export function RunFields({ id, task, state, picks, options, initial, stageModel, locked, onPicks }: RunFieldsProps) {
   const agents = useContext(AgentsContext);
+  const models = useContext(AgentModelsContext);
   const [menu, setMenu] = useState<Menu>();
   const toggle = (which: Menu) => (isOpen: boolean): void => setMenu(isOpen ? which : undefined);
   const changed = (field: RunField): boolean => initial !== undefined && picks[field] !== initial[field];
   const isLocked = locked !== undefined;
   const shown: RunPicks = locked === undefined ? picks : { ...picks, model: locked.model ?? '', specializedAgent: locked.specializedAgent ?? '', args: (locked.args ?? []).join(' ') };
   const ofAgent = options?.[picks.agent];
-  const line = runsLine({ ...shown, model: shown.model || (stageModel ?? '') }, ofAgent?.args ?? []);
+  const line = runsLine({ ...shown, model: shown.model || stageModel || (models[picks.agent] ?? '') }, ofAgent?.args ?? []);
   const defaultLabel = stageModel === undefined ? undefined : t('run.model.stage', { model: stageModel });
   return (
     <div className="grid grid-cols-2 gap-2.5">

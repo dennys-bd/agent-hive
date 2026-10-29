@@ -8,7 +8,7 @@ import type { HeadlessInput, HeadlessResult } from '../src/headless-run.js';
 import { REVIEW_SCHEMA, REVIEWER_ID } from '../src/reviewer.js';
 import { createServer } from '../src/server.js';
 import { registerTemplateReviewRoutes } from '../src/server-template-review.js';
-import { type AgentAvailability, REVIEWER_DEFAULTS, type ReviewerConfig } from '../src/types.js';
+import { type AgentAvailability, type Config, REVIEWER_DEFAULTS, type ReviewerConfig } from '../src/types.js';
 import { assertUntouched, BUILD, type Fixture, fixture, put, snapshot } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -40,14 +40,16 @@ async function reviewFixture(t: TestContext): Promise<Fixture> {
 }
 
 interface Served { base: string; lines: string[]; calls: HeadlessInput[]; use(reviewer: Partial<ReviewerConfig>): void }
-async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH): Promise<Served> {
+const AGENT_CONFIG: Pick<Config, 'agentModels' | 'agentEnabled'> = { agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true } };
+
+async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH, agentConfig = AGENT_CONFIG): Promise<Served> {
   const app = express();
   app.use(express.json());
   const { log, lines } = fakeLog();
   const calls: HeadlessInput[] = [];
   let reviewer = REVIEWER_DEFAULTS;
   registerTemplateReviewRoutes(app, {
-    requireLive: () => ({ runtime: { config: { defaultAgent: 'claude', reviewer, comb: { workspaces: f.workspaces } } } }),
+    requireLive: () => ({ runtime: { config: { defaultAgent: 'claude', ...agentConfig, reviewer, comb: { workspaces: f.workspaces } } } }),
     home: f.home, pluginSource: f.pluginSource, agents, log,
     runHeadless: (input) => { calls.push(input); return run(input); },
   });
@@ -159,4 +161,17 @@ test('the daemon registers the route behind its gates, waiting for a config like
   t.after(() => server.close());
   const res = await hiveFetch(`http://127.0.0.1:${port}${at(BUILD)}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: '{}' });
   assert.equal(res.status, 409, 'registered: requireLive answers, not a 404');
+});
+
+test('a reviewer with model null runs its agent\'s default model; a reviewer naming a disabled agent is refused 409 with the reason and runs nothing (#482)', async (t) => {
+  const f = await reviewFixture(t);
+  const models = { ...AGENT_CONFIG, agentModels: { claude: 'opus', codex: null } };
+  const { base, calls } = await serve(t, f, async () => answer([]), BOTH, models);
+  assert.equal((await review(base, BUILD, BODY))[0], 200);
+  assert.equal(calls[0].model, 'opus');
+  const off = await serve(t, f, async () => answer([]), BOTH, { ...AGENT_CONFIG, agentEnabled: { claude: true, codex: false } });
+  off.use({ agent: 'codex' });
+  const [status, body] = await review(off.base, BUILD, BODY);
+  assert.deepEqual([status, body.code, body.error], [409, 'agent_unavailable', 'agent codex is disabled: enable it in Settings › execution › agents']);
+  assert.equal(off.calls.length, 0);
 });

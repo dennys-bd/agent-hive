@@ -6,7 +6,7 @@ import { writeCredentials } from '../src/credentials.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import { ptyCommand } from '../src/spawn.js';
 import type { Activity, AgentAvailability, McpSettings, Task, Exec, SettingsBody, SettingsInfo, Worker } from '../src/types.js';
-import { activityOf } from '../src/activities.js';
+import { activityOf, localActivityId } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, move, onOwnStages, plainArgs, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
@@ -189,4 +189,27 @@ test('a claude stage run\'s MCP file holds the Hive\'s server and its workspace\
   const file = JSON.parse(await readFile(launchFlag(workers[0].launch, '--mcp-config') ?? '', 'utf8')) as { mcpServers: Record<string, unknown> };
   assert.deepEqual(Object.keys(file.mcpServers), ['hive', 'docs']);
   assert.deepEqual(file.mcpServers.docs, { type: 'http', url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer t0k' } });
+});
+
+const MODELS = { agentModels: { claude: 'opus', codex: null } };
+
+test('a stage with no model launches its agent\'s default model; with none, no model flag (#482)', async (t) => {
+  const { server, workers } = await start(t, { ...BODY, ...MODELS });
+  await waitFor(() => workers.length === 1);
+  assert.deepEqual(plainArgs(workers[0].launch), ['--model', 'opus', '--session-id', work0(server)!.sessionId!]);
+  const plain = await start(t);
+  await waitFor(() => plain.workers.length === 1);
+  assert.equal(plainArgs(plain.workers[0].launch).includes('--model'), false);
+});
+
+test('a free session opened with no model launches the default; its own pick wins; a disabled agent never starts (#482)', async (t) => {
+  const { base, workers } = await start(t, { ...BODY, ...MODELS }, {}, 0);
+  const url = `${base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions`;
+  assert.equal((await postJson(url, { kind: 'claude' })).status, 200);
+  assert.deepEqual(plainArgs(workers[0].launch).slice(0, 2), ['--model', 'opus']);
+  assert.equal((await postJson(url, { kind: 'claude', model: 'sonnet' })).status, 200);
+  assert.deepEqual(plainArgs(workers[1].launch).slice(0, 2), ['--model', 'sonnet']);
+  const off = await start(t, { ...BODY, agentEnabled: { claude: true, codex: false } }, {}, 0);
+  await postJson(`${off.base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions`, { kind: 'codex' });
+  assert.equal(off.workers.length, 0, 'refused before a pty: spawnFailed with the reason');
 });

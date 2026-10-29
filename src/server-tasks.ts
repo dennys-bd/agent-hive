@@ -75,7 +75,7 @@ export interface TaskRouteDeps {
    * call time, a POST /settings may have changed them; the source is the live one. */
   requireLive(res: Response): {
     state: State;
-    runtime: { config: Pick<Config, 'agentArgs' | 'branch' | 'baseBranch' | 'comb' | 'editor'>; sources: ReadonlyMap<string, Pick<Source, 'comments' | 'create'>>; promptsDir: string };
+    runtime: { config: Pick<Config, 'agentArgs' | 'agentEnabled' | 'branch' | 'baseBranch' | 'comb' | 'editor'>; sources: ReadonlyMap<string, Pick<Source, 'comments' | 'create'>>; promptsDir: string };
   } | undefined;
   dispatch(event: HiveEvent, size?: TerminalSize): Promise<Effect[]>; // #808: size, the page's grid, reaches only the spawns this event causes
   language(): Language; // the Hive's effective language, the config's else the system's: a kept-both item's " - copy" suffix (#594)
@@ -135,7 +135,7 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   const workspace = workspaceOf(current.runtime.config, task, current.state.tasks); // #179: a task with no workspace is refused here, never a silent no-op
   if ('status' in workspace) return workspace;
   await deps.plugin.ready(); // #316: a render a save queued lands before the picks read the folder
-  const picked = parseRunPick(body, current.state, task, deps.agents, deps.language(), () => deps.plugin.dir(workspace.name)); // #290: the run picks, before any git; #316: its workspace's agents
+  const picked = parseRunPick(body, current.state, task, deps.agents, deps.language(), () => deps.plugin.dir(workspace.name), current.runtime.config.agentEnabled); // #290: the run picks, before any git; #316: its workspace's agents
   if ('status' in picked) return picked;
   const placed = { ...(raw === undefined ? {} : { workspace: task.workspace }), ...picked };
   if (stageOf(current.state.stages, task.stage)?.action === 'deleteActivity') return { type: 'start', itemId, ...placed };

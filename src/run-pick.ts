@@ -1,7 +1,7 @@
 // A manual start's run picks (#290): what POST /tasks/:id/start may ask its stage run to launch with, checked against the task, its stage, its
 // start mode and this machine. Out of server-tasks.ts, which is over its size.
 import { activityOf } from './activities.js';
-import { isAvailable, knownAgent, stageAgentIn } from './agents.js';
+import { disabledRefusal, isAvailable, knownAgent, stageAgentIn } from './agents.js';
 import { askedLaunch } from './launch-options.js';
 import { isRecord } from './rate-limits.js';
 import type { Refusal } from './server-tasks.js';
@@ -38,14 +38,14 @@ function pickRefusal(state: State, task: Task, language: Language): Refusal | un
 /** The run picks a start's body asks for (#290): none asked is none ({}), so today's start is unchanged; else the agent (one this machine has),
  * the session (new, previous or one of the task's, recorded by that agent) and #257's launch, checked with no continueId: a stage resume runs
  * the stage's prompt with the new picks. Absent fields stay the stage's. A 400 names the field, a 409 the run that takes no picks. `pluginDir`
- * answers the task's workspace's plugin folder, whose agents a specialized agent must be one of (#316); it is read only when one is named (#317). */
-export function parseRunPick(body: unknown, state: State, task: Task, agents: readonly AgentAvailability[], language: Language, pluginDir: () => string): { runPick?: RunPick } | Refusal {
+ * answers the task's workspace's plugin folder, whose agents a specialized agent must be one of (#316); it is read only when one is named (#317). `enabled` is the config's agentEnabled: a disabled agent is refused here, before any worktree (#482). */
+export function parseRunPick(body: unknown, state: State, task: Task, agents: readonly AgentAvailability[], language: Language, pluginDir: () => string, enabled: Record<AgentId, boolean>): { runPick?: RunPick } | Refusal {
   const asked: Record<string, unknown> = isRecord(body) ? body : {};
   if (PICK_FIELDS.every((field) => asked[field] === undefined)) return {};
   const refused = pickRefusal(state, task, language);
   if (refused) return refused;
   const agent = asked.agent === undefined ? stageAgentIn(state, stageOf(state.stages, task.stage) ?? {}) : knownAgent(asked.agent);
-  if (agent === undefined || (asked.agent !== undefined && !isAvailable(agent, agents))) return refusal('agent', language);
+  if (agent === undefined || (asked.agent !== undefined && !(isAvailable(agent, agents) && disabledRefusal(agent, enabled) === undefined))) return refusal('agent', language);
   const resume = resumeOf(asked.session, state, task, agent);
   if (resume === undefined) return refusal('session', language);
   const launch = askedLaunch(asked, agent, language, pluginDir);

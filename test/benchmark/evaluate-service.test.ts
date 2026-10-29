@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { EvaluateDeps } from '../../src/benchmark/evaluate.js';
 import type { Run } from '../../src/benchmark/exec.js';
+import { defaultEvaluation } from '../../src/benchmark/new-experiment.js';
+import type { EvaluateContext } from '../../src/benchmark/evaluate.js';
 import { benchRunDeps, createBenchEvaluator, readyFetch } from '../../src/benchmark/evaluate-service.js';
 import type { BenchRunEvaluation, HiveEvent, State } from '../../src/types.js';
 import { fakeLog } from '../fakes.js';
@@ -14,11 +16,13 @@ const STATE: State = stateWith(experiment({ rounds: [
   { n: 2, runs: [run('bbbb1', { round: 2, status: 'done' }), run('bbbb2', { round: 2, armId: 'a2', status: 'running' })] },
 ] }));
 
+const LIVE = { agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true } };
+
 function service(evaluateRun: (token: string, deps: EvaluateDeps) => Promise<BenchRunEvaluation | undefined>, abortWaitMs?: number) {
   const events: HiveEvent[] = [];
   const { log, lines } = fakeLog();
   const evaluator = createBenchEvaluator({
-    latest: () => STATE, dispatch: async (event) => { events.push(event); }, folderOf: (id) => `/hive/benchmark/${id}`, log, now: () => Date.parse(AT), ...(abortWaitMs === undefined ? {} : { abortWaitMs }),
+    latest: () => STATE, config: () => LIVE, dispatch: async (event) => { events.push(event); }, folderOf: (id) => `/hive/benchmark/${id}`, log, now: () => Date.parse(AT), ...(abortWaitMs === undefined ? {} : { abortWaitMs }),
     runDeps: (signal) => ({ signal }) as EvaluateDeps, evaluateRun: (ctx, deps) => evaluateRun(ctx.run.token, deps),
   });
   return { evaluator, events, lines };
@@ -106,4 +110,36 @@ test('readyFetch answers the status and cancels the body so the poll holds no so
   const res = await readyFetch('http://127.0.0.1:1/', { signal: new AbortController().signal }, async () => ({ status: 200, body }) as Response);
   assert.deepEqual(res, { status: 200 });
   assert.equal(cancelled, true);
+});
+
+test('an evaluation runs each collector, the tester and the judge with no model on its agent\'s default model, read when it starts; a named model is kept (#482)', async () => {
+  const evaluation = { ...defaultEvaluation('claude'), collectors: [{ agent: 'claude' as const }, { agent: 'codex' as const }] };
+  const state = stateWith(experiment({ evaluation, rounds: [{ n: 1, runs: [run('aaaa1', { status: 'done' })] }] }));
+  const seen: EvaluateContext[] = [];
+  const evaluator = createBenchEvaluator({
+    latest: () => state, dispatch: async () => undefined, folderOf: (id) => `/hive/benchmark/${id}`, log: fakeLog().log, now: () => Date.parse(AT),
+    config: () => ({ ...LIVE, agentModels: { claude: 'opus', codex: null } }),
+    runDeps: (signal) => ({ signal }) as EvaluateDeps, evaluateRun: async (ctx) => { seen.push(ctx); return EVAL; },
+  });
+  await evaluator.evaluate('exp-1', ['aaaa1']);
+  const used = seen[0].experiment.evaluation;
+  assert.deepEqual([used.collectors.map((c) => c.model), used.tester.model, used.judge.model], [['opus', undefined], 'sonnet', 'opus']);
+});
+
+test('an evaluation whose collector, tester or judge names a disabled agent, or that starts with no live config, is refused before any run: no evaluateRun, a warning with the reason (#482)', async () => {
+  const evaluation = { ...defaultEvaluation('claude'), collectors: [{ agent: 'claude' as const }, { agent: 'codex' as const }] };
+  const state = stateWith(experiment({ evaluation, rounds: [{ n: 1, runs: [run('aaaa1', { status: 'done' })] }] }));
+  for (const [config, reason] of [[() => ({ ...LIVE, agentEnabled: { claude: true, codex: false } }), 'agent codex is disabled'], [() => undefined, 'no live configuration']] as const) {
+    const { log, lines } = fakeLog();
+    let called = false;
+    const events: HiveEvent[] = [];
+    const evaluator = createBenchEvaluator({
+      latest: () => state, dispatch: async (e) => { events.push(e); }, folderOf: (id) => `/hive/benchmark/${id}`, log, now: () => Date.parse(AT), config,
+      runDeps: (signal) => ({ signal }) as EvaluateDeps, evaluateRun: async () => { called = true; return EVAL; },
+    });
+    await evaluator.evaluate('exp-1', ['aaaa1'], true);
+    assert.equal(called, false);
+    assert.deepEqual(events, []);
+    assert.match(lines.filter((l) => l.startsWith('WARN')).join('\n'), new RegExp(`benchmark exp-1 aaaa1: .*${reason}`));
+  }
 });

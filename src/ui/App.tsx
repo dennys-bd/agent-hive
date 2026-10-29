@@ -8,6 +8,7 @@ import { EditorLanguagesContext, type EditorLanguages } from '@/components/edito
 import { Dashboard } from '@/components/Dashboard';
 import type { Selection } from '@/components/DetailPanel';
 import { AgentsContext, DefaultAgentContext } from '@/components/NewRunButton';
+import { AgentModelsContext, offeredAgents } from '@/lib/agent-settings';
 import { TaskRefContext, type TaskRefs } from '@/components/PtyTab';
 import { Settings } from '@/components/settings/Settings';
 import { FileIconsContext } from '@/hooks/use-file-icons';
@@ -109,6 +110,7 @@ export function App() {
     editor: info?.config?.editor ?? EDITOR_DEFAULTS,
     openLanguage: (language) => { setSettingsView({ section: 'editor', language }); setSettingsOpen(true); },
   }), [info]);
+  const offered = useMemo(() => offeredAgents(info?.agents ?? [], info?.config?.agentEnabled), [info]);
   // The template reviewer's setting (#329) for the plugins view's menu: the saved key, and its write, which posts it with the prefix as the
   // close-tab notices post theirs and reloads the info; a failed reload is a toast, as theirs is
   const reviewer = useMemo<ReviewerSettings>(() => ({
@@ -149,8 +151,9 @@ export function App() {
       <div className="contents" inert={settingsOpen}>
         {/* the panel's tabs take a saved terminal font at once (#376): a save reloads info and re-renders them */}
         <DefaultAgentContext.Provider value={info.config?.defaultAgent ?? DEFAULT_AGENT}>
-          {/* #931: the agents boot found, which every menu that opens a session disables by */}
-          <AgentsContext.Provider value={info.agents}>
+          {/* #931: the agents boot found, minus the disabled ones (#482); every menu that opens a session disables by it */}
+          <AgentsContext.Provider value={offered}>
+          <AgentModelsContext.Provider value={info.config?.agentModels ?? {}}>
             {/* the files tree's icons (#754): the saved choice, and the theme applyTheme painted for Material's light overrides */}
             <FileIconsContext.Provider value={{ ...(info.config?.fileIcons ?? FILE_ICONS_DEFAULTS), theme: resolvedTheme }}>
               <CloseTabContext.Provider value={closeTab}>
@@ -163,6 +166,7 @@ export function App() {
                 </TaskRefContext.Provider>
               </CloseTabContext.Provider>
             </FileIconsContext.Provider>
+          </AgentModelsContext.Provider>
           </AgentsContext.Provider>
         </DefaultAgentContext.Provider>
       </div>

@@ -32,11 +32,12 @@ const startWith = (server: HiveServer, runPick?: RunPick) => server.dispatch({ t
 const sessionOf = (server: HiveServer): string | undefined => activityOf(server.getState()!, 'local:1')?.sessionId;
 
 test('runModel: a model picked by hand, else the stage\'s own on the stage\'s agent, else none, which is the agent\'s default (#290)', () => {
-  assert.equal(runModel('sonnet', BUILD, 'claude', 'claude'), 'sonnet');
-  assert.equal(runModel(undefined, BUILD, 'claude', 'claude'), 'opus');
-  assert.equal(runModel(undefined, BUILD, 'codex', 'claude'), undefined, 'a stage\'s model is a name of its own agent');
-  assert.equal(runModel(undefined, { ...BUILD, agent: 'codex' }, 'codex', 'claude'), 'opus');
-  assert.equal(runModel(undefined, {}, 'claude', 'claude'), undefined);
+  const config = { defaultAgent: 'claude' as const, agentModels: { claude: null, codex: null } };
+  assert.equal(runModel('sonnet', BUILD, 'claude', config), 'sonnet');
+  assert.equal(runModel(undefined, BUILD, 'claude', config), 'opus');
+  assert.equal(runModel(undefined, BUILD, 'codex', config), undefined, 'a stage\'s model is a name of its own agent');
+  assert.equal(runModel(undefined, { ...BUILD, agent: 'codex' }, 'codex', config), 'opus');
+  assert.equal(runModel(undefined, {}, 'claude', config), undefined);
 });
 
 test('a stage run with picks runs claude with them after the global args: the picked model over the stage\'s, the specialized agent, the args (#290)', async (t) => {

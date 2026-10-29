@@ -8,7 +8,7 @@ import { createInProblem, type CreateInProblem } from './create-in.js';
 import { REPOSITORY } from './task-refs.js';
 import { parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
-import { checkStageModels, parseAgentArgs } from './config-agent-args.js';
+import { checkEnabledAgents, checkStageModels, parseAgentArgs, parseAgentEnabled, parseAgentModels } from './config-agent-args.js';
 import { checkClearedResumes, checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
 import { hiveActionRaw, parseStageAgent, runsAgentRaw } from './config-stage-agent.js';
 import { parseFork } from './fork.js';
@@ -31,6 +31,7 @@ export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
 export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor'> = {
   logLevel: 'info',
   agentArgs: { claude: [], codex: [] },
+  agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, // #482: a first save without them
   budget: {},
   usageRules: [],
   reviewer: REVIEWER_DEFAULTS, // #328: the one key with a default a first save writes
@@ -632,6 +633,8 @@ function parseFields(raw: unknown): Config {
     closeTerminalTabNotice: requireBoolean(raw.closeTerminalTabNotice, 'closeTerminalTabNotice'),
     defaultAgent: requireAgent(raw.defaultAgent, 'defaultAgent'), // #516: a file from before the key is migrated to claude
     agentArgs: parseAgentArgs(raw.agentArgs), // #924: a file from before the key is migrated from claudeArgs
+    agentModels: parseAgentModels(raw.agentModels), // #482: a file from before the key is migrated to null for every agent
+    agentEnabled: parseAgentEnabled(raw.agentEnabled), // #482: … and to true
     theme: requireTheme(raw.theme),
     terminalFont: requireTerminalFont(raw.terminalFont),
     trustedDomains: requireTrustedDomains(raw.trustedDomains),
@@ -651,6 +654,7 @@ export function parseConfig(raw: unknown): Config {
   checkResumedAgents(config.comb.stages, config.comb.transitions, config.defaultAgent); // #925: needs defaultAgent, which the fields parse last
   checkClearedResumes(config.comb.stages, config.comb.transitions); // #494: a POST /settings save goes through here too
   checkStageModels(config.comb.stages, config.defaultAgent); // #927: the same
+  checkEnabledAgents(config.comb.stages, config.defaultAgent, config.agentEnabled); // #482: a POST /settings save goes through here too
   return config;
 }
 

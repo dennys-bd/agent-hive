@@ -1,5 +1,5 @@
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useContext, useState } from 'react';
 import { agentName, isAvailable, knownAgent } from '../../agents';
 import { isLaunchModel } from '../../launch-pick';
 import { AGENT_IDS, type AgentAvailability, type AgentId, type AgentLaunchOptions, type LaunchOption } from '../../types';
@@ -9,6 +9,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { t } from '@/i18n';
+import { AgentModelsContext } from '@/lib/agent-settings';
 
 // cmdk values no model or agent name can take ('@' is outside both shapes): the default model's item and none's
 const DEFAULT_ITEM = '@default';
@@ -17,15 +18,15 @@ const NONE_ITEM = '@none';
 const ONE_M = '[1m]';
 const PLUGIN = 'hive'; // the Hive plugin, the hive: of every specialized agent (codex-home's CODEX_PLUGIN, which the page cannot import)
 
-interface FieldMenuProps { id?: string; label: string; shown: string; isDefault: boolean; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; children: ReactNode }
+interface FieldMenuProps { id?: string; label: string; shown: ReactNode; title: string; isDefault: boolean; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; children: ReactNode }
 
 // A field's menu (#257): a combobox button showing the pick (the default muted, a pick in mono) over a searchable list. Modal: its content is
 // portalled out of the dialog that holds it, and the dialog's scroll lock eats the wheel there unless the popover registers its own (#290)
-function FieldMenu({ id, label, shown, isDefault, disabled = false, open, onOpenChange, children }: FieldMenuProps) {
+function FieldMenu({ id, label, shown, title, isDefault, disabled = false, open, onOpenChange, children }: FieldMenuProps) {
   return (
     <Popover modal open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <Button id={id} type="button" variant="outline" role="combobox" aria-expanded={open} aria-label={label} title={shown} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
+        <Button id={id} type="button" variant="outline" role="combobox" aria-expanded={open} aria-label={label} title={title} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
           <span className={isDefault ? 'truncate text-muted-foreground' : 'truncate font-mono text-xs'}>{shown}</span>
           <ChevronsUpDownIcon className="opacity-50" />
         </Button>
@@ -46,6 +47,17 @@ function Row({ id, hint, isPicked }: { id: string; hint?: string; isPicked: bool
   );
 }
 
+// What an empty model runs (#290, #482): the stage's (defaultLabel), else the agent's default model, else the CLI's own
+function emptyModel(name: string, defaultLabel: string | undefined, model: string | undefined): { shown: ReactNode; text: string; hint: string } {
+  if (defaultLabel !== undefined) return { shown: defaultLabel, text: defaultLabel, hint: t('newSession.model.defaultHint', { agent: name }) };
+  if (model === undefined) {
+    const text = t('newSession.model.default', { agent: name });
+    return { shown: text, text, hint: t('newSession.model.defaultHint', { agent: name }) };
+  }
+  const text = `${t('newSession.model.agentDefault')} · ${model}`;
+  return { shown: <>{t('newSession.model.agentDefault')} · <span className="font-mono">{model}</span></>, text, hint: t('newSession.model.agentDefaultHint') };
+}
+
 // A [1m] alias names its context in the page's language; any other option its own hint
 const hintOf = ({ id, hint }: LaunchOption): string | undefined => (id.endsWith(ONE_M) ? t('newSession.model.context1m') : hint);
 
@@ -55,7 +67,7 @@ export interface InheritRow { label: string; isPicked: boolean; onPick(): void }
 // #877: a grid row names its control with `label`, having no <Label>
 interface ModelMenuProps { id?: string; label?: string; agent: AgentId; options?: AgentLaunchOptions; value: string; disabled?: boolean; defaultLabel?: string; inherit?: InheritRow; open: boolean; onOpenChange(open: boolean): void; onPick(model: string): void }
 
-/** modelo (#257): the agent's default (the Hive passes no flag), its aliases and its versions, most recent first, and a typed name the lists
+/** modelo (#257): the agent's default (the Hive passes no flag, or the default model of Settings › execução, #482), its aliases and its versions, most recent first, and a typed name the lists
  * lack, offered when it has a model's shape. '' is the default; defaultLabel names what '' runs when a stage gives it a model (#290): '' never
  * unsets it. */
 export function ModelMenu({ id, label, agent, options, value, disabled = false, defaultLabel, inherit, open, onOpenChange, onPick }: ModelMenuProps) {
@@ -63,7 +75,7 @@ export function ModelMenu({ id, label, agent, options, value, disabled = false, 
   const toggle = (isOpen: boolean): void => { onOpenChange(isOpen); if (!isOpen) setSearch(''); };
   const pick = (model: string): void => { onPick(model); toggle(false); };
   const name = agentName(agent);
-  const fallback = defaultLabel ?? t('newSession.model.default', { agent: name });
+  const empty = emptyModel(name, defaultLabel, useContext(AgentModelsContext)[agent] ?? undefined);
   const typed = search.trim();
   const aliases = options?.aliases ?? [];
   const versions = options?.versions ?? [];
@@ -72,15 +84,15 @@ export function ModelMenu({ id, label, agent, options, value, disabled = false, 
     <CommandItem key={option.id} value={option.id} onSelect={() => pick(option.id)}><Row id={option.id} hint={hintOf(option)} isPicked={option.id === value} /></CommandItem>
   );
   return (
-    <FieldMenu id={id} label={label ?? t('newSession.model')} shown={value === '' ? fallback : value} isDefault={value === ''} disabled={disabled} open={open} onOpenChange={toggle}>
+    <FieldMenu id={id} label={label ?? t('newSession.model')} shown={value === '' ? empty.shown : value} title={value === '' ? empty.text : value} isDefault={value === ''} disabled={disabled} open={open} onOpenChange={toggle}>
       <Command label={t('newSession.model.search')}>
         <CommandInput value={search} onValueChange={setSearch} aria-label={t('newSession.model.search')} placeholder={t('newSession.model.search')} />
         <CommandList>
-          <CommandItem value={DEFAULT_ITEM} keywords={[name]} onSelect={() => pick('')}>
+          <CommandItem value={DEFAULT_ITEM} keywords={[name, empty.text]} onSelect={() => pick('')}>
             <CheckIcon className={value === '' ? 'opacity-100' : 'opacity-0'} />
             <span className="flex min-w-0 flex-col">
-              <span>{fallback}</span>
-              <span className="truncate text-muted-foreground text-xs">{t('newSession.model.defaultHint', { agent: name })}</span>
+              <span>{empty.shown}</span>
+              <span className="truncate text-muted-foreground text-xs">{empty.hint}</span>
             </span>
           </CommandItem>
           {inherit !== undefined && (
@@ -124,7 +136,7 @@ export function SpecializedAgentMenu({ id, label, agent, agents, value, disabled
   const none = t('newSession.agents.none');
   const shown = value !== '' ? value : isEmpty ? t('newSession.agents.empty', { agent: agentName(agent) }) : none;
   return (
-    <FieldMenu id={id} label={label ?? t('newSession.specializedAgent')} shown={shown} isDefault={value === ''} disabled={isEmpty || disabled} open={open} onOpenChange={onOpenChange}>
+    <FieldMenu id={id} label={label ?? t('newSession.specializedAgent')} shown={shown} title={shown} isDefault={value === ''} disabled={isEmpty || disabled} open={open} onOpenChange={onOpenChange}>
       <Command label={t('newSession.agents.search')}>
         <CommandInput aria-label={t('newSession.agents.search')} placeholder={t('newSession.agents.search')} />
         <CommandList>
@@ -158,7 +170,7 @@ interface SkillMenuProps { id?: string; skills?: AgentLaunchOptions['skills']; v
 export function SkillMenu({ id, skills = [], value, open, onOpenChange, onPick }: SkillMenuProps) {
   const pick = (name: string): void => { onPick(name); onOpenChange(false); };
   return (
-    <FieldMenu id={id} label={t('settings.stages.skill')} shown={value === '' ? t('settings.stages.skill.none') : `${PLUGIN}:${value}`} isDefault={value === ''} open={open} onOpenChange={onOpenChange}>
+    <FieldMenu id={id} label={t('settings.stages.skill')} shown={value === '' ? t('settings.stages.skill.none') : `${PLUGIN}:${value}`} title={value === '' ? t('settings.stages.skill.none') : `${PLUGIN}:${value}`} isDefault={value === ''} open={open} onOpenChange={onOpenChange}>
       <Command label={t('settings.stages.skill.search')}>
         <CommandInput aria-label={t('settings.stages.skill.search')} placeholder={t('settings.stages.skill.search')} />
         <CommandList>
@@ -180,7 +192,7 @@ interface AgentFieldProps {
   onChange(agent: AgentId): void; onDefault?(): void; onOpenChange(open: boolean): void;
 }
 
-/** agente (#257, #290): each agent with its mark in its own colour; one boot did not find is disabled and named off PATH, as the + names it.
+/** agente (#257, #290): each offered agent (#482: not the disabled ones) with its mark in its own colour; one boot did not find is disabled and named off PATH, as the + names it.
  * With defaultLabel, null reads as that row (the reviewer menu, #329). */
 export function AgentField({ id, label, value, agents, defaultLabel, onChange, onDefault, onOpenChange }: AgentFieldProps) {
   const pick = (v: string): void => {
@@ -188,15 +200,17 @@ export function AgentField({ id, label, value, agents, defaultLabel, onChange, o
     const picked = knownAgent(v);
     if (picked !== undefined) onChange(picked);
   };
+  const isOffered = (agent: AgentId): boolean => agents.some((a) => a.agent === agent);
+  const listed = AGENT_IDS.filter((agent) => isOffered(agent) || agent === value); // #482: a disabled agent is not offered; a value saved before stays readable
   return (
     <Select value={value ?? DEFAULT_ITEM} onValueChange={pick} onOpenChange={onOpenChange}>
       <SelectTrigger id={id} aria-label={label} className="w-full"><SelectValue /></SelectTrigger>
       <SelectContent>
         {defaultLabel !== undefined && <SelectItem value={DEFAULT_ITEM}>{defaultLabel}</SelectItem>}
-        {AGENT_IDS.map((agent) => (
+        {listed.map((agent) => (
           <SelectItem key={agent} value={agent} disabled={!isAvailable(agent, agents)}>
             <AgentIcon agent={agent} className={`size-4 ${AGENT_COLOR[agent] ?? ''}`} />
-            {isAvailable(agent, agents) ? agentName(agent) : `${agentName(agent)} · ${t('settings.agent.offPath')}`}
+            {isAvailable(agent, agents) || !isOffered(agent) ? agentName(agent) : `${agentName(agent)} · ${t('settings.agent.offPath')}`}
           </SelectItem>
         ))}
       </SelectContent>

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { setLanguage } from '@/i18n';
+import { AgentModelsContext } from '@/lib/agent-settings';
 import { ALL_AGENTS } from '../../src/agents';
 import type { AgentAvailability, AgentId, LaunchOptions } from '../../src/types';
 import { bareTask, liveOf, taskPairOf, type WithWork } from '../fixtures/work';
@@ -103,4 +104,28 @@ test('a failed /launch-options leaves the fields usable with the defaults (#257)
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   await user.keyboard('{Enter}');
   expect(onOpen).toHaveBeenCalledWith('claude', {});
+});
+
+test('with a default model the model field reads padrão · <model>, the runs line passes it, and an untouched dialog still opens with no picks (#482)', async () => {
+  const user = userEvent.setup();
+  render(
+    <AgentModelsContext.Provider value={{ claude: 'opus', codex: null }}>
+      <NewSessionDialog target={target} defaultAgent="claude" agents={ALL_AGENTS} onOpen={onOpen} onClose={onClose} />
+    </AgentModelsContext.Provider>,
+  );
+  expect(await screen.findByText('claude --permission-mode auto --model opus')).toBeInTheDocument();
+  const model = screen.getByRole('combobox', { name: 'modelo' });
+  expect(model).toHaveTextContent('padrão · opus');
+  await user.click(model);
+  expect(within(listbox()).getByText('o modelo padrão de execução › agentes')).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await user.keyboard('{Enter}');
+  expect(onOpen).toHaveBeenCalledWith('claude', {}); // the server resolves the default: one meaning of default
+});
+
+test('an agent the config disables is not offered by the agent field (#482)', async () => {
+  const user = userEvent.setup();
+  shown('claude', [{ agent: 'claude', available: true }]); // what App's offeredAgents leaves with codex disabled
+  await user.click(screen.getByRole('combobox', { name: 'agente' }));
+  expect(screen.queryByRole('option', { name: /codex/ })).not.toBeInTheDocument();
 });

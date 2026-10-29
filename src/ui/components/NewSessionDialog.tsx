@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useContext, useState } from 'react';
 import { isAvailable } from '../../agents';
 import { taskLabel } from '../../tasks';
 import type { AgentAvailability, AgentId, LaunchOptions, LaunchPick } from '../../types';
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useLaunchOptions } from '@/hooks/use-launch-options';
 import { t } from '@/i18n';
+import { AgentModelsContext } from '@/lib/agent-settings';
 import type { RunTarget } from '@/lib/activities';
 import { launchOf, runsLine, type SessionPicks } from '@/lib/new-session';
 
@@ -77,6 +78,7 @@ export function NewSessionDialog({ target, defaultAgent, agents, onOpen, onClose
   const options = useLaunchOptions(target.kind === 'local' ? target.workspace : target.activity.workspace); // #316: the agents its workspace gets
   const [picks, setPicks] = useState<SessionPicks>({ agent: defaultAgent, model: '', specializedAgent: '', args: '' });
   const [menu, setMenu] = useState<Menu>();
+  const models = useContext(AgentModelsContext);
   const canOpen = isAvailable(picks.agent, agents);
   const open = (): void => {
     if (!canOpen) return;
@@ -98,7 +100,7 @@ export function NewSessionDialog({ target, defaultAgent, agents, onOpen, onClose
           <DialogDescription className="text-[13px]">{subtitleOf(target)}</DialogDescription>
         </DialogHeader>
         <Fields picks={picks} options={options} agents={agents} menu={menu} onMenu={setMenu} onPicks={(change) => setPicks((p) => ({ ...p, ...change }))} />
-        <Summary runs={runsLine(picks, options?.[picks.agent].args ?? [])} place={placeOf(target)} />
+        <Summary runs={runsLine({ ...picks, model: picks.model || (models[picks.agent] ?? '') }, options?.[picks.agent].args ?? [])} place={placeOf(target)} />
         <DialogFooter>
           <Button type="button" variant="outline" data-closer onClick={onClose}>{t('newSession.cancel')}</Button>
           <Button type="button" disabled={!canOpen} onClick={open}>{t('newSession.open')} ↵</Button>

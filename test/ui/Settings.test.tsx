@@ -24,7 +24,7 @@ const info: SettingsInfo = {
   config: {
     auth: { github: 'cli' },
     comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }], transitions: [], stages: [{ name: 'fila', from: { board: ['Ready'] } }], commands: [] },
-    logLevel: 'info', agentArgs: { claude: [], codex: [] }, budget: {}, usageRules: [],
+    logLevel: 'info', agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
   },
 };
@@ -748,19 +748,39 @@ test('a save that deletes a stage holding tasks asks first, naming how many go w
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings', expect.objectContaining({ method: 'POST' })));
 });
 
-test('execução shows the saved Claude arguments one per line, and the save sends agentArgs with one argument per non-blank line, as typed (#924)', async () => {
+test('execução shows the saved Claude arguments on one line, and the save sends agentArgs split on whitespace (#924, #482)', async () => {
   const user = userEvent.setup();
   render(<Settings info={{ ...info, config: { ...info.config!, agentArgs: { claude: ['--permission-mode', 'auto'], codex: [] } } }} onSaved={vi.fn()} />);
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));
 
   await open(user, 'execution');
   const field = screen.getByLabelText(t('settings.agentArgs', { agent: 'claude' }));
-  expect(field).toHaveValue('--permission-mode\nauto');
+  expect(field).toHaveValue('--permission-mode auto');
   await user.clear(field);
-  await user.type(field, '--model{Enter}{Enter}opus 4{Enter}  ');
+  await user.type(field, '--model  opus 4 ');
   await user.click(screen.getByRole('button', { name: t('settings.save') }));
 
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/settings', expect.objectContaining({ method: 'POST' })));
   const body = JSON.parse(String((fetchMock.mock.calls.at(-1)![1] as RequestInit).body)) as { agentArgs: Record<string, string[]> };
-  expect(body.agentArgs).toEqual({ claude: ['--model', 'opus 4'], codex: [] });
+  expect(body.agentArgs).toEqual({ claude: ['--model', 'opus', '4'], codex: [] });
+});
+
+test('fluxo\'s stage model field shows the agent\'s default from the draft (#482)', async () => {
+  const user = userEvent.setup();
+  const config = { ...info.config!, agentModels: { claude: 'opus', codex: null }, comb: { ...info.config!.comb, stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x' }] } };
+  render(<Settings info={{ ...info, config }} onSaved={vi.fn()} />);
+  await open(user, 'flow');
+  expect(screen.getByRole('combobox', { name: t('newSession.model') })).toHaveTextContent('padrão · opus');
+});
+
+test('a model typed in the execução agentes card redraws fluxo\'s padrão before the save (#482)', async () => {
+  const user = userEvent.setup();
+  const config = { ...info.config!, comb: { ...info.config!.comb, stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x' }] } };
+  render(<Settings info={{ ...info, config }} onSaved={vi.fn()} />);
+  await open(user, 'execution');
+  await user.click(screen.getByRole('combobox', { name: t('settings.agents.model.of', { agent: 'claude' }) }));
+  await user.type(screen.getByRole('combobox', { name: t('newSession.model.search') }), 'opus');
+  await user.click(await screen.findByRole('option', { name: new RegExp(t('newSession.model.typed', { model: 'opus' })) }));
+  await user.click(within(screen.getByRole('region', { name: t('settings.agents') })).getByRole('button', { name: t('settings.section.flow') }));
+  expect(screen.getByRole('combobox', { name: t('newSession.model') })).toHaveTextContent('padrão · opus');
 });

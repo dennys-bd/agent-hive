@@ -321,3 +321,8 @@ test('openNew spreads the dialog\'s picks into the open\'s body, on a task and i
   openNew({ kind: 'local', workspace: 'hive', activity: localPairOf('hive').activity }, 'codex', openRun, undefined, undefined, { model: 'gpt-5.6-terra' });
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/activities/local%3Ahive/sessions', expect.objectContaining({ body: JSON.stringify({ kind: 'codex', model: 'gpt-5.6-terra' }) })));
 });
+
+test('newRunEntries lists no session of an agent the offered list lacks (#482)', () => {
+  const kinds = newRunEntries({ kind: 'task', task: bareTask(task()), activity: liveIn(task()) }, 'claude', [{ agent: 'claude', available: true }]).map((e) => e.kind);
+  expect(kinds).not.toContain('codex');
+});
