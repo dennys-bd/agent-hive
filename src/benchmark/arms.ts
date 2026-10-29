@@ -1,6 +1,18 @@
 // The arm routes' rules (#459), pure: which letter a new arm takes, what it copies, and the 404 / 409 an arm route answers. A 27th arm is
 // not a real case, so the letters stop at Z.
-import type { Arm, ArmOverrides, ArmSetup, BenchStagePick, BenchStageRole, Experiment } from '../types.js';
+import { commandFirst } from '../stage-agent.js';
+import type { Arm, ArmOverrides, ArmSetup, BenchStage, BenchStagePick, BenchStageRole, Experiment, StageOverride as BenchStageOverride } from '../types.js';
+
+/** The fields a stage override may hold (#536), mergeArm's, the dialog's diff's and flowIssues' one list. */
+export const STAGE_OVERRIDE_FIELDS = ['agent', 'model', 'prompt', 'skill', 'commands', 'judge', 'threshold'] as const satisfies readonly (keyof BenchStageOverride)[];
+
+/** The call a stage makes (#536, generalised from #459's per role): a skill stage's /hive:<skill>; a prompt stage's opening slash command
+ *  (commandFirst), else the first /hive:<name> or /hive-<name> its prompt holds. Undefined for a stage that runs no agent. */
+export function stageCall(stage: Pick<BenchStage, 'action' | 'prompt' | 'skill'>): string | undefined {
+  if (stage.action === 'skill') return stage.skill === undefined ? undefined : `/hive:${stage.skill}`;
+  if (stage.action !== undefined) return undefined;
+  return commandFirst(stage.prompt ?? '')?.command.split(/\s/)[0] ?? stage.prompt?.match(/\/hive(?::|-)[\w-]+/)?.[0];
+}
 
 export const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const HTTP_NOT_FOUND = 404;
@@ -40,6 +52,7 @@ export function checkTargets(experiment: Experiment, to: readonly string[]): Arm
   return missing === undefined ? undefined : unknownArm(missing);
 }
 
+// ponytail: the per-role shape of #462; Task 12 replaces it with types.ts StageOverride
 type StageOverride = NonNullable<NonNullable<ArmOverrides['stages']>[BenchStageRole]>;
 
 /** An arm's setup (#462): each stage field the arm sets over the base's same field, every other key whole. An arm that changes build's agent
