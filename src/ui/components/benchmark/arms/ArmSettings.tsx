@@ -6,7 +6,8 @@ import type { Arm, ArmSetup, Experiment, LaunchOptions } from '../../../../types
 import { editArm, patchBase } from '@/components/benchmark/arms/arm-api';
 import { armRows, cleanSetup, countText, diffOverrides, readRow, type RowKey, rowLabel, type RowValues, writeRow } from '@/components/benchmark/arms/arm-rows';
 import { ItemsField } from '@/components/benchmark/arms/ItemsField';
-import { ListField, RulesField, WorktreeField } from '@/components/benchmark/arms/ListFields';
+import { ChipList } from '@/components/benchmark/arms/ChipList';
+import { RulesField, WorktreeField } from '@/components/benchmark/arms/ListFields';
 import { FixedRows } from '@/components/benchmark/arms/FixedRows';
 import { GroupHeading, RowGroup } from '@/components/benchmark/arms/RowGroup';
 import { StageFields } from '@/components/benchmark/arms/StageFields';
@@ -72,12 +73,12 @@ function SettingsBody({ draft, options, experiment, isLocked, isOnlyOverrides, o
       {!draft.isArm && <FixedRows experiment={experiment} onShowConfig={onShowConfig} />}
       <StageFields draft={draft} options={options} group={group} />
       {heading(t('benchmark.arms.settings.group.items'))}
-      {group('plugins', <ListField id="arm-plugins" label={t('benchmark.arms.settings.listHint')} value={setup.plugins} onChange={(v) => draft.edit('plugins', v)} />)}
+      {group('plugins', <ChipList id="arm-plugins" addLabel={t('benchmark.arms.settings.addPlugin')} placeholder={t('benchmark.arms.settings.pluginPlaceholder')} value={setup.plugins} isReadOnly={isLocked} onChange={(v) => draft.edit('plugins', v)} />)}
       {group('items', <ItemsField experimentId={experiment.id} value={setup.items} onChange={(v) => draft.edit('items', v)} />)}
       {heading(t('benchmark.arms.settings.group.tasks'), t('benchmark.arms.settings.group.tasksHint'))}
       {group('tasks', <TasksField value={setup.tasks} onChange={(v) => draft.edit('tasks', v)} />)}
       {heading(t('benchmark.arms.settings.group.rules'))}
-      {group('rules', <RulesField value={setup.rules} onChange={(v) => draft.edit('rules', v)} />)}
+      {group('rules', <RulesField value={setup.rules} isReadOnly={isLocked} onChange={(v) => draft.edit('rules', v)} />)}
       {group('worktree', <WorktreeField value={setup.worktree} onChange={(v) => draft.edit('worktree', v)} />)}
     </div>
   );

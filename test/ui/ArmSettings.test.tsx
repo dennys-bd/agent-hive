@@ -200,3 +200,14 @@ test('a base edited elsewhere while open does not turn the fields the arm left a
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { stages: { build: { agent: 'codex', model: null } } } } }]);
 });
+
+test('a plugin added as a chip is a plugins override (#536)', async () => {
+  const user = userEvent.setup();
+  const calls = stubBenchmarkFetch();
+  const onClose = open(ARMS, 'a2');
+  await user.type(screen.getByRole('textbox', { name: 'adicionar plugin' }), 'plugins/ecc{Enter}');
+  expect(screen.getByRole('button', { name: 'tirar plugins/ecc' })).toBeInTheDocument();
+  await save(user);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { plugins: ['plugins/ecc'] } } }]);
+});
