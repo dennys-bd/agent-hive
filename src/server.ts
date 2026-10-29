@@ -309,7 +309,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const benchQueue = serial(); // #478: the experiment routes and benchmark_draft write <home>/benchmark/ one at a time
   const benchVersion = async (): Promise<string> => (await pluginVersion(shippedPlugin)) ?? '';
   const benchEvaluator = createBenchEvaluator({
-    latest: () => live?.state, dispatch, folderOf: (id) => experimentFolder(home, id), log, now: Date.now,
+    latest: () => live?.state, dispatch, folderOf: (id) => experimentFolder(home, id), log, now: Date.now, config: () => live?.runtime.config,
     runDeps: benchRunDeps({ exec: execRun, ...(deps.headless === undefined ? {} : { headless: deps.headless }) }),
   });
   // #472: the benchmark's loops, one per running experiment; a Quit aborts them before the evaluations they would start

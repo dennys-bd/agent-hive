@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { chmod, cp, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { disabledRefusal } from '../agents.js';
 import { experimentDir, runHome } from '../benchmark-guards.js';
 import { CONFIG_FILE, workspaceByName } from '../config.js';
 import { type ItemKey, listFiles, childFolders, parseItemId, versionDir } from '../item-sources.js';
@@ -216,6 +217,9 @@ export async function prepareRun(experiment: Experiment, arm: Arm, round: number
   const nested = nestedPaths(workspace);
   const dir = experimentDir(deps.hiveDir, experiment.id);
   const setup = mergeArm(experiment.base, arm.overrides);
+  // #482: a stage on an agent the Hive disables would be refused in the run; refused here, before any branch, as a blindness leak is
+  const disabled = Object.values(setup.stages).map((pick) => disabledRefusal(pick.agent, deps.config.agentEnabled)).find((r) => r !== undefined);
+  if (disabled !== undefined) throw new Error(disabled);
   const versions = await armVersions(pinHome(dir), setup.items);
   // still checked here, the last guard: the route's check ran before a round that may start hours later (#472)
   const leak = experiment.blindness.on ? await leakOf(experiment, arm, setup, versions, join(dir, 'seed')) : undefined;
