@@ -72,3 +72,8 @@ test('the running chip reads rodada 1/N once the first round started, and says i
   rerender(<Head experiment={{ ...RUNNING, status: 'sleeping', stopAfterRound: true }} />);
   expect(screen.getByText('dormindo · rodada 2/3')).toBeInTheDocument();
 });
+
+test("the header's controls opt out of the window header's drag region, so their clicks reach them (#535)", () => {
+  const { container } = render(<Head experiment={RUNNING} />);
+  expect(container.firstElementChild).toHaveClass('[&_:is(button,input)]:[-webkit-app-region:no-drag]');
+});
