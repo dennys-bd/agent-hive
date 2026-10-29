@@ -11,7 +11,7 @@ import { readyWorktree } from './server-stage-commands.js';
 import { renderPrompt } from './spawn.js';
 import { rubricLines } from './stage-agent.js';
 import { failingScores } from './stage-evaluate.js';
-import type { Activity, AgentAvailability, AgentId, Effect, EvaluateRow, Exec, HiveEvent, JudgeScore, ReviewFinding, Stage, StageEvaluate, Task, Workspace } from './types.js';
+import type { Activity, AgentAvailability, AgentId, Config, Effect, EvaluateRow, Exec, HiveEvent, JudgeScore, ReviewFinding, Stage, StageEvaluate, Task, Workspace } from './types.js';
 
 // How an evaluate stage runs (#877): every reviewer headless at once in the task's worktree, read-only, then the judge with their findings; each
 // answer under its schema, checked with zod. One AbortController per evaluation: the Stop's abortEvaluate, a Quit's abortAll. A reviewer that
@@ -46,7 +46,7 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 
 // One row's launch (#877, decision 7): its agent on PATH, then its picks as a stage run's are checked, its specialized agent looked up in the
 // workspace's plugin folder, which is read only when some row names one, and once for all the rows
-async function resolveRows(deps: EvaluateDeps, stage: Stage, workspace: string): Promise<{ reviewers: Row[]; judge: Row } | Broken> {
+async function resolveRows(deps: EvaluateDeps, stage: Stage, workspace: string, config: Pick<Config, 'agentModels' | 'agentEnabled'>): Promise<{ reviewers: Row[]; judge: Row } | Broken> {
   const { reviewers = [], judge } = stage;
   if (judge === undefined) return { broken: 'the stage has no judge' }; // the config refuses it; a hand-edited state's stage might not
   const named: [string, EvaluateRow][] = [...reviewers.map((row, i): [string, EvaluateRow] => [`reviewer ${i + 1} (${row.agent})`, row]), [`judge (${judge.agent})`, judge]];
@@ -55,7 +55,7 @@ async function resolveRows(deps: EvaluateDeps, stage: Stage, workspace: string):
   let roles: SpecializedAgent[] | undefined;
   const rows: Row[] = [];
   for (const [who, row] of named) {
-    const refusal = agentRefusal(row.agent, deps.agents);
+    const refusal = agentRefusal(row.agent, deps.agents, config.agentEnabled);
     if (refusal !== undefined) return { broken: `${who}: ${refusal}` };
     const pick = { ...(row.model === undefined ? {} : { model: row.model }), ...(row.specializedAgent === undefined ? {} : { specializedAgent: row.specializedAgent }) };
     const picked = launchRun(pick, [], () => (roles ??= specializedAgents(dir)));
@@ -131,7 +131,7 @@ export function createEvaluateRunner(deps: EvaluateDeps): EvaluateRunner {
     const broken = (message: string): HiveEvent => ({ type: 'evaluateBroken', activityId: activity.id, runId, message });
     const workspace = taskWorkspace(runtime.config, task);
     if (!workspace) return broken(noWorkspaceReason(task));
-    const rows = await resolveRows(deps, effect.stage, workspace.name);
+    const rows = await resolveRows(deps, effect.stage, workspace.name, runtime.config);
     if ('broken' in rows) return broken(rows.broken);
     let cwd: string | undefined;
     try {

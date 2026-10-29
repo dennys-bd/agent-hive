@@ -40,6 +40,8 @@ async function reviewFixture(t: TestContext): Promise<Fixture> {
 }
 
 interface Served { base: string; lines: string[]; calls: HeadlessInput[]; use(reviewer: Partial<ReviewerConfig>): void }
+const AGENT_CONFIG = { agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true } };
+
 async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH): Promise<Served> {
   const app = express();
   app.use(express.json());
@@ -47,7 +49,7 @@ async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH): Pr
   const calls: HeadlessInput[] = [];
   let reviewer = REVIEWER_DEFAULTS;
   registerTemplateReviewRoutes(app, {
-    requireLive: () => ({ runtime: { config: { defaultAgent: 'claude', reviewer, comb: { workspaces: f.workspaces } } } }),
+    requireLive: () => ({ runtime: { config: { defaultAgent: 'claude', ...AGENT_CONFIG, reviewer, comb: { workspaces: f.workspaces } } } }),
     home: f.home, pluginSource: f.pluginSource, agents, log,
     runHeadless: (input) => { calls.push(input); return run(input); },
   });

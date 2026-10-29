@@ -28,13 +28,15 @@ async function until(check: () => boolean): Promise<void> {
   while (!check()) await sleep(10);
 }
 
+const AGENT_CONFIG = { agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true } };
+
 async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH): Promise<{ base: string; lines: string[]; calls: HeadlessInput[] }> {
   const app = express();
   app.use(express.json());
   const { log, lines } = fakeLog();
   const calls: HeadlessInput[] = [];
   registerAssistRoutes(app, {
-    requireLive: () => ({ runtime: { config: { defaultAgent: 'claude', comb: { workspaces: f.workspaces } } } }),
+    requireLive: () => ({ runtime: { config: { defaultAgent: 'claude', ...AGENT_CONFIG, comb: { workspaces: f.workspaces } } } }),
     home: f.home, pluginSource: f.pluginSource, agents, log,
     runHeadless: (input) => { calls.push(input); return run(input); },
   });

@@ -13,7 +13,7 @@ import { parseAnnotations, REVIEW_SCHEMA, REVIEWER_ID, REVIEWER_NAME, reviewProm
 import { type AssistRouteDeps, cancelOnClose, openFile, variablesOf } from './server-assist.js';
 import { bodyOf, ITEMS_ERROR_MESSAGE } from './server-plugins.js';
 import { deliveredHeader, parseTemplate, renderTemplate } from './template.js';
-import type { AgentId, ReviewerConfig } from './types.js';
+import type { AgentId, Config } from './types.js';
 
 const HTTP_CONFLICT = 409;
 const HTTP_SERVER_ERROR = 500;
@@ -32,7 +32,7 @@ const MESSAGES: Record<Exclude<ReviewCode, 'agent_unavailable'>, string> = {
 
 const REVIEW_BODY = z.object({ version: z.string().nullable(), path: z.string(), text: z.string() });
 type ReviewBody = z.infer<typeof REVIEW_BODY>;
-type ReviewConfig = { defaultAgent: AgentId; reviewer: ReviewerConfig; comb: { workspaces: ItemSources['workspaces'] } };
+type ReviewConfig = Pick<Config, 'defaultAgent' | 'agentModels' | 'agentEnabled' | 'reviewer'> & { comb: { workspaces: ItemSources['workspaces'] } };
 
 export interface TemplateReviewRouteDeps extends Omit<AssistRouteDeps, 'requireLive'> {
   requireLive(res: Response): { runtime: { config: ReviewConfig } } | undefined;
@@ -67,7 +67,7 @@ async function prepare(res: Response, deps: TemplateReviewRouteDeps, sources: It
   if (!read) return undefined;
   const { reviewer } = config;
   const agent = reviewer.agent ?? config.defaultAgent;
-  const refused = agentRefusal(agent, deps.agents);
+  const refused = agentRefusal(agent, deps.agents, config.agentEnabled);
   if (refused !== undefined) return void fail(res, HTTP_CONFLICT, refused, 'agent_unavailable');
   const instructions = await reviewerInstructions(sources, reviewer.version);
   if ('reason' in instructions) {

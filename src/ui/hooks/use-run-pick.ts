@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { runModel } from '../../agents';
+import { stageModelFor } from '../../agents';
 import { previousSession, stageOf, worktreeSessions } from '../../tasks';
 import type { AgentId, LaunchPick, Session, State, Task } from '../../types';
 import { launchOf, type SessionPicks } from '@/lib/new-session';
@@ -76,7 +76,7 @@ export function useRunPick(state: State, task: Task | undefined, defaultAgent: A
   const itemId = task?.item.itemId;
   const picks = edited !== undefined && edited.itemId === itemId ? edited.picks : initial;
   const stage = task === undefined ? undefined : stageOf(state.stages, task.stage);
-  const stageModel = stage === undefined ? undefined : runModel(undefined, stage, picks.agent, defaultAgent);
+  const stageModel = stage === undefined ? undefined : stageModelFor(stage, picks.agent, defaultAgent);
   const set = (change: Partial<RunPicks>): void => {
     if (itemId !== undefined) setEdited({ itemId, picks: nextPicks(picks, change, task, state) });
   };

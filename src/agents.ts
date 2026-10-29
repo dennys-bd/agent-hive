@@ -74,10 +74,27 @@ export const stageAgentIn = (state: Pick<State, 'defaultAgent'>, stage: Pick<Sta
   agentOf(stage, { defaultAgent: liveDefaultAgent(state) });
 
 /** The model a stage run passes (#290), resolved here only: the one picked by hand in the Start dialog; else the stage's own, when the run is
- * the stage's agent (a stage's model is a name of that agent, #516, #927); else none: the agent's own default, no model flag. The Hive's
- * per-agent default goes between the last two. "padrão do {agente}" in the dialog means this chain. */
-export const runModel = (picked: string | undefined, stage: Pick<Stage, 'model' | 'agent'>, agent: AgentId, defaultAgent: AgentId): string | undefined =>
-  picked ?? (agent === agentOf(stage, { defaultAgent }) ? stage.model : undefined);
+ * the stage's agent (a stage's model is a name of that agent, #516, #927); else the agent's default model (Config.agentModels, #482); else
+ * none: the CLI's own default, no model flag. "padrão do {agente}" in the dialog means this chain. */
+export const runModel = (picked: string | undefined, stage: Pick<Stage, 'model' | 'agent'>, agent: AgentId, config: Pick<Config, 'defaultAgent' | 'agentModels'>): string | undefined =>
+  picked ?? stageModelFor(stage, agent, config.defaultAgent) ?? defaultModel(config, agent);
+
+/** The stage's own model, when the run is the stage's agent (#290, #516, #927): a stage's model is a name of that agent. */
+export const stageModelFor = (stage: Pick<Stage, 'model' | 'agent'>, agent: AgentId, defaultAgent: AgentId): string | undefined =>
+  (agent === agentOf(stage, { defaultAgent }) ? stage.model : undefined);
+
+/** The Hive's default model for `agent` (#482): what every run that names none passes; undefined = the CLI's own, no model flag. The one read. */
+export const defaultModel = (config: Pick<Config, 'agentModels'>, agent: AgentId): string | undefined => config.agentModels[agent] ?? undefined;
+
+/** A headless run's input with its agent's default model when it names none (#482): the template reviewer, assist, the benchmark's evaluation. */
+export function withDefaultModel<T extends { agent: AgentId; model?: string }>(input: T, config: Pick<Config, 'agentModels'>): T {
+  const model = input.model ?? defaultModel(config, input.agent);
+  return model === undefined ? input : { ...input, model };
+}
+
+/** Why a run of a disabled agent cannot start (#482), or undefined. */
+export const disabledRefusal = (agent: AgentId, enabled: Record<AgentId, boolean>): string | undefined =>
+  (enabled[agent] ? undefined : `agent ${agent} is disabled: enable it in Settings › execution › agents`);
 
 /** An agent as the UI and a review mention name it (#536, #925): its own label, lowercase as every label is. The one agent-to-label map. */
 export const agentName = (agent: AgentId): string => AGENTS[agent].label.toLowerCase();
@@ -85,7 +102,8 @@ export const agentName = (agent: AgentId): string => AGENTS[agent].label.toLower
 /** Whether boot found `agent` on PATH (#516); one it never checked is not. The menus that open a session disable the others (#931). */
 export const isAvailable = (agent: AgentId, agents: readonly AgentAvailability[]): boolean => agents.some((a) => a.agent === agent && a.available);
 
-/** Why a run of `agent` cannot start, or undefined: an agent boot did not find (or never checked) is refused before any worktree. */
-export function agentRefusal(agent: AgentId, agents: readonly AgentAvailability[]): string | undefined {
-  return isAvailable(agent, agents) ? undefined : `agent ${agent} is not on PATH: install it, then restart the Hive`;
+/** Why a run of `agent` cannot start, or undefined: one boot did not find (or never checked), then one the config disables (#482); both refused
+ * before any worktree. */
+export function agentRefusal(agent: AgentId, agents: readonly AgentAvailability[], enabled: Record<AgentId, boolean>): string | undefined {
+  return isAvailable(agent, agents) ? disabledRefusal(agent, enabled) : `agent ${agent} is not on PATH: install it, then restart the Hive`;
 }
