@@ -5,7 +5,8 @@ import { isVersionName, safeFilePath } from '../custom-versions.js';
 import { parseItemId } from '../item-sources.js';
 import { COMMIT } from '../state-guards.js';
 import { SCORE_MAX, SKILL_NAME } from '../stage-agent.js';
-import { AGENT_IDS, type ArmOverrides, type ArmSetup, type BenchBlindness, type BenchEvaluation, type BenchIsolation, type BenchPace, type BenchSeed, ENV_NAME, type EvaluateRow, type StageOverride } from '../types.js';
+import { isFlow } from '../benchmark-guards.js';
+import { AGENT_IDS, type ArmOverrides, type ArmSetup, type BenchBlindness, type BenchFlow, type BenchEvaluation, type BenchIsolation, type BenchPace, type BenchSeed, ENV_NAME, type EvaluateRow, type StageOverride } from '../types.js';
 import { UPLOAD_NAME, UPLOAD_PREFIX } from './store.js';
 
 const NAME_MAX = 120;
@@ -14,19 +15,14 @@ export const NAME = z.string().trim().min(1).max(NAME_MAX);
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const positive = z.number().int().positive();
 
-const PICK = z.strictObject({ agent: z.enum(AGENT_IDS), model: z.string().min(1).optional(), skill: z.string().min(1), prompt: z.string() });
 const TASK = z.strictObject({ key: z.string().min(1), title: z.string(), body: z.string(), blockedBy: z.array(z.string()) });
 const SETUP_FIELDS = {
-  stages: z.strictObject({ spec: PICK, plan: PICK, build: PICK, pr: PICK }), plugins: z.array(z.string().min(1)),
+  plugins: z.array(z.string().min(1)),
   rules: z.strictObject({ allow: z.array(z.string()), deny: z.array(z.string()) }), tasks: z.array(TASK),
   items: z.record(z.string().refine((id) => parseItemId(id) !== undefined, 'an item id'), z.string().refine(isVersionName, 'a version name')), worktree: z.strictObject({ setup: z.string(), teardown: z.string() }),
 };
-export const ARM_SETUP: z.ZodType<ArmSetup> = z.strictObject(SETUP_FIELDS);
-// An arm's stage holds only the fields it sets (#462); model null is the agent's own default over a base model. Strict, so an unknown role
-// or field is still a 400
-const PARTIAL_PICK = PICK.extend({ model: z.string().min(1).nullable() }).partial();
-const PARTIAL_STAGES = z.strictObject({ spec: PARTIAL_PICK, plan: PARTIAL_PICK, build: PARTIAL_PICK, pr: PARTIAL_PICK }).partial();
-export const ARM_OVERRIDES: z.ZodType<ArmOverrides> = z.strictObject({ ...SETUP_FIELDS, stages: PARTIAL_STAGES }).partial();
+// The flow's shape is the guard's; what a patch may change of it is flowIssues', against the experiment's own copy
+export const ARM_SETUP: z.ZodType<ArmSetup> = z.strictObject({ flow: z.custom<BenchFlow>(isFlow, 'a copied flow'), ...SETUP_FIELDS });
 
 // A repo path (a file or a folder at the commit, no trailing slash) or upload:<name>
 const isSeedEntry = (entry: string): boolean => (entry.startsWith(UPLOAD_PREFIX) ? UPLOAD_NAME.test(entry.slice(UPLOAD_PREFIX.length)) : safeFilePath(entry) !== undefined);
@@ -56,6 +52,8 @@ export const STAGE_OVERRIDE: z.ZodType<StageOverride> = z.strictObject({
   commands: z.array(z.string().min(1)).min(1), judge: EVALUATE_ROW, threshold: z.number().min(0).max(SCORE_MAX),
 }).partial();
 export const STAGE_NAME = z.string().min(1).refine((name) => name !== '__proto__', 'a stage name');
+// An arm's stage holds only the fields it sets (#462), by stage name (#536); strict, so an unknown field, or a flow, is a 400
+export const ARM_OVERRIDES: z.ZodType<ArmOverrides> = z.strictObject({ ...SETUP_FIELDS, stages: z.record(STAGE_NAME, STAGE_OVERRIDE) }).partial();
 export const EVALUATION: z.ZodType<BenchEvaluation> = z.strictObject({ collectors: z.array(EVALUATE_ROW), dynamic: z.boolean(), tester: EVALUATE_ROW, scenarioWalks: z.number().int().min(1), judge: EVALUATE_ROW, rubric: z.string() });
 
 export const CREATE = z.discriminatedUnion('kind', [

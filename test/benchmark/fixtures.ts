@@ -12,12 +12,16 @@ import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
 import { parseConfig } from '../../src/config.js';
 import { combConfig } from '../fakes.js';
-import type { Command, Transition, Activity, Arm, ArmOverrides, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, Stage, State, Task, Worker } from '../../src/types.js';
+import type { Command, Transition, Activity, Arm, ArmOverrides, ArmSetup, BenchFlow, BenchIsolation, BenchRun, BenchStage, Config, Experiment, Stage, State, Task, Worker } from '../../src/types.js';
 
-const pick = (skill: string): BenchStagePick => ({ agent: 'claude', skill, prompt: `${skill} {title}\n\n{body}` });
+const promptStage = (name: string, call: string, extra: Partial<BenchStage> = {}): BenchStage => ({ name, prompt: `${call} {title}\n\n{body}`, agent: 'claude', ...extra });
+export const SETUP_FLOW: BenchFlow = {
+  copiedAt: '2026-10-21T09:00:00.000Z', commands: [], dropped: [],
+  stages: [promptStage('Spec', '/hive:new-spec'), promptStage('Plan', '/hive:new-plan', { session: 'continue' }), promptStage('Build', '/hive:new-build'), promptStage('PR', '/hive:new-pr')],
+  transitions: [{ from: 'Spec', to: 'Plan', when: 'done' }, { from: 'Plan', to: 'Build', when: 'done' }, { from: 'Build', to: 'PR', when: 'done' }, { from: 'PR', to: 'end', when: 'done' }],
+};
 export const SETUP: ArmSetup = {
-  stages: { spec: pick('/hive:new-spec'), plan: pick('/hive:new-plan'), build: pick('/hive:new-build'), pr: pick('/hive:new-pr') },
-  plugins: [], rules: { allow: [], deny: [] }, tasks: [{ key: 'T1', title: 'One', body: 'b', blockedBy: [] }],
+  flow: SETUP_FLOW, plugins: [], rules: { allow: [], deny: [] }, tasks: [{ key: 'T1', title: 'One', body: 'b', blockedBy: [] }],
   items: {}, worktree: { setup: 'RUN pnpm install', teardown: '' },
 };
 
@@ -134,14 +138,6 @@ export const watchTask = (n: number, blockedBy: number[] = [], key = `T${n}`, ti
   ({ itemId: `local:${n}`, key, title, blockedBy: blockedBy.map((b) => `local:${b}`) });
 
 export const SHA = 'c'.repeat(40);
-// spec by prompt (codex, a model), plan by a skill stage, build by a /hive-build prompt after a /hive-pr-review decoy; pr unmatched
-export const BENCH_STAGES_V1: Stage[] = [
-  { name: 'Spec', from: {}, prompt: '/hive:new-spec {id}', agent: 'codex', model: 'gpt-5' },
-  { name: 'Plan', from: {}, action: 'skill', skill: 'new-plan' },
-  { name: 'Check', from: {}, prompt: '/hive-pr-review {id}' },
-  { name: 'Build', from: {}, prompt: '/hive-build {title}' },
-  { name: 'Done', from: {} },
-];
 // The user's real flow shape (#536): source entry and start actions, an approval, a skill stage, commands, an evaluation, a delayed
 // delete activity, and a transition that moves the source's card
 export const BENCH_STAGES: Stage[] = [
@@ -173,7 +169,7 @@ export const CLAUDE_ARGS = ['--plugin-dir', '/plugins/extra', '--allowedTools', 
 /** A parsed config around one workspace `bench` at `repo`; its stages and agent args are replaced after the parse (the routes only read them). */
 export function benchConfig(repo: string): Config {
   const parsed = parseConfig(combConfig({ stages: [{ name: 'Todo', from: {} }], workspaces: [{ name: 'bench', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', setup: 'RUN pnpm install' }] }));
-  return { ...parsed, defaultAgent: 'claude', agentArgs: { ...parsed.agentArgs, claude: CLAUDE_ARGS }, comb: { ...parsed.comb, stages: BENCH_STAGES_V1 } };
+  return { ...parsed, defaultAgent: 'claude', agentArgs: { ...parsed.agentArgs, claude: CLAUDE_ARGS }, comb: { ...parsed.comb, stages: BENCH_STAGES, transitions: BENCH_TRANSITIONS, commands: BENCH_COMMANDS } };
 }
 
 export const benchExperiment = (patch: Partial<Experiment> = {}): Experiment =>

@@ -6,7 +6,7 @@ import { benchmarkReduce } from '../../src/benchmark-reducer.js';
 import { registerBenchmarkRoutes } from '../../src/server-benchmark.js';
 import type { DraftCtx, DraftDeps } from '../../src/benchmark/drafts.js';
 import type { Logger } from '../../src/log.js';
-import type { BenchmarkEvent, Config, Exec, Experiment, HiveEvent, OptionalTool, State } from '../../src/types.js';
+import type { BenchmarkEvent, Config, Exec, Experiment, HiveEvent, OptionalTool, Stage, State } from '../../src/types.js';
 import { put } from '../custom-fixture.js';
 import { fakeLog } from '../fakes.js';
 import { tempDir } from '../temp-dir.js';
@@ -23,7 +23,7 @@ export interface BenchDeps {
   events: BenchmarkEvent[]; deps: DraftDeps; state(): State; ctx(): DraftCtx; dir(id: string): string;
 }
 export interface Bench extends BenchDeps { base: string; sessionEvents: HiveEvent[] }
-interface BenchOpts { experiments?: Experiment[]; files?: Record<string, string>; mcpOff?: OptionalTool[] }
+interface BenchOpts { experiments?: Experiment[]; files?: Record<string, string>; mcpOff?: OptionalTool[]; stages?: Stage[] }
 
 // git as the routes call it, after `-C <repo>`: the base's symref and sha, and the files `files` holds at SHA; anything else fails as git does
 function fakeGit(files: Record<string, string>): (args: string[]) => string {
@@ -56,7 +56,7 @@ export async function benchDeps(t: TestContext, opts: BenchOpts = {}): Promise<B
   };
   const { log, lines } = fakeLog();
   const base = benchConfig(repo);
-  const config: Config = { ...base, mcp: { ...base.mcp, off: opts.mcpOff ?? [] } };
+  const config: Config = { ...base, mcp: { ...base.mcp, off: opts.mcpOff ?? [] }, comb: { ...base.comb, stages: opts.stages ?? base.comb.stages } };
   const deps: DraftDeps = {
     dispatch: async (event) => { events.push(event); state = benchmarkReduce(state, event); },
     home, pluginSource, exec, version: async () => '0.1.0', now: () => new Date(AT),

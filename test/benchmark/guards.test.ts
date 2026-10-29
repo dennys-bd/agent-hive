@@ -86,9 +86,19 @@ test('a token saved twice keeps its first run only, so two runs never share a ho
   assert.deepEqual(loaded.rounds.map((r) => r.runs.map((x) => x.token)), [['gggg1'], ['gggg2']]);
 });
 
-test('an experiment whose base lacks a stage prompt, the items map or the worktree setup does not load (#471)', () => {
-  const { prompt: _p, ...noPrompt } = SETUP.stages.spec;
-  const bases = [{ ...SETUP, stages: { ...SETUP.stages, spec: noPrompt } }, { ...SETUP, items: undefined }, { ...SETUP, worktree: { setup: 'x' } }];
+test('an experiment saved before #536, its base holding the four stages, loads as none (#536)', () => {
+  const { flow: _flow, ...rest } = SETUP;
+  const old = { ...rest, stages: { spec: { agent: 'claude', skill: '/s', prompt: 'p' }, plan: {}, build: {}, pr: {} } };
+  assert.deepEqual(ids(saved({ experiments: [experiment({ base: old as unknown as ArmSetup })] })), []);
+});
+
+test('an experiment whose base has a malformed flow, no items map or no worktree setup does not load (#471, #536)', () => {
+  const stage = SETUP.flow.stages[0];
+  const bases = [
+    { ...SETUP, flow: { ...SETUP.flow, stages: 'x' } }, { ...SETUP, flow: { ...SETUP.flow, stages: [] } }, { ...SETUP, flow: { ...SETUP.flow, stages: [{ ...stage, from: {} }] } },
+    { ...SETUP, flow: { ...SETUP.flow, transitions: [{ from: 'Spec', to: 'Plan' }] } }, { ...SETUP, flow: { ...SETUP.flow, commands: [{ name: 'test' }] } },
+    { ...SETUP, flow: { ...SETUP.flow, copiedAt: 1 } }, { ...SETUP, items: undefined }, { ...SETUP, worktree: { setup: 'x' } },
+  ];
   for (const base of bases) assert.deepEqual(ids(saved({ experiments: [experiment({ base: base as ArmSetup })] })), [], JSON.stringify(base));
   assert.deepEqual(ids(saved({ experiments: [experiment()] })), ['exp-1']);
 });
@@ -119,13 +129,16 @@ test('an experiment whose evaluation has no tester object or no integer scenario
   }
 });
 
-test('an arm whose stages hold only some roles and fields, or a null model, loads; an unknown role or a non-string field drops it (#462)', () => {
-  const partial = arm('a2', 'B', { stages: { build: { agent: 'codex', model: null } } });
-  const badRole = arm('a3', 'C', { stages: { review: { agent: 'codex' } } } as unknown as ArmOverrides);
-  const badField = arm('a4', 'D', { stages: { build: { model: 5 } } } as unknown as ArmOverrides);
-  const nullAgent = arm('a5', 'E', { stages: { build: { agent: null } } } as unknown as ArmOverrides);
-  const [loaded] = load(saved({ experiments: [experiment({ arms: [arm('a1', 'A'), partial, badRole, badField, nullAgent] })] })).experiments;
-  assert.deepEqual(loaded.arms.map((a) => [a.id, a.overrides]), [['a1', {}], ['a2', { stages: { build: { agent: 'codex', model: null } } }]]);
+test('an arm whose stages hold some stages by any name and some fields, or a null model, loads; a bad field or an override holding flow drops it (#462, #536)', () => {
+  const partial = arm('a2', 'B', { stages: { Build: { agent: 'codex', model: null }, Review: { judge: { agent: 'claude' }, threshold: 8 }, Checks: { commands: ['test'] } } });
+  const notObject = arm('a3', 'C', { stages: { Build: 'codex' } } as unknown as ArmOverrides);
+  const badAgent = arm('a4', 'D', { stages: { Build: { agent: 'gemini' } } } as unknown as ArmOverrides);
+  const badModel = arm('a5', 'E', { stages: { Build: { model: 5 } } } as unknown as ArmOverrides);
+  const unknownField = arm('a6', 'F', { stages: { Build: { from: {} } } } as unknown as ArmOverrides);
+  const withFlow = arm('a7', 'G', { flow: SETUP.flow } as unknown as ArmOverrides);
+  const nullAgent = arm('a8', 'H', { stages: { Build: { agent: null } } } as unknown as ArmOverrides);
+  const [loaded] = load(saved({ experiments: [experiment({ arms: [arm('a1', 'A'), partial, notObject, badAgent, badModel, unknownField, withFlow, nullAgent] })] })).experiments;
+  assert.deepEqual(loaded.arms.map((a) => a.id), ['a1', 'a2']);
 });
 
 test('a loaded experiment keeps an mcp createdBy and drops an arm whose id is no id (#478)', () => {

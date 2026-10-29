@@ -7,7 +7,7 @@ import { pluginTrees } from '../../src/benchmark/pin.js';
 import type { Experiment } from '../../src/types.js';
 import { put, snapshot } from '../custom-fixture.js';
 import { AT, call, errorOf, serve } from './bench-server.js';
-import { arm, benchExperiment, ISOLATION, run, SHA } from './fixtures.js';
+import { arm, BENCH_STAGES, benchExperiment, ISOLATION, run, SHA } from './fixtures.js';
 
 const exists = (path: string): Promise<boolean> => stat(path).then(() => true, () => false);
 const E = '/benchmark/experiments';
@@ -19,8 +19,9 @@ test("POST empty answers a draft with arm A, the workspace's base, the defaults,
   assert.equal(status, 201);
   assert.match(e.id, /^x[a-z0-9]{8}$/);
   assert.deepEqual([e.status, e.name, e.createdAt, e.arms.map((a) => [a.letter, a.name, a.overrides])], ['draft', 'Experiment 1', AT, [['A', 'Arm A', {}]]]);
-  assert.deepEqual(e.base.stages.spec, { agent: 'codex', model: 'gpt-5', skill: '/hive:new-spec', prompt: '/hive:new-spec {id}' });
-  assert.deepEqual([e.base.stages.pr.skill, e.base.items, e.base.worktree, e.base.plugins.length, e.base.rules.deny], ['/hive:new-pr', { 'hive:new-build': 'tdd' }, { setup: 'RUN pnpm install', teardown: '' }, 2, ['Bash(gh:*)']]);
+  assert.deepEqual(e.base.flow.stages.map((s) => s.name), ['Spec', 'Plan', 'Build', 'Checks', 'Review', 'Done']);
+  assert.deepEqual(e.base.flow.commands, [{ name: 'test', line: 'pnpm test' }, { name: 'lint', line: 'pnpm lint' }]);
+  assert.deepEqual([e.base.items, e.base.worktree, e.base.plugins.length, e.base.rules.deny], [{ 'hive:new-build': 'tdd' }, { setup: 'RUN pnpm install', teardown: '' }, 2, ['Bash(gh:*)']]);
   assert.deepEqual([e.pace.pairs, e.isolation.permissionMode.all, e.blindness.on, e.evaluation.dynamic], [3, 'dontAsk', true, true]);
   assert.deepEqual(e.evaluation.tester, { agent: 'claude', model: 'sonnet' });
   assert.equal(e.evaluation.scenarioWalks, 1);
@@ -34,6 +35,15 @@ test("POST empty answers a draft with arm A, the workspace's base, the defaults,
   assert.deepEqual([e.seedHash, e.tasksHash], [await seedHash(e.seed, dir), tasksHash([])]);
   assert.deepEqual(bench.state().benchmark.experiments, [e]);
   assert.equal(((await call(bench, 'POST', E, { kind: 'empty', workspace: 'bench' }))[1] as Experiment).name, 'Experiment 2');
+});
+
+test('POST empty from a flow with a wait for CI answers 422 with the stage that blocks it, and writes nothing (#536)', async (t) => {
+  const bench = await serve(t, { stages: [...BENCH_STAGES, { name: 'CI', from: {}, action: 'waitForCi', ciChecks: 'all', rerunOnce: false }] });
+  const answer = await call(bench, 'POST', E, { kind: 'empty', workspace: 'bench' });
+  assert.deepEqual(errorOf(answer), [422, 'flow_refused']);
+  assert.match((answer[1] as { message: string }).message, /CI waits for CI/);
+  assert.deepEqual(bench.state().benchmark.experiments, []);
+  assert.deepEqual(await readdir(join(bench.home, 'benchmark')).catch(() => []), []);
 });
 
 test('POST duplicate copies arms, tasks and every section, no rounds, keeps plugin.hash and seedHash, and copies the pin and seed/ only (#459)', async (t) => {
@@ -238,14 +248,14 @@ test("registerBenchmarkRoutes mounts the control routes: run on an unknown exper
   assert.deepEqual(errorOf(await call(bench, 'POST', `${E}/nope/run`, {})), [404, 'unknown_experiment']);
 });
 
-test('an arm PATCH accepts a partial stage with a null model and refuses an unknown role or agent (#462)', async (t) => {
+test('an arm PATCH accepts a partial stage by name with a null model and refuses an unknown field or agent (#462, #536)', async (t) => {
   const bench = await serve(t, { experiments: [benchExperiment()] });
-  const overrides = { stages: { build: { agent: 'codex', model: null } } };
+  const overrides = { stages: { Build: { agent: 'codex', model: null } } };
   assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides }))[0], 204);
   assert.deepEqual(bench.state().benchmark.experiments[0].arms[0].overrides, overrides);
-  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { review: { agent: 'codex' } } } }))[0], 400);
-  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { build: { agent: 'gemini' } } } }))[0], 400);
-  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { build: { model: '' } } } }))[0], 400);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { Build: { from: {} } } } }))[0], 400);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { Build: { agent: 'gemini' } } } }))[0], 400);
+  assert.equal((await call(bench, 'PATCH', `${E}/exp-1/arms/a1`, { overrides: { stages: { Build: { model: '' } } } }))[0], 400);
 });
 
 test("GET items lists the pin's items and versions, not the current store's; 404 for an unknown experiment (#462)", async (t) => {

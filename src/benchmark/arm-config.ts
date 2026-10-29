@@ -1,34 +1,44 @@
 import { join } from 'node:path';
+import { agentOf } from '../agents.js';
 import { workspaceByName } from '../config.js';
+import { resumedStage } from '../config-transitions.js';
 import { initialState } from '../orchestrator.js';
 import { shellQuote } from '../shell-init.js';
 import { HIVE_SOURCE } from '../tasks.js';
-import { MCP_DEFAULTS, type Arm, type ArmSetup, type BenchStageRole, type BenchTask, type CombConfig, type Config, type Experiment, type IsolationRow, type Stage, type State, type Task, type Workspace } from '../types.js';
+import { runsAgent } from '../stage-agent.js';
+import { type AgentId, type Arm, type ArmSetup, type BenchFlow, type BenchTask, type CombConfig, type Command, type Config, END, type Experiment, type IsolationRow, MCP_DEFAULTS, type Stage, type State, type Task, type Transition, type Workspace } from '../types.js';
 import { mergeArm } from './arms.js';
 import { runBranch, runPrefix } from './git.js';
 import { RUN_SANDBOX_FILE, SANDBOX_FILE } from './sandbox.js';
 import { DONE_STAGE, type WatchTask } from './watcher.js';
 import { type RunPaths, runClaudeArgs } from './worker-rules.js';
 
-export const RUN_STAGES: readonly { role: BenchStageRole; name: string }[] = [
-  { role: 'spec', name: 'Spec' }, { role: 'plan', name: 'Plan' }, { role: 'build', name: 'Build' }, { role: 'pr', name: 'PR' },
-];
 export { mergeArm }; // runner-run.ts, run-home.ts and pr.ts keep importing it from here
 
 // hasOwn: an arm id like `constructor` must not reach Object.prototype
 export const resolveRow = <T>(row: IsolationRow<T>, armId: string): T => (row.perArm !== undefined && Object.hasOwn(row.perArm, armId) ? row.perArm[armId] : row.all);
 
-export function runStages(picks: ArmSetup['stages']): Pick<CombConfig, 'stages' | 'transitions'> {
-  const stages: Stage[] = RUN_STAGES.map(({ role, name }, i) => {
-    const pick = picks[role];
-    // #925: a session resumes only under its own agent, so a stage whose agent changes starts a new one
-    const continues = i > 0 && picks[RUN_STAGES[i - 1].role].agent === pick.agent;
-    return { name, from: {}, prompt: pick.prompt, agent: pick.agent, ...(pick.model === undefined ? {} : { model: pick.model }), ...(continues ? { session: 'continue' as const } : {}) };
-  });
-  // Done holds a finished task: the watcher (3.3) counts what reaches it, and no prompt runs there
-  const names = [...stages.map((s) => s.name), DONE_STAGE];
-  return { stages: [...stages, { name: DONE_STAGE, from: {} }], transitions: names.slice(0, -1).map((from, i) => ({ from, to: names[i + 1], when: 'done' as const })) };
+// #925: a session resumes only under its own agent; an arm that changes one side of a resume starts a new session there instead
+function resumesAnother(transition: Transition, stages: readonly Stage[], defaultAgent: AgentId): boolean {
+  const to = stages.find((s) => s.name === transition.to);
+  const from = to === undefined ? undefined : stages.find((s) => s.name === resumedStage(transition, to));
+  if (to === undefined || from === undefined || !runsAgent(to) || !runsAgent(from)) return false;
+  return agentOf(from, { defaultAgent }) !== agentOf(to, { defaultAgent });
 }
+
+/** The copied flow as the run's comb (#536): its stages as they are, `end` retargeted to DONE_STAGE, where the watcher (3.3) counts what
+ *  reaches it and no prompt runs. */
+export function runStages(flow: BenchFlow, defaultAgent: AgentId): Pick<CombConfig, 'stages' | 'transitions'> {
+  const stages: Stage[] = [...flow.stages.map((s) => ({ ...s, from: {} })), { name: DONE_STAGE, from: {} }];
+  const transitions = flow.transitions.map((t): Transition => {
+    const retargeted = t.to === END ? { ...t, to: DONE_STAGE } : t;
+    return resumesAnother(retargeted, stages, defaultAgent) ? { ...retargeted, session: 'new' } : retargeted;
+  });
+  return { stages, transitions };
+}
+
+// The copied lines run in the run's one workspace, so each is every workspace's; stages only, never the task menu
+const runCommands = (flow: BenchFlow): Command[] => flow.commands.map((c) => ({ name: c.name, impls: [{ workspace: null, command: c.line }], menu: false, env: {} }));
 
 // COPY only reads inside the main checkout and sandbox.json lives in the run home, so the copy is a RUN line; the home goes through shellQuote
 export const sandboxSetupLine = (home: string): string => `RUN mkdir -p .claude && cp ${shellQuote(join(home, RUN_SANDBOX_FILE))} ${SANDBOX_FILE}`;
@@ -64,15 +74,15 @@ function claudeArgs(experiment: Experiment, arm: Arm, setup: ArmSetup, token: st
 export function runConfig(main: Config, experiment: Experiment, arm: Arm, token: string, paths: RunConfigPaths): Config {
   const setup = mergeArm(experiment.base, arm.overrides);
   const { comb: _comb, baseBranch: _base, branch: _template, agentArgs, ...rest } = main;
-  const comb = { prefix: runPrefix(token), workspaces: [runWorkspace(main, experiment, arm, setup, paths)], sources: [], ...runStages(setup.stages), commands: [], hiveSource: true, createIn: HIVE_SOURCE };
+  const comb = { prefix: runPrefix(token), workspaces: [runWorkspace(main, experiment, arm, setup, paths)], sources: [], ...runStages(setup.flow, main.defaultAgent), commands: runCommands(setup.flow), hiveSource: true, createIn: HIVE_SOURCE };
   // mcp: the user's own servers (and their tokens) are not the run's to hand to a worker
   return { ...rest, comb, mcp: MCP_DEFAULTS, baseBranch: runBranch(token), agentArgs: { ...agentArgs, claude: claudeArgs(experiment, arm, setup, token, paths.rules) } };
 }
 
-/** The arm's tasks as local tasks in the first stage; only the unblocked ones auto, since the watcher (3.3) releases the others. */
-export function runState(tasks: readonly BenchTask[], token: string, workspace: string, maxConcurrent: number): State {
+/** The arm's tasks as local tasks in the flow's first stage; only the unblocked ones auto, since the watcher (3.3) releases the others. */
+export function runState(tasks: readonly BenchTask[], token: string, workspace: string, maxConcurrent: number, firstStage: string): State {
   const prefix = runPrefix(token);
-  const local = tasks.map((task, i): Task => ({ item: { itemId: `local:${i + 1}`, id: `${prefix}-${i + 1}`, title: task.title, body: task.body, url: '' }, stage: RUN_STAGES[0].name, boardColumn: '', auto: task.blockedBy.length === 0, created: true, workspace }));
+  const local = tasks.map((task, i): Task => ({ item: { itemId: `local:${i + 1}`, id: `${prefix}-${i + 1}`, title: task.title, body: task.body, url: '' }, stage: firstStage, boardColumn: '', auto: task.blockedBy.length === 0, created: true, workspace }));
   return { ...initialState(maxConcurrent), tasks: local, localCount: tasks.length };
 }
 

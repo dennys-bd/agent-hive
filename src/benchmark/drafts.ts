@@ -14,6 +14,7 @@ import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, Se
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
+const HTTP_UNPROCESSABLE = 422;
 const BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz';
 const ID_CHARS = 8;
 export const BENCHMARK_IO_MESSAGE = 'the experiment folder could not be read or written; see hive.log';
@@ -102,7 +103,8 @@ async function emptyStart(ctx: DraftCtx, name: string, label: string | undefined
   if (workspace === undefined) return unknownWorkspace(name);
   const git = repoGit(deps, workspace);
   const seed = emptySeed(workspace.name, await seedCommit(config, workspace, git));
-  const base = baseSnapshot(config, workspace, await readCatalogue({ home: deps.home, pluginSource: deps.pluginSource, workspaces: config.comb.workspaces }));
+  const base = baseSnapshot(config, workspace, await readCatalogue({ home: deps.home, pluginSource: deps.pluginSource, workspaces: config.comb.workspaces }), deps.now());
+  if ('refused' in base) return { status: HTTP_UNPROCESSABLE, error: 'flow_refused', message: `the workspace's flow cannot be copied: ${base.refused}` };
   const experiment = emptyExperiment({
     id: newId(ids(ctx), draw), armId: newId([], draw), name: label ?? defaultName(experiments, workspace.name), createdAt: deps.now().toISOString(), seed, base,
     judge: config.defaultAgent, plugin: { version: await deps.version(), hash: '' }, seedHash: '', tasksHash: tasksHash(base.tasks),

@@ -2,7 +2,8 @@
 import { copyFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { deliveredName } from '../template.js';
-import type { ArmOverrides, BenchMetrics, BenchScenario, CollectorResult, Experiment, ScenarioResult } from '../types.js';
+import type { BenchMetrics, BenchScenario, CollectorResult, Experiment, ScenarioResult } from '../types.js';
+import { mergeArm, stageCall } from './arms.js';
 import type { Click } from './browser.js';
 
 export const REDACTED = '[redacted]';
@@ -23,11 +24,11 @@ const skillWords = (skill: string): string[] => {
 
 /** Every tell of one experiment (#474): what tells its arms apart. Never an arm letter: one character would scrub every `A` of a diff. */
 export function blindTells(experiment: Experiment, subagents: readonly string[]): RegExp[] {
-  const setups: ArmOverrides[] = [experiment.base, ...experiment.arms.map((a) => a.overrides)];
+  const setups = [experiment.base, ...experiment.arms.map((a) => mergeArm(experiment.base, a.overrides))];
   const words = [
     ...experiment.arms.map((a) => a.name),
-    ...setups.flatMap((s) => Object.values(s.stages ?? {}).flatMap((pick) => (pick?.skill === undefined ? [] : skillWords(pick.skill)))),
-    ...setups.flatMap((s) => s.plugins ?? []).map((path) => basename(path)),
+    ...setups.flatMap((s) => s.flow.stages.flatMap((stage) => skillWords(stageCall(stage) ?? ''))),
+    ...setups.flatMap((s) => s.plugins).map((path) => basename(path)),
     ...subagents, ...experiment.blindness.forbiddenWords,
   ].map((w) => w.trim()).filter((w) => w !== '');
   return [...new Set(words)].sort((a, b) => b.length - a.length).map(wordPattern);

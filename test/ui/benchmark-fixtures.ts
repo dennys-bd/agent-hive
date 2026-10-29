@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { AgentId, ArmSetup, BenchFlow, BenchMetrics, BenchRound, BenchRun, BenchStagePick, BenchTask, Experiment } from '../../src/types';
+import type { AgentId, ArmSetup, BenchFlow, BenchMetrics, BenchRound, BenchRun, BenchStage, BenchTask, Experiment } from '../../src/types';
 import { arm, experiment, run, SETUP } from '../benchmark/fixtures';
 import { json } from './plugins-fixtures';
 
@@ -45,16 +45,15 @@ export function stubBenchmarkFetch(status?: number, items: unknown[] = []): Call
   return calls;
 }
 
-const stagePick = (skill: string, model = 'sonnet'): BenchStagePick => ({ agent: 'claude', model, skill, prompt: `${skill} {id}` });
 const benchTask = (n: number, blockedBy: string[] = []): BenchTask => ({ key: `T${n}`, title: `Task ${n}`, body: '', blockedBy });
 /** benchmark.hv.html's #dlg-settings flow (#536): Spec → Plan → Build → Checks (failed back to Build 3x) → Avaliação (rejected back to Build 2x) → PR → end. */
 export const ARMS_FLOW: BenchFlow = {
   copiedAt: '2026-10-01T21:30:00',
   stages: [
-    { name: 'Spec', prompt: '/hive:new-spec escreva a spec da tarefa a partir da referência do seed', agent: 'claude', model: 'sonnet' },
-    { name: 'Plan', prompt: '/hive:new-plan transforme a spec num plano fatiado', agent: 'claude', model: 'sonnet' },
-    { name: 'Build', prompt: '/hive:new-build implemente o plano, teste primeiro', agent: 'claude', model: 'sonnet' },
-    { name: 'Checks', action: 'commands', commands: ['test', 'lint', 'tsc'], stopOnFailure: true, onMissing: 'fail' },
+    { name: 'Spec', prompt: '/hive:new-spec {id}', agent: 'claude', model: 'sonnet' },
+    { name: 'Plan', prompt: '/hive:new-plan {id}', agent: 'claude', model: 'sonnet' },
+    { name: 'Build', prompt: '/hive:new-build {id}', agent: 'claude', model: 'sonnet' },
+    { name: 'Checks', action: 'commands', commands: ['test', 'lint', 'types'], stopOnFailure: true, onMissing: 'fail' },
     {
       name: 'Avaliação', action: 'evaluate', reviewers: [{ agent: 'claude', specializedAgent: 'hive:code-reviewer' }, { agent: 'claude', specializedAgent: 'hive:tdd' }],
       judge: { agent: 'claude', model: 'fable' }, threshold: 7, rubric: 'correção',
@@ -67,44 +66,46 @@ export const ARMS_FLOW: BenchFlow = {
     { from: 'Avaliação', to: 'PR', when: 'verdict', verdict: 'passed' }, { from: 'Avaliação', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 2 },
     { from: 'PR', to: 'end', when: 'done' },
   ],
-  commands: [{ name: 'test', line: 'pnpm test' }, { name: 'lint', line: 'pnpm lint' }, { name: 'tsc', line: 'tsc --noEmit' }],
+  commands: [{ name: 'test', line: 'pnpm test' }, { name: 'lint', line: 'pnpm lint' }, { name: 'types', line: 'tsc --noEmit' }],
   dropped: [],
 };
 
 /** benchmark.hv.html's #s-visao: the base and arms A (skills and plugins), B (none), C (build), D (own tasks). */
 export const ARMS_BASE: ArmSetup = {
-  stages: { spec: stagePick('/hive:new-spec'), plan: stagePick('/hive:new-plan'), build: stagePick('/hive:new-build'), pr: stagePick('/hive:new-pr', 'haiku') },
-  plugins: [], rules: { allow: Array.from({ length: 14 }, (_, i) => `Tool${i}`), deny: ['gh', 'push *'] },
+  flow: ARMS_FLOW, plugins: [], rules: { allow: Array.from({ length: 14 }, (_, i) => `Tool${i}`), deny: ['gh', 'push *'] },
   tasks: [benchTask(1), benchTask(2, ['T1']), benchTask(3, ['T1']), benchTask(4, ['T2']), benchTask(5), benchTask(6), benchTask(7), benchTask(8)],
   items: {}, worktree: { setup: '', teardown: '' },
 };
 export const ARMS = experiment({
   id: 'exp-arms', name: 'skills: comandos × plugin', base: ARMS_BASE, tasksHash: '91d4'.padEnd(64, '0'),
   arms: [
-    { id: 'a1', letter: 'A', name: 'comandos do repo', overrides: { stages: { spec: { skill: '/hive-spec' }, plan: { skill: '/hive-plan' }, build: { skill: '/hive-build' } }, plugins: ['/plugins/superpowers', '/plugins/ecc'] } },
+    { id: 'a1', letter: 'A', name: 'comandos do repo', overrides: { stages: { Spec: { prompt: '/hive-spec {id}' }, Plan: { prompt: '/hive-plan {id}' }, Build: { prompt: '/hive-build {id}' } }, plugins: ['/plugins/superpowers', '/plugins/ecc'] } },
     { id: 'a2', letter: 'B', name: 'skills do plugin', overrides: {} },
-    { id: 'a3', letter: 'C', name: 'plugin + codex', overrides: { stages: { build: { agent: 'codex', model: 'gpt-5' } } } },
+    { id: 'a3', letter: 'C', name: 'plugin + codex', overrides: { stages: { Build: { agent: 'codex', model: 'gpt-5' } } } },
     { id: 'a4', letter: 'D', name: 'tarefas juntas', overrides: { tasks: [benchTask(1), benchTask(2), benchTask(3)] } },
   ],
 });
 export const ARMS_PATH = '/benchmark/experiments/exp-arms';
 
-const pickOf = (skill: string, agent: AgentId = 'claude', model?: string): BenchStagePick =>
-  ({ agent, ...(model === undefined ? {} : { model }), skill, prompt: `${skill} {title}\n\n{body}` });
+const promptOf = (call: string): string => `${call} {title}\n\n{body}`;
+const stageOf = (name: string, call: string, agent: AgentId = 'claude', model?: string): BenchStage =>
+  ({ name, prompt: promptOf(call), agent, ...(model === undefined ? {} : { model }) });
 const compareTask = (n: number, blockedBy: string[] = []): BenchTask => ({ key: `T${n}`, title: `task ${n}`, body: '', blockedBy });
-const BASE_STAGES = { spec: pickOf('/hive:new-spec'), plan: pickOf('/hive:new-plan'), build: pickOf('/hive:new-build', 'claude', 'sonnet'), pr: pickOf('/hive:new-pr') };
+const COMPARE_FLOW: BenchFlow = {
+  ...SETUP.flow, stages: [stageOf('Spec', '/hive:new-spec'), stageOf('Plan', '/hive:new-plan'), stageOf('Build', '/hive:new-build', 'claude', 'sonnet'), stageOf('PR', '/hive:new-pr')],
+};
 
-/** benchmark.hv.html's #s-comparar: A overrides three prompts and the plugins, B nothing, C build's agent and model, D its own tasks. An arm
+/** benchmark.hv.html's #s-comparar: A overrides three prompts and the plugins, B nothing, C Build's agent and model, D its own tasks. An arm
  *  sets only the stage fields it changes, as the arms tab writes them (#462). */
 export const COMPARE = experiment({
   id: 'compare', name: 'skills: comandos × plugin', tasksHash: `91d4${'0'.repeat(60)}`,
-  base: { ...SETUP, stages: BASE_STAGES, tasks: [compareTask(1), compareTask(2, ['T1']), compareTask(3, ['T1', 'T2']), ...[4, 5, 6, 7, 8].map((n) => compareTask(n))] },
+  base: { ...SETUP, flow: COMPARE_FLOW, tasks: [compareTask(1), compareTask(2, ['T1']), compareTask(3, ['T1', 'T2']), ...[4, 5, 6, 7, 8].map((n) => compareTask(n))] },
   arms: [
     { id: 'a1', letter: 'A', name: 'comandos do repo', overrides: {
-      stages: { spec: { skill: '/hive-spec' }, plan: { skill: '/hive-plan' }, build: { skill: '/hive-build' } }, plugins: ['superpowers', 'ecc'],
+      stages: { Spec: { prompt: promptOf('/hive-spec') }, Plan: { prompt: promptOf('/hive-plan') }, Build: { prompt: promptOf('/hive-build') } }, plugins: ['superpowers', 'ecc'],
     } },
     { id: 'a2', letter: 'B', name: 'skills do plugin', overrides: {} },
-    { id: 'a3', letter: 'C', name: 'plugin + codex', overrides: { stages: { build: { agent: 'codex', model: 'gpt-5' } } } },
+    { id: 'a3', letter: 'C', name: 'plugin + codex', overrides: { stages: { Build: { agent: 'codex', model: 'gpt-5' } } } },
     { id: 'a4', letter: 'D', name: 'tarefas juntas', overrides: { tasks: [compareTask(1), compareTask(2), compareTask(3)] } },
   ],
 });

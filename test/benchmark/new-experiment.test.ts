@@ -4,26 +4,32 @@ import { baseSnapshot, BLIND_WORDS, DEFAULT_PACE, defaultIsolation, duplicateOf,
 import { SANDBOX_DOMAINS } from '../../src/benchmark/sandbox.js';
 import { WORKER_ALLOW, WORKER_DENY } from '../../src/benchmark/worker-rules.js';
 import type { CatalogueItem } from '../../src/types.js';
-import { benchConfig, benchExperiment, run } from './fixtures.js';
+import { copyFlow } from '../../src/benchmark/flow-copy.js';
+import { BENCH_STAGES, benchConfig, benchExperiment, NOW, run } from './fixtures.js';
 
 const version = (name: string, workspaces: string[]) => ({ name, from: 'original', workspaces, unknownWorkspaces: [], updateAvailable: false, editedAt: '' });
 const item = (id: string, versions: ReturnType<typeof version>[]): CatalogueItem =>
   ({ id, origin: id.split(':')[0], kind: 'skill', name: id.split(':')[1], description: '', userCreated: false, state: 'customized', versions, onOriginal: [], files: [], usage: [] });
 
-test('baseSnapshot: stages matched by role in comb order, the unmatched one defaulted, plugins, rules, items, worktree and no tasks (#459)', () => {
+test('baseSnapshot: the copied flow, plugins, rules, items, worktree and no tasks (#459, #536)', () => {
   const config = benchConfig('/work/bench');
   const catalogue = [item('hive:new-build', [version('mine', ['other']), version('tdd', ['bench'])]), item('hive:architect', [version('mine', ['other'])])];
-  assert.deepEqual(baseSnapshot(config, config.comb.workspaces[0], catalogue), {
-    stages: {
-      spec: { agent: 'codex', model: 'gpt-5', skill: '/hive:new-spec', prompt: '/hive:new-spec {id}' },
-      plan: { agent: 'claude', skill: '/hive:new-plan', prompt: '/hive:new-plan' },
-      build: { agent: 'claude', skill: '/hive-build', prompt: '/hive-build {title}' },
-      pr: { agent: 'claude', skill: '/hive:new-pr', prompt: '/hive:new-pr' },
-    },
+  const copy = copyFlow(config, 'bench', NOW);
+  assert.ok('flow' in copy);
+  assert.deepEqual(baseSnapshot(config, config.comb.workspaces[0], catalogue, NOW), {
+    flow: copy.flow,
     plugins: ['/plugins/extra', '/plugins/two'],
     rules: { allow: ['Read', 'Bash(npm run test:coverage *)'], deny: ['Bash(gh:*)'] },
     tasks: [], items: { 'hive:new-build': 'tdd' }, worktree: { setup: 'RUN pnpm install', teardown: '' },
   });
+});
+
+test('baseSnapshot refuses a flow with a wait for CI, naming the stage (#536)', () => {
+  const config = benchConfig('/work/bench');
+  const ci = { ...config, comb: { ...config.comb, stages: [...BENCH_STAGES, { name: 'CI', from: {}, action: 'waitForCi' as const, ciChecks: 'all' as const, rerunOnce: false }] } };
+  const answer = baseSnapshot(ci, config.comb.workspaces[0], [], NOW);
+  assert.ok('refused' in answer);
+  assert.match(answer.refused, /CI waits for CI/);
 });
 
 test("emptyExperiment is a draft with arm A and the screens' defaults (#459)", () => {

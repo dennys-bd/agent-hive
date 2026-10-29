@@ -1,10 +1,10 @@
 // The arm routes' rules (#459), pure: which letter a new arm takes, what it copies, and the 404 / 409 an arm route answers. A 27th arm is
 // not a real case, so the letters stop at Z.
 import { commandFirst } from '../stage-agent.js';
-import type { Arm, ArmOverrides, ArmSetup, BenchStage, BenchStagePick, BenchStageRole, Experiment, StageOverride as BenchStageOverride } from '../types.js';
+import type { Arm, ArmOverrides, ArmSetup, BenchStage, Experiment, StageOverride } from '../types.js';
 
 /** The fields a stage override may hold (#536), mergeArm's, the dialog's diff's and flowIssues' one list. */
-export const STAGE_OVERRIDE_FIELDS = ['agent', 'model', 'prompt', 'skill', 'commands', 'judge', 'threshold'] as const satisfies readonly (keyof BenchStageOverride)[];
+export const STAGE_OVERRIDE_FIELDS = ['agent', 'model', 'prompt', 'skill', 'commands', 'judge', 'threshold'] as const satisfies readonly (keyof StageOverride)[];
 
 /** The call a stage makes (#536, generalised from #459's per role): a skill stage's /hive:<skill>; a prompt stage's opening slash command
  *  (commandFirst), else the first /hive:<name> or /hive-<name> its prompt holds. Undefined for a stage that runs no agent. */
@@ -52,19 +52,20 @@ export function checkTargets(experiment: Experiment, to: readonly string[]): Arm
   return missing === undefined ? undefined : unknownArm(missing);
 }
 
-// ponytail: the per-role shape of #462; Task 12 replaces it with types.ts StageOverride
-type StageOverride = NonNullable<NonNullable<ArmOverrides['stages']>[BenchStageRole]>;
+// The override's fields over the stage's; a null model drops the base's
+function mergeStage(stage: BenchStage, override: StageOverride): BenchStage {
+  const { model, ...fields } = override;
+  const { model: baseModel, ...kept } = { ...stage, ...fields };
+  const merged = model === null ? undefined : (model ?? baseModel);
+  return merged === undefined ? kept : { ...kept, model: merged };
+}
 
-/** An arm's setup (#462): each stage field the arm sets over the base's same field, every other key whole. An arm that changes build's agent
- *  still follows a later base edit of spec, of build's model, or of any field it never set. A null model is the agent's own default: the
- *  merged pick has none. Pure, so the dashboard merges as the runs do. */
+/** An arm's setup (#462, #536): each stage's overridden fields over the base stage of that name, every other key whole. An arm that changes
+ *  Build's agent still follows a later base edit of Spec, of Build's model, or of any field it never set. An override for a stage the flow
+ *  lacks is never read; hasOwn so a stage named like a prototype key reads nothing; the base's flow comes last, so a hand-edited override
+ *  holding `flow` never replaces the copy. Pure, so the dashboard merges as the runs do. */
 export function mergeArm(base: ArmSetup, overrides: ArmOverrides): ArmSetup {
-  const { stages, ...rest } = overrides;
-  const pick = (role: BenchStageRole): BenchStagePick => {
-    const { model, ...fields }: StageOverride = stages?.[role] ?? {};
-    const { model: baseModel, ...kept } = { ...base.stages[role], ...fields };
-    const merged = model === null ? undefined : (model ?? baseModel);
-    return merged === undefined ? kept : { ...kept, model: merged };
-  };
-  return { ...base, ...rest, stages: { spec: pick('spec'), plan: pick('plan'), build: pick('build'), pr: pick('pr') } };
+  const { stages = {}, ...rest } = overrides;
+  const merged = base.flow.stages.map((s) => (Object.hasOwn(stages, s.name) ? mergeStage(s, stages[s.name]) : s));
+  return { ...base, ...rest, flow: { ...base.flow, stages: merged } };
 }

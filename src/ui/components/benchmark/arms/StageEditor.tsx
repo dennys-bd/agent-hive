@@ -1,7 +1,9 @@
 import { useContext, useState } from 'react';
 import { stageCall } from '../../../../benchmark/arms.js';
+import { canonicalJson } from '../../../../benchmark/canonical.js';
 import { SCORE_MAX } from '../../../../stage-agent.js';
 import { type AgentId, type BenchFlow, type BenchStage, DEFAULT_AGENT, type LaunchOptions } from '../../../../types';
+import { stageText } from '@/components/benchmark/arms/arm-rows';
 import { ChipList } from '@/components/benchmark/arms/ChipList';
 import { entriesText, exitsOf, verdictsText } from '@/components/benchmark/arms/stage-lines';
 import { AgentField, type InheritRow, ModelMenu } from '@/components/LaunchMenus';
@@ -26,20 +28,6 @@ export function stageKind(stage: BenchStage): MessageKey {
   if (stage.action !== undefined) return `settings.stages.action.${stage.action}`;
   if (stage.prompt !== undefined) return 'benchmark.arms.settings.kind.prompt';
   return stage.approval === true ? 'settings.stages.action.gate' : 'settings.stages.meta.show';
-}
-
-const pickText = (agent: AgentId | undefined, model: string | undefined): string => [agent ?? DEFAULT_AGENT, ...(model === undefined ? [] : [model])].join(' · ');
-
-// What the base has where the shown stage differs, each struck apart; a prompt stage's call stands for its prompt
-function wasParts(base: BenchStage, stage: BenchStage): string[] {
-  const parts = [
-    ...(base.agent !== stage.agent || base.model !== stage.model ? [pickText(base.agent, base.model)] : []),
-    ...(stageCall(base) !== stageCall(stage) ? [stageCall(base) ?? ''] : []),
-    ...(base.commands?.join(', ') !== stage.commands?.join(', ') ? [(base.commands ?? []).join(', ')] : []),
-    ...(base.judge?.agent !== stage.judge?.agent || base.judge?.model !== stage.judge?.model ? [pickText(base.judge?.agent, base.judge?.model)] : []),
-    ...(base.threshold !== stage.threshold ? [String(base.threshold ?? '')] : []),
-  ];
-  return parts.filter((p) => p !== '');
 }
 
 interface PickProps { id: string; stageName: string; agentLabel: MessageKey; modelLabel: MessageKey; agent: AgentId; model?: string; baseModel?: string; isArm: boolean; options?: LaunchOptions; onPick(agent: AgentId, model?: string): void }
@@ -151,7 +139,8 @@ function StageLines({ flow, stage }: { flow: BenchFlow; stage: BenchStage }) {
 /** One stage of the copied flow, editable (#536): who runs it and what it runs, then the struck base value in an arm, then its verdicts, exits
  * and entries. Presentational: the shown stage comes in and the changed one goes out. */
 export function StageEditor({ stage, base, flow, isArm, isLocked, options, onChange }: StageEditorProps) {
-  const was = isArm ? wasParts(base, stage) : [];
+  // the base's value struck under a stage the arm overrides, as the card's row reads it
+  const was = isArm && canonicalJson(stage) !== canonicalJson(base) ? stageText(base, stage) : undefined;
   const runsAgent = stage.action === 'skill' || (stage.action === undefined && stage.prompt !== undefined);
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -160,7 +149,7 @@ export function StageEditor({ stage, base, flow, isArm, isLocked, options, onCha
         {stage.action === 'commands' && <CommandsField stage={stage} flow={flow} isLocked={isLocked} onChange={onChange} />}
         {stage.action === 'evaluate' && <EvaluateFields stage={stage} options={options} onChange={onChange} />}
       </fieldset>
-      {was.length > 0 && <span className="text-muted-foreground text-xs">{t('benchmark.arms.settings.wasBase')} {was.map((part) => <s key={part} className="mr-1.5 font-mono">{part}</s>)}</span>}
+      {was !== undefined && <span className="text-muted-foreground text-xs">{t('benchmark.arms.settings.wasBase')} <s className="font-mono">{was}</s></span>}
       <StageLines flow={flow} stage={stage} />
     </div>
   );

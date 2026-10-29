@@ -37,7 +37,7 @@ test("comparar draws the screen: config, base and one column per arm; só difere
   expect(within(table()).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
     'config', 'base', 'A · comandos do repo', 'B · skills do plugin', 'C · plugin + codex', 'D · tarefas juntas',
   ]);
-  expect(rowLabels()).toEqual(['spec · prompt', 'plan · prompt', 'build · prompt', 'build · agente', 'plugins extras', 'tarefas']);
+  expect(rowLabels()).toEqual(['Spec · prompt', 'Plan · prompt', 'Build · prompt', 'Build · agente', 'plugins extras', 'tarefas']);
   expect(cellsOf('tarefas')).toEqual(['8 · 3 bloqueios · t·91d4', '·', '·', '·', '3 · 0 bloqueios']);
   expect(screen.getByRole('switch', { name: 'só diferenças' })).toBeChecked();
   expect(screen.getByText(
@@ -74,7 +74,7 @@ test("clicking an overridden cell opens copiar para with every other arm; a pick
   await waitFor(() => expect(calls).toEqual([{
     method: 'PATCH', path: '/benchmark/experiments/compare/arms/a1',
     body: { overrides: {
-      stages: { spec: { skill: '/hive-spec' }, plan: { skill: '/hive-plan' }, build: { skill: '/hive-build', agent: 'codex', model: 'gpt-5' } },
+      stages: { Spec: { prompt: '/hive-spec {title}\n\n{body}' }, Plan: { prompt: '/hive-plan {title}\n\n{body}' }, Build: { prompt: '/hive-build {title}\n\n{body}', agent: 'codex', model: 'gpt-5' } },
       plugins: ['superpowers', 'ecc'],
     } },
   }]));

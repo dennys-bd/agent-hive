@@ -40,7 +40,7 @@ function RowList({ rows, tasksHash }: { rows: readonly ArmRow[]; tasksHash?: str
     <dl className="m-0 flex flex-col gap-2 px-3.5 py-3 text-[13px]">
       {rows.map((row) => (
         <div key={row.key} className="grid grid-cols-[64px_minmax(0,1fr)] items-baseline gap-2">
-          <dt className="text-muted-foreground text-xs">{t(row.label)}</dt>
+          <dt className="text-muted-foreground text-xs">{row.label}</dt>
           <dd className="m-0 flex min-w-0 flex-col gap-0.5 [overflow-wrap:anywhere]">
             <span><span>{row.value}</span>{row.key === 'tasks' && tasksHash !== undefined && <span className="font-mono text-xs">{` · t·${tasksHash}`}</span>}</span>
             {row.was !== undefined && <span className="text-muted-foreground text-xs line-through">{row.was}</span>}

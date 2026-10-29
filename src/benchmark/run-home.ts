@@ -9,7 +9,7 @@ import { pluginRenderPath } from '../plugin-render.js';
 import { VERSION_FILE, parseVersionJson, writeVersionJson } from '../custom-versions.js';
 import type { Arm, ArmSetup, BenchRun, Config, Experiment, Workspace } from '../types.js';
 import { pinHome, pluginTrees } from './pin.js';
-import { mergeArm, RUN_STAGES, resolveRow, runConfig, runState } from './arm-config.js';
+import { mergeArm, resolveRow, runConfig, runState } from './arm-config.js';
 import { type BlindInput, type BlindLeak, blindLeak } from './blind-check.js';
 import { inDir, type Run } from './exec.js';
 import { BASELINE_BRANCH, CLONE_DIR, createRunBranch, experimentBaseline, nestedBaseline, nestedOrigin, NESTED_DIR, ORIGIN_DIR, resolveBaseline, runBranch, unsignedCommits } from './git.js';
@@ -131,7 +131,10 @@ async function fileInputs(root: string, files: readonly string[], label: string)
 async function leakOf(experiment: Experiment, arm: Arm, setup: ArmSetup, versions: readonly ArmVersion[], seedDir: string): Promise<BlindLeak | undefined> {
   const inputs: BlindInput[] = [
     ...setup.tasks.map((task) => ({ where: `task ${task.key}`, text: `${task.title}\n${task.body}` })),
-    ...RUN_STAGES.map(({ role }) => ({ where: `stage ${role}`, text: setup.stages[role].prompt })),
+    // every prompt the flow hands a worker: its stages', its transitions' (composed into the next run's) and its commands' lines
+    ...setup.flow.stages.map((s) => ({ where: `stage ${s.name}`, text: s.prompt ?? '' })),
+    ...setup.flow.transitions.map((t) => ({ where: `transition ${t.from} → ${t.to}`, text: t.prompt ?? '' })),
+    ...setup.flow.commands.map((c) => ({ where: `command ${c.name}`, text: c.line })),
     // the setup and teardown lines run in the worker's worktree, and the env values reach its process: both are read there
     { where: 'worktree setup', text: setup.worktree.setup }, { where: 'worktree teardown', text: setup.worktree.teardown },
     ...Object.entries(resolveRow(experiment.isolation.env, arm.id)).map(([name, value]) => ({ where: `env ${name}`, text: `${name}=${value}` })),
@@ -192,7 +195,7 @@ async function writeRunHome(inputs: RunInputs, deps: RunDeps): Promise<void> {
     allowedDomains: resolveRow(experiment.isolation.network, arm.id),
   });
   const marker: RunMarker = { experiment: { id: experiment.id, name: experiment.name }, arm: { letter: arm.letter, name: arm.name }, round: inputs.round, pairs: experiment.pace.pairs, token, frozen: false };
-  await writeHome(home, runConfig(deps.config, experiment, arm, token, { clone, home, rules }), runState(setup.tasks, token, experiment.seed.workspace, experiment.pace.workersPerArm));
+  await writeHome(home, runConfig(deps.config, experiment, arm, token, { clone, home, rules }), runState(setup.tasks, token, experiment.seed.workspace, experiment.pace.workersPerArm, setup.flow.stages[0].name));
   await copyVersions(home, versions, experiment.seed.workspace);
   await writeFile(join(home, RUN_SANDBOX_FILE), json(sandbox), { mode: 0o600 });
   await writeFile(join(home, MARKER_FILE), json(marker), { mode: 0o600 });

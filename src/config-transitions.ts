@@ -115,7 +115,7 @@ export function parseTransitions(raw: unknown, stages: readonly Stage[], parseSo
 
 // The stage whose session a transition resumes, when the flow alone says it (#925): previous and a plain move into a continue stage resume
 // the origin's, continueOf names its stage; a new session, or a move into a stage that starts its own, resumes nothing
-function resumedStage(transition: Transition, to: Stage): string | undefined {
+export function resumedStage(transition: Transition, to: Stage): string | undefined {
   if (transition.session === 'previous') return transition.from;
   if (typeof transition.session === 'object') return transition.session.continueOf;
   return transition.session === undefined && to.session === 'continue' ? transition.from : undefined;

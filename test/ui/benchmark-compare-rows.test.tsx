@@ -10,22 +10,22 @@ beforeEach(() => setLanguage('pt'));
 const grid = (e: Experiment): string[][] => compareRows(e).map((row) => [row.label, row.base, ...row.cells.map((cell) => (cell.isSame ? '·' : cell.value))]);
 const differing = (e: Experiment): string[][] => grid(e).filter((row) => row.slice(2).some((value) => value !== '·'));
 
-test("the screen's sample: fifteen setup rows in the spec's order; the six that differ carry the screen's values and dots; the other nine are equal (#464)", () => {
+test("the screen's sample: fifteen setup rows, two per agent stage by name, then the rest; the six that differ carry the screen's values and dots; the other nine are equal (#464)", () => {
   expect(compareRows(COMPARE).map((row) => row.id)).toEqual([
-    'spec.prompt', 'spec.agent', 'plan.prompt', 'plan.agent', 'build.prompt', 'build.agent', 'pr.prompt', 'pr.agent',
+    'stage:Spec:prompt', 'stage:Spec:agent', 'stage:Plan:prompt', 'stage:Plan:agent', 'stage:Build:prompt', 'stage:Build:agent', 'stage:PR:prompt', 'stage:PR:agent',
     'plugins', 'rules.allow', 'rules.deny', 'items', 'worktree.setup', 'worktree.teardown', 'tasks',
   ]);
   expect(differing(COMPARE)).toEqual([
-    ['spec · prompt', '/hive:new-spec', '/hive-spec', '·', '·', '·'],
-    ['plan · prompt', '/hive:new-plan', '/hive-plan', '·', '·', '·'],
-    ['build · prompt', '/hive:new-build', '/hive-build', '·', '·', '·'],
-    ['build · agente', 'claude · sonnet', '·', '·', 'codex · gpt-5', '·'],
+    ['Spec · prompt', '/hive:new-spec', '/hive-spec', '·', '·', '·'],
+    ['Plan · prompt', '/hive:new-plan', '/hive-plan', '·', '·', '·'],
+    ['Build · prompt', '/hive:new-build', '/hive-build', '·', '·', '·'],
+    ['Build · agente', 'claude · sonnet', '·', '·', 'codex · gpt-5', '·'],
     ['plugins extras', '—', 'superpowers, ecc', '·', '·', '·'],
     ['tarefas', '8 · 3 bloqueios · t·91d4', '·', '·', '·', '3 · 0 bloqueios'],
   ]);
   expect(hiddenCount(compareRows(COMPARE))).toBe(9);
   expect(grid(COMPARE).find(([label]) => label === 'worktree · teardown')).toEqual(['worktree · teardown', '—', '·', '·', '·', '·']);
-  expect(grid(COMPARE).find(([label]) => label === 'spec · agente')?.[1]).toBe('claude'); // no model: the agent alone
+  expect(grid(COMPARE).find(([label]) => label === 'Spec · agente')?.[1]).toBe('claude'); // no model: the agent alone
 });
 
 test('items read <item>@<version>, sorted; a tasks list with the same counts but other tasks is still an override (#464)', () => {
@@ -74,22 +74,22 @@ test('a record reads key=value pairs (#464)', () => {
 const [A, B, C, D] = COMPARE.arms;
 
 test("a copy sets one stage field on the target, field by field as the arms tab writes it, and keeps the target's other overrides (#464)", () => {
-  expect(copiedOverrides(COMPARE, 'build.agent', C, A)).toEqual({
-    stages: { spec: { skill: '/hive-spec' }, plan: { skill: '/hive-plan' }, build: { skill: '/hive-build', agent: 'codex', model: 'gpt-5' } },
+  expect(copiedOverrides(COMPARE, 'stage:Build:agent', C, A)).toEqual({
+    stages: { Spec: { prompt: '/hive-spec {title}\n\n{body}' }, Plan: { prompt: '/hive-plan {title}\n\n{body}' }, Build: { prompt: '/hive-build {title}\n\n{body}', agent: 'codex', model: 'gpt-5' } },
     plugins: ['superpowers', 'ecc'],
   });
-  expect(copiedOverrides(COMPARE, 'build.prompt', A, D)).toEqual({ stages: { build: { skill: '/hive-build' } }, tasks: D.overrides.tasks });
+  expect(copiedOverrides(COMPARE, 'stage:Build:prompt', A, D)).toEqual({ stages: { Build: { prompt: '/hive-build {title}\n\n{body}' } }, tasks: D.overrides.tasks });
   expect(copiedOverrides(COMPARE, 'tasks', D, B)).toEqual({ tasks: D.overrides.tasks });
 });
 
 test("a copy that brings a key back to the base drops it; a source on the agent's own default model says null over the base's model (#464)", () => {
-  expect(copiedOverrides(COMPARE, 'build.agent', A, C)).toEqual({}); // A's build agent is the base's: C's stages are the base's again
-  const E: Arm = { id: 'a5', letter: 'E', name: 'codex sem modelo', overrides: { stages: { build: { agent: 'codex', model: null } } } };
-  const copied = copiedOverrides({ ...COMPARE, arms: [...COMPARE.arms, E] }, 'build.agent', E, B);
-  expect(copied).toEqual({ stages: { build: { agent: 'codex', model: null } } });
+  expect(copiedOverrides(COMPARE, 'stage:Build:agent', A, C)).toEqual({}); // A's Build agent is the base's: C's stages are the base's again
+  const E: Arm = { id: 'a5', letter: 'E', name: 'codex sem modelo', overrides: { stages: { Build: { agent: 'codex', model: null } } } };
+  const copied = copiedOverrides({ ...COMPARE, arms: [...COMPARE.arms, E] }, 'stage:Build:agent', E, B);
+  expect(copied).toEqual({ stages: { Build: { agent: 'codex', model: null } } });
 });
 
 test('holdsSame compares the two arms on the row; isSetupRowId tells the setup rows from the isolation ones (#464)', () => {
-  expect([holdsSame(COMPARE, 'build.agent', A, B), holdsSame(COMPARE, 'build.agent', C, A), holdsSame(COMPARE, 'tasks', D, A)]).toEqual([true, false, false]);
+  expect([holdsSame(COMPARE, 'stage:Build:agent', A, B), holdsSame(COMPARE, 'stage:Build:agent', C, A), holdsSame(COMPARE, 'tasks', D, A)]).toEqual([true, false, false]);
   expect([isSetupRowId('tasks'), isSetupRowId('isolation.network')]).toEqual([true, false]);
 });

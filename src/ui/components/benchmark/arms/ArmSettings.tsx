@@ -2,16 +2,20 @@ import { LockIcon } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { isLocked as isLockedExperiment, mergeArm } from '../../../../benchmark/arms.js';
 import { canonicalJson } from '../../../../benchmark/canonical.js';
-import type { Arm, ArmSetup, Experiment, LaunchOptions } from '../../../../types';
+import type { Arm, ArmSetup, BenchStage, Experiment, LaunchOptions } from '../../../../types';
 import { TASKS_HASH_CHARS } from '@/components/benchmark/arms/ArmCard';
 import { editArm, patchBase } from '@/components/benchmark/arms/arm-api';
-import { armRows, cleanSetup, countText, diffOverrides, readRow, type RowKey, rowLabel, rowText, type RowValues, writeRow } from '@/components/benchmark/arms/arm-rows';
+import {
+  armRows, cleanSetup, countText, diffOverrides, type FixedKey, type FixedValues, isStageKey, readRow, readStage, type RowKey, rowLabel, rowText, stageKey, stageNameOf,
+  writeRow, writeStage,
+} from '@/components/benchmark/arms/arm-rows';
 import { ItemsField } from '@/components/benchmark/arms/ItemsField';
 import { ChipList } from '@/components/benchmark/arms/ChipList';
-import { RulesField, WorktreeField } from '@/components/benchmark/arms/ListFields';
+import { WorktreeField } from '@/components/benchmark/arms/ListFields';
 import { FixedRows } from '@/components/benchmark/arms/FixedRows';
+import { FlowGroup } from '@/components/benchmark/arms/FlowGroup';
 import { GroupHeading, RowGroup } from '@/components/benchmark/arms/RowGroup';
-import { StageFields } from '@/components/benchmark/arms/StageFields';
+import { StageEditor, stageKind } from '@/components/benchmark/arms/StageEditor';
 import { TasksField } from '@/components/benchmark/arms/TasksField';
 import { DialogBase } from '@/components/DialogBase';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +27,7 @@ import { isMac } from '@/lib/shortcut-bindings';
 
 export interface Draft {
   base: ArmSetup; setup: ArmSetup; start: ArmSetup; isArm: boolean; count: number;
-  isOverridden(key: RowKey): boolean; edit<K extends RowKey>(key: K, value: RowValues[K]): void; reset(key: RowKey): void;
+  isOverridden(key: RowKey): boolean; edit<K extends FixedKey>(key: K, value: FixedValues[K]): void; editStage(stage: BenchStage): void; reset(key: RowKey): void;
 }
 
 // Opening copies the base and the arm's merged setup (or the base) into local state; every edit changes only the draft. The base is frozen
@@ -39,7 +43,8 @@ function useDraft(experiment: Experiment, arm: Arm | undefined, isArm: boolean):
     base, setup, start, isArm, count: rows.filter((r) => r.overridden).length,
     isOverridden: (key) => rows.some((r) => r.key === key && r.overridden),
     edit: (key, value) => setSetup((s) => settle(writeRow(s, key, value))),
-    reset: (key) => setSetup((s) => settle(writeRow(s, key, readRow(base, key)))),
+    editStage: (stage) => setSetup((s) => settle(writeStage(s, stage))),
+    reset: (key) => setSetup((s) => settle(isStageKey(key) ? writeStage(s, readStage(base, stageNameOf(key))) : writeRow(s, key, readRow(base, key)))),
   };
 }
 
@@ -54,33 +59,64 @@ async function save(experiment: Experiment, arm: Arm | undefined, draft: Draft):
 export const overriddenBy = (experiment: Experiment, key: RowKey): string[] =>
   experiment.arms.filter((a) => armRows(experiment.base, a.overrides).some((r) => r.key === key && r.overridden)).map((a) => a.letter);
 
-interface BodyProps { draft: Draft; options?: LaunchOptions; experiment: Experiment; isLocked: boolean; isOnlyOverrides: boolean; onShowConfig(): void }
+interface BodyProps {
+  draft: Draft; options?: LaunchOptions; experiment: Experiment; isLocked: boolean; isOnlyOverrides: boolean; onShowConfig(): void; onOpenFlowSettings?(): void;
+}
+type Group = (key: RowKey, children: ReactNode, was?: ReactNode, hint?: string) => ReactNode;
 
-function SettingsBody({ draft, options, experiment, isLocked, isOnlyOverrides, onShowConfig }: BodyProps) {
-  const rowOf = (key: RowKey, children: ReactNode, was?: ReactNode): ReactNode => (
+function groupOf({ draft, experiment, isLocked, isOnlyOverrides }: BodyProps): Group {
+  const rowOf: Group = (key, children, was, hint) => (
     <RowGroup
-      key={key} label={t(rowLabel(key))} isArm={draft.isArm} isLocked={isLocked} isOverridden={draft.isOverridden(key)} locksItself={key === 'tasks'} was={was}
+      key={key} label={rowLabel(key)} hint={hint} isArm={draft.isArm} isLocked={isLocked} isOverridden={draft.isOverridden(key)} locksItself={key === 'tasks'} was={was}
       overriddenBy={draft.isArm ? [] : overriddenBy(experiment, key)} onReset={() => draft.reset(key)}
     >
       {children}
     </RowGroup>
   );
   // Only overrides: an arm's untouched rows go, and so do the headings over them
-  const group = (key: RowKey, children: ReactNode, was?: ReactNode): ReactNode => (isOnlyOverrides && !draft.isOverridden(key) ? null : rowOf(key, children, was));
+  return (key, children, was, hint) => (isOnlyOverrides && !draft.isOverridden(key) ? null : rowOf(key, children, was, hint));
+}
+
+// The chart picks the stage the editor row shows; in an arm a dot marks each overridden stage. Only overrides with no stage overridden: no group
+function StageGroup(props: BodyProps & { group: Group }) {
+  const { draft, options, experiment, isLocked, isOnlyOverrides, onOpenFlowSettings, group } = props;
+  const { setup } = draft;
+  const [picked, setPicked] = useState(() => setup.flow.stages[0].name);
+  const marked = new Set(draft.isArm ? setup.flow.stages.map((s) => s.name).filter((name) => draft.isOverridden(stageKey(name))) : []);
+  if (isOnlyOverrides && marked.size === 0) return null;
+  const stage = readStage(setup, picked);
+  const editor = group(stageKey(picked), (
+    <StageEditor stage={stage} base={readStage(draft.base, picked)} flow={setup.flow} isArm={draft.isArm} isLocked={isLocked} options={options} onChange={draft.editStage} />
+  ), undefined, t(stageKind(stage)));
+  return (
+    <FlowGroup
+      workspace={experiment.workspace} flow={setup.flow} picked={picked} onPick={setPicked} marked={marked} isArm={draft.isArm} editor={editor}
+      onOpenSettings={draft.isArm ? undefined : onOpenFlowSettings}
+    />
+  );
+}
+
+function SettingsBody(props: BodyProps) {
+  const { draft, experiment, isLocked, isOnlyOverrides, onShowConfig } = props;
+  const group = groupOf(props);
   const heading = (title: string, hint?: string): ReactNode => (isOnlyOverrides ? null : <GroupHeading title={title} hint={hint} />);
   const { setup } = draft;
   const baseTasks = `${rowText(draft.base, 'tasks')} · t·${experiment.tasksHash.slice(0, TASKS_HASH_CHARS)}`;
+  const rules = (key: 'rules.allow' | 'rules.deny', add: 'benchmark.arms.settings.addAllow' | 'benchmark.arms.settings.addDeny') => group(key, (
+    <ChipList id={`arm-${key.replace('.', '-')}`} addLabel={t(add)} placeholder={t('benchmark.arms.settings.rulePlaceholder')} value={readRow(setup, key)} isReadOnly={isLocked} onChange={(v) => draft.edit(key, v)} />
+  ));
   return (
     <div className="flex min-w-0 flex-col pb-2">
       {!draft.isArm && <FixedRows experiment={experiment} onShowConfig={onShowConfig} />}
-      <StageFields draft={draft} options={options} group={group} />
+      <StageGroup {...props} group={group} />
       {heading(t('benchmark.arms.settings.group.items'))}
       {group('plugins', <ChipList id="arm-plugins" addLabel={t('benchmark.arms.settings.addPlugin')} placeholder={t('benchmark.arms.settings.pluginPlaceholder')} value={setup.plugins} isReadOnly={isLocked} onChange={(v) => draft.edit('plugins', v)} />)}
       {group('items', <ItemsField experimentId={experiment.id} value={setup.items} onChange={(v) => draft.edit('items', v)} />)}
       {heading(t('benchmark.arms.settings.group.tasks'), t('benchmark.arms.settings.group.tasksHint'))}
       {group('tasks', <TasksField value={setup.tasks} isReadOnly={isLocked} summary={draft.isArm && !draft.isOverridden('tasks') ? baseTasks : undefined} onChange={(v) => draft.edit('tasks', v)} />, draft.isArm && draft.isOverridden('tasks') ? <TasksWas text={baseTasks} /> : undefined)}
       {heading(t('benchmark.arms.settings.group.rules'))}
-      {group('rules', <RulesField value={setup.rules} isReadOnly={isLocked} onChange={(v) => draft.edit('rules', v)} />)}
+      {rules('rules.allow', 'benchmark.arms.settings.addAllow')}
+      {rules('rules.deny', 'benchmark.arms.settings.addDeny')}
       {group('worktree', <WorktreeField value={setup.worktree} onChange={(v) => draft.edit('worktree', v)} />)}
     </div>
   );
@@ -128,7 +164,7 @@ export interface ArmSettingsProps { experiment: Experiment; armId?: string; onCl
 /** An arm's settings, or the base's when armId is absent (#462, #536). Editing changes a draft; salvar posts it once when it changed, and
  *  cancelar, Esc, the × and the overlay drop it. A refused post keeps the dialog open behind the toast. While the experiment runs or sleeps it
  *  opens read only. */
-export function ArmSettings({ experiment, armId, onClose, onShowConfig }: ArmSettingsProps) {
+export function ArmSettings({ experiment, armId, onClose, onShowConfig, onOpenFlowSettings }: ArmSettingsProps) {
   const arm = experiment.arms.find((a) => a.id === armId);
   const isGone = armId !== undefined && arm === undefined; // removed elsewhere while open: never fall back to editing the base
   const draft = useDraft(experiment, arm, armId !== undefined);
@@ -151,7 +187,10 @@ export function ArmSettings({ experiment, armId, onClose, onShowConfig }: ArmSet
       primary={isLocked ? undefined : { label: t('benchmark.arms.settings.save'), shortcut: isMac() ? '⌘↵' : 'Ctrl+↵', onConfirm: saveDraft }}
     >
       {isEmpty && <p className="m-0 py-6 text-[13px] text-muted-foreground">{t('benchmark.arms.settings.onlyEmpty')}</p>}
-      <SettingsBody draft={draft} options={options} experiment={experiment} isLocked={isLocked} isOnlyOverrides={isOnlyOverrides} onShowConfig={onShowConfig} />
+      <SettingsBody
+        draft={draft} options={options} experiment={experiment} isLocked={isLocked} isOnlyOverrides={isOnlyOverrides} onShowConfig={onShowConfig}
+        onOpenFlowSettings={onOpenFlowSettings}
+      />
     </DialogBase>
   );
 }
