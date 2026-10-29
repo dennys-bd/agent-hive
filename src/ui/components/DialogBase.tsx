@@ -8,13 +8,17 @@ import { t } from '@/i18n';
 import { isMac } from '@/lib/shortcut-bindings';
 
 /** One confirming action of a dialog (#75): its button's text and what it runs. A returned promise holds the dialog open until it settles.
- * danger (#461): the primary of an action that destroys, red, the one place colour marks a status in a dialog. */
-export interface DialogAction { label: string; onConfirm(): void | Promise<void>; disabled?: boolean; pending?: boolean; danger?: boolean }
+ * danger (#461): the primary of an action that destroys, red, the one place colour marks a status in a dialog.
+ * shortcut (#536): a <kbd> after the label. */
+export interface DialogAction { label: string; onConfirm(): void | Promise<void>; disabled?: boolean; pending?: boolean; danger?: boolean; shortcut?: string }
 
 export interface DialogBaseProps {
-  title: string; children: ReactNode; primary: DialogAction;
-  context?: ReactNode; secondary?: DialogAction; tertiary?: DialogAction; error?: string;
-  cancelLabel?: string; closeButton?: boolean; initialFocus?: 'close' | 'primary' | 'none'; size?: 'default' | 'sm';
+  title: ReactNode; children: ReactNode;
+  primary?: DialogAction; // none: a read-only dialog, the cancel alone (named by cancelLabel)
+  context?: ReactNode; secondary?: DialogAction; tertiary?: DialogAction; error?: string; footerNote?: ReactNode;
+  cancelLabel?: string; closeButton?: boolean; initialFocus?: 'close' | 'primary' | 'none'; size?: 'default' | 'sm' | 'wide';
+  primaryKey?: 'enter' | 'mod'; // mod: ⌘/Ctrl+Enter runs the primary and a bare Enter runs nothing, for a dialog full of fields
+  isOverlayDismissable?: boolean; // a click on the overlay cancels, as Esc does
   trigger?: ReactElement; open?: boolean; onOpenChange?(open: boolean): void;
 }
 
@@ -24,10 +28,11 @@ type Slot = 'primary' | 'secondary' | 'tertiary';
 const FOOTER_BUTTON = 'h-auto px-3 py-1.5 text-[13px]';
 
 // The one keyboard rule (#75): Enter alone runs the primary, ⌘+Enter (Ctrl+Enter off macOS) the secondary, ⌥+Enter the tertiary; any other mix none
-function slotOf(event: KeyboardEvent): Slot | undefined {
+function slotOf(event: KeyboardEvent, primaryKey: 'enter' | 'mod'): Slot | undefined {
   const mod = isMac() ? event.metaKey : event.ctrlKey;
   const otherMod = isMac() ? event.ctrlKey : event.metaKey;
   if (event.shiftKey || otherMod || (mod && event.altKey)) return undefined;
+  if (primaryKey === 'mod') return mod ? 'primary' : undefined;
   if (mod) return 'secondary';
   return event.altKey ? 'tertiary' : 'primary';
 }
@@ -58,7 +63,7 @@ function useDialogState(open: boolean | undefined, onOpenChange: ((open: boolean
   return { isOpen: open ?? own, setOpen, run, isBusy };
 }
 
-interface HeaderProps { title: string; context?: ReactNode; closeLabel?: string; closeRef: Ref<HTMLButtonElement> }
+interface HeaderProps { title: ReactNode; context?: ReactNode; closeLabel?: string; closeRef: Ref<HTMLButtonElement> }
 
 // The handoff's header: the title with the muted × at its right, the context line under them
 function DialogHeader({ title, context, closeLabel, closeRef }: HeaderProps) {
@@ -77,10 +82,10 @@ function DialogHeader({ title, context, closeLabel, closeRef }: HeaderProps) {
   );
 }
 
-interface FooterProps { cancelLabel: string; actions: Record<Slot, DialogAction | undefined>; isBusy: boolean; primaryRef: Ref<HTMLButtonElement>; run(action: DialogAction): void }
+interface FooterProps { cancelLabel: string; note?: ReactNode; actions: Record<Slot, DialogAction | undefined>; isBusy: boolean; primaryRef: Ref<HTMLButtonElement>; run(action: DialogAction): void }
 
 // cancel, then the tertiary, the secondary and the primary at the right edge; the primary is red only when it destroys (#461)
-function DialogFooter({ cancelLabel, actions, isBusy, primaryRef, run }: FooterProps) {
+function DialogFooter({ cancelLabel, note, actions, isBusy, primaryRef, run }: FooterProps) {
   const button = (slot: Slot): ReactNode => {
     const action = actions[slot];
     if (action === undefined) return null;
@@ -91,11 +96,13 @@ function DialogFooter({ cancelLabel, actions, isBusy, primaryRef, run }: FooterP
         className={FOOTER_BUTTON} disabled={action.disabled === true || action.pending === true || isBusy} onClick={() => run(action)}
       >
         {action.label}
+        {action.shortcut !== undefined && <kbd className="ml-1.5 font-mono text-[11px] opacity-70">{action.shortcut}</kbd>}
       </Button>
     );
   };
   return (
     <AlertDialogFooter>
+      {note !== undefined && <span className="mr-auto text-muted-foreground text-xs">{note}</span>}
       <AlertDialogCancel size="sm" className={FOOTER_BUTTON}>{cancelLabel}</AlertDialogCancel>
       {button('tertiary')}{button('secondary')}{button('primary')}
     </AlertDialogFooter>
@@ -106,8 +113,8 @@ function DialogFooter({ cancelLabel, actions, isBusy, primaryRef, run }: FooterP
  * optional context line, the body, and lowercase buttons. Enter runs the primary wherever the focus is, Esc cancels, ⌘/Ctrl+Enter the
  * secondary, ⌥+Enter the tertiary. */
 export function DialogBase({
-  title, children, primary, context, secondary, tertiary, error, cancelLabel = t('settings.cancel'), closeButton = true, initialFocus = 'close',
-  size = 'default', trigger, open, onOpenChange,
+  title, children, primary, context, secondary, tertiary, error, footerNote, cancelLabel = t('settings.cancel'), closeButton = true,
+  initialFocus = 'close', size = 'default', primaryKey = 'enter', isOverlayDismissable = false, trigger, open, onOpenChange,
 }: DialogBaseProps) {
   const state = useDialogState(open, onOpenChange);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -121,19 +128,23 @@ export function DialogBase({
     // A held key's repeats, an IME's commit (229 when isComposing is already false), and an Enter a portaled child (a select's menu) took
     if (event.key !== 'Enter' || event.repeat || event.nativeEvent.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
     if (!event.currentTarget.contains(event.target as Node)) return;
-    const slot = slotOf(event);
-    if ((slot === undefined || slot === 'primary') && isMultiLine(event.target)) return;
+    const slot = slotOf(event, primaryKey);
+    if (primaryKey === 'mod' && slot === undefined) return; // a field's or button's own Enter
+    if ((slot === undefined || (slot === 'primary' && primaryKey === 'enter')) && isMultiLine(event.target)) return;
     event.preventDefault(); // ahead of the focused button's own Enter: on the × it confirms, never cancels
     if (slot !== undefined) state.run(actions[slot]);
   };
   return (
     <AlertDialog open={state.isOpen} onOpenChange={state.setOpen}>
       {trigger && <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>}
-      <AlertDialogContent size={size} onOpenAutoFocus={onOpenAutoFocus} onKeyDown={onKeyDown}>
+      <AlertDialogContent
+        size={size} onOpenAutoFocus={onOpenAutoFocus} onKeyDown={onKeyDown}
+        onOverlayClick={isOverlayDismissable ? () => state.setOpen(false) : undefined}
+      >
         <DialogHeader title={title} context={context} closeLabel={closeButton ? cancelLabel : undefined} closeRef={closeRef} />
-        {children}
+        {size === 'wide' ? <div className="-mx-6 min-h-0 overflow-y-auto px-6">{children}</div> : children}
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
-        <DialogFooter cancelLabel={cancelLabel} actions={actions} isBusy={state.isBusy} primaryRef={primaryRef} run={state.run} />
+        <DialogFooter cancelLabel={cancelLabel} note={footerNote} actions={actions} isBusy={state.isBusy} primaryRef={primaryRef} run={state.run} />
       </AlertDialogContent>
     </AlertDialog>
   );
