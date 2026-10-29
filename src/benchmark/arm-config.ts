@@ -7,13 +7,12 @@ import { MCP_DEFAULTS, type Arm, type ArmSetup, type BenchStageRole, type BenchT
 import { mergeArm } from './arms.js';
 import { runBranch, runPrefix } from './git.js';
 import { RUN_SANDBOX_FILE, SANDBOX_FILE } from './sandbox.js';
-import type { WatchTask } from './watcher.js';
+import { DONE_STAGE, type WatchTask } from './watcher.js';
 import { type RunPaths, runClaudeArgs } from './worker-rules.js';
 
 export const RUN_STAGES: readonly { role: BenchStageRole; name: string }[] = [
   { role: 'spec', name: 'Spec' }, { role: 'plan', name: 'Plan' }, { role: 'build', name: 'Build' }, { role: 'pr', name: 'PR' },
 ];
-export const DONE_STAGE = 'Done';
 export { mergeArm }; // runner-run.ts, run-home.ts and pr.ts keep importing it from here
 
 // hasOwn: an arm id like `constructor` must not reach Object.prototype

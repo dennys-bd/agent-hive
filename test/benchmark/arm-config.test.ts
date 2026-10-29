@@ -16,8 +16,8 @@ test('mergeArm takes an override key whole; resolveRow takes the arm\'s value, e
 
 test('runStages chains Spec, Plan, Build, PR into Done, continuing a session only under the same agent (#471, #925)', () => {
   const { stages, transitions } = runStages({ ...SETUP.stages, build: { agent: 'codex', skill: '/x', prompt: 'B' } });
-  assert.deepEqual(stages.map((s) => [s.name, s.agent, s.session]), [['Spec', 'claude', undefined], ['Plan', 'claude', 'continue'], ['Build', 'codex', undefined], ['PR', 'claude', undefined], ['Done', undefined, undefined]]);
-  assert.deepEqual(transitions.map((x) => `${x.from}>${x.to}:${x.when}`), ['Spec>Plan:done', 'Plan>Build:done', 'Build>PR:done', 'PR>Done:done']);
+  assert.deepEqual(stages.map((s) => [s.name, s.agent, s.session]), [['Spec', 'claude', undefined], ['Plan', 'claude', 'continue'], ['Build', 'codex', undefined], ['PR', 'claude', undefined], ['Delivered', undefined, undefined]]);
+  assert.deepEqual(transitions.map((x) => `${x.from}>${x.to}:${x.when}`), ['Spec>Plan:done', 'Plan>Build:done', 'Build>PR:done', 'PR>Delivered:done']);
 });
 
 test('runConfig parses: the main config with the run comb, no branch template, the arm\'s env, rows and plugins in the Claude args (#471)', () => {
