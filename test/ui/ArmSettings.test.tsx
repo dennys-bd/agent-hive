@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ArmSettings } from '@/components/benchmark/arms/ArmSettings';
@@ -210,4 +210,16 @@ test('a plugin added as a chip is a plugins override (#536)', async () => {
   await save(user);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { plugins: ['plugins/ecc'] } } }]);
+});
+
+test("an arm on the base's tasks reads the summary with the hash; an arm with its own tasks shows the base struck and the yellow line (#536)", () => {
+  stubBenchmarkFetch();
+  open(ARMS, 'a3');
+  expect(screen.getByText('8 tarefas · 3 bloqueios · t·91d4')).toBeInTheDocument();
+  expect(screen.queryByRole('textbox', { name: 'chave' })).not.toBeInTheDocument();
+  cleanup();
+  open(ARMS, 'a4');
+  expect(screen.getByText('8 tarefas · 3 bloqueios · t·91d4').tagName).toBe('S');
+  expect(screen.getByText('tarefas diferentes da base · comparação só por run')).toHaveClass('text-waiting');
+  expect(screen.getAllByRole('textbox', { name: 'chave' })).toHaveLength(3);
 });

@@ -9,12 +9,13 @@ export const ROW_GRID = '-mx-2.5 grid grid-cols-[96px_minmax(0,1fr)_118px] items
 interface RowGroupProps {
   label: string; hint?: string; isArm: boolean; isLocked: boolean; isOverridden: boolean;
   overriddenBy: readonly string[]; // base mode: the letters of the arms that override the row
+  locksItself?: boolean; // the fields take isLocked themselves (the tasks table's chevrons open while read only), so no disabled fieldset
   was?: ReactNode; onReset(): void; children: ReactNode;
 }
 
 /** One row of the settings (#462, #536): its fields, and in arm mode `igual à base` or `voltar à base`; in the base, the arms that override it.
  * The fields sit in a fieldset of their own, so a read-only dialog keeps its other buttons (ver em config, chevrons) working. */
-export function RowGroup({ label, hint, isArm, isLocked, isOverridden, overriddenBy, was, onReset, children }: RowGroupProps) {
+export function RowGroup({ label, hint, isArm, isLocked, isOverridden, overriddenBy, locksItself = false, was, onReset, children }: RowGroupProps) {
   const reset = (
     <Button type="button" size="sm" variant="link" className="h-auto p-0 text-[13px]" aria-label={t('benchmark.arms.settings.resetRow', { row: label })} onClick={onReset}>
       {t('benchmark.arms.settings.reset')}
@@ -33,10 +34,10 @@ export function RowGroup({ label, hint, isArm, isLocked, isOverridden, overridde
         {label}
         {hint !== undefined && <small className="block text-muted-foreground text-xs">{hint}</small>}
       </div>
-      <fieldset disabled={isLocked} className="contents [&_:disabled]:border-transparent">
+      <fieldset disabled={isLocked && !locksItself} className="contents [&_:disabled]:border-transparent">
         <div className="flex min-w-0 flex-col gap-2">
           {children}
-          {was !== undefined && <span className="text-muted-foreground text-xs">{was}</span>}
+          {was !== undefined && <div className="text-muted-foreground text-xs">{was}</div>}
         </div>
       </fieldset>
       <div className="pt-1 text-xs">{state}</div>

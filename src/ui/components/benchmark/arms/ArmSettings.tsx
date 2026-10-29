@@ -3,8 +3,9 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { isLocked as isLockedExperiment, mergeArm } from '../../../../benchmark/arms.js';
 import { canonicalJson } from '../../../../benchmark/canonical.js';
 import type { Arm, ArmSetup, Experiment, LaunchOptions } from '../../../../types';
+import { TASKS_HASH_CHARS } from '@/components/benchmark/arms/ArmCard';
 import { editArm, patchBase } from '@/components/benchmark/arms/arm-api';
-import { armRows, cleanSetup, countText, diffOverrides, readRow, type RowKey, rowLabel, type RowValues, writeRow } from '@/components/benchmark/arms/arm-rows';
+import { armRows, cleanSetup, countText, diffOverrides, readRow, type RowKey, rowLabel, rowText, type RowValues, writeRow } from '@/components/benchmark/arms/arm-rows';
 import { ItemsField } from '@/components/benchmark/arms/ItemsField';
 import { ChipList } from '@/components/benchmark/arms/ChipList';
 import { RulesField, WorktreeField } from '@/components/benchmark/arms/ListFields';
@@ -56,18 +57,19 @@ export const overriddenBy = (experiment: Experiment, key: RowKey): string[] =>
 interface BodyProps { draft: Draft; options?: LaunchOptions; experiment: Experiment; isLocked: boolean; isOnlyOverrides: boolean; onShowConfig(): void }
 
 function SettingsBody({ draft, options, experiment, isLocked, isOnlyOverrides, onShowConfig }: BodyProps) {
-  const rowOf = (key: RowKey, children: ReactNode): ReactNode => (
+  const rowOf = (key: RowKey, children: ReactNode, was?: ReactNode): ReactNode => (
     <RowGroup
-      key={key} label={t(rowLabel(key))} isArm={draft.isArm} isLocked={isLocked} isOverridden={draft.isOverridden(key)}
+      key={key} label={t(rowLabel(key))} isArm={draft.isArm} isLocked={isLocked} isOverridden={draft.isOverridden(key)} locksItself={key === 'tasks'} was={was}
       overriddenBy={draft.isArm ? [] : overriddenBy(experiment, key)} onReset={() => draft.reset(key)}
     >
       {children}
     </RowGroup>
   );
   // Only overrides: an arm's untouched rows go, and so do the headings over them
-  const group = (key: RowKey, children: ReactNode): ReactNode => (isOnlyOverrides && !draft.isOverridden(key) ? null : rowOf(key, children));
+  const group = (key: RowKey, children: ReactNode, was?: ReactNode): ReactNode => (isOnlyOverrides && !draft.isOverridden(key) ? null : rowOf(key, children, was));
   const heading = (title: string, hint?: string): ReactNode => (isOnlyOverrides ? null : <GroupHeading title={title} hint={hint} />);
   const { setup } = draft;
+  const baseTasks = `${rowText(draft.base, 'tasks')} · t·${experiment.tasksHash.slice(0, TASKS_HASH_CHARS)}`;
   return (
     <div className="flex min-w-0 flex-col pb-2">
       {!draft.isArm && <FixedRows experiment={experiment} onShowConfig={onShowConfig} />}
@@ -76,11 +78,21 @@ function SettingsBody({ draft, options, experiment, isLocked, isOnlyOverrides, o
       {group('plugins', <ChipList id="arm-plugins" addLabel={t('benchmark.arms.settings.addPlugin')} placeholder={t('benchmark.arms.settings.pluginPlaceholder')} value={setup.plugins} isReadOnly={isLocked} onChange={(v) => draft.edit('plugins', v)} />)}
       {group('items', <ItemsField experimentId={experiment.id} value={setup.items} onChange={(v) => draft.edit('items', v)} />)}
       {heading(t('benchmark.arms.settings.group.tasks'), t('benchmark.arms.settings.group.tasksHint'))}
-      {group('tasks', <TasksField value={setup.tasks} onChange={(v) => draft.edit('tasks', v)} />)}
+      {group('tasks', <TasksField value={setup.tasks} isReadOnly={isLocked} summary={draft.isArm && !draft.isOverridden('tasks') ? baseTasks : undefined} onChange={(v) => draft.edit('tasks', v)} />, draft.isArm && draft.isOverridden('tasks') ? <TasksWas text={baseTasks} /> : undefined)}
       {heading(t('benchmark.arms.settings.group.rules'))}
       {group('rules', <RulesField value={setup.rules} isReadOnly={isLocked} onChange={(v) => draft.edit('rules', v)} />)}
       {group('worktree', <WorktreeField value={setup.worktree} onChange={(v) => draft.edit('worktree', v)} />)}
     </div>
+  );
+}
+
+// The base's tasks struck, and the yellow line: the arm's own tasks are not the base's, so its runs compare per run only
+function TasksWas({ text }: { text: string }) {
+  return (
+    <>
+      <span>{t('benchmark.arms.settings.wasBase')} <s>{text}</s></span>
+      <p className="m-0 flex items-start gap-1.5 text-waiting"><span aria-hidden="true">●</span>{t('benchmark.arms.tasksWarning')}</p>
+    </>
   );
 }
 
