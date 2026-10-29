@@ -82,7 +82,7 @@ function openDesigns(activities: readonly Activity[], layouts: Readonly<Record<s
     const layout = layouts[activityKey(activity)];
     const tabs = layout === undefined ? [] : groupsOf(layout.root).flatMap((group) => group.tabs);
     return tabs.flatMap((tab) => (tab.kind === 'design' ? [{ key: designKey(activity, tab.path), activity, path: tab.path }] : []));
-  }).sort((a, b) => a.key.localeCompare(b.key)); // flatMap's own new array: nothing shared is sorted
+  }).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)); // a total order (localeCompare may tie distinct keys); flatMap's own new array
 }
 
 const anchored = (anchor: string): CSSProperties =>
