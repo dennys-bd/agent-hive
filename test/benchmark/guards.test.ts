@@ -97,7 +97,9 @@ test('an experiment whose base has a malformed flow, no items map or no worktree
   const bases = [
     { ...SETUP, flow: { ...SETUP.flow, stages: 'x' } }, { ...SETUP, flow: { ...SETUP.flow, stages: [] } }, { ...SETUP, flow: { ...SETUP.flow, stages: [{ ...stage, from: {} }] } },
     { ...SETUP, flow: { ...SETUP.flow, transitions: [{ from: 'Spec', to: 'Plan' }] } }, { ...SETUP, flow: { ...SETUP.flow, commands: [{ name: 'test' }] } },
-    { ...SETUP, flow: { ...SETUP.flow, copiedAt: 1 } }, { ...SETUP, items: undefined }, { ...SETUP, worktree: { setup: 'x' } },
+    { ...SETUP, flow: { ...SETUP.flow, copiedAt: 1 } },
+    { ...SETUP, flow: { ...SETUP.flow, stages: [stage, stage] } },
+    { ...SETUP, flow: { ...SETUP.flow, transitions: [{ from: 'Nope', to: 'end', when: 'done' }] } }, { ...SETUP, flow: { ...SETUP.flow, transitions: [{ from: 'Spec', to: 'Nope', when: 'done' }] } }, { ...SETUP, items: undefined }, { ...SETUP, worktree: { setup: 'x' } },
   ];
   for (const base of bases) assert.deepEqual(ids(saved({ experiments: [experiment({ base: base as ArmSetup })] })), [], JSON.stringify(base));
   assert.deepEqual(ids(saved({ experiments: [experiment()] })), ['exp-1']);

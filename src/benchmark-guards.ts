@@ -50,10 +50,18 @@ const isBenchStage = (v: unknown): boolean => isJsonObject(v) && isText(v.name) 
 const isBenchTransition = (v: unknown): boolean => isJsonObject(v) && isText(v.from) && isText(v.to) && isText(v.when) && v.sources === undefined;
 const isLine = (v: unknown): boolean => isJsonObject(v) && isText(v.name) && isText(v.line);
 const isListOf = (v: unknown, check: (item: unknown) => boolean): boolean => Array.isArray(v) && v.every(check);
+// Names are unique, and a transition leaves a stage and reaches a stage or the end
+function isWired(stages: unknown[], transitions: unknown[]): boolean {
+  const names = stages.map((s) => (s as { name: string }).name);
+  return new Set(names).size === names.length && transitions.every((t) => {
+    const { from, to } = t as { from: string; to: string };
+    return names.includes(from) && (to === 'end' || names.includes(to));
+  });
+}
 /** The shape of an experiment's copied flow (#536); schemas.ts reads it too. A base from before #536 holds stages, not a flow, so it fails. */
 export const isFlow = (v: unknown): v is BenchFlow =>
   isJsonObject(v) && isText(v.copiedAt) && Array.isArray(v.stages) && v.stages.length > 0 && v.stages.every(isBenchStage)
-  && isListOf(v.transitions, isBenchTransition) && isListOf(v.commands, isLine) && isTexts(v.dropped);
+  && isListOf(v.transitions, isBenchTransition) && isListOf(v.commands, isLine) && isTexts(v.dropped) && isWired(v.stages, v.transitions as unknown[]);
 // An item id and a version name become a folder under the run home's custom/ (3.1): one segment each, as the custom store names them
 const isItems = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([id, version]) => parseItemId(id) !== undefined && isVersionName(version));
 const isWorktree = (v: unknown): boolean => isJsonObject(v) && isText(v.setup) && isText(v.teardown);
