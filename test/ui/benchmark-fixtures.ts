@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { AgentId, ArmSetup, BenchMetrics, BenchRound, BenchRun, BenchStagePick, BenchTask, Experiment } from '../../src/types';
+import type { AgentId, ArmSetup, BenchFlow, BenchMetrics, BenchRound, BenchRun, BenchStagePick, BenchTask, Experiment } from '../../src/types';
 import { arm, experiment, run, SETUP } from '../benchmark/fixtures';
 import { json } from './plugins-fixtures';
 
@@ -47,6 +47,30 @@ export function stubBenchmarkFetch(status?: number, items: unknown[] = []): Call
 
 const stagePick = (skill: string, model = 'sonnet'): BenchStagePick => ({ agent: 'claude', model, skill, prompt: `${skill} {id}` });
 const benchTask = (n: number, blockedBy: string[] = []): BenchTask => ({ key: `T${n}`, title: `Task ${n}`, body: '', blockedBy });
+/** benchmark.hv.html's #dlg-settings flow (#536): Spec → Plan → Build → Checks (failed back to Build 3x) → Avaliação (rejected back to Build 2x) → PR → end. */
+export const ARMS_FLOW: BenchFlow = {
+  copiedAt: '2026-10-01T21:30:00',
+  stages: [
+    { name: 'Spec', prompt: '/hive:new-spec escreva a spec da tarefa a partir da referência do seed', agent: 'claude', model: 'sonnet' },
+    { name: 'Plan', prompt: '/hive:new-plan transforme a spec num plano fatiado', agent: 'claude', model: 'sonnet' },
+    { name: 'Build', prompt: '/hive:new-build implemente o plano, teste primeiro', agent: 'claude', model: 'sonnet' },
+    { name: 'Checks', action: 'commands', commands: ['test', 'lint', 'tsc'], stopOnFailure: true, onMissing: 'fail' },
+    {
+      name: 'Avaliação', action: 'evaluate', reviewers: [{ agent: 'claude', specializedAgent: 'hive:code-reviewer' }, { agent: 'claude', specializedAgent: 'hive:tdd' }],
+      judge: { agent: 'claude', model: 'fable' }, threshold: 7, rubric: 'correção',
+    },
+    { name: 'PR', prompt: 'abra o PR com o resumo da entrega', agent: 'claude', model: 'haiku' },
+  ],
+  transitions: [
+    { from: 'Spec', to: 'Plan', when: 'done' }, { from: 'Plan', to: 'Build', when: 'done' }, { from: 'Build', to: 'Checks', when: 'done' },
+    { from: 'Checks', to: 'Avaliação', when: 'verdict', verdict: 'passed' }, { from: 'Checks', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 3 },
+    { from: 'Avaliação', to: 'PR', when: 'verdict', verdict: 'passed' }, { from: 'Avaliação', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 2 },
+    { from: 'PR', to: 'end', when: 'done' },
+  ],
+  commands: [{ name: 'test', line: 'pnpm test' }, { name: 'lint', line: 'pnpm lint' }, { name: 'tsc', line: 'tsc --noEmit' }],
+  dropped: [],
+};
+
 /** benchmark.hv.html's #s-visao: the base and arms A (skills and plugins), B (none), C (build), D (own tasks). */
 export const ARMS_BASE: ArmSetup = {
   stages: { spec: stagePick('/hive:new-spec'), plan: stagePick('/hive:new-plan'), build: stagePick('/hive:new-build'), pr: stagePick('/hive:new-pr', 'haiku') },
