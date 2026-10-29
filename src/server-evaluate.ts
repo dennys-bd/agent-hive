@@ -1,4 +1,4 @@
-import { agentRefusal } from './agents.js';
+import { agentRefusal, defaultModel } from './agents.js';
 import { noWorkspaceReason, taskWorkspace } from './config.js';
 import { DiffTooLarge, diffBase, taskPatch } from './diff.js';
 import { cutPatch, JUDGE_SCHEMA, judgePrompt, parseFindings, parseScores, REVIEW_SCHEMA, reviewerPrompt, type Work } from './evaluate-prompt.js';
@@ -61,7 +61,8 @@ async function resolveRows(deps: EvaluateDeps, stage: Stage, workspace: string, 
     const picked = launchRun(pick, [], () => (roles ??= specializedAgents(dir)));
     if ('refusal' in picked) return { broken: `${who}: ${picked.refusal}` };
     const instructions = picked.specializedAgent?.instructions;
-    rows.push({ who, agent: row.agent, focus: row.focus ?? '', ...(picked.model === undefined ? {} : { model: picked.model }), ...(instructions === undefined ? {} : { instructions }) });
+    const model = picked.model ?? defaultModel(config, row.agent); // #482: a row with none runs its agent's default
+    rows.push({ who, agent: row.agent, focus: row.focus ?? '', ...(model === undefined ? {} : { model }), ...(instructions === undefined ? {} : { instructions }) });
   }
   return { reviewers: rows.slice(0, -1), judge: rows[rows.length - 1] as Row };
 }

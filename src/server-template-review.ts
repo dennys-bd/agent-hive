@@ -3,7 +3,7 @@
 // output and stderr reach hive.log only. The checks, the run and the guard are those of ask the agent (#330), reused from server-assist.ts.
 import type { Express, Response } from 'express';
 import { z } from 'zod';
-import { agentRefusal } from './agents.js';
+import { agentRefusal, withDefaultModel } from './agents.js';
 import { fileLines } from './assist.js';
 import { isRefusal, mainFiles } from './custom-versions.js';
 import { type HeadlessInput, type HeadlessResult, runHeadless } from './headless-run.js';
@@ -77,7 +77,7 @@ async function prepare(res: Response, deps: TemplateReviewRouteDeps, sources: It
   const others = read.files.filter((file) => file.path !== body.path).map(({ path, text }) => ({ path, text }));
   const catalogue = await readCatalogue(sources);
   const prompt = reviewPrompt({ instructions: instructions.text, path: body.path, kind: read.item.kind, text: body.text, others, variables: variablesOf(read, body), catalogue });
-  return { agent, ...(reviewer.model === null ? {} : { model: reviewer.model }), prompt, lineCount: fileLines(body.text).length };
+  return { ...withDefaultModel({ agent, ...(reviewer.model === null ? {} : { model: reviewer.model }) }, config), prompt, lineCount: fileLines(body.text).length }; // #482: null = the agent's default model
 }
 
 async function runAndAnswer(res: Response, deps: TemplateReviewRouteDeps, id: string, run: Prepared, signal: AbortSignal): Promise<void> {

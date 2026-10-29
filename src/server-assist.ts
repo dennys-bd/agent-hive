@@ -3,7 +3,7 @@
 // that goes away cancels its run. The agent's raw output and stderr reach hive.log only.
 import type { Express, Response } from 'express';
 import { z } from 'zod';
-import { agentRefusal } from './agents.js';
+import { agentRefusal, withDefaultModel } from './agents.js';
 import { applyProposal, ASSIST_SCHEMA, type AssistAnswer, assistPrompt, type AssistTarget, parseProposal, proposalHunk, targetOf } from './assist.js';
 import { isRefusal, mainFiles } from './custom-versions.js';
 import { type HeadlessInput, type HeadlessResult, runHeadless } from './headless-run.js';
@@ -87,7 +87,7 @@ async function prepare(res: Response, deps: AssistRouteDeps, sources: ItemSource
   if (refused !== undefined) return void fail(res, HTTP_CONFLICT, refused, 'agent_unavailable');
   const catalogue = await readCatalogue(sources);
   const prompt = assistPrompt({ request: body.request, path: body.path, kind: read.item.kind, text: body.text, target, variables: variablesOf(read, body), catalogue });
-  return { agent, ...(body.model === undefined ? {} : { model: body.model }), prompt, target, text: body.text };
+  return { ...withDefaultModel({ agent, ...(body.model === undefined ? {} : { model: body.model }) }, config), prompt, target, text: body.text }; // #482
 }
 
 // res, not req: req's close fires as soon as express.json has read the body; res's before the answer means the client went away. Listened
