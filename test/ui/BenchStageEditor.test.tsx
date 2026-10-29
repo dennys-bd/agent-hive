@@ -63,3 +63,10 @@ test('locked: the comboboxes and the prompt are disabled (#536)', () => {
   expect(screen.getByRole('combobox', { name: 'agente de Spec' })).toBeDisabled();
   expect(screen.getByRole('textbox', { name: 'prompt de Spec' })).toBeDisabled();
 });
+
+test('a blank skill on a skill stage shows the error inline (#536)', () => {
+  const skill = { name: 'Plan', action: 'skill' as const, skill: '' };
+  renderWithAgents(<StageEditor stage={skill} base={skill} flow={ARMS_FLOW} isArm={false} isLocked={false} onChange={vi.fn()} />);
+  expect(screen.getByText('A skill não pode ficar vazia.')).toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'skill de Plan' })).toHaveAttribute('aria-invalid', 'true');
+});

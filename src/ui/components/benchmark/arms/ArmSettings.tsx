@@ -15,7 +15,7 @@ import { WorktreeField } from '@/components/benchmark/arms/ListFields';
 import { FixedRows } from '@/components/benchmark/arms/FixedRows';
 import { FlowGroup } from '@/components/benchmark/arms/FlowGroup';
 import { GroupHeading, RowGroup } from '@/components/benchmark/arms/RowGroup';
-import { StageEditor, stageKind } from '@/components/benchmark/arms/StageEditor';
+import { blankField, StageEditor, stageKind } from '@/components/benchmark/arms/StageEditor';
 import { TasksField } from '@/components/benchmark/arms/TasksField';
 import { DialogBase } from '@/components/DialogBase';
 import { Badge } from '@/components/ui/badge';
@@ -184,7 +184,7 @@ export function ArmSettings({ experiment, armId, onClose, onShowConfig, onOpenFl
       cancelLabel={isLocked ? t('benchmark.arms.settings.close') : t('benchmark.arms.settings.cancel')}
       context={<SettingsContext draft={draft} isLocked={isLocked} isOnlyOverrides={isOnlyOverrides} onOnlyOverrides={setOnlyOverrides} />}
       footerNote={draft.isArm ? t('benchmark.arms.settings.footer.arm') : t('benchmark.arms.settings.footer.base', { arms: letters })}
-      primary={isLocked ? undefined : { label: t('benchmark.arms.settings.save'), shortcut: isMac() ? '⌘↵' : 'Ctrl+↵', onConfirm: saveDraft }}
+      primary={isLocked ? undefined : { label: t('benchmark.arms.settings.save'), disabled: draft.setup.flow.stages.some((s) => blankField(s) !== undefined), shortcut: isMac() ? '⌘↵' : 'Ctrl+↵', onConfirm: saveDraft }}
     >
       {isEmpty && <p className="m-0 py-6 text-[13px] text-muted-foreground">{t('benchmark.arms.settings.onlyEmpty')}</p>}
       <SettingsBody

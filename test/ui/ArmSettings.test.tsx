@@ -282,3 +282,15 @@ test("an arm on the base's tasks reads the summary with the hash; an arm with it
   expect(screen.getByText('tarefas diferentes da base · comparação só por run')).toHaveClass('text-waiting');
   expect(screen.getAllByRole('textbox', { name: 'chave' })).toHaveLength(3);
 });
+
+test('a cleared prompt keeps salvar disabled with the error inline and posts nothing (#536)', async () => {
+  const user = userEvent.setup();
+  const calls = stubBenchmarkFetch();
+  open(ARMS, 'a2');
+  await user.clear(screen.getByRole('textbox', { name: 'prompt de Spec' }));
+  expect(screen.getByRole('button', { name: /^salvar/ })).toBeDisabled();
+  expect(screen.getByText('O prompt não pode ficar vazio.')).toBeInTheDocument();
+  await user.type(screen.getByRole('textbox', { name: 'prompt de Spec' }), '/x');
+  expect(screen.getByRole('button', { name: /^salvar/ })).toBeEnabled();
+  expect(posts(calls)).toEqual([]);
+});

@@ -30,6 +30,12 @@ export function stageKind(stage: BenchStage): MessageKey {
   return stage.approval === true ? 'settings.stages.action.gate' : 'settings.stages.meta.show';
 }
 
+/** The field a stage's draft holds blank (#536): the server refuses '' for a prompt or a skill, so the dialog's salvar waits for it to be filled. */
+export function blankField(stage: BenchStage): 'prompt' | 'skill' | undefined {
+  if (stage.action === 'skill') return stage.skill?.trim() === '' ? 'skill' : undefined;
+  return stage.action === undefined && stage.prompt?.trim() === '' ? 'prompt' : undefined;
+}
+
 interface PickProps { id: string; stageName: string; agentLabel: MessageKey; modelLabel: MessageKey; agent: AgentId; model?: string; baseModel?: string; isArm: boolean; options?: LaunchOptions; onPick(agent: AgentId, model?: string): void }
 
 // In an arm '' is the agent's own default (no model over a base model); the base's model, when it names one, is a row of its own
@@ -59,6 +65,7 @@ const withPick = (stage: BenchStage, agent: AgentId, model?: string): BenchStage
 
 function AgentStageFields({ stage, base, isArm, options, onChange }: Pick<StageEditorProps, 'stage' | 'base' | 'isArm' | 'options' | 'onChange'>) {
   const isSkill = stage.action === 'skill';
+  const blank = blankField(stage);
   return (
     <>
       <PickFields
@@ -68,9 +75,10 @@ function AgentStageFields({ stage, base, isArm, options, onChange }: Pick<StageE
       {/* a prompt stage's skill is the command its prompt opens on, read only; a skill stage's is the field itself */}
       <Input
         aria-label={t('benchmark.arms.settings.skillOf', { stage: stage.name })} placeholder={t('benchmark.arms.settings.noSkill')} className="font-mono text-xs"
-        readOnly={!isSkill} value={isSkill ? (stage.skill ?? '') : (stageCall(stage) ?? '')} onChange={(e) => onChange({ ...stage, skill: e.target.value })}
+        readOnly={!isSkill} aria-invalid={blank === 'skill'} value={isSkill ? (stage.skill ?? '') : (stageCall(stage) ?? '')} onChange={(e) => onChange({ ...stage, skill: e.target.value })}
       />
-      {!isSkill && <Textarea aria-label={t('benchmark.arms.settings.promptOf', { stage: stage.name })} rows={2} value={stage.prompt ?? ''} className="text-xs" onChange={(e) => onChange({ ...stage, prompt: e.target.value })} />}
+      {!isSkill && <Textarea aria-label={t('benchmark.arms.settings.promptOf', { stage: stage.name })} aria-invalid={blank === 'prompt'} rows={2} value={stage.prompt ?? ''} className="text-xs" onChange={(e) => onChange({ ...stage, prompt: e.target.value })} />}
+      {blank !== undefined && <p role="alert" className="m-0 text-destructive text-xs">{t(blank === 'skill' ? 'benchmark.arms.settings.blankSkill' : 'benchmark.arms.settings.blankPrompt')}</p>}
     </>
   );
 }
