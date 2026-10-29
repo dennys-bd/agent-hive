@@ -150,6 +150,21 @@ test('a duplicate whose source folder cannot be copied answers 500 and leaves no
   assert.deepEqual(await readdir(join(bench.home, 'benchmark')), ['exp-1']);
 });
 
+test('PATCH base may change a stage\'s agent and prompt, never the flow\'s structure, and writes nothing on a refusal (#536)', async (t) => {
+  const bench = await serve(t);
+  const [, created] = await call(bench, 'POST', E, { kind: 'empty', workspace: 'bench' });
+  const e = created as Experiment;
+  const stages = e.base.flow.stages.map((s) => (s.name === 'Spec' ? { ...s, agent: 'claude' as const, model: 'opus', prompt: '/x {id}' } : s));
+  assert.deepEqual(await call(bench, 'PATCH', `${E}/${e.id}`, { base: { ...e.base, flow: { ...e.base.flow, stages } } }), [200, { id: e.id }]);
+  const renamed = stages.map((s) => (s.name === 'Spec' ? { ...s, name: 'Other' } : s));
+  const answer = await call(bench, 'PATCH', `${E}/${e.id}`, { base: { ...e.base, flow: { ...e.base.flow, stages: renamed } } });
+  assert.deepEqual(errorOf(answer), [400, 'bad_body']);
+  assert.match((answer[1] as { message: string }).message, /structure/);
+  const missing = stages.map((s) => (s.name === 'Checks' ? { ...s, commands: ['deploy'] } : s));
+  assert.match(((await call(bench, 'PATCH', `${E}/${e.id}`, { base: { ...e.base, flow: { ...e.base.flow, stages: missing } } }))[1] as { message: string }).message, /no line for command deploy/);
+  assert.deepEqual(bench.state().benchmark.experiments[0].base.flow.stages[0].prompt, '/x {id}');
+});
+
 test('a base PATCH rehashes the tasks; the other sections land as sent; a seed naming another workspace is 400 (#459)', async (t) => {
   const e = benchExperiment();
   const bench = await serve(t, { experiments: [e] });

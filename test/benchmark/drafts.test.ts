@@ -105,3 +105,20 @@ test("drafter answers { id } or { refused }, one write at a time; a seed path no
   assert.deepEqual(await readdir(join(bench.home, 'benchmark')), [made.id]);
   assert.deepEqual(await drafter({ ...bench.deps, queue: serial(), log: bench.log, live: () => undefined }).draft({ workspace: 'bench' }, MCP), { refused: 'the Hive has no config yet' });
 });
+
+test('benchmark_draft keeps the copied flow\'s structure: a base dropping a transition is refused naming base.flow; changing Spec\'s model is a draft (#536)', async (t) => {
+  const bench = await benchDeps(t);
+  const tool = drafter({ ...bench.deps, queue: serial(), log: bench.log, live: () => ({ config: bench.config, experiments: bench.state().benchmark.experiments }) });
+  const made = await createEmptyExperiment(bench.ctx(), { workspace: 'bench', createdBy: USER });
+  assert.ok(!isRefusal(made));
+  const { flow } = made.base;
+  const dropped = await tool.draft({ workspace: 'bench', base: { ...made.base, flow: { ...flow, transitions: flow.transitions.slice(1) } } }, MCP);
+  assert.ok('refused' in dropped);
+  assert.match(dropped.refused, /^base\.flow: .*structure/);
+  const stages = flow.stages.map((s) => (s.name === 'Spec' ? { ...s, model: 'gpt-5-mini' } : s));
+  const edited = await tool.draft({ workspace: 'bench', base: { ...made.base, flow: { ...flow, stages } } }, MCP);
+  assert.ok('id' in edited);
+  assert.equal(bench.state().benchmark.experiments.find((e) => e.id === edited.id)?.base.flow.stages[0].model, 'gpt-5-mini');
+  const replaced = await tool.draft({ id: made.id, base: { ...made.base, flow: { ...flow, copiedAt: '2020-01-01T00:00:00.000Z' } } }, MCP);
+  assert.ok('refused' in replaced);
+});
