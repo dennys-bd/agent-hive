@@ -10,7 +10,7 @@ import { localKey } from '@/lib/activities';
 import type { FileAt } from '@/lib/editor-models';
 import { connectPty } from '@/lib/pty-stream';
 import { linkHandler, openLink } from '@/lib/trusted-links';
-import { followTheme, linkFiles, linkTaskRefs, loadSearch, openRefUrl, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
+import { followTheme, linkFiles, linkTaskRefs, loadSearch, openRefUrl, terminalCopy, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
 
 // activityId: the activity the run is in (#629), what its task references post open-ref for. active: its tab is shown. focused: of a split tab's
 // panes (#641), the one that takes the keyboard; a tab alone always does. isAsleep (#672): the run ended with its session kept; its tail shows
@@ -108,6 +108,7 @@ export function PtyTab({ tab, activityId, label, active, focused = true, fileLin
     const search = loadSearch(xterm);
     xterm.open(element);
     setFindTarget({ term: xterm, search });
+    terminalCopy(xterm); // #543: after open, like the paste; a ⌘C with no selection leaves the clipboard to what Claude copied
     terminalPaste(xterm, () => window.hive?.clipboardFiles() ?? Promise.resolve([])); // #843: after open, which gives it its element; outside the viewer, the text
     const { disconnect, postSize } = connectPty(xterm, ptyId, () => onExit(ptyId)); // before the first fit, so its grid reaches the pty
     const terminal = { xterm, fit, host: element, postSize };

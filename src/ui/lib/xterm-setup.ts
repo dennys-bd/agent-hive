@@ -213,6 +213,16 @@ export function terminalKeys(term: Terminal, onFind?: () => void): void {
   });
 }
 
+/** The terminal's copy (#543). Claude Code in fullscreen tracks the mouse, so a drag is its own selection, which it puts on the clipboard
+ * itself on release; xterm then holds none. xterm's copy handler writes its selection whatever it is, so the ⌘C that follows would replace
+ * Claude's copy with an empty text. With no selection the event is stopped before xterm's handler and its default is left alone, so the
+ * clipboard keeps what it holds. A capture listener on the open xterm's element (call it after `open`), as terminalPaste's. */
+export function terminalCopy(term: Terminal): void {
+  term.element?.addEventListener('copy', (event) => {
+    if (!term.hasSelection()) event.stopImmediatePropagation();
+  }, { capture: true });
+}
+
 // What a pasted file's path escapes (#843), as Terminal.app and iTerm type a dragged file: the shell's special ASCII characters, space and
 // tab included. Letters outside ASCII stay, so an accented name reads as itself.
 const SHELL_SPECIAL = /[ \t!"#$&'()*;<=>?[\\\]^`{|}~]/g;
