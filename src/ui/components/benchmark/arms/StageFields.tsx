@@ -21,9 +21,9 @@ function PickFields({ draft, role, options, menu, setMenu }: PickFieldsProps) {
   return (
     <div className="grid grid-cols-2 gap-3">
       {/* another agent's model means nothing to it, as StageBlocks: the agent's own default */}
-      <AgentField id={`arm-${role}-agent`} label={t('benchmark.arms.settings.agentOf', { role })} value={pick.agent} agents={agents} onOpenChange={() => undefined} onChange={(agent) => draft.edit(role, { agent })} />
+      <AgentField id={`arm-${role}-agent`} label={t('benchmark.arms.settings.agentOf', { stage: role })} value={pick.agent} agents={agents} onOpenChange={() => undefined} onChange={(agent) => draft.edit(role, { agent })} />
       <ModelMenu
-        id={`arm-${role}-model`} label={t('benchmark.arms.settings.modelOf', { role })} agent={pick.agent} options={options?.[pick.agent]} value={pick.model ?? ''}
+        id={`arm-${role}-model`} label={t('benchmark.arms.settings.modelOf', { stage: role })} agent={pick.agent} options={options?.[pick.agent]} value={pick.model ?? ''}
         defaultLabel={draft.isArm ? t('benchmark.arms.settings.agentDefault') : undefined} inherit={inherit}
         open={menu === role} onOpenChange={(isOpen) => setMenu(isOpen ? role : undefined)} onPick={(model) => draft.edit(role, { agent: pick.agent, model })}
       />
@@ -36,7 +36,7 @@ function PerRoleFields({ draft, rowKey }: { draft: Draft; rowKey: 'skills' | 'pr
   return (
     <div className="grid grid-cols-2 gap-2">
       {ROLES.map((role) => {
-        const label = t(rowKey === 'skills' ? 'benchmark.arms.settings.skillOf' : 'benchmark.arms.settings.promptOf', { role });
+        const label = t(rowKey === 'skills' ? 'benchmark.arms.settings.skillOf' : 'benchmark.arms.settings.promptOf', { stage: role });
         const change = (value: string): void => draft.edit(rowKey, { ...values, [role]: value });
         return rowKey === 'skills'
           ? <Input key={role} aria-label={label} value={values[role]} onChange={(e) => change(e.target.value)} className="font-mono text-xs" />

@@ -9,10 +9,11 @@ interface ChipListProps {
   id: string; addLabel: string; placeholder: string; value: readonly string[];
   onChange(value: string[]): void; isReadOnly?: boolean; limit?: number;
   options?: readonly string[]; // only these may be added (a datalist offers them); absent = any text
+  titleOf?(chip: string): string | undefined; // a chip's tooltip (a command's line)
 }
 
 /** The screen's `.list`: mono chips with a ×, `mais N` past the limit, and a field that adds on Enter (#536). */
-export function ChipList({ id, addLabel, placeholder, value, onChange, isReadOnly = false, limit = CHIP_LIMIT, options }: ChipListProps) {
+export function ChipList({ id, addLabel, placeholder, value, onChange, isReadOnly = false, limit = CHIP_LIMIT, options, titleOf }: ChipListProps) {
   const [draft, setDraft] = useState('');
   const [isOpen, setOpen] = useState(false);
   const shown = isOpen ? value : value.slice(0, limit);
@@ -29,7 +30,7 @@ export function ChipList({ id, addLabel, placeholder, value, onChange, isReadOnl
     <span className="flex flex-wrap items-center gap-1.5">
       {value.length === 0 && <span className="text-muted-foreground">{t('benchmark.arms.settings.chips.none')}</span>}
       {shown.map((chip) => (
-        <span key={chip} className="inline-flex items-center gap-1.5 rounded-[5px] border bg-background py-0.5 pr-1 pl-2 font-mono text-xs">
+        <span key={chip} title={titleOf?.(chip)} className="inline-flex items-center gap-1.5 rounded-[5px] border bg-background py-0.5 pr-1 pl-2 font-mono text-xs">
           {chip}
           {!isReadOnly && (
             <button
