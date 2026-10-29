@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import type { Terminal } from '@xterm/xterm';
 import { toast } from 'sonner';
 import { setShortcuts } from '@/lib/shortcut-bindings';
-import { clearTerminal, escapePath, findOptions, FONT_FAMILY, linkTaskRefs, openRefUrl, paintTerminal, shownSize, terminalFontStack, terminalCopy, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
+import { clearTerminal, escapePath, findOptions, FONT_FAMILY, linkTaskRefs, openRefUrl, paintTerminal, shownSize, terminalFontStack, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
 import type { Shortcuts } from '../../src/types';
 import { FakeTerminal } from './xterm-fakes';
 
@@ -298,28 +298,6 @@ test('terminalPaste: a clipboard read that rejects pastes the text, as if no fil
   const { paste, pasteText } = pasteTerm(async () => { throw new Error('clipboard unavailable'); });
   pasteText('hello');
   await vi.waitFor(() => expect(paste).toHaveBeenCalledExactlyOnceWith('hello'));
-});
-
-// An open xterm as terminalCopy reads it (#543): its element, holding a textarea with xterm's own copy listener
-function copyTerm(selection: string) {
-  const element = document.createElement('div');
-  const textarea = element.appendChild(document.createElement('textarea'));
-  const xtermOwn = vi.fn((event: Event) => event.preventDefault());
-  textarea.addEventListener('copy', xtermOwn);
-  terminalCopy({ element, hasSelection: () => selection !== '' } as unknown as Terminal);
-  return { xtermOwn, copy: (): boolean => fireEvent.copy(textarea) };
-}
-
-test('terminalCopy: with no selection xterm never sees the copy and the default is not prevented, so what Claude copied stays on the clipboard (#543)', () => {
-  const { xtermOwn, copy } = copyTerm('');
-  expect(copy()).toBe(true);
-  expect(xtermOwn).not.toHaveBeenCalled();
-});
-
-test('terminalCopy: with a selection the copy goes on to xterm\'s own handler (#543)', () => {
-  const { xtermOwn, copy } = copyTerm('handoff');
-  expect(copy()).toBe(false);
-  expect(xtermOwn).toHaveBeenCalledOnce();
 });
 
 test('clearTerminal clears the tracked xterm of a worker, and nothing once it is untracked (#584)', () => {

@@ -19,7 +19,7 @@ import { setShortcuts } from './lib/shortcut-bindings.js';
 import { refPrefixes } from './lib/task-refs.js';
 import { applyTheme } from './lib/theme.js';
 import { linkHandler, openLink, setTrustedDomains } from './lib/trusted-links.js';
-import { FONT_FAMILY, linkFiles, linkTaskRefs, loadSearch, openRefUrl, paintTerminal, terminalCopy, terminalFontStack, terminalKeys, terminalPaste } from './lib/xterm-setup.js';
+import { FONT_FAMILY, linkFiles, linkTaskRefs, loadSearch, openRefUrl, paintTerminal, terminalFontStack, terminalKeys, terminalPaste } from './lib/xterm-setup.js';
 
 const host = document.getElementById('terminal');
 if (!host) throw new Error('terminal.html: #terminal missing');
@@ -122,7 +122,6 @@ let stopTheme = applyTheme('system', () => paintTerminal(term));
 const fit = new FitAddon();
 term.loadAddon(fit);
 term.open(host);
-terminalCopy(term); // #543: after open, like the paste; a ⌘C with no selection leaves the clipboard to what Claude copied
 terminalPaste(term, () => window.hiveTerminal.clipboardFiles()); // #843: after open, which gives it its element; main reads Finder's files
 // A file link opens in the main window's editor pane, in this run's activity (#717): main checks it, focuses the main
 // window and forwards it
