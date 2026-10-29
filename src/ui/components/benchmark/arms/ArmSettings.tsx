@@ -123,7 +123,7 @@ function SettingsContext({ draft, isLocked, isOnlyOverrides, onOnlyOverrides }: 
   );
 }
 
-export interface ArmSettingsProps { experiment: Experiment; armId?: string; onClose(): void; onShowConfig(): void }
+export interface ArmSettingsProps { experiment: Experiment; armId?: string; onClose(): void; onShowConfig(): void; onOpenFlowSettings?(): void } // onOpenFlowSettings: the flow group's link to Settings, left out when absent
 
 /** An arm's settings, or the base's when armId is absent (#462, #536). Editing changes a draft; salvar posts it once when it changed, and
  *  cancelar, Esc, the × and the overlay drop it. A refused post keeps the dialog open behind the toast. While the experiment runs or sleeps it

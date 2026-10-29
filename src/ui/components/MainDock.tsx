@@ -48,6 +48,7 @@ export interface MainDockProps {
   detail(view: DetailView): ReactNode; children: ReactNode;
   rateLimits?: PlanReadings; // #463: state.rateLimits, the config tab's current spend; absent: no reading
   experiments?: Experiment[]; // #461: state.benchmark.experiments, the benchmark view's list; absent (the terminal's harness): none
+  openFlowSettings?(): void; // #536: the benchmark base dialog's abrir em settings; absent (a harness): no link
   consoleChannels?: ConsoleChannels; // the daemon's console channels (#353), read by the Dashboard; absent (the terminal's harness): no console
   // the chip that opens its drawer lives in the Dashboard's footer (redesign 05)
   // The Automação tab's body (#456), from the Dashboard, handed what its worker chips call (#457); absent (the terminal's harness): no such tab
@@ -336,7 +337,7 @@ export function MainDock(props: MainDockProps) {
     id: 'automation', title: t('dock.automation'), ownHeader: true, body: <FlowShownContext.Provider value={isFlow}>{automation(open)}</FlowShownContext.Provider>,
   }];
   const plugins = usePluginsDock({ isShown: selection.center === 'plugins', workspaces, activate, fontFamily }); // #313: the third view, wired beside MainDock
-  const benchmark = useBenchmarkDock({ isShown: selection.center === 'benchmark', experiments: props.experiments ?? NO_EXPERIMENTS, workspaces, activate, rateLimits: props.rateLimits }); // #461: the fourth view
+  const benchmark = useBenchmarkDock({ isShown: selection.center === 'benchmark', experiments: props.experiments ?? NO_EXPERIMENTS, workspaces, activate, rateLimits: props.rateLimits, slots: { openFlowSettings: props.openFlowSettings } }); // #461: the fourth view
   const viewRight = selection.center === 'plugins' ? plugins.right : selection.center === 'benchmark' ? benchmark.right : undefined;
   const panels: DockPanel[] = [
     // First in the list, as in PANELS: the tab a shared side opens on (#457, #746)
