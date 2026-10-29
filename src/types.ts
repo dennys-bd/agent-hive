@@ -808,6 +808,14 @@ export type ExperimentStatus = 'draft' | 'running' | 'sleeping' | 'done';
 export type BenchStageRole = 'spec' | 'plan' | 'build' | 'pr';
 /** What a stage of a run is: the agent, its model and the skill or command the stage prompt calls (`/hive:new-build`, `/hive-build`). */
 export interface BenchStagePick { agent: AgentId; model?: string; skill: string; prompt: string } // prompt: the stage's prompt, {id}/{title}/{body} left for the Hive
+/** A stage of an experiment's copied flow (#536): the Hive's Stage without what talks to a source. */
+export type BenchStage = Omit<Stage, 'from' | 'onStart'>;
+export type BenchTransition = Omit<Transition, 'sources'>;
+/** The Hive's flow as the experiment copied it (#536); the run's comb is built from it. commands: each named command's line for the seed's
+ *  workspace. dropped: what the copy took out (`Spec.from`, `Done.after`, `Review → Done.sources`), for the dialog's note. */
+export interface BenchFlow { copiedAt: string; stages: BenchStage[]; transitions: BenchTransition[]; commands: { name: string; line: string }[]; dropped: string[] }
+/** What an arm changes of one stage, by field; model null = the agent's own default over a base model. */
+export type StageOverride = Partial<Pick<BenchStage, 'agent' | 'prompt' | 'skill' | 'commands' | 'judge' | 'threshold'>> & { model?: string | null };
 export interface BenchTask { key: string; title: string; body: string; blockedBy: string[] }
 export interface BenchRules { allow: string[]; deny: string[] }
 /** The base, and what an arm overrides of it: the same shape, every field optional on the arm. */

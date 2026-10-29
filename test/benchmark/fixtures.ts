@@ -12,7 +12,7 @@ import type { Run } from '../../src/benchmark/exec.js';
 import { initialState } from '../../src/orchestrator.js';
 import { parseConfig } from '../../src/config.js';
 import { combConfig } from '../fakes.js';
-import type { Activity, Arm, ArmOverrides, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, Stage, State, Task, Worker } from '../../src/types.js';
+import type { Command, Transition, Activity, Arm, ArmOverrides, ArmSetup, BenchIsolation, BenchRun, BenchStagePick, Config, Experiment, Stage, State, Task, Worker } from '../../src/types.js';
 
 const pick = (skill: string): BenchStagePick => ({ agent: 'claude', skill, prompt: `${skill} {title}\n\n{body}` });
 export const SETUP: ArmSetup = {
@@ -135,19 +135,45 @@ export const watchTask = (n: number, blockedBy: number[] = [], key = `T${n}`, ti
 
 export const SHA = 'c'.repeat(40);
 // spec by prompt (codex, a model), plan by a skill stage, build by a /hive-build prompt after a /hive-pr-review decoy; pr unmatched
-export const BENCH_STAGES: Stage[] = [
+export const BENCH_STAGES_V1: Stage[] = [
   { name: 'Spec', from: {}, prompt: '/hive:new-spec {id}', agent: 'codex', model: 'gpt-5' },
   { name: 'Plan', from: {}, action: 'skill', skill: 'new-plan' },
   { name: 'Check', from: {}, prompt: '/hive-pr-review {id}' },
   { name: 'Build', from: {}, prompt: '/hive-build {title}' },
   { name: 'Done', from: {} },
 ];
+// The user's real flow shape (#536): source entry and start actions, an approval, a skill stage, commands, an evaluation, a delayed
+// delete activity, and a transition that moves the source's card
+export const BENCH_STAGES: Stage[] = [
+  { name: 'Spec', from: { board: ['Ready'] }, onStart: { board: [{ type: 'move', column: 'In progress' }] }, prompt: '/hive:new-spec {id}', agent: 'codex', model: 'gpt-5' },
+  { name: 'Plan', from: {}, action: 'skill', skill: 'new-plan' },
+  { name: 'Build', from: {}, prompt: '/hive-build {title}', approval: true },
+  { name: 'Checks', from: {}, action: 'commands', commands: ['test', 'lint'], stopOnFailure: true, onMissing: 'fail' },
+  { name: 'Review', from: {}, action: 'evaluate', reviewers: [], judge: { agent: 'claude', model: 'opus' }, threshold: 7, rubric: 'correctness' },
+  { name: 'Done', from: {}, action: 'deleteActivity', after: '5d' },
+];
+export const BENCH_TRANSITIONS: Transition[] = [
+  { from: 'Spec', to: 'Plan', when: 'done' }, { from: 'Plan', to: 'Build', when: 'done' },
+  { from: 'Build', to: 'Checks', when: 'approved' }, { from: 'Build', to: 'Build', when: 'feedback' },
+  { from: 'Checks', to: 'Review', when: 'verdict', verdict: 'passed' }, { from: 'Checks', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 3 },
+  { from: 'Review', to: 'Done', when: 'verdict', verdict: 'passed', sources: { board: [{ type: 'move', column: 'Done' }] } },
+  { from: 'Review', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 2 },
+  { from: 'Done', to: 'end', when: 'done' },
+];
+export const BENCH_COMMANDS: Command[] = [
+  { name: 'test', impls: [{ workspace: null, command: 'pnpm test' }], menu: true, env: {} },
+  { name: 'lint', impls: [{ workspace: 'bench', command: 'pnpm lint' }, { workspace: null, command: 'npm run lint' }], menu: false, env: {} },
+  { name: 'deploy', impls: [{ workspace: 'other', command: 'make deploy' }], menu: true, env: {} },
+];
+export const NOW = new Date('2026-10-01T21:30:00.000Z');
+export const benchComb = (stages: Stage[] = BENCH_STAGES): Pick<Config, 'comb' | 'defaultAgent'> =>
+  ({ defaultAgent: 'claude', comb: { ...benchConfig('/r').comb, stages, transitions: BENCH_TRANSITIONS, commands: BENCH_COMMANDS } });
 export const CLAUDE_ARGS = ['--plugin-dir', '/plugins/extra', '--allowedTools', 'Read Bash(npm run test:coverage *)', '--disallowedTools', 'Bash(gh:*)', '--plugin-dir', '/plugins/two'];
 
 /** A parsed config around one workspace `bench` at `repo`; its stages and agent args are replaced after the parse (the routes only read them). */
 export function benchConfig(repo: string): Config {
   const parsed = parseConfig(combConfig({ stages: [{ name: 'Todo', from: {} }], workspaces: [{ name: 'bench', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', setup: 'RUN pnpm install' }] }));
-  return { ...parsed, defaultAgent: 'claude', agentArgs: { ...parsed.agentArgs, claude: CLAUDE_ARGS }, comb: { ...parsed.comb, stages: BENCH_STAGES } };
+  return { ...parsed, defaultAgent: 'claude', agentArgs: { ...parsed.agentArgs, claude: CLAUDE_ARGS }, comb: { ...parsed.comb, stages: BENCH_STAGES_V1 } };
 }
 
 export const benchExperiment = (patch: Partial<Experiment> = {}): Experiment =>
