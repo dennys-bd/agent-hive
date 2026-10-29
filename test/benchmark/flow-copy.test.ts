@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFlow } from '../../src/benchmark/flow-copy.js';
-import type { BenchFlow, Stage } from '../../src/types.js';
+import { copyFlow, flowIssues } from '../../src/benchmark/flow-copy.js';
+import type { BenchFlow, BenchStage, Stage } from '../../src/types.js';
 import { BENCH_STAGES, benchComb, NOW } from './fixtures.js';
 
 const flowOf = (result: ReturnType<typeof copyFlow>): BenchFlow => {
@@ -34,4 +34,18 @@ test('a wait for CI refuses with its name; a stage named Delivered, an empty flo
   assert.match((copyFlow(benchComb([]), 'bench', NOW) as { refused: string }).refused, /no stage/);
   const deploy: Stage = { name: 'Ship', from: {}, action: 'commands', commands: ['deploy'], stopOnFailure: true, onMissing: 'fail' };
   assert.match((withStage(deploy) as { refused: string }).refused, /Ship runs deploy, which has no line in workspace bench/);
+});
+
+test('flowIssues: an edit of the editable fields passes; a renamed stage, a moved transition or a foreign command does not (#536)', () => {
+  const flow = flowOf(copyFlow(benchComb(), 'bench', NOW));
+  const edit = (i: number, patch: Partial<BenchStage>): BenchFlow => ({ ...flow, stages: flow.stages.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
+  assert.deepEqual(flowIssues(flow, edit(0, { agent: 'claude', model: 'opus', prompt: '/x {id}' })), []);
+  assert.deepEqual(flowIssues(flow, edit(4, { judge: { agent: 'codex' }, threshold: 8 })), []);
+  assert.match(flowIssues(flow, edit(0, { name: 'Other' }))[0], /structure/);
+  const { approval: _approval, ...noApproval } = flow.stages[2];
+  assert.match(flowIssues(flow, { ...flow, stages: flow.stages.map((s, j) => (j === 2 ? noApproval : s)) })[0], /structure/);
+  assert.match(flowIssues(flow, { ...flow, transitions: flow.transitions.slice(1) })[0], /structure/);
+  assert.match(flowIssues(flow, edit(3, { commands: ['deploy'] }))[0], /Checks: no line for command deploy/);
+  assert.match(flowIssues(flow, edit(4, { threshold: 11 }))[0], /Review/);
+  assert.match(flowIssues(flow, edit(0, { model: null as unknown as string }))[0], /Spec/);
 });

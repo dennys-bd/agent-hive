@@ -1,6 +1,9 @@
 import { resolveCommand } from '../run-commands.js';
 import { runsAgent } from '../stage-agent.js';
 import type { BenchFlow, BenchStage, BenchTransition, Config, Stage, Transition } from '../types.js';
+import { STAGE_OVERRIDE_FIELDS } from './arms.js';
+import { canonicalJson } from './canonical.js';
+import { STAGE_OVERRIDE } from './schemas.js';
 import { DONE_STAGE } from './watcher.js';
 
 export type FlowCopy = { flow: BenchFlow } | { refused: string };
@@ -60,4 +63,25 @@ export function copyFlow(config: Comb, workspace: string, now: Date): FlowCopy {
       dropped: [...copiedStages, ...copiedTransitions].flatMap((c) => c.dropped),
     },
   };
+}
+
+// The flow with every editable field taken out: what must stay as the copy made it
+const frame = (flow: BenchFlow): string =>
+  canonicalJson({ ...flow, stages: flow.stages.map((s) => Object.fromEntries(Object.entries(s).filter(([k]) => !(STAGE_OVERRIDE_FIELDS as readonly string[]).includes(k)))) });
+
+function fieldIssues(stage: BenchStage, commands: readonly { name: string }[]): string[] {
+  const editable = Object.fromEntries(Object.entries(stage).filter(([k]) => (STAGE_OVERRIDE_FIELDS as readonly string[]).includes(k)));
+  const parsed = STAGE_OVERRIDE.safeParse(editable);
+  const issues = parsed.success ? [] : parsed.error.issues.map((i) => `base.flow.${stage.name}: ${i.path.join('.')} ${i.message}`);
+  // a base has a model or none: null (the agent's default) only means something on an arm
+  const nullModel = editable.model === null ? [`base.flow.${stage.name}: model cannot be null on a base`] : [];
+  const missing = (stage.commands ?? []).filter((c) => !commands.some((l) => l.name === c)).map((c) => `base.flow.${stage.name}: no line for command ${c}`);
+  return [...issues, ...nullModel, ...missing];
+}
+
+/** What a patched base's flow may not do (#536): change the copy's structure (every field but STAGE_OVERRIDE_FIELDS, the stage order, the
+ *  transitions, the commands, copiedAt, dropped), give an editable field a bad value, or name a command the copy has no line for. */
+export function flowIssues(copy: BenchFlow, next: BenchFlow): string[] {
+  if (frame(copy) !== frame(next)) return ['base.flow: the flow is the copy the experiment was created with; change its structure in Settings and create another experiment'];
+  return next.stages.flatMap((s) => fieldIssues(s, next.commands));
 }

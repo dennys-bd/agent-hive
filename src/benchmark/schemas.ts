@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { isVersionName, safeFilePath } from '../custom-versions.js';
 import { parseItemId } from '../item-sources.js';
 import { COMMIT } from '../state-guards.js';
-import { AGENT_IDS, type ArmOverrides, type ArmSetup, type BenchBlindness, type BenchEvaluation, type BenchIsolation, type BenchPace, type BenchSeed, ENV_NAME, type EvaluateRow } from '../types.js';
+import { SCORE_MAX, SKILL_NAME } from '../stage-agent.js';
+import { AGENT_IDS, type ArmOverrides, type ArmSetup, type BenchBlindness, type BenchEvaluation, type BenchIsolation, type BenchPace, type BenchSeed, ENV_NAME, type EvaluateRow, type StageOverride } from '../types.js';
 import { UPLOAD_NAME, UPLOAD_PREFIX } from './store.js';
 
 const NAME_MAX = 120;
@@ -49,6 +50,12 @@ export const PACE: z.ZodType<BenchPace> = z.strictObject({
 });
 export const BLINDNESS: z.ZodType<BenchBlindness> = z.strictObject({ on: z.boolean(), forbiddenWords: z.array(z.string().min(1)) });
 const EVALUATE_ROW: z.ZodType<EvaluateRow> = z.strictObject({ agent: z.enum(AGENT_IDS), model: z.string().min(1).optional(), specializedAgent: z.string().min(1).optional(), focus: z.string().optional() });
+// The record key refuses __proto__: z.record assigns, and that key would set the prototype
+export const STAGE_OVERRIDE: z.ZodType<StageOverride> = z.strictObject({
+  agent: z.enum(AGENT_IDS), model: z.string().min(1).nullable(), prompt: z.string().min(1), skill: z.string().regex(SKILL_NAME),
+  commands: z.array(z.string().min(1)).min(1), judge: EVALUATE_ROW, threshold: z.number().min(0).max(SCORE_MAX),
+}).partial();
+export const STAGE_NAME = z.string().min(1).refine((name) => name !== '__proto__', 'a stage name');
 export const EVALUATION: z.ZodType<BenchEvaluation> = z.strictObject({ collectors: z.array(EVALUATE_ROW), dynamic: z.boolean(), tester: EVALUATE_ROW, scenarioWalks: z.number().int().min(1), judge: EVALUATE_ROW, rubric: z.string() });
 
 export const CREATE = z.discriminatedUnion('kind', [
