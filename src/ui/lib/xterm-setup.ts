@@ -214,11 +214,14 @@ export function terminalKeys(term: Terminal, onFind?: () => void): void {
   });
 }
 
+// A copy bigger than this is dropped: decoding xterm's 10 MB OSC limit would stall the page for a clipboard nobody pastes
+const MAX_OSC52_BASE64 = 1024 * 1024;
+
 // OSC 52's payload is `<selection names>;<base64>`; `?` instead of the base64 asks to read the clipboard back
 const decodeOsc52 = (data: string): string | undefined => {
   const separator = data.indexOf(';');
   const payload = separator === -1 ? '' : data.slice(separator + 1);
-  if (payload === '' || payload === '?') return undefined;
+  if (payload === '' || payload === '?' || payload.length > MAX_OSC52_BASE64) return undefined;
   try {
     return new TextDecoder().decode(Uint8Array.from(atob(payload), (char) => char.charCodeAt(0)));
   } catch {
@@ -233,8 +236,10 @@ const decodeOsc52 = (data: string): string | undefined => {
 export function terminalClipboard(term: Terminal, write = (text: string): Promise<void> => navigator.clipboard.writeText(text)): void {
   term.parser.registerOscHandler(52, (data) => {
     const text = decodeOsc52(data);
-    // the id keeps a burst of refused writes to one toast
-    if (text !== undefined) write(text).catch(() => toast.error(t('terminal.copyFailed'), { id: 'terminal.copyFailed' }));
+    // then(), so a write that throws at once toasts as a rejected one does; the id keeps a burst of refused writes to one toast
+    if (text !== undefined) {
+      Promise.resolve(text).then(write).catch(() => toast.error(t('terminal.copyFailed'), { id: 'terminal.copyFailed' }));
+    }
     return true;
   });
 }

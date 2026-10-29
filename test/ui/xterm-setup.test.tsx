@@ -310,18 +310,19 @@ function oscTerm(write: (text: string) => Promise<void>) {
 
 const base64 = (text: string): string => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
 
-test('terminalClipboard: an OSC 52 write puts its decoded UTF-8 text on the clipboard, with or without a selection name (#543)', () => {
+test('terminalClipboard: an OSC 52 write puts its decoded UTF-8 text on the clipboard, with or without a selection name (#543)', async () => {
   const write = vi.fn(async () => undefined);
   const osc = oscTerm(write);
   expect(osc(`c;${base64('handoff: ação ✓')}`)).toBe(true);
   osc(`;${base64('second')}`);
-  expect(write.mock.calls).toEqual([['handoff: ação ✓'], ['second']]);
+  await vi.waitFor(() => expect(write.mock.calls).toEqual([['handoff: ação ✓'], ['second']]));
 });
 
-test('terminalClipboard: a read query, a missing payload or bad base64 writes nothing and is still consumed (#543)', () => {
+test('terminalClipboard: a read query, a missing payload, bad base64 or a payload over 1 MB writes nothing and is still consumed (#543)', async () => {
   const write = vi.fn(async () => undefined);
   const osc = oscTerm(write);
-  expect([osc('c;?'), osc('c'), osc('c;%%%')]).toEqual([true, true, true]);
+  expect([osc('c;?'), osc('c'), osc('c;%%%'), osc(`c;${'A'.repeat(1024 * 1024 + 4)}`)]).toEqual([true, true, true, true]);
+  await Promise.resolve();
   expect(write).not.toHaveBeenCalled();
 });
 
@@ -331,13 +332,13 @@ test('terminalClipboard: the OSC 52 Claude Code prints on a drag, parsed by a re
   const write = vi.fn(async () => undefined);
   terminalClipboard(term, write);
   await new Promise<void>((resolve) => term.write(`\x1b]52;c;${base64('copied by claude')}\x07`, resolve));
-  expect(write).toHaveBeenCalledExactlyOnceWith('copied by claude');
+  await vi.waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith('copied by claude'));
   term.dispose();
 });
 
 test('terminalClipboard: a write the clipboard refuses shows a toast in our own words (#543)', async () => {
   const error = vi.spyOn(toast, 'error').mockImplementation(() => '');
-  oscTerm(async () => { throw new Error('Document is not focused.'); })(`c;${base64('x')}`);
+  oscTerm(() => { throw new Error('Document is not focused.'); })(`c;${base64('x')}`);
   await vi.waitFor(() => expect(error).toHaveBeenCalledExactlyOnceWith('The program\'s copy did not reach the clipboard', { id: 'terminal.copyFailed' }));
 });
 
