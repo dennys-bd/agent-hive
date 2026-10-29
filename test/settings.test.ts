@@ -410,6 +410,21 @@ test('POST /settings takes agentArgs from the body and keeps the saved ones when
   assert.deepEqual(await onDisk(), { claude: [], codex: [] });
 });
 
+test('POST /settings takes agentModels and agentEnabled from the body, keeps the saved ones when it has none, and refuses a stage of a disabled agent, writing nothing (#482)', async (t) => {
+  const { base, home } = await start(t);
+  const onDisk = async (): Promise<Config> => JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual([(await onDisk()).agentModels, (await onDisk()).agentEnabled], [{ claude: null, codex: null }, { claude: true, codex: true }], 'a first save without them');
+  const models = { claude: 'opus', codex: null };
+  const enabled = { claude: true, codex: false };
+  assert.equal((await postSettings(base, { ...BODY, agentModels: models, agentEnabled: enabled })).status, 200);
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual([(await onDisk()).agentModels, (await onDisk()).agentEnabled], [models, enabled], 'an omitted key keeps the saved one');
+  const refused = await postSettings(base, { ...BODY, stages: [{ ...STAGES[0], agent: 'codex' }] });
+  assert.equal(refused.status, 400);
+  assert.deepEqual((await onDisk()).agentEnabled, enabled);
+});
+
 // POST /config with a non-zero maxConcurrent is skipped here: this file's start() uses the real
 // launchPty (no fake), and a fake source task under a non-zero maxConcurrent would risk spawning
 // an actual `claude` process. See test/server.test.ts, which fakes launchPty, for that coverage.

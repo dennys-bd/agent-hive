@@ -303,6 +303,34 @@ test('parseConfig requires agentArgs, one array of strings per agent, and names 
   assert.throws(() => parseConfig({ ...GITHUB, agentArgs: { claude: [], codex: [], gemini: [] } }), { message: 'hive.config.json: "agentArgs" has an unknown agent "gemini"' });
 });
 
+test('parseConfig requires agentModels, null or a model name per agent, and refuses a stray agent, a bad name and a Claude model as Codex\'s default (#482)', () => {
+  assert.deepEqual(parseConfig(GITHUB).agentModels, { claude: null, codex: null }, 'what combConfig writes: the form default');
+  const both = { claude: 'opus', codex: 'gpt-5.6-terra' };
+  assert.deepEqual(parseConfig({ ...GITHUB, agentModels: both }).agentModels, both);
+  for (const bad of ['', '-x', 3, ['opus']]) {
+    assert.throws(() => parseConfig({ ...GITHUB, agentModels: { claude: bad, codex: null } }), { message: 'hive.config.json: "agentModels.claude" must be null or a model name' }, JSON.stringify(bad));
+  }
+  assert.throws(() => parseConfig({ ...GITHUB, agentModels: { claude: null } }), { message: 'hive.config.json: "agentModels.codex" must be null or a model name' });
+  assert.throws(() => parseConfig({ ...GITHUB, agentModels: { claude: null, codex: null, gemini: null } }), { message: 'hive.config.json: "agentModels" has an unknown agent "gemini"' });
+  assert.throws(() => parseConfig({ ...GITHUB, agentModels: { claude: null, codex: 'opus' } }), { message: 'hive.config.json: "agentModels.codex" "opus" is a Claude model; codex needs a Codex model name' });
+});
+
+test('parseConfig requires agentEnabled, true or false per agent; the default agent cannot be off, nor can a stage or an evaluation row name an agent that is (#482)', () => {
+  assert.deepEqual(parseConfig(GITHUB).agentEnabled, { claude: true, codex: true });
+  const off = { claude: true, codex: false };
+  assert.deepEqual(parseConfig({ ...GITHUB, agentEnabled: off }).agentEnabled, off);
+  assert.throws(() => parseConfig({ ...GITHUB, agentEnabled: { claude: 'yes', codex: true } }), { message: 'hive.config.json: "agentEnabled.claude" must be true or false' });
+  assert.throws(() => parseConfig({ ...GITHUB, agentEnabled: { claude: true, codex: true, gemini: true } }), { message: 'hive.config.json: "agentEnabled" has an unknown agent "gemini"' });
+  assert.throws(() => parseConfig({ ...GITHUB, agentEnabled: { claude: false, codex: true } }), { message: 'hive.config.json: "agentEnabled.claude" cannot be false: claude is the default agent' });
+  const stage = (extra: Record<string, unknown>) => ({ name: 'spec', from: { board: ['Ready'] }, ...extra });
+  const codexOff = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)], agentEnabled: off }));
+  assert.throws(codexOff({ prompt: '/x', agent: 'codex' }), { message: 'hive.config.json: "comb.stages[0].agent" names codex, which "agentEnabled" turns off' });
+  const evaluate = { action: 'evaluate', threshold: 3, rubric: 'Good?' };
+  assert.throws(codexOff({ ...evaluate, reviewers: [{ agent: 'claude', focus: 'a' }, { agent: 'codex', focus: 'b' }], judge: { agent: 'claude' } }), { message: 'hive.config.json: "comb.stages[0].reviewers[1].agent" names codex, which "agentEnabled" turns off' });
+  assert.throws(codexOff({ ...evaluate, reviewers: [], judge: { agent: 'codex' } }), { message: 'hive.config.json: "comb.stages[0].judge.agent" names codex, which "agentEnabled" turns off' });
+  assert.doesNotThrow(codexOff({ prompt: '/x' }), 'no own agent: the default, always on');
+});
+
 test('parseConfig requires defaultAgent, one of the known agents, with no default (#516)', () => {
   assert.equal(parseConfig(GITHUB).defaultAgent, 'claude', 'what combConfig writes: the form default');
   for (const bad of [undefined, 'gemini', '', 1, null]) {

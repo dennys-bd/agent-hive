@@ -39,6 +39,8 @@ export async function configFrom(home: string, body: Partial<SettingsBody>): Pro
       createIn: body.createIn ?? renamedCreateIn(current?.comb.createIn, body.renames),
     },
     auth: body.auth ?? current?.auth, // the form sends it with a GitHub source; an API caller that omits it keeps the saved transport
+    agentModels: body.agentModels ?? current?.agentModels ?? DEFAULT_CONFIG.agentModels, // #482: the form always sends it; an API caller that omits it keeps the saved one
+    agentEnabled: body.agentEnabled ?? current?.agentEnabled ?? DEFAULT_CONFIG.agentEnabled, // #482: the same
     agentArgs: body.agentArgs ?? current?.agentArgs ?? DEFAULT_CONFIG.agentArgs, // the form always sends it (#924); an API caller that omits it keeps the saved lists
     branch: body.branch ?? current?.branch, // the form always sends it (empty field = key absent); an API caller that omits it keeps the current template
     logLevel: current?.logLevel, // never in the body: the file is the switch

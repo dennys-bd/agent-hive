@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, parseConfig } from '../src/config.js';
-import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateCodexArgs, migrateFileIcons, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
+import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateCodexArgs, migrateAgentDefaults, migrateFileIcons, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
 import { combConfig, FILTER, LOCAL_STAGES } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -277,4 +277,16 @@ test('migrateCodexArgs gives a saved agentArgs without codex an empty list, keep
   assert.equal(migrateCodexArgs(bare), bare, 'no agentArgs: migrateAgentArgs makes it first');
   assert.equal(migrateCodexArgs('x'), 'x');
   assert.deepEqual(parseConfig(migrateConfig({ ...bare, claudeArgs: ['--x'] })).agentArgs, { claude: ['--x'], codex: [] });
+});
+
+test('migrateAgentDefaults gives a file from before #482 every agent at null in agentModels and on in agentEnabled; a present key is kept; migrateConfig runs it (#482)', () => {
+  const file = combConfig({ stages: LOCAL_STAGES });
+  const { agentModels: _m, agentEnabled: _e, ...bare } = file;
+  assert.deepEqual(migrateAgentDefaults(bare), { ...bare, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true } });
+  assert.equal(migrateAgentDefaults(file), file, "today's shape comes back as the same reference");
+  const kept = { ...bare, agentModels: { claude: 'opus', codex: null } };
+  assert.deepEqual((migrateAgentDefaults(kept) as Record<string, unknown>).agentModels, { claude: 'opus', codex: null });
+  assert.equal(migrateAgentDefaults('x'), 'x');
+  const parsed = parseConfig(migrateConfig(bare));
+  assert.deepEqual([parsed.agentModels, parsed.agentEnabled], [{ claude: null, codex: null }, { claude: true, codex: true }]);
 });

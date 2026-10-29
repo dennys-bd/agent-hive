@@ -40,7 +40,7 @@ const CONFIG: Config = {
     stages: STAGES,
   },
   logLevel: 'info', language: 'pt', baseBranch: 'develop',
-  agentArgs: { claude: [], codex: [] }, budget: { maxTokensPerHour: 50_000 }, usageRules: [{ source: 'hour', percent: 80, signal: 'yellow' }, { source: 'session', percent: 90, maxWorkers: 1, signal: 'red' }],
+  agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: { maxTokensPerHour: 50_000 }, usageRules: [{ source: 'hour', percent: 80, signal: 'yellow' }, { source: 'session', percent: 90, maxWorkers: 1, signal: 'red' }],
   onClose: 'quit', // not the form default, so draftFrom visibly reads it (#513)
   notifications: { waiting: true, approval: false, pr: true, failed: false }, // not the form default, so draftFrom visibly reads it (#199)
   deleteActivity: { session: true, transcripts: true, nonAutoTasks: true }, // not the form defaults, so draftFrom visibly reads it (#236, #496)
