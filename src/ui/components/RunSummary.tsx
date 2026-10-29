@@ -1,20 +1,22 @@
-import { Fragment, type ReactNode, type RefObject, useEffect, useRef } from 'react';
+import { Fragment, type ReactNode, type RefObject, useContext, useEffect, useRef } from 'react';
 import { agentName } from '../../agents';
 import { sessionText } from '@/components/RunFields';
 import { AGENT_COLOR, AgentIcon } from '@/components/SessionLabel';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { RunPicks } from '@/hooks/use-run-pick';
 import { t } from '@/i18n';
+import { AgentModelsContext } from '@/lib/agent-settings';
 
-// The model the run passes, as runModel resolves it: an explicit pick, else the stage's, else the agent's own default
-const modelText = (picks: RunPicks, stageModel?: string): string => picks.model || stageModel || t('newSession.model.default', { agent: agentName(picks.agent) });
+// The model the run passes, as runModel resolves it: an explicit pick, else the stage's, else the agent's default model (#482), else its own
+const modelText = (picks: RunPicks, stageModel?: string, agentDefault?: string | null): string =>
+  picks.model || stageModel || (agentDefault ? `${t('newSession.model.agentDefault')} · ${agentDefault}` : t('newSession.model.default', { agent: agentName(picks.agent) }));
 
 // The hover's lines: every pick in full, the specialized agent and the args in mono and never cut
-function RunDetails({ picks, stageModel }: { picks: RunPicks; stageModel?: string }) {
+function RunDetails({ picks, stageModel, agentDefault }: { picks: RunPicks; stageModel?: string; agentDefault?: string | null }) {
   const args = picks.args.trim();
   const rows: [string, string, boolean][] = [
     [t('newSession.agent'), agentName(picks.agent), false],
-    [t('newSession.model'), modelText(picks, stageModel), false],
+    [t('newSession.model'), modelText(picks, stageModel, agentDefault), false],
     [t('session.pick'), sessionText(picks.session), false],
     [t('newSession.specializedAgent'), picks.specializedAgent || t('newSession.agents.none'), picks.specializedAgent !== ''],
     [t('newSession.args'), args || '—', args !== ''],
@@ -46,7 +48,8 @@ interface RunSummaryProps { picks: RunPicks; stageModel?: string; isCustomizable
 /** executar etapas' first summary row (#290, handoff "Modo executar etapas"): what the run launches with, cut with an ellipsis and listed in full
  * on hover, and personalizar › on the right when the run is a start. Two cells of StagesBox's grid. */
 export function RunSummary({ picks, stageModel, isCustomizable, isOpen, onToggle, buttonRef }: RunSummaryProps) {
-  const line = `${agentName(picks.agent)} · ${modelText(picks, stageModel)} · ${t('run.sessionIs', { session: sessionText(picks.session) })}`;
+  const agentDefault = useContext(AgentModelsContext)[picks.agent];
+  const line = `${agentName(picks.agent)} · ${modelText(picks, stageModel, agentDefault)} · ${t('run.sessionIs', { session: sessionText(picks.session) })}`;
   return (
     <>
       <span className="text-muted-foreground">{t('run.label')}</span>
@@ -56,7 +59,7 @@ export function RunSummary({ picks, stageModel, isCustomizable, isOpen, onToggle
             <TooltipTrigger asChild>
               <span className="flex min-w-0 flex-1 items-center gap-1.5"><AgentIcon agent={picks.agent} className={`size-3.5 shrink-0 ${AGENT_COLOR[picks.agent] ?? ''}`} /><span className="truncate">{line}</span></span>
             </TooltipTrigger>
-            <TooltipContent className="w-[260px]"><RunDetails picks={picks} stageModel={stageModel} /></TooltipContent>
+            <TooltipContent className="w-[260px]"><RunDetails picks={picks} stageModel={stageModel} agentDefault={agentDefault} /></TooltipContent>
           </Tooltip>
         </TooltipProvider>
         {isCustomizable && (

@@ -764,3 +764,12 @@ test('execução shows the saved Claude arguments one per line, and the save sen
   const body = JSON.parse(String((fetchMock.mock.calls.at(-1)![1] as RequestInit).body)) as { agentArgs: Record<string, string[]> };
   expect(body.agentArgs).toEqual({ claude: ['--model', 'opus 4'], codex: [] });
 });
+
+test('fluxo\'s stage model field shows the agent\'s default from the draft (#482)', async () => {
+  const user = userEvent.setup();
+  const config = { ...info.config!, agentModels: { claude: 'opus', codex: null }, comb: { ...info.config!.comb, stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x' }] } };
+  render(<Settings info={{ ...info, config }} onSaved={vi.fn()} />);
+  await open(user, 'flow');
+  expect(screen.getByRole('combobox', { name: t('newSession.model') })).toHaveTextContent('padrão · opus');
+  // the execução half (editing the model there redraws fluxo before the save) lands with the agentes card, Task 7
+});

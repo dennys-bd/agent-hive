@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 import { StartDialog } from '@/components/StartDialog';
 import { ConsoleContext } from '@/hooks/use-console';
 import { setLanguage, t } from '@/i18n';
+import { AgentModelsContext } from '@/lib/agent-settings';
 import { CreateTargetsContext, type CreateTargets } from '@/lib/create-targets';
 import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { BaseOptions, SetupRow, Task, Worker, Stage, State } from '../../src/types';
@@ -790,4 +791,10 @@ test('a continue shows the run without personalizar, since its session is fixed;
 test('sessão livre reads the launch options of the task\'s workspace (#316)', async () => {
   render(<StartDialog state={state()} taskId="I4" initialMode="free" onClose={vi.fn()} />);
   await waitFor(() => expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain('/launch-options?workspace=site'));
+});
+
+test('executar etapas names the agent\'s default model in the summary when the stage gives none (#482)', async () => {
+  render(<AgentModelsContext.Provider value={{ claude: 'opus' }}><StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={vi.fn()} /></AgentModelsContext.Provider>);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  expect(screen.getByText('claude · padrão · opus · sessão nova')).toBeInTheDocument();
 });

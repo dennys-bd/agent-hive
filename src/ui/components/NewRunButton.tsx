@@ -38,7 +38,7 @@ export const AgentsContext = createContext<readonly AgentAvailability[]>(ALL_AGE
 /** An agent as every menu that opens a session lists it (#931): all of them, one boot did not find disabled and named as AgentSelect names it. */
 export interface AgentPick { agent: AgentId; label: string; disabled: boolean }
 
-export const agentPicks = (agents: readonly AgentAvailability[]): AgentPick[] => AGENT_IDS.map((agent) => {
+export const agentPicks = (agents: readonly AgentAvailability[]): AgentPick[] => AGENT_IDS.filter((agent) => agents.some((a) => a.agent === agent)).map((agent) => {
   const isOn = isAvailable(agent, agents);
   return { agent, label: isOn ? agentName(agent) : `${agentName(agent)} · ${t('settings.agent.offPath')}`, disabled: !isOn };
 });

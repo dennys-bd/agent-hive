@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { offeredAgents } from '../src/ui/lib/agent-settings.js';
 import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem } from '../src/ui/lib/settings-agents.js';
 import { draftFrom, toSettingsBody } from '../src/ui/lib/settings-form.js';
 import { emptyRow, emptyStage } from '../src/ui/lib/settings-stages.js';
@@ -29,4 +30,10 @@ test('agentsProblem names a bad model and a Claude model on codex in execution, 
   const judged = { ...emptyStage(), action: 'evaluate' as const, judge: emptyRow('codex') };
   assert.equal(agentsProblem(draft({ agentEnabled: off, stages: [judged] }))?.stage, judged.id);
   assert.equal(agentsProblem(draft({ agentEnabled: off, stages: [{ ...emptyStage(), approval: true, agent: 'codex' as const }] })), undefined, 'a gate runs no agent: its leftover agent is not sent');
+});
+
+test('offeredAgents drops the agents the config disables and keeps boot\'s availability; no config offers every agent (#482)', () => {
+  const found = [{ agent: 'claude' as const, available: true }, { agent: 'codex' as const, available: false }];
+  assert.deepEqual(offeredAgents(found, { claude: true, codex: false }), [found[0]]);
+  assert.deepEqual(offeredAgents(found, undefined), found);
 });

@@ -9,6 +9,8 @@ import { WorkspacesSection, searchEntries as workspacesEntries } from '@/compone
 import { WorktreesTab, searchEntries as maintenanceEntries } from '@/components/settings/WorktreesTab';
 import { Button } from '@/components/ui/button';
 import { LOCALE, t } from '@/i18n';
+import { AgentModelsContext, offeredAgents } from '@/lib/agent-settings';
+import { agentModelsFrom } from '@/lib/settings-agents';
 import type { SettingEntry } from '@/lib/settings-search';
 import type { SettingsSection } from '@/lib/settings-sections';
 import { type SourceDraft, emptyWorkspace, type SettingsDraft } from '@/lib/settings-form';
@@ -52,7 +54,8 @@ export function SectionContent({ section, error, source, ...props }: SectionCont
     <div className="flex max-w-5xl flex-col gap-6">
       <SectionHeading section={section} source={source} action={headingAction(section, props)} onBack={() => props.flow.onOpenSource(undefined)} />
       {error && <p role="alert" className="whitespace-pre-wrap text-destructive text-sm">{error}</p>}
-      {body(section, source, props)}
+      {/* #482: the draft's default models, so a change in execução redraws fluxo's model fields before the save */}
+      <AgentModelsContext.Provider value={agentModelsFrom(props.draft.agentModels)}>{body(section, source, props)}</AgentModelsContext.Provider>
     </div>
   );
 }
@@ -67,7 +70,7 @@ function headingAction(section: SettingsSection, { draft, onChange }: Pick<Secti
 function body(section: SettingsSection, source: SourceDraft | undefined, { draft, info, state, flow, language, onLanguage, onChange, onCapSaved }: Omit<SectionContentProps, 'section' | 'error' | 'source'>): ReactNode {
   switch (section) {
     case 'workspaces': return <WorkspacesSection draft={draft} state={state} savedNames={(info.config?.comb.workspaces ?? []).map((w) => w.name)} onChange={onChange} onCapSaved={onCapSaved} />;
-    case 'flow': return <FlowSection draft={draft} source={source} flow={flow} agents={info.agents} launchWorkspace={info.config?.comb.workspaces[0]?.name} onChange={onChange} />;
+    case 'flow': return <FlowSection draft={draft} source={source} flow={flow} agents={offeredAgents(info.agents, draft.agentEnabled)} launchWorkspace={info.config?.comb.workspaces[0]?.name} onChange={onChange} />;
     case 'execution': return <ExecutionSection draft={draft} agents={info.agents} onChange={onChange} onOpenFlow={() => flow.onOpenSource(undefined)} />;
     case 'rules': return <RulesTab draft={draft} state={state} locale={LOCALE[info.language]} onChange={onChange} />;
     case 'app': return <AppSection draft={draft} onChange={onChange} />;
