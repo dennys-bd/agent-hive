@@ -15,6 +15,7 @@ export class FakeTerminal {
   providers: FakeLinkProvider[] = [];
   textarea: HTMLTextAreaElement | undefined = document.createElement('textarea'); // xterm's hidden input, there once open() ran: the key probe listens on it (#732)
   selection = ''; // #12: what hasSelection / getSelection answer, '' for none
+  parser = { registerOscHandler: () => ({ dispose() {} }) }; // terminalClipboard's OSC 52 (#543)
   private keyHandler: (event: KeyboardEvent) => boolean = () => true; // terminalKeys' handler (#448); press() drives it
   buffer = { active: { getLine: (y: number) => (this.lines[y] === undefined ? undefined : { translateToString: () => this.lines[y] }) } };
   private typed: ((data: string) => void)[] = [];

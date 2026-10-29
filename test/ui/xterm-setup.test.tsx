@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import type { Terminal } from '@xterm/xterm';
 import { toast } from 'sonner';
 import { setShortcuts } from '@/lib/shortcut-bindings';
-import { clearTerminal, escapePath, findOptions, FONT_FAMILY, linkTaskRefs, openRefUrl, paintTerminal, shownSize, terminalFontStack, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
+import { clearTerminal, escapePath, findOptions, FONT_FAMILY, linkTaskRefs, openRefUrl, paintTerminal, shownSize, terminalFontStack, terminalClipboard, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
 import type { Shortcuts } from '../../src/types';
 import { FakeTerminal } from './xterm-fakes';
 
@@ -298,6 +298,47 @@ test('terminalPaste: a clipboard read that rejects pastes the text, as if no fil
   const { paste, pasteText } = pasteTerm(async () => { throw new Error('clipboard unavailable'); });
   pasteText('hello');
   await vi.waitFor(() => expect(paste).toHaveBeenCalledExactlyOnceWith('hello'));
+});
+
+// An xterm as terminalClipboard reads it (#543): the OSC 52 handler it registers, called as xterm's parser calls it
+function oscTerm(write: (text: string) => Promise<void>) {
+  let handler: ((data: string) => boolean) | undefined;
+  const term = { parser: { registerOscHandler: (ident: number, h: (data: string) => boolean) => { if (ident === 52) handler = h; } } };
+  terminalClipboard(term as unknown as Terminal, write);
+  return (data: string): boolean | undefined => handler?.(data);
+}
+
+const base64 = (text: string): string => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+
+test('terminalClipboard: an OSC 52 write puts its decoded UTF-8 text on the clipboard, with or without a selection name (#543)', () => {
+  const write = vi.fn(async () => undefined);
+  const osc = oscTerm(write);
+  expect(osc(`c;${base64('handoff: ação ✓')}`)).toBe(true);
+  osc(`;${base64('second')}`);
+  expect(write.mock.calls).toEqual([['handoff: ação ✓'], ['second']]);
+});
+
+test('terminalClipboard: a read query, a missing payload or bad base64 writes nothing and is still consumed (#543)', () => {
+  const write = vi.fn(async () => undefined);
+  const osc = oscTerm(write);
+  expect([osc('c;?'), osc('c'), osc('c;%%%')]).toEqual([true, true, true]);
+  expect(write).not.toHaveBeenCalled();
+});
+
+test('terminalClipboard: the OSC 52 Claude Code prints on a drag, parsed by a real xterm, reaches the clipboard (#543)', async () => {
+  const { Terminal: RealTerminal } = await import('@xterm/xterm');
+  const term = new RealTerminal();
+  const write = vi.fn(async () => undefined);
+  terminalClipboard(term, write);
+  await new Promise<void>((resolve) => term.write(`\x1b]52;c;${base64('copied by claude')}\x07`, resolve));
+  expect(write).toHaveBeenCalledExactlyOnceWith('copied by claude');
+  term.dispose();
+});
+
+test('terminalClipboard: a write the clipboard refuses shows a toast in our own words (#543)', async () => {
+  const error = vi.spyOn(toast, 'error').mockImplementation(() => '');
+  oscTerm(async () => { throw new Error('Document is not focused.'); })(`c;${base64('x')}`);
+  await vi.waitFor(() => expect(error).toHaveBeenCalledExactlyOnceWith('The program\'s copy did not reach the clipboard', { id: 'terminal.copyFailed' }));
 });
 
 test('clearTerminal clears the tracked xterm of a worker, and nothing once it is untracked (#584)', () => {
