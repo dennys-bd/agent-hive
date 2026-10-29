@@ -27,7 +27,8 @@ function stateWith(column: string, sessions: Session[] = []): State {
   return withWork(polled, ID, { worktree: '/wt/hive-1-task-1' }, { sessions });
 }
 const taskIn = (state: State): Task => state.tasks.find((t) => t.item.itemId === ID)!;
-const parse = (body: unknown, state: State, agents: AgentAvailability[] = BOTH) => parseRunPick(body, state, taskIn(state), agents, 'en', () => pluginSource());
+const ON = { claude: true, codex: true };
+const parse = (body: unknown, state: State, agents: AgentAvailability[] = BOTH, enabled: Record<AgentId, boolean> = ON) => parseRunPick(body, state, taskIn(state), agents, 'en', () => pluginSource(), enabled);
 const refused = (answer: ReturnType<typeof parse>): Refusal | undefined => ('status' in answer ? answer : undefined);
 
 test('a body with no pick is no pick: today\'s start (#290)', () => {
@@ -67,4 +68,10 @@ test('picks on a continue or next to a handover are a 409; on a stage that runs 
   const handed = withWork(stateWith('Ready'), ID, { handover: { prompt: 'from the transition' } });
   assert.equal(refused(parse({ session: 'new' }, handed))?.status, 409);
   assert.equal(refused(parse({ agent: 'claude' }, stateWith('Done')))?.status, 400);
+});
+
+test('an agent the config disables is a 400 naming "agent", before any session or launch check (#482)', () => {
+  const answer = refused(parse({ agent: 'codex' }, stateWith('Ready'), BOTH, { claude: true, codex: false }));
+  assert.equal(answer?.status, 400);
+  assert.match(answer?.message ?? '', /"agent"/);
 });
