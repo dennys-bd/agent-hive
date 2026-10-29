@@ -6,7 +6,7 @@ import { type CloseTabSettings, type ConfirmLoss, forgetRun, noticeInput, notice
 import { CopyToSub } from '@/components/CopySession';
 import { CONTEXT_KIT } from '@/components/menu-kit';
 import type { LiveRun } from '../../task-runs';
-import { DesignPane } from '@/components/DesignPane';
+import { designKey, DesignSlot } from '@/components/DesignLayer';
 import { DesignCountPill } from '@/components/DesignComments';
 import { EditorPane } from '@/components/EditorPane';
 import { UntitledPane } from '@/components/UntitledPane';
@@ -230,7 +230,7 @@ function CenterTab({ item, index, group, groups, activity, ops, drag, onClose, o
   );
 }
 
-interface TabBodyProps { item: CenterTabRef; activity: Activity; active: boolean; fileLinks: boolean; fontFamily: string; ops: CenterOps; onExit(ptyId: string): void; onWake(ptyId: string): void }
+interface TabBodyProps { item: CenterTabRef; activity: Activity; active: boolean; fileLinks: boolean; fontFamily: string; ops: CenterOps; groupId: string; onFocus(): void; onExit(ptyId: string): void; onWake(ptyId: string): void }
 
 // The console as a grid tab (redesign 05): the drawer's console without its abrir como aba and esc; hidden, not unmounted, behind another tab.
 // Its channel is its own (#755), in its tab ref and saved with the layout: a pick retargets the ref, the drawer's selection is never touched;
@@ -255,8 +255,8 @@ function ConsoleTab({ item, active, fontFamily, ops }: { item: ConsoleRef; activ
 }
 
 // A tab's view (#457, #458): a run's terminal or its split's panes (#641), kept mounted while another tab shows, a task's diff (#270), a file's
-// editor pane (#717), a Hive design's design pane (#109) or the console (redesign 05)
-function TabBody({ item, activity, active, fileLinks, fontFamily, ops, onExit, onWake }: TabBodyProps) {
+// editor pane (#717), a Hive design's slot, which the design layer lays its pane over (#109, #533) or the console (redesign 05)
+function TabBody({ item, activity, active, fileLinks, fontFamily, ops, groupId, onFocus, onExit, onWake }: TabBodyProps) {
   if (item.kind === 'console') return <ConsoleTab item={item} active={active} fontFamily={fontFamily} ops={ops} />;
   if (item.kind === 'diff') {
     if (activity.kind === 'local') return null; // a local activity has no stage or worktree to diff (#590)
@@ -266,7 +266,8 @@ function TabBody({ item, activity, active, fileLinks, fontFamily, ops, onExit, o
   if (item.kind === 'file') {
     return <EditorPane activityId={activity.activity.id} path={item.path} label={`${activityTitle(activity)} · ${baseName(item.path)}`} active={active} fontFamily={fontFamily} workspace={activity.activity.workspace} openKey={activityKey(activity)} />;
   }
-  if (item.kind === 'design') return <DesignPane activity={activity} path={item.path} label={t('design.tab', { label: activityTitle(activity), name: baseName(item.path) })} active={active} />;
+  // #533: the pane lives in the design layer, so a view or activity switch keeps its page; only the shown tab holds the slot it covers
+  if (item.kind === 'design') return active ? <DesignSlot slotKey={designKey(activity, item.path)} groupId={groupId} onFocus={onFocus} /> : null;
   if (item.kind === 'preview') {
     return <PreviewPane activity={activity} path={item.path} label={t('preview.tab', { label: activityTitle(activity), name: baseName(item.path) })} active={active} />;
   }
@@ -308,9 +309,10 @@ export function CenterGroup({ group, activity, groups, focused, ops, drag, fileL
       {headed && <PaneHeader item={headed} label={refText(headed, activity)} activity={activity} context={pane} />}
       <div data-center-body className={`relative flex min-h-0 min-w-0 flex-1 flex-row ${shown?.kind === 'run' ? RUN_INSET : ''}`}>
         {group.tabs.map((item, index) => (
-          <TabBody key={refKey(item)} item={item} activity={activity} active={index === group.active} fileLinks={fileLinks} fontFamily={fontFamily} ops={ops} onExit={onExit} onWake={onWake} />
+          <TabBody key={refKey(item)} item={item} activity={activity} active={index === group.active} fileLinks={fileLinks} fontFamily={fontFamily} ops={ops} groupId={group.id} onFocus={focus} onExit={onExit} onWake={onWake} />
         ))}
-        {shade && <div aria-hidden data-drop-edge={shade} style={SHADE[shade]} className="pointer-events-none absolute bg-primary/20" />}
+        {/* z-20: above the design layer's pane (#533), which covers this body */}
+        {shade && <div aria-hidden data-drop-edge={shade} style={SHADE[shade]} className="pointer-events-none absolute z-20 bg-primary/20" />}
       </div>
     </section>
   );
