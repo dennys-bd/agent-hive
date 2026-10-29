@@ -59,7 +59,7 @@ export function ArmsTab({ experiment, benchmark }: ArmsTabProps) {
         </div>
       </div>
       <AddArm experiment={experiment} />
-      {settingsOf !== undefined && <ArmSettings key={settingsOf.armId ?? 'base'} experiment={experiment} armId={settingsOf.armId} onClose={() => setSettingsOf(undefined)} />}
+      {settingsOf !== undefined && <ArmSettings key={settingsOf.armId ?? 'base'} experiment={experiment} armId={settingsOf.armId} onClose={() => setSettingsOf(undefined)} onShowConfig={() => { benchmark.setTab('config'); setSettingsOf(undefined); }} />}
       {removing !== undefined && (
         <Confirm
           danger open title={t('benchmark.arms.remove.title')} context={<span className="font-mono">{`${removing.letter} · ${removing.name}`}</span>}

@@ -46,8 +46,8 @@ test("abrir settings opens the arm's settings, and on the base card the base mod
   stubBenchmarkFetch();
   render(<Tab />);
   await user.click(within(card('C')).getByRole('button', { name: 'abrir settings' }));
-  expect(await screen.findByRole('dialog', { name: 'braço C · plugin + codex' })).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  expect(await screen.findByRole('alertdialog', { name: 'C Plugin + codex' })).toBeInTheDocument();
+  await user.click(within(screen.getByRole('alertdialog')).getAllByRole('button', { name: 'cancelar' })[0]);
   await user.click(within(screen.getByRole('region', { name: 'base' })).getByRole('button', { name: 'abrir settings' }));
-  expect(await screen.findByRole('dialog', { name: 'base · todos os braços' })).toBeInTheDocument();
+  expect(await screen.findByRole('alertdialog', { name: 'Base' })).toBeInTheDocument();
 });
