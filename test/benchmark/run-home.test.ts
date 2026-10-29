@@ -153,7 +153,7 @@ test('prepareRun carries the main config\'s default models into the run\'s confi
   const models = { claude: 'opus', codex: null };
   const done = await prepareRun(EXP, EXP.arms[0], 1, { ...deps, config: { ...deps.config, agentModels: models } });
   assert.deepEqual(parseConfig(await readJson(join(done.home, 'hive.config.json'))).agentModels, models);
-  const codex = experiment({ arms: [arm('a1', 'A', { stages: { ...SETUP.stages, build: { agent: 'codex', skill: '/x', prompt: 'B' } } })] });
+  const codex = experiment({ arms: [arm('a1', 'A', { stages: { Build: { agent: 'codex', prompt: 'B' } } })] });
   const off = { ...deps, config: { ...deps.config, agentEnabled: { claude: true, codex: false } } };
   const runs = await readdir(join(hiveDir, 'benchmark', 'exp-1', 'runs')).catch(() => []);
   await assert.rejects(prepareRun(codex, codex.arms[0], 1, off), { message: 'agent codex is disabled: enable it in Settings › execution › agents' });

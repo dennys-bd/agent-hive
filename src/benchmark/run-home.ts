@@ -221,7 +221,9 @@ export async function prepareRun(experiment: Experiment, arm: Arm, round: number
   const dir = experimentDir(deps.hiveDir, experiment.id);
   const setup = mergeArm(experiment.base, arm.overrides);
   // #482: a stage on an agent the Hive disables would be refused in the run; refused here, before any branch, as a blindness leak is
-  const disabled = Object.values(setup.stages).map((pick) => disabledRefusal(pick.agent, deps.config.agentEnabled)).find((r) => r !== undefined);
+  // a stage that names no agent runs the default one, which is always enabled (#482)
+  const agents = setup.flow.stages.flatMap((stage) => (stage.agent === undefined ? [] : [stage.agent]));
+  const disabled = agents.map((agent) => disabledRefusal(agent, deps.config.agentEnabled)).find((r) => r !== undefined);
   if (disabled !== undefined) throw new Error(disabled);
   const versions = await armVersions(pinHome(dir), setup.items);
   // still checked here, the last guard: the route's check ran before a round that may start hours later (#472)
