@@ -127,11 +127,18 @@ test('the agent copy (#516): neutral delete activity texts, the execution hint, 
     assert.deepEqual(naming, [], language);
   }
   assert.deepEqual([MESSAGES.pt['settings.section.execution.hint'], MESSAGES.en['settings.section.execution.hint']], ['agente, branches, excluir atividade', 'agent, branches, delete activity']);
-  assert.deepEqual([MESSAGES.pt['settings.defaultAgent'], MESSAGES.en['settings.defaultAgent']], ['agente padrão', 'default agent']);
-  assert.match(MESSAGES.pt['settings.defaultAgent.hint'], /^usado quando a etapa não escolhe outro/);
   setLanguage('pt');
   assert.equal(t('settings.agent.offPath'), 'fora do PATH');
-  assert.equal(t('settings.defaultAgent.missing', { agent: 'claude' }), 'claude está fora do PATH: as etapas dele não começam até ele ser instalado e o Hive reiniciado');
+});
+
+test('the agents card reads as the handoff writes it (#482)', () => {
+  assert.deepEqual(
+    ['settings.agents', 'settings.agents.makeDefault', 'settings.agents.enabled', 'settings.agents.lockedDefault', 'settings.agents.args.none'].map((k) => MESSAGES.pt[k as keyof typeof MESSAGES.pt]),
+    ['agentes', 'tornar padrão', 'habilitado', 'o agente padrão fica habilitado', 'nenhum'],
+  );
+  assert.equal(MESSAGES.pt['settings.agents.disabled'], 'desabilitado: etapas e sessões não oferecem o {agent}');
+  assert.equal(MESSAGES.pt['settings.agents.missing'], 'não instalado · o Hive procura {agent} no PATH ao abrir');
+  assert.equal(MESSAGES.pt['settings.agents.hint'], 'o modelo e os argumentos de toda execução que não escolhe outros · cada etapa pode trocar em');
 });
 
 test('the main process texts follow the language: the Quit / Restart confirmation by count, its buttons, the menu lines (#242)', (ctx) => {

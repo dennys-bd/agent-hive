@@ -71,7 +71,7 @@ function body(section: SettingsSection, source: SourceDraft | undefined, { draft
   switch (section) {
     case 'workspaces': return <WorkspacesSection draft={draft} state={state} savedNames={(info.config?.comb.workspaces ?? []).map((w) => w.name)} onChange={onChange} onCapSaved={onCapSaved} />;
     case 'flow': return <FlowSection draft={draft} source={source} flow={flow} agents={offeredAgents(info.agents, draft.agentEnabled)} launchWorkspace={info.config?.comb.workspaces[0]?.name} onChange={onChange} />;
-    case 'execution': return <ExecutionSection draft={draft} agents={info.agents} onChange={onChange} onOpenFlow={() => flow.onOpenSource(undefined)} />;
+    case 'execution': return <ExecutionSection draft={draft} agents={info.agents} launchWorkspace={info.config?.comb.workspaces[0]?.name} onChange={onChange} onOpenFlow={() => flow.onOpenSource(undefined)} />;
     case 'rules': return <RulesTab draft={draft} state={state} locale={LOCALE[info.language]} onChange={onChange} />;
     case 'app': return <AppSection draft={draft} onChange={onChange} />;
     case 'editor': return <EditorSection draft={draft} language={language} onLanguage={onLanguage} onChange={onChange} />;

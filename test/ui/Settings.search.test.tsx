@@ -11,7 +11,7 @@ import type { SettingsInfo } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
 const info: SettingsInfo = {
-  configured: true, home: '/home', language: 'pt', agents: [{ agent: 'claude', available: true }],
+  configured: true, home: '/home', language: 'pt', agents: [{ agent: 'claude', available: true }, { agent: 'codex', available: true }],
   config: {
     auth: { github: 'cli' },
     comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: { remote: 'upstream', pr: 'fork', sync: 'local' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: true, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }], transitions: [], stages: [{ name: 'fila', from: { board: ['Ready'] } }, { name: 'review', from: {}, prompt: '/x' }], commands: [] },
