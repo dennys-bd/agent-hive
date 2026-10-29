@@ -21,6 +21,8 @@ const CHIP: Record<ExperimentStatus, { key: MessageKey; className: string }> = {
   done: { key: 'benchmark.header.chip.done', className: 'text-muted-foreground border-empty' },
 };
 const COMMIT_CHARS = 7;
+// The head sits in the window header, which drags the window (#583): its controls opt out to keep their clicks, its text drags (#535)
+const NO_DRAG_CONTROLS = '[&_:is(button,input)]:[-webkit-app-region:no-drag]';
 
 function creatorOf({ createdBy }: Experiment): string {
   if (createdBy.kind === 'user') return t('benchmark.header.byUser');
@@ -113,7 +115,7 @@ export function ExperimentHeader({ benchmark, experiment, primary }: ExperimentH
     ? <Button type="button" size="sm" onClick={() => setDialog('wake')}>{t('benchmark.sleep.wake')}</Button>
     : primary;
   return (
-    <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-3">
+    <div className={`flex h-full min-w-0 flex-1 items-center gap-2 px-3 ${NO_DRAG_CONTROLS}`}>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-center gap-2 font-medium text-[13px]">
           {isRenaming ? <NameField name={experiment.name} onDone={finish} /> : <span className="truncate">{experiment.name}</span>}
