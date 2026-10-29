@@ -98,8 +98,12 @@ export function DesignLayer({ activities, layouts }: DesignLayerProps) {
     <>
       {openDesigns(activities, layouts).map(({ key, activity, path }) => {
         const slot = slots[key];
+        // #533 decision 8: closeKeyGroup (⌘W) reads [data-center-group] from the focus, and a pointer down focuses the group, as CenterGroup's
+        // own capture handler does; the pane no longer sits inside its group's section. The drag ignores it: it measures under [data-center-root]
         return (
-          <div key={key} data-design-layer={key} inert={slot === undefined} style={slot === undefined ? parkedStyle(sizes[key]) : anchored(slot.anchor)} className="absolute z-10 flex">
+          <div
+            key={key} data-design-layer={key} data-center-group={slot?.groupId} onPointerDownCapture={slot?.focus} inert={slot === undefined} style={slot === undefined ? parkedStyle(sizes[key]) : anchored(slot.anchor)} className="absolute z-10 flex"
+          >
             <DesignPane activity={activity} path={path} label={t('design.tab', { label: activityTitle(activity), name: baseName(path) })} active={slot !== undefined} />
           </div>
         );
