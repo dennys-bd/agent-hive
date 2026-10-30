@@ -2790,6 +2790,8 @@ const en = {
   'benchmark.config.eval.judge.hint': 'model that gives the scores',
   'benchmark.config.eval.rubric': 'rubric',
   'benchmark.config.eval.rubric.hint': 'one criterion per line, scored 1–5',
+  'benchmark.config.eval.rubric.add': 'add criterion',
+  'benchmark.config.eval.rubric.placeholder': '+ criterion',
   // #464: the benchmark compare tab, benchmark.hv.html's #s-comparar
   'benchmark.compare.row.prompt': '{stage} · prompt',
   'benchmark.compare.row.agent': '{stage} · agent',
@@ -5782,6 +5784,8 @@ const pt: Record<MessageKey, string> = {
   'benchmark.config.eval.judge.hint': 'modelo que dá as notas',
   'benchmark.config.eval.rubric': 'rubrica',
   'benchmark.config.eval.rubric.hint': 'um critério por linha, nota 1–5',
+  'benchmark.config.eval.rubric.add': 'adicionar critério',
+  'benchmark.config.eval.rubric.placeholder': '+ critério',
   // #464: the benchmark compare tab, benchmark.hv.html's #s-comparar
   'benchmark.compare.row.prompt': '{stage} · prompt',
   'benchmark.compare.row.agent': '{stage} · agente',

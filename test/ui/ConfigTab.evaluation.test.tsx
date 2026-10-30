@@ -45,7 +45,7 @@ test("the form edits the collectors through #877's grid, the judge's picks, the 
   const walks = screen.getByRole('textbox', { name: 'passadas por cenário' });
   await user.clear(walks);
   await user.type(walks, '3');
-  await user.type(screen.getByRole('textbox', { name: 'rubrica' }), '\nclareza');
+  await user.type(screen.getByRole('textbox', { name: 'adicionar critério' }), 'clareza{Enter}');
   expect(screen.getByRole('combobox', { name: 'agente do testador' })).toBeInTheDocument();
   await user.click(screen.getByRole('switch', { name: 'coletor dinâmico' }));
   expect(screen.queryByRole('combobox', { name: 'agente do testador' })).not.toBeInTheDocument();
@@ -54,7 +54,7 @@ test("the form edits the collectors through #877's grid, the judge's picks, the 
     method: 'PATCH', path: '/benchmark/experiments/skills',
     body: { evaluation: {
       collectors: [{ agent: 'claude', model: 'sonnet', focus: 'tdd' }, { agent: 'claude', focus: 'security' }], dynamic: false,
-      tester: { agent: 'claude', model: 'sonnet' }, scenarioWalks: 3, judge: { agent: 'codex' }, rubric: 'fidelidade\ncomportamento\n\ncódigo\nclareza',
+      tester: { agent: 'claude', model: 'sonnet' }, scenarioWalks: 3, judge: { agent: 'codex' }, rubric: 'fidelidade\ncomportamento\ncódigo\nclareza',
     } },
   }]));
 });
