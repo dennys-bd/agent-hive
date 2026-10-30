@@ -28,8 +28,10 @@ const L = {
 const draftOf = (e: BenchEvaluation): EvaluationDraft => ({
   collectors: e.collectors.map(rowDraft), dynamic: e.dynamic, tester: rowDraft(e.tester), scenarioWalks: String(e.scenarioWalks), judge: rowDraft(e.judge), rubric: linesOf(e.rubric),
 });
-const evaluationOf = (d: EvaluationDraft): BenchEvaluation => ({
-  collectors: d.collectors.map(rowFrom), dynamic: d.dynamic, tester: rowFrom(d.tester), scenarioWalks: Number(d.scenarioWalks), judge: rowFrom(d.judge), rubric: d.rubric.join('\n'),
+// An untouched rubric keeps its stored text: the chips drop blank lines and indentation, which only an edit should lose
+const rubricOf = (chips: readonly string[], stored: string): string => (chips.join('\n') === linesOf(stored).join('\n') ? stored : chips.join('\n'));
+const evaluationOf = (d: EvaluationDraft, stored: BenchEvaluation): BenchEvaluation => ({
+  collectors: d.collectors.map(rowFrom), dynamic: d.dynamic, tester: rowFrom(d.tester), scenarioWalks: Number(d.scenarioWalks), judge: rowFrom(d.judge), rubric: rubricOf(d.rubric, stored.rubric),
 });
 
 const dynamicText = ({ evaluation, seed }: Experiment): string =>
@@ -106,7 +108,7 @@ function EvaluationForm({ experiment, edit, head }: { experiment: Experiment; ed
   const set = (patch: Partial<EvaluationDraft>): void => setDraft({ ...draft, ...patch });
   const isWalksValid = /^\d+$/.test(draft.scenarioWalks.trim()) && Number(draft.scenarioWalks) >= 1;
   return (
-    <Section {...head} edit={edit} foot={<EditFoot edit={edit} isValid={isWalksValid} isSaving={isSaving} onSave={() => void save('evaluation', evaluationOf(draft))} />}>
+    <Section {...head} edit={edit} foot={<EditFoot edit={edit} isValid={isWalksValid} isSaving={isSaving} onSave={() => void save('evaluation', evaluationOf(draft, experiment.evaluation))} />}>
       <Row label={L.collectors()} hint={t('benchmark.config.eval.collectors.hint')}><CollectorGrid {...pick} rows={draft.collectors} defaultAgent={defaultAgent} onChange={(collectors) => set({ collectors })} /></Row>
       <Row label={L.dynamic()} hint={t('benchmark.config.eval.dynamic.hint')}>
         <Switch aria-label={L.dynamic()} checked={draft.dynamic} onCheckedChange={(dynamic) => set({ dynamic })} />

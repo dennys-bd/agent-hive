@@ -109,7 +109,8 @@ export function DurationField({ label, value, onChange }: { label: string; value
 /** A row's shortcut into another section's form (editar cenários, #537): hidden while locked or while that section is open; it scrolls there. */
 export function EditButton({ edit, label, scrollTo }: { edit: SectionEdit; label: string; scrollTo: string }) {
   if (edit.isLocked || edit.isOpen) return null;
-  const open = (): void => { edit.open(); document.getElementById(scrollTo)?.scrollIntoView({ block: 'start' }); };
+  // After the next frame: opening swaps the read card for the form, so the node to scroll to only exists then
+  const open = (): void => { edit.open(); requestAnimationFrame(() => document.getElementById(scrollTo)?.scrollIntoView?.({ block: 'start' })); };
   return <Button type="button" variant="link" size="xs" className="h-auto p-0" onClick={open}>{label}</Button>;
 }
 

@@ -62,3 +62,10 @@ test('isMono off drops the mono font from the chips and the add field (#537)', (
   expect(screen.getByText('código')).not.toHaveClass('font-mono');
   expect(screen.getByRole('textbox', { name: 'adicionar critério' })).not.toHaveClass('font-mono');
 });
+
+test('× removes only its own chip when the loaded list repeats a value (#537)', async () => {
+  const user = userEvent.setup();
+  render(<Harness start={['a', 'b', 'a']} />);
+  await user.click(screen.getAllByRole('button', { name: 'tirar a' })[0] as HTMLElement);
+  expect(screen.getByRole('status')).toHaveTextContent('b|a');
+});

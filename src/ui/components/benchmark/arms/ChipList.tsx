@@ -53,7 +53,7 @@ export function ChipList({ id, addLabel, placeholder, value, onChange, isReadOnl
         // The index is in the key because a read-only list can repeat a value, so the text alone is no key
         const key = `${i}:${chip}`;
         if (isReadOnly && pillOf !== undefined) return <Fragment key={key}>{pillOf(chip)}</Fragment>;
-        return <Chip key={key} chip={chip} isMono={isMono} isReadOnly={isReadOnly} title={titleOf?.(chip)} onRemove={() => onChange(value.filter((c) => c !== chip))} />;
+        return <Chip key={key} chip={chip} isMono={isMono} isReadOnly={isReadOnly} title={titleOf?.(chip)} onRemove={() => onChange(value.filter((_, j) => j !== i))} />;
       })}
       {hidden > 0 && (
         <button type="button" aria-expanded={isOpen} className="text-muted-foreground text-xs underline-offset-2 hover:underline" onClick={() => setOpen(!isOpen)}>

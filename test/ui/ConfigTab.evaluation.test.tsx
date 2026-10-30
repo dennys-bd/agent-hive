@@ -59,6 +59,16 @@ test("the form edits the collectors through #877's grid, the judge's picks, the 
   }]));
 });
 
+test('an untouched rubric saves as stored, blank lines and indentation kept (#537)', async () => {
+  const user = userEvent.setup();
+  const calls = stubConfigFetch();
+  const rubric = 'fidelidade\n\n  comportamento';
+  renderConfig({ ...CONFIG, evaluation: { ...CONFIG.evaluation, rubric } });
+  await user.click(editIn('avaliação'));
+  await user.click(within(region('avaliação')).getByRole('button', { name: 'salvar' }));
+  await waitFor(() => expect(calls).toMatchObject([{ method: 'PATCH', body: { evaluation: { rubric } } }]));
+});
+
 test('passadas below 1 keeps salvar off (#463)', async () => {
   const user = userEvent.setup();
   stubConfigFetch();
@@ -77,7 +87,7 @@ test("editar cenários opens the seed's form and scrolls to the seed section (#4
   renderConfig(CONFIG);
   await user.click(within(rowIn('avaliação', 'coletor dinâmico')).getByRole('button', { name: 'editar cenários' }));
   expect(screen.getByRole('textbox', { name: 'commit de partida' })).toBeInTheDocument();
-  expect(scrolled).toEqual(['config-seed']);
+  await waitFor(() => expect(scrolled).toEqual(['config-seed'])); // after the next frame, once the form is mounted
 });
 
 test("julgar de novo sem executar confirms with the ended runs' count, then POSTs the evaluate route; disabled with none ended (#463)", async () => {
