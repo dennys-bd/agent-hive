@@ -56,15 +56,15 @@ function Rejudge({ experiment, isLocked }: { experiment: Experiment; isLocked: b
   );
 }
 
-function EvaluationRows({ experiment, edit, seedEdit }: EvaluationProps) {
+function EvaluationRows({ experiment, seedEdit }: Omit<EvaluationProps, 'edit'>) {
   const { evaluation } = experiment;
   return (
     <>
-      <Row label={L.collectors()} hint={t('benchmark.config.eval.collectors.hint')} side={<EditButton edit={edit} />}><Values texts={evaluation.collectors.map(collectorText)} /></Row>
+      <Row label={L.collectors()} hint={t('benchmark.config.eval.collectors.hint')}><Values texts={evaluation.collectors.map(collectorText)} /></Row>
       <Row label={L.dynamic()} hint={t('benchmark.config.eval.dynamic.hint')} side={<EditButton edit={seedEdit} label={t('benchmark.config.eval.editScenarios')} />}><Pill>{dynamicText(experiment)}</Pill></Row>
       {evaluation.dynamic && <Row label={L.tester()} hint={t('benchmark.config.eval.tester.hint')}><Pill>{rowText(evaluation.tester)}</Pill></Row>}
       <Row label={L.judge()} hint={t('benchmark.config.eval.judge.hint')}><Pill>{rowText(evaluation.judge)}</Pill></Row>
-      <Row label={L.rubric()} hint={t('benchmark.config.eval.rubric.hint')} side={<EditButton edit={edit} />}><Values texts={linesOf(evaluation.rubric)} /></Row>
+      <Row label={L.rubric()} hint={t('benchmark.config.eval.rubric.hint')}><Values texts={linesOf(evaluation.rubric)} /></Row>
     </>
   );
 }
@@ -105,7 +105,7 @@ function EvaluationForm({ experiment, edit, head }: { experiment: Experiment; ed
   const set = (patch: Partial<EvaluationDraft>): void => setDraft({ ...draft, ...patch });
   const isWalksValid = /^\d+$/.test(draft.scenarioWalks.trim()) && Number(draft.scenarioWalks) >= 1;
   return (
-    <Section {...head} foot={<EditFoot edit={edit} isValid={isWalksValid} isSaving={isSaving} onSave={() => void save('evaluation', evaluationOf(draft))} />}>
+    <Section {...head} edit={edit} foot={<EditFoot edit={edit} isValid={isWalksValid} isSaving={isSaving} onSave={() => void save('evaluation', evaluationOf(draft))} />}>
       <Row label={L.collectors()} hint={t('benchmark.config.eval.collectors.hint')}><CollectorGrid {...pick} rows={draft.collectors} defaultAgent={defaultAgent} onChange={(collectors) => set({ collectors })} /></Row>
       <Row label={L.dynamic()} hint={t('benchmark.config.eval.dynamic.hint')}>
         <Switch aria-label={L.dynamic()} checked={draft.dynamic} onCheckedChange={(dynamic) => set({ dynamic })} />
@@ -124,5 +124,5 @@ function EvaluationForm({ experiment, edit, head }: { experiment: Experiment; ed
 export function EvaluationSection({ experiment, edit, seedEdit }: EvaluationProps) {
   const head: Head = { title: t('benchmark.config.eval.title'), sub: t('benchmark.config.eval.sub'), side: <Rejudge experiment={experiment} isLocked={edit.isLocked} /> };
   if (edit.isOpen) return <EvaluationForm experiment={experiment} edit={edit} head={head} />;
-  return <Section {...head}><EvaluationRows experiment={experiment} edit={edit} seedEdit={seedEdit} /></Section>;
+  return <Section {...head} edit={edit}><EvaluationRows experiment={experiment} seedEdit={seedEdit} /></Section>;
 }

@@ -22,15 +22,24 @@ export function Note({ children }: { children: ReactNode }) {
 /** What a section's rows and form read of the tab's edit state (spec, "Editing model"). */
 export interface SectionEdit { isOpen: boolean; isLocked: boolean; open(): void; close(): void; markDirty(): void; saved(id: string): void }
 
-export interface SectionProps { title: string; sub: string; side?: ReactNode; note?: ReactNode; foot?: ReactNode; isDimmed?: boolean; children: ReactNode }
+export interface SectionProps { title: string; sub: string; edit: SectionEdit; id?: string; side?: ReactNode; note?: ReactNode; foot?: ReactNode; isDimmed?: boolean; children: ReactNode }
 
-export function Section({ title, sub, side, note, foot, isDimmed = false, children }: SectionProps) {
+// The screen's .sect-edit: last in the header. Open, it keeps its width unseen so the header does not shift; locked, it is gone (#463)
+function HeaderEdit({ edit, section }: { edit: SectionEdit; section: string }) {
+  if (edit.isLocked) return null;
+  const text = t('benchmark.config.edit');
+  if (edit.isOpen) return <span aria-hidden="true" className="invisible text-xs">{text}</span>;
+  return <Button type="button" variant="link" size="xs" className="h-auto p-0" aria-label={t('benchmark.config.editSection', { section })} onClick={edit.open}>{text}</Button>;
+}
+
+export function Section({ title, sub, edit, id, side, note, foot, isDimmed = false, children }: SectionProps) {
   return (
-    <section aria-label={title} className="flex flex-col gap-2.5">
+    <section id={id} aria-label={title} className="flex flex-col gap-2.5">
       <div className="flex items-baseline gap-2.5">
         <h2 className="m-0 font-semibold text-sm">{title}</h2>
         <span className="flex-1 text-muted-foreground text-xs">{sub}</span>
         {side}
+        <HeaderEdit edit={edit} section={title} />
       </div>
       {note}
       <div className={`flex flex-col rounded-lg border ${isDimmed ? 'opacity-55' : ''}`}>{children}</div>

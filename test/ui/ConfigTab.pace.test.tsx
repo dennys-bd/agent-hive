@@ -42,7 +42,7 @@ test('editar opens ritmo as a form; salvar sends one PATCH with pace alone and r
   await user.clear(field('% do plano'));
   await user.click(salvar());
   await waitFor(() => expect(calls).toEqual([{ method: 'PATCH', path: '/benchmark/experiments/skills', body: { pace: { pairs: 5, runTimeoutMs: 5_400_000, workersPerArm: 3, cap: {} } } }]));
-  expect(within(region('ritmo')).getByRole('button', { name: 'editar' })).toBeInTheDocument();
+  expect(within(region('ritmo')).getByRole('button', { name: 'editar ritmo' })).toBeInTheDocument();
 });
 
 test('cancelar drops the draft and posts nothing (#463)', async () => {
@@ -78,7 +78,7 @@ test('an open form closes unsaved when the experiment starts running, and editar
   await user.type(field('pares'), '9');
   rerender({ ...CONFIG, status: 'running' });
   expect(screen.queryByRole('textbox', { name: 'pares' })).not.toBeInTheDocument();
-  expect(within(region('ritmo')).queryByRole('button', { name: 'editar' })).not.toBeInTheDocument();
+  expect(within(region('ritmo')).queryByRole('button', { name: 'editar ritmo' })).not.toBeInTheDocument();
   rerender(CONFIG);
   expect(screen.queryByRole('textbox', { name: 'pares' })).not.toBeInTheDocument(); // closed for good, not hidden
   expect(calls).toEqual([]);

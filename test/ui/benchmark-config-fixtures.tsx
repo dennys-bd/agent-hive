@@ -75,6 +75,6 @@ export function renderConfig(e: Experiment, rateLimits?: PlanReadings) {
 }
 export const region = (name: string): HTMLElement => screen.getByRole('region', { name });
 export const rowIn = (section: string, label: string): HTMLElement => within(region(section)).getByRole('group', { name: label });
-export const editIn = (section: string): HTMLElement => within(region(section)).getAllByRole('button', { name: 'editar' })[0] as HTMLElement;
+export const editIn = (section: string): HTMLElement => within(region(section)).getByRole('button', { name: `editar ${section}` });
 /** The pills' texts under `el`, in order (an arm's pill reads its letter then its value: `CbypassPermissions`). */
 export const pills = (el: HTMLElement): (string | null)[] => [...el.querySelectorAll('[data-slot="badge"]')].map((b) => b.textContent);

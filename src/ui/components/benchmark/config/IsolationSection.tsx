@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { Arm, BenchIsolation, Experiment, IsolationRow } from '../../../../types.js';
 import { durationText, linesOf, mapRow, PERMISSION_MODES, resolve, riskyArms, toggleScope } from '@/components/benchmark/config/config-lib';
 import { type EditableKey, type IsolationDraft, isolationDraft, isolationErrors, isolationFrom, type LimitsDraft } from '@/components/benchmark/config/isolation-draft';
-import { DurationField, EditButton, EditFoot, Field, FieldError, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
+import { DurationField, EditFoot, Field, FieldError, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -126,7 +126,7 @@ function IsolationForm({ experiment, edit }: IsolationProps) {
   const errorOf = (k: EditableKey): string | undefined => { const key = errors[k]; return key === undefined ? undefined : t(key); };
   const text = (k: TextKey) => <EditRow k={k} row={draft[k]} arms={arms} editor={textEditor} error={errorOf(k)} onChange={(next) => setRow(k, next)} />;
   return (
-    <Section {...head()} foot={<EditFoot edit={edit} isValid={Object.keys(errors).length === 0} isSaving={isSaving} onSave={() => void save('isolation', isolationFrom(draft, experiment.isolation))} />}>
+    <Section {...head()} edit={edit} foot={<EditFoot edit={edit} isValid={Object.keys(errors).length === 0} isSaving={isSaving} onSave={() => void save('isolation', isolationFrom(draft, experiment.isolation))} />}>
       <ReadRow k="environment" row={rows.environment} arms={arms} risky={[]} />
       {text('network')}
       <EditRow k="permissionMode" row={draft.permissionMode} arms={arms} editor={modeEditor(risky)} extra={<RiskLine arms={risky} />} onChange={(next) => setRow('permissionMode', next)} />
@@ -146,7 +146,7 @@ export function IsolationSection({ experiment, edit }: IsolationProps) {
   const rows = readRows(experiment.isolation);
   const risky = riskyArms(experiment.arms, experiment.isolation);
   return (
-    <Section {...head()} side={<EditButton edit={edit} />}>
+    <Section {...head()} edit={edit}>
       {ORDER.map((k) => <ReadRow key={k} k={k} row={rows[k]} arms={experiment.arms} risky={risky} />)}
     </Section>
   );

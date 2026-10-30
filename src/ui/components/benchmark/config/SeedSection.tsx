@@ -4,7 +4,7 @@ import type { BenchScenario, BenchSeed, Experiment } from '../../../../types.js'
 import { COMMIT_SHA, nextScenarioId, scenarioIdsValid, scenariosText } from '@/components/benchmark/config/config-lib';
 import { refusalOf } from '@/components/benchmark/config/save-section';
 import { EntryPill, SeedEntries } from '@/components/benchmark/config/SeedEntries';
-import { EditButton, EditFoot, Field, FieldError, Note, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
+import { EditFoot, Field, FieldError, Note, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
@@ -23,9 +23,9 @@ const L = {
 const commitText = (seed: BenchSeed): string => seed.commit.slice(0, COMMIT_CHARS);
 
 // The section's head: its sub line, the hash with the lock, and the note that a seed change makes a new experiment
-function seedHead(experiment: Experiment) {
+function seedHead(experiment: Experiment, edit: SectionEdit) {
   return {
-    title: t('benchmark.config.seed.title'), sub: t('benchmark.config.seed.sub'), note: <Note>{t('benchmark.config.seed.note')}</Note>,
+    edit, title: t('benchmark.config.seed.title'), sub: t('benchmark.config.seed.sub'), note: <Note>{t('benchmark.config.seed.note')}</Note>,
     side: (
       <span className="flex items-center gap-1.5 self-center rounded-[5px] border px-2 py-0.5 font-mono text-muted-foreground text-xs">
         <LockIcon aria-hidden="true" className="size-3" />{t('benchmark.config.seed.hash', { hash: experiment.seedHash.slice(0, HASH_CHARS) })}
@@ -41,23 +41,23 @@ const WorkspaceRow = ({ workspace }: { workspace: string }) => (
   </Row>
 );
 
-function SeedRows({ experiment, edit }: SeedProps) {
+function SeedRows({ experiment }: { experiment: Experiment }) {
   const { seed } = experiment;
   const { command, url, files } = seed.sample;
   const entryPill = (entry: string) => <EntryPill entry={entry} />;
   return (
     <>
       <WorkspaceRow workspace={seed.workspace} />
-      <Row label={L.commit()} hint={t('benchmark.config.seed.commit.hint')} side={<EditButton edit={edit} label={t('benchmark.config.change')} />}>
+      <Row label={L.commit()} hint={t('benchmark.config.seed.commit.hint')}>
         <Pill isMono>{commitText(seed)}</Pill><Pill>{t('benchmark.config.seed.origin')}</Pill>
       </Row>
-      <Row label={L.reference()} hint={t('benchmark.config.seed.reference.hint')} side={<EditButton edit={edit} />}>
+      <Row label={L.reference()} hint={t('benchmark.config.seed.reference.hint')}>
         <Values texts={seed.reference} pillOf={entryPill} />
       </Row>
-      <Row label={L.sample()} hint={t('benchmark.config.seed.sample.hint')} side={<EditButton edit={edit} />}>
+      <Row label={L.sample()} hint={t('benchmark.config.seed.sample.hint')}>
         <Values texts={[...files, command, url].filter((text) => text !== '')} pillOf={entryPill} />
       </Row>
-      <Row label={L.scenarios()} hint={t('benchmark.config.seed.scenarios.hint')} side={<EditButton edit={edit} />}><Pill>{scenariosText(seed.scenarios)}</Pill></Row>
+      <Row label={L.scenarios()} hint={t('benchmark.config.seed.scenarios.hint')}><Pill>{scenariosText(seed.scenarios)}</Pill></Row>
     </>
   );
 }
@@ -110,7 +110,7 @@ function SeedForm({ experiment, edit }: SeedProps) {
   const fork = experiment.rounds.length > 0 ? { notice: t('benchmark.config.seed.forkNotice'), saveLabel: t('benchmark.config.seed.saveAsNew') } : {};
   const entries = { experimentId: experiment.id };
   return (
-    <Section {...seedHead(experiment)} foot={<EditFoot edit={edit} isValid={isCommitValid && areScenariosValid} isSaving={isSaving} onSave={() => void save('seed', seedOf(draft), onRefusal)} {...fork} />}>
+    <Section {...seedHead(experiment, edit)} foot={<EditFoot edit={edit} isValid={isCommitValid && areScenariosValid} isSaving={isSaving} onSave={() => void save('seed', seedOf(draft), onRefusal)} {...fork} />}>
       <WorkspaceRow workspace={draft.workspace} />
       <Row label={L.commit()} hint={t('benchmark.config.seed.commit.hint')}>
         <Field label={L.commit()} value={draft.commit} onChange={(commit) => set({ commit })} className="w-80 font-mono" error={isCommitValid ? undefined : t('benchmark.config.error.commit')} />
@@ -132,5 +132,5 @@ function SeedForm({ experiment, edit }: SeedProps) {
 /** seed (#463): the problem, the same for every arm; saving it on an experiment with rounds forks a new draft (root design, "Hashes"). */
 export function SeedSection({ experiment, edit }: SeedProps) {
   if (edit.isOpen) return <SeedForm experiment={experiment} edit={edit} />;
-  return <Section {...seedHead(experiment)}><SeedRows experiment={experiment} edit={edit} /></Section>;
+  return <Section {...seedHead(experiment, edit)}><SeedRows experiment={experiment} /></Section>;
 }
