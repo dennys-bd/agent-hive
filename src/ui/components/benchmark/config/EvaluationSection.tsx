@@ -1,6 +1,7 @@
 import { type ReactNode, useContext, useState } from 'react';
 import type { BenchEvaluation, Experiment } from '../../../../types.js';
 import { collectorText, judgeableRuns, linesOf, rowDraft, rowFrom, rowText, scenariosText } from '@/components/benchmark/config/config-lib';
+import { SEED_SECTION_ID } from '@/components/benchmark/config/SeedSection';
 import { evaluateAgain, toastRefusal } from '@/components/benchmark/config/save-section';
 import { EditButton, EditFoot, Field, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
 import { Confirm } from '@/components/Confirm';
@@ -61,7 +62,7 @@ function EvaluationRows({ experiment, seedEdit }: Omit<EvaluationProps, 'edit'>)
   return (
     <>
       <Row label={L.collectors()} hint={t('benchmark.config.eval.collectors.hint')}><Values texts={evaluation.collectors.map(collectorText)} /></Row>
-      <Row label={L.dynamic()} hint={t('benchmark.config.eval.dynamic.hint')} side={<EditButton edit={seedEdit} label={t('benchmark.config.eval.editScenarios')} />}><Pill>{dynamicText(experiment)}</Pill></Row>
+      <Row label={L.dynamic()} hint={t('benchmark.config.eval.dynamic.hint')} side={<EditButton edit={seedEdit} label={t('benchmark.config.eval.editScenarios')} scrollTo={SEED_SECTION_ID} />}><Pill>{dynamicText(experiment)}</Pill></Row>
       {evaluation.dynamic && <Row label={L.tester()} hint={t('benchmark.config.eval.tester.hint')}><Pill>{rowText(evaluation.tester)}</Pill></Row>}
       <Row label={L.judge()} hint={t('benchmark.config.eval.judge.hint')}><Pill>{rowText(evaluation.judge)}</Pill></Row>
       <Row label={L.rubric()} hint={t('benchmark.config.eval.rubric.hint')}><Values texts={linesOf(evaluation.rubric)} /></Row>

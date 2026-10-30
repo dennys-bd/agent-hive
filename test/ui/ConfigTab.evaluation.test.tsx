@@ -5,7 +5,10 @@ import { setLanguage } from '@/i18n';
 import { CONFIG, DRAFT_CONFIG, editIn, pills, region, renderConfig, rowIn, stubConfigFetch } from './benchmark-config-fixtures';
 
 beforeEach(() => setLanguage('pt'));
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 async function pick(combobox: string, option: string): Promise<void> {
   const trigger = screen.getByRole('combobox', { name: combobox });
@@ -66,12 +69,15 @@ test('passadas below 1 keeps salvar off (#463)', async () => {
   expect(within(region('avaliação')).getByRole('button', { name: 'salvar' })).toBeDisabled();
 });
 
-test("editar cenários opens the seed section's form (#463)", async () => {
+test("editar cenários opens the seed's form and scrolls to the seed section (#463, #537)", async () => {
   const user = userEvent.setup();
   stubConfigFetch();
+  const scrolled: string[] = [];
+  vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) { scrolled.push(this.id); });
   renderConfig(CONFIG);
   await user.click(within(rowIn('avaliação', 'coletor dinâmico')).getByRole('button', { name: 'editar cenários' }));
   expect(screen.getByRole('textbox', { name: 'commit de partida' })).toBeInTheDocument();
+  expect(scrolled).toEqual(['config-seed']);
 });
 
 test("julgar de novo sem executar confirms with the ended runs' count, then POSTs the evaluate route; disabled with none ended (#463)", async () => {

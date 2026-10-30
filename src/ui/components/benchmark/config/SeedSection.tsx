@@ -12,6 +12,8 @@ import { t } from '@/i18n';
 
 interface SeedProps { experiment: Experiment; edit: SectionEdit }
 type EntryList = 'reference' | 'files';
+/** The seed section's DOM id: avaliação's editar cenários scrolls to it (#537). */
+export const SEED_SECTION_ID = 'config-seed';
 const HASH_CHARS = 6;
 const COMMIT_CHARS = 7;
 const L = {
@@ -25,7 +27,7 @@ const commitText = (seed: BenchSeed): string => seed.commit.slice(0, COMMIT_CHAR
 // The section's head: its sub line, the hash with the lock, and the note that a seed change makes a new experiment
 function seedHead(experiment: Experiment, edit: SectionEdit) {
   return {
-    edit, title: t('benchmark.config.seed.title'), sub: t('benchmark.config.seed.sub'), note: <Note>{t('benchmark.config.seed.note')}</Note>,
+    edit, id: SEED_SECTION_ID, title: t('benchmark.config.seed.title'), sub: t('benchmark.config.seed.sub'), note: <Note>{t('benchmark.config.seed.note')}</Note>,
     side: (
       <span className="flex items-center gap-1.5 self-center rounded-[5px] border px-2 py-0.5 font-mono text-muted-foreground text-xs">
         <LockIcon aria-hidden="true" className="size-3" />{t('benchmark.config.seed.hash', { hash: experiment.seedHash.slice(0, HASH_CHARS) })}
