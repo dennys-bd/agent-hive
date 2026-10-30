@@ -68,17 +68,17 @@ export const linesOf = (text: string): string[] => text.split('\n').map((line) =
 
 export interface ParsedEnv { env: Record<string, string>; bad: string[] }
 
-/** One NAME=value per line; a line whose name fails ENV_NAME (the route's check) is bad, kept as typed for the error. */
-export function parseEnv(text: string): ParsedEnv {
-  const lines = linesOf(text).map((line) => {
-    const at = line.indexOf('=');
-    return { line, name: at < 0 ? '' : line.slice(0, at).trim(), value: line.slice(at + 1) };
+/** One NAME=value per chip; a chip whose name fails ENV_NAME (the route's check) is bad, kept as typed for the error. */
+export function parseEnv(chips: readonly string[]): ParsedEnv {
+  const entries = chips.map((chip) => chip.trim()).filter((chip) => chip !== '').map((chip) => {
+    const at = chip.indexOf('=');
+    return { chip, name: at < 0 ? '' : chip.slice(0, at).trim(), value: chip.slice(at + 1) };
   });
-  const good = lines.filter((l) => ENV_NAME.test(l.name));
-  return { env: Object.fromEntries(good.map((l) => [l.name, l.value])), bad: lines.filter((l) => !ENV_NAME.test(l.name)).map((l) => l.line) };
+  const good = entries.filter((e) => ENV_NAME.test(e.name));
+  return { env: Object.fromEntries(good.map((e) => [e.name, e.value])), bad: entries.filter((e) => !ENV_NAME.test(e.name)).map((e) => e.chip) };
 }
 
-export const envText = (env: Record<string, string>): string => Object.entries(env).map(([name, value]) => `${name}=${value}`).join('\n');
+export const envChips = (env: Record<string, string>): string[] => Object.entries(env).map(([name, value]) => `${name}=${value}`);
 
 export function scenariosText(scenarios: readonly BenchScenario[]): string {
   const first = scenarios[0];

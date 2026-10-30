@@ -2,6 +2,7 @@
 import { InfoIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { Experiment } from '../../../../types.js';
+import { ChipList } from '@/components/benchmark/arms/ChipList';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,18 +22,27 @@ export function Note({ children }: { children: ReactNode }) {
 /** What a section's rows and form read of the tab's edit state (spec, "Editing model"). */
 export interface SectionEdit { isOpen: boolean; isLocked: boolean; open(): void; close(): void; markDirty(): void; saved(id: string): void }
 
-export interface SectionProps { title: string; sub: string; side?: ReactNode; note?: ReactNode; foot?: ReactNode; isDimmed?: boolean; children: ReactNode }
+export interface SectionProps { title: string; sub: string; edit: SectionEdit; id?: string; side?: ReactNode; note?: ReactNode; foot?: ReactNode; isDimmed?: boolean; children: ReactNode }
 
-export function Section({ title, sub, side, note, foot, isDimmed = false, children }: SectionProps) {
+// The screen's .sect-edit: last in the header. Open, it keeps its width unseen so the header does not shift; locked, it is gone (#463)
+function HeaderEdit({ edit, section }: { edit: SectionEdit; section: string }) {
+  if (edit.isLocked) return null;
+  const text = t('benchmark.config.edit');
+  if (edit.isOpen) return <span aria-hidden="true" className="invisible text-xs">{text}</span>;
+  return <Button type="button" variant="link" size="xs" className="h-auto p-0" aria-label={t('benchmark.config.editSection', { section })} onClick={edit.open}>{text}</Button>;
+}
+
+export function Section({ title, sub, edit, id, side, note, foot, isDimmed = false, children }: SectionProps) {
   return (
-    <section aria-label={title} className="flex flex-col gap-2.5">
+    <section id={id} aria-label={title} className="flex flex-col gap-2.5">
       <div className="flex items-baseline gap-2.5">
         <h2 className="m-0 font-semibold text-sm">{title}</h2>
         <span className="flex-1 text-muted-foreground text-xs">{sub}</span>
         {side}
+        <HeaderEdit edit={edit} section={title} />
       </div>
       {note}
-      <div className={`flex flex-col divide-y rounded-lg border ${isDimmed ? 'opacity-55' : ''}`}>{children}</div>
+      <div className={`flex flex-col rounded-lg border ${isDimmed ? 'opacity-55' : ''}`}>{children}</div>
       {foot}
     </section>
   );
@@ -44,7 +54,8 @@ export interface ConfigRowProps { label: string; hint?: string; side?: ReactNode
 export function Row({ label, hint, side, isIsolation = false, children }: ConfigRowProps) {
   const grid = isIsolation ? 'grid-cols-[170px_minmax(0,1fr)_150px] py-1.5' : 'grid-cols-[170px_minmax(0,1fr)_auto] py-[7px]';
   return (
-    <fieldset aria-label={label} className={`m-0 grid ${grid} items-center gap-4 border-0 px-3.5 text-[13px]`}>
+    // The row draws its own divider: a border-0 here (or the card's zero-specificity divide-y) would hide it
+    <fieldset aria-label={label} className={`m-0 grid ${grid} items-center gap-4 border-t first:border-t-0 px-3.5 text-[13px]`}>
       <span className="flex flex-col gap-px"><span>{label}</span>{hint !== undefined && <small className="text-muted-foreground text-xs">{hint}</small>}</span>
       <span className="flex min-w-0 flex-wrap items-center gap-1.5">{children}</span>
       <span className="justify-self-end whitespace-nowrap text-muted-foreground text-xs">{side}</span>
@@ -63,10 +74,13 @@ export function Pill({ children, isMono = false, isRisk = false, arm }: { childr
 
 export const None = () => <span className="text-muted-foreground text-xs">{t('benchmark.config.none')}</span>;
 
-export function Values({ texts, isMono = false }: { texts: readonly string[]; isMono?: boolean }) {
+interface ValuesProps { texts: readonly string[]; isMono?: boolean; isRisk?: boolean; pillOf?(text: string): ReactNode }
+
+/** A read row's list (#537): the config's pills, folded after CHIP_LIMIT by the arm dialog's ChipList, so both read one way. */
+export function Values({ texts, isMono = false, isRisk = false, pillOf }: ValuesProps) {
   if (texts.length === 0) return <None />;
-  // biome-ignore lint/suspicious/noArrayIndexKey: read-only pills can repeat (two collectors alike, a repeated rubric line), so the text alone is no key
-  return <>{texts.map((text, i) => <Pill key={`${i}:${text}`} isMono={isMono}>{text}</Pill>)}</>;
+  const pill = pillOf ?? ((text: string) => <Pill isMono={isMono} isRisk={isRisk}>{text}</Pill>);
+  return <ChipList id="" addLabel="" placeholder="" value={texts} onChange={() => undefined} isReadOnly pillOf={pill} />;
 }
 
 export const FieldError = ({ children }: { children: ReactNode }) => <p role="alert" className="w-full text-destructive text-xs">{children}</p>;
@@ -92,10 +106,12 @@ export function DurationField({ label, value, onChange }: { label: string; value
   );
 }
 
-/** A row's editar: hidden while the experiment is locked, and while its own section is the one in edit. */
-export function EditButton({ edit, label }: { edit: SectionEdit; label?: string }) {
+/** A row's shortcut into another section's form (editar cenários, #537): hidden while locked or while that section is open; it scrolls there. */
+export function EditButton({ edit, label, scrollTo }: { edit: SectionEdit; label: string; scrollTo: string }) {
   if (edit.isLocked || edit.isOpen) return null;
-  return <Button type="button" variant="link" size="xs" className="h-auto p-0" onClick={edit.open}>{label ?? t('benchmark.config.edit')}</Button>;
+  // After the next frame: opening swaps the read card for the form, so the node to scroll to only exists then
+  const open = (): void => { edit.open(); requestAnimationFrame(() => document.getElementById(scrollTo)?.scrollIntoView?.({ block: 'start' })); };
+  return <Button type="button" variant="link" size="xs" className="h-auto p-0" onClick={open}>{label}</Button>;
 }
 
 interface EditFootProps { edit: SectionEdit; isValid: boolean; isSaving: boolean; onSave(): void; notice?: string; saveLabel?: string }

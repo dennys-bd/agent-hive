@@ -5,7 +5,10 @@ import { setLanguage } from '@/i18n';
 import { CONFIG, DRAFT_CONFIG, editIn, pills, region, renderConfig, rowIn, stubConfigFetch } from './benchmark-config-fixtures';
 
 beforeEach(() => setLanguage('pt'));
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 async function pick(combobox: string, option: string): Promise<void> {
   const trigger = screen.getByRole('combobox', { name: combobox });
@@ -42,7 +45,7 @@ test("the form edits the collectors through #877's grid, the judge's picks, the 
   const walks = screen.getByRole('textbox', { name: 'passadas por cenário' });
   await user.clear(walks);
   await user.type(walks, '3');
-  await user.type(screen.getByRole('textbox', { name: 'rubrica' }), '\nclareza');
+  await user.type(screen.getByRole('textbox', { name: 'adicionar critério' }), 'clareza{Enter}');
   expect(screen.getByRole('combobox', { name: 'agente do testador' })).toBeInTheDocument();
   await user.click(screen.getByRole('switch', { name: 'coletor dinâmico' }));
   expect(screen.queryByRole('combobox', { name: 'agente do testador' })).not.toBeInTheDocument();
@@ -51,9 +54,19 @@ test("the form edits the collectors through #877's grid, the judge's picks, the 
     method: 'PATCH', path: '/benchmark/experiments/skills',
     body: { evaluation: {
       collectors: [{ agent: 'claude', model: 'sonnet', focus: 'tdd' }, { agent: 'claude', focus: 'security' }], dynamic: false,
-      tester: { agent: 'claude', model: 'sonnet' }, scenarioWalks: 3, judge: { agent: 'codex' }, rubric: 'fidelidade\ncomportamento\n\ncódigo\nclareza',
+      tester: { agent: 'claude', model: 'sonnet' }, scenarioWalks: 3, judge: { agent: 'codex' }, rubric: 'fidelidade\ncomportamento\ncódigo\nclareza',
     } },
   }]));
+});
+
+test('an untouched rubric saves as stored, blank lines and indentation kept (#537)', async () => {
+  const user = userEvent.setup();
+  const calls = stubConfigFetch();
+  const rubric = 'fidelidade\n\n  comportamento';
+  renderConfig({ ...CONFIG, evaluation: { ...CONFIG.evaluation, rubric } });
+  await user.click(editIn('avaliação'));
+  await user.click(within(region('avaliação')).getByRole('button', { name: 'salvar' }));
+  await waitFor(() => expect(calls).toMatchObject([{ method: 'PATCH', body: { evaluation: { rubric } } }]));
 });
 
 test('passadas below 1 keeps salvar off (#463)', async () => {
@@ -66,12 +79,15 @@ test('passadas below 1 keeps salvar off (#463)', async () => {
   expect(within(region('avaliação')).getByRole('button', { name: 'salvar' })).toBeDisabled();
 });
 
-test("editar cenários opens the seed section's form (#463)", async () => {
+test("editar cenários opens the seed's form and scrolls to the seed section (#463, #537)", async () => {
   const user = userEvent.setup();
   stubConfigFetch();
+  const scrolled: string[] = [];
+  vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) { scrolled.push(this.id); });
   renderConfig(CONFIG);
   await user.click(within(rowIn('avaliação', 'coletor dinâmico')).getByRole('button', { name: 'editar cenários' }));
   expect(screen.getByRole('textbox', { name: 'commit de partida' })).toBeInTheDocument();
+  await waitFor(() => expect(scrolled).toEqual(['config-seed'])); // after the next frame, once the form is mounted
 });
 
 test("julgar de novo sem executar confirms with the ended runs' count, then POSTs the evaluate route; disabled with none ended (#463)", async () => {

@@ -19,7 +19,7 @@ test("seed reads the screen's rows: the hash, the workspace read-only in its col
   expect(within(workspace).queryByRole('button')).not.toBeInTheDocument();
   expect(workspace.querySelector('span[style]')).toHaveStyle({ backgroundColor: '#7c8cff' });
   expect(pills(rowIn('seed', 'commit de partida'))).toEqual(['4c1e9a2', 'origin local']);
-  expect(within(rowIn('seed', 'commit de partida')).getByRole('button', { name: 'trocar' })).toBeInTheDocument();
+  expect(within(rowIn('seed', 'commit de partida')).queryByRole('button')).toBeNull();
   expect(pills(rowIn('seed', 'referência'))).toEqual(['handoff_plugins', 'spec.md', 'print-1.png']);
   expect(pills(rowIn('seed', 'dados de exemplo'))).toEqual(['fixtures/bench-seed.sql', 'pnpm dev', 'localhost:5173']);
   expect(pills(rowIn('seed', 'cenários'))).toEqual(['6 cenários S1–S6']);
@@ -29,7 +29,7 @@ test('a seed save on an experiment with rounds shows the fork notice and salvar 
   const user = userEvent.setup();
   const calls = stubConfigFetch({ 'PATCH /benchmark/experiments/skills': { body: { id: 'skills-fork' } } });
   const { select } = renderConfig(CONFIG);
-  await user.click(within(rowIn('seed', 'commit de partida')).getByRole('button', { name: 'trocar' }));
+  await user.click(editIn('seed'));
   expect(within(region('seed')).getByText('salvar cria um experimento novo; as rodadas ficam neste')).toBeInTheDocument();
   await user.clear(commit());
   await user.type(commit(), SHA);

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { experimentTokens, highestPercent } from '../../../../benchmark/cap.js';
 import type { BenchPace, Experiment, PlanReadings } from '../../../../types.js';
 import { type DurationFields, durationFields, durationMs, durationText, tokenText } from '@/components/benchmark/config/config-lib';
-import { DurationField, EditButton, EditFoot, Field, FieldError, Pill, Row, Section, type SectionEdit, useDraft, useSave } from '@/components/benchmark/config/Section';
+import { DurationField, EditFoot, Field, FieldError, Pill, Row, Section, type SectionEdit, useDraft, useSave } from '@/components/benchmark/config/Section';
 import { type MessageKey, t } from '@/i18n';
 
 interface PaceProps { experiment: Experiment; edit: SectionEdit; rateLimits?: PlanReadings }
@@ -68,7 +68,7 @@ function PaceForm({ experiment, edit }: PaceProps) {
   const set = (patch: Partial<PaceDraft>): void => setDraft({ ...draft, ...patch });
   const timeoutError = error('timeout');
   return (
-    <Section {...head()} foot={<EditFoot edit={edit} isValid={Object.keys(errors).length === 0} isSaving={isSaving} onSave={() => void save('pace', paceOf(draft))} />}>
+    <Section {...head()} edit={edit} foot={<EditFoot edit={edit} isValid={Object.keys(errors).length === 0} isSaving={isSaving} onSave={() => void save('pace', paceOf(draft))} />}>
       <Row label={L.pairs()} hint={t('benchmark.config.pace.pairs.hint')}><Field label={L.pairs()} value={draft.pairs} onChange={(pairs) => set({ pairs })} error={error('pairs')} /></Row>
       <Row label={L.until()} hint={t('benchmark.config.pace.until.hint')}><Field type="time" label={L.until()} value={draft.until} onChange={(until) => set({ until })} className="w-28" /></Row>
       <Row label={L.timeout()}><DurationField label={L.timeout()} value={draft.timeout} onChange={(timeout) => set({ timeout })} />{timeoutError !== undefined && <FieldError>{timeoutError}</FieldError>}</Row>
@@ -86,7 +86,7 @@ export function PaceSection({ experiment, edit, rateLimits }: PaceProps) {
   if (edit.isOpen) return <PaceForm experiment={experiment} edit={edit} />;
   const { pace } = experiment;
   return (
-    <Section {...head()} side={<EditButton edit={edit} />}>
+    <Section {...head()} edit={edit}>
       <Row label={L.pairs()} hint={t('benchmark.config.pace.pairs.hint')}><Pill>{pace.pairs}</Pill></Row>
       <Row label={L.until()} hint={t('benchmark.config.pace.until.hint')}><Pill>{pace.until ?? t('benchmark.config.pace.noUntil')}</Pill></Row>
       <Row label={L.timeout()}><Pill>{durationText(pace.runTimeoutMs)}</Pill></Row>

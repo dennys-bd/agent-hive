@@ -1,6 +1,8 @@
 import { type ReactNode, useContext, useState } from 'react';
 import type { BenchEvaluation, Experiment } from '../../../../types.js';
+import { ChipList } from '@/components/benchmark/arms/ChipList';
 import { collectorText, judgeableRuns, linesOf, rowDraft, rowFrom, rowText, scenariosText } from '@/components/benchmark/config/config-lib';
+import { SEED_SECTION_ID } from '@/components/benchmark/config/SeedSection';
 import { evaluateAgain, toastRefusal } from '@/components/benchmark/config/save-section';
 import { EditButton, EditFoot, Field, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
 import { Confirm } from '@/components/Confirm';
@@ -8,14 +10,13 @@ import { AgentsContext, DefaultAgentContext } from '@/components/NewRunButton';
 import { Picks, ReviewerRow, type RowProps } from '@/components/settings/StageEvaluate';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { useLaunchOptions } from '@/hooks/use-launch-options';
 import { t, tPlural } from '@/i18n';
 import { emptyRow, type EvaluateRowDraft } from '@/lib/settings-stages';
 
 interface EvaluationProps { experiment: Experiment; edit: SectionEdit; seedEdit: SectionEdit }
 interface Head { title: string; sub: string; side: ReactNode }
-interface EvaluationDraft { collectors: EvaluateRowDraft[]; dynamic: boolean; tester: EvaluateRowDraft; scenarioWalks: string; judge: EvaluateRowDraft; rubric: string }
+interface EvaluationDraft { collectors: EvaluateRowDraft[]; dynamic: boolean; tester: EvaluateRowDraft; scenarioWalks: string; judge: EvaluateRowDraft; rubric: string[] }
 type PickProps = Pick<RowProps, 'agents' | 'menu' | 'onMenu'> & { options: ReturnType<typeof useLaunchOptions> };
 const COLS = ['agent', 'model', 'specializedAgent'] as const;
 const col = (key: (typeof COLS)[number]): string => t(`settings.stages.evaluate.col.${key}`);
@@ -25,10 +26,12 @@ const L = {
 };
 
 const draftOf = (e: BenchEvaluation): EvaluationDraft => ({
-  collectors: e.collectors.map(rowDraft), dynamic: e.dynamic, tester: rowDraft(e.tester), scenarioWalks: String(e.scenarioWalks), judge: rowDraft(e.judge), rubric: e.rubric,
+  collectors: e.collectors.map(rowDraft), dynamic: e.dynamic, tester: rowDraft(e.tester), scenarioWalks: String(e.scenarioWalks), judge: rowDraft(e.judge), rubric: linesOf(e.rubric),
 });
-const evaluationOf = (d: EvaluationDraft): BenchEvaluation => ({
-  collectors: d.collectors.map(rowFrom), dynamic: d.dynamic, tester: rowFrom(d.tester), scenarioWalks: Number(d.scenarioWalks), judge: rowFrom(d.judge), rubric: d.rubric,
+// An untouched rubric keeps its stored text: the chips drop blank lines and indentation, which only an edit should lose
+const rubricOf = (chips: readonly string[], stored: string): string => (chips.join('\n') === linesOf(stored).join('\n') ? stored : chips.join('\n'));
+const evaluationOf = (d: EvaluationDraft, stored: BenchEvaluation): BenchEvaluation => ({
+  collectors: d.collectors.map(rowFrom), dynamic: d.dynamic, tester: rowFrom(d.tester), scenarioWalks: Number(d.scenarioWalks), judge: rowFrom(d.judge), rubric: rubricOf(d.rubric, stored.rubric),
 });
 
 const dynamicText = ({ evaluation, seed }: Experiment): string =>
@@ -56,15 +59,15 @@ function Rejudge({ experiment, isLocked }: { experiment: Experiment; isLocked: b
   );
 }
 
-function EvaluationRows({ experiment, edit, seedEdit }: EvaluationProps) {
+function EvaluationRows({ experiment, seedEdit }: Omit<EvaluationProps, 'edit'>) {
   const { evaluation } = experiment;
   return (
     <>
-      <Row label={L.collectors()} hint={t('benchmark.config.eval.collectors.hint')} side={<EditButton edit={edit} />}><Values texts={evaluation.collectors.map(collectorText)} /></Row>
-      <Row label={L.dynamic()} hint={t('benchmark.config.eval.dynamic.hint')} side={<EditButton edit={seedEdit} label={t('benchmark.config.eval.editScenarios')} />}><Pill>{dynamicText(experiment)}</Pill></Row>
+      <Row label={L.collectors()} hint={t('benchmark.config.eval.collectors.hint')}><Values texts={evaluation.collectors.map(collectorText)} /></Row>
+      <Row label={L.dynamic()} hint={t('benchmark.config.eval.dynamic.hint')} side={<EditButton edit={seedEdit} label={t('benchmark.config.eval.editScenarios')} scrollTo={SEED_SECTION_ID} />}><Pill>{dynamicText(experiment)}</Pill></Row>
       {evaluation.dynamic && <Row label={L.tester()} hint={t('benchmark.config.eval.tester.hint')}><Pill>{rowText(evaluation.tester)}</Pill></Row>}
       <Row label={L.judge()} hint={t('benchmark.config.eval.judge.hint')}><Pill>{rowText(evaluation.judge)}</Pill></Row>
-      <Row label={L.rubric()} hint={t('benchmark.config.eval.rubric.hint')} side={<EditButton edit={edit} />}><Values texts={linesOf(evaluation.rubric)} /></Row>
+      <Row label={L.rubric()} hint={t('benchmark.config.eval.rubric.hint')}><Values texts={linesOf(evaluation.rubric)} /></Row>
     </>
   );
 }
@@ -105,7 +108,7 @@ function EvaluationForm({ experiment, edit, head }: { experiment: Experiment; ed
   const set = (patch: Partial<EvaluationDraft>): void => setDraft({ ...draft, ...patch });
   const isWalksValid = /^\d+$/.test(draft.scenarioWalks.trim()) && Number(draft.scenarioWalks) >= 1;
   return (
-    <Section {...head} foot={<EditFoot edit={edit} isValid={isWalksValid} isSaving={isSaving} onSave={() => void save('evaluation', evaluationOf(draft))} />}>
+    <Section {...head} edit={edit} foot={<EditFoot edit={edit} isValid={isWalksValid} isSaving={isSaving} onSave={() => void save('evaluation', evaluationOf(draft, experiment.evaluation))} />}>
       <Row label={L.collectors()} hint={t('benchmark.config.eval.collectors.hint')}><CollectorGrid {...pick} rows={draft.collectors} defaultAgent={defaultAgent} onChange={(collectors) => set({ collectors })} /></Row>
       <Row label={L.dynamic()} hint={t('benchmark.config.eval.dynamic.hint')}>
         <Switch aria-label={L.dynamic()} checked={draft.dynamic} onCheckedChange={(dynamic) => set({ dynamic })} />
@@ -114,7 +117,10 @@ function EvaluationForm({ experiment, edit, head }: { experiment: Experiment; ed
       {draft.dynamic && <Row label={L.tester()} hint={t('benchmark.config.eval.tester.hint')}><PickRow {...pick} row={draft.tester} who="tester" onChange={(tester) => set({ tester })} /></Row>}
       <Row label={L.judge()} hint={t('benchmark.config.eval.judge.hint')}><PickRow {...pick} row={draft.judge} who="judge" onChange={(judge) => set({ judge })} /></Row>
       <Row label={L.rubric()} hint={t('benchmark.config.eval.rubric.hint')}>
-        <Textarea aria-label={L.rubric()} rows={3} spellCheck={false} value={draft.rubric} onChange={(e) => set({ rubric: e.target.value })} className="w-80 text-xs" />
+        <ChipList
+          id="eval-rubric" addLabel={t('benchmark.config.eval.rubric.add')} placeholder={t('benchmark.config.eval.rubric.placeholder')} value={draft.rubric}
+          onChange={(rubric) => set({ rubric })} limit={Number.POSITIVE_INFINITY} isMono={false}
+        />
       </Row>
     </Section>
   );
@@ -124,5 +130,5 @@ function EvaluationForm({ experiment, edit, head }: { experiment: Experiment; ed
 export function EvaluationSection({ experiment, edit, seedEdit }: EvaluationProps) {
   const head: Head = { title: t('benchmark.config.eval.title'), sub: t('benchmark.config.eval.sub'), side: <Rejudge experiment={experiment} isLocked={edit.isLocked} /> };
   if (edit.isOpen) return <EvaluationForm experiment={experiment} edit={edit} head={head} />;
-  return <Section {...head}><EvaluationRows experiment={experiment} edit={edit} seedEdit={seedEdit} /></Section>;
+  return <Section {...head} edit={edit}><EvaluationRows experiment={experiment} seedEdit={seedEdit} /></Section>;
 }

@@ -1,19 +1,19 @@
 import { ChevronDownIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Arm, BenchIsolation, Experiment, IsolationRow } from '../../../../types.js';
-import { durationText, linesOf, mapRow, PERMISSION_MODES, resolve, riskyArms, toggleScope } from '@/components/benchmark/config/config-lib';
+import { ChipList } from '@/components/benchmark/arms/ChipList';
+import { durationText, envChips, mapRow, PERMISSION_MODES, resolve, riskyArms, toggleScope } from '@/components/benchmark/config/config-lib';
 import { type EditableKey, type IsolationDraft, isolationDraft, isolationErrors, isolationFrom, type LimitsDraft } from '@/components/benchmark/config/isolation-draft';
-import { DurationField, EditButton, EditFoot, Field, FieldError, None, Pill, Row, Section, type SectionEdit, useDraft, useSave } from '@/components/benchmark/config/Section';
+import { DurationField, EditFoot, Field, FieldError, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 
 interface IsolationProps { experiment: Experiment; edit: SectionEdit }
 const ORDER = ['environment', 'network', 'permissionMode', 'allowedTools', 'deniedTools', 'limits', 'env', 'betweenRounds'] as const;
 type IsoKey = (typeof ORDER)[number];
-type TextKey = 'network' | 'allowedTools' | 'deniedTools' | 'env';
+type ChipKey = 'network' | 'allowedTools' | 'deniedTools' | 'env';
 const label = (k: IsoKey): string => t(`benchmark.config.iso.${k}`);
 const hint = (k: IsoKey): string => t(`benchmark.config.iso.${k}.hint`);
 const head = (): { title: string; sub: string } => ({ title: t('benchmark.config.iso.title'), sub: t('benchmark.config.iso.sub') });
@@ -25,7 +25,7 @@ const limitTexts = (l: { turns?: number; ms?: number }): string[] => [
 const readRows = (iso: BenchIsolation): Record<IsoKey, IsolationRow<string[]>> => ({
   environment: mapRow(iso.environment, () => ['local']), network: iso.network, permissionMode: mapRow(iso.permissionMode, (mode) => [mode]),
   allowedTools: iso.allowedTools, deniedTools: iso.deniedTools, limits: mapRow(iso.limits, limitTexts),
-  env: mapRow(iso.env, (env) => Object.entries(env).map(([name, value]) => `${name}=${value}`)),
+  env: mapRow(iso.env, envChips),
   betweenRounds: mapRow(iso.betweenRounds, () => [t('benchmark.config.iso.freshWorktree')]),
 });
 const isFixed = (k: IsoKey): boolean => k === 'environment' || k === 'betweenRounds';
@@ -43,8 +43,7 @@ const scopeText = (varies: boolean): string => t(varies ? 'benchmark.config.iso.
 
 function ReadRow({ k, row, arms, risky }: { k: IsoKey; row: IsolationRow<string[]>; arms: readonly Arm[]; risky: readonly Arm[] }) {
   const isRisky = (armId?: string): boolean => k === 'permissionMode' && (armId === undefined ? risky.length > 0 : risky.some((a) => a.id === armId));
-  // biome-ignore lint/suspicious/noArrayIndexKey: a list row can repeat an entry, so the value alone is no key
-  const shared = row.all.length === 0 ? <None /> : row.all.map((value, i) => <Pill key={`${i}:${value}`} isMono isRisk={isRisky()}>{value}</Pill>);
+  const shared = <Values texts={row.all} isMono isRisk={isRisky()} />;
   const perArm = arms.map((arm) => <Pill key={arm.id} isMono arm={arm.letter} isRisk={isRisky(arm.id)}>{resolve(row, arm.id).join(', ') || '—'}</Pill>);
   return (
     <Row label={label(k)} hint={hint(k)} isIsolation side={isFixed(k) ? undefined : scopeText(row.perArm !== undefined)}>
@@ -70,7 +69,7 @@ function ScopeMenu({ name, varies, onPick }: { name: string; varies: boolean; on
   );
 }
 
-type Editor<T> = (value: T, onValue: (value: T) => void, name: string, armId?: string) => ReactNode;
+type Editor<T> = (value: T, onValue: (value: T) => void, name: string, arm?: Arm) => ReactNode;
 interface EditRowProps<T> { k: EditableKey; row: IsolationRow<T>; arms: readonly Arm[]; editor: Editor<T>; error?: string; extra?: ReactNode; onChange(row: IsolationRow<T>): void }
 
 // A row of the form: its scope menu, then one editor for every arm or one per arm, each prefixed by the arm's letter
@@ -81,7 +80,7 @@ function EditRow<T>({ k, row, arms, editor, error, extra, onChange }: EditRowPro
   const setArm = (armId: string) => (value: T): void => onChange({ ...row, perArm: { ...row.perArm, [armId]: value } });
   const perArm = arms.map((arm) => (
     <span key={arm.id} className="flex items-center gap-1">
-      <b className="font-semibold text-muted-foreground text-xs">{arm.letter}</b>{editor(resolve(row, arm.id), setArm(arm.id), t('benchmark.config.iso.ofArm', { row: name, arm: arm.letter }), arm.id)}
+      <b className="font-semibold text-muted-foreground text-xs">{arm.letter}</b>{editor(resolve(row, arm.id), setArm(arm.id), t('benchmark.config.iso.ofArm', { row: name, arm: arm.letter }), arm)}
     </span>
   ));
   return (
@@ -93,9 +92,16 @@ function EditRow<T>({ k, row, arms, editor, error, extra, onChange }: EditRowPro
   );
 }
 
-const textEditor: Editor<string> = (value, onValue, name) => (
-  <Textarea aria-label={name} rows={2} spellCheck={false} placeholder={t('benchmark.config.iso.perLine')} value={value} onChange={(e) => onValue(e.target.value)} className="min-h-0 w-56 font-mono text-xs" />
-);
+// The screen's .ed list: every chip shown (no fold while editing), × to remove, Enter to add; per arm, the add field is suffixed by the letter
+const chipEditor = (k: ChipKey): Editor<string[]> => (value, onValue, _name, arm) => {
+  const add = t(`benchmark.config.iso.${k}.add`);
+  return (
+    <ChipList
+      id={`iso-${k}-${arm?.id ?? 'all'}`} addLabel={arm === undefined ? add : t('benchmark.config.iso.ofArm', { row: add, arm: arm.letter })}
+      placeholder={t(`benchmark.config.iso.${k}.placeholder`)} value={value} onChange={onValue} limit={Number.POSITIVE_INFINITY}
+    />
+  );
+};
 
 const limitsEditor: Editor<LimitsDraft> = (value, onValue, name) => (
   <span className="flex items-center gap-2">
@@ -105,8 +111,8 @@ const limitsEditor: Editor<LimitsDraft> = (value, onValue, name) => (
 );
 
 function modeEditor(risky: readonly Arm[]): Editor<string> {
-  return (value, onValue, name, armId) => {
-    const isRisk = risky.some((a) => armId === undefined || a.id === armId);
+  return (value, onValue, name, arm) => {
+    const isRisk = risky.some((a) => arm === undefined || a.id === arm.id);
     return (
       <Select value={value} onValueChange={onValue}>
         <SelectTrigger aria-label={name} className={`h-7 font-mono text-xs ${isRisk ? 'border-waiting' : ''}`}><SelectValue /></SelectTrigger>
@@ -122,19 +128,19 @@ function IsolationForm({ experiment, edit }: IsolationProps) {
   const { arms } = experiment;
   const errors = isolationErrors(draft);
   const rows = readRows(experiment.isolation);
-  const risky = riskyArms(arms, { permissionMode: draft.permissionMode, deniedTools: mapRow(draft.deniedTools, linesOf) }); // live, a warning only
+  const risky = riskyArms(arms, { permissionMode: draft.permissionMode, deniedTools: draft.deniedTools }); // live, a warning only
   const setRow = <K extends EditableKey>(k: K, next: IsolationDraft[K]): void => setDraft({ ...draft, [k]: next });
   const errorOf = (k: EditableKey): string | undefined => { const key = errors[k]; return key === undefined ? undefined : t(key); };
-  const text = (k: TextKey) => <EditRow k={k} row={draft[k]} arms={arms} editor={textEditor} error={errorOf(k)} onChange={(next) => setRow(k, next)} />;
+  const chips = (k: ChipKey) => <EditRow k={k} row={draft[k]} arms={arms} editor={chipEditor(k)} error={errorOf(k)} onChange={(next) => setRow(k, next)} />;
   return (
-    <Section {...head()} foot={<EditFoot edit={edit} isValid={Object.keys(errors).length === 0} isSaving={isSaving} onSave={() => void save('isolation', isolationFrom(draft, experiment.isolation))} />}>
+    <Section {...head()} edit={edit} foot={<EditFoot edit={edit} isValid={Object.keys(errors).length === 0} isSaving={isSaving} onSave={() => void save('isolation', isolationFrom(draft, experiment.isolation))} />}>
       <ReadRow k="environment" row={rows.environment} arms={arms} risky={[]} />
-      {text('network')}
+      {chips('network')}
       <EditRow k="permissionMode" row={draft.permissionMode} arms={arms} editor={modeEditor(risky)} extra={<RiskLine arms={risky} />} onChange={(next) => setRow('permissionMode', next)} />
-      {text('allowedTools')}
-      {text('deniedTools')}
+      {chips('allowedTools')}
+      {chips('deniedTools')}
       <EditRow k="limits" row={draft.limits} arms={arms} editor={limitsEditor} error={errorOf('limits')} onChange={(next) => setRow('limits', next)} />
-      {text('env')}
+      {chips('env')}
       <ReadRow k="betweenRounds" row={rows.betweenRounds} arms={arms} risky={[]} />
     </Section>
   );
@@ -147,7 +153,7 @@ export function IsolationSection({ experiment, edit }: IsolationProps) {
   const rows = readRows(experiment.isolation);
   const risky = riskyArms(experiment.arms, experiment.isolation);
   return (
-    <Section {...head()} side={<EditButton edit={edit} />}>
+    <Section {...head()} edit={edit}>
       {ORDER.map((k) => <ReadRow key={k} k={k} row={rows[k]} arms={experiment.arms} risky={risky} />)}
     </Section>
   );
