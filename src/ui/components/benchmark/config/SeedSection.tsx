@@ -4,7 +4,7 @@ import type { BenchScenario, BenchSeed, Experiment } from '../../../../types.js'
 import { COMMIT_SHA, nextScenarioId, scenarioIdsValid, scenariosText } from '@/components/benchmark/config/config-lib';
 import { refusalOf } from '@/components/benchmark/config/save-section';
 import { EntryPill, SeedEntries } from '@/components/benchmark/config/SeedEntries';
-import { EditButton, EditFoot, Field, FieldError, None, Note, Pill, Row, Section, type SectionEdit, useDraft, useSave } from '@/components/benchmark/config/Section';
+import { EditButton, EditFoot, Field, FieldError, Note, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
@@ -44,7 +44,7 @@ const WorkspaceRow = ({ workspace }: { workspace: string }) => (
 function SeedRows({ experiment, edit }: SeedProps) {
   const { seed } = experiment;
   const { command, url, files } = seed.sample;
-  const isSampleEmpty = files.length === 0 && command === '' && url === '';
+  const entryPill = (entry: string) => <EntryPill entry={entry} />;
   return (
     <>
       <WorkspaceRow workspace={seed.workspace} />
@@ -52,13 +52,10 @@ function SeedRows({ experiment, edit }: SeedProps) {
         <Pill isMono>{commitText(seed)}</Pill><Pill>{t('benchmark.config.seed.origin')}</Pill>
       </Row>
       <Row label={L.reference()} hint={t('benchmark.config.seed.reference.hint')} side={<EditButton edit={edit} />}>
-        {seed.reference.length === 0 ? <None /> : seed.reference.map((entry) => <EntryPill key={entry} entry={entry} />)}
+        <Values texts={seed.reference} pillOf={entryPill} />
       </Row>
       <Row label={L.sample()} hint={t('benchmark.config.seed.sample.hint')} side={<EditButton edit={edit} />}>
-        {isSampleEmpty && <None />}
-        {files.map((entry) => <EntryPill key={entry} entry={entry} />)}
-        {command !== '' && <Pill isMono>{command}</Pill>}
-        {url !== '' && <Pill isMono>{url}</Pill>}
+        <Values texts={[...files, command, url].filter((text) => text !== '')} pillOf={entryPill} />
       </Row>
       <Row label={L.scenarios()} hint={t('benchmark.config.seed.scenarios.hint')} side={<EditButton edit={edit} />}><Pill>{scenariosText(seed.scenarios)}</Pill></Row>
     </>

@@ -91,3 +91,15 @@ test("permissões picks a mode per arm; a bad env name keeps salvar off; the PAT
     body: { isolation: { ...CONFIG.isolation, permissionMode: { all: 'dontAsk', perArm: { ...CONFIG.isolation.permissionMode.perArm, a1: 'plan' } }, env: { all: { CI: '1' } } } },
   }]));
 });
+
+const TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm test:*)', 'Bash(git commit:*)', 'Bash(git add:*)', 'Bash(git status)', 'Bash(git diff:*)', 'Bash(pnpm lint)', 'TodoWrite'];
+
+test('12 allowed tools read 7 pills and mais 5; mais shows all 12 and turns into menos (#537)', async () => {
+  const user = userEvent.setup();
+  renderConfig({ ...CONFIG, isolation: { ...CONFIG.isolation, allowedTools: { all: TOOLS } } });
+  const row = rowIn('isolamento', 'ferramentas permitidas');
+  expect(pills(row)).toEqual(TOOLS.slice(0, 7));
+  await user.click(within(row).getByRole('button', { name: 'mais 5' }));
+  expect(pills(row)).toEqual(TOOLS);
+  expect(within(row).getByRole('button', { name: 'menos' })).toHaveAttribute('aria-expanded', 'true');
+});

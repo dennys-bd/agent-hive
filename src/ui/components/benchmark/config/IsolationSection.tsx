@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { Arm, BenchIsolation, Experiment, IsolationRow } from '../../../../types.js';
 import { durationText, linesOf, mapRow, PERMISSION_MODES, resolve, riskyArms, toggleScope } from '@/components/benchmark/config/config-lib';
 import { type EditableKey, type IsolationDraft, isolationDraft, isolationErrors, isolationFrom, type LimitsDraft } from '@/components/benchmark/config/isolation-draft';
-import { DurationField, EditButton, EditFoot, Field, FieldError, None, Pill, Row, Section, type SectionEdit, useDraft, useSave } from '@/components/benchmark/config/Section';
+import { DurationField, EditButton, EditFoot, Field, FieldError, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -43,8 +43,7 @@ const scopeText = (varies: boolean): string => t(varies ? 'benchmark.config.iso.
 
 function ReadRow({ k, row, arms, risky }: { k: IsoKey; row: IsolationRow<string[]>; arms: readonly Arm[]; risky: readonly Arm[] }) {
   const isRisky = (armId?: string): boolean => k === 'permissionMode' && (armId === undefined ? risky.length > 0 : risky.some((a) => a.id === armId));
-  // biome-ignore lint/suspicious/noArrayIndexKey: a list row can repeat an entry, so the value alone is no key
-  const shared = row.all.length === 0 ? <None /> : row.all.map((value, i) => <Pill key={`${i}:${value}`} isMono isRisk={isRisky()}>{value}</Pill>);
+  const shared = <Values texts={row.all} isMono isRisk={isRisky()} />;
   const perArm = arms.map((arm) => <Pill key={arm.id} isMono arm={arm.letter} isRisk={isRisky(arm.id)}>{resolve(row, arm.id).join(', ') || '—'}</Pill>);
   return (
     <Row label={label(k)} hint={hint(k)} isIsolation side={isFixed(k) ? undefined : scopeText(row.perArm !== undefined)}>

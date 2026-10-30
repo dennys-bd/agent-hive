@@ -2,6 +2,7 @@
 import { InfoIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { Experiment } from '../../../../types.js';
+import { ChipList } from '@/components/benchmark/arms/ChipList';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,10 +65,13 @@ export function Pill({ children, isMono = false, isRisk = false, arm }: { childr
 
 export const None = () => <span className="text-muted-foreground text-xs">{t('benchmark.config.none')}</span>;
 
-export function Values({ texts, isMono = false }: { texts: readonly string[]; isMono?: boolean }) {
+interface ValuesProps { texts: readonly string[]; isMono?: boolean; isRisk?: boolean; pillOf?(text: string): ReactNode }
+
+/** A read row's list (#537): the config's pills, folded after CHIP_LIMIT by the arm dialog's ChipList, so both read one way. */
+export function Values({ texts, isMono = false, isRisk = false, pillOf }: ValuesProps) {
   if (texts.length === 0) return <None />;
-  // biome-ignore lint/suspicious/noArrayIndexKey: read-only pills can repeat (two collectors alike, a repeated rubric line), so the text alone is no key
-  return <>{texts.map((text, i) => <Pill key={`${i}:${text}`} isMono={isMono}>{text}</Pill>)}</>;
+  const pill = pillOf ?? ((text: string) => <Pill isMono={isMono} isRisk={isRisk}>{text}</Pill>);
+  return <ChipList id="" addLabel="" placeholder="" value={texts} onChange={() => undefined} isReadOnly pillOf={pill} />;
 }
 
 export const FieldError = ({ children }: { children: ReactNode }) => <p role="alert" className="w-full text-destructive text-xs">{children}</p>;
