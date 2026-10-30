@@ -130,13 +130,23 @@ test('stored() answers the stored listing as the SourceItems listItems builds fr
   assert.deepEqual(offline.calls, []);
 });
 
-test('stored() answers [] with no item store, with no account, and for an @me owner it cannot resolve without the network (#191)', async () => {
+test('stored() answers [] with no item store and with no account (#191)', async () => {
   const { gql, calls } = fakeGql({});
   assert.deepEqual(await createSource(SPEC, { gql }).stored?.(), []);
   assert.deepEqual(await createSource(SPEC, { gql, items: { ...(await memoryStore()), source: async () => undefined } }).stored?.(), []);
-  const mine = parseConfig(combConfig({ source: { type: 'github', owner: '@me', number: 6, filter: FILTER } }));
-  assert.deepEqual(await createSource(sourceSpec(mine, mine.comb.sources[0]), { gql, items: await memoryStore() }).stored?.(), []);
   assert.deepEqual(calls, []);
+});
+
+test('stored() answers an @me owner\'s stored listing at boot, before any call resolves the login: @me is the rows\' own account (#547)', async () => {
+  const items = await memoryStore();
+  const mine = parseConfig(combConfig({ source: { type: 'github', owner: '@me', number: 6, filter: FILTER } }));
+  const spec = sourceSpec(mine, mine.comb.sources[0]);
+  const { gql } = fakeGql({ viewer: { viewer: { login: 'bia' } }, probe: probeAt(T1), items: page([node(1, 'Ready')]), relations: {} });
+  const listed = await createSource(spec, { gql, items }).listItems();
+  const offline = fakeGql({});
+  assert.equal(listed.length, 1);
+  assert.deepEqual(await createSource(spec, { gql: offline.gql, items }).stored?.(), listed);
+  assert.deepEqual(offline.calls, []);
 });
 
 // #424: 1, blocked by an open #9, lists 2 as its sub-issue; only 2 carries the hive label. The relations query answers the one kept task
