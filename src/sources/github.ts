@@ -18,6 +18,7 @@ import { findBlockers, relateItem } from './github-blockers.js';
 import { pageItems, PROJECT_ITEM_LIMIT, quotaFrom, type ItemPages } from './github-pages.js';
 import { applyRelations, createItemsSync, fetchRelations, joinRelations, readProbe } from './github-items-sync.js';
 import { hasListing, readListing, storedNodes, type ItemStore, type ListingKey } from '../read-model/items.js';
+import { sourceLogin } from '../read-model/rows.js';
 import { readProject, storedProject, type ProjectRead } from './github-project.js';
 import { groupUnderEpics, inheritedBlockers, statusOf, treeLinks, type TreeLinks } from './github-tree.js';
 
@@ -246,11 +247,13 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   }
 
   // #191: the model's listing with no network call: the poll's item steps without the filter (`me` may need the network), and the stored
-  // relations alone. No store, no account, or an `@me` owner not resolved yet: nothing, and the tasks wait for the first poll
+  // relations alone. No store or no account: nothing, and the tasks wait for the first poll. #547: an `@me` owner is the rows' own account,
+  // so boot needs no viewer call to find its listing. ponytail: a token whose account differs from the rows' login (a GH_TOKEN override)
+  // just misses the key and hydrates nothing, as before; the first poll corrects it
   async function stored(): Promise<SourceItem[]> {
     const rows = await items?.source();
-    const offline = login ?? (owner === ME ? undefined : owner);
-    if (items === undefined || rows === undefined || offline === undefined) return [];
+    if (items === undefined || rows === undefined) return [];
+    const offline = login ?? (owner === ME ? sourceLogin(rows) : owner);
     const read = readListing(items.db, keyOf(rows, offline));
     const links = treeLinks(read.nodes);
     return applyRelations(keep(read.nodes, links, false), joinRelations(read.nodes, read.relations), inheritedBlockers(read.nodes, links));
