@@ -1,11 +1,10 @@
 import { type ReactNode, useId } from 'react';
 import { EXPERIMENT_PATHS, runBranch } from '../../../../benchmark/names.js';
 import type { Experiment } from '../../../../types.js';
-import { linesOf } from '@/components/benchmark/config/config-lib';
+import { ChipList } from '@/components/benchmark/arms/ChipList';
 import { saveSection, toastRefusal } from '@/components/benchmark/config/save-section';
 import { EditFoot, Pill, Row, Section, type SectionEdit, useDraft, useSave, Values } from '@/components/benchmark/config/Section';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 
 interface BlindnessProps { experiment: Experiment; edit: SectionEdit }
@@ -46,12 +45,17 @@ function BlindRows({ words }: { words: ReactNode }) {
 
 function BlindnessForm({ experiment, edit, head }: BlindnessProps & { head: { title: string; sub: string; side: ReactNode } }) {
   const { blindness } = experiment;
-  const [text, setText] = useDraft(() => blindness.forbiddenWords.join('\n'), edit);
+  const [words, setWords] = useDraft(() => blindness.forbiddenWords, edit);
   const { isSaving, save } = useSave(experiment.id, edit);
-  const words = <Textarea aria-label={wordsLabel()} rows={4} spellCheck={false} placeholder={t('benchmark.config.blind.perLine')} value={text} onChange={(e) => setText(e.target.value)} className="w-64 text-xs" />;
+  const field = (
+    <ChipList
+      id="blind-words" addLabel={t('benchmark.config.blind.words.add')} placeholder={t('benchmark.config.blind.words.placeholder')} value={words}
+      onChange={setWords} limit={Number.POSITIVE_INFINITY} isMono={false}
+    />
+  );
   return (
-    <Section {...head} edit={edit} isDimmed={!blindness.on} foot={<EditFoot edit={edit} isValid isSaving={isSaving} onSave={() => void save('blindness', { on: blindness.on, forbiddenWords: linesOf(text) })} />}>
-      <BlindRows words={words} />
+    <Section {...head} edit={edit} isDimmed={!blindness.on} foot={<EditFoot edit={edit} isValid isSaving={isSaving} onSave={() => void save('blindness', { on: blindness.on, forbiddenWords: words })} />}>
+      <BlindRows words={field} />
     </Section>
   );
 }

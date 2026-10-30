@@ -27,14 +27,13 @@ test('with blindness off the three rows sit at .55 and the switch reads desligad
   expect(screen.getByRole('switch', { name: 'cegueira' })).not.toBeChecked();
 });
 
-test('editar opens the word list, one per line; salvar drops the blanks and keeps on (#463)', async () => {
+test('editar opens the words as chips; one removed and one added reach the PATCH, on kept (#463, #537)', async () => {
   const user = userEvent.setup();
   const calls = stubConfigFetch();
   renderConfig(CONFIG);
   await user.click(editIn('cegueira'));
-  const words = screen.getByRole('textbox', { name: 'palavras proibidas' });
-  expect(words).toHaveValue('benchmark\nbraço\nexperimento');
-  await user.type(words, '\n\n bench ');
+  await user.click(screen.getByRole('button', { name: 'tirar braço' }));
+  await user.type(screen.getByRole('textbox', { name: 'adicionar palavra proibida' }), ' bench {Enter}');
   await user.click(within(region('cegueira')).getByRole('button', { name: 'salvar' }));
-  await waitFor(() => expect(calls).toEqual([{ method: 'PATCH', path: PATH, body: { blindness: { on: true, forbiddenWords: ['benchmark', 'braço', 'experimento', 'bench'] } } }]));
+  await waitFor(() => expect(calls).toEqual([{ method: 'PATCH', path: PATH, body: { blindness: { on: true, forbiddenWords: ['benchmark', 'experimento', 'bench'] } } }]));
 });
