@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'vitest';
 import {
-  collectorText, durationFields, durationMs, durationText, envText, judgeableRuns, mapRow, nextScenarioId, parseEnv, resolve, riskyArms, rowDraft, rowFrom,
+  collectorText, durationFields, durationMs, durationText, envChips, judgeableRuns, mapRow, nextScenarioId, parseEnv, resolve, riskyArms, rowDraft, rowFrom,
   rowText, scenarioIdsValid, scenariosText, toggleScope, tokenText,
 } from '@/components/benchmark/config/config-lib';
 import { setLanguage } from '@/i18n';
@@ -38,9 +38,9 @@ test("toggleScope gives every arm the row's value, and back drops perArm keeping
   expect(mapRow({ all: 1, perArm: { a1: 2 } }, (n) => n * 10)).toEqual({ all: 10, perArm: { a1: 20 } });
 });
 
-test('the env text: one NAME=value per line, blanks dropped, a value may hold =; a line without a valid name is bad (#463)', () => {
-  expect(parseEnv('CI=1\n\n HIVE_BENCH=a=b \n1BAD=x\nnoequals')).toEqual({ env: { CI: '1', HIVE_BENCH: 'a=b' }, bad: ['1BAD=x', 'noequals'] });
-  expect(envText({ CI: '1', HIVE_BENCH: '1' })).toBe('CI=1\nHIVE_BENCH=1');
+test('the env chips: one NAME=value each, blanks dropped, a value may hold =; a chip without a valid name is bad (#463, #537)', () => {
+  expect(parseEnv(['CI=1', '', ' HIVE_BENCH=a=b ', '1BAD=x', 'noequals'])).toEqual({ env: { CI: '1', HIVE_BENCH: 'a=b' }, bad: ['1BAD=x', 'noequals'] });
+  expect(envChips({ CI: '1', HIVE_BENCH: '1' })).toEqual(['CI=1', 'HIVE_BENCH=1']);
 });
 
 test('scenarios read N cenários S1–S6, one alone, none as nenhum cenário; the next id is the first free S<n>; ids must be filled and unique (#463)', () => {
