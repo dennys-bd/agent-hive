@@ -32,7 +32,7 @@ export function Section({ title, sub, side, note, foot, isDimmed = false, childr
         {side}
       </div>
       {note}
-      <div className={`flex flex-col divide-y rounded-lg border ${isDimmed ? 'opacity-55' : ''}`}>{children}</div>
+      <div className={`flex flex-col rounded-lg border ${isDimmed ? 'opacity-55' : ''}`}>{children}</div>
       {foot}
     </section>
   );
@@ -44,7 +44,8 @@ export interface ConfigRowProps { label: string; hint?: string; side?: ReactNode
 export function Row({ label, hint, side, isIsolation = false, children }: ConfigRowProps) {
   const grid = isIsolation ? 'grid-cols-[170px_minmax(0,1fr)_150px] py-1.5' : 'grid-cols-[170px_minmax(0,1fr)_auto] py-[7px]';
   return (
-    <fieldset aria-label={label} className={`m-0 grid ${grid} items-center gap-4 border-0 px-3.5 text-[13px]`}>
+    // The row draws its own divider: a border-0 here (or the card's zero-specificity divide-y) would hide it
+    <fieldset aria-label={label} className={`m-0 grid ${grid} items-center gap-4 border-t first:border-t-0 px-3.5 text-[13px]`}>
       <span className="flex flex-col gap-px"><span>{label}</span>{hint !== undefined && <small className="text-muted-foreground text-xs">{hint}</small>}</span>
       <span className="flex min-w-0 flex-wrap items-center gap-1.5">{children}</span>
       <span className="justify-self-end whitespace-nowrap text-muted-foreground text-xs">{side}</span>

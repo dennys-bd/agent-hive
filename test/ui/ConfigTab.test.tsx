@@ -1,7 +1,7 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { CONFIG, renderConfig } from './benchmark-config-fixtures';
+import { CONFIG, region, renderConfig } from './benchmark-config-fixtures';
 
 beforeEach(() => setLanguage('pt'));
 afterEach(() => vi.unstubAllGlobals());
@@ -21,4 +21,16 @@ test('while running no editar, trocar or editar cenários is drawn in any sectio
   expect(screen.getByRole('switch', { name: 'cegueira' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'julgar de novo sem executar' })).toBeDisabled();
   expect(screen.getAllByRole('region').map((r) => r.getAttribute('aria-label'))).toEqual(['seed', 'ritmo', 'isolamento', 'cegueira', 'avaliação']);
+});
+
+test('every row in a card draws its own top divider but the first, and nothing resets it (#537)', () => {
+  renderConfig(CONFIG);
+  for (const name of ['seed', 'ritmo', 'isolamento', 'cegueira', 'avaliação']) {
+    const rows = within(region(name)).getAllByRole('group');
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(row).toHaveClass('border-t', 'first:border-t-0'); // jsdom has no layout: the class is what can be checked
+      expect(row).not.toHaveClass('border-0');
+    }
+  }
 });
