@@ -267,6 +267,7 @@ const en = {
   'detail.copy': 'copy', // #283: the description's two copy buttons
   'detail.copyRaw': 'copy raw',
   'detail.copyFailed': 'Unexpected error',
+  'terminal.copyFailed': 'The program\'s copy did not reach the clipboard', // #543: an OSC 52 write the clipboard refused
   'files.tab.files': 'files',
   'files.tab.details': 'details',
   'files.tab.variables': 'variables',
@@ -3258,6 +3259,7 @@ const pt: Record<MessageKey, string> = {
   'detail.copy': 'copiar',
   'detail.copyRaw': 'copiar markdown',
   'detail.copyFailed': 'Erro inesperado',
+  'terminal.copyFailed': 'A cópia do programa não chegou à área de transferência',
   'files.tab.files': 'arquivos',
   'files.tab.details': 'detalhes',
   'files.tab.variables': 'variáveis',

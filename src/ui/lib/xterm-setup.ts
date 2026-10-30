@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { FIXED_BINDINGS, matches } from '../../shortcuts.js';
 import type { RefTarget } from '../../task-refs.js';
 import type { TerminalSize } from '../../terminal-wire.js';
+import { t } from '../i18n.js';
 import { postJson } from './api.js';
 import { findFileLinks } from './file-links.js';
 import { isMac, pressed, pressedFixed } from './shortcut-bindings.js';
@@ -210,6 +211,36 @@ export function terminalKeys(term: Terminal, onFind?: () => void): void {
       else term.clear();
     }
     return false;
+  });
+}
+
+// A copy bigger than this is dropped: decoding xterm's 10 MB OSC limit would stall the page for a clipboard nobody pastes
+const MAX_OSC52_BASE64 = 1024 * 1024;
+
+// OSC 52's payload is `<selection names>;<base64>`; `?` instead of the base64 asks to read the clipboard back
+const decodeOsc52 = (data: string): string | undefined => {
+  const separator = data.indexOf(';');
+  const payload = separator === -1 ? '' : data.slice(separator + 1);
+  if (payload === '' || payload === '?' || payload.length > MAX_OSC52_BASE64) return undefined;
+  try {
+    return new TextDecoder().decode(Uint8Array.from(atob(payload), (char) => char.charCodeAt(0)));
+  } catch {
+    return undefined; // not base64: nothing a program meant to copy
+  }
+};
+
+/** The terminal's OSC 52 (#543): what a program asks to copy goes on the clipboard, as iTerm2 and VS Code's terminal do. Claude Code copies
+ * a drag of its own selection this way as well as with pbcopy, and its pbcopy does not always reach the pasteboard, while it still says
+ * it copied. Writes only: a read query is dropped, or any program in a terminal could read the clipboard. Every OSC 52 is consumed, so
+ * xterm never acts on one itself. */
+export function terminalClipboard(term: Terminal, write = (text: string): Promise<void> => navigator.clipboard.writeText(text)): void {
+  term.parser.registerOscHandler(52, (data) => {
+    const text = decodeOsc52(data);
+    // then(), so a write that throws at once toasts as a rejected one does; the id keeps a burst of refused writes to one toast
+    if (text !== undefined) {
+      Promise.resolve(text).then(write).catch(() => toast.error(t('terminal.copyFailed'), { id: 'terminal.copyFailed' }));
+    }
+    return true;
   });
 }
 
