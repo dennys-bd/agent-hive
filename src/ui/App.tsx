@@ -160,7 +160,7 @@ export function App() {
                 <TaskRefContext.Provider value={taskRefs}>
                   <EditorLanguagesContext.Provider value={editorLanguages}>
                     <ReviewerContext.Provider value={reviewer}>
-                    <Dashboard state={state} effective={effective} selected={selected} locale={LOCALE[language]} tick={tick} hasSource={(info.config?.comb.sources.length ?? 0) > 0} fileLinks fontFamily={terminalFontStack(info.config?.terminalFont ?? '')} sources={sources} onSelect={setSelected} onEditRules={() => openSettings({ section: 'rules' })} onAddWorkspace={() => openSettings({ section: 'workspaces' })} onOpenSettings={() => setSettingsOpen(true)} openShortcuts={() => openSettings({ section: 'shortcuts' })} sidebarsPerView={info.config?.sidebarsPerView} />
+                    <Dashboard state={state} effective={effective} selected={selected} locale={LOCALE[language]} tick={tick} hasSource={(info.config?.comb.sources.length ?? 0) > 0} fileLinks fontFamily={terminalFontStack(info.config?.terminalFont ?? '')} sources={sources} onSelect={setSelected} onEditRules={() => openSettings({ section: 'rules' })} onAddWorkspace={() => openSettings({ section: 'workspaces' })} onOpenSettings={() => setSettingsOpen(true)} openShortcuts={() => openSettings({ section: 'shortcuts' })} onOpenFlowSettings={() => openSettings({ section: 'flow' })} sidebarsPerView={info.config?.sidebarsPerView} />
                     </ReviewerContext.Provider>
                   </EditorLanguagesContext.Provider>
                 </TaskRefContext.Provider>

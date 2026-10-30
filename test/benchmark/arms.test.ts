@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { armFrom, checkArm, checkRemove, checkTargets, isArmRefusal, isLocked, nextLetter } from '../../src/benchmark/arms.js';
+import { armFrom, checkArm, checkRemove, checkTargets, isArmRefusal, isLocked, nextLetter, stageCall } from '../../src/benchmark/arms.js';
 import { arm, experiment } from './fixtures.js';
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
@@ -34,4 +34,12 @@ test('checkArm and checkTargets answer 404 for an unknown arm; checkRemove refus
 
 test('isLocked holds while running or sleeping only (#459)', () => {
   assert.deepEqual((['draft', 'running', 'sleeping', 'done'] as const).map((status) => isLocked(experiment({ status }))), [false, true, true, false]);
+});
+
+test("stageCall: a skill stage's /hive:<skill>, a prompt's opening command, else its first /hive call; none on an action (#536)", () => {
+  assert.equal(stageCall({ action: 'skill', skill: 'new-plan' }), '/hive:new-plan');
+  assert.equal(stageCall({ prompt: '/superpowers:executing-plans {id}' }), '/superpowers:executing-plans');
+  assert.equal(stageCall({ prompt: 'write the spec, then run /hive-spec on it' }), '/hive-spec');
+  assert.equal(stageCall({ prompt: 'open the PR with a summary' }), undefined);
+  assert.equal(stageCall({ action: 'commands' }), undefined);
 });

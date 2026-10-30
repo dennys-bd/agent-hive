@@ -6,6 +6,7 @@ import type { Express, Request, Response } from 'express';
 import type { z } from 'zod';
 import { type ArmRefusal, armFrom, checkArm, checkRemove, checkTargets, isArmRefusal, isLocked } from './benchmark/arms.js';
 import { byCodePoint } from './benchmark/canonical.js';
+import { overrideIssues } from './benchmark/flow-copy.js';
 import type { BenchEvaluator } from './benchmark/evaluate-service.js';
 import type { BenchRunner } from './benchmark/runner.js';
 import { type AskSessionDeps, registerBenchmarkAgentRoutes } from './server-benchmark-agent.js';
@@ -175,6 +176,8 @@ async function editArm(req: Request, ctx: Ctx): Promise<void> {
   if (experiment === undefined || body === undefined) return;
   const arm = checkArm(experiment, armIdOf(req));
   if (isArmRefusal(arm)) return refuse(ctx, arm);
+  const issues = overrideIssues(experiment.base.flow, body.overrides?.stages ?? {});
+  if (issues.length > 0) return fail(ctx.res, HTTP_BAD_REQUEST, 'bad_body', issues.map((i) => `arm ${body.name ?? arm.name}: ${i}`).join('\n'));
   await ctx.deps.dispatch({ type: 'benchmarkArmEdited', id: experiment.id, armId: arm.id, patch: body });
   ctx.res.status(HTTP_NO_CONTENT).end();
 }

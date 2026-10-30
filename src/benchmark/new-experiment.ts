@@ -1,7 +1,8 @@
 // What a new experiment starts from (#459): the base the workspace's current settings give (decomposition node 1), the screens' defaults,
 // and the copies duplicate and fork make. Pure: ids, the clock, the commit, the hashes and the catalogue come from the route.
-import { type AgentId, type ArmSetup, type BenchBlindness, type BenchEvaluation, type BenchIsolation, type BenchPace, type BenchSeed, type BenchStagePick, type BenchStageRole, type CatalogueItem, type Config, EXPERIMENT_ID, type Experiment, type Stage, type Workspace } from '../types.js';
+import { type AgentId, type ArmSetup, type BenchBlindness, type BenchEvaluation, type BenchIsolation, type BenchPace, type BenchSeed, type CatalogueItem, type Config, EXPERIMENT_ID, type Experiment, type Workspace } from '../types.js';
 import { armName } from './arms.js';
+import { copyFlow } from './flow-copy.js';
 import { SANDBOX_DOMAINS } from './sandbox.js';
 import { splitRules, WORKER_ALLOW, WORKER_DENY } from './worker-rules.js';
 
@@ -36,32 +37,20 @@ function flagRules(args: readonly string[], flag: string): string[] {
   });
 }
 
-/** The call a stage makes for a role: a skill stage's `/hive:<skill>`, or the `/hive:new-<role>` / `/hive-<role>` its prompt holds. A
- *  following letter or dash is another skill (`/hive-pr-review`). */
-export function stageCall(stage: Stage, role: BenchStageRole): string | undefined {
-  if (stage.action === 'skill') return stage.skill === `new-${role}` || stage.skill === `hive-${role}` ? `/hive:${stage.skill}` : undefined;
-  return stage.prompt?.match(new RegExp(`/hive(?::new-|-)${role}(?![\\w-])`))?.[0];
-}
-
-function pickFor(config: Pick<Config, 'comb' | 'defaultAgent'>, role: BenchStageRole): BenchStagePick {
-  const stage = config.comb.stages.find((s) => stageCall(s, role) !== undefined);
-  const call = stage === undefined ? undefined : stageCall(stage, role);
-  if (stage === undefined || call === undefined) return { agent: config.defaultAgent, skill: `/hive:new-${role}`, prompt: `/hive:new-${role}` };
-  const model = stage.model === undefined ? {} : { model: stage.model };
-  return { agent: stage.agent ?? config.defaultAgent, ...model, skill: call, prompt: stage.prompt ?? call };
-}
-
 const itemsFor = (catalogue: readonly CatalogueItem[], workspace: string): Record<string, string> =>
   Object.fromEntries(catalogue.flatMap((item) => {
     const active = item.versions.find((v) => v.workspaces.includes(workspace));
     return active === undefined ? [] : [[item.id, active.name]];
   }));
 
-/** The workspace's current settings as an experiment's base (decomposition node 1; the spec's decisions on #471's fields). */
-export function baseSnapshot(config: Pick<Config, 'comb' | 'defaultAgent' | 'agentArgs'>, workspace: Pick<Workspace, 'name' | 'setup' | 'teardown'>, catalogue: readonly CatalogueItem[]): ArmSetup {
+/** The workspace's current settings as an experiment's base (decomposition node 1; the spec's decisions on #471's fields), its flow copied
+ *  at `now` (#536); or why that flow cannot run as a benchmark. */
+export function baseSnapshot(config: Pick<Config, 'comb' | 'defaultAgent' | 'agentArgs'>, workspace: Pick<Workspace, 'name' | 'setup' | 'teardown'>, catalogue: readonly CatalogueItem[], now: Date): ArmSetup | { refused: string } {
+  const copy = copyFlow(config, workspace.name, now);
+  if ('refused' in copy) return copy;
   const args = config.agentArgs.claude;
   return {
-    stages: { spec: pickFor(config, 'spec'), plan: pickFor(config, 'plan'), build: pickFor(config, 'build'), pr: pickFor(config, 'pr') },
+    flow: copy.flow,
     plugins: args.flatMap((arg, i) => (arg === PLUGIN_DIR_FLAG && i + 1 < args.length ? [args[i + 1]] : [])),
     rules: { allow: flagRules(args, ALLOW_FLAG), deny: flagRules(args, DENY_FLAG) },
     tasks: [], items: itemsFor(catalogue, workspace.name), worktree: { setup: workspace.setup ?? '', teardown: workspace.teardown ?? '' },

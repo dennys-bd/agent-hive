@@ -43,7 +43,7 @@ import { FONT_FAMILY } from '@/lib/xterm-setup';
 
 // tick is not read: its only job is to change every RERENDER_MS so elapsed()/relative readings redraw between events.
 export interface DashboardProps {
-  state: State | undefined; effective?: EffectiveLimits; selected?: Selection; locale: string; tick: number; hasSource?: boolean; fileLinks?: boolean; fontFamily?: string; sources?: SourcesNav; onSelect(selection?: Selection): void; onEditRules?(): void; onAddWorkspace?(): void; onOpenSettings?(): void; openShortcuts?(): void;
+  state: State | undefined; effective?: EffectiveLimits; selected?: Selection; locale: string; tick: number; hasSource?: boolean; fileLinks?: boolean; fontFamily?: string; sources?: SourcesNav; onSelect(selection?: Selection): void; onEditRules?(): void; onAddWorkspace?(): void; onOpenSettings?(): void; openShortcuts?(): void; onOpenFlowSettings?(): void; // #536: the benchmark base dialog's link to Settings > fluxo
   sidebarsPerView?: SidebarsPerView; // #821: what each view keeps of its sidebars; absent (the tests' harness): every side shared
 }
 
@@ -260,7 +260,7 @@ export function Dashboard(props: DashboardProps) {
   return <CreateTargetsContext.Provider value={createTargetsOf(props.sources ?? NO_SOURCES)}><WorkspaceColorsContext.Provider value={props.state?.workspaceColors ?? NO_COLORS}><TreeHoverHost><DetailSlotProvider><HeaderSlotProvider><DashboardView {...props} /></HeaderSlotProvider></DetailSlotProvider></TreeHoverHost></WorkspaceColorsContext.Provider></CreateTargetsContext.Provider>;
 }
 
-function DashboardView({ state, effective, selected, locale, hasSource, fileLinks, fontFamily, sources, onSelect, onEditRules, onAddWorkspace, onOpenSettings, openShortcuts, sidebarsPerView }: DashboardProps) {
+function DashboardView({ state, effective, selected, locale, hasSource, fileLinks, fontFamily, sources, onSelect, onEditRules, onAddWorkspace, onOpenSettings, openShortcuts, onOpenFlowSettings, sidebarsPerView }: DashboardProps) {
   const repositories = useRepositories();
   const { picks, goTo, back, openPr, openIssue, page } = useCenterNav(state, sources, repositories, selected, onSelect); // #380
   // #353: the live command runs, and #351: the running worktree setups, as one key, so a run or a setup starting or ending anywhere reads
@@ -283,7 +283,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         <MainDock
           showTask={goTo}
           sidebarsPerView={sidebarsPerView}
-          fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} experiments={state.benchmark.experiments} rateLimits={state.rateLimits} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
+          fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} experiments={state.benchmark.experiments} rateLimits={state.rateLimits} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue} openFlowSettings={onOpenFlowSettings}
           tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
           // redesign 02 and #225: the signal, the workers, the rules, the shown activity's checkers and problems, the console and shut down; the manual
           // signal and the worker cap stay in the flow sidebar (redesign 09)

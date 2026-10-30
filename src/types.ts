@@ -805,20 +805,26 @@ export const DEFAULT_AGENT: AgentId = 'claude';
 // ── Benchmark (#458): the contract types.benchmark of docs/agent/hive/specs/2026-10-21-benchmark-view-decomposition.md, "Data model".
 // Experiments live in State so the UI reads them from the one /events stream; the heavy artifacts stay files under the experiment folder.
 export type ExperimentStatus = 'draft' | 'running' | 'sleeping' | 'done';
-export type BenchStageRole = 'spec' | 'plan' | 'build' | 'pr';
-/** What a stage of a run is: the agent, its model and the skill or command the stage prompt calls (`/hive:new-build`, `/hive-build`). */
-export interface BenchStagePick { agent: AgentId; model?: string; skill: string; prompt: string } // prompt: the stage's prompt, {id}/{title}/{body} left for the Hive
+/** A stage of an experiment's copied flow (#536): the Hive's Stage without what talks to a source. */
+export type BenchStage = Omit<Stage, 'from' | 'onStart'>;
+export type BenchTransition = Omit<Transition, 'sources'>;
+/** The Hive's flow as the experiment copied it (#536); the run's comb is built from it. commands: each named command's line for the seed's
+ *  workspace. dropped: what the copy took out (`Spec.from`, `Done.after`, `Review → Done.sources`), for the dialog's note. */
+export interface BenchFlow { copiedAt: string; stages: BenchStage[]; transitions: BenchTransition[]; commands: { name: string; line: string }[]; dropped: string[] }
+/** What an arm changes of one stage, by field; model null = the agent's own default over a base model. */
+export type StageOverride = Partial<Pick<BenchStage, 'agent' | 'prompt' | 'skill' | 'commands' | 'judge' | 'threshold'>> & { model?: string | null };
 export interface BenchTask { key: string; title: string; body: string; blockedBy: string[] }
 export interface BenchRules { allow: string[]; deny: string[] }
-/** The base, and what an arm overrides of it: the same shape, every field optional on the arm. */
+/** The base, and what an arm overrides of it: the same shape, every field optional on the arm, the flow the base's alone. */
 export interface ArmSetup {
-  stages: Record<BenchStageRole, BenchStagePick>; plugins: string[]; rules: BenchRules; tasks: BenchTask[];
+  flow: BenchFlow; plugins: string[]; rules: BenchRules; tasks: BenchTask[];
   items: Record<string, string>; // itemId (`origin:name`) → custom version name; an item absent runs its original
   worktree: { setup: string; teardown: string }; // the workspace's Settings syntax (COPY / RUN lines)
 }
-/** What an arm changes of the base (#462): each stage per role and per field, so overriding build's agent never freezes spec; the rest whole.
- *  A stage's model null is the Hive's default for its agent (Config.agentModels, read when the run starts, #482) over a base model; absent keeps the base's. */
-export type ArmOverrides = Partial<Omit<ArmSetup, 'stages'>> & { stages?: Partial<Record<BenchStageRole, Partial<Omit<BenchStagePick, 'model'>> & { model?: string | null }>> };
+/** What an arm changes of the base (#462, #536): each stage by name and by field, so overriding Build's agent never freezes Spec; the rest
+ *  whole. A stage's model null is the Hive's default for its agent (Config.agentModels, read when the run starts, #482) over a base model;
+ *  absent keeps the base's. */
+export type ArmOverrides = Partial<Omit<ArmSetup, 'flow'>> & { stages?: Record<string, StageOverride> };
 export interface Arm { id: string; letter: string; name: string; overrides: ArmOverrides }
 export interface BenchScenario { id: string; title: string; text: string }
 /** The seed: the problem, the same for every arm. Its hash covers every field; a change forks the experiment (1.2). */

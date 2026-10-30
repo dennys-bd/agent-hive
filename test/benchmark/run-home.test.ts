@@ -8,11 +8,11 @@ import { blindnessLeak, blindnessMessage, prepareExperiment, prepareRun, renderS
 import { parseConfig } from '../../src/config.js';
 import { shellQuote } from '../../src/shell-init.js';
 import { loadState } from '../../src/state-store.js';
-import { BENCH_TOKEN, type ArmSetup, type Experiment } from '../../src/types.js';
+import { BENCH_TOKEN, type ArmOverrides, type Experiment } from '../../src/types.js';
 import { WS_PATH, mainConfig, arm, benchHome, experiment, ISOLATION, line, SETUP } from './fixtures.js';
 
-const OVERRIDES: Partial<ArmSetup> = {
-  stages: { ...SETUP.stages, build: { agent: 'claude', skill: '/x', prompt: 'ARM-BUILD {title}' } },
+const OVERRIDES: ArmOverrides = {
+  stages: { Build: { prompt: 'ARM-BUILD {title}' } },
   rules: { allow: ['Bash(make:*)'], deny: ['Bash(curl:*)'] }, items: { 'hive:new-spec': 'terse' },
   worktree: { setup: 'RUN pnpm install', teardown: 'RUN echo bye' },
   tasks: [{ key: 'T1', title: 'One', body: 'b', blockedBy: [] }, { key: 'T2', title: 'Two', body: 'c', blockedBy: ['T1'] }],
@@ -25,7 +25,7 @@ test('prepareRun writes a config that parses: the arm\'s stages and prompts, the
   const run = await prepareRun(EXP, EXP.arms[1], 1, deps);
   const raw = await readJson(join(run.home, 'hive.config.json'));
   const config = parseConfig(raw);
-  assert.deepEqual(config.comb.stages.map((s) => s.prompt), [SETUP.stages.spec.prompt, SETUP.stages.plan.prompt, 'ARM-BUILD {title}', SETUP.stages.pr.prompt, undefined]);
+  assert.deepEqual(config.comb.stages.map((s) => s.prompt), [...SETUP.flow.stages.map((s) => (s.name === 'Build' ? 'ARM-BUILD {title}' : s.prompt)), undefined]);
   const [ws] = config.comb.workspaces;
   assert.equal(ws.path, join(hiveDir, 'benchmark', 'exp-1', 'clone'));
   assert.deepEqual(ws.setup?.split('\n'), [`RUN mkdir -p .claude && cp ${shellQuote(join(run.home, 'sandbox.json'))} .claude/settings.local.json`, 'RUN pnpm install']);
@@ -82,12 +82,15 @@ test('a symlink in a custom version folder is not copied into the run home (#471
   assert.deepEqual(await readdir(join(run.home, 'custom', 'hive', 'new-spec', 'terse', 'files')), ['SKILL.md']);
 });
 
-test('the blindness check also reads the worktree setup and teardown and the resolved env values (#471)', async (t) => {
+test('the blindness check also reads the worktree setup and teardown, the resolved env values, the copied commands\' lines and the transition and stage prompts (#471, #536)', async (t) => {
   const { deps } = await benchHome(t);
   for (const [patch, where] of [
     [{ arms: [arm('a1', 'A', { worktree: { setup: 'RUN echo benchmark', teardown: '' } })] }, 'worktree setup'],
     [{ arms: [arm('a1', 'A', { worktree: { setup: '', teardown: 'RUN echo benchmark' } })] }, 'worktree teardown'],
     [{ isolation: { ...ISOLATION, env: { all: { CI: '1' }, perArm: { a1: { LABEL: 'benchmark' } } } } }, 'env LABEL'],
+    [{ base: { ...SETUP, flow: { ...SETUP.flow, commands: [{ name: 'test', line: 'pnpm benchmark' }] } } }, 'command test'],
+    [{ base: { ...SETUP, flow: { ...SETUP.flow, transitions: SETUP.flow.transitions.map((x) => (x.to === 'Plan' ? { ...x, prompt: 'the benchmark asks' } : x)) } } }, 'transition Spec → Plan'],
+    [{ arms: [arm('a1', 'A', { stages: { Plan: { prompt: 'a benchmark plan' } } })] }, 'stage Plan'],
   ] as [Partial<Experiment>, string][]) {
     const exp = experiment(patch);
     await assert.rejects(prepareRun(exp, exp.arms[0], 1, deps), (err: Error) => /blindness: "benchmark"/.test(err.message) && err.message.includes(where), where);
@@ -150,7 +153,7 @@ test('prepareRun carries the main config\'s default models into the run\'s confi
   const models = { claude: 'opus', codex: null };
   const done = await prepareRun(EXP, EXP.arms[0], 1, { ...deps, config: { ...deps.config, agentModels: models } });
   assert.deepEqual(parseConfig(await readJson(join(done.home, 'hive.config.json'))).agentModels, models);
-  const codex = experiment({ arms: [arm('a1', 'A', { stages: { ...SETUP.stages, build: { agent: 'codex', skill: '/x', prompt: 'B' } } })] });
+  const codex = experiment({ arms: [arm('a1', 'A', { stages: { Build: { agent: 'codex', prompt: 'B' } } })] });
   const off = { ...deps, config: { ...deps.config, agentEnabled: { claude: true, codex: false } } };
   const runs = await readdir(join(hiveDir, 'benchmark', 'exp-1', 'runs')).catch(() => []);
   await assert.rejects(prepareRun(codex, codex.arms[0], 1, off), { message: 'agent codex is disabled: enable it in Settings › execution › agents' });

@@ -10,9 +10,9 @@ import type { TabId } from '@/components/benchmark/tabs';
 import { t } from '@/i18n';
 import type { PanelId } from '@/lib/dock-layout';
 
-/** What later leaves plug into the shell (#461): pedir ao agente (filled by useBenchmarkDock, #478), exportar report.md (2.7). Absent: the item is
- * left out. */
-export interface BenchmarkSlots { askAgent?(): void; exportReport?(experiment: Experiment): void }
+/** What later leaves plug into the shell (#461): pedir ao agente (filled by useBenchmarkDock, #478), exportar report.md (2.7), abrir em settings. Absent:
+ * the item is left out. */
+export interface BenchmarkSlots { askAgent?(): void; exportReport?(experiment: Experiment): void; openFlowSettings?(): void } // openFlowSettings (#536): Settings > fluxo, the base dialog's link
 
 export interface Benchmark {
   experiments: readonly Experiment[]; sidebar: SidebarGroups;

@@ -8,12 +8,14 @@ import type { Logger } from '../log.js';
 import { type Git, gitOrWords } from '../worktree-base.js';
 import { seedHash, tasksHash, treeHash } from './hash.js';
 import { composeDraft, DRAFT, type DraftInput, resultIssues, zodIssues } from './draft-schema.js';
+import { flowIssues, overrideIssues } from './flow-copy.js';
 import { baseSnapshot, copyName, defaultName, duplicateOf, emptyExperiment, emptySeed, forkName, forkOf, newId } from './new-experiment.js';
 import { pluginTrees } from './pin.js';
 import { copyFolder, createFolder, experimentFolder, pinPlugin, removeFolder, SeedFileMissing, seedCommit, syncSeed } from './store.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
+const HTTP_UNPROCESSABLE = 422;
 const BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz';
 const ID_CHARS = 8;
 export const BENCHMARK_IO_MESSAGE = 'the experiment folder could not be read or written; see hive.log';
@@ -49,6 +51,7 @@ export function serial(): Queue {
   };
 }
 
+const badBody = (lines: readonly string[]): DraftRefusal => ({ status: HTTP_BAD_REQUEST, error: 'bad_body', message: lines.join('\n') });
 const unknownWorkspace = (name: string): DraftRefusal => ({ status: HTTP_NOT_FOUND, error: 'unknown_workspace', message: `no workspace ${name}` });
 const unknownExperiment = (id: string): DraftRefusal => ({ status: HTTP_NOT_FOUND, error: 'unknown_experiment', message: `no experiment ${id}` });
 const workspaceOf = (config: Config, name: string): Workspace | undefined => config.comb.workspaces.find((w) => w.name === name);
@@ -102,7 +105,8 @@ async function emptyStart(ctx: DraftCtx, name: string, label: string | undefined
   if (workspace === undefined) return unknownWorkspace(name);
   const git = repoGit(deps, workspace);
   const seed = emptySeed(workspace.name, await seedCommit(config, workspace, git));
-  const base = baseSnapshot(config, workspace, await readCatalogue({ home: deps.home, pluginSource: deps.pluginSource, workspaces: config.comb.workspaces }));
+  const base = baseSnapshot(config, workspace, await readCatalogue({ home: deps.home, pluginSource: deps.pluginSource, workspaces: config.comb.workspaces }), deps.now());
+  if ('refused' in base) return { status: HTTP_UNPROCESSABLE, error: 'flow_refused', message: `the workspace's flow cannot be copied: ${base.refused}` };
   const experiment = emptyExperiment({
     id: newId(ids(ctx), draw), armId: newId([], draw), name: label ?? defaultName(experiments, workspace.name), createdAt: deps.now().toISOString(), seed, base,
     judge: config.defaultAgent, plugin: { version: await deps.version(), hash: '' }, seedHash: '', tasksHash: tasksHash(base.tasks),
@@ -155,6 +159,9 @@ async function fork(ctx: DraftCtx, experiment: Experiment, sections: Sections & 
 
 /** Writes the sections: the experiment's id, or a new draft's when a seed edit forks an experiment with rounds. */
 export async function editSections(ctx: DraftCtx, experiment: Experiment, sections: Sections): Promise<string | DraftRefusal> {
+  // #536: the base keeps the flow the experiment copied; only its stages' editable fields change
+  const issues = sections.base === undefined ? [] : flowIssues(experiment.base.flow, sections.base.flow);
+  if (issues.length > 0) return badBody(issues);
   const { seed, ...others } = sections;
   if (seed === undefined) return edit(ctx, experiment, sections, undefined);
   if (seed.workspace !== experiment.workspace) return { status: HTTP_BAD_REQUEST, error: 'bad_body', message: 'seed.workspace: an experiment keeps the workspace it was created in' };
@@ -168,14 +175,14 @@ export async function editSections(ctx: DraftCtx, experiment: Experiment, sectio
 
 const HTTP_CONFLICT = 409;
 const NO_CONFIG = 'the Hive has no config yet';
-const badBody = (lines: readonly string[]): DraftRefusal => ({ status: HTTP_BAD_REQUEST, error: 'bad_body', message: lines.join('\n') });
 const armId = (taken: readonly string[]): string => newId(taken, draw);
 
 // The composed result, or every issue it has; nothing is written yet
 function checked(start: Experiment, body: DraftInput): Experiment | DraftRefusal {
   const composed = composeDraft(start, body, armId);
   if (Array.isArray(composed)) return badBody(composed);
-  const issues = resultIssues(composed);
+  const armIssues = composed.arms.flatMap((a) => overrideIssues(composed.base.flow, a.overrides.stages ?? {}).map((i) => `arm ${a.name}: ${i}`));
+  const issues = [...resultIssues(composed), ...flowIssues(start.base.flow, composed.base.flow), ...armIssues];
   return issues.length > 0 ? badBody(issues) : composed;
 }
 

@@ -5,6 +5,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { DialogBase } from '@/components/DialogBase';
 import { AlertDialogDescription } from '@/components/ui/alert-dialog';
 import { setLanguage } from '@/i18n';
+import { isMac } from '@/lib/shortcut-bindings';
 
 type User = ReturnType<typeof userEvent.setup>;
 type Props = Omit<ComponentProps<typeof DialogBase>, 'title' | 'children' | 'trigger'>;
@@ -102,4 +103,31 @@ test('a held Enter repeat and an IME commit run nothing; the plain Enter on the 
   expect(onConfirm).not.toHaveBeenCalled();
   fireEvent.keyDown(closeAndCancel()[0], { key: 'Enter' });
   expect(onConfirm).toHaveBeenCalledOnce();
+});
+
+test('primaryKey mod: Enter in a field runs nothing, ⌘/Ctrl+Enter runs the primary; the shortcut shows beside its label (#536)', async () => {
+  const user = userEvent.setup();
+  const onConfirm = vi.fn();
+  await show(user, { primary: { label: 'salvar', shortcut: '⌘↵', onConfirm }, primaryKey: 'mod' }, <input aria-label="campo" />);
+  await user.click(screen.getByRole('textbox', { name: 'campo' }));
+  await user.keyboard('{Enter}');
+  expect(onConfirm).not.toHaveBeenCalled();
+  expect(within(dialog()).getByRole('button', { name: /salvar/ })).toHaveTextContent('salvar⌘↵');
+  await user.keyboard(isMac() ? '{Meta>}{Enter}{/Meta}' : '{Control>}{Enter}{/Control}');
+  expect(onConfirm).toHaveBeenCalledTimes(1);
+});
+
+test('no primary: the footer holds only the cancel, named by cancelLabel; footerNote sits at its left (#536)', async () => {
+  const user = userEvent.setup();
+  await show(user, { cancelLabel: 'fechar', footerNote: 'só leitura' });
+  expect(within(dialog()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['fechar', 'fechar']);
+  expect(within(dialog()).getByText('só leitura')).toBeInTheDocument();
+});
+
+test('isOverlayDismissable: a click on the overlay closes as Esc does (#536)', async () => {
+  const user = userEvent.setup();
+  const onOpenChange = vi.fn();
+  render(<DialogBase title="T" open onOpenChange={onOpenChange} isOverlayDismissable primary={{ label: 'ok', onConfirm: vi.fn() }}>x</DialogBase>);
+  await user.click(document.querySelector('[data-slot="alert-dialog-overlay"]') as HTMLElement);
+  expect(onOpenChange).toHaveBeenCalledWith(false);
 });

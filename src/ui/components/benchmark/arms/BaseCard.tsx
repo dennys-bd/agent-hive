@@ -1,23 +1,29 @@
 import { LockIcon } from 'lucide-react';
 import type { Experiment } from '../../../../types';
 import { CardFooter, TASKS_HASH_CHARS } from '@/components/benchmark/arms/ArmCard';
-import { ROLES, rowLabel, rowText } from '@/components/benchmark/arms/arm-rows';
+import { pluginText, seedText } from '@/components/benchmark/arms/FixedRows';
+import { stageCall } from '../../../../benchmark/arms.js';
+import { runsAgent } from '../../../../stage-agent.js';
+import { pickText, plural, rowLabel, rowText } from '@/components/benchmark/arms/arm-rows';
 import { dayMonth } from '@/components/benchmark/sidebar-groups';
 import { t } from '@/i18n';
 import { clockOf } from '@/lib/design-comments';
 
-const PIN_HASH_CHARS = 6;
-const COMMIT_CHARS = 7;
 interface BaseRow { label: string; value: string; isPinned?: boolean }
 
+// The flow by its workspace and size, then each stage that runs an agent, as the screen's base card
 function baseRows(e: Experiment): BaseRow[] {
+  const { stages } = e.base.flow;
+  const agentStages = stages.filter(runsAgent);
+  const { allow, deny } = e.base.rules;
   return [
-    ...ROLES.map((role) => ({ label: t(rowLabel(role)), value: rowText(e.base, role) })),
-    { label: t(rowLabel('skills')), value: rowText(e.base, 'skills') },
-    { label: t('benchmark.arms.base.plugin'), value: `hive ${e.plugin.version} · ${e.plugin.hash.slice(0, PIN_HASH_CHARS)}`, isPinned: true },
-    { label: t('benchmark.arms.base.seed'), value: `${e.seed.workspace} @ ${e.seed.commit.slice(0, COMMIT_CHARS)} · ${e.seedHash.slice(0, PIN_HASH_CHARS)}`, isPinned: true },
-    { label: t(rowLabel('tasks')), value: `${rowText(e.base, 'tasks')} · t·${e.tasksHash.slice(0, TASKS_HASH_CHARS)}` },
-    { label: t(rowLabel('rules')), value: rowText(e.base, 'rules') },
+    { label: rowLabel('flow'), value: `${e.workspace} · ${plural(stages.length, 'benchmark.arms.value.stages.one', 'benchmark.arms.value.stages.other')}` },
+    ...agentStages.map((s) => ({ label: s.name, value: pickText(s.agent, s.model) })),
+    { label: t('benchmark.arms.row.skills'), value: agentStages.flatMap((s) => stageCall(s) ?? []).join(' ') },
+    { label: t('benchmark.arms.base.plugin'), value: pluginText(e), isPinned: true },
+    { label: t('benchmark.arms.base.seed'), value: seedText(e), isPinned: true },
+    { label: rowLabel('tasks'), value: `${rowText(e.base, 'tasks')} · t·${e.tasksHash.slice(0, TASKS_HASH_CHARS)}` },
+    { label: t('benchmark.arms.row.rules'), value: t('benchmark.arms.value.rules', { allowed: allow.length, denied: deny.join(', ') || '0' }) },
   ];
 }
 

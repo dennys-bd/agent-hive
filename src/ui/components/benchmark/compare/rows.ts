@@ -1,12 +1,13 @@
 // The compare tab's pure parts (#464): every arm's effective setup set against the base, row by row, and the overrides a copy posts. No React,
 // tested without rendering.
-import type { Arm, ArmOverrides, ArmSetup, BenchIsolation, BenchStagePick, BenchStageRole, Experiment } from '../../../../types';
-import { isLocked, mergeArm } from '../../../../benchmark/arms';
-import { diffOverrides } from '@/components/benchmark/arms/arm-rows';
+import type { Arm, ArmOverrides, ArmSetup, BenchIsolation, BenchStage, Experiment } from '../../../../types';
+import { isLocked, mergeArm, stageCall } from '../../../../benchmark/arms';
+import { runsAgent } from '../../../../stage-agent';
+import { diffOverrides, pickText, readStage, writeStage } from '@/components/benchmark/arms/arm-rows';
 import { t, tPlural } from '@/i18n';
 
 export type SetupRowId =
-  | `${BenchStageRole}.prompt` | `${BenchStageRole}.agent` | 'plugins' | 'rules.allow' | 'rules.deny' | 'items' | 'worktree.setup' | 'worktree.teardown' | 'tasks';
+  | `stage:${string}:prompt` | `stage:${string}:agent` | 'plugins' | 'rules.allow' | 'rules.deny' | 'items' | 'worktree.setup' | 'worktree.teardown' | 'tasks';
 export type RowId = SetupRowId | `isolation.${keyof BenchIsolation}`;
 /** One arm's cell: its rendered value, whether it equals the base's, and whether a click may copy it to another arm. */
 export interface CompareCell { armId: string; value: string; isSame: boolean; isCopyable: boolean }
@@ -15,7 +16,6 @@ export interface CompareRow { id: RowId; label: string; base: string; cells: Com
 // One setup row: its label, the value the cells compare (deep), the text a cell shows, and the setup `to` becomes with this row's value from `from`
 interface SetupRow { id: SetupRowId; label(): string; valueOf(setup: ArmSetup): unknown; text(setup: ArmSetup): string; copy(from: ArmSetup, to: ArmSetup): ArmSetup }
 
-const STAGES: readonly BenchStageRole[] = ['spec', 'plan', 'build', 'pr'];
 const NONE = '—';
 const HASH_CHARS = 4;
 
@@ -31,7 +31,6 @@ export function isSameValue(a: unknown, b: unknown): boolean {
 
 const listText = (values: readonly string[]): string => (values.length === 0 ? NONE : values.join(', '));
 const blankText = (value: string): string => (value.trim() === '' ? NONE : value);
-const agentText = (pick: BenchStagePick): string => (pick.model === undefined ? pick.agent : `${pick.agent} · ${pick.model}`);
 // Sorted by item id, so the text does not depend on the order the record was built in
 const itemsText = ({ items }: ArmSetup): string =>
   listText(Object.entries(items).sort(([a], [b]) => a.localeCompare(b)).map(([item, version]) => `${item}@${version}`));
@@ -40,27 +39,29 @@ function tasksText({ tasks }: ArmSetup): string {
   return tPlural('benchmark.compare.tasks', blockers, { n: tasks.length, k: blockers });
 }
 
-const withPick = (setup: ArmSetup, stage: BenchStageRole, pick: BenchStagePick): ArmSetup => ({ ...setup, stages: { ...setup.stages, [stage]: pick } });
-// The source's agent and model on the target's pick, with no model key when the source has none, so the pick can equal a base pick without one
-const withAgent = (to: BenchStagePick, from: BenchStagePick): BenchStagePick =>
-  ({ agent: from.agent, ...(from.model === undefined ? {} : { model: from.model }), skill: to.skill, prompt: to.prompt });
+// The named stage of `to` with `change` over it; an absent field of the source drops the target's, so the copy can equal the base
+const withStage = (to: ArmSetup, name: string, change: (stage: BenchStage) => BenchStage): ArmSetup => writeStage(to, change(readStage(to, name)));
+function withFields(stage: BenchStage, from: BenchStage, fields: readonly ('agent' | 'model' | 'prompt' | 'skill')[]): BenchStage {
+  const kept = Object.fromEntries(Object.entries(stage).filter(([key]) => !(fields as readonly string[]).includes(key))) as BenchStage;
+  return { ...kept, ...Object.fromEntries(fields.flatMap((f) => (from[f] === undefined ? [] : [[f, from[f]]]))) };
+}
+const callText = (stage: BenchStage): string => stageCall(stage) ?? (stage.prompt ?? '').split('\n')[0];
 
-const stageRows = (stage: BenchStageRole): SetupRow[] => [
+const stageRows = (name: string): SetupRow[] => [
   {
-    id: `${stage}.prompt`, label: () => t('benchmark.compare.row.prompt', { stage }),
-    valueOf: (s) => s.stages[stage].skill, text: (s) => s.stages[stage].skill,
-    copy: (from, to) => withPick(to, stage, { ...to.stages[stage], skill: from.stages[stage].skill }),
+    id: `stage:${name}:prompt`, label: () => t('benchmark.compare.row.prompt', { stage: name }),
+    valueOf: (s) => [readStage(s, name).prompt ?? null, readStage(s, name).skill ?? null], text: (s) => callText(readStage(s, name)),
+    copy: (from, to) => withStage(to, name, (stage) => withFields(stage, readStage(from, name), ['prompt', 'skill'])),
   },
   {
-    id: `${stage}.agent`, label: () => t('benchmark.compare.row.agent', { stage }),
-    valueOf: (s) => [s.stages[stage].agent, s.stages[stage].model ?? null], text: (s) => agentText(s.stages[stage]),
-    copy: (from, to) => withPick(to, stage, withAgent(to.stages[stage], from.stages[stage])),
+    id: `stage:${name}:agent`, label: () => t('benchmark.compare.row.agent', { stage: name }),
+    valueOf: (s) => [readStage(s, name).agent, readStage(s, name).model ?? null], text: (s) => pickText(readStage(s, name).agent, readStage(s, name).model),
+    copy: (from, to) => withStage(to, name, (stage) => withFields(stage, readStage(from, name), ['agent', 'model'])),
   },
 ];
 
-// The spec's order: two rows per stage, then the rest as the screen draws them. The stage's prompt text is not a row
-const SETUP_ROWS: readonly SetupRow[] = [
-  ...STAGES.flatMap(stageRows),
+// The spec's order: two rows per stage that runs an agent, by name, then the rest as the screen draws them
+const FIXED_ROWS: readonly SetupRow[] = [
   { id: 'plugins', label: () => t('benchmark.compare.row.plugins'), valueOf: (s) => s.plugins, text: (s) => listText(s.plugins), copy: (from, to) => ({ ...to, plugins: from.plugins }) },
   {
     id: 'rules.allow', label: () => t('benchmark.compare.row.allow'), valueOf: (s) => s.rules.allow, text: (s) => listText(s.rules.allow),
@@ -82,8 +83,9 @@ const SETUP_ROWS: readonly SetupRow[] = [
   // Compared by the task array, not the text: two lists with the same counts are still different tasks
   { id: 'tasks', label: () => t('benchmark.compare.row.tasks'), valueOf: (s) => s.tasks, text: tasksText, copy: (from, to) => ({ ...to, tasks: from.tasks }) },
 ];
+const setupRows = (base: ArmSetup): SetupRow[] => [...base.flow.stages.filter(runsAgent).flatMap((s) => stageRows(s.name)), ...FIXED_ROWS];
 
-/** What an arm runs: each stage field it sets over the base's, every other key whole (#462's mergeArm, as the runs merge it). */
+/** What an arm runs: each stage field it sets over the base's same stage, every other key whole (mergeArm, as the runs merge it). */
 export const effectiveSetup = (experiment: Experiment, arm: Arm): ArmSetup => mergeArm(experiment.base, arm.overrides);
 
 function setupRow(row: SetupRow, experiment: Experiment, isOpen: boolean): CompareRow {
@@ -123,7 +125,7 @@ function isolationRow(experiment: Experiment, key: keyof BenchIsolation): Compar
 export function compareRows(experiment: Experiment): CompareRow[] {
   const isOpen = !isLocked(experiment);
   const isolation = ISOLATION_KEYS.flatMap((key) => isolationRow(experiment, key) ?? []);
-  return [...SETUP_ROWS.map((row) => setupRow(row, experiment, isOpen)), ...isolation];
+  return [...setupRows(experiment.base).map((row) => setupRow(row, experiment, isOpen)), ...isolation];
 }
 
 export const isEqualRow = (row: CompareRow): boolean => row.cells.every((cell) => cell.isSame);
@@ -132,9 +134,9 @@ export const hiddenCount = (rows: readonly CompareRow[]): number => rows.filter(
 
 export const isSetupRowId = (id: RowId): id is SetupRowId => !id.startsWith('isolation.');
 
-// SetupRowId names exactly the rows of SETUP_ROWS, so the throw is unreachable from typed callers
-function setupRowOf(id: SetupRowId): SetupRow {
-  const row = SETUP_ROWS.find((r) => r.id === id);
+// The table hands back the ids it drew from the same base, so the throw is unreachable from the tab
+function setupRowOf(experiment: Experiment, id: SetupRowId): SetupRow {
+  const row = setupRows(experiment.base).find((r) => r.id === id);
   if (row === undefined) throw new Error(`no compare row ${id}`);
   return row;
 }
@@ -142,10 +144,10 @@ function setupRowOf(id: SetupRowId): SetupRow {
 /** The target's new overrides after a copy (spec, "What a copy posts"). The route replaces overrides whole, so this is the whole object; the
  *  arms tab's diff keeps only what differs from the base, field by field in a stage, so an equal field never counts in N sobreposições. */
 export const copiedOverrides = (experiment: Experiment, rowId: SetupRowId, from: Arm, to: Arm): ArmOverrides =>
-  diffOverrides(experiment.base, setupRowOf(rowId).copy(effectiveSetup(experiment, from), effectiveSetup(experiment, to)));
+  diffOverrides(experiment.base, setupRowOf(experiment, rowId).copy(effectiveSetup(experiment, from), effectiveSetup(experiment, to)));
 
 /** Whether two arms already hold the same value on the row: copiar para lists such a target disabled. */
 export function holdsSame(experiment: Experiment, rowId: SetupRowId, a: Arm, b: Arm): boolean {
-  const row = setupRowOf(rowId);
+  const row = setupRowOf(experiment, rowId);
   return isSameValue(row.valueOf(effectiveSetup(experiment, a)), row.valueOf(effectiveSetup(experiment, b)));
 }

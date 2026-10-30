@@ -1,69 +1,80 @@
-// The arms tab's rows (#462): what one override is (a stage's agent · model, the four skills, the four prompts, plugins, items, tasks, rules,
-// worktree), read from an ArmSetup, written back and told apart from the base. The only module that knows which fields a row covers.
-import { mergeArm } from '../../../../benchmark/arms.js';
+// The arms tab's rows (#462, #536): one per stage of the copied flow, by name, then plugins, items, tasks, the two rules lists and the
+// worktree; read from an ArmSetup, written back and told apart from the base. The only module that knows which fields a row covers.
+import { mergeArm, STAGE_OVERRIDE_FIELDS, stageCall } from '../../../../benchmark/arms.js';
 import { byCodePoint, canonicalJson } from '../../../../benchmark/canonical.js';
-import type { AgentId, ArmOverrides, ArmSetup, BenchRules, BenchStagePick, BenchStageRole, BenchTask } from '../../../../types.js';
+import { runsAgent } from '../../../../stage-agent.js';
+import { type ArmOverrides, type ArmSetup, type BenchFlow, type BenchStage, type BenchTask, DEFAULT_AGENT, type StageOverride } from '../../../../types.js';
 import { type MessageKey, t } from '@/i18n';
+import { executorLine } from '@/lib/flow-labels';
 
-export const ROLES: readonly BenchStageRole[] = ['spec', 'plan', 'build', 'pr'];
-export interface AgentPick { agent: AgentId; model?: string } // no model: the agent's own default
-export interface RowValues {
-  spec: AgentPick; plan: AgentPick; build: AgentPick; pr: AgentPick;
-  skills: Record<BenchStageRole, string>; prompts: Record<BenchStageRole, string>;
-  plugins: string[]; items: Record<string, string>; tasks: BenchTask[]; rules: BenchRules; worktree: ArmSetup['worktree'];
+export type StageKey = `stage:${string}`;
+export type FixedKey = 'flow' | 'plugins' | 'items' | 'tasks' | 'rules.allow' | 'rules.deny' | 'worktree';
+export type RowKey = FixedKey | StageKey;
+export interface FixedValues {
+  flow: BenchFlow; plugins: string[]; items: Record<string, string>; tasks: BenchTask[]; 'rules.allow': string[]; 'rules.deny': string[]; worktree: ArmSetup['worktree'];
 }
-export type RowKey = keyof RowValues;
-export const ROW_KEYS: readonly RowKey[] = ['spec', 'plan', 'build', 'pr', 'skills', 'prompts', 'plugins', 'items', 'tasks', 'rules', 'worktree'];
-export interface ArmRow { key: RowKey; label: MessageKey; value: string; was?: string; overridden: boolean }
-type StageOverride = NonNullable<NonNullable<ArmOverrides['stages']>[BenchStageRole]>;
+export interface ArmRow { key: RowKey; label: string; value: string; was?: string; overridden: boolean }
 
-const isRole = (key: RowKey): key is BenchStageRole => (ROLES as readonly string[]).includes(key);
-const perRole = <T>(of: (role: BenchStageRole) => T): Record<BenchStageRole, T> => ({ spec: of('spec'), plan: of('plan'), build: of('build'), pr: of('pr') });
+const STAGE_PREFIX = 'stage:';
+const FIXED_ROWS: readonly Exclude<FixedKey, 'flow'>[] = ['plugins', 'items', 'tasks', 'rules.allow', 'rules.deny', 'worktree'];
+const NONE = '—';
+
+export const stageKey = (name: string): StageKey => `${STAGE_PREFIX}${name}`;
+export const isStageKey = (key: RowKey): key is StageKey => key.startsWith(STAGE_PREFIX);
+export const stageNameOf = (key: StageKey): string => key.slice(STAGE_PREFIX.length);
 const same = (a: unknown, b: unknown): boolean => canonicalJson(a) === canonicalJson(b);
 
-const pickOf = (setup: ArmSetup, role: BenchStageRole): AgentPick => {
-  const { agent, model } = setup.stages[role];
-  return model === undefined ? { agent } : { agent, model };
-};
-const withStages = (setup: ArmSetup, change: (role: BenchStageRole, pick: BenchStagePick) => BenchStagePick): ArmSetup =>
-  ({ ...setup, stages: perRole((role) => change(role, setup.stages[role])) });
-// '' is the model menu's default row: the agent's own default, no model
-const withPick = (role: BenchStageRole) => (setup: ArmSetup, value: AgentPick): ArmSetup => withStages(setup, (r, pick) => {
-  if (r !== role) return pick;
-  const { model: _model, ...rest } = pick;
-  return { ...rest, agent: value.agent, ...(value.model === undefined || value.model === '' ? {} : { model: value.model }) };
-});
+/** Every row of a setup: each stage in flow order, then the fixed ones; the flow itself is the base's alone, never a row of an arm. */
+export const armRowKeys = (setup: ArmSetup): RowKey[] => [...setup.flow.stages.map((s) => stageKey(s.name)), ...FIXED_ROWS];
 
-const READ: { [K in RowKey]: (setup: ArmSetup) => RowValues[K] } = {
-  spec: (s) => pickOf(s, 'spec'), plan: (s) => pickOf(s, 'plan'), build: (s) => pickOf(s, 'build'), pr: (s) => pickOf(s, 'pr'),
-  skills: (s) => perRole((r) => s.stages[r].skill), prompts: (s) => perRole((r) => s.stages[r].prompt),
-  plugins: (s) => s.plugins, items: (s) => s.items, tasks: (s) => s.tasks, rules: (s) => s.rules, worktree: (s) => s.worktree,
+const READ: { [K in FixedKey]: (setup: ArmSetup) => FixedValues[K] } = {
+  flow: (s) => s.flow, plugins: (s) => s.plugins, items: (s) => s.items, tasks: (s) => s.tasks,
+  'rules.allow': (s) => s.rules.allow, 'rules.deny': (s) => s.rules.deny, worktree: (s) => s.worktree,
 };
-const WRITE: { [K in RowKey]: (setup: ArmSetup, value: RowValues[K]) => ArmSetup } = {
-  spec: withPick('spec'), plan: withPick('plan'), build: withPick('build'), pr: withPick('pr'),
-  skills: (s, v) => withStages(s, (r, p) => ({ ...p, skill: v[r] })), prompts: (s, v) => withStages(s, (r, p) => ({ ...p, prompt: v[r] })),
-  plugins: (s, v) => ({ ...s, plugins: v }), items: (s, v) => ({ ...s, items: v }), tasks: (s, v) => ({ ...s, tasks: v }),
-  rules: (s, v) => ({ ...s, rules: v }), worktree: (s, v) => ({ ...s, worktree: v }),
+const WRITE: { [K in FixedKey]: (setup: ArmSetup, value: FixedValues[K]) => ArmSetup } = {
+  flow: (s, v) => ({ ...s, flow: v }), plugins: (s, v) => ({ ...s, plugins: v }), items: (s, v) => ({ ...s, items: v }), tasks: (s, v) => ({ ...s, tasks: v }),
+  'rules.allow': (s, v) => ({ ...s, rules: { ...s.rules, allow: v } }), 'rules.deny': (s, v) => ({ ...s, rules: { ...s.rules, deny: v } }),
+  worktree: (s, v) => ({ ...s, worktree: v }),
 };
-export const readRow = <K extends RowKey>(setup: ArmSetup, key: K): RowValues[K] => READ[key](setup);
-export const writeRow = <K extends RowKey>(setup: ArmSetup, key: K, value: RowValues[K]): ArmSetup => WRITE[key](setup, value);
+export const readRow = <K extends FixedKey>(setup: ArmSetup, key: K): FixedValues[K] => READ[key](setup);
+export const writeRow = <K extends FixedKey>(setup: ArmSetup, key: K, value: FixedValues[K]): ArmSetup => WRITE[key](setup, value);
 
-// The fields a stage changes; a model the base names and the stage lacks is the agent's own default, said as null (mergeArm drops it)
-function stageDiff(base: BenchStagePick, pick: BenchStagePick): StageOverride {
-  const changed = Object.fromEntries(Object.entries(pick).filter(([field, v]) => v !== undefined && base[field as keyof BenchStagePick] !== v));
-  return { ...changed, ...(base.model !== undefined && pick.model === undefined ? { model: null } : {}) } as StageOverride;
+/** A stage of the setup's flow by name; rows are built from that flow, so a name it lacks is a caller's bug. */
+export function readStage(setup: ArmSetup, name: string): BenchStage {
+  const stage = setup.flow.stages.find((s) => s.name === name);
+  if (stage === undefined) throw new Error(`no stage ${name} in the flow`);
+  return stage;
+}
+export const writeStage = (setup: ArmSetup, stage: BenchStage): ArmSetup =>
+  ({ ...setup, flow: { ...setup.flow, stages: setup.flow.stages.map((s) => (s.name === stage.name ? stage : s)) } });
+
+// The override fields a stage changes; a model the base names and the stage lacks is the agent's own default, said as null (mergeArm drops it)
+function stageDiff(base: BenchStage, stage: BenchStage): StageOverride {
+  const changed = STAGE_OVERRIDE_FIELDS.flatMap((field): [string, unknown][] => {
+    if (field !== 'model') return stage[field] !== undefined && !same(stage[field], base[field]) ? [[field, stage[field]]] : [];
+    if (base.model !== undefined && stage.model === undefined) return [[field, null]];
+    return stage.model !== undefined && stage.model !== base.model ? [[field, stage.model]] : [];
+  });
+  return Object.fromEntries(changed) as StageOverride;
 }
 
 /** What `setup` changes of `base`, and nothing else: a field equal to the base's, an empty stage and an empty `stages` are dropped. */
 export function diffOverrides(base: ArmSetup, setup: ArmSetup): ArmOverrides {
-  const { stages: _stages, ...rest } = setup;
-  const top = Object.fromEntries(Object.entries(rest).filter(([key, v]) => !same(base[key as keyof typeof rest], v))) as Partial<Omit<ArmSetup, 'stages'>>;
-  const stages = Object.fromEntries(ROLES.map((r) => [r, stageDiff(base.stages[r], setup.stages[r])] as const).filter(([, d]) => Object.keys(d).length > 0));
+  const { flow, ...rest } = setup;
+  const top = Object.fromEntries(Object.entries(rest).filter(([key, v]) => !same(base[key as keyof typeof rest], v))) as Partial<Omit<ArmSetup, 'flow'>>;
+  const stages = Object.fromEntries(base.flow.stages.flatMap((b) => {
+    const shown = flow.stages.find((s) => s.name === b.name);
+    const diff = shown === undefined ? {} : stageDiff(b, shown);
+    return Object.keys(diff).length === 0 ? [] : [[b.name, diff] as const];
+  }));
   return Object.keys(stages).length === 0 ? top : { ...top, stages };
 }
-export const setRow = <K extends RowKey>(base: ArmSetup, overrides: ArmOverrides, key: K, value: RowValues[K]): ArmOverrides =>
+export const setRow = <K extends FixedKey>(base: ArmSetup, overrides: ArmOverrides, key: K, value: FixedValues[K]): ArmOverrides =>
   diffOverrides(base, writeRow(mergeArm(base, overrides), key, value));
-export const resetRow = <K extends RowKey>(base: ArmSetup, overrides: ArmOverrides, key: K): ArmOverrides => setRow(base, overrides, key, readRow(base, key));
+export const setStage = (base: ArmSetup, overrides: ArmOverrides, stage: BenchStage): ArmOverrides => diffOverrides(base, writeStage(mergeArm(base, overrides), stage));
+export function resetRow(base: ArmSetup, overrides: ArmOverrides, key: RowKey): ArmOverrides {
+  return isStageKey(key) ? setStage(base, overrides, readStage(base, stageNameOf(key))) : setRow(base, overrides, key, readRow(base, key));
+}
 
 const filled = (list: readonly string[]): string[] => list.filter((entry) => entry.trim() !== '');
 /** The setup as it is posted: the blank lines a list field or a blocked-by field leaves while being typed are not entries. */
@@ -75,11 +86,26 @@ export const cleanSetup = (s: ArmSetup): ArmSetup => ({
 export const plural = (n: number, one: MessageKey, other: MessageKey): string => (n === 1 ? t(one) : t(other, { n }));
 export const countText = (n: number): string => plural(n, 'benchmark.arms.count.one', 'benchmark.arms.count.other');
 const tasksCount = (tasks: readonly BenchTask[]): string => plural(tasks.length, 'benchmark.arms.value.tasks.one', 'benchmark.arms.value.tasks.other');
-const tasksText = (tasks: readonly BenchTask[]): string =>
+export const tasksText = (tasks: readonly BenchTask[]): string =>
   `${tasksCount(tasks)} · ${plural(tasks.reduce((n, task) => n + task.blockedBy.length, 0), 'benchmark.arms.value.blockers.one', 'benchmark.arms.value.blockers.other')}`;
-const pickText = (pick: BenchStagePick): string => (pick.model === undefined ? pick.agent : `${pick.agent} · ${pick.model}`);
+export const pickText = (agent: string | undefined, model: string | undefined): string => [agent ?? DEFAULT_AGENT, ...(model === undefined ? [] : [model])].join(' · ');
 const folderName = (path: string): string => path.split('/').filter(Boolean).at(-1) ?? path;
 const lineCount = (text: string): number => text.split('\n').filter((line) => line.trim() !== '').length;
+const listText = (list: readonly string[]): string => (list.length === 0 ? NONE : list.join(', '));
+
+/** A stage as one line against another (#536): an agent stage's agent · model, or its call when only its prompt or skill differs; an
+ *  evaluation's judge and threshold; a commands stage's commands; any other its executor line. */
+export function stageText(shown: BenchStage, other: BenchStage): string {
+  if (runsAgent(shown)) {
+    const isPickSame = shown.agent === other.agent && shown.model === other.model;
+    const isCallChanged = shown.prompt !== other.prompt || shown.skill !== other.skill;
+    if (isPickSame && isCallChanged) return stageCall(shown) ?? (shown.prompt ?? '').split('\n')[0];
+    return pickText(shown.agent, shown.model);
+  }
+  if (shown.action === 'evaluate') return t('benchmark.arms.value.judge', { who: pickText(shown.judge?.agent, shown.judge?.model), n: shown.threshold ?? '' });
+  if (shown.action === 'commands') return listText(shown.commands ?? []);
+  return executorLine({ ...shown, from: {} });
+}
 
 // The plugins the shown setup adds and removes against the other one, as the screen's `+ superpowers, ecc`
 function pluginsText(shown: ArmSetup, other: ArmSetup): string {
@@ -88,47 +114,58 @@ function pluginsText(shown: ArmSetup, other: ArmSetup): string {
   const parts = [...(added.length > 0 ? [`+ ${added.join(', ')}`] : []), ...(removed.length > 0 ? [`− ${removed.join(', ')}`] : [])];
   return parts.join(' · ') || shown.plugins.map(folderName).join(', '); // the same plugins reordered: the list itself
 }
-// The stages whose prompt differs from the other setup's, each with its first line
-const promptsText = (shown: ArmSetup, other: ArmSetup): string =>
-  ROLES.filter((r) => shown.stages[r].prompt !== other.stages[r].prompt).map((r) => `${r}: ${shown.stages[r].prompt.split('\n')[0]}`).join(' · ');
 function itemsText(items: Readonly<Record<string, string>>): string {
   const entries = Object.entries(items).sort(([a], [b]) => byCodePoint(a, b));
   return entries.length === 0 ? t('benchmark.arms.value.itemsOriginal') : entries.map(([id, version]) => `${id} → ${version}`).join(', ');
 }
 
-// was: null draws no struck base value (skills, plugins, as the screen); absent, the base shown against the arm
+// was: null draws no struck base value (plugins, as the screen); absent, the base shown against the arm
 interface RowFormat { label: MessageKey; show(shown: ArmSetup, other: ArmSetup): string; was?: ((base: ArmSetup, arm: ArmSetup) => string) | null }
-const stageFormat = (role: BenchStageRole): RowFormat => ({ label: `benchmark.arms.row.${role}`, show: (s) => pickText(s.stages[role]) });
-const FORMAT: Record<RowKey, RowFormat> = {
-  spec: stageFormat('spec'), plan: stageFormat('plan'), build: stageFormat('build'), pr: stageFormat('pr'),
-  skills: { label: 'benchmark.arms.row.skills', show: (s) => ROLES.map((r) => s.stages[r].skill).join(' '), was: null },
-  prompts: { label: 'benchmark.arms.row.prompts', show: promptsText },
+const FORMAT: Record<Exclude<FixedKey, 'flow'>, RowFormat> = {
   plugins: { label: 'benchmark.arms.row.plugins', show: pluginsText, was: null },
   items: { label: 'benchmark.arms.row.items', show: (s) => itemsText(s.items) },
   tasks: { label: 'benchmark.arms.row.tasks', show: (s) => tasksText(s.tasks), was: (b) => t('benchmark.arms.value.tasksOfBase', { tasks: tasksCount(b.tasks) }) },
-  rules: { label: 'benchmark.arms.row.rules', show: (s) => t('benchmark.arms.value.rules', { allowed: s.rules.allow.length, denied: s.rules.deny.join(', ') || '0' }) },
+  'rules.allow': { label: 'benchmark.arms.row.allow', show: (s) => listText(s.rules.allow) },
+  'rules.deny': { label: 'benchmark.arms.row.deny', show: (s) => listText(s.rules.deny) },
   worktree: { label: 'benchmark.arms.row.worktree', show: (s) => t('benchmark.arms.value.worktree', { setup: lineCount(s.worktree.setup), teardown: lineCount(s.worktree.teardown) }) },
 };
-export const rowLabel = (key: RowKey): MessageKey => FORMAT[key].label;
-export const rowText = (setup: ArmSetup, key: RowKey): string => FORMAT[key].show(setup, setup);
+/** A row's label: a stage's own name, or the fixed row's translated one. */
+export const rowLabel = (key: RowKey): string => (isStageKey(key) ? stageNameOf(key) : key === 'flow' ? t('benchmark.arms.row.flow') : t(FORMAT[key].label));
+export const rowText = (setup: ArmSetup, key: Exclude<FixedKey, 'flow'>): string => FORMAT[key].show(setup, setup);
+
+function stageRow(base: ArmSetup, arm: ArmSetup, key: StageKey): ArmRow {
+  const name = stageNameOf(key);
+  const [shown, was] = [readStage(arm, name), readStage(base, name)];
+  return { key, label: name, value: stageText(shown, was), was: stageText(was, shown), overridden: !same(shown, was) };
+}
 
 /** Every row of the arm, overridden when its merged value differs from the base's (canonical JSON). */
 export function armRows(base: ArmSetup, overrides: ArmOverrides): ArmRow[] {
   const arm = mergeArm(base, overrides);
-  return ROW_KEYS.map((key) => {
-    const format = FORMAT[key];
+  return armRowKeys(base).map((key) => {
+    if (isStageKey(key)) return stageRow(base, arm, key);
+    const format = FORMAT[key as Exclude<FixedKey, 'flow'>];
     const was = format.was === null ? undefined : (format.was ?? ((b: ArmSetup, a: ArmSetup) => format.show(b, a)))(base, arm);
-    return { key, label: format.label, value: format.show(arm, base), ...(was === undefined ? {} : { was }), overridden: !same(readRow(arm, key), readRow(base, key)) };
+    return { key, label: t(format.label), value: format.show(arm, base), ...(was === undefined ? {} : { was }), overridden: !same(readRow(arm, key as FixedKey), readRow(base, key as FixedKey)) };
   });
 }
 
-/** The card's footer (decided with the user): the rows the arm leaves as the base has them, the four stages as `agentes` when none differs
- *  (the screen's A and D); the pinned plugin and the seed are not rows. */
+/** The card's footer (decided with the user): the rows the arm leaves as the base has them, every stage as `etapas` when none differs and the
+ *  two rules lists as `regras` when both are kept; the pinned plugin and the seed are not rows. */
 export function sameRows(rows: readonly ArmRow[]): string {
   const kept = rows.filter((r) => !r.overridden);
   if (kept.length === rows.length) return t('benchmark.arms.footer.all');
   if (kept.length === 0) return t('benchmark.arms.footer.none');
-  const isEveryStage = ROLES.every((role) => kept.some((r) => r.key === role));
-  const labels = [...(isEveryStage ? [t('benchmark.arms.row.agents')] : []), ...kept.filter((r) => !(isEveryStage && isRole(r.key))).map((r) => t(r.label))];
+  const stages = rows.filter((r) => isStageKey(r.key));
+  const keptStages = kept.filter((r) => isStageKey(r.key));
+  const isEveryStage = keptStages.length === stages.length;
+  const isBothRules = kept.some((r) => r.key === 'rules.allow') && kept.some((r) => r.key === 'rules.deny');
+  const labels = [
+    ...(isEveryStage ? [t('benchmark.arms.row.stages')] : keptStages.map((r) => r.label)),
+    ...kept.filter((r) => !isStageKey(r.key)).flatMap((r) => {
+      if (!isBothRules || (r.key !== 'rules.allow' && r.key !== 'rules.deny')) return [r.label];
+      return r.key === 'rules.allow' ? [t('benchmark.arms.row.rules')] : [];
+    }),
+  ];
   return t('benchmark.arms.footer.same', { rows: labels.join(', ') });
 }

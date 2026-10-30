@@ -13,7 +13,7 @@ export type ChartSelection = { kind: 'stage' | 'transition'; id: string; back?: 
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 64; // 6b's node (#887)
 // 6b's canvas (#887): 1px dots of --border on a 16px grid, inline so they follow the theme's token
-const CANVAS = { backgroundImage: 'radial-gradient(color-mix(in srgb, var(--border) 90%, transparent) 1px, transparent 1px)', backgroundSize: '16px 16px' };
+export const CANVAS = { backgroundImage: 'radial-gradient(color-mix(in srgb, var(--border) 90%, transparent) 1px, transparent 1px)', backgroundSize: '16px 16px' };
 
 /** The action's icon (#134, 6b's table): bot, list-checks, workflow, scale, user-check, trash-2. */
 export const actionIcon = (s: StageDraft): LucideIcon =>

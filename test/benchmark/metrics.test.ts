@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseShortstat, readInterventions, runMetrics, stageSpans } from '../../src/benchmark/metrics.js';
 import { costOf } from '../../src/benchmark/prices.js';
-import type { WatchState, WatchTask } from '../../src/benchmark/watcher.js';
+import { DONE_STAGE, type WatchState, type WatchTask } from '../../src/benchmark/watcher.js';
 import type { ActivityRecord, Intervention, TaskUsage } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
 import { snap, task, watchTask } from './fixtures.js';
@@ -26,7 +26,7 @@ const MODEL_TOKENS = {
 };
 
 test('stageSpans measures each stage up to the next entry, stops at Done, and runs an unfinished stage to the end (#105)', () => {
-  const entries = [{ stage: 'Spec', at: T0 }, { stage: 'Plan', at: plus(10) }, { stage: 'Build', at: plus(40) }, { stage: 'Merge', at: plus(120) }, { stage: 'Done', at: plus(130) }];
+  const entries = [{ stage: 'Spec', at: T0 }, { stage: 'Plan', at: plus(10) }, { stage: 'Build', at: plus(40) }, { stage: 'Merge', at: plus(120) }, { stage: DONE_STAGE, at: plus(130) }];
   assert.deepEqual(stageSpans(entries, plus(500)), [{ stage: 'Spec', ms: 600_000 }, { stage: 'Plan', ms: 1_800_000 }, { stage: 'Build', ms: 4_800_000 }, { stage: 'Merge', ms: 600_000 }]);
   assert.deepEqual(stageSpans(entries.slice(0, 3), plus(100)), [{ stage: 'Spec', ms: 600_000 }, { stage: 'Plan', ms: 1_800_000 }, { stage: 'Build', ms: 3_600_000 }]);
   assert.deepEqual(stageSpans([], plus(1)), []);
@@ -41,7 +41,7 @@ test('parseShortstat reads git diff --shortstat, with either count missing and w
 
 test("runMetrics gives the result screen's run B · par 1: tokens, time without sleep, waiting, restarts with where, diff, tests and cost (#473)", () => {
   const usages = [usage(800_000, 22), usage(700_000, 38), usage(1_100_000, 72, 18)];
-  const state = usages.reduce((s, u, i) => withRecord(s, i + 1, { usage: u, result: { merged: true, testsGreen: true } }), snap([task(1, 'Done'), task(2, 'Done'), task(3, 'Done')]));
+  const state = usages.reduce((s, u, i) => withRecord(s, i + 1, { usage: u, result: { merged: true, testsGreen: true } }), snap([task(1, DONE_STAGE), task(2, DONE_STAGE), task(3, DONE_STAGE)]));
   const watch = watchOf(SCREEN_TASKS, { 'local:1': { Build: ['r1'] }, 'local:2': { Build: ['r2'] }, 'local:3': { Spec: ['r3'], Build: ['r4', 'r5'] } });
   const diff = { files: 33, insertions: 3480, deletions: 540 };
   const { metrics, unpriced } = runMetrics({ startedAt: T0, endedAt: plus(325), sleptMs: 30 * 60_000, watch, state, diff, modelTokens: MODEL_TOKENS });
@@ -59,7 +59,7 @@ test("runMetrics gives the result screen's run B · par 1: tokens, time without 
 
 test('runMetrics counts restarts in every stage, one where entry per stage and task in seed order; tests count only a boolean testsGreen; sleep past the span is 0 ms (#473)', () => {
   const watch = watchOf([watchTask(1), watchTask(2)], { 'local:1': { Spec: ['r1', 'r2'], Build: ['r3', 'r4'] }, 'local:2': { Plan: ['r5'], Build: ['r6', 'r7', 'r8'] } });
-  const state = withRecord(withRecord(snap([task(1, 'Done'), task(2, 'Done')]), 1, { result: { testsGreen: false } }), 2, { result: { testsGreen: 'yes' } });
+  const state = withRecord(withRecord(snap([task(1, DONE_STAGE), task(2, DONE_STAGE)]), 1, { result: { testsGreen: false } }), 2, { result: { testsGreen: 'yes' } });
   const { metrics } = runMetrics({ ...FACTS, sleptMs: 2 * 3_600_000, watch, state });
   assert.deepEqual(metrics.restarts, { count: 4, where: ['spec · T1', 'build · T1', 'build · T2'] });
   assert.deepEqual(metrics.tasks.map((t) => t.restarts), [2, 2]);

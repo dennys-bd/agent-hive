@@ -19,8 +19,12 @@ afterEach(() => vi.unstubAllGlobals());
 
 test("the screen's sample: counts, rows, B's none line, D's struck base tasks and yellow line, the footers (#462)", () => {
   render(<Tab />);
-  expect(['A', 'B', 'C', 'D'].map((l) => within(card(l)).getByText(/^\d+ sobreposiç/).textContent)).toEqual(['2 sobreposições', '0 sobreposições', '1 sobreposição', '1 sobreposição']);
+  expect(['A', 'B', 'C', 'D'].map((l) => within(card(l)).getByText(/^\d+ sobreposiç/).textContent)).toEqual(['4 sobreposições', '0 sobreposições', '1 sobreposição', '1 sobreposição']);
   expect(within(card('A')).getByText('+ superpowers, ecc')).toBeInTheDocument();
+  expect(within(card('A')).getByText('/hive-spec')).toBeInTheDocument();
+  expect(within(card('A')).getByText('/hive:new-spec')).toHaveClass('line-through');
+  expect(within(card('A')).getByText('igual à base: Checks, Avaliação, PR, itens, tarefas, regras, worktree')).toBeInTheDocument();
+  expect(within(card('C')).getByText('Build')).toBeInTheDocument();
   expect(within(card('B')).getByText('nenhuma sobreposição · este braço é a própria base')).toBeInTheDocument();
   expect(within(card('B')).getByText('igual à base: tudo')).toBeInTheDocument();
   expect(within(card('C')).getByText('codex · gpt-5')).toBeInTheDocument();
@@ -31,11 +35,14 @@ test("the screen's sample: counts, rows, B's none line, D's struck base tasks an
   expect(within(card('A')).queryByText(WARNING)).not.toBeInTheDocument();
 });
 
-test('the base card lists the stages, skills, the pinned plugin and seed, the tasks with their hash and the rules (#462)', () => {
+test('the base card lists the flow, its agent stages, skills, the pinned plugin and seed, the tasks with their hash and the rules (#462, #536)', () => {
   render(<Tab />);
   const base = within(screen.getByRole('region', { name: 'base' }));
+  expect(base.getByText(`${ARMS.workspace} · 6 etapas`)).toBeInTheDocument();
+  expect(base.getByText('PR')).toBeInTheDocument();
   expect(base.getByText('claude · haiku')).toBeInTheDocument();
-  expect(base.getByText('/hive:new-spec /hive:new-plan /hive:new-build /hive:new-pr')).toBeInTheDocument();
+  expect(base.queryByText('Checks')).not.toBeInTheDocument();
+  expect(base.getByText('/hive:new-spec /hive:new-plan /hive:new-build')).toBeInTheDocument();
   expect(base.getByText(`hive ${ARMS.plugin.version} · ${ARMS.plugin.hash.slice(0, 6)}`)).toBeInTheDocument();
   expect(base.getByText('8 tarefas · 3 bloqueios · t·91d4')).toBeInTheDocument();
   expect(base.getByText('14 permitidas · gh, push * negadas')).toBeInTheDocument();
@@ -46,8 +53,8 @@ test("abrir settings opens the arm's settings, and on the base card the base mod
   stubBenchmarkFetch();
   render(<Tab />);
   await user.click(within(card('C')).getByRole('button', { name: 'abrir settings' }));
-  expect(await screen.findByRole('dialog', { name: 'braço C · plugin + codex' })).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  expect(await screen.findByRole('alertdialog', { name: 'C Plugin + codex' })).toBeInTheDocument();
+  await user.click(within(screen.getByRole('alertdialog')).getAllByRole('button', { name: 'cancelar' })[0]);
   await user.click(within(screen.getByRole('region', { name: 'base' })).getByRole('button', { name: 'abrir settings' }));
-  expect(await screen.findByRole('dialog', { name: 'base · todos os braços' })).toBeInTheDocument();
+  expect(await screen.findByRole('alertdialog', { name: 'Base' })).toBeInTheDocument();
 });

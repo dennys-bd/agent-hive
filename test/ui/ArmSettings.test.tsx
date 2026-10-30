@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ArmSettings } from '@/components/benchmark/arms/ArmSettings';
@@ -12,97 +12,198 @@ type User = ReturnType<typeof userEvent.setup>;
 beforeEach(() => setLanguage('pt'));
 afterEach(() => vi.unstubAllGlobals());
 const posts = (calls: Call[]): Call[] => calls.filter((c) => c.method !== 'GET'); // launch options and items load on open
-const pickAgent = async (user: User, role: string, agent: RegExp): Promise<void> => {
+const pickNode = (user: User, stage: string) => user.click(screen.getByRole('button', { name: new RegExp(`^${stage}`) }));
+const node = (stage: string): HTMLElement => screen.getByRole('button', { name: new RegExp(`^${stage}`) });
+const pickAgent = async (user: User, stage: string, agent: RegExp): Promise<void> => {
   // Radix Select in jsdom ignores a second pointer open after a pick; the keyboard opens it every time
-  screen.getByRole('combobox', { name: `agente de ${role}` }).focus();
+  screen.getByRole('combobox', { name: `agente de ${stage}` }).focus();
   await user.keyboard('{Enter}');
   await user.click(await screen.findByRole('option', { name: agent }));
 };
-const pickModel = async (user: User, role: string, name: RegExp): Promise<void> => {
-  await user.click(screen.getByRole('combobox', { name: `modelo de ${role}` }));
+const pickModel = async (user: User, stage: string, name: RegExp): Promise<void> => {
+  await user.click(screen.getByRole('combobox', { name: `modelo de ${stage}` }));
   await user.click(await screen.findByRole('option', { name }));
 };
 // a bare undefined would take a default, so base mode passes its armId explicitly
+const save = (user: User) => user.click(screen.getByRole('button', { name: /^salvar/ }));
 const open = (experiment: Experiment = ARMS, armId?: string) => {
   const onClose = vi.fn();
-  render(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={experiment} armId={armId} onClose={onClose} /></AgentsContext.Provider>);
+  render(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={experiment} armId={armId} onClose={onClose} onShowConfig={vi.fn()} /></AgentsContext.Provider>);
   return onClose;
 };
 
-test("editing build's agent raises the count, voltar à base lowers it, and closing posts the arm's overrides once (#462)", async () => {
+test("editing Build's agent raises the count, voltar à base lowers it, and salvar posts the arm's overrides once (#462, #536)", async () => {
   const user = userEvent.setup();
   const calls = stubBenchmarkFetch();
   const onClose = open(ARMS, 'a2');
-  const dialog = screen.getByRole('dialog', { name: 'braço B · skills do plugin' });
-  expect(within(dialog).getByText('0 sobreposições')).toBeInTheDocument();
-  await pickAgent(user, 'build', /codex/i);
-  expect(within(dialog).getByText('1 sobreposição')).toBeInTheDocument();
-  await user.click(within(dialog).getByRole('button', { name: 'voltar à base: build' }));
-  expect(within(dialog).getByText('0 sobreposições')).toBeInTheDocument();
-  await pickAgent(user, 'build', /codex/i);
-  await user.click(within(dialog).getByRole('button', { name: 'fechar' }));
+  const dialog = screen.getByRole('alertdialog', { name: 'B Skills do plugin' });
+  expect(within(dialog).getByText('nenhuma sobreposição · este braço é a própria base')).toBeInTheDocument();
+  await pickNode(user, 'Build');
+  await pickAgent(user, 'Build', /codex/i);
+  expect(within(dialog).getByText('1 sobreposição · o resto segue a base')).toBeInTheDocument();
+  await user.click(within(dialog).getByRole('button', { name: 'voltar à base: Build' }));
+  expect(within(dialog).getByText('nenhuma sobreposição · este braço é a própria base')).toBeInTheDocument();
+  await pickAgent(user, 'Build', /codex/i);
+  await save(user);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   // another agent drops the base's sonnet: codex runs its own default model
-  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { stages: { build: { agent: 'codex', model: null } } } } }]);
+  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { stages: { Build: { agent: 'codex', model: null } } } } }]);
+});
+
+test('clicking a node shows its editor; editing Build\'s agent marks its node and row; voltar à base clears both (#536)', async () => {
+  const user = userEvent.setup();
+  stubBenchmarkFetch();
+  open(ARMS, 'a2');
+  expect(node('Spec')).toHaveAttribute('aria-current', 'true');
+  await pickNode(user, 'Build');
+  expect(node('Build')).toHaveAttribute('aria-current', 'true');
+  expect(node('Spec')).not.toHaveAttribute('aria-current');
+  await pickAgent(user, 'Build', /codex/i);
+  expect(within(node('Build')).getByRole('img', { name: 'sobreposta neste braço' })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Build' })).toHaveClass('bg-accent');
+  expect(within(screen.getByRole('region', { name: 'Build' })).getByText('claude · sonnet').tagName).toBe('S');
+  expect(screen.getByText('1 sobreposição · o resto segue a base')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'voltar à base: Build' }));
+  expect(within(node('Build')).queryByRole('img')).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Build' })).not.toHaveClass('bg-accent');
+});
+
+test("an arm's overridden prompt stage shows the base's call struck under the row (#536)", async () => {
+  stubBenchmarkFetch();
+  open(ARMS, 'a1');
+  const spec = within(screen.getByRole('region', { name: 'Spec' }));
+  expect(spec.getByRole('textbox', { name: 'prompt de Spec' })).toHaveValue('/hive-spec {id}');
+  expect(spec.getByText('/hive:new-spec').tagName).toBe('S');
+});
+
+test('locked mode keeps node picking (#536)', async () => {
+  const user = userEvent.setup();
+  stubBenchmarkFetch();
+  open({ ...ARMS, status: 'running' }, 'a3');
+  await pickNode(user, 'PR');
+  expect(node('PR')).toHaveAttribute('aria-current', 'true');
+  expect(screen.getByRole('textbox', { name: 'prompt de PR' })).toBeDisabled();
 });
 
 test("the model menu offers the agent's default (model null over the base's) and the base's model, which resets the field (#462)", async () => {
   const user = userEvent.setup();
   const calls = stubBenchmarkFetch();
   const onClose = open(ARMS, 'a2');
-  await pickModel(user, 'build', /^o padrão do agente/);
-  expect(screen.getByText('1 sobreposição')).toBeInTheDocument();
-  await pickModel(user, 'build', /^o da base: sonnet/);
-  expect(screen.getByText('0 sobreposições')).toBeInTheDocument();
-  await pickModel(user, 'build', /^o padrão do agente/);
-  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  await pickNode(user, 'Build');
+  await pickModel(user, 'Build', /^o padrão do agente/);
+  expect(screen.getByText('1 sobreposição · o resto segue a base')).toBeInTheDocument();
+  await pickModel(user, 'Build', /^o da base: sonnet/);
+  expect(screen.getByText('nenhuma sobreposição · este braço é a própria base')).toBeInTheDocument();
+  await pickModel(user, 'Build', /^o padrão do agente/);
+  await save(user);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
-  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { stages: { build: { model: null } } } } }]);
+  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { stages: { Build: { model: null } } } } }]);
 });
 
-test('closing untouched posts nothing; Esc closes too (#462)', async () => {
+test('salvar posts the overrides once; cancelar, Esc and × post nothing (#536)', async () => {
   const user = userEvent.setup();
   const calls = stubBenchmarkFetch();
   const onClose = open(ARMS, 'a3');
-  await user.keyboard('{Escape}');
+  await save(user);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts(calls)).toEqual([]);
+});
+
+test('cancelar, Esc and × drop an edited draft and post nothing (#536)', async () => {
+  const user = userEvent.setup();
+  const calls = stubBenchmarkFetch();
+  const onClose = open(ARMS, 'a2');
+  await pickAgent(user, 'Spec', /codex/i);
+  await user.click(within(screen.getByRole('alertdialog')).getAllByRole('button', { name: 'cancelar' }).at(-1) as HTMLElement);
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
+  await user.click(within(screen.getByRole('alertdialog')).getAllByRole('button', { name: 'cancelar' })[0]);
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(3));
+  expect(posts(calls)).toEqual([]);
+});
+
+test('só sobreposições hides the rows equal to the base; with none overridden it says so (#536)', async () => {
+  const user = userEvent.setup();
+  stubBenchmarkFetch();
+  open(ARMS, 'a3');
+  expect(screen.getByRole('region', { name: 'plugins' })).toBeInTheDocument();
+  await user.click(screen.getByRole('switch', { name: 'só sobreposições' }));
+  expect(screen.queryByRole('region', { name: 'plugins' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Spec' })).not.toBeInTheDocument();
+  await pickNode(user, 'Build');
+  expect(screen.getByRole('region', { name: 'Build' })).toBeInTheDocument();
+});
+
+test('só sobreposições on an arm with no override reads nenhuma sobreposição (#536)', async () => {
+  const user = userEvent.setup();
+  stubBenchmarkFetch();
+  open(ARMS, 'a2');
+  await user.click(screen.getByRole('switch', { name: 'só sobreposições' }));
+  expect(screen.getByText('nenhuma sobreposição: este braço é a própria base.')).toBeInTheDocument();
+});
+
+test('locked: the lock note, no salvar, no voltar à base, and ver em config still works (#536)', async () => {
+  const user = userEvent.setup();
+  stubBenchmarkFetch();
+  const onShowConfig = vi.fn();
+  render(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={{ ...ARMS, status: 'running' }} onClose={vi.fn()} onShowConfig={onShowConfig} /></AgentsContext.Provider>);
+  expect(screen.getByRole('status')).toHaveTextContent('só leitura');
+  expect(screen.queryByRole('button', { name: /^salvar/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /voltar à base/ })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'fechar' })).toHaveLength(2);
+  await user.click(screen.getByRole('button', { name: 'ver em config' })); // base-only row: the arm has none
+  expect(onShowConfig).toHaveBeenCalled();
+});
+
+test('base mode: each row names the arms that override it, Build\'s names A and C, and the footer names them all (#536)', async () => {
+  const user = userEvent.setup();
+  stubBenchmarkFetch();
+  open(ARMS);
+  expect(within(screen.getByRole('region', { name: 'Spec' })).getByText('A sobrepõe')).toBeInTheDocument();
+  await pickNode(user, 'Build');
+  expect(within(screen.getByRole('region', { name: 'Build' })).getByText('A e C sobrepõem')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'plugins' })).getByText('A sobrepõe')).toBeInTheDocument();
+  expect(screen.getByText('salvar muda a base de A, B, C e D nas linhas que eles não sobrepõem.')).toBeInTheDocument();
 });
 
 test('a refused save keeps the dialog open (#462)', async () => {
   const user = userEvent.setup();
   stubBenchmarkFetch(409);
   const onClose = open(ARMS, 'a2');
-  await user.type(screen.getByRole('textbox', { name: 'skill de spec' }), 'x');
-  await user.click(screen.getByRole('button', { name: 'fechar' }));
-  await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+  await user.type(screen.getByRole('textbox', { name: 'prompt de Spec' }), 'x');
+  await save(user);
+  await waitFor(() => expect(screen.getByRole('alertdialog')).toBeInTheDocument());
   expect(onClose).not.toHaveBeenCalled();
 });
 
-test('a running experiment opens read only and closing posts nothing (#462)', async () => {
+test('a running experiment opens read only: fechar posts nothing (#462)', async () => {
   const user = userEvent.setup();
   const calls = stubBenchmarkFetch();
   const onClose = open({ ...ARMS, status: 'running' }, 'a3');
-  expect(screen.getByRole('combobox', { name: 'agente de build' })).toBeDisabled();
-  expect(screen.getByRole('combobox', { name: 'modelo de build' })).toBeDisabled();
-  expect(screen.getByRole('textbox', { name: 'skill de spec' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'voltar à base: build' })).toBeDisabled();
-  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  await pickNode(user, 'Build');
+  expect(screen.getByRole('combobox', { name: 'agente de Build' })).toBeDisabled();
+  expect(screen.getByRole('combobox', { name: 'modelo de Build' })).toBeDisabled();
+  expect(screen.getByRole('textbox', { name: 'prompt de Build' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'voltar à base: Build' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^salvar/ })).not.toBeInTheDocument();
+  await user.click(within(screen.getByRole('alertdialog')).getAllByRole('button', { name: 'fechar' }).at(-1) as HTMLElement);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts(calls)).toEqual([]);
 });
 
-test('base mode: every field plain, no igual à base, closing posts the whole base (#462)', async () => {
+test('base mode: every field plain, no igual à base, salvar posts the whole base (#462)', async () => {
   const user = userEvent.setup();
   const calls = stubBenchmarkFetch();
   open(ARMS);
-  expect(screen.getByRole('dialog', { name: 'base · todos os braços' })).toBeInTheDocument();
+  expect(screen.getByRole('alertdialog', { name: 'Base' })).toBeInTheDocument();
   expect(screen.queryByText('igual à base')).not.toBeInTheDocument();
-  const skill = screen.getByRole('textbox', { name: 'skill de spec' });
-  await user.clear(skill);
-  await user.type(skill, '/x');
-  await user.click(screen.getByRole('button', { name: 'fechar' }));
-  const base = { ...ARMS.base, stages: { ...ARMS.base.stages, spec: { ...ARMS.base.stages.spec, skill: '/x' } } };
+  const prompt = screen.getByRole('textbox', { name: 'prompt de Spec' });
+  await user.clear(prompt);
+  await user.type(prompt, '/x');
+  await save(user);
+  const flow = { ...ARMS.base.flow, stages: ARMS.base.flow.stages.map((s) => (s.name === 'Spec' ? { ...s, prompt: '/x' } : s)) };
+  const base = { ...ARMS.base, flow };
   await waitFor(() => expect(posts(calls)).toEqual([{ method: 'PATCH', path: ARMS_PATH, body: { base } }]));
 });
 
@@ -116,8 +217,8 @@ test('items lists the pinned items, each original or a pinned version; a pick is
   expect(build).toHaveTextContent('original');
   await user.click(build);
   await user.click(await screen.findByRole('option', { name: 'terse' }));
-  expect(screen.getByText('1 sobreposição')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  expect(screen.getByText('1 sobreposição · o resto segue a base')).toBeInTheDocument();
+  await save(user);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { items: { 'hive:new-build': 'terse' } } } }]);
   expect(calls).toContainEqual({ method: 'GET', path: `${ARMS_PATH}/items` });
@@ -126,9 +227,9 @@ test('items lists the pinned items, each original or a pinned version; a pick is
 test('an arm removed elsewhere while open closes the dialog without posting, never editing the base (#462)', async () => {
   const calls = stubBenchmarkFetch();
   const onClose = vi.fn();
-  const view = render(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={ARMS} armId="a2" onClose={onClose} /></AgentsContext.Provider>);
+  const view = render(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={ARMS} armId="a2" onClose={onClose} onShowConfig={vi.fn()} /></AgentsContext.Provider>);
   const without = { ...ARMS, arms: ARMS.arms.filter((a) => a.id !== 'a2') };
-  view.rerender(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={without} armId="a2" onClose={onClose} /></AgentsContext.Provider>);
+  view.rerender(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={without} armId="a2" onClose={onClose} onShowConfig={vi.fn()} /></AgentsContext.Provider>);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts(calls)).toEqual([]);
 });
@@ -137,11 +238,59 @@ test('a base edited elsewhere while open does not turn the fields the arm left a
   const user = userEvent.setup();
   const calls = stubBenchmarkFetch();
   const onClose = vi.fn();
-  const view = render(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={ARMS} armId="a2" onClose={onClose} /></AgentsContext.Provider>);
+  const view = render(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={ARMS} armId="a2" onClose={onClose} onShowConfig={vi.fn()} /></AgentsContext.Provider>);
   const edited = { ...ARMS, base: { ...ARMS.base, plugins: [...ARMS.base.plugins, 'elsewhere'] } };
-  view.rerender(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={edited} armId="a2" onClose={onClose} /></AgentsContext.Provider>);
-  await pickAgent(user, 'build', /codex/i);
-  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  view.rerender(<AgentsContext.Provider value={AGENTS}><ArmSettings experiment={edited} armId="a2" onClose={onClose} onShowConfig={vi.fn()} /></AgentsContext.Provider>);
+  await pickNode(user, 'Build');
+  await pickAgent(user, 'Build', /codex/i);
+  await save(user);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
-  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { stages: { build: { agent: 'codex', model: null } } } } }]);
+  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { stages: { Build: { agent: 'codex', model: null } } } } }]);
+});
+
+test('a denied rule added as a chip is a rules override; the allowed list stays the base\'s (#536)', async () => {
+  const user = userEvent.setup();
+  const calls = stubBenchmarkFetch();
+  const onClose = open(ARMS, 'a2');
+  await user.type(screen.getByRole('textbox', { name: 'adicionar regra negada' }), 'curl{Enter}');
+  expect(within(screen.getByRole('region', { name: 'negadas' })).getByText('voltar à base')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'permitidas' })).getByText('igual à base')).toBeInTheDocument();
+  await save(user);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { rules: { allow: ARMS.base.rules.allow, deny: ['gh', 'push *', 'curl'] } } } }]);
+});
+
+test('a plugin added as a chip is a plugins override (#536)', async () => {
+  const user = userEvent.setup();
+  const calls = stubBenchmarkFetch();
+  const onClose = open(ARMS, 'a2');
+  await user.type(screen.getByRole('textbox', { name: 'adicionar plugin' }), 'plugins/ecc{Enter}');
+  expect(screen.getByRole('button', { name: 'tirar plugins/ecc' })).toBeInTheDocument();
+  await save(user);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts(calls)).toEqual([{ method: 'PATCH', path: `${ARMS_PATH}/arms/a2`, body: { overrides: { plugins: ['plugins/ecc'] } } }]);
+});
+
+test("an arm on the base's tasks reads the summary with the hash; an arm with its own tasks shows the base struck and the yellow line (#536)", () => {
+  stubBenchmarkFetch();
+  open(ARMS, 'a3');
+  expect(screen.getByText('8 tarefas · 3 bloqueios · t·91d4')).toBeInTheDocument();
+  expect(screen.queryByRole('textbox', { name: 'chave' })).not.toBeInTheDocument();
+  cleanup();
+  open(ARMS, 'a4');
+  expect(screen.getByText('8 tarefas · 3 bloqueios · t·91d4').tagName).toBe('S');
+  expect(screen.getByText('tarefas diferentes da base · comparação só por run')).toHaveClass('text-waiting');
+  expect(screen.getAllByRole('textbox', { name: 'chave' })).toHaveLength(3);
+});
+
+test('a cleared prompt keeps salvar disabled with the error inline and posts nothing (#536)', async () => {
+  const user = userEvent.setup();
+  const calls = stubBenchmarkFetch();
+  open(ARMS, 'a2');
+  await user.clear(screen.getByRole('textbox', { name: 'prompt de Spec' }));
+  expect(screen.getByRole('button', { name: /^salvar/ })).toBeDisabled();
+  expect(screen.getByText('O prompt não pode ficar vazio.')).toBeInTheDocument();
+  await user.type(screen.getByRole('textbox', { name: 'prompt de Spec' }), '/x');
+  expect(screen.getByRole('button', { name: /^salvar/ })).toBeEnabled();
+  expect(posts(calls)).toEqual([]);
 });

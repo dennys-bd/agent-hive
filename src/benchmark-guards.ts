@@ -2,10 +2,11 @@
 // every enum is checked field by field; the deep config objects only by shape, since none reaches either before 1.2's routes validate them
 // on write. Then the boot rule. state.json is the user's file: a hand edit must not name a folder or a branch outside the experiment's own.
 import { join } from 'node:path';
+import type { STAGE_OVERRIDE_FIELDS } from './benchmark/arms.js';
 import { isVersionName } from './custom-versions.js';
 import { parseItemId } from './item-sources.js';
 import { COMMIT, isJsonObject } from './state-guards.js';
-import { AGENT_IDS, BENCH_RUN_STATUSES, BENCH_TOKEN, EXPERIMENT_ID, EXPERIMENT_STATUSES, isBranchName, type AgentId, type Arm, type BenchmarkState, type BenchRound, type BenchRun, type BenchRunStatus, type BenchStageRole, type Experiment, type ExperimentStatus } from './types.js';
+import { AGENT_IDS, BENCH_RUN_STATUSES, BENCH_TOKEN, EXPERIMENT_ID, EXPERIMENT_STATUSES, isBranchName, type AgentId, type Arm, type BenchmarkState, type BenchRound, type BenchRun, type BenchFlow, type BenchRunStatus, type Experiment, type StageOverride, type ExperimentStatus } from './types.js';
 
 const STRINGS = ['name', 'createdAt', 'workspace', 'seedHash', 'tasksHash'] as const;
 const OBJECTS = ['base', 'seed', 'pace', 'isolation', 'blindness', 'evaluation', 'createdBy', 'plugin'] as const;
@@ -43,25 +44,47 @@ const uniqueTokens = (rounds: BenchRound[]): BenchRound[] => {
   return rounds.map((round) => ({ ...round, runs: round.runs.filter((run) => all.find((other) => other.token === run.token) === run) }));
 };
 
-const ROLES: readonly BenchStageRole[] = ['spec', 'plan', 'build', 'pr'];
-const isPick = (v: unknown): boolean => isJsonObject(v) && isText(v.agent) && isText(v.skill) && isText(v.prompt);
-const isStages = (v: unknown): boolean => isJsonObject(v) && ROLES.every((role) => isPick(v[role]));
+const isTexts = (v: unknown): boolean => Array.isArray(v) && v.every(isText);
+// A copied stage talks to no source (#536): from and onStart were taken out, as was a transition's sources
+const isBenchStage = (v: unknown): boolean => isJsonObject(v) && isText(v.name) && v.from === undefined && v.onStart === undefined;
+const isBenchTransition = (v: unknown): boolean => isJsonObject(v) && isText(v.from) && isText(v.to) && isText(v.when) && v.sources === undefined;
+const isLine = (v: unknown): boolean => isJsonObject(v) && isText(v.name) && isText(v.line);
+const isListOf = (v: unknown, check: (item: unknown) => boolean): boolean => Array.isArray(v) && v.every(check);
+// Names are unique, and a transition leaves a stage and reaches a stage or the end
+function isWired(stages: unknown[], transitions: unknown[]): boolean {
+  const names = stages.map((s) => (s as { name: string }).name);
+  return new Set(names).size === names.length && transitions.every((t) => {
+    const { from, to } = t as { from: string; to: string };
+    return names.includes(from) && (to === 'end' || names.includes(to));
+  });
+}
+/** The shape of an experiment's copied flow (#536); schemas.ts reads it too. A base from before #536 holds stages, not a flow, so it fails. */
+export const isFlow = (v: unknown): v is BenchFlow =>
+  isJsonObject(v) && isText(v.copiedAt) && Array.isArray(v.stages) && v.stages.length > 0 && v.stages.every(isBenchStage)
+  && isListOf(v.transitions, isBenchTransition) && isListOf(v.commands, isLine) && isTexts(v.dropped) && isWired(v.stages, v.transitions as unknown[]);
 // An item id and a version name become a folder under the run home's custom/ (3.1): one segment each, as the custom store names them
 const isItems = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([id, version]) => parseItemId(id) !== undefined && isVersionName(version));
 const isWorktree = (v: unknown): boolean => isJsonObject(v) && isText(v.setup) && isText(v.teardown);
-const SETUP_CHECKS: Record<string, (v: unknown) => boolean> = { stages: isStages, items: isItems, worktree: isWorktree };
-const PICK_FIELDS: readonly string[] = ['agent', 'model', 'skill', 'prompt'];
-// An arm's stage holds only the fields it changes (#462): each one present is a string, under a known role; model may be null (the agent's default)
-const isPickField = (key: string, field: unknown): boolean => PICK_FIELDS.includes(key) && (isText(field) || (key === 'model' && field === null));
-const isPartialPick = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([key, field]) => isPickField(key, field));
-const isPartialStages = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([role, pick]) => (ROLES as readonly string[]).includes(role) && isPartialPick(pick));
-const OVERRIDE_CHECKS: Record<string, (v: unknown) => boolean> = { ...SETUP_CHECKS, stages: isPartialStages };
+const SETUP_CHECKS: Record<string, (v: unknown) => boolean> = { flow: isFlow, items: isItems, worktree: isWorktree };
+const isAgent = (v: unknown): boolean => AGENT_IDS.includes(v as AgentId);
+// An arm's stage holds only the fields it changes (#462), each with its own check; model may be null (the agent's default)
+const FIELD_CHECKS: Record<(typeof STAGE_OVERRIDE_FIELDS)[number], (v: unknown) => boolean> = {
+  agent: isAgent, model: (v) => v === null || (isText(v) && v !== ''), prompt: isText, skill: isText, commands: isTexts,
+  judge: (v) => isJsonObject(v) && isAgent(v.agent), threshold: isNumber,
+};
+const isFieldOf = (key: string): key is keyof StageOverride => Object.hasOwn(FIELD_CHECKS, key);
+const isStageOverride = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([key, field]) => isFieldOf(key) && FIELD_CHECKS[key](field));
+// By stage name (#536): any name loads, since an override for a stage the flow lacks is never read
+const isStageOverrides = (v: unknown): boolean => isJsonObject(v) && Object.values(v).every(isStageOverride);
+const OVERRIDE_CHECKS: Record<string, (v: unknown) => boolean> = { items: isItems, worktree: isWorktree, stages: isStageOverrides };
 // The base holds every field; an arm's overrides only the ones it changes
 const isSetup = (v: unknown, partial: boolean): boolean =>
   isJsonObject(v) && Object.entries(partial ? OVERRIDE_CHECKS : SETUP_CHECKS).every(([key, check]) => (partial && v[key] === undefined) || check(v[key]));
 
 // An arm id keys the isolation rows' perArm and may name a folder: the experiment id's shape, so no `__proto__` or `constructor` either
-const isArm = (value: unknown): value is Arm => isJsonObject(value) && isText(value.id) && EXPERIMENT_ID.test(value.id) && isText(value.letter) && isSetup(value.overrides, true);
+// An override holding flow would be a second copy no route can write: the arm is dropped
+const isArm = (value: unknown): value is Arm =>
+  isJsonObject(value) && isText(value.id) && EXPERIMENT_ID.test(value.id) && isText(value.letter) && isSetup(value.overrides, true) && isJsonObject(value.overrides) && value.overrides.flow === undefined;
 const isSeedCommit = (seed: unknown): boolean => isJsonObject(seed) && isText(seed.commit) && COMMIT.test(seed.commit);
 
 // The tester and the number of walks reach a headless run's argv and a loop's bound (#474): checked here, not only by shape

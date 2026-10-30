@@ -8,7 +8,7 @@ import { tempDir } from '../temp-dir.js';
 import { arm, experiment } from './fixtures.js';
 
 const EXP = experiment({
-  arms: [{ ...arm('a1', 'A'), name: 'Control' }, { ...arm('a2', 'B', { stages: { build: { skill: '/superpowers:executing-plans' } }, plugins: ['/plugins/superpowers'] }), name: 'Turbo' }],
+  arms: [{ ...arm('a1', 'A'), name: 'Control' }, { ...arm('a2', 'B', { stages: { Build: { prompt: '/superpowers:executing-plans {title}' } }, plugins: ['/plugins/superpowers'] }), name: 'Turbo' }],
   blindness: { on: true, forbiddenWords: ['benchmark'] },
 });
 const TELLS = blindTells(EXP, ['code-reviewer']);

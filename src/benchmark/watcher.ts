@@ -1,7 +1,7 @@
 import { activityOf, resultOf, taskOfWorker } from '../activities.js';
 import type { Intervention, State, Status, Task, TaskProgressState } from '../types.js';
 
-export const DONE_STAGE = 'Done';
+export const DONE_STAGE = 'Delivered'; // #536: a real flow has a Done stage of its own
 export const POLL_MS = 15_000;
 const UNREACHABLE_MAX = 4; // failed reads in a row before the run is an error: a daemon busy for a minute is not dead
 
