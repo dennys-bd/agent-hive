@@ -12,12 +12,13 @@ const FILE = '/docs-repo/agent/specs/2026-10-11-site-decomposition.md';
 const PATH = 'agent/specs/2026-10-11-site-decomposition.md';
 
 // git as the checkout read meets it: `answers` by subcommand; a missing one throws, as git does outside a checkout
-// `ignore` is check-ignore's exit code: 0 ignored, 1 not (the default), else a failure
+// `ignore` is check-ignore's exit code: 0 ignored, 1 not (the default), else a failure. Like git 2.50, check-ignore refuses --literal-pathspecs
 function checkoutGit(answers: Partial<Record<'rev-parse' | 'get-url' | 'branch', string>>, ignore = 1) {
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
     calls.push([file, ...args]);
     if (args.includes('check-ignore')) {
+      if (args.includes('--literal-pathspecs')) throw Object.assign(new Error('Command failed'), { code: 128, stderr: 'fatal: pathspec magic not supported by this command: \'literal\'\n' });
       if (ignore === 0) return { stdout: '' };
       throw Object.assign(new Error('Command failed'), { code: ignore, stderr: ignore === 1 ? '' : 'fatal: bad\n' });
     }
@@ -37,8 +38,13 @@ test('fileCheckout reads the toplevel from the file\'s folder, then that checkou
     ['git', '-C', '/docs-repo/agent/specs', 'rev-parse', '--show-toplevel'],
     ['git', '-C', '/docs-repo', 'remote', 'get-url', 'origin'],
     ['git', '-C', '/docs-repo', 'branch', '--show-current'],
-    ['git', '--literal-pathspecs', '-C', '/docs-repo', 'check-ignore', '-q', '--', PATH],
+    ['git', '-C', '/docs-repo', 'check-ignore', '-q', '--', PATH],
   ]);
+});
+
+test('check-ignore runs without --literal-pathspecs, which it refuses: a file with glob characters still reads (#544)', async () => {
+  const { exec } = checkoutGit(FULL);
+  assert.equal((await fileCheckout(exec, '/docs-repo/agent/specs/[a]*?.md')).ignored, false);
 });
 
 test('fileCheckout marks a file git ignores (exit 0), and a check-ignore failure other than exit 1 is an error (#936)', async () => {
