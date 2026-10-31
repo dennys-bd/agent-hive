@@ -32,8 +32,8 @@ export type SaveResult =
 /** What reload keeps of an editor across its edit (#717): the cursor and the scroll. */
 export interface KeptView { saveViewState(): unknown; restoreViewState(state: unknown): void }
 
-/** What a reveal moves (#717): the pane's editor. */
-export interface RevealView {
+/** What a reveal moves (#717), and what a moved tab's view state is read from and restored to (#551): the pane's editor. */
+export interface RevealView extends KeptView {
   setPosition(position: { lineNumber: number; column: number }): void;
   revealPositionInCenter(position: { lineNumber: number; column: number }): void;
   focus(): void;
@@ -50,6 +50,8 @@ const BOM = '\uFEFF';
 const listeners = new Set<() => void>();
 const views = new Map<string, RevealView>();
 const pending = new Map<string, FileAt>(); // a reveal asked while no pane shows the file
+const pendingViews = new Map<string, object>(); // a moved tab's view state while no pane shows the file yet (#551)
+const NEVER_SAVED = -1; // an alternative version id no model reaches: a moved buffer reads dirty even undone to its first text (#551)
 const UNTITLED = '\0untitled-'; // NUL never appears in a path, so an untitled buffer's key never meets a file's (#818)
 const NO_FILE: FileText = { path: '', text: '', version: '' };
 let untitledCount = 0; // the page's count, as VS Code's Untitled-N
@@ -122,8 +124,8 @@ let monacoLoad: Promise<typeof import('@/lib/monaco')> | undefined;
  * vitest's mocked module, and one shared promise is no worse in the app. */
 export const loadMonaco = (): Promise<typeof import('@/lib/monaco')> => (monacoLoad ??= import('@/lib/monaco'));
 
-async function create(activityId: string, path: string): Promise<editor.ITextModel> {
-  const [setup, file] = await Promise.all([loadMonaco(), isUntitledPath(path) ? Promise.resolve(NO_FILE) : readFile(activityId, path)]); // #818: no file behind an untitled one
+// The model over `file` under its key (#717), unless its tab closed while it was made; clean, or dirty from the start with NEVER_SAVED (#551)
+function register(setup: Awaited<ReturnType<typeof loadMonaco>>, activityId: string, path: string, file: FileText, savedVersionId?: number): editor.ITextModel {
   const model = setup.monaco.editor.createModel(file.text, languageOf(setup.monaco.languages.getLanguages(), path));
   if (cancelled.delete(keyOf(activityId, path))) {
     model.dispose();
@@ -131,9 +133,14 @@ async function create(activityId: string, path: string): Promise<editor.ITextMod
   }
   setup.applySyntaxFor(model, path); // #780: a syntax package, when one is installed
   model.onDidChangeContent(notify);
-  entries.set(keyOf(activityId, path), { activityId, path, model, base: file.version, savedVersionId: model.getAlternativeVersionId() });
+  entries.set(keyOf(activityId, path), { activityId, path, model, base: file.version, savedVersionId: savedVersionId ?? model.getAlternativeVersionId() });
   notify();
   return model;
+}
+
+async function create(activityId: string, path: string): Promise<editor.ITextModel> {
+  const [setup, file] = await Promise.all([loadMonaco(), isUntitledPath(path) ? Promise.resolve(NO_FILE) : readFile(activityId, path)]); // #818: no file behind an untitled one
+  return register(setup, activityId, path, file);
 }
 
 /** The file's model (#717): read and created on the first open, the same one after; a refused read rejects with a FileError. */
@@ -160,7 +167,7 @@ export const baseOf = (activityId: string, path: string): string | undefined => 
 
 /** The buffer's text while an editor pane holds the file (#697): what its preview renders, unsaved edits included; undefined otherwise.
  * subscribe notifies on every edit, open and close. */
-export const textOf = (activityId: string, path: string): string | undefined => entryOf(activityId, path)?.model.getValue();
+export const textOf = (activityId: string, path: string, withBom = false): string | undefined => entryOf(activityId, path)?.model.getValue(undefined, withBom);
 
 // The entry with its new base and clean point, unless it closed meanwhile
 function settle(activityId: string, path: string, change: Pick<Entry, 'base' | 'savedVersionId'>): void {
@@ -238,6 +245,38 @@ export function keepMine(activityId: string, path: string, version: string): voi
   if (entry !== undefined) settle(activityId, path, { base: version, savedVersionId: entry.savedVersionId });
 }
 
+/** A moved tab's buffer on this page (#551): a new model with the carried text over the carried base, or, for a file already open here (a
+ *  changes tab that stayed), the text as one undoable edit and the base its own, as adopt does, so a pane showing it keeps a live model.
+ *  Dirty either way. A read already flying lands first, so it never replaces the carried text. */
+export async function seed(activityId: string, path: string, text: string, base: string): Promise<void> {
+  const key = keyOf(activityId, path);
+  await loading.get(key)?.catch(() => undefined); // a refused read leaves no model: the seed makes one below
+  const entry = entries.get(key);
+  if (entry !== undefined) {
+    replaceText(entry.model, text, views.get(key));
+    settle(activityId, path, { base, savedVersionId: NEVER_SAVED });
+    return;
+  }
+  cancelled.delete(key);
+  const made = loadMonaco().then((setup) => register(setup, activityId, path, { path, text, version: base }, NEVER_SAVED)).finally(() => loading.delete(key));
+  loading.set(key, made); // an open asked meanwhile waits for this model instead of reading the disk
+  await made;
+}
+
+/** The attached editor's view state (#551): selections, folding and scroll, opaque; undefined while no pane shows the file. */
+export function viewOf(activityId: string, path: string): object | undefined {
+  const state = views.get(keyOf(activityId, path))?.saveViewState();
+  return typeof state === 'object' && state !== null ? state : undefined; // Monaco answers null for an editor with no model
+}
+
+/** A moved tab's view state back on its editor (#551): at once while a pane shows the file, else when one next attaches, as a reveal waits. */
+export function restoreView(activityId: string, path: string, state: object): void {
+  const key = keyOf(activityId, path);
+  const view = views.get(key);
+  if (view === undefined) pendingViews.set(key, state);
+  else view.restoreViewState(state);
+}
+
 /** The file's model disposed and forgotten with its tab (#717), any waiting reveal with it. */
 export function close(activityId: string, path: string): void {
   const key = keyOf(activityId, path);
@@ -245,6 +284,7 @@ export function close(activityId: string, path: string): void {
   entries.get(key)?.model.dispose();
   entries.delete(key);
   pending.delete(key);
+  pendingViews.delete(key);
   views.delete(key);
   notify();
 }
@@ -284,6 +324,11 @@ export function revealAt(activityId: string, path: string, at: FileAt): void {
 export function attachView(activityId: string, path: string, view: RevealView): () => void {
   const key = keyOf(activityId, path);
   views.set(key, view);
+  const state = pendingViews.get(key);
+  if (state !== undefined) { // before the reveal, so a line a link asked for still wins the cursor
+    pendingViews.delete(key);
+    view.restoreViewState(state);
+  }
   const at = pending.get(key);
   if (at !== undefined) {
     pending.delete(key);
@@ -306,7 +351,7 @@ function moveKey<T>(map: Map<string, T>, from: string, to: string): void {
 }
 
 /** A path the files tree renamed or moved (#818): every open entry at `from`, or under it for a folder, re-keyed to its new path with its
- *  buffer, dirty or not, its pending reveal and its view; nothing is disposed. Then the listeners hear it, the center's tabs among them. */
+ *  buffer, dirty or not, its pending reveal and view state, and its view; nothing is disposed. Then the listeners hear it, the center's tabs among them. */
 export function renamed(activityId: string, from: string, to: string): void {
   for (const entry of [...entries.values()]) {
     const path = entry.activityId === activityId ? renamedPath(entry.path, from, to) : undefined;
@@ -316,6 +361,7 @@ export function renamed(activityId: string, from: string, to: string): void {
     entries.set(now, { ...entry, path });
     moveKey(views, was, now);
     moveKey(pending, was, now);
+    moveKey(pendingViews, was, now);
     moveBase(activityId, entry.path, path); // the base and the pick the panes compare with follow the file too
   }
   for (const listener of renameListeners) listener(activityId, from, to);
