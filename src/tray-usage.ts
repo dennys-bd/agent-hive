@@ -4,7 +4,7 @@ import type { MenuItemConstructorOptions, NativeImage } from 'electron';
 import { AGENTS } from './agents.js';
 import { AGENT_IDS, type AgentId, type PlanReadings, type RateLimits, type RateLimitWindow } from './types.js';
 import { t } from './ui/i18n.js';
-import { clock, countdown, type MeterBand, meterBand, PERCENT_MAX, windowLabel } from './ui/lib/usage.js';
+import { clock, countdown, type MeterBand, meterBand, PERCENT_MAX, shownWindow, windowLabel } from './ui/lib/usage.js';
 
 export const METER_WIDTH = 22; // the bar at 1x; the 2x representation doubles both
 export const METER_HEIGHT = 8;
@@ -22,9 +22,13 @@ const capitalized = (text: string): string => text.charAt(0).toUpperCase() + tex
  *  key with spaces. */
 export const windowName = (key: string): string => capitalized(windowLabel(key));
 
-/** `Session 82% · resets in 2h40m`: the countdown is the header's, from `now`, in the header's words, lower-case after the dot (#242). */
-export const usageLine = (key: string, limit: RateLimitWindow, now: number): string =>
-  `${windowName(key)} ${Math.round(limit.usedPercent)}% · ${t('limits.resets', { time: countdown(limit.resetsAt, now) })}`;
+/** `Session 82% · resets in 2h40m`: the countdown is the header's, from `now`, in the header's words, lower-case after the dot (#242). Past
+ * its reset a window reads as the footer shows it (#557, shownWindow): `Week 0% · resets in 3d`, `Session 0% · 5h`, or the name and 0% alone. */
+export function usageLine(key: string, limit: RateLimitWindow, now: number): string {
+  const { percent, resetsAt, length } = shownWindow(key, limit, now);
+  const reset = resetsAt === undefined ? length : t('limits.resets', { time: countdown(resetsAt, now) });
+  return reset === undefined ? `${windowName(key)} ${percent}%` : `${windowName(key)} ${percent}% · ${reset}`;
+}
 
 /** The line's bar: a rounded track filled from the left over `percent` in the band's color, the rest in translucent grey. */
 export function meterBitmap(percent: number, band: MeterBand, scale: 1 | 2): Buffer {
@@ -57,7 +61,7 @@ function agentLines(agent: AgentId, reading: RateLimits | undefined, now: number
   if (!reading || windows.length === 0) return [];
   const toolTip = capitalized(t('limits.at', { time: clock(reading.at, locale) })); // a reading can be old: it comes from a worker's status line
   return windows.map(([key, limit]): MenuItemConstructorOptions => {
-    const percent = Math.round(limit.usedPercent); // as the header rounds it, so the bar's band matches the number
+    const percent = shownWindow(key, limit, now).percent; // the line's number, so the bar's band matches it, a past window's 0 too (#557)
     return { label: `${AGENTS[agent].label} · ${usageLine(key, limit, now)}`, icon: icon(percent, meterBand(percent)), toolTip, click: onClick };
   });
 }

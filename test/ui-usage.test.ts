@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
-import { countdown, describeRules, duration, elapsed, fmt, HOUR_MS, inBackoff, latestQuota, meterBand, nextMorning, pauseUntil, percent, sourcePercent, timeLeft, usageTotals, windowLabel, windowResetsAt, withinLimit } from '../src/ui/lib/usage.js';
+import { countdown, DAY_MS, describeRules, duration, elapsed, fmt, HOUR_MS, inBackoff, latestQuota, meterBand, nextMorning, pauseUntil, percent, shownWindow, sourcePercent, timeLeft, usageTotals, windowLabel, windowResetsAt, withinLimit } from '../src/ui/lib/usage.js';
 import type { SourceQuota, SourceSync, State, UsageRule } from '../src/types.js';
 
 const NOW = Date.parse('2026-09-17T12:00:00.000Z');
@@ -165,4 +165,17 @@ test('describeRules names a rule\'s agent when it is not the default agent (#929
   const codexWeek = { source: 'week', percent: 90, signal: 'red', agent: 'codex' } as const;
   assert.equal(describeRules([codexWeek, { source: 'session', percent: 80, signal: 'yellow', agent: 'claude' }]), `${t('window.week')} ≥ 90% · codex, ${t('window.session')} ≥ 80%`);
   assert.equal(describeRules([codexWeek], 'codex'), `${t('window.week')} ≥ 90%`, 'the default agent: not named');
+});
+
+test('shownWindow: before its reset the rounded percent and the reset; past it 0%, five_hour and thirty_day their length, a week its next weekly reset, any other key nothing (#557)', () => {
+  const ahead = new Date(NOW + HOUR_MS).toISOString();
+  const past = (ms: number): string => new Date(NOW - ms).toISOString();
+  const inDays = (days: number): string => new Date(NOW + days * DAY_MS).toISOString();
+  assert.deepEqual(shownWindow('five_hour', { usedPercent: 46.4, resetsAt: ahead }, NOW), { percent: 46, resetsAt: ahead });
+  assert.deepEqual(shownWindow('five_hour', { usedPercent: 46, resetsAt: past(1) }, NOW), { percent: 0, length: '5h' });
+  assert.deepEqual(shownWindow('thirty_day', { usedPercent: 46, resetsAt: past(DAY_MS) }, NOW), { percent: 0, length: '30d' });
+  assert.deepEqual(shownWindow('seven_day', { usedPercent: 90, resetsAt: past(4 * DAY_MS) }, NOW), { percent: 0, resetsAt: inDays(3) });
+  assert.deepEqual(shownWindow('seven_day_opus', { usedPercent: 90, resetsAt: past(17 * DAY_MS) }, NOW), { percent: 0, resetsAt: inDays(4) }, 'three weeks on');
+  assert.deepEqual(shownWindow('seven_day', { usedPercent: 90, resetsAt: past(0) }, NOW), { percent: 0, resetsAt: inDays(7) }, 'a reset at now is past');
+  assert.deepEqual(shownWindow('some_window', { usedPercent: 50, resetsAt: past(1) }, NOW), { percent: 0 });
 });

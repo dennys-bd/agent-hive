@@ -134,3 +134,19 @@ test('a one-agent refresh logs only that agent\'s reason: another agent\'s logge
   await server.refreshPlanLimits(true, ['codex']);
   assert.deepEqual(planLines(), ['INFO plan limits claude: HTTP 429'], 'never "claude: ok" from a read that did not read claude');
 });
+
+test('POST /plan-limits/refresh logs its reason every time it answers 502, a repeat and the no-window fallback included (#557)', async (t) => {
+  const { log, lines } = fakeLog();
+  let next: PlanLimitsReport = claudePlan(HIGH);
+  const { base, server } = await start(t, { readPlanLimits: async () => next, log });
+  await waitFor(() => server.getState()?.rateLimits !== undefined);
+  next = claudePlanFailure('HTTP 429');
+  for (let i = 0; i < 2; i += 1) assert.equal((await postJson(`${base}/plan-limits/refresh`)).status, 502);
+  next = claudePlan(undefined);
+  assert.equal((await postJson(`${base}/plan-limits/refresh`)).status, 502);
+  assert.deepEqual(lines.filter((l) => l.includes('plan limits refresh')), [
+    'INFO plan limits refresh: HTTP 429',
+    'INFO plan limits refresh: HTTP 429',
+    'INFO plan limits refresh: the usage endpoint answered no plan window',
+  ]);
+});

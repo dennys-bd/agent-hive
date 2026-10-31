@@ -89,3 +89,17 @@ test('×, Escape, a click outside and a second click on the chip close it; a cli
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(chip()).toHaveAttribute('aria-expanded', 'false');
 });
+
+test('a window past its reset reads 0%: the session and the 30 days their length, bare; the week reinicia and the time to its next reset (#557)', async () => {
+  const hoursAgo = (n: number): string => new Date(NOW.getTime() - n * 60 * MIN).toISOString();
+  const pastClaude: RateLimits = { at: claude.at, windows: { five_hour: { usedPercent: 80, resetsAt: hoursAgo(1) }, seven_day: { usedPercent: 92, resetsAt: hoursAgo(48) } } };
+  const pastCodex: RateLimits = { at: claude.at, windows: { thirty_day: { usedPercent: 46, resetsAt: hoursAgo(1) } } };
+  render(<AgentUsage state={{ rateLimits: { claude: pastClaude, codex: pastCodex } }} form="full" />);
+  expect(screen.getByTitle(/^codex ·/)).toHaveTextContent('30d0%30d');
+  await userEvent.setup().click(chip());
+  const [claudeRow, codexRow] = within(screen.getByRole('dialog')).getAllByRole('listitem');
+  expect(claudeRow).toHaveTextContent('sessão0%5h');
+  expect(within(claudeRow).queryByText(/reinicia 5h/)).toBeNull();
+  expect(claudeRow).toHaveTextContent('semana0%reinicia 5d');
+  expect(codexRow).toHaveTextContent('30 dias0%30d');
+});

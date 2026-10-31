@@ -1325,8 +1325,13 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     const reason = await refreshPlanLimits(true, agent === undefined ? undefined : [agent]);
-    if (reason === undefined) res.json({ ok: true });
-    else res.status(HTTP_BAD_GATEWAY).json({ error: reason });
+    if (reason === undefined) {
+      res.json({ ok: true });
+      return;
+    }
+    // #557: every failed ↻, every time. notePlanReason logs only a change, and NO_PLAN_READING is no agent's reason; the toast has copy only
+    log.info(`plan limits refresh: ${reason}`);
+    res.status(HTTP_BAD_GATEWAY).json({ error: reason });
   });
 
   // `hive stop` (with the UI header, like every dashboard POST). The answer goes out first; close() drops every connection, so
