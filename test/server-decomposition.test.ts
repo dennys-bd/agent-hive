@@ -219,7 +219,7 @@ test('POST commits a hand edit in the file\'s checkout, pushes its branch and op
   const dirty = await routes(t, { dirty: true });
   assert.equal((await post(dirty.url, CHOICE)).status, 200);
   const literal = (args: string[]): boolean => args[0] === '--literal-pathspecs';
-  assert.deepEqual(dirty.git.filter((args) => args.includes('--')).map(literal), [true, true, true, true], 'check-ignore, status, add and commit read the path literally');
+  assert.deepEqual(dirty.git.filter((args) => args.includes('--')).map(literal), [false, true, true, true], 'status, add and commit read the path literally; check-ignore refuses the flag (#544)');
   const plain = dirty.git.map((args) => (literal(args) ? args.slice(1) : args));
   assert.deepEqual(plain.map((args) => args.slice(2)), [
     ['rev-parse', '--show-toplevel'], ['remote', 'get-url', 'origin'], ['branch', '--show-current'], ['check-ignore', '-q', '--', 'decomposition.md'],

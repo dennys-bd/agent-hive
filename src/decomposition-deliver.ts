@@ -27,10 +27,11 @@ export async function fileCheckout(exec: Exec, file: string): Promise<FileChecko
   return { toplevel, repository, branch, path, ignored: await isIgnored(exec, toplevel, path) };
 }
 
-// check-ignore -q: exit 0 ignored, exit 1 not ignored, anything else is a failed read like the others
+// check-ignore -q: exit 0 ignored, exit 1 not ignored, anything else is a failed read like the others. check-ignore refuses
+// --literal-pathspecs (exit 128, #544) and never globs its argument after `--`, so it goes without
 async function isIgnored(exec: Exec, toplevel: string, path: string): Promise<boolean> {
   try {
-    await exec('git', ['--literal-pathspecs', '-C', toplevel, 'check-ignore', '-q', '--', path]);
+    await exec('git', ['-C', toplevel, 'check-ignore', '-q', '--', path]);
     return true;
   } catch (err) {
     if ((err as { code?: unknown }).code === 1) return false;
