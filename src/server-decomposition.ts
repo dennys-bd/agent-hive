@@ -14,7 +14,7 @@ import { activityFolders, DISK, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal } from './server-tasks.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { fetchStatusField, type GithubSourceConfig } from './sources/github.js';
-import type { Config, Decomposition, DecompositionPreview, DecompositionSource, Exec, Gql, HiveEvent, Stage, State, Task } from './types.js';
+import type { Config, Decomposition, DecompositionPreview, DecompositionSource, Exec, Gql, HiveEvent, Item, Stage, State, Task } from './types.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
@@ -37,7 +37,7 @@ const WRITING_MESSAGE = 'as issues desta decomposição já estão sendo criadas
 /** What the decomposition's routes need (#865). */
 export interface DecompositionRouteDeps {
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'> } } | undefined;
-  dispatch(event: HiveEvent): Promise<unknown>; // each step's decompositionIssue, then approve or closeTask
+  dispatch(event: HiveEvent): Promise<unknown>; // each step's decompositionIssue, then markEpic (#556) and approve, or closeTask
   exec: Exec; // git remote get-url origin: a local goal's repository; the file's checkout, and the delivery's status, add, commit and push (#936)
   gql: GqlJson; // gh api graphql --input -: the Hive's own login, as the issue page's writes (#757)
 }
@@ -55,6 +55,13 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 // fetchStatusField takes the polling transport's shape; the Hive's login answers the same query through stdin
 const asGql = (gql: GqlJson): Gql => (query, variables) => gql(query, variables ?? {});
 const githubSources = (config: Pick<Config, 'comb'>): GithubSourceConfig[] => config.comb.sources.filter((s): s is GithubSourceConfig => s.type === 'github');
+
+// #556: the stamp the GitHub adapter gives an issue with sub-issues (asEpic), read from the goal's own source: the next poll writes the same
+// value, so nothing flips. Under show and hide the goal never runs as a task; under ignore, or off any GitHub source of the Comb, none
+function epicOf(config: Pick<Config, 'comb'>, task: Task): Item['epic'] {
+  const source = githubSources(config).find((s) => s.name === task.item.source);
+  return source === undefined || source.epics === 'ignore' ? undefined : { follows: source.epicFollows, switchAt: source.switchAt };
+}
 
 // The file the result names, wherever it is (#936: a docsRepo outside the worktree included), resolved as the file routes resolve it (#258,
 // #697): absolute, or relative to the goal's worktree. Still under FILE_MAX, and a read failure keeps its fixed words
@@ -157,8 +164,8 @@ async function choiceOf(config: Pick<Config, 'comb'>, gql: GqlJson, body: unknow
 }
 
 // The write and the stage's end: the file's checkout resolved first (#936), so a file the Hive cannot deliver writes nothing; each step
-// dispatched as decompositionIssue before the next; the file delivered and its PR recorded as pr; `done` once everything is done; then approve for
-// a GitHub goal or closeTask for a local one, straight to the reducer, past the approve route's guard. An error is a 502 with GitHub's words, and the steps done stay
+// dispatched as decompositionIssue before the next; the file delivered and its PR recorded as pr; `done` once everything is done; then, for a GitHub goal whose source
+// shows or hides epics, markEpic (#556); then approve for a GitHub goal or closeTask for a local one, straight to the reducer, past the approve route's guard. An error is a 502 with GitHub's words, and the steps done stay
 async function write(deps: DecompositionRouteDeps, current: Live, activityId: string, body: unknown, res: Response): Promise<void> {
   const goal = await readGoal(deps, current, activityId);
   if ('status' in goal) return refuse(res, goal);
@@ -187,6 +194,9 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
   }, recorded);
   if (delivered !== undefined) return refuse(res, { status: HTTP_BAD_GATEWAY, message: delivered });
   await record(DONE_KEY, written.root);
+  // #556: stamped before the approve, so the approved stage spawns nothing of the goal's own and a held run ends instead of going on
+  const epic = goal.number === undefined ? undefined : epicOf(current.runtime.config, goal.task);
+  if (epic !== undefined) await deps.dispatch({ type: 'markEpic', taskId, epic });
   await deps.dispatch(goal.number === undefined ? { type: 'closeTask', taskId } : { type: 'approve', activityId });
   res.json({ ok: true });
 }

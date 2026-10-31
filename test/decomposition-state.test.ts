@@ -59,3 +59,50 @@ test('closeTask takes a local goal whose decomposition is written even while its
   assert.deepEqual([state.tasks.length, state.workers[0].status], [0, 'empty']);
   assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' ? [e.ptyId] : [])), [ptyId]);
 });
+
+// #556: the stamp the route sends for a goal whose source runs epics: show or hide
+const EPIC: NonNullable<Item['epic']> = { follows: 'aheadThenBehind', switchAt: 'spec' };
+const goalOf = (state: State) => state.tasks.find((t) => t.item.itemId === ID);
+
+test('markEpic stamps item.epic on the task without touching the state it read; no effect, no worker change, still awaiting in its stage (#556)', () => {
+  const before = deepFreeze(awaiting());
+  const { state, effects } = reduce(before, { type: 'markEpic', taskId: ID, epic: EPIC });
+  assert.deepEqual(goalOf(state)?.item.epic, EPIC);
+  assert.deepEqual([effects, goalOf(state)?.stage, state.workers], [[], 'goal', before.workers]);
+  assert.equal(activityOf(state, ID)?.approval?.since, activityOf(before, ID)?.approval?.since);
+  assert.equal(goalOf(before)?.item.epic, undefined, 'the state read is untouched');
+});
+
+test('markEpic on a task the Hive does not hold changes nothing (#556)', () => {
+  const state = deepFreeze(awaiting());
+  assert.equal(reduce(state, { type: 'markEpic', taskId: 'board:gone', epic: EPIC }).state, state);
+});
+
+test('the markEpic log line names the task only, never a title (#556)', () => {
+  assert.equal(describeEvent({ type: 'markEpic', taskId: ID, epic: EPIC }), 'markEpic #board:item1');
+});
+
+test('a goal stamped then approved with its run held: the run is killed, nothing spawns, and it waits as an epic in the approved stage until its children are listed (#556)', () => {
+  const held = awaiting();
+  const ptyId = held.workers[0].runId!;
+  const stamped = deepFreeze(reduce(held, { type: 'markEpic', taskId: ID, epic: EPIC }).state);
+  const { state, effects } = reduce(stamped, { type: 'approve', activityId: activityOf(stamped, ID)!.id });
+  assert.deepEqual([goalOf(state)?.stage, goalOf(state)?.item.epic, state.workers[0].status], ['spec', EPIC, 'empty']);
+  assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' ? [e.ptyId] : [])), [ptyId], 'answer -> canContinue -> goesOn skips the epic: the run ends');
+  assert.equal(effects.some((e) => e.type === 'spawn'), false, 'the freed worker finds no candidate: isIdle drops the epic');
+});
+
+const CHILD: Item = { itemId: 'board:item2', id: '2', title: 'Backend', body: '', url: 'https://github.com/o/r/issues/2', source: 'board', parent: ID };
+
+test('with its children already listed, the approved epic follows them to their stage in the same reduction, and only a child may spawn (#556)', () => {
+  const held = awaiting();
+  const ptyId = held.workers[0].runId!;
+  // the worker is held by the goal's approval, so this poll starts no child
+  const listed = reduce(held, { type: 'poll', source: 'board', items: [{ item: { ...item, children: [CHILD.itemId] }, column: 'Goals' }, { item: CHILD, column: 'Goals' }] }).state;
+  const stamped = deepFreeze(reduce(listed, { type: 'markEpic', taskId: ID, epic: EPIC }).state);
+  assert.equal(goalOf(stamped)?.stage, 'goal', 'its child is in goal: followEpics has nowhere to move it yet');
+  const { state, effects } = reduce(stamped, { type: 'approve', activityId: activityOf(stamped, ID)!.id });
+  assert.equal(goalOf(state)?.stage, 'goal', 'approved into spec, then followEpics put it back with its child');
+  assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' ? [e.ptyId] : [])), [ptyId]);
+  assert.equal(effects.some((e) => e.type === 'spawn' && e.task.item.itemId === ID), false);
+});

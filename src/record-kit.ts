@@ -2,7 +2,7 @@ import { activityOf, addUsage, heldRun, recordOf, recordsOf, recordWithSession, 
 import { NO_USAGE, runTime, sessionsOf, taskId, titled, workersOf } from './tasks.js';
 import { recordedIssues } from './decomposition.js';
 import { withLaunch } from './launch-pick.js';
-import type { Activity, ActivityRecord, AgentId, DeleteActivityScope, LaunchPick, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
+import type { Activity, ActivityRecord, AgentId, DeleteActivityScope, Item, LaunchPick, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
 
 // The record side of a task's runs (#629): its sessions, its usage, its result and its PRs, written to the records where tasks.ts wrote them
 // on the task. New work lands in the live activity's record; a session already listed is updated in the record that holds it. Pure.
@@ -93,6 +93,13 @@ export const withResult = (state: State, task: Task, result: Record<string, unkn
 /** One step of a decomposition's write (#865): `id` → the issue `number`, merged into the live record's result.decompositionIssues. */
 export const withDecompositionIssue = (state: State, task: Task, id: string, number: number): State =>
   withLive(state, task, (r) => ({ ...r, result: { ...r.result, decompositionIssues: { ...recordedIssues(r.result), [id]: number } } }));
+
+/** A decomposed goal made an epic by the write that created its sub-issues (#556), stamped as the GitHub adapter stamps one (asEpic). The
+ * task is found by id; an unknown one leaves the state itself. */
+export function withEpic(state: State, id: string, epic: NonNullable<Item['epic']>): State {
+  const task = state.tasks.find((c) => taskId(c) === id);
+  return task ? { ...state, tasks: state.tasks.map((c) => (c === task ? { ...task, item: { ...task.item, epic } } : c)) } : state;
+}
 
 /** A PR appended once to the live record, open (#207): both hive_pr and the gh pr create detection may report it. A url reported again takes
  * hive_pr's slice, which the detection never has (#698); without one the record is the same object. The reporting session is written only

@@ -228,6 +228,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'evaluateEnded': return `evaluateEnded activity=${shortId(event.activityId)} run=${shortId(event.runId)} scores=${event.scores.map((s) => s.score).join(',')} findings=${event.findings.length}`; // #877: numbers only, never the evidence nor a finding
     case 'evaluateBroken': return `evaluateBroken activity=${shortId(event.activityId)} run=${shortId(event.runId)}: ${event.message.split('\n')[0]}`; // #877: who broke and why, the first line only
     case 'decompositionIssue': return `decompositionIssue #${event.taskId} ${event.id}=#${event.number}`; // #865: never a title
+    case 'markEpic': return `markEpic #${event.taskId}`; // #556: the task id only, never a title
     case 'forkSynced': return `forkSynced activity=${shortId(event.activityId)} ${event.sync.mode} ${event.sync.result}`; // #854: never the reason, git's or gh's words
     case 'sourceActionFailed': return `sourceActionFailed #${event.taskId}: ${event.message}`;
     case 'worktreeGone': return `worktreeGone activity=${shortId(event.activityId)}`;

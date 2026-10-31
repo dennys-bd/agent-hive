@@ -163,7 +163,7 @@ test('POST on a GitHub goal records each step as it is done, then approves the s
   const { url, events, calls } = await routes(t);
   const res = await post(url, CHOICE);
   assert.deepEqual([res.status, await res.json()], [200, { ok: true }]);
-  assert.deepEqual(stepsOf(events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106', 'pr=300', 'done=7', 'approve']);
+  assert.deepEqual(stepsOf(events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106', 'pr=300', 'done=7', 'markEpic', 'approve']);
   assert.deepEqual(events.at(-1), { type: 'approve', activityId: activityIdOf('board:I7') });
   const bodies = calls.filter((c) => c.query === CREATE_ISSUE).map((c) => String(c.variables.body));
   assert.match(bodies[0], /^Parent: #7$/m);
@@ -234,7 +234,7 @@ test('POST commits a hand edit in the file\'s checkout, pushes its branch and op
   assert.equal((await post(retried.url, CHOICE)).status, 200);
   assert.deepEqual(
     [stepsOf(retried.events), retried.git.map((args) => args[2]), retried.calls.some((c) => c.query === CREATE_PULL_REQUEST)],
-    [['done=7', 'approve'], [], false],
+    [['done=7', 'markEpic', 'approve'], [], false],
   );
 });
 
@@ -245,7 +245,7 @@ test('an ignored file is refused 409 before any issue, and a recorded pr never r
   assert.equal(ignored.calls.some((c) => c.query === CREATE_ISSUE), false);
   const moved = await routes(t, { noCheckout: true, result: { ...PENDING, decompositionIssues: { design: 7, '1': 101, '1.1': 102, '1.2': 103, '2': 104, '2.1': 105, '2.2': 106, pr: 300 } } });
   assert.equal((await post(moved.url, CHOICE)).status, 200);
-  assert.deepEqual([stepsOf(moved.events), moved.git], [['done=7', 'approve'], []]);
+  assert.deepEqual([stepsOf(moved.events), moved.git], [['done=7', 'markEpic', 'approve'], []]);
 });
 
 test('a failed push answers 502 with git\'s words; the issues stay recorded and neither pr nor done is (#936)', async (t) => {
@@ -292,4 +292,27 @@ test('GET answers a fixed 500 for a local read failure, without the path, and 41
   const big = await routes(t, { text: 'x'.repeat(256 * 1024 + 1) });
   const refused = await fetch(big.url);
   assert.deepEqual([refused.status, await refused.json()], [413, { error: 'o decomposition.md passa de 256 KB' }]);
+});
+
+test('POST on a GitHub goal under epics show or hide stamps it an epic with its source\'s epicFollows and switchAt, after done and right before the approve (#556)', async (t) => {
+  for (const epics of ['show', 'hide'] as const) {
+    const { url, events } = await routes(t, { sources: [{ ...GITHUB_ENTRY, epics }] });
+    assert.equal((await post(url, CHOICE)).status, 200, epics);
+    assert.deepEqual(events.slice(-3), [
+      { type: 'decompositionIssue', taskId: 'board:I7', id: 'done', number: 7 },
+      { type: 'markEpic', taskId: 'board:I7', epic: { follows: 'aheadThenBehind', switchAt: 'fila' } },
+      { type: 'approve', activityId: activityIdOf('board:I7') },
+    ], epics);
+  }
+});
+
+test('POST stamps nothing under epics ignore, nor on a goal whose source is no GitHub source of the Comb: the approve goes on as before (#556)', async (t) => {
+  const ignored = await routes(t, { sources: [{ ...GITHUB_ENTRY, epics: 'ignore' }] });
+  assert.equal((await post(ignored.url, CHOICE)).status, 200);
+  const foreign = await routes(t, { task: { ...GOAL, item: { ...GOAL.item, source: 'notes' } } });
+  assert.equal((await post(foreign.url, CHOICE)).status, 200);
+  for (const { events } of [ignored, foreign]) {
+    assert.deepEqual(events.slice(-2).map((e) => e.type), ['decompositionIssue', 'approve']);
+    assert.equal(events.some((e) => e.type === 'markEpic'), false);
+  }
 });
