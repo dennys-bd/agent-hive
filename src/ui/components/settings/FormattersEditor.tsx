@@ -2,7 +2,6 @@ import { XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { WorkspaceScopePicker } from '@/components/settings/WorkspaceScopePicker';
 import { t } from '@/i18n';
 import { type CustomFormatterDraft, DEFAULT_FORMATTER_DRAFT, emptyCustomFormatter, type FormatterDraft, type LanguageDraft } from '@/lib/settings-format';
@@ -38,7 +37,7 @@ function SupportedRow({ n, id, anchor, setting, state, names, onChange }: Suppor
       </div>
       <div className={SUB}>
         <span />
-        <Textarea aria-label={t('settings.format.argsOf', { id })} rows={1} spellCheck={false} className="min-h-8 font-mono text-xs" placeholder={t('settings.format.args')} value={setting.args} onChange={(e) => onChange({ ...setting, args: e.target.value })} />
+        <Input aria-label={t('settings.format.argsOf', { id })} spellCheck={false} className="font-mono text-xs" placeholder={t('settings.format.args')} value={setting.args} onChange={(e) => onChange({ ...setting, args: e.target.value })} />
       </div>
     </fieldset>
   );

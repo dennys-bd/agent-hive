@@ -15,13 +15,22 @@ const SAVED: EditorConfig = {
   },
 };
 
-test('editorDraft and editorFrom round-trip the editor config: args one per line, extensions comma separated (#780)', () => {
+test('editorDraft and editorFrom round-trip the editor config: args space separated (#541), extensions comma separated (#780)', () => {
   const draft = editorDraft(SAVED);
-  assert.equal(draft.languages.python?.formatters.ruff?.args, '--line-length\n100');
+  assert.equal(draft.languages.python?.formatters.ruff?.args, '--line-length 100');
   assert.equal(draft.languages.python?.checkers.mypy?.args, '--strict');
   assert.equal(draft.languages.sql?.custom[0].extensions, '.sql, .psql');
   assert.deepEqual(editorFrom(draft), SAVED);
   assert.deepEqual(editorFrom(editorDraft()), EDITOR_DEFAULTS);
+});
+
+test('editorFrom splits args on any whitespace, so a saved arg with a space comes back as several (#541)', () => {
+  const draft = editorDraft(SAVED);
+  const ruff = { enabled: true, args: '  --line-length\t100\n--fix ', workspaces: 'all' as const };
+  const python = draft.languages.python;
+  assert.ok(python);
+  const edited = { ...draft, languages: { ...draft.languages, python: { ...python, formatters: { ruff } } } };
+  assert.deepEqual(editorFrom(edited).languages.python?.formatters?.ruff?.args, ['--line-length', '100', '--fix']);
 });
 
 test('editorFrom leaves out what is back on its default: a language with nothing changed, a formatter on with no args in every workspace (#780)', () => {

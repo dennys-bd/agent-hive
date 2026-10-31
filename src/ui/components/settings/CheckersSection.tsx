@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { type Described, describeInstall, installActions, StateLine } from '@/components/settings/InstallRow';
 import { WorkspaceScopePicker } from '@/components/settings/WorkspaceScopePicker';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
-import { argLines, type CheckerDraft, DEFAULT_FORMATTER_DRAFT, type LanguageDraft } from '@/lib/settings-format';
+import { splitArgs } from '@/lib/new-session';
+import { type CheckerDraft, DEFAULT_FORMATTER_DRAFT, type LanguageDraft } from '@/lib/settings-format';
 import { listOf } from '@/lib/settings-languages';
 import { type CheckerDef, checkersOf, shownCommand } from '../../../checkers';
 import { inScope, type LanguageDef, serverDef } from '../../../languages';
@@ -60,7 +61,7 @@ function CheckerRow({ def, setting, state, install, names, onAct, onChange }: Ro
   const found = (state?.found ?? []).filter((name) => selected.includes(name));
   const isLsp = def.kind === 'lsp';
   const via = isLsp ? t('settings.checkers.lsp', { via: t(`settings.server.via.${serverDef(def.server).install}`) }) : t('settings.checkers.cli');
-  const command = shownCommand(def, argLines(base.args));
+  const command = shownCommand(def, splitArgs(base.args));
   return (
     <fieldset aria-label={def.id} className="flex min-w-0 flex-col gap-2 border-b px-3 py-2.5 last:border-b-0">
       <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3">
@@ -78,7 +79,7 @@ function CheckerRow({ def, setting, state, install, names, onAct, onChange }: Ro
       </div>
       {install?.state === 'installing' && <Progress value={install.percent} aria-label={t('settings.install.progress', { name: def.id })} className="h-1.5 bg-accent" indicatorClassName="bg-foreground" />}
       {install?.state === 'failed' && isLogShown && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border bg-background px-2.5 py-2 font-mono text-muted-foreground text-xs">{install.log}</pre>}
-      <Textarea aria-label={t('settings.checkers.argsOf', { name: def.id })} rows={1} spellCheck={false} className="min-h-8 font-mono text-xs" placeholder={t('settings.checkers.args')} value={base.args} onChange={(e) => onChange({ ...base, args: e.target.value })} />
+      <Input aria-label={t('settings.checkers.argsOf', { name: def.id })} spellCheck={false} className="font-mono text-xs" placeholder={t('settings.checkers.args')} value={base.args} onChange={(e) => onChange({ ...base, args: e.target.value })} />
     </fieldset>
   );
 }

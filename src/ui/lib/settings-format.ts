@@ -6,11 +6,12 @@ import {
   type WorkspaceScope,
 } from '../../types.js';
 import { t } from '../i18n.js';
+import { splitArgs } from './new-session.js';
 import type { SettingsDraft, SettingsProblem } from './settings-form.js';
 
 // The editor config as Settings › editor edits it (#780), kept out of settings-form.ts so that file stays small: the draft key `editor`.
 
-/** A supported formatter's setting in one language as edited (#780): args one per line, as typed. */
+/** A supported formatter's setting in one language as edited (#780): args on one line, as typed, split on whitespace (#541). */
 export interface FormatterDraft { enabled: boolean; args: string; workspaces: WorkspaceScope }
 /** A custom formatter's row (#780): id is its React key, never sent; extensions comma separated, as typed. */
 export interface CustomFormatterDraft { id: string; name: string; command: string; extensions: string; workspaces: WorkspaceScope }
@@ -27,7 +28,7 @@ export const emptyLanguageDraft = (): LanguageDraft => ({ server: 'all', formatt
 export const emptyCustomFormatter = (extensions: readonly string[] = []): CustomFormatterDraft =>
   ({ id: crypto.randomUUID(), name: '', command: '', extensions: extensions.join(', '), workspaces: 'all' });
 
-const formatterDraft = (f: LanguageFormatter): FormatterDraft => ({ enabled: f.enabled, args: f.args.join('\n'), workspaces: f.workspaces });
+const formatterDraft = (f: LanguageFormatter): FormatterDraft => ({ enabled: f.enabled, args: f.args.join(' '), workspaces: f.workspaces });
 const customDraft = (c: CustomFormatter): CustomFormatterDraft =>
   ({ ...emptyCustomFormatter(), name: c.name, command: c.command, extensions: c.extensions.join(', '), workspaces: c.workspaces });
 const draftsOf = (settings: Partial<Record<string, LanguageFormatter>> | undefined): Record<string, FormatterDraft> =>
@@ -45,15 +46,13 @@ export const editorDraft = (editor: EditorConfig = EDITOR_DEFAULTS): EditorDraft
   languages: Object.fromEntries(Object.entries(editor.languages).flatMap(([id, c]) => (c ? [[id, languageDraft(c)]] : []))),
 });
 
-/** Extra args as the config keeps them (#780, #782): one per line, trimmed, blanks dropped. */
-export const argLines = (text: string): string[] => text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
 /** A custom row's extensions as the config keeps them (#749): split on commas, trimmed, lowercased, blanks dropped. */
 export const extensionsOf = (text: string): string[] => text.split(',').map(normalizeExtension).filter((e) => e !== '');
 
 // A formatter back on its default is left out: the config keeps only what the user changed
 function formatterFrom(draft: FormatterDraft | undefined): LanguageFormatter | undefined {
   if (draft === undefined) return undefined;
-  const args = argLines(draft.args);
+  const args = splitArgs(draft.args);
   return draft.enabled && args.length === 0 && draft.workspaces === 'all' ? undefined : { enabled: draft.enabled, args, workspaces: draft.workspaces };
 }
 
