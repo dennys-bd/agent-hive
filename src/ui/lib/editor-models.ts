@@ -54,17 +54,11 @@ const pendingViews = new Map<string, object>(); // a moved tab's view state whil
 const NEVER_SAVED = -1; // an alternative version id no model reaches: a moved buffer reads dirty even undone to its first text (#551)
 const UNTITLED = '\0untitled-'; // NUL never appears in a path, so an untitled buffer's key never meets a file's (#818)
 const NO_FILE: FileText = { path: '', text: '', version: '' };
-let untitledCount = 0; // the page's count, as VS Code's Untitled-N
 
 /** An untitled buffer's path in the store (#818). */
 export const untitledPath = (n: number): string => `${UNTITLED}${n}`;
 export const isUntitledPath = (path: string): boolean => path.startsWith(UNTITLED);
-
-/** The next untitled tab's number (#818). */
-export function nextUntitled(): number {
-  untitledCount += 1;
-  return untitledCount;
-}
+export { nextUntitled } from './untitled-count.js'; // #551: its own module, so the count's storage stays out of the models
 
 const keyOf = (activityId: string, path: string): string => `${activityId}:${path}`;
 const entryOf = (activityId: string, path: string): Entry | undefined => entries.get(keyOf(activityId, path));

@@ -97,3 +97,24 @@ test('a dirty file and an untitled buffer taken, checked by parseMovedTab, close
   expect([buffer(PATH), buffer(draft)]).toEqual([[true, 'mine\n', 'v1'], [true, 'draft', '']]);
   expect(fetchMock).toHaveBeenCalledTimes(1); // only the file's first open read the disk
 });
+
+test('nextUntitled counts on through localStorage, shared by two module instances, and starts again on the main page\'s load (#551)', async () => {
+  const load = async (search: string): Promise<typeof models> => {
+    history.replaceState(null, '', `/${search}`);
+    vi.resetModules();
+    return import('@/lib/editor-models');
+  };
+  localStorage.clear();
+  const main = await load('');
+  expect(main.nextUntitled()).toBe(1);
+  const detached = await load('?window=w1');
+  expect([detached.nextUntitled(), main.nextUntitled(), detached.nextUntitled()]).toEqual([2, 3, 4]);
+  const reloaded = await load('');
+  expect(reloaded.nextUntitled()).toBe(1);
+  history.replaceState(null, '', '/');
+});
+
+test('nextUntitled falls back to the page\'s own count when storage throws (#551)', () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('denied', 'SecurityError'); });
+  expect([models.nextUntitled(), models.nextUntitled()]).toEqual([1, 2]);
+});
