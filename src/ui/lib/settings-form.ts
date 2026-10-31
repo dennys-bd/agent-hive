@@ -56,7 +56,7 @@ export interface SettingsDraft {
   approvalMinutes: string;
   rateLimitWaitMinutes: string; // #805
   defaultAgent: AgentId; // #516
-  agentArgs: Record<AgentId, string>; agentModels: Record<AgentId, string>; agentEnabled: Record<AgentId, boolean>; // #924: arguments as typed, one per line; #482: each default model as typed ('' = none) and switch
+  agentArgs: Record<AgentId, string>; agentModels: Record<AgentId, string>; agentEnabled: Record<AgentId, boolean>; // #482: arguments as typed on one line, split on whitespace; each default model as typed ('' = none) and switch
   theme: Theme;
   fileIcons: FileIcons; // #754: the files tree's icons, edited on app › appearance
   sidebarsPerView: SidebarsPerView; // #821: which sidebar state each view keeps, edited on app
