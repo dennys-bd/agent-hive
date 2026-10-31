@@ -2,23 +2,15 @@
 // columns, split-tree.ts) whose leaves are groups of tabs, each tab a run's terminal, a task's diff or the console (redesign 05); a run's tab
 // may hold a split of terminal panes of its own (#641, pane-split.ts). Pure: every function returns a new layout and never touches its input.
 // Stored per viewer in the view state like the dock's (#342, #484), never a setting; what does not read back as written is dropped.
-import type { DiffScope } from '../../types';
-import { focusPane, leavesOf, type Panes, parsePanes, prunePanes, renamePane, splitPane } from './pane-split.js';
+import { type CenterTabRef, consoleRef, isFilePath, normalizePath, parseTabRef, type RunRef } from '../../tab-carry.js';
+import { focusPane, leavesOf, type Panes, prunePanes, renamePane, splitPane } from './pane-split.js';
 import { type Axis, isObject, leaves, parseTree, rebuild, resizeAt, type TreeNode, type TreeSplit } from './split-tree.js';
 import { readView, writeView } from './view-state.js';
 
+// The tab ref moved to src/tab-carry.ts (#551), where main parses a moved tab; its importers here keep reading it from this file
+export { type CenterTabRef, type ConsoleRef, consoleRef, isFilePath, type RunRef } from '../../tab-carry.js';
 export type { PaneNode, Panes } from './pane-split.js';
 
-/** What a layout stores of a tab: enough to rebuild it from the activity's live runs and its task. A run's tab split into panes (#641) keeps
- * one of its runs, the anchor, as its ptyId and its key; the anchor is always one of its panes. A run tab whose anchor holds a session names
- * it (#696): after a restart the tab still knows the session to continue. */
-export type CenterTabRef = { kind: 'run'; ptyId: string; panes?: Panes; sessionId?: string } | { kind: 'diff'; scope: DiffScope; checkpoint?: number } | { kind: 'console'; channel?: string; locked?: true; run?: string } | { kind: 'file'; path: string } | { kind: 'preview'; path: string } | { kind: 'design'; path: string } | { kind: 'changes'; path: string } | { kind: 'untitled'; n: number };
-export type RunRef = Extract<CenterTabRef, { kind: 'run' }>;
-/** A console tab (#755): the channel it shows, its own and saved with the layout; locked on a commands stage's channel, with no channel select.
- * No channel: the newest one, as a tab stored before #755 reads. */
-export type ConsoleRef = Extract<CenterTabRef, { kind: 'console' }>;
-export const consoleRef = (channel?: string, locked = false, run?: string): ConsoleRef =>
-  ({ kind: 'console', ...(channel === undefined ? {} : { channel }), ...(locked ? { locked: true as const } : {}), ...(run === undefined ? {} : { run }) });
 export interface TabGroup { kind: 'group'; id: string; tabs: CenterTabRef[]; active: number }
 export type Split = TreeSplit<TabGroup>;
 export type CenterNode = TreeNode<TabGroup>;
@@ -41,25 +33,6 @@ export function refKey(ref: CenterTabRef): string {
   if (ref.kind === 'console') return ref.channel === undefined ? 'console' : `console:${ref.channel}${ref.run === undefined ? '' : `#${ref.run}`}`; // a channel is encoded, never holding a #
   return `diff:${ref.scope}${ref.checkpoint === undefined ? '' : `:${ref.checkpoint}`}`;
 }
-
-// A posix path with its `.` and empty segments gone and each `..` taken back (#697): a relative path's leading `..` stays, for isFilePath to
-// refuse, and the root's parent is the root. String work only: the page has no node:path
-function normalizePath(path: string): string {
-  const isAbsolute = path.startsWith('/');
-  const parts: string[] = []; // local to this call, so the push below mutates nothing shared
-  for (const part of path.split('/')) {
-    if (part === '' || part === '.') continue;
-    if (part !== '..') parts.push(part);
-    else if (parts.length > 0 && parts.at(-1) !== '..') parts.pop();
-    else if (!isAbsolute) parts.push(part);
-  }
-  return `${isAbsolute ? '/' : ''}${parts.join('/')}`;
-}
-
-/** A file tab's path (#717, #697): relative to the activity's folder without a `..` segment, or absolute (a file outside it) as
- * normalizePath leaves it; never empty. */
-export const isFilePath = (path: string): boolean =>
-  path !== '' && path !== '/' && !path.split('/').includes('..') && (!path.startsWith('/') || normalizePath(path) === path);
 
 /** A clicked path as a tab's (#717, #697): resolved against `folder`, then relative to it when it lands inside, else absolute and normalized;
  * a relative path with no folder known stays relative, cleaned. Undefined for an empty path, and for a relative one that climbs out with no
@@ -317,43 +290,13 @@ export function pruneLayouts(
   return JSON.stringify(next) === JSON.stringify(layouts) ? layouts : next;
 }
 
-// A stored run tab: with panes (#641), only when parsePanes reads them and the anchor is one of them; its session (#696) only as a string
-function parseRun({ ptyId, panes, sessionId }: Record<string, unknown>): RunRef | undefined {
-  if (typeof ptyId !== 'string' || ptyId === '') return undefined;
-  const session = typeof sessionId === 'string' && sessionId !== '' ? { sessionId } : {};
-  if (panes === undefined) return { kind: 'run', ptyId, ...session };
-  const parsed = parsePanes(panes);
-  return parsed !== undefined && leavesOf(parsed.root).includes(ptyId) ? { kind: 'run', ptyId, panes: parsed, ...session } : undefined;
-}
-
-// A stored console tab (#755): its channel only as a non-empty string, locked and run only beside one; anything else is the plain console
-const parseConsole = ({ channel, locked, run }: Record<string, unknown>): ConsoleRef =>
-  (typeof channel === 'string' && channel !== '' ? consoleRef(channel, locked === true, typeof run === 'string' && run !== '' ? run : undefined) : consoleRef());
-
-const DIFF_SCOPE_NAMES: readonly DiffScope[] = ['stage', 'worktree', 'commit', 'checkpoint'];
-
-function parseRef(value: unknown): CenterTabRef | undefined {
-  if (!isObject(value)) return undefined;
-  if (value.kind === 'run') return parseRun(value);
-  if (value.kind === 'diff' && DIFF_SCOPE_NAMES.includes(value.scope as DiffScope)) { // #619: a checkpoint only as a whole positive number
-    const checkpoint = value.scope === 'checkpoint' && Number.isInteger(value.checkpoint) && (value.checkpoint as number) >= 1 ? { checkpoint: value.checkpoint as number } : {};
-    return { kind: 'diff', scope: value.scope as DiffScope, ...checkpoint };
-  }
-  if (value.kind === 'file' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'file', path: value.path }; // #717
-  if (value.kind === 'preview' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'preview', path: value.path }; // #697
-  if (value.kind === 'design' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'design', path: value.path }; // #109
-  if (value.kind === 'changes' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'changes', path: value.path }; // #668
-  if (value.kind === 'console') return parseConsole(value); // #755
-  return undefined;
-}
-
 // The activity's PR tab (#592) is gone (#758): a stored one leaves its group on read, the rest of the group kept
 const isRetired = (value: unknown): boolean => isObject(value) && value.kind === 'pr';
 
 function parseGroup({ id, tabs, active }: Record<string, unknown>): TabGroup | undefined {
   if (typeof id !== 'string' || !Array.isArray(tabs)) return undefined;
   if (typeof active !== 'number' || !Number.isInteger(active) || active < 0 || active >= tabs.length) return undefined;
-  const refs = tabs.filter((tab) => !isRetired(tab)).map(parseRef);
+  const refs = tabs.filter((tab) => !isRetired(tab)).map((tab) => parseTabRef(tab));
   if (refs.length === 0 || !refs.every((ref): ref is CenterTabRef => ref !== undefined)) return undefined;
   // the tab shown stays shown; a retired one shown gives way to the tab before it
   const shown = tabs.slice(0, active + 1).filter((tab) => !isRetired(tab)).length - 1;
