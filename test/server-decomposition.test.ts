@@ -137,7 +137,7 @@ test('GET lists the overlap warnings, and the file stays writable (#936)', async
     .replace('In: the landing page. Out: the contact form.', 'In: the landing page. Out: the contact form.\nTouches: src/');
   const { url } = await routes(t, { text });
   const read = (await (await fetch(url)).json()) as DecompositionPreview;
-  assert.deepEqual([read.problems, read.warnings], [[], [{ line: 76, message: '"2.1" touches "src/contact.ts" and "2.2" touches "src", and no "Blocked by:" orders them' }]]);
+  assert.deepEqual([read.problems, read.warnings], [[], [{ line: 70, message: '"src" is touched by "2.1", "2.2", and no "Blocked by:" orders some of them' }]]);
 });
 
 test('POST refuses 409 on a task not awaiting approval, and on a file with problems, before asking GitHub anything (#865)', async (t) => {

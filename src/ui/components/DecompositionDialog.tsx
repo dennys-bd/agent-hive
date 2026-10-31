@@ -25,13 +25,14 @@ function Picker({ id, label, value, options, onChange }: { id: string; label: st
   );
 }
 
-// The overlaps (#936): nodes touching the same files with no blocker between them. Muted: they never stop the write
+// The overlaps (#936): nodes touching the same files with no blocker between them. Muted: they never stop the write. The list scrolls on its
+// own (#555) so a long one never pushes the confirm button off the screen
 function Warnings({ warnings }: { warnings: DecompositionProblem[] }) {
   if (warnings.length === 0) return null;
   return (
     <div className={`flex flex-col gap-1 text-sm ${MUTED}`}>
       <p>{t('decomposition.warnings')}</p>
-      <ul className="list-disc pl-5">
+      <ul className="max-h-48 list-disc overflow-y-auto pl-5">
         {warnings.map((w) => <li key={`${w.line}:${w.message}`}>{t('decomposition.problem', { line: w.line, message: w.message })}</li>)}
       </ul>
     </div>

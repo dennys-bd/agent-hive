@@ -29,17 +29,24 @@ const overlaps = (a: string, b: string): boolean => a === b || b.startsWith(`${a
 const sharedPath = (a: string[], b: string[]): [string, string] | undefined =>
   a.flatMap((x) => b.filter((y) => overlaps(x, y)).map((y): [string, string] => [x, y]))[0];
 
-/** One warning per pair of leaves whose Touches: overlap and that no Blocked by chain orders (#936), at the later leaf's Touches: line. */
+// The pair's broader path: the folder when one holds the other, else the path both name
+const broader = ([a, b]: [string, string]): string => (a.length <= b.length ? a : b);
+
+/** One warning per path that leaves touch with no Blocked by chain ordering them (#936), grouped by path so a file every leaf touches is one
+ * line, not one per pair (#555): it names, in file order, every leaf in at least one unordered pair on it, at the first one's Touches: line. */
 export function overlapWarnings(parsed: ParsedNode[]): DecompositionProblem[] {
   const inner = new Set(parsed.map((p) => parentOf(p.node.id)));
   const leaves = parsed.filter((p) => !inner.has(p.node.id) && p.node.touches.length > 0);
   const blockers = new Map(parsed.map((p) => [p.node.id, p.node.blockedBy]));
   const waits = new Map(leaves.map((p) => [p.node.id, waitsFor(p.node.id, blockers)]));
   const ordered = (a: string, b: string): boolean => waitsOn(waits.get(a) ?? new Set(), b) || waitsOn(waits.get(b) ?? new Set(), a);
-  return leaves.flatMap((later, i) => leaves.slice(0, i).flatMap((earlier) => {
+  const pairs = leaves.flatMap((later, i) => leaves.slice(0, i).flatMap((earlier) => {
     const shared = sharedPath(earlier.node.touches, later.node.touches);
-    if (shared === undefined || ordered(earlier.node.id, later.node.id)) return [];
-    const message = `"${earlier.node.id}" touches "${shared[0]}" and "${later.node.id}" touches "${shared[1]}", and no "Blocked by:" orders them`;
-    return [{ line: later.at.touches ?? later.line, message }];
+    return shared === undefined || ordered(earlier.node.id, later.node.id) ? [] : [{ path: broader(shared), indexes: [leaves.indexOf(earlier), i] }];
   }));
+  return [...new Set(pairs.map((p) => p.path))].map((path) => {
+    const group = [...new Set(pairs.filter((p) => p.path === path).flatMap((p) => p.indexes))].sort((a, b) => a - b).map((i) => leaves[i]);
+    const message = `"${path}" is touched by ${group.map((l) => `"${l.node.id}"`).join(', ')}, and no "Blocked by:" orders some of them`;
+    return { line: group[0].at.touches ?? group[0].line, message };
+  }).sort((a, b) => a.line - b.line);
 }
