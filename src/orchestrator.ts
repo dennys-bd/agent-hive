@@ -4,7 +4,7 @@ import { benchmarkReduce, isBenchmarkEvent } from './benchmark-reducer.js';
 import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
-import { forgetFailedFreeRun, forgetFailedSession, keepRecord, touchSession, withDecompositionIssue, withPr, withResult, withTurn } from './record-kit.js';
+import { forgetFailedFreeRun, forgetFailedSession, keepRecord, touchSession, withDecompositionIssue, withEpic, withPr, withResult, withTurn } from './record-kit.js';
 import { AGENTS, liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionWritten } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
@@ -157,6 +157,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'evaluateBroken': return afterCommands(state, evaluateBroken(state, event)); // #877: the worker frees; the task stops, no try spent
     case 'stopEvaluate': return fill(haltEvaluate(state, event.activityId)); // #877: the freed worker may take another task
     case 'decompositionIssue': return none(decompositionIssue(state, event)); // #865: no fill, no effects: a step of the write, recorded on the task
+    case 'markEpic': return none(withEpic(state, event.taskId, event.epic)); // #556: no fill, no effects: an epic frees nothing; the approve that follows ends its run, followEpics places it once its children are known
     case 'forkSynced': return none(withForkSync(state, event)); // #854: no fill: a record of how the worktree started, nothing freed
     case 'sourceActionFailed': return sourceActionFailed(state, event.taskId, event.message, event.leaving); // no fill: the error keeps the task out of it (#286)
     case 'stop': return stopped(state, event); // close: hive_stop's (#314); cause: the sleep it is (#672)

@@ -59,3 +59,25 @@ test('closeTask takes a local goal whose decomposition is written even while its
   assert.deepEqual([state.tasks.length, state.workers[0].status], [0, 'empty']);
   assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' ? [e.ptyId] : [])), [ptyId]);
 });
+
+// #556: the stamp the route sends for a goal whose source runs epics: show or hide
+const EPIC: NonNullable<Item['epic']> = { follows: 'aheadThenBehind', switchAt: 'spec' };
+const goalOf = (state: State) => state.tasks.find((t) => t.item.itemId === ID);
+
+test('markEpic stamps item.epic on the task without touching the state it read; no effect, no worker change, still awaiting in its stage (#556)', () => {
+  const before = deepFreeze(awaiting());
+  const { state, effects } = reduce(before, { type: 'markEpic', taskId: ID, epic: EPIC });
+  assert.deepEqual(goalOf(state)?.item.epic, EPIC);
+  assert.deepEqual([effects, goalOf(state)?.stage, state.workers], [[], 'goal', before.workers]);
+  assert.equal(activityOf(state, ID)?.approval?.since, activityOf(before, ID)?.approval?.since);
+  assert.equal(goalOf(before)?.item.epic, undefined, 'the state read is untouched');
+});
+
+test('markEpic on a task the Hive does not hold changes nothing (#556)', () => {
+  const state = deepFreeze(awaiting());
+  assert.equal(reduce(state, { type: 'markEpic', taskId: 'board:gone', epic: EPIC }).state, state);
+});
+
+test('the markEpic log line names the task only, never a title (#556)', () => {
+  assert.equal(describeEvent({ type: 'markEpic', taskId: ID, epic: EPIC }), 'markEpic #board:item1');
+});
