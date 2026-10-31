@@ -132,6 +132,8 @@ const en = {
   'usage.refreshAll': '↻ all',
   'usage.refreshOne': 'refresh {agent} · read {ago}',
   'usage.refreshNone': 'refresh {agent} · no reading',
+  'usage.refresh.failed': "Couldn't read {agent} usage", // #557: a failed ↻'s toast; the server's reason is in hive.log
+  'usage.refresh.failedAll': "Couldn't read the usage", // ↻ all
   'usage.resets': 'resets {time}',
   'usage.read': 'read {ago}',
   'usage.noReading': 'no reading',
@@ -3134,6 +3136,8 @@ const pt: Record<MessageKey, string> = {
   'usage.refreshAll': '↻ todos',
   'usage.refreshOne': 'atualizar {agent} · lido {ago}',
   'usage.refreshNone': 'atualizar {agent} · sem leitura',
+  'usage.refresh.failed': 'Não foi possível ler o uso do {agent}',
+  'usage.refresh.failedAll': 'Não foi possível ler o uso',
   'usage.resets': 'reinicia {time}',
   'usage.read': 'lido {ago}',
   'usage.noReading': 'sem leitura',

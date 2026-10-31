@@ -1,8 +1,9 @@
 import { ChevronDownIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { planLimitAgents } from '../../../agents';
+import { toast } from 'sonner';
+import { AGENTS, planLimitAgents } from '../../../agents';
 import type { AgentId, PlanReadings, RateLimits, State } from '../../../types';
-import { act } from '@/components/actions';
+import { sendJson, WriteCancelled } from '@/lib/api';
 import { UsagePanel } from '@/components/footer/UsagePanel';
 import { AgentMark, percentTone, RefreshButton, UsageMeter } from '@/components/footer/UsageParts';
 import { t } from '@/i18n';
@@ -85,12 +86,17 @@ export function AgentUsage({ state, form, agents = PLAN_AGENTS }: AgentUsageProp
   }, []);
   const toggle = (): void => setIsOpen((open) => !open);
   const close = useCallback(() => setIsOpen(false), []); // stable: the panel's listeners and focus hand-back hang on it
+  // #557: sendJson, not act, so a failure toasts our copy; the server's reason is in hive.log. A cancel (#469) says nothing; the ↻ stops
+  // either way
   const refresh = (agent?: AgentId): void => {
     const asked = agent === undefined ? agents : [agent];
     setRefreshing((current) => new Set([...current, ...asked]));
-    // act never rejects: a refusal is its toast, and the ↻ stops either way
-    void act('/plan-limits/refresh', agent === undefined ? {} : { agent }).finally(() =>
-      setRefreshing((current) => new Set([...current].filter((a) => !asked.includes(a)))));
+    void sendJson('POST', '/plan-limits/refresh', agent === undefined ? {} : { agent })
+      .catch((err: unknown) => {
+        if (err instanceof WriteCancelled) return;
+        toast.error(agent === undefined ? t('usage.refresh.failedAll') : t('usage.refresh.failed', { agent: AGENTS[agent].label }));
+      })
+      .finally(() => setRefreshing((current) => new Set([...current].filter((a) => !asked.includes(a)))));
   };
   const readings = shownReadings(state.rateLimits ?? {}, now);
   return (
