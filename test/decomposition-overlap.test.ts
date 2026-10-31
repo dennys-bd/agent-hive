@@ -45,6 +45,18 @@ test('many leaves on one path give one line naming every leaf in an unordered pa
   ]);
 });
 
+test('a pair sharing two files warns on both, and the warnings follow their first leaf\'s line, not the order the paths are met (#555)', () => {
+  assert.deepEqual(warningsOf(...leaf('1', 'b.ts'), ...leaf('2', 'a.ts, b.ts'), ...leaf('3', 'a.ts, b.ts')), [
+    { line: 7, message: touched('b.ts', '1', '2', '3') },
+    { line: 14, message: touched('a.ts', '2', '3') },
+  ]);
+  // b.ts is met first (3 with 2), a.ts later (4 with 1): a.ts still comes first, at 1's line
+  assert.deepEqual(warningsOf(...leaf('1', 'a.ts'), ...leaf('2', 'b.ts'), ...leaf('3', 'b.ts'), ...leaf('4', 'a.ts, b.ts')), [
+    { line: 7, message: touched('a.ts', '1', '4') },
+    { line: 14, message: touched('b.ts', '2', '3', '4') },
+  ]);
+});
+
 test('a file with a problem has no warnings: the problems come first (#936)', () => {
   const parsed = parseDecomposition(file('# G', ...leaf('1', 'src'), ...leaf('2', 'src'), '## 3 X', '### Acceptance criteria', '- ok'));
   assert.deepEqual([parsed.problems.length > 0, parsed.warnings], [true, []]);

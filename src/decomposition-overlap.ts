@@ -26,11 +26,10 @@ const waitsOn = (waits: ReadonlySet<string>, b: string): boolean => [...waits].s
 
 // Two paths overlap when equal, or when one is a folder holding the other
 const overlaps = (a: string, b: string): boolean => a === b || b.startsWith(`${a}/`) || a.startsWith(`${b}/`);
-const sharedPath = (a: string[], b: string[]): [string, string] | undefined =>
-  a.flatMap((x) => b.filter((y) => overlaps(x, y)).map((y): [string, string] => [x, y]))[0];
-
 // The pair's broader path: the folder when one holds the other, else the path both name
-const broader = ([a, b]: [string, string]): string => (a.length <= b.length ? a : b);
+const broader = (a: string, b: string): string => (a.length <= b.length ? a : b);
+// Every path two leaves share, each once: a pair on two files warns on both
+const sharedPaths = (a: string[], b: string[]): string[] => [...new Set(a.flatMap((x) => b.filter((y) => overlaps(x, y)).map((y) => broader(x, y))))];
 
 /** One warning per path that leaves touch with no Blocked by chain ordering them (#936), grouped by path so a file every leaf touches is one
  * line, not one per pair (#555): it names, in file order, every leaf in at least one unordered pair on it, at the first one's Touches: line. */
@@ -40,12 +39,17 @@ export function overlapWarnings(parsed: ParsedNode[]): DecompositionProblem[] {
   const blockers = new Map(parsed.map((p) => [p.node.id, p.node.blockedBy]));
   const waits = new Map(leaves.map((p) => [p.node.id, waitsFor(p.node.id, blockers)]));
   const ordered = (a: string, b: string): boolean => waitsOn(waits.get(a) ?? new Set(), b) || waitsOn(waits.get(b) ?? new Set(), a);
-  const pairs = leaves.flatMap((later, i) => leaves.slice(0, i).flatMap((earlier) => {
-    const shared = sharedPath(earlier.node.touches, later.node.touches);
-    return shared === undefined || ordered(earlier.node.id, later.node.id) ? [] : [{ path: broader(shared), indexes: [leaves.indexOf(earlier), i] }];
-  }));
-  return [...new Set(pairs.map((p) => p.path))].map((path) => {
-    const group = [...new Set(pairs.filter((p) => p.path === path).flatMap((p) => p.indexes))].sort((a, b) => a - b).map((i) => leaves[i]);
+  // ponytail: every pair of leaves, O(n²·t²); a decomposition holds tens of leaves, index the paths if it ever holds thousands
+  const groups = new Map<string, Set<number>>();
+  for (let i = 0; i < leaves.length; i++) {
+    for (let j = 0; j < i; j++) {
+      const shared = sharedPaths(leaves[j].node.touches, leaves[i].node.touches);
+      if (shared.length === 0 || ordered(leaves[j].node.id, leaves[i].node.id)) continue;
+      for (const path of shared) groups.set(path, (groups.get(path) ?? new Set<number>()).add(j).add(i));
+    }
+  }
+  return [...groups].map(([path, indexes]) => {
+    const group = [...indexes].sort((a, b) => a - b).map((i) => leaves[i]);
     const message = `"${path}" is touched by ${group.map((l) => `"${l.node.id}"`).join(', ')}, and no "Blocked by:" orders some of them`;
     return { line: group[0].at.touches ?? group[0].line, message };
   }).sort((a, b) => a.line - b.line);
