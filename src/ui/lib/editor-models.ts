@@ -5,22 +5,16 @@ import type { editor } from 'monaco-editor';
 import { type FileSaved, type FileText, type FormatLog, IMAGE_TYPES } from '../../types';
 import { gated } from './api.js';
 import { moved as moveBase } from './file-base.js';
+import { activityRoute, readFile } from './file-read.js';
 import { renamedPath } from './file-tree.js';
+
+// The disk reads live in file-read.ts (#551); their importers keep reading them from here
+export { FileError, fileUrl, readFile, readImage } from './file-read.js';
 
 const HTTP_CONFLICT = 409;
 
 /** Where a click puts the cursor (#717): a terminal's link carries a line, and maybe a column. */
 export interface FileAt { line: number; col?: number }
-
-/** A read the pane cannot show (#717): the route's status, which the pane names in its own words, and the server's message. */
-export class FileError extends Error {
-  readonly status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
 
 /** A save's outcome (#717, #749): written (with a failed format's reason and console run), refused because the disk moved on (with the disk's
  * version), or failed with the server's words. */
@@ -51,6 +45,7 @@ const listeners = new Set<() => void>();
 const views = new Map<string, RevealView>();
 const pending = new Map<string, FileAt>(); // a reveal asked while no pane shows the file
 const pendingViews = new Map<string, object>(); // a moved tab's view state while no pane shows the file yet (#551)
+const CLOSED = 'closed while loading';
 const NEVER_SAVED = -1; // an alternative version id no model reaches: a moved buffer reads dirty even undone to its first text (#551)
 const UNTITLED = '\0untitled-'; // NUL never appears in a path, so an untitled buffer's key never meets a file's (#818)
 const NO_FILE: FileText = { path: '', text: '', version: '' };
@@ -63,35 +58,9 @@ export { nextUntitled } from './untitled-count.js'; // #551: its own module, so 
 const keyOf = (activityId: string, path: string): string => `${activityId}:${path}`;
 const entryOf = (activityId: string, path: string): Entry | undefined => entries.get(keyOf(activityId, path));
 const isEntryDirty = (entry: Entry): boolean => entry.model.getAlternativeVersionId() !== entry.savedVersionId;
-type Route = 'file' | 'file-version' | 'image';
-const activityRoute = (activityId: string, name: Route): string => `/activities/${encodeURIComponent(activityId)}/${name}`;
 const notify = (): void => {
   for (const listener of listeners) listener();
 };
-
-/** A file's read, version or image route (#717, #498), the path in the query. */
-export const fileUrl = (activityId: string, path: string, name: Route = 'file'): string =>
-  `${activityRoute(activityId, name)}?${new URLSearchParams({ path })}`;
-
-// A refused read (#717): the route's status and the server's words, its status text when the body has none
-async function refusal(res: Response): Promise<FileError> {
-  const { error } = (await res.json().catch(() => ({}))) as { error?: string };
-  return new FileError(res.status, error ?? res.statusText);
-}
-
-/** A file's text and version from the disk (#717); a refused read rejects with a FileError. The preview pane reads through it too (#697). */
-export async function readFile(activityId: string, path: string): Promise<FileText> {
-  const res = await fetch(fileUrl(activityId, path));
-  if (res.ok) return (await res.json()) as FileText;
-  throw await refusal(res);
-}
-
-/** An image's bytes from the disk (#498), for the image view's object URL; a refused read rejects with a FileError. */
-export async function readImage(activityId: string, path: string): Promise<Blob> {
-  const res = await fetch(fileUrl(activityId, path, 'image'));
-  if (res.ok) return res.blob();
-  throw await refusal(res);
-}
 
 type Languages = ReadonlyArray<{ id: string; extensions?: string[]; filenames?: string[] }>;
 
@@ -123,7 +92,7 @@ function register(setup: Awaited<ReturnType<typeof loadMonaco>>, activityId: str
   const model = setup.monaco.editor.createModel(file.text, languageOf(setup.monaco.languages.getLanguages(), path));
   if (cancelled.delete(keyOf(activityId, path))) {
     model.dispose();
-    throw new Error('closed while loading');
+    throw new Error(CLOSED);
   }
   setup.applySyntaxFor(model, path); // #780: a syntax package, when one is installed
   model.onDidChangeContent(notify);
@@ -244,7 +213,9 @@ export function keepMine(activityId: string, path: string, version: string): voi
  *  Dirty either way. A read already flying lands first, so it never replaces the carried text. */
 export async function seed(activityId: string, path: string, text: string, base: string): Promise<void> {
   const key = keyOf(activityId, path);
-  await loading.get(key)?.catch(() => undefined); // a refused read leaves no model: the seed makes one below
+  // a refused read leaves no model and the seed makes one below; a read the tab's close cancelled means there is no tab left to seed
+  const closed = await loading.get(key)?.then(() => false, (error: unknown) => error instanceof Error && error.message === CLOSED);
+  if (closed === true) return;
   const entry = entries.get(key);
   if (entry !== undefined) {
     replaceText(entry.model, text, views.get(key));
@@ -266,9 +237,19 @@ export function viewOf(activityId: string, path: string): object | undefined {
 /** A moved tab's view state back on its editor (#551): at once while a pane shows the file, else when one next attaches, as a reveal waits. */
 export function restoreView(activityId: string, path: string, state: object): void {
   const key = keyOf(activityId, path);
+  if (!entries.has(key)) return; // closed meanwhile: a later tab on the path must not inherit it
   const view = views.get(key);
   if (view === undefined) pendingViews.set(key, state);
-  else view.restoreViewState(state);
+  else restoreState(view, state);
+}
+
+// The state came from another page: one Monaco refuses costs the cursor and scroll, never the pane's mount (#551)
+function restoreState(view: KeptView, state: object): void {
+  try {
+    view.restoreViewState(state);
+  } catch {
+    // the editor keeps the view it has
+  }
 }
 
 /** The file's model disposed and forgotten with its tab (#717), any waiting reveal with it. */
@@ -321,7 +302,7 @@ export function attachView(activityId: string, path: string, view: RevealView): 
   const state = pendingViews.get(key);
   if (state !== undefined) { // before the reveal, so a line a link asked for still wins the cursor
     pendingViews.delete(key);
-    view.restoreViewState(state);
+    restoreState(view, state);
   }
   const at = pending.get(key);
   if (at !== undefined) {

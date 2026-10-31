@@ -307,3 +307,30 @@ test('restoreView lands at once on an attached editor, else on the next attach; 
   models.attachView(A, 'src/b.ts', again)();
   expect(again.restoreViewState).not.toHaveBeenCalled();
 });
+
+test('a tab closed while seed waits for its read leaves no model behind, so nothing holds the page\'s unload (#551)', async () => {
+  let release = (): void => undefined;
+  fetchMock.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    return jsonResponse({ path: PATH, ...disk });
+  });
+  const opening = models.open(A, PATH).catch(() => undefined);
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  const seeding = models.seed(A, PATH, 'mine\n', 'v7');
+  models.close(A, PATH);
+  release();
+  await Promise.all([opening, seeding]);
+  expect([models.baseOf(A, PATH), models.anyDirty()]).toEqual([undefined, false]);
+});
+
+test('restoreView with no model asks nothing of a later tab, and a view state Monaco refuses leaves the pane mounted (#551)', async () => {
+  models.restoreView(A, PATH, { scrollTop: 9 });
+  await fake();
+  const later = editorView();
+  models.attachView(A, PATH, later)();
+  expect(later.restoreViewState).not.toHaveBeenCalled();
+  models.restoreView(A, PATH, { scrollTop: 9 });
+  const refusing = { ...editorView(), restoreViewState: vi.fn(() => { throw new Error('bad state'); }) };
+  expect(() => models.attachView(A, PATH, refusing)).not.toThrow();
+  expect(refusing.restoreViewState).toHaveBeenCalled();
+});
