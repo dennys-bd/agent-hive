@@ -104,7 +104,8 @@ test('Codex\'s stray pattern is the pty id; a clear has no argv (it is /clear ty
   assert.equal(codexRunner.transcriptDir('/repo'), undefined, 'no per-cwd dir: removal and copy find nothing there (#929)');
   assert.equal(codexRunner.ownsTranscript(`/codex-home/sessions/2026/10/12/rollout-x-${ID}.jsonl`, '/repo', ID, { CODEX_HOME: '/codex-home' }), true);
   await assert.rejects(codexRunner.readTurn('/x.jsonl'));
-  assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), await codexRunner.planLimits({ env: { CODEX_HOME: await tempDir(t, 'codex-') } }), codexRunner.statusLimits({}, 0)], [0, undefined, undefined]);
+  assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), codexRunner.statusLimits({}, 0)], [0, undefined]);
+  await assert.rejects(codexRunner.planLimits({ env: { CODEX_HOME: await tempDir(t, 'codex-') } }), { message: 'no Codex rollout found' }); // #557
 });
 
 test('prepareHome writes the codex shim and removes the old <home>/codex/agents; it prepares no plugin folder, since every run loads its workspace\'s render (#932, #317)', async (t) => {

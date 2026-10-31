@@ -14,14 +14,15 @@ const WINDOW_KEYS: ReadonlyMap<number, string> = new Map([[300, 'five_hour'], [1
 // ponytail: the newest 5 rollouts, each read whole every 5 minutes; past them a reading is stale anyway. Tail-read if rollouts ever weigh
 const PLAN_FILES_MAX = 5;
 
-// `used_percent` from 0 (clamped to 100) and `resets_at` as positive integer epoch seconds still ahead: an old rollout never reports a full
-// window that has reset since
-function parseWindow(raw: unknown, now: Date): RateLimitWindow | undefined {
+// `used_percent` from 0 (clamped to 100) and `resets_at` as positive integer epoch seconds. A past reset is kept (#557): Codex writes
+// rate_limits only while it is used, so an idle account's newest rollout carries only past windows, and they are still the truth (nothing
+// used since). The views show such a window as reset (shownWindow in src/ui/lib/usage.ts)
+function parseWindow(raw: unknown): RateLimitWindow | undefined {
   if (!isRecord(raw) || !isPercent(raw.used_percent)) return undefined;
   const { resets_at: resetsAt } = raw;
   if (typeof resetsAt !== 'number' || !Number.isInteger(resetsAt) || resetsAt <= 0) return undefined;
   const reset = new Date(resetsAt * MS_PER_SECOND);
-  if (Number.isNaN(reset.getTime()) || reset.getTime() <= now.getTime()) return undefined;
+  if (Number.isNaN(reset.getTime())) return undefined;
   return { usedPercent: Math.min(raw.used_percent, PERCENT_MAX), resetsAt: reset.toISOString() };
 }
 
@@ -32,7 +33,7 @@ export function parseCodexRateLimits(raw: unknown, now: Date): RateLimits | unde
     const key = isRecord(window) && typeof window.window_minutes === 'number' ? WINDOW_KEYS.get(window.window_minutes) : undefined;
     return key === undefined ? [] : [[key, window]];
   });
-  return collectWindows(Object.fromEntries(keyed), (window) => parseWindow(window, now), now);
+  return collectWindows(Object.fromEntries(keyed), parseWindow, now);
 }
 
 // A rollout's last token_count that carries rate_limits; only a line naming the key is parsed
@@ -62,13 +63,19 @@ async function newestRollouts(root: string, max: number): Promise<string[]> {
   return picked.slice(0, max);
 }
 
-/** The newest rollout's plan reading (#929): its last rate_limits; a newer rollout without any hands over to the next. No rollout, or none
- * among the newest PLAN_FILES_MAX with one: undefined. A rollout that fails to read is skipped. */
-export async function readCodexPlanLimits(deps: Pick<PlanLimitsDeps, 'env' | 'now'> = {}): Promise<RateLimits | undefined> {
+/** The newest rollout's plan reading (#929): its last rate_limits; a newer rollout without any hands over to the next. A rollout that fails
+ * to read is skipped. No reading throws its reason (#557), which planLimitsReading turns into the agent's failure and hive.log shows: no
+ * rollout, none among the newest PLAN_FILES_MAX with rate_limits, or one whose windows are all of unknown length. No reason names a path. */
+export async function readCodexPlanLimits(deps: Pick<PlanLimitsDeps, 'env' | 'now'> = {}): Promise<RateLimits> {
   const now = deps.now?.() ?? new Date();
-  for (const file of await newestRollouts(sessionsRoot(deps.env), PLAN_FILES_MAX)) {
+  const files = await newestRollouts(sessionsRoot(deps.env), PLAN_FILES_MAX);
+  if (files.length === 0) throw new Error('no Codex rollout found');
+  for (const file of files) {
     const raw = await lastRateLimits(file).catch(() => undefined);
-    if (raw !== undefined) return parseCodexRateLimits(raw, now);
+    if (raw === undefined) continue;
+    const reading = parseCodexRateLimits(raw, now);
+    if (reading === undefined) throw new Error('rate_limits carries no known window');
+    return reading;
   }
-  return undefined;
+  throw new Error(`none of the newest ${PLAN_FILES_MAX} rollouts carries rate_limits`);
 }
