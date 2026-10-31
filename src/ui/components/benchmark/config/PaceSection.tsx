@@ -40,7 +40,7 @@ const paceOf = (d: PaceDraft): BenchPace => ({
 
 /** The cap row's side (#463): the experiment's tokens and the highest plan window, the numbers the scheduler stops on (cap.ts). */
 export function spendText(experiment: Experiment, rateLimits?: PlanReadings): string {
-  const percent = highestPercent(rateLimits);
+  const percent = highestPercent(rateLimits, Date.now());
   return t('benchmark.config.pace.now', { tokens: tokenText(experimentTokens(experiment)), percent: percent === undefined ? '—' : `${Math.round(percent)}%` });
 }
 
