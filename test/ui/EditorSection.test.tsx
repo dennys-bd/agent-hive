@@ -145,7 +145,7 @@ test('a server\'s chips and a formatter\'s switch and args go into the body as t
   await user.keyboard('{Escape}');
   expect(await detail.findByText('desligado em todos')).toBeInTheDocument();
   await user.click(detail.getAllByRole('switch', { name: 'usar ruff' })[0]); // the formatter's (the checker's follows it); SAVED has it off: back on its default
-  await user.type(detail.getByLabelText('argumentos extras de black'), '-l{Enter}99');
+  await user.type(detail.getByLabelText('argumentos extras de black'), '-l 99');
   await user.click(screen.getByRole('button', { name: t('settings.save') }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   const [, init] = fetchMock.mock.calls.find(([url]) => url === '/settings') ?? [];
