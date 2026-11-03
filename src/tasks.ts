@@ -1,8 +1,9 @@
 import { activityOf, holdsSlug, keptActivity, recordsOf, taskOfActivity, terminalsIn, worktreeOwner, workersIn, type WorkState } from './activities.js';
 import { staleRead } from './column-write.js';
 import { parentOf } from './task-tree.js';
+import { flowOf } from './flows.js';
 import { hiveAction, holdsWorker, runsAgent } from './stage-agent.js';
-import type { Activity, SourceAction, SourceItem, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
+import type { Activity, Flow, SourceAction, SourceItem, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
 
 /** What a task's workers are read from (#629): the workers point at the activity, the activity's record lists the task. */
 export type WorkersState = Pick<State, 'workers' | 'activities' | 'activityRecords'>;
@@ -138,9 +139,10 @@ export const stageOf = (stages: Stage[], name: string): Stage | undefined => sta
 export const entryStage = (stages: Stage[], source: string | undefined, boardColumn: string): Stage | undefined =>
   stages.find((c) => onSource(c.from, source)?.includes(boardColumn));
 
-/** Past the first door (#32): the task's stage comes later in `stages` than the first stage whose `from` names any column of the task's source.
- * The Hive has one ordered stage list, and the source's earliest door is where new work lands. A task with no source has no first stage. */
-export function isPastFirstStage(stages: Stage[], task: Pick<Task, 'item' | 'stage'>): boolean {
+/** Past the first door (#32): the task's stage comes later in its own flow (#564) than that flow's first stage whose `from` names any column
+ * of the task's source. Judged per flow, or a task in the second flow's first stage would count as started because of the first flow. */
+export function isPastFirstStage(flows: readonly Flow[], task: Pick<Task, 'item' | 'stage'>): boolean {
+  const stages = flowOf(flows, task.stage)?.stages ?? [];
   const first = stages.findIndex((s) => (onSource(s.from, task.item.source)?.length ?? 0) > 0);
   return first >= 0 && stages.findIndex((s) => s.name === task.stage) > first;
 }

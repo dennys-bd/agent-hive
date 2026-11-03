@@ -7,9 +7,11 @@ import { initialState } from '../src/orchestrator.js';
 import { localActivityId } from '../src/activities.js';
 import { activityIdOf, bareTask, movedWork, withKeptRecord, withWork, type WithWork } from './fixtures/work.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import type { Activity, ActivityRecord, SourceItem, State, Task, Session, DeleteActivityScope, Stage, Effect, Terminal, Transition, Worker, Item } from '../src/types.js';
+import type { Activity, ActivityRecord, Flow, SourceItem, State, Task, Session, DeleteActivityScope, Stage, Effect, Terminal, Transition, Worker, Item } from '../src/types.js';
 import { DELETE_ACTIVITY_DEFAULTS } from '../src/types.js';
 import { move } from './fakes.js';
+import { mainFlows } from './fixtures/main-flow.js';
+import { flatten } from '../src/flows.js';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -528,12 +530,29 @@ test('resolveWorkspace: task.workspace first, then the source field\'s hint, the
 test('isPastFirstStage: the task\'s stage comes after the first stage its source enters through; its own first stage, another source\'s door and a local task are not (#32)', () => {
   const GOAL: LegacyStage = { name: 'goal', from: { board: ['Goals'] } };
   const stages = [GOAL, DEV, DONE];
-  assert.equal(isPastFirstStage(stages, task(1, GOAL)), false);
-  assert.equal(isPastFirstStage(stages, task(1, DEV)), true);
-  assert.equal(isPastFirstStage([DEV, DONE], task(1, DEV)), false, 'its source\'s first door');
-  assert.equal(isPastFirstStage([{ name: 'notes', from: { notes: ['X'] } }, DEV], task(1, DEV)), false, 'another source\'s door does not count');
+  assert.equal(isPastFirstStage(mainFlows(stages), task(1, GOAL)), false);
+  assert.equal(isPastFirstStage(mainFlows(stages), task(1, DEV)), true);
+  assert.equal(isPastFirstStage(mainFlows([DEV, DONE]), task(1, DEV)), false, 'its source\'s first door');
+  assert.equal(isPastFirstStage(mainFlows([{ name: 'notes', from: { notes: ['X'] } }, DEV]), task(1, DEV)), false, 'another source\'s door does not count');
   const { source: _source, ...local } = item(1);
-  assert.equal(isPastFirstStage(stages, { ...task(1, DONE), item: local }), false, 'no source, no first stage');
+  assert.equal(isPastFirstStage(mainFlows(stages), { ...task(1, DONE), item: local }), false, 'no source, no first stage');
+});
+
+const FEATURE: Stage[] = [{ name: 'spec', from: { board: ['Ready'] } }, { name: 'build', from: {} }];
+const BUG: Stage[] = [{ name: 'triage', from: { board: ['Bug'] } }, { name: 'fix', from: {} }];
+const TWO_FLOWS: Flow[] = [{ name: 'feature', stages: FEATURE, transitions: [] }, { name: 'bug', stages: BUG, transitions: [] }];
+
+test('entryStage finds the stage of the second flow for its column (#564)', () => {
+  assert.equal(entryStage(flatten(TWO_FLOWS).stages, 'board', 'Bug')?.name, 'triage');
+  assert.equal(entryStage(flatten(TWO_FLOWS).stages, 'board', 'Ready')?.name, 'spec');
+});
+
+test('isPastFirstStage judges a task against the first door of its own flow (#564)', () => {
+  const at = (stage: string) => ({ item: { ...item(1), source: 'board' }, stage });
+  assert.equal(isPastFirstStage(TWO_FLOWS, at('triage')), false, 'the second flow\'s first stage is its own first door');
+  assert.equal(isPastFirstStage(TWO_FLOWS, at('fix')), true);
+  assert.equal(isPastFirstStage(TWO_FLOWS, at('build')), true);
+  assert.equal(isPastFirstStage(TWO_FLOWS, at('gone')), false, 'a stage of no flow is past nothing');
 });
 
 test('resolveWorkspace with the task list: the parent\'s resolved workspace after the child\'s own hint and before its source\'s default, up the whole lineage; a cycle ends at the default; no list, today\'s answer (#32)', () => {
