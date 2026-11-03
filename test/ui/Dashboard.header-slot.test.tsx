@@ -32,7 +32,7 @@ function Home({ initial }: { initial?: Selection }) {
 
 const view = (name: string): void => { fireEvent.click(within(screen.getByRole('navigation', { name: 'views' })).getByRole('button', { name })); };
 const center = (): HTMLElement => document.querySelector<HTMLElement>('[data-header-column="center"]')!;
-const flowBar = (): HTMLElement | null => screen.queryByRole('region', { name: 'fluxo' });
+const flowBar = (): HTMLElement | null => screen.queryByRole('region', { name: 'tarefas' });
 
 beforeEach(() => {
   setLanguage('pt');
@@ -45,7 +45,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 test('in the flow view the flow\'s bar sits in the header\'s center column, not in the center pane (#295)', () => {
   render(<Home />);
-  view('fluxo');
+  view('tarefas');
   const bar = flowBar()!;
   expect(center()).toContainElement(bar);
   expect(screen.getByRole('main')).not.toContainElement(bar);
@@ -58,14 +58,14 @@ test('under Atividades the home has no bar, an open activity its own and no flow
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByRole('button', { name: /#1 Task A/ }));
   expect(center()).toContainElement(document.querySelector<HTMLElement>('[data-activity-bar]'));
   expect(flowBar()).toBeNull();
-  view('fluxo');
+  view('tarefas');
   expect(center()).toContainElement(flowBar());
   expect(center().querySelector('[data-activity-bar]')).toBeNull();
 });
 
 test('in the flow view the details pane draws no group header, no Detalhes tab and no ×: the header\'s detalhes icon names it and closes it (#221, #295)', () => {
   render(<Home initial={{ taskId: 'A' }} />);
-  view('fluxo');
+  view('tarefas');
   const right = document.querySelector<HTMLElement>('[data-dock="right"]')!;
   expect(right).toContainElement(screen.getByRole('complementary', { name: 'detalhe' }));
   expect(within(right).queryByRole('tablist')).not.toBeInTheDocument();

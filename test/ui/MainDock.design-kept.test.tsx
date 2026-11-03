@@ -61,7 +61,7 @@ test('the design\'s frame is the same node after the center shows Fluxo and come
   click('design A');
   const frame = await screen.findByTitle('Landing.hv.html');
   expect(layerOf(frame)).not.toHaveAttribute('inert');
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' }));
   expect(screen.getByTitle('Landing.hv.html')).toBe(frame);
   expect(layerOf(frame)).toHaveAttribute('inert');
   fireEvent.click(screen.getByRole('button', { name: 'atividades' }));

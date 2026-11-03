@@ -23,14 +23,14 @@ const item = (name: string): HTMLElement => screen.getByRole('menuitem', { name 
 const names = (): string[] => screen.getAllByRole('menuitem').map((el) => el.textContent ?? '');
 beforeEach(() => { setLanguage('pt'); });
 
-test('right-click on an activity: nova sessão, executar etapas…, the diffs, ver no fluxo, then dormir, and excluir atividade… in the destructive colour; aprovar and enviar feedback… only while the stage awaits approval (redesign 03)', async () => {
+test('right-click on an activity: nova sessão, executar etapas…, the diffs, ver nas tarefas, then dormir, and excluir atividade… in the destructive colour; aprovar and enviar feedback… only while the stage awaits approval (redesign 03)', async () => {
   const user = userEvent.setup();
   const onShowFlow = vi.fn();
   const menu = (c: Task, workers: Worker[] = []) => <ActivityMenu task={c} state={state(c, workers)} onShowFlow={onShowFlow}><button type="button">row</button></ActivityMenu>;
   const { rerender } = render(menu(task({ workerId: 's1' }), [live]));
   fireEvent.contextMenu(screen.getByRole('button', { name: 'row' }));
-  await screen.findByRole('menuitem', { name: 'ver no fluxo' });
-  expect(names()).toEqual(['nova sessão', 'executar etapas…', 'diff da etapa', 'diff da worktree', 'mostrar PR', 'ver no fluxo', 'dormir', expect.stringMatching(/^excluir atividade…/)]);
+  await screen.findByRole('menuitem', { name: 'ver nas tarefas' });
+  expect(names()).toEqual(['nova sessão', 'executar etapas…', 'diff da etapa', 'diff da worktree', 'mostrar PR', 'ver nas tarefas', 'dormir', expect.stringMatching(/^excluir atividade…/)]);
   expect(item('executar etapas…')).toHaveAttribute('data-disabled'); // the stage runs
   expect(item('dormir')).not.toHaveClass('text-destructive'); // sleeping loses nothing (#672)
   expect(screen.getByRole('menuitem', { name: /^excluir atividade…/ })).toHaveClass('text-destructive');
@@ -42,23 +42,23 @@ test('right-click on an activity: nova sessão, executar etapas…, the diffs, v
   expect(screen.queryByRole('menuitem', { name: 'aprovar' })).not.toBeInTheDocument();
   expect(item('executar etapas…')).not.toHaveAttribute('data-disabled'); // the stage never ran: a start
   expect(item('excluir atividade…')).not.toHaveAttribute('data-disabled');
-  await user.click(item('ver no fluxo'));
+  await user.click(item('ver nas tarefas'));
   expect(onShowFlow).toHaveBeenCalledTimes(1);
 });
 
-test('the ⋯ opens the same items as the right-click, as a dropdown, from one list; ver no fluxo shows the flow (#536)', async () => {
+test('the ⋯ opens the same items as the right-click, as a dropdown, from one list; ver nas tarefas shows the flow (#536)', async () => {
   const user = userEvent.setup();
   const onShowFlow = vi.fn();
   const running = task({ workerId: 's1' });
   render(<ActivityMenuButton task={running} state={state(running, [live])} onShowFlow={onShowFlow} />);
   screen.getByRole('button', { name: 'mais ações' }).focus();
   await user.keyboard('{Enter}');
-  await screen.findByRole('menuitem', { name: 'ver no fluxo' });
+  await screen.findByRole('menuitem', { name: 'ver nas tarefas' });
   // the right-click's list for the same task, in the test above
-  expect(names()).toEqual(['nova sessão', 'executar etapas…', 'diff da etapa', 'diff da worktree', 'mostrar PR', 'ver no fluxo', 'dormir', expect.stringMatching(/^excluir atividade…/)]);
+  expect(names()).toEqual(['nova sessão', 'executar etapas…', 'diff da etapa', 'diff da worktree', 'mostrar PR', 'ver nas tarefas', 'dormir', expect.stringMatching(/^excluir atividade…/)]);
   expect(item('dormir')).not.toHaveClass('text-destructive'); // sleeping loses nothing (#672)
   expect(screen.getByRole('menu')).toHaveClass('w-[236px]');
-  await user.click(item('ver no fluxo'));
+  await user.click(item('ver nas tarefas'));
   expect(onShowFlow).toHaveBeenCalledTimes(1);
 });
 

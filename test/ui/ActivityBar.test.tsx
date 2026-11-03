@@ -67,13 +67,13 @@ test('the commands, dormir and the ⋯ sit out of the window drag; the title and
   expect(screen.getByText('#1 Task 1').closest('[class*="no-drag"]')).toBeNull();
 });
 
-test('the ⋯ lists the activity\'s items; ver no fluxo shows the flow (#536)', async () => {
+test('the ⋯ lists the activity\'s items; ver nas tarefas shows the flow (#536)', async () => {
   const user = userEvent.setup();
   const onShowFlow = vi.fn();
   render(bar(task(), onShowFlow));
   screen.getByRole('button', { name: 'mais ações' }).focus();
   await user.keyboard('{Enter}');
-  await user.click(await screen.findByRole('menuitem', { name: 'ver no fluxo' }));
+  await user.click(await screen.findByRole('menuitem', { name: 'ver nas tarefas' }));
   expect(onShowFlow).toHaveBeenCalledTimes(1);
 });
 
@@ -90,6 +90,6 @@ test('a local activity\'s bar reads local, then the workspace and its checkout\'
   screen.getByRole('button', { name: 'mais ações' }).focus();
   await user.keyboard('{Enter}');
   expect(await screen.findByRole('menuitem', { name: 'nova sessão' })).toBeInTheDocument();
-  expect(screen.queryByRole('menuitem', { name: 'ver no fluxo' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('menuitem', { name: 'ver nas tarefas' })).not.toBeInTheDocument();
   vi.unstubAllGlobals();
 });

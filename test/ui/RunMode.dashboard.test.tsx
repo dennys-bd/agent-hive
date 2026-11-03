@@ -38,7 +38,7 @@ test('in run mode the rail dims plugins and benchmark, inert at .35, keeps ativi
     expect(within(rail()).getByRole('button', { name })).toBeDisabled();
     expect(within(rail()).getByRole('button', { name })).toHaveClass('opacity-35');
   }
-  for (const name of ['atividades', 'fluxo']) expect(within(rail()).getByRole('button', { name })).toBeEnabled();
+  for (const name of ['atividades', 'tarefas']) expect(within(rail()).getByRole('button', { name })).toBeEnabled();
   expect(within(rail()).queryByRole('button', { name: t('rail.shortcutMap') })).toBeNull();
 });
 

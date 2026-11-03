@@ -35,7 +35,7 @@ test('on the board the footer offers abrir atividade, disabled while the task is
   const { unmount } = render(panel(idle));
   expect(within(footer()).getByRole('button', { name: 'abrir atividade' })).toBeDisabled();
   expect(idle.canOpenActivity).toHaveBeenCalledWith('I1');
-  expect(within(footer()).queryByRole('button', { name: 'ver no fluxo' })).not.toBeInTheDocument();
+  expect(within(footer()).queryByRole('button', { name: 'ver nas tarefas' })).not.toBeInTheDocument();
   unmount();
   const running = navOf('automation', true);
   render(panel(running));
@@ -43,12 +43,12 @@ test('on the board the footer offers abrir atividade, disabled while the task is
   expect(running.openActivity).toHaveBeenCalledWith('I1');
 });
 
-test('under Atividades the footer offers ver no fluxo, which goes back to the board; without a nav only ⋯ is there', async () => {
+test('under Atividades the footer offers ver nas tarefas, which goes back to the board; without a nav only ⋯ is there', async () => {
   const user = userEvent.setup();
   const activities = navOf('activities', true);
   const { unmount } = render(panel(activities));
   expect(within(footer()).queryByRole('button', { name: 'abrir atividade' })).not.toBeInTheDocument();
-  await user.click(within(footer()).getByRole('button', { name: 'ver no fluxo' }));
+  await user.click(within(footer()).getByRole('button', { name: 'ver nas tarefas' }));
   expect(activities.showFlow).toHaveBeenCalledOnce();
   unmount();
   render(panel(undefined));

@@ -57,7 +57,7 @@ test('a focused task leads the comandos with its operations; aprovar posts and t
   const user = userEvent.setup();
   const pending: WithWork = { ...taskA, approval: { since: '2026-09-28T10:00:00.000Z' } };
   render(<Home tasks={[pending]} flow={<main><button type="button" data-task-id="A">task A</button></main>} />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the board is the center (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the board is the center (#746)
   const face = screen.getByRole('button', { name: 'task A' });
   face.focus();
   commandsKey();
@@ -73,7 +73,7 @@ test('the search key pressed while it is open keeps the focus group, switches to
   const user = userEvent.setup();
   const pending: WithWork = { ...taskA, approval: { since: '2026-09-28T10:00:00.000Z' } };
   render(<Home tasks={[pending]} flow={<main><button type="button" data-task-id="A">task A</button></main>} />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the board is the center (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the board is the center (#746)
   const face = screen.getByRole('button', { name: 'task A' });
   face.focus();
   commandsKey();

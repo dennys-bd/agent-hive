@@ -73,7 +73,7 @@ test('with an activity open its bar is in the header and none sits over the cent
   expect(bars).toHaveLength(1);
   expect(screen.getByRole('banner')).toContainElement(bars[0]);
   expect(within(screen.getByTestId('center')).getByText('Task A')).toBeInTheDocument();
-  fireEvent.click(railButton('fluxo')); // the pick stays under the flow, its bar does not
+  fireEvent.click(railButton('tarefas')); // the pick stays under the flow, its bar does not
   expect(screen.getByTestId('center')).toBeEmptyDOMElement();
 });
 
@@ -91,14 +91,14 @@ test('the shell\'s panes: none on the home; both on a task\'s activity, the acti
   expect(shell()).toMatchObject({ active: 'files', rightShown: true });
   openActivity(/^local/);
   expect(shell()).toMatchObject({ active: 'files', enabled: { files: true, details: false }, rightShown: true });
-  fireEvent.click(railButton('fluxo'));
+  fireEvent.click(railButton('tarefas'));
   expect(shell()).toMatchObject({ active: 'details', enabled: { files: false, details: true }, rightShown: true });
 });
 
 test('Cmd+B and Cmd+Shift+B still toggle the sides, and the shell follows (#452, #221)', () => {
   resetViewState({ dockLayout: DETAIL_RIGHT });
   render(<Window />);
-  fireEvent.click(railButton('fluxo'));
+  fireEvent.click(railButton('tarefas'));
   expect(shell()).toMatchObject({ rightShown: true, left: true });
   sideKey('right');
   expect(shell()).toMatchObject({ rightShown: false });
@@ -118,7 +118,7 @@ test("in plugins the shell's pane is variáveis alone: arquivos and detalhes off
   expect(shell()).toMatchObject({ active: 'variables', rightShown: true });
   pick('pick variáveis'); // the active one: the side closes, as the group's × does
   expect(shell()).toMatchObject({ rightShown: false });
-  fireEvent.click(railButton('fluxo'));
+  fireEvent.click(railButton('tarefas'));
   expect(shell()).toMatchObject({ active: 'details', enabled: { variables: false } });
 });
 

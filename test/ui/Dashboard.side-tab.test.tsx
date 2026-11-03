@@ -56,7 +56,7 @@ test('with an activity shown, the toggleSideTab key opens its closed sidebar and
 
 test('on the flow the key is not bound: it reaches the page untouched (#585)', () => {
   render(<Home />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the window opens on Atividades (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the window opens on Atividades (#746)
   expect(sideKey()).toBe(true);
 });
 
@@ -71,7 +71,7 @@ test.each([
   await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#1 Task A').closest('button') as HTMLElement);
   rightKey(); // the activities' right side open, on arquivos (redesign 07)
   expect(checked('arquivos')).toBe('true');
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.click(within(screen.getByRole('main')).getByText('#1 Task A')); // a pick outside the activities
   fireEvent.click(screen.getByRole('button', { name: 'atividades' }));
   expect(checked(tab)).toBe('true');

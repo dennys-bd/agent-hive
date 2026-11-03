@@ -19,7 +19,7 @@ vi.mock('@/hooks/use-comments', () => ({ useComments: () => ({ kind: 'unsupporte
 vi.mock('@/hooks/use-task-files', () => ({ useTaskFiles: () => [] }));
 vi.mock('@/hooks/use-task-tree', () => ({ useTaskTree: () => ({ status: 'loading' }) }));
 
-// "ver no fluxo" (#229): the task of roadmap must show in the flow whatever the center held before
+// "ver nas tarefas" (#229): the task of roadmap must show in the flow whatever the center held before
 const source = (name: string): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
 const NAV: SourcesNav = { sources: [source('roadmap'), source('other')], auth: 'cli' };
 const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
@@ -52,18 +52,18 @@ function Home() {
   return <Dashboard state={working} locale="pt-BR" tick={0} sources={NAV} selected={selected} onSelect={setSelected} />;
 }
 
-const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); }; // the window opens on Atividades (#746)
 const showActivities = (): void => { fireEvent.click(screen.getByRole('button', { name: 'atividades' })); };
-const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
+const automation = () => within(screen.getByRole('region', { name: 'Tarefas' }));
 const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 const right = (): HTMLElement => document.querySelector<HTMLElement>('[data-dock="right"]')!;
 
-// Picks the task's activity and presses the details' "ver no fluxo"
+// Picks the task's activity and presses the details' "ver nas tarefas"
 async function seeInFlow(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   showActivities();
   await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#12 Pager breaks').closest('button') as HTMLElement);
   fireEvent.keyDown(document.body, { key: 'E', code: 'KeyE', ctrlKey: true, altKey: true, shiftKey: true }); // toggleSideTab off macOS: opens Detalhes (#585)
-  await user.click(within(right()).getByRole('button', { name: 'ver no fluxo' }));
+  await user.click(within(right()).getByRole('button', { name: 'ver nas tarefas' }));
 }
 
 test('from a repository page, see in flow lands on the task\'s source flow with the task selected and no back button', async () => {

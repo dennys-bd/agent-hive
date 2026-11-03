@@ -37,7 +37,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 test('Ctrl+/ opens the shortcut map and Ctrl+/ again closes it, the focus going back where it was (#639)', async () => {
   render(<Home flow={<main><button type="button">alvo</button></main>} />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the board is the center (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the board is the center (#746)
   const target = screen.getByRole('button', { name: 'alvo' });
   target.focus();
   mapKey(target);
@@ -50,7 +50,7 @@ test('Ctrl+/ opens the shortcut map and Ctrl+/ again closes it, the focus going 
 test('Ctrl+/ on a terminal\'s textarea opens the map too, the key never reaching the pty; Escape gives the focus back to it (#639)', async () => {
   const user = userEvent.setup();
   render(<Home flow={<main><textarea aria-label="terminal" /></main>} />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the board is the center (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the board is the center (#746)
   const xterm = screen.getByRole('textbox', { name: 'terminal' }); // where xterm takes its keys
   xterm.focus();
   expect(mapKey(xterm)).toBe(false);
@@ -70,7 +70,7 @@ test('with the focus inside another dialog the key does nothing: the search stay
 
 test('a Settings key field that is recording keeps the key (#449, #639)', () => {
   render(<Home flow={<main><button type="button" data-shortcut-recording="">gravando</button></main>} />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the board is the center (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the board is the center (#746)
   expect(mapKey(screen.getByRole('button', { name: 'gravando' }))).toBe(true); // not prevented: the field records it
   expect(map()).not.toBeInTheDocument();
 });

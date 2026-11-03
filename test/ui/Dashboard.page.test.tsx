@@ -78,9 +78,9 @@ function Home({ initial, calls = [] }: { initial?: Selection; calls?: (Selection
   return <Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} selected={selected} onSelect={onSelect} />;
 }
 
-const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); }; // the window opens on Atividades (#746)
 const showActivities = (): void => { fireEvent.click(screen.getByRole('button', { name: 'atividades' })); };
-const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
+const automation = () => within(screen.getByRole('region', { name: 'Tarefas' }));
 const main = () => within(screen.getByRole('main'));
 const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 // The header's detalhes icon (#221): there while the right column shows, pressed while Detalhes is its pane; the right group draws no tab (#295)

@@ -125,7 +125,7 @@ const startC = (): void => { fireEvent.click(screen.getByRole('button', { name: 
 test('a started task waits unselected until its run appears, then becomes the activity with its stage run alone in the center (#457, #458)', () => {
   const calls: Selection[] = [];
   const { rerender } = render(<Home calls={calls} />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the board is the center (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the board is the center (#746)
   startC();
   rerender(<Home calls={calls} />);
   expect(screen.getByRole('main')).toBeInTheDocument();
@@ -141,7 +141,7 @@ test('a started task with its worktree already listed still waits for its run be
   const calls: Selection[] = [];
   const withWorktree: WithWork = { ...taskC, worktree: '/w/c' };
   const { rerender } = render(<Home calls={calls} c={withWorktree} />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the board is the center (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the board is the center (#746)
   startC();
   rerender(<Home calls={calls} c={withWorktree} />);
   expect(screen.getByRole('main')).toBeInTheDocument();
@@ -159,7 +159,7 @@ test('a pending start gives way to what the user did since: another opened run, 
   expect(screen.getByRole('region', { name: '#1 Task A · terminal' })).toBeVisible(); // still task A's
   rerender(<Home />);
   startC();
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' }));
   rerender(<Home workers={[workerA, stageC]} />);
   expect(screen.getByRole('main')).toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'Atividades' })).not.toBeVisible();
@@ -177,7 +177,7 @@ test('a session under an activity shows its run\'s tab in the activity\'s center
   fireEvent.click(session());
   expect(centerTabs()).toEqual([['Claude', 'true']]);
   expect(session()).toHaveAttribute('aria-current', 'true');
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' }));
   expect(screen.getByRole('main')).toBeInTheDocument();
   expect(session()).not.toHaveAttribute('aria-current'); // the pick stays (#458), but the board is the center now
 });
