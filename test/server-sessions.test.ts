@@ -17,6 +17,7 @@ import { FOLDER_MISSING_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive, writeTranscript } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
+import { workPath } from './fixtures/work.js';
 
 // A workspace's local activity (#292, #590), end to end through the server: the route, the reducer's Terminal and the pool's launch.
 // No worker (maxConcurrent 0): every run below is one the test opened.
@@ -325,4 +326,21 @@ test('a task\'s run that exits before its session wrote a transcript forgets tha
   workers[1].handlers.onExit();
   await waitFor(ended(server, workers[1].launch.ptyId));
   assert.deepEqual(sessionsOf(server.getState()!, 'local:1').map((s) => s.id), [id]);
+});
+
+test('opening a worktree session with no transcript answers 409, as a repo one does; once its transcript is there it opens with --resume (#586)', async (t) => {
+  await claudeConfig(t);
+  const { base, server, workers } = await start(t);
+  await server.dispatch({ type: 'createTask', title: 'one', body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
+  assert.equal((await postJson(`${base}/tasks/local:1/open`, { kind: 'claude' })).status, 200);
+  const activity = activityOf(server.getState()!, 'local:1');
+  const worker = server.getState()!.workers.find((w) => w.activityId === activity?.id && w.status !== 'empty');
+  assert.ok(activity?.worktree !== undefined && worker?.runId !== undefined && worker.sessionId !== undefined);
+  const { runId, sessionId } = worker;
+  await server.dispatch({ type: 'exit', ptyId: runId }); // straight to the reducer, unchecked: a session recorded before #586
+  const open = (): Promise<Response> => postJson(`${base}${workPath(server, 'local:1')}/sessions/${sessionId}/open`);
+  await refused(open(), 409, 'O histórico desta sessão não existe mais', 'claude --resume would start an empty conversation under that id');
+  await writeTranscript(activity.worktree, sessionId);
+  assert.equal((await open()).status, 200);
+  assert.deepEqual(plainArgs(workers.at(-1)!.launch).slice(-2), ['--resume', sessionId]);
 });
