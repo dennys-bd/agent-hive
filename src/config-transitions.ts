@@ -3,9 +3,9 @@ import { hiveActionRaw, runsAgentRaw } from './config-stage-agent.js';
 import { hasFixedVerdicts, runsAgent } from './stage-agent.js';
 import { isGate } from './tasks.js';
 import { isAutomatic, transitionKey, verdictsOf } from './transitions.js';
-import { END, TRIGGERS, type AgentId, type SourceAction, type Stage, type Transition, type TransitionSession, type Trigger } from './types.js';
+import { END, TRIGGERS, type AgentId, type Flow, type SourceAction, type Stage, type Transition, type TransitionSession, type Trigger } from './types.js';
 
-// comb.transitions and a stage's verdicts in hive.config.json (#134), out of config.ts, which is over 400 lines. The prefix is config.ts's
+// A flow's transitions and a stage's verdicts in hive.config.json (#134), out of config.ts, which is over 400 lines. The prefix is config.ts's
 // CONFIG_FILE, written out, and the source maps are config.ts's own parser, handed in: config.ts calls this file, so importing it back would
 // make the two import each other.
 const FILE = 'hive.config.json';
@@ -31,11 +31,20 @@ export function parseVerdicts(raw: Record<string, unknown>, field: string): Pick
   return { verdicts: names };
 }
 
-const stageNamed = (value: unknown, field: string, stages: readonly Stage[]): Stage =>
-  (typeof value === 'string' ? stages.find((s) => s.name === value) : undefined) ?? fail(field, 'names no stage');
+/** Where a transition list sits (#564): its path, its flow and that flow's stages; the other flows only name a stage that is not this flow's. */
+export interface FlowScope { field: string; flow: string; stages: readonly Stage[]; others: readonly Flow[] }
 
-const target = (value: unknown, field: string, stages: readonly Stage[]): string =>
-  (value === END ? END : (typeof value === 'string' ? stages.find((s) => s.name === value)?.name : undefined) ?? fail(field, `names no stage nor "${END}"`));
+// #564: a stage of another flow is a different mistake from a stage no flow has, so it says which flow holds it
+const missing = (value: unknown, field: string, scope: FlowScope, what: string): never => {
+  const holder = typeof value === 'string' ? scope.others.find((f) => f.stages.some((s) => s.name === value)) : undefined;
+  return fail(field, holder === undefined ? what : `"${String(value)}" is a stage of flow "${holder.name}", not of "${scope.flow}"`);
+};
+
+const stageNamed = (value: unknown, field: string, scope: FlowScope): Stage =>
+  (typeof value === 'string' ? scope.stages.find((s) => s.name === value) : undefined) ?? missing(value, field, scope, 'names no stage');
+
+const target = (value: unknown, field: string, scope: FlowScope): string =>
+  (value === END ? END : (typeof value === 'string' ? scope.stages.find((s) => s.name === value)?.name : undefined) ?? missing(value, field, scope, `names no stage nor "${END}"`));
 
 const trigger = (value: unknown, field: string): Trigger => TRIGGERS.find((t) => t === value) ?? fail(field, 'must be "done", "approved", "feedback" or "verdict"');
 
@@ -71,11 +80,11 @@ function parseMaxTries(value: unknown, when: Trigger, field: string): Pick<Trans
   return { maxTries: value };
 }
 
-function parseSession(value: unknown, field: string, stages: readonly Stage[]): Pick<Transition, 'session'> {
+function parseSession(value: unknown, field: string, scope: FlowScope): Pick<Transition, 'session'> {
   if (value === undefined) return {};
   if (value === 'previous' || value === 'new') return { session: value };
   if (!isRecord(value) || Object.keys(value).length !== 1 || value.continueOf === undefined) return fail(field, 'must be "previous", "new" or { "continueOf": "<stage>" }');
-  const session: TransitionSession = { continueOf: stageNamed(value.continueOf, `${field}.continueOf`, stages).name };
+  const session: TransitionSession = { continueOf: stageNamed(value.continueOf, `${field}.continueOf`, scope).name };
   return { session };
 }
 
@@ -85,10 +94,10 @@ function text(value: unknown, field: string): string | undefined {
   return value;
 }
 
-function parseTransition(raw: unknown, field: string, stages: readonly Stage[], parseSources: SourcesParser): Transition {
+function parseTransition(raw: unknown, field: string, scope: FlowScope, parseSources: SourcesParser): Transition {
   if (!isRecord(raw)) return fail(field, 'must be an object');
-  const from = stageNamed(raw.from, `${field}.from`, stages);
-  const to = target(raw.to, `${field}.to`, stages);
+  const from = stageNamed(raw.from, `${field}.from`, scope);
+  const to = target(raw.to, `${field}.to`, scope);
   const when = trigger(raw.when, `${field}.when`);
   const verdict = parseVerdict(raw, field, from, when);
   checkTrigger(from, when, to, field);
@@ -96,20 +105,20 @@ function parseTransition(raw: unknown, field: string, stages: readonly Stage[], 
   const prompt = text(raw.prompt, `${field}.prompt`);
   return {
     from: from.name, to, when, ...verdict, ...(label === undefined ? {} : { label: label.trim() }), ...(prompt === undefined ? {} : { prompt }),
-    ...parseSession(raw.session, `${field}.session`, stages), ...parseMaxTries(raw.maxTries, when, `${field}.maxTries`),
+    ...parseSession(raw.session, `${field}.session`, scope), ...parseMaxTries(raw.maxTries, when, `${field}.maxTries`),
     ...(raw.sources === undefined ? {} : { sources: parseSources(raw.sources, `${field}.sources`) }),
   };
 }
 
-/** comb.transitions (#134): required, [] allowed (every stage end then stops its task); each checked against the stages and named by its
- * index; no two with the same (from, when, verdict), the transition's key. */
-export function parseTransitions(raw: unknown, stages: readonly Stage[], parseSources: SourcesParser): Transition[] {
-  if (raw === undefined) fail('comb.transitions', 'is required');
-  if (!Array.isArray(raw)) return fail('comb.transitions', 'must be an array');
-  const transitions = raw.map((t: unknown, i: number) => parseTransition(t, `comb.transitions[${i}]`, stages, parseSources));
+/** A flow's transitions (#134, #564): required, [] allowed (every stage end then stops its task); each checked against the flow's stages and
+ * named by its index; no two with the same (from, when, verdict), the transition's key. */
+export function parseTransitions(raw: unknown, scope: FlowScope, parseSources: SourcesParser): Transition[] {
+  if (raw === undefined) fail(scope.field, 'is required');
+  if (!Array.isArray(raw)) return fail(scope.field, 'must be an array');
+  const transitions = raw.map((t: unknown, i: number) => parseTransition(t, `${scope.field}[${i}]`, scope, parseSources));
   const keys = transitions.map(transitionKey);
   const twin = keys.findIndex((key, i) => keys.indexOf(key) !== i);
-  if (twin !== -1) fail(`comb.transitions[${twin}]`, 'repeats the "from", "when" and "verdict" of an earlier transition');
+  if (twin !== -1) fail(`${scope.field}[${twin}]`, 'repeats the "from", "when" and "verdict" of an earlier transition');
   return transitions;
 }
 

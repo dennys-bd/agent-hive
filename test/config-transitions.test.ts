@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkClearedResumes, checkResumedAgents } from '../src/config-transitions.js';
-import type { AgentId, Stage, Transition } from '../src/types.js';
+import { checkClearedResumes, checkResumedAgents, parseTransitions, type FlowScope } from '../src/config-transitions.js';
+import type { AgentId, Flow, Stage, Transition } from '../src/types.js';
 
 // #925: AGENT_IDS holds only claude until 3.1, so a second agent is a cast: the check only compares ids
 const OTHER = 'other' as AgentId;
@@ -73,4 +73,28 @@ test('a handoff asked past a stage that runs no agent after a clearing stage is 
   assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'Plan')]),
     { message: 'hive.config.json: "comb.transitions[1].to" "Plan" asks for a handoff from the session of "Spec", which clears it when it ends (#494)' });
   assert.doesNotThrow(() => checkClearedResumes(stages, [T('Spec', 'Plan')]));
+});
+
+const NO_SOURCES = (): Record<string, never> => ({});
+const MAIN: Stage[] = [stage('spec'), stage('dev')];
+const BUG: Flow = { name: 'bug', stages: [stage('fix')], transitions: [] };
+const scope: FlowScope = { field: 'comb.flows[0].transitions', flow: 'main', stages: MAIN, others: [BUG] };
+
+test('a to, a from and a continueOf naming a stage of another flow are refused naming that flow (#564)', () => {
+  assert.throws(() => parseTransitions([{ from: 'spec', to: 'dev', when: 'done' }, { from: 'dev', to: 'fix', when: 'done' }], scope, NO_SOURCES),
+    { message: 'hive.config.json: "comb.flows[0].transitions[1].to" "fix" is a stage of flow "bug", not of "main"' });
+  assert.throws(() => parseTransitions([{ from: 'fix', to: 'dev', when: 'done' }], scope, NO_SOURCES),
+    { message: 'hive.config.json: "comb.flows[0].transitions[0].from" "fix" is a stage of flow "bug", not of "main"' });
+  assert.throws(() => parseTransitions([{ from: 'spec', to: 'dev', when: 'done', session: { continueOf: 'fix' } }], scope, NO_SOURCES),
+    { message: 'hive.config.json: "comb.flows[0].transitions[0].session.continueOf" "fix" is a stage of flow "bug", not of "main"' });
+  assert.throws(() => parseTransitions([{ from: 'spec', to: 'nope', when: 'done' }], scope, NO_SOURCES),
+    { message: 'hive.config.json: "comb.flows[0].transitions[0].to" names no stage nor "end"' }, 'a name no flow has keeps today\'s message');
+});
+
+test('an end transition with its own sources passes in each flow (#564)', () => {
+  const sources = (raw: unknown) => raw as Record<string, []>;
+  const ended = (from: string) => [{ from, to: 'end', when: 'done', sources: { board: [] } }];
+  assert.deepEqual(parseTransitions(ended('dev'), scope, sources)[0].sources, { board: [] });
+  const bugScope: FlowScope = { field: 'comb.flows[1].transitions', flow: 'bug', stages: BUG.stages, others: [{ name: 'main', stages: MAIN, transitions: [] }] };
+  assert.deepEqual(parseTransitions(ended('fix'), bugScope, sources)[0].sources, { board: [] });
 });

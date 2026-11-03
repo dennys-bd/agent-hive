@@ -4,6 +4,7 @@ import { WORKSPACE_HEX_COLOR, WORKSPACE_PRESET_COLORS } from './types.js';
 import { LOG_LEVELS, type LogLevel } from './log.js';
 import { LANGUAGES } from './language.js';
 import { branchProblem, COMB_PREFIX, DURATION, onSource, WORKSPACE_NAME, RESERVED_SOURCE, HIVE_SOURCE, isReservedSource, type BranchProblem, type WorkspaceNames, resolveWorkspace } from './tasks.js';
+import { MAIN_FLOW } from './flows.js';
 import { createInProblem, type CreateInProblem } from './create-in.js';
 import { REPOSITORY } from './task-refs.js';
 import { parseSourceTaskProps } from './task-props.js';
@@ -424,7 +425,7 @@ function parseComb(raw: unknown): CombConfig {
   const stages = parseStages(raw.stages, sources);
   requireSwitchAt(sources, stages); // #30: once the stages are known
   // #134: a transition's sources are read as onStart is, with a leaving action allowed last
-  const transitions = parseTransitions(raw.transitions, stages, (value, field) => parseSourceMap(value, field, sources, requireActionList(false)));
+  const transitions = parseTransitions(raw.transitions, { field: 'comb.transitions', flow: MAIN_FLOW, stages, others: [] }, (value, field) => parseSourceMap(value, field, sources, requireActionList(false)));
   return { prefix, workspaces, sources, stages, transitions, commands, ...parseCreateIn(raw, sources) };
 }
 
