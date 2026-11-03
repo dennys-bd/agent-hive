@@ -167,7 +167,7 @@ test('POST /settings writes the config with defaults and boots the runtime on th
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true });
   const { prefix, sources, stages, commands, hiveSource, createIn, ...rest } = BODY;
-  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, comb: { prefix, workspaces: workspacesAt(repo), sources, ...chained(stages ?? []), commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
+  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, comb: { prefix, workspaces: workspacesAt(repo), sources, flows: [{ name: 'main', ...chained(stages ?? []) }], commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
   await server.poll(); // the first poll runs in the background (#59); wait for it before reading tasks
   const state = server.getState();
   assert.equal(state?.workers.length, 0);
@@ -215,7 +215,7 @@ test('a second POST /settings reconfigures in memory, keeps agentArgs and drops 
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true });
   const rewritten = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
-  assert.equal(rewritten.comb.stages[0].from.board?.[0], 'Done');
+  assert.equal(rewritten.comb.flows[0].stages[0].from.board?.[0], 'Done');
   assert.equal('port' in rewritten, false, 'the parse ignores it, so the save drops it');
   assert.deepEqual(rewritten.agentArgs, { claude: ['--model', 'sonnet'], codex: [] });
   await server.poll(); // reconfigure's poll runs in the background (#59)
@@ -366,8 +366,8 @@ test('concurrent POST /settings calls run one at a time and the last one wins on
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
   const onDisk = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
-  assert.equal(onDisk.comb.stages[0].from.board?.[0], 'Done');
-  assert.equal((await json<SettingsInfo>(hiveFetch(`${base}/settings`))).config?.comb.stages[0].from.board?.[0], 'Done');
+  assert.equal(onDisk.comb.flows[0].stages[0].from.board?.[0], 'Done');
+  assert.equal((await json<SettingsInfo>(hiveFetch(`${base}/settings`))).config?.comb.flows[0].stages[0].from.board?.[0], 'Done');
 });
 
 test('POST /settings never writes maxConcurrent: the state keeps its own cap across saves (#727)', async (t) => {
@@ -458,11 +458,11 @@ test('POST /settings with stages persists them, GET /settings returns them, an o
   const posted: LegacyStage[] = [{ name: 'spec', from: { board: ['Ready'] }, onFinish: { board: [move('In review')] }, prompt: '/hive-spec {url}', session: 'new' }, { name: 'review', from: { board: ['In review'] } }];
   const { stages } = chained(posted); // #134: onFinish is saved as the transitions' sources
   assert.equal((await postSettings(base, onOwnStages({ ...BODY, stages: posted }))).status, 200);
-  assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.stages, stages);
-  assert.deepEqual((await json<SettingsInfo>(hiveFetch(`${base}/settings`))).config?.comb.stages, stages);
+  assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.flows[0].stages, stages);
+  assert.deepEqual((await json<SettingsInfo>(hiveFetch(`${base}/settings`))).config?.comb.flows[0].stages, stages);
   const { stages: _omitted, ...withoutStages } = BODY;
   assert.equal((await postSettings(base, { ...withoutStages, sources: [{ ...GITHUB_ENTRY, switchAt: 'spec' }] })).status, 200);
-  assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.stages, stages, 'an API caller that omits it keeps the saved ones');
+  assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.flows[0].stages, stages, 'an API caller that omits it keeps the saved ones');
   const bad = await postSettings(base, { ...BODY, stages: [{ name: 'a', from: { board: ['Ready'] }, session: 'resume' }] });
   assert.equal(bad.status, 400);
   assert.match((await json<{ error: string }>(bad)).error, /stages\[0\]\.session/);

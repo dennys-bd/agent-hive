@@ -1338,8 +1338,7 @@ export interface CombConfig {
   prefix: string; // local task ids are <prefix>-<n>
   workspaces: Workspace[]; // one or more, names and paths unique (#179)
   sources: SourceConfig[]; // [] = no external source: nothing is polled from or written to one
-  stages: Stage[]; // the pipeline, in order (#286: was columns)
-  transitions: Transition[]; // #134: the arrows between the stages; [] = every stage end stops its task
+  flows: Flow[]; // #564: required, non-empty; stage names are unique across flows and a source column leads into one flow (each flow's stages in order, #286; its transitions, #134)
   commands: Command[]; // #511: the Comb's run commands, each enabled in some workspaces; [] = none
   hiveSource: boolean; // #846: the hive source is on; false needs a source, and POST /settings refuses it while a created task exists
   createIn: string; // #846: the default destination of a new task: HIVE_SOURCE or a source with a repository

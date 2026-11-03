@@ -39,18 +39,18 @@ export function savedFlows(current: readonly Flow[] | undefined, sent: SentPair 
  * not parse (one from before the Comb, or from before workspace names) is no current config: the body is all there is. */
 export async function configFrom(home: string, body: Partial<SettingsBody>): Promise<Config> {
   const current = await loadConfigIfPresent(home).catch(() => undefined);
+  const saved = flatten(current?.comb.flows ?? []);
   // #134: a body that sends stages without transitions (an API caller) gets them from those stages, as a file from before #134 does; one that
-  // sends neither keeps the saved ones
-  const transitions = body.transitions ?? (body.stages === undefined ? current?.comb.transitions : undefined);
+  // sends neither keeps the saved flows (#564)
+  const sent = body.stages === undefined ? undefined : (migrateTransitions({ comb: { stages: body.stages, transitions: body.transitions } }) as { comb: SentPair }).comb;
   // #861: the stage renames, checked against the saved and the sent stages; what the saved file names by a stage follows them
-  const stageRenames = stageRenamesOf(body.stageRenames, current?.comb.stages ?? [], body.stages ?? current?.comb.stages ?? []);
-  return parseConfig(migrateTransitions({
+  const stageRenames = stageRenamesOf(body.stageRenames, saved.stages, body.stages ?? saved.stages);
+  return parseConfig({
     comb: {
       prefix: body.prefix,
       workspaces: body.workspaces ?? current?.comb.workspaces, // the form's workspaces list (#179)
       sources: body.sources ?? renamedSwitchAt(current?.comb.sources, stageRenames), // the form's sources list (#180); [] = no source
-      stages: body.stages ?? current?.comb.stages,
-      transitions,
+      flows: savedFlows(current?.comb.flows, sent),
       commands: body.commands ?? current?.comb.commands, // the form always sends it (#511), [] included
       hiveSource: body.hiveSource ?? current?.comb.hiveSource, // #846
       createIn: body.createIn ?? renamedCreateIn(current?.comb.createIn, body.renames),
@@ -94,7 +94,7 @@ export async function configFrom(home: string, body: Partial<SettingsBody>): Pro
     editor: body.editor ?? current?.editor, // the form always sends it (#780); an API caller that omits it keeps the saved one
     mcp: body.mcp ?? current?.mcp ?? DEFAULT_CONFIG.mcp, // #333: the form never sends it, the MCP routes do; a first save, or a file from before the key, writes the defaults
     reviewer: body.reviewer ?? current?.reviewer, // the form never sends it (#328); the reviewer menu (4.3) may; an omitted key keeps the saved one
-  }));
+  });
 }
 
 // The names of the workspaces an occupied worker's task resolves to: a stage run, or a free session, is inside one of their worktrees.

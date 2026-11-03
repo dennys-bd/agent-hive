@@ -9,6 +9,7 @@ import { migrateConfig } from '../src/config-migrate.js';
 import { loadState } from '../src/state-store.js';
 import { BOARD_COLUMNS, FIXTURE_DIR, materializeTestConfig, readBoardEnv, readFixture, stopTestHive, testWorktrees } from '../scripts/test-home.js';
 import { tempDir } from './temp-dir.js';
+import { flatten } from '../src/flows.js';
 
 const VALUES = { workspace: '/repo/worktree', owner: 'octo-org', number: 7 };
 const STAGES = ['Backlog', 'Plan', 'Dev', 'In Review', 'Done'];
@@ -21,9 +22,9 @@ test('the test home config, materialized, parses with no free worker, prefix TES
   const [source] = config.comb.sources;
   assert.ok(source.type === 'github');
   assert.deepEqual([source.name, source.owner, source.number, source.taskProps, source.qualifyId], ['test', 'octo-org', 7, { defaults: { workspace: 'agent-hive', auto: true }, rules: [] }, false]);
-  assert.deepEqual(config.comb.stages.map((s) => s.name), STAGES);
+  assert.deepEqual(flatten(config.comb.flows).stages.map((s) => s.name), STAGES);
   assert.deepEqual(
-    [...new Set(citedColumns(config.comb.stages, config.comb.transitions, 'test').map((c) => c.column))].sort(), [...BOARD_COLUMNS].sort(),
+    [...new Set(citedColumns(flatten(config.comb.flows).stages, flatten(config.comb.flows).transitions, 'test').map((c) => c.column))].sort(), [...BOARD_COLUMNS].sort(),
     'a stage citing a column the seed does not create would fail resolveFields on boot',
   );
 });
@@ -42,7 +43,7 @@ test('loadState keeps every fixture task and every variant the board draws diffe
   const state = await loadState(FIXTURE_DIR, workspaceScope(config)); // #629: the scope boot passes, which the migration places activities by
   assert.equal(state.maxConcurrent, 0);
   assert.equal(state.tasks.length, raw.tasks.length, 'loadState drops a bad task, or the whole file, silently');
-  const stages = config.comb.stages.map((s) => s.name);
+  const stages = flatten(config.comb.flows).stages.map((s) => s.name);
   for (const task of state.tasks) {
     assert.ok(stages.includes(task.stage), `${task.item.id} sits in ${task.stage}`);
     assert.equal(activityOf(state, task.item.itemId)?.slug ?? slugFor(task.item), slugFor(task.item), task.item.id); // #629: its activity's, when it has one

@@ -5,6 +5,7 @@ import { STAGE_OVERRIDE_FIELDS } from './arms.js';
 import { canonicalJson } from './canonical.js';
 import { STAGE_NAME, STAGE_OVERRIDE } from './schemas.js';
 import { DONE_STAGE } from './watcher.js';
+import { flatten } from '../flows.js';
 
 export type FlowCopy = { flow: BenchFlow } | { refused: string };
 type Comb = Pick<Config, 'comb' | 'defaultAgent'>;
@@ -51,7 +52,8 @@ function commandLines(stages: readonly Stage[], commands: Config['comb']['comman
 
 /** The workspace's flow as an experiment's base keeps it (#536), or the reason the Hive cannot run it. */
 export function copyFlow(config: Comb, workspace: string, now: Date): FlowCopy {
-  const { stages, transitions, commands } = config.comb;
+  const { commands } = config.comb;
+  const { stages, transitions } = flatten(config.comb.flows);
   const refused = refusal(stages);
   if (refused !== undefined) return { refused };
   const resolved = commandLines(stages, commands, workspace);

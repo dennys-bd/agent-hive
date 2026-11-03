@@ -20,7 +20,7 @@ const info: SettingsInfo = {
   config: {
     auth: { github: 'cli' },
     comb: {
-      prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [], transitions: [], stages: [{ name: 'fila', from: {} }], commands: [DEV],
+      prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [], flows: [{ name: 'main', stages: [{ name: 'fila', from: {} }], transitions: [] }], commands: [DEV],
       workspaces: [{ name: 'hive', path: '/repo', env: { NODE_ENV: 'development' }, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: '#a1b2c3' }, { name: 'web', path: '/web', env: { PORT: '8' }, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: PRESETS[1] }],
     },
     logLevel: 'info', agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: {}, usageRules: [],

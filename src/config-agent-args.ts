@@ -62,6 +62,6 @@ export function checkEnabledAgents(stages: readonly Stage[], defaultAgent: Agent
 export function checkStageModels(stages: readonly Stage[], defaultAgent: AgentId, at: string): void {
   stages.forEach((stage, i) => {
     if (stage.model === undefined || agentOf(stage, { defaultAgent }) !== 'codex' || !CLAUDE_MODEL.test(stage.model)) return;
-    throw new Error(`${FILE}: "comb.stages[${i}].model" "${stage.model}" is a Claude model; a codex stage needs a Codex model name`);
+    throw new Error(`${FILE}: "${at}.stages[${i}].model" "${stage.model}" is a Claude model; a codex stage needs a Codex model name`);
   });
 }

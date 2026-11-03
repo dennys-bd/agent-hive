@@ -22,6 +22,7 @@ import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem } f
 import { type RuleDraft, renamedRuleDrafts, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
 import { badEvaluation, limitFrom, numberField, optional, orphanContinue, type StageDraft, stageDraft, stageFrom, stageRenamesFrom } from './settings-stages.js';
 import { draftTitle, type TransitionDraft, transitionDraft, transitionFrom, transitionsProblem } from './settings-transitions.js';
+import { flatten } from '../../flows.js';
 
 export { emptyStage, type StageDraft } from './settings-stages.js';
 export type { TransitionDraft } from './settings-transitions.js';
@@ -113,7 +114,8 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
   const config = info?.config;
   const workspaces = config ? config.comb.workspaces.map(workspaceDraft) : [proposedRow(info?.proposedWorkspace)]; // the saved workspaces, else the proposal (#179)
   const rows = config ? config.comb.sources.map(sourceDraft) : [emptySource(workspaces[0].name)]; // a first setup: one GitHub row (#180), its default workspace the proposal (#293, #688)
-  const stages = (config?.comb.stages ?? []).map((c) => stageDraft(c, rows, config?.defaultAgent));
+  const flat = flatten(config?.comb.flows ?? []);
+  const stages = flat.stages.map((c) => stageDraft(c, rows, config?.defaultAgent));
   // #30: switchAt as its stage draft's id; the ids are kept, so the stages' from still finds each row
   const sources = config ? rows.map((row, i) => ({ ...row, switchAt: switchAtId(config.comb.sources[i].switchAt, stages) })) : rows;
   return {
@@ -126,7 +128,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     sources,
     auth: config?.auth?.github ?? 'cli', // a form opened with no config starts on cli, the transport that needs nothing
     stages,
-    transitions: (config?.comb.transitions ?? []).map((t) => transitionDraft(t, stages, sources)),
+    transitions: flat.transitions.map((t) => transitionDraft(t, stages, sources)),
     language: info?.language ?? 'en',
     branch: config?.branch ?? '', // empty = the default template; the hint under the field says which
     baseBranch: config?.baseBranch ?? '', // empty field = automatic

@@ -14,7 +14,7 @@ const info: SettingsInfo = {
   configured: true, home: '/home', language: 'pt', agents: [{ agent: 'claude', available: true }],
   config: {
     auth: { github: 'cli' },
-    comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }], transitions: [], stages: [{ name: 'fila', from: { board: ['Ready'] } }], commands: [] },
+    comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }], flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] } }], transitions: [] }], commands: [] },
     logLevel: 'info', agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
   },
@@ -312,7 +312,7 @@ test('a save error leaves the footer once the draft it was about changes or is r
 
 test('a save whose stage has approval and a terminou exit is refused on the client: fluxo opens, the footer names the transition and its editor opens, again after a click elsewhere (#918)', async () => {
   const user = userEvent.setup();
-  const comb = { ...info.config!.comb, stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x', approval: true as const }], transitions: [{ from: 'fila', to: 'end', when: 'done' as const }] };
+  const comb = { ...info.config!.comb, flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x', approval: true as const }], transitions: [{ from: 'fila', to: 'end', when: 'done' as const }] }] };
   render(<Settings info={{ ...info, config: { ...info.config!, comb } }} onSaved={vi.fn()} onCancel={vi.fn()} />);
   await settled();
   await open(user, 'execution');

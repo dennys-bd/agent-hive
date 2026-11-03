@@ -6,9 +6,9 @@ import { combConfig, FILTER } from './fakes.js';
 // #710: a skill stage and a stage's specialized agent, through the whole parse
 const github = (stages: unknown[]) => combConfig({ source: { type: 'github', owner: '@me', number: 6, filter: FILTER }, stages, transitions: [] });
 const stage = (extra: Record<string, unknown>) => ({ name: 'plan', from: { board: ['Ready'] }, ...extra });
-const parsed = (extra: Record<string, unknown>) => parseConfig(github([stage(extra)])).comb.stages[0];
+const parsed = (extra: Record<string, unknown>) => parseConfig(github([stage(extra)])).comb.flows[0].stages[0];
 const refused = (extra: Record<string, unknown>, message: string): void =>
-  assert.throws(() => parsed(extra), { message: `hive.config.json: "comb.stages[0].${message}` }, JSON.stringify(extra));
+  assert.throws(() => parsed(extra), { message: `hive.config.json: "comb.flows[0].stages[0].${message}` }, JSON.stringify(extra));
 const SKILL = { action: 'skill', skill: 'new-plan' };
 const BAD_SKILL = 'skill" must be a Hive skill\'s name: lowercase letters, digits and hyphens';
 const NEEDS_AGENT = 'specializedAgent" needs a stage that runs an agent: a "prompt" or "action": "skill"';

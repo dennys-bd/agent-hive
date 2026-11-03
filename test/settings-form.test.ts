@@ -9,6 +9,7 @@ import { emptyRule, type RuleDraft } from '../src/ui/lib/settings-rules.js';
 import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRule, Command, SettingsInfo } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, DELETE_ACTIVITY_DEFAULTS, CONSOLE_LINES_DEFAULT, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { FIXED } from './fakes.js';
+import { mainFlows } from './fixtures/main-flow.js';
 
 // #30: not a new source's keys, so draftFrom visibly reads them; switchAt on STAGES' second stage
 const EPICS = { epics: 'hide', epicFollows: 'ahead', switchAt: 'dev' } as const;
@@ -36,8 +37,7 @@ const CONFIG: Config = {
     workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }],
     commands: [FRONT], hiveSource: true, createIn: 'hive',
     sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
-    transitions: TRANSITIONS,
-    stages: STAGES,
+    flows: mainFlows(STAGES, TRANSITIONS),
   },
   logLevel: 'info', language: 'pt', baseBranch: 'develop',
   agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: { maxTokensPerHour: 50_000 }, usageRules: [{ source: 'hour', percent: 80, signal: 'yellow' }, { source: 'session', percent: 90, maxWorkers: 1, signal: 'red' }],
@@ -174,7 +174,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
     auth: { github: 'api' },
     sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
     renames: {},
-    stages: CONFIG.comb.stages, transitions: CONFIG.comb.transitions,
+    stages: STAGES, transitions: TRANSITIONS,
     budget: { maxTokensPerHour: 50_000 }, usageRules: CONFIG.usageRules, language: 'pt', baseBranch: 'develop', onClose: 'quit',
     deleteActivity: { session: true, transcripts: true, nonAutoTasks: true },
     shutdownIdleMinutes: 45,
@@ -480,10 +480,10 @@ test('isMinutes (#778): whole minutes from 1 to the max, the predicate the sessi
 });
 
 test('a stage\'s approval (#268): the draft reads it, the body sends approval: true only from a prompt stage that has it, never from a delete activity one', () => {
-  const approving: Config = { ...CONFIG, comb: { ...CONFIG.comb, stages: [{ ...CONFIG.comb.stages[0], approval: true }, ...CONFIG.comb.stages.slice(1)] } };
+  const approving: Config = { ...CONFIG, comb: { ...CONFIG.comb, flows: mainFlows([{ ...STAGES[0], approval: true }, ...STAGES.slice(1)], TRANSITIONS) } };
   const draft = draftFrom(info(approving));
   assert.deepEqual(draft.stages.map((c) => c.approval), [true, false, false]);
-  assert.deepEqual(toSettingsBody(draft).stages, approving.comb.stages, 'the saved stages come back as they were');
+  assert.deepEqual(toSettingsBody(draft).stages, approving.comb.flows[0].stages, 'the saved stages come back as they were');
   const cleanup = toSettingsBody({ ...draft, stages: [{ ...draft.stages[2], approval: true }] });
   assert.equal('approval' in cleanup.stages![0], false, 'parseStage would refuse it next to the action');
 });
@@ -558,14 +558,14 @@ test('validateSettings refuses a github row\'s rule with no values or a projectF
 test('a stage\'s maxWorkers and a rule\'s stage round-trip through the draft: an empty field sends no key, 0 is kept (#475)', () => {
   const capped: Config = {
     ...CONFIG,
-    comb: { ...CONFIG.comb, stages: CONFIG.comb.stages.map((s) => (s.name === 'dev' ? { ...s, maxWorkers: 0 } : s)) },
+    comb: { ...CONFIG.comb, flows: mainFlows(STAGES.map((s) => (s.name === 'dev' ? { ...s, maxWorkers: 0 } : s)), TRANSITIONS) },
     usageRules: [...CONFIG.usageRules, { source: 'week', percent: 70, maxWorkers: 1, stage: 'dev' }],
   };
   const draft = draftFrom(info(capped));
   assert.deepEqual(draft.stages.map((s) => s.maxWorkers), ['', '0', '']);
   assert.deepEqual(draft.rules.map((r) => r.stage), ['', '', '', 'dev']);
   const body = toSettingsBody(draft);
-  assert.deepEqual([body.stages, body.usageRules], [capped.comb.stages, capped.usageRules], 'an untouched form saves what it loaded');
+  assert.deepEqual([body.stages, body.usageRules], [capped.comb.flows[0].stages, capped.usageRules], 'an untouched form saves what it loaded');
   assert.equal('stage' in body.usageRules![0]!, false, 'a global rule sends no stage key');
   const cleared = toSettingsBody({ ...draft, stages: draft.stages.map((s) => ({ ...s, maxWorkers: ' ' })) });
   assert.equal(cleared.stages?.some((s) => 'maxWorkers' in s), false, 'an empty field is no cap: no key');
@@ -643,7 +643,7 @@ test('a workspace row keeps its memory total limit as typed through the draft an
 });
 
 test('the form loads the saved transitions by stage id and sends them back; a broken one is refused on the flow section, named as the chart names it, with its id (#134, #918)', () => {
-  const saved: Config = { ...CONFIG, comb: { ...CONFIG.comb, stages: [{ name: 'Build', from: {}, prompt: '/b' }], transitions: [{ from: 'Build', to: 'end', when: 'done' }] } };
+  const saved: Config = { ...CONFIG, comb: { ...CONFIG.comb, flows: mainFlows([{ name: 'Build', from: {}, prompt: '/b' }], [{ from: 'Build', to: 'end', when: 'done' }]) } };
   const draft = draftFrom(info(saved));
   assert.equal(draft.transitions[0].from, draft.stages[0].id);
   assert.deepEqual(toSettingsBody(draft).transitions, [{ from: 'Build', to: 'end', when: 'done' }]);

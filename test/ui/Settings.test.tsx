@@ -23,7 +23,7 @@ const info: SettingsInfo = {
   configured: true, home: '/home', language: 'pt', agents: [{ agent: 'claude', available: true }],
   config: {
     auth: { github: 'cli' },
-    comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }], transitions: [], stages: [{ name: 'fila', from: { board: ['Ready'] } }], commands: [] },
+    comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }], flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] } }], transitions: [] }], commands: [] },
     logLevel: 'info', agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
   },
@@ -735,7 +735,7 @@ test('the link under the default agent takes the settings to the Flow section (#
 
 test('a save that deletes a stage holding tasks asks first, naming how many go where; confirming sends the save (#861)', async () => {
   const user = userEvent.setup();
-  const two: SettingsInfo = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, stages: [{ name: 'fila', from: { board: ['Ready'] } }, { name: 'dev', from: { board: ['Doing'] } }] } } };
+  const two: SettingsInfo = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] } }, { name: 'dev', from: { board: ['Doing'] } }], transitions: [] }] } } };
   const queued: Task = { item: { itemId: 'board:I1', id: '1', title: 'T', body: '', url: '', source: 'board' }, stage: 'fila', boardColumn: 'Ready', auto: true };
   render(<Settings info={two} state={{ ...BASE_STATE, tasks: [queued] }} onSaved={vi.fn()} />);
   await open(user, 'flow');
@@ -767,7 +767,7 @@ test('execução shows the saved Claude arguments on one line, and the save send
 
 test('fluxo\'s stage model field shows the agent\'s default from the draft (#482)', async () => {
   const user = userEvent.setup();
-  const config = { ...info.config!, agentModels: { claude: 'opus', codex: null }, comb: { ...info.config!.comb, stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x' }] } };
+  const config = { ...info.config!, agentModels: { claude: 'opus', codex: null }, comb: { ...info.config!.comb, flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x' }], transitions: [] }] } };
   render(<Settings info={{ ...info, config }} onSaved={vi.fn()} />);
   await open(user, 'flow');
   expect(screen.getByRole('combobox', { name: t('newSession.model') })).toHaveTextContent('padrão · opus');
@@ -775,7 +775,7 @@ test('fluxo\'s stage model field shows the agent\'s default from the draft (#482
 
 test('a model typed in the execução agentes card redraws fluxo\'s padrão before the save (#482)', async () => {
   const user = userEvent.setup();
-  const config = { ...info.config!, comb: { ...info.config!.comb, stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x' }] } };
+  const config = { ...info.config!, comb: { ...info.config!.comb, flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x' }], transitions: [] }] } };
   render(<Settings info={{ ...info, config }} onSaved={vi.fn()} />);
   await open(user, 'execution');
   await user.click(screen.getByRole('combobox', { name: t('settings.agents.model.of', { agent: 'claude' }) }));

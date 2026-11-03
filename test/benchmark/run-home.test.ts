@@ -10,6 +10,7 @@ import { shellQuote } from '../../src/shell-init.js';
 import { loadState } from '../../src/state-store.js';
 import { BENCH_TOKEN, type ArmOverrides, type Experiment } from '../../src/types.js';
 import { WS_PATH, mainConfig, arm, benchHome, experiment, ISOLATION, line, SETUP } from './fixtures.js';
+import { flatten } from '../../src/flows.js';
 
 const OVERRIDES: ArmOverrides = {
   stages: { Build: { prompt: 'ARM-BUILD {title}' } },
@@ -25,7 +26,7 @@ test('prepareRun writes a config that parses: the arm\'s stages and prompts, the
   const run = await prepareRun(EXP, EXP.arms[1], 1, deps);
   const raw = await readJson(join(run.home, 'hive.config.json'));
   const config = parseConfig(raw);
-  assert.deepEqual(config.comb.stages.map((s) => s.prompt), [...SETUP.flow.stages.map((s) => (s.name === 'Build' ? 'ARM-BUILD {title}' : s.prompt)), undefined]);
+  assert.deepEqual(flatten(config.comb.flows).stages.map((s) => s.prompt), [...SETUP.flow.stages.map((s) => (s.name === 'Build' ? 'ARM-BUILD {title}' : s.prompt)), undefined]);
   const [ws] = config.comb.workspaces;
   assert.equal(ws.path, join(hiveDir, 'benchmark', 'exp-1', 'clone'));
   assert.deepEqual(ws.setup?.split('\n'), [`RUN mkdir -p .claude && cp ${shellQuote(join(run.home, 'sandbox.json'))} .claude/settings.local.json`, 'RUN pnpm install']);

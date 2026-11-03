@@ -15,6 +15,7 @@ import { fakeGqlJson, GITHUB_ENTRY } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
 import { EXAMPLE } from './fixtures/decomposition.js';
 import { tempDir } from './temp-dir.js';
+import { mainFlows } from './fixtures/main-flow.js';
 
 // The decomposition's routes (#865) alone over a saved state: the goal's worktree holds decomposition.md, GitHub is a fake, and every
 // dispatched event is recorded rather than reduced.
@@ -47,8 +48,8 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const state: State = withWork({ ...initialState(0), tasks: [task] }, task.item.itemId, work, { result: setup.result ?? PENDING });
   const comb: CombConfig = {
     prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: setup.sources ?? [GITHUB_ENTRY], commands: [],
-    stages: [{ name: 'spec', from: { board: ['Backlog'] }, prompt: '/hive:new-spec {url}' }, { name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }],
-    transitions: [], hiveSource: true, createIn: 'hive',
+    flows: mainFlows([{ name: 'spec', from: { board: ['Backlog'] }, prompt: '/hive:new-spec {url}' }, { name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }]),
+    hiveSource: true, createIn: 'hive',
   };
   const events: HiveEvent[] = [];
   const git: string[][] = [];

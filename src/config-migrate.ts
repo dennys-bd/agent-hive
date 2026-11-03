@@ -1,5 +1,5 @@
 // Every load-time migration a hive.config.json may need: #511 (each workspace's run commands and its setup timeout in minutes), #513 (the
-// menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #924 (claudeArgs into agentArgs), #927 (agentArgs.codex), #482 (each agent's default model and switch), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list) and #727 (retired keys). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
+// menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #924 (claudeArgs into agentArgs), #927 (agentArgs.codex), #482 (each agent's default model and switch), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list), #727 (retired keys) and #564 (a flat comb as one main flow). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
 // idempotent; malformed entries pass through untouched, so parseConfig still names their fault.
 
 import { MAIN_FLOW } from './flows.js';
@@ -190,4 +190,4 @@ export function migrateFlows(raw: unknown): unknown {
 }
 
 /** Every load-time migration, oldest first: readConfig's one entry point. */
-export const migrateConfig = (raw: unknown): unknown => migrateAgentDefaults(migrateCreateIn(migrateRetiredKeys(migrateTransitions(migrateFileIcons(migrateCodexArgs(migrateAgentArgs(migrateDefaultAgent(migrateStageActions(migrateOnClose(migrateWorkspaces(raw)))))))))));
+export const migrateConfig = (raw: unknown): unknown => migrateFlows(migrateAgentDefaults(migrateCreateIn(migrateRetiredKeys(migrateTransitions(migrateFileIcons(migrateCodexArgs(migrateAgentArgs(migrateDefaultAgent(migrateStageActions(migrateOnClose(migrateWorkspaces(raw))))))))))));

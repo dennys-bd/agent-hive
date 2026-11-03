@@ -26,7 +26,7 @@ test('baseSnapshot: the copied flow, plugins, rules, items, worktree and no task
 
 test('baseSnapshot refuses a flow with a wait for CI, naming the stage (#536)', () => {
   const config = benchConfig('/work/bench');
-  const ci = { ...config, comb: { ...config.comb, stages: [...BENCH_STAGES, { name: 'CI', from: {}, action: 'waitForCi' as const, ciChecks: 'all' as const, rerunOnce: false }] } };
+  const ci = { ...config, comb: { ...config.comb, flows: [{ ...config.comb.flows[0], stages: [...BENCH_STAGES, { name: 'CI', from: {}, action: 'waitForCi' as const, ciChecks: 'all' as const, rerunOnce: false }] }] } };
   const answer = baseSnapshot(ci, config.comb.workspaces[0], [], NOW);
   assert.ok('refused' in answer);
   assert.match(answer.refused, /CI waits for CI/);

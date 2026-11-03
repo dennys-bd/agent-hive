@@ -47,7 +47,7 @@ const MAX_KEY_LENGTH = 4096; // a key ends with its line's text, so it is as lon
 const DISMISSED = z.object({ version: z.string().nullable(), keys: z.array(z.string().max(MAX_KEY_LENGTH)).max(MAX_DISMISSED) });
 
 export interface PluginRouteDeps {
-  requireLive(res: Response): { runtime: { config: { comb: { workspaces: ItemSources['workspaces']; stages: readonly StageRef[] } } } } | undefined;
+  requireLive(res: Response): { runtime: { config: { comb: { workspaces: ItemSources['workspaces']; flows: readonly { stages: readonly StageRef[] }[] } } } } | undefined;
   store: CustomStore;
   home: string;
   pluginSource: string;
@@ -78,7 +78,7 @@ function route(deps: PluginRouteDeps, handle: Handle) {
     if (!current) return;
     try {
       const { comb } = current.runtime.config;
-      await handle(req, res, { home: deps.home, pluginSource: deps.pluginSource, workspaces: comb.workspaces }, comb.stages);
+      await handle(req, res, { home: deps.home, pluginSource: deps.pluginSource, workspaces: comb.workspaces }, comb.flows.flatMap((f) => f.stages));
     } catch (err) {
       deps.log.error(`plugins: ${req.method} ${req.path} failed: ${errorMessage(err)}`);
       res.status(HTTP_SERVER_ERROR).json({ error: ITEMS_ERROR_MESSAGE });

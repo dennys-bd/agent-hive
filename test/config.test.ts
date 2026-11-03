@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { taskWorkspace, loadConfig, loadConfigIfPresent, parseConfig, predatesComb, workspaceByName, workspaceScope, requireWorkspace, unnamedWorkspacePath } from '../src/config.js';
-import { type LegacyStage, transitionsOf } from '../src/config-migrate.js';
+import { type LegacyStage, migrateConfig, transitionsOf } from '../src/config-migrate.js';
+import { flatten } from '../src/flows.js';
 import { SHORTCUTS } from '../src/shortcut-registry.js';
 import type { SourceTaskProps, Config } from '../src/types.js';
 import { MCP_DEFAULTS, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, SIGNALS_DEFAULTS, APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RESERVED_ENV_NAMES, SHUTDOWN_IDLE_DEFAULT, WORKSPACE_PRESET_COLORS } from '../src/types.js';
@@ -31,7 +32,7 @@ test('parseConfig applies defaults on top of a minimal config', () => {
 
 test('parseConfig reads stages[].action and after, keeps them absent when unset and rejects the bad ones naming the index', () => {
   const stage = (extra: Record<string, unknown>) => ({ name: 'done', from: { board: ['Done'] }, ...extra });
-  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];
   assert.equal(parsed({ action: 'deleteActivity' }).action, 'deleteActivity');
   assert.deepEqual(
     parsed({ action: 'deleteActivity', after: '5d', session: 'continue', model: 'opus' }),
@@ -42,82 +43,82 @@ test('parseConfig reads stages[].action and after, keeps them absent when unset 
   const plain = parsed({});
   assert.deepEqual(['action' in plain, 'after' in plain], [false, false], 'absent stays absent: the file stays clean');
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
-  assert.throws(bad({ action: 'other' }), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands", "waitForCi", "skill" or "evaluate"' });
-  assert.throws(bad({ action: 1 }), /comb\.stages\[0\]\.action/);
-  assert.throws(bad({ action: 'deleteActivity', prompt: '/x' }), { message: 'hive.config.json: "comb.stages[0].action" cannot be combined with "prompt"' });
+  assert.throws(bad({ action: 'other' }), { message: 'hive.config.json: "comb.flows[0].stages[0].action" must be "deleteActivity", "commands", "waitForCi", "skill" or "evaluate"' });
+  assert.throws(bad({ action: 1 }), /comb\.flows\[0\]\.stages\[0\]\.action/);
+  assert.throws(bad({ action: 'deleteActivity', prompt: '/x' }), { message: 'hive.config.json: "comb.flows[0].stages[0].action" cannot be combined with "prompt"' });
   for (const after of ['5', '0d', '5 d', '1w', '', '05d', '1.5h', '1H', 5, null]) {
-    assert.throws(bad({ after }), { message: 'hive.config.json: "comb.stages[0].after" must be a duration like "30m", "12h" or "5d"' }, JSON.stringify(after));
+    assert.throws(bad({ after }), { message: 'hive.config.json: "comb.flows[0].stages[0].after" must be a duration like "30m", "12h" or "5d"' }, JSON.stringify(after));
   }
 });
 
 test('parseConfig refuses a stage whose action is still delete activity, naming deleteActivity, and reads deleteActivity (#573)', () => {
   const stage = (action: string) => ({ name: 'done', from: { board: ['Done'] }, action });
-  assert.throws(() => parseConfig(github({ stages: [stage('cleanup')] })), { message: 'hive.config.json: "comb.stages[0].action" must be "deleteActivity", "commands", "waitForCi", "skill" or "evaluate"' }); // #573: the old name, on purpose
-  assert.equal(parseConfig(github({ stages: [stage('deleteActivity')] })).comb.stages[0].action, 'deleteActivity');
+  assert.throws(() => parseConfig(github({ stages: [stage('cleanup')] })), { message: 'hive.config.json: "comb.flows[0].stages[0].action" must be "deleteActivity", "commands", "waitForCi", "skill" or "evaluate"' }); // #573: the old name, on purpose
+  assert.equal(parseConfig(github({ stages: [stage('deleteActivity')] })).comb.flows[0].stages[0].action, 'deleteActivity');
 });
 
 test('parseConfig reads a commands stage: its names trimmed, in order, and its switch; refuses either key without the action, a missing, empty or repeated list, and every agent key beside it (#755)', () => {
   const stage = (extra: Record<string, unknown>) => ({ name: 'checks', from: { board: ['Checks'] }, ...extra });
-  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
   const ok = { action: 'commands', commands: [' build ', 'lint', 'hive test'], stopOnFailure: true, onMissing: 'fail' };
   assert.deepEqual(parsed(ok), { name: 'checks', from: { board: ['Checks'] }, action: 'commands', commands: ['build', 'lint', 'hive test'], stopOnFailure: true, onMissing: 'fail' });
   assert.deepEqual(parsed({ ...ok, commands: ['gone'], stopOnFailure: false, onMissing: 'skip' }), { name: 'checks', from: { board: ['Checks'] }, action: 'commands', commands: ['gone'], stopOnFailure: false, onMissing: 'skip' }, 'a name the Comb does not have is checked when the stage runs');
-  const list = '"comb.stages[0].commands" must be a non-empty array of distinct command names';
+  const list = '"comb.flows[0].stages[0].commands" must be a non-empty array of distinct command names';
   const refused: [Record<string, unknown>, string][] = [
-    [{ commands: ['build'] }, '"comb.stages[0].commands" needs "action": "commands"'],
-    [{ stopOnFailure: true }, '"comb.stages[0].stopOnFailure" needs "action": "commands"'],
-    [{ action: 'deleteActivity', commands: ['build'] }, '"comb.stages[0].commands" needs "action": "commands"'],
-    [{ onMissing: 'skip' }, '"comb.stages[0].onMissing" needs "action": "commands"'],
-    [{ action: 'deleteActivity', onMissing: 'fail' }, '"comb.stages[0].onMissing" needs "action": "commands"'],
-    [{ ...ok, onMissing: undefined }, '"comb.stages[0].onMissing" must be "fail" or "skip"'],
-    [{ ...ok, onMissing: 'ignore' }, '"comb.stages[0].onMissing" must be "fail" or "skip"'],
+    [{ commands: ['build'] }, '"comb.flows[0].stages[0].commands" needs "action": "commands"'],
+    [{ stopOnFailure: true }, '"comb.flows[0].stages[0].stopOnFailure" needs "action": "commands"'],
+    [{ action: 'deleteActivity', commands: ['build'] }, '"comb.flows[0].stages[0].commands" needs "action": "commands"'],
+    [{ onMissing: 'skip' }, '"comb.flows[0].stages[0].onMissing" needs "action": "commands"'],
+    [{ action: 'deleteActivity', onMissing: 'fail' }, '"comb.flows[0].stages[0].onMissing" needs "action": "commands"'],
+    [{ ...ok, onMissing: undefined }, '"comb.flows[0].stages[0].onMissing" must be "fail" or "skip"'],
+    [{ ...ok, onMissing: 'ignore' }, '"comb.flows[0].stages[0].onMissing" must be "fail" or "skip"'],
     [{ action: 'commands', stopOnFailure: true, onMissing: 'fail' }, list],
     [{ ...ok, commands: [] }, list],
     [{ ...ok, commands: ['build', ' build'] }, list],
     [{ ...ok, commands: ['build', ' '] }, list],
     [{ ...ok, commands: 'build' }, list],
     [{ ...ok, commands: ['build', 7] }, list],
-    [{ action: 'commands', commands: ['build'], onMissing: 'fail' }, '"comb.stages[0].stopOnFailure" must be true or false'],
-    [{ ...ok, stopOnFailure: 'yes' }, '"comb.stages[0].stopOnFailure" must be true or false'],
-    [{ ...ok, prompt: '/x' }, '"comb.stages[0].action" cannot be combined with "prompt"'],
-    [{ ...ok, approval: true }, '"comb.stages[0].approval" cannot be combined with "action"'],
-    [{ ...ok, agent: 'claude' }, '"comb.stages[0].agent" cannot be combined with "action"'],
-    [{ ...ok, handoff: true }, '"comb.stages[0].handoff" cannot be combined with "action"'],
-    [{ ...ok, model: 'opus' }, '"comb.stages[0].model" cannot be combined with "action": "commands"'],
-    [{ ...ok, session: 'new' }, '"comb.stages[0].session" cannot be combined with "action": "commands"'],
+    [{ action: 'commands', commands: ['build'], onMissing: 'fail' }, '"comb.flows[0].stages[0].stopOnFailure" must be true or false'],
+    [{ ...ok, stopOnFailure: 'yes' }, '"comb.flows[0].stages[0].stopOnFailure" must be true or false'],
+    [{ ...ok, prompt: '/x' }, '"comb.flows[0].stages[0].action" cannot be combined with "prompt"'],
+    [{ ...ok, approval: true }, '"comb.flows[0].stages[0].approval" cannot be combined with "action"'],
+    [{ ...ok, agent: 'claude' }, '"comb.flows[0].stages[0].agent" cannot be combined with "action"'],
+    [{ ...ok, handoff: true }, '"comb.flows[0].stages[0].handoff" cannot be combined with "action"'],
+    [{ ...ok, model: 'opus' }, '"comb.flows[0].stages[0].model" cannot be combined with "action": "commands"'],
+    [{ ...ok, session: 'new' }, '"comb.flows[0].stages[0].session" cannot be combined with "action": "commands"'],
   ];
   for (const [extra, message] of refused) assert.throws(bad(extra), { message: `hive.config.json: ${message}` }, JSON.stringify(extra));
 });
 
 test('parseConfig reads stages[].approval as a boolean kept only when true, and refuses it next to an action (#268)', () => {
   const stage = (extra: Record<string, unknown>) => ({ name: 'spec', from: { board: ['Ready'] }, ...extra });
-  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];
   assert.equal(parsed({ prompt: '/x', approval: true }).approval, true);
   assert.equal('approval' in parsed({ prompt: '/x', approval: false }), false, 'false is no key: the file stays clean');
   assert.equal('approval' in parsed({ prompt: '/x' }), false);
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
-  assert.throws(bad({ action: 'deleteActivity', approval: true }), { message: 'hive.config.json: "comb.stages[0].approval" cannot be combined with "action"' });
-  assert.throws(bad({ prompt: '/x', approval: 'yes' }), { message: 'hive.config.json: "comb.stages[0].approval" must be true or false' });
+  assert.throws(bad({ action: 'deleteActivity', approval: true }), { message: 'hive.config.json: "comb.flows[0].stages[0].approval" cannot be combined with "action"' });
+  assert.throws(bad({ prompt: '/x', approval: 'yes' }), { message: 'hive.config.json: "comb.flows[0].stages[0].approval" must be true or false' });
 });
 
 test('parseConfig reads stages[].handoff as a boolean kept only when true, and refuses it next to an action or a continued session (#692)', () => {
   const stage = (extra: Record<string, unknown>) => ({ name: 'plan', from: { board: ['Ready'] }, ...extra });
-  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];
   assert.equal(parsed({ prompt: '/x', handoff: true }).handoff, true);
   assert.equal(parsed({ prompt: '/x', session: 'new', handoff: true }).handoff, true);
   assert.equal('handoff' in parsed({ prompt: '/x', handoff: false }), false, 'false is no key: the file stays clean');
   assert.equal('handoff' in parsed({ prompt: '/x' }), false);
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
-  assert.throws(bad({ action: 'deleteActivity', handoff: true }), { message: 'hive.config.json: "comb.stages[0].handoff" cannot be combined with "action"' });
-  assert.throws(bad({ prompt: '/x', session: 'continue', handoff: true }), { message: 'hive.config.json: "comb.stages[0].handoff" cannot be combined with "session": "continue"' });
-  assert.throws(bad({ handoff: true }), { message: 'hive.config.json: "comb.stages[0].handoff" cannot be used without "prompt"' });
-  assert.throws(bad({ prompt: '/x', handoff: 'yes' }), { message: 'hive.config.json: "comb.stages[0].handoff" must be true or false' });
+  assert.throws(bad({ action: 'deleteActivity', handoff: true }), { message: 'hive.config.json: "comb.flows[0].stages[0].handoff" cannot be combined with "action"' });
+  assert.throws(bad({ prompt: '/x', session: 'continue', handoff: true }), { message: 'hive.config.json: "comb.flows[0].stages[0].handoff" cannot be combined with "session": "continue"' });
+  assert.throws(bad({ handoff: true }), { message: 'hive.config.json: "comb.flows[0].stages[0].handoff" cannot be used without "prompt"' });
+  assert.throws(bad({ prompt: '/x', handoff: 'yes' }), { message: 'hive.config.json: "comb.flows[0].stages[0].handoff" must be true or false' });
 });
 
 test('parseConfig reads stages[].clearSession as a boolean kept only when true, on a prompt or a skill stage, a continued session included; refused next to a Hive action and on a stage that runs no agent (#494)', () => {
   const stage = (extra: Record<string, unknown>) => ({ name: 'spec', from: { board: ['Ready'] }, ...extra });
-  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];
   assert.equal(parsed({ prompt: '/x', clearSession: true }).clearSession, true);
   assert.equal(parsed({ action: 'skill', skill: 'new-spec', clearSession: true }).clearSession, true);
   assert.equal(parsed({ prompt: '/x', session: 'continue', clearSession: true }).clearSession, true, 'it resumes the previous session and clears it when done');
@@ -125,17 +126,17 @@ test('parseConfig reads stages[].clearSession as a boolean kept only when true, 
   assert.equal('clearSession' in parsed({ prompt: '/x' }), false);
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
   for (const action of ['deleteActivity', 'commands', 'waitForCi', 'evaluate']) {
-    assert.throws(bad({ action, clearSession: true }), { message: 'hive.config.json: "comb.stages[0].clearSession" cannot be combined with "action"' }, action);
+    assert.throws(bad({ action, clearSession: true }), { message: 'hive.config.json: "comb.flows[0].stages[0].clearSession" cannot be combined with "action"' }, action);
   }
-  assert.throws(bad({ clearSession: true }), { message: 'hive.config.json: "comb.stages[0].clearSession" cannot be used without "prompt"' });
-  assert.throws(bad({ approval: true, clearSession: true }), { message: 'hive.config.json: "comb.stages[0].clearSession" cannot be used without "prompt"' }, 'a gate never spawns');
-  assert.throws(bad({ prompt: '/x', clearSession: 'yes' }), { message: 'hive.config.json: "comb.stages[0].clearSession" must be true or false' });
+  assert.throws(bad({ clearSession: true }), { message: 'hive.config.json: "comb.flows[0].stages[0].clearSession" cannot be used without "prompt"' });
+  assert.throws(bad({ approval: true, clearSession: true }), { message: 'hive.config.json: "comb.flows[0].stages[0].clearSession" cannot be used without "prompt"' }, 'a gate never spawns');
+  assert.throws(bad({ prompt: '/x', clearSession: 'yes' }), { message: 'hive.config.json: "comb.flows[0].stages[0].clearSession" must be true or false' });
 });
 
 test('parseConfig refuses a transition that resumes the session of a stage with clearSession; a new session out of it parses (#494)', () => {
   const stages = [{ name: 'spec', from: { board: ['Ready'] }, prompt: '/spec', clearSession: true }, { name: 'plan', from: {}, prompt: '/plan' }];
   const config = (session: unknown) => github({ stages, transitions: [{ from: 'spec', to: 'plan', when: 'done', session }] });
-  assert.throws(() => parseConfig(config('previous')), { message: 'hive.config.json: "comb.transitions[0].session" resumes the session of "spec", which clears it when it ends (#494)' });
+  assert.throws(() => parseConfig(config('previous')), { message: 'hive.config.json: "comb.flows[0].transitions[0].session" resumes the session of "spec", which clears it when it ends (#494)' });
   assert.doesNotThrow(() => parseConfig(config('new')));
 });
 
@@ -324,10 +325,10 @@ test('parseConfig requires agentEnabled, true or false per agent; the default ag
   assert.throws(() => parseConfig({ ...GITHUB, agentEnabled: { claude: false, codex: true } }), { message: 'hive.config.json: "agentEnabled.claude" cannot be false: claude is the default agent' });
   const stage = (extra: Record<string, unknown>) => ({ name: 'spec', from: { board: ['Ready'] }, ...extra });
   const codexOff = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)], agentEnabled: off }));
-  assert.throws(codexOff({ prompt: '/x', agent: 'codex' }), { message: 'hive.config.json: "comb.stages[0].agent" names codex, which "agentEnabled" turns off' });
+  assert.throws(codexOff({ prompt: '/x', agent: 'codex' }), { message: 'hive.config.json: "comb.flows[0].stages[0].agent" names codex, which "agentEnabled" turns off' });
   const evaluate = { action: 'evaluate', threshold: 3, rubric: 'Good?' };
-  assert.throws(codexOff({ ...evaluate, reviewers: [{ agent: 'claude', focus: 'a' }, { agent: 'codex', focus: 'b' }], judge: { agent: 'claude' } }), { message: 'hive.config.json: "comb.stages[0].reviewers[1].agent" names codex, which "agentEnabled" turns off' });
-  assert.throws(codexOff({ ...evaluate, reviewers: [], judge: { agent: 'codex' } }), { message: 'hive.config.json: "comb.stages[0].judge.agent" names codex, which "agentEnabled" turns off' });
+  assert.throws(codexOff({ ...evaluate, reviewers: [{ agent: 'claude', focus: 'a' }, { agent: 'codex', focus: 'b' }], judge: { agent: 'claude' } }), { message: 'hive.config.json: "comb.flows[0].stages[0].reviewers[1].agent" names codex, which "agentEnabled" turns off' });
+  assert.throws(codexOff({ ...evaluate, reviewers: [], judge: { agent: 'codex' } }), { message: 'hive.config.json: "comb.flows[0].stages[0].judge.agent" names codex, which "agentEnabled" turns off' });
   assert.doesNotThrow(codexOff({ prompt: '/x' }), 'no own agent: the default, always on');
 });
 
@@ -340,12 +341,12 @@ test('parseConfig requires defaultAgent, one of the known agents, with no defaul
 
 test("parseConfig reads a stage's agent: kept when known, absent stays absent, unknown or next to an action refused by field (#516)", () => {
   const stage = (extra: Record<string, unknown>) => ({ name: 'dev', from: { board: ['Ready'] }, ...extra });
-  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];
   assert.equal(parsed({ prompt: '/x', agent: 'claude' }).agent, 'claude');
   assert.equal('agent' in parsed({ prompt: '/x' }), false, 'absent = the default agent; the file stays clean');
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
-  assert.throws(bad({ prompt: '/x', agent: 'gemini' }), { message: 'hive.config.json: "comb.stages[0].agent" must be one of: claude, codex' });
-  assert.throws(bad({ action: 'deleteActivity', agent: 'claude' }), { message: 'hive.config.json: "comb.stages[0].agent" cannot be combined with "action"' });
+  assert.throws(bad({ prompt: '/x', agent: 'gemini' }), { message: 'hive.config.json: "comb.flows[0].stages[0].agent" must be one of: claude, codex' });
+  assert.throws(bad({ action: 'deleteActivity', agent: 'claude' }), { message: 'hive.config.json: "comb.flows[0].stages[0].agent" cannot be combined with "action"' });
 });
 
 test('parseConfig requires theme, one of system, light or dark, with no default (#296)', () => {
@@ -495,29 +496,29 @@ test('parseConfig reads stages as written, keeps absent optional keys absent and
     { name: 'dev', from: { board: ['Ready'] }, onStart: { board: [move('In progress')] }, onFinish: { board: [move('In review')] }, prompt: '/hive-build {url}', session: 'continue' },
     { name: 'review', from: { board: ['In review'] } },
   ];
-  assert.deepEqual(parseConfig(github({ stages })).comb.stages, chained(stages).stages); // #134: onFinish moved to the transitions
-  assert.equal('weight' in parseConfig(github({ stages: [{ ...stages[0], weight: 5 }, ...stages.slice(1)] })).comb.stages[0], false, 'a leftover weight is ignored: the file boots as it is (#316)');
-  assert.equal('session' in parseConfig(github({ stages })).comb.stages[2], false, 'absent stays absent: new is the default at use');
+  assert.deepEqual(parseConfig(github({ stages })).comb.flows[0].stages, chained(stages).stages); // #134: onFinish moved to the transitions
+  assert.equal('weight' in parseConfig(github({ stages: [{ ...stages[0], weight: 5 }, ...stages.slice(1)] })).comb.flows[0].stages[0], false, 'a leftover weight is ignored: the file boots as it is (#316)');
+  assert.equal('session' in parseConfig(github({ stages })).comb.flows[0].stages[2], false, 'absent stays absent: new is the default at use');
   const bad = (stages: unknown) => () => parseConfig(github({ stages }));
-  const { stages: _dropped, ...noStages } = GITHUB.comb as Record<string, unknown>;
-  assert.throws(() => parseConfig({ ...GITHUB, comb: noStages }), { message: 'hive.config.json: "comb.stages" is required' });
-  assert.throws(bad([]), { message: 'hive.config.json: "comb.stages" must be a non-empty array' });
-  assert.throws(bad('x'), /"comb\.stages" must be a non-empty array/);
-  assert.throws(bad([5]), /"comb\.stages\[0\]" must be an object/);
-  assert.throws(bad([{ from: {} }]), /"comb\.stages\[0\]\.name" must be a non-empty string/);
-  assert.throws(bad([{ name: 'a' }]), /"comb\.stages\[0\]\.from" must be an object keyed by source name/);
-  assert.throws(bad([{ name: 'a', from: { board: [1] } }]), /comb\.stages\[0\]\.from/);
-  assert.throws(bad([{ name: 'a', from: { board: ['x'] }, session: 'resume' }]), /"comb\.stages\[0\]\.session" must be one of: new, continue/);
-  assert.throws(bad([{ name: 'a', from: { board: ['x'] }, prompt: 7 }]), /comb\.stages\[0\]\.prompt/);
-  assert.throws(bad([{ name: 'a', from: { board: ['x'] }, onStart: { board: '' } }]), /comb\.stages\[0\]\.onStart/);
-  assert.throws(bad([{ name: 'a', from: { board: ['x'] } }, { name: 'a', from: {} }]), { message: 'hive.config.json: "comb.stages[1].name" must be unique' });
-  assert.throws(bad([{ name: 'a', from: {} }]), { message: 'hive.config.json: "comb.stages" must have at least one stage with "from.board"' });
+  const { flows: _dropped, ...noFlows } = GITHUB.comb as Record<string, unknown>;
+  assert.throws(() => parseConfig({ ...GITHUB, comb: noFlows }), { message: 'hive.config.json: "comb.flows" is required' });
+  assert.throws(bad([]), { message: 'hive.config.json: "comb.flows[0].stages" must be a non-empty array' });
+  assert.throws(bad('x'), /"comb\.flows\[0\]\.stages" must be a non-empty array/);
+  assert.throws(bad([5]), /"comb\.flows\[0\]\.stages\[0\]" must be an object/);
+  assert.throws(bad([{ from: {} }]), /"comb\.flows\[0\]\.stages\[0\]\.name" must be a non-empty string/);
+  assert.throws(bad([{ name: 'a' }]), /"comb\.flows\[0\]\.stages\[0\]\.from" must be an object keyed by source name/);
+  assert.throws(bad([{ name: 'a', from: { board: [1] } }]), /comb\.flows\[0\]\.stages\[0\]\.from/);
+  assert.throws(bad([{ name: 'a', from: { board: ['x'] }, session: 'resume' }]), /"comb\.flows\[0\]\.stages\[0\]\.session" must be one of: new, continue/);
+  assert.throws(bad([{ name: 'a', from: { board: ['x'] }, prompt: 7 }]), /comb\.flows\[0\]\.stages\[0\]\.prompt/);
+  assert.throws(bad([{ name: 'a', from: { board: ['x'] }, onStart: { board: '' } }]), /comb\.flows\[0\]\.stages\[0\]\.onStart/);
+  assert.throws(bad([{ name: 'a', from: { board: ['x'] } }, { name: 'a', from: {} }]), { message: 'hive.config.json: "comb.flows[0].stages[1].name" must be unique' });
+  assert.throws(bad([{ name: 'a', from: {} }]), { message: 'hive.config.json: "comb.flows" must have at least one stage with "from.board"' });
 });
 
 test('comb.columns is refused with the rename, no migration: the message names comb.stages (#286)', () => {
-  const { stages, ...comb } = GITHUB.comb as Record<string, unknown>;
-  assert.throws(() => parseConfig({ ...GITHUB, comb: { ...comb, columns: stages } }), { message: 'hive.config.json: "comb.columns" was renamed to "comb.stages" (#286)' });
-  assert.throws(() => parseConfig({ ...GITHUB, comb: { ...comb, columns: stages, stages } }), /"comb\.columns" was renamed/, 'even next to the new key');
+  const { flows, ...comb } = GITHUB.comb as Record<string, unknown>;
+  assert.throws(() => parseConfig({ ...GITHUB, comb: { ...comb, columns: flows } }), { message: 'hive.config.json: "comb.columns" was renamed to "comb.stages" (#286)' });
+  assert.throws(() => parseConfig({ ...GITHUB, comb: { ...comb, columns: flows, flows } }), /"comb\.columns" was renamed/, 'even next to the new key');
 });
 
 test('comb.projects is refused with the rename, no migration: the message names comb.workspaces (#571)', () => {
@@ -534,9 +535,9 @@ const twoSourceComb = (stage: Record<string, unknown>) => {
   const notes = { name: 'notes', qualifyId: false, ...GITHUB_SOURCE, number: 7, taskProps: FIXED };
   return parseConfig(combConfig({ sources: [sourceEntry(GITHUB_SOURCE), notes], stages: [{ name: 'dev', from: { board: ['Ready'], notes: ['todo'] }, ...stage }] })).comb;
 };
-const twoSourceStage = (stage: Record<string, unknown>) => twoSourceComb(stage).stages[0];
+const twoSourceStage = (stage: Record<string, unknown>) => twoSourceComb(stage).flows[0].stages[0];
 // #134: a pre-#134 onFinish is migrated into the stage's transition, whose sources hold the list
-const twoSourceExit = (stage: Record<string, unknown>) => twoSourceComb(stage).transitions[0].sources;
+const twoSourceExit = (stage: Record<string, unknown>) => twoSourceComb(stage).flows[0].transitions[0].sources;
 const refusedStage = (stage: Record<string, unknown>, message: string) => assert.throws(() => twoSourceStage(stage), { message: `hive.config.json: ${message}` });
 
 test('onStart / onFinish take source actions (#286): a non-list is refused naming the list shape; a GitHub source takes every action', () => {
@@ -545,11 +546,11 @@ test('onStart / onFinish take source actions (#286): a non-list is refused namin
   const moves = { onStart: { board: [{ type: 'move', column: 'In progress' }] }, onFinish: { board: [{ type: 'move', column: 'In review' }], notes: [{ type: 'remove' }] } };
   assert.deepEqual(twoSourceStage(moves), { name: 'dev', from: { board: ['Ready'], notes: ['todo'] }, onStart: moves.onStart });
   assert.deepEqual(twoSourceExit(moves), moves.onFinish);
-  refusedStage({ onFinish: { board: 'In review' } }, `"comb.transitions[0].sources.board" ${LIST}`);
-  refusedStage({ onStart: { board: 'In progress' } }, `"comb.stages[0].onStart.board" ${LIST}`);
-  refusedStage({ onFinish: { board: ['In review'] } }, `"comb.transitions[0].sources.board[0]" must be an object: ${SHAPE} (#286)`);
-  refusedStage({ onFinish: { board: [{ type: 'nuke' }] } }, '"comb.transitions[0].sources.board[0].type" must be one of: move, archive, remove, close, delete');
-  refusedStage({ onFinish: { board: [{ type: 'move' }] } }, '"comb.transitions[0].sources.board[0].column" must be a non-empty string');
+  refusedStage({ onFinish: { board: 'In review' } }, `"comb.flows[0].transitions[0].sources.board" ${LIST}`);
+  refusedStage({ onStart: { board: 'In progress' } }, `"comb.flows[0].stages[0].onStart.board" ${LIST}`);
+  refusedStage({ onFinish: { board: ['In review'] } }, `"comb.flows[0].transitions[0].sources.board[0]" must be an object: ${SHAPE} (#286)`);
+  refusedStage({ onFinish: { board: [{ type: 'nuke' }] } }, '"comb.flows[0].transitions[0].sources.board[0].type" must be one of: move, archive, remove, close, delete');
+  refusedStage({ onFinish: { board: [{ type: 'move' }] } }, '"comb.flows[0].transitions[0].sources.board[0].column" must be a non-empty string');
 });
 
 test('each source takes an ordered list of actions: one of each type, a leaving action only last (#515)', () => {
@@ -557,30 +558,30 @@ test('each source takes an ordered list of actions: one of each type, a leaving 
   assert.deepEqual(twoSourceExit({ onFinish: { board: [done, { type: 'close' }] } }), { board: [done, { type: 'close' }] });
   assert.deepEqual(twoSourceExit({ onFinish: { board: [{ type: 'close' }, { type: 'archive' }] } }), { board: [{ type: 'close' }, { type: 'archive' }] });
   assert.deepEqual(twoSourceExit({ onFinish: { notes: [{ type: 'move', column: 'done' }, { type: 'remove' }] } }), { notes: [{ type: 'move', column: 'done' }, { type: 'remove' }] });
-  refusedStage({ onFinish: { board: [] } }, `"comb.transitions[0].sources.board" ${LIST}`);
-  refusedStage({ onFinish: { board: { type: 'close' } } }, `"comb.transitions[0].sources.board" ${LIST}`);
-  refusedStage({ onFinish: { board: [{ type: 'close' }, { type: 'close' }] } }, '"comb.transitions[0].sources.board[1].type" "close" is already in the list');
-  refusedStage({ onFinish: { board: [done, { type: 'move', column: 'Ready' }] } }, '"comb.transitions[0].sources.board[1].type" "move" is already in the list');
+  refusedStage({ onFinish: { board: [] } }, `"comb.flows[0].transitions[0].sources.board" ${LIST}`);
+  refusedStage({ onFinish: { board: { type: 'close' } } }, `"comb.flows[0].transitions[0].sources.board" ${LIST}`);
+  refusedStage({ onFinish: { board: [{ type: 'close' }, { type: 'close' }] } }, '"comb.flows[0].transitions[0].sources.board[1].type" "close" is already in the list');
+  refusedStage({ onFinish: { board: [done, { type: 'move', column: 'Ready' }] } }, '"comb.flows[0].transitions[0].sources.board[1].type" "move" is already in the list');
   const last = 'takes the task off its source, so it must be the last action';
-  refusedStage({ onFinish: { board: [{ type: 'archive' }, { type: 'close' }] } }, `"comb.transitions[0].sources.board[0].type" "archive" ${last}`);
-  refusedStage({ onFinish: { board: [{ type: 'archive' }, { type: 'delete' }] } }, `"comb.transitions[0].sources.board[0].type" "archive" ${last}`);
+  refusedStage({ onFinish: { board: [{ type: 'archive' }, { type: 'close' }] } }, `"comb.flows[0].transitions[0].sources.board[0].type" "archive" ${last}`);
+  refusedStage({ onFinish: { board: [{ type: 'archive' }, { type: 'delete' }] } }, `"comb.flows[0].transitions[0].sources.board[0].type" "archive" ${last}`);
 });
 
 test('on start a list may move and close, never take the task off the source (#515)', () => {
   const start = [{ type: 'move', column: 'In progress' }, { type: 'close' }];
   assert.deepEqual(twoSourceStage({ onStart: { board: start } }).onStart, { board: start });
   for (const type of ['archive', 'remove', 'delete']) {
-    refusedStage({ onStart: { board: [{ type }] } }, `"comb.stages[0].onStart.board[0].type" "${type}" cannot run on start: it would take the task off its source while its worker runs`);
+    refusedStage({ onStart: { board: [{ type }] } }, `"comb.flows[0].stages[0].onStart.board[0].type" "${type}" cannot run on start: it would take the task off its source while its worker runs`);
   }
 });
 
 test('parseConfig reads a stage\'s maxWorkers as a non-negative integer, 0 included, keeps it absent when unset and refuses the rest (#475)', () => {
   const stage = (maxWorkers?: unknown) => ({ name: 'a', from: { board: ['x'] }, ...(maxWorkers === undefined ? {} : { maxWorkers }) });
-  assert.equal('maxWorkers' in parseConfig(github({ stages: [stage()] })).comb.stages[0], false, 'absent stays absent: no stage cap');
-  assert.equal(parseConfig(github({ stages: [stage(0)] })).comb.stages[0].maxWorkers, 0, '0 is kept: it pauses the stage');
-  assert.equal(parseConfig(github({ stages: [stage(3)] })).comb.stages[0].maxWorkers, 3);
+  assert.equal('maxWorkers' in parseConfig(github({ stages: [stage()] })).comb.flows[0].stages[0], false, 'absent stays absent: no stage cap');
+  assert.equal(parseConfig(github({ stages: [stage(0)] })).comb.flows[0].stages[0].maxWorkers, 0, '0 is kept: it pauses the stage');
+  assert.equal(parseConfig(github({ stages: [stage(3)] })).comb.flows[0].stages[0].maxWorkers, 3);
   for (const bad of [-1, 1.5, '2', null]) {
-    assert.throws(() => parseConfig(github({ stages: [stage(bad)] })), { message: 'hive.config.json: "comb.stages[0].maxWorkers" must be a non-negative integer' }, JSON.stringify(bad));
+    assert.throws(() => parseConfig(github({ stages: [stage(bad)] })), { message: 'hive.config.json: "comb.flows[0].stages[0].maxWorkers" must be a non-negative integer' }, JSON.stringify(bad));
   }
 });
 
@@ -676,30 +677,30 @@ test('a blocked rule (#441) parses with its operator alone; values (even []) or 
 });
 
 test('parseConfig reads a Comb with its prefix, its one workspace and its stages, with a source or without one', () => {
-  assert.deepEqual(parseConfig(GITHUB).comb, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [sourceEntry({ ...GITHUB_SOURCE, ...EPICS })], ...chained(STAGES), commands: [], hiveSource: true, createIn: 'hive' });
+  assert.deepEqual(parseConfig(GITHUB).comb, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [sourceEntry({ ...GITHUB_SOURCE, ...EPICS })], flows: [{ name: 'main', ...chained(STAGES) }], commands: [], hiveSource: true, createIn: 'hive' });
   const bare = parseConfig(combConfig({ stages: LOCAL_STAGES, auth: undefined })).comb;
-  assert.deepEqual(bare, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [], stages: LOCAL_STAGES, transitions: transitionsOf(LOCAL_STAGES), commands: [], hiveSource: true, createIn: 'hive' });
+  assert.deepEqual(bare, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [], flows: [{ name: 'main', stages: LOCAL_STAGES, transitions: transitionsOf(LOCAL_STAGES) }], commands: [], hiveSource: true, createIn: 'hive' });
 });
 
 test('from, onStart and onFinish are maps keyed by source name: a key naming no source is refused, every source needs a from, and without sources no stage names one; auth.github is required when any source is GitHub (#180)', () => {
   const notes = { name: 'notes', qualifyId: false, ...GITHUB_SOURCE, number: 7, taskProps: FIXED };
   const parsed = (stage: Record<string, unknown>) =>
-    parseConfig(combConfig({ sources: [sourceEntry(GITHUB_SOURCE), notes], stages: [{ name: 'dev', ...stage }] })).comb.stages[0];
+    parseConfig(combConfig({ sources: [sourceEntry(GITHUB_SOURCE), notes], stages: [{ name: 'dev', ...stage }] })).comb.flows[0].stages[0];
   const full = { from: { board: ['Ready'], notes: ['todo'] }, onStart: { board: [move('In progress')] }, onFinish: { board: [move('In review')], notes: [move('review')] } };
   assert.deepEqual(parsed(full), { name: 'dev', from: full.from, onStart: full.onStart }); // #134: onFinish moved to the transitions
   assert.equal('onStart' in parsed({ from: full.from }), false, 'absent stays absent');
   const refused = (stage: Record<string, unknown>, message: string) => assert.throws(() => parsed(stage), { message: `hive.config.json: ${message}` });
-  refused({ from: { board: ['Ready'], nope: ['x'] } }, '"comb.stages[0].from.nope" names no source');
-  refused({ ...full, onStart: { nope: 'x' } }, '"comb.stages[0].onStart.nope" names no source');
-  refused({ ...full, onFinish: { nope: 'x' } }, '"comb.transitions[0].sources.nope" names no source');
-  refused({ from: ['Ready'] }, '"comb.stages[0].from" must be an object keyed by source name');
-  refused({ ...full, onStart: 'In progress' }, '"comb.stages[0].onStart" must be an object keyed by source name');
-  refused({ from: { board: 'Ready', notes: ['todo'] } }, '"comb.stages[0].from.board" must be an array of strings');
-  refused({ ...full, onStart: { board: '' } }, `"comb.stages[0].onStart.board" ${LIST}`);
-  refused({ from: { board: ['Ready'] } }, '"comb.stages" must have at least one stage with "from.notes"');
+  refused({ from: { board: ['Ready'], nope: ['x'] } }, '"comb.flows[0].stages[0].from.nope" names no source');
+  refused({ ...full, onStart: { nope: 'x' } }, '"comb.flows[0].stages[0].onStart.nope" names no source');
+  refused({ ...full, onFinish: { nope: 'x' } }, '"comb.flows[0].transitions[0].sources.nope" names no source');
+  refused({ from: ['Ready'] }, '"comb.flows[0].stages[0].from" must be an object keyed by source name');
+  refused({ ...full, onStart: 'In progress' }, '"comb.flows[0].stages[0].onStart" must be an object keyed by source name');
+  refused({ from: { board: 'Ready', notes: ['todo'] } }, '"comb.flows[0].stages[0].from.board" must be an array of strings');
+  refused({ ...full, onStart: { board: '' } }, `"comb.flows[0].stages[0].onStart.board" ${LIST}`);
+  refused({ from: { board: ['Ready'] } }, '"comb.flows" must have at least one stage with "from.notes"');
   const local = (stage: Record<string, unknown>) => () => parseConfig(combConfig({ stages: [{ name: 'fila', ...stage }], auth: undefined }));
   assert.doesNotThrow(local({ from: {} }), 'no sources: tasks enter by hand');
-  assert.throws(local({ from: { board: ['Ready'] } }), { message: 'hive.config.json: "comb.stages[0].from.board" names no source' });
+  assert.throws(local({ from: { board: ['Ready'] } }), { message: 'hive.config.json: "comb.flows[0].stages[0].from.board" names no source' });
   const githubOnly = { sources: [notes], stages: [{ name: 'dev', from: { notes: ['todo'] } }], auth: undefined };
   assert.throws(() => parseConfig(combConfig(githubOnly)), { message: 'hive.config.json: "auth.github" is required and must be one of: cli, api' });
 });
@@ -1059,45 +1060,45 @@ test('reviewer is optional: absent, or a field left out, takes REVIEWER_DEFAULTS
 
 test('parseConfig reads a wait-for-CI stage: which checks, the list only with list, the re-run switch and an optional wait; refuses each key without the action and every other action\'s key beside it (#834)', () => {
   const stage = (extra: Record<string, unknown>) => ({ name: 'ci', from: { board: ['CI'] }, ...extra });
-  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
   const ok = { action: 'waitForCi', ciChecks: 'list', checks: [' build ', 'e2e-*'], rerunOnce: true, timeout: '60m' };
   assert.deepEqual(parsed(ok), { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'list', checks: ['build', 'e2e-*'], rerunOnce: true, timeout: '60m' });
   assert.deepEqual(parsed({ action: 'waitForCi', ciChecks: 'required', rerunOnce: false }), { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'required', rerunOnce: false }, 'no timeout: no limit');
-  const list = '"comb.stages[0].checks" must be a non-empty array of distinct check names or patterns';
-  const which = '"comb.stages[0].ciChecks" must be "required", "all" or "list"';
-  const wait = '"comb.stages[0].timeout" must be a timeout like "30s", "10m" or "1h", up to 24h';
+  const list = '"comb.flows[0].stages[0].checks" must be a non-empty array of distinct check names or patterns';
+  const which = '"comb.flows[0].stages[0].ciChecks" must be "required", "all" or "list"';
+  const wait = '"comb.flows[0].stages[0].timeout" must be a timeout like "30s", "10m" or "1h", up to 24h';
   const refused: [Record<string, unknown>, string][] = [
-    [{ ciChecks: 'all' }, '"comb.stages[0].ciChecks" needs "action": "waitForCi"'],
-    [{ rerunOnce: true }, '"comb.stages[0].rerunOnce" needs "action": "waitForCi"'],
-    [{ timeout: '1h' }, '"comb.stages[0].timeout" needs "action": "waitForCi"'],
-    [{ action: 'commands', commands: ['build'], stopOnFailure: true, onMissing: 'fail', checks: ['x'] }, '"comb.stages[0].checks" needs "action": "waitForCi"'],
+    [{ ciChecks: 'all' }, '"comb.flows[0].stages[0].ciChecks" needs "action": "waitForCi"'],
+    [{ rerunOnce: true }, '"comb.flows[0].stages[0].rerunOnce" needs "action": "waitForCi"'],
+    [{ timeout: '1h' }, '"comb.flows[0].stages[0].timeout" needs "action": "waitForCi"'],
+    [{ action: 'commands', commands: ['build'], stopOnFailure: true, onMissing: 'fail', checks: ['x'] }, '"comb.flows[0].stages[0].checks" needs "action": "waitForCi"'],
     [{ ...ok, ciChecks: 'some' }, which],
     [{ ...ok, ciChecks: undefined }, which],
-    [{ ...ok, ciChecks: 'all' }, '"comb.stages[0].checks" needs "ciChecks": "list"'],
+    [{ ...ok, ciChecks: 'all' }, '"comb.flows[0].stages[0].checks" needs "ciChecks": "list"'],
     [{ ...ok, checks: [] }, list],
     [{ ...ok, checks: ['build', ' build'] }, list],
     [{ ...ok, checks: ['build', ' '] }, list],
     [{ ...ok, checks: undefined }, list],
-    [{ ...ok, rerunOnce: 'yes' }, '"comb.stages[0].rerunOnce" must be true or false'],
+    [{ ...ok, rerunOnce: 'yes' }, '"comb.flows[0].stages[0].rerunOnce" must be true or false'],
     [{ ...ok, timeout: '1d' }, wait],
     [{ ...ok, timeout: '25h' }, wait],
-    [{ ...ok, prompt: '/x' }, '"comb.stages[0].action" cannot be combined with "prompt"'],
-    [{ ...ok, approval: true }, '"comb.stages[0].approval" cannot be combined with "action"'],
-    [{ ...ok, agent: 'claude' }, '"comb.stages[0].agent" cannot be combined with "action"'],
-    [{ ...ok, handoff: true }, '"comb.stages[0].handoff" cannot be combined with "action"'],
-    [{ ...ok, model: 'opus' }, '"comb.stages[0].model" cannot be combined with "action": "waitForCi"'],
-    [{ ...ok, session: 'new' }, '"comb.stages[0].session" cannot be combined with "action": "waitForCi"'],
-    [{ ...ok, commands: ['build'] }, '"comb.stages[0].commands" needs "action": "commands"'],
-    [{ ...ok, stopOnFailure: true }, '"comb.stages[0].stopOnFailure" needs "action": "commands"'],
-    [{ ...ok, onMissing: 'fail' }, '"comb.stages[0].onMissing" needs "action": "commands"'],
+    [{ ...ok, prompt: '/x' }, '"comb.flows[0].stages[0].action" cannot be combined with "prompt"'],
+    [{ ...ok, approval: true }, '"comb.flows[0].stages[0].approval" cannot be combined with "action"'],
+    [{ ...ok, agent: 'claude' }, '"comb.flows[0].stages[0].agent" cannot be combined with "action"'],
+    [{ ...ok, handoff: true }, '"comb.flows[0].stages[0].handoff" cannot be combined with "action"'],
+    [{ ...ok, model: 'opus' }, '"comb.flows[0].stages[0].model" cannot be combined with "action": "waitForCi"'],
+    [{ ...ok, session: 'new' }, '"comb.flows[0].stages[0].session" cannot be combined with "action": "waitForCi"'],
+    [{ ...ok, commands: ['build'] }, '"comb.flows[0].stages[0].commands" needs "action": "commands"'],
+    [{ ...ok, stopOnFailure: true }, '"comb.flows[0].stages[0].stopOnFailure" needs "action": "commands"'],
+    [{ ...ok, onMissing: 'fail' }, '"comb.flows[0].stages[0].onMissing" needs "action": "commands"'],
   ];
   for (const [extra, message] of refused) assert.throws(bad(extra), { message: `hive.config.json: ${message}` }, JSON.stringify(extra));
 });
 
 test('parseConfig reads an evaluate stage: reviewers with a focus, a judge with none, a 0..10 threshold and a rubric with a line; refuses each key without the action, a bad row and every other key beside it (#877)', () => {
   const stage = (extra: Record<string, unknown>) => ({ name: 'eval', from: { board: ['Eval'] }, ...extra });
-  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.stages[0];
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
   const ok = {
     action: 'evaluate',
@@ -1110,7 +1111,7 @@ test('parseConfig reads an evaluate stage: reviewers with a focus, a judge with 
     judge: { agent: 'claude', model: 'opus' }, threshold: 7, rubric: 'Meets {result.spec}?\n\n  Tests cover it?  ',
   }, 'the rubric is kept as typed: rubricLines reads it');
   assert.deepEqual(parsed({ ...ok, reviewers: [], threshold: 0 }).reviewers, [], 'no reviewer: the judge reads the work alone');
-  const f = (key: string) => `"comb.stages[0].${key}"`;
+  const f = (key: string) => `"comb.flows[0].stages[0].${key}"`;
   const refused: [Record<string, unknown>, string][] = [
     [{ reviewers: [] }, `${f('reviewers')} needs "action": "evaluate"`],
     [{ judge: { agent: 'claude' } }, `${f('judge')} needs "action": "evaluate"`],
@@ -1200,16 +1201,17 @@ const FULL = [
 const withFlow = (transitions: unknown, stages: unknown[] = FLOW_STAGES) => parseConfig(github({ stages, transitions }));
 
 test('parseConfig reads comb.transitions: required, [] allowed; prompts, sessions, tries, labels, sources and a prompt stage\'s verdicts kept as written (#134)', () => {
-  assert.deepEqual(withFlow(FULL).comb.transitions, FULL);
-  assert.deepEqual(withFlow([]).comb.transitions, []);
-  assert.deepEqual(withFlow(FULL).comb.stages[0].verdicts, ['needs design', 'ready']);
+  assert.deepEqual(withFlow(FULL).comb.flows[0].transitions, FULL);
+  assert.deepEqual(withFlow([]).comb.flows[0].transitions, []);
+  assert.deepEqual(withFlow(FULL).comb.flows[0].stages[0].verdicts, ['needs design', 'ready']);
   const raw = github({ stages: FLOW_STAGES, transitions: FULL });
-  assert.throws(() => parseConfig({ ...raw, comb: { ...(raw.comb as Record<string, unknown>), transitions: undefined } }), { message: 'hive.config.json: "comb.transitions" is required' });
-  assert.throws(() => withFlow({}), { message: 'hive.config.json: "comb.transitions" must be an array' });
+  const [flow] = (raw.comb as { flows: Record<string, unknown>[] }).flows;
+  assert.throws(() => parseConfig({ ...raw, comb: { ...(raw.comb as Record<string, unknown>), flows: [{ ...flow, transitions: undefined }] } }), { message: 'hive.config.json: "comb.flows[0].transitions" is required' });
+  assert.throws(() => withFlow({}), { message: 'hive.config.json: "comb.flows[0].transitions" must be an array' });
 });
 
 test('parseConfig refuses a transition naming no stage, a bad trigger or verdict, a user trigger without approval, done after approval, a gate\'s feedback to itself, bad tries, a bad session, a bad label, bad sources and a repeated (from, when, verdict) (#134)', () => {
-  const at = `hive.config.json: "comb.transitions[${FULL.length}]`;
+  const at = `hive.config.json: "comb.flows[0].transitions[${FULL.length}]`;
   const refused: [Record<string, unknown>, string][] = [
     [{ from: 'Nope', to: 'Build', when: 'done' }, '.from" names no stage'],
     [{ from: 'Build', to: 'Nope', when: 'done' }, '.to" names no stage nor "end"'],
@@ -1238,7 +1240,7 @@ test('parseConfig refuses a transition naming no stage, a bad trigger or verdict
   for (const [extra, message] of refused) assert.throws(() => withFlow([...FULL, extra]), { message: `${at}${message}` }, JSON.stringify(extra));
   assert.throws(() => withFlow([...FULL, { from: 'Build', to: 'PR', when: 'done' }]), { message: `${at}" repeats the "from", "when" and "verdict" of an earlier transition` });
   const clean = { name: 'Clean', from: {}, action: 'deleteActivity' };
-  assert.deepEqual(withFlow([...FULL, { from: 'Clean', to: 'end', when: 'done' }], [...FLOW_STAGES, clean]).comb.transitions.at(-1), { from: 'Clean', to: 'end', when: 'done' }, 'a delete activity ends with done');
+  assert.deepEqual(withFlow([...FULL, { from: 'Clean', to: 'end', when: 'done' }], [...FLOW_STAGES, clean]).comb.flows[0].transitions.at(-1), { from: 'Clean', to: 'end', when: 'done' }, 'a delete activity ends with done');
 });
 
 test('a transition from an evaluate stage takes verdict passed or failed with maxTries, and never done (#877)', () => {
@@ -1251,13 +1253,13 @@ test('a transition from an evaluate stage takes verdict passed or failed with ma
 
 test('a stage\'s verdicts: prompt stages only, a non-empty list of distinct trimmed names; no stage may be named end (#134)', () => {
   const one = (stage: Record<string, unknown>) => () => parseConfig(github({ stages: [{ name: 'Build', from: { board: ['Ready'] }, ...stage }], transitions: [] }));
-  const v = 'hive.config.json: "comb.stages[0].verdicts" ';
+  const v = 'hive.config.json: "comb.flows[0].stages[0].verdicts" ';
   assert.throws(one({ action: 'waitForCi', ciChecks: 'all', rerunOnce: false, verdicts: ['ok'] }), { message: `${v}cannot be combined with "action": its verdicts are fixed` });
   assert.throws(one({ approval: true, verdicts: ['ok'] }), { message: `${v}needs "prompt": a stage that runs nothing gives no verdict` });
   for (const verdicts of [[], ['ok', 'ok'], [' ok'], [''], 'ok', [1]]) {
     assert.throws(one({ prompt: '/b', verdicts }), { message: `${v}must be a non-empty array of distinct, trimmed names` }, JSON.stringify(verdicts));
   }
-  assert.throws(() => parseConfig(github({ stages: [{ name: 'end', from: { board: ['Ready'] } }], transitions: [] })), { message: 'hive.config.json: "comb.stages[0].name" cannot be "end": it names the end of the flow' });
+  assert.throws(() => parseConfig(github({ stages: [{ name: 'end', from: { board: ['Ready'] } }], transitions: [] })), { message: 'hive.config.json: "comb.flows[0].stages[0].name" cannot be "end": it names the end of the flow' });
 });
 
 const WITH_REPO = { ...GITHUB_SOURCE, repository: 'acme/app' };
@@ -1305,12 +1307,12 @@ test('a workspace\'s benchmarkPrIn is required: worktree or checkout, and a miss
 test('a codex stage, by its own agent or the default, refuses a Claude model naming the field, fable included; a Codex model passes and a claude stage keeps its aliases (#927, #257)', () => {
   const withStage = (extra: Record<string, unknown>, top: Record<string, unknown> = {}) => github({ stages: [{ ...STAGES[0], ...extra }], ...top });
   for (const model of ['fable', 'fable[1m]', 'opus', 'sonnet', 'haiku', 'sonnet[1m]', 'claude-sonnet-4']) {
-    const message = `hive.config.json: "comb.stages[0].model" "${model}" is a Claude model; a codex stage needs a Codex model name`;
+    const message = `hive.config.json: "comb.flows[0].stages[0].model" "${model}" is a Claude model; a codex stage needs a Codex model name`;
     assert.throws(() => parseConfig(withStage({ agent: 'codex', model })), { message }, model);
   }
-  assert.throws(() => parseConfig(withStage({ model: 'opus' }, { defaultAgent: 'codex' })), /"comb\.stages\[0\]\.model" "opus" is a Claude model/, 'the default agent counts');
-  assert.equal(parseConfig(withStage({ agent: 'codex', model: 'gpt-5.6-terra' })).comb.stages[0].model, 'gpt-5.6-terra');
-  assert.equal(parseConfig(withStage({ model: 'opus' })).comb.stages[0].model, 'opus', 'a claude stage keeps its aliases');
+  assert.throws(() => parseConfig(withStage({ model: 'opus' }, { defaultAgent: 'codex' })), /"comb\.flows\[0\]\.stages\[0\]\.model" "opus" is a Claude model/, 'the default agent counts');
+  assert.equal(parseConfig(withStage({ agent: 'codex', model: 'gpt-5.6-terra' })).comb.flows[0].stages[0].model, 'gpt-5.6-terra');
+  assert.equal(parseConfig(withStage({ model: 'opus' })).comb.flows[0].stages[0].model, 'opus', 'a claude stage keeps its aliases');
 });
 
 test('parseConfig reads a month rule and a plan rule\'s agent; it refuses an unknown agent and an agent on a budget source (#929)', () => {
@@ -1336,4 +1338,28 @@ test('an mcp server scoped to a workspace the Comb does not have fails the parse
   const figma = { name: 'figma', url: 'http://127.0.0.1:3845/mcp', workspace: 'hive-site', on: false };
   assert.equal(parseConfig(github({ mcp: { off: [], servers: [{ ...figma, workspace: 'hive' }] } })).mcp.servers[0].workspace, 'hive');
   assert.throws(() => parseConfig(github({ mcp: { off: [], servers: [figma] } })), { message: 'hive.config.json: "mcp.servers": figma is scoped to hive-site, which no longer exists' });
+});
+
+test('a config round trip writes flows, never the flat pair (#564)', () => {
+  const config = parseConfig(github({ stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: 'x' }] }));
+  const written = JSON.parse(JSON.stringify(config)) as { comb: Record<string, unknown> };
+  assert.equal('stages' in written.comb || 'transitions' in written.comb, false);
+  assert.deepEqual(parseConfig(written), config);
+});
+
+test('a comb with flows and stages is refused by name; a flat file reaches the parser as one main flow (#564)', () => {
+  const raw = github({});
+  assert.throws(() => parseConfig({ ...raw, comb: { ...(raw.comb as object), stages: [] } }), /"comb\.stages" cannot be combined with "comb\.flows"/);
+  const { flows, ...flat } = raw.comb as { flows: { stages: unknown; transitions: unknown }[] };
+  const parsed = parseConfig(migrateConfig({ ...raw, comb: { ...flat, stages: flows[0].stages, transitions: flows[0].transitions } }));
+  assert.deepEqual(parsed.comb.flows.map((f) => f.name), ['main']);
+});
+
+test('two flows parse with each check under its flow-indexed path (#564)', () => {
+  const raw = github({});
+  const second = { name: 'bug', stages: [{ name: 'fix', from: {}, prompt: '/x', model: 'opus', agent: 'codex' }], transitions: [] };
+  const comb = raw.comb as { flows: unknown[] };
+  assert.throws(() => parseConfig({ ...raw, comb: { ...comb, flows: [...comb.flows, second] } }),
+    { message: 'hive.config.json: "comb.flows[1].stages[0].model" "opus" is a Claude model; a codex stage needs a Codex model name' });
+  assert.deepEqual(flatten(parseConfig(raw).comb.flows).stages.map((s) => s.name), [STAGES[0].name]);
 });
