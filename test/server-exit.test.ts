@@ -67,7 +67,7 @@ test('exitEvent finds a transcript written under the resolved cwd of a workspace
   assert.deepEqual(await exitEvent(linked, RUN, env), { type: 'exit', ptyId: RUN });
 });
 
-test('exitEvent never flags a run whose transcript dir it cannot look into: a check that cannot run never forgets a session (#586)', { skip: process.getuid?.() === 0 }, async (t) => {
+test('exitEvent never flags a run whose transcript dir it cannot look into: a check that cannot run never forgets a session (#586)', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async (t) => {
   const root = await tempDir(t, 'claude-');
   const projects = join(root, 'projects');
   await mkdir(projects);
