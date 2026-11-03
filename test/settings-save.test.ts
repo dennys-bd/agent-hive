@@ -4,8 +4,8 @@ import { execFile } from 'node:child_process';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, stageRenamesOf } from '../src/settings-save.js';
-import type { SourceConfig, Stage } from '../src/types.js';
+import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, savedFlows, SEVERAL_FLOWS, stageRenamesOf } from '../src/settings-save.js';
+import type { Flow, SourceConfig, Stage } from '../src/types.js';
 import { GITHUB_ENTRY, workspacesAt } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -41,4 +41,25 @@ test('nestedRefusal names the workspace, the nested path and the cause with its 
   assert.deepEqual(await nestedRefusal(config(['docs', 'docs/agent'])), {
     status: 400, message: "hive: nested repo docs/agent: docs/agent is not a git repository's top level · the top level is docs · use docs",
   });
+});
+
+const TWO: Flow[] = [
+  { name: 'feature', stages: [{ name: 'spec', from: {} }], transitions: [{ from: 'spec', to: 'end', when: 'done' }] },
+  { name: 'bug', stages: [{ name: 'fix', from: {} }], transitions: [] },
+];
+
+test('with two flows, an unchanged flat pair keeps both flows and a body without stages keeps them too (#564)', () => {
+  const pair = { stages: [{ name: 'spec', from: {} }, { name: 'fix', from: {}, prompt: undefined }], transitions: [{ from: 'spec', to: 'end', when: 'done' }] };
+  assert.equal(savedFlows(TWO, pair), TWO, 'the same flows, untouched');
+  assert.equal(savedFlows(TWO, undefined), TWO);
+});
+
+test('with two flows, a changed flat pair is refused (#564)', () => {
+  assert.throws(() => savedFlows(TWO, { stages: [{ name: 'spec', from: {} }], transitions: [] }), { message: SEVERAL_FLOWS });
+});
+
+test('with one flow, or none saved, the pair replaces it and keeps its name (#564)', () => {
+  const pair = { stages: [{ name: 'dev', from: {} }], transitions: [] };
+  assert.deepEqual(savedFlows([{ ...TWO[0] }], pair), [{ name: 'feature', ...pair }]);
+  assert.deepEqual(savedFlows(undefined, pair), [{ name: 'main', ...pair }], 'a first setup gets main');
 });

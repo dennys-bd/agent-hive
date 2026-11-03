@@ -1,11 +1,13 @@
 import { realpath } from 'node:fs/promises';
+import { isDeepStrictEqual } from 'node:util';
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import { migrateTransitions } from './config-migrate.js';
+import { flatten, MAIN_FLOW } from './flows.js';
 import { DEFAULT_CONFIG, taskWorkspace, loadConfigIfPresent, parseConfig } from './config.js';
 import type { Refusal } from './server-tasks.js';
 import { parseSetup } from './setup-script.js';
 import { nestedProblemText, nestedRepoProblem } from './nested-check.js';
-import type { CombConfig, Config, Language, Workspace, SettingsBody, SourceConfig, Stage, State, UsageRule } from './types.js';
+import type { CombConfig, Config, Flow, Language, Workspace, SettingsBody, SourceConfig, Stage, State, UsageRule } from './types.js';
 import { workspacePathProblem } from './worktree.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -17,6 +19,21 @@ const isNameMap = (raw: unknown): raw is Record<string, string> =>
 // #846: a source rename carries createIn, as the form carries the stages' from by row id; a body that names createIn wins
 const renamedCreateIn = (createIn: string | undefined, renames: unknown): string | undefined =>
   (createIn !== undefined && isNameMap(renames) && Object.hasOwn(renames, createIn) ? renames[createIn] : createIn);
+
+/** What POST /settings sends of the flow until #565: the flat pair, already through migrateTransitions. */
+export interface SentPair { stages: unknown; transitions: unknown }
+export const SEVERAL_FLOWS = 'Settings edits one flow only: edit several flows in hive.config.json until Settings supports them (#565)';
+
+const plain = (value: unknown): unknown => JSON.parse(JSON.stringify(value)); // a key the form writes as undefined is no change
+
+/** The flows a save writes (decision 15): none sent keeps the saved ones; one saved flow (or none) takes the pair under its name; several
+ * keep their flows when the pair is their flattened one, and a changed pair is refused. */
+export function savedFlows(current: readonly Flow[] | undefined, sent: SentPair | undefined): unknown {
+  if (sent === undefined) return current;
+  if (current === undefined || current.length <= 1) return [{ name: current?.[0]?.name ?? MAIN_FLOW, ...sent }];
+  if (isDeepStrictEqual(plain(sent), plain(flatten(current)))) return current;
+  throw new Error(SEVERAL_FLOWS); // configFrom's caller answers every throw as a 400
+}
 
 /** The body over the saved file: a key the body omits keeps the saved value (the form always sends the ones it owns). A file that does
  * not parse (one from before the Comb, or from before workspace names) is no current config: the body is all there is. */
