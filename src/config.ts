@@ -652,10 +652,10 @@ function parseFields(raw: unknown): Config {
 
 export function parseConfig(raw: unknown): Config {
   const config = parseFields(raw);
-  checkResumedAgents(config.comb.stages, config.comb.transitions, config.defaultAgent); // #925: needs defaultAgent, which the fields parse last
-  checkClearedResumes(config.comb.stages, config.comb.transitions); // #494: a POST /settings save goes through here too
-  checkStageModels(config.comb.stages, config.defaultAgent); // #927: the same
-  checkEnabledAgents(config.comb.stages, config.defaultAgent, config.agentEnabled); // #482: a POST /settings save goes through here too
+  checkResumedAgents(config.comb.stages, config.comb.transitions, config.defaultAgent, 'comb'); // #925: needs defaultAgent, which the fields parse last
+  checkClearedResumes(config.comb.stages, config.comb.transitions, 'comb'); // #494: a POST /settings save goes through here too
+  checkStageModels(config.comb.stages, config.defaultAgent, 'comb'); // #927: the same
+  checkEnabledAgents(config.comb.stages, config.defaultAgent, config.agentEnabled, 'comb'); // #482: a POST /settings save goes through here too
   return config;
 }
 

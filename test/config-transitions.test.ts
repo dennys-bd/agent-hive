@@ -7,7 +7,7 @@ import type { AgentId, Flow, Stage, Transition } from '../src/types.js';
 const OTHER = 'other' as AgentId;
 const stage = (name: string, extra: Partial<Stage> = {}): Stage => ({ name, from: {}, prompt: `/${name}`, ...extra });
 const T = (from: string, to: string, extra: Partial<Transition> = {}): Transition => ({ from, to, when: 'done', ...extra });
-const check = (stages: Stage[], transitions: Transition[]) => () => checkResumedAgents(stages, transitions, 'claude');
+const check = (stages: Stage[], transitions: Transition[]) => () => checkResumedAgents(stages, transitions, 'claude', 'comb');
 const refusal = (i: number): { message: string } =>
   ({ message: `hive.config.json: "comb.transitions[${i}].session" resumes a session of claude in a stage of other: use "handoff" to switch agents (#692)` });
 
@@ -34,7 +34,7 @@ test('a stage that spawns no agent is neither side of the check: a gate, a comma
 
 // #494: a stage with clearSession forgets its run's session as the task leaves it, so nothing may resume it
 const CLEARING = [stage('Spec', { clearSession: true }), stage('Plan'), stage('Build', { session: 'continue' })];
-const clears = (transitions: Transition[]) => () => checkClearedResumes(CLEARING, transitions);
+const clears = (transitions: Transition[]) => () => checkClearedResumes(CLEARING, transitions, 'comb');
 const cleared = (i: number): { message: string } =>
   ({ message: `hive.config.json: "comb.transitions[${i}].session" resumes the session of "Spec", which clears it when it ends (#494)` });
 
@@ -48,9 +48,9 @@ test('a resume reached through stages that run no agent is refused too: a gate l
   const gate: Stage = { name: 'Gate', from: {}, approval: true };
   const ci: Stage = { name: 'CI', from: {}, action: 'waitForCi', ciChecks: 'all', rerunOnce: false };
   const stages = [...CLEARING, gate, ci];
-  assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'Build')]), cleared(1));
-  assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'CI'), T('CI', 'Build')]), cleared(2));
-  assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'Plan', { session: 'previous' })]), cleared(1));
+  assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'Build')], 'comb'), cleared(1));
+  assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'CI'), T('CI', 'Build')], 'comb'), cleared(2));
+  assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'Plan', { session: 'previous' })], 'comb'), cleared(1));
 });
 
 test('a new session out of a clearing stage, a move into a stage that starts its own, the end, a destination that runs no agent, a chain an agent stage breaks and another stage\'s resume parse (#494)', () => {
@@ -59,20 +59,20 @@ test('a new session out of a clearing stage, a move into a stage that starts its
   assert.doesNotThrow(() => checkClearedResumes(stages, [
     T('Spec', 'Build', { session: 'new' }), T('Spec', 'Plan'), T('Spec', 'end', { session: 'previous' }), T('Spec', 'Gate', { session: 'previous' }), T('Plan', 'Build'),
     T('Gate', 'Build', { session: 'new' }), T('Gate', 'Plan'),
-  ]));
+  ], 'comb'));
 });
 
 test('a clearing stage\'s loop to itself keeps its session, so its resume parses (#494)', () => {
   const stages = [stage('Spec', { clearSession: true, session: 'continue' }), stage('Plan')];
-  assert.doesNotThrow(() => checkClearedResumes(stages, [T('Spec', 'Spec', { when: 'feedback', session: 'previous' }), T('Spec', 'Spec', { when: 'verdict', verdict: 'again' })]));
+  assert.doesNotThrow(() => checkClearedResumes(stages, [T('Spec', 'Spec', { when: 'feedback', session: 'previous' }), T('Spec', 'Spec', { when: 'verdict', verdict: 'again' })], 'comb'));
 });
 
 test('a handoff asked past a stage that runs no agent after a clearing stage is refused; asked right out of it, it parses (#494)', () => {
   const gate: Stage = { name: 'Gate', from: {}, approval: true };
   const stages = [stage('Spec', { clearSession: true }), gate, stage('Plan', { handoff: true })];
-  assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'Plan')]),
+  assert.throws(() => checkClearedResumes(stages, [T('Spec', 'Gate'), T('Gate', 'Plan')], 'comb'),
     { message: 'hive.config.json: "comb.transitions[1].to" "Plan" asks for a handoff from the session of "Spec", which clears it when it ends (#494)' });
-  assert.doesNotThrow(() => checkClearedResumes(stages, [T('Spec', 'Plan')]));
+  assert.doesNotThrow(() => checkClearedResumes(stages, [T('Spec', 'Plan')], 'comb'));
 });
 
 const NO_SOURCES = (): Record<string, never> => ({});
@@ -97,4 +97,12 @@ test('an end transition with its own sources passes in each flow (#564)', () => 
   assert.deepEqual(parseTransitions(ended('dev'), scope, sources)[0].sources, { board: [] });
   const bugScope: FlowScope = { field: 'comb.flows[1].transitions', flow: 'bug', stages: BUG.stages, others: [{ name: 'main', stages: MAIN, transitions: [] }] };
   assert.deepEqual(parseTransitions(ended('fix'), bugScope, sources)[0].sources, { board: [] });
+});
+
+test('the resume checks name the transition under the path they are given (#564)', () => {
+  const stages = [stage('Spec'), stage('Build', { agent: OTHER })];
+  assert.throws(() => checkResumedAgents(stages, [T('Spec', 'Build', { session: 'previous' })], 'claude', 'comb.flows[1]'),
+    { message: 'hive.config.json: "comb.flows[1].transitions[0].session" resumes a session of claude in a stage of other: use "handoff" to switch agents (#692)' });
+  assert.throws(() => checkClearedResumes(CLEARING, [T('Spec', 'Plan', { session: 'previous' })], 'comb.flows[1]'),
+    { message: 'hive.config.json: "comb.flows[1].transitions[0].session" resumes the session of "Spec", which clears it when it ends (#494)' });
 });

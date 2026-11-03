@@ -133,7 +133,7 @@ export function resumedStage(transition: Transition, to: Stage): string | undefi
 /** #925: every transition whose resumed session the flow names, refused when that session's agent is not its destination's: one agent cannot
  * resume another's session, a handoff (#692) switches them. Pure, so it is tested with a stage of a second agent before AGENT_IDS has one;
  * parseConfig runs it once defaultAgent is parsed. */
-export function checkResumedAgents(stages: readonly Stage[], transitions: readonly Transition[], defaultAgent: AgentId): void {
+export function checkResumedAgents(stages: readonly Stage[], transitions: readonly Transition[], defaultAgent: AgentId, at: string): void {
   transitions.forEach((transition, i) => {
     const to = stages.find((s) => s.name === transition.to);
     const resumed = to === undefined ? undefined : resumedStage(transition, to);
@@ -141,7 +141,7 @@ export function checkResumedAgents(stages: readonly Stage[], transitions: readon
     if (to === undefined || from === undefined || !runsAgent(to) || !runsAgent(from)) return;
     const was = agentOf(from, { defaultAgent });
     const now = agentOf(to, { defaultAgent });
-    if (was !== now) fail(`comb.transitions[${i}].session`, `resumes a session of ${was} in a stage of ${now}: use "handoff" to switch agents (#692)`);
+    if (was !== now) fail(`${at}.transitions[${i}].session`, `resumes a session of ${was} in a stage of ${now}: use "handoff" to switch agents (#692)`);
   });
 }
 
@@ -162,32 +162,32 @@ function passedOn(stages: readonly Stage[], transitions: readonly Transition[], 
   return out;
 }
 
-const clearedResume = (i: number, stage: string): never =>
-  fail(`comb.transitions[${i}].session`, `resumes the session of "${stage}", which clears it when it ends (#494)`);
+const clearedResume = (at: string, i: number, stage: string): never =>
+  fail(`${at}.transitions[${i}].session`, `resumes the session of "${stage}", which clears it when it ends (#494)`);
 
 // A handoff asked past a stage that runs no agent is written by the task's last session (feedbackSession), the one the clear forgot
-const clearedHandoff = (i: number, stage: string, to: string): never =>
-  fail(`comb.transitions[${i}].to`, `"${to}" asks for a handoff from the session of "${stage}", which clears it when it ends (#494)`);
+const clearedHandoff = (at: string, i: number, stage: string, to: string): never =>
+  fail(`${at}.transitions[${i}].to`, `"${to}" asks for a handoff from the session of "${stage}", which clears it when it ends (#494)`);
 
 /** #494: a resume of a session a stage clears as it ends is refused: it would find nothing and start a new session without a word. Two ways
  * reach it: a transition whose resumedStage is the clearing stage, and a plain or previous move out of a stage that runs no agent, reached
  * from the clearing stage through such stages only, since the cleared session was the task's last there; a handoff asked there, which that
  * session would write, too. A stage's loop to itself keeps its session, so it resumes it. A destination that runs no agent resumes nothing,
  * as in checkResumedAgents. */
-export function checkClearedResumes(stages: readonly Stage[], transitions: readonly Transition[]): void {
+export function checkClearedResumes(stages: readonly Stage[], transitions: readonly Transition[], at: string): void {
   const clears = (name: string | undefined) => stages.find((s) => s.name === name)?.clearSession === true;
   transitions.forEach((transition, i) => {
     const to = stages.find((s) => s.name === transition.to);
     const resumed = to === undefined || !runsAgent(to) ? undefined : resumedStage(transition, to);
     const loop = transition.to === transition.from && resumed === transition.from; // a stage's own loop is no end: its session stays
-    if (resumed !== undefined && !loop && clears(resumed)) clearedResume(i, resumed);
+    if (resumed !== undefined && !loop && clears(resumed)) clearedResume(at, i, resumed);
   });
   stages.filter((s) => s.clearSession === true).forEach((clearing) => {
     passedOn(stages, transitions, clearing.name).forEach((transition) => {
       const to = stages.find((s) => s.name === transition.to);
       if (transition.from === clearing.name || to === undefined) return;
-      if (resumedStage(transition, to) === transition.from) clearedResume(transitions.indexOf(transition), clearing.name);
-      if (to.handoff === true) clearedHandoff(transitions.indexOf(transition), clearing.name, to.name);
+      if (resumedStage(transition, to) === transition.from) clearedResume(at, transitions.indexOf(transition), clearing.name);
+      if (to.handoff === true) clearedHandoff(at, transitions.indexOf(transition), clearing.name, to.name);
     });
   });
 }
