@@ -39,10 +39,10 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); }; // the window opens on Atividades (#746)
 const main = () => within(screen.getByRole('main'));
 const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
-const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
+const automation = () => within(screen.getByRole('region', { name: 'Tarefas' }));
 
 test('the tabs show only with an external source picked; the native tab shows its table, and a new pick returns to the flow (#756)', async () => {
   const user = userEvent.setup();

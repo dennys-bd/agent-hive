@@ -70,7 +70,7 @@ const chip = (): HTMLElement => within(footer()).getByRole('button', { name: /^c
 const drawer = (): HTMLElement | null => screen.queryByRole('region', { name: 'console' });
 
 // Radix's ContextMenu opens once per file under jsdom (#377): this is the only test here that right-clicks a task, kept first.
-const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); }; // the window opens on Atividades (#746)
 
 test('a command run from executar › switches the footer\'s chip to it, running, and leaves the drawer closed until the chip is clicked (redesign 05)', async () => {
   const user = userEvent.setup();

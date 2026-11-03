@@ -66,7 +66,7 @@ test('the window opens on Atividades: Home in the center and the Atividades side
   const left = group('left')!;
   expect(within(left).queryByRole('tab')).not.toBeInTheDocument(); // each sidebar draws its own header (redesign 03, 09)
   expect(within(left).getByRole('region', { name: 'Atividades' })).toBeVisible();
-  expect(within(left).getByRole('region', { name: 'Automação' })).not.toBeVisible();
+  expect(within(left).getByRole('region', { name: 'Tarefas' })).not.toBeVisible();
   expect(left).toContainElement(nav());
   expect(within(nav()).getAllByRole('button', { name: /^#/ }).map((button) => within(button).getByText(/^#/).textContent)).toEqual(['#1 Task A', '#2 Task B']);
 });
@@ -116,7 +116,7 @@ test('Automação shows the board and keeps the pick; Atividades brings the same
   showActivities();
   await user.click(row('#1 Task A'));
   expect(centerTabs()).toEqual([['Claude · abcdef12', 'false'], ['Terminal', 'true']]);
-  await user.click(view('fluxo'));
+  await user.click(view('tarefas'));
   expect(screen.getByRole('main')).toBeInTheDocument();
   expect(screen.queryByRole('tablist', { name: 'abas' })).not.toBeInTheDocument();
   showActivities();
@@ -138,25 +138,25 @@ test('closing the left panel and opening it again leaves the center as it is (#4
 test('the rail lists atividades then fluxo and the header no view switch; Cmd+1 / Cmd+2 and the rail show the Atividades and Automação tabs, the center following (#533, #746, #221)', async () => {
   render(<Home state={base} />);
   expect(within(document.querySelector('header') as HTMLElement).queryAllByRole('radio')).toEqual([]);
-  expect(within(screen.getByRole('navigation', { name: 'views' })).getAllByRole('button').slice(0, 2).map((b) => b.title)).toEqual(['atividades Ctrl+1', 'fluxo Ctrl+2']); // jsdom runs as off macOS
+  expect(within(screen.getByRole('navigation', { name: 'views' })).getAllByRole('button').slice(0, 2).map((b) => b.title)).toEqual(['atividades Ctrl+1', 'tarefas Ctrl+2']); // jsdom runs as off macOS
 
   fireEvent.keyDown(document.body, { key: '2', code: 'Digit2', ctrlKey: true });
   expect(screen.getByRole('main')).toBeInTheDocument();
-  expect(view('fluxo')).toHaveAttribute('aria-current', 'page');
+  expect(view('tarefas')).toHaveAttribute('aria-current', 'page');
 
   fireEvent.keyDown(document.body, { key: '1', code: 'Digit1', ctrlKey: true });
   expect(home()).toBeInTheDocument();
   expect(view('atividades')).toHaveAttribute('aria-current', 'page');
   expect(within(group('left')!).getByRole('region', { name: 'Atividades' })).toBeVisible();
 
-  await userEvent.setup().click(view('fluxo'));
+  await userEvent.setup().click(view('tarefas'));
   expect(screen.getByRole('main')).toBeInTheDocument();
-  expect(within(group('left')!).getByRole('region', { name: 'Automação' })).toBeVisible();
+  expect(within(group('left')!).getByRole('region', { name: 'Tarefas' })).toBeVisible();
 });
 
 test('a board whose last poll failed shows its error above the board (#180, #533)', () => {
   render(<Dashboard state={{ ...base, syncs: { notes: { error: 'project not found' } } }} hasSource locale="pt-BR" tick={0} onSelect={() => {}} />);
-  fireEvent.click(view('fluxo')); // the window opens on Atividades (#746)
+  fireEvent.click(view('tarefas')); // the window opens on Atividades (#746)
   expect(within(screen.getByRole('main')).getByText('source notes: project not found')).toBeInTheDocument();
 });
 

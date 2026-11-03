@@ -53,7 +53,7 @@ const boardTask = (label: string): Element => screen.getAllByText(label).find((e
 // The window opens on Atividades (#746): a test about the board or Detalhes beside it shows the flow first. Switching views never opens a side (#821)
 // The header's detalhes icon (#221): there while the right column shows, pressed while Detalhes is its pane; the right group draws no tab (#295)
 const detailsIcon = (): HTMLElement | null => within(screen.getByRole('banner')).queryByRole('button', { name: 'detalhes' });
-const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); };
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); };
 
 test('the panels are fixed: Detalhes sits alone in the right panel beside the center and no group draws a tab to move it; a stored layout with Detalhes on the left reads as the defaults (#342, #452, #295)', () => {
   resetViewState({ dockLayout: { ...DEFAULT_DOCK_LAYOUT, docks: { automation: 'left', activities: 'left', plugins: 'left', benchmark: 'left', detail: 'left' } } });
@@ -95,7 +95,7 @@ test('the first run opens the center on Home and the left panel on the Atividade
   expect(screen.queryAllByRole('tab')).toEqual([]); // each sidebar draws its own header; the window header's views switch them (redesign 03, 09)
   expect(left).toContainElement(screen.getByRole('region', { name: 'Atividades' }));
   expect(screen.getByRole('region', { name: 'Atividades' })).toBeVisible();
-  const automation = screen.getByRole('region', { name: 'Automação' });
+  const automation = screen.getByRole('region', { name: 'Tarefas' });
   expect(left).toContainElement(automation); // mounted beside Atividades (#456), not shown
   expect(automation).not.toBeVisible();
   expect(within(automation).getAllByRole('radio').map((item) => item.textContent)).toEqual(['green', 'yellow', 'red']);
@@ -179,7 +179,7 @@ test('⌘1 / ⌘2 never open a closed left side: with no setting given the side 
   render(<Home />);
   panelKey('left');
   viewKey('2');
-  expect(screen.getByRole('region', { name: 'Automação', hidden: true })).not.toBeVisible();
+  expect(screen.getByRole('region', { name: 'Tarefas', hidden: true })).not.toBeVisible();
   viewKey('1');
   expect(screen.getByRole('region', { name: 'Atividades', hidden: true })).not.toBeVisible();
   expect(saved()).toMatchObject({ open: { activities: { left: false }, automation: { left: false } } });
@@ -189,7 +189,7 @@ test('with the left kept per view, ⌘1 / ⌘2 restore each view\'s own left sid
   render(<Home sidebarsPerView={{ left: true, right: true, rightTab: true }} />);
   panelKey('left');
   viewKey('2');
-  expect(screen.getByRole('region', { name: 'Automação' })).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Tarefas' })).toBeVisible();
   viewKey('1');
   expect(screen.getByRole('region', { name: 'Atividades', hidden: true })).not.toBeVisible();
   expect(saved()).toMatchObject({ open: { activities: { left: false }, automation: { left: true } } });

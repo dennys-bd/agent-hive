@@ -7,7 +7,7 @@ const en = {
   'header.sourceError': 'source {name}: {error}',
   'header.brand': 'hive', // #533
   'header.workers': 'workers {active}/{max}', // #227: the brand's count, the signal popover's first row (#295) and the flow sidebar's worker cap
-  'header.flow': 'flow',
+  'header.flow': 'tasks',
   'header.activities': 'activities',
   'header.signalTitle': 'signal {signal} · {effect}', // #221, #295: the brand's title, what the signal holds back in the middle; the popover's toggle changes it
   'header.signalTitlePlain': 'signal {signal}', // a signal that holds nothing back
@@ -18,7 +18,7 @@ const en = {
   'header.github.title': 'open on GitHub',
   'rail.label': 'views', // #220: the view rail
   'rail.activities': 'activities',
-  'rail.flow': 'flow',
+  'rail.flow': 'tasks',
   'rail.plugins': 'plugins',
   'rail.benchmark': 'benchmark',
   'rail.monitor': 'monitor · soon',
@@ -90,7 +90,7 @@ const en = {
   'flow.tab.flow': 'flow', // #756: the source header's tabs, with an external source picked
   'flow.tab.native.github': 'GitHub Project', // the native view of a github source: a product name, the same in every language
   'back.title': 'back · {key}', // #911: the page header's back button
-  'back.flow': 'flow · {pick}', // #911, #380: the flow a page goes back to
+  'back.flow': 'tasks · {pick}', // #911, #380, #570: the tasks view a page goes back to
   'footer.rules': 'rules',
   'footer.rule.cap': 'max {n} workers',
   'footer.rule.stageCap': '{stage} max {n}',
@@ -257,7 +257,7 @@ const en = {
   'detail.ago': '{time} ago',
   'detail.openActivity': 'open activity',
   'detail.issueLink': 'issue ›', // #64: on a PR page, the details' title row opens the task's issue
-  'detail.showFlow': 'see in flow',
+  'detail.showFlow': 'see in tasks',
   'detail.dismissError': 'dismiss', // #354: under the task's error and in the exhausted block
   'detail.more': 'more actions',
   'detail.menu.openIssue': 'open issue in {source}',
@@ -318,7 +318,7 @@ const en = {
   'terminal.panel.kind.diffCommit': 'last commit diff',
   'terminal.panel.kind.diffCheckpoint': 'checkpoint {n} diff',
   'dock.detail': 'Details',
-  'dock.automation': 'Automation',
+  'dock.automation': 'Tasks',
   'dock.activities': 'Activities',
   'console.channel': 'channel',
   'console.run': 'run',
@@ -553,7 +553,7 @@ const en = {
   'home.yesterday': 'yesterday',
   'home.days': '{n} days ago',
   'home.search': 'search', // #584: the ⌘P hint
-  'home.flow': 'flow',
+  'home.flow': 'tasks',
   'home.noWorkspace.title': 'No workspace yet',
   'home.noWorkspace.text': 'add a repository folder to get started.',
   'home.noWorkspace.add': 'add workspace…',
@@ -916,7 +916,7 @@ const en = {
   'settings.sidebarsPerView.left': 'keep the left sidebar per view',
   'settings.sidebarsPerView.right': 'keep the right sidebar per view',
   'settings.sidebarsPerView.rightTab': "keep the right sidebar's tab",
-  'settings.sidebarsPerView.rightTab.hint': 'picking a task in the flow no longer switches it to details',
+  'settings.sidebarsPerView.rightTab.hint': 'picking a task in the tasks view no longer switches it to details',
   'settings.budgetHour': 'per hour',
   'settings.budgetDay': 'per day',
   'settings.budgetHint': 'past a limit no new worker starts; the running ones finish. empty = no limit.',
@@ -1695,7 +1695,7 @@ const en = {
   'shortcuts.toggleRight': 'open or close the right panel',
   'shortcuts.clear': 'clear the terminal', // #448
   'shortcuts.findInTerminal': 'find in terminal', // #12
-  'shortcuts.viewFlow': 'go to flow', // #533
+  'shortcuts.viewFlow': 'go to tasks', // #533
   'shortcuts.viewPlugins': 'go to plugins', // #313
   'shortcuts.viewBenchmark': 'go to benchmark', // #458
   'shortcuts.viewActivities': 'go to activities',
@@ -1781,7 +1781,7 @@ const en = {
   'shortcuts.scope.global': 'global',
   'shortcuts.scope.activities': 'activities',
   'shortcuts.scope.files': 'files tree',
-  'shortcuts.scope.flow': 'flow',
+  'shortcuts.scope.flow': 'tasks',
   'shortcuts.scope.plugins': 'plugins',
   'shortcuts.scope.benchmark': 'benchmark', // #458
   'shortcuts.scope.dialogs': 'dialogs and feedback',
@@ -3011,7 +3011,7 @@ const pt: Record<MessageKey, string> = {
   'header.sourceError': 'source {name}: {error}',
   'header.brand': 'hive',
   'header.workers': 'workers {active}/{max}',
-  'header.flow': 'fluxo',
+  'header.flow': 'tarefas',
   'header.activities': 'atividades',
   'header.signalTitle': 'sinal {signal} · {effect}',
   'header.signalTitlePlain': 'sinal {signal}',
@@ -3022,7 +3022,7 @@ const pt: Record<MessageKey, string> = {
   'header.github.title': 'abrir no GitHub',
   'rail.label': 'views',
   'rail.activities': 'atividades',
-  'rail.flow': 'fluxo',
+  'rail.flow': 'tarefas',
   'rail.plugins': 'plugins',
   'rail.benchmark': 'benchmark',
   'rail.monitor': 'monitor · em breve',
@@ -3094,7 +3094,7 @@ const pt: Record<MessageKey, string> = {
   'flow.tab.flow': 'fluxo',
   'flow.tab.native.github': 'GitHub Project',
   'back.title': 'voltar · {key}',
-  'back.flow': 'fluxo · {pick}',
+  'back.flow': 'tarefas · {pick}',
   'footer.rules': 'regras',
   'footer.rule.cap': 'máx {n} workers',
   'footer.rule.stageCap': '{stage} máx {n}',
@@ -3261,7 +3261,7 @@ const pt: Record<MessageKey, string> = {
   'detail.ago': 'há {time}',
   'detail.openActivity': 'abrir atividade',
   'detail.issueLink': 'issue ›',
-  'detail.showFlow': 'ver no fluxo',
+  'detail.showFlow': 'ver nas tarefas',
   'detail.dismissError': 'dispensar', // #354
   'detail.more': 'mais ações',
   'detail.menu.openIssue': 'abrir issue no {source}',
@@ -3322,7 +3322,7 @@ const pt: Record<MessageKey, string> = {
   'terminal.panel.kind.diffCommit': 'diff do último commit',
   'terminal.panel.kind.diffCheckpoint': 'diff do ponto {n}',
   'dock.detail': 'Detalhes',
-  'dock.automation': 'Automação',
+  'dock.automation': 'Tarefas',
   'dock.activities': 'Atividades',
   'console.channel': 'canal',
   'console.run': 'execução',
@@ -3557,7 +3557,7 @@ const pt: Record<MessageKey, string> = {
   'home.yesterday': 'ontem',
   'home.days': 'há {n} dias',
   'home.search': 'buscar',
-  'home.flow': 'fluxo',
+  'home.flow': 'tarefas',
   'home.noWorkspace.title': 'Nenhum workspace ainda',
   'home.noWorkspace.text': 'adicione a pasta de um repositório para começar.',
   'home.noWorkspace.add': 'adicionar workspace…',
@@ -3915,7 +3915,7 @@ const pt: Record<MessageKey, string> = {
   'settings.sidebarsPerView.left': 'manter a lateral esquerda por visão',
   'settings.sidebarsPerView.right': 'manter a lateral direita por visão',
   'settings.sidebarsPerView.rightTab': 'manter a aba da lateral direita',
-  'settings.sidebarsPerView.rightTab.hint': 'escolher uma tarefa no fluxo não troca mais para detalhes',
+  'settings.sidebarsPerView.rightTab.hint': 'escolher uma tarefa na visão tarefas não troca mais para detalhes',
   'settings.budgetHour': 'por hora',
   'settings.budgetDay': 'por dia',
   'settings.budgetHint': 'ao estourar, nenhum worker novo começa; os que estão executando terminam. vazio = sem limite.',
@@ -4692,7 +4692,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.toggleRight': 'abrir ou fechar o painel da direita',
   'shortcuts.clear': 'limpar o terminal',
   'shortcuts.findInTerminal': 'buscar no terminal', // #12
-  'shortcuts.viewFlow': 'ir para fluxo',
+  'shortcuts.viewFlow': 'ir para tarefas',
   'shortcuts.viewPlugins': 'ir para plugins', // #313
   'shortcuts.viewBenchmark': 'ir para benchmark', // #458
   'shortcuts.viewActivities': 'ir para atividades',
@@ -4778,7 +4778,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.scope.global': 'global',
   'shortcuts.scope.activities': 'atividades',
   'shortcuts.scope.files': 'árvore de arquivos',
-  'shortcuts.scope.flow': 'fluxo',
+  'shortcuts.scope.flow': 'tarefas',
   'shortcuts.scope.plugins': 'plugins',
   'shortcuts.scope.benchmark': 'benchmark', // #458
   'shortcuts.scope.dialogs': 'diálogos e feedback',

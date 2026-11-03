@@ -87,9 +87,9 @@ function Home({ shown = state, initial, calls = [] }: { shown?: State; initial?:
   return <Dashboard state={shown} locale="pt-BR" tick={0} sources={NAV} selected={selected} onSelect={onSelect} />;
 }
 
-const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); }; // the window opens on Atividades (#746)
 const showActivities = (): void => { fireEvent.click(screen.getByRole('button', { name: 'atividades' })); };
-const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
+const automation = () => within(screen.getByRole('region', { name: 'Tarefas' }));
 const main = () => within(screen.getByRole('main'));
 const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 const BACK_KEY = { key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }; // goBack off macOS: jsdom is not macOS
@@ -118,7 +118,7 @@ test('the flow on roadmap with #12 selected → issue → PR → issue → PR: o
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
   await user.click(await main().findByRole('button', { name: 'abrir PR ›' }));
   expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  await user.click(bar().getByRole('button', { name: 'fluxo · roadmap' })); // ‹ is aria-hidden: the name is the label
+  await user.click(bar().getByRole('button', { name: 'tarefas · roadmap' })); // ‹ is aria-hidden: the name is the label
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
   expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
   expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
@@ -126,7 +126,7 @@ test('the flow on roadmap with #12 selected → issue → PR → issue → PR: o
   expect(calls).toEqual([]); // an unchanged selection is not picked again: its panel stays as the user left it
 });
 
-test('the flow on hive → a repository\'s issue whose task is roadmap\'s: back reads fluxo · todas and shows every source, so the task is in it (#380)', async () => {
+test('the flow on hive → a repository\'s issue whose task is roadmap\'s: back reads tarefas · todas and shows every source, so the task is in it (#380)', async () => {
   const user = userEvent.setup();
   render(<Home shown={working} />);
   showFlow();
@@ -135,7 +135,7 @@ test('the flow on hive → a repository\'s issue whose task is roadmap\'s: back 
   await user.click(await bar().findByRole('tab', { name: 'issues 3' }));
   await user.click(await main().findByText('Issue 12'));
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
-  await user.click(bar().getByRole('button', { name: 'fluxo · todas' }));
+  await user.click(bar().getByRole('button', { name: 'tarefas · todas' }));
   expect(main().queryByRole('heading', { name: 'Pager breaks' })).not.toBeInTheDocument();
   expect(bar().getByText('todas as sources')).toBeInTheDocument(); // the flow's header
   expect(automation().getByRole('button', { name: /^todas/ })).toHaveAttribute('aria-pressed', 'true');
@@ -150,7 +150,7 @@ test('a PR with no task, opened from a repository\'s PR list, goes back to the f
   await user.click(automation().getByRole('button', { name: /^site/ }));
   await user.click(await main().findByText('Fix the pager'));
   expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  await user.click(bar().getByRole('button', { name: 'fluxo · roadmap' }));
+  await user.click(bar().getByRole('button', { name: 'tarefas · roadmap' }));
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
   expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
   expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
@@ -165,7 +165,7 @@ test('an issue opened from the GitHub Project table goes back to the flow, not t
   await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await user.click(await main().findByText('Pager breaks'));
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
-  expect(bar().getByRole('button', { name: 'fluxo · roadmap' })).toBeInTheDocument();
+  expect(bar().getByRole('button', { name: 'tarefas · roadmap' })).toBeInTheDocument();
   expect(fireEvent.keyDown(window, BACK_KEY)).toBe(false); // ⌘[ on macOS
   expect(await bar().findByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
   expect(main().queryByText('2 issues · 0 no fluxo')).not.toBeInTheDocument();
@@ -181,7 +181,7 @@ test('an issue opened from the Atividades view goes back to the flow, not to tha
   sideKey();
   await user.click(within(right()).getByRole('link', { name: 'site#12' }));
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
-  await user.click(bar().getByRole('button', { name: 'fluxo · todas' }));
+  await user.click(bar().getByRole('button', { name: 'tarefas · todas' }));
   expect(main().queryByRole('heading', { name: 'Pager breaks' })).not.toBeInTheDocument(); // main() is found: Automação shows
   expect(bar().getByText('todas as sources')).toBeInTheDocument();
 });
@@ -218,7 +218,7 @@ test('a PR opened from the GitHub Project (the task details\' PR link) and merge
   await main().findByText('Elsewhere'); // the table's row out of the flow
   await user.click(screen.getByRole('link', { name: '#7' }));
   expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  expect(bar().getByRole('button', { name: 'fluxo · roadmap' })).toBeInTheDocument();
+  expect(bar().getByRole('button', { name: 'tarefas · roadmap' })).toBeInTheDocument();
   await merge(user);
   expect(await bar().findByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
   expect(main().queryByText('Elsewhere')).not.toBeInTheDocument();
@@ -232,7 +232,7 @@ test('a PR opened from the repository\'s PR list and merged goes back to the flo
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^site/ }));
   await user.click(await main().findByText('Fix the pager'));
-  expect(await bar().findByRole('button', { name: 'fluxo · todas' })).toBeInTheDocument();
+  expect(await bar().findByRole('button', { name: 'tarefas · todas' })).toBeInTheDocument();
   await merge(user);
   expect(await bar().findByText('todas as sources')).toBeInTheDocument();
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
@@ -246,7 +246,7 @@ test('a PR opened from the Atividades view and merged goes back to the flow unde
   await pickActivity(user);
   sideKey();
   await user.click(within(right()).getByRole('link', { name: '#7' }));
-  expect(await bar().findByRole('button', { name: 'fluxo · todas' })).toBeInTheDocument();
+  expect(await bar().findByRole('button', { name: 'tarefas · todas' })).toBeInTheDocument();
   await merge(user);
   expect(await bar().findByText('todas as sources')).toBeInTheDocument();
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument(); // main() is found: Automação shows
@@ -264,11 +264,11 @@ test('a merge GitHub refuses keeps the PR page, with its message and the way bac
   await merge(user);
   expect(await within(main().getByRole('region', { name: 'mergear' })).findByRole('alert')).toHaveTextContent('Pull request is in a merge queue');
   expect(main().getByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  expect(bar().getByRole('button', { name: 'fluxo · todas' })).toBeInTheDocument();
+  expect(bar().getByRole('button', { name: 'tarefas · todas' })).toBeInTheDocument();
   fetchMock.mockImplementation(async (input, init) => (String(input) === '/repositories/acme/site/pulls/7' ? jsonRes({ ...PR_PAGE, state: 'merged' }) : answer(input, init)));
   await user.click(bar().getByRole('button', { name: 'atualizar' }));
   expect(await main().findByText('mergeado: só leitura')).toBeInTheDocument();
   expect(main().getByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  expect(bar().getByRole('button', { name: 'fluxo · todas' })).toBeInTheDocument();
+  expect(bar().getByRole('button', { name: 'tarefas · todas' })).toBeInTheDocument();
   expect(main().queryByRole('region', { name: 'mergear' })).not.toBeInTheDocument();
 });

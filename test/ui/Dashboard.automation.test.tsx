@@ -34,13 +34,13 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); }; // the window opens on Atividades (#746)
 
 test('Automação and Atividades offer no move: they stay on the left, and a stored layout with Automação on the right reads as the defaults (#456, #458)', () => {
   resetViewState({ dockLayout: { ...DEFAULT_DOCK_LAYOUT, docks: { automation: 'right', activities: 'left', detail: 'right' } } });
   render(<Dashboard state={state} locale="pt-BR" tick={0} onSelect={() => {}} />);
   showFlow();
-  expect(within(group('left')!).getByRole('region', { name: 'Automação' })).toBeVisible();
+  expect(within(group('left')!).getByRole('region', { name: 'Tarefas' })).toBeVisible();
   expect(within(group('left')!).getByRole('region', { name: 'Atividades' })).toBeInTheDocument();
   expect(within(group('left')!).queryAllByRole('tab')).toEqual([]); // no tab to right-click: nothing offers a move (redesign 09)
   expect(group('right')).toHaveStyle({ opacity: '0' }); // the defaults: the right side closed
@@ -61,7 +61,7 @@ test('a hive pick holds with no source configured and leaves only the tasks crea
   const taskB: Task = { item: { itemId: 'board:B', id: '2', title: 'Task B', body: '', url: '', source: 'board' }, stage: 'dev', boardColumn: 'Ready', auto: true };
   render(<Dashboard state={{ ...state, tasks: [...state.tasks, taskB] }} locale="pt-BR" tick={0} onSelect={() => {}} />);
   showFlow();
-  const automation = within(screen.getByRole('region', { name: 'Automação' }));
+  const automation = within(screen.getByRole('region', { name: 'Tarefas' }));
   await user.click(automation.getByRole('button', { name: /^hive/ }));
   expect(automation.getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
   expect(within(screen.getByRole('main')).getByText('#1 Task A')).toBeInTheDocument();

@@ -56,7 +56,7 @@ test('the window opens on the home, which hides the right side without closing i
   expect(screen.getByRole('heading', { name: 'Nenhuma atividade aberta' })).toBeInTheDocument();
   expect(screen.getByText('detalhes')).not.toBeVisible();
   expect((readView('dockLayout') as DockLayout | undefined)?.open.activities.right).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' }));
   expect(screen.getByText('detalhes')).toBeVisible();
   toHome();
   expect(screen.getByText('detalhes')).not.toBeVisible();

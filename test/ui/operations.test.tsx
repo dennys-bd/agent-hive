@@ -34,7 +34,7 @@ test('with nothing open and nothing focused only the global group lists, in the 
   const ctx = ctxOf(stateOf([]));
   const ops = operationsFor(ctx);
   expect(ops.map((op) => text(op, ctx))).toEqual([
-    'ir para atividades', 'ir para fluxo', 'ir para plugins', 'ir para benchmark', 'abrir ou fechar o painel da esquerda', 'abrir ou fechar o painel da direita', 'abrir ou fechar o console',
+    'ir para atividades', 'ir para tarefas', 'ir para plugins', 'ir para benchmark', 'abrir ou fechar o painel da esquerda', 'abrir ou fechar o painel da direita', 'abrir ou fechar o console',
     'nova atividade', 'novo terminal', 'o mapa de atalhos', 'sinal',
   ]);
   expect(new Set(ops.map((op) => op.group))).toEqual(new Set(['global']));

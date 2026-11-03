@@ -51,9 +51,9 @@ test('with a header the rail is the first thing left of the dock in both views, 
   };
   atLeft();
   expect(railButton('atividades')).toHaveAttribute('aria-current', 'page'); // the window opens on Atividades (#746)
-  fireEvent.click(railButton('fluxo'));
+  fireEvent.click(railButton('tarefas'));
   expect(screen.getByRole('main')).toHaveTextContent('fluxo'); // the board is the center
-  expect(railButton('fluxo')).toHaveAttribute('aria-current', 'page');
+  expect(railButton('tarefas')).toHaveAttribute('aria-current', 'page');
   expect(railButton('atividades')).not.toHaveAttribute('aria-current');
   atLeft();
   fireEvent.click(railButton('atividades'));
@@ -66,7 +66,7 @@ test('with the left side collapsed only the left group goes: the rail stays (#22
   render(<Window />);
   expect(screen.getByRole('navigation', { name: 'Atividades', hidden: true })).not.toBeVisible(); // the left group's list
   expect(rail()).toBeVisible();
-  fireEvent.click(railButton('fluxo'));
+  fireEvent.click(railButton('tarefas'));
   expect(rail()).toBeVisible();
 });
 
@@ -108,7 +108,7 @@ test("the rail's third view is plugins, Ctrl+3 as its click; Ctrl+1 and Ctrl+2 s
   expect(railButton('plugins')).toHaveAttribute('aria-current', 'page');
   expect(screen.getByRole('main', { hidden: true })).not.toBeVisible(); // the flow is not the center
   fireEvent.keyDown(window, { key: '2', code: 'Digit2', ctrlKey: true });
-  expect(railButton('fluxo')).toHaveAttribute('aria-current', 'page');
+  expect(railButton('tarefas')).toHaveAttribute('aria-current', 'page');
   fireEvent.keyDown(window, { key: '1', code: 'Digit1', ctrlKey: true });
   expect(railButton('atividades')).toHaveAttribute('aria-current', 'page');
   fireEvent.click(railButton('plugins'));
@@ -120,7 +120,7 @@ test("the rail's fourth view is benchmark, Ctrl+4 as its click; Ctrl+1 to Ctrl+3
   fireEvent.keyDown(window, { key: '4', code: 'Digit4', ctrlKey: true });
   expect(railButton('benchmark')).toHaveAttribute('aria-current', 'page');
   expect(screen.getByRole('main', { hidden: true })).not.toBeVisible();
-  for (const [digit, name] of [['3', 'plugins'], ['2', 'fluxo'], ['1', 'atividades']] as const) {
+  for (const [digit, name] of [['3', 'plugins'], ['2', 'tarefas'], ['1', 'atividades']] as const) {
     fireEvent.keyDown(window, { key: digit, code: `Digit${digit}`, ctrlKey: true });
     expect(railButton(name)).toHaveAttribute('aria-current', 'page');
   }

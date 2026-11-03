@@ -32,7 +32,7 @@ function Dock() {
 
 const search = (): HTMLElement => screen.getByLabelText(t('flow.search'));
 const toActivities = (): void => { fireEvent.click(screen.getByRole('button', { name: 'atividades' })); };
-const toFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); };
+const toFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); };
 
 beforeEach(() => {
   setLanguage('pt');

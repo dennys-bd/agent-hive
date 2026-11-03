@@ -21,7 +21,7 @@ const TASKS = [task('1', 'roadmap'), task('2', 'roadmap'), task('3', 'notes'), t
 const STATE = state([{ id: 's1', status: 'working', activityId: activityIdOf('I1'), runId: 'W1' }], TASKS);
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string) => json(String(url).startsWith('/settings/projects') ? [{ number: 7, title: 'Roadmap', url: 'https://github.com/orgs/acme/projects/7' }] : { ok: true }));
-const panel = (): HTMLElement => screen.getByRole('region', { name: 'Automação' });
+const panel = (): HTMLElement => screen.getByRole('region', { name: 'Tarefas' });
 const follows = (a: Node, b: Node): boolean => a.compareDocumentPosition(b) === Node.DOCUMENT_POSITION_FOLLOWING;
 
 function renderPanel(nav: Partial<SourcesNav> = {}, source?: string) {

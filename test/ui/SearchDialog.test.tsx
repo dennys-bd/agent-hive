@@ -81,7 +81,7 @@ test('tudo groups atividades, tarefas and comandos; a task with an activity only
   expect(within(atividades).getByText('daemon', { selector: 'b' })).toHaveClass('font-medium');
   expect(screen.getByText('bloqueada por 466')).toBeInTheDocument();
   expect(screen.getByText('3 resultados')).toBeInTheDocument();
-  expect(screen.getByText('ver no fluxo')).toBeInTheDocument();
+  expect(screen.getByText('ver nas tarefas')).toBeInTheDocument();
 });
 
 test('a task held by an ancestor names the ancestor in its search row (#424)', async () => {

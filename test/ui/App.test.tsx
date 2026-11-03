@@ -73,7 +73,7 @@ test('a board task opens its panel, which stays open while the task is in the Hi
   const user = userEvent.setup();
   currentState = state([task('1', 's1')], worker('I1'));
   const { rerender } = render(<App />);
-  await user.click(screen.getByRole('button', { name: 'fluxo' })); // the window opens on Atividades (#746)
+  await user.click(screen.getByRole('button', { name: 'tarefas' })); // the window opens on Atividades (#746)
   await user.click(within(screen.getByRole('main')).getByText('#1 Task 1'));
   expectTaskAlone();
   currentState = state([task('1')], worker()); // the run ended; the task stays in its stage
@@ -90,7 +90,7 @@ test('a board task opens its panel, which stays open while the task is in the Hi
 test('the dashboard wrapper fills the viewport height and main takes the remaining space', () => {
   currentState = state([], worker());
   render(<App />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' }));
   const main = screen.getByRole('main');
   expect(main.className).toEqual(expect.stringContaining('min-h-0'));
   expect(main.className).toEqual(expect.stringContaining('flex-1'));
@@ -102,7 +102,7 @@ test('the max workers control lives in the Automação tab, in neither the heade
   render(<App />);
   const header = document.querySelector('header')!;
   const footer = screen.getByRole('contentinfo');
-  expect(within(screen.getByRole('region', { name: 'Automação' })).getByLabelText('máx.')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Tarefas' })).getByLabelText('máx.')).toBeInTheDocument();
   expect(within(header).queryByLabelText('máx.')).not.toBeInTheDocument();
   expect(within(footer).queryByLabelText('máx.')).not.toBeInTheDocument();
   expect(within(footer).queryByRole('status')).not.toBeInTheDocument(); // the signal is the header brand's mark (#227)
@@ -115,7 +115,7 @@ test('a click on a stopped task opens the panel on the details panel with no Wor
   vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })));
   currentState = state([task('1')], worker());
   render(<App />);
-  await user.click(screen.getByRole('button', { name: 'fluxo' })); // the window opens on Atividades (#746)
+  await user.click(screen.getByRole('button', { name: 'tarefas' })); // the window opens on Atividades (#746)
   await user.click(screen.getByRole('button', { name: 'iniciar' }));
   const run = screen.getByRole('button', { name: /executar etapas/ });
   await waitFor(() => expect(run).toBeEnabled());

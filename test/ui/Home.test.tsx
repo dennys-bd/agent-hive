@@ -78,7 +78,7 @@ test('recentes opens a live task\'s activity and resumes a stopped task\'s last 
 
 test('the keys row shows each shortcut\'s current binding with its label (redesign 08)', () => {
   render(<Home tasks={[]} liveActivities={[]} activityRecords={[]} workers={[]} workspaces={['hive']} nav={navOf()} />);
-  for (const hint of ['Ctrl+Shift+Nnova atividade', 'Ctrl+Shift+Pbuscar', 'Ctrl+Shift+Tterminal no local', 'Ctrl+2fluxo']) { // the flow's key moved to ⌘2 (#746)
+  for (const hint of ['Ctrl+Shift+Nnova atividade', 'Ctrl+Shift+Pbuscar', 'Ctrl+Shift+Tterminal no local', 'Ctrl+2tarefas']) { // the flow's key moved to ⌘2 (#746)
     expect(screen.getByText((_, element) => element?.tagName === 'SPAN' && element.textContent === hint)).toBeInTheDocument();
   }
 });

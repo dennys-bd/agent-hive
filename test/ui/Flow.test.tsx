@@ -791,7 +791,7 @@ test('with hive picked, only the tasks with no source show, in every stage and i
   expect(titles()).toEqual(['#2 Task 2', '#3 Task 3']);
   expect(within(header('dev')).getByText('1')).toBeInTheDocument();
   expect(within(header('review')).getByText('1')).toBeInTheDocument();
-  const flowHeader = screen.getByRole('region', { name: 'fluxo' });
+  const flowHeader = screen.getByRole('region', { name: 'tarefas' });
   expect(within(flowHeader).getByText('hive')).toBeInTheDocument();
   expect(within(flowHeader).queryByText(/^atualizado/)).not.toBeInTheDocument();
 });

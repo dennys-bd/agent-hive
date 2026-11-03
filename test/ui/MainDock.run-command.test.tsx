@@ -69,7 +69,7 @@ test('with several, it opens the search on that task\'s commands; a pick runs it
 
 test('in the flow it acts on the focused task; with no command it does nothing and leaves the key alone (#585)', async () => {
   const { rerender } = render(<Home commands={['test']} flow={<main><button type="button" data-task-id="A">task A</button></main>} />);
-  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the board is the center (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the board is the center (#746)
   screen.getByRole('button', { name: 'task A' }).focus();
   runKey();
   await waitFor(() => expect(runs()).toEqual([{ command: 'test' }]));

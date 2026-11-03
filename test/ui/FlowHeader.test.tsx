@@ -24,7 +24,7 @@ const state = (tasks: Task[], extra: Partial<State> = {}): State => movedWork({
 });
 const tasks = [task('1', 'roadmap', { branch: 'hive/1-pager' }), task('2', 'notes'), task('3', 'roadmap', { branch: 'hive/3-pager' })];
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
-const header = (): HTMLElement => screen.getByRole('region', { name: 'fluxo' });
+const header = (): HTMLElement => screen.getByRole('region', { name: 'tarefas' });
 const chips = (): string[] => within(header()).queryAllByText(/^(hive|site|docs)$/).map((el) => el.textContent ?? '');
 const dataTransfer = () => {
   const data = new Map<string, string>();
@@ -271,9 +271,9 @@ test('under a header slot provider the bar renders in the registered slot, not i
   expect(header()).not.toHaveClass('border-b');
   expect(header().className).toContain('[-webkit-app-region:no-drag]'); // its controls keep their clicks in the dragging header
   rerender(inSlot(true, false));
-  expect(screen.queryByRole('region', { name: 'fluxo' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'tarefas' })).not.toBeInTheDocument();
   rerender(inSlot(false));
-  expect(screen.queryByRole('region', { name: 'fluxo' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'tarefas' })).not.toBeInTheDocument();
 });
 
 test('with github, GitHub sits right before atualizar, titled abrir no GitHub, its icon muted, and opens the URL in the browser; without it, no button (#352)', async () => {
@@ -294,5 +294,5 @@ test('with github, GitHub sits right before atualizar, titled abrir no GitHub, i
   expect(open).toHaveBeenCalledWith('https://github.com/acme/web/issues', '_blank', 'noreferrer');
   setLanguage('en');
   rerender(page('https://github.com/acme/web/issues'));
-  expect(within(screen.getByRole('region', { name: 'flow' })).getByRole('button', { name: 'GitHub' })).toHaveAttribute('title', 'open on GitHub');
+  expect(within(screen.getByRole('region', { name: 'tasks' })).getByRole('button', { name: 'GitHub' })).toHaveAttribute('title', 'open on GitHub');
 });
