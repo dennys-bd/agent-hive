@@ -484,6 +484,7 @@ async function showSettings(): Promise<void> {
 const senderWindow = registerWindowIpc({
   handle: (channel, listener) => ipcMain.handle(channel, listener),
   mainWindows,
+  fromWebContents: (webContents) => BrowserWindow.fromWebContents(webContents),
   dialog,
   clipboard,
   settingsChanged: async () => {

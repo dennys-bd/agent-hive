@@ -20,12 +20,16 @@ function fakeWindow(isFull: boolean) {
 function rig() {
   const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>();
   const main = fakeWindow(false);
-  const entry: MainWindow = { win: main.win, detached: {} as DetachedWindows };
+  const other = fakeWindow(true); // a detached window of this main window, in full screen
+  const closedBy: unknown[] = [];
+  const detached = { owns: (sender: unknown) => sender === other.webContents, closeWindow: (sender: unknown) => { closedBy.push(sender); } } as unknown as DetachedWindows;
+  const entry: MainWindow = { win: main.win, detached };
   const parents: BrowserWindow[] = [];
   const counts = { settings: 0 };
   const senderWindow = registerWindowIpc({
     handle: (channel, listener) => { handlers.set(channel, listener); },
     mainWindows: new Map([[PORT, entry]]),
+    fromWebContents: (webContents) => (webContents === other.webContents ? other.win : null),
     dialog: {
       showOpenDialog: async (win) => { parents.push(win); return { canceled: false, filePaths: ['/repo'] }; },
       showSaveDialog: async (win) => { parents.push(win); return { canceled: false, filePath: '/repo/a.ts' }; },
@@ -41,7 +45,7 @@ function rig() {
     assert.ok(handler, `no handler for ${channel}`);
     return handler(ev, ...args);
   };
-  return { senderWindow, event, invoke, main, entry, parents, counts };
+  return { senderWindow, event, invoke, main, entry, parents, counts, other, closedBy };
 }
 
 test('senderWindow answers a main window\'s page for the main and shared scopes, and refuses the detached scope, a stranger, a frame off its port and no frame (#552)', () => {
@@ -77,4 +81,20 @@ test('window:closeWindow from a main window\'s page closes that window, through 
   const h = rig();
   h.invoke('window:closeWindow', h.event(h.main.webContents));
   assert.deepEqual(h.main.calls, ['close']);
+});
+
+test('a detached window\'s page is found through its main window\'s registry: its own window for the detached and shared scopes, refused for the main one; its sheets, full screen and closeWindow are its own (#552)', async () => {
+  const h = rig();
+  const ev = h.event(h.other.webContents);
+  for (const scope of ['detached', 'shared'] as const) {
+    const found = h.senderWindow(ev, scope);
+    assert.deepEqual([found.entry === h.entry, found.win === h.other.win], [true, true], scope);
+  }
+  assert.throws(() => h.senderWindow(ev, 'main'), { message: 'janela não encontrada' });
+  assert.throws(() => h.senderWindow(h.event(h.other.webContents, 'http://127.0.0.1:1/'), 'detached'), { message: 'janela não encontrada' });
+  await h.invoke('window:chooseFolder', ev);
+  assert.ok(h.parents.length === 1 && h.parents[0] === h.other.win, 'the sheet is on the detached window');
+  assert.equal(h.invoke('window:isFullScreen', ev), true);
+  h.invoke('window:closeWindow', ev);
+  assert.deepEqual([h.closedBy.length === 1 && h.closedBy[0] === h.other.webContents, h.other.calls, h.main.calls], [true, [], []], 'destroyed by its registry, never closed again');
 });

@@ -32,18 +32,23 @@ export interface WindowClipboard { read(format: string): string; writeBuffer(for
 export interface WindowIpcDeps {
   handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void; // ipcMain.handle
   mainWindows: ReadonlyMap<number, MainWindow>;
+  fromWebContents(webContents: IpcMainInvokeEvent['sender']): BrowserWindow | null; // BrowserWindow.fromWebContents: a detached sender's own window
   dialog: WindowDialogs;
   clipboard: WindowClipboard;
   settingsChanged(): Promise<void>; // the viewer re-reads onClose (#513) and rebuilds the app menu with the saved shortcuts (#449)
 }
 
-// The sender's main window, on its own port: a page the daemon redirected elsewhere keeps the preload but gets nothing. A main window's page
-// only, until detached senders are found through their registry (#552)
-function senderWindow({ mainWindows }: Pick<WindowIpcDeps, 'mainWindows'>, event: IpcSender, scope: WindowScope): WindowSender {
+// The sender's main window, and the window that sent it (spec decision 16): a main window's page, or one of its detached windows, found
+// through that main window's registry. Either way the frame must be on the entry's port: a page the daemon redirected elsewhere keeps the
+// preload but gets nothing.
+function senderWindow({ mainWindows, fromWebContents }: Pick<WindowIpcDeps, 'mainWindows' | 'fromWebContents'>, event: IpcSender, scope: WindowScope): WindowSender {
   for (const [port, entry] of mainWindows) {
-    if (entry.win.webContents !== event.sender) continue;
-    if (scope === 'detached' || !event.senderFrame?.url.startsWith(`http://127.0.0.1:${port}/`)) break;
-    return { entry, win: entry.win };
+    const isMain = entry.win.webContents === event.sender;
+    if (!isMain && !entry.detached.owns(event.sender)) continue;
+    const win = isMain ? entry.win : fromWebContents(event.sender);
+    const isInScope = scope === 'shared' || (scope === 'main') === isMain;
+    if (win === null || !isInScope || !event.senderFrame?.url.startsWith(`http://127.0.0.1:${port}/`)) break;
+    return { entry, win };
   }
   throw new Error('janela não encontrada');
 }
@@ -89,9 +94,12 @@ export function registerWindowIpc(deps: WindowIpcDeps): SenderWindow {
     const { canceled, filePath } = await dialog.showSaveDialog(win, typeof defaultPath === 'string' ? { defaultPath } : {});
     return canceled || filePath === undefined || filePath === '' ? undefined : filePath;
   });
-  // The page's closeWindow shortcut (#585): its own window closes, through the close handler (#513) that may turn the last main window's close into a quit
+  // The page's closeWindow (#585, spec decision 7): a main window closes through its close handler (#513), which may turn the last one's close
+  // into a quit; a detached window is destroyed by its registry, since its page calls this only once it holds nothing left to guard
   handle('window:closeWindow', (event) => {
-    sender(event, 'shared').win.close();
+    const { entry, win } = sender(event, 'shared');
+    if (win === entry.win) win.close();
+    else entry.detached.closeWindow(event.sender);
   });
   // Whether the asking window is in full screen (#295): a window created full screen (restored there, #398) sends no enter event
   handle('window:isFullScreen', (event) => sender(event, 'shared').win.isFullScreen());
