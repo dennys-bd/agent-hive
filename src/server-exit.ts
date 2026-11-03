@@ -1,6 +1,8 @@
+import { realpath } from 'node:fs/promises';
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import { ranAgent } from './agents.js';
 import { taskWorkspace } from './config.js';
+import { isUuid } from './uuid.js';
 import { runSessionId } from './record-kit.js';
 import type { Runtime } from './server.js';
 import { findTranscript } from './transcript.js';
@@ -21,17 +23,29 @@ function runToCheck(state: State, config: Pick<Config, 'comb'>, ptyId: string): 
   const id = runSessionId(state, worker);
   const activity = activityOfWorker(state, worker);
   const task = taskOfWorker(state, worker);
-  if (id === undefined || activity?.kind !== 'task' || task === undefined) return undefined;
+  if (id === undefined || !isUuid(id) || activity?.kind !== 'task' || task === undefined) return undefined;
   const workspace = taskWorkspace(config, task);
   return workspace && { cwd: taskDir(workspace.path, activity), id, agent: ranAgent(worker) };
 }
 
+// The cwd as the Hive spelled it and as the agent may see it: a workspace reached through a symbolic link names another transcript dir once
+// resolved, and checking only one would forget a session whose transcript sits in the other
+export async function cwdsOf(cwd: string): Promise<string[]> {
+  const real = await realpath(cwd).catch(() => cwd); // a cwd gone from the disk: its own spelling is all there is
+  return real === cwd ? [cwd] : [cwd, real];
+}
+
 /** The exit of run `ptyId`, flagged `noTranscript` when the task's session it holds has no transcript where its agent's resume would look
- * (#586). A check that throws counts as found: a check that cannot run never forgets a session. */
+ * (#586). A check that throws counts as found, and so does any failure here: a check that cannot run never forgets a session, and never
+ * loses the exit either. */
 export async function exitEvent(live: Live | undefined, ptyId: string, env: NodeJS.ProcessEnv = process.env): Promise<ExitEvent> {
   const plain: ExitEvent = { type: 'exit', ptyId };
-  const run = live && runToCheck(live.state, live.runtime.config, ptyId);
-  if (run === undefined) return plain;
-  const found = await findTranscript([run.cwd], run.id, run.agent, env).catch(() => 'unread');
-  return found === undefined ? { ...plain, noTranscript: true } : plain;
+  try {
+    const run = live && runToCheck(live.state, live.runtime.config, ptyId);
+    if (run === undefined) return plain;
+    const found = await findTranscript(await cwdsOf(run.cwd), run.id, run.agent, env);
+    return found === undefined ? { ...plain, noTranscript: true } : plain;
+  } catch {
+    return plain;
+  }
 }

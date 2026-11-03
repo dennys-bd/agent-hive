@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activityOf, localActivityId } from '../src/activities.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
@@ -49,5 +49,29 @@ test('exitEvent never flags a run it has nothing to check on: a terminal, a capt
   assert.deepEqual(await exitEvent(live(withRun({ terminalId: 'terminal-1' })), RUN, env), plain, 'its cwd is wherever the user typed it');
   assert.deepEqual(await exitEvent(live(withLocal(withRun({ activityId: localActivityId(WORKSPACE) }), WORKSPACE)), RUN, env), plain, 'forgetUnopenedLocal\'s (#587)');
   assert.deepEqual(await exitEvent(live(withRun({ sessionId: undefined }, {})), RUN, env), plain, 'Codex before its first SessionStart');
+  assert.deepEqual(await exitEvent(live(withRun({ sessionId: 'not-a-uuid' }, { sessionId: 'not-a-uuid' })), RUN, env), plain, 'no session id of the Hive\'s: nothing to look up');
   assert.deepEqual(await exitEvent(undefined, RUN, env), plain);
+});
+
+test('exitEvent finds a transcript written under the resolved cwd of a workspace reached through a symbolic link (#586)', async (t) => {
+  const env = await claudeEnv(t);
+  const real = await realpath(await tempDir(t, 'repo-'));
+  const link = join(await tempDir(t, 'link-'), 'repo');
+  await symlink(real, link);
+  const linked = { state: withRun(), runtime: { config: parseConfig(combConfig({ path: link, stages: LOCAL_STAGES })) } };
+  const cwd = taskDir(link, activityOf(linked.state, ITEM.itemId)!);
+  await mkdir(cwd, { recursive: true });
+  const dir = transcriptDir(await realpath(cwd), env); // where an agent that resolves its cwd writes it
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${SESSION}.jsonl`), '{}\n');
+  assert.deepEqual(await exitEvent(linked, RUN, env), { type: 'exit', ptyId: RUN });
+});
+
+test('exitEvent never flags a run whose transcript dir it cannot look into: a check that cannot run never forgets a session (#586)', { skip: process.getuid?.() === 0 }, async (t) => {
+  const root = await tempDir(t, 'claude-');
+  const projects = join(root, 'projects');
+  await mkdir(projects);
+  await chmod(projects, 0o000); // stat answers EACCES, never ENOENT
+  t.after(() => chmod(projects, 0o700)); // registered after tempDir's removal, so it runs first
+  assert.deepEqual(await exitEvent(live(withRun()), RUN, { CLAUDE_CONFIG_DIR: root }), { type: 'exit', ptyId: RUN });
 });

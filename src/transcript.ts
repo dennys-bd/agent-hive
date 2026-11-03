@@ -33,7 +33,11 @@ export async function removeTranscripts(
   }
 }
 
-const isFile = (path: string): Promise<boolean> => stat(path).then((s) => s.isFile(), () => false);
+// Only a path that is not there is no file (#586): any other stat failure rejects, so a check that could not look never reads as "missing"
+const isFile = (path: string): Promise<boolean> => stat(path).then((s) => s.isFile(), (err: NodeJS.ErrnoException) => {
+  if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false;
+  throw err;
+});
 const ignoreMissing = (err: NodeJS.ErrnoException): void => {
   if (err.code !== 'ENOENT') throw err;
 };
