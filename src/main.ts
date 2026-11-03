@@ -4,7 +4,7 @@ import { app, type BaseWindow, BrowserWindow, clipboard, dialog, ipcMain, Menu, 
 import { appMenuTemplate } from './app-menu.js';
 import { loadConfigIfPresent } from './config.js';
 import { activeWorkers, configuredTheme, type DaemonAddress, type DaemonStatus, daemonStatus, ensureDaemon, menuLabel, ourDaemon, livePtys, setSignal, stopDaemon } from './daemon.js';
-import { registerDetachIpc } from './detach-ipc.js';
+import { type DetachedWindows, registerDetachIpc } from './detach-ipc.js';
 import { createDetachedWindowsFor, externalLinksToBrowser, TRAFFIC_LIGHTS, WINDOW_PRELOAD } from './detached-window.js';
 import { hiveHome } from './home.js';
 import { languageFrom } from './language.js';
@@ -103,6 +103,17 @@ function windowBackground(): string {
 // #227: below this the footer's last step (handoff §6) stops fitting the usual content; a saved rectangle narrower than it is widened by Electron
 const MIN_WIDTH = 960;
 
+// The main window's close while it has detached windows (#552): each goes first with a plain close, which its own unsaved-edits dialog may
+// keep; the main window closes again once every one went, and stays when one was kept. A quit that went through already destroyed them.
+function closesDetachedFirst(event: { preventDefault(): void }, win: BrowserWindow, detached: DetachedWindows): boolean {
+  if (quitting || detached.size() === 0) return false;
+  event.preventDefault();
+  void detached.closeWithMain().then((isClosed) => {
+    if (isClosed && !win.isDestroyed()) win.close(); // its own close handler (#513, #398) runs as today
+  });
+  return true;
+}
+
 // Registered, not loaded: showMainWindow loads it once the port's cookie is in (#467)
 function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
   const origin = `http://127.0.0.1:${port}`;
@@ -120,6 +131,7 @@ function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
   // and a Cancel in the warning keeps this window open. Its size, position and state are stored regardless (#398), the pre-maximize /
   // pre-fullscreen rectangle so a plain move or resize next time returns there; several main windows open, the last close wins.
   win.on('close', (event) => {
+    if (closesDetachedFirst(event, win, detached)) return;
     const mainWindowBoundsFile = join(app.getPath('userData'), MAIN_WINDOW_BOUNDS_FILE);
     const stored: MainWindowBounds = { ...win.getNormalBounds(), maximized: win.isMaximized(), fullScreen: win.isFullScreen() };
     try {
@@ -264,11 +276,10 @@ async function loadSettings(): Promise<void> {
   setLanguage(settings.language);
 }
 
-// Window → Fechar and Cmd+W (#358): a main window is asked first, since only its page knows whether the focus is in the terminal panel. The page
-// closes a tab or does nothing (#612). Any other window (a detached run #252) just closes: it holds that one run.
+// Window → Fechar and Cmd+W (#358): a Hive page is asked, a main window's (#612) or a detached window's (#552), since only the page knows
+// where its focus is; it closes a tab or does nothing, never the window. Any other window just closes.
 function closeFocused(win: BaseWindow | undefined): void {
-  const mainWindow = [...mainWindows.values()].find((m) => m.win === win);
-  if (mainWindow) mainWindow.win.webContents.send('window:close');
+  if (win instanceof BrowserWindow && [...mainWindows.values()].some((m) => m.win === win || m.detached.owns(win.webContents))) win.webContents.send('window:close');
   else win?.close();
 }
 
@@ -350,6 +361,13 @@ async function confirmStop(action: 'quit' | 'restart'): Promise<boolean> {
   return response === CONFIRM_BUTTON;
 }
 
+// A quit's or a Restart's detached windows close plainly first, after the confirm and before the stop (#552): a Cancel in one's
+// unsaved-edits dialog stops it there, so it never leaves a viewer over a stopped daemon
+async function closeDetachedWindows(): Promise<boolean> {
+  const closed = await Promise.all([...mainWindows.values()].map(({ detached }) => detached.closeWithMain()));
+  return closed.every(Boolean);
+}
+
 // The menu's Quit and Cmd+Q (#193): what `hive stop` does, then the viewer goes. A daemon that is down, or a port that is not ours, has
 // nothing to stop (#466). A failed count or stop rejects to reportError and the viewer stays: quitting anyway would leave a daemon the user
 // believes is stopped.
@@ -357,7 +375,7 @@ async function quitHive(): Promise<void> {
   if (stopping) return;
   stopping = true;
   try {
-    if (!(await confirmStop('quit'))) return;
+    if (!(await confirmStop('quit')) || !(await closeDetachedWindows())) return;
     await stopDaemon(hiveHome());
     quitting = true;
     app.quit();
@@ -372,7 +390,7 @@ async function restartHive(): Promise<void> {
   if (stopping) return;
   stopping = true;
   try {
-    if (!(await confirmStop('restart'))) return;
+    if (!(await confirmStop('restart')) || !(await closeDetachedWindows())) return;
     await stopDaemon(hiveHome());
     const daemon = await ensureDaemon(hiveHome(), app.getLocale());
     lastError = undefined;
