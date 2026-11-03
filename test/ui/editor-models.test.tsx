@@ -20,6 +20,11 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 const fake = async (activityId = A, path = PATH): Promise<FakeModel> => (await models.open(activityId, path)) as unknown as FakeModel;
 const puts = (): unknown[] => fetchMock.mock.calls.flatMap(([, init]) => (init?.method === 'PUT' ? [JSON.parse(String(init.body))] : []));
 const state = (): [boolean, string | undefined] => [models.isDirty(A, PATH), models.baseOf(A, PATH)];
+// A pane's editor as attachView receives it: Monaco's, which reveals and keeps its view state (#551)
+const editorView = () => ({
+  setPosition: vi.fn(), revealPositionInCenter: vi.fn(), focus: vi.fn(),
+  saveViewState: vi.fn(() => ({ scrollTop: 40 })), restoreViewState: vi.fn(),
+});
 
 beforeEach(() => {
   disk = { text: 'one\n', version: 'v1' };
@@ -106,7 +111,7 @@ test('close disposes the model and forgets it; closeExcept drops every model of 
 
 test('a reveal waits for the file\'s editor when none shows it, and lands at once when one does (#717)', () => {
   models.revealAt(A, PATH, { line: 3 });
-  const view = { setPosition: vi.fn(), revealPositionInCenter: vi.fn(), focus: vi.fn() };
+  const view = editorView();
   const detach = models.attachView(A, PATH, view);
   expect(view.setPosition).toHaveBeenCalledWith({ lineNumber: 3, column: 1 });
   models.revealAt(A, PATH, { line: 9, col: 4 });
@@ -252,4 +257,80 @@ test('in run mode a save waits on the gate: a cancel PUTs nothing and the buffer
   expect(await approved).toEqual({ status: 'saved' });
   expect(puts()).toEqual([{ path: PATH, text: 'three\n', version: 'v1', format: false }]);
   expect(state()).toEqual([false, 'v2']);
+});
+
+test('seed makes a moved buffer\'s model from its text over its base, dirty with no read, and the next save PUTs that base and its BOM (#551)', async () => {
+  await models.seed(A, PATH, '\uFEFFmine\n', 'v7');
+  expect([models.textOf(A, PATH), models.textOf(A, PATH, true), ...state()]).toEqual(['mine\n', '\uFEFFmine\n', true, 'v7']);
+  expect(fetchMock).not.toHaveBeenCalled(); // the text came with the tab
+  await models.save(A, PATH, false);
+  expect(puts()).toEqual([{ path: PATH, text: '\uFEFFmine\n', version: 'v7', format: false }]);
+});
+
+test('seed over an open model replaces its text as one edit in the same model and takes the carried base, dirty (#551)', async () => {
+  const model = await fake();
+  await models.seed(A, PATH, 'mine\n', 'v7');
+  expect(await models.open(A, PATH)).toBe(model);
+  expect([model.getValue(), ...state()]).toEqual(['mine\n', true, 'v7']);
+});
+
+test('seed while the file\'s read still flies waits for it, so the read never replaces the carried text (#551)', async () => {
+  let release = (): void => undefined;
+  fetchMock.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    return jsonResponse({ path: PATH, ...disk });
+  });
+  const opening = models.open(A, PATH);
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  const seeding = models.seed(A, PATH, 'mine\n', 'v7');
+  release();
+  await seeding;
+  expect(await opening).toBe(await models.open(A, PATH));
+  expect([models.textOf(A, PATH), ...state()]).toEqual(['mine\n', true, 'v7']);
+});
+
+test('restoreView lands at once on an attached editor, else on the next attach; renamed moves a waiting one and close drops it (#551)', async () => {
+  await fake();
+  models.restoreView(A, PATH, { scrollTop: 9 });
+  models.renamed(A, PATH, 'src/b.ts');
+  const moved = editorView();
+  const detach = models.attachView(A, 'src/b.ts', moved);
+  expect(moved.restoreViewState).toHaveBeenCalledWith({ scrollTop: 9 });
+  expect(models.viewOf(A, 'src/b.ts')).toEqual({ scrollTop: 40 });
+  models.restoreView(A, 'src/b.ts', { scrollTop: 3 });
+  expect(moved.restoreViewState).toHaveBeenLastCalledWith({ scrollTop: 3 });
+  detach();
+  expect(models.viewOf(A, 'src/b.ts')).toBeUndefined();
+  models.restoreView(A, 'src/b.ts', { scrollTop: 5 });
+  models.close(A, 'src/b.ts');
+  const again = editorView();
+  models.attachView(A, 'src/b.ts', again)();
+  expect(again.restoreViewState).not.toHaveBeenCalled();
+});
+
+test('a tab closed while seed waits for its read leaves no model behind, so nothing holds the page\'s unload (#551)', async () => {
+  let release = (): void => undefined;
+  fetchMock.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    return jsonResponse({ path: PATH, ...disk });
+  });
+  const opening = models.open(A, PATH).catch(() => undefined);
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  const seeding = models.seed(A, PATH, 'mine\n', 'v7');
+  models.close(A, PATH);
+  release();
+  await Promise.all([opening, seeding]);
+  expect([models.baseOf(A, PATH), models.anyDirty()]).toEqual([undefined, false]);
+});
+
+test('restoreView with no model asks nothing of a later tab, and a view state Monaco refuses leaves the pane mounted (#551)', async () => {
+  models.restoreView(A, PATH, { scrollTop: 9 });
+  await fake();
+  const later = editorView();
+  models.attachView(A, PATH, later)();
+  expect(later.restoreViewState).not.toHaveBeenCalled();
+  models.restoreView(A, PATH, { scrollTop: 9 });
+  const refusing = { ...editorView(), restoreViewState: vi.fn(() => { throw new Error('bad state'); }) };
+  expect(() => models.attachView(A, PATH, refusing)).not.toThrow();
+  expect(refusing.restoreViewState).toHaveBeenCalled();
 });
