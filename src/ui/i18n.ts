@@ -309,7 +309,6 @@ const en = {
   'terminal.panel.kind.stage': 'stage',
   'terminal.panel.kind.session': 'session',
   'terminal.panel.kind.terminal': 'terminal',
-  'terminal.window.dock': 'Back to the panel',
   'link.confirm.title': 'Open link', // #404
   'link.confirm.trust': 'always trust {host}',
   'link.confirm.open': 'open',
@@ -3313,7 +3312,6 @@ const pt: Record<MessageKey, string> = {
   'terminal.panel.kind.stage': 'etapa',
   'terminal.panel.kind.session': 'sessão',
   'terminal.panel.kind.terminal': 'terminal',
-  'terminal.window.dock': 'Voltar ao painel',
   'link.confirm.title': 'Abrir link',
   'link.confirm.trust': 'sempre confiar em {host}',
   'link.confirm.open': 'abrir',
