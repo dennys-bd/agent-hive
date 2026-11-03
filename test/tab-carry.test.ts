@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { type CenterTabRef, parseMovedTab, parseTabRef } from '../src/tab-carry.js';
+import { type CenterTabRef, parseMovedTab, parseTabRef, refKey, runsOf } from '../src/tab-carry.js';
 import type { Panes } from '../src/ui/lib/pane-split.js';
 
 // A tab crossing between windows (#551): main checks every payload with parseMovedTab, so what it refuses never reaches a page
@@ -60,4 +60,12 @@ test('parseTabRef reads a stored ref as center-layout did and refuses an untitle
   assert.deepEqual(parseTabRef({ kind: 'file', path: 'src/a.ts', extra: 1 }), { kind: 'file', path: 'src/a.ts' });
   assert.equal(parseTabRef({ kind: 'file', path: '../a.ts' }), undefined);
   assert.deepEqual(parseTabRef({ kind: 'console', channel: '' }), { kind: 'console' });
+});
+
+test('refKey names each kind of tab as the center does, and runsOf lists a run tab\'s run, a split one\'s panes in reading order (#458, #641, #552)', () => {
+  assert.deepEqual(REFS.map((ref) => refKey(ref)), [
+    'p1', 'p1', 'diff:checkpoint:2', 'console:stage:build#r1', 'file:src/a.ts', 'preview:README.md', 'design:docs/a.hv.html', 'changes:src/a.ts', 'untitled:3',
+  ]);
+  assert.deepEqual([refKey({ kind: 'console' }), refKey({ kind: 'diff', scope: 'worktree' })], ['console', 'diff:worktree']);
+  assert.deepEqual(REFS.map((ref) => runsOf(ref)), [['p1'], ['p1', 'p2'], [], [], [], [], [], [], []]);
 });

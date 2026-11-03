@@ -1,5 +1,5 @@
 // The file paths a line of a worker's terminal shows (#258), for the terminal window's link provider: a relative path with a `/` or a file
-// extension, or an absolute one, with an optional :line or :line:col. Pure, so node:test covers it; src/ui/terminal.ts wires it to xterm.
+// extension, or an absolute one, with an optional :line or :line:col. Pure, so node:test covers it; xterm-setup.ts wires it to xterm.
 
 /** One path found in a line: its text, its optional position, and its span in the line (start inclusive, end exclusive). */
 export interface FileLink {

@@ -1,4 +1,4 @@
-// The xterm wiring the terminal window (src/ui/terminal.ts) and the main window's panel tabs (PtyTab.tsx) share (#251): the font, the colors
+// The xterm wiring of the center's and the panel's terminal tabs (PtyTab.tsx, #251): the font, the colors
 // from the page's tokens (#296), the file links (#258), the task references (#588), the configured font's stack (#376), the shortcuts
 // that act in a terminal (#448), the paste of files copied in Finder (#843) and the find bar's search addon (#12).
 import { type ISearchOptions, SearchAddon } from '@xterm/addon-search';

@@ -13,5 +13,5 @@
     "types": ["vite/client", "node"],
     "paths": { "@/*": ["./*"] }
   },
-  "include": ["**/*.ts", "**/*.tsx", "../types.ts", "../tasks.ts", "../log.ts", "../terminal-bridge.d.ts", "../window-bridge.d.ts", "../../test/ui/**/*.ts", "../../test/ui/**/*.tsx"]
+  "include": ["**/*.ts", "**/*.tsx", "../types.ts", "../tasks.ts", "../log.ts", "../window-bridge.d.ts", "../../test/ui/**/*.ts", "../../test/ui/**/*.tsx"]
 }

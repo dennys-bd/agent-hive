@@ -63,7 +63,7 @@ test('a refusal is logged at debug with its method and path, never with a value 
 
 test('the pages answer with a Content-Security-Policy: images and media never reach an http: listener, connections stay same-origin, no object or base, frames only from the design frame route (#467, #108)', async (t) => {
   const { base, port } = await start(t);
-  for (const path of ['/', '/terminal.html']) {
+  for (const path of ['/', '/index.html?window=w1&activity=a-I1']) { // the main window's page, and the same page as a detached window loads it (#552)
     const res = await fetch(`${base}${path}`, { headers: { [SECRET_HEADER]: SECRET } });
     assert.equal(res.status, 200, path);
     const policy = res.headers.get('content-security-policy') ?? '';

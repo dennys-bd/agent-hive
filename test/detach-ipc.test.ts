@@ -1,216 +1,279 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { IpcMainInvokeEvent } from 'electron';
-import { type DetachedFile, type MainWindowPage, createDetachedWindows, type DetachedEvents, registerDetachIpc } from '../src/detach-ipc.js';
-import type { Point } from '../src/terminal-wire.js';
+import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
+import { createDetachedWindows, type DetachedEvents, type DetachedWindow, type DetachedWindows, registerDetachIpc } from '../src/detach-ipc.js';
+import type { CenterTabRef, MovedTab } from '../src/tab-carry.js';
+import type { Panes } from '../src/ui/lib/pane-split.js';
+import type { WindowScope } from '../src/window-ipc.js';
 
-const WORKER = '0b6f3c1e-5d2a-4c8b-9e7f-1a2b3c4d5e6f';
-const OTHER = '1c2d3e4f-0000-4000-8000-000000000002';
-const TAB: DetachedTab = { ptyId: WORKER, kind: 'stage', task: 'board:I1', title: '#1 Task 1', label: '#1 Task 1 · etapa' };
-const PROJECT_TAB: DetachedTab = { ptyId: OTHER, kind: 'terminal', project: 'hive', title: 'hive', label: 'hive · shell' };
-const EVENT = {} as IpcMainInvokeEvent; // the fake senderMainWindow never reads it
+// The main process's side of detached windows (#552) over fakes: a build answers a fake window whose page loads when the test says, and the
+// handlers run over a fake ipcMain with one main window
 
-interface FakeWindow { tab: DetachedTab; on: DetachedEvents; focused: number; destroyed: boolean; positions: Point[] }
+const A = 'a-I1';
+const B = 'a-I2';
+const FILE: MovedTab = { activity: A, ref: { kind: 'file', path: 'src/a.ts' }, carry: { text: 'mine\n', base: 'v1' } };
+const DIFF: MovedTab = { activity: A, ref: { kind: 'diff', scope: 'worktree' } };
+const PANES: Panes = {
+  root: { kind: 'split', axis: 'row', children: [{ kind: 'pane', ptyId: 'p1' }, { kind: 'pane', ptyId: 'p2' }], sizes: [50, 50] },
+  focused: 'p2',
+};
+const SPLIT: MovedTab = { activity: B, ref: { kind: 'run', ptyId: 'p1', panes: PANES } };
+const MAIN = { page: 'main' }; // the main window's webContents
 
-const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
-
-// registerDetachIpc over a fake ipcMain and one main window whose registry builds fake windows. `invoke` plays the page's call; `control` says
-// whether the next page fails to load, or holds its load open until the window is destroyed (#467); `built` holds every window opened; `sent` holds what the main window's page got; `stopped` holds every
-// worker id the registry asked to stop (#400); `opened` holds every task id the registry passed on (#588).
-function hub() {
-  const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>();
-  const sent: unknown[][] = [];
-  const built: FakeWindow[] = [];
-  const stopped: string[] = [];
-  const opened: string[] = [];
-  const files: DetachedFile[] = [];
-  const control = { fail: false, hold: false };
-  const win: MainWindowPage = { webContents: { send: (...args: unknown[]) => { sent.push(args); } } };
-  const detach = registerDetachIpc({
-    handle: (channel, listener) => { handlers.set(channel, listener); },
-    senderMainWindow: () => mainWindow,
-  });
-  const terminals = createDetachedWindows({
-    ...detach.mainWindowDeps(win),
-    stopShell: (ptyId) => { stopped.push(ptyId); },
-    onOpenTask: (taskId) => { opened.push(taskId); },
-    onOpenFile: (file) => { files.push(file); },
-    build: async (tab, on) => {
-      if (control.fail) {
-        await tick(); // a real build reads the saved bounds first
-        on.closed(); // load() destroys a window whose page failed, and Electron emits closed
-        throw new Error('load failed');
-      }
-      await tick(); // a real build reads the saved bounds first
-      const fake: FakeWindow = { tab, on, focused: 0, destroyed: false, positions: [] };
-      built.push(fake);
-      let abort = (): void => {};
-      const aborted = new Promise<never>((_resolve, reject) => { abort = () => reject(new Error('ERR_ABORTED')); });
-      aborted.catch(() => undefined); // only a held load awaits it
-      // Electron emits closed after destroy, and a destroyed window aborts its load
-      const window = {
-        focus: () => { fake.focused += 1; },
-        destroy: () => { fake.destroyed = true; on.closed(); abort(); },
-        setPosition: (x: number, y: number) => { fake.positions.push({ x, y }); },
-      };
-      on.created(window);
-      if (control.hold) await aborted; // a page still loading: a hostile server on the port can keep it so
-      return window;
-    },
-  });
-  const mainWindow = { win, terminals };
-  const invoke = (channel: string, ...args: unknown[]): unknown => {
-    const handler = handlers.get(channel);
-    assert.ok(handler, `no handler for ${channel}`);
-    return handler(EVENT, ...args);
-  };
-  return { invoke, sent, built, control, terminals, stopped, opened, files };
+interface FakeWindow {
+  activity: string;
+  on: DetachedEvents;
+  win: DetachedWindow;
+  sent: unknown[][];
+  counts: { focus: number; close: number; destroy: number };
+  isDirty: boolean; // its page holds unsaved edits: a close shows the dialog, and the user picks Cancel
+  load(): void;
+  fail(): void; // its page failed to load: the builder destroys it, and Electron emits closed
 }
 
-test('a malformed tab or pty id is refused before it reaches the main window, and window:panelRect is no longer handled (#252, #440, #647)', () => {
-  const h = hub();
-  for (const bad of [undefined, 'W', { ...TAB, ptyId: 'W1' }, { ...TAB, kind: 'tab' }, { ...TAB, kind: 'shell' }, { ...TAB, label: '' }]) {
-    assert.throws(() => h.invoke('window:detach', bad), { message: 'aba inválida' }, JSON.stringify(bad));
-  }
-  assert.throws(() => h.invoke('window:focusDetached', 'W1'), { message: 'aba inválida: W1' });
-  assert.throws(() => h.invoke('window:panelRect', { x: 0, y: 0, width: 400, height: 820 }), { message: 'no handler for window:panelRect' }, 'dock-by-drop is gone (#440)');
-  assert.equal(h.built.length, 0);
+const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+const hasClosing = (win: FakeWindow): boolean => win.sent.some(([channel]) => channel === 'window:closing');
+
+// A build whose page loads when the test says. Its close plays Electron's: the close event, which the registry may prevent, then closed, or,
+// with unsaved edits, the dialog's Cancel. Its destroy emits closed and aborts a load still running (#467).
+function fakeBuild(built: FakeWindow[]) {
+  return (activity: string, on: DetachedEvents): Promise<DetachedWindow> => {
+    let settle = { load: (): void => undefined, fail: (_err: Error): void => undefined };
+    const loading = new Promise<void>((resolve, reject) => { settle = { load: resolve, fail: reject }; });
+    const sent: unknown[][] = [];
+    const counts = { focus: 0, close: 0, destroy: 0 };
+    const win: DetachedWindow = {
+      focus: () => { counts.focus += 1; },
+      close: () => {
+        counts.close += 1;
+        if (fake.isDirty) {
+          on.kept();
+          return;
+        }
+        let isPrevented = false;
+        on.closing({ preventDefault: () => { isPrevented = true; } });
+        if (!isPrevented) on.closed();
+      },
+      destroy: () => {
+        counts.destroy += 1;
+        on.closed();
+        settle.fail(new Error('ERR_ABORTED'));
+      },
+      webContents: { send: (...args: unknown[]) => { sent.push(args); } },
+    };
+    const fake: FakeWindow = {
+      activity, on, win, sent, counts, isDirty: false,
+      load: () => settle.load(),
+      fail: () => {
+        on.closed();
+        settle.fail(new Error('load failed'));
+      },
+    };
+    built.push(fake);
+    on.created(win);
+    return loading.then(() => win);
+  };
+}
+
+function rig() {
+  const built: FakeWindow[] = [];
+  const mainSent: unknown[][] = [];
+  const opened: string[] = [];
+  const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>();
+  const listeners = new Map<string, (event: IpcMainEvent, ...args: unknown[]) => void>();
+  const page = { webContents: { send: (...args: unknown[]) => { mainSent.push(args); } } };
+  // window-ipc.ts's senderWindow in small: the main window's page for main, one of this registry's windows for detached, either for shared
+  const senderWindow = (event: { sender: unknown }, scope: WindowScope): { entry: { detached: DetachedWindows } } => {
+    const isMain = event.sender === MAIN;
+    const isAllowed = scope === 'shared' ? isMain || detached.owns(event.sender) : scope === 'main' ? isMain : detached.owns(event.sender);
+    if (!isAllowed) throw new Error('janela não encontrada');
+    return { entry: { detached } };
+  };
+  const hub = registerDetachIpc({
+    handle: (channel, listener) => { handlers.set(channel, listener); },
+    on: (channel, listener) => { listeners.set(channel, listener); },
+    senderWindow,
+  });
+  const detached = createDetachedWindows({ ...hub.mainWindowDeps(page), onOpenTask: (taskId) => { opened.push(taskId); }, build: fakeBuild(built) });
+  const invoke = (channel: string, sender: unknown, ...args: unknown[]): unknown => {
+    const handler = handlers.get(channel);
+    assert.ok(handler, `no handler for ${channel}`);
+    return handler({ sender } as unknown as IpcMainInvokeEvent, ...args);
+  };
+  const send = (channel: string, sender: unknown, ...args: unknown[]): void => {
+    const listener = listeners.get(channel);
+    assert.ok(listener, `no listener for ${channel}`);
+    listener({ sender } as unknown as IpcMainEvent, ...args);
+  };
+  // A tab moved out from the main window, its activity's newest window loaded
+  const moveLoaded = async (tab: MovedTab): Promise<void> => {
+    const moving = invoke('window:moveToWindow', MAIN, tab) as Promise<void>;
+    built.filter((w) => w.activity === tab.activity).at(-1)?.load();
+    await moving;
+  };
+  return { built, mainSent, opened, detached, invoke, send, moveLoaded };
+}
+
+test('moveToWindow for an activity with no window builds one and sends it window:open with the moved tab, carry included, only once its page loaded (#552)', async () => {
+  const h = rig();
+  const moving = h.invoke('window:moveToWindow', MAIN, { ...FILE, extra: 1 }) as Promise<void>;
+  assert.deepEqual(h.built.map((w) => w.activity), [A]);
+  await tick();
+  assert.deepEqual(h.built[0].sent, [], 'nothing before the load');
+  h.built[0].load();
+  await moving;
+  assert.deepEqual(h.built[0].sent, [['window:open', FILE]]);
 });
 
-test('detach opens the run\'s window once, with the known keys only, a second argument ignored; a second detach or focusDetached focuses it; once it closes focusDetached answers false and the next detach opens a new one (#252, #440)', async () => {
-  const h = hub();
-  await h.invoke('window:detach', { ...TAB, extra: 'dropped', session: 'hive-1-task-1', terminal: 'internal' }, null); // where the drop point rode: never read
-  await h.invoke('window:detach', TAB);
+test('a second tab of the same activity, during the load and after it, builds nothing and reaches the same window, focused; another activity\'s builds its own (#552)', async () => {
+  const h = rig();
+  const first = h.invoke('window:moveToWindow', MAIN, FILE) as Promise<void>;
+  const second = h.invoke('window:moveToWindow', MAIN, DIFF) as Promise<void>;
+  h.built[0].load();
+  await Promise.all([first, second]);
+  const preview: MovedTab = { activity: A, ref: { kind: 'preview', path: 'README.md' } };
+  await h.moveLoaded(preview);
   assert.equal(h.built.length, 1);
-  assert.deepEqual(h.built[0].tab, TAB);
-  assert.equal(h.built[0].focused, 1);
-  assert.equal(h.invoke('window:focusDetached', WORKER), true);
-  await tick();
-  assert.equal(h.built[0].focused, 2);
-  h.built[0].on.closed();
-  assert.equal(h.invoke('window:focusDetached', WORKER), false);
-  await h.invoke('window:detach', TAB);
+  assert.deepEqual(h.built[0].sent, [['window:open', FILE], ['window:open', DIFF], ['window:open', preview]]);
+  assert.equal(h.built[0].counts.focus, 3);
+  await h.moveLoaded(SPLIT);
+  assert.deepEqual(h.built.map((w) => w.activity), [A, B]);
+  assert.deepEqual(h.built[1].sent, [['window:open', SPLIT]]);
+});
+
+test('a build whose page fails to load makes the move reject, leaves no window and lists no tab; the next move builds anew (#552)', async () => {
+  const h = rig();
+  const moving = h.invoke('window:moveToWindow', MAIN, FILE) as Promise<void>;
+  h.built[0].fail();
+  await assert.rejects(moving, { message: 'load failed' });
+  assert.deepEqual([h.detached.size(), h.invoke('window:detachedTabs', MAIN)], [0, []]);
+  await h.moveLoaded(FILE);
   assert.equal(h.built.length, 2);
 });
 
-test('the strip\'s drag moves the window to each point, rounded, ignores anything that is not a finite point, and never docks wherever it goes (#377, #440)', async () => {
-  const h = hub();
-  await h.invoke('window:detach', TAB);
-  const [win] = h.built;
-  win.on.moveTo({ x: 120.4, y: 280.6 });
-  for (const bad of [undefined, null, 'x', { x: 1 }, { y: 2 }, { x: Number.NaN, y: 2 }, { x: 1, y: Number.POSITIVE_INFINITY }, { x: '1', y: 2 }]) {
-    win.on.moveTo(bad);
+test('moveToWindow and focusTab refuse a malformed payload before any build; the main-only channels refuse a detached page, and the old detach channels are gone (#552)', async () => {
+  const h = rig();
+  for (const bad of [undefined, { ref: FILE.ref }, { ...FILE, activity: '' }, { ...DIFF, carry: FILE.carry }, { activity: A, ref: { kind: 'untitled', n: 0 } }]) {
+    assert.throws(() => h.invoke('window:moveToWindow', MAIN, bad), { message: 'aba inválida' }, JSON.stringify(bad));
   }
-  win.on.moveTo({ x: 130, y: 290 });
-  await tick();
-  assert.deepEqual(win.positions, [{ x: 120, y: 281 }, { x: 130, y: 290 }]);
-  assert.deepEqual([win.destroyed, h.sent], [false, []], 'a move never docks: only the button and the title menu do');
-});
-
-test('the page\'s dock button (term:dock) docks at once; the title menu\'s dock arriving in the same gesture docks nothing more, and a late move reaches no window (#377, #252, #440)', async () => {
-  const h = hub();
-  await h.invoke('window:detach', TAB);
-  const [win] = h.built;
-  win.on.dock();
-  assert.equal(h.invoke('window:focusDetached', WORKER), false, 'docking: the run is back in the panel before the destroy lands');
-  win.on.dock(); // the title menu's item (term:titleMenu), reported before the destroy lands
-  win.on.moveTo({ x: 10, y: 10 });
-  await tick();
-  assert.deepEqual(h.sent, [['window:dock', TAB]]);
-  assert.equal(win.destroyed, true);
-  assert.deepEqual(win.positions, [], 'setPosition on a destroyed BrowserWindow throws');
-});
-
-test('closing the main window closes every detached window without docking; a window whose page fails to load rejects and leaves no entry behind (#252)', async () => {
-  const h = hub();
-  await h.invoke('window:detach', TAB);
-  await h.invoke('window:detach', { ...TAB, ptyId: OTHER });
-  h.terminals.closeAll();
-  await tick();
-  assert.deepEqual(h.built.map((w) => w.destroyed), [true, true]);
-  assert.deepEqual(h.sent, [], 'closing is not docking');
-  h.control.fail = true;
-  await assert.rejects(async () => { await h.invoke('window:detach', TAB); }, { message: 'load failed' });
-  assert.equal(h.invoke('window:focusDetached', WORKER), false);
-});
-
-test('closeAll destroys a window still loading at once, and one not yet created as soon as it exists, without a rejection reaching the page (#467)', async () => {
-  const h = hub();
-  h.control.hold = true;
-  const loading = h.invoke('window:detach', TAB) as Promise<void>;
-  await tick();
-  const early = h.invoke('window:detach', { ...TAB, ptyId: OTHER }) as Promise<void>; // still reading its bounds
-  h.terminals.closeAll();
-  assert.deepEqual(h.built.map((w) => w.destroyed), [true], 'destroyed now, not after a load the old port may never finish');
-  await Promise.all([loading, early]); // resolved: the main window is going, no toast for it
-  assert.deepEqual(h.built.map((w) => w.destroyed), [true, true]);
-  assert.deepEqual(h.invoke('window:detachedPtys'), []);
-  assert.deepEqual(h.sent, []);
-});
-
-test('a project shell detaches with its project and no task; a tab with both, neither, or an empty project is refused (#400)', async () => {
-  const h = hub();
-  const { task: _task, ...neither } = TAB;
-  for (const bad of [{ ...TAB, project: 'hive' }, neither, { ...PROJECT_TAB, project: '' }, { ...PROJECT_TAB, project: 7 }]) {
-    assert.throws(() => h.invoke('window:detach', bad), { message: 'aba inválida' }, JSON.stringify(bad));
+  assert.throws(() => h.invoke('window:focusTab', MAIN, A, 7), { message: 'aba inválida' });
+  assert.equal(h.built.length, 0);
+  await h.moveLoaded(FILE);
+  const page = h.built[0].win.webContents;
+  for (const [channel, args] of [['window:moveToWindow', [DIFF]], ['window:focusTab', [A, 'diff:worktree']], ['window:detachedTabs', []]] as const) {
+    assert.throws(() => h.invoke(channel, page, ...args), { message: 'janela não encontrada' }, channel);
   }
-  await h.invoke('window:detach', { ...PROJECT_TAB, extra: 'dropped', session: 'project-1c2d3e4f' });
-  assert.deepEqual(h.built.map((w) => w.tab), [PROJECT_TAB]);
+  assert.equal(h.built.length, 1);
+  for (const channel of ['window:detach', 'window:focusDetached', 'window:detachedPtys', 'window:panelRect']) {
+    assert.throws(() => h.invoke(channel, MAIN), { message: `no handler for ${channel}` }, 'a call rejects, which focusRun reads as no window');
+  }
 });
 
-test('the user closing a project shell\'s window stops the shell once; a dock, a failed load, the main window closing and a task run\'s window stop nothing (#400)', async () => {
-  const h = hub();
-  await h.invoke('window:detach', PROJECT_TAB);
-  await h.invoke('window:detach', TAB);
-  h.built[1].on.closed(); // a task run's window: closing it only closes that viewer
-  h.built[0].on.closed(); // the user closes the shell's window
-  assert.deepEqual(h.stopped, [OTHER]);
-  await h.invoke('window:detach', PROJECT_TAB);
-  h.built[2].on.dock(); // the page's dock button, or the title menu's
-  await tick();
-  h.control.fail = true;
-  await assert.rejects(async () => { await h.invoke('window:detach', PROJECT_TAB); }, { message: 'load failed' });
-  h.control.fail = false;
-  await h.invoke('window:detach', PROJECT_TAB);
-  h.terminals.closeAll(); // the main window closing, and a quit going through (main.ts's before-quit)
-  await tick();
-  assert.deepEqual(h.built.map((w) => w.destroyed), [false, false, true, true]);
-  assert.deepEqual(h.stopped, [OTHER], 'only the user\'s close stops the shell');
+test('dock sends window:dock with the moved tab to the main window\'s page and unlists it; a malformed tab, another activity\'s, or a dock from the main window is refused and sends nothing (#552)', async () => {
+  const h = rig();
+  await h.moveLoaded(FILE);
+  await h.moveLoaded(DIFF);
+  const page = h.built[0].win.webContents;
+  h.invoke('window:dock', page, { ...FILE, extra: 1 });
+  assert.deepEqual(h.mainSent, [['window:dock', FILE]]);
+  assert.deepEqual(h.invoke('window:detachedTabs', MAIN), [{ activity: A, ref: DIFF.ref }]);
+  for (const bad of [undefined, 'file', { ...DIFF, activity: B }, { activity: A, ref: { kind: 'pr', number: 1 } }, { ...DIFF, carry: FILE.carry }]) {
+    assert.throws(() => h.invoke('window:dock', page, bad), { message: 'aba inválida' }, JSON.stringify(bad));
+  }
+  assert.throws(() => h.invoke('window:dock', MAIN, DIFF), { message: 'janela não encontrada' });
+  assert.equal(h.mainSent.length, 1);
 });
 
-test('window:detachedPtys answers the pty ids that have a window, focusing none, and drops one once it docks or closes (#400)', async () => {
-  const h = hub();
-  assert.deepEqual(h.invoke('window:detachedPtys'), []);
-  await h.invoke('window:detach', TAB);
-  await h.invoke('window:detach', PROJECT_TAB);
-  assert.deepEqual(h.invoke('window:detachedPtys'), [WORKER, OTHER]);
-  await tick();
-  assert.deepEqual(h.built.map((w) => w.focused), [0, 0]);
-  h.built[0].on.dock();
-  h.built[1].on.closed();
-  assert.deepEqual(h.invoke('window:detachedPtys'), []);
+test('detachedTabs lists every tab out by activity and ref, never a carry; focusTab focuses for a listed tab or a pane of a listed split tab, and answers false for any other (#552)', async () => {
+  const h = rig();
+  await h.moveLoaded(FILE);
+  await h.moveLoaded(DIFF);
+  await h.moveLoaded(SPLIT);
+  assert.deepEqual(h.invoke('window:detachedTabs', MAIN), [{ activity: A, ref: FILE.ref }, { activity: A, ref: DIFF.ref }, { activity: B, ref: SPLIT.ref }]);
+  const [first, second] = h.built;
+  assert.deepEqual([h.invoke('window:focusTab', MAIN, A, 'file:src/a.ts'), h.invoke('window:focusTab', MAIN, B, 'p1'), h.invoke('window:focusTab', MAIN, B, 'p2')], [true, true, true]);
+  assert.deepEqual([first.counts.focus, second.counts.focus], [3, 3]);
+  for (const [activity, key] of [[A, 'p2'], [A, 'preview:README.md'], [B, 'file:src/a.ts'], ['a-I9', 'file:src/a.ts']]) {
+    assert.equal(h.invoke('window:focusTab', MAIN, activity, key), false, `${activity} ${key}`);
+  }
+  assert.deepEqual([first.counts.focus, second.counts.focus], [3, 3], 'no focus for a tab no window holds');
 });
 
-test('term:openTask passes a non-empty string task id to the main window, ignores any other payload, and neither docks nor closes the window (#588)', async () => {
-  const h = hub();
-  await h.invoke('window:detach', TAB);
+test('a tab leaves detachedTabs once the page stops reporting it, once docked, and once its window closed; a report drops malformed refs and is ignored from any other sender (#552)', async () => {
+  const h = rig();
+  await h.moveLoaded(FILE);
+  await h.moveLoaded(DIFF);
+  await h.moveLoaded(SPLIT);
+  const [first, second] = h.built;
+  const untitled: CenterTabRef = { kind: 'untitled', n: 2 };
+  h.send('window:tabs', first.win.webContents, [DIFF.ref, untitled, { kind: 'pr', number: 1 }, 'junk']);
+  h.send('window:tabs', MAIN, []); // the main window is no detached window: dropped, never thrown
+  h.send('window:tabs', first.win.webContents, 'junk'); // no list: the last report stands
+  assert.deepEqual(h.invoke('window:detachedTabs', MAIN), [{ activity: A, ref: DIFF.ref }, { activity: A, ref: untitled }, { activity: B, ref: SPLIT.ref }]);
+  h.invoke('window:dock', first.win.webContents, { activity: A, ref: untitled });
+  second.on.closed();
+  assert.deepEqual(h.invoke('window:detachedTabs', MAIN), [{ activity: A, ref: DIFF.ref }]);
+  assert.equal(h.invoke('window:focusTab', MAIN, B, 'p1'), false);
+});
+
+test('a user\'s close of a window holding tabs is prevented and its page gets window:closing; closeWindow from that page destroys it; an empty window closes at once (#552)', async () => {
+  const h = rig();
+  await h.moveLoaded(FILE);
   const [win] = h.built;
-  for (const bad of [undefined, null, '', 7, { taskId: 'board:I1' }]) win.on.openTask(bad);
-  win.on.openTask('board:I7');
-  await tick();
+  win.win.close();
+  assert.deepEqual(win.sent.at(-1), ['window:closing']);
+  assert.equal(h.detached.size(), 1, 'the window stays until its page calls closeWindow');
+  h.detached.closeWindow(MAIN); // only the window's own page closes it this way
+  assert.equal(win.counts.destroy, 0);
+  h.detached.closeWindow(win.win.webContents);
+  assert.deepEqual([win.counts.destroy, h.detached.size(), h.invoke('window:detachedTabs', MAIN)], [1, 0, []]);
+  await h.moveLoaded(SPLIT);
+  const empty = h.built[1];
+  h.send('window:tabs', empty.win.webContents, []);
+  empty.win.close();
+  assert.deepEqual([hasClosing(empty), h.detached.size()], [false, 0]);
+});
+
+test('closeWithMain closes each window plainly, never sending window:closing; it answers true once all closed, false as soon as one was kept, and the others still close (#552)', async () => {
+  const h = rig();
+  assert.equal(await h.detached.closeWithMain(), true, 'no window: nothing to wait for');
+  await h.moveLoaded(FILE);
+  await h.moveLoaded(SPLIT);
+  assert.equal(await h.detached.closeWithMain(), true);
+  assert.deepEqual([h.built.map((w) => w.counts.close), h.detached.size()], [[1, 1], 0]);
+  await h.moveLoaded(FILE);
+  await h.moveLoaded(SPLIT);
+  h.built[2].isDirty = true; // its unsaved-edits dialog answers Cancel
+  assert.equal(await h.detached.closeWithMain(), false);
+  assert.deepEqual([h.detached.size(), h.built[2].counts.destroy, h.built[3].counts.close], [1, 0, 1]);
+  assert.ok(h.built.every((w) => !hasClosing(w)), 'nothing docks into a page that unloads');
+  h.built[2].isDirty = false;
+  h.built[2].win.close(); // the kept window's next close is the user's again
+  assert.equal(hasClosing(h.built[2]), true);
+});
+
+test('closeAll destroys every window once, loaded or still loading, and one built after it as soon as it exists, with no rejection reaching the page (#467, #552)', async () => {
+  const h = rig();
+  await h.moveLoaded(FILE);
+  const loading = h.invoke('window:moveToWindow', MAIN, SPLIT) as Promise<void>;
+  h.detached.closeAll();
+  h.detached.closeAll();
+  assert.deepEqual(h.built.map((w) => w.counts.destroy), [1, 1]);
+  await loading; // resolved: the main window is going, no toast for it
+  await h.invoke('window:moveToWindow', MAIN, DIFF);
+  assert.deepEqual(h.built.map((w) => w.counts.destroy), [1, 1, 1]);
+  assert.deepEqual([h.detached.size(), h.mainSent], [0, []]);
+});
+
+test('window:openTask from a detached window passes a non-empty task id to its main window, and refuses any other id or sender (#588, #552)', async () => {
+  const h = rig();
+  await h.moveLoaded(FILE);
+  const page = h.built[0].win.webContents;
+  for (const bad of [undefined, '', 7, { taskId: 'board:I1' }]) {
+    assert.throws(() => h.invoke('window:openTask', page, bad), { message: 'tarefa inválida' }, JSON.stringify(bad));
+  }
+  assert.throws(() => h.invoke('window:openTask', MAIN, 'board:I7'), { message: 'janela não encontrada' });
+  h.invoke('window:openTask', page, 'board:I7');
   assert.deepEqual(h.opened, ['board:I7']);
-  assert.deepEqual([win.destroyed, h.sent], [false, []]);
-  assert.deepEqual(h.invoke('window:detachedPtys'), [WORKER], 'the window stays');
-});
-
-test('term:openFile passes a checked file link to the main window with its tab\'s task or workspace, ignores any other payload, and neither docks nor closes the window (#717)', async () => {
-  const h = hub();
-  await h.invoke('window:detach', TAB);
-  await h.invoke('window:detach', PROJECT_TAB);
-  const [task, shell] = h.built;
-  for (const bad of [undefined, null, 'src/a.ts', {}, { path: '' }, { path: 7 }, { path: 'a.ts', line: 0 }, { path: 'a.ts', line: 1, col: 1.5 }]) task.on.openFile(bad);
-  task.on.openFile({ path: 'src/a.ts', line: 12, col: 3, extra: true });
-  shell.on.openFile({ path: '/repo/README.md' });
-  assert.deepEqual(h.files, [{ path: 'src/a.ts', line: 12, col: 3, task: 'board:I1' }, { path: '/repo/README.md', project: 'hive' }]);
-  assert.deepEqual([task.destroyed, shell.destroyed, h.sent], [false, false, []]);
+  assert.deepEqual(h.built[0].counts, { focus: 1, close: 0, destroy: 0 }, 'the window neither docks nor closes');
 });

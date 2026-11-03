@@ -7,13 +7,12 @@ import { defineConfig } from 'vite';
 const API_ROUTES = ['/events', '/setup', '/ptys', '/tasks', '/config', '/signal', '/board', '/api'];
 const HIVE_PORT = process.env.HIVE_PORT ?? '47821';
 
-const page = (name: string): string => fileURLToPath(new URL(`./src/ui/${name}`, import.meta.url)); // absolute: Rollup resolves inputs against the cwd
-
 export default defineConfig({
   root: 'src/ui',
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': fileURLToPath(new URL('./src/ui', import.meta.url)) } },
-  // Two pages: the board (React) and the terminal window (plain TS on xterm.js), both under dist/src/ui where express.static serves them.
-  build: { outDir: '../../dist/src/ui', emptyOutDir: false, rollupOptions: { input: { index: page('index.html'), terminal: page('terminal.html') } } }, // tsc writes i18n.js, highlight.js and lib/*.js in the same dir
+  // One page (#552): the dashboard, which a detached window loads too, in window mode (?window=…). It lands under dist/src/ui, where
+  // express.static serves it; tsc writes i18n.js, highlight.js and lib/*.js in the same dir
+  build: { outDir: '../../dist/src/ui', emptyOutDir: false },
   server: { proxy: Object.fromEntries(API_ROUTES.map((route) => [route, `http://127.0.0.1:${HIVE_PORT}`])) },
 });

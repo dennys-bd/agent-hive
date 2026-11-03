@@ -1044,7 +1044,7 @@ test('a save\'s sourceAction effects stay pinned to that save\'s own runtime eve
   assert.deepEqual(applied, ['I1 archive', 'I2 archive'], 'I2\'s effect was not dropped as "no board" by save #2\'s runtime');
 });
 
-test('GET / serves the built index.html and its hashed asset through express.static, and /terminal.html is the second Vite entry; the old /ui/*.js routes are gone', async (t) => {
+test('GET / serves the built index.html and its hashed asset through express.static; the old /ui/*.js routes are gone', async (t) => {
   const server = createServer({ secret: SECRET, home: await tempDir(t, 'home-'), sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit }); // setup mode: the page must load before any config
   const port = await server.listen(0);
   t.after(() => server.close());
@@ -1059,9 +1059,6 @@ test('GET / serves the built index.html and its hashed asset through express.sta
   assert.match(js.headers.get('content-type') ?? '', /javascript/);
   assert.equal((await hiveFetch(`${base}/ui/app.js`)).status, 404);
   assert.equal((await hiveFetch(`${base}/../package.json`)).status, 404, 'static never leaves UI_DIR');
-  const terminal = await hiveFetch(`${base}/terminal.html?slug=hive-1-task`);
-  assert.equal(terminal.status, 200);
-  assert.match(await terminal.text(), /src="\/assets\/terminal-[^"]+\.js"/, 'the terminal window page, built from src/ui/terminal.html');
 });
 
 test('a spawn failure frees the worker and marks the task with the message: the bar shows it, neither fill nor a poll retries, a manual start does', async (t) => {
