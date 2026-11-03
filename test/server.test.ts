@@ -18,6 +18,7 @@ import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { prStatesQuery } from '../src/pull-requests.js';
 import { createServer, type HiveServer, killStrays, type ServerDeps } from '../src/server.js';
 import { activityOf, prsOf, recordWithSession, resultOf, taskOfWorker } from '../src/activities.js';
+import { runSessionId } from '../src/record-kit.js';
 import { activityIdOf, readyOn, withWork, workId, workPath } from './fixtures/work.js';
 import { sessionsOf, slugFor } from '../src/tasks.js';
 import { blockedMessage, deleteActivityOnDisk, openTask } from '../src/server-tasks.js';
@@ -32,7 +33,7 @@ import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure } from './fakes.js';
+import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -132,13 +133,23 @@ const markDone = (server: HiveServer, ptyId: string): Promise<Effect[]> => serve
 // A stopped task that ran once: session id from the spawn, worktree from a SessionStart at `cwd` (the repo by default), worker freed by
 // an exit under red so nothing respawns (in flight since its spawn, under yellow it would resume at once, #224). The state is left red.
 async function ranOnce(t: TestContext, extra: Partial<ServerDeps> = {}, cwd?: string): Promise<Started> {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const started = await start(t, BODY, undefined, {}, extra);
   const { base, server, workers } = started;
   await hookEvent(base, worker0(server).runId!, { hook_event_name: 'SessionStart', cwd: cwd ?? started.repo });
+  await wrote(server, workers[0]);
   await server.dispatch({ type: 'setSignal', signal: 'red' });
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
   return started;
+}
+
+// #586: what a run that reached a prompt leaves before its exit, its session's transcript in its cwd's transcript dir: without it the exit
+// forgets the session. claudeConfigDir first, so it never lands under the real ~/.claude
+async function wrote(server: HiveServer, worker: FakeWorker): Promise<void> {
+  const state = server.getState()!;
+  const run = state.workers.find((w) => w.runId === worker.launch.ptyId)!;
+  await writeTranscript(worker.launch.cwd, runSessionId(state, run)!);
 }
 
 // Every spawn goes through ensureWorktree: the tests' repo is a bare temp dir with no git in it, so the default exec answers
@@ -487,9 +498,11 @@ test('an error reported by the spawner lands in State.error with the worker slug
 });
 
 test('an exit without Stop stops the task in its stage with its session: no new worker; a start runs it again with a fresh session id (#283)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const { base, server, workers } = await start(t);
   const first = worker0(server).runId;
   const session = work0(server)?.sessionId;
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
   assert.deepEqual([task0(server).stage, work0(server)?.stopped, work0(server)?.sessionId, workers.length], ['fila', true, session, 1]);
@@ -1230,6 +1243,7 @@ test('the deleteActivity effect runs git inside the batch: deleteActivityFailed 
 });
 
 test('a poll marks the worktree of a stopped task whose directory left the disk as gone (once) and keeps its path, leaves a running one alone (#208)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const { log, lines } = fakeLog();
   const worktree = await tempDir(t, 'wt-');
   const { base, server, workers } = await start(t, BODY, log); // I1 running
@@ -1239,6 +1253,7 @@ test('a poll marks the worktree of a stopped task whose directory left the disk 
   assert.deepEqual(await json(postJson(`${base}/sources/refresh`)), { ok: true });
   assert.deepEqual([work0(server)?.worktree, work0(server)?.worktreeGone], [worktree, undefined], 'running: the worker is inside it, whatever the disk says');
   await server.dispatch({ type: 'setSignal', signal: 'red' });
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
   assert.deepEqual(await json(postJson(`${base}/sources/refresh`)), { ok: true });
@@ -1634,6 +1649,7 @@ test('POST /activities/:id/delete follows the delete-activity scope (#236, #573)
   const { base, repo, server, workers } = await start(t, { ...BODY, deleteActivity: scope }, undefined, {}, { exec: git.exec });
   await hookEvent(base, worker0(server).runId!, { hook_event_name: 'SessionStart', cwd: repo });
   await server.dispatch({ type: 'setSignal', signal: 'red' }); // nothing respawns once the worker exits (in flight: yellow would, #224)
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
   const worktree = worktreePath(repo, TASK_SLUG);
@@ -1668,6 +1684,7 @@ test('with transcripts in scope a delete removes every record\'s transcripts, a 
   const { base, repo, server, workers } = await start(t, BODY, undefined, {}, { exec: git.exec }); // sessions kept on the first delete
   await server.dispatch({ type: 'setSignal', signal: 'red' });
   await hookEvent(base, worker0(server).runId!, { hook_event_name: 'SessionStart', cwd: repo });
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
   const worktree = worktreePath(repo, TASK_SLUG);
@@ -1679,6 +1696,7 @@ test('with transcripts in scope a delete removes every record\'s transcripts, a 
   await server.dispatch({ type: 'setDeleteActivity', deleteActivity: { session: true, transcripts: true, nonAutoTasks: false } });
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   await hookEvent(base, worker0(server).runId!, { hook_event_name: 'SessionStart', cwd: repo });
+  await wrote(server, workers[1]);
   workers[1].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
   await mkdir(worktree, { recursive: true });
@@ -1688,10 +1706,12 @@ test('with transcripts in scope a delete removes every record\'s transcripts, a 
 });
 
 test('POST /activities/:id/continue takes a deleted activity\'s record id: its kept session resumes in the task\'s live activity (#629)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const git = listedGit();
   const { base, repo, server, workers } = await start(t, { ...BODY, stages: [{ ...STAGES[0], session: 'continue' }, ...STAGES.slice(1)] }, undefined, {}, { exec: git.exec });
   await server.dispatch({ type: 'setSignal', signal: 'red' });
   await hookEvent(base, worker0(server).runId!, { hook_event_name: 'SessionStart', cwd: repo });
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
   await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
@@ -1955,6 +1975,7 @@ test('POST /tasks/:id/open checks a resume before any git: one it cannot offer i
 });
 
 test('POST /tasks/:id/open: a bad kind is 400 and creates nothing; terminal on a task with no worktree creates it on the default base, then opens the terminal through the pool and takes no worker; claude opens a free session in a session of its own (no prompt, no model, with the Hive\'s MCP), a second one is appended too, outside the cap, a held session is 409, the worker close kills it and the exit drops the worker for its resume (#164, #237, #459)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const { base, home, repo, server, workers } = await start(t, idle());
   const worktree = worktreePath(repo, 'hive-1-from-ready');
   await postJson(`${base}/tasks/board:I1/auto`, { auto: false });
@@ -1983,6 +2004,7 @@ test('POST /tasks/:id/open: a bad kind is 400 and creates nothing; terminal on a
   assert.deepEqual(await held.json(), { error: 'sessão já aberta ou desconhecida' });
   assert.deepEqual(await json(postJson(`${base}/ptys/${live[2].runId}/stop`, {})), { ok: true });
   assert.deepEqual(workers.map((w) => w.killed), [0, 0, 1], 'the task\'s close button kills that manual session only');
+  await wrote(server, workers[1]);
   workers[1].handlers.onExit();
   await waitFor(() => !server.getState()!.workers.some((s) => s.runId === first.runId));
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude', continueId: first.sessionId }));
@@ -2001,8 +2023,7 @@ test('a resumed repo session runs in the workspace\'s main repo, not in the task
 });
 
 test('POST /activities/:id/sessions/:session/open opens a listed session in a manual worker on any task, a repo one in the main repo once its transcript moved there; refusals in order: unknown task, missing, deleting, not continuable, a worktree session with no worktree on disk, a repo session whose transcript is gone (#208)', async (t) => {
-  claudeConfigDir(t, await tempDir(t, 'claude-'));
-  const { base, repo, server, workers } = await ranOnce(t); // I1 stopped, red, not manual, its session listed
+  const { base, repo, server, workers } = await ranOnce(t); // I1 stopped, red, not manual, its session listed; ranOnce points CLAUDE_CONFIG_DIR at a temp dir (#586)
   // #629: under the record holding the session, as the panel addresses it: a deleted activity's record once it was removed
   const recordId = (id: string, session: string): string => recordWithSession(server.getState()!, id, session)?.id ?? workId(server.getState()!, id);
   const open = (id: string, session: string): Promise<Response> => postJson(`${base}/activities/${encodeURIComponent(recordId(id, session))}/sessions/${session}/open`);
@@ -2025,6 +2046,7 @@ test('POST /activities/:id/sessions/:session/open opens a listed session in a ma
   await refused('board:I1', s, 409, 'a worktree desta sessão não existe mais');
   await server.dispatch({ type: 'deletingActivity', activityId: workId(server.getState()!, 'board:I1') });
   await server.dispatch({ type: 'activityRemoved', activityId: workId(server.getState()!, 'board:I1') }); // the Hive removed it: the session moves to the main repo
+  await rm(join(transcriptDir(worktreePath(repo, TASK_SLUG)), `${s}.jsonl`)); // #586: ranOnce's run wrote it; this refusal is about one gone
   await refused('board:I1', s, 409, 'O histórico desta sessão não existe mais');
   const from = transcriptDir(worktreePath(repo, TASK_SLUG));
   await mkdir(join(from, s), { recursive: true });
@@ -2390,6 +2412,7 @@ test('killStrays pkills each worker\'s worker id and runs nothing for a terminal
 });
 
 test('POST /activities/:id/continue resumes the stopped stage\'s latest session with the continue prompt alone (#167): 404 unknown or before the stage ran (no activity, #629), 409 while a stage run holds the task (#283)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const { base, home, server, workers } = await start(t, idle()); // nothing runs on its own
   assert.equal((await postJson(`${base}${workPath(server, 'nope')}/continue`)).status, 404);
   const never = await postJson(`${base}${workPath(server, 'board:I1')}/continue`);
@@ -2400,6 +2423,7 @@ test('POST /activities/:id/continue resumes the stopped stage\'s latest session 
   const running = await postJson(`${base}${workPath(server, 'board:I1')}/continue`);
   assert.equal(running.status, 409);
   assert.deepEqual(await running.json(), { error: 'tarefa já está executando' });
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit(); // no hive_done: stopped
   await waitFor(() => work0(server)?.stopped === true);
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/continue`)), { ok: true });
@@ -2409,9 +2433,11 @@ test('POST /activities/:id/continue resumes the stopped stage\'s latest session 
 });
 
 test('POST /activities/:id/continue is 409 sessão já aberta while a free session holds the stage\'s session, and starts no second process: the UI focuses that run instead (#283)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const { base, server, workers } = await start(t, idle());
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   const session = work0(server)!.sessionId!;
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit(); // no hive_done: stopped
   await waitFor(() => work0(server)?.stopped === true);
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude', continueId: session }));
@@ -2422,10 +2448,12 @@ test('POST /activities/:id/continue is 409 sessão já aberta while a free sessi
 });
 
 test('a stage spawn records where it started; GET /activities/:id/restart previews the reset; POST resets and cleans the worktree before a new session; 409 while the stage run holds the task (#283)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const git = restartGit(HEAD_SHA);
   const { base, repo, server, workers } = await start(t, BODY, undefined, {}, { exec: git.exec }); // I1 runs in fila (a new session)
   assert.deepEqual(work0(server)?.stageStart, { stage: 'fila', commit: HEAD_SHA });
   assert.equal((await hiveFetch(`${base}${workPath(server, 'board:I1')}/restart`)).status, 409, 'running: nothing to restart yet');
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => work0(server)?.stopped === true);
   assert.deepEqual(await json(hiveFetch(`${base}${workPath(server, 'board:I1')}/restart`)), { mode: 'reset', branch: TASK_BRANCH, commits: 3, files: 3 });
@@ -2456,8 +2484,10 @@ test('a stage run started in a stage that already has its start keeps that start
 });
 
 test('Restart on a published branch that moved checks out <branch>-r2 and the task follows it; a git failure is a 409 with git\'s words and starts nothing (#283)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const moved = restartGit(HEAD_SHA, 'feedfacefeedfacefeedfacefeedfacefeedface');
   const one = await start(t, BODY, undefined, {}, { exec: moved.exec });
+  await wrote(one.server, one.workers[0]);
   one.workers[0].handlers.onExit();
   await waitFor(() => work0(one.server)?.stopped === true);
   assert.deepEqual(await json(hiveFetch(`${one.base}${workPath(one.server, 'board:I1')}/restart`)), { mode: 'branch', branch: TASK_BRANCH, newBranch: `${TASK_BRANCH}-r2`, commits: 3, files: 3 });
@@ -2467,6 +2497,7 @@ test('Restart on a published branch that moved checks out <branch>-r2 and the ta
   assert.equal(work0(one.server)?.branch, `${TASK_BRANCH}-r2`);
   const broken = restartGit(HEAD_SHA, undefined, 'reset');
   const two = await start(t, BODY, undefined, {}, { exec: broken.exec });
+  await wrote(two.server, two.workers[0]);
   two.workers[0].handlers.onExit();
   await waitFor(() => work0(two.server)?.stopped === true);
   const refused = await postJson(`${two.base}${workPath(two.server, 'board:I1')}/restart`);
@@ -2491,9 +2522,11 @@ test('a stage end captures its checkpoint inside the Stop\'s batch, before the c
 });
 
 test('Restart captures the checkpoint it throws away before its git, and still restarts when the capture fails (#619)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const stoppedOn = async (exec: Exec): Promise<Started> => {
     const started = await start(t, BODY, undefined, {}, { exec });
     await hookEvent(started.base, worker0(started.server).runId!, { hook_event_name: 'SessionStart', cwd: started.repo });
+    await wrote(started.server, started.workers[0]);
     started.workers[0].handlers.onExit();
     await waitFor(() => work0(started.server)?.stopped === true);
     return started;
@@ -2539,6 +2572,7 @@ test('POST /activities/:id/sessions/:session/clear forgets that one session and 
   await refused(clear('board:I1', first), unavailable); // its stage run holds it
   await hookEvent(base, worker0(server).runId!, { hook_event_name: 'SessionStart', cwd: repo }); // the worktree a new session needs
   await server.dispatch({ type: 'setSignal', signal: 'red' }); // nothing respawns once the worker exits
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'board:I1') }); // a second session, held by its free session
@@ -2560,6 +2594,7 @@ test('POST /activities/:id/sessions/:session/clear keeps the transcript when the
   const scope = { session: true, transcripts: false, nonAutoTasks: false };
   const { base, repo, server, workers } = await start(t, { ...BODY, deleteActivity: scope });
   const session = work0(server)!.sessionId!;
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => work0(server)?.stopped === true);
   const dir = transcriptDir(worktreePath(repo, TASK_SLUG));
@@ -2610,10 +2645,12 @@ test('deleteActivityOnDisk drops the stage-start ref of an activity whose start 
 });
 
 test('Restart is refused while a session or a terminal runs on the task; while its git runs the task is marked, so a continue or a start is refused (#283)', async (t) => {
+  claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   const git = restartGit(HEAD_SHA, undefined, undefined, gate);
   const { base, server, workers } = await start(t, BODY, undefined, {}, { exec: git.exec });
+  await wrote(server, workers[0]);
   workers[0].handlers.onExit(); // no hive_done: stopped
   await waitFor(() => work0(server)?.stopped === true);
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' }));

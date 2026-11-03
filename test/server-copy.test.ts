@@ -68,13 +68,13 @@ async function twoActivities(t: TestContext): Promise<Two> {
   for (const title of ['one', 'two']) await server.dispatch({ type: 'createTask', title, body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
   for (const c of server.getState()!.tasks) await readyOn(server, c.item.itemId, { path: worktreePath(repo, slugFor(c.item)), branch: `hive/${slugFor(c.item)}`, base: null, local: false });
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'local:1') });
-  workers[0].handlers.onExit();
-  await waitFor(() => server.getState()!.workers.length === 0);
   const [one, two] = ['local:1', 'local:2'].map((id) => activityOf(server.getState()!, id)!); // #629: the worktrees are the activities'
   const source = sessionsOf(server.getState()!, 'local:1')[0].id;
   const dir = transcriptDir(one.worktree!);
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, `${source}.jsonl`), `${TRANSCRIPT}\n`);
+  await writeFile(join(dir, `${source}.jsonl`), `${TRANSCRIPT}\n`); // before the exit, as the run wrote it: an exit with none forgets the session (#586)
+  workers[0].handlers.onExit();
+  await waitFor(() => server.getState()!.workers.length === 0);
   return { base, server, workers, repo, home, git, source, one: one.worktree!, two: two.worktree!, gate };
 }
 
@@ -271,9 +271,9 @@ async function codexSource(t: TestContext, two: Two): Promise<void> {
   await two.server.dispatch({ type: 'openSession', activityId: workId(two.server.getState()!, 'local:1'), agent: 'codex' });
   const run = two.workers.at(-1)!;
   await two.server.dispatch({ type: 'hook', ptyId: run.launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: SESSION, cwd: two.one, source: 'startup' } });
+  await writeRollout(home, DAY, SESSION, [sessionMeta(SESSION, undefined, two.one)]); // before the exit, as the run wrote it (#586)
   run.handlers.onExit();
   await waitFor(() => two.server.getState()!.workers.length === 0);
-  await writeRollout(home, DAY, SESSION, [sessionMeta(SESSION, undefined, two.one)]);
 }
 
 test('a Codex session copies with codex fork <id>: its rollout found by id, nothing copied, no copyOf mark; the fork\'s SessionStart names the copy\'s entry, the dialog\'s name kept (#933)', async (t) => {

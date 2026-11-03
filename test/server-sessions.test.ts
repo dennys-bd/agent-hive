@@ -2,6 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf, localActivityId } from '../src/activities.js';
 import { localSessionsOf } from '../src/local-sessions.js';
+import { sessionsOf } from '../src/tasks.js';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -13,7 +14,7 @@ import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { FOLDER_BODY_MESSAGE } from '../src/server-sessions.js';
 import { FOLDER_MISSING_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
-import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive, writeTranscript } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
@@ -296,4 +297,32 @@ test('a new local session takes a model, a specialized agent and args, and refus
   assert.equal((await postJson(url, { kind: 'claude', ...pick })).status, 200);
   assert.deepEqual(plainArgs(workers[0].launch).slice(0, 5), ['--verbose', '--agent', 'hive:planner', '--model', 'sonnet']);
   assert.deepEqual(localSessionsOf(server.getState()!, WORKSPACE).at(-1)?.launch, pick);
+});
+
+// #586: a Claude config dir of the test's own, put back after
+async function claudeConfig(t: TestContext): Promise<void> {
+  const dir = await tempDir(t, 'claude-');
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  t.after(() => { if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = previous; });
+}
+
+const ended = (server: HiveServer, ptyId: string) => (): boolean => !server.getState()!.workers.some((w) => w.runId === ptyId && w.status !== 'empty');
+
+test('a task\'s run that exits before its session wrote a transcript forgets that session; one that wrote it keeps it (#586)', async (t) => {
+  await claudeConfig(t);
+  const { base, server, workers } = await start(t);
+  await server.dispatch({ type: 'createTask', title: 'one', body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
+  assert.equal((await postJson(`${base}/tasks/local:1/open`, { kind: 'claude' })).status, 200);
+  assert.equal(sessionsOf(server.getState()!, 'local:1').length, 1, 'the open recorded its session');
+  workers[0].handlers.onExit(); // the pool's exit: through exitEvent
+  await waitFor(ended(server, workers[0].launch.ptyId));
+  assert.deepEqual(sessionsOf(server.getState()!, 'local:1'), [], 'nothing left to continue');
+  assert.equal((await postJson(`${base}/tasks/local:1/open`, { kind: 'claude' })).status, 200);
+  const [flag, id] = plainArgs(workers[1].launch).slice(-2);
+  assert.equal(flag, '--session-id', 'a new session, never a resume');
+  await writeTranscript(workers[1].launch.cwd, id);
+  workers[1].handlers.onExit();
+  await waitFor(ended(server, workers[1].launch.ptyId));
+  assert.deepEqual(sessionsOf(server.getState()!, 'local:1').map((s) => s.id), [id]);
 });

@@ -63,6 +63,7 @@ export interface SpawnerDeps {
   exec: Exec; // git for the worktree step; tests inject a fake
   log: Pick<Logger, 'info' | 'error'>;
   dispatch(event: HiveEvent): Promise<Effect[]>;
+  exitOf(ptyId: string): Promise<HiveEvent>; // #586: the run's exit event, its transcript check made (server-exit.ts)
   fail(context: string, err: unknown): Promise<void>;
   isLive(ptyId: string): boolean; // the worker still holds this run (#299): a Stop during the setup freed it
   ptys: Pick<PtyHost, 'has' | 'subscribe' | 'adopt'>; // a run command's output (#353) and a worktree setup's (#351) reach the console through the pty host
@@ -150,11 +151,11 @@ function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], 
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
-  const { pool, exec, log, dispatch, fail, isLive, ptys, consoleStore, agents, secret, home, facts, lspDir, plugin, externalMcp } = deps;
+  const { pool, exec, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, secret, home, facts, lspDir, plugin, externalMcp } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
   // What the pool answers for any run: the exit frees it, a kill / focus failure reaches the bar, a start that never happened frees it too.
   const handlers = (ptyId: string, slug: string) => ({
-    onExit: (): void => void dispatch({ type: 'exit', ptyId }),
+    onExit: (): void => void exitOf(ptyId).then(dispatch),
     onError: (message: string): void => void fail(`worker ${slug}`, new Error(message)),
     onSpawnFailed: (message: string): void => void dispatch({ type: 'spawnFailed', ptyId, message }),
   });

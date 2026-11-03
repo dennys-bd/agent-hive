@@ -225,11 +225,11 @@ test('clearing a checkout task\'s session deletes its transcript from the worksp
   const { base, repo, server, workers } = await start(t, { ...DELETE_ACTIVITY_DEFAULTS, session: true, transcripts: true }); // transcripts needs session
   await postJson(`${base}/tasks/board:I1/start`, { base: null, local: true });
   const session = work0(server)!.sessionId!;
-  workers[0].handlers.onExit();
-  await waitFor(() => work0(server)?.stopped === true);
   const dir = transcriptDir(repo);
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, `${session}.jsonl`), '{}\n');
+  await writeFile(join(dir, `${session}.jsonl`), '{}\n'); // before the exit, as the run wrote it: an exit with none forgets the session (#586)
+  workers[0].handlers.onExit();
+  await waitFor(() => work0(server)?.stopped === true);
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/sessions/${session}/clear`)), { ok: true });
   assert.deepEqual(await readdir(dir), []);
 });
