@@ -114,8 +114,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
   const config = info?.config;
   const workspaces = config ? config.comb.workspaces.map(workspaceDraft) : [proposedRow(info?.proposedWorkspace)]; // the saved workspaces, else the proposal (#179)
   const rows = config ? config.comb.sources.map(sourceDraft) : [emptySource(workspaces[0].name)]; // a first setup: one GitHub row (#180), its default workspace the proposal (#293, #688)
-  const flat = flatten(config?.comb.flows ?? []);
-  const stages = flat.stages.map((c) => stageDraft(c, rows, config?.defaultAgent));
+  const stages = flatten(config?.comb.flows ?? []).stages.map((c) => stageDraft(c, rows, config?.defaultAgent));
   // #30: switchAt as its stage draft's id; the ids are kept, so the stages' from still finds each row
   const sources = config ? rows.map((row, i) => ({ ...row, switchAt: switchAtId(config.comb.sources[i].switchAt, stages) })) : rows;
   return {
@@ -128,7 +127,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     sources,
     auth: config?.auth?.github ?? 'cli', // a form opened with no config starts on cli, the transport that needs nothing
     stages,
-    transitions: flat.transitions.map((t) => transitionDraft(t, stages, sources)),
+    transitions: flatten(config?.comb.flows ?? []).transitions.map((t) => transitionDraft(t, stages, sources)),
     language: info?.language ?? 'en',
     branch: config?.branch ?? '', // empty = the default template; the hint under the field says which
     baseBranch: config?.baseBranch ?? '', // empty field = automatic
