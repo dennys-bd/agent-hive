@@ -319,7 +319,7 @@ Run from the docs repository, `<folder>` the design folder, quoted. It prints
 nothing and exits 0 when the folder passes:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/check-hv.mjs" "<folder>"
+node "${HIVE_PLUGIN_ROOT}/scripts/check-hv.mjs" "<folder>"
 ```
 
 It reports, one line each: what reaches outside the folder or the network

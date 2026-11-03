@@ -8,6 +8,7 @@ import { pluginSource } from '../src/hooks-settings.js';
 import { deliveredName, hasDeclarations, parseTemplate, renderTemplate } from '../src/template.js';
 import { createPluginRender, NoPluginFolderError, PLUGINS_DIR, pluginRenderPath, type PluginRender, type RenderConfig } from '../src/plugin-render.js';
 import { put, snapshot } from './custom-fixture.js';
+import { PLUGIN_ROOT } from '../src/template-refs.js';
 import { tempDir } from './temp-dir.js';
 
 // Each workspace's plugin folder (#316): the shipped plugin, the workspace's versions over it, every template rendered for it
@@ -50,11 +51,13 @@ test('with no version and no user item, a workspace\'s folder is the shipped plu
   const decode = (bytes: string | undefined): string => Buffer.from(bytes ?? '', 'base64').toString('utf8');
   // #338: a .md whose header has declarations is rendered too, under its own name
   const isTemplate = (path: string, raw: string): boolean => path.endsWith('.liquid') || (path.endsWith('.md') && hasDeclarations(parseTemplate(raw).header));
+  // #446: every delivered .md names the workspace's folder where its source says ${HIVE_PLUGIN_ROOT}
+  const rooted = (path: string, raw: string): string => (deliveredName(path).endsWith('.md') ? raw.split(PLUGIN_ROOT).join(pluginRenderPath(r.home, 'a')) : raw);
   const expected = Object.fromEntries(Object.entries(shipped).map(([path, bytes]) => {
-    if (!isTemplate(path, decode(bytes))) return [path, bytes];
+    if (!isTemplate(path, decode(bytes))) return [path, Buffer.from(rooted(path, decode(bytes))).toString('base64')];
     const result = renderTemplate(parseTemplate(decode(bytes)), 'a');
     if (!result.ok) return assert.fail(`${path}: ${result.errors[0]?.message}`);
-    return [deliveredName(path), Buffer.from(result.text).toString('base64')];
+    return [deliveredName(path), Buffer.from(rooted(path, result.text)).toString('base64')];
   }));
   const delivered = await snapshot(pluginRenderPath(r.home, 'a'));
   assert.deepEqual(delivered, expected);
@@ -62,7 +65,7 @@ test('with no version and no user item, a workspace\'s folder is the shipped plu
   // Codex's role reader parses an agent's header line by line: the delivery only takes the basedOn lines out
   const BASED_ON_LINES = /^basedOn:\n(?: {2}- .*\n)+/m;
   for (const path of Object.keys(shipped).filter((p) => p.startsWith('agents/') && p.endsWith('.md'))) {
-    assert.equal(decode(delivered[path]), decode(shipped[path]).replace(BASED_ON_LINES, ''), path);
+    assert.equal(decode(delivered[path]), rooted(path, decode(shipped[path]).replace(BASED_ON_LINES, '')), path);
   }
 });
 
@@ -186,4 +189,18 @@ test('a write the catalogue cannot read logs the class only and never rejects (#
   await writeFile(join(r.home, 'custom', 'hive'), 'a file where a folder goes'); // readdir of custom/hive throws ENOTDIR
   await r.create().write(config(r.repo, 'a'));
   assert.ok(r.logs.some((line) => /^plugin render: not written \(\w+\)$/.test(line)), r.logs.join('\n'));
+});
+
+test('the HIVE_PLUGIN_ROOT placeholder becomes the workspace\'s absolute folder in every delivered .md, plain or rendered, and in its Codex copy (#446)', async (t) => {
+  const plain = `---\nname: reviewer\ndescription: R\n---\nRead \`${PLUGIN_ROOT}/reference/design.md\`, run node "${PLUGIN_ROOT}/scripts/check-hv.mjs".\n`;
+  const liquid = `---\nname: maker\ndescription: D\n---\n{{ workspace }} reads ${PLUGIN_ROOT}/reference/skeleton.hv.html\n`;
+  const r = await rig(t, { ...SHIPPED, 'agents/reviewer.md': plain, 'agents/maker.md.liquid': liquid, 'reference/design.md': `node "${PLUGIN_ROOT}/scripts/check-hv.mjs"\n` });
+  await r.create().write(config(r.repo, 'a'));
+  const dir = pluginRenderPath(r.home, 'a');
+  assert.equal(await text(r, 'a', 'agents/reviewer.md'), `---\nname: reviewer\ndescription: R\n---\nRead \`${dir}/reference/design.md\`, run node "${dir}/scripts/check-hv.mjs".\n`);
+  assert.equal(await text(r, 'a', 'agents/maker.md'), `---\nname: maker\ndescription: D\n---\na reads ${dir}/reference/skeleton.hv.html\n`);
+  assert.equal(await text(r, 'a', 'reference/design.md'), `node "${dir}/scripts/check-hv.mjs"\n`);
+  for (const path of await listFiles(dir)) assert.doesNotMatch(await text(r, 'a', path), /HIVE_PLUGIN_ROOT/, path);
+  const codexCopy = await readFile(join(pluginCacheDir(r.codex, dir), 'agents', 'reviewer.md'), 'utf8');
+  assert.ok(codexCopy.includes(`${dir}/scripts/check-hv.mjs`), 'Codex reads the same absolute path');
 });

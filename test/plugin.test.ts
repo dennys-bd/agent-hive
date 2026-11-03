@@ -14,8 +14,6 @@ const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-revi
 const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
 // #416: an agent that reads a Hive convention is a template; the rest stay plain Markdown
 const TEMPLATE_AGENTS: readonly string[] = ['designer'];
-// #446: an agent reviewed since names no model; the older ones still route to one
-const NO_MODEL: readonly string[] = ['decomposition-reviewer', 'designer'];
 const agentPath = (agent: string): string => `agents/${agent}${TEMPLATE_AGENTS.includes(agent) ? '.md.liquid' : '.md'}`;
 const agentText = (agent: string): Promise<string> => readFile(join(PLUGIN, agentPath(agent)), 'utf8');
 
@@ -107,17 +105,13 @@ test('every skill and agent declares the frontmatter Claude Code reads, with the
     assert.equal(front.name, skill, `skills/${skill} declares its own name`);
     assert.ok((front.description ?? '').length > 40, `skills/${skill} has a description worth dispatching on`);
   }
-  const opus: string[] = [];
   for (const agent of AGENTS) {
     const front = frontmatter(await agentText(agent));
     assert.equal(front.name, agent);
     assert.ok((front.description ?? '').length > 40, `agents/${agent} has a description`);
-    if (NO_MODEL.includes(agent)) assert.equal(front.model, undefined, `${agent} names no model: a session's or a stage's model is set in the Hive, for any agent runner (#446)`);
-    else assert.ok(['sonnet', 'opus'].includes(front.model), `agents/${agent} routes to a model: ${front.model}`);
+    assert.equal(front.model, undefined, `${agent} names no model: a session's or a stage's model is set in the Hive, for any agent runner (#446)`);
     assert.ok((front.tools ?? '').includes('Read'), `agents/${agent} declares its tools`);
-    if (front.model === 'opus') opus.push(agent);
   }
-  assert.deepEqual(opus, ['architect', 'planner'], 'the model table: sonnet everywhere, opus for the architect and the planner, none for the agents reviewed since #446');
 });
 
 test('every shipped skill and agent credits its origins in basedOn, each a file at its source\'s ref, or opens its header with the original comment (#338)', async () => {
@@ -184,7 +178,7 @@ test('/hive:decomposition declares its own four variables, interpolated where us
   assert.match(text, /## Review\n\nOnce the check passes, dispatch the reviewer with the file's path:\n`Use the hive:decomposition-reviewer agent on <path>`/);
   for (const part of ['Two rounds at most', 'it never edits the file', 'a run resumed by feedback included']) assert.ok(text.includes(part), part);
   const reviewer = await readFile(join(PLUGIN, 'agents', 'decomposition-reviewer.md'), 'utf8');
-  assert.ok(reviewer.includes(`${'$'}{CLAUDE_PLUGIN_ROOT}/reference/decomposition.md`), 'the reviewer reads the shared file rules');
+  assert.ok(reviewer.includes(`${'$'}{HIVE_PLUGIN_ROOT}/reference/decomposition.md`), 'the reviewer reads the shared file rules');
   for (const part of ['never derive a `Blocked by` from the files two leaves touch', '**Verdict:** clean | changes needed', '### Blocking', '### Advisory', 'Unwritten dependency']) assert.ok(reviewer.includes(part), part);
   assert.ok(!frontmatter(reviewer).tools?.split(', ').some((tool) => ['Write', 'Edit', 'Bash'].includes(tool)), 'the reviewer only reads');
   const rendered = renderedFor(text);
@@ -360,7 +354,7 @@ test('CREDITS.md credits every source with its repository, ref and licence, and 
 });
 
 // Claude Code expands this in an agent's text; the Hive's PLUGIN path is where it points at run time
-const PLUGIN_ROOT = '$' + '{CLAUDE_PLUGIN_ROOT}';
+const PLUGIN_ROOT = '$' + '{HIVE_PLUGIN_ROOT}';
 
 test('the design agents read the references through the plugin root variable, since an agent is not told its plugin\'s directory', async () => {
   for (const agent of ['designer', 'design-reviewer']) {

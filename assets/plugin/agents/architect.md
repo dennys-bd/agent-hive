@@ -2,7 +2,6 @@
 name: architect
 description: System design specialist. Consulted on the architectural path of /hive:new-spec, before the spec is written, for trade-offs between approaches, component boundaries and interface changes. Returns a recommendation; never writes files.
 tools: Read, Grep, Glob
-model: opus
 basedOn:
   - { name: "ecc:architect", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/architect.md }
 ---

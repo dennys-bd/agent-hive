@@ -12,8 +12,10 @@ export interface TemplateRef {
 
 // hive:<name>, with or without the slash, never inside a word or a path: agent-hive:x and a/hive:x are no reference
 const HIVE_REF = /(?<![\w/-])\/?hive:([A-Za-z0-9][\w-]*)/g;
-// The plugin's root scripts/, alone or under ${CLAUDE_PLUGIN_ROOT}/; dist/scripts/x is another folder, a sentence's final dot not the file's
-const SCRIPT_REF = /(?:\$\{CLAUDE_PLUGIN_ROOT\}\/|(?<![\w./-]))(scripts\/[\w-]+(?:\.[\w-]+)*)/g;
+/** How a template names the plugin's own folder (#446): agent-neutral, since no runner expands it; the render writes the workspace's folder. */
+export const PLUGIN_ROOT = '$' + '{HIVE_PLUGIN_ROOT}'; // concatenated: a literal ${…} reads as a template mistake
+// The plugin's root scripts/, alone or under ${HIVE_PLUGIN_ROOT}/; dist/scripts/x is another folder, a sentence's final dot not the file's
+const SCRIPT_REF = /(?:\$\{HIVE_PLUGIN_ROOT\}\/|(?<![\w./-]))(scripts\/[\w-]+(?:\.[\w-]+)*)/g;
 // Only inside inline code, so a prose path such as /tmp never is one; it starts the span or a word and is not a path, a namespace or a file
 const BARE_REF = /(?<![^\s(])\/([A-Za-z0-9][\w-]*)(?![\w:/.-])/g;
 const INLINE_CODE = /(`+)(.+?)\1/g;
