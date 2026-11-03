@@ -64,7 +64,7 @@ test('droppedReviews names the tasks a reduction dropped, but none a stage chang
   const prev = { ...initialState(0), tasks: [task('work:1'), task('local:2'), task('local:3')] };
   const next = { ...prev, tasks: [task('local:3')] };
   assert.deepEqual(droppedReviews(prev, next, { type: 'closeTask', taskId: 'work:1' }), ['work:1', 'local:2']);
-  assert.deepEqual(droppedReviews(prev, next, { type: 'setStages', stages: [], transitions: [] }), []);
+  assert.deepEqual(droppedReviews(prev, next, { type: 'setStages', flows: [] }), []);
   assert.deepEqual(droppedReviews(prev, prev, { type: 'tick' }), []);
 });
 

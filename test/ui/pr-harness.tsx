@@ -7,6 +7,7 @@ import type { PrView } from '@/lib/pr-view';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { jsonResponse } from '../fakes';
 import type { Call } from './diff-harness';
+import { flowed } from '../fixtures/main-flow.js';
 
 export const PR = 'https://github.com/acme/app/pull/7';
 export const PR2 = 'https://github.com/acme/app/pull/9';
@@ -54,8 +55,8 @@ export const prCalls = (hive: FakePrHive, method: string, url: string): Call[] =
 
 /** A State with no task (#758): the PR is no task's. */
 export const STATE: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'dev', from: {}, prompt: 'x' }], tasks: [], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
-  activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: {}, prompt: 'x' }], []), tasks: [], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
+  activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
 /** Task I1, issue acme/app#1, holding PR in its live activity a-I1 (#758). */

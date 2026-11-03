@@ -3,6 +3,7 @@ import { initialPicks, NEW_SESSION, nextPicks, openBody, PREVIOUS_SESSION, start
 import type { Session, Stage, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../../src/types';
 import { withWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 const AT = '2026-10-13T10:00:00.000Z';
 const CLAUDE = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -11,7 +12,7 @@ const session = (id: string, agent: Session['agent']): Session => ({ id, started
 const stages: Stage[] = [{ name: 'spec', from: {}, prompt: 'x' }, { name: 'build', from: {}, prompt: 'x', session: 'continue', model: 'opus' }];
 const TASK: Task = { item: { itemId: 'I1', id: 'SITE-1', title: 'one', body: '', url: '' }, stage: 'build', boardColumn: '', auto: true, workspace: 'site' };
 const stateWith = (sessions: Session[]): State => withWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages, tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 }, 'I1', {}, { sessions });
 

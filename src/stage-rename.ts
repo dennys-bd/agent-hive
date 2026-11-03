@@ -1,4 +1,4 @@
-import type { Activity, ActivityRecord, State, Task, TaskUsage } from './types.js';
+import type { Activity, ActivityRecord, Stage, State, Task, TaskUsage, Transition } from './types.js';
 
 // #861: a save that renamed stages, as one map applied once per value (so A ↔ B swaps), over every State field the audit found naming a
 // stage or holding a transitionKey (plan Task 1). The stages and transitions too, so no reduction between this and setStages reads a task in
@@ -59,10 +59,13 @@ export function renameStages(state: State, renames: Record<string, string>): Sta
   if (Object.keys(renames).length === 0) return state;
   const stage: Rename = (name) => (Object.hasOwn(renames, name) ? renames[name] : name);
   const key: Rename = (k) => rekeyed(k, stage);
+  const renamedStage = (s: Stage): Stage => ({ ...s, name: stage(s.name) });
+  const renamedTransition = (t: Transition): Transition => ({ ...t, from: stage(t.from), to: stage(t.to) });
   const next: State = {
     ...state,
-    stages: state.stages.map((s) => ({ ...s, name: stage(s.name) })),
-    transitions: state.transitions.map((t) => ({ ...t, from: stage(t.from), to: stage(t.to) })),
+    flows: state.flows.map((f) => ({ ...f, stages: f.stages.map(renamedStage), transitions: f.transitions.map(renamedTransition) })), // #564: never an old name in a flow
+    stages: state.stages.map(renamedStage),
+    transitions: state.transitions.map(renamedTransition),
     tasks: state.tasks.map((t) => renamedTask(t, stage)),
     activities: state.activities.map((a) => renamedActivity(a, stage, key)),
     activityRecords: state.activityRecords.map((r) => renamedRecord(r, stage)),

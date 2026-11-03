@@ -6,6 +6,7 @@ import { parseRunPick } from '../src/run-pick.js';
 import type { Refusal } from '../src/server-tasks.js';
 import type { AgentAvailability, AgentId, Item, Session, Stage, State, Task } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // POST /tasks/:id/start's run picks (#290), checked against the task, its stage and this machine.
 const ID = 'board:1';
@@ -23,7 +24,7 @@ const session = (id: string, agent: AgentId, stages = ['Spec']): Session => ({ i
 
 // Task 1 in `column`'s stage, nothing running, its worktree on disk and `sessions` on its record
 function stateWith(column: string, sessions: Session[] = []): State {
-  const polled = reduce({ ...initialState(0), workspaces: ['hive'], syncs: { board: {} }, stages: STAGES, transitions: [] }, { type: 'poll', source: 'board', items: [{ item, column }] }).state;
+  const polled = reduce({ ...initialState(0), workspaces: ['hive'], syncs: { board: {} }, ...flowed(STAGES, []),}, { type: 'poll', source: 'board', items: [{ item, column }] }).state;
   return withWork(polled, ID, { worktree: '/wt/hive-1-task-1' }, { sessions });
 }
 const taskIn = (state: State): Task => state.tasks.find((t) => t.item.itemId === ID)!;

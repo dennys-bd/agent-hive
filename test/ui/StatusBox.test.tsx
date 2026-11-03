@@ -7,6 +7,7 @@ import { setLanguage } from '@/i18n';
 import type { Stage, State, Worker } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, bareTask, movedWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 const SESSION = 'aaaaaaaa-0000-4000-8000-000000000001';
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
@@ -19,7 +20,7 @@ const stopped: WithWork = {
 };
 const ACTIVITY = activityIdOf('I1');
 const state = (task: WithWork, extra: Partial<State> = {}): State => movedWork<State>({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages, tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
   activities: [], activityRecords: [{ id: ACTIVITY, taskIds: ['I1'], sessions }],
   sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });

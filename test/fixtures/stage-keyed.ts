@@ -1,6 +1,7 @@
 import { initialState } from '../../src/orchestrator.js';
 import { transitionKey } from '../../src/transitions.js';
 import type { Activity, ActivityRecord, State, Task } from '../../src/types.js';
+import { flowed } from './main-flow.js';
 
 // #861: one State naming stages A and B in every field the audit (plan Task 1) found to hold a stage name or a transitionKey. renameStages'
 // tests rename RENAMES and read each field through STAGE_KEYED_FIELDS, so a field the audit adds gets its own assertion.
@@ -34,8 +35,7 @@ const RECORD: ActivityRecord = {
 /** The audited State: every stage-keyed field filled. */
 export const stageKeyedState = (): State => ({
   ...initialState(0),
-  stages: [{ name: 'A', from: {} }, { name: 'B', from: {} }],
-  transitions: [{ from: 'A', to: 'B', when: 'done' }],
+  ...flowed([{ name: 'A', from: {} }, { name: 'B', from: {} }], [{ from: 'A', to: 'B', when: 'done' }]),
   tasks: [TASK], activities: [ACTIVITY], activityRecords: [RECORD],
   workers: [{ id: 'w1', status: 'working', stage: 'A' }],
   usageRules: [{ source: 'hour', percent: 80, maxWorkers: 1, stage: 'A' }],

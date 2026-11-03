@@ -8,6 +8,7 @@ import { transitionKey } from '../src/transitions.js';
 import type { Effect, HiveEvent, Item, Stage, State, Transition } from '../src/types.js';
 import { move } from './fakes.js';
 import { workId } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // The flow as a graph (#134), end to end through reduce: every stage end takes the transition its trigger fires.
 
@@ -20,7 +21,7 @@ const STAGES: Stage[] = [
 ];
 // Task 1 polled into the first stage, running in the only worker, green
 const flow = (transitions: Transition[], stages: Stage[] = STAGES): State =>
-  reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, stages, transitions }, { type: 'poll', source: 'board', items: [{ item, column: 'Ready' }] }).state;
+  reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...flowed(stages, transitions),}, { type: 'poll', source: 'board', items: [{ item, column: 'Ready' }] }).state;
 // hive_done, then its Stop: what ends a stage
 const stageEnd = (state: State, done: Partial<Extract<HiveEvent, { type: 'done' }>> = {}) => {
   const ptyId = state.workers[0].runId ?? '';

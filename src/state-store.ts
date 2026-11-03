@@ -9,6 +9,7 @@ import { isCount, isDate, isJsonObject, isStringArray, loadActivity, loadRecord,
 import { MOVED_TASK_KEYS, migrateLocals, migrateWork, migrateWorker } from './state-migrate.js';
 import type { WorkspaceNames } from './tasks.js';
 import { loadBenchmark } from './benchmark-guards.js';
+import { flatten, MAIN_FLOW } from './flows.js';
 import { copyDisabledRule, isDisabledRule } from './usage-rules.js';
 import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type Item, type Task, type Terminal, type Signal, type Worker, type WorkerEvent, type WorkerEventKind, type State, type Status, type UsageRule, type UsageSample } from './types.js';
 
@@ -171,6 +172,14 @@ function migrated(parsed: State & { localSessions?: unknown }, saved: Task[], ta
   return { activities: [...work.activities, ...locals.activities], activityRecords: [...work.activityRecords, ...locals.activityRecords] };
 }
 
+// #564: a file from before has only the flat pair, read as one main flow; the config overwrites all three on boot (#861 compares like with like)
+function savedFlows(parsed: State): Pick<State, 'flows' | 'stages' | 'transitions'> {
+  if (Array.isArray(parsed.flows)) return { flows: parsed.flows, ...flatten(parsed.flows) };
+  const stages = Array.isArray(parsed.stages) ? parsed.stages : [];
+  const transitions = Array.isArray(parsed.transitions) ? parsed.transitions : [];
+  return { flows: stages.length === 0 ? [] : [{ name: MAIN_FLOW, stages, transitions }], stages, transitions };
+}
+
 // Files written before the signal or the budget existed lack these fields; anything unknown reads as the default. A saved shutdown is
 // dropped here, not only by boot: the live state is built before boot runs, and a restart must never come back armed (#233), nor awake (#226). A `terminal`
 // from before #378 goes: the rest is spread. A file from before #570 has slots and shells, never read (no migration): its runs are lost, its
@@ -193,8 +202,7 @@ function normalize(parsed: State, hiveDir: string, scope?: WorkspaceNames): Stat
     ...rest,
     maxConcurrent,
     workers,
-    transitions: Array.isArray(parsed.transitions) ? parsed.transitions : [], // #134: overwritten by the config on boot, as the stages are
-    stages: Array.isArray(parsed.stages) ? parsed.stages : [], // overwritten by the config on boot; a saved `columns` (before #286) is dropped
+    ...savedFlows(parsed), // overwritten by the config on boot (#134, #564); a saved `columns` (before #286) is dropped
     workspaces: isStringArray(parsed.workspaces) ? parsed.workspaces : [], // overwritten by the config on boot (#179)
     sourceWorkspaces: {}, // overwritten by the config on boot (#179, #180)
     commands: {}, // overwritten by the config on boot (#300)

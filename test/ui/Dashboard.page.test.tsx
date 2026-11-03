@@ -12,6 +12,7 @@ import { resetViewState } from '@/lib/view-state';
 import type { IssuePage as Issue, PrData, RepoIssues, RepoPrs, RepoSummary, SourceConfig, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { FakeWebSocket, resetFakes } from './xterm-fakes';
+import { flowed } from '../fixtures/main-flow.js';
 
 vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./xterm-fakes')).FakeTerminal }));
 vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./xterm-fakes')).FakeFitAddon }));
@@ -42,9 +43,9 @@ const T12: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager b
 const A: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Task A', body: '', url: '' }, stage: 'dev', boardColumn: '', auto: false, created: true };
 const B: Task = { item: { itemId: 'local:2', id: 'HIVE-2', title: 'Fix it', body: '', url: '' }, stage: 'dev', boardColumn: '', auto: false, created: true };
 const state: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], tasks: [T12, A, B],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], []), tasks: [T12, A, B],
   sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [{ id: 'r-B', taskIds: [B.item.itemId], sessions: [], prs: [{ url: PR_PAGE.url, state: 'open' }] }],
-  usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
+  usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

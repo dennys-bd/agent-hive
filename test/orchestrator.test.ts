@@ -6,7 +6,7 @@ import { startMode } from '../src/task-runs.js';
 import { localSessionsOf } from '../src/local-sessions.js';
 import { activityOf, localActivityId, prsOf, recordOf, recordsOf, resultOf, taskOfPr, taskOfWorker, usageOf, withActivity, withRecord } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import type { Activity, ActivityRecord, ForkSyncResult } from '../src/types.js';
+import type { Activity, ActivityRecord, Flow, ForkSyncResult } from '../src/types.js';
 import { describeEvent } from '../src/log.js';
 import { savedWork } from '../src/state-guards.js';
 import { HOUR_MS } from '../src/usage.js';
@@ -3669,4 +3669,15 @@ test('the last child reaching Done takes its epic review → done through that t
   assert.deepEqual(deriveFacts(due.state, closed, close, Date.now()).filter((r) => r.event === 'task.closed'), [
     { event: 'task.closed', level: 'info', task_id: 'board:item1', task: '1', stage: 'done', reason: 'finished', via: 'archive' },
   ]);
+});
+
+test('setStages takes the flows and sets their flattened stages and transitions with them (#564)', () => {
+  const flows: Flow[] = [
+    { name: 'main', stages: [{ name: 'spec', from: {}, prompt: '/s' }], transitions: [{ from: 'spec', to: 'end', when: 'done' }] },
+    { name: 'bug', stages: [{ name: 'fix', from: {}, prompt: '/f' }], transitions: [] },
+  ];
+  const { state } = reduce(initialState(0), { type: 'setStages', flows });
+  assert.deepEqual(state.flows, flows);
+  assert.deepEqual(state.stages.map((s) => s.name), ['spec', 'fix']);
+  assert.deepEqual(state.transitions, flows[0].transitions);
 });

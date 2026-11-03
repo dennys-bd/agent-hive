@@ -9,6 +9,7 @@ import { sessionsOf } from '../src/tasks.js';
 import type { AgentId, Effect, HookPayload, Session, Stage, State, Worker } from '../src/types.js';
 import { withLocal, withWork, workId } from './fixtures/work.js';
 import { CODEX_SESSION, CODEX_TURN, codexHook, PR_URL, QUESTION, SUBAGENT } from './fixtures/codex-hooks.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // #925: every run records its agent; #927: the second agent is codex, which picks its own session id
 const OTHER: AgentId = 'codex';
@@ -24,7 +25,7 @@ const kept = (agent: AgentId): Session => ({ id: S1, startedAt: AT, stages: ['sp
 // One task in `dev`, its activity holding S1 (recorded as `agent`'s) with its worktree, the workspace's local activity beside it
 const onDev = (dev: Partial<Stage>, agent: AgentId = 'claude', extra: Partial<State> = {}): State => withLocal(withWork({
   ...initialState(1), workspaces: ['hive'], ...extra,
-  stages: [{ name: 'dev', from: {}, prompt: '/build', ...dev }],
+  ...flowed([{ name: 'dev', from: {}, prompt: '/build', ...dev }]),
   tasks: [{ item: ITEM, stage: 'dev', boardColumn: 'Ready', auto: true, workspace: 'hive' }],
 }, ITEM.itemId, { slug: 'hive-1-t', worktree: '/wt', sessionId: S1 }, { sessions: [kept(agent)] }), 'hive');
 const spawnOf = (effects: Effect[]) => effects.find((e): e is Extract<Effect, { type: 'spawn' }> => e.type === 'spawn');

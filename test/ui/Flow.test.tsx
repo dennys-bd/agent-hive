@@ -9,6 +9,7 @@ import { readView, resetViewState } from '@/lib/view-state';
 import type { ActivityRecord, BaseOptions, Item, Task, Session, Stage, Transition, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }, { name: 'review', from: { board: ['In review'] } }];
 const task = (id: string, stage: string, extra: Partial<WithWork> = {}): WithWork => ({
@@ -18,7 +19,7 @@ const task = (id: string, stage: string, extra: Partial<WithWork> = {}): WithWor
 const rec = (sessions: Session[]): ActivityRecord[] => [{ id: 'a-I1', taskIds: ['I1'], sessions }];
 const worker = (id: string, taskId?: string): Worker => ({ id, status: taskId ? 'working' : 'empty', ...(taskId ? { activityId: activityIdOf(taskId), ptyId: `w-${id}` } : {}) });
 const state = (tasks: WithWork[], workers: Worker[], cols: Stage[] = stages, sourceOrder: string[] = []): State =>
-  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, stages: cols, tasks, sourceOrder, localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
+  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, ...flowed(cols, []), tasks, sourceOrder, localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
 const header = (name: string): HTMLElement => screen.getByRole('heading', { level: 3, name }).parentElement!; // a stage's header row (#542)
 

@@ -5,8 +5,9 @@ import { createEvent, createTask, HIVE_OFF_MESSAGE, notInFlowNotice, noColumnMes
 import { taskOfPr } from '../src/activities.js';
 import { GITHUB_ENTRY } from './fakes.js';
 import type { HiveEvent, Source, State, Task } from '../src/types.js';
+import { flowed } from './fixtures/main-flow.js';
 
-const STATE: State = { ...initialState(0), stages: [{ name: 'fila', from: {}, prompt: 'x' }], workspaces: ['hive'] };
+const STATE: State = { ...initialState(0), ...flowed([{ name: 'fila', from: {}, prompt: 'x' }]), workspaces: ['hive'] };
 const SOURCES = ['roadmap'];
 const BASE = { title: 'Fix login', body: 'steps', stage: 'fila', auto: false };
 const URL = 'https://github.com/acme/r/issues/12';
@@ -38,7 +39,7 @@ test('createEvent answers 409 when a task already has that origin (#756)', () =>
 
 const ROADMAP = { ...GITHUB_ENTRY, name: 'roadmap', repository: 'acme/app' };
 const COMB = { prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [ROADMAP, { ...GITHUB_ENTRY, name: 'notes' }] };
-const ON_SOURCE: State = { ...STATE, stages: [{ name: 'fila', from: { roadmap: ['Todo'] }, prompt: 'x' }, { name: 'later', from: {} }] };
+const ON_SOURCE: State = { ...STATE, ...flowed([{ name: 'fila', from: { roadmap: ['Todo'] }, prompt: 'x' }, { name: 'later', from: {} }]) };
 const MADE: Task = { item: { itemId: 'roadmap:PVTI_9', id: '9', title: 'Fix login', body: '', url: '', source: 'roadmap' }, stage: 'fila', boardColumn: 'Todo', auto: true };
 
 function fakeDeps(comb = COMB, { listed = true, fail, pollFails }: { listed?: boolean; fail?: string; pollFails?: string } = {}) {

@@ -7,12 +7,13 @@ import { setLanguage } from '@/i18n';
 import type { SourceConfig, Task, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 const task = (id: string, board?: string): Task => ({
   item: { itemId: `I${id}`, id, title: `Task ${id}`, body: '', url: '', source: board }, stage: 'dev', boardColumn: 'Ready', auto: true,
 });
 const state = (workers: Worker[], tasks: Task[] = []): State => withPointedWork({
-  signal: 'yellow', signals: SIGNALS_DEFAULTS, maxConcurrent: 5, workers, stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }], tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
+  signal: 'yellow', signals: SIGNALS_DEFAULTS, maxConcurrent: 5, workers, ...flowed([{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
 const taskProps = { defaults: { workspace: 'hive', auto: true }, rules: [] };
 const roadmap: SourceConfig = { name: 'roadmap', type: 'github', owner: 'acme', number: 7, filter: [], taskProps, qualifyId: false, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };

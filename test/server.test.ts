@@ -37,6 +37,7 @@ import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { flatten } from '../src/flows.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // the workspace is per server: start() names its own repo (#202)
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -607,7 +608,7 @@ test('GET /ptys counts the workers a stop would kill (#193) and lists them for t
   const state: State = withWork(withWork({
     ...initialState(5),
     workspaces: ['hive'],
-    stages: flatten(config.comb.flows).stages,
+    ...flowed(flatten(config.comb.flows).stages),
     tasks: [sourceTask, localTask],
     signal: 'yellow', // nothing is spawned into the empty worker while the test reads the list
     terminals: [{ terminalId: 'a1b2c3d4-0000-4000-8000-000000000009', activityId: activityIdOf('I1'), startedAt: '2026-09-25T10:00:00.000Z', cwd: '/repo' }],

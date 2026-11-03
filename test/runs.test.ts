@@ -9,6 +9,7 @@ import { liveRuns, stageSession, startMode } from '../src/task-runs.js';
 import { sessionsOf } from '../src/tasks.js';
 import { activityOf, localActivityId } from '../src/activities.js';
 import { activityIdOf, withLocal, withWork, workId } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // A workspace's local activity (#590): a new claude session in its checkout, kept as a local session (#587) from its start.
 const SESSION = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
@@ -195,7 +196,7 @@ const STAGE_RUN = 'cccccccc-0000-4000-8000-000000000001';
 const SPEC_RUN: Session = { id: STAGE_RUN, startedAt: PAST, stages: ['spec'], agent: 'claude' as const, lastUsedAt: PAST };
 const ranSpec = (stage: string): State => withWork({
   ...initialState(1), signal: 'red', workspaces: ['hive'],
-  stages: [{ name: 'spec', from: {}, prompt: 'x' }, { name: 'plan', from: {}, prompt: 'x' }, { name: 'dev', from: {}, prompt: 'x' }],
+  ...flowed([{ name: 'spec', from: {}, prompt: 'x' }, { name: 'plan', from: {}, prompt: 'x' }, { name: 'dev', from: {}, prompt: 'x' }]),
   tasks: [{ item: ITEM, stage, boardColumn: 'Ready', auto: true }],
 }, ITEM.itemId, { slug: 'hive-1-t', worktree: WORKTREE, sessionId: STAGE_RUN }, { sessions: [SPEC_RUN] });
 const freeRun = (state: State): Worker => state.workers.find((w) => w.freeSession)!;

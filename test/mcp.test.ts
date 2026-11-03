@@ -27,6 +27,7 @@ import type { RecordInput } from '../src/facts.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { reviewEventDuring, send } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // One worker: the fake source's task runs in it, so its worker is the live one. `later` is a second Comb stage without a prompt.
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -320,7 +321,7 @@ test('conventionsAnswer: a stage run reads its stage\'s approval; a free session
   };
   const task: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'T', body: '', url: '' }, stage: 'spec', boardColumn: '', auto: true, workspace: 'site' };
   const state = {
-    ...initialState(0), stages: [{ name: 'spec', from: {}, prompt: '/x', approval: true as const }], tasks: [task],
+    ...initialState(0), ...flowed([{ name: 'spec', from: {}, prompt: '/x', approval: true as const }]), tasks: [task],
     activities: [{ id: 'a1', kind: 'task' as const, workspace: 'site' }, { id: 'local:hive', kind: 'local' as const, workspace: 'hive' }],
     activityRecords: [{ id: 'a1', taskIds: ['local:1'], sessions: [] }],
   };

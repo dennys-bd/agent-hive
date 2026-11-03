@@ -167,7 +167,7 @@ test('POST /settings writes the config with defaults and boots the runtime on th
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true });
   const { prefix, sources, stages, commands, hiveSource, createIn, ...rest } = BODY;
-  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, comb: { prefix, workspaces: workspacesAt(repo), sources, flows: [{ name: 'main', ...chained(stages ?? []) }], commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
+  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, comb: { prefix, workspaces: workspacesAt(repo), sources, flows: [{ name: 'main', stages: chained(stages ?? []).stages, transitions: chained(stages ?? []).transitions }], commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
   await server.poll(); // the first poll runs in the background (#59); wait for it before reading tasks
   const state = server.getState();
   assert.equal(state?.workers.length, 0);

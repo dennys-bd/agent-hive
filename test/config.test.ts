@@ -677,7 +677,7 @@ test('a blocked rule (#441) parses with its operator alone; values (even []) or 
 });
 
 test('parseConfig reads a Comb with its prefix, its one workspace and its stages, with a source or without one', () => {
-  assert.deepEqual(parseConfig(GITHUB).comb, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [sourceEntry({ ...GITHUB_SOURCE, ...EPICS })], flows: [{ name: 'main', ...chained(STAGES) }], commands: [], hiveSource: true, createIn: 'hive' });
+  assert.deepEqual(parseConfig(GITHUB).comb, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [sourceEntry({ ...GITHUB_SOURCE, ...EPICS })], flows: [{ name: 'main', stages: chained(STAGES).stages, transitions: chained(STAGES).transitions }], commands: [], hiveSource: true, createIn: 'hive' });
   const bare = parseConfig(combConfig({ stages: LOCAL_STAGES, auth: undefined })).comb;
   assert.deepEqual(bare, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [], flows: [{ name: 'main', stages: LOCAL_STAGES, transitions: transitionsOf(LOCAL_STAGES) }], commands: [], hiveSource: true, createIn: 'hive' });
 });

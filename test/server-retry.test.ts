@@ -8,6 +8,7 @@ import type { TaskRouteDeps } from '../src/server-tasks.js';
 import { transitionKey } from '../src/transitions.js';
 import type { Activity, HiveEvent, Item, Stage, State, Task, Transition } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // POST /tasks/:id/retry (#915) and /dismiss-error (#354) alone over a state: every dispatched event is recorded rather than reduced.
 
@@ -24,7 +25,7 @@ const HALTED: Partial<Activity> = { stopped: true, error: 'tries out: verdict:fa
 interface Setup { work?: Partial<Activity>; transitions?: Transition[]; task?: Task }
 
 async function route(t: TestContext, { work = HALTED, transitions = [RETRY], task = TASK }: Setup = {}) {
-  const state: State = withWork({ ...initialState(0), stages: STAGES, transitions, tasks: [task] }, ID, work);
+  const state: State = withWork({ ...initialState(0), ...flowed(STAGES, transitions), tasks: [task] }, ID, work);
   const events: HiveEvent[] = [];
   const app = express();
   const dispatch = async (event: HiveEvent): Promise<never[]> => { events.push(event); return []; };

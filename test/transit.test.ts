@@ -7,6 +7,7 @@ import { transitionKey } from '../src/transitions.js';
 import { END, FEEDBACK_MAX } from '../src/types.js';
 import type { Activity, Item, Session, Stage, State, Task, TaskUsage, Transition, TryRecord } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // The try history (#915): take records each try an automatic transition with maxTries counts, and wherever the tries go the log goes.
 // Called directly on a hand-built state; every input is frozen deep and compared after the call.
@@ -35,7 +36,7 @@ interface Placement { stage?: string; stages?: Stage[]; transitions?: Transition
 // The task in `stage`, its activity holding `work`, its record holding `result`; frozen
 function placed(work: Partial<Activity> = {}, { stage = 'checks', stages = STAGES, transitions = [RETRY], result = { commands: { verdict: 'failed', output: OUTPUT } } }: Placement = {}): State {
   const task: Task = { item, stage, boardColumn: '', auto: true, workspace: 'hive' };
-  return deepFreeze(withWork({ ...initialState(0), workspaces: ['hive'], stages, transitions, tasks: [task] }, ID, work, { result }));
+  return deepFreeze(withWork({ ...initialState(0), workspaces: ['hive'], ...flowed(stages, transitions), tasks: [task] }, ID, work, { result }));
 }
 
 // The call, which must leave its input as it was
@@ -116,7 +117,7 @@ test('retry answers undefined when the error is no TRIES_OUT, the transition is 
 
 test('a retry event into a prompt stage starts the destination\'s run at once: the fill picks the task once its stop is cleared (#915)', () => {
   const task: Task = { item, stage: 'checks', boardColumn: '', auto: true, workspace: 'hive' };
-  const halted = deepFreeze(withWork({ ...initialState(1), signal: 'green', workspaces: ['hive'], stages: STAGES, transitions: [RETRY], tasks: [task] }, ID,
+  const halted = deepFreeze(withWork({ ...initialState(1), signal: 'green', workspaces: ['hive'], ...flowed(STAGES, [RETRY]), tasks: [task] }, ID,
     { ...HALTED, tries: { [KEY]: 3 } }, { result: { commands: { verdict: 'failed', output: OUTPUT } } }));
   const { state, effects } = pure(halted, (s) => reduce(s, { type: 'retry', taskId: ID }));
   const spawn = effects.find((e) => e.type === 'spawn');
@@ -177,7 +178,7 @@ test('dismissError answers undefined for an unknown task, a missing one, one wit
 // The task stopped with an error in `stage`, one free worker and green: what the due actions and the fill read
 function erredIn(stage: string): State {
   const task: Task = { item, stage, boardColumn: '', auto: true, workspace: 'hive' };
-  return deepFreeze(withWork({ ...initialState(1), signal: 'green', workspaces: ['hive'], stages: [...STAGES, CI], transitions: [RETRY], tasks: [task] }, ID, ERRED));
+  return deepFreeze(withWork({ ...initialState(1), signal: 'green', workspaces: ['hive'], ...flowed([...STAGES, CI], [RETRY]), tasks: [task] }, ID, ERRED));
 }
 
 test('a dismissError event in a wait-for-CI stage starts the wait on the same dispatch; in a prompt stage with auto on it spawns nothing (#354)', () => {
@@ -201,7 +202,7 @@ interface Clearing { stages?: Stage[]; transitions?: Transition[]; transcripts?:
 // The task in spec, its activity naming `work`'s session, its record holding the stage run's session, a free one and the usage; frozen
 function clearing(work: Partial<Activity> = { sessionId: RUN }, { stages = [SPEC, PLAN], transitions = [OUT], transcripts = false }: Clearing = {}): State {
   const task: Task = { item, stage: 'spec', boardColumn: '', auto: true, workspace: 'hive' };
-  const base = withWork({ ...initialState(0), workspaces: ['hive'], stages, transitions, tasks: [task] }, ID, work, { sessions: [ran(RUN, ['spec']), ran(FREE, [], true)], usage: USAGE });
+  const base = withWork({ ...initialState(0), workspaces: ['hive'], ...flowed(stages, transitions), tasks: [task] }, ID, work, { sessions: [ran(RUN, ['spec']), ran(FREE, [], true)], usage: USAGE });
   return deepFreeze({ ...base, deleteActivity: { ...base.deleteActivity, session: transcripts, transcripts } });
 }
 const listed = (s: State): string[] => s.activityRecords.filter((r) => r.taskIds.includes(ID)).flatMap((r) => r.sessions.map((x) => x.id));

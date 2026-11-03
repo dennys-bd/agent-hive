@@ -11,6 +11,7 @@ import { setLanguage } from '@/i18n';
 import type { Activity, BaseOptions, Item, Task, TaskPr, Session, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../../src/types';
 import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 // The task face (redesign 10, #542), rendered in its board: the task menu, the drag and the Start dialog need what Flow hands them.
 const stages: Stage[] = [
@@ -22,7 +23,7 @@ const task = (extra: Partial<WithWork> = {}): WithWork => ({
 });
 const working = (extra: Partial<Worker> = {}): Worker => ({ id: 's1', status: 'working', activityId: activityIdOf('I1'), runId: 'W1', ...extra });
 const state = (c: Task, workers: Worker[] = [], extra: Partial<State> = {}): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages, tasks: [c], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], ...flowed(stages, []), tasks: [c], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
   sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });
 const since = '2026-09-25T10:00:00.000Z';

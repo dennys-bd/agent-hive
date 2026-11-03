@@ -6,6 +6,7 @@ import { initialState } from '../src/orchestrator.js';
 import { ItemNotOnSourceError, PartialWriteError } from '../src/field-values.js';
 import { registerProjectRoutes, type ProjectRouteDeps } from '../src/server-project.js';
 import type { FieldValue, FieldWrite, HiveEvent, ItemField, ProjectItem, ProjectView, Source, SourceItem, Stage, State } from '../src/types.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // Two stages let work's Ready and In review in; Todo is cited by none
 const STAGES: Stage[] = [{ name: 'dev', from: { work: ['Ready'] }, prompt: 'x' }, { name: 'review', from: { work: ['In review'] }, prompt: 'y' }];
@@ -18,7 +19,7 @@ type ViewSource = Partial<Pick<Source, 'project' | 'fieldsOf' | 'setField' | 'se
 function routes(t: TestContext, sources: Record<string, ViewSource>, extra: Partial<State> = {}, dispatched: HiveEvent[] = [], rejecting = false, extraDeps: Pick<ProjectRouteDeps, 'refreshOptions'> = {}): string {
   const app = express();
   app.use(express.json());
-  const state: State = { ...initialState(0), stages: STAGES, ...extra };
+  const state: State = { ...initialState(0), ...flowed(STAGES), ...extra };
   registerProjectRoutes(app, {
     requireLive: () => ({ state, runtime: { sources: new Map(Object.entries(sources)) } }),
     dispatch: async (event) => { dispatched.push(event); if (rejecting) throw new Error('reducer failed'); },

@@ -7,6 +7,7 @@ import { readView, resetViewState } from '@/lib/view-state';
 import type { Task, FilterRule, Worker, Stage, State, ItemFacets } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 // A stage's view filter (#374), in a file of its own: Flow.test.tsx is long already. The kebab is a DropdownMenu and the filter a Dialog,
 // and unlike a ContextMenu (see Flow.contextmenu.test.tsx) both open again and again in one jsdom file.
@@ -23,7 +24,7 @@ const task = (id: string, stage: string, facets?: Partial<ItemFacets>, extra: Pa
 });
 const worker = (id: string, taskId?: string): Worker => ({ id, status: taskId ? 'working' : 'empty', ...(taskId ? { activityId: activityIdOf(taskId), ptyId: `w-${id}` } : {}) });
 const state = (tasks: WithWork[], workers: Worker[], cols: Stage[] = stages): State =>
-  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, stages: cols, tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
+  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, ...flowed(cols, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
 const saved = (): unknown => readView('stageFilters') ?? null;
 const save = (value: unknown): void => resetViewState({ stageFilters: value });

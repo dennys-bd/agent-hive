@@ -14,6 +14,7 @@ import { MCP_DEFAULTS } from '../src/types.js';
 import type { Config, HiveEvent, Stage, State, Task, Transition, Worker } from '../src/types.js';
 import { fakeFacts } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // hive_done on a task in a wait for CI whose only exit is passed (#339). dispatch runs the real reducer, so the test reads what the call left
 const ITEM_ID = 'gh:I1';
@@ -29,7 +30,7 @@ interface Harness { client: Client; dispatched: HiveEvent[]; records: RecordInpu
 
 async function harness(t: TestContext, freeSession = true, stages: Stage[] = STAGES): Promise<Harness> {
   const workers: Worker[] = [{ id: 'w1', runId: 'p1', status: 'working', activityId: activityIdOf(ITEM_ID), ...(freeSession ? { freeSession: true } : {}) }];
-  let state: State = withWork({ ...initialState(1), stages, transitions: TRANSITIONS, tasks: [TASK], workers }, ITEM_ID);
+  let state: State = withWork({ ...initialState(1), ...flowed(stages, TRANSITIONS), tasks: [TASK], workers }, ITEM_ID);
   const dispatched: HiveEvent[] = [];
   const { facts, records } = fakeFacts();
   const unused = async (): Promise<never> => { throw new Error('unused'); };

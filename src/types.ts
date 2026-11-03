@@ -753,6 +753,7 @@ export interface State {
   maxConcurrent: number;
   workers: Worker[];
   terminals: Terminal[]; // the terminals of tasks (#283) and workspaces (#292); a plain one is kept asleep across a boot (#696), a command's run never
+  flows: Flow[]; // #564: the config's flows on boot and by setStages; stages and transitions are their flattened views, always set with them
   stages: Stage[]; // copied from the config's stages on boot and by setStages; the pipeline order (#286)
   transitions: Transition[]; // #134: copied from the config with the stages, on boot and by setStages
   workspaces: string[]; // the Comb's workspace names, from the config on boot and on every save (#179); what resolveWorkspace reads
@@ -1556,7 +1557,7 @@ export type HiveEvent =
   | { type: 'setShutdown'; armed: boolean } // the main window's power toggle (#233)
   | { type: 'setKeepAwake'; on: boolean } // the footer's keep-awake toggle, or the daemon clearing it after the holder failed (#226)
   | { type: 'tick' } // the server's poll timer while shutdown-when-done is armed (#233): the reducer's final step reads the clock
-  | { type: 'setStages'; stages: Stage[]; transitions: Transition[] } // #134: the transitions travel with the stages
+  | { type: 'setStages'; flows: Flow[] } // #134: the transitions travel with the stages; #564: in their flows, the reducer derives the flattened pair
   | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78)
   | { type: 'setWorkspace'; taskId: string; workspace: string } // right-click › Workspace (#179)
   | { type: 'rateLimits'; agent: AgentId; ptyId?: string; rateLimits: RateLimits; replace?: boolean } // agent: whose plan (#929); no ptyId: the Hive's own reading; replace: the header's refresh, taken as read

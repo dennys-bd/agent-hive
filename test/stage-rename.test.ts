@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { initialState } from '../src/orchestrator.js';
 import { renameStages } from '../src/stage-rename.js';
+import { flowed } from './fixtures/main-flow.js';
 import { transitionKey } from '../src/transitions.js';
 import { RENAMES, STAGE_KEYED_FIELDS, stageKeyedState } from './fixtures/stage-keyed.js';
 
@@ -25,4 +27,11 @@ test('renameStages with an empty map, or one naming no stage the state holds, is
   const state = stageKeyedState();
   assert.equal(renameStages(state, {}), state);
   assert.equal(renameStages(state, { Q: 'R' }), state);
+});
+
+test('renameStages renames a stage inside its flow too, so flows never hold an old name (#564)', () => {
+  const start = { ...initialState(0), ...flowed([{ name: 'spec', from: {} }], [{ from: 'spec', to: 'end', when: 'done' }]) };
+  const renamed = renameStages(start, { spec: 'Spec' });
+  assert.deepEqual(renamed.flows[0].stages.map((s) => s.name), ['Spec']);
+  assert.deepEqual(renamed.flows[0].transitions[0].from, 'Spec');
 });

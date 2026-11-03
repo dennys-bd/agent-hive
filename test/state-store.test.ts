@@ -11,6 +11,7 @@ import { APPROVAL_MINUTES_DEFAULT, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, R
 import { savedActivityId, savedTasks, withKeptRecord, withLocal, withWork, } from './fixtures/work.js';
 import { tempDir } from './temp-dir.js';
 import { loadRecord, savedPrs } from '../src/state-guards.js';
+import { flowed } from './fixtures/main-flow.js';
 
 const uuid = (n: number): string => `3f2504e0-4f89-11d3-9a0c-0305e82c330${n}`; // the shape randomUUID gives a worker; anything else empties the worker
 // A file written before #629: no activities, so loadState migrates the tasks' own work into records
@@ -951,8 +952,22 @@ test('loadState reads a lean item with \'\' for its title, body and url and a fu
 test('a lean task with no facets, blockers, blockedBy or epic goes through a poll event without throwing, and the poll fills its item (#191)', async (t) => {
   const dir = await tempDir(t, '');
   const lean = { item: { itemId: 'board:I1', id: '1', source: 'board' }, stage: 'dev', boardColumn: 'Ready', auto: true };
-  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), stages: [{ name: 'dev', from: { board: ['Ready'] } }], syncs: { board: {} }, tasks: [lean] }));
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), ...flowed([{ name: 'dev', from: { board: ['Ready'] } }]), syncs: { board: {} }, tasks: [lean] }));
   const listed: Item = { itemId: 'board:I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1', source: 'board' };
   const { state } = reduce(await loadState(dir), { type: 'poll', source: 'board', items: [{ item: listed, column: 'Ready' }] });
   assert.deepEqual(state.tasks.map((task) => task.item), [listed]);
+});
+
+test('loadState reads a file from before #564 as one main flow, and a saved flows as written (#564)', async (t) => {
+  const dir = await tempDir(t, '');
+  const stages = [{ name: 'dev', from: {} }];
+  const transitions = [{ from: 'dev', to: 'end', when: 'done' as const }];
+  const { flows: _flows, ...before } = initialState(1);
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...before, stages, transitions }));
+  const loaded = await loadState(dir);
+  assert.deepEqual([loaded.flows, loaded.stages, loaded.transitions], [[{ name: 'main', stages, transitions }], stages, transitions]);
+  const two = [{ name: 'a', stages, transitions }, { name: 'b', stages: [{ name: 'fix', from: {} }], transitions: [] }];
+  await saveState(dir, { ...initialState(1), flows: two, stages: [], transitions: [] });
+  const again = await loadState(dir);
+  assert.deepEqual([again.flows, again.stages.map((s) => s.name)], [two, ['dev', 'fix']], 'the flattened pair follows the flows');
 });

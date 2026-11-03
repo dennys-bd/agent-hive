@@ -10,6 +10,7 @@ import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { Task, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { type WithWork, movedWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 const stages: Stage[] = [{ name: 'dev', from: { roadmap: ['Ready'], notes: ['todo'] }, prompt: '/hive-build {url}' }];
 const task = (id: string, source: string, extra: Partial<WithWork> = {}): WithWork => ({
@@ -17,7 +18,7 @@ const task = (id: string, source: string, extra: Partial<WithWork> = {}): WithWo
 });
 const at = (hours: number, minutes: number): string => new Date(2026, 8, 29, hours, minutes).toISOString(); // local time, whatever the TZ
 const state = (tasks: Task[], extra: Partial<State> = {}): State => movedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages, tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['hive', 'site', 'docs'], sourceWorkspaces: { roadmap: 'hive', notes: 'site' }, workspaceColors: {}, commands: {},
   syncs: { roadmap: { polledAt: at(9, 28) }, notes: { polledAt: at(9, 5) } },
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,

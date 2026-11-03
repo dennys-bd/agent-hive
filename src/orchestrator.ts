@@ -9,7 +9,7 @@ import { AGENTS, liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionWritten } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
-import type { Activity, ActivityRecord, SourceSync, Task, TaskBase, TaskPr, PrSlice, Stage, Transition, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item, RunPick } from './types.js';
+import type { Activity, ActivityRecord, SourceSync, Task, TaskBase, TaskPr, PrSlice, Flow, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item, RunPick } from './types.js';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, SPAWN_FAILED } from './types.js';
 import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
@@ -31,6 +31,7 @@ import { holdsWorker } from './stage-agent.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
 import { renameStages } from './stage-rename.js';
 import { placeVanished } from './vanished-stages.js';
+import { flatten } from './flows.js';
 import { followEpics } from './epic-follow.js';
 import { blockerSet, closeRefsTo } from './hive-blockers.js';
 import { isUuid } from './uuid.js';
@@ -52,7 +53,7 @@ export const STATUSES: readonly Status[] = ['empty', 'working', 'waiting', 'revi
 
 export function initialState(maxConcurrent: number): State {
   return {
-    signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent, workers: Array.from({ length: maxConcurrent }, emptyWorker), terminals: [], stages: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, tasks: [], activities: [], activityRecords: [], sourceOrder: [], usage: [], budget: {},
+    signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent, workers: Array.from({ length: maxConcurrent }, emptyWorker), terminals: [], flows: [], stages: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, tasks: [], activities: [], activityRecords: [], sourceOrder: [], usage: [], budget: {},
     usageRules: [], disabledRules: [], localCount: 0, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT,
     rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, // #805
     benchmark: { experiments: [] }, // #458
@@ -129,7 +130,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setKeepAwake': return none(setKeepAwake(state, event.on)); // no fill: keeping the machine awake starts no job (#226)
     case 'setShutdown': return fill(none(setShutdown(state, event.armed))); // arming no longer caps the signal (#727); the fill runs as after any setting
     case 'tick': return none(state); // nothing by itself: the final step reads the clock (#233)
-    case 'setStages': return fill(setStages(state, event.stages, event.transitions));
+    case 'setStages': return fill(setStages(state, event.flows));
     case 'setWorkspaces': return fill(setWorkspaces(state, event)); // a task that resolved to none may be a candidate now
     case 'setWorkspace': return fill(none(setWorkspace(state, event.taskId, event.workspace))); // idem
     case 'hook': return settleCopy(state, event.ptyId, event.payload.hook_event_name, applyHook(state, event.ptyId, event.payload, event.branch, event.tokens, event.title)); // a copy's SessionStart or early end drops its temporary transcript (#587)
@@ -404,9 +405,10 @@ function awaitGate(state: State, task: Task): State {
 // The tasks of a stage the save removed go where destinationOf says (#861, vanished-stages.ts): a stopped one enters its destination through
 // settleEntries and the gates, keeping its activity; one a run holds is placed with no entry and halts at its run's end. A stage turned into
 // deleteActivity acts now.
-function setStages(state: State, stages: Stage[], transitions: Transition[]): Reduced {
+function setStages(state: State, flows: Flow[]): Reduced {
+  const { stages, transitions } = flatten(flows);
   const placed = placeVanished(state, stages);
-  const staged = settleEntries(placed.before, { ...placed.state, stages, transitions });
+  const staged = settleEntries(placed.before, { ...placed.state, flows, stages, transitions });
   return runActions(staged.tasks.reduce(awaitGate, staged), placed.effects);
 }
 

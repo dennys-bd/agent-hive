@@ -860,13 +860,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     const saved = await loadState(home, workspaceScope(config));
     // #861: the saved stages first, so a stage a hand edit removed while the Hive was down is a deletion setStages places, never a stranded
     // task; a home with none saved takes the config's. #727: signals on the state before boot, which opens on onOpen
-    const flat = flatten(config.comb.flows);
-    const flow = saved.stages.length > 0 ? { stages: saved.stages, transitions: saved.transitions } : flat;
+    const flow = saved.stages.length > 0 ? { flows: saved.flows, stages: saved.stages, transitions: saved.transitions } : { flows: config.comb.flows, ...flatten(config.comb.flows) };
     live = { runtime, state: withWorkspaces({ ...saved, ...flow, signals: config.signals }, config) };
     await boot(saved);
-    if (!isDeepStrictEqual(flow.stages, flat.stages) || !isDeepStrictEqual(flow.transitions, flat.transitions)) {
-      await dispatch({ type: 'setStages', ...flat });
-    }
+    if (!isDeepStrictEqual(flow.flows, config.comb.flows)) await dispatch({ type: 'setStages', flows: config.comb.flows });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
     pollInBackground(refreshPlanLimits);
@@ -894,10 +891,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (live.state.approvalMinutes !== config.approvalMinutes) await dispatch({ type: 'setApprovalMinutes', minutes: config.approvalMinutes });
     if (live.state.rateLimitWaitMinutes !== config.rateLimitWaitMinutes) await dispatch({ type: 'setRateLimitWait', minutes: config.rateLimitWaitMinutes }); // #805
     if (live.state.defaultAgent !== config.defaultAgent) await dispatch({ type: 'setDefaultAgent', agent: config.defaultAgent }); // #925
-    const flat = flatten(config.comb.flows);
-    if (!isDeepStrictEqual(live.state.stages, flat.stages) || !isDeepStrictEqual(live.state.transitions, flat.transitions)) {
-      dispatchInBackground({ type: 'setStages', ...flat }); // #134: they travel together
-    }
+    if (!isDeepStrictEqual(live.state.flows, config.comb.flows)) dispatchInBackground({ type: 'setStages', flows: config.comb.flows }); // #134, #564: they travel together
     await dispatch({ type: 'setSources', sources: config.comb.sources.map((b) => b.name) }); // every save (#180): a removed source's tasks go missing at the next poll
     dispatchInBackground({ type: 'setWorkspaces', ...workspaceScope(config) }); // every save (#179): a new default or workspace can place a waiting task
     pollInBackground();
