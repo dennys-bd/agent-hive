@@ -2943,6 +2943,25 @@ test('a spawn that fails drops the session its new run appended, so the stage re
   assert.deepEqual([work(kept, 1)?.sessionId, sessionsN(kept, 1)?.map((s) => s.id)], ['kept-session-id-0001', ['kept-session-id-0001']]);
 });
 
+test('an exit whose run never wrote its new session\'s transcript forgets that session, so the task offers Start; without the flag the session stays (#586)', () => {
+  const first = filled(1, 2).state; // spec: a new session for task 1, on its activity: no SessionStart named it on the worker yet
+  const ptyId = first.workers[0].runId!;
+  const red = signaled(first, 'red').state; // nothing refills the worker
+  const forgot = reduce(red, { type: 'exit', ptyId, noTranscript: true }).state;
+  assert.deepEqual([sessionsN(forgot, 1), holds(forgot, 1, 'sessionId'), work(forgot, 1)?.error], [[], false, undefined], 'no error: a Stop is no failure');
+  assert.equal(startMode(task(forgot, 1)!, forgot), 'start');
+  const kept = reduce(red, { type: 'exit', ptyId }).state;
+  assert.deepEqual(sessionsN(kept, 1).map((s) => s.id), [work(first, 1)?.sessionId], 'no flag: as today');
+});
+
+test('an exit with noTranscript on a continue run keeps the older session it resumed (#586)', () => {
+  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['spec', 'dev'], agent: 'claude' as const, lastUsedAt: PAST }];
+  const known: State = withMade(withLive({ ...base(1), tasks: [{ item: item(1), stage: 'dev', boardColumn: 'In progress', auto: true }] }, 1, { sessionId: 'kept-session-id-0001' }), 1, { sessions });
+  const resumed = reduce(known, { type: 'setSignal', signal: 'green' }).state; // dev continues the kept session
+  const kept = reduce(resumed, { type: 'exit', ptyId: resumed.workers[0].runId!, noTranscript: true }).state;
+  assert.deepEqual([work(kept, 1)?.sessionId, sessionsN(kept, 1).map((s) => s.id)], ['kept-session-id-0001', ['kept-session-id-0001']]);
+});
+
 test('start runs a manual task like any other: its stage\'s prompt in a worker, run stage (#283)', () => {
   const { state, effects } = started(manualState(1), 'board:item1'); // yellow, a free worker
   const spawn = effects.at(-1);
@@ -3258,6 +3277,21 @@ test('a claude session that never opened forgets the session its open appended, 
   const worker = resumed.workers.find((s) => s.freeSession)!;
   const kept = reduce(resumed, { type: 'spawnFailed', ptyId: worker.runId!, message: 'pty: boom' }).state;
   assert.deepEqual(sessionsN(kept, 1)?.map((s) => s.id), listed, 'an older session stays');
+});
+
+test('a free run\'s exit with noTranscript drops only its own entry; a resumed session stays listed (#586)', () => {
+  const ran = ranOnce(1); // stopped in spec: one session from its stage run
+  // backdated, as in #283's test: a stage run's session and a resume can share one millisecond in a test
+  const idle: State = withMade(ran, 1, { sessions: sessionsN(ran, 1).map((x) => ({ ...x, startedAt: PAST })) });
+  const listed = sessionsN(idle, 1).map((s) => s.id);
+  const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, 'board:item1') }).state;
+  const fresh = opened.workers.find((s) => s.freeSession)!;
+  const exited = reduce(opened, { type: 'exit', ptyId: fresh.runId!, noTranscript: true }).state;
+  assert.deepEqual([sessionsN(exited, 1).map((s) => s.id), work(exited, 1)?.sessionId], [listed, work(idle, 1)?.sessionId]);
+  const resumed = reduce(idle, { type: 'openSession', activityId: workId(idle, 'board:item1'), continueId: listed[0] }).state;
+  const worker = resumed.workers.find((s) => s.freeSession)!;
+  const kept = reduce(resumed, { type: 'exit', ptyId: worker.runId!, noTranscript: true }).state;
+  assert.deepEqual(sessionsN(kept, 1).map((s) => s.id), listed, 'an older session stays');
 });
 
 // A manual gate (#315): approval and no prompt. gate → signoff (a second gate) → dev
