@@ -5,13 +5,13 @@ import { appMenuTemplate } from './app-menu.js';
 import { loadConfigIfPresent } from './config.js';
 import { activeWorkers, configuredTheme, type DaemonAddress, type DaemonStatus, daemonStatus, ensureDaemon, menuLabel, ourDaemon, livePtys, setSignal, stopDaemon } from './daemon.js';
 import { registerDetachIpc } from './detach-ipc.js';
+import { createDetachedWindowsFor, externalLinksToBrowser, TRAFFIC_LIGHTS, WINDOW_PRELOAD } from './detached-window.js';
 import { hiveHome } from './home.js';
 import { languageFrom } from './language.js';
-import { guardUnsavedEdits, openFileOn } from './main-window-guards.js';
+import { guardUnsavedEdits } from './main-window-guards.js';
 import { type MainWindowBounds, readMainWindowBounds, writeMainWindowBounds } from './main-window-bounds.js';
 import { createNotifier } from './notify-viewer.js';
 import { effectiveBindings } from './shortcuts.js';
-import { createTerminalWindows, externalLinksToBrowser } from './terminal-window.js';
 import { signalItems, trayIconFile, type TraySignal, watchSignal } from './tray-signal.js';
 import { METER_HEIGHT, METER_WIDTH, meterBitmap, usageItems } from './tray-usage.js';
 import { type LivePty, type Shortcuts, type Signal, VIEWER_DEFAULTS, type ViewerSettings } from './types.js'; // ViewerSettings, VIEWER_DEFAULTS: the onClose setting (#513)
@@ -25,15 +25,14 @@ const APP_NAME = 'Agent Hive';
 // The two --background values of src/ui/theme.css (test/theme.test.ts keeps them in sync): a window paints before its page, so it takes
 // the saved theme's background and never flashes white or the other theme (#296).
 const WINDOW_BACKGROUND = { dark: '#111418', light: '#f5f6f8' } as const;
-const BOUNDS_FILE = 'terminal-bounds.json'; // under userData
-const MAIN_WINDOW_BOUNDS_FILE = 'main-window-bounds.json'; // under userData; the main window's own, next to the terminals' (#398)
+const DETACHED_BOUNDS_FILE = 'detached-window-bounds.json'; // under userData: where the last detached window closed (#552; not terminal-bounds.json, not migrated)
+const MAIN_WINDOW_BOUNDS_FILE = 'main-window-bounds.json'; // under userData; the main window's own, next to the detached windows' (#398)
 // runs from dist/src/main.js; the asset is not copied by the build, the preload is tsc's CommonJS output of window-preload.cts
 const ICON = fileURLToPath(new URL('../../assets/icon.png', import.meta.url));
 // the menu bar template image (#191); Electron loads trayTemplate@2x.png next to it and tints it for the bar
 const TRAY_ICON = fileURLToPath(new URL('../../assets/trayTemplate.png', import.meta.url));
 // the menu bar icon with the effective signal's badge (#196), or trayTemplate with no signal: every tray image sits next to TRAY_ICON
 const trayAsset = (file: string): string => fileURLToPath(new URL(`../../assets/${file}`, import.meta.url));
-const WINDOW_PRELOAD = fileURLToPath(new URL('./window-preload.cjs', import.meta.url));
 // the menu's worker dots (#192), in the main window's status colors and not template images; Electron loads dot-<status>@2x.png next to each.
 // createFromPath never throws: a file that fails to load is an empty image, which dotFor leaves out of its line.
 const dotIcon = (status: Exclude<LivePty['status'], 'terminal'>): NativeImage =>
@@ -88,10 +87,10 @@ async function followMainWindow(daemon: DaemonAddress): Promise<void> {
 app.setName(APP_NAME);
 
 // A HIVE_HOME viewer (#310) gets its own userData, next to that home: sharing the installed one's would make the single-instance
-// lock and terminal-bounds.json collide with the real Hive instead of running a test one beside it.
+// lock and the window bounds files collide with the real Hive instead of running a test one beside it.
 if (process.env.HIVE_HOME) app.setPath('userData', join(hiveHome(), 'electron'));
 
-// The main window of one daemon plus its detached terminal windows (#252). Closing the main window closes them (the runs go on in the daemon)
+// The main window of one daemon plus its detached windows (#252). Closing the main window closes them (the runs go on in the daemon)
 // and, when it was the last main window, the Dock icon: with onClose menuBar the viewer stays there (#191); with onClose quit closing the last
 // main window is a quit (#513). A detached window never outlives its main window, so "a window is open" and "a main window is open" are the same thing.
 // The saved theme resolved for a window about to open (#296): system reads nativeTheme, truthful because the Hive never sets its themeSource.
@@ -101,7 +100,6 @@ function windowBackground(): string {
   return WINDOW_BACKGROUND[dark ? 'dark' : 'light'];
 }
 
-const TRAFFIC_LIGHTS = { x: 14, y: 16 }; // the handoff's: 12px lights 16px from the top of a 44px header
 // #227: below this the footer's last step (handoff §6) stops fitting the usual content; a saved rectangle narrower than it is widened by Electron
 const MIN_WIDTH = 960;
 
@@ -115,7 +113,7 @@ function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
     ...rect, ...(fullScreen ? { fullscreen: true } : {}), minWidth: MIN_WIDTH, titleBarStyle: 'hiddenInset', trafficLightPosition: TRAFFIC_LIGHTS, backgroundColor: windowBackground(), webPreferences: { preload: WINDOW_PRELOAD },
   });
   if (maximized && !fullScreen) win.maximize();
-  const detached = createTerminalWindows({ port: () => port, boundsFile: join(app.getPath('userData'), BOUNDS_FILE), background: windowBackground, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), onOpenFile: openFileOn(win, focusWindow), log });
+  const detached = createDetachedWindowsFor({ port: () => port, boundsFile: join(app.getPath('userData'), DETACHED_BOUNDS_FILE), background: windowBackground, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), log });
   mainWindows.set(port, { win, detached });
   showDock();
   // With onClose quit (#513) the last main window's close goes through before-quit like Cmd+Q: the settings decide whether the Hive stops,
@@ -494,14 +492,8 @@ const senderWindow = registerWindowIpc({
   },
 });
 
-// A panel tab as a window of its own and back (#252): the handlers live in detach-ipc.ts.
-const detach = registerDetachIpc({
-  handle: (channel, listener) => ipcMain.handle(channel, listener),
-  senderMainWindow: (event) => {
-    const { entry } = senderWindow(event, 'main');
-    return { win: entry.win, terminals: entry.detached };
-  },
-});
+// A center tab as a window of its own and back (#552): the handlers live in detach-ipc.ts
+const detach = registerDetachIpc({ handle: (channel, listener) => ipcMain.handle(channel, listener), on: (channel, listener) => ipcMain.on(channel, listener), senderWindow });
 
 if (!app.requestSingleInstanceLock()) {
   app.quit(); // the running viewer gets second-instance and opens or focuses its main window
@@ -513,8 +505,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {});
   // Every pass but the last is held here and goes through quitHive (confirm, stop, quit): Cmd+Q and the menu's Quit (#193), and every quit
   // now goes through it (#513): the "viewer quits alone, daemon headless" path from the old both-off state is gone. A quit that goes
-  // through closes every main window's terminals first (#400), as the main window's own close does: Electron closes the windows in no set order, and a
-  // detached workspace shell's window closed before its main window would read as the user's close and stop the shell.
+  // through closes every main window's detached windows first (#400), as the main window's own close does: Electron closes the windows in no set order.
   app.on('before-quit', (event) => {
     if (quitting) {
       for (const { detached } of mainWindows.values()) detached.closeAll();
