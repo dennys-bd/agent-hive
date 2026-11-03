@@ -1,6 +1,6 @@
 // Pure meter math for the header and the tasks. No DOM, no React: node:test imports it from dist/src/ui/lib.
 import { agentName, liveDefaultAgent } from '../../agents.js';
-import { type AgentId, DEFAULT_AGENT, isPlanSource, type PlanSource, type SourceQuota, type SourceSync, type DisableUntil, type RuleSource, type State, type UsageRule } from '../../types.js';
+import { type AgentId, DEFAULT_AGENT, isPlanSource, type PlanSource, type RateLimitWindow, type SourceQuota, type SourceSync, type DisableUntil, type RuleSource, type State, type UsageRule } from '../../types.js';
 import { type MessageKey, statusText, t } from '../i18n.js';
 
 // Mirrors src/usage.ts, which cannot be imported here (it pulls node:fs into the browser).
@@ -67,6 +67,25 @@ export function compact(remaining: number): string {
   if (days > 0) return hours > 0 ? `${days}d${hours}h` : `${days}d`;
   if (hours > 0) return minutes > 0 ? `${hours}h${minutes}m` : `${hours}h`;
   return `${minutes}m`;
+}
+
+const WEEK_MS = 7 * DAY_MS;
+// #557 decision 3: these windows start counting at the first use after a reset, so past it the next reset is one full window from that use
+const WINDOW_LENGTH_MS: Readonly<Record<string, number>> = { five_hour: 5 * HOUR_MS, thirty_day: 30 * DAY_MS };
+
+/** A plan window as every view shows it (#557): `resetsAt` when a countdown follows the percent, `length` when the window's length does. */
+export interface ShownWindow { percent: number; resetsAt?: string; length?: string }
+
+/** One rule for the footer and the menu bar, so they never disagree (#557). The held reading is never rewritten: past its reset (at now
+ * included, as sourcePercent counts it) a window reads 0%, nothing used yet. five_hour and thirty_day then show their length, a week rolls
+ * on a fixed schedule so its next reset is known, and any other key shows no reset: its length is unknown. */
+export function shownWindow(key: string, window: RateLimitWindow, now: number): ShownWindow {
+  const reset = Date.parse(window.resetsAt);
+  if (Number.isNaN(reset) || reset > now) return { percent: Math.round(window.usedPercent), resetsAt: window.resetsAt };
+  if (Object.hasOwn(WINDOW_LENGTH_MS, key)) return { percent: 0, length: compact(WINDOW_LENGTH_MS[key]) };
+  if (key !== 'seven_day' && !key.startsWith(WEEKLY_PREFIX)) return { percent: 0 };
+  const weeks = Math.floor((now - reset) / WEEK_MS) + 1;
+  return { percent: 0, resetsAt: new Date(reset + weeks * WEEK_MS).toISOString() };
 }
 
 /** A task in backoff (#805): its status word and the time until the Hive types continue; the word alone with no wait to read. */

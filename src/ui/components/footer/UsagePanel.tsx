@@ -4,8 +4,7 @@ import { agentName } from '../../../agents';
 import type { AgentId, PlanReadings, RateLimits } from '../../../types';
 import { AgentMark, RefreshButton, UsageMeter } from '@/components/footer/UsageParts';
 import { t, tPlural } from '@/i18n';
-import { readAgo, usageWindows } from '@/lib/agent-usage';
-import { countdown } from '@/lib/usage';
+import { readAgo, resetText, usageWindows } from '@/lib/agent-usage';
 
 interface UsagePanelProps { agents: readonly AgentId[]; readings: PlanReadings; now: number; refreshing: ReadonlySet<AgentId>; onRefresh(agent?: AgentId): void; onClose(): void }
 interface RowProps { agent: AgentId; reading?: RateLimits; now: number; isSpinning: boolean; onRefresh(agent: AgentId): void }
@@ -23,8 +22,8 @@ function PanelRow({ agent, reading, now, isSpinning, onRefresh }: RowProps) {
       </div>
       {reading === undefined
         ? <span className="text-muted-foreground">{t('usage.noReading')}</span>
-        : usageWindows(reading).map((w) => (
-          <UsageMeter key={w.key} label={w.long} percent={w.percent} barClassName="flex-1" reset={t('usage.resets', { time: countdown(w.resetsAt, now) })} />
+        : usageWindows(reading, now).map((w) => (
+          <UsageMeter key={w.key} label={w.long} percent={w.percent} barClassName="flex-1" reset={resetText(w)} />
         ))}
     </li>
   );

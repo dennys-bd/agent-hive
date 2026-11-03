@@ -65,7 +65,7 @@ function schedulerDeps(rt: Runtime, entry: LiveExperiment): SchedulerDeps<LiveRu
   return {
     latest: ctx.latest, dispatch: ctx.dispatch, now: ctx.now, log: ctx.log, signal: ctx.signal,
     deadline: () => rt.live.get(ctx.id)?.deadline,
-    capReached: () => { const experiment = ctx.latest(); return experiment !== undefined && capReached(experiment, rt.deps.latest()?.rateLimits); },
+    capReached: () => { const experiment = ctx.latest(); return experiment !== undefined && capReached(experiment, rt.deps.latest()?.rateLimits, ctx.now().getTime()); },
     awake: () => untilAwake(ctx.gate, ctx.signal),
     startRun: (experiment, arm, round) => startRun(ctx, experiment, arm, round),
     watch: (handle) => watchOne(ctx, handle),

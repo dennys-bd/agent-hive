@@ -1,9 +1,14 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { AgentUsage } from '@/components/footer/AgentUsage';
+import { setWriteGate, WriteCancelled } from '@/lib/api';
 import { setLanguage } from '@/i18n';
 import type { AgentId, RateLimits } from '../../src/types';
+import { jsonResponse } from '../fakes';
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
 const NOW = new Date('2026-10-12T12:00:00.000Z');
 const MIN = 60_000;
@@ -21,7 +26,7 @@ const marks = (el: Element): Element[] => [...el.querySelectorAll('[data-icon="c
 const FIVE = ['claude', 'codex', 'kiro', 'amp', 'gemini'] as unknown as AgentId[]; // AGENT_IDS has two: the seam stands in for more
 
 beforeEach(() => { setLanguage('pt'); vi.useFakeTimers({ now: NOW, toFake: ['Date'] }); vi.stubGlobal('fetch', vi.fn(async () => ok())); });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); setWriteGate(undefined); vi.mocked(toast.error).mockClear(); });
 
 test('full: a chip per agent with plan limits; per window its label, a 56px bar, the % and the reset; the mark in the agent\'s colour; ↻ (#223)', () => {
   render(<AgentUsage state={{ rateLimits: { claude } }} form="full" />);
@@ -122,4 +127,24 @@ test('group: one button with the first three marks stacked, +2, the top agent wi
   unmount();
   render(<AgentUsage state={{}} form="group" />);
   expect(within(screen.getByRole('button', { name: 'uso dos agentes' })).getByText('claude —')).toHaveClass('text-muted-foreground');
+});
+
+test('a failed ↻ toasts the copy naming its agent, never the server\'s text; ↻ todos says it for every agent; a cancel toasts nothing (#557)', async () => {
+  const user = userEvent.setup();
+  const serverText = 'none of the newest 5 rollouts carries rate_limits';
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: serverText }, 502)));
+  render(<AgentUsage state={{ rateLimits: { claude } }} form="full" />);
+  const codexRefresh = (): HTMLElement => screen.getAllByRole('button', { name: 'atualizar codex · sem leitura' })[0];
+  await user.click(codexRefresh());
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Não foi possível ler o uso do Codex'));
+  await waitFor(() => expect(codexRefresh()).toBeEnabled());
+  await user.click(screen.getByRole('button', { name: /^claude ·/ }));
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '↻ todos' }));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Não foi possível ler o uso'));
+  await waitFor(() => expect(codexRefresh()).toBeEnabled());
+  expect(toast.error).not.toHaveBeenCalledWith(serverText);
+  setWriteGate({ ask: () => Promise.reject(new WriteCancelled('cancelled')), written: () => undefined });
+  await user.click(codexRefresh());
+  await waitFor(() => expect(codexRefresh()).toBeEnabled());
+  expect(toast.error).toHaveBeenCalledTimes(2);
 });

@@ -43,7 +43,7 @@ export const CONFIG: Experiment = experiment({
 export const DRAFT_CONFIG: Experiment = { ...CONFIG, id: 'draft-1', status: 'draft', rounds: [] };
 /** The Hive's latest rate-limit reading: its highest window is 39.6%, read as 40%. */
 export const READINGS: PlanReadings = {
-  claude: { at: '2026-10-22T10:00:00Z', windows: { five_hour: { usedPercent: 12.4, resetsAt: '2026-10-22T15:00:00Z' }, seven_day: { usedPercent: 39.6, resetsAt: '2026-10-27T10:00:00Z' } } },
+  claude: { at: '2026-10-22T10:00:00Z', windows: { five_hour: { usedPercent: 12.4, resetsAt: '2099-10-22T15:00:00Z' }, seven_day: { usedPercent: 39.6, resetsAt: '2099-10-27T10:00:00Z' } } },
 };
 
 export interface Answer { status?: number; body?: unknown }

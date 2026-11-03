@@ -1,13 +1,13 @@
 import { ChevronDownIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { planLimitAgents } from '../../../agents';
+import { toast } from 'sonner';
+import { AGENTS, planLimitAgents } from '../../../agents';
 import type { AgentId, PlanReadings, RateLimits, State } from '../../../types';
-import { act } from '@/components/actions';
+import { sendJson, WriteCancelled } from '@/lib/api';
 import { UsagePanel } from '@/components/footer/UsagePanel';
 import { AgentMark, percentTone, RefreshButton, UsageMeter } from '@/components/footer/UsageParts';
 import { t } from '@/i18n';
 import { chipTitle, highestPercent, shownReadings, topAgent, usageWindows } from '@/lib/agent-usage';
-import { countdown } from '@/lib/usage';
 
 /** The usage group's forms (#223): the footer picks one per step of handoff §6 (#227, footer-steps). */
 export type UsageForm = 'full' | 'compact' | 'minimal' | 'group';
@@ -22,12 +22,12 @@ const BAR: Record<Exclude<ChipForm, 'minimal'>, string> = { full: 'w-14', compac
 // After the mark: each window (full, compact), the highest % (minimal), or that there is nothing to measure yet
 function ChipBody({ reading, now, form }: { reading?: RateLimits; now: number; form: ChipForm }) {
   if (form === 'minimal') {
-    const top = highestPercent(reading);
+    const top = highestPercent(reading, now);
     return <span className={top === undefined ? 'text-muted-foreground' : percentTone(top)}>{top === undefined ? '—' : `${top}%`}</span>;
   }
   if (reading === undefined) return <span className="text-muted-foreground">{t('usage.noReading')}</span>;
-  return usageWindows(reading).map((w) => (
-    <UsageMeter key={w.key} label={w.short} percent={w.percent} barClassName={BAR[form]} reset={form === 'full' ? countdown(w.resetsAt, now) : undefined} />
+  return usageWindows(reading, now).map((w) => (
+    <UsageMeter key={w.key} label={w.short} percent={w.percent} barClassName={BAR[form]} reset={form === 'full' && w.reset !== '' ? w.reset : undefined} />
   ));
 }
 
@@ -47,12 +47,12 @@ function UsageChip({ agent, reading, now, form, isOpen, isSpinning, onToggle, on
   );
 }
 
-interface GroupProps { agents: readonly AgentId[]; readings: PlanReadings; isOpen: boolean; onToggle(): void }
+interface GroupProps { agents: readonly AgentId[]; readings: PlanReadings; now: number; isOpen: boolean; onToggle(): void }
 
 // The group form (handoff §6 step 6): the first three marks stacked, +n for the rest, the top agent and ⌄, one button for the panel
-function UsageGroupButton({ agents, readings, isOpen, onToggle }: GroupProps) {
-  const top = topAgent(agents, readings);
-  const percent = top === undefined ? undefined : highestPercent(readings[top]);
+function UsageGroupButton({ agents, readings, now, isOpen, onToggle }: GroupProps) {
+  const top = topAgent(agents, readings, now);
+  const percent = top === undefined ? undefined : highestPercent(readings[top], now);
   const more = agents.length - GROUP_MARKS;
   return (
     <button type="button" aria-label={t('usage.panel.title')} aria-expanded={isOpen} onClick={onToggle} className={CHIP}>
@@ -79,25 +79,30 @@ export function AgentUsage({ state, form, agents = PLAN_AGENTS }: AgentUsageProp
   const [now, setNow] = useState(() => Date.now());
   const [isOpen, setIsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState<ReadonlySet<AgentId>>(() => new Set());
-  // Ticks the countdowns and the readings' ages between the 5-minute readings
+  // Ticks the countdowns and the readings' ages between the 5-minute readings, and flips a window to reset at its reset time (#557)
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => clearInterval(id);
   }, []);
   const toggle = (): void => setIsOpen((open) => !open);
   const close = useCallback(() => setIsOpen(false), []); // stable: the panel's listeners and focus hand-back hang on it
+  // #557: sendJson, not act, so a failure toasts our copy; the server's reason is in hive.log. A cancel (#469) says nothing; the ↻ stops
+  // either way
   const refresh = (agent?: AgentId): void => {
     const asked = agent === undefined ? agents : [agent];
     setRefreshing((current) => new Set([...current, ...asked]));
-    // act never rejects: a refusal is its toast, and the ↻ stops either way
-    void act('/plan-limits/refresh', agent === undefined ? {} : { agent }).finally(() =>
-      setRefreshing((current) => new Set([...current].filter((a) => !asked.includes(a)))));
+    void sendJson('POST', '/plan-limits/refresh', agent === undefined ? {} : { agent })
+      .catch((err: unknown) => {
+        if (err instanceof WriteCancelled) return;
+        toast.error(agent === undefined ? t('usage.refresh.failedAll') : t('usage.refresh.failed', { agent: AGENTS[agent].label }));
+      })
+      .finally(() => setRefreshing((current) => new Set([...current].filter((a) => !asked.includes(a)))));
   };
-  const readings = shownReadings(state.rateLimits ?? {});
+  const readings = shownReadings(state.rateLimits ?? {}, now);
   return (
     <div data-usage-group="" className="flex shrink-0 items-center gap-2">
       {form === 'group'
-        ? <UsageGroupButton agents={agents} readings={readings} isOpen={isOpen} onToggle={toggle} />
+        ? <UsageGroupButton agents={agents} readings={readings} now={now} isOpen={isOpen} onToggle={toggle} />
         : agents.map((agent) => (
           <UsageChip key={agent} agent={agent} reading={readings[agent]} now={now} form={form} isOpen={isOpen} isSpinning={refreshing.has(agent)} onToggle={toggle} onRefresh={refresh} />
         ))}

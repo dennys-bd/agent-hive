@@ -48,7 +48,7 @@ test('windowName: the board\'s windowLabel with its first letter upper-cased: Se
 test('usageLine: the label, the rounded percent and the time until the reset (#197)', () => {
   assert.equal(usageLine('five_hour', READING.windows.five_hour, NOW), 'Session 82% · resets in 2h40m');
   assert.equal(usageLine('seven_day_opus', { usedPercent: 12.4, resetsAt: '2026-09-28T15:00:00.000Z' }, NOW), 'Week opus 12% · resets in 4d3h');
-  assert.equal(usageLine('seven_day', { usedPercent: 100, resetsAt: '2026-09-24T11:00:00.000Z' }, NOW), 'Week 100% · resets in 0m', 'a reset already past');
+  assert.equal(usageLine('seven_day', { usedPercent: 100, resetsAt: '2026-09-24T11:00:00.000Z' }, NOW), 'Week 0% · resets in 6d23h', 'a reset already past: the next weekly one (#557)');
 });
 
 test('meterBitmap: 22x8 pixels at 1x and 44x16 at 2x; transparent corners around a rounded track 4 points high that spans the width (#197)', () => {
@@ -134,4 +134,15 @@ test('usageItems lists Claude\'s lines, then Codex\'s, each prefixed by its labe
   const items = usageItems({ codex, claude: READING }, NOW, 'en-US', () => undefined, () => {});
   assert.deepEqual(items.map((item) => item.label ?? item.type), ['Claude · Session 82% · resets in 2h40m', 'Claude · Week 95% · resets in 4d3h', 'Codex · 30 days 40% · resets in 10d', 'separator']);
   assert.equal(items[2].toolTip, `Read at ${clock(codex.at, 'en-US')}`);
+});
+
+test('usageLine and its bar: a window past its reset reads 0%; a week the time to its next weekly reset, a session or the 30 days its length, any other key no reset (#557)', () => {
+  const pastWeek = { usedPercent: 95, resetsAt: '2026-09-20T12:00:00.000Z' }; // four days before NOW: the next reset is in 3 days
+  assert.equal(usageLine('seven_day', pastWeek, NOW), 'Week 0% · resets in 3d');
+  assert.equal(usageLine('five_hour', { usedPercent: 82, resetsAt: '2026-09-24T10:00:00.000Z' }, NOW), 'Session 0% · 5h');
+  assert.equal(usageLine('thirty_day', { usedPercent: 46, resetsAt: '2026-09-24T11:00:00.000Z' }, NOW), '30 days 0% · 30d');
+  assert.equal(usageLine('some_new_window', { usedPercent: 50, resetsAt: '2026-09-24T11:00:00.000Z' }, NOW), 'Some new window 0%');
+  const icons: [number, MeterBand][] = [];
+  usageItems({ claude: { at: AT, windows: { seven_day: pastWeek } } }, NOW, 'en-US', (percent, band) => void icons.push([percent, band]), () => {});
+  assert.deepEqual(icons, [[0, 'neutral']], 'the bar empties with the number');
 });
