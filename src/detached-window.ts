@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BrowserWindow, shell } from 'electron';
-import { type BuildDetached, createDetachedWindows, type DetachedEvents, type DetachedWindows, type DockTarget } from './detach-ipc.js';
+import { type BuildDetached, createDetachedWindows, type DetachedEvents, type DetachedWindow, type DetachedWindows, type DockTarget } from './detach-ipc.js';
 import { isOpenableExternal } from './external-url.js';
 import type { Logger } from './log.js';
 import { guardUnsavedEdits } from './main-window-guards.js';
@@ -44,9 +44,24 @@ export function externalLinksToBrowser(win: BrowserWindow, origin: string, log: 
   });
 }
 
-// Every detached window stores its bounds as it closes: the next one opens there (#252, #552)
-function saveBoundsOnClose(win: BrowserWindow, boundsFile: string, log: Pick<Logger, 'error'>): void {
-  win.on('close', () => void writeBounds(boundsFile, win.getBounds()).catch((err: Error) => log.error(`detached window bounds failed: ${err.message}`)));
+// Every detached window stores its bounds as it goes: the next one opens there (#252, #552)
+function storeBounds(win: BrowserWindow, boundsFile: string, log: Pick<Logger, 'error'>): void {
+  if (win.isDestroyed()) return;
+  void writeBounds(boundsFile, win.getBounds()).catch((err: Error) => log.error(`detached window bounds failed: ${err.message}`));
+}
+
+// The registry's handle on the window: destroy emits no close, and closeWindow (the page docked everything) destroys, so the bounds are
+// stored there too, or a window closed with tabs in it would never move the next one
+function handleOf(win: BrowserWindow, deps: DetachedWindowDeps): DetachedWindow {
+  return {
+    focus: () => win.focus(),
+    close: () => win.close(),
+    destroy: () => {
+      storeBounds(win, deps.boundsFile, deps.log);
+      win.destroy();
+    },
+    webContents: win.webContents,
+  };
 }
 
 // A page that fails to load rejects: the caller's toast shows it, and no empty window is left behind
@@ -61,7 +76,7 @@ async function load(win: BrowserWindow, url: string): Promise<void> {
 // the bounds the next window opens at, and the full screen the page's strip reads (#295)
 function wire(win: BrowserWindow, on: DetachedEvents, deps: DetachedWindowDeps): void {
   guardUnsavedEdits(win, on.kept);
-  saveBoundsOnClose(win, deps.boundsFile, deps.log);
+  win.on('close', () => storeBounds(win, deps.boundsFile, deps.log));
   win.on('close', (event) => on.closing(event));
   win.on('closed', () => on.closed());
   win.on('enter-full-screen', () => win.webContents.send('window:fullScreen', true));
@@ -81,9 +96,10 @@ function detachedWindows(deps: DetachedWindowDeps): BuildDetached {
     const origin = `http://127.0.0.1:${deps.port()}`;
     externalLinksToBrowser(win, origin, deps.log);
     wire(win, on, deps);
-    on.created(win); // before the load: a main window going for another port destroys it now (#467)
+    const handle = handleOf(win, deps);
+    on.created(handle); // before the load: a main window going for another port destroys it now (#467)
     await load(win, `${origin}/index.html?${new URLSearchParams({ window: randomUUID(), activity })}`);
-    return win;
+    return handle;
   };
 }
 
