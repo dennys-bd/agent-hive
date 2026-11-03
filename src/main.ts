@@ -1,11 +1,10 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, type BaseWindow, BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent, Menu, type MenuItemConstructorOptions, type NativeImage, nativeImage, nativeTheme, screen, session, Tray } from 'electron';
+import { app, type BaseWindow, BrowserWindow, clipboard, dialog, ipcMain, Menu, type MenuItemConstructorOptions, type NativeImage, nativeImage, nativeTheme, screen, session, Tray } from 'electron';
 import { appMenuTemplate } from './app-menu.js';
-import { clipboardFilesPlist, isClipboardPathList, parseClipboardFiles } from './clipboard-files.js';
 import { loadConfigIfPresent } from './config.js';
 import { activeWorkers, configuredTheme, type DaemonAddress, type DaemonStatus, daemonStatus, ensureDaemon, menuLabel, ourDaemon, livePtys, setSignal, stopDaemon } from './daemon.js';
-import { type DetachedWindows, registerDetachIpc } from './detach-ipc.js';
+import { registerDetachIpc } from './detach-ipc.js';
 import { hiveHome } from './home.js';
 import { languageFrom } from './language.js';
 import { guardUnsavedEdits, openFileOn } from './main-window-guards.js';
@@ -19,6 +18,7 @@ import { type LivePty, type Shortcuts, type Signal, VIEWER_DEFAULTS, type Viewer
 import { LOCALE, type MessageKey, type PluralFamily, setLanguage, t, tPlural } from './ui/i18n.js';
 import type { MeterBand } from './ui/lib/usage.js';
 import { createViewerAuth } from './viewer-auth.js';
+import { type MainWindow, registerWindowIpc } from './window-ipc.js';
 import { homeLog } from './home-log.js';
 
 const APP_NAME = 'Agent Hive';
@@ -54,12 +54,6 @@ const STOP_TEXT: Record<'quit' | 'restart', { message: PluralFamily; verb: Messa
 const REASON_MAX = 80;
 const log = homeLog(); // #742: the main process's errors reach hive.log, not only a terminal it was started from
 
-/** A main window and its detached terminal windows (#252), keyed by the daemon's port: one main window per Hive. */
-interface MainWindow {
-  win: BrowserWindow;
-  terminals: DetachedWindows;
-}
-
 const mainWindows = new Map<number, MainWindow>();
 
 // The main window's cookie (#467): the probed secret as a cookie of the daemon's port, set before any page of that daemon loads, once every
@@ -72,7 +66,7 @@ function closeOtherPorts(port: number): void {
   for (const [other, mainWindow] of [...mainWindows]) {
     if (other === port) continue;
     mainWindows.delete(other);
-    mainWindow.terminals.closeAll();
+    mainWindow.detached.closeAll();
     mainWindow.win.destroy();
   }
 }
@@ -121,8 +115,8 @@ function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
     ...rect, ...(fullScreen ? { fullscreen: true } : {}), minWidth: MIN_WIDTH, titleBarStyle: 'hiddenInset', trafficLightPosition: TRAFFIC_LIGHTS, backgroundColor: windowBackground(), webPreferences: { preload: WINDOW_PRELOAD },
   });
   if (maximized && !fullScreen) win.maximize();
-  const terminals = createTerminalWindows({ port: () => port, boundsFile: join(app.getPath('userData'), BOUNDS_FILE), background: windowBackground, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), onOpenFile: openFileOn(win, focusWindow), log });
-  mainWindows.set(port, { win, terminals });
+  const detached = createTerminalWindows({ port: () => port, boundsFile: join(app.getPath('userData'), BOUNDS_FILE), background: windowBackground, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), onOpenFile: openFileOn(win, focusWindow), log });
+  mainWindows.set(port, { win, detached });
   showDock();
   // With onClose quit (#513) the last main window's close goes through before-quit like Cmd+Q: the settings decide whether the Hive stops,
   // and a Cancel in the warning keeps this window open. Its size, position and state are stored regardless (#398), the pre-maximize /
@@ -142,7 +136,7 @@ function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
   win.on('closed', () => {
     if (mainWindows.get(port)?.win !== win) return; // destroyed by closeOtherPorts, which already let its windows go
     mainWindows.delete(port);
-    terminals.closeAll();
+    detached.closeAll();
     whenNoMainWindow();
   });
   // #295: the header drops the window buttons' inset in full screen, where macOS hides them; the page asks window:isFullScreen at load
@@ -488,61 +482,26 @@ async function showSettings(): Promise<void> {
   sendToMainWindow(webContents, { view: 'settings' });
 }
 
-// The sender must be a main window still showing its own daemon: a page the daemon redirected elsewhere keeps the preload but gets nothing.
-function senderMainWindow(event: IpcMainInvokeEvent): MainWindow {
-  const entry = [...mainWindows.entries()].find(([, b]) => b.win.webContents === event.sender);
-  if (!entry || !event.senderFrame?.url.startsWith(`http://127.0.0.1:${entry[0]}/`)) throw new Error('main window not found');
-  return entry[1];
-}
-
-// The settings form's "Choose…" (window.hive.chooseFolder, #202): the native folder picker, as a sheet on the main window that asked.
-ipcMain.handle('window:chooseFolder', async (event) => {
-  const { canceled, filePaths } = await dialog.showOpenDialog(senderMainWindow(event).win, { properties: ['openDirectory'] });
-  return canceled ? undefined : filePaths[0];
+// The IPC both kinds of page share, with its sender check (#552): in window-ipc.ts
+const senderWindow = registerWindowIpc({
+  handle: (channel, listener) => ipcMain.handle(channel, listener),
+  mainWindows,
+  dialog,
+  clipboard,
+  settingsChanged: async () => {
+    await loadSettings();
+    applySettings();
+  },
 });
-
-// The settings form's save (window.hive.settingsChanged): the viewer re-reads onClose (#513) and adds or removes its icon, and rebuilds the app menu with the saved shortcuts (#449).
-// A rejection reaches the page's toast; the save itself already went through.
-ipcMain.handle('window:settingsChanged', async (event) => {
-  senderMainWindow(event);
-  await loadSettings();
-  applySettings();
-});
-
-// ⌘V in the files tree (#594) and in a panel tab's terminal (#843): the files Finder put on the clipboard. The sandboxed preload has no clipboard, so main reads it.
-ipcMain.handle('window:clipboardFiles', (event) => {
-  senderMainWindow(event);
-  return parseClipboardFiles(clipboard.read('NSFilenamesPboardType'), clipboard.read('public.file-url'));
-});
-
-// ⌘C and ⌘X in the files tree (#818): the files on the pasteboard as Finder's ⌘C writes them, so they paste in Finder and back in the tree.
-// Only NSFilenamesPboardType: each writeBuffer replaces the pasteboard, so a public.file-url written after it would erase it, and both
-// Finder's paste and parseClipboardFiles read the plist first. Absolute paths only, checked here: IPC is untrusted.
-ipcMain.handle('window:writeClipboardFiles', (event, paths: unknown) => {
-  senderMainWindow(event);
-  if (!isClipboardPathList(paths)) {
-    throw new Error('clipboard files must be absolute paths without control characters, and not too many');
-  }
-  clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(clipboardFilesPlist(paths), 'utf8'));
-});
-
-// An untitled file's ⌘S (#818): the OS's save dialog as a sheet on the window that asked, starting at `defaultPath`; its own Replace?
-// confirms an existing file. Undefined when cancelled.
-ipcMain.handle('window:saveDialog', async (event, defaultPath: unknown) => {
-  const { win } = senderMainWindow(event);
-  const { canceled, filePath } = await dialog.showSaveDialog(win, typeof defaultPath === 'string' ? { defaultPath } : {});
-  return canceled || filePath === undefined || filePath === '' ? undefined : filePath;
-});
-
-// The page's closeWindow shortcut (#585), the only key that closes a main window since the close key stopped falling back to it (#612):
-// its own window closes, through the close handler (#513) that may turn the last main window's close into a quit.
-ipcMain.handle('window:closeWindow', (event) => senderMainWindow(event).win.close());
-
-// Whether the asking main window is in full screen (#295): a window created full screen (restored there, #398) sends no enter event
-ipcMain.handle('window:isFullScreen', (event) => senderMainWindow(event).win.isFullScreen());
 
 // A panel tab as a window of its own and back (#252): the handlers live in detach-ipc.ts.
-const detach = registerDetachIpc({ handle: (channel, listener) => ipcMain.handle(channel, listener), senderMainWindow });
+const detach = registerDetachIpc({
+  handle: (channel, listener) => ipcMain.handle(channel, listener),
+  senderMainWindow: (event) => {
+    const { entry } = senderWindow(event, 'main');
+    return { win: entry.win, terminals: entry.detached };
+  },
+});
 
 if (!app.requestSingleInstanceLock()) {
   app.quit(); // the running viewer gets second-instance and opens or focuses its main window
@@ -558,7 +517,7 @@ if (!app.requestSingleInstanceLock()) {
   // detached workspace shell's window closed before its main window would read as the user's close and stop the shell.
   app.on('before-quit', (event) => {
     if (quitting) {
-      for (const { terminals } of mainWindows.values()) terminals.closeAll();
+      for (const { detached } of mainWindows.values()) detached.closeAll();
       return;
     }
     event.preventDefault();
