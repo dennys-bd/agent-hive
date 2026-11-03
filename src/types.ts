@@ -563,6 +563,9 @@ export interface Transition {
   sources?: Record<string, SourceAction[]>; // what each source does as the task passes (was Stage.onFinish)
 }
 
+/** A named pipeline (#564): stage names are unique across every flow. */
+export interface Flow { name: string; stages: Stage[]; transitions: Transition[] }
+
 /** The verdicts a commands or a wait-for-CI stage gives (#134): fixed, editable nowhere. */
 export const FIXED_VERDICTS = ['passed', 'failed'] as const;
 /** How a stage end no transition matches starts on its activity's error (#134), the exit after it (`approved`, `verdict:failed`): the card
