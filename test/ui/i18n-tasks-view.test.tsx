@@ -21,4 +21,11 @@ describe('the tasks view copy', () => {
       expect(MESSAGES.pt[key], key).toMatch(/tarefas/i);
     }
   });
+
+  it('keeps flow / fluxo where it names the stages and transitions', () => {
+    for (const key of ['flow.tab.flow', 'settings.section.flow', 'benchmark.arms.row.flow'] as const) {
+      expect(MESSAGES.en[key], key).toBe('flow');
+      expect(MESSAGES.pt[key], key).toBe('fluxo');
+    }
+  });
 });
