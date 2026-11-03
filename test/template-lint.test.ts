@@ -7,7 +7,7 @@ import { type LintAnnotation, type LintInput, type LintItem, lintTemplate, varia
 
 // The structural lint (#312): each check alone, the grouping of workspaces, the render's dedup, the shipped plugin linting clean.
 // Escaped, so the linter does not read a plain string's ${...} as a template mistake.
-const PLUGIN_ROOT = `\${CLAUDE_PLUGIN_ROOT}`;
+const PLUGIN_ROOT = `\${HIVE_PLUGIN_ROOT}`;
 
 const STACKED: LintItem = {
   origin: 'hive',

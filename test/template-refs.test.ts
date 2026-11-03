@@ -5,7 +5,7 @@ import { type TemplateRef, templateRefs } from '../src/template-refs.js';
 
 // The references of a template (#312): what the lint checks and the map's chips (1.2) show.
 // Escaped, so the linter does not read a plain string's ${...} as a template mistake.
-const PLUGIN_ROOT = `\${CLAUDE_PLUGIN_ROOT}`;
+const PLUGIN_ROOT = `\${HIVE_PLUGIN_ROOT}`;
 
 /** The references of a template named x whose body is the given lines; the body starts at file line 4. */
 const refsOf = (...body: string[]): TemplateRef[] => templateRefs(parseTemplate(['---', 'name: x', '---', ...body, ''].join('\n')));

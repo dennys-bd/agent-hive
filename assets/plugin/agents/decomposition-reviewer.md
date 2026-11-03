@@ -11,7 +11,7 @@ You review a decomposition: a goal split into a tree of nodes, each to become a 
 
 In this order:
 
-- `${CLAUDE_PLUGIN_ROOT}/reference/decomposition.md`: what the file holds, in "Contracts and blockers", "Files touched" and "The file". The Hive refuses a file that breaks "Check before you end" at its line, so what that list catches is not yours to find: you find what no parser can.
+- `${HIVE_PLUGIN_ROOT}/reference/decomposition.md`: what the file holds, in "Contracts and blockers", "Files touched" and "The file". The Hive refuses a file that breaks "Check before you end" at its line, so what that list catches is not yours to find: you find what no parser can.
 - The file, whole: the goal's text, `## Design`, every node, `## Suggestions`.
 - The documents the goal and the designs cite, and the parts of the repository the nodes name in their scopes and `Touches:` lines, enough to know what already exists and what one node needs from another.
 
