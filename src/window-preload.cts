@@ -1,4 +1,4 @@
-// The main window's bridge: contextIsolation and the sandbox stay on, so the page gets these calls and nothing else of Electron.
+// The bridge of every Hive window, the main one and a detached one (#552): contextIsolation and the sandbox stay on, so the page gets these calls and nothing else of Electron.
 // CommonJS (.cts → dist/src/window-preload.cjs): a sandboxed preload is loaded as a script with `require`, not as an ES module.
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
@@ -20,13 +20,34 @@ ipcRenderer.on('window:select', (_event, selection: unknown) => {
   else heldSelection = selection;
 });
 
-// A detached window docked back (#252): main sends window:dock, which a page still loading (a reload) has not subscribed to yet. Every dock
-// waits here, not only the last one: two windows can dock during one reload. A later subscription replaces the earlier one.
-let dockListener: ((tab: unknown) => void) | undefined;
-let heldDocks: unknown[] = [];
-ipcRenderer.on('window:dock', (_event, tab: unknown) => {
-  if (dockListener) dockListener(tab);
-  else heldDocks = [...heldDocks, tab];
+// Messages main sends before the page has subscribed (#252, #552): a page still loading has no listener yet, and a message without one is
+// lost. Every one waits here, in order; a later subscription replaces the earlier one (StrictMode mounts twice).
+function heldUntilSubscribed(channel: string): (callback: (value: unknown) => void) => void {
+  let listener: ((value: unknown) => void) | undefined;
+  let held: unknown[] = [];
+  ipcRenderer.on(channel, (_event, value: unknown) => {
+    if (listener) listener(value);
+    else held = [...held, value];
+  });
+  return (callback) => {
+    listener = callback;
+    const due = held;
+    held = [];
+    for (const value of due) callback(value);
+  };
+}
+
+// A tab docked back to this main window (#252, #552): two windows can dock during one reload
+const onDock = heldUntilSubscribed('window:dock');
+// A tab moved into this detached window (#552): the first window:open lands as the page loads, before it has mounted
+const onOpen = heldUntilSubscribed('window:open');
+
+// The user closed this detached window while it holds tabs (#552): one request is enough, so one waits
+let closingListener: (() => void) | undefined;
+let isClosingHeld = false;
+ipcRenderer.on('window:closing', () => {
+  if (closingListener) closingListener();
+  else isClosingHeld = true;
 });
 
 // Cmd+W / Window → Fechar on this main window (#358): main asks the page, since only the page knows where its focus is. The close key closes
@@ -58,12 +79,20 @@ const bridge: HiveWindow = {
   detach: (tab) => invoke('window:detach', tab),
   focusDetached: (ptyId) => invoke('window:focusDetached', ptyId),
   detachedPtys: () => invoke('window:detachedPtys'),
-  onDock: (callback) => {
-    dockListener = callback;
-    const held = heldDocks;
-    heldDocks = [];
-    for (const tab of held) callback(tab);
+  onDock,
+  moveToWindow: (tab) => invoke('window:moveToWindow', tab), // #552
+  focusTab: (activity, key) => invoke('window:focusTab', activity, key),
+  detachedTabs: () => invoke('window:detachedTabs'),
+  onOpen,
+  dock: (tab) => invoke('window:dock', tab),
+  onClosing: (callback) => {
+    closingListener = callback;
+    if (!isClosingHeld) return;
+    isClosingHeld = false;
+    callback();
   },
+  openTask: (taskId) => invoke('window:openTask', taskId), // #588 from a detached window
+  tabsChanged: (refs) => ipcRenderer.send('window:tabs', refs), // sent: nothing to answer
   // The unsubscribe clears only its own callback: a stale cleanup must never drop a newer subscription (a remount, StrictMode)
   onCloseKey: (callback) => {
     closeKeyListener = callback;
