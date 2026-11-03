@@ -185,7 +185,7 @@ export function describeEvent(event: HiveEvent): string {
       const { hook_event_name: name, tool_name: tool, reason, source } = event.payload;
       return `hook ${name} pty=${shortId(event.ptyId)}${field('tool', tool)}${field('reason', reason)}${field('source', source)}`;
     }
-    case 'exit': return `exit pty=${shortId(event.ptyId)}`;
+    case 'exit': return `exit pty=${shortId(event.ptyId)}${event.noTranscript ? ' noTranscript' : ''}`; // #586: the only trace of a forgotten session
     case 'stop': return `stop pty=${shortId(event.ptyId)}${event.cause === undefined ? '' : ` cause=${event.cause}`}${event.block ? ' block' : ''}`;
     case 'forgetSlept': return `forgetSlept pty=${shortId(event.ptyId)}`; // #672
     case 'quit': return 'quit';
