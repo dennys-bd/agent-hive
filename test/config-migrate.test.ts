@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, parseConfig } from '../src/config.js';
-import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateCodexArgs, migrateAgentDefaults, migrateFileIcons, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
+import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateCodexArgs, migrateAgentDefaults, migrateFileIcons, migrateFlows, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
 import { combConfig, FILTER, LOCAL_STAGES } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -289,4 +289,17 @@ test('migrateAgentDefaults gives a file from before #482 every agent at null in 
   assert.equal(migrateAgentDefaults('x'), 'x');
   const parsed = parseConfig(migrateConfig(bare));
   assert.deepEqual([parsed.agentModels, parsed.agentEnabled], [{ claude: null, codex: null }, { claude: true, codex: true }]);
+});
+
+test('migrateFlows wraps a flat comb as one main flow and drops the flat keys (#564)', () => {
+  const stages = [{ name: 'dev', from: { board: ['Ready'] }, prompt: 'x' }];
+  const transitions = [{ from: 'dev', to: 'end', when: 'done' }];
+  const migrated = migrateFlows({ logLevel: 'info', comb: { prefix: 'HIVE', stages, transitions } }) as { logLevel: string; comb: Record<string, unknown> };
+  assert.deepEqual(migrated, { logLevel: 'info', comb: { prefix: 'HIVE', flows: [{ name: 'main', stages, transitions }] } });
+});
+
+test('migrateFlows returns a comb with flows, or no comb, as the same reference (#564)', () => {
+  const withFlows = { comb: { flows: [], stages: [] } }; // both keys: the parser refuses it by name
+  assert.equal(migrateFlows(withFlows), withFlows);
+  for (const odd of [null, 7, 'x', [], {}, { comb: {} }, { comb: 'no' }]) assert.equal(migrateFlows(odd), odd, JSON.stringify(odd));
 });

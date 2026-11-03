@@ -2,6 +2,7 @@
 // menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #924 (claudeArgs into agentArgs), #927 (agentArgs.codex), #482 (each agent's default model and switch), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list) and #727 (retired keys). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
 // idempotent; malformed entries pass through untouched, so parseConfig still names their fault.
 
+import { MAIN_FLOW } from './flows.js';
 import { hasFixedVerdicts } from './stage-agent.js';
 import { AGENT_IDS, END, FILE_ICONS_DEFAULTS, type SourceAction, type Stage, type Transition } from './types.js';
 
@@ -177,6 +178,15 @@ export function migrateCreateIn(raw: unknown): unknown {
   const comb = isRecord(raw) ? raw.comb : undefined;
   if (!isRecord(raw) || !isRecord(comb) || (comb.hiveSource !== undefined && comb.createIn !== undefined)) return raw;
   return { ...raw, comb: { hiveSource: true, createIn: LEGACY_CREATE_IN, ...comb } };
+}
+
+/** #564: a flat comb (stages and transitions, no flows) as one main flow, in memory; the next save writes flows. Runs after
+ * migrateStageActions and migrateTransitions, which still read the flat pair. It only wraps: a malformed pair is the parser's to name. */
+export function migrateFlows(raw: unknown): unknown {
+  const comb = isRecord(raw) ? raw.comb : undefined;
+  if (!isRecord(raw) || !isRecord(comb) || comb.flows !== undefined || comb.stages === undefined) return raw;
+  const { stages, transitions, ...rest } = comb;
+  return { ...raw, comb: { ...rest, flows: [{ name: MAIN_FLOW, stages, transitions }] } };
 }
 
 /** Every load-time migration, oldest first: readConfig's one entry point. */
