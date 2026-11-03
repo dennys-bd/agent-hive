@@ -34,6 +34,26 @@ export function normalizePath(path: string): string {
 export const isFilePath = (path: string): boolean =>
   path !== '' && path !== '/' && !path.split('/').includes('..') && (!path.startsWith('/') || normalizePath(path) === path);
 
+// moved here from center-layout.ts (#552): main matches focusTab's key against a listed tab
+/** A tab's identity in its layout (#458), as the Terminal panel's tabKey (#270): the run's pty id, its diff's scope, its file's
+ * path (#717), its preview's (#697), its design's (#109) or its changes' (#668), or an untitled tab's number (#818: a buffer with no file, never stored, center-files.ts), or the console's channel (#755: one tab per channel, and per stage execution for a stage's; `console` for one with none). */
+export function refKey(ref: CenterTabRef): string {
+  if (ref.kind === 'run') return ref.ptyId;
+  if (ref.kind === 'file') return `file:${ref.path}`;
+  if (ref.kind === 'preview') return `preview:${ref.path}`;
+  if (ref.kind === 'design') return `design:${ref.path}`; // #109: one tab per file, beside its editor tab
+  if (ref.kind === 'changes') return `changes:${ref.path}`;
+  if (ref.kind === 'untitled') return `untitled:${ref.n}`; // #818
+  if (ref.kind === 'console') return ref.channel === undefined ? 'console' : `console:${ref.channel}${ref.run === undefined ? '' : `#${ref.run}`}`; // a channel is encoded, never holding a #
+  return `diff:${ref.scope}${ref.checkpoint === undefined ? '' : `:${ref.checkpoint}`}`;
+}
+
+/** Every run a tab shows (#641): a split tab's panes in reading order, a run tab's one run, none for a diff, a PR or the console. */
+export function runsOf(ref: CenterTabRef): string[] {
+  if (ref.kind !== 'run') return [];
+  return ref.panes === undefined ? [ref.ptyId] : leavesOf(ref.panes.root);
+}
+
 // A stored run tab: with panes (#641), only when parsePanes reads them and the anchor is one of them; its session (#696) only as a string
 function parseRun({ ptyId, panes, sessionId }: Record<string, unknown>): RunRef | undefined {
   if (typeof ptyId !== 'string' || ptyId === '') return undefined;

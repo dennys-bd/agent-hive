@@ -2,13 +2,13 @@
 // columns, split-tree.ts) whose leaves are groups of tabs, each tab a run's terminal, a task's diff or the console (redesign 05); a run's tab
 // may hold a split of terminal panes of its own (#641, pane-split.ts). Pure: every function returns a new layout and never touches its input.
 // Stored per viewer in the view state like the dock's (#342, #484), never a setting; what does not read back as written is dropped.
-import { type CenterTabRef, consoleRef, isFilePath, normalizePath, parseTabRef, type RunRef } from '../../tab-carry.js';
-import { focusPane, leavesOf, type Panes, prunePanes, renamePane, splitPane } from './pane-split.js';
+import { type CenterTabRef, consoleRef, isFilePath, normalizePath, parseTabRef, refKey, type RunRef, runsOf } from '../../tab-carry.js';
+import { focusPane, type Panes, prunePanes, renamePane, splitPane } from './pane-split.js';
 import { type Axis, isObject, leaves, parseTree, rebuild, resizeAt, type TreeNode, type TreeSplit } from './split-tree.js';
 import { readView, writeView } from './view-state.js';
 
-// The tab ref moved to src/tab-carry.ts (#551), where main parses a moved tab; its importers here keep reading it from this file
-export { type CenterTabRef, type ConsoleRef, consoleRef, isFilePath, type RunRef } from '../../tab-carry.js';
+// The tab ref moved to src/tab-carry.ts (#551), and its key with it (#552), where main parses and matches a moved tab; its importers here keep reading them from this file
+export { type CenterTabRef, type ConsoleRef, consoleRef, isFilePath, refKey, type RunRef, runsOf } from '../../tab-carry.js';
 export type { PaneNode, Panes } from './pane-split.js';
 
 export interface TabGroup { kind: 'group'; id: string; tabs: CenterTabRef[]; active: number }
@@ -21,19 +21,6 @@ export type Edge = 'left' | 'right' | 'top' | 'bottom';
 const HALF = 50;
 const EDGE_AXIS: Record<Edge, Axis> = { left: 'row', right: 'row', top: 'column', bottom: 'column' };
 
-/** A tab's identity in its layout (#458), as the Terminal panel's tabKey (#270): the run's pty id, its diff's scope, its file's
- * path (#717), its preview's (#697), its design's (#109) or its changes' (#668), or an untitled tab's number (#818: a buffer with no file, never stored, center-files.ts), or the console's channel (#755: one tab per channel, and per stage execution for a stage's; `console` for one with none). */
-export function refKey(ref: CenterTabRef): string {
-  if (ref.kind === 'run') return ref.ptyId;
-  if (ref.kind === 'file') return `file:${ref.path}`;
-  if (ref.kind === 'preview') return `preview:${ref.path}`;
-  if (ref.kind === 'design') return `design:${ref.path}`; // #109: one tab per file, beside its editor tab
-  if (ref.kind === 'changes') return `changes:${ref.path}`;
-  if (ref.kind === 'untitled') return `untitled:${ref.n}`; // #818
-  if (ref.kind === 'console') return ref.channel === undefined ? 'console' : `console:${ref.channel}${ref.run === undefined ? '' : `#${ref.run}`}`; // a channel is encoded, never holding a #
-  return `diff:${ref.scope}${ref.checkpoint === undefined ? '' : `:${ref.checkpoint}`}`;
-}
-
 /** A clicked path as a tab's (#717, #697): resolved against `folder`, then relative to it when it lands inside, else absolute and normalized;
  * a relative path with no folder known stays relative, cleaned. Undefined for an empty path, and for a relative one that climbs out with no
  * folder to climb from, which the caller resolves another way (#818). */
@@ -42,12 +29,6 @@ export function fileRefPath(path: string, folder?: string): string | undefined {
   const full = normalizePath(path.startsWith('/') || folder === undefined ? path : `${folder}/${path}`);
   const inside = folder !== undefined && full.startsWith(`${folder}/`) ? full.slice(folder.length + 1) : full;
   return isFilePath(inside) ? inside : undefined;
-}
-
-/** Every run a tab shows (#641): a split tab's panes in reading order, a run tab's one run, none for a diff, a PR or the console. */
-export function runsOf(ref: CenterTabRef): string[] {
-  if (ref.kind !== 'run') return [];
-  return ref.panes === undefined ? [ref.ptyId] : leavesOf(ref.panes.root);
 }
 
 // Whether the tab is the one `key` names, or holds that run as one of its panes (#641)
