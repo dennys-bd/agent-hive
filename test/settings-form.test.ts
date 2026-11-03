@@ -10,6 +10,7 @@ import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRu
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, DELETE_ACTIVITY_DEFAULTS, CONSOLE_LINES_DEFAULT, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { FIXED } from './fakes.js';
 import { mainFlows } from './fixtures/main-flow.js';
+import { savedFlows } from '../src/settings-save.js';
 
 // #30: not a new source's keys, so draftFrom visibly reads them; switchAt on STAGES' second stage
 const EPICS = { epics: 'hide', epicFollows: 'ahead', switchAt: 'dev' } as const;
@@ -714,4 +715,17 @@ test('validateSettings refuses a skill stage with no skill, on flow (#710)', () 
   const skill = { ...valid.stages[1], action: 'skill' as const, skill: '' };
   assert.deepEqual(validateSettings({ ...valid, stages: [valid.stages[0], skill] }), { section: 'flow', message: t('settings.stages.error.skill', { n: 2 }) });
   assert.equal(validateSettings({ ...valid, stages: [valid.stages[0], { ...skill, skill: 'new-plan' }] }), undefined);
+});
+
+// #564 decision 15: with several flows the form still sends the flat pair, and an untouched form must give back exactly the saved one,
+// or every save of any other setting would be refused
+test('an untouched form over several flows sends the pair savedFlows keeps', () => {
+  const flows = [
+    { name: 'main', stages: [STAGES[0], STAGES[1]], transitions: [TRANSITIONS[0], { from: 'dev', to: 'end', when: 'done' } as Transition] },
+    { name: 'bug', stages: [STAGES[2]], transitions: [TRANSITIONS[2]] },
+  ];
+  const config: Config = { ...CONFIG, comb: { ...CONFIG.comb, flows } };
+  const body = toSettingsBody(draftFrom(info(config)));
+  assert.ok(body.stages !== undefined && body.transitions !== undefined);
+  assert.deepEqual(savedFlows(flows, { stages: body.stages, transitions: body.transitions }), flows);
 });
