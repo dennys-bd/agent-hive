@@ -1,0 +1,72 @@
+name: probe-windows (#601, throwaway)
+
+on:
+  push:
+    branches: [probe/601-windows]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: pnpm install as is
+        continue-on-error: true
+        run: pnpm install --frozen-lockfile
+      - name: pnpm install without scripts, then rebuild node-pty
+        continue-on-error: true
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm rebuild node-pty
+          node -e "require('node-pty'); console.log('node-pty loads')"
+      - name: claude via npm
+        continue-on-error: true
+        run: |
+          npm i -g @anthropic-ai/claude-code
+          claude --version
+      - name: claude via native installer
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          irm https://claude.ai/install.ps1 | iex
+          & "$env:USERPROFILE\.local\bin\claude.exe" --version
+      - name: probe
+        run: node probe/windows.mjs
+      - name: claude without Git Bash on PATH
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch '\\Git\\' }) -join ';'
+          $env:ANTHROPIC_API_KEY = 'sk-invalid'
+          claude -p "say hi" 2>&1 | Select-Object -First 20
+          "exit=$LASTEXITCODE"
+      - name: tsc
+        continue-on-error: true
+        shell: bash
+        run: pnpm exec tsc 2>&1 | tail -40
+      - name: node tests (summary)
+        continue-on-error: true
+        shell: bash
+        run: |
+          d="$(mktemp -d)"
+          CODEX_HOME="$d" CLAUDE_CONFIG_DIR="$d/claude" node --test --test-reporter=spec "dist/test/*.test.js" "dist/test/agents/*.test.js" "dist/test/sources/*.test.js" "dist/test/benchmark/*.test.js" "dist/test/repos/*.test.js" "dist/test/read-model/*.test.js" > node-tests.txt 2>&1 || true
+          tail -15 node-tests.txt
+          echo "--- failing tests ---"
+          grep -E '✖' node-tests.txt | head -120
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: node-tests
+          path: node-tests.txt
+          if-no-files-found: ignore
