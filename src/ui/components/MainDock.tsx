@@ -5,6 +5,7 @@ import { ActivitiesPanel, type ActivitiesNav, PlusMenu } from '@/components/Acti
 import { ActivityCenter } from '@/components/ActivityCenter';
 import { useConfirmLoss } from '@/components/AgentLossConfirm';
 import { closePaneOf, windowMove } from '@/components/CenterGroup';
+import { focusOrOpen } from '@/components/actions';
 import { useCloseTab } from '@/components/close-tab-notice';
 import { ConsoleDrawer } from '@/components/ConsoleDrawer';
 import type { DetailNav, Selection } from '@/components/DetailPanel';
@@ -121,12 +122,12 @@ const NO_RECORDS: State['activityRecords'] = [];
 const NO_ACTIVITIES: State['activities'] = [];
 const NO_EXPERIMENTS: Experiment[] = [];
 
-interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; workspaces: string[]; sourceWorkspaces?: Record<string, string>; stages: Stage[]; workers: Worker[]; nav: ActivitiesNav; isShown: boolean }
+interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; workspaces: string[]; sourceWorkspaces?: Record<string, string>; stages: Stage[]; workers: Worker[]; nav: ActivitiesNav; isShown: boolean; openRun(key: string, ptyId: string): void }
 
 // The Activities tab (#457, redesign 03): the workspaces and their activities; a row's click makes it the window's center, a session's opens
 // that run in it (#492). While the center is Atividades', the session its focused group shows is marked; under Automação none is.
-function activitiesPanel({ activities, selection, layouts, nav, ...rest }: ActivitiesArgs): DockPanel {
-  const { current, center, openRun } = selection;
+function activitiesPanel({ activities, selection, layouts, nav, openRun, ...rest }: ActivitiesArgs): DockPanel {
+  const { current, center } = selection;
   const shown = center === 'activities' ? shownRun(layouts.layout) : undefined;
   const body = (
     <section aria-label={t('dock.activities')} className="flex min-h-0 flex-1 flex-col">
@@ -271,6 +272,8 @@ export function MainDock(props: MainDockProps) {
     const key = tab.task ?? (tab.project === undefined ? undefined : localKey(tab.project));
     if (key !== undefined) openRun(key, tab.ptyId);
   }, [openRun]);
+  // A session's line (#492): its tab's detached window when one holds it (#554), else its tab here
+  const openRunHere = (key: string, ptyId: string): void => focusOrOpen(key, ptyId, () => openRun(key, ptyId));
   useDockedTabs(activities, selection.openTab);
   useSleptNotices(activities, openUserRun); // the auto flow's and the idle shutdown's sleeps show their notice here (#672)
   // A task's diff (#270): a tab of its activity's center (#458); the task's menu offers none while it is no activity
@@ -353,7 +356,7 @@ export function MainDock(props: MainDockProps) {
   const viewRight = selection.center === 'plugins' ? plugins.right : selection.center === 'benchmark' ? benchmark.right : undefined;
   const panels: DockPanel[] = [
     // First in the list, as in PANELS: the tab a shared side opens on (#457, #746)
-    activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities' }),
+    activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities', openRun: openRunHere }),
     ...automationPanel,
     ...(hasHeader ? [plugins.panel, benchmark.panel] : []), // #313, #461: reached only through the rail and ⌘3 / ⌘4, which only a window with a header has
     viewRight ?? detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, detail, onClose: closeDetail, nav }),

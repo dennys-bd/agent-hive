@@ -184,6 +184,17 @@ const CLOSED_LEFT: DockLayout = { docks: { automation: 'left', activities: 'left
 const isLeftOpen = (): boolean | undefined => (readView('dockLayout') as DockLayout | undefined)?.open.activities.left;
 const toggleLeft = (): void => { fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, shiftKey: true }); }; // off macOS (#585)
 
+test('a session whose tab is out in a detached window raises that window and opens no tab (#554)', async () => {
+  const focusTab = vi.fn(async (_activity: string, _key: string) => true);
+  vi.stubGlobal('hive', { focusTab, onCloseKey: () => () => undefined, onDock: () => undefined });
+  render(<Home />);
+  fireEvent.click(screen.getByRole('button', { name: 'atividades' }));
+  fireEvent.click(session());
+  expect(focusTab).toHaveBeenCalledWith('A', 'W1');
+  await act(async () => undefined);
+  expect(screen.queryByRole('tablist', { name: 'abas' })).toBeNull();
+});
+
 test('a run opened with the left side closed leaves it closed and shows the run in the center; reopened, the side shows Atividades (#612)', () => {
   resetViewState({ dockLayout: CLOSED_LEFT });
   render(<Home />);

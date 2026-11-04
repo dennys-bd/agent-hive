@@ -37,7 +37,7 @@ const atividades = (): HTMLElement => screen.getByRole('region', { name: 'Ativid
 
 test('a board task\'s abrir opens its task\'s activity in the center, Atividades shown (#251, #457)', async () => {
   const user = userEvent.setup();
-  vi.stubGlobal('hive', { focusDetached: vi.fn(async () => false), onDock: vi.fn(), onCloseKey: vi.fn(), detachedPtys: vi.fn(async () => []) });
+  vi.stubGlobal('hive', { focusTab: vi.fn(async () => false), onDock: vi.fn(), onCloseKey: vi.fn() });
   render(<Dashboard state={state} locale="pt-BR" tick={0} onSelect={() => {}} />);
   await user.click(screen.getByRole('button', { name: 'tarefas' })); // the window opens on Atividades (#746)
   await user.click(screen.getAllByRole('button', { name: 'abrir' })[0]); // the board's tasks, A then B
@@ -47,14 +47,14 @@ test('a board task\'s abrir opens its task\'s activity in the center, Atividades
   expect(FakeWebSocket.all.map((s) => s.path)).toEqual(['/ptys/W1/pty']);
 });
 
-test('a run with a detached window of its own (#252) raises that window and leaves the board and the selection alone (#457)', async () => {
+test('a run whose tab is out in a detached window (#554) raises that window and leaves the board and the selection alone (#457)', async () => {
   const user = userEvent.setup();
-  const focusDetached = vi.fn(async () => true);
-  vi.stubGlobal('hive', { focusDetached, onDock: vi.fn(), onCloseKey: vi.fn(), detachedPtys: vi.fn(async () => []) });
+  const focusTab = vi.fn(async () => true);
+  vi.stubGlobal('hive', { focusTab, onDock: vi.fn(), onCloseKey: vi.fn() });
   render(<Dashboard state={state} locale="pt-BR" tick={0} onSelect={() => {}} />);
   await user.click(screen.getByRole('button', { name: 'tarefas' })); // the window opens on Atividades (#746)
   await user.click(screen.getAllByRole('button', { name: 'abrir' })[0]);
-  await vi.waitFor(() => expect(focusDetached).toHaveBeenCalledWith('W1'));
+  await vi.waitFor(() => expect(focusTab).toHaveBeenCalledWith('A', 'W1'));
   expect(screen.getByRole('main')).toBeInTheDocument();
   expect(atividades()).not.toBeVisible();
   expect(FakeWebSocket.all).toEqual([]);
