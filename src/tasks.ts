@@ -229,7 +229,7 @@ function parentWorkspace(task: Pick<Task, 'item'>, scope: WorkspaceScope, walked
 // source (source column differs from the one the Hive last saw or wrote) follows into the Hive only while the task is stopped. A read from
 // before the Hive's own column write (#889) refreshes everything but the column, so it can neither move the task back nor make shouldWrite
 // compare against a value the source no longer holds; any other read confirms, overrides or outlives the write, and its mark goes.
-function seenAgain(task: Task, seen: SourceItem, stages: Stage[], runs: WorkState, now: string): Task {
+export function seenAgain(task: Task, seen: SourceItem, stages: Stage[], runs: WorkState, now: string): Task {
   if (task.orphan) return task;
   const { missing: _missing, ...present } = task;
   if (staleRead(task, seen.column, now)) return { ...present, item: seen.item };

@@ -598,6 +598,9 @@ export interface ColumnWrite {
   at: string; // ISO, when the write was emitted: the mark expires COLUMN_WRITE_TIMEOUT_MS after it
 }
 
+/** Why a started task is past its source's listing (#568): the reason Source.item last answered. closed and gone are ends, not marks. */
+export type OutOfListing = 'listing' | 'filter' | 'project';
+
 /** A source task inside the Hive: it exists while it sits in a stage, running or not. */
 
 export interface Task {
@@ -605,7 +608,8 @@ export interface Task {
   stage?: string; // the Hive stage the task sits in (#286: the Hive's own columns are stages); absent = outside the flow (#566): no fill, no transitions, no caps
   boardColumn: string; // where the Hive last saw or left it on the source; the poll compares against it
   missing?: true; // gone from the source; waits for close or keep
-  orphan?: true; // kept after going missing: runs to the end, no source writes, ignored by the poll
+  orphan?: true; // #568: the source was removed or the item is gone: runs to the end, no source writes, ignored by the poll
+  outOfListing?: OutOfListing; // #568: started, and the source's last listing did not bring it; the reason item() last answered
   enteredAt?: string; // ISO, when the task entered its current stage: what `after` counts from. Stamped by the next poll when absent (upgrade)
   leaving?: true; // an archive / remove / delete is in flight on the source (#286): out of the fill, left unmarked by the poll, answered by closeTask or sourceActionFailed; never survives a boot
   pinned?: true; // moved by hand: holds the position it occupies in its stage across polls. Dropped by resetOrder and by a stage change (#123)
@@ -1547,7 +1551,7 @@ export interface DecompositionPreview {
 
 export type HiveEvent =
   | { type: 'boot' }
-  | { type: 'poll'; source?: string; items: SourceItem[] } // source absent: a Comb with no sources (#132), merge nothing
+  | { type: 'poll'; source?: string; items: SourceItem[]; reads?: { itemId: string; read: SourceItemRead }[] } // source absent: a Comb with no sources (#132), merge nothing; reads (#568): item() of each started task the listing lacks
   | { type: 'itemRead'; source: string; itemId: string; entry?: SourceItem } // #686: one item re-read after a field write; entry absent when it is out of the source's listing
   | { type: 'blockerSet'; itemId: string; change: BlockerChange } // #56: a hive task's relation, written on both tasks; POST …/blockers checked it
   | { type: 'setMax'; max: number }
