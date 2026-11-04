@@ -11,6 +11,7 @@ import { sessionsOf } from '../src/tasks.js';
 import type { Effect, LaunchPick, Session, State } from '../src/types.js';
 import { CODEX_SESSION, CODEX_TURN } from './fixtures/codex-hooks.js';
 import { withLocal, withWork, workId } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // #257: a free session keeps what it was opened with (model, specialized agent, args) on its worker and its record; a resume runs with the record's
 const ITEM = { itemId: 'board:I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
@@ -24,7 +25,7 @@ const LOCAL: Session = { id: L1, startedAt: AT, stages: [], lastUsedAt: AT, agen
 // One task in dev with its worktree and claude's S1, the workspace's local activity holding L1
 const onDev = (kept: Session = KEPT): State => withLocal(withWork({
   ...initialState(1), workspaces: ['hive'],
-  stages: [{ name: 'dev', from: {}, prompt: '/build' }],
+  ...flowed([{ name: 'dev', from: {}, prompt: '/build' }]),
   tasks: [{ item: ITEM, stage: 'dev', boardColumn: 'Ready', auto: false, workspace: 'hive' }],
 }, ITEM.itemId, { slug: 'hive-1-t', worktree: '/wt', sessionId: S1 }, { sessions: [kept] }), 'hive', [LOCAL]);
 type SessionSpawn = Extract<Effect, { type: 'spawnSession' }>;

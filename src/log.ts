@@ -5,6 +5,7 @@ import { taskId, sessionsOf } from './tasks.js';
 import { activityOf, activityOfWorker, isLocalActivityId, localWorkspaceOf, taskOfWorker } from './activities.js';
 import { localSessionsOf } from './local-sessions.js';
 import { prNumber } from './pull-requests.js';
+import { flatten } from './flows.js';
 import type { BenchmarkEvent, Stage, Effect, HiveEvent, Worker, State } from './types.js';
 
 export type LogLevel = 'warn' | 'info' | 'debug'; // the threshold logLevel sets (#742: warn added)
@@ -167,7 +168,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'setKeepAwake': return `setKeepAwake ${event.on ? 'on' : 'off'}`; // #226
     case 'setShutdown': return `setShutdown ${event.armed ? 'on' : 'off'}`;
     case 'tick': return 'tick';
-    case 'setStages': return `setStages ${describeStages(event.stages)}`;
+    case 'setStages': return `setStages ${describeStages(flatten(event.flows).stages)}`;
     case 'setWorkspaces': {
       const defaults = Object.entries(event.sourceWorkspaces).map(([source, workspace]) => `${source}:${workspace}`).join(',');
       return `setWorkspaces ${event.workspaces.join(',')}${defaults === '' ? '' : ` defaults=${defaults}`}`;

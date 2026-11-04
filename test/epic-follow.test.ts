@@ -8,6 +8,7 @@ import { END, type EpicFollows, type Item, type Stage, type State, type Task, ty
 import { HOUR_MS } from '../src/usage.js';
 import { move } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // The show epic's rule (#31): a pass over the state after the step, pure, its moves written to the source like a move by hand.
 
@@ -30,7 +31,7 @@ const epic = (stage: string, children: string[], follows: EpicFollows = 'behind'
   item: node('E', { children: children.map((id) => `board:${id}`), epic: { follows, switchAt: 'build' }, ...extra }), stage, boardColumn: COLUMN[stage], auto: true,
 });
 const at = (tasks: Task[], transitions: Transition[] = [], stages: Stage[] = STAGES): State =>
-  deepFreeze({ ...initialState(0), workspaces: ['hive'], syncs: { board: {} }, stages, transitions, tasks });
+  deepFreeze({ ...initialState(0), workspaces: ['hive'], syncs: { board: {} }, ...flowed(stages, transitions), tasks });
 const epicIn = (s: State): Task | undefined => s.tasks.find((t) => t.item.itemId === 'board:E');
 // #213: the issue's flow. dev writes In progress as a run starts there; review → done writes Done; done waits 12h and deletes the activity,
 // then done → end archives. spec → dev writes a column of its own, so a test tells it from dev's first door

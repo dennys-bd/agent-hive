@@ -19,7 +19,7 @@ async function serve(t: TestContext, f: Fixture, stages: Stage[] = []): Promise<
   const { log, lines } = fakeLog();
   const store = createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: () => undefined, log });
   registerPluginRoutes(app, {
-    requireLive: () => ({ runtime: { config: { comb: { workspaces: f.workspaces, stages } } } }),
+    requireLive: () => ({ runtime: { config: { comb: { workspaces: f.workspaces, flows: [{ stages }] } } } }),
     store,
     home: f.home,
     pluginSource: f.pluginSource,

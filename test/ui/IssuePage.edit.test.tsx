@@ -6,6 +6,7 @@ import { IssuePage } from '@/components/IssuePage';
 import { setLanguage } from '@/i18n';
 import type { IssuePage as Issue, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
+import { flowed } from '../fixtures/main-flow.js';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
@@ -16,8 +17,8 @@ const ISSUE: Issue = {
   body: 'The pager breaks', author: 'bia', createdAt: '2026-10-01T09:00:00Z', pullRequests: [], comments: [], commentCount: 0,
 };
 const STATE: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'dev', from: {}, prompt: 'x' }], tasks: [], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
-  activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: {}, prompt: 'x' }], []), tasks: [], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
+  activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
 const CHANGED = 'a issue mudou no GitHub; recarregada. seu rascunho continua no campo.';

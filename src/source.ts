@@ -9,6 +9,7 @@ import { isNetworkError } from './fork.js';
 import type { Logger } from './log.js';
 import type { ItemStore } from './read-model/items.js';
 import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, ReadOptions, SourceItem } from './types.js';
+import { flatten } from './flows.js';
 
 export interface SourceDeps {
   gql?: Gql; // GraphQL runner, injectable for tests; the default is the transport `auth.github` names
@@ -18,7 +19,7 @@ export interface SourceDeps {
 }
 
 /** What the server hands createSource for one entry (#180): that source (its epics keys included, #30) next to the Comb's stages and the transport. */
-export const sourceSpec = ({ auth, comb }: Config, source: SourceConfig): SourceSpec => ({ auth, source, stages: comb.stages, transitions: comb.transitions });
+export const sourceSpec = ({ auth, comb }: Config, source: SourceConfig): SourceSpec => ({ auth, source, ...flatten(comb.flows) });
 
 /** One adapter for one source (#180): it reads only its own source's entries of the stages' and transitions' maps. */
 export function createSource(spec: SourceSpec, deps: SourceDeps): Source {
@@ -106,7 +107,7 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
 // What an adapter bakes in at creation, per entry: the entry (its epics keys included, #30), its cited columns and the transport. A change of
 // any needs a new instance.
 const bakedIn = (config: Config, name: string): unknown[] => [
-  config.comb.sources.find((b) => b.name === name), citedColumns(config.comb.stages, config.comb.transitions, name), config.auth,
+  config.comb.sources.find((b) => b.name === name), citedColumns(flatten(config.comb.flows).stages, flatten(config.comb.flows).transitions, name), config.auth,
 ];
 
 /** One namespaced source per comb.sources entry, in order, keyed by name (#180). With `reuse` (the live config and sources) an entry whose

@@ -6,6 +6,7 @@ import type { Optimistic } from '@/hooks/use-issue';
 import { setLanguage } from '@/i18n';
 import type { IssuePage, ItemField, ProjectItem, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
+import { flowed } from '../fixtures/main-flow.js';
 
 const URL12 = 'https://github.com/acme/site/issues/12';
 const ISSUE: IssuePage = {
@@ -15,9 +16,9 @@ const ISSUE: IssuePage = {
 const TASK: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: '', url: URL12, source: 'roadmap' }, stage: 'dev', boardColumn: 'In review', auto: true };
 const STATE: State = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
-  stages: [{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }, { name: 'review', from: { roadmap: ['In review'] }, prompt: 'y' }],
+  ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }, { name: 'review', from: { roadmap: ['In review'] }, prompt: 'y' }], []),
   activities: [{ id: 'A1', kind: 'task', workspace: 'site', branch: 'hive/12-pager' }], activityRecords: [{ id: 'A1', taskIds: [TASK.item.itemId], sessions: [] }],
-  usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['site'], sourceWorkspaces: { roadmap: 'site' }, workspaceColors: {}, commands: {}, syncs: {},
+  usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['site'], sourceWorkspaces: { roadmap: 'site' }, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

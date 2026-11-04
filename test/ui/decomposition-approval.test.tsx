@@ -7,13 +7,13 @@ import { setLanguage } from '@/i18n';
 import type { DecompositionPreview, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { withWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 // criar issues in place of aprovar (#865): the detail's button and the A key open the same confirm, and nothing is approved.
 const since = '2026-10-09T10:00:00.000Z';
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'goal', boardColumn: 'Goals', auto: true };
 const base: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }],
-  transitions: [{ from: 'goal', to: 'end', when: 'approved' }], tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }], [{ from: 'goal', to: 'end', when: 'approved' }]), tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
   sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: { board: {} }, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
   approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };

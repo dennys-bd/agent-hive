@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, parseConfig } from '../src/config.js';
-import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateCodexArgs, migrateAgentDefaults, migrateFileIcons, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
+import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateCodexArgs, migrateAgentDefaults, migrateFileIcons, migrateFlows, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
 import { combConfig, FILTER, LOCAL_STAGES } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -101,7 +101,13 @@ const OLD_STAGE = {
   onStart: { work: { type: 'move', column: 'In progress' } },
   onFinish: { work: { type: 'close' }, notes: { type: 'move', column: 'review' } },
 };
-const oldFile = (stages: unknown[]): Record<string, unknown> => combConfig({ stages });
+// A file from before #564: combConfig's one flow back as the flat pair, what the migrations before migrateFlows read
+const flat = (file: Record<string, unknown>): Record<string, unknown> => {
+  const { flows, ...comb } = combOf(file);
+  const [main] = flows as { stages: unknown; transitions: unknown }[];
+  return { ...file, comb: { ...comb, stages: main.stages, transitions: main.transitions } };
+};
+const oldFile = (stages: unknown[]): Record<string, unknown> => flat(combConfig({ stages }));
 
 test('migrateStageActions wraps each single onStart / onFinish action in a one-element list, and keeps everything else (#515)', () => {
   const raw = oldFile([OLD_STAGE, { name: 'gate', from: {}, prompt: '' }]);
@@ -137,21 +143,29 @@ test('malformed stage actions pass through for the parser to name them (#515)', 
   assert.equal(migrateStageActions(raw), raw);
   const mixed = oldFile([OLD_STAGE, ...odd]);
   assert.deepEqual((combOf(migrateStageActions(mixed)).stages as unknown[]).slice(1), odd);
-  const pre286 = combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER }, stages: [{ name: 'a', from: { board: ['Ready'] }, onFinish: { board: 'Done' } }] });
-  assert.throws(() => parseConfig(migrateConfig(pre286)), /"comb\.transitions\[0\]\.sources\.board" must be a non-empty array of actions/); // #134: onFinish is the transition's sources now
+  const pre286 = flat(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER }, stages: [{ name: 'a', from: { board: ['Ready'] }, onFinish: { board: 'Done' } }] }));
+  assert.throws(() => parseConfig(migrateConfig(pre286)), /"comb\.flows\[0\]\.transitions\[0\]\.sources\.board" must be a non-empty array of actions/); // #134: onFinish is the transition's sources now
 });
 
 test('migrateConfig chains the stage actions after the others (#511, #513, #515)', () => {
   const migrated = migrateConfig({ ...oldFile([OLD_STAGE]), onClose: undefined, menuBar: false, stopOnClose: true }) as Record<string, unknown>;
   assert.equal(migrated.onClose, 'quit');
-  assert.deepEqual(((combOf(migrated).stages as Record<string, unknown>[])[0]).onStart, { work: [{ type: 'move', column: 'In progress' }] });
+  assert.deepEqual(((combOf(migrated).flows as { stages: Record<string, unknown>[] }[])[0].stages[0]).onStart, { work: [{ type: 'move', column: 'In progress' }] });
   const board = { type: 'github', owner: 'acme', number: 6, filter: FILTER };
-  const file = combConfig({ source: board, stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: 'x', onStart: { board: { type: 'move', column: 'In progress' } }, onFinish: { board: { type: 'close' } } }] });
+  const file = flat(combConfig({ source: board, stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: 'x', onStart: { board: { type: 'move', column: 'In progress' } }, onFinish: { board: { type: 'close' } } }] }));
   // the fixture's own derived flow is dropped: the migration derives it after the single actions became lists
   const old = { ...file, comb: { ...(file.comb as Record<string, unknown>), transitions: undefined } };
   const { comb } = parseConfig(migrateConfig(old));
-  assert.deepEqual(comb.stages[0], { name: 'dev', from: { board: ['Ready'] }, prompt: 'x', onStart: { board: [{ type: 'move', column: 'In progress' }] } });
-  assert.deepEqual(comb.transitions[0].sources, { board: [{ type: 'close' }] }, '#134: the listed onFinish became the transition\'s sources');
+  assert.deepEqual(comb.flows[0].stages[0], { name: 'dev', from: { board: ['Ready'] }, prompt: 'x', onStart: { board: [{ type: 'move', column: 'In progress' }] } });
+  assert.deepEqual(comb.flows[0].transitions[0].sources, { board: [{ type: 'close' }] }, '#134: the listed onFinish became the transition\'s sources');
+});
+
+test('migrateConfig wraps a pre-#134 file last: one main flow with the derived transitions (#564)', () => {
+  const file = oldFile([{ name: 'dev', from: {}, prompt: 'x' }]);
+  const raw = { ...file, comb: { ...combOf(file), transitions: undefined } };
+  const { comb } = parseConfig(migrateConfig(raw));
+  assert.deepEqual(comb.flows.map((f) => f.name), ['main']);
+  assert.deepEqual(comb.flows[0].transitions.map((t) => t.to), ['end'], '#134 derived them before the wrap');
 });
 
 test('migrateDefaultAgent gives a pre-#516 file defaultAgent: claude and nothing else; stages keep no agent (#516)', () => {
@@ -289,4 +303,17 @@ test('migrateAgentDefaults gives a file from before #482 every agent at null in 
   assert.equal(migrateAgentDefaults('x'), 'x');
   const parsed = parseConfig(migrateConfig(bare));
   assert.deepEqual([parsed.agentModels, parsed.agentEnabled], [{ claude: null, codex: null }, { claude: true, codex: true }]);
+});
+
+test('migrateFlows wraps a flat comb as one main flow and drops the flat keys (#564)', () => {
+  const stages = [{ name: 'dev', from: { board: ['Ready'] }, prompt: 'x' }];
+  const transitions = [{ from: 'dev', to: 'end', when: 'done' }];
+  const migrated = migrateFlows({ logLevel: 'info', comb: { prefix: 'HIVE', stages, transitions } }) as { logLevel: string; comb: Record<string, unknown> };
+  assert.deepEqual(migrated, { logLevel: 'info', comb: { prefix: 'HIVE', flows: [{ name: 'main', stages, transitions }] } });
+});
+
+test('migrateFlows returns a comb with flows, or no comb, as the same reference (#564)', () => {
+  const withFlows = { comb: { flows: [], stages: [] } }; // both keys: the parser refuses it by name
+  assert.equal(migrateFlows(withFlows), withFlows);
+  for (const odd of [null, 7, 'x', [], {}, { comb: {} }, { comb: 'no' }]) assert.equal(migrateFlows(odd), odd, JSON.stringify(odd));
 });

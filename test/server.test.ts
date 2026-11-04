@@ -37,6 +37,8 @@ import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnSta
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { flatten } from '../src/flows.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // the workspace is per server: start() names its own repo (#202)
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -535,7 +537,7 @@ test('kill on a worker whose process the pool does not know (Hive restarted) fre
   const config = parseConfig(combConfig({ sources: BODY.sources, path: repo }));
   const sources = createSources(config, factory);
   const [source] = sources.values();
-  const previous = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, stages: config.comb.stages, transitions: config.comb.transitions }, { type: 'poll', source: 'board', items: await source.listItems() }).state; // occupied by a worker of a previous run
+  const previous = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...flatten(config.comb.flows) }, { type: 'poll', source: 'board', items: await source.listItems() }).state; // occupied by a worker of a previous run
   const state: State = { ...previous, signal: 'yellow' }; // yellow: the freed task is not run again, so the freed worker stays visible
   const { spawn, workers } = fakeSpawn();
   const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: noGit, runtime: { config, sources }, state });
@@ -607,7 +609,7 @@ test('GET /ptys counts the workers a stop would kill (#193) and lists them for t
   const { home, repo } = await tempHive(t);
   const { factory } = fakeSourceFactory();
   const config = parseConfig(combConfig({ sources: BODY.sources, path: repo }));
-  const stage = config.comb.stages[0].name;
+  const stage = config.comb.flows[0].stages[0].name;
   const sourceTask: Task = {
     item: { itemId: 'I1', source: 'board', id: '1', title: 'Task 1', body: '', url: 'https://github.com/acme/r/issues/1' },
     stage, boardColumn: 'Ready', auto: true,
@@ -619,7 +621,7 @@ test('GET /ptys counts the workers a stop would kill (#193) and lists them for t
   const state: State = withWork(withWork({
     ...initialState(5),
     workspaces: ['hive'],
-    stages: config.comb.stages,
+    ...flowed(flatten(config.comb.flows).stages),
     tasks: [sourceTask, localTask],
     signal: 'yellow', // nothing is spawned into the empty worker while the test reads the list
     terminals: [{ terminalId: 'a1b2c3d4-0000-4000-8000-000000000009', activityId: activityIdOf('I1'), startedAt: '2026-09-25T10:00:00.000Z', cwd: '/repo' }],

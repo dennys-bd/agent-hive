@@ -10,6 +10,8 @@ import {
 } from '../src/sources/github-queries.js';
 import { type LegacyStage, stripLegacy, transitionsOf } from '../src/config-migrate.js';
 import { citedColumns, onSource } from '../src/tasks.js';
+import { MAIN_FLOW } from '../src/flows.js';
+import { flowed } from './fixtures/main-flow.js';
 import { initialState } from '../src/orchestrator.js';
 import { saveState } from '../src/state-store.js';
 import type { Logger } from '../src/log.js';
@@ -17,7 +19,7 @@ import type { KeepAwakeSpawn } from '../src/keep-awake.js';
 import type { GqlJson } from '../src/sources/github-gql.js';
 import type { FactLog, RecordInput } from '../src/facts.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
-import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, TaskFilter, Stage, Transition, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
+import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { AGENTS } from '../src/agents.js';
@@ -215,18 +217,18 @@ export function onOwnStages<T extends { sources?: SourceConfig[]; stages?: reado
  * `shutdownIdleMinutes: undefined` one from before #233; `theme: undefined` one from before #296; `terminalFont: undefined` one from before #376;
  * `trustedDomains: undefined` one from before #404; `consoleLines: undefined` one from before #353; `shortcuts: undefined` one from before #449; `closeSessionTab: undefined` one from before #614);
  * Every GitHub entry gets EPICS' keys it lacks, switchAt on the first of `stages` (#30).
- * `commands` is comb.commands ([] unless given, #511). `transitions` is comb.transitions, the migration's over `stages` unless given (#134). A workspace without env is a file from before #348. `editor` is EDITOR_DEFAULTS (#780); `editor: undefined` writes a file without it. `sidebarsPerView: undefined` writes a file from before #821. `signals: undefined` writes a file from before #727. `notifications: undefined` writes a file from before #199. `agentArgs` is { claude: [], codex: [] } (#924, #927); `agentArgs: undefined` writes a file from before the key. `agentModels: undefined` / `agentEnabled: undefined` write a file from before #482.
+ * `commands` is comb.commands ([] unless given, #511). `flows` is one main flow around `stages` and `transitions` unless given (#564); `transitions` is the migration's over `stages` unless given (#134). A workspace without env is a file from before #348. `editor` is EDITOR_DEFAULTS (#780); `editor: undefined` writes a file without it. `sidebarsPerView: undefined` writes a file from before #821. `signals: undefined` writes a file from before #727. `notifications: undefined` writes a file from before #199. `agentArgs` is { claude: [], codex: [] } (#924, #927); `agentArgs: undefined` writes a file from before the key. `agentModels: undefined` / `agentEnabled: undefined` write a file from before #482.
  */
 export function combConfig({
-  source, sources = source === undefined ? [] : [sourceEntry(source as Record<string, unknown>)], stages = STAGES, transitions, prefix = 'HIVE', path = '/repo',
+  source, sources = source === undefined ? [] : [sourceEntry(source as Record<string, unknown>)], stages = STAGES, transitions, flows, prefix = 'HIVE', path = '/repo',
   workspaces = [{ name: WORKSPACE, path, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], commands = [], hiveSource = true, createIn = 'hive', ...rest
 }: Record<string, unknown> = {}): Record<string, unknown> {
-  return { auth: AUTH, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: true }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, mcp: MCP_DEFAULTS, ...rest, comb: { prefix, workspaces, sources: Array.isArray(sources) ? sources.map(withEpics(stages)) : sources, stages, transitions: transitions ?? derivedFlow(stages), commands, hiveSource, createIn } };
+  return { auth: AUTH, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: true }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, mcp: MCP_DEFAULTS, ...rest, comb: { prefix, workspaces, sources: Array.isArray(sources) ? sources.map(withEpics(stages)) : sources, flows: flows ?? [{ name: MAIN_FLOW, stages, transitions: transitions ?? derivedFlow(stages) }], commands, hiveSource, createIn } };
 }
 
-/** A pre-#134 stage list, onFinish and all, as the flow its migration makes (#134): what a reducer fixture spreads where it set `stages`. */
-export const chained = (stages: readonly LegacyStage[]): { stages: Stage[]; transitions: Transition[] } =>
-  ({ stages: stages.map(stripLegacy), transitions: transitionsOf(stages) });
+/** A pre-#134 stage list, onFinish and all, as the flow its migration makes (#134), in one main flow with its flattened pair (#564): what a reducer
+ * fixture spreads where it set `stages`. */
+export const chained = (stages: readonly LegacyStage[]): Pick<State, 'flows' | 'stages' | 'transitions'> => flowed(stages.map(stripLegacy), transitionsOf(stages));
 
 // A source that has the OPTIONS columns and returns one task named after the configured entry column.
 // `resolveDelayMs` makes resolveFields slow so concurrent saves overlap; `quota` gives it a fixed quota reading (none by default);

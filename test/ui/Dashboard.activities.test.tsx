@@ -10,6 +10,7 @@ import type { Task, Terminal, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { FakeWebSocket, resetFakes } from './xterm-fakes';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./xterm-fakes')).FakeTerminal }));
 vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./xterm-fakes')).FakeFitAddon }));
@@ -26,8 +27,8 @@ const workerA: Worker = { id: 's1', status: 'working', activityId: activityIdOf(
 const shellA: Terminal = { terminalId: 'W2', activityId: activityIdOf('A'), startedAt: T0, cwd: '/repo' };
 const shellB: Terminal = { terminalId: 'W3', activityId: activityIdOf('B'), startedAt: T0, cwd: '/repo' };
 const base: State = withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [workerA], stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }],
-  tasks: [taskA, taskB, taskC], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [workerA], ...flowed([{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }], []),
+  tasks: [taskA, taskB, taskC], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [shellA, shellB],
 });
 

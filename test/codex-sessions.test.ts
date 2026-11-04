@@ -11,6 +11,7 @@ import { sessionsOf } from '../src/tasks.js';
 import type { Effect, HookPayload, Session, SleepCause, SleptRun, State, Worker } from '../src/types.js';
 import { withLocal, withWork, workId } from './fixtures/work.js';
 import { CODEX_SESSION, CODEX_TURN } from './fixtures/codex-hooks.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // #931: Codex's free and local sessions open with no id and take Codex's own from their first SessionStart; then they sleep and wake
 const ITEM = { itemId: 'board:I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
@@ -21,7 +22,7 @@ const KEPT: Session = { id: S1, startedAt: AT, stages: ['dev'], lastUsedAt: AT, 
 // One task in dev, by hand (no fill starts it), its activity holding claude's S1 and its worktree; the workspace's local activity beside it
 const onDev = (): State => withLocal(withWork({
   ...initialState(1), workspaces: ['hive'],
-  stages: [{ name: 'dev', from: {}, prompt: '/build' }],
+  ...flowed([{ name: 'dev', from: {}, prompt: '/build' }]),
   tasks: [{ item: ITEM, stage: 'dev', boardColumn: 'Ready', auto: false, workspace: 'hive' }],
 }, ITEM.itemId, { slug: 'hive-1-t', worktree: '/wt', sessionId: S1 }, { sessions: [KEPT] }), 'hive');
 type SessionSpawn = Extract<Effect, { type: 'spawnSession' }>;

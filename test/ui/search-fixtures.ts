@@ -5,6 +5,7 @@ import type { ActivityRecord, Task, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { withLocalActivities } from '../../src/activities';
 import { movedWork, withPointedWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 export const STAGES: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
 
@@ -16,8 +17,8 @@ export const task = (id: string, title: string, extra: Partial<WithWork> = {}): 
 export const recordFor = (itemId: string, made: Partial<Omit<ActivityRecord, 'id' | 'taskIds'>>): ActivityRecord => ({ id: `a-${itemId}`, taskIds: [itemId], sessions: [], ...made });
 
 export const stateOf = (tasks: Task[], extra: Partial<State> = {}): State => withLocalActivities(movedWork(withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: STAGES, tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [],
-  disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(STAGES, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [],
+  disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
   approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 }))); // #629: each run's activity and record, the worktree fields on each task's activity, and each workspace's local pair
 

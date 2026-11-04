@@ -11,6 +11,7 @@ import type { State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { FakeTerminal, FakeWebSocket, resetFakes } from './xterm-fakes';
 import { activityIdOf, withPointedWork, type WithWork, withTasks } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./xterm-fakes')).FakeTerminal }));
 vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./xterm-fakes')).FakeFitAddon }));
@@ -20,8 +21,8 @@ vi.mock('@/hooks/use-task-files', () => ({ useTaskFiles: () => [] }));
 // A task with a worktree whose workspace runs `test` (#300); nothing live on it
 const taskA: WithWork = { item: { itemId: 'A', id: '1', title: 'Task A', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true, worktree: '/wt' };
 const state: State = withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [{ id: 's1', status: 'empty' }], stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }],
-  tasks: [taskA], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: { hive: ['test'] }, syncs: {},
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [{ id: 's1', status: 'empty' }], ...flowed([{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }], []),
+  tasks: [taskA], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: { hive: ['test'] }, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
 const CHANNEL: ChannelEntry = { id: 'command:hive:test', kind: 'command', label: 'hive · test', status: 'done' };

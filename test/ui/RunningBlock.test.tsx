@@ -7,6 +7,7 @@ import { setLanguage } from '@/i18n';
 import type { Activity, Stage, StageCi, StageCiCheck, StageCommands, State, Task, Transition } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { withWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 // The details panel's block while a stage runs with no agent (#914): a wait for CI or a commands stage, over a fixed clock.
 
@@ -15,7 +16,7 @@ const CI: Stage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ci
 const CHECKS: Stage = { name: 'checks', from: { board: ['Checks'] }, action: 'commands', commands: ['build', 'test', 'lint'], stopOnFailure: true };
 const taskIn = (stage: string): Task => ({ item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage, boardColumn: '', auto: true });
 const at = (stage: string, work: Partial<Activity>, transitions: Transition[] = []): State => withWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [CI, CHECKS], transitions, tasks: [taskIn(stage)], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([CI, CHECKS], transitions), tasks: [taskIn(stage)], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
   activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 }, 'I1', work);

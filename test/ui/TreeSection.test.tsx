@@ -9,6 +9,7 @@ import { resetViewState } from '@/lib/view-state';
 import type { Item, Stage, State, Task, Worker } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] } }, { name: 'done', from: { board: ['Done'] } }];
 type Links = Pick<Item, 'parent' | 'children' | 'closedChildren'>;
@@ -27,7 +28,7 @@ const TREE = [
 ];
 const WAITING: Worker = { id: 's1', status: 'waiting', activityId: activityIdOf('I3'), runId: 'W1' };
 const state = (tasks: WithWork[] = TREE, workers: Worker[] = [WAITING]): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages, tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], ...flowed(stages, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
   sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 // withPointedWork splits each fixture, so the section gets the state's own task

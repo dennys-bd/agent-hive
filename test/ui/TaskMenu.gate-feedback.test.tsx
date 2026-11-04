@@ -5,6 +5,7 @@ import { setLanguage } from '@/i18n';
 import type { Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { movedWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 // Its own file (HIVE-2), like TaskMenu.gate.test.tsx: Radix's ContextMenu opens once per file under jsdom, and selecting an item closes it.
 const stages: Stage[] = [
@@ -19,7 +20,7 @@ const task: WithWork = {
 const sessions = [{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: AT, stages: ['spec'], agent: 'claude' as const, lastUsedAt: AT }]; // #629: the record's
 const workers: Worker[] = [{ id: 's1', status: 'empty' }];
 const state: State = movedWork<State>({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages, tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions }], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], ...flowed(stages, []), tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions }], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
   sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }));

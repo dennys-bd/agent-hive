@@ -3,13 +3,15 @@ import { isAbsolute, join } from 'node:path';
 import { WORKSPACE_HEX_COLOR, WORKSPACE_PRESET_COLORS } from './types.js';
 import { LOG_LEVELS, type LogLevel } from './log.js';
 import { LANGUAGES } from './language.js';
-import { branchProblem, COMB_PREFIX, DURATION, onSource, WORKSPACE_NAME, RESERVED_SOURCE, HIVE_SOURCE, isReservedSource, type BranchProblem, type WorkspaceNames, resolveWorkspace } from './tasks.js';
+import { branchProblem, COMB_PREFIX, DURATION, WORKSPACE_NAME, RESERVED_SOURCE, HIVE_SOURCE, isReservedSource, type BranchProblem, type WorkspaceNames, resolveWorkspace } from './tasks.js';
+import { flatten } from './flows.js';
+import { parseFlows } from './config-flows.js';
 import { createInProblem, type CreateInProblem } from './create-in.js';
 import { REPOSITORY } from './task-refs.js';
 import { parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
 import { checkEnabledAgents, checkStageModels, parseAgentArgs, parseAgentEnabled, parseAgentModels } from './config-agent-args.js';
-import { checkClearedResumes, checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
+import { checkClearedResumes, checkResumedAgents, parseVerdicts } from './config-transitions.js';
 import { hiveActionRaw, parseStageAgent, runsAgentRaw } from './config-stage-agent.js';
 import { parseFork } from './fork.js';
 import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseStageEvaluate, parseTimeout } from './run-commands.js';
@@ -22,7 +24,7 @@ import { parseNestedRepos } from './config-nested.js';
 import { parseBenchmarkPrIn } from './config-benchmark-pr.js';
 import { parseSignals } from './signals-config.js';
 import { parseMcp } from './mcp-settings.js';
-import { MCP_DEFAULTS, type McpSettings, AGENT_IDS, END, REVIEWER_DEFAULTS, type ReviewerConfig, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, isPlanSource, PLAN_SOURCES, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
+import { MCP_DEFAULTS, type McpSettings, AGENT_IDS, REVIEWER_DEFAULTS, type ReviewerConfig, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, isPlanSource, PLAN_SOURCES, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
@@ -307,22 +309,6 @@ function requireDuration(value: unknown, field: string): string {
   return value;
 }
 
-// Required, non-empty, unique names. Every source needs at least one entry point: a source nothing can enter from is a config mistake, not a
-// quiet Hive. Without sources no stage names one (parseSourceMap refuses the key): tasks enter by hand (#132).
-function parseStages(raw: unknown, sources: SourceRef[]): Stage[] {
-  if (raw === undefined) throw new Error(`${CONFIG_FILE}: "comb.stages" is required`);
-  if (!Array.isArray(raw) || raw.length === 0) throw new Error(`${CONFIG_FILE}: "comb.stages" must be a non-empty array`);
-  const stages = raw.map((stage, i) => parseStage(stage, `comb.stages[${i}]`, sources));
-  stages.forEach((stage, i) => {
-    if (stages.findIndex((s) => s.name === stage.name) !== i) throw new Error(`${CONFIG_FILE}: "comb.stages[${i}].name" must be unique`);
-  });
-  const end = stages.findIndex((s) => s.name === END); // #134: a transition's "end" must never name a stage
-  if (end !== -1) throw new Error(`${CONFIG_FILE}: "comb.stages[${end}].name" cannot be "end": it names the end of the flow`);
-  const silent = sources.find((b) => !stages.some((s) => (onSource(s.from, b.name)?.length ?? 0) > 0))?.name;
-  if (silent !== undefined) throw new Error(`${CONFIG_FILE}: "comb.stages" must have at least one stage with "from.${silent}"`);
-  return stages;
-}
-
 function requirePrefix(value: unknown, field = 'comb.prefix'): string {
   if (typeof value !== 'string' || !COMB_PREFIX.test(value)) {
     throw new Error(`${CONFIG_FILE}: "${field}" must be a letter followed by up to 9 letters or digits`);
@@ -421,11 +407,12 @@ function parseComb(raw: unknown): CombConfig {
   const workspaces = parseWorkspaces(raw.workspaces);
   const sources = parseSources(raw.sources, workspaces);
   const commands = parseCommands(raw.commands, 'comb.commands', workspaces.map((p) => p.name)); // #511, #755: each command's lines name its workspaces
-  const stages = parseStages(raw.stages, sources);
-  requireSwitchAt(sources, stages); // #30: once the stages are known
-  // #134: a transition's sources are read as onStart is, with a leaving action allowed last
-  const transitions = parseTransitions(raw.transitions, stages, (value, field) => parseSourceMap(value, field, sources, requireActionList(false)));
-  return { prefix, workspaces, sources, stages, transitions, commands, ...parseCreateIn(raw, sources) };
+  const flows = parseFlows(raw, sources.map((s) => s.name), {
+    stage: (value, field) => parseStage(value, field, sources),
+    sources: (value, field) => parseSourceMap(value, field, sources, requireActionList(false)), // #134: read as onStart is, a leaving action allowed last
+  });
+  requireSwitchAt(sources, flatten(flows).stages); // #30: once the stages are known
+  return { prefix, workspaces, sources, flows, commands, ...parseCreateIn(raw, sources) };
 }
 
 // #846: worded for the file; the form shows the same rules through t()
@@ -611,7 +598,7 @@ function parseFields(raw: unknown): Config {
     // '' is how a cleared form field says "automatic": the key is dropped, not refused. Resolved per repo at spawn time, so no default.
     ...(raw.baseBranch === undefined || raw.baseBranch === '' ? {} : { baseBranch: requireBranch(raw.baseBranch, 'baseBranch') }),
     budget: optional(raw.budget, DEFAULT_CONFIG.budget, parseBudget),
-    usageRules: requireRuleStages(optional(raw.usageRules, DEFAULT_CONFIG.usageRules, parseUsageRules), comb.stages),
+    usageRules: requireRuleStages(optional(raw.usageRules, DEFAULT_CONFIG.usageRules, parseUsageRules), flatten(comb.flows).stages),
     // Required, no default (#513, #236, #258, #233, #268, #296, #376, #404, #353, #449, #516, #614, #573, #696, #805, #821, #727, #199): last, so any other problem in a file is named first. A file from before the keys boots
     // the settings form prefilled (hive.ts), and one save writes them.
     onClose: requireOnClose(raw.onClose),
@@ -651,10 +638,13 @@ function parseFields(raw: unknown): Config {
 
 export function parseConfig(raw: unknown): Config {
   const config = parseFields(raw);
-  checkResumedAgents(config.comb.stages, config.comb.transitions, config.defaultAgent); // #925: needs defaultAgent, which the fields parse last
-  checkClearedResumes(config.comb.stages, config.comb.transitions); // #494: a POST /settings save goes through here too
-  checkStageModels(config.comb.stages, config.defaultAgent); // #927: the same
-  checkEnabledAgents(config.comb.stages, config.defaultAgent, config.agentEnabled); // #482: a POST /settings save goes through here too
+  config.comb.flows.forEach(({ stages, transitions }, f) => { // #564: transitions stay inside their flow, so each check runs per flow
+    const at = `comb.flows[${f}]`;
+    checkResumedAgents(stages, transitions, config.defaultAgent, at); // #925: needs defaultAgent, which the fields parse last
+    checkClearedResumes(stages, transitions, at); // #494: a POST /settings save goes through here too
+    checkStageModels(stages, config.defaultAgent, at); // #927: the same
+    checkEnabledAgents(stages, config.defaultAgent, config.agentEnabled, at); // #482: a POST /settings save goes through here too
+  });
   return config;
 }
 

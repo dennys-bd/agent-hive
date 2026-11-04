@@ -15,7 +15,7 @@ const records = [{ id: 'a-I1', taskIds: ['I1'], sessions: [{ id: S, startedAt: '
 const run = { ptyId: 'W3', label: 'Claude · a1b2c3d4', kind: 'session' as const, session: 'a1b2c3d4' };
 const activity: TaskActivity = { kind: 'task', ...taskPairOf('I1', {}, records[0]), task, runs: [run], sessions: [{ run, status: 'working' }], status: 'working', worker: false, records };
 const state: State = withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [{ id: 's', status: 'working', runId: 'W3', activityId: activityIdOf('I1'), sessionId: S, freeSession: true }], terminals: [], stages: [], tasks: [task], sourceOrder: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [{ id: 's', status: 'working', runId: 'W3', activityId: activityIdOf('I1'), sessionId: S, freeSession: true }], terminals: [], flows: [], stages: [], tasks: [task], sourceOrder: [],
   localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: records, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });

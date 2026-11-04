@@ -11,6 +11,7 @@ import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { BaseOptions, SetupRow, Task, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DISCARD_FAILED, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 const stages: Stage[] = [
   { name: 'inbox', from: { board: ['Inbox'] } }, // no prompt: a task created here skips it
@@ -23,7 +24,7 @@ const task = (itemId: string, id: string, title: string, extra: Partial<WithWork
 const LANDING = task('I4', 'SITE-4', 'Landing copy review', { stage: 'dev' });
 const HERO = task('I9', 'SITE-9', 'Landing hero for teams');
 const state = (tasks: Task[] = [LANDING, HERO]): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages, tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['hive', 'site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 const SHIPPED = task('I7', 'SITE-7', 'Shipped pricing page', { stage: 'done' });

@@ -58,5 +58,5 @@ test('droppedPrReviews names the PRs of the tasks a reduction dropped, not one a
   const prev = withKeptRecord(held, 'local:1', 'r1', prsOf([PR, shared]));
   const next = { ...prev, tasks: [task(2)], activityRecords: prev.activityRecords.filter((r) => r.id !== 'r1') };
   assert.deepEqual(droppedPrReviews(prev, next, { type: 'closeTask', taskId: 'local:1' }), [PR]);
-  assert.deepEqual(droppedPrReviews(prev, next, { type: 'setStages', stages: [], transitions: [] }), []);
+  assert.deepEqual(droppedPrReviews(prev, next, { type: 'setStages', flows: [] }), []);
 });

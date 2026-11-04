@@ -7,6 +7,7 @@ import { sessionsOf } from '../src/tasks.js';
 import { capturedCwd } from '../src/terminal-runs.js';
 import type { AgentId, HiveEvent, Session, State } from '../src/types.js';
 import { withLocal, withWork, workId } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 test('capturedCwd keeps an absolute folder on one line inside the terminal\'s own, and nothing else (#932)', () => {
   assert.deepEqual(
@@ -28,7 +29,7 @@ const held = (id: string, tokens: number): Session => ({ id, startedAt: AT, stag
 // there. No worker can be filled (maxConcurrent 0, not auto)
 function world(on: 'task' | 'local'): State {
   const base = withLocal(withWork({
-    ...initialState(0), workspaces: ['hive'], stages: [{ name: 'dev', from: {}, prompt: '/build' }],
+    ...initialState(0), workspaces: ['hive'], ...flowed([{ name: 'dev', from: {}, prompt: '/build' }]),
     tasks: [{ item: ITEM, stage: 'dev', boardColumn: 'Ready', auto: false, workspace: 'hive' }],
   }, ITEM.itemId, { slug: 'hive-1-t', worktree: '/repo', local: true }, { sessions: [held(S1, 900)] }), 'hive', [held(S2, 400)]);
   const activityId = on === 'task' ? workId(base, ITEM.itemId) : localActivityId('hive');

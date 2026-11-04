@@ -15,6 +15,7 @@ import { liveRuns } from '../../src/task-runs';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type AgentId, type BaseOptions, type State, type Task } from '../../src/types';
 import { activityIdOf, taskPairOf, withPointedWork } from '../fixtures/work';
 import { taskReview } from '@/lib/review-events';
+import { flowed } from '../fixtures/main-flow.js';
 
 // #925: no second agent ships until 3.1 adds codex, so this file adds one. AGENTS gains its facts (agentName reads them, so it is rebuilt
 // over the mocked map), AGENT_IDS lists it. Its id is a cast: no production id is added
@@ -76,9 +77,9 @@ test('a review names a mentioned session by its own agent, on the page and in wh
 
 const BASES: BaseOptions = { hasWorktree: false, defaultRef: 'origin/main', tasks: [], local: [], remote: [] };
 const startState: State = withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'dev', from: {}, prompt: 'x' }],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: {}, prompt: 'x' }], []),
   tasks: [{ item: { itemId: 'I4', id: 'SITE-4', title: 'Landing', body: '', url: '' }, stage: 'dev', boardColumn: 'Doing', auto: true, workspace: 'site' }],
-  sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
+  sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
   approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });

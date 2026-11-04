@@ -302,12 +302,12 @@ test('livePtys accepts a line with no taskId, a workspace\'s terminal (#292), an
 });
 
 test('ensureDaemon rejects with the log tail when the daemon exits before answering, and records no port', async (t) => {
-  const { home } = await bootableHome(t, { stages: 'nope' }); // comb.stages is not an array: a Comb file that fails to parse is fatal, run.js exits 1
+  const { home } = await bootableHome(t, { stages: 'nope' }); // the flow's stages are not an array: a Comb file that fails to parse is fatal, run.js exits 1
   // bootTracked kills the child either way: had the boot wrongly succeeded, the daemon must still not outlive the test (#786)
   const err = await bootTracked(t, home).then(() => undefined, (e: unknown) => e);
   assert.ok(err instanceof DaemonBootError, 'a typed error: the caller reads the pid it must not leave behind (#786)');
   assert.match(err.message, /^Agent Hive não subiu \(veja .*hive\.log\)\n/);
-  assert.match(err.message, /"comb\.stages" must be a non-empty array/, 'the log tail is the diagnosis');
+  assert.match(err.message, /"comb\.flows\[0\]\.stages" must be a non-empty array/, 'the log tail is the diagnosis');
   assert.equal(typeof err.pid, 'number', 'the child it spawned');
   assert.ok(err.pid !== undefined && !pidExists(err.pid), 'that child exited: the pid is the child\'s, not this process\'s');
   assert.equal(daemonPort(home), undefined, 'it never bound');

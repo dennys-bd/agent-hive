@@ -15,6 +15,7 @@ import type { Refusal } from './server-tasks.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { fetchStatusField, type GithubSourceConfig } from './sources/github.js';
 import type { Config, Decomposition, DecompositionPreview, DecompositionSource, Exec, Gql, HiveEvent, Item, Stage, State, Task } from './types.js';
+import { flatten } from './flows.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
@@ -108,7 +109,7 @@ async function sourcesOf(config: Pick<Config, 'comb'>, gql: GqlJson, own?: strin
   const ordered = [...githubSources(config)].sort((a, b) => Number(b.name === own) - Number(a.name === own));
   return Promise.all(ordered.map(async (source) => {
     const statuses = (await fetchStatusField(source.owner, source.number, asGql(gql))).options.map((o) => o.name);
-    const column = suggestedColumn(config.comb.stages, source.name, statuses);
+    const column = suggestedColumn(flatten(config.comb.flows).stages, source.name, statuses);
     return { name: source.name, statuses, ...(column === undefined ? {} : { column }) };
   }));
 }

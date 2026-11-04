@@ -6,6 +6,7 @@ import { DONE_STAGE } from '../../src/benchmark/watcher.js';
 import { parseConfig } from '../../src/config.js';
 import type { ArmOverrides, BenchFlow } from '../../src/types.js';
 import { arm, benchComb, experiment, ISOLATION, mainConfig, NOW, SETUP } from './fixtures.js';
+import { flatten } from '../../src/flows.js';
 
 const PATHS = { clone: '/hive/benchmark/exp-1/clone', home: '/hive/benchmark/exp-1/runs/abcd1234', rules: { home: '/hive/benchmark/exp-1/runs/abcd1234', homes: ['/hive'], denied: [] } };
 
@@ -80,7 +81,7 @@ test('runConfig parses with the copied flow, its commands enabled in the run\'s 
   const exp = experiment({ base: { ...SETUP, flow: copied() } });
   const config = parseConfig(runConfig(mainConfig(), exp, arm('a1', 'A'), 'abcd1234', PATHS));
   assert.deepEqual(config.comb.commands.map((c) => [c.name, c.impls]), [['test', [{ workspace: null, command: 'pnpm test' }]], ['lint', [{ workspace: null, command: 'pnpm lint' }]]]);
-  assert.equal(config.comb.stages.at(-1)?.name, DONE_STAGE);
+  assert.equal(flatten(config.comb.flows).stages.at(-1)?.name, DONE_STAGE);
   const state = runState(SETUP.tasks, 'abcd1234', 'hive', 3, 'Spec');
   assert.deepEqual(state.tasks.map((t) => t.stage), ['Spec']);
 });

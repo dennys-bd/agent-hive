@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { IDLE_POLL_INTERVAL_MS, isSourceQuota, POLL_INTERVAL_MS, QUOTA_RESERVE, shouldPoll } from '../src/polling.js';
 import type { SourceQuota, State } from '../src/types.js';
+import { flowed } from './fixtures/main-flow.js';
 
 const NOW = Date.parse('2026-09-16T12:00:00.000Z');
 const MINUTE_MS = 60_000;
@@ -12,7 +13,7 @@ const TASK = { itemId: 'board:item1', id: '1', title: 'Task 1', body: '', url: '
 const readAt = (state: State, ms: number, board = 'board'): State => ({ ...state, syncs: { ...state.syncs, [board]: { ...state.syncs[board], polledAt: iso(ms) } } });
 const withQuota = (state: State, quota: SourceQuota, board = 'board'): State => ({ ...state, syncs: { ...state.syncs, [board]: { ...state.syncs[board], quota } } });
 const free = readAt({ ...initialState(1), syncs: { board: {} } }, NOW - POLL_INTERVAL_MS); // one empty worker, read 30 s ago
-const busy = readAt(reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, stages: [{ name: 'c', from: { board: ['Ready'] }, prompt: 'x' }] }, { type: 'poll', source: 'board', items: [{ item: TASK, column: 'Ready' }] }).state, NOW - POLL_INTERVAL_MS); // the only worker working
+const busy = readAt(reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...flowed([{ name: 'c', from: { board: ['Ready'] }, prompt: 'x' }])}, { type: 'poll', source: 'board', items: [{ item: TASK, column: 'Ready' }] }).state, NOW - POLL_INTERVAL_MS); // the only worker working
 const quota = (remaining: number, resetsAt: number): SourceQuota => ({ limit: 5000, remaining, resetsAt: iso(resetsAt), at: iso(NOW) });
 
 test('shouldPoll is true whenever a job could start, however fresh the source\'s last read', () => {

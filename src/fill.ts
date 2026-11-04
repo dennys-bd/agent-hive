@@ -60,7 +60,7 @@ export function canSchedule(state: State, now: number): boolean {
 // wherever it entered
 function mayStartNew(state: State, behaviour: SignalBehaviour, task: Task): boolean {
   if (behaviour.newTasks !== 'tree') return behaviour.newTasks === 'always';
-  const started = (t: Task): boolean => isStarted(state, t) || (taskId(t) !== taskId(task) && isPastFirstStage(state.stages, t));
+  const started = (t: Task): boolean => isStarted(state, t) || (taskId(t) !== taskId(task) && isPastFirstStage(state.flows, t));
   return treeStarted(state.tasks, taskId(task), started);
 }
 

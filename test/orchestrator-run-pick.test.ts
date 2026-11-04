@@ -4,6 +4,7 @@ import { activityOf } from '../src/activities.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import type { Effect, Item, RunPick, Stage, State, Transition } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // A manual start's run picks (#290), end to end through reduce: the run they start, and what the runs after it do.
 
@@ -20,7 +21,7 @@ const PICK: RunPick = { agent: 'codex', resume: null, launch: { model: 'gpt-5.6-
 
 // Task 1 polled into Build under red: it waits for a start by hand, which takes the one free worker
 function queued(stages: Stage[] = STAGES): State {
-  const red = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, stages, transitions: [TO_REVIEW] }, { type: 'setSignal', signal: 'red' }).state;
+  const red = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...flowed(stages, [TO_REVIEW]),}, { type: 'setSignal', signal: 'red' }).state;
   return reduce(red, { type: 'poll', source: 'board', items: [{ item, column: 'Ready' }] }).state;
 }
 const start = (state: State, runPick?: RunPick) => reduce(state, { type: 'start', itemId: ID, ...(runPick === undefined ? {} : { runPick }) });

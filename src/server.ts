@@ -122,6 +122,7 @@ import {
   type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
   type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State, type TreeChange,
 } from './types.js';
+import { flatten } from './flows.js';
 
 const execFileAsync: Exec = promisify(execFile);
 const SSE_HEARTBEAT_MS = 25_000;
@@ -850,7 +851,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     for (const { path } of config.comb.workspaces) await excludeFromGit(path); // each workspace keeps its worktrees in <path>/.hive/ (#179)
     log.setLevel(config.logLevel); // read from the file on every save: a hand edit switches the level without a restart
     wiring.facts.setLevel(config.logLevel); // one switch for both files (#742)
-    log.info(`config port=${port} sources=${config.comb.sources.map((b) => `${b.name}:${b.type}`).join(',') || 'none'} logLevel=${config.logLevel} stages=${describeStages(config.comb.stages)}`);
+    log.info(`config port=${port} sources=${config.comb.sources.map((b) => `${b.name}:${b.type}`).join(',') || 'none'} logLevel=${config.logLevel} stages=${describeStages(flatten(config.comb.flows).stages)}`);
     return { config, sources, hooksPath, promptsDir, protocol, port };
   }
 
@@ -860,12 +861,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     const saved = await loadState(home, workspaceScope(config));
     // #861: the saved stages first, so a stage a hand edit removed while the Hive was down is a deletion setStages places, never a stranded
     // task; a home with none saved takes the config's. #727: signals on the state before boot, which opens on onOpen
-    const flow = saved.stages.length > 0 ? { stages: saved.stages, transitions: saved.transitions } : { stages: config.comb.stages, transitions: config.comb.transitions };
+    const flow = saved.stages.length > 0 ? { flows: saved.flows, stages: saved.stages, transitions: saved.transitions } : { flows: config.comb.flows, ...flatten(config.comb.flows) };
     live = { runtime, state: withWorkspaces({ ...saved, ...flow, signals: config.signals }, config) };
     await boot(saved);
-    if (!isDeepStrictEqual(flow.stages, config.comb.stages) || !isDeepStrictEqual(flow.transitions, config.comb.transitions)) {
-      await dispatch({ type: 'setStages', stages: config.comb.stages, transitions: config.comb.transitions });
-    }
+    if (!isDeepStrictEqual(flow.flows, config.comb.flows)) await dispatch({ type: 'setStages', flows: config.comb.flows });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
     pollInBackground(refreshPlanLimits);
@@ -893,9 +892,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (live.state.approvalMinutes !== config.approvalMinutes) await dispatch({ type: 'setApprovalMinutes', minutes: config.approvalMinutes });
     if (live.state.rateLimitWaitMinutes !== config.rateLimitWaitMinutes) await dispatch({ type: 'setRateLimitWait', minutes: config.rateLimitWaitMinutes }); // #805
     if (live.state.defaultAgent !== config.defaultAgent) await dispatch({ type: 'setDefaultAgent', agent: config.defaultAgent }); // #925
-    if (!isDeepStrictEqual(live.state.stages, config.comb.stages) || !isDeepStrictEqual(live.state.transitions, config.comb.transitions)) {
-      dispatchInBackground({ type: 'setStages', stages: config.comb.stages, transitions: config.comb.transitions }); // #134: they travel together
-    }
+    if (!isDeepStrictEqual(live.state.flows, config.comb.flows)) dispatchInBackground({ type: 'setStages', flows: config.comb.flows }); // #134, #564: they travel together
     await dispatch({ type: 'setSources', sources: config.comb.sources.map((b) => b.name) }); // every save (#180): a removed source's tasks go missing at the next poll
     dispatchInBackground({ type: 'setWorkspaces', ...workspaceScope(config) }); // every save (#179): a new default or workspace can place a waiting task
     pollInBackground();

@@ -6,6 +6,7 @@ import { setLanguage } from '@/i18n';
 import type { Stage, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 // Kept apart from Flow.test.tsx (#164): Radix's ContextMenu never shows content again once closed, under jsdom — reproduced with
 // a bare `radix-ui` ContextMenu, no app code involved, closed by selecting an item or by Escape either one. It is not specific to a
@@ -21,7 +22,7 @@ const task = (id: string, stage: string, extra: Partial<WithWork> = {}): WithWor
 const worker = (id: string, taskId?: string): Worker => ({ id, status: taskId ? 'working' : 'empty', ...(taskId ? { activityId: activityIdOf(taskId) } : {}) });
 const manualWorker = (id: string, runId: string): Worker => ({ id, status: 'working', activityId: activityIdOf('I1'), runId: runId, freeSession: true });
 const state = (tasks: WithWork[], workers: Worker[], cols: Stage[] = stages, sourceOrder: string[] = []): State =>
-  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, stages: cols, tasks, sourceOrder, localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
+  withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, ...flowed(cols, []), tasks, sourceOrder, localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 
 const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });

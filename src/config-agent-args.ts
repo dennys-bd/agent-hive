@@ -44,13 +44,13 @@ export const parseAgentEnabled = (value: unknown): Record<AgentId, boolean> => p
 
 /** #482: the default agent is always enabled, so no run is left without one; a stage's own agent and an evaluation row's must be enabled,
  * so no saved stage fails later. A stage with no own agent runs the default. parseConfig runs it once defaultAgent is parsed. */
-export function checkEnabledAgents(stages: readonly Stage[], defaultAgent: AgentId, enabled: Record<AgentId, boolean>): void {
+export function checkEnabledAgents(stages: readonly Stage[], defaultAgent: AgentId, enabled: Record<AgentId, boolean>, at: string): void {
   if (!enabled[defaultAgent]) throw new Error(`${FILE}: "agentEnabled.${defaultAgent}" cannot be false: ${defaultAgent} is the default agent`);
   stages.forEach((stage, i) => {
     const named: [string, AgentId | undefined][] = [
-      [`comb.stages[${i}].agent`, stage.agent],
-      ...(stage.reviewers ?? []).map((row, j): [string, AgentId] => [`comb.stages[${i}].reviewers[${j}].agent`, row.agent]),
-      [`comb.stages[${i}].judge.agent`, stage.judge?.agent],
+      [`${at}.stages[${i}].agent`, stage.agent],
+      ...(stage.reviewers ?? []).map((row, j): [string, AgentId] => [`${at}.stages[${i}].reviewers[${j}].agent`, row.agent]),
+      [`${at}.stages[${i}].judge.agent`, stage.judge?.agent],
     ];
     const off = named.find(([, agent]) => agent !== undefined && !enabled[agent]);
     if (off !== undefined) throw new Error(`${FILE}: "${off[0]}" names ${off[1]}, which "agentEnabled" turns off`);
@@ -59,9 +59,9 @@ export function checkEnabledAgents(stages: readonly Stage[], defaultAgent: Agent
 
 /** #927: a stage whose agent (its own, else the default) is codex and whose model is Claude's is refused by field. The Hive has no list of
  * Codex models to check against otherwise. parseConfig runs it once defaultAgent is parsed, as checkResumedAgents. */
-export function checkStageModels(stages: readonly Stage[], defaultAgent: AgentId): void {
+export function checkStageModels(stages: readonly Stage[], defaultAgent: AgentId, at: string): void {
   stages.forEach((stage, i) => {
     if (stage.model === undefined || agentOf(stage, { defaultAgent }) !== 'codex' || !CLAUDE_MODEL.test(stage.model)) return;
-    throw new Error(`${FILE}: "comb.stages[${i}].model" "${stage.model}" is a Claude model; a codex stage needs a Codex model name`);
+    throw new Error(`${FILE}: "${at}.stages[${i}].model" "${stage.model}" is a Claude model; a codex stage needs a Codex model name`);
   });
 }

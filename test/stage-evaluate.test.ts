@@ -5,6 +5,7 @@ import { deriveFacts } from '../src/fact-derive.js';
 import { describeEffect, describeEvent } from '../src/log.js';
 import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
 import type { Activity, Effect, HiveEvent, Item, JudgeScore, SourceItem, Stage, State, Transition } from '../src/types.js';
+import { flowed, mainFlows } from './fixtures/main-flow.js';
 
 // An evaluate stage (#877): the reducer's side, end to end through reduce. The task is polled into the stage under green: the fill starts the
 // evaluation in the one worker, and every effect below is the stage's own.
@@ -23,7 +24,7 @@ const FAILED: Transition = { from: 'eval', when: 'verdict', verdict: 'failed', t
 const DIMS = ['Meets the spec?', 'Tests cover it?', 'No regression?'];
 const scores = (...n: number[]): JudgeScore[] => n.map((score, i) => ({ dimension: DIMS[i], score, evidence: `evidence ${i + 1}` }));
 const base = (transitions: Transition[] = [PASSED, FAILED], extra: Partial<State> = {}): State =>
-  ({ ...initialState(1), signal: 'green', workspaces: ['hive'], syncs: { board: {} }, stages: [EVAL, BUILD, PR], transitions, ...extra });
+  ({ ...initialState(1), signal: 'green', workspaces: ['hive'], syncs: { board: {} }, ...flowed([EVAL, BUILD, PR], transitions), ...extra });
 const polled = (transitions?: Transition[]): Reduced => reduce(base(transitions), { type: 'poll', source: 'board', items: [listed('Eval')] });
 const live = (s: State): Activity | undefined => activityOf(s, ID);
 const evaluateOf = (effects: Effect[]) => effects.find((e): e is Extract<Effect, { type: 'evaluate' }> => e.type === 'evaluate');
@@ -143,7 +144,7 @@ test('a boot during the stage drops the mark and leaves the activity stopped, it
 
 test('a save that removes the stage halts the evaluation at once and aborts it (#861, #877)', () => {
   const s = polled().state;
-  const saved = reduce(s, { type: 'setStages', stages: [BUILD, PR], transitions: [] });
+  const saved = reduce(s, { type: 'setStages', flows: mainFlows([BUILD, PR]) });
   assert.equal(live(saved.state)?.evaluate, undefined);
   assert.ok(saved.effects.some((e) => e.type === 'abortEvaluate'));
   assert.equal(saved.state.workers.filter((w) => w.status !== 'empty').length, 0);

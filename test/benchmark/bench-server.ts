@@ -11,6 +11,7 @@ import { put } from '../custom-fixture.js';
 import { fakeLog } from '../fakes.js';
 import { tempDir } from '../temp-dir.js';
 import { benchConfig, SHA, stateWith } from './fixtures.js';
+import { mainFlows } from '../fixtures/main-flow.js';
 
 export const AT = '2026-10-21T12:00:00.000Z';
 export const PLUGIN_FILES = { '.claude-plugin/plugin.json': '{"name":"hive","version":"0.1.0"}', 'skills/new-build/SKILL.md': 'ship\n' };
@@ -56,7 +57,7 @@ export async function benchDeps(t: TestContext, opts: BenchOpts = {}): Promise<B
   };
   const { log, lines } = fakeLog();
   const base = benchConfig(repo);
-  const config: Config = { ...base, mcp: { ...base.mcp, off: opts.mcpOff ?? [] }, comb: { ...base.comb, stages: opts.stages ?? base.comb.stages } };
+  const config: Config = { ...base, mcp: { ...base.mcp, off: opts.mcpOff ?? [] }, comb: { ...base.comb, flows: opts.stages === undefined ? base.comb.flows : mainFlows(opts.stages) } };
   const deps: DraftDeps = {
     dispatch: async (event) => { events.push(event); state = benchmarkReduce(state, event); },
     home, pluginSource, exec, version: async () => '0.1.0', now: () => new Date(AT),

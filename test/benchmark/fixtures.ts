@@ -13,6 +13,7 @@ import { initialState } from '../../src/orchestrator.js';
 import { parseConfig } from '../../src/config.js';
 import { combConfig } from '../fakes.js';
 import type { Command, Transition, Activity, Arm, ArmOverrides, ArmSetup, BenchFlow, BenchIsolation, BenchRun, BenchStage, Config, Experiment, Stage, State, Task, Worker } from '../../src/types.js';
+import { mainFlows } from '../fixtures/main-flow.js';
 
 const promptStage = (name: string, call: string, extra: Partial<BenchStage> = {}): BenchStage => ({ name, prompt: `${call} {title}\n\n{body}`, agent: 'claude', ...extra });
 export const SETUP_FLOW: BenchFlow = {
@@ -163,13 +164,13 @@ export const BENCH_COMMANDS: Command[] = [
 ];
 export const NOW = new Date('2026-10-01T21:30:00.000Z');
 export const benchComb = (stages: Stage[] = BENCH_STAGES): Pick<Config, 'comb' | 'defaultAgent'> =>
-  ({ defaultAgent: 'claude', comb: { ...benchConfig('/r').comb, stages, transitions: BENCH_TRANSITIONS, commands: BENCH_COMMANDS } });
+  ({ defaultAgent: 'claude', comb: { ...benchConfig('/r').comb, flows: mainFlows(stages, BENCH_TRANSITIONS), commands: BENCH_COMMANDS } });
 export const CLAUDE_ARGS = ['--plugin-dir', '/plugins/extra', '--allowedTools', 'Read Bash(npm run test:coverage *)', '--disallowedTools', 'Bash(gh:*)', '--plugin-dir', '/plugins/two'];
 
 /** A parsed config around one workspace `bench` at `repo`; its stages and agent args are replaced after the parse (the routes only read them). */
 export function benchConfig(repo: string): Config {
   const parsed = parseConfig(combConfig({ stages: [{ name: 'Todo', from: {} }], workspaces: [{ name: 'bench', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', setup: 'RUN pnpm install' }] }));
-  return { ...parsed, defaultAgent: 'claude', agentArgs: { ...parsed.agentArgs, claude: CLAUDE_ARGS }, comb: { ...parsed.comb, stages: BENCH_STAGES, transitions: BENCH_TRANSITIONS, commands: BENCH_COMMANDS } };
+  return { ...parsed, defaultAgent: 'claude', agentArgs: { ...parsed.agentArgs, claude: CLAUDE_ARGS }, comb: { ...parsed.comb, flows: mainFlows(BENCH_STAGES, BENCH_TRANSITIONS), commands: BENCH_COMMANDS } };
 }
 
 export const benchExperiment = (patch: Partial<Experiment> = {}): Experiment =>

@@ -23,6 +23,7 @@ import { hydrate } from './hydrate.js';
 import { openUsageStore } from './usage-store.js';
 import { workspacePathProblem } from './worktree.js';
 import { BENCHMARK_PR_IN_NEW, MCP_DEFAULTS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type SourceItem, type Config, type Exec, type Language } from './types.js';
+import { flatten } from './flows.js';
 
 const execFileAsync: Exec = promisify(execFile);
 
@@ -155,7 +156,7 @@ async function bootHiveMode(
   // state.json carries a copy of the budget; the config file is the source, so a hand edit wins on boot. #191: its lean tasks get their
   // source fields back from the read model before createServer, so no rule runs on a task without them when the model has them
   const loaded = await loadState(home, workspaceScope(config));
-  const saved = { ...loaded, tasks: hydrate(loaded.tasks, await storedItems(sources, log)), budget: config.budget, usageRules: config.usageRules, stages: config.comb.stages, transitions: config.comb.transitions, signals: config.signals };
+  const saved = { ...loaded, tasks: hydrate(loaded.tasks, await storedItems(sources, log)), budget: config.budget, usageRules: config.usageRules, flows: config.comb.flows, ...flatten(config.comb.flows), signals: config.signals };
   // listen() builds the runtime on the bound port, hooks.json and the workspaces' git excludes included (#466)
   const state = runMode?.marker.frozen === true ? frozenState(saved) : saved; // #475: an ended run's Hive starts nothing
   const server = createServer({ home, runtime: { config, sources }, state, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }), ...(runMode === undefined ? {} : { runMode }) });

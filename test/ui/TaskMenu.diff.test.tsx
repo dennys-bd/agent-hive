@@ -7,6 +7,7 @@ import { setLanguage } from '@/i18n';
 import type { Task, DiffScope, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 // Its own file (#270): Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx), so the menu is opened once and
 // every state below arrives through rerender. The dock's diff opener is a spy (#458): where it opens the diff is MainDock.open-diff.test.tsx's.
@@ -18,7 +19,7 @@ const task = (extra: Partial<WithWork> = {}): WithWork => ({
 const workers: Worker[] = [{ id: 's1', status: 'empty' }];
 // live: the task runs a plain terminal, which makes it an activity, the only place a diff opens since redesign 07
 const state = (c: Task, live = true): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: live ? [{ terminalId: 'W1', activityId: activityIdOf('I1'), startedAt: '2026-01-01T00:00:00Z', cwd: '/repo' }] : [], stages, tasks: [c], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: live ? [{ terminalId: 'W1', activityId: activityIdOf('I1'), startedAt: '2026-01-01T00:00:00Z', cwd: '/repo' }] : [], ...flowed(stages, []), tasks: [c], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
   sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 beforeEach(() => { setLanguage('pt'); });

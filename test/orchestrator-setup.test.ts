@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { activityOf, withActivity } from '../src/activities.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import type { Item, SetupRow, Stage, State } from '../src/types.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // A failed worktree setup's rows on the activity (#390): what the Start dialog shows after the mark is gone. Out of orchestrator.test.ts,
 // which is past 2,000 lines.
@@ -20,7 +21,7 @@ const FAILED: SetupRow[] = [...PASSED.slice(0, 2), { ...PASSED[2], status: 'fail
 
 // Task 1 polled into Build under red, its activity born as a first open makes it (#629): nothing runs until a start by hand
 function opened(): { state: State; id: string } {
-  const red = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, stages: STAGES, transitions: [] }, { type: 'setSignal', signal: 'red' }).state;
+  const red = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...flowed(STAGES, []),}, { type: 'setSignal', signal: 'red' }).state;
   const polled = reduce(red, { type: 'poll', source: 'board', items: [{ item, column: 'Ready' }] }).state;
   const born = reduce(polled, { type: 'createActivity', taskId: ID }).state;
   return { state: born, id: activityOf(born, ID)?.id ?? 'none' };

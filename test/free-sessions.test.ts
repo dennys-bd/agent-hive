@@ -10,6 +10,7 @@ import { withWork, workId } from './fixtures/work.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { SourceItem, Signal, Stage, Transition, Worker, State, Item } from '../src/types.js';
 import { move, chained } from './fakes.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // The user's own sessions (#459): only automation counts as a worker; a session runs in a worker of its own, outside the cap.
 const STAGES: LegacyStage[] = [
@@ -20,7 +21,7 @@ const WORKTREE = '/tmp/worktrees/hive-1-task-1';
 const item = (n: number): Item => ({ itemId: `board:item${n}`, id: String(n), title: `Task ${n}`, body: '', url: `https://github.com/o/r/issues/${n}`, source: 'board' });
 const listed = (n: number): SourceItem => ({ item: item(n), column: 'Backlog' });
 // n tasks polled into spec under `signal` (up to max start under green), each given a worktree afterwards so a session may open on any
-const hive = (max: number, n: number, signal: Signal = 'green', graph: Pick<State, 'stages' | 'transitions'> = chained(STAGES)): State => {
+const hive = (max: number, n: number, signal: Signal = 'green', graph: Pick<State, 'flows' | 'stages' | 'transitions'> = chained(STAGES)): State => {
   const start: State = { ...initialState(max), signal, workspaces: ['hive'], syncs: { board: {} }, ...graph };
   const polled = reduce(start, { type: 'poll', source: 'board', items: Array.from({ length: n }, (_, i) => listed(i + 1)) }).state;
   // #629: the worktree is each task's activity's: the spawn's own, else a fixture pair
@@ -130,7 +131,7 @@ const LATE_FLOW: Transition[] = [{ from: 'Dev', to: 'CI', when: 'done' }, { from
 const DOCS_PR = 'https://github.com/o/d/pull/2';
 // Task 1 in CI under red, so no stage run starts: its free session's done moved it from Dev, and a late one may follow
 const inCi = (): { state: State; own: string } => {
-  const opened = session(hive(1, 1, 'red', { stages: LATE_STAGES, transitions: LATE_FLOW }), 1).state;
+  const opened = session(hive(1, 1, 'red', flowed(LATE_STAGES, LATE_FLOW)), 1).state;
   const own = sessionOf(opened).runId!;
   return { state: reduce(opened, { type: 'done', ptyId: own }).state, own };
 };

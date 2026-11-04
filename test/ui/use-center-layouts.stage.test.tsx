@@ -7,13 +7,14 @@ import { resetViewState } from '@/lib/view-state';
 import type { Activity as LiveActivity, Stage, StageCommands, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { withWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 // A commands stage's locked console tab (#755), as the center's layouts open it
 const CHECKS: Stage = { name: 'checks', from: {}, action: 'commands', commands: ['build'], stopOnFailure: true };
 const TASK: Task = { item: { itemId: 'A', id: '1', title: 'Task A', body: '', url: '' }, stage: 'checks', boardColumn: '', auto: true };
 const BASE: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [CHECKS], tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [],
-  usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([CHECKS], []), tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [],
+  usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
 const RUN: StageCommands = { stage: 'checks', at: 0, ptyId: 'P0', runId: 'R0', failed: [], workerId: 'w1', started: [] };

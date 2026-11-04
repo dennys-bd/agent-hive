@@ -221,7 +221,7 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'moveTask', taskId: 'PVTI_2', before: 'PVTI_1' }), 'moveTask #PVTI_2 before=#PVTI_1');
   assert.equal(describeEvent({ type: 'moveTask', taskId: 'PVTI_2' }), 'moveTask #PVTI_2 before=end');
   assert.equal(describeEvent({ type: 'resetOrder', stage: 'dev' }), 'resetOrder stage=dev');
-  assert.equal(describeEvent({ type: 'setStages', stages: [{ name: 'a', from: {} }, { name: 'b', from: {} }], transitions: [] }), 'setStages a>b'); // #316: no numbers
+  assert.equal(describeEvent({ type: 'setStages', flows: [{ name: 'main', stages: [{ name: 'a', from: {} }, { name: 'b', from: {} }], transitions: [] }, { name: 'bug', stages: [{ name: 'c', from: {} }], transitions: [] }] }), 'setStages a>b>c'); // #316: no numbers; #564: every flow's stages
   assert.equal(describeEvent({ type: 'sourceActionFailed', taskId: 'board:I1', message: 'must have admin rights', leaving: true }), 'sourceActionFailed #board:I1: must have admin rights'); // #286
   assert.equal(describeEvent({ type: 'activityDeleted', activityId: 'a-PVTI_1' }), 'activityDeleted activity=a-PVTI_1');
   assert.equal(describeEvent({ type: 'deleteActivityFailed', activityId: 'a-PVTI_1', message: "error: The branch 'hive-30-logs' is not fully merged." }), "deleteActivityFailed activity=a-PVTI_1: error: The branch 'hive-30-logs' is not fully merged.");

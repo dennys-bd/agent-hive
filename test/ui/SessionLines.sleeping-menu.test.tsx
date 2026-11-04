@@ -15,7 +15,7 @@ const task: WithWork = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '
 const records = [{ id: 'a-I1', taskIds: ['I1'], sessions: [session] }]; // #629: the task's session is its record's
 const activity: TaskActivity = { kind: 'task', ...taskPairOf('I1', {}, records[0]), task, runs: [], sessions: [{ session, status: 'empty' }], status: 'empty', worker: false, records };
 const state: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [], tasks: [task], sourceOrder: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], flows: [], stages: [], tasks: [task], sourceOrder: [],
   localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: records, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };

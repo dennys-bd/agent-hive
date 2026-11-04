@@ -4,6 +4,7 @@ import { describeEvent } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { seenOne } from '../src/tasks.js';
 import type { Item, SourceItem, Stage, State, Task } from '../src/types.js';
+import { flowed } from './fixtures/main-flow.js';
 
 // A field write's re-read item (#686): the poll's one-task step applied to that task alone, through the reducer.
 
@@ -17,7 +18,7 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 // Two tasks of board in Ready (dev); maxConcurrent 0 keeps the fill from starting either
-const polled = (): State => deepFreeze(reduce({ ...initialState(0), syncs: { board: {} }, stages: STAGES }, { type: 'poll', source: 'board', items: [listed(1), listed(2)] }).state);
+const polled = (): State => deepFreeze(reduce({ ...initialState(0), syncs: { board: {} }, ...flowed(STAGES)}, { type: 'poll', source: 'board', items: [listed(1), listed(2)] }).state);
 const taskOf = (state: State, n: number): Task | undefined => state.tasks.find((c) => c.item.itemId === `board:I${n}`);
 
 test('itemRead refreshes its task alone: the item as re-read; the other task, the source order and the sync stamp stay (#686)', () => {

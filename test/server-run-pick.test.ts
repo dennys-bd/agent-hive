@@ -8,6 +8,7 @@ import type { HiveServer } from '../src/server.js';
 import type { RunPick, Stage } from '../src/types.js';
 import { type FakeWorker, fakeSpawn, LOCAL_STAGES, plainArgs } from './fakes.js';
 import { SESSION_A, send, startReviews } from './review-server.js';
+import { mainFlows } from './fixtures/main-flow.js';
 
 // A manual start's run picks (#290) through the server: the stage spawn runs them, POST /tasks/:id/start checks them.
 const BUILD: Stage = { name: 'build', from: {}, prompt: 'Build {id}', model: 'opus' };
@@ -23,7 +24,7 @@ async function until(check: () => boolean): Promise<void> {
 async function inBuild(t: TestContext, stage: Stage = BUILD): Promise<{ base: string; server: HiveServer; workers: FakeWorker[] }> {
   const { spawn, workers } = fakeSpawn();
   const { base, server } = await startReviews(t, { launchPty: spawn });
-  await server.dispatch({ type: 'setStages', stages: [...LOCAL_STAGES, stage], transitions: [] });
+  await server.dispatch({ type: 'setStages', flows: mainFlows([...LOCAL_STAGES, stage]) });
   await server.dispatch({ type: 'setAuto', taskId: 'local:1', auto: false });
   await server.dispatch({ type: 'moveToStage', taskId: 'local:1', stage: stage.name });
   return { base, server, workers };

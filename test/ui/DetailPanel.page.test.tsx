@@ -8,6 +8,7 @@ import { setLanguage } from '@/i18n';
 import type { State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { withWork } from '../fixtures/work';
+import { flowed } from '../fixtures/main-flow.js';
 
 // Every task id the panel asked useComments for: a page reads none, its comments are the center's
 const read: (string | undefined)[] = [];
@@ -24,8 +25,8 @@ const TASK: Task = {
 };
 const HIVE: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Local', body: 'the local body', url: '' }, stage: 'dev', boardColumn: '', auto: false, created: true };
 const BASE: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], tasks: [TASK, HIVE],
-  sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['site'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], []), tasks: [TASK, HIVE],
+  sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['site'],
   sourceWorkspaces: { roadmap: 'site' }, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
   approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
