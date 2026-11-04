@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { loadViewState, readView, resetViewState, VIEW_WRITE_DELAY_MS, writeView } from '@/lib/view-state';
+import { loadViewState, readView, resetViewState, setViewWrites, VIEW_WRITE_DELAY_MS, writeView } from '@/lib/view-state';
 import { VIEW_KEYS } from '../../src/view-state';
 
 // The dashboard's view state (#484): one load before the first render, synchronous reads, one debounced post per key, a flush on pagehide.
@@ -89,4 +89,17 @@ test('a post that fails is reported with console.error naming the key, and the s
   await vi.advanceTimersByTimeAsync(VIEW_WRITE_DELAY_MS);
   await vi.waitFor(() => expect(error).toHaveBeenCalledWith('view state: stageFilters not saved', expect.any(Error)));
   expect(readView('stageFilters')).toEqual({ dev: [] });
+});
+
+test('under setViewWrites(false) a write changes readView and posts nothing, neither after the delay nor on pagehide; resetViewState turns writes back on (#553)', async () => {
+  setViewWrites(false);
+  writeView('splitEdge', 'bottom');
+  expect(readView('splitEdge')).toBe('bottom');
+  await vi.advanceTimersByTimeAsync(VIEW_WRITE_DELAY_MS);
+  window.dispatchEvent(new Event('pagehide'));
+  expect(posts()).toEqual([]);
+  resetViewState();
+  writeView('splitEdge', 'right');
+  await vi.advanceTimersByTimeAsync(VIEW_WRITE_DELAY_MS);
+  expect(posts()).toEqual([['/view-state/splitEdge', { value: 'right' }, false, '1']]);
 });
