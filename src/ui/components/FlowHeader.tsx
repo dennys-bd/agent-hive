@@ -2,7 +2,7 @@ import { ExternalLinkIcon, SearchIcon } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { repoName } from '../../pull-requests';
 import { displayBinding } from '../../shortcuts';
-import { resolveWorkspace } from '../../tasks';
+import { type HIVE_SOURCE, resolveWorkspace } from '../../tasks';
 import type { RepoSummary, SourceConfig, SourceSync, Task, State } from '../../types';
 import { act } from '@/components/actions';
 import { ButtonKeyHint, KeyHint } from '@/components/KeyHint';
@@ -87,14 +87,11 @@ function SearchField({ label, value, isShown, isNarrow, onChange }: { label: str
   );
 }
 
-// The source header (handoff §2): its name, then its type and owner, muted
-function SourceHeading({ source }: { source: SourceConfig }) {
-  return (
-    <>
-      <span className="font-semibold text-[13px] text-foreground">{source.name}</span>
-      <span>{`${t(`tasks.header.source.${source.type}`)} · ${source.owner}`}</span>
-    </>
-  );
+// The source header (handoff §2): its name, then its type and owner, muted. The hive source (#572) has neither, as its sidebar row has no second line
+function SourceHeading({ source }: { source: SourceConfig | typeof HIVE_SOURCE }) {
+  const name = <span className="font-semibold text-[13px] text-foreground">{typeof source === 'string' ? source : source.name}</span>;
+  if (typeof source === 'string') return name;
+  return <>{name}<span>{`${t(`tasks.header.source.${source.type}`)} · ${source.owner}`}</span></>;
 }
 
 /** A repository header's tab (#758): its PR list, or its issues. */
@@ -141,7 +138,7 @@ function RepoTitle({ header }: { header: RepoHeader }) {
 }
 
 /** What the header is for (#571): the tasks view, a source's table and pages, or a repository's lists and pages. */
-export type HeaderMode = { kind: 'tasks' } | { kind: 'source'; source: SourceConfig } | { kind: 'repo'; header: RepoHeader };
+export type HeaderMode = { kind: 'tasks' } | { kind: 'source'; source: SourceConfig | typeof HIVE_SOURCE } | { kind: 'repo'; header: RepoHeader };
 const TASKS_MODE: HeaderMode = { kind: 'tasks' };
 
 // fluxo, the sources legend (#574), the display slot, and the chips of the workspaces the shown tasks resolve to (#542)

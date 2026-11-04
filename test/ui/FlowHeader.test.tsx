@@ -130,6 +130,13 @@ test('in the source mode the header names the source and, muted, its type and ow
   expect(within(header()).getByRole('textbox', { name: 'buscar tarefas' }).closest('label')).toHaveClass('flex-[0_1_200px]');
 });
 
+test('the hive source header names hive alone: no type or owner line, no chips, no last poll (#572)', () => {
+  render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: 'hive' }} tasks={[]} search="" onSearch={vi.fn()} />);
+  expect(within(header()).getByText('hive')).toHaveClass('font-semibold', 'text-[13px]');
+  expect(within(header()).queryByText(/github project/)).not.toBeInTheDocument();
+  expect(within(header()).queryByText(/^atualizado/)).not.toBeInTheDocument();
+});
+
 test('with onRefresh, atualizar runs it instead of polling every source (#756)', async () => {
   const user = userEvent.setup();
   const onRefresh = vi.fn(async () => undefined);

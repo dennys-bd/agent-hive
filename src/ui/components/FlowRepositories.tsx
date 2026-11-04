@@ -1,4 +1,4 @@
-import { MoreHorizontalIcon } from 'lucide-react';
+import { CornerDownRightIcon, GitForkIcon, MoreHorizontalIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { repoName } from '../../pull-requests';
 import type { RepoSummary } from '../../types';
@@ -35,8 +35,14 @@ function RepoMenu({ repo, isPinned, onPin }: Pick<RepoRowProps, 'repo' | 'isPinn
   );
 }
 
+// handoff §4d: a nested repo hangs under ↳ (corner-down-right), a fork under ⑂ (git-fork)
+function ChildMark({ isFork }: { isFork: boolean }) {
+  const Icon = isFork ? GitForkIcon : CornerDownRightIcon;
+  return <span aria-hidden="true" data-child={isFork ? 'fork' : 'nested'} className="-mr-0.5 flex w-2.5 text-muted-foreground"><Icon className="size-2.5" /></span>;
+}
+
 // A repository's row (handoff 02): the workspace's square, the name, the open PRs, the ⋯; under it the workspace and the last activity. A
-// fork's pair (#854) names each in full; the original says so, the fork hangs under it with ↳. A div, not a button: the ⋯ is a button of its
+// fork's pair (#854) names each in full; the original says so, the fork hangs under it with ⑂, a nested repo with ↳. A div, not a button: the ⋯ is a button of its
 // own inside it, as on a source's row. A repository the model never synced (#182) shows the syncing mark in place of its open PRs.
 function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
   const isChild = repo.role === 'fork' || repo.role === 'nested'; // #653: a nested repo hangs as a fork does
@@ -45,12 +51,12 @@ function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
   return (
     // biome-ignore lint/a11y/useSemanticElements: see above
     <div
-      role="button" tabIndex={0} title={repo.repository} className={ROW} data-selected={isSelected ? '' : undefined} aria-pressed={isSelected}
+      role="button" tabIndex={0} title={repo.repository} className={`${ROW} ${isChild ? '-mt-1.5' : ''}`} data-selected={isSelected ? '' : undefined} aria-pressed={isSelected}
       onClick={(e) => { if (e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest('button')) onPick(repo.repository); }}
       onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onPick(repo.repository); } }}
     >
       <span className="flex items-center gap-2">
-        {isChild && <span aria-hidden="true" className="-mr-0.5 w-2.5 text-muted-foreground text-xs">↳</span>}
+        {isChild && <ChildMark isFork={repo.role === 'fork'} />}
         <WorkspaceSquare name={repo.workspace} />
         <span className="min-w-0 flex-1 truncate">{repo.role === undefined ? repoName(repo.repository) : repo.repository}</span>
         <span className="w-6 text-right text-muted-foreground text-xs tabular-nums">{repo.syncedAt === null ? <Syncing /> : repo.openPrs}</span>
@@ -62,7 +68,7 @@ function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
 }
 
 /** The repositories of the flow sidebar (#757, handoff 02), below the sources: the pinned ones in pin order, then the rest by last activity,
- * RECENT_SHOWN of them and +N for the others. Read when it mounts; a pick here clears the source pick. Hidden while none is listed. */
+ * RECENT_SHOWN of them and +N for the others. Its header is the tasks sidebar's section (#572); with none listed it renders nothing inside it. Read when it mounts. */
 export function FlowRepositories({ selected, onPick }: { selected?: string; onPick(repository: string): void }) {
   const repositories = useRepositories();
   const [pinned, pin] = usePinned();
@@ -77,8 +83,7 @@ export function FlowRepositories({ selected, onPick }: { selected?: string; onPi
     <RepoRow key={repo.repository} repo={repo} isSelected={selected === repo.repository} isPinned={pinned.includes(repo.repository)} onPick={onPick} onPin={pin} />
   );
   return (
-    <section aria-label={t('repos.title')} className="flex min-h-0 flex-col gap-0.5">
-      <div className="flex items-center justify-between pb-1.5 text-muted-foreground text-xs"><span>{t('repos.title')}</span><span>{t('repos.prs')}</span></div>
+    <div className="flex flex-col gap-0.5">
       {groups.pinned.length > 0 && <p className={GROUP}>{t('repos.pinned')}</p>}
       {groups.pinned.map(row)}
       {recent.length > 0 && <p className={`${GROUP} ${groups.pinned.length > 0 ? 'pt-2' : ''}`}>{t('repos.recent')}</p>}
@@ -88,6 +93,6 @@ export function FlowRepositories({ selected, onPick }: { selected?: string; onPi
           {t('repos.more', { n: hidden })}
         </button>
       )}
-    </section>
+    </div>
   );
 }

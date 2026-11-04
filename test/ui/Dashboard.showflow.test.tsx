@@ -80,7 +80,7 @@ test('from a repository page, see in flow lands on the task\'s source flow with 
   expect(bar().queryByTitle(/^voltar( · |$)/)).not.toBeInTheDocument(); // the back button's title (#911)
 });
 
-test('with a source\'s table shown, see in flow shows the tasks\' flowchart, todas pressed, the task selected (#571)', async () => {
+test('with a source\'s table shown, see in flow shows the task\'s flow, its row pressed, the task selected (#571, #572)', async () => {
   const user = userEvent.setup();
   render(<Home />);
   showFlow();
@@ -88,7 +88,8 @@ test('with a source\'s table shown, see in flow shows the tasks\' flowchart, tod
   await bar().findByText('other');
   await seeInFlow(user);
   await bar().findByText('todas as sources');
-  expect(automation().getByRole('button', { name: /^todas/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(automation().getByRole('button', { name: /^main/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(automation().getByRole('button', { name: /^todas em lista/ })).toHaveAttribute('aria-pressed', 'false');
   expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'false');
   expect(automation().getByRole('button', { name: /^other/ })).toHaveAttribute('aria-pressed', 'false');
   expect(screen.getByRole('heading', { name: '#12 Pager breaks' })).toBeInTheDocument();

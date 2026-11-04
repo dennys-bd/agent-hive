@@ -37,11 +37,7 @@ const en = {
   'signal.effect.noWorkerless': 'no workerless stages',
   'signal.effect.likeGreen': 'like green',
   'flow.signal': 'signal',
-  'flow.sources': 'sources',
-  'flow.sources.filter': 'filter',
   'flow.sources.add': 'add source',
-  'flow.sources.search': 'filter sources',
-  'flow.sources.all': 'all',
   'flow.source.type.github': 'github project',
   'flow.source.type.hive': 'hive tasks',
   'flow.source.menu': '{name} actions',
@@ -1791,7 +1787,7 @@ const en = {
   'shortcuts.fixed.openActivity': 'open the activity',
   'shortcuts.fixed.autoTask': 'auto on or off for the task',
   'shortcuts.fixed.taskMenu': "the task's menu",
-  'shortcuts.fixed.pickSource': 'filter by source 1–9, 0 for all',
+  'shortcuts.fixed.pickSource': 'open source 1–9, 0 for the list',
   'shortcuts.fixed.zoomFit': 'fit the flow', // #910
   'shortcuts.fixed.cancel': 'cancel',
   'shortcuts.fixed.treeCut': 'cut',
@@ -3050,6 +3046,14 @@ const en = {
   'tasks.display.epics.hint.none': 'epics show as cards in the stages.',
   'tasks.display.epics.hint.middle': 'only the root epic stays. the middle ones leave the view and stay in the flow.',
   'tasks.display.epics.hint.all': 'no epic in the view. they stay in the flow and their children stay in the stages.',
+  'tasks.sidebar.list': 'all as a list', // #572: the tasks section's rows (handoff §4b)
+  'tasks.sidebar.outside': 'no flow',
+  'tasks.sidebar.automation': 'automation', // #572: the sidebar's section titles (handoff §4)
+  'tasks.sidebar.tasks': 'tasks',
+  'tasks.sidebar.sources': 'sources',
+  'tasks.sidebar.toggle': '{name} section', // the title's accessible name: the rail's tarefas and the header's region already hold the bare word
+  'tasks.sidebar.resize': 'resize {name}',
+  'tasks.sidebar.newFlow': 'new flow',
 };
 
 export type MessageKey = keyof typeof en;
@@ -3089,11 +3093,7 @@ const pt: Record<MessageKey, string> = {
   'signal.effect.noWorkerless': 'sem etapas sem worker',
   'signal.effect.likeGreen': 'como green',
   'flow.signal': 'sinal',
-  'flow.sources': 'sources',
-  'flow.sources.filter': 'filtrar',
   'flow.sources.add': 'adicionar source',
-  'flow.sources.search': 'filtrar sources',
-  'flow.sources.all': 'todas',
   'flow.source.type.github': 'github project',
   'flow.source.type.hive': 'tarefas do hive',
   'flow.source.menu': 'ações de {name}',
@@ -4836,7 +4836,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.fixed.openActivity': 'abrir a atividade',
   'shortcuts.fixed.autoTask': 'auto ligado ou desligado na tarefa',
   'shortcuts.fixed.taskMenu': 'o menu da tarefa',
-  'shortcuts.fixed.pickSource': 'filtrar por source 1–9, 0 para todas',
+  'shortcuts.fixed.pickSource': 'abrir source 1–9, 0 para a lista',
   'shortcuts.fixed.zoomFit': 'ajustar o fluxo',
   'shortcuts.fixed.cancel': 'cancelar',
   'shortcuts.fixed.treeCut': 'recortar',
@@ -6094,6 +6094,14 @@ const pt: Record<MessageKey, string> = {
   'tasks.display.epics.hint.none': 'epics aparecem como cards nas etapas.',
   'tasks.display.epics.hint.middle': 'fica só o epic raiz. os do meio somem da vista e continuam no fluxo.',
   'tasks.display.epics.hint.all': 'nenhum epic na vista. continuam no fluxo e as filhas seguem nas etapas.',
+  'tasks.sidebar.list': 'todas em lista',
+  'tasks.sidebar.outside': 'sem fluxo',
+  'tasks.sidebar.automation': 'automação',
+  'tasks.sidebar.tasks': 'tarefas',
+  'tasks.sidebar.sources': 'sources',
+  'tasks.sidebar.toggle': 'seção {name}',
+  'tasks.sidebar.resize': 'redimensionar {name}',
+  'tasks.sidebar.newFlow': 'novo fluxo',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

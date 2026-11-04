@@ -72,7 +72,7 @@ const automation = () => within(screen.getByRole('region', { name: 'Tarefas' }))
 const main = () => within(screen.getByRole('main'));
 const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 
-test('picking a repository clears the source pick, todas included, and picking a source clears the repository (#757)', async () => {
+test('picking a repository clears the source pick, and picking a source clears the repository (#757)', async () => {
   const user = userEvent.setup();
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
@@ -80,13 +80,12 @@ test('picking a repository clears the source pick, todas included, and picking a
   await user.click(await automation().findByRole('button', { name: /^site/ }));
   expect(automation().getByRole('button', { name: /^site/ })).toHaveAttribute('aria-pressed', 'true');
   expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'false');
-  expect(automation().getByRole('button', { name: /^todas/ })).toHaveAttribute('aria-pressed', 'false');
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
   expect(automation().getByRole('button', { name: /^site/ })).toHaveAttribute('aria-pressed', 'false');
   expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('a picked repository takes the center with its header on the PRs tab and its open PRs; issues shows its open issues; picking todas shows the flowchart again (#757, #758)', async () => {
+test('a picked repository takes the center with its header on the PRs tab and its open PRs; issues shows its open issues; picking the flow row shows the flowchart again (#757, #758, #572)', async () => {
   const user = userEvent.setup();
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
@@ -97,7 +96,7 @@ test('a picked repository takes the center with its header on the PRs tab and it
   await user.click(bar().getByRole('tab', { name: 'issues 3' }));
   expect(await main().findByText('Issue 12')).toBeInTheDocument();
   expect(bar().getByRole('tab', { name: 'issues 3' })).toHaveAttribute('aria-selected', 'true');
-  await user.click(automation().getByRole('button', { name: /^todas/ }));
+  await user.click(automation().getByRole('button', { name: /^main/ }));
   expect(main().queryByText('Issue 12')).not.toBeInTheDocument();
   expect(bar().getByText('todas as sources')).toBeInTheDocument();
 });

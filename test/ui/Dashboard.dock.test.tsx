@@ -101,7 +101,7 @@ test('the first run opens the center on Home and the left panel on the Atividade
   expect(automation).not.toBeVisible();
   expect(within(automation).getAllByRole('radio').map((item) => item.textContent)).toEqual(['green', 'yellow', 'red']);
   expect(within(automation).getByLabelText('máx.')).toBeInTheDocument();
-  expect(within(automation).getByRole('button', { name: /^todas/ })).toBeInTheDocument(); // the sources (redesign 09)
+  expect(within(automation).getByRole('button', { name: /^todas em lista/ })).toBeInTheDocument(); // the tasks section (#572)
   const footer = screen.getByRole('contentinfo');
   expect(within(footer).queryByRole('status')).not.toBeInTheDocument(); // #227: the signal is the brand's mark
   expect(document.querySelector('header [data-signal]')).toHaveAttribute('data-signal', 'green'); // by the manual signal before an effective one

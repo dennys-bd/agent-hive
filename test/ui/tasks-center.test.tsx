@@ -3,10 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 import { Dashboard } from '@/components/Dashboard';
 import type { SourcesNav } from '@/components/FlowSources';
-import { FIRST_CENTER, type TasksCenter, backOf, centerOfPick, centerOfTask, resolveCenter, useTasksCenter } from '@/hooks/use-tasks-center';
+import { FIRST_CENTER, type TasksCenter, backOf, centerOfTask, resolveCenter, useTasksCenter } from '@/hooks/use-tasks-center';
 import { forgetProjects } from '@/hooks/use-project';
 import { setLanguage } from '@/i18n';
-import { resetViewState } from '@/lib/view-state';
+import { readView, resetViewState } from '@/lib/view-state';
 import { flatten } from '../../src/flows';
 import type { Flow, ProjectView, RepoSummary, SourceConfig, Stage, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../../src/types';
@@ -28,19 +28,18 @@ const STATE: State = {
 
 beforeEach(() => setLanguage('pt'));
 
-test('resolveCenter keeps a center whose flow, source and repository exist and reads any other as the first flow (#571)', () => {
-  const live: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'ship' }, { kind: 'tasks', view: 'outside' }, { kind: 'source', source: 'roadmap' }, { kind: 'repo', repository: 'acme/site', tab: 'issues' }];
-  for (const center of live) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE])).toBe(center);
-  const stale: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'gone' }, { kind: 'source', source: 'notes' }, { kind: 'source', source: 'hive' }, { kind: 'repo', repository: 'acme/else', tab: 'prs' }];
-  for (const center of stale) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE])).toEqual(FIRST_CENTER);
+test('resolveCenter keeps a center whose flow, source and repository exist, and the hive source while it is on; any other reads as the first flow (#571, #572)', () => {
+  const live: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'ship' }, { kind: 'tasks', view: 'outside' }, { kind: 'tasks', view: 'list' }, { kind: 'source', source: 'roadmap' }, { kind: 'source', source: 'hive' }, { kind: 'repo', repository: 'acme/site', tab: 'issues' }];
+  for (const center of live) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE], true)).toBe(center);
+  const stale: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'gone' }, { kind: 'source', source: 'notes' }, { kind: 'repo', repository: 'acme/else', tab: 'prs' }];
+  for (const center of stale) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE], true)).toEqual(FIRST_CENTER);
+  expect(resolveCenter({ kind: 'source', source: 'hive' }, FLOWS, [ROADMAP], [SITE], false)).toEqual(FIRST_CENTER);
 });
 
-test('centerOfTask places a task in the flow its stage belongs to, else outside; todas and hive pick the first flow, a source its table (#571)', () => {
+test('centerOfTask places a task in the flow its stage belongs to, else outside (#571)', () => {
   expect(centerOfTask(FLOWS, { stage: 'review' })).toEqual({ kind: 'tasks', view: 'flow', flow: 'ship' });
   expect(centerOfTask(FLOWS, { stage: '' })).toEqual({ kind: 'tasks', view: 'outside' });
   expect(centerOfTask(FLOWS, { stage: 'gone' })).toEqual({ kind: 'tasks', view: 'outside' });
-  expect([centerOfPick(undefined), centerOfPick('hive')]).toEqual([FIRST_CENTER, FIRST_CENTER]);
-  expect(centerOfPick('roadmap')).toEqual({ kind: 'source', source: 'roadmap' });
 });
 
 test('backOf: a page goes back to the list it was opened from, labelled voltar; a list and the tasks view have no way back (#571)', () => {
@@ -109,6 +108,15 @@ test("a page under a source or a repository is the details panel's page and has 
   expect(result.current.back).toBeUndefined();
 });
 
+test('the hive source is a center while it is on, with no SourceConfig resolved; once it is off it reads as the first flow (#572)', () => {
+  const { result, rerender } = renderHook(({ nav }) => useTasksCenter(STATE, nav, [SITE], vi.fn()), { initialProps: { nav: NAV } });
+  act(() => result.current.show({ kind: 'source', source: 'hive' }));
+  expect(result.current.center).toEqual({ kind: 'source', source: 'hive' });
+  expect(result.current.source).toBeUndefined();
+  rerender({ nav: { ...NAV, hiveSource: false } });
+  expect(result.current.center).toEqual(FIRST_CENTER);
+});
+
 vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./xterm-fakes')).FakeTerminal }));
 vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./xterm-fakes')).FakeFitAddon }));
 vi.mock('@/hooks/use-comments', () => ({ useComments: () => ({ kind: 'unsupported' }) }));
@@ -136,7 +144,7 @@ const goToRow = async (user: ReturnType<typeof userEvent.setup>, title: string):
   await user.click(within((await main().findByText(title)).closest('tr')!).getByRole('button', { name: 'fluxo ›' }));
 };
 
-test("a source row opens its table under the source header, with no tabs; todas shows the first flow's flowchart (#571)", async () => {
+test("a source row opens its table under the source header, with no tabs; the first flow's row shows its flowchart (#571)", async () => {
   const user = userEvent.setup();
   render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showTasks();
@@ -148,9 +156,9 @@ test("a source row opens its table under the source header, with no tabs; todas 
   expect(bar().getByText('github project · acme')).toBeInTheDocument();
   expect(bar().queryAllByRole('tab')).toEqual([]);
   expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
-  await user.click(automation().getByRole('button', { name: /^todas/ }));
+  await user.click(automation().getByRole('button', { name: /^build/ }));
   expect(stageNode('dev')).not.toBeNull();
-  expect(automation().getByRole('button', { name: /^todas/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(automation().getByRole('button', { name: /^build/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('fluxo › on a task of the second flow shows that flowchart and selects it; on a task in no flow, the outside placeholder (#571)', async () => {
@@ -199,11 +207,36 @@ test('the outside placeholder has exibir with no voltas rows, counting only the 
   await user.click(pop.getByRole('checkbox', { name: 'hive' }));
   expect(bar().getByText('roadmap')).toBeInTheDocument();
   await user.keyboard('{Escape}');
-  await user.click(automation().getByRole('button', { name: /^todas/ }));
+  await user.click(automation().getByRole('button', { name: /^build/ }));
   expect(stageNode('dev')).not.toBeNull();
   expect(bar().getByText('roadmap')).toBeInTheDocument(); // one value for every view
   await user.click(bar().getByRole('button', { name: 'exibir' }));
   pop = within(screen.getByRole('dialog'));
   expect(pop.getByRole('radiogroup', { name: 'voltas' })).toBeInTheDocument();
   expect(pop.getByRole('checkbox', { name: 'hive' })).not.toBeChecked();
+});
+
+test('⌥0 opens todas em lista and ⌥1 the hive source, while the tasks view shows (#572)', () => {
+  render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
+  showTasks();
+  fireEvent.keyDown(window, { key: '™', code: 'Digit0', altKey: true });
+  expect(automation().getByRole('button', { name: /^todas em lista/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(main().getByText('em breve')).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: '™', code: 'Digit1', altKey: true });
+  expect(automation().getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(bar().getByText('hive')).toHaveClass('font-semibold');
+});
+
+test('mostrar só esta in a source\'s ⋯ leaves only that source on: the header legend names it and the center stays (#572)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const user = userEvent.setup();
+  render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
+  showTasks();
+  automation().getByRole('button', { name: 'ações de roadmap' }).focus();
+  await user.keyboard('{Enter}');
+  await user.click(screen.getByRole('menuitem', { name: 'mostrar só esta' }));
+  expect(bar().getByText('roadmap')).toBeInTheDocument(); // the legend: the one source on (#574 decision 10)
+  expect(stageNode('dev')).not.toBeNull();
+  expect(readView('flowView')).toMatchObject({ sourcesOff: ['hive'] });
 });
