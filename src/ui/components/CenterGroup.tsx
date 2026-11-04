@@ -138,16 +138,20 @@ function closeRun(ptyId: string, activity: Activity, settings: CloseTabSettings,
   if (noticeOn(run, settings)) showCloseTabNotice(noticeInput(run, activity, settings, () => sleepUntabbed(run, activity, settings, openRun), openRun));
 }
 
+/** A file tab's buffer and its base go with the last tab that shows them (#717, #668): a close, or a dock to the main window (#553). */
+export function dropBuffer(item: CenterTabRef, activityId: string, isShared: boolean): void {
+  const buffer = bufferPath(item);
+  if (buffer === undefined || isShared) return;
+  models.close(activityId, buffer);
+  fileBase.close(activityId, buffer);
+}
+
 /** A tab's close (#452, #612): its X, a middle-click, or ⌘W on a tab that is not split. Every run it holds follows the close rule, each pane
  * of a split tab included (#641); a diff, a PR or the console holds none. A file's buffer and its base go with the last tab that shows them,
  * its editor or its changes tab (#717, #668): isShared says the other one is still open. */
 export function closeTab(item: CenterTabRef, activity: Activity, ops: CenterOps, settings: CloseTabSettings, confirmLoss: ConfirmLoss, openRun?: OpenRun, isShared = false): void {
   ops.close(refKey(item));
-  const buffer = bufferPath(item);
-  if (buffer !== undefined && !isShared) {
-    models.close(activity.activity.id, buffer);
-    fileBase.close(activity.activity.id, buffer);
-  }
+  dropBuffer(item, activity.activity.id, isShared);
   for (const ptyId of runsOf(item)) closeRun(ptyId, activity, settings, confirmLoss, openRun);
 }
 

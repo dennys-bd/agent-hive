@@ -142,6 +142,7 @@ const en = {
   'usage.ago.hours': '{n} h ago',
   'usage.ago.days': '{n} d ago',
   'usage.close': 'close',
+  'window.dockFailed': "Couldn't move the tab back to the main window", // #553: a dock main refused
   'window.back': 'Back to the main window', // #553: a detached window's tab, or the strip's button
   'window.session': 'session',
   'window.week': 'week',
@@ -3146,6 +3147,7 @@ const pt: Record<MessageKey, string> = {
   'usage.ago.hours': 'há {n} h',
   'usage.ago.days': 'há {n} d',
   'usage.close': 'fechar',
+  'window.dockFailed': 'Não foi possível voltar a aba para a janela principal',
   'window.back': 'Voltar para a janela principal',
   'window.session': 'sessão',
   'window.week': 'semana',
