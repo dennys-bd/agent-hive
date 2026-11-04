@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from 'react';
 import { taskTotals } from '../../record-kit';
 import { taskLabel } from '../../tasks';
 import type { State } from '../../types';
+import { inFlow } from '../../tasks';
 import { ActivityMenuButton } from '@/components/ActivityMenu';
 import { LocalMenuButton } from '@/components/LocalMenu';
 import { useBranches } from '@/components/QuickDialogs';
@@ -41,7 +42,7 @@ function factsOf({ task, activity }: TaskActivity, state: Pick<State, 'workers' 
   const own = activity.branch; // the live activity's (#629)
   const branch: Fact[] = own === undefined ? [] : [{ key: 'branch', node: <span className="font-mono">{own}</span> }];
   return [
-    { key: 'stage', node: t('detail.stage', { stage: task.stage }) },
+    ...(inFlow(task) ? [{ key: 'stage', node: t('detail.stage', { stage: task.stage }) }] : []), // #566: a task outside the flow has no stage to name
     ...branch,
     { key: 'time', node: compact(total.ms - total.waitingMs) },
     { key: 'tokens', node: t('activity.bar.tokens', { tokens: fmt(total.tokens) }) },
