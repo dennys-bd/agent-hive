@@ -152,7 +152,7 @@ export function describeEvent(event: HiveEvent): string {
   if (isBenchmarkEvent(event)) return describeBenchmark(event); // #458
   switch (event.type) {
     case 'boot': return 'boot';
-    case 'poll': return `poll source=${event.source ?? '-'} items=${event.items.length} ids=${event.items.slice(0, POLL_IDS_MAX).map((c) => c.item.id).join(',')}`;
+    case 'poll': return `poll source=${event.source ?? '-'} items=${event.items.length} ids=${event.items.slice(0, POLL_IDS_MAX).map((c) => c.item.id).join(',')}${event.reads === undefined ? '' : ` reads=${event.reads.map((r) => `${r.itemId}:${r.read.reason}`).join(',')}`}`;
     case 'setMax': return `setMax ${event.max}`;
     case 'setSignal': return `setSignal ${event.signal}`;
     case 'setSignals': return `setSignals onOpen=${event.signals.onOpen}`; // #727: the rows are the config's
@@ -203,8 +203,6 @@ export function describeEvent(event: HiveEvent): string {
     case 'restoreFailed': return `restoreFailed #${event.itemId}`;
     case 'clearSessions': return `clearSessions ${act(event.activityId)} ${shortId(event.sessionId)}`;
     case 'closeTask': return `close task=#${event.taskId}`;
-    case 'keepTask': return `keepTask #${event.taskId}`;
-    case 'closeMissing': return `closeMissing stage=${event.stage}`;
     case 'done': return `done pty=${shortId(event.ptyId)}${event.result ? ` result=${Object.keys(event.result).join(',')}` : ''}${event.verdict === undefined ? '' : ` verdict=${event.verdict}`}`; // keys only; a verdict's name is config, the evidence is never logged (#134)
     case 'pr': return `pr pty=${shortId(event.ptyId)}`;
     case 'prStates': return `prStates ${event.states.map((s) => `#${prNumber(s.url)}=${s.state}`).join(',')}`; // numbers, never the links

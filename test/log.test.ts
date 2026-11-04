@@ -176,6 +176,8 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'boot' }), 'boot');
   assert.equal(describeEvent({ type: 'leaveFlow', taskId: 'board:I1' }), 'leaveFlow #board:I1'); // #566
   assert.equal(describeEvent({ type: 'poll', source: 'board', items: [item('1'), item('2')].map((t) => ({ item: t, column: 'Ready' })) }), 'poll source=board items=2 ids=1,2');
+  assert.equal(describeEvent({ type: 'poll', source: 'board', items: [], reads: [{ itemId: 'board:I1', read: { reason: 'gone' } }, { itemId: 'board:I2', read: { reason: 'closed', item: item('2') } }] }),
+    'poll source=board items=0 ids= reads=board:I1:gone,board:I2:closed', '#568: ids and reasons, never a title');
   const ids = Array.from({ length: 25 }, (_, i) => String(i + 1));
   assert.equal(describeEvent({ type: 'poll', source: 'board', items: ids.map((id) => ({ item: item(id), column: 'Ready' })) }), `poll source=board items=25 ids=${ids.slice(0, 20).join(',')}`);
   assert.equal(describeEvent({ type: 'exit', ptyId: PTY }), 'exit pty=1a2b3c4d');
@@ -208,8 +210,6 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'error' }), 'error');
   assert.equal(describeEvent({ type: 'start', itemId: 'PVTI_1' }), 'start #PVTI_1');
   assert.equal(describeEvent({ type: 'closeTask', taskId: 'PVTI_1' }), 'close task=#PVTI_1');
-  assert.equal(describeEvent({ type: 'keepTask', taskId: 'PVTI_1' }), 'keepTask #PVTI_1');
-  assert.equal(describeEvent({ type: 'closeMissing', stage: 'dev' }), 'closeMissing stage=dev');
   assert.equal(describeEvent({ type: 'done', ptyId: PTY }), 'done pty=1a2b3c4d');
   assert.equal(describeEvent({ type: 'done', ptyId: PTY, result: { spec: 'x', plan: 'y' } }), 'done pty=1a2b3c4d result=spec,plan');
   assert.equal(describeEvent({ type: 'pr', ptyId: PTY, url: 'https://github.com/acme/r/pull/9' }), 'pr pty=1a2b3c4d');

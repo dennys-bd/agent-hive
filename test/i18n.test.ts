@@ -68,7 +68,8 @@ test('t fills {placeholders} from vars and leaves the text alone otherwise', () 
 });
 
 test('the flow and stage keys exist in both languages', () => {
-  for (const key of ['task.start', 'task.missing', 'task.close', 'task.keep', 'task.freeSession', 'confirm.close', 'confirm.closeMissing', 'confirm.closeMissingAll', 'confirm.closeMissingRunning', 'stage.missing', 'stage.closeMissing', 'confirm.deleteActivity', 'detail.deleteActivity', 'detail.deleteActivityBlocked.running', 'detail.deleteActivityBlocked.deleting', 'detail.deleteActivityBlocked.nothingToDelete', 'confirm.forceDeleteActivity', 'task.force', 'settings.stages', 'settings.stages.add', 'settings.stages.error', 'flow.end', 'flow.node.list', 'flow.list.footer', 'activity.delete', 'task.delete', 'settings.stages.action', 'settings.stages.action.prompt', 'settings.stages.action.deleteActivity', 'settings.stages.after', 'settings.rules.from', 'settings.rules.value', 'settings.group.rules.hint', 'settings.rules.measure', 'settings.rules.now', 'settings.rules.caption', 'settings.rules.measure.week', 'settings.rules.effect', 'settings.rules.effect.maxWorkers', 'settings.rules.effect.signal', 'settings.rules.effect.stageWorkers', 'settings.baseBranch', 'settings.baseBranch.auto', 'settings.baseBranch.hint', 'signal.locked', 'maxWorkers.locked', 'footer.rules', 'footer.paused', 'pause.title', 'pause.resume', 'settings.section.maintenance', 'worktrees.empty', 'worktrees.noTask', 'worktrees.detached', 'worktrees.deleteActivityFailed', 'worktrees.cleanOrphans', 'worktrees.removed', 'worktrees.refused', 'worktrees.hint', 'worktrees.remove', 'confirm.removeOrphanWorktree', 'confirm.cleanOrphans'] as const) {
+  for (const key of ['task.missing', 'task.keep', 'task.close', 'stage.missing', 'stage.closeMissing', 'confirm.closeMissing', 'confirm.closeMissingAll', 'confirm.closeMissingRunning', 'confirm.title.closeTask', 'confirm.title.closeTasks']) assert.equal(key in MESSAGES.en || key in MESSAGES.pt, false, key); // #568
+  for (const key of ['task.start', 'task.freeSession', 'confirm.close', 'confirm.deleteActivity', 'detail.deleteActivity', 'detail.deleteActivityBlocked.running', 'detail.deleteActivityBlocked.deleting', 'detail.deleteActivityBlocked.nothingToDelete', 'confirm.forceDeleteActivity', 'task.force', 'settings.stages', 'settings.stages.add', 'settings.stages.error', 'flow.end', 'flow.node.list', 'flow.list.footer', 'activity.delete', 'task.delete', 'settings.stages.action', 'settings.stages.action.prompt', 'settings.stages.action.deleteActivity', 'settings.stages.after', 'settings.rules.from', 'settings.rules.value', 'settings.group.rules.hint', 'settings.rules.measure', 'settings.rules.now', 'settings.rules.caption', 'settings.rules.measure.week', 'settings.rules.effect', 'settings.rules.effect.maxWorkers', 'settings.rules.effect.signal', 'settings.rules.effect.stageWorkers', 'settings.baseBranch', 'settings.baseBranch.auto', 'settings.baseBranch.hint', 'signal.locked', 'maxWorkers.locked', 'footer.rules', 'footer.paused', 'pause.title', 'pause.resume', 'settings.section.maintenance', 'worktrees.empty', 'worktrees.noTask', 'worktrees.detached', 'worktrees.deleteActivityFailed', 'worktrees.cleanOrphans', 'worktrees.removed', 'worktrees.refused', 'worktrees.hint', 'worktrees.remove', 'confirm.removeOrphanWorktree', 'confirm.cleanOrphans'] as const) {
     assert.ok(MESSAGES.en[key].length > 0 && MESSAGES.pt[key].length > 0, key);
   }
   for (const key of ['task.markManual', 'task.unmarkManual', 'task.cleanup', 'task.manual', 'task.noProject']) {
@@ -496,15 +497,15 @@ test('the rules button\'s and panel\'s copy reads as the spec writes it, in both
 
 test('the confirmations\' copy (#75): sentence-case titles with no question mark, lowercase messages and buttons, in both languages; shutdown says the computer', () => {
   const titles = [
-    'confirm.title.stopRun', 'confirm.title.closeTask', 'confirm.title.closeTasks', 'confirm.title.deleteTask', 'confirm.title.trash',
+    'confirm.title.stopRun', 'confirm.title.deleteTask', 'confirm.title.trash',
     'confirm.title.discardEdits', 'confirm.title.discardSettings', 'confirm.title.deleteActivity', 'confirm.title.cleanOrphans',
     'confirm.title.deleteStages', 'confirm.title.sleep', 'confirm.title.shutdown', 'confirm.title.forceDelete', 'activities.deleteAll.title',
   ] as const;
   const lowercase = [
-    'confirm.close', 'confirm.closeMissing', 'confirm.closeMissingAll', 'confirm.removeLocal', 'confirm.deleteActivity', 'confirm.deleteActivity.lead',
+    'confirm.close', 'confirm.removeLocal', 'confirm.deleteActivity', 'confirm.deleteActivity.lead',
     'confirm.deleteActivity.nothing', 'confirm.removeOrphanWorktree', 'confirm.cleanOrphans', 'confirm.forceDeleteActivity', 'confirm.shutdown',
     'confirm.agentLost', 'editor.discardConfirm', 'settings.discard.message', 'settings.stages.deleteMoves.message', 'files.trashOne', 'files.trashMany',
-    'activities.deleteAll.text', 'settings.cancel', 'detail.closeWorker', 'task.close', 'stage.closeMissing', 'task.delete.confirm', 'files.trash',
+    'activities.deleteAll.text', 'settings.cancel', 'detail.closeWorker', 'task.delete.confirm', 'files.trash',
     'editor.discard', 'detail.deleteActivity', 'activities.deleteAll.confirm', 'worktrees.cleanOrphans', 'settings.discard.confirm',
     'settings.stages.deleteMoves.confirm', 'task.force', 'session.sleep', 'shutdown.arm',
   ] as const;

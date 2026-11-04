@@ -167,12 +167,10 @@ test('dismissError in a stage with an action drops the error and the stop; in a 
   assert.equal(activityOf(unheld?.state ?? placed({}), ID)?.stopped, true, 'an error that came without a stop still leaves a prompt stage stopped');
 });
 
-test('dismissError answers undefined for an unknown task, a missing one, one with no error and one a run holds (#354)', () => {
+test('dismissError answers undefined for an unknown task, one with no error and one a run holds (#354)', () => {
   assert.equal(dismissError(placed(ERRED), 'board:nope'), undefined);
   assert.equal(dismissError(placed({ stopped: true }), ID), undefined);
   assert.equal(dismissError(placed({ ...ERRED, workerId: 'w1' }), ID), undefined);
-  const erred = placed(ERRED);
-  assert.equal(dismissError(deepFreeze({ ...erred, tasks: [{ ...erred.tasks[0], missing: true }] }), ID), undefined);
 });
 
 // The task stopped with an error in `stage`, one free worker and green: what the due actions and the fill read

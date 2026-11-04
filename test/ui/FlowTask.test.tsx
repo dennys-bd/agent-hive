@@ -36,7 +36,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
-test('taskAction picks one button by priority: aprovar while no session of the task is live, abrir on a live session (aguardando você too, an approval pending or not), continuar, excluir in a delete-activity stage, iniciar; none for a blocked, a missing or a nothing-to-run task (#542, #829, #812)', () => {
+test('taskAction picks one button by priority: aprovar while no session of the task is live, abrir on a live session (aguardando você too, an approval pending or not), continuar, excluir in a delete-activity stage, iniciar; none for a blocked or a nothing-to-run task (#542, #829, #812)', () => {
   // #629: the run fields are the activity's, so the task is read from the state
   const actionOf = (c: WithWork, workers: Worker[] = [], extra: Partial<State> = {}) => taskAction(c, state(c, workers, extra));
   const waiting = working({ status: 'waiting', freeSession: true, sessionId: 'bbbbbbbb-0000-4000-8000-000000000002' });
@@ -53,7 +53,6 @@ test('taskAction picks one button by priority: aprovar while no session of the t
   expect(actionOf(task({ stage: 'done', worktree: '/wt' }), [waiting])).toBe('open'); // a session open: abrir before excluir
   expect(actionOf(task())).toBe('start');
   expect(actionOf(task({ item: { ...task().item, blockedBy: ['9'] } }))).toBeUndefined();
-  expect(actionOf(task({ missing: true }))).toBeUndefined();
   expect(actionOf(task({ stage: 'review' }))).toBeUndefined();
 });
 
@@ -103,9 +102,6 @@ test('the face (#134): the workspace square before the id, the workspace\'s name
   rerender(<Flow state={state(task({ auto: false, approval: { since } }))} flow={firstFlow(state(task({ auto: false, approval: { since } })))} />);
   expect(tile()).toHaveClass('border-approval');
   expect(within(tile()).getByText('aguardando aprovação')).toHaveClass('text-approval');
-  rerender(<Flow state={state(task({ missing: true }))} flow={firstFlow(state(task({ missing: true })))} />);
-  expect(tile()).toHaveClass('border-destructive');
-  expect(within(tile()).getByRole('button', { name: 'fechar' })).toBeInTheDocument();
 });
 
 test('a task that came through a transition with tries shows its verdict and n/max beside its status; one with no limit shows nothing (#134)', () => {
@@ -394,7 +390,7 @@ test('a failed start reads destructive with its short message in the viewer\'s l
   expect(within(tile()).getByText('the terminal could not start')).toHaveClass('text-destructive');
 });
 
-test('a task with an error shows ✕ dispensar erro after its status, which posts dismiss-error and does not open the task; none without an error, for a missing task or an epic; disabled while a run holds it (#354)', async () => {
+test('a task with an error shows ✕ dispensar erro after its status, which posts dismiss-error and does not open the task; none without an error or for an epic; disabled while a run holds it (#354)', async () => {
   const user = userEvent.setup();
   const onOpen = vi.fn();
   const erred = task({ stopped: true, error: 'no transition: verdict:failed' });
@@ -407,8 +403,6 @@ test('a task with an error shows ✕ dispensar erro after its status, which post
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/dismiss-error', expect.objectContaining({ method: 'POST' })));
   expect(onOpen).not.toHaveBeenCalled();
   rerender(<Flow state={state(task())} flow={firstFlow(state(task()))} onOpen={onOpen} />);
-  expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
-  rerender(<Flow state={state(task({ missing: true, error: 'no transition: done' }))} flow={firstFlow(state(task({ missing: true, error: 'no transition: done' })))} onOpen={onOpen} />);
   expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
   const epic = task({ error: 'archive refused', item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
   rerender(<Flow state={state(epic)} flow={firstFlow(state(epic))} onOpen={onOpen} />);

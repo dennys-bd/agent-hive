@@ -27,7 +27,7 @@ interface AwaitedActivity { from: SessionRef; taskId: string }
 export const AWAIT_DIRECTORY_MS = 5 * 60_000;
 
 // An activity that will not get its directory from this start: its spawn failed, it left the flow, or an archive or removal is on it
-const gaveUp = (task: Task, activity: Activity | undefined): boolean => activity?.error !== undefined || task.missing === true || task.leaving === true;
+const gaveUp = (task: Task, activity: Activity | undefined): boolean => activity?.error !== undefined || task.leaving === true;
 
 /** The new activity of nova atividade… (Planning default 5): the copy waits for its directory, and refuses at once what the UI narrows out.
  * `cancel`: the user opened another copy or Start dialog, which replaces this one. */

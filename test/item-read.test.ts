@@ -5,6 +5,7 @@ import { initialState, reduce } from '../src/orchestrator.js';
 import { seenOne } from '../src/tasks.js';
 import type { Item, SourceItem, Stage, State, Task } from '../src/types.js';
 import { flowed } from './fixtures/main-flow.js';
+import { withWork } from './fixtures/work.js';
 
 // A field write's re-read item (#686): the poll's one-task step applied to that task alone, through the reducer.
 
@@ -35,11 +36,13 @@ test('itemRead with a new column moves a stopped task into the stage that column
   assert.deepEqual([taskOf(after, 1)?.stage, taskOf(after, 1)?.boardColumn], ['review', 'In review']);
 });
 
-test('itemRead with no entry marks the task missing, as the poll would once the item left the listing (#686)', () => {
+test('itemRead with no entry marks a started task listing, as the poll would once the item left the listing; a never-started one waits for the next poll (#686, #568)', () => {
   const before = polled();
-  const after = reduce(before, { type: 'itemRead', source: 'board', itemId: 'board:I1' }).state;
-  assert.equal(taskOf(after, 1)?.missing, true);
-  assert.equal(taskOf(after, 2), taskOf(before, 2));
+  assert.equal(reduce(before, { type: 'itemRead', source: 'board', itemId: 'board:I1' }).state, before, 'never started: the next poll drops it');
+  const started = withWork(before, 'board:I1');
+  const after = reduce(started, { type: 'itemRead', source: 'board', itemId: 'board:I1' }).state;
+  assert.equal(taskOf(after, 1)?.outOfListing, 'listing');
+  assert.equal(taskOf(after, 2), taskOf(started, 2));
 });
 
 test('itemRead on an unknown item, an item of another source or a local task leaves the state as it is (#686)', () => {
@@ -51,11 +54,13 @@ test('itemRead on an unknown item, an item of another source or a local task lea
   assert.equal(reduce(withLocal, { type: 'itemRead', source: 'board', itemId: 'local:1' }).state, withLocal);
 });
 
-test('seenOne is the poll\'s step for one known task: listed, it is seen again; unlisted, it is missing; an orphan stays as it is (#686)', () => {
+test('seenOne is the poll\'s step for one known task: listed, it is seen again; unlisted and started, out of the listing; never started, gone; an orphan stays as it is (#686, #568)', () => {
   const task: Task = { item: item(1), stage: 'dev', boardColumn: 'Ready', auto: true };
-  const runs = initialState(0);
-  assert.equal(seenOne(task, listed(1, 'Ready', 'New'), STAGES, runs, AT).item.title, 'New');
-  assert.equal(seenOne(task, undefined, STAGES, runs, AT).missing, true);
+  const runs = withWork(initialState(0), 'board:I1');
+  assert.equal(seenOne(task, listed(1, 'Ready', 'New'), STAGES, runs, AT)?.item.title, 'New');
+  assert.equal(seenOne(task, undefined, STAGES, runs, AT)?.outOfListing, 'listing');
+  assert.equal(seenOne(task, undefined, STAGES, initialState(0), AT), undefined, 'never started: it leaves');
+  assert.equal(seenOne({ ...task, outOfListing: 'filter' }, listed(1), STAGES, runs, AT)?.outOfListing, undefined);
   const orphan: Task = { ...task, orphan: true };
   assert.equal(seenOne(orphan, undefined, STAGES, runs, AT), orphan);
   assert.equal(seenOne(orphan, listed(1), STAGES, runs, AT), orphan);

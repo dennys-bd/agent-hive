@@ -131,6 +131,13 @@ export function createItemsSync(deps: ItemsSyncDeps): ItemsSync {
     if (probed !== stamp || keyed !== readKey || now() - readAt >= FULL_READ_MAX_AGE_MS) {
       const before = writes;
       const read = await deps.listNodes();
+      const stored = readListing(store.db, key);
+      // #568: an empty full read over a stored listing with nodes is not believed: nothing is stored and no stamp kept, so the next poll reads
+      // in full again and the reducer never sees every task leave at once
+      if (read.nodes.length === 0 && stored.nodes.length > 0) {
+        stamp = undefined;
+        return stored;
+      }
       const relations = await deps.fetchRelations(deps.kept(read.nodes)); // before the transaction: a failed query stores nothing
       storeListing(store.db, key, read, relations);
       stamp = writes === before ? probed : undefined;

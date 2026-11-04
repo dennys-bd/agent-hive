@@ -53,11 +53,11 @@ test('task.moved names who moved it: by hand, an approval, a merge, a stage\'s a
   assert.equal(by(STOP), 'auto', 'hive_done and its Stop advanced it');
 });
 
-test('a task that left is task.closed or task.deleted with finished (and the onFinish mechanism as via), missing or hand, carrying only the fields the old state still fills (#742)', () => {
+test('a task that left is task.closed or task.deleted with finished (and the onFinish mechanism as via), closed or hand, carrying only the fields the old state still fills (#742)', () => {
   const left = (gone: Task, event: HiveEvent): RecordInput[] => deriveFacts(base([gone]), base([]), event, NOW);
   const CLOSE: HiveEvent = { type: 'closeTask', taskId: 'board:I1' };
   const closed = (stage: string, rest: Record<string, unknown>) => [{ event: 'task.closed', level: 'info', task_id: 'board:I1', task: '1', stage, ...rest }];
-  assert.deepEqual(left(task(1, 'dev', { missing: true }), CLOSE), closed('dev', { reason: 'missing' }));
+  assert.deepEqual(left(task(1), POLL), closed('dev', { reason: 'closed' }), 'the poll let it go: closed on its source, never started, or its source removed (#568)');
   assert.deepEqual(left(task(1, 'dev', { leaving: true }), CLOSE), closed('dev', { reason: 'finished', via: 'archive' }), 'its leaving action went through');
   assert.deepEqual(left(task(1), STOP), closed('dev', { reason: 'finished', via: 'move' }), 'past the last stage after an onFinish move');
   assert.deepEqual(left(task(1, 'review'), STOP), closed('review', { reason: 'finished', via: 'none' }), 'no onFinish action');

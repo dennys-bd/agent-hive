@@ -52,7 +52,6 @@ test('POST /tasks/:id/retry answers 404 for an unknown task and 409 when it is m
   assert.equal((await unknown.post('board:nope')).status, 404);
   assert.deepEqual(unknown.events, []);
   const cases: [string, Setup][] = [
-    ['tarefa sumiu do source: feche ou mantenha', { task: { ...TASK, missing: true } }],
     ['tarefa não parou por falta de tentativas', { work: { ...HALTED, error: 'no transition: verdict:failed' } }],
     ['tarefa não parou por falta de tentativas', { work: {} }],
     ['a transição que esgotou as tentativas não existe mais', { transitions: [] }],
@@ -84,7 +83,6 @@ test('POST /tasks/:id/dismiss-error answers 404 for an unknown task and 409 when
   assert.equal((await unknown.post('board:nope', 'dismiss-error')).status, 404);
   assert.deepEqual(unknown.events, []);
   const cases: [string, Setup][] = [
-    ['tarefa sumiu do source: feche ou mantenha', { task: { ...TASK, missing: true } }],
     ['tarefa já está executando', { work: { ...HALTED, workerId: 'w1' } }],
     ['tarefa não tem erro', { work: { stopped: true } }],
   ];

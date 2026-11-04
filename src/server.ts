@@ -52,6 +52,7 @@ import { shutdownCommand } from './platform-commands.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-requests.js';
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
+import { readUnlisted, unlistedStarted } from './poll-reads.js';
 import { deleteActivityOnDisk, registerTaskRoutes } from './server-tasks.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
 import { exitEvent } from './server-exit.js';
@@ -657,8 +658,9 @@ export function createServer(deps: ServerDeps): HiveServer {
       await leave(false);
       return;
     }
+    const url = live?.state.tasks.find((c) => taskId(c) === effect.taskId)?.item.url ?? ''; // #568: an issue off the Project is reached by its url
     try {
-      await wiring.sourceAction(live?.state, effect.taskId, effect.action.type, source.apply(effect.itemId, effect.action)); // source.action (#742)
+      await wiring.sourceAction(live?.state, effect.taskId, effect.action.type, source.apply(effect.itemId, effect.action, url)); // source.action (#742)
     } catch (err) {
       await fail(`source.apply(${effect.action.type})`, err);
       await dispatch({ type: 'sourceActionFailed', taskId: effect.taskId, message: errorMessage(err), leaving: isLeaving(effect.action) });
@@ -715,8 +717,10 @@ export function createServer(deps: ServerDeps): HiveServer {
       const items = leftItems.filter(name, startedAt, listed);
       const kept = new Set(items);
       for (const { item } of listed.filter((entry) => !kept.has(entry))) log.debug(`poll source=${name} dropped ${item.itemId}: closed after the read began`);
+      const reads = live === undefined ? [] : await readUnlisted(source, unlistedStarted(live.state, name, items), log); // #568: before the dispatch, so the reducer stays pure
+      if (isStale(runtime)) return;
       log.info(`poll source=${name} items=${items.length}`);
-      await dispatch({ type: 'poll', source: name, items: items.map(unattended) });
+      await dispatch({ type: 'poll', source: name, items: items.map(unattended), ...(reads.length === 0 ? {} : { reads }) });
     } catch (err) {
       if (isStale(runtime)) return;
       const message = errorMessage(err);
@@ -1244,7 +1248,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The protocol routes (#336): blocks, passages and a workspace's render; a passage write rewrites the protocol files on the settings chain
   registerProtocolRoutes(app, { requireLive, queueSave, passages, memory, protocolFor, log });
 
-  // create, start, bases, close, keep, session, session exit, delete-activity, move, reset-order, close-missing, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
+  // create, start, bases, close, session, session exit, delete-activity, move, reset-order, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
   const taskDeps = { treeWatch, exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same

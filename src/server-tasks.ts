@@ -2,7 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { activityOf, otherSlugs } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { createTask, UNKNOWN_STAGE_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from './create-task.js';
-import { branchFor, inFlow, slugFor, canCloseMissing, canOpenSession, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
+import { branchFor, inFlow, slugFor, canOpenSession, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
 import { hiveAction, runsAgent } from './stage-agent.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
 import { baseRemote, workspaceBase } from './fork.js';
@@ -49,11 +49,9 @@ export const UNKNOWN_TASK_MESSAGE = 'tarefa desconhecida';
 const TASK_ON_SOURCE_MESSAGE = 'tarefa ainda está na source';
 export const RUNNING_MESSAGE = 'tarefa já está executando';
 export const SETUP_RUNNING_MESSAGE = 'o setup desta tarefa ainda está em andamento'; // #351: one worktree, one setup at a time
-export const MISSING_MESSAGE = 'tarefa sumiu do source: feche ou mantenha';
 export const LEAVING_MESSAGE = 'tarefa saindo da source'; // #491: an archive, remove or delete of the source is in flight on it (#286)
 const EPIC_MESSAGE = 'um épico não executa: sua etapa vem das filhas'; // #31: a show epic; the reducer's start ignores it
 const DIFFERENT_STAGES_MESSAGE = 'tarefas em etapas diferentes';
-const NOTHING_MISSING_MESSAGE = 'nenhuma tarefa dessa etapa saiu da source'; // #279: the stage's close all has nothing canCloseMissing allows
 export const OUTSIDE_FLOW_MESSAGE = 'the task is outside the flow: move it into a stage first'; // #566
 export const DELETING_MESSAGE = 'atividade sendo excluída'; // a delete-activity stage or route is running git on it (#573)
 const AUTO_BODY_MESSAGE = 'auto precisa ser true ou false';
@@ -114,7 +112,6 @@ function startRefusal(state: State, itemId: string): Refusal | undefined {
   const activity = activityOf(state, itemId);
   if (activity?.setup) return { status: HTTP_CONFLICT, message: SETUP_RUNNING_MESSAGE }; // before RUNNING: both paths answer the same (#351)
   if (activity?.workerId !== undefined || inAction(activity)) return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // #755, #834: a stage action runs
-  if (task.missing) return { status: HTTP_CONFLICT, message: MISSING_MESSAGE };
   if (activity?.deleting || activity?.approval) return { status: HTTP_CONFLICT, message: activity?.deleting ? DELETING_MESSAGE : AWAITING_MESSAGE }; // the reducer ignores both (#268)
   const stage = stageOf(state.stages, task.stage);
   if (hiveAction(stage) !== undefined) return undefined; // a git command of the Hive or the workspace's commands (#755): no worker, no blockers, no prompt
@@ -150,20 +147,12 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   return { type: 'start', itemId, base: { ref: base, tellWorker: tellWorker === true }, ...placed };
 }
 
-/** The user's answer to a task that left the source (fechar / manter): what the reducer would ignore in silence, as the route's answer. */
-function taskRefusal(state: State, itemId: string): Refusal | undefined {
-  const task = state.tasks.find((c) => c.item.itemId === itemId);
-  if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
-  if (!task.missing) return { status: HTTP_CONFLICT, message: TASK_ON_SOURCE_MESSAGE };
-  return activityOf(state, itemId)?.deleting ? { status: HTTP_CONFLICT, message: DELETING_MESSAGE } : undefined; // git is removing its worktree (#182)
-}
-
-/** Why a close would be a no-op in the reducer: a source task closes once it left the source, a local one (#132) once it stopped. */
+/** Why a close would be a no-op in the reducer: a source task closes once it is out of the listing or orphan (#568), a local one (#132) once it stopped. */
 function closeRefusal(state: State, itemId: string): Refusal | undefined {
   const task = state.tasks.find((c) => c.item.itemId === itemId);
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
   if (activityOf(state, itemId)?.deleting) return { status: HTTP_CONFLICT, message: DELETING_MESSAGE }; // git is removing its worktree (#182)
-  if (task.missing || canRemoveCreated(task, state)) return undefined;
+  if (task.outOfListing !== undefined || task.orphan || canRemoveCreated(task, state)) return undefined;
   if (!task.created) return { status: HTTP_CONFLICT, message: TASK_ON_SOURCE_MESSAGE };
   return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // a run of any kind holds it (#164, #283); deleting was refused above
 }
@@ -219,7 +208,6 @@ export function openTask(state: State, itemId: string): { task: Task; activity?:
   const task = state.tasks.find((c) => c.item.itemId === itemId);
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
   const activity = activityOf(state, itemId);
-  if (task.missing) return { status: HTTP_CONFLICT, message: MISSING_MESSAGE };
   if (activity?.deleting) return { status: HTTP_CONFLICT, message: DELETING_MESSAGE }; // no terminal, session or worktree while git removes it (#182)
   if (activity?.setup) return { status: HTTP_CONFLICT, message: SETUP_RUNNING_MESSAGE }; // a second open, a run command or a session while it sets up (#351)
   if (!canOpenSession(task, activity)) return { status: HTTP_CONFLICT, message: LEAVING_MESSAGE }; // the checks above leave only leaving
@@ -250,7 +238,7 @@ function moveRefusal(state: State, itemId: string, before: string | undefined): 
   return before === undefined ? undefined : beforeRefusal(state, before, task.stage);
 }
 
-// The human override on a stopped task (start), the human answer to one that left the source (close / keep), the removal of a stopped task's worktree (delete-activity) and the Hive's own order
+// The human override on a stopped task (start), the remove of a task out of the listing or an orphan (close), the removal of a stopped task's worktree (delete-activity) and the Hive's own order
 // (move / reset-order). The checks answer what the reducer would ignore in silence, so the UI is never left without an answer; a race between the check and the dispatch is a no-op in the
 // reducer, never a spawn or a close it should not do.
 export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
@@ -277,27 +265,24 @@ export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
     res.json({ ok: true });
   });
 
-  for (const action of ['close', 'keep'] as const) {
-    app.post(`/tasks/:id/${action}`, async (req: Request, res: Response) => {
-      const current = requireLive(res);
-      if (!current) return;
-      const taskId = req.params.id as string;
-      const refusal = (action === 'close' ? closeRefusal : taskRefusal)(current.state, taskId);
-      if (refusal) {
-        res.status(refusal.status).json({ error: refusal.message });
-        return;
-      }
-      const removal = action === 'close' ? await removeCreatedWorktree(deps, current, taskId) : undefined; // #542: git before the task goes
-      if (typeof removal === 'object') return refuse(res, removal);
-      if (removal === undefined) await dispatch(action === 'close' ? { type: 'closeTask', taskId } : { type: 'keepTask', taskId });
-      res.json({ ok: true });
-    });
-  }
+  app.post('/tasks/:id/close', async (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const taskId = req.params.id as string;
+    const refusal = closeRefusal(current.state, taskId);
+    if (refusal) {
+      res.status(refusal.status).json({ error: refusal.message });
+      return;
+    }
+    const removal = await removeCreatedWorktree(deps, current, taskId); // #542: git before the task goes
+    if (typeof removal === 'object') return refuse(res, removal);
+    if (removal === undefined) await dispatch({ type: 'closeTask', taskId });
+    res.json({ ok: true });
+  });
 
   registerCreateRoute(app, deps);
   registerCommentsRoute(app, deps);
   registerOrderRoutes(app, deps);
-  registerCloseMissingRoute(app, deps);
   registerBaseRoute(app, deps);
   registerDeleteActivityRoute(app, deps);
   registerAutoRoutes(app, deps);
@@ -362,22 +347,6 @@ function registerOrderRoutes(app: Express, { requireLive, dispatch }: TaskRouteD
     }
     await dispatch({ type: 'resetOrder', stage });
     res.json({ ok: true });
-  });
-}
-
-// A stage's close all (#279): every stopped missing task of the stage in one reducer event, so no worker starts on one between this check
-// and the close. The count is taken with the reducer's own rule; dispatch reduces before its first await, so it is what closes. No kill, no
-// git: a running missing task keeps its own close / keep, and the worktrees stay on disk for Settings › Worktrees (#181, #182).
-function registerCloseMissingRoute(app: Express, { requireLive, dispatch }: TaskRouteDeps): void {
-  app.post('/stages/:name/close-missing', async (req: Request, res: Response) => {
-    const current = requireLive(res);
-    if (!current) return;
-    const stage = req.params.name as string;
-    if (stageOf(current.state.stages, stage) === undefined) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_STAGE_MESSAGE });
-    const closed = current.state.tasks.filter((c) => c.stage === stage && canCloseMissing(c, current.state)).length;
-    if (closed === 0) return refuse(res, { status: HTTP_CONFLICT, message: NOTHING_MISSING_MESSAGE });
-    await dispatch({ type: 'closeMissing', stage });
-    res.json({ closed });
   });
 }
 
@@ -538,7 +507,6 @@ function registerAutoRoutes(app: Express, { requireLive, dispatch }: TaskRouteDe
     const auto = (req.body as { auto?: unknown } | undefined)?.auto;
     const task = current.state.tasks.find((c) => c.item.itemId === taskId);
     if (!task) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE });
-    if (task.missing) return refuse(res, { status: HTTP_CONFLICT, message: MISSING_MESSAGE });
     if (typeof auto !== 'boolean') return refuse(res, { status: HTTP_BAD_REQUEST, message: AUTO_BODY_MESSAGE });
     await dispatch({ type: 'setAuto', taskId, auto });
     res.json({ ok: true });

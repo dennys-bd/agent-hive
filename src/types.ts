@@ -601,18 +601,21 @@ export interface ColumnWrite {
   at: string; // ISO, when the write was emitted: the mark expires COLUMN_WRITE_TIMEOUT_MS after it
 }
 
+/** Why a started task is past its source's listing (#568): the reason Source.item last answered. closed and gone are ends, not marks. */
+export type OutOfListing = 'listing' | 'filter' | 'project';
+
 /** A source task inside the Hive: it exists while it sits in a stage, running or not. */
 
 export interface Task {
   item: Item;
   stage?: string; // the Hive stage the task sits in (#286: the Hive's own columns are stages); absent = outside the flow (#566): no fill, no transitions, no caps
   boardColumn: string; // where the Hive last saw or left it on the source; the poll compares against it
-  missing?: true; // gone from the source; waits for close or keep
-  orphan?: true; // kept after going missing: runs to the end, no source writes, ignored by the poll
+  orphan?: true; // #568: the source was removed or the item is gone: runs to the end, no source writes, ignored by the poll
+  outOfListing?: OutOfListing; // #568: started, and the source's last listing did not bring it; the reason item() last answered
   enteredAt?: string; // ISO, when the task entered its current stage: what `after` counts from. Stamped by the next poll when absent (upgrade)
   leaving?: true; // an archive / remove / delete is in flight on the source (#286): out of the fill, left unmarked by the poll, answered by closeTask or sourceActionFailed; never survives a boot
   pinned?: true; // moved by hand: holds the position it occupies in its stage across polls. Dropped by resetOrder and by a stage change (#123)
-  created?: true; // created in the Hive (#132, #573: was local): never written to a source, never marked missing by the poll; leaves only through remove
+  created?: true; // created in the Hive (#132, #573: was local): never written to a source; leaves only through remove
   auto: boolean; // a worker may pick it up on its own (#164, #573: was manual?: true, inverted); off, the fill never starts it and a delete-activity stage takes it only under nonAutoTasks (#496); every run by hand works on it as on any task
   workspace?: string; // a Comb workspace's name: chosen by hand, or frozen when the worktree was created (#179)
   columnWrite?: ColumnWrite; // set with every setColumn effect, cleared by the poll that confirms, overrides or outlives it (#889)
@@ -1552,7 +1555,7 @@ export interface DecompositionPreview {
 
 export type HiveEvent =
   | { type: 'boot' }
-  | { type: 'poll'; source?: string; items: SourceItem[] } // source absent: a Comb with no sources (#132), merge nothing
+  | { type: 'poll'; source?: string; items: SourceItem[]; reads?: { itemId: string; read: SourceItemRead }[] } // source absent: a Comb with no sources (#132), merge nothing; reads (#568): item() of each started task the listing lacks
   | { type: 'itemRead'; source: string; itemId: string; entry?: SourceItem } // #686: one item re-read after a field write; entry absent when it is out of the source's listing
   | { type: 'blockerSet'; itemId: string; change: BlockerChange } // #56: a hive task's relation, written on both tasks; POST …/blockers checked it
   | { type: 'setMax'; max: number }
@@ -1597,9 +1600,7 @@ export type HiveEvent =
   | { type: 'restoreFailed'; itemId: string } // #619: the restore's git failed: the mark goes
   | { type: 'clearSessions'; activityId: string; sessionId: string } // one session's limpar in the panel (#304); a record id (#629)
   | { type: 'createTask'; title: string; body: string; stage?: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string } } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67)
-  | { type: 'closeTask'; taskId: string } // close on a missing task, remove on a stopped local one (#132): the task and its session go; a missing task's worktree stays (#182), a local task's goes first, in the route (#542)
-  | { type: 'keepTask'; taskId: string } // manter on a missing task
-  | { type: 'closeMissing'; stage: string } // close all in a stage's missing strip (#279): every closable missing task of the stage goes
+  | { type: 'closeTask'; taskId: string } // close on a task out of the listing or an orphan (#568), remove on a stopped local one (#132): the task and its session go; the worktree of a task off the source stays (#182), a local task's goes first, in the route (#542)
   | { type: 'done'; ptyId: string; result?: Record<string, unknown>; verdict?: string; evidence?: string } // hive_done: the command is finished; result is merged into the task (#99); verdict / evidence: how it ended and why (#134)
   | { type: 'pr'; ptyId: string; url: string; slice?: PrSlice } // hive_pr: the PR the worker opened, https only (#99), and its slice (#698)
   | { type: 'prStates'; states: TaskPr[] } // after the poll: the states the PR query read (#207)
@@ -1986,7 +1987,7 @@ export interface Source {
   item(itemId: string, url: string): Promise<SourceItemRead>; // #567: one item, never a listing; rejects when the read fails
   stored?(): Promise<SourceItem[]>; // #191: the listing the read model holds, read with no network call; [] when there is none
   setColumn(itemId: string, column: string): Promise<void>;
-  apply(itemId: string, action: ItemAction): Promise<void>; // what a stage's onStart / a transition's sources ask beyond a move (#286, #515); rejects for an action its type's SOURCE_ACTIONS entry lacks
+  apply(itemId: string, action: ItemAction, url: string): Promise<void>; // url (#568) reaches an issue off the Project; what a stage's onStart / a transition's sources ask beyond a move (#286, #515); rejects for an action its type's SOURCE_ACTIONS entry lacks
   settingsOptions(): Promise<string[]>; // status values available, for the settings form
   quota?(): Promise<SourceQuota | undefined>; // the polling account's API quota; a source without one leaves it out
   comments?(itemId: string): Promise<TaskComment[]>; // oldest first, read when the panel opens on a task; a source without comments leaves it out

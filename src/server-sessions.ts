@@ -22,7 +22,6 @@ const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const UNKNOWN_TASK_MESSAGE = 'tarefa desconhecida';
-const MISSING_MESSAGE = 'tarefa sumiu da source: feche ou mantenha';
 const DELETING_MESSAGE = 'atividade sendo excluída';
 const NOT_CONTINUABLE_MESSAGE = 'sessão já aberta ou desconhecida';
 const NO_WORKTREE_MESSAGE = 'a worktree desta sessão não existe mais';
@@ -46,7 +45,6 @@ function openable(state: State, record: ActivityRecord, id: string): { task: Tas
   const task = taskOfActivity(state, record.id);
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
   const itemId = task.item.itemId;
-  if (task.missing) return { status: HTTP_CONFLICT, message: MISSING_MESSAGE };
   const activity = activityOf(state, itemId);
   if (activity?.deleting) return { status: HTTP_CONFLICT, message: DELETING_MESSAGE }; // git is removing its worktree (#182)
   const session = continuable(task, state).find((s) => s.id === id && record.sessions.some((r) => r.id === id));

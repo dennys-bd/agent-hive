@@ -82,7 +82,7 @@ export function pickedRun(activity: Activity): { activity: Activity; pick?: RunP
 export const startsFresh = (mode: StartMode): boolean => mode === 'start' || (typeof mode === 'object' && !mode.continue);
 
 /**
- * What the task offers (#283). None for a blocked, missing, deleting or leaving (#286) task and a stage with nothing to run (no prompt, no skill (#710), no deleteActivity action; a
+ * What the task offers (#283). None for a blocked, deleting or leaving (#286) task and a stage with nothing to run (no prompt, no skill (#710), no deleteActivity action; a
  * delete activity stage ignores blockers, as its start does). Running while a stage worker holds it. Start while its stage has not run, in any stage
  * and on a non-auto task too, except a continue stage on a task with no session at all (#350): none. Otherwise Continue, and Restart only on a stage that starts a new session and whose start was recorded: restarting
  * a stage that continues the previous stage's session would throw that context away. A live worker of the task on the stage's session (only a
@@ -92,7 +92,7 @@ export const startsFresh = (mode: StartMode): boolean => mode === 'start' || (ty
 export function startMode(task: Task, state: Pick<State, 'stages' | 'workers' | 'activities' | 'activityRecords'>): StartMode {
   const stage = stageOf(state.stages, task.stage);
   const activity = activityOf(state, taskId(task));
-  if (!stage || task.missing || activity?.deleting || task.leaving || task.item.epic !== undefined) return 'none'; // #31: a show epic never runs
+  if (!stage || activity?.deleting || task.leaving || task.item.epic !== undefined) return 'none'; // #31: a show epic never runs
   if (hiveAction(stage) === undefined && (!runsAgent(stage) || isBlocked(task.item))) return 'none';
   if (activity?.workerId !== undefined || inAction(activity)) return 'running'; // #755, #834: a commands stage or a wait for CI in flight runs too
   if (activity?.setup) return 'none'; // a first open's worktree setup runs (#351): nothing to start, continue or restart until it ends

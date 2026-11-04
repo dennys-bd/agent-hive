@@ -6,11 +6,10 @@ import { canDismissError, inFlow, leave, taskId } from './tasks.js';
 import type { Activity, State, Task } from './types.js';
 
 /** Why leave-flow may not run (#566), in the order the route answers. The reducer and the route share it, so they never disagree. */
-export type LeaveBlocker = 'outside' | 'missing' | 'epic' | 'deleting' | 'running';
+export type LeaveBlocker = 'outside' | 'epic' | 'deleting' | 'running';
 
 export function leaveBlocker(state: State, task: Task): LeaveBlocker | undefined {
   if (!inFlow(task)) return 'outside';
-  if (task.missing) return 'missing';
   if (task.item.epic !== undefined) return 'epic'; // followEpics would put it back in a stage on the next event
   if (activityOf(state, taskId(task))?.deleting) return 'deleting';
   return canDismissError(task, state) ? undefined : 'running'; // canMoveToStage's refusal, the epic already answered

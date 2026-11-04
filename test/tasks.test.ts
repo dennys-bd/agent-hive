@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inFlow, leave, stageOf, branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
+import { inFlow, leave, stageOf, branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
 import { COLUMN_WRITE_TIMEOUT_MS } from '../src/column-write.js';
 import { taskTotals, touchSession } from '../src/record-kit.js';
 import { initialState } from '../src/orchestrator.js';
@@ -104,12 +104,11 @@ test('dueDeletions: stopped, present, error-free tasks in a due delete activity 
   const blocked = task(2, DONE, { enteredAt: ago(6 * DAY), item: { ...item(2), blockedBy: ['9'] } });
   const early = task(3, DONE, { enteredAt: ago(DAY) });
   const running = task(4, DONE, { enteredAt: ago(6 * DAY), workerId: 's1' });
-  const missing = task(5, DONE, { enteredAt: ago(6 * DAY), missing: true });
   const failed = task(6, DONE, { enteredAt: ago(6 * DAY), error: "error: The branch 'x' is not fully merged." });
   const prompt = task(7, DEV, { enteredAt: ago(6 * DAY) });
   const atOnce = task(8, AT_ONCE);
   const orphan = task(9, DONE, { enteredAt: ago(6 * DAY), orphan: true });
-  assert.deepEqual(dues([prompt, atOnce, due, blocked, early, running, missing, failed, orphan], STAGES, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS).map((c) => c.item.id), ['8', '1', '2', '9']);
+  assert.deepEqual(dues([prompt, atOnce, due, blocked, early, running, failed, orphan], STAGES, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS).map((c) => c.item.id), ['8', '1', '2', '9']);
   assert.deepEqual(dues([], STAGES, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS), []);
 });
 
@@ -132,7 +131,7 @@ test('enter stamps enteredAt with the stage change; mergeTasks stamps a task tha
   const [kept] = merge([old], STAGES, [{ item: item(1), column: 'In progress' }]);
   assert.deepEqual([kept.stage, kept.boardColumn, kept.enteredAt], ['dev', 'In progress', old.enteredAt], 'a move to a stage that is no door keeps the stamp');
   const [gone] = merge([unstamped], STAGES, []);
-  assert.ok(gone.missing && Date.parse(gone.enteredAt!) >= before, 'an unlisted task is stamped too');
+  assert.ok(gone?.outOfListing === 'listing' && Date.parse(gone.enteredAt!) >= before, 'an unlisted started task is kept, marked, and stamped too (#568)');
 });
 
 test('a listed task is born with its source\'s autoOnEntry, on when absent; a later poll or a move on the source back to an entry stage never touches auto (#688)', () => {
@@ -263,10 +262,10 @@ const seenIn = (column: string, title = 'Task 1'): SourceItem => ({ item: { ...i
 test('mergeTasks over a column write: the written column clears the mark, a stale one inside the window is ignored while the item refreshes, an expired mark or a third column lets a stopped task follow (#889)', () => {
   const [confirmed] = merge([writtenDone(10_000)], STAGES, [seenIn('Done')], NO_RUNS, AT_NOW);
   assert.deepEqual([confirmed.stage, confirmed.boardColumn, confirmed.columnWrite, confirmed.enteredAt], ['done', 'Done', undefined, ago(HOUR)]);
-  const [stale] = merge([writtenDone(10_000, { missing: true })], STAGES, [seenIn('Ready', 'Renamed')], NO_RUNS, AT_NOW);
+  const [stale] = merge([writtenDone(10_000, { outOfListing: 'filter' })], STAGES, [seenIn('Ready', 'Renamed')], NO_RUNS, AT_NOW);
   assert.deepEqual([stale.stage, stale.boardColumn, stale.enteredAt], ['done', 'Done', ago(HOUR)], 'a read from before the write: no move back');
   assert.deepEqual(stale.columnWrite, { column: 'Done', stale: ['Ready'], at: ago(10_000) }, 'the mark waits for the source to show the write');
-  assert.deepEqual([stale.item.title, stale.missing], ['Renamed', undefined], 'everything but the column refreshes');
+  assert.deepEqual([stale.item.title, stale.outOfListing], ['Renamed', undefined], 'everything but the column refreshes');
   const [held] = merge([writtenDone(COLUMN_WRITE_TIMEOUT_MS - 1)], STAGES, [seenIn('Ready')], NO_RUNS, AT_NOW);
   assert.deepEqual([held.stage, held.boardColumn], ['done', 'Done'], 'just under the window (#191: 30 s) the write still holds');
   const [expired] = merge([writtenDone(COLUMN_WRITE_TIMEOUT_MS)], STAGES, [seenIn('Ready')], NO_RUNS, AT_NOW);
@@ -414,7 +413,6 @@ test('canMoveToStage and canRemoveCreated read every worker of the task (#164, #
   assert.equal(canMoveToStage(local, runsOf([])), true, 'a stopped local task, not manual (#366)');
   assert.equal(canMoveToStage(task(1, DEV), runsOf([])), true, 'a stopped board task with auto on (#708)');
   assert.equal(canMoveToStage(task(1, DEV), runsOf([stageRun])), false, 'auto on: its stage run still holds it (#708)');
-  assert.equal(canMoveToStage({ ...marked, missing: true }, runsOf([])), false, 'gone from the board');
   assert.equal(canMoveToStage({ ...local, leaving: true }, runsOf([])), false, 'its board action is in flight (#286)');
   assert.equal(canMoveToStage(local, runsOf([sessionWorker(1)])), true, 'a free session is the user\'s own: it holds nothing (#366)');
   assert.equal(canMoveToStage(local, runsFor([{ ...local, workerId: 's1' }], runsOf([stageRun]))), false, 'its stage run holds it');
@@ -424,13 +422,13 @@ test('canMoveToStage and canRemoveCreated read every worker of the task (#164, #
   assert.equal(canRemoveCreated(local, runsOf([sessionWorker(1)])), false, 'a manual session holds it');
 });
 
-test('canDismissError is canMoveToStage without its epic clause: an idle epic passes, a held, missing or leaving task does not (#354)', () => {
+test('canDismissError is canMoveToStage without its epic clause: an idle epic passes, a held or leaving task does not (#354)', () => {
   const plain = task(1, DEV);
   const epic: WithWork = { ...plain, item: { ...plain.item, epic: { follows: 'behind', switchAt: 'done' } } };
   assert.deepEqual([canMoveToStage(epic, runsOf([])), canDismissError(epic, runsOf([]))], [false, true], 'an epic: its refused end action is dismissable (#31)');
   assert.deepEqual([canMoveToStage(plain, runsOf([])), canDismissError(plain, runsOf([]))], [true, true]);
   const held = runsFor([{ ...plain, workerId: 's1' }]);
-  for (const [refused, runs] of [[plain, held], [{ ...plain, missing: true }, runsOf([])], [{ ...plain, leaving: true }, runsOf([])]] as const) {
+  for (const [refused, runs] of [[plain, held], [{ ...plain, leaving: true }, runsOf([])]] as const) {
     assert.deepEqual([canMoveToStage(refused, runs), canDismissError(refused, runs)], [false, false]);
   }
 });
@@ -466,18 +464,6 @@ test('spawnedRun of a workspace shell\'s spawnTerminal, which has no task, answe
   const shell: Effect = { type: 'spawnTerminal', terminal: { terminalId: WORKER, activityId: localActivityId('hive'), startedAt: ago(0), cwd: '/repo' }, activity: { id: localActivityId('hive'), kind: 'local', workspace: 'hive' } };
   assert.equal(LOCAL_SLUG, 'workspace');
   assert.deepEqual(spawnedRun([shell]), { ptyId: WORKER });
-});
-
-test('canCloseMissing: a stopped missing task with no worker of any kind, not being deleted and not open in a terminal; nothing else (#279)', () => {
-  const gone = task(1, DEV, { missing: true });
-  assert.equal(canCloseMissing(gone, runsOf([])), true);
-  assert.equal(canCloseMissing(task(1, DEV), runsOf([])), false, 'still on the board');
-  assert.equal(canCloseMissing(task(1, DEV, { orphan: true }), runsOf([])), false, 'kept: an orphan is no longer missing');
-  assert.equal(canCloseMissing(task(1, DEV, { created: true }), runsOf([])), false, 'a local task never leaves a board (#132)');
-  assert.equal(canCloseMissing(gone, { ...runsOf([]), ...work([], 'item1', { deleting: true }) }), false, 'git is removing its worktree (#182)');
-  assert.equal(canCloseMissing(gone, runsFor([{ ...gone, workerId: 's1' }], runsOf([{ id: 's1', status: 'working', activityId: activityIdOf('item1') }]))), false, 'its automatic worker runs');
-  assert.equal(canCloseMissing(gone, runsOf([sessionWorker(1)])), false, 'only a manual session runs on it (#164)');
-  assert.equal(canCloseMissing(gone, runsOf([sessionWorker(2), { id: 's9', status: 'empty' }])), true, "another task's session and an empty worker do not hold it");
 });
 
 test('worktreeRows: no task with the slug is noTask; a stopped task in a delete activity stage that still has its worktree is cleanupFailed with its error; the same task while deleting, one waiting with no error, or a task in a prompt stage, is no orphan (#181)', () => {
@@ -651,7 +637,7 @@ test('citedColumns cites every move of both lists, first citation wins; a list w
   assert.deepEqual(citedColumns([{ name: 'x', from: {}, onStart: { work: [{ type: 'close' }] } }], [], 'work'), []);
 });
 
-test('mergeTasks for one source touches only that source\'s tasks: another source\'s and the local ones are neither refreshed nor marked missing, and a new item enters through its source\'s from only (#180)', () => {
+test('mergeTasks for one source touches only that source\'s tasks: another source\'s and the local ones are neither refreshed nor dropped, and a new item enters through its source\'s from only (#180)', () => {
   const stages: LegacyStage[] = [{ name: 'dev', from: { work: ['Ready'], notes: ['todo'] }, prompt: 'x' }];
   const on = (board: string, n: number): Item => ({ ...item(n), itemId: `${board}:${n}`, source: board });
   const workTask: Task = { item: on('work', 1), stage: 'dev', boardColumn: 'Ready', auto: true, enteredAt: ago(HOUR) };
@@ -659,19 +645,22 @@ test('mergeTasks for one source touches only that source\'s tasks: another sourc
   const localTask: Task = { item: { ...item(3), itemId: 'local:3', source: undefined }, stage: 'dev', boardColumn: '', auto: true, created: true, enteredAt: ago(HOUR) };
   const listed: SourceItem[] = [{ item: on('work', 4), column: 'Ready' }, { item: on('work', 5), column: 'todo' }];
   const merged = mergeTasks([workTask, notesTask, localTask], stages, { source: 'work', items: listed }, ['work', 'notes'], ['work:4', 'work:5', 'notes:2'], NO_RUNS, AT_NOW);
-  assert.equal(merged.find((c) => taskId(c) === 'work:1')?.missing, true, 'its own board no longer lists it');
+  assert.equal(merged.find((c) => taskId(c) === 'work:1'), undefined, 'its own board no longer lists it and it never started: gone (#568)');
   assert.deepEqual(merged.find((c) => taskId(c) === 'notes:2'), notesTask, 'another board\'s task is untouched');
   assert.deepEqual(merged.find((c) => taskId(c) === 'local:3'), localTask);
-  assert.deepEqual(merged.filter((c) => c.item.source === 'work' && !c.missing).map(taskId), ['work:4'], '"todo" is a notes column: work:5 enters nowhere');
+  assert.deepEqual(merged.filter((c) => c.item.source === 'work').map(taskId), ['work:4'], '"todo" is a notes column: work:5 enters nowhere');
 });
 
-test('a task whose source is gone, or saved before sources had names, is marked missing by any poll; markRemoved spares local tasks and kept orphans (#180)', () => {
-  const gone: Task = { item: { ...item(1), itemId: 'old:1', source: 'old' }, stage: 'dev', boardColumn: 'Ready', auto: true };
+test('a task whose source is gone, or saved before sources had names, turns orphan at any poll when it started and leaves when it never did; markRemoved spares local tasks and orphans (#180, #568)', () => {
+  const gone: Task = { item: { ...item(1), itemId: 'old:1', source: 'old' }, stage: 'dev', boardColumn: 'Ready', auto: true, outOfListing: 'filter' };
   const legacy: Task = { ...gone, item: { itemId: 'PVTI_2', id: '2', title: 'Task 2', body: '', url: '' } };
   const orphan: Task = { ...gone, item: { ...gone.item, itemId: 'old:3' }, orphan: true };
   const local: Task = { ...gone, item: { itemId: 'local:4', id: 'HIVE-4', title: 'Task 4', body: '', url: '' }, created: true };
-  assert.deepEqual(markRemoved([gone, legacy, orphan, local], ['work']).map((c) => c.missing === true), [true, true, false, false]);
-  assert.equal(mergeTasks([gone], STAGES, { source: 'board', items: [] }, ['board'], [], NO_RUNS, AT_NOW)[0].missing, true, 'another board\'s poll marks it too');
+  const idle: Task = { ...gone, item: { ...gone.item, itemId: 'old:5' } };
+  const runs = withWork(withWork(initialState(0), 'old:1'), 'PVTI_2');
+  assert.deepEqual(markRemoved([gone, legacy, orphan, local, idle], ['work'], runs).map((c) => [taskId(c), c.orphan === true, c.outOfListing]),
+    [['old:1', true, undefined], ['PVTI_2', true, undefined], ['old:3', true, 'filter'], ['local:4', false, 'filter']]);
+  assert.equal(mergeTasks([gone], STAGES, { source: 'board', items: [] }, ['board'], [], runs, AT_NOW)[0].orphan, true, 'another board\'s poll turns it too');
 });
 
 test('replaceSegment swaps one source\'s ids in place and appends a source seen for the first time (#180)', () => {
@@ -756,8 +745,8 @@ test('a leaving task (#286) is not idle: no candidate, no due delete activity; a
   const held: Runs = { ...NO_RUNS, ...pairs([[2, { worktree: '/wt/hive-2-task-2' }]]) };
   assert.equal(dues([cleanable], STAGES, NOW, held, DELETE_ACTIVITY_DEFAULTS).length, 1);
   assert.deepEqual(dues([{ ...cleanable, leaving: true }], STAGES, NOW, held, DELETE_ACTIVITY_DEFAULTS), []);
-  assert.equal(merge([{ ...ready, leaving: true }], STAGES, [])[0].missing, undefined);
-  assert.equal(merge([ready], STAGES, [])[0].missing, true, 'a task that is not leaving is marked');
+  assert.equal(merge([{ ...ready, leaving: true }], STAGES, [])[0].outOfListing, undefined);
+  assert.equal(merge([ready], STAGES, [])[0].outOfListing, 'listing', 'a started task that is not leaving is marked (#568)');
 });
 
 test('isLive: a task is live while a non-empty worker or a terminal names it, a stage run, a free session or a terminal alike, or while it holds workerId; an empty worker and another task\'s runs do not count (#356)', () => {

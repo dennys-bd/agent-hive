@@ -63,7 +63,7 @@ const MOVED_BY: Partial<Record<HiveEvent['type'], MoveBy>> = {
   moveToStage: 'hand', leaveFlow: 'hand', approve: 'approval', prStates: 'merge', activityDeleted: 'on_finish', activityRemoved: 'on_finish', stageCommandEnded: 'on_finish', ciRead: 'on_finish', poll: 'source', // #755: a passed commands stage; #834: a passed wait
   stageCommandsRefused: 'on_finish', ciFailed: 'on_finish', ciClock: 'on_finish', evaluateEnded: 'on_finish', // #877: a passed or routed evaluation; #134: a routed failure moves the task
 };
-const BY_HAND: readonly HiveEvent['type'][] = ['closeTask', 'closeMissing', 'taskDeleted'];
+const BY_HAND: readonly HiveEvent['type'][] = ['closeTask', 'taskDeleted'];
 
 // The mechanism that took a finished task out (#134: a transition's sources): a leaving action's type once the source confirmed it, else a move
 // written by a transition to end; none for a task no source action applies to (a local one, or no move)
@@ -77,9 +77,10 @@ function finishVia(state: State, task: Task): FinishVia {
   return !task.created && actions(true).some((a) => a.type === 'move') ? 'move' : 'none';
 }
 
-// Why a task left: missing from the source, closed or deleted by hand with no leaving action in flight, else finished with its mechanism
+// Why a task left (#568): the poll let it go (closed on its source, never started, or its source removed: the listing lacks it), closed or
+// deleted by hand with no leaving action in flight, else finished with its mechanism
 function goneFields(state: State, task: Task, event: HiveEvent): { reason: GoneReason; via?: FinishVia } {
-  if (task.missing) return { reason: 'missing' };
+  if (event.type === 'poll' && !event.items.some((c) => c.item.itemId === taskId(task))) return { reason: 'closed' };
   if (!task.leaving && BY_HAND.includes(event.type)) return { reason: 'hand' };
   return { reason: 'finished', via: finishVia(state, task) };
 }

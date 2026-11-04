@@ -1,17 +1,12 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { activityOf } from '../../activities';
-import { canCloseMissing, workersOf } from '../../tasks';
 import type { FilterRule, Stage, State, Task } from '../../types';
 import { stageWorkerCount } from '../../worker-count';
-import { act } from '@/components/actions';
-import { Confirm } from '@/components/Confirm';
 import { NODE_WIDTH } from '@/components/FlowChart';
 import { FlowTask } from '@/components/FlowTask';
 import { FilterIndicator } from '@/components/StageFilter';
 import { StageMenu } from '@/components/StageMenu';
 import { type DragRef, useStageDrag } from '@/components/task-drag';
 import { TreeGroupHeader } from '@/components/TreeGroupHeader';
-import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import { executorLine } from '@/lib/flow-labels';
 import { hiddenBelow } from '@/lib/flow-layout';
@@ -20,27 +15,6 @@ import { flatRows, nodeRows } from '@/lib/tree-groups';
 
 // A task that waits for the user (#134): a session asking, or an approval
 const awaitsYou = (task: Task, state: State): boolean => ['waiting', 'approval'].includes(taskState(task, state));
-
-// A stage's close all (#279), between its header and its tasks: every stopped missing task of the stage in one go, behind one confirm that
-// says what stays running and that the worktrees stay on disk. Absent while nothing is closable; a running missing task keeps its own close / keep.
-function MissingStrip({ stage, tasks, state }: { stage: string; tasks: Task[]; state: State }) {
-  const closable = tasks.filter((c) => canCloseMissing(c, state)).length;
-  if (closable === 0) return null;
-  const running = tasks.filter((c) => c.missing && (activityOf(state, c.item.itemId)?.workerId !== undefined || workersOf(state, c).length > 0)).length;
-  const message = [t('confirm.closeMissingAll', { n: closable }), running > 0 ? t('confirm.closeMissingRunning', { m: running }) : ''].filter(Boolean).join(' ');
-  return (
-    <div className="flex items-center justify-between gap-2 text-destructive text-xs">
-      {t('stage.missing', { n: closable })}
-      <Confirm
-        title={t('confirm.title.closeTasks')}
-        message={message}
-        confirmLabel={t('stage.closeMissing')}
-        trigger={<Button type="button" size="xs" variant="outline">{t('stage.closeMissing')}</Button>}
-        onConfirm={() => act(`/stages/${encodeURIComponent(stage)}/close-missing`)}
-      />
-    </div>
-  );
-}
 
 // The list's fold, read on every scroll and resize: whether it overflows, and how many tasks sit below it
 function useFold(count: number) {
@@ -76,7 +50,7 @@ interface FlowNodeProps {
 }
 
 /** A stage as a node of the flowchart (#134, 1b): NODE_WIDTH wide (#54), its header (name, count, ● N out of tries (#913), ● N awaiting you, ⋯), who runs it, the view filter's indicator
- * (#374), the missing strip (#279) and its tasks, scrolling inside up to `maxHeight`; the footer only when they overflow. `tasks` are what the
+ * (#374) and its tasks, scrolling inside up to `maxHeight`; the footer only when they overflow. `tasks` are what the
  * source pick, the view filter and the search let through; `order` is the stage's whole order, which a drop is read in (#366). */
 export function FlowNode(props: FlowNodeProps) {
   const { stage, state, tasks, order, shown, filteredOut, rules, drag, selectedId, isListed, maxHeight, cap, onOpen, onFilter, onClearFilter, onList, isTree = false, collapsed = [], onToggleGroup, focus, onFocusTree } = props;
@@ -103,7 +77,6 @@ export function FlowNode(props: FlowNodeProps) {
       </div>
       <p className="flex-none truncate pr-2 text-muted-foreground text-xs">{executorLine(stage)}</p>
       <FilterIndicator rules={rules} hidden={filteredOut} onClear={onClearFilter} />
-      <MissingStrip stage={stage.name} tasks={order} state={state} />
       <ul
         ref={fold.ref} aria-label={stage.name} data-stage-tasks data-drop={tailDrop ? 'end' : undefined} onDragOver={dragOverEnd} onDrop={dropAtEnd} onDragLeave={onListDragLeave}
         className="relative flex min-h-0 flex-[0_1_auto] flex-col gap-1.5 overflow-y-auto pr-2 [scrollbar-width:none] after:absolute after:inset-x-0 after:-bottom-1 after:hidden after:h-0.5 after:bg-primary after:content-[''] data-[drop=end]:after:block"

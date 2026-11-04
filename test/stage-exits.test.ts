@@ -87,13 +87,17 @@ test('a list runs in its order, and a move to the column the source already show
   assert.deepEqual(shown(stageEnd(started.state, 'hive:item1').effects), ['kill', 'sourceAction close']);
 });
 
-test('a task the source does not have gets no write from either list (#515)', () => {
+test('a task the source does not have gets no write from either list; an out-of-listing one gets every action, and its column only on the Project (#515, #568)', () => {
   const list: SourceAction[] = [move('Done'), CLOSE, { type: 'archive' }];
   const task: Task = { item: item('hive', 1), stage: 'build', boardColumn: 'Ready', auto: true };
-  for (const mark of [{ orphan: true }, { missing: true }, { created: true }] as const) {
+  for (const mark of [{ orphan: true }, { created: true }] as const) {
     const unwritable = { ...task, ...mark };
     assert.deepEqual(sourceWrites(unwritable, list), { task: unwritable, effects: [] }, JSON.stringify(mark));
   }
+  const written = (t: Task): string[] =>
+    sourceWrites(t, list).effects.map((e) => (e.type === 'setColumn' ? `column ${e.column}` : e.type === 'sourceAction' ? e.action.type : e.type));
+  assert.deepEqual(written({ ...task, outOfListing: 'filter' }), ['column Done', 'close', 'archive'], 'filtered out, still on the Project');
+  assert.deepEqual(written({ ...task, outOfListing: 'project' }), ['close', 'archive'], 'off the Project the item has no Status to write');
   assert.deepEqual(sourceWrites(task, undefined), { task, effects: [] });
 });
 

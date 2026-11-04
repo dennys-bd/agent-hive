@@ -128,8 +128,8 @@ const taskActivities = (activities: readonly Activity[]): TaskActivity[] => acti
 
 const activityOf = (activities: readonly TaskActivity[], task: Task): TaskActivity | undefined => activities.find((a) => a.task.item.itemId === task.item.itemId);
 
-// A task with an activity shows only as the activity (the handoff: no duplicates); a missing one waits for its close or keep
-const tasksOf = (tasks: readonly Task[], activities: readonly TaskActivity[]): Task[] => tasks.filter((task) => !task.missing && activityOf(activities, task) === undefined);
+// A task with an activity shows only as the activity (the handoff: no duplicates)
+const tasksOf = (tasks: readonly Task[], activities: readonly TaskActivity[]): Task[] => tasks.filter((task) => activityOf(activities, task) === undefined);
 
 // A task's live activity's branch (#629): what its search reads besides the label
 const branchOf = (input: SearchInput, task: Task): string =>

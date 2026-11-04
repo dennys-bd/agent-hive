@@ -2,14 +2,14 @@ import type { Citation } from '../tasks.js';
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type {
-  Source, SourceItem, SourceItemRead, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, InheritedBlocker, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef, ReadOptions,
+  Source, SourceItem, SourceItemRead, SourceConfig, SourceQuota, FilterOptions, Gql, InheritedBlocker, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef, ReadOptions,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
 import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
 import type { Logger } from '../log.js';
 import {
-  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PROJECTS, PROJECT_FIELDS, SELECT_FIELDS, issueRepo,
-  SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhIssueRelations, type GhItemNode, type GhOption, type IssueIdData,
+  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ITEMS, PROJECTS, PROJECT_FIELDS, SELECT_FIELDS,
+  SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhIssueRelations, type GhItemNode, type GhOption,
   type ProjectsData, type SelectFieldsData, type ViewerData,
 } from './github-queries.js';
 import { createProjectIssue, repositoryNodeId } from './github-create.js';
@@ -21,7 +21,7 @@ import { hasListing, readListing, storedNodes, type ItemStore, type ListingKey }
 import { sourceLogin } from '../read-model/rows.js';
 import { readProject, storedProject, type ProjectRead } from './github-project.js';
 import { groupUnderEpics, inheritedBlockers, inPlace, statusOf, treeFields, treeLinks, type TreeLinks } from './github-tree.js';
-import { readOneItem } from './github-item.js';
+import { applyOffProject, closeVariables, readOneItem } from './github-item.js';
 
 export { groupUnderEpics, treeLinks, type TreeLinks } from './github-tree.js';
 
@@ -63,20 +63,6 @@ export async function listProjects(owner: string, gql: Gql = cliGql()): Promise<
 
 export async function listStatusOptions(owner: string, number: number, gql: Gql = cliGql()): Promise<string[]> {
   return (await fetchStatusField(owner, number, gql)).options.map((o) => o.name);
-}
-
-const STATE_REASONS: Record<CloseReason, string> = { wontDo: 'NOT_PLANNED', duplicate: 'DUPLICATE' }; // #314
-
-// A close's variables (#314): the reason as GitHub's state reason; a duplicate's original is named by number in the issue's own repository
-// and resolved to its node id first. A bare close sends the issue alone, as before.
-async function closeVariables(gql: Gql, issueId: string, url: string | undefined, { reason, duplicateOf }: CloseAction): Promise<Record<string, string>> {
-  const stated: Record<string, string> = reason === undefined ? { issueId } : { issueId, stateReason: STATE_REASONS[reason] };
-  if (duplicateOf === undefined) return stated;
-  const repo = issueRepo(url ?? '');
-  if (!repo) throw new Error(`"duplicateOf" needs the issue's repository: ${url ?? 'no url'} is no issue url`);
-  const original = ((await gql(ISSUE_ID, { ...repo, number: duplicateOf })) as IssueIdData).repository?.issue?.id;
-  if (!original) throw new Error(`issue #${duplicateOf} not found in ${repo.owner}/${repo.name}`);
-  return { ...stated, duplicateIssueId: original };
 }
 
 // An epic is any issue GitHub itself counts sub-issues for, whatever their state: the field costs nothing extra on the listing, so this is known
@@ -277,10 +263,11 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
 
   // #286: archive and remove act on the project item; close and delete on its issue, known from the last listing. A draft has no issue:
   // it cannot be closed, and deleting it deletes the item. A close from hive_stop carries a reason and maybe the original of a duplicate (#314).
-  async function apply(itemId: string, action: ItemAction): Promise<void> {
+  // #568: an item the listing does not hold is off the Project, and only its url still reaches the issue
+  async function apply(itemId: string, action: ItemAction, url: string): Promise<void> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
     if (contents.size === 0) await listItems(); // #353: at boot another source's poll can run this before ours listed; a truly empty project re-lists
-    if (!contents.has(itemId)) throw new Error(`item ${itemId} is not on the source`);
+    if (!contents.has(itemId)) return applyOffProject(gql, action, url);
     const content = contents.get(itemId);
     const issueId = content?.__typename === 'Issue' ? content.id : undefined;
     const item = { projectId: resolved.projectId, itemId };

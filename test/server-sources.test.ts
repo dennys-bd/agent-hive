@@ -136,7 +136,7 @@ test('renamesRefusal (#278): 400 for a map the running Hive cannot apply, 409 wh
     }));
   const on = (board: string, n: number, extra: Partial<Task> = {}): Task =>
     ({ item: { itemId: `${board}:${n}`, id: String(n), title: `Task ${n}`, body: '', url: '', source: board }, stage: 'fila', boardColumn: 'Ready', auto: true, ...extra });
-  const live = { config: configOf('work', 'notes'), state: { ...initialState(0), tasks: [on('work', 1), on('old', 2, { missing: true })] } }; // old: removed by an earlier save
+  const live = { config: configOf('work', 'notes'), state: { ...initialState(0), tasks: [on('work', 1), on('old', 2, { orphan: true })] } }; // old: removed by an earlier save
   const next = configOf('job', 'notes');
   const bad = (renames: unknown, config: Config, message: string): void =>
     assert.deepEqual(renamesRefusal(renames, config, live), { status: 400, message }, JSON.stringify(renames));
@@ -175,7 +175,7 @@ test('a save that renames a source carries its running task over: the same workt
   assert.deepEqual(state.tasks.map((c) => c.item.itemId), ['job:12'], 'no task missing, no duplicate');
   const [after] = state.tasks;
   // #629: the same activity, its sessionId and workerId with it; its record lists the new id
-  assert.deepEqual([activityOf(state, 'job:12'), after.stage, after.missing], [was, before.stage, undefined], 'the same activity: its record lists the new id (#629)');
+  assert.deepEqual([activityOf(state, 'job:12'), after.stage, after.outOfListing], [was, before.stage, undefined], 'the same activity: its record lists the new id (#629)');
   assert.equal(taskOfWorker(state, state.workers.find((s) => s.id === worker.id)!)?.item.itemId, 'job:12', 'the worker keeps its activity, whose record lists the new id (#629)');
   assert.deepEqual(Object.keys(state.syncs).sort(), ['job', 'notes']);
 });
@@ -186,9 +186,10 @@ test('a rename onto the name of a removed source whose task is still in the Hive
   await sources.server.poll();
   const [work] = sources.body.sources ?? [];
   const workOnly: LegacyStage[] = [{ ...STAGES[0], from: { work: ['Ready'] }, onStart: { work: [move('In progress')] } }];
+  await sources.server.dispatch({ type: 'createActivity', taskId: 'notes:7' }); // started: it outlives its source as an orphan (#568)
   assert.equal((await postJson(`${sources.base}/settings`, { ...sources.body, sources: [work], flows: bodyFlows(workOnly) })).status, 200); // notes removed
   await sources.server.poll();
-  assert.equal(sources.server.getState()?.tasks.find((c) => c.item.itemId === 'notes:7')?.missing, true, 'its board is gone');
+  assert.equal(sources.server.getState()?.tasks.find((c) => c.item.itemId === 'notes:7')?.orphan, true, 'its board is gone');
   const saved = await readFile(join(sources.home, CONFIG_FILE), 'utf8');
   const res = await postJson(`${sources.base}/settings`, {
     ...sources.body, sources: [{ ...work, name: 'notes' }], renames: { work: 'notes' },

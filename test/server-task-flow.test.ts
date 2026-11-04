@@ -20,7 +20,6 @@ const conflict = (error: string) => ({ status: 409, message: error });
 test('leaveFlowRefusal answers 409 for a task outside the flow, a missing one, a show epic, one being deleted and one a stage run holds; none for a stopped task (#566)', () => {
   const { stage: _stage, ...outside } = TASK;
   assert.deepEqual(leaveFlowRefusal(at(outside), outside), conflict('already outside the flow'));
-  assert.deepEqual(leaveFlowRefusal(at({ ...TASK, missing: true }), { ...TASK, missing: true }), conflict('tarefa sumiu do source: feche ou mantenha'));
   const epic: Task = { ...TASK, item: { ...TASK.item, epic: { follows: 'behind', switchAt: 'fila' } } };
   assert.deepEqual(leaveFlowRefusal(at(epic), epic), conflict("an epic follows its children's stages"));
   assert.deepEqual(leaveFlowRefusal(at(TASK, { deleting: true }), TASK), conflict('atividade sendo excluída'));

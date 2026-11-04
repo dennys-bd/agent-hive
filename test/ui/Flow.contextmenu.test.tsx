@@ -32,7 +32,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 const openTaskMenu = (text: string): void => { fireEvent.contextMenu(screen.getByText(text).closest('li')!); };
 
 // fireEvent.click reaches a menu item nested in a submenu under jsdom, where userEvent.click does not; the mover para etapa → review click below closes the one usable menu, so it comes last.
-test('right-click on a task offers começar sozinho, checked unless manual; mover para etapa on any task lists the other stages, is disabled while a stage run holds the task but not while a session is open on it, and posts move-to; a missing task has no menu (#164, #366, #542, #708)', async () => {
+test('right-click on a task offers começar sozinho, checked unless manual; mover para etapa on any task lists the other stages, is disabled while a stage run holds the task but not while a session is open on it, and posts move-to (#164, #366, #542, #708)', async () => {
   const user = userEvent.setup();
   const stageRun: Worker = { id: 's1', status: 'working', activityId: activityIdOf('I1'), runId: 'bbbbbbbb-0000-4000-8000-000000000002' };
   const autoStart = (): HTMLElement => screen.getByRole('menuitemcheckbox', { name: 'começar sozinho' });
@@ -63,7 +63,4 @@ test('right-click on a task offers começar sozinho, checked unless manual; move
   expect(screen.queryByRole('menuitem', { name: 'dev' })).not.toBeInTheDocument(); // its own stage is not a target
   fireEvent.click(review);
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/move-to', expect.objectContaining({ method: 'POST', body: JSON.stringify({ stage: 'review' }) })));
-
-  rerender(<Flow state={state([task('1', 'dev', { missing: true })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { missing: true })], [worker('s1')]))} />);
-  expect(screen.getByText('#1 Task 1').closest('li')).not.toHaveAttribute('data-slot', 'context-menu-trigger'); // a missing task gets no menu wrapper
 });

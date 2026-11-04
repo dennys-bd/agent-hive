@@ -1,9 +1,10 @@
 import { activityOf, holdsSlug, keptActivity, recordsOf, taskOfActivity, terminalsIn, worktreeOwner, workersIn, type WorkState } from './activities.js';
 import { staleRead } from './column-write.js';
 import { parentOf } from './task-tree.js';
+import { outOfRead } from './out-of-listing.js';
 import { flowOf } from './flows.js';
 import { hiveAction, holdsWorker, runsAgent } from './stage-agent.js';
-import type { Activity, Flow, SourceAction, SourceItem, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
+import type { Activity, Flow, SourceAction, SourceItem, SourceItemRead, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
 
 /** What a task's workers are read from (#629): the workers point at the activity, the activity's record lists the task. */
 export type WorkersState = Pick<State, 'workers' | 'activities' | 'activityRecords'>;
@@ -182,7 +183,7 @@ export const inAction = (activity: Pick<Activity, 'commands' | 'ci' | 'evaluate'
  * user or by a run that died (#283), not leaving the source (#286), not awaiting approval (#268), not running its worktree setup (#351) or a stage
  * action (#755, #834), and not a show epic (#31: its children run, it never does, by the fill or by a stage action). */
 const isIdle = (task: Task, activity: Activity | undefined, nonAutoToo = false): boolean =>
-  activity?.workerId === undefined && !activity?.deleting && !task.missing && activity?.error === undefined && (nonAutoToo || task.auto) && !activity?.stopped
+  activity?.workerId === undefined && !activity?.deleting && activity?.error === undefined && (nonAutoToo || task.auto) && !activity?.stopped
   && !task.leaving && !activity?.approval && !activity?.setup && !inAction(activity) && task.item.epic === undefined;
 
 /** Started (#727): the task has a live activity, whatever made it: a stage run, a free session, a first open. What a signal's resume picks up
@@ -225,13 +226,13 @@ function parentWorkspace(task: Pick<Task, 'item'>, scope: WorkspaceScope, walked
   return parent === undefined || lineage.has(parent.item.itemId) ? undefined : resolveIn(parent, scope, lineage);
 }
 
-// A known task seen again: the task fields refresh, the mark of a task that had gone missing drops, and a human move on the
+// A known task seen again: the task fields refresh, the mark of a task that had left the listing drops (#568), and a human move on the
 // source (source column differs from the one the Hive last saw or wrote) follows into the Hive only while the task is stopped. A read from
 // before the Hive's own column write (#889) refreshes everything but the column, so it can neither move the task back nor make shouldWrite
 // compare against a value the source no longer holds; any other read confirms, overrides or outlives the write, and its mark goes.
-function seenAgain(task: Task, seen: SourceItem, stages: Stage[], runs: WorkState, now: string): Task {
+export function seenAgain(task: Task, seen: SourceItem, stages: Stage[], runs: WorkState, now: string): Task {
   if (task.orphan) return task;
-  const { missing: _missing, ...present } = task;
+  const { outOfListing: _outOfListing, ...present } = task;
   if (staleRead(task, seen.column, now)) return { ...present, item: seen.item };
   const { columnWrite: _columnWrite, ...rest } = present;
   const refreshed: Task = { ...rest, item: seen.item, boardColumn: seen.column };
@@ -246,19 +247,20 @@ const entered = (seen: SourceItem, stages: Stage[]): Task[] => {
   return entry ? [enter({ item: seen.item, stage: entry.name, boardColumn: seen.column, auto: seen.item.autoOnEntry ?? true }, entry)] : [];
 };
 
-// Gone from the source's listing: marked missing, unless the task never had a source to be listed by (local, #132), was kept (orphan), or is
-// leaving through its own source action (#286): closeTask or sourceActionFailed answers that one.
-const unlisted = (task: Task): Task => (task.orphan || task.missing || task.created || task.leaving ? task : { ...task, missing: true });
-
-/** One source's poll (#180): which source listed what. */
-export interface Listing { source: string; items: SourceItem[] }
+/** One source's poll (#180): which source listed what; reads (#568): item() of the started tasks it lacks. */
+export interface Listing { source: string; items: SourceItem[]; reads?: readonly { itemId: string; read: SourceItemRead }[] }
 
 // A task no current source can list (#180): a source task whose source was removed in Settings, or one saved before sources had names.
 const sourceless = (task: Task, sources: string[]): boolean => !task.created && (task.item.source === undefined || !sources.includes(task.item.source));
 
-/** What any poll does first (#180): a task whose source is no longer in the Comb is marked missing (close / keep as today); local tasks,
- * kept orphans and every current source's tasks are left as they are. */
-export const markRemoved = (tasks: Task[], sources: string[]): Task[] => tasks.map((c) => (sourceless(c, sources) ? unlisted(c) : c));
+/** What any poll does first (#180, #568): a task whose source is no longer in the Comb turns orphan when it started, since no adapter is left
+ * to read its item, and leaves when it never did; local tasks, orphans, leaving tasks and every current source's tasks stay as they are. */
+export const markRemoved = (tasks: Task[], sources: string[], runs: WorkState): Task[] => tasks.flatMap((c) => {
+  if (!sourceless(c, sources) || c.orphan || c.leaving) return [c];
+  if (!isStarted(runs, c)) return [];
+  const { outOfListing: _outOfListing, ...rest } = c;
+  return [{ ...rest, orphan: true as const }];
+});
 
 /** The flat source order with `source`'s ids swapped for `ids` in place, or appended when that source shows up for the first time (#180). A
  * source's ids are the ones prefixed `<source>:`; a source name never holds a ":". */
@@ -293,7 +295,7 @@ export function renameSource(task: Task, renames: Record<string, string>): Task 
   return to === undefined ? task : { ...task, item: { ...task.item, source: to, itemId: renamedId(task.item.itemId, renames) } };
 }
 
-/** The state after a rename in Settings (#278), as one map (a swap rewrites each task once): every task of a renamed source (missing and
+/** The state after a rename in Settings (#278), as one map (a swap rewrites each task once): every task of a renamed source (out-of-listing and
  * orphan ones too), the records' task ids (the workers point at activities, #629) and the source order under the new ids, and each status under its new key; a stale status already under a
  * new name (a removed source's) gives way. One event, so a running worker never sees an old id. An empty map: the same state. */
 export function renameSources(state: State, renames: Record<string, string>): State {
@@ -309,20 +311,27 @@ export function renameSources(state: State, renames: Record<string, string>): St
   };
 }
 
-/** One known task against its source's latest word (#180, #686): seen again when listed, else unlisted. What mergeTasks runs on each of the
- * polled source's tasks, and itemRead on the one item a field write re-read. seenAgain and unlisted keep their guards. */
-export const seenOne = (task: Task, entry: SourceItem | undefined, stages: Stage[], runs: WorkState, now: string): Task =>
-  (entry ? seenAgain(task, entry, stages, runs, now) : unlisted(task));
+/** One known task against its source's latest word (#180, #686, #568): listed, seen again; an orphan, a leaving or a created task as it is;
+ * unlisted and never started, gone (undefined); unlisted and started, what item() answered (outOfRead). What mergeTasks runs on each of the
+ * polled source's tasks, and itemRead on the one item a field write re-read. */
+export function seenOne(task: Task, entry: SourceItem | undefined, stages: Stage[], runs: Runs, now: string, read?: SourceItemRead): Task | undefined {
+  if (task.orphan) return task;
+  if (entry) return seenAgain(task, entry, stages, runs, now);
+  if (task.leaving || task.created) return task; // closeTask or sourceActionFailed answers a leaving one (#286)
+  return isStarted(runs, task) ? outOfRead(task, read, stages, runs, now) : undefined;
+}
 
-/** One source's poll (#180): that source's known tasks are updated (seen again) or marked missing (unlisted), its new items enter through its
- * `from`, and the tasks of every other source and the local ones are left alone, but for a removed source's (markRemoved). Every Hive stage
+/** One source's poll (#180): that source's known tasks are updated (seen again, or read past the listing, #568) or let go, its new items enter
+ * through its `from`, and the tasks of every other source and the local ones are left alone, but for a removed source's (markRemoved). A task
+ * let go is absent from the result: poll drops it through dropTask. Every Hive stage
  * is then put back in `order` (the whole flat source order, this listing already swapped in) except for the tasks that hold their position
  * (`followSource`: pinned, live in `runs`, #356, or unlisted). A task without `enteredAt` (saved before the field existed) is stamped `now`,
  * the poll's time, which seenAgain also measures a column write's window by (#889). */
-export function mergeTasks(tasks: Task[], stages: Stage[], { source, items: listed }: Listing, sources: string[], order: string[], runs: Runs, now: string): Task[] {
+export function mergeTasks(tasks: Task[], stages: Stage[], { source, items: listed, reads = [] }: Listing, sources: string[], order: string[], runs: Runs, now: string): Task[] {
   const seen = new Map(listed.map((entry) => [entry.item.itemId, entry]));
   const known = new Set(tasks.map(taskId));
-  const kept = markRemoved(tasks, sources).map((task) => (task.item.source === source ? seenOne(task, seen.get(taskId(task)), stages, runs, now) : task)); // another source's task, or a local one: this poll says nothing about it
+  const answers = new Map(reads.map((r) => [r.itemId, r.read]));
+  const kept = markRemoved(tasks, sources, runs).flatMap((task) => (task.item.source === source ? seenOne(task, seen.get(taskId(task)), stages, runs, now, answers.get(taskId(task))) ?? [] : task)); // another source's task, or a local one: this poll says nothing about it
   const merged = [...kept, ...listed.flatMap((entry) => (known.has(entry.item.itemId) ? [] : entered(entry, stages)))];
   const stamped = merged.map((c) => (inFlow(c) && c.enteredAt === undefined ? { ...c, enteredAt: now } : c));
   return followSource(stamped, order, runs);
@@ -369,7 +378,7 @@ export function moveTask(tasks: Task[], id: string, before?: string): Task[] {
   return pin(moved);
 }
 
-// Source index of a task; one the source no longer lists (orphan, missing) sorts after every listed one
+// Source index of a task; one absent from the source's listing (out of it, orphan) sorts after every listed one
 function sourceIndex(sourceOrder: string[], task: Task): number {
   const index = sourceOrder.indexOf(taskId(task));
   return index < 0 ? sourceOrder.length : index;
@@ -394,7 +403,7 @@ export const isLive = (task: Task, runs: Runs): boolean =>
   activityOf(runs, taskId(task))?.workerId !== undefined || workersOf(runs, task).length > 0 || terminalsOf(runs, task).length > 0;
 
 // A task that holds the position it occupies through a poll: moved by hand, live (a run's start put it there, #117, #356), or absent from
-// the source's listing (missing, orphan), which leaves it no order to follow and no reason to sink to the bottom.
+// the source's listing (out of it, orphan), which leaves it no order to follow and no reason to sink to the bottom.
 const isAnchored = (task: Task, sourceOrder: string[], runs: Runs): boolean =>
   task.pinned === true || isLive(task, runs) || !sourceOrder.includes(taskId(task));
 
@@ -455,7 +464,7 @@ export function differsFromSource(tasks: Task[], stage: string, sourceOrder: str
 /** Abrir sessão (#283): any task still on the source and not leaving it, whose worktree no git is removing and no setup is preparing (#351).
  * A blocker holds the stage run only (#491): the user opens a session or a terminal on a blocked task by hand. The reducer, the route and the
  * task menu share this one rule; a running stage, its auto setting or a stopped task changes nothing. */
-export const canOpenSession = (task: Task, activity: Activity | undefined): boolean => !task.missing && !activity?.deleting && !task.leaving && !activity?.setup;
+export const canOpenSession = (task: Task, activity: Activity | undefined): boolean => !activity?.deleting && !task.leaving && !activity?.setup;
 
 /** Why delete activity (#182, #210, #573) may not run, in the order the user would ask: a run holds the task (its stage run or a session,
  * #164; a terminal does not, #573), the activity is already being deleted, nothing the scope covers is on it (#236). */
@@ -476,7 +485,7 @@ export const terminalsOf = (state: Pick<State, 'terminals' | 'activities' | 'act
  * deleting the activity closes it. */
 const hasSessionRun = (task: Task, state: WorkersState): boolean => activityOf(state, taskId(task))?.workerId !== undefined || workersOf(state, task).length > 0;
 
-/** The first RemovalBlocker the task hits, or undefined when delete activity may run. A missing task qualifies: its activity can be deleted
+/** The first RemovalBlocker the task hits, or undefined when delete activity may run. An out-of-listing task qualifies: its activity can be deleted
  * before it is closed. In a delete-activity stage nothing to delete never blocks (#236): the click moves the task on by hand. The reducer,
  * the route (its 409) and the menu item (its reason) share this one rule, so they never disagree. */
 export function removalBlocker(task: Task, state: Pick<State, 'workers' | 'stages' | 'deleteActivity' | 'activities' | 'activityRecords'>): RemovalBlocker | undefined {
@@ -502,13 +511,6 @@ export function createdRemovalBlocker(task: Task, runs: Runs): 'running' | 'dele
 export function canRemoveCreated(task: Task, runs: Runs): boolean {
   return task.created === true && createdRemovalBlocker(task, runs) === undefined;
 }
-
-/** A missing task the stage's close all may take (#279): stopped, not being deleted, held by no run, nor running a stage action, whose commands
- * run holds a worker (#755, #727). The reducer, the
- * route and the stage's strip share this one rule, so the count they show is what closes. */
-export const canCloseMissing = (task: Task, state: WorkersState): boolean =>
-  task.missing === true && !activityOf(state, taskId(task))?.deleting && activityOf(state, taskId(task))?.workerId === undefined && workersOf(state, task).length === 0
-  && !inAction(activityOf(state, taskId(task)));
 
 /** How a task is named on screen: `#12 Title` for a source task, `HIVE-3 Title` for a local one (#132): there is no issue number to point at. */
 export const taskLabel = (task: Pick<Task, 'item' | 'created'>): string => {
@@ -617,7 +619,7 @@ export const previousSession = (task: Task, state: WorkersState): Session | unde
 /** A task whose error the user may dismiss (#354): what canMoveToStage asks, an epic included: its refused end action (#31) freezes it and
  * a dismiss unfreezes it without moving it. */
 export const canDismissError = (task: Task, state: WorkersState): boolean =>
-  !task.missing && !task.leaving && activityOf(state, taskId(task))?.workerId === undefined && !inAction(activityOf(state, taskId(task))) // #755, #834
+  !task.leaving && activityOf(state, taskId(task))?.workerId === undefined && !inAction(activityOf(state, taskId(task))) // #755, #834
   && !workersOf(state, task).some((s) => !s.freeSession);
 
 /** A task the user may move to another stage (#164, #366, #708), by right-click → move to or by a drag, auto on or off: still on the
