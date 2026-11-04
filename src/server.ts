@@ -657,8 +657,9 @@ export function createServer(deps: ServerDeps): HiveServer {
       await leave(false);
       return;
     }
+    const url = live?.state.tasks.find((c) => c.item.itemId === effect.taskId)?.item.url ?? ''; // #568: an issue off the Project is reached by its url
     try {
-      await wiring.sourceAction(live?.state, effect.taskId, effect.action.type, source.apply(effect.itemId, effect.action)); // source.action (#742)
+      await wiring.sourceAction(live?.state, effect.taskId, effect.action.type, source.apply(effect.itemId, effect.action, url)); // source.action (#742)
     } catch (err) {
       await fail(`source.apply(${effect.action.type})`, err);
       await dispatch({ type: 'sourceActionFailed', taskId: effect.taskId, message: errorMessage(err), leaving: isLeaving(effect.action) });

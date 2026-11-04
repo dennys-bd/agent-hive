@@ -2814,6 +2814,7 @@ test('a leaving sourceAction (#286): the source applies it and the task leaves t
   await markDone(server, ptyId);
   assert.equal((await hookEvent(base, ptyId, { hook_event_name: 'Stop' })).status, 204);
   assert.deepEqual(accepting.applied, ['I1 archive'], 'the adapter sees its own id');
+  assert.deepEqual(accepting.urls, ['https://github.com/acme/r/issues/1'], 'the task\'s url travels with the action (#568)');
   assert.deepEqual(server.getState()?.tasks, [], 'closeTask took it out');
   assert.ok(lines.includes('INFO sourceAction #board:I1 archive ok'), lines.join('\n'));
 

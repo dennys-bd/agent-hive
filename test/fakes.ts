@@ -242,10 +242,11 @@ export const chained = (stages: readonly LegacyStage[]): Pick<State, 'flows' | '
 // A source that has the OPTIONS columns and returns one task named after the configured entry column.
 // `resolveDelayMs` makes resolveFields slow so concurrent saves overlap; `quota` gives it a fixed quota reading (none by default);
 // `applyError` makes every source action reject with that message (#286). `applied` records each action as `<own id> <type>`; `actions` the same calls whole (#314).
-export function fakeSourceFactory(resolveDelayMs = 0, quota?: SourceQuota, applyError?: string): { factory: (config: SourceSpec) => Source; configs: SourceSpec[]; applied: string[]; actions: ItemAction[] } {
+export function fakeSourceFactory(resolveDelayMs = 0, quota?: SourceQuota, applyError?: string): { factory: (config: SourceSpec) => Source; configs: SourceSpec[]; applied: string[]; actions: ItemAction[]; urls: string[] } {
   const configs: SourceSpec[] = [];
   const applied: string[] = [];
   const actions: ItemAction[] = []; // the whole action, reason included (#314)
+  const urls: string[] = []; // the url each action carried (#568)
   const factory = (config: SourceSpec): Source => {
     configs.push(config);
     return {
@@ -261,9 +262,10 @@ export function fakeSourceFactory(resolveDelayMs = 0, quota?: SourceQuota, apply
         return [{ item: { itemId: 'I1', id: '1', title: `from ${from}`, body: '', url: 'https://github.com/acme/r/issues/1' }, column: from }];
       },
       async setColumn() {},
-      async apply(itemId, action) {
+      async apply(itemId, action, url) {
         applied.push(`${itemId} ${action.type}`);
         actions.push(action);
+        urls.push(url);
         if (applyError !== undefined) throw new Error(applyError);
       },
       async settingsOptions() {
@@ -272,7 +274,7 @@ export function fakeSourceFactory(resolveDelayMs = 0, quota?: SourceQuota, apply
       ...(quota ? { quota: async () => quota } : {}),
     };
   };
-  return { factory, configs, applied, actions };
+  return { factory, configs, applied, actions, urls };
 }
 
 /** A Logger that writes nothing: every call becomes a `LEVEL message` line, whatever the level, and setLevel a `LEVEL <level>` line. */

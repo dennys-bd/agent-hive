@@ -1,8 +1,8 @@
 import { ItemNotOnSourceError } from '../field-values.js';
 import type { ItemStore } from '../read-model/items.js';
-import type { Gql, Item, SourceItemRead, SourceItem } from '../types.js';
+import type { CloseAction, CloseReason, Gql, Item, ItemAction, SourceItemRead, SourceItem } from '../types.js';
 import { readItem } from './github-fields.js';
-import { ISSUE_BY_NUMBER, issueRef, type GhItemFieldsNode, type IssueByNumberData, type IssueRef } from './github-queries.js';
+import { CLOSE_ISSUE, DELETE_ISSUE, ISSUE_BY_NUMBER, ISSUE_ID, issueRef, issueRepo, type GhItemFieldsNode, type IssueByNumberData, type IssueIdData, type IssueRef } from './github-queries.js';
 import { statusOf } from './github-tree.js';
 
 /** What one item's read needs of the adapter (#567): its transport and project, the poll's steps on one node, unfiltered and in any Status
@@ -73,4 +73,28 @@ export async function readOneItem(ctx: ItemReadContext, itemId: string, url: str
   const entry = await ctx.entry(node);
   if (entry === undefined) return issueRead(itemId, false, fields); // no Status value: no column to answer
   return { reason: ctx.isListed(node, entry) ? 'listing' : 'filter', entry };
+}
+
+const STATE_REASONS: Record<CloseReason, string> = { wontDo: 'NOT_PLANNED', duplicate: 'DUPLICATE' }; // #314
+
+// A close's variables (#314): the reason as GitHub's state reason; a duplicate's original is named by number in the issue's own repository
+// and resolved to its node id first. A bare close sends the issue alone, as before.
+export async function closeVariables(gql: Gql, issueId: string, url: string | undefined, { reason, duplicateOf }: CloseAction): Promise<Record<string, string>> {
+  const stated: Record<string, string> = reason === undefined ? { issueId } : { issueId, stateReason: STATE_REASONS[reason] };
+  if (duplicateOf === undefined) return stated;
+  const repo = issueRepo(url ?? '');
+  if (!repo) throw new Error(`"duplicateOf" needs the issue's repository: ${url ?? 'no url'} is no issue url`);
+  const original = ((await gql(ISSUE_ID, { ...repo, number: duplicateOf })) as IssueIdData).repository?.issue?.id;
+  if (!original) throw new Error(`issue #${duplicateOf} not found in ${repo.owner}/${repo.name}`);
+  return { ...stated, duplicateIssueId: original };
+}
+
+/** #568: an action on an item the last listing does not hold, a task a project read found off the Project. archive and remove are already
+ * done (the item is off the Project); close and delete reach the issue by its url, one lookup. Rejects when the url names no issue. */
+export async function applyOffProject(gql: Gql, action: ItemAction, url: string): Promise<void> {
+  if (action.type === 'archive' || action.type === 'remove') return;
+  const ref = issueRef(url);
+  const issueId = ref && ((await gql(ISSUE_ID, { owner: ref.owner, name: ref.name, number: ref.number })) as IssueIdData).repository?.issue?.id;
+  if (!issueId) throw new Error(`"${action.type}" off the Project found no issue: ${url === '' ? 'no url' : url}`);
+  await (action.type === 'close' ? gql(CLOSE_ISSUE, await closeVariables(gql, issueId, url, action)) : gql(DELETE_ISSUE, { issueId }));
 }

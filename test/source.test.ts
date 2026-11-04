@@ -19,6 +19,7 @@ const hidden = specOf({ source: { ...GITHUB_SOURCE, epics: 'hide' } });
 
 const options = [{ id: 'O_ready', name: 'Ready' }, { id: 'O_prog', name: 'In progress' }, { id: 'O_rev', name: 'In review' }, { id: 'O_done', name: 'Done' }];
 const fields = { repositoryOwner: { projectV2: { id: 'PVT_1', field: { id: 'F_status', options } } } };
+const URL1 = 'https://github.com/acme/r/issues/1';
 const RATE = { limit: 5000, remaining: 4320, resetAt: '2026-09-16T13:00:00.000Z' };
 /** What a listed issue with no assignee, label, milestone, repository or single-select value carries for the view filter (#374). */
 const NO_FACETS = { assignees: [], labels: [], fields: {} };
@@ -110,12 +111,12 @@ test('apply (#286): archive and remove send the item mutation with the project i
   const draft = { id: 'I3', fieldValueByName: { name: 'Ready' }, content: { __typename: 'DraftIssue', title: 'Draft' } };
   const { gql, calls } = fakeGql({ fields, items: page([linked(1), draft]), relations: {}, archiveItem: {}, deleteItem: {}, closeIssue: {}, deleteIssue: {} });
   const source = createSource(config, { gql });
-  await assert.rejects(source.apply('I1', { type: 'archive' }), /not resolved/);
+  await assert.rejects(source.apply('I1', { type: 'archive' }, URL1), /not resolved/);
   await source.resolveFields();
   await source.listItems();
-  for (const type of ['archive', 'remove', 'close', 'delete'] as const) await source.apply('I1', { type });
-  await source.apply('I3', { type: 'delete' });
-  await assert.rejects(source.apply('I3', { type: 'close' }), { message: '"close" needs an issue, not a draft or a pull request' });
+  for (const type of ['archive', 'remove', 'close', 'delete'] as const) await source.apply('I1', { type }, URL1);
+  await source.apply('I3', { type: 'delete' }, URL1);
+  await assert.rejects(source.apply('I3', { type: 'close' }, URL1), { message: '"close" needs an issue, not a draft or a pull request' });
   const writes = calls.filter((c) => ['archiveItem', 'deleteItem', 'closeIssue', 'deleteIssue'].includes(c.name)).map((c) => [c.name, c.variables]);
   assert.deepEqual(writes, [
     ['archiveItem', { projectId: 'PVT_1', itemId: 'I1' }], ['deleteItem', { projectId: 'PVT_1', itemId: 'I1' }],
@@ -129,9 +130,9 @@ test('apply close with hive_stop\'s reason (#314): wontDo sends NOT_PLANNED; dup
   const source = createSource(config, { gql });
   await source.resolveFields();
   await source.listItems();
-  await source.apply('I1', { type: 'close', reason: 'wontDo' });
-  await source.apply('I1', { type: 'close', reason: 'duplicate', duplicateOf: 7 });
-  await assert.rejects(source.apply('I1', { type: 'close', reason: 'duplicate', duplicateOf: 8 }), { message: 'issue #8 not found in acme/r' });
+  await source.apply('I1', { type: 'close', reason: 'wontDo' }, URL1);
+  await source.apply('I1', { type: 'close', reason: 'duplicate', duplicateOf: 7 }, URL1);
+  await assert.rejects(source.apply('I1', { type: 'close', reason: 'duplicate', duplicateOf: 8 }, URL1), { message: 'issue #8 not found in acme/r' });
   const sent = calls.filter((c) => ['issueId', 'closeIssue'].includes(c.name)).map((c) => [c.name, c.variables]);
   assert.deepEqual(sent, [
     ['closeIssue', { issueId: 'N1', stateReason: 'NOT_PLANNED' }],
@@ -140,20 +141,36 @@ test('apply close with hive_stop\'s reason (#314): wontDo sends NOT_PLANNED; dup
   ], 'the bare close keeps sending { issueId } alone: the #286 test above');
 });
 
-test('apply before the adapter ever listed (#353): it runs the listing query first, then the action; an item still absent from that listing rejects as before', async () => {
+test('apply before the adapter ever listed (#353): it runs the listing query first, then the action; an item still absent from that listing is off the Project: an archive resolves with no call (#568)', async () => {
   const { gql, calls } = fakeGql({ fields, items: page([linked(1)]), relations: {}, archiveItem: {} });
   const source = createSource(config, { gql });
   await source.resolveFields();
-  await source.apply('I1', { type: 'archive' });
+  await source.apply('I1', { type: 'archive' }, URL1);
   assert.deepEqual(calls.map((c) => c.name).filter((name) => name === 'items' || name === 'archiveItem'), ['items', 'archiveItem']);
-  await source.apply('I1', { type: 'archive' });
+  await source.apply('I1', { type: 'archive' }, URL1);
   assert.equal(calls.filter((c) => c.name === 'items').length, 1, 'listed once: the listing filled what apply acts on');
 
   const fresh = fakeGql({ fields, items: page([linked(1)]), relations: {} });
   const other = createSource(config, { gql: fresh.gql });
   await other.resolveFields();
-  await assert.rejects(other.apply('I9', { type: 'archive' }), { message: 'item I9 is not on the source' });
-  assert.equal(fresh.calls.filter((c) => c.name === 'items').length, 1, 'it listed before refusing');
+  await other.apply('I9', { type: 'archive' }, 'https://github.com/acme/r/issues/9'); // #568: off the Project already: nothing to archive
+  assert.equal(fresh.calls.filter((c) => c.name === 'items').length, 1, 'it listed first');
+  assert.equal(fresh.calls.filter((c) => c.name === 'archiveItem').length, 0, 'and wrote nothing');
+});
+
+test('apply on an item the listing does not hold (#568): close and delete resolve its issue from the url, one lookup each, then act on it; archive and remove make no call; a url that names no issue rejects', async () => {
+  const { gql, calls } = fakeGql({ fields, items: page([linked(1)]), relations: {}, issueId: { repository: { issue: { id: 'N9' } } }, closeIssue: {}, deleteIssue: {} });
+  const source = createSource(config, { gql });
+  await source.resolveFields();
+  await source.listItems();
+  const url = 'https://github.com/acme/r/issues/9';
+  for (const type of ['archive', 'remove', 'close', 'delete'] as const) await source.apply('PVTI_9', { type }, url);
+  await assert.rejects(source.apply('PVTI_9', { type: 'close' }, ''), { message: '"close" off the Project found no issue: no url' });
+  const writes = calls.filter((c) => ['issueId', 'archiveItem', 'deleteItem', 'closeIssue', 'deleteIssue'].includes(c.name)).map((c) => [c.name, c.variables]);
+  assert.deepEqual(writes, [
+    ['issueId', { owner: 'acme', name: 'r', number: 9 }], ['closeIssue', { issueId: 'N9' }],
+    ['issueId', { owner: 'acme', name: 'r', number: 9 }], ['deleteIssue', { issueId: 'N9' }],
+  ]);
 });
 
 test('listItems returns the issues in any cited column with the column name, in source order', async () => {
@@ -639,7 +656,7 @@ test('namespaced lists <name>:<id> with the source set, qualifies the id with th
     item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [],
     listItems: async () => [{ item: { itemId: 'PVTI_1', id: '12', title: 'T', body: '', url: '' }, column: 'Ready' }],
     setColumn: async (itemId, column) => { calls.push(`${itemId}→${column}`); },
-    apply: async (itemId, action) => { calls.push(`apply ${itemId} ${action.type}`); },
+    apply: async (itemId, action, url) => { calls.push(`apply ${itemId} ${action.type} ${url}`); },
     comments: async (itemId) => { calls.push(`comments ${itemId}`); return []; },
   };
   const entry = (extra: { qualifyId?: boolean; prefix?: string } = {}): SourceConfig => ({ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS, ...extra });
@@ -651,8 +668,8 @@ test('namespaced lists <name>:<id> with the source set, qualifies the id with th
   const source = namespaced(entry(), adapter);
   await source.setColumn('work:PVTI_1', 'Done');
   await source.comments?.('work:PVTI_1');
-  await source.apply('work:PVTI_1', { type: 'archive' });
-  assert.deepEqual(calls, ['PVTI_1→Done', 'comments PVTI_1', 'apply PVTI_1 archive']);
+  await source.apply('work:PVTI_1', { type: 'archive' }, 'u');
+  assert.deepEqual(calls, ['PVTI_1→Done', 'comments PVTI_1', 'apply PVTI_1 archive u']);
   const { comments: _comments, ...bare } = adapter;
   assert.equal(namespaced(entry(), bare).comments, undefined, 'a source without comments stays without');
   assert.deepEqual([itemSource('work:PVTI_1'), itemSource('local:3'), itemSource('PVTI_1')], ['work', 'local', undefined]);

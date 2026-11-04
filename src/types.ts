@@ -1981,7 +1981,7 @@ export interface Source {
   item(itemId: string, url: string): Promise<SourceItemRead>; // #567: one item, never a listing; rejects when the read fails
   stored?(): Promise<SourceItem[]>; // #191: the listing the read model holds, read with no network call; [] when there is none
   setColumn(itemId: string, column: string): Promise<void>;
-  apply(itemId: string, action: ItemAction): Promise<void>; // what a stage's onStart / a transition's sources ask beyond a move (#286, #515); rejects for an action its type's SOURCE_ACTIONS entry lacks
+  apply(itemId: string, action: ItemAction, url: string): Promise<void>; // url (#568) reaches an issue off the Project; what a stage's onStart / a transition's sources ask beyond a move (#286, #515); rejects for an action its type's SOURCE_ACTIONS entry lacks
   settingsOptions(): Promise<string[]>; // status values available, for the settings form
   quota?(): Promise<SourceQuota | undefined>; // the polling account's API quota; a source without one leaves it out
   comments?(itemId: string): Promise<TaskComment[]>; // oldest first, read when the panel opens on a task; a source without comments leaves it out
