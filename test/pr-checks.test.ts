@@ -57,3 +57,11 @@ test('a check run neither in progress nor completed drops startedAt and carries 
     ['test', LATER, undefined], ['build', AT, undefined], ['lint', undefined, undefined], ['deploy', LATER, undefined],
   ]);
 });
+
+test('a start or a suite creation GitHub sends that is no date is dropped, so the check falls back to the wait\'s own clock (#598)', () => {
+  const nodes = [
+    { ...run('test', 'IN_PROGRESS', null, null), startedAt: 'soon' },
+    { ...run('e2e', 'QUEUED', null, null), checkSuite: { createdAt: 'yesterday' } },
+  ];
+  assert.deepEqual(checksOf({ state: 'PENDING', contexts: { nodes } })?.items.map((c) => [c.name, c.startedAt, c.queuedAt]), [['test', undefined, undefined], ['e2e', undefined, undefined]]);
+});

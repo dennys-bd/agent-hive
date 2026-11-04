@@ -95,3 +95,13 @@ test('ciClock judges the last read\'s checks; with no checks yet it fails only a
   assert.equal(describeEvent({ type: 'ciClock', activityId: 'abcdef123456', at: 'x' }), 'ciClock activity=abcdef12');
   reduce(deepFreeze(running), ticked);
 });
+
+test('an open PR that reports no check yet ends on queueTimeout from the wait\'s start, as no checks; ciClock judges it from the last read (#598)', () => {
+  const s = polled({ timeout: '10m', queueTimeout: '1h' }).state;
+  const empty = (at: string): State => read(s, [pr([])], at).state;
+  assert.equal(live(empty(plus(s, 59)))?.stopped, undefined);
+  assert.deepEqual([errorOf(empty(plus(s, 61))), outputOf(empty(plus(s, 61)))], ['CI failed: no checks (queued over 1h)', 'CI timed out · no checks (queued over 1h)']);
+  const seen = empty(plus(s, 1));
+  const ticked = reduce(seen, { type: 'ciClock', activityId: live(seen)?.id ?? 'none', at: plus(s, 61) }).state;
+  assert.equal(errorOf(ticked), 'CI failed: no checks (queued over 1h)');
+});

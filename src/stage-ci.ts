@@ -87,11 +87,14 @@ function overdue(stage: Stage, ci: StageCi, checks: readonly StageCiCheck[], wai
 // The output after a timeout, in English as a commands stage's lines are: every check or wait that ran out, with its limit
 const timeoutOutput = (names: readonly string[]): string => `CI timed out · ${names.join(', ')}`;
 
-// #854: the waits with no check to time, as a timeout names them
+// #854, #598: the waits with no check to time, as a timeout names them; an open PR that reports no check yet is one too
 const waitsOf = (verdict: CiVerdict): string[] => {
   if (verdict.kind === 'awaiting') return verdict.workflows.map((w) => `${cleanName(w)} (awaiting approval)`);
-  return verdict.kind === 'pending' && verdict.waitingPr ? ['no open PR'] : [];
+  if (verdict.kind !== 'pending') return [];
+  return verdict.waitingPr ? ['no open PR'] : verdict.total === 0 ? ['no checks'] : [];
 };
+// The same waits for a tick, from the last read's count; none known before the first read after a boot
+const lastWaits = (ci: StageCi): string[] => (ci.waitingPr ? ['no open PR'] : ci.total === 0 ? ['no checks'] : []);
 
 // #914: both lists come from stageChecks in one order, so equal JSON means no check changed state or time
 const sameChecks = (a: readonly StageCiCheck[] | undefined, b: readonly StageCiCheck[] | undefined): boolean => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
@@ -193,7 +196,7 @@ export function ciClock(state: State, { activityId, at }: Extract<HiveEvent, { t
   const wait = waitOf(state, activityId);
   const stage = wait && stageOf(state.stages, wait.ci.stage);
   if (!wait || !stage || wait.ci.collecting) return none(state);
-  const late = overdue(stage, wait.ci, wait.ci.checks ?? [], wait.ci.waitingPr ? ['no open PR'] : [], at);
+  const late = overdue(stage, wait.ci, wait.ci.checks ?? [], lastWaits(wait.ci), at);
   return late.length === 0 ? none(state) : failCi(state, wait, timeoutOutput(late), late);
 }
 

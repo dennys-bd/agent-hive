@@ -37,18 +37,26 @@ export function checkState(raw: unknown): PrCheck['state'] {
 
 const filled = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
+// #598: a start is a clock's origin, and an unparsable one would never run out: dropped, so the wait's own start counts instead
+const dated = (value: unknown): string | undefined => {
+  const text = filled(value);
+  return text !== undefined && !Number.isNaN(Date.parse(text)) ? text : undefined;
+};
+
 // url, at and startedAt only when GitHub gave them
 function withLinks(check: Pick<PrCheck, 'name' | 'state'>, url: unknown, at: unknown, startedAt?: unknown): PrCheck {
-  const [link, time, start] = [filled(url), filled(at), filled(startedAt)];
+  const [link, time, start] = [filled(url), filled(at), dated(startedAt)];
   return { ...check, ...(link === undefined ? {} : { url: link }), ...(time === undefined ? {} : { at: time }), ...(start === undefined ? {} : { startedAt: start }) };
 }
 
 // #598: GitHub may fill an Actions job's startedAt when it creates the job, before a runner takes it, so only a run in progress or done has
-// started; a queued one (QUEUED, WAITING, PENDING, REQUESTED) carries its suite's creation instead, the start of its queue, when the read asked it
+// started; a queued one (QUEUED, WAITING, PENDING, REQUESTED) carries its suite's creation instead, the start of its queue, when the read asked it.
+// ponytail: a job waiting on another job (needs:) or on an environment's approval counts its queue from the suite's creation too; per-job
+// queue times would need the Actions jobs API
 function runOf(node: Record<string, unknown>, name: string): PrCheck {
   const ran = node.status === 'IN_PROGRESS' || node.status === 'COMPLETED';
   const check = withLinks({ name, state: node.status === 'COMPLETED' ? checkState(node.conclusion) : 'pending' }, node.detailsUrl, node.completedAt, ran ? node.startedAt : undefined);
-  const queuedAt = ran || !isObject(node.checkSuite) ? undefined : filled(node.checkSuite.createdAt);
+  const queuedAt = ran || !isObject(node.checkSuite) ? undefined : dated(node.checkSuite.createdAt);
   return queuedAt === undefined ? check : { ...check, queuedAt };
 }
 
