@@ -7,6 +7,7 @@ import { setLanguage, t } from '@/i18n';
 import type { Task, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./xterm-fakes')).FakeTerminal }));
 vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./xterm-fakes')).FakeFitAddon }));
@@ -26,7 +27,7 @@ function Dock() {
       fileLinks={false} fontFamily="monospace" workspaces={['hive']} tasks={[]} workers={[]} terminals={[]} onSelect={vi.fn()} detail={() => <p>detalhes</p>}
       header={() => <header />}
     >
-      <Flow state={state} />
+      <Flow state={state} flow={firstFlow(state)} />
     </MainDock>
   );
 }

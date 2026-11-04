@@ -8,6 +8,7 @@ import type { Task, FilterRule, Worker, Stage, State, ItemFacets } from '../../s
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // A stage's view filter (#374), in a file of its own: Flow.test.tsx is long already. The kebab is a DropdownMenu and the filter a Dialog,
 // and unlike a ContextMenu (see Flow.contextmenu.test.tsx) both open again and again in one jsdom file.
@@ -49,7 +50,7 @@ test('Filtrar… opens a dialog whose pickers list the stage\'s own values; Apli
     task('3', 'dev'), // no facets, as a local task
     task('4', 'review', { assignees: ['caio'] }),
   ];
-  render(<Flow state={state(tasks, [worker('s1', 'I1')])} />);
+  render(<Flow state={state(tasks, [worker('s1', 'I1')])} flow={firstFlow(state(tasks, [worker('s1', 'I1')]))} />);
   await openStageMenu(user, 0);
   await user.click(screen.getByRole('menuitem', { name: 'Filtrar…' }));
   const dialog = await screen.findByRole('dialog', { name: 'Filtrar dev' });
@@ -71,7 +72,7 @@ test('Filtrar… opens a dialog whose pickers list the stage\'s own values; Apli
 test('a saved filter applies on load: it hides its tasks and says how many; a filter saved for a stage the Hive no longer has is ignored (#374)', () => {
   save({ spec: [{ field: 'label', op: 'none', values: ['blocked'] }], gone: [LABEL_X] });
   const tasks = ['1', '2', '3', '4', '5'].map((id) => task(id, 'spec', { labels: id === '2' || id === '4' ? ['blocked'] : [] }, id === '2' ? { workerId: 's1' } : {}));
-  render(<Flow state={state(tasks, [worker('s1', 'I2')], capped)} />);
+  render(<Flow state={state(tasks, [worker('s1', 'I2')], capped)} flow={firstFlow(state(tasks, [worker('s1', 'I2')], capped))} />);
   expect(titles()).toEqual(['#1 Task 1', '#3 Task 3', '#5 Task 5']);
   expect(screen.getByText('2 ocultos')).toBeInTheDocument();
   expect(within(screen.getByRole('heading', { level: 3 }).parentElement!).getByText('5')).toBeInTheDocument();
@@ -80,7 +81,7 @@ test('a saved filter applies on load: it hides its tasks and says how many; a fi
 test('Limpar filtro in a stage\'s header shows its every task again and removes it from storage; that write drops a stage the Hive no longer has (#374)', async () => {
   const user = userEvent.setup();
   save({ dev: [ANA], review: [LABEL_X], gone: [LABEL_X] });
-  render(<Flow state={state([task('1', 'dev', { assignees: ['ana'] }), task('2', 'dev'), task('3', 'review', { labels: ['x'] })], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev', { assignees: ['ana'] }), task('2', 'dev'), task('3', 'review', { labels: ['x'] })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { assignees: ['ana'] }), task('2', 'dev'), task('3', 'review', { labels: ['x'] })], [worker('s1')]))} />);
   expect(titles()).toEqual(['#1 Task 1', '#3 Task 3']);
   expect(screen.getByText('1 oculto')).toBeInTheDocument();
   expect(screen.getByText('0 ocultos')).toBeInTheDocument(); // review is filtered though its rule hides nothing: it still says so
@@ -93,7 +94,7 @@ test('Limpar filtro in a stage\'s header shows its every task again and removes 
 test('a stage whose every task fails its filter says so instead of vazia; the kebab offers Limpar filtro only while the stage has a rule, and picking it shows the tasks again (#374)', async () => {
   const user = userEvent.setup();
   save({ dev: [LABEL_X] });
-  render(<Flow state={state([task('1', 'dev'), task('2', 'dev')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev'), task('2', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev'), task('2', 'dev')], [worker('s1')]))} />);
   expect(screen.getByText('Nenhuma tarefa passa no filtro')).toBeInTheDocument();
   expect(screen.getAllByText('vazia')).toHaveLength(1); // review really is empty
   await openStageMenu(user, 1); // review: no rule
@@ -110,7 +111,7 @@ test('a stage whose every task fails its filter says so instead of vazia; the ke
 test('the dialog opens on the saved rules, and cancelar leaves them as they were even after the draft removed one (#374)', async () => {
   const user = userEvent.setup();
   save({ dev: [ANA] });
-  render(<Flow state={state([task('1', 'dev', { assignees: ['ana'] }), task('2', 'dev')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev', { assignees: ['ana'] }), task('2', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { assignees: ['ana'] }), task('2', 'dev')], [worker('s1')]))} />);
   await openStageMenu(user, 0);
   await user.click(screen.getByRole('menuitem', { name: 'Filtrar…' }));
   const dialog = await screen.findByRole('dialog', { name: 'Filtrar dev' });
@@ -125,7 +126,7 @@ test('the dialog opens on the saved rules, and cancelar leaves them as they were
 test('a stage filtered with bloqueado não está hides a task without facets whose dependency is still open and shows the free ones, facets or not (#441)', () => {
   save({ dev: [{ field: 'blocked', op: 'none' }] });
   const blocked = (c: Task): WithWork => ({ ...c, item: { ...c.item, blockedBy: ['9'] } });
-  render(<Flow state={state([task('1', 'dev'), blocked(task('2', 'dev')), task('3', 'dev', { labels: ['x'] })], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev'), blocked(task('2', 'dev')), task('3', 'dev', { labels: ['x'] })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev'), blocked(task('2', 'dev')), task('3', 'dev', { labels: ['x'] })], [worker('s1')]))} />);
   expect(titles()).toEqual(['#1 Task 1', '#3 Task 3']); // #1 and #2 carry no facets
   expect(screen.getByText('1 oculto')).toBeInTheDocument();
 });

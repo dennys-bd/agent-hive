@@ -6,6 +6,7 @@ import type { Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { movedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file (HIVE-2), like TaskMenu.gate.test.tsx: Radix's ContextMenu opens once per file under jsdom, and selecting an item closes it.
 const stages: Stage[] = [
@@ -27,7 +28,7 @@ const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 
 test('the task menu on a task in a manual gate whose previous stage ran offers Aprovar and Enviar feedback…, which opens the feedback dialog (HIVE-2, #379)', async () => {
-  render(<Flow state={state} />);
+  render(<Flow state={state} flow={firstFlow(state)} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   expect(await screen.findByRole('menuitem', { name: 'aprovar' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('menuitem', { name: 'enviar feedback…' }));

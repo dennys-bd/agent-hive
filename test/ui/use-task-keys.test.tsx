@@ -8,6 +8,7 @@ import type { BaseOptions, Stage, State, Worker } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, movedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }, { name: 'review', from: { board: ['In review'] } }];
 const task = (id: string, stage: string, extra: Partial<WithWork> = {}): WithWork => ({
@@ -27,7 +28,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 afterEach(() => vi.unstubAllGlobals());
 
 test('the arrows move the focus between tasks: up and down in a stage, left and right to the closest stage with a task (#585)', () => {
-  render(<Flow state={state([task('1', 'dev'), task('2', 'dev'), task('3', 'review')])} />);
+  render(<Flow state={state([task('1', 'dev'), task('2', 'dev'), task('3', 'review')])} flow={firstFlow(state([task('1', 'dev'), task('2', 'dev'), task('3', 'review')]))} />);
   face('#1 Task 1').focus();
   fireEvent.keyDown(face('#1 Task 1'), { key: 'ArrowDown' });
   expect(face('#2 Task 2')).toHaveFocus();
@@ -41,17 +42,17 @@ test('the arrows move the focus between tasks: up and down in a stage, left and 
 
 test('Enter on a focused task opens its details as a click does (#585)', () => {
   const onOpen = vi.fn();
-  render(<Flow state={state([task('1', 'dev')])} onOpen={onOpen} />);
+  render(<Flow state={state([task('1', 'dev')])} flow={firstFlow(state([task('1', 'dev')]))} onOpen={onOpen} />);
   fireEvent.keyDown(face('#1 Task 1'), { key: 'Enter' });
   expect(onOpen).toHaveBeenCalledWith('I1');
 });
 
 test('F opens the details of a task awaiting approval and asks for its inline feedback box; with no approval it does nothing (#585)', () => {
   const onOpen = vi.fn();
-  const { rerender } = render(<Flow state={state([task('1', 'dev')])} onOpen={onOpen} />);
+  const { rerender } = render(<Flow state={state([task('1', 'dev')])} flow={firstFlow(state([task('1', 'dev')]))} onOpen={onOpen} />);
   expect(fireEvent.keyDown(face('#1 Task 1'), { key: 'f' })).toBe(true); // no approval: no feedback, the key goes on
   expect([onOpen.mock.calls.length, takeFeedbackRequest('I1')]).toEqual([0, false]);
-  rerender(<Flow state={state([task('1', 'dev', { approval: { since } })])} onOpen={onOpen} />);
+  rerender(<Flow state={state([task('1', 'dev', { approval: { since } })])} flow={firstFlow(state([task('1', 'dev', { approval: { since } })]))} onOpen={onOpen} />);
   expect(fireEvent.keyDown(face('#1 Task 1'), { key: 'f' })).toBe(false);
   expect(onOpen).toHaveBeenCalledWith('I1');
   expect(takeFeedbackRequest('I1')).toBe(true);
@@ -60,7 +61,7 @@ test('F opens the details of a task awaiting approval and asks for its inline fe
 test('A and F do nothing on a task awaiting approval while a session of it waits: the user answers there, and the keys go on (#829)', () => {
   const onOpen = vi.fn();
   const waiting: Worker = { id: 's1', status: 'waiting', activityId: activityIdOf('I1'), runId: 'W1', freeSession: true };
-  render(<Flow state={{ ...state([task('1', 'dev', { approval: { since } })]), workers: [waiting] }} onOpen={onOpen} />);
+  render(<Flow state={{ ...state([task('1', 'dev', { approval: { since } })]), workers: [waiting] }} flow={firstFlow({ ...state([task('1', 'dev', { approval: { since } })]), workers: [waiting] })} onOpen={onOpen} />);
   expect(fireEvent.keyDown(face('#1 Task 1'), { key: 'a' })).toBe(true);
   expect(fireEvent.keyDown(face('#1 Task 1'), { key: 'f' })).toBe(true);
   expect([onOpen.mock.calls.length, takeFeedbackRequest('I1'), posts()]).toEqual([0, false, []]);
@@ -69,18 +70,18 @@ test('A and F do nothing on a task awaiting approval while a session of it waits
 test('F on a task in a manual gate with no session at all opens its details on the feedback box too (#685)', () => {
   const onOpen = vi.fn();
   const gated: State = { ...state([task('1', 'gate', { approval: { since } })]), stages: [{ name: 'gate', from: { board: ['Ready'] }, approval: true }] };
-  render(<Flow state={gated} onOpen={onOpen} />);
+  render(<Flow state={gated} flow={firstFlow(gated)} onOpen={onOpen} />);
   expect(fireEvent.keyDown(face('#1 Task 1'), { key: 'f' })).toBe(false);
   expect(onOpen).toHaveBeenCalledWith('I1');
   expect(takeFeedbackRequest('I1')).toBe(true);
 });
 
 test('a letter runs the task menu\'s own item: A approves, S flips auto, I opens run stages; a letter whose item is absent does nothing (#585)', async () => {
-  const { rerender } = render(<Flow state={state([task('1', 'dev', { approval: { since } })])} />);
+  const { rerender } = render(<Flow state={state([task('1', 'dev', { approval: { since } })])} flow={firstFlow(state([task('1', 'dev', { approval: { since } })]))} />);
   fireEvent.keyDown(face('#1 Task 1'), { key: 'a' });
   fireEvent.keyDown(face('#1 Task 1'), { key: 's' });
   await waitFor(() => expect(posts()).toEqual(['/activities/a-I1/approve', '/tasks/I1/auto']));
-  rerender(<Flow state={state([task('1', 'dev')])} />);
+  rerender(<Flow state={state([task('1', 'dev')])} flow={firstFlow(state([task('1', 'dev')]))} />);
   expect(fireEvent.keyDown(face('#1 Task 1'), { key: 'a' })).toBe(true); // no approval: no item, the key goes on
   fireEvent.keyDown(face('#1 Task 1'), { key: 'i' });
   expect(await screen.findByRole('dialog', { name: 'Iniciar #1' })).toBeInTheDocument();
@@ -88,7 +89,7 @@ test('a letter runs the task menu\'s own item: A approves, S flips auto, I opens
 });
 
 test('nothing on a key inside the task: its own button keeps it (#585)', () => {
-  render(<Flow state={state([task('1', 'dev', { approval: { since } })])} />);
+  render(<Flow state={state([task('1', 'dev', { approval: { since } })])} flow={firstFlow(state([task('1', 'dev', { approval: { since } })]))} />);
   fireEvent.keyDown(within(face('#1 Task 1')).getByRole('button', { name: 'aprovar' }), { key: 's' });
   expect(posts()).toEqual([]);
 });

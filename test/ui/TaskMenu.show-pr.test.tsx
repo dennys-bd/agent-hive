@@ -8,6 +8,7 @@ import type { ActivityRecord, Task, Worker, Stage, State } from '../../src/types
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file: Radix's ContextMenu opens once per file under jsdom; every state arrives through rerender
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
@@ -26,7 +27,7 @@ beforeEach(() => { setLanguage('pt'); });
 test('right-click › mostrar PR hands the task\'s next PR to the dock\'s PR opener, activity or not; disabled while it has none (#592, #758)', async () => {
   const user = userEvent.setup();
   const openPr = vi.fn();
-  const board = (c: Task, live = true, records: ActivityRecord[] = []) => <PrOpenerContext.Provider value={openPr}><Flow state={state(c, live, records)} /></PrOpenerContext.Provider>;
+  const board = (c: Task, live = true, records: ActivityRecord[] = []) => <PrOpenerContext.Provider value={openPr}><Flow state={state(c, live, records)} flow={firstFlow(state(c, live, records))} /></PrOpenerContext.Provider>;
   const withPrs = [{ id: 'a-I1', taskIds: ['I1'], sessions: [], prs }]; // #629: the PRs are the record's
   const item = (): HTMLElement => screen.getByRole('menuitem', { name: 'mostrar PR' });
   const { rerender } = render(board(task()));

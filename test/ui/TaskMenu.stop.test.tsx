@@ -7,6 +7,7 @@ import type { Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file (#343, #542): Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx), so the menu is opened once
 // and every state below arrives through rerender; the one confirm click at the end closes it for good.
@@ -23,15 +24,15 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 
 test('right-click › dormir is absent with no live agent session, a plain item on one, which sleeps that run at once with no dialog (#343, #672)', async () => {
   const user = userEvent.setup();
-  const { rerender } = render(<Flow state={state(task(), [])} />);
+  const { rerender } = render(<Flow state={state(task(), [])} flow={firstFlow(state(task(), []))} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   expect(await screen.findByRole('menuitem', { name: 'abrir sessão livre…' })).toBeInTheDocument();
   expect(screen.queryByRole('menuitem', { name: 'dormir' })).not.toBeInTheDocument();
-  rerender(<Flow state={withPointedWork({ ...state(task(), []), terminals: [{ terminalId: 'T1', activityId: activityIdOf('I1'), startedAt: '2026-09-25T10:00:00.000Z', cwd: '/repo' }] })} />); // pointed: the terminal's activity exists
+  rerender(<Flow state={withPointedWork({ ...state(task(), []), terminals: [{ terminalId: 'T1', activityId: activityIdOf('I1'), startedAt: '2026-09-25T10:00:00.000Z', cwd: '/repo' }] })} flow={firstFlow(withPointedWork({ ...state(task(), []), terminals: [{ terminalId: 'T1', activityId: activityIdOf('I1'), startedAt: '2026-09-25T10:00:00.000Z', cwd: '/repo' }] }))} />); // pointed: the terminal's activity exists
   expect(screen.queryByRole('menuitem', { name: 'dormir' })).not.toBeInTheDocument(); // a terminal is no session
   expect(screen.getByRole('menuitem', { name: 'dormir todas' })).toBeInTheDocument(); // #696: a live terminal sleeps with dormir todas
 
-  rerender(<Flow state={state(task({ workerId: 's1' }), [{ id: 's1', status: 'working', activityId: activityIdOf('I1'), runId: 'W1' }])} />);
+  rerender(<Flow state={state(task({ workerId: 's1' }), [{ id: 's1', status: 'working', activityId: activityIdOf('I1'), runId: 'W1' }])} flow={firstFlow(state(task({ workerId: 's1' }), [{ id: 's1', status: 'working', activityId: activityIdOf('I1'), runId: 'W1' }]))} />);
   await user.click(screen.getByRole('menuitem', { name: 'dormir' }));
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

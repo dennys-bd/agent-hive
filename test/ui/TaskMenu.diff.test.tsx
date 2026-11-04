@@ -8,6 +8,7 @@ import type { Task, DiffScope, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file (#270): Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx), so the menu is opened once and
 // every state below arrives through rerender. The dock's diff opener is a spy (#458): where it opens the diff is MainDock.open-diff.test.tsx's.
@@ -27,7 +28,7 @@ beforeEach(() => { setLanguage('pt'); });
 test('right-click › diff da etapa and diff da worktree hand the task and its scope to the dock\'s diff opener; both are disabled without a worktree on disk, the stage one also without a start in the current stage (#270, #458)', async () => {
   const user = userEvent.setup();
   const openDiff = vi.fn((_task: Task, _scope: DiffScope) => undefined);
-  const board = (c: Task, live = true) => <DiffOpenerContext.Provider value={openDiff}><Flow state={state(c, live)} /></DiffOpenerContext.Provider>;
+  const board = (c: Task, live = true) => <DiffOpenerContext.Provider value={openDiff}><Flow state={state(c, live)} flow={firstFlow(state(c, live))} /></DiffOpenerContext.Provider>;
   const item = (name: string): HTMLElement => screen.getByRole('menuitem', { name });
   const { rerender } = render(board(task()));
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);

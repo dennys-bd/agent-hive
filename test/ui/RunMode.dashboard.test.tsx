@@ -5,6 +5,7 @@ import { Dashboard } from '@/components/Dashboard';
 import { setLanguage, t } from '@/i18n';
 import { resetViewState } from '@/lib/view-state';
 import { stateWith } from '../benchmark/fixtures';
+import { flowed } from '../fixtures/main-flow.js';
 import { RUN, stubRunFetch } from './run-hive-fixtures';
 import { FakeWebSocket, resetFakes } from './xterm-fakes';
 
@@ -19,7 +20,7 @@ afterEach(() => { resetRunHive(); vi.unstubAllGlobals(); });
 async function dashboard(run: typeof RUN | undefined): Promise<void> {
   stubRunFetch(run);
   await bootRunHive();
-  render(<Dashboard state={{ ...stateWith(), workspaces: ['hive'] }} locale="pt-BR" tick={0} onSelect={() => undefined} />);
+  render(<Dashboard state={{ ...stateWith(), ...flowed([], []), workspaces: ['hive'] }} locale="pt-BR" tick={0} onSelect={() => undefined} />);
 }
 const rail = (): HTMLElement => screen.getByRole('navigation', { name: t('rail.label') });
 

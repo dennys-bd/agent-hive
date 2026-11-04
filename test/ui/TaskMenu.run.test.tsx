@@ -8,6 +8,7 @@ import type { Task, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { type WithWork, movedWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file (#300): Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx), so the menu is opened once and
 // every state below arrives through rerender.
@@ -28,7 +29,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 test('right-click › executar lists the commands of the task\'s workspace: absent when it has none, disabled without a worktree on disk; a pick posts /run and opens the console on the command\'s channel with the new run, no terminal tab (#300, #353)', async () => {
   const user = userEvent.setup();
   const openConsole = vi.fn();
-  const board = (s: State) => <ConsoleContext.Provider value={openConsole}><Flow state={s} /></ConsoleContext.Provider>;
+  const board = (s: State) => <ConsoleContext.Provider value={openConsole}><Flow state={s} flow={firstFlow(s)} /></ConsoleContext.Provider>;
   const { rerender } = render(board(state(task({ worktree: '/wt' }), {})));
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   expect(await screen.findByRole('menuitem', { name: 'abrir sessão livre…' })).toBeInTheDocument();

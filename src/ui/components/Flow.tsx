@@ -1,8 +1,7 @@
 import { useRef, useState } from 'react';
 import { activityOf } from '../../activities';
-import { MAIN_FLOW } from '../../flows';
 import { sourceOf } from '../../tasks';
-import type { FilterRule, Stage, State, Task } from '../../types';
+import type { Flow as FlowConfig, FilterRule, Stage, State, Task } from '../../types';
 import { FlowChart } from '@/components/FlowChart';
 import { FlowHeader, type SourceTabs } from '@/components/FlowHeader';
 import { FlowListPanel } from '@/components/FlowListPanel';
@@ -21,7 +20,7 @@ import { visibleUnderFilter } from '@/lib/stage-filters';
 import { focusTrail } from '@/lib/tree-focus';
 import { hasTree } from '@/lib/tree-groups';
 
-interface FlowProps { state: State; source?: string; selectedId?: string; onOpen?(taskId: string): void; tabs?: SourceTabs; stageCaps?: Record<string, number> } // source: the flow sidebar's pick (redesign 09); selectedId: the detail panel's task (#542); tabs: the source header's, with an external source picked (#756); stageCaps: the effective caps, which a node shows as n/cap (#727)
+interface FlowProps { state: State; flow: FlowConfig; source?: string; selectedId?: string; onOpen?(taskId: string): void; tabs?: SourceTabs; stageCaps?: Record<string, number> } // flow: the one drawn (#571); source: the flow sidebar's pick (redesign 09); selectedId: the detail panel's task (#542); tabs: the source header's, with an external source picked (#756); stageCaps: the effective caps, which a node shows as n/cap (#727)
 
 /** What a stage shows (#374, #542, #665): its tasks in the Hive's order, those of the picked source, those the view filter lets through, and
  * those the search lets through after it. */
@@ -37,7 +36,7 @@ export function stageTasks(state: State, stage: string, source: string | undefin
  * list panel over its right. Drag a task to reorder or, for a task canMoveToStage allows, onto another node (#366, #708); the ⋯ offers the
  * source's order back and the stage's view filter (#374). A parent's focus › dims all but its subtree, with a trail to climb back and leave
  * (#35). The canvas is the task menus' collision boundary. */
-export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: FlowProps) {
+export function Flow({ state, flow: drawn, source, selectedId, onOpen, tabs, stageCaps }: FlowProps) {
   const drag = useRef<Dragging | undefined>(undefined);
   const filters = useStageFilters(state.stages.map((s) => s.name));
   const [editing, setEditing] = useState<string>(); // the stage whose filter dialog is open (#374)
@@ -45,34 +44,35 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
   const [canvas, setCanvas] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState(''); // session-only: it survives a view switch on purpose, the flow stays mounted under Atividades (#596), and clears on an app reload (#542)
   const isShown = useIsFlowShown();
-  const flow = useFlowView(isShown, state.flows[0]?.name ?? MAIN_FLOW); // the flowchart's view (#909, #910, #571): loops and the first flow's canvas, kept in flowView
-  const isTree = flow.view.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
+  const chart = useFlowView(isShown, drawn.name); // the flowchart's view (#909, #910, #571): loops and the drawn flow's canvas, kept in flowView
+  const inFlow = new Set(drawn.stages.map((s) => s.name));
+  const isTree = chart.view.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
   const { itemId: focused, focus, focusOn, leave } = useTreeFocus(state.tasks, source, isShown); // #35: the focus on a subtree, never in flowView
-  const shown = source === undefined ? state.tasks : state.tasks.filter((c) => sourceOf(c) === source);
+  const shown = state.tasks.filter((c) => inFlow.has(c.stage) && (source === undefined || sourceOf(c) === source));
   const of = (stage: string) => stageTasks(state, stage, source, filters.rulesOf(stage), search);
   const node = (stage: Stage, maxHeight: number) => {
     const { all, ofSource, filtered, tasks } = of(stage.name);
     return (
       <FlowNode
         stage={stage} state={state} tasks={tasks} order={all} shown={ofSource.length} filteredOut={ofSource.length - filtered.length} rules={filters.rulesOf(stage.name)} drag={drag}
-        selectedId={selectedId} isListed={listed === stage.name} maxHeight={maxHeight} isTree={isTree} collapsed={flow.view.collapsed} onToggleGroup={flow.toggleGroup}
+        selectedId={selectedId} isListed={listed === stage.name} maxHeight={maxHeight} isTree={isTree} collapsed={chart.view.collapsed} onToggleGroup={chart.toggleGroup}
         cap={stageCaps !== undefined && Object.hasOwn(stageCaps, stage.name) ? stageCaps[stage.name] : undefined} onOpen={onOpen}
         onFilter={() => setEditing(stage.name)} onClearFilter={() => filters.set(stage.name, [])} onList={() => setListed(stage.name)} focus={focus} onFocusTree={focusOn}
       />
     );
   };
-  const listedStage = state.stages.find((s) => s.name === listed);
+  const listedStage = drawn.stages.find((s) => s.name === listed);
   const listedTasks = listedStage && of(listedStage.name);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} source={source} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} loops={flow.view.loops} onLoops={flow.toggleLoops} tree={isTree} onTree={() => flow.toggleTree(isTree)} />
+      <FlowHeader state={state} source={source} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} loops={chart.view.loops} onLoops={chart.toggleLoops} tree={isTree} onTree={() => chart.toggleTree(isTree)} />
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart
-            stages={state.stages} transitions={state.transitions} loops={flow.view.loops} zoom={flow.view.zoom} pan={flow.view.pan}
-            fitRequest={flow.fitRequest} onPan={flow.onPan} onFit={flow.onFit} onZoom={flow.zoomTo} renderNode={node}
+            key={drawn.name} stages={drawn.stages} transitions={drawn.transitions} loops={chart.view.loops} zoom={chart.view.zoom} pan={chart.view.pan}
+            fitRequest={chart.fitRequest} onPan={chart.onPan} onFit={chart.onFit} onZoom={chart.zoomTo} renderNode={node}
           />
-          <FlowZoom zoom={flow.view.zoom} onZoom={flow.zoomTo} onFit={flow.fit} />
+          <FlowZoom zoom={chart.view.zoom} onZoom={chart.zoomTo} onFit={chart.fit} />
           {focus && focused !== undefined && <FocusTrail trail={focusTrail(state.tasks, focused)} count={shown.filter((c) => focus.has(c.item.itemId)).length} onFocus={focusOn} onLeave={leave} />}
           {listedStage && listedTasks && (
             <FlowListPanel stage={listedStage} state={state} tasks={listedTasks.tasks} order={listedTasks.all} drag={drag} selectedId={selectedId} onOpen={onOpen} onClose={() => setListed(undefined)} />

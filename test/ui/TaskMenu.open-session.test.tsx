@@ -7,6 +7,7 @@ import type { Stage, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { type WithWork, movedWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file: Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx). Every state below is reached through
 // rerender while the one menu stays open.
@@ -28,10 +29,10 @@ test('right-click › abrir sessão livre… on any task: disabled on one being 
   const focusDetached = vi.fn(async () => true);
   vi.stubGlobal('hive', { focusDetached });
   const blocked = task({ worktree: '/wt/hive-1-task-1', item: { ...task().item, blockedBy: ['9'] } }); // a blocker holds the stage run only (#491)
-  const { rerender } = render(<Flow state={state([task({ deleting: true })])} />);
+  const { rerender } = render(<Flow state={state([task({ deleting: true })])} flow={firstFlow(state([task({ deleting: true })]))} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   expect(await screen.findByRole('menuitem', { name: 'abrir sessão livre…' })).toHaveAttribute('data-disabled');
-  rerender(<Flow state={state([blocked])} />);
+  rerender(<Flow state={state([blocked])} flow={firstFlow(state([blocked]))} />);
   const item = screen.getByRole('menuitem', { name: 'abrir sessão livre…' });
   expect(item).not.toHaveAttribute('data-disabled');
   fireEvent.click(item);

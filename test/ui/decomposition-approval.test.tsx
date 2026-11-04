@@ -8,6 +8,7 @@ import type { DecompositionPreview, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { withWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // criar issues in place of aprovar (#865): the detail's button and the A key open the same confirm, and nothing is approved.
 const since = '2026-10-09T10:00:00.000Z';
@@ -27,7 +28,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 afterEach(() => vi.unstubAllGlobals());
 
 test('A on a task whose decomposition is not on GitHub opens the create issues dialog and approves nothing (#865)', async () => {
-  render(<Flow state={pending()} />);
+  render(<Flow state={pending()} flow={firstFlow(pending())} />);
   fireEvent.keyDown(screen.getByText('#1 Task 1').closest('li')!, { key: 'a' });
   expect(await screen.findByRole('dialog', { name: 'Criar issues' })).toBeInTheDocument();
   expect(posts()).toEqual([]);

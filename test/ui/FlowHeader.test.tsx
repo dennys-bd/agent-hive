@@ -11,6 +11,7 @@ import type { Task, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { type WithWork, movedWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 const stages: Stage[] = [{ name: 'dev', from: { roadmap: ['Ready'], notes: ['todo'] }, prompt: '/hive-build {url}' }];
 const task = (id: string, source: string, extra: Partial<WithWork> = {}): WithWork => ({
@@ -36,22 +37,22 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 afterEach(() => vi.unstubAllGlobals());
 
 test('the header names todas as sources or the picked one, one chip per workspace a shown task resolves to in the Comb\'s order, and the latest poll of the shown sources (#542)', () => {
-  const { rerender } = render(<Flow state={state(tasks)} />);
+  const { rerender } = render(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} />);
   expect(within(header()).getByText('todas as sources')).toBeInTheDocument();
   expect(chips()).toEqual(['hive', 'site']); // docs has no task
   expect(within(header()).queryByRole('button', { name: /^(hive|site)$/ })).not.toBeInTheDocument(); // a legend, not a filter
   expect(within(header()).getByText('atualizado 09:28')).toBeInTheDocument();
-  rerender(<Flow state={state(tasks)} source="notes" />);
+  rerender(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} source="notes" />);
   expect(within(header()).getByText('notes')).toBeInTheDocument();
   expect(chips()).toEqual(['site']);
   expect(within(header()).getByText('atualizado 09:05')).toBeInTheDocument();
-  rerender(<Flow state={state(tasks, { syncs: {} })} />);
+  rerender(<Flow state={state(tasks, { syncs: {} })} flow={firstFlow(state(tasks, { syncs: {} }))} />);
   expect(within(header()).queryByText(/^atualizado/)).not.toBeInTheDocument();
 });
 
 test('buscar tarefas hides the tasks that match neither title, number nor branch, and a drop still reads the full order; ⌘F focuses it and Esc clears and leaves it (#542)', async () => {
   const user = userEvent.setup();
-  render(<Flow state={state(tasks)} />);
+  render(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} />);
   const field = screen.getByRole('textbox', { name: 'buscar tarefas' });
   fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true }); // jsdom is not macOS: CmdOrCtrl is Ctrl
   expect(field).toHaveFocus();
@@ -80,7 +81,7 @@ test('atualizar posts /sources/refresh and stays disabled until it answers (#542
   const user = userEvent.setup();
   let answer: (res: Response) => void = () => undefined;
   fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { answer = resolve; }));
-  render(<Flow state={state(tasks)} />);
+  render(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} />);
   const refresh = within(header()).getByRole('button', { name: 'atualizar' });
   await user.click(refresh);
   expect(fetchMock).toHaveBeenLastCalledWith('/sources/refresh', expect.objectContaining({ method: 'POST' }));
@@ -99,7 +100,7 @@ test('lastPolled is the latest poll of the shown sources in local HH:MM, undefin
 
 test('F5 refreshes the flow as atualizar does while the flow shows; hidden under Atividades the key is not bound (#585)', async () => {
   const f5 = (): boolean => fireEvent.keyDown(window, { key: 'F5', code: 'F5' }); // refreshFlow off macOS
-  const { unmount } = render(<Flow state={state(tasks)} />);
+  const { unmount } = render(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} />);
   expect(f5()).toBe(false);
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/sources/refresh', expect.objectContaining({ method: 'POST' })));
   unmount();
@@ -247,7 +248,7 @@ test('⑂ árvore shows only with onTree, right before ↺ voltas, pressed with 
 });
 
 test('⌘F leaves buscar tarefas alone while the Settings page is open, and the key goes on unprevented (#689)', () => {
-  render(<><Flow state={state(tasks)} /><div data-settings-page="" /></>);
+  render(<><Flow state={state(tasks)} flow={firstFlow(state(tasks))} /><div data-settings-page="" /></>);
   const field = screen.getByRole('textbox', { name: 'buscar tarefas' });
   expect(fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true })).toBe(true);
   expect(field).not.toHaveFocus();

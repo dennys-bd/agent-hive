@@ -7,6 +7,7 @@ import type { Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { movedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file (#268, #379), like TaskMenu.approval.test.tsx: Radix's ContextMenu (and any Dialog it opens) shows content only once per
 // jsdom file, so the menu opens exactly once and every further state — the dialog switching Enviar to Começar agora/Fila, a failed then a
@@ -26,7 +27,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 test('Enviar feedback… opens a feedback dialog beside the menu (#379): Enviar on a held session, Começar agora/Fila without one, a failed send keeps it open with the text and an inline error, a successful one closes it', async () => {
   const user = userEvent.setup();
   const held = task({ approval: { since: '2026-09-25T10:00:00.000Z', until: '2026-09-25T10:05:00.000Z' } });
-  const { rerender } = render(<Flow state={state(held)} />);
+  const { rerender } = render(<Flow state={state(held)} flow={firstFlow(state(held))} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   fireEvent.click(await screen.findByRole('menuitem', { name: 'enviar feedback…' }));
   const dialog = await screen.findByRole('dialog', { name: 'enviar feedback…' });
@@ -34,7 +35,7 @@ test('Enviar feedback… opens a feedback dialog beside the menu (#379): Enviar 
   expect(within(dialog).queryByRole('button', { name: 'começar agora' })).not.toBeInTheDocument();
 
   const noSession = task({ approval: { since: '2026-09-25T10:00:00.000Z' } });
-  rerender(<Flow state={state(noSession)} />);
+  rerender(<Flow state={state(noSession)} flow={firstFlow(state(noSession))} />);
   expect(within(dialog).queryByRole('button', { name: 'enviar' })).not.toBeInTheDocument();
   expect(within(dialog).getByRole('button', { name: 'começar agora' })).toBeInTheDocument();
   expect(within(dialog).getByRole('button', { name: 'na ordem' })).toBeInTheDocument();

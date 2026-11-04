@@ -7,6 +7,7 @@ import type { Stage, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Kept apart from Flow.test.tsx (#164): Radix's ContextMenu never shows content again once closed, under jsdom — reproduced with
 // a bare `radix-ui` ContextMenu, no app code involved, closed by selecting an item or by Escape either one. It is not specific to a
@@ -35,34 +36,34 @@ test('right-click on a task offers começar sozinho, checked unless manual; move
   const user = userEvent.setup();
   const stageRun: Worker = { id: 's1', status: 'working', activityId: activityIdOf('I1'), runId: 'bbbbbbbb-0000-4000-8000-000000000002' };
   const autoStart = (): HTMLElement => screen.getByRole('menuitemcheckbox', { name: 'começar sozinho' });
-  const { rerender } = render(<Flow state={state([task('1', 'dev')], [worker('s1')])} />);
+  const { rerender } = render(<Flow state={state([task('1', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev')], [worker('s1')]))} />);
   openTaskMenu('#1 Task 1');
   expect(screen.getByRole('menuitem', { name: 'mover para etapa' })).not.toHaveAttribute('data-disabled'); // a source task with auto on moves too (#708)
   expect(autoStart()).toHaveAttribute('aria-checked', 'true');
 
-  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1' })], [stageRun])} />);
+  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1' })], [stageRun])} flow={firstFlow(state([task('1', 'dev', { workerId: 's1' })], [stageRun]))} />);
   expect(screen.getByRole('menuitem', { name: 'mover para etapa' })).toHaveAttribute('data-disabled'); // auto on: its stage run holds it (#708)
 
-  rerender(<Flow state={state([task('1', 'dev', { created: true })], [worker('s1')])} />);
+  rerender(<Flow state={state([task('1', 'dev', { created: true })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { created: true })], [worker('s1')]))} />);
   expect(screen.getByRole('menuitem', { name: 'mover para etapa' })).not.toHaveAttribute('data-disabled'); // created in the Hive, not manual (#366)
 
-  rerender(<Flow state={state([task('1', 'dev', { created: true, workerId: 's1' })], [stageRun])} />);
+  rerender(<Flow state={state([task('1', 'dev', { created: true, workerId: 's1' })], [stageRun])} flow={firstFlow(state([task('1', 'dev', { created: true, workerId: 's1' })], [stageRun]))} />);
   expect(screen.getByRole('menuitem', { name: 'mover para etapa' })).toHaveAttribute('data-disabled'); // its stage run holds it
 
-  rerender(<Flow state={state([task('1', 'dev', { auto: false })], [worker('s1')])} />);
+  rerender(<Flow state={state([task('1', 'dev', { auto: false })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { auto: false })], [worker('s1')]))} />);
   expect(autoStart()).toHaveAttribute('aria-checked', 'false');
   expect(screen.getByRole('menuitem', { name: 'mover para etapa' })).not.toHaveAttribute('data-disabled');
 
-  rerender(<Flow state={state([task('1', 'dev', { auto: false })], [manualWorker('m1', 'aaaaaaaa-0000-4000-8000-000000000001')])} />);
+  rerender(<Flow state={state([task('1', 'dev', { auto: false })], [manualWorker('m1', 'aaaaaaaa-0000-4000-8000-000000000001')])} flow={firstFlow(state([task('1', 'dev', { auto: false })], [manualWorker('m1', 'aaaaaaaa-0000-4000-8000-000000000001')]))} />);
   expect(screen.getByRole('menuitem', { name: 'mover para etapa' })).not.toHaveAttribute('data-disabled'); // a session is the user's own (#366)
 
-  rerender(<Flow state={state([task('1', 'dev', { auto: false })], [worker('s1')])} />);
+  rerender(<Flow state={state([task('1', 'dev', { auto: false })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { auto: false })], [worker('s1')]))} />);
   await user.click(screen.getByRole('menuitem', { name: 'mover para etapa' })); // if jsdom does not open it on click: focus it and press {ArrowRight}
   const review = await screen.findByRole('menuitem', { name: 'review' });
   expect(screen.queryByRole('menuitem', { name: 'dev' })).not.toBeInTheDocument(); // its own stage is not a target
   fireEvent.click(review);
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/move-to', expect.objectContaining({ method: 'POST', body: JSON.stringify({ stage: 'review' }) })));
 
-  rerender(<Flow state={state([task('1', 'dev', { missing: true })], [worker('s1')])} />);
+  rerender(<Flow state={state([task('1', 'dev', { missing: true })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { missing: true })], [worker('s1')]))} />);
   expect(screen.getByText('#1 Task 1').closest('li')).not.toHaveAttribute('data-slot', 'context-menu-trigger'); // a missing task gets no menu wrapper
 });

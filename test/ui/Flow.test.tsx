@@ -10,6 +10,7 @@ import type { ActivityRecord, BaseOptions, Item, Task, Session, Stage, Transitio
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }, { name: 'review', from: { board: ['In review'] } }];
 const task = (id: string, stage: string, extra: Partial<WithWork> = {}): WithWork => ({
@@ -51,7 +52,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 test('a missing task offers fechar / manter; fechar asks once, with no worktree question, and posts close with no body; manter posts keep (#182)', async () => {
   const user = userEvent.setup();
-  render(<Flow state={state([task('1', 'dev', { missing: true })], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev', { missing: true })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { missing: true })], [worker('s1')]))} />);
   expect(screen.getByText('sumiu da source')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'manter' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/keep', expect.objectContaining({ method: 'POST' }));
@@ -65,7 +66,7 @@ test('a missing task offers fechar / manter; fechar asks once, with no worktree 
 
 test('a running task shows abrir and no iniciar; a blocked task and a stage without prompt show no button (#542)', () => {
   const running = task('1', 'dev', { workerId: 's1', branch: 'hive-1-task-1' });
-  render(<Flow state={state([running, task('2', 'dev', { item: { ...task('2', 'dev').item, blockedBy: ['1'] } }), task('3', 'review')], [worker('s1', 'I1'), worker('s2')])} />);
+  render(<Flow state={state([running, task('2', 'dev', { item: { ...task('2', 'dev').item, blockedBy: ['1'] } }), task('3', 'review')], [worker('s1', 'I1'), worker('s2')])} flow={firstFlow(state([running, task('2', 'dev', { item: { ...task('2', 'dev').item, blockedBy: ['1'] } }), task('3', 'review')], [worker('s1', 'I1'), worker('s2')]))} />);
   expect(screen.getByRole('button', { name: 'abrir' })).toBeInTheDocument();
   expect(screen.getByText('⊘ bloqueada por 1')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'iniciar' })).not.toBeInTheDocument();
@@ -77,27 +78,27 @@ test('a task awaiting approval shows Aprovar on the board task itself; clicking 
   const user = userEvent.setup();
   const onOpen = vi.fn();
   const waiting = task('1', 'dev', { approval: { since: '2026-09-25T10:00:00.000Z' } });
-  render(<Flow state={state([waiting], [worker('s1')])} onOpen={onOpen} />);
+  render(<Flow state={state([waiting], [worker('s1')])} flow={firstFlow(state([waiting], [worker('s1')]))} onOpen={onOpen} />);
   await user.click(screen.getByRole('button', { name: 'aprovar' }));
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/approve', expect.objectContaining({ method: 'POST' })));
   expect(onOpen).not.toHaveBeenCalled();
 });
 
 test('a task not awaiting approval shows no Aprovar on the board task (#349)', () => {
-  render(<Flow state={state([task('1', 'dev')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev')], [worker('s1')]))} />);
   expect(screen.queryByRole('button', { name: 'aprovar' })).not.toBeInTheDocument();
 });
 
 test('a stage header shows its name, the count the source pick lets through, auto when the stage has a prompt or an action whatever its cap, and no +; an empty stage still shows the empty body line (#316, #542)', () => {
   const cols: Stage[] = [...stages, { name: 'done', from: { board: ['Done'] }, action: 'deleteActivity' }, { name: 'capped', from: { board: ['X'] }, prompt: '/x', maxWorkers: 0 }];
-  const { rerender } = render(<Flow state={state([], [worker('s1')], cols)} />);
+  const { rerender } = render(<Flow state={state([], [worker('s1')], cols)} flow={firstFlow(state([], [worker('s1')], cols))} />);
   expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['dev', 'review', 'done', 'capped']);
   expect(within(header('dev')).getByText('0')).toBeInTheDocument();
   expect(within(header('dev')).queryByText('auto')).not.toBeInTheDocument(); // the stage's auto is gone (#134)
   expect(screen.queryByText('manual')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /nova tarefa/ })).not.toBeInTheDocument();
   expect(screen.getAllByText('vazia')).toHaveLength(4);
-  rerender(<Flow state={state([task('1', 'dev')], [worker('s1')], cols)} />);
+  rerender(<Flow state={state([task('1', 'dev')], [worker('s1')], cols)} flow={firstFlow(state([task('1', 'dev')], [worker('s1')], cols))} />);
   expect(within(header('dev')).getByText('1')).toBeInTheDocument();
 });
 
@@ -111,13 +112,13 @@ async function runStages(user: ReturnType<typeof userEvent.setup>): Promise<void
 
 test('iniciar opens the Start dialog even on a task that already has its worktree: it asks no base, and executar etapas posts start, with or without a free worker (redesign 10, 11)', async () => {
   const user = userEvent.setup();
-  const { rerender } = render(<Flow state={state([task('3', 'dev')], [worker('s1')])} />);
+  const { rerender } = render(<Flow state={state([task('3', 'dev')], [worker('s1')])} flow={firstFlow(state([task('3', 'dev')], [worker('s1')]))} />);
   await user.click(screen.getByRole('button', { name: 'iniciar' }));
   expect(screen.getByRole('dialog', { name: 'Iniciar #3' })).toBeInTheDocument();
   await runStages(user);
   expect(fetchMock).toHaveBeenCalledWith('/tasks/I3/bases');
   expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I3/start', expect.objectContaining({ method: 'POST', body: '{}' }));
-  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1' }), task('3', 'dev')], [worker('s1', 'I1')])} />); // every worker taken
+  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1' }), task('3', 'dev')], [worker('s1', 'I1')])} flow={firstFlow(state([task('1', 'dev', { workerId: 's1' }), task('3', 'dev')], [worker('s1', 'I1')]))} />); // every worker taken
   await user.click(screen.getByRole('button', { name: 'iniciar' }));
   await runStages(user);
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
@@ -128,7 +129,7 @@ test('a stopped task in a delete activity stage offers excluir, not iniciar, eve
   const user = userEvent.setup();
   const cleanup: Stage[] = [stages[0], { name: 'done', from: { board: ['Done'] }, action: 'deleteActivity', after: '5d' }];
   const blocked = task('2', 'done', { item: { ...task('2', 'done').item, blockedBy: ['1'] } });
-  render(<Flow state={state([task('1', 'dev', { workerId: 's1' }), blocked, task('3', 'dev')], [worker('s1', 'I1')], cleanup)} />);
+  render(<Flow state={state([task('1', 'dev', { workerId: 's1' }), blocked, task('3', 'dev')], [worker('s1', 'I1')], cleanup)} flow={firstFlow(state([task('1', 'dev', { workerId: 's1' }), blocked, task('3', 'dev')], [worker('s1', 'I1')], cleanup))} />);
   expect(screen.queryByText('bloqueada por 1')).not.toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: 'iniciar' })).toHaveLength(1); // task 3, stopped in dev
   await user.click(screen.getByRole('button', { name: 'excluir' }));
@@ -139,17 +140,17 @@ test('a stopped task in a delete activity stage offers excluir, not iniciar, eve
 test('a task in a delete-activity stage hides excluir while a free session is open on it and shows it once it closes; a terminal does not hide it (#228, #573)', () => {
   const deleting: Stage[] = [stages[0], { name: 'done', from: { board: ['Done'] }, action: 'deleteActivity' }];
   const session: Worker = { ...worker('s1', 'I1'), freeSession: true };
-  const { rerender } = render(<Flow state={state([task('1', 'done')], [session], deleting)} />);
+  const { rerender } = render(<Flow state={state([task('1', 'done')], [session], deleting)} flow={firstFlow(state([task('1', 'done')], [session], deleting))} />);
   expect(screen.queryByRole('button', { name: 'excluir' })).not.toBeInTheDocument();
-  rerender(<Flow state={withPointedWork({ ...state([task('1', 'done')], [worker('s1')], deleting), terminals: [{ terminalId: 'sh1', activityId: activityIdOf('I1'), startedAt: '2026-09-26T00:00:00Z', cwd: '/repo' }] })} />);
+  rerender(<Flow state={withPointedWork({ ...state([task('1', 'done')], [worker('s1')], deleting), terminals: [{ terminalId: 'sh1', activityId: activityIdOf('I1'), startedAt: '2026-09-26T00:00:00Z', cwd: '/repo' }] })} flow={firstFlow(withPointedWork({ ...state([task('1', 'done')], [worker('s1')], deleting), terminals: [{ terminalId: 'sh1', activityId: activityIdOf('I1'), startedAt: '2026-09-26T00:00:00Z', cwd: '/repo' }] }))} />);
   expect(screen.getByRole('button', { name: 'excluir' })).toBeInTheDocument();
-  rerender(<Flow state={state([task('1', 'done')], [worker('s1')], deleting)} />);
+  rerender(<Flow state={state([task('1', 'done')], [worker('s1')], deleting)} flow={firstFlow(state([task('1', 'done')], [worker('s1')], deleting))} />);
   expect(screen.getByRole('button', { name: 'excluir' })).toBeInTheDocument();
 });
 
 test('the upper half of a task shows the line before it and posts before it; the lower half shows and posts before the next task in the stage, or the end on the last one', () => {
   const rect = stubTaskRect();
-  render(<Flow state={state([task('1', 'dev'), task('2', 'dev'), task('3', 'dev'), task('4', 'dev')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev'), task('2', 'dev'), task('3', 'dev'), task('4', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev'), task('2', 'dev'), task('3', 'dev'), task('4', 'dev')], [worker('s1')]))} />);
   const [one, , three, four] = ['#1 Task 1', '#2 Task 2', '#3 Task 3', '#4 Task 4'].map((text) => screen.getByText(text).closest('li')!);
   const dt = dataTransfer();
 
@@ -180,7 +181,7 @@ test('the upper half of a task shows the line before it and posts before it; the
 });
 
 test('the stage tail posts the end; the same drop is refused when the dragged task is already last, matching the no-line no-op rule', () => {
-  render(<Flow state={state([task('1', 'dev'), task('2', 'dev')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev'), task('2', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev'), task('2', 'dev')], [worker('s1')]))} />);
   const [one, two] = ['#1 Task 1', '#2 Task 2'].map((text) => screen.getByText(text).closest('li')!);
   const list = screen.getByRole('list', { name: 'dev' });
   const dt = dataTransfer();
@@ -203,7 +204,7 @@ test('the stage tail posts the end; the same drop is refused when the dragged ta
 
 test('a target that would leave the task where it is shows no line and posts nothing: before itself, or before the task that already follows it', () => {
   const rect = stubTaskRect();
-  render(<Flow state={state([task('1', 'dev'), task('2', 'dev'), task('3', 'dev')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev'), task('2', 'dev'), task('3', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev'), task('2', 'dev'), task('3', 'dev')], [worker('s1')]))} />);
   const [one, two] = ['#1 Task 1', '#2 Task 2'].map((text) => screen.getByText(text).closest('li')!);
   const dt = dataTransfer();
 
@@ -223,7 +224,7 @@ test('a target that would leave the task where it is shows no line and posts not
 
 test('dragend and leaving the list clear the line, though the dragged task stays dimmed until dragend; another stage still refuses the drop', () => {
   const rect = stubTaskRect();
-  render(<Flow state={state([task('1', 'dev', { leaving: true }), task('2', 'dev'), task('3', 'review')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev', { leaving: true }), task('2', 'dev'), task('3', 'review')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { leaving: true }), task('2', 'dev'), task('3', 'review')], [worker('s1')]))} />);
   const [one, , three] = ['#1 Task 1', '#2 Task 2', '#3 Task 3'].map((text) => screen.getByText(text).closest('li')!);
   expect(one).toHaveAttribute('draggable', 'true');
   expect(screen.getAllByTitle('arraste pra reordenar')).toHaveLength(1); // the leaving task: it cannot change stage
@@ -251,11 +252,11 @@ test('dragend and leaving the list clear the line, though the dragged task stays
 
 test('a dragged task no longer in this stage mid-drag (e.g. a live update) is never mistaken for already sitting at the hovered target (#122)', () => {
   const rect = stubTaskRect();
-  const { rerender } = render(<Flow state={state([task('1', 'dev'), task('2', 'dev'), task('3', 'dev')], [worker('s1')])} />);
+  const { rerender } = render(<Flow state={state([task('1', 'dev'), task('2', 'dev'), task('3', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev'), task('2', 'dev'), task('3', 'dev')], [worker('s1')]))} />);
   const one = screen.getByText('#1 Task 1').closest('li')!;
   const dt = dataTransfer();
   fireEvent.dragStart(one, { dataTransfer: dt });
-  rerender(<Flow state={state([task('2', 'dev'), task('3', 'dev')], [worker('s1')])} />); // task 1 left the stage mid-drag
+  rerender(<Flow state={state([task('2', 'dev'), task('3', 'dev')], [worker('s1')])} flow={firstFlow(state([task('2', 'dev'), task('3', 'dev')], [worker('s1')]))} />); // task 1 left the stage mid-drag
   const two = screen.getByText('#2 Task 2').closest('li')!;
   dragOverAt(two, dt, 10); // upper half: before task 2, now the first task
   expect(two).toHaveAttribute('data-drop', 'before');
@@ -266,7 +267,7 @@ test('a dragged task no longer in this stage mid-drag (e.g. a live update) is ne
 
 test('a task that may change stage shows the drop line in another stage and posts move-to with that stage and where it landed, before a task or at the end with no before; in its own stage it still posts move (#366)', () => {
   const rect = stubTaskRect();
-  render(<Flow state={state([task('1', 'dev', { auto: false }), task('4', 'dev'), task('2', 'review'), task('3', 'review')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev', { auto: false }), task('4', 'dev'), task('2', 'review'), task('3', 'review')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { auto: false }), task('4', 'dev'), task('2', 'review'), task('3', 'review')], [worker('s1')]))} />);
   const [one, four, two, three] = ['#1 Task 1', '#4 Task 4', '#2 Task 2', '#3 Task 3'].map((text) => screen.getByText(text).closest('li')!);
   const dt = dataTransfer();
 
@@ -293,7 +294,7 @@ test('a task that may change stage shows the drop line in another stage and post
 });
 
 test('an empty stage keeps its list, which takes a task that may change stage at its end (#366)', () => {
-  render(<Flow state={state([task('1', 'dev', { created: true })], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev', { created: true })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { created: true })], [worker('s1')]))} />);
   const one = screen.getByText('1 Task 1').closest('li')!; // a local task's label has no # (#132)
   const review = screen.getByRole('list', { name: 'review' });
   expect(within(review).getByText('vazia')).toBeInTheDocument();
@@ -307,7 +308,7 @@ test('an empty stage keeps its list, which takes a task that may change stage at
 });
 
 test('a source task with auto on shows the drop line in another stage and posts move-to (#708)', () => {
-  render(<Flow state={state([task('1', 'dev'), task('2', 'review')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev'), task('2', 'review')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev'), task('2', 'review')], [worker('s1')]))} />);
   const one = screen.getByText('#1 Task 1').closest('li')!;
   expect(one).toHaveAttribute('title', 'arraste pra reordenar ou mover para outra etapa');
   const review = screen.getByRole('list', { name: 'review' });
@@ -322,7 +323,7 @@ test('a source task with auto on shows the drop line in another stage and posts 
 
 test('a task its stage run holds gets no drop line in another stage but still reorders in its own; each tooltip says what a drag may do, or to stop the stage first (#366)', () => {
   const rect = stubTaskRect();
-  render(<Flow state={state([task('1', 'dev', { auto: false, workerId: 's1' }), task('2', 'dev', { leaving: true }), task('3', 'review', { auto: false })], [worker('s1', 'I1')])} />);
+  render(<Flow state={state([task('1', 'dev', { auto: false, workerId: 's1' }), task('2', 'dev', { leaving: true }), task('3', 'review', { auto: false })], [worker('s1', 'I1')])} flow={firstFlow(state([task('1', 'dev', { auto: false, workerId: 's1' }), task('2', 'dev', { leaving: true }), task('3', 'review', { auto: false })], [worker('s1', 'I1')]))} />);
   const [one, two, three] = ['#1 Task 1', '#2 Task 2', '#3 Task 3'].map((text) => screen.getByText(text).closest('li')!);
   expect([one, two, three].map((li) => li.getAttribute('title'))).toEqual(['pare a etapa pra mover para outra etapa', 'arraste pra reordenar', 'arraste pra reordenar ou mover para outra etapa']);
   const review = screen.getByRole('list', { name: 'review' });
@@ -345,7 +346,7 @@ test('the flow is a canvas (#134, #908): one node per stage with its executor li
   const transitions = [{ from: 'dev', to: 'review', when: 'done' as const }, { from: 'review', to: 'end', when: 'done' as const }];
   vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(400);
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(200);
-  render(<Flow state={{ ...state([task('1', 'dev')], [worker('s1')]), transitions }} />);
+  render(<Flow state={{ ...state([task('1', 'dev')], [worker('s1')]), transitions }} flow={firstFlow({ ...state([task('1', 'dev')], [worker('s1')]), transitions })} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(canvas).toHaveClass('relative', 'min-h-0', 'flex-1', 'overflow-hidden', 'bg-background'); // fills the area below the header (#908)
   expect(canvas.className.split(' ').filter((c) => c === 'border' || c.startsWith('rounded-') || /^m[xytblr]?-/.test(c))).toEqual([]);
@@ -360,7 +361,7 @@ test('the flow is a canvas (#134, #908): one node per stage with its executor li
 
 test('every node may grow to the canvas\'s bottom and the chart is exactly as tall as the canvas, with no node measured (#908)', () => {
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(800);
-  render(<Flow state={{ ...state([task('1', 'dev')], [worker('s1')]), transitions: [{ from: 'dev', to: 'review', when: 'done' }] }} />);
+  render(<Flow state={{ ...state([task('1', 'dev')], [worker('s1')]), transitions: [{ from: 'dev', to: 'review', when: 'done' }] }} flow={firstFlow({ ...state([task('1', 'dev')], [worker('s1')]), transitions: [{ from: 'dev', to: 'review', when: 'done' }] })} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.style.maxHeight).toBe(`${800 - 2 * MARGIN}px`);
   expect(canvas.querySelector<HTMLElement>('[data-flow-stages] > div')!.style.height).toBe('800px');
@@ -377,7 +378,7 @@ test('the flow view draws no pill on the default path, a passed verdict included
     { from: 'review', to: 'dev', when: 'verdict', verdict: 'failed', maxTries: 3 },
     { from: 'pr', to: 'pr', when: 'feedback' },
   ];
-  render(<Flow state={{ ...state([], [worker('s1')], cols), transitions }} />);
+  render(<Flow state={{ ...state([], [worker('s1')], cols), transitions }} flow={firstFlow({ ...state([], [worker('s1')], cols), transitions })} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(within(canvas).queryByText('terminou')).not.toBeInTheDocument();
   expect(within(canvas).queryByText('aprovado')).not.toBeInTheDocument();
@@ -399,7 +400,7 @@ test('↺ voltas hides every arrow with its pill, the row falling to the margin,
   resetViewState();
   onTestFinished(() => resetViewState()); // drops the pending post
   const user = userEvent.setup();
-  render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} />);
+  render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} flow={firstFlow({ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED })} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   const row = (): string => canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.parentElement!.style.top;
   const loops = screen.getByRole('button', { name: '↺ voltas' });
@@ -420,7 +421,7 @@ test('↺ voltas hides every arrow with its pill, the row falling to the margin,
 test('a stored flowView with loops off draws the flow without them on the first render, the button not pressed: the reload case (#909)', () => {
   resetViewState({ flowView: { loops: false, zoom: 1, pan: { x: 0, y: 0 } } });
   onTestFinished(() => resetViewState());
-  render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} />);
+  render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} flow={firstFlow({ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED })} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(screen.getByRole('button', { name: '↺ voltas' })).toHaveAttribute('aria-pressed', 'false');
   expect(kinds(canvas)).toEqual([]);
@@ -444,7 +445,7 @@ test('− and + move the zoom by 10% and the number goes back to 100%; the chart
   const user = userEvent.setup();
   vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(400); // an overflowing node shows its lista › footer
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(200);
-  render(<Flow state={twoStages()} />);
+  render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(paneOf(canvas)).toHaveClass('flex', 'overflow-auto');
   expect(sizerOf(canvas)).toHaveClass('m-auto', 'shrink-0'); // a chart smaller than the canvas sits centred at every zoom
@@ -473,7 +474,7 @@ test('ajustar on a chart wider than the canvas zooms out until it fits and scrol
   onTestFinished(() => { vi.restoreAllMocks(); });
   const user = userEvent.setup();
   viewport(416, 600);
-  const { unmount } = render(<Flow state={twoStages()} />);
+  const { unmount } = render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   let canvas = screen.getByRole('region', { name: 'fluxograma' });
   paneOf(canvas).scrollLeft = 30;
   await user.click(screen.getByRole('button', { name: 'ajustar' }));
@@ -485,7 +486,7 @@ test('ajustar on a chart wider than the canvas zooms out until it fits and scrol
   expect(readView('flowView')).toEqual(storedView({}, { zoom: 0.8 }));
   unmount();
   viewport(1000, 600);
-  render(<Flow state={twoStages()} />);
+  render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument(); // flowView's zoom, back
   await user.click(screen.getByRole('button', { name: 'ajustar' }));
@@ -497,7 +498,7 @@ test('a stored flowView with zoom 0.8 and a pan draws the chart at 80% scrolled 
   onTestFinished(() => { vi.restoreAllMocks(); });
   viewport(400, 600);
   resetViewState({ flowView: { loops: true, canvas: { main: { zoom: 0.8, pan: { x: 120, y: 15 } } } } });
-  render(<Flow state={twoStages()} />);
+  render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument();
   expect(scaledOf(canvas).style.transform).toBe('scale(0.8)');
@@ -511,7 +512,7 @@ test('a zoom keeps the centre of the last scroll, not of the offsets the browser
   onTestFinished(() => { vi.restoreAllMocks(); });
   const user = userEvent.setup();
   viewport(400, 600);
-  render(<Flow state={twoStages()} />);
+  render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
   pane.scrollLeft = 100;
   fireEvent.scroll(pane);
@@ -531,7 +532,7 @@ const percent = (): string | null => screen.getByRole('button', { name: /^\d+%$/
 test('⌘ + wheel, Ctrl + wheel and a pinch zoom the flow one 10% step and keep the page from zooming; a plain wheel and one with no deltaY only scroll (#81)', () => {
   onTestFinished(() => { vi.restoreAllMocks(); });
   viewport(400, 600);
-  render(<Flow state={twoStages()} />);
+  render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
   expect(wheel(pane, { deltaY: -100 })).toBe(true);
   expect(percent()).toBe('100%');
@@ -548,7 +549,7 @@ test('a wheel zoom keeps the point under the pointer in place; one at the bound 
   const user = userEvent.setup();
   viewport(400, 600);
   resetViewState({ flowView: { loops: true, canvas: { main: { zoom: 1.4, pan: { x: 100, y: 0 } } } } });
-  render(<Flow state={twoStages()} />);
+  render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
   vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ left: 50, top: 20 } as DOMRect);
   expect(wheel(pane, { deltaY: -100, metaKey: true, clientX: 150, clientY: 50 })).toBe(false); // the pointer 100, 30 into the pane
@@ -568,7 +569,7 @@ test('coming back to the flow after Atividades hid it (display: none) puts the l
   const resizes: Array<() => void> = [];
   vi.stubGlobal('ResizeObserver', class { constructor(read: () => void) { resizes.push(read); } observe(): void {} disconnect(): void {} });
   viewport(400, 600);
-  render(<Flow state={twoStages()} />);
+  render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
   pane.scrollLeft = 40;
   pane.scrollTop = 25;
@@ -591,7 +592,7 @@ const openStageMenu = async (user: ReturnType<typeof userEvent.setup>, index: nu
 test('every stage has a stage-actions menu whose reset item is enabled only while the order differs from the board and posts reset-order', async () => {
   const user = userEvent.setup();
   const tasks = [task('1', 'dev'), task('2', 'dev'), task('3', 'review')];
-  const { rerender } = render(<Flow state={state(tasks, [worker('s1')], stages, ['I2', 'I1', 'I3'])} />);
+  const { rerender } = render(<Flow state={state(tasks, [worker('s1')], stages, ['I2', 'I1', 'I3'])} flow={firstFlow(state(tasks, [worker('s1')], stages, ['I2', 'I1', 'I3']))} />);
   expect(screen.getAllByRole('button', { name: 'ações da etapa' })).toHaveLength(2); // one per stage, whether or not it differs
   await openStageMenu(user, 1); // review sits as the board lists it
   expect(screen.getByRole('menuitem', { name: 'restaurar ordem da source' })).toHaveAttribute('data-disabled');
@@ -599,14 +600,14 @@ test('every stage has a stage-actions menu whose reset item is enabled only whil
   await openStageMenu(user, 0);
   await user.click(screen.getByRole('menuitem', { name: 'restaurar ordem da source' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/stages/dev/reset-order', expect.objectContaining({ method: 'POST', body: undefined }));
-  rerender(<Flow state={state(tasks, [worker('s1')])} />); // before the first poll: no board order to differ from
+  rerender(<Flow state={state(tasks, [worker('s1')])} flow={firstFlow(state(tasks, [worker('s1')]))} />); // before the first poll: no board order to differ from
   await openStageMenu(user, 0);
   expect(screen.getByRole('menuitem', { name: 'restaurar ordem da source' })).toHaveAttribute('data-disabled');
   await user.keyboard('{Escape}'); // close it: an open menu left mounted at cleanup can swallow the next test's first click
 });
 
 test('the board no longer renders the signal strip itself (#357: it moved to the header)', () => {
-  render(<Flow state={state([task('1', 'dev')], [worker('s1')])} />);
+  render(<Flow state={state([task('1', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev')], [worker('s1')]))} />);
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
@@ -616,7 +617,7 @@ test('a click on a task\'s free area opens it; its buttons, its PR link, a dialo
   const ran = { sessionId: 'a1b2c3d4-0000-4000-8000-000000000001', worktree: '/wt/hive-1-task-1' };
   // #629: the session and the PR are the task's record's
   const records = [{ ...rec([{ id: ran.sessionId, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' }])[0], prs: [{ url: 'https://github.com/o/r/pull/9', state: 'open' as const }] }];
-  render(<Flow state={{ ...state([task('1', 'dev', ran), task('2', 'dev', { missing: true })], [worker('s1')]), activityRecords: records }} onOpen={onOpen} />);
+  render(<Flow state={{ ...state([task('1', 'dev', ran), task('2', 'dev', { missing: true })], [worker('s1')]), activityRecords: records }} flow={firstFlow({ ...state([task('1', 'dev', ran), task('2', 'dev', { missing: true })], [worker('s1')]), activityRecords: records })} onOpen={onOpen} />);
   await user.click(screen.getByRole('button', { name: 'continuar' })); // the task ran: its session is the stage's (#283)
     await user.click(screen.getByRole('button', { name: 'fechar' }));
   await user.click(screen.getByRole('alertdialog')); // portaled out of the li, yet its clicks still bubble through React to it
@@ -637,7 +638,7 @@ test('a click on a task\'s free area opens it; its buttons, its PR link, a dialo
 test('a task with no worktree yet: the Start dialog asks the base, with the default preselected; cancelar closes it without a post (#131)', async () => {
   bases = NO_WORKTREE;
   const user = userEvent.setup();
-  render(<Flow state={state([task('3', 'dev')], [worker('s1')])} />);
+  render(<Flow state={state([task('3', 'dev')], [worker('s1')])} flow={firstFlow(state([task('3', 'dev')], [worker('s1')]))} />);
   await user.click(screen.getByRole('button', { name: 'iniciar' }));
   const dialog = screen.getByRole('dialog', { name: 'Iniciar #3' });
   expect(await within(dialog).findByRole('combobox', { name: 'origin/main' })).toBeInTheDocument();
@@ -650,10 +651,10 @@ test('a task with no worktree yet: the Start dialog asks the base, with the defa
 
 test('a local task reads HIVE-1 without #, and its face has no remover, stopped or running: removal lives in its menu and its panel (#132, #355)', () => {
   const local = task('1', 'dev', { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Local', body: '', url: '' }, boardColumn: '', created: true });
-  const { rerender } = render(<Flow state={state([local], [worker('s1')])} />);
+  const { rerender } = render(<Flow state={state([local], [worker('s1')])} flow={firstFlow(state([local], [worker('s1')]))} />);
   expect(screen.getByText('HIVE-1 Local')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'remover' })).not.toBeInTheDocument();
-  rerender(<Flow state={state([{ ...local, workerId: 's1' }], [worker('s1', 'local:1')])} />);
+  rerender(<Flow state={state([{ ...local, workerId: 's1' }], [worker('s1', 'local:1')])} flow={firstFlow(state([{ ...local, workerId: 's1' }], [worker('s1', 'local:1')]))} />);
   expect(screen.queryByRole('button', { name: 'remover' })).not.toBeInTheDocument();
 });
 
@@ -664,19 +665,19 @@ const sessionWorker = (id: string, runId: string): Worker => ({ id, status: 'wor
 
 test('a task shows the auto badge unless it is manual; a manual task offers what any task offers (iniciar, its blockers) (#164, #542)', () => {
   const blocked = task('1', 'dev', { auto: false, item: { ...task('1', 'dev').item, blockedBy: ['9'] } });
-  const { rerender } = render(<Flow state={state([blocked], [worker('s1')])} />);
+  const { rerender } = render(<Flow state={state([blocked], [worker('s1')])} flow={firstFlow(state([blocked], [worker('s1')]))} />);
   const item = () => screen.getByText('#1 Task 1').closest('li')!;
   expect(within(item()).queryByText('auto')).not.toBeInTheDocument();
   expect(screen.getByText('⊘ bloqueada por 9')).toBeInTheDocument();
-  rerender(<Flow state={state([task('1', 'dev', { auto: false })], [worker('s1')])} />);
+  rerender(<Flow state={state([task('1', 'dev', { auto: false })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { auto: false })], [worker('s1')]))} />);
   expect(screen.getByRole('button', { name: 'iniciar' })).toBeInTheDocument();
-  rerender(<Flow state={state([task('1', 'dev')], [worker('s1')])} />);
+  rerender(<Flow state={state([task('1', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev')], [worker('s1')]))} />);
   expect(within(item()).getByText('auto')).toBeInTheDocument();
 });
 
 test('a task with several sessions borders itself in the worst of them: a waiting session outranks a working one (#229)', () => {
   const waiting = { ...sessionWorker('m1', 'aaaaaaaa-0000-4000-8000-000000000001'), status: 'waiting' as const };
-  render(<Flow state={state([task('1', 'dev', { workerId: 's1' })], [worker('s1', 'I1'), waiting])} />);
+  render(<Flow state={state([task('1', 'dev', { workerId: 's1' })], [worker('s1', 'I1'), waiting])} flow={firstFlow(state([task('1', 'dev', { workerId: 's1' })], [worker('s1', 'I1'), waiting]))} />);
   const item = screen.getByText('#1 Task 1').closest('li')!;
   expect(item).toHaveClass('border-waiting');
   expect(within(item).getByText(/esperando você/)).toBeInTheDocument();
@@ -686,12 +687,12 @@ test('a stopped task whose stage ran offers continuar, which posts continue; rei
   const user = userEvent.setup();
   const sessions = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-25T10:00:00.000Z' }];
   const ran = task('1', 'dev', { stopped: true, stageStart: { stage: 'dev', commit: 'a1b2c3d' } });
-  const { rerender } = render(<Flow state={{ ...state([ran], [worker('s1')]), activityRecords: rec(sessions) }} />);
+  const { rerender } = render(<Flow state={{ ...state([ran], [worker('s1')]), activityRecords: rec(sessions) }} flow={firstFlow({ ...state([ran], [worker('s1')]), activityRecords: rec(sessions) })} />);
   expect(screen.queryByRole('button', { name: 'iniciar' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'reiniciar etapa…' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'continuar' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/continue', expect.objectContaining({ method: 'POST' }));
-  rerender(<Flow state={state([task('2', 'dev')], [worker('s1')])} />);
+  rerender(<Flow state={state([task('2', 'dev')], [worker('s1')])} flow={firstFlow(state([task('2', 'dev')], [worker('s1')]))} />);
   expect(screen.getByRole('button', { name: 'iniciar' })).toBeInTheDocument();
 });
 
@@ -701,7 +702,7 @@ test('a task whose stage session is held by a live free session offers no contin
   vi.stubGlobal('hive', { focusDetached });
   const held = sessionWorker('s2', 'cccccccc-0000-4000-8000-000000000003');
   const sessions = [{ id: held.sessionId!, startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-25T10:00:00.000Z' }];
-  render(<Flow state={{ ...state([task('1', 'dev', { stopped: true, worktree: '/wt/hive-1-task-1' })], [worker('s1'), held]), activityRecords: rec(sessions) }} />);
+  render(<Flow state={{ ...state([task('1', 'dev', { stopped: true, worktree: '/wt/hive-1-task-1' })], [worker('s1'), held]), activityRecords: rec(sessions) }} flow={firstFlow({ ...state([task('1', 'dev', { stopped: true, worktree: '/wt/hive-1-task-1' })], [worker('s1'), held]), activityRecords: rec(sessions) })} />);
   expect(screen.queryByRole('button', { name: 'continuar' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'abrir' }));
   expect(focusDetached).toHaveBeenCalledWith('cccccccc-0000-4000-8000-000000000003');
@@ -710,7 +711,7 @@ test('a task whose stage session is held by a live free session offers no contin
 
 test('the workspace line names the workspace each task resolves to, and sem workspace when no rule resolves one (#179, #542)', () => {
   const hinted = task('2', 'dev', { item: { ...task('2', 'dev').item, workspaceHint: 'site' } });
-  render(<Flow state={{ ...state([task('1', 'dev'), hinted], [worker('s1')]), workspaces: ['hive', 'site'] }} />);
+  render(<Flow state={{ ...state([task('1', 'dev'), hinted], [worker('s1')]), workspaces: ['hive', 'site'] }} flow={firstFlow({ ...state([task('1', 'dev'), hinted], [worker('s1')]), workspaces: ['hive', 'site'] })} />);
   expect(within(screen.getByText('#2 Task 2')).getByTitle('site')).toBeInTheDocument();
   expect(within(screen.getByText('#1 Task 1')).queryByTitle(/./)).not.toBeInTheDocument();
 });
@@ -721,7 +722,7 @@ test('a stage with stopped missing tasks shows the strip with their count; close
     task('1', 'dev', { missing: true }), task('2', 'dev', { missing: true }), task('3', 'dev', { missing: true, workerId: 's1' }),
     task('4', 'review', { missing: true, workerId: 's2' }), // review's only missing task runs: no strip there
   ];
-  render(<Flow state={state(tasks, [worker('s1', 'I3'), worker('s2', 'I4')])} />);
+  render(<Flow state={state(tasks, [worker('s1', 'I3'), worker('s2', 'I4')])} flow={firstFlow(state(tasks, [worker('s1', 'I3'), worker('s2', 'I4')]))} />);
   expect(screen.getByText(t('stage.missing', { n: 2 }))).toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: t('stage.closeMissing') })).toHaveLength(1);
   await user.click(screen.getByRole('button', { name: t('stage.closeMissing') }));
@@ -737,9 +738,12 @@ test('no strip while nothing in the stage is closable (a running or deleting mis
   const { rerender } = render(<Flow state={state([
     task('1', 'dev', { missing: true, workerId: 's1' }), task('2', 'dev', { missing: true, workerId: 's2' }), task('3', 'dev', { missing: true, deleting: true }),
     task('4', 'dev', { orphan: true }), task('5', 'dev'),
-  ], [worker('s1', 'I1'), worker('s2', 'I2')])} />);
+  ], [worker('s1', 'I1'), worker('s2', 'I2')])} flow={firstFlow(state([
+    task('1', 'dev', { missing: true, workerId: 's1' }), task('2', 'dev', { missing: true, workerId: 's2' }), task('3', 'dev', { missing: true, deleting: true }),
+    task('4', 'dev', { orphan: true }), task('5', 'dev'),
+  ], [worker('s1', 'I1'), worker('s2', 'I2')]))} />);
   expect(screen.queryByRole('button', { name: t('stage.closeMissing') })).not.toBeInTheDocument();
-  rerender(<Flow state={state([task('6', 'review', { missing: true })], [worker('s1')])} />);
+  rerender(<Flow state={state([task('6', 'review', { missing: true })], [worker('s1')])} flow={firstFlow(state([task('6', 'review', { missing: true })], [worker('s1')]))} />);
   expect(screen.getByText(t('stage.missing', { n: 1 }))).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: t('stage.closeMissing') }));
   expect(within(screen.getByRole('alertdialog')).getByText(t('confirm.closeMissingAll', { n: 1 }))).toBeInTheDocument();
@@ -748,40 +752,40 @@ test('no strip while nothing in the stage is closable (a running or deleting mis
 test('a task awaiting approval shows the approval colour and aguardando aprovação with no Start, Continue or Restart, and aprovar while a held run keeps its worker (#268, #542)', () => {
   const since = '2026-09-25T10:00:00.000Z';
   const ran = rec([{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: since, stages: ['dev'], agent: 'claude' as const, lastUsedAt: since }]);
-  const { rerender } = render(<Flow state={{ ...state([task('1', 'dev', { approval: { since } })], [worker('s1')]), activityRecords: ran }} />);
+  const { rerender } = render(<Flow state={{ ...state([task('1', 'dev', { approval: { since } })], [worker('s1')]), activityRecords: ran }} flow={firstFlow({ ...state([task('1', 'dev', { approval: { since } })], [worker('s1')]), activityRecords: ran })} />);
   const tile = () => screen.getByText('#1 Task 1').closest('li')!;
   expect(tile()).toHaveClass('border-approval');
   expect(within(tile()).getByText(/aguardando aprovação/)).toBeInTheDocument();
   for (const name of [t('task.start'), t('task.continue'), t('task.restartStage')]) expect(within(tile()).queryByRole('button', { name })).not.toBeInTheDocument();
   const holding: Worker = { id: 's1', status: 'approval', activityId: activityIdOf('I1'), runId: 'W1' };
-  rerender(<Flow state={{ ...state([task('1', 'dev', { approval: { since, until: '2026-09-25T10:10:00.000Z' }, workerId: 's1' })], [holding]), activityRecords: ran }} />);
+  rerender(<Flow state={{ ...state([task('1', 'dev', { approval: { since, until: '2026-09-25T10:10:00.000Z' }, workerId: 's1' })], [holding]), activityRecords: ran }} flow={firstFlow({ ...state([task('1', 'dev', { approval: { since, until: '2026-09-25T10:10:00.000Z' }, workerId: 's1' })], [holding]), activityRecords: ran })} />);
   expect(tile()).toHaveClass('border-approval');
   expect(within(tile()).getByText(/aguardando aprovação/)).toBeInTheDocument();
   expect(within(tile()).getByRole('button', { name: 'aprovar' })).toBeInTheDocument();
-  rerender(<Flow state={{ ...state([task('1', 'dev')], [worker('s1')]), activityRecords: ran }} />);
+  rerender(<Flow state={{ ...state([task('1', 'dev')], [worker('s1')]), activityRecords: ran }} flow={firstFlow({ ...state([task('1', 'dev')], [worker('s1')]), activityRecords: ran })} />);
   expect(tile()).not.toHaveClass('border-approval');
 });
 
 test('a task running its worktree setup says so from task.setup: iniciando with no worker, then its step; with its stage worker, the status; nothing without it (#299, #351, #542)', () => {
   const opening = task('1', 'dev', { setup: { consoleId: 'setup:I1', rows: [] } });
-  const { rerender } = render(<Flow state={state([opening], [worker('s1')])} />);
+  const { rerender } = render(<Flow state={state([opening], [worker('s1')])} flow={firstFlow(state([opening], [worker('s1')]))} />);
   expect(screen.getByText('iniciando')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: t('task.start') })).not.toBeInTheDocument();
-  rerender(<Flow state={state([{ ...opening, setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } }], [worker('s1')])} />);
+  rerender(<Flow state={state([{ ...opening, setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } }], [worker('s1')])} flow={firstFlow(state([{ ...opening, setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } }], [worker('s1')]))} />);
   expect(screen.getByText('preparando: RUN pnpm install')).toBeInTheDocument();
-  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1', setup: { consoleId: 'setup:I1', step: 'COPY .env', rows: [] } })], [worker('s1', 'I1')])} />);
+  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1', setup: { consoleId: 'setup:I1', step: 'COPY .env', rows: [] } })], [worker('s1', 'I1')])} flow={firstFlow(state([task('1', 'dev', { workerId: 's1', setup: { consoleId: 'setup:I1', step: 'COPY .env', rows: [] } })], [worker('s1', 'I1')]))} />);
   expect(screen.getByText('trabalhando')).toBeInTheDocument();
-  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1' })], [{ ...worker('s1', 'I1'), lastEvent: { kind: 'prompt' } }])} />);
+  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1' })], [{ ...worker('s1', 'I1'), lastEvent: { kind: 'prompt' } }])} flow={firstFlow(state([task('1', 'dev', { workerId: 's1' })], [{ ...worker('s1', 'I1'), lastEvent: { kind: 'prompt' } }]))} />);
   expect(screen.queryByText(/preparando|iniciando/)).not.toBeInTheDocument();
 });
 
 test('a picked source shows only its tasks and counts them in the stage header; none picked shows every source (redesign 09)', () => {
   const onSource = (id: string, board?: string): Task => { const c = task(id, 'dev'); return { ...c, item: { ...c.item, source: board } }; };
   const tasks = [onSource('1', 'roadmap'), onSource('2', 'notes'), onSource('3')];
-  const { rerender } = render(<Flow state={state(tasks, [])} source="roadmap" />);
+  const { rerender } = render(<Flow state={state(tasks, [])} flow={firstFlow(state(tasks, []))} source="roadmap" />);
   expect(titles()).toEqual(['#1 Task 1']);
   expect(within(header('dev')).getByText('1')).toBeInTheDocument();
-  rerender(<Flow state={state(tasks, [])} />);
+  rerender(<Flow state={state(tasks, [])} flow={firstFlow(state(tasks, []))} />);
   expect(titles()).toEqual(['#1 Task 1', '#2 Task 2', '#3 Task 3']);
 });
 
@@ -790,7 +794,7 @@ test('with hive picked, only the tasks with no source show, in every stage and i
   const tasks = [onSource('1', 'dev', 'roadmap'), onSource('2', 'dev'), onSource('3', 'review'), onSource('4', 'review', 'notes')];
   // one workspace other than hive, so its chip never reads as the pick's label
   const picked = { ...state(tasks, []), workspaces: ['site'], syncs: { roadmap: { polledAt: '2026-10-02T09:28:00.000Z' } } };
-  render(<Flow state={picked} source="hive" />);
+  render(<Flow state={picked} flow={firstFlow(picked)} source="hive" />);
   expect(titles()).toEqual(['#2 Task 2', '#3 Task 3']);
   expect(within(header('dev')).getByText('1')).toBeInTheDocument();
   expect(within(header('review')).getByText('1')).toBeInTheDocument();
@@ -801,12 +805,12 @@ test('with hive picked, only the tasks with no source show, in every stage and i
 
 test('a capped stage\'s node shows n/cap after its count; over the cap the number reads in foreground and its title says how many were started by hand (#727)', () => {
   const s = state([task('1', 'dev'), task('2', 'dev')], [worker('w1', 'I1'), worker('w2', 'I2')]);
-  const { rerender } = render(<Flow state={s} stageCaps={{ dev: 1 }} />);
+  const { rerender } = render(<Flow state={s} flow={firstFlow(s)} stageCaps={{ dev: 1 }} />);
   const over = within(header('dev')).getByText('2/1');
   expect(over).toHaveClass('text-foreground');
   expect(over).toHaveAttribute('title', t('flow.stageCap.byHand', { k: 1 }));
   expect(within(header('review')).queryByText(/\d\/\d/)).not.toBeInTheDocument();
-  rerender(<Flow state={s} stageCaps={{ dev: 2 }} />);
+  rerender(<Flow state={s} flow={firstFlow(s)} stageCaps={{ dev: 2 }} />);
   expect(within(header('dev')).getByText('2/2')).not.toHaveClass('text-foreground');
   expect(within(header('dev')).getByText('2/2')).not.toHaveAttribute('title');
 });
@@ -820,7 +824,7 @@ const ZOOM_FIT = { key: '!', code: 'Digit1', shiftKey: true };
 test('Ctrl+=, Ctrl+-, Ctrl+0 and ⇧1 do what +, −, the number and ajustar do, only while the flow shows; ⇧1 in buscar tarefas types (#910)', () => {
   onTestFinished(() => { vi.restoreAllMocks(); });
   viewport(416, 600);
-  const flow = (isShown: boolean) => <FlowShownContext.Provider value={isShown}><Flow state={twoStages()} /></FlowShownContext.Provider>;
+  const flow = (isShown: boolean) => <FlowShownContext.Provider value={isShown}><Flow state={twoStages()} flow={firstFlow(twoStages())} /></FlowShownContext.Provider>;
   const { rerender } = render(flow(true));
   const scale = (): string => scaledOf(screen.getByRole('region', { name: 'fluxograma' })).style.transform;
   expect(fireEvent.keyDown(window, ZOOM_IN)).toBe(false); // prevented: the key is the flow's
@@ -855,11 +859,11 @@ test('⑂ árvore starts on with a tree in the list and off without one; a click
   resetViewState();
   onTestFinished(() => resetViewState()); // drops the pending post
   const user = userEvent.setup();
-  const { unmount } = render(<Flow state={state([task('1', 'dev')], [worker('s1')])} />);
+  const { unmount } = render(<Flow state={state([task('1', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev')], [worker('s1')]))} />);
   expect(treeToggle()).toHaveAttribute('aria-pressed', 'false');
   expect(treeToggle()).toHaveAttribute('title', 'agrupar por árvore');
   unmount();
-  const { unmount: unmountTree } = render(<Flow state={forest()} />);
+  const { unmount: unmountTree } = render(<Flow state={forest()} flow={firstFlow(forest())} />);
   expect(treeToggle()).toHaveAttribute('aria-pressed', 'true');
   expect(within(nodeOf('dev')).getByText('⑂ #1 Task 1')).toBeInTheDocument();
   expect(within(nodeOf('review')).getByText('⑂ #1 Task 1')).toBeInTheDocument(); // the root sits in dev; review's group still names it
@@ -868,7 +872,7 @@ test('⑂ árvore starts on with a tree in the list and off without one; a click
   expect(within(nodeOf('dev')).queryByText('⑂ #1 Task 1')).not.toBeInTheDocument();
   expect(readView('flowView')).toEqual(storedView({ tree: false }));
   unmountTree();
-  render(<Flow state={forest()} />);
+  render(<Flow state={forest()} flow={firstFlow(forest())} />);
   expect(treeToggle()).toHaveAttribute('aria-pressed', 'false');
   expect(screen.queryByText('sem árvore')).not.toBeInTheDocument();
 });
@@ -877,14 +881,14 @@ test('the chevron collapses a tree\'s group in its own node only, and the collap
   resetViewState();
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
-  const { unmount } = render(<Flow state={forest()} />);
+  const { unmount } = render(<Flow state={forest()} flow={firstFlow(forest())} />);
   await user.click(within(nodeOf('dev')).getAllByRole('button', { name: /^recolher/ })[0]);
   expect(within(nodeOf('dev')).queryByText('#2 Task 2')).not.toBeInTheDocument();
   expect(within(nodeOf('dev')).getByRole('button', { name: /^expandir/ })).toHaveAttribute('aria-expanded', 'false');
   expect(within(nodeOf('review')).getByText('#3 Task 3')).toBeInTheDocument();
   expect(readView('flowView')).toEqual(storedView({}, { collapsed: ['dev\u0000I1'] }));
   unmount();
-  render(<Flow state={forest()} />);
+  render(<Flow state={forest()} flow={firstFlow(forest())} />);
   expect(within(nodeOf('dev')).queryByText('#1 Task 1')).not.toBeInTheDocument();
   expect(within(nodeOf('dev')).getByText('#4 Task 4')).toBeInTheDocument();
 });
@@ -905,7 +909,7 @@ test('focar › on #872 fades every card but #872, #875 and #876, keeps the node
   resetViewState();
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
-  render(<Flow state={handoff()} />);
+  render(<Flow state={handoff()} flow={firstFlow(handoff())} />);
   expect(faded()).toEqual([]);
   expect(trail()).not.toBeInTheDocument();
   await user.click(focusOn('872'));
@@ -925,7 +929,7 @@ test('#870 in the trail widens the focus to the whole tree; × leaves it; a new 
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
   const s = handoff();
-  const { rerender } = render(<Flow state={s} />);
+  const { rerender } = render(<Flow state={s} flow={firstFlow(s)} />);
   await user.click(focusOn('872'));
   await user.click(within(trail()!).getByRole('button', { name: 'focar #870' }));
   expect(faded()).toEqual(['9']);
@@ -934,13 +938,13 @@ test('#870 in the trail widens the focus to the whole tree; × leaves it; a new 
   expect(trail()).not.toBeInTheDocument();
   expect(faded()).toEqual([]);
   await user.click(focusOn('872'));
-  rerender(<Flow state={s} source="hive" />);
+  rerender(<Flow state={s} flow={firstFlow(s)} source="hive" />);
   expect(trail()).not.toBeInTheDocument();
-  rerender(<Flow state={s} />);
+  rerender(<Flow state={s} flow={firstFlow(s)} />);
   expect(trail()).not.toBeInTheDocument(); // back on the first source the focus stays dropped
   expect(faded()).toEqual([]);
   await user.click(focusOn('872'));
-  rerender(<Flow state={{ ...s, tasks: s.tasks.filter((c) => c.item.itemId !== 'I872') }} />);
+  rerender(<Flow state={{ ...s, tasks: s.tasks.filter((c) => c.item.itemId !== 'I872') }} flow={firstFlow({ ...s, tasks: s.tasks.filter((c) => c.item.itemId !== 'I872') })} />);
   expect(trail()).not.toBeInTheDocument();
   expect(document.querySelector('[data-flow-stages] .opacity-30')).toBeNull(); // the chart's, not the zoom controls' idle fade (#81)
 });
@@ -954,7 +958,7 @@ test('Esc leaves the focus, prevented so the details panel\'s Escape never sees 
   document.addEventListener('keydown', panelKey);
   onTestFinished(() => document.removeEventListener('keydown', panelKey));
   const user = userEvent.setup();
-  render(<Flow state={handoff()} />);
+  render(<Flow state={handoff()} flow={firstFlow(handoff())} />);
   await user.click(focusOn('872'));
   fireEvent.keyDown(screen.getByRole('textbox', { name: 'buscar tarefas' }), { key: 'Escape' });
   expect(trail()).toBeInTheDocument();
@@ -972,7 +976,7 @@ test('Esc keeps the focus while the flow is hidden under Atividades and from ins
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
   const s = handoff();
-  const flow = (isShown: boolean) => <FlowShownContext.Provider value={isShown}><Flow state={s} /></FlowShownContext.Provider>;
+  const flow = (isShown: boolean) => <FlowShownContext.Provider value={isShown}><Flow state={s} flow={firstFlow(s)} /></FlowShownContext.Provider>;
   const { rerender } = render(flow(true));
   await user.click(focusOn('872'));
   rerender(flow(false));
@@ -990,7 +994,7 @@ test('Esc keeps the focus while Settings, the console drawer or a node\'s list p
   resetViewState();
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
-  render(<Flow state={handoff()} />);
+  render(<Flow state={handoff()} flow={firstFlow(handoff())} />);
   await user.click(focusOn('872'));
   for (const marker of ['data-settings-page', 'data-console-drawer', 'data-flow-list-panel']) {
     const layer = document.body.appendChild(document.createElement('div'));
@@ -999,4 +1003,33 @@ test('Esc keeps the focus while Settings, the console drawer or a node\'s list p
     expect(trail()).toBeInTheDocument();
     layer.remove();
   }
+});
+
+// #571: the comb's two flows, dev in build and review in ship
+const twoFlows = (tasks: WithWork[]): State => ({ ...state(tasks, []), flows: [{ name: 'build', stages: [stages[0]], transitions: [] }, { name: 'ship', stages: [stages[1]], transitions: [] }] });
+const stageNode = (stage: string): Element | null => screen.getByRole('region', { name: 'fluxograma' }).querySelector(`[data-stage="${stage}"]`);
+
+test('a passed flow draws only its stages and its tasks; switching flows keeps the search, since Flow stays mounted (#571)', async () => {
+  const user = userEvent.setup();
+  const s = twoFlows([task('1', 'dev'), task('2', 'review')]);
+  const { rerender } = render(<Flow state={s} flow={s.flows[0]} />);
+  expect(stageNode('dev')).not.toBeNull();
+  expect(stageNode('review')).toBeNull();
+  expect(titles()).toEqual(['#1 Task 1']);
+  await user.type(screen.getByRole('textbox', { name: 'buscar tarefas' }), 'Task');
+  rerender(<Flow state={s} flow={s.flows[1]} />);
+  expect(stageNode('review')).not.toBeNull();
+  expect(stageNode('dev')).toBeNull();
+  expect(titles()).toEqual(['#2 Task 2']);
+  expect(screen.getByRole('textbox', { name: 'buscar tarefas' })).toHaveValue('Task');
+});
+
+test('each flow shows its own stored zoom on a switch (#571)', () => {
+  resetViewState({ flowView: { loops: true, canvas: { build: { zoom: 0.8 }, ship: { zoom: 1.2 } } } });
+  onTestFinished(() => resetViewState());
+  const s = twoFlows([]);
+  const { rerender } = render(<Flow state={s} flow={s.flows[0]} />);
+  expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument();
+  rerender(<Flow state={s} flow={s.flows[1]} />);
+  expect(screen.getByRole('button', { name: '120%' })).toBeInTheDocument();
 });

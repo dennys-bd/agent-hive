@@ -242,7 +242,7 @@ function Center({ state, selected, picks, repositories, onSelect, goTo, stageCap
     }
     return <ProjectTable state={state} source={external} tabs={tabs} onGoTo={goTo} onOpenIssue={projectOpener(picks, repositories, goTo)} />;
   }
-  return <Flow state={state} source={picked} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} tabs={tabs} stageCaps={stageCaps} />;
+  return <Flow state={state} flow={state.flows[0]} source={picked} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} tabs={tabs} stageCaps={stageCaps} />;
 }
 
 // #36: the details' tree row under the pointer, shared by the details (which set it) and the flow's cards (which light up). A component of its
