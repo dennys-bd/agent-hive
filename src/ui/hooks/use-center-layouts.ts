@@ -1,15 +1,19 @@
 import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { stageChannel } from '../../console';
+import { dropBuffer } from '@/components/CenterGroup';
 import { applyLanding, type Landing } from '@/components/center-drag';
 import type { TabRequest } from '@/hooks/use-activity';
 import { renameTabs, storableLayouts } from '@/lib/center-files';
+import { t } from '@/i18n';
 import * as models from '@/lib/editor-models';
 import { type Activity, activityKey, runSessions, sleepingSessions } from '@/lib/activities';
 import {
-  type CenterLayout, type CenterTabRef, changePanes, closeLeaf, closeRef, foldIntoPane, initialLayout, openRef, prune, pruneLayouts, readCenterLayouts, replaceRun, resize,
-  retargetRef, selectRef, type TabSessions, withStageConsole, writeCenterLayouts,
+  type CenterLayout, type CenterTabRef, changePanes, closeLeaf, closeRef, findRef, foldIntoPane, initialLayout, openRef, prune, pruneLayouts, readCenterLayouts, refKey, replaceRun, resize,
+  retargetRef, selectRef, sharesBuffer, type TabSessions, withStageConsole, writeCenterLayouts,
 } from '@/lib/center-layout';
 import { focusPane, resizePanes } from '@/lib/pane-split';
+import { takeCarry } from '@/lib/tab-carry';
 import type { Axis } from '@/lib/split-tree';
 
 /** What the center does to the picked activity's layout (#458). */
@@ -27,6 +31,7 @@ export interface CenterOps {
   holdRun(ptyId: string): void; // a sleeping tab's continue (#672): its tab stays while the session moves to a new run
   replaceRun(from: string, to: string): void; // #672: the new run takes over the sleeping run's tab, in place
   releaseRun(ptyId: string): void; // #672: a refused continue: the sleeping tab's hold ends, or it would outlive its record
+  moveToWindow(key: string): Promise<boolean>; // #554: to its activity's detached window, closed here once main took it
 }
 // layouts (#533): every activity's stored layout, read-only, for the design layer, which keeps a pane per open design tab of any activity
 export interface CenterLayouts extends CenterOps { layout?: CenterLayout; layouts: Readonly<Record<string, CenterLayout>> }
@@ -144,6 +149,36 @@ function useRenamedTabs(activities: Activity[], setStore: Dispatch<SetStateActio
   }), [setStore]);
 }
 
+// #554: a tab to its activity's detached window. It closes here only once main took it, or an unsaved edit could be lost, and its carry goes
+// with it. A tab already moving is not sent twice (a double pick of the menu item); keyed by activity too, since two activities share tab keys
+function useMoveToWindow(current: Activity | undefined, layout: CenterLayout | undefined, close: (key: string) => void): (key: string) => Promise<boolean> {
+  const moving = useRef(new Map<string, Promise<boolean>>());
+  const send = async (activity: Activity, ref: CenterTabRef): Promise<boolean> => {
+    const carry = takeCarry(activity.activity.id, ref);
+    try {
+      await window.hive?.moveToWindow({ activity: activityKey(activity), ref, ...(carry === undefined ? {} : { carry }) });
+    } catch (err) {
+      console.error('main window: moveToWindow refused', err);
+      toast.error(t('window.moveFailed'));
+      return false;
+    }
+    // No closeRun: the run goes on in the window. This render's close is bound to `activity`, so a pick changed meanwhile still closes it here
+    close(refKey(ref));
+    dropBuffer(ref, activity.activity.id, false); // never shared: a shared buffer does not move (spec decision 4)
+    return true;
+  };
+  return (key) => {
+    const ref = layout && findRef(layout, key);
+    const id = current === undefined ? undefined : `${activityKey(current)}\n${key}`;
+    const pending = id === undefined ? undefined : moving.current.get(id);
+    if (pending !== undefined) return pending;
+    if (current === undefined || id === undefined || ref === undefined || window.hive === undefined || sharesBuffer(layout, ref)) return Promise.resolve(false);
+    const started = send(current, ref).finally(() => moving.current.delete(id));
+    moving.current.set(id, started);
+    return started;
+  };
+}
+
 export interface CenterLayoutsOptions {
   seed?: Record<string, CenterLayout>; // the layouts the store starts from; default readCenterLayouts()
   fallback?: boolean; // an activity with no entry shows its main run; default true
@@ -172,6 +207,9 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
       return { holding: s.holding, layouts: withEntry(s.layouts, key, layout), emptied: layout === undefined ? key : undefined };
     });
   };
+  const layout = current === undefined ? undefined : viewOf(store, current, fallback);
+  const close = (key: string): void => change((shown) => shown && closeRef(shown, key));
+  const moveToWindow = useMoveToWindow(current, layout, close);
   // No dependency list: `change` is new on every render, and `handled` keeps a request from applying twice
   useEffect(() => {
     if (current === undefined || request === undefined || request === handled) return;
@@ -181,10 +219,10 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
     change((layout) => (layout === undefined ? initialLayout(ref) : openRef(layout, ref)));
   });
   return {
-    layout: current === undefined ? undefined : viewOf(store, current, fallback),
+    layout,
     layouts: store.layouts,
     select: (group, index) => change((layout) => layout && selectRef(layout, group, index)),
-    close: (key) => change((layout) => layout && closeRef(layout, key)),
+    close,
     land: (key, landing) => change((layout) => layout && applyLanding(layout, key, landing)),
     resize: (path, sizes) => change((layout) => layout && resize(layout, path, sizes)),
     open: (ref) => change((layout) => (layout === undefined ? initialLayout(ref) : openRef(layout, ref))),
@@ -196,5 +234,6 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
     holdRun: (ptyId) => setStore((s) => ({ ...s, holding: [...s.holding, ptyId] })),
     releaseRun: (ptyId) => setStore((s) => ({ ...s, holding: s.holding.filter((held) => held !== ptyId) })),
     replaceRun: (from, to) => setStore((s) => handedOver(s, from, to)),
+    moveToWindow,
   };
 }
