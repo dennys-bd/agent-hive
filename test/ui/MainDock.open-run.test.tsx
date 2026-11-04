@@ -101,19 +101,17 @@ test('a new run on the activity already shown leaves its tabs as they are until 
   expect(centerTabs()).toEqual([['Claude', 'false'], ['Terminal', 'false'], ['Claude', 'true']]);
 });
 
-test('a workspace\'s terminal opened from the UI goes to its local activity\'s center and selects no task, with no window of its own; a docked-back task run goes to its activity (#590)', () => {
+test('a workspace\'s terminal opened from the UI goes to its local activity\'s center and selects no task, with no window of its own; a docked-back task run goes to its activity (#590, #554)', async () => {
   let docked: (tab: unknown) => void = () => {};
-  const detach = vi.fn(async (_tab: unknown) => undefined);
-  vi.stubGlobal('hive', { detach, onCloseKey: vi.fn(), onDock: (callback: (tab: unknown) => void) => { docked = callback; } });
+  vi.stubGlobal('hive', { onCloseKey: vi.fn(), onDock: (callback: (tab: unknown) => void) => { docked = callback; } });
   const calls: Selection[] = [];
   const { rerender } = render(<Home calls={calls} />);
   click('P1');
-  expect(detach).not.toHaveBeenCalled();
   rerender(<Home calls={calls} terminals={[shellA, { terminalId: 'P1', activityId: localActivityId('hive'), startedAt: T0, cwd: '/repo' }]} />);
   expect(centerTabs()).toEqual([['Terminal', 'true']]);
   expect(screen.getByRole('region', { name: 'hive · terminal' })).toBeVisible();
   expect(calls).toEqual([]);
-  act(() => docked(run('W2', 'A')));
+  await act(async () => { docked({ activity: 'A', ref: { kind: 'run', ptyId: 'W2' } }); }); // a MovedTab now (#554)
   expect(screen.getByRole('region', { name: '#1 Task A · terminal' })).toBeVisible();
 });
 

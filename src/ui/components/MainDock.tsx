@@ -1,4 +1,5 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useEffectEvent, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { parseMovedTab } from '../../tab-carry';
 import type { Task, EffectiveLimits, Experiment, PlanReadings, SidebarsPerView, Terminal, Worker, Stage, State } from '../../types';
 import { ActivitiesPanel, type ActivitiesNav, PlusMenu } from '@/components/ActivitiesPanel';
 import { ActivityCenter } from '@/components/ActivityCenter';
@@ -20,7 +21,7 @@ import { Openers } from '@/components/DockOpeners';
 import { useBenchmarkDock } from '@/components/benchmark/benchmark-dock';
 import { usePluginsDock } from '@/components/plugins/plugins-dock';
 import { DesignLayer, DesignLayerProvider } from '@/components/DesignLayer';
-import { dockedTab, type OpenDiff, type OpenFileHow, type OpenPr, type OpenRun } from '@/components/terminal-tabs';
+import type { OpenDiff, OpenFileHow, OpenPr, OpenRun } from '@/components/terminal-tabs';
 import { type ConsoleChannels, ConsoleChannelsContext, type OpenStageOutput, shownChannel, useConsoleOpener } from '@/hooks/use-console';
 import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
 import { type CenterLayouts, useCenterLayouts } from '@/hooks/use-center-layouts';
@@ -30,9 +31,10 @@ import { type HeaderShell, useHeaderShell } from '@/hooks/use-header-shell';
 import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
-import { shownFile, shownRun } from '@/lib/center-layout';
+import { type CenterTabRef, shownFile, shownRun } from '@/lib/center-layout';
 import type { FileAt } from '@/lib/editor-models';
 import { pendingSessions } from '@/lib/home';
+import { applyCarry } from '@/lib/tab-carry';
 import { useRememberFocus } from '@/lib/session-focus';
 import { onPanelKey, onShortcutKey, onViewKey, type PanelId, runShortcut, shownBySide } from '@/lib/dock-layout';
 
@@ -93,15 +95,25 @@ export interface SearchSource { state: State; effective?: EffectiveLimits; openS
 export interface NewActivity { workspace?: string; taskId?: string; title?: string; onStarted(taskId: string): void; onClose(): void }
 type StartRequest = Pick<NewActivity, 'workspace' | 'taskId' | 'title'>;
 
-// A detached window docked back (#252): a task's run goes to its activity, a workspace's to its local activity (#590). main's message is IPC,
-// so its shape is checked. onDock hands back no unsubscribe: one subscription per opener, as before.
-function useDockedRuns(open: OpenRun): void {
+// A tab docked back from a detached window (#554): its carry applied, then opened in its activity's center, picked. Main already parsed the
+// payload, so a bad one, or one whose activity the State no longer lists, is a bug: logged, no toast. Subscribed once (the preload holds
+// every window:dock until then); the activities are read at the time
+function useDockedTabs(activities: Activity[], openTab: (key: string, ref: CenterTabRef) => void): void {
+  const latest = useRef({ activities, openTab });
+  useEffect(() => { latest.current = { activities, openTab }; });
   useEffect(() => {
     window.hive?.onDock((value) => {
-      const tab = dockedTab(value);
-      if (tab) open(tab);
+      const tab = parseMovedTab(value);
+      const target = tab && latest.current.activities.find((activity) => activityKey(activity) === tab.activity);
+      if (tab === undefined || target === undefined) {
+        console.error('main window: window:dock dropped', typeof value); // never the payload: a carry holds the user's unsaved text
+        return;
+      }
+      applyCarry(target.activity.id, tab.ref, tab.carry) // an untitled number taken here comes back renumbered (#551)
+        .then((ref) => latest.current.openTab(tab.activity, ref))
+        .catch((err: unknown) => console.error('main window: a docked tab did not open', err));
     });
-  }, [open]);
+  }, []);
 }
 
 const NO_STAGES: Stage[] = [];
@@ -259,7 +271,7 @@ export function MainDock(props: MainDockProps) {
     const key = tab.task ?? (tab.project === undefined ? undefined : localKey(tab.project));
     if (key !== undefined) openRun(key, tab.ptyId);
   }, [openRun]);
-  useDockedRuns(openUserRun);
+  useDockedTabs(activities, selection.openTab);
   useSleptNotices(activities, openUserRun); // the auto flow's and the idle shutdown's sleeps show their notice here (#672)
   // A task's diff (#270): a tab of its activity's center (#458); the task's menu offers none while it is no activity
   const openTaskDiff: OpenDiff = (task, scope, checkpoint) => openDiff(task.item.itemId, scope, checkpoint);
