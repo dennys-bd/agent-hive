@@ -1,5 +1,5 @@
 import { ExternalLinkIcon, SearchIcon } from 'lucide-react';
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { repoName } from '../../pull-requests';
 import { displayBinding } from '../../shortcuts';
 import { resolveWorkspace } from '../../tasks';
@@ -158,12 +158,17 @@ function RepoTitle({ header }: { header: RepoHeader }) {
   );
 }
 
-// fluxo, the picked source or todas as sources, and the chips of the workspaces the shown tasks resolve to (#542)
-function FlowTitle({ state, source, tasks }: { state: State; source?: string; tasks: Task[] }) {
+/** What the header is for (#571): the tasks view, or a repository's lists and pages (the source mode joins in Task 5). */
+export type HeaderMode = { kind: 'tasks' } | { kind: 'repo'; header: RepoHeader };
+const TASKS_MODE: HeaderMode = { kind: 'tasks' };
+
+// fluxo, the picked source or todas as sources, the display slot, and the chips of the workspaces the shown tasks resolve to (#542)
+function FlowTitle({ state, source, tasks, display }: { state: State; source?: string; tasks: Task[]; display?: ReactNode }) {
   return (
     <>
       <span className="font-semibold text-[13px] text-foreground">{t('header.flow')}</span>
       <span>{source ?? t('flow.allSources')}</span>
+      {display}
       {shownWorkspaces(tasks, state).map((name) => (
         <span key={name} className="flex items-center gap-1.5 rounded-[4px] border px-1.5 py-0.5">
           <WorkspaceSquare name={name} />
@@ -189,7 +194,8 @@ interface FlowHeaderProps {
   isShown?: boolean;
   tabs?: SourceTabs; // #756: an external source is picked: the source header
   onRefresh?(): Promise<unknown>; // #756: what atualizar runs instead of polling every source (the native view reads itself again); never rejects
-  repository?: RepoHeader; // #757: a repository is picked: the repository header
+  mode?: HeaderMode; // #571: tasks (default) or a repository (#757, the repository header)
+  display?: ReactNode; // #571: the tasks mode's display control, right after the legend; nothing passes it until 2.5 (decision 12)
   back?: BackLink; // #911, #380: the way back to the last flow; only the issue and PR pages pass it
   github?: string; // #352: the GitHub page of what the center shows; only the repository views and the issue/PR pages pass it
   loops?: boolean; onLoops?(): void; // #909: the flowchart's ↺ voltas; only Flow passes them, so the native tab and the repository headers never show it
@@ -199,11 +205,11 @@ interface FlowHeaderProps {
 /** The flow's header (redesign 10, #542): fluxo, the picked source or todas as sources, the chips of the workspaces the shown tasks resolve
  * to, ⑂ tree with `onTree` (#34), ↺ voltas with `onLoops` (#909), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does. `tasks`: the source pick's.
  * With `tabs` it is the source header instead (#756, handoff 01), on both tabs, with no chips and no last poll; with
- * `repository` the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. With `github` (#352), GitHub ↗ sits right before atualizar. It renders in the window header's center column (#295, HeaderSlot),
+ * `mode` repo the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. With `github` (#352), GitHub ↗ sits right before atualizar. It renders in the window header's center column (#295, HeaderSlot),
  * the header's 44px and border its own. */
-export function FlowHeader({ state, source, tasks, search, onSearch, isShown = true, tabs, onRefresh, repository, back, github, loops = true, onLoops, tree = false, onTree }: FlowHeaderProps) {
+export function FlowHeader({ state, source, tasks, search, onSearch, isShown = true, tabs, onRefresh, mode = TASKS_MODE, display, back, github, loops = true, onLoops, tree = false, onTree }: FlowHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const isOwn = tabs !== undefined || repository !== undefined;
+  const isOwn = tabs !== undefined || mode.kind === 'repo';
   const polled = isOwn ? undefined : lastPolled(state.syncs, source);
   const refresh = (): void => {
     setIsRefreshing(true);
@@ -216,9 +222,9 @@ export function FlowHeader({ state, source, tasks, search, onSearch, isShown = t
     refreshKey.current = refresh;
   });
   useEffect(() => (isShown ? onShortcutKey([[true, 'refreshFlow']], () => refreshKey.current()) : undefined), [isShown]);
-  const title = repository
-    ? <RepoTitle header={repository} />
-    : tabs ? <SourceTitle name={source ?? ''} tabs={tabs} /> : <FlowTitle state={state} source={source} tasks={tasks} />;
+  const title = mode.kind === 'repo'
+    ? <RepoTitle header={mode.header} />
+    : tabs ? <SourceTitle name={source ?? ''} tabs={tabs} /> : <FlowTitle state={state} source={source} tasks={tasks} display={display} />;
   return (
     <HeaderSlot>
     <section aria-label={t('header.flow')} className={`flex h-full min-w-0 flex-1 items-center gap-2.5 px-3.5 text-muted-foreground text-xs ${NO_DRAG_CONTROLS}`}>
@@ -235,9 +241,9 @@ export function FlowHeader({ state, source, tasks, search, onSearch, isShown = t
           {t('flow.loops')}
         </Button>
       )}
-      {onSearch && <SearchField label={t(repository ? 'repos.search' : 'flow.search')} value={search ?? ''} isShown={isShown} isNarrow={isOwn} onChange={onSearch} />}
+      {onSearch && <SearchField label={t(mode.kind === 'repo' ? 'repos.search' : 'flow.search')} value={search ?? ''} isShown={isShown} isNarrow={isOwn} onChange={onSearch} />}
       {polled !== undefined && <span>{t('flow.updated', { time: polled })}</span>}
-      {github !== undefined && <GithubButton url={github} />}
+      {github !== undefined && isOwn && <GithubButton url={github} />}
       <Button type="button" variant="outline" size="xs" disabled={isRefreshing} onClick={refresh}>
         {t('flow.refresh')}<ButtonKeyHint id="refreshFlow" />
       </Button>

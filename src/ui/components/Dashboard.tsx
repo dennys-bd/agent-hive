@@ -207,7 +207,7 @@ interface RepoCenterArgs { state: State; picks: SourcePick; repo: RepoSummary; g
 function repoCenter({ state, picks, repo, goTo, onOpenIssue, onOpenPr, back }: RepoCenterArgs): ReactNode {
   const heading: RepoHeader = { summary: repo, tab: picks.repoTab, onTab: picks.onRepoTab, onRepository: picks.pickRepository };
   // #911: a page's header carries the way back, never a list's; #352: the page names its own GitHub URL
-  const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} tasks={[]} repository={heading} onRefresh={reload} back={back} github={github} />;
+  const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} tasks={[]} mode={{ kind: 'repo', header: heading }} onRefresh={reload} back={back} github={github} />;
   const { issue, pr } = picks;
   // #69: the merge goes back as the header's button does, to the last flow (#380)
   if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={goTo} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} onMerged={back?.onBack} />;

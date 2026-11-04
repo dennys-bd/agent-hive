@@ -147,7 +147,7 @@ test('with a repository the header shows its workspace square, its name, its wor
   const user = userEvent.setup();
   const onTab = vi.fn();
   const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
-  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} repository={{ summary, tab: 'prs', onTab }} />);
+  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'prs', onTab } }} />);
   expect(within(header()).getByText('web')).toHaveAttribute('title', 'acme/web');
   expect(within(header()).getByText('workspace site')).toBeInTheDocument();
   expect(chips()).toEqual([]);
@@ -283,7 +283,7 @@ test('with github, GitHub sits right before atualizar, titled abrir no GitHub, i
   const open = vi.spyOn(window, 'open').mockReturnValue(null);
   onTestFinished(() => open.mockRestore());
   const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
-  const page = (github?: string) => <FlowHeader state={state(tasks)} tasks={[]} search="" onSearch={vi.fn()} repository={{ summary, tab: 'issues', onTab: vi.fn() }} github={github} />;
+  const page = (github?: string) => <FlowHeader state={state(tasks)} tasks={[]} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'issues', onTab: vi.fn() } }} github={github} />;
   const { rerender } = render(page());
   expect(within(header()).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
   rerender(page('https://github.com/acme/web/issues'));
@@ -297,4 +297,12 @@ test('with github, GitHub sits right before atualizar, titled abrir no GitHub, i
   setLanguage('en');
   rerender(page('https://github.com/acme/web/issues'));
   expect(within(screen.getByRole('region', { name: 'tasks' })).getByRole('button', { name: 'GitHub' })).toHaveAttribute('title', 'open on GitHub');
+});
+
+test('in the tasks mode the display slot sits right after the sources legend; GitHub never shows there, even when passed (#571)', () => {
+  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} display={<button type="button">exibir</button>} github="https://github.com/acme" />);
+  expect(within(header()).getByText('tarefas', { selector: 'span' })).toHaveClass('font-semibold');
+  expect(within(header()).getByText('todas as sources').nextElementSibling).toBe(within(header()).getByRole('button', { name: 'exibir' }));
+  expect(within(header()).getByRole('textbox', { name: 'buscar tarefas' })).toBeInTheDocument();
+  expect(within(header()).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
 });
