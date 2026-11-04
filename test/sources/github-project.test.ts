@@ -195,7 +195,7 @@ test('project reads each issue\'s blocked-by relations, open and closed: a short
 
 test('with a store, project answers the stored listing and fields with no call; nothing stored yet, or fresh, reads in full first (#282)', async () => {
   const { db } = await openReadModel(':memory:');
-  const items: ItemStore = { db, source: async () => ROWS, notify: () => undefined };
+  const items: ItemStore = { db, source: async () => ROWS, notify: () => undefined, refetch: async () => 'skipped' as const };
   const probe = { rateLimit: null, repositoryOwner: { projectV2: { updatedAt: T1 } } };
   const { gql, calls } = fakeGql({
     fields: FIELDS, probe, items: [page([itemNode(1, 'Ready')]), page([itemNode(1, 'In review', T2)])], relations: { i0: { issue: { blocking: { nodes: [] } } } },

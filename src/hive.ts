@@ -87,6 +87,9 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
   }
 }
 
+// #282, #567: a boot adapter's write answer and its refetch reach the server, which exists only after the boot adapters
+type Relay = Pick<ItemStore, 'notify' | 'refetch'>;
+
 async function bootMode(home: string, log: Logger, language: Language, deps: BootDeps, raw: unknown, readModel: ReadModel | undefined): Promise<BootedHive> {
   if (raw === undefined) return bootSetupMode(home, log, language, deps, readModel);
   const parsed = parseOrFallback(raw, log);
@@ -94,8 +97,8 @@ async function bootMode(home: string, log: Logger, language: Language, deps: Boo
   const { config } = parsed;
   log.setLevel(config.logLevel);
   // #282: a boot adapter's write answer names its issue row's repository to the open views, through the server once it exists
-  const relay: { notify: ItemStore['notify'] } = { notify: () => undefined };
-  const items = readModel && bootItemStore(readModel, config, log, deps.ghToken, (repository, kinds) => relay.notify(repository, kinds));
+  const relay: Relay = { notify: () => undefined, refetch: async () => 'skipped' };
+  const items = readModel && bootItemStore(readModel, config, log, deps.ghToken, relay);
   // A test injects a source that needs no gh (#740); the daemon builds the real adapters
   const build: SourceFactory = deps.sourceFactory ?? ((spec, store) => createSource(spec, { log, ghToken: deps.ghToken, ...(store === undefined ? {} : { items: store }) }));
   const sources = createSources(config, (spec) => build(spec, items));
@@ -127,10 +130,14 @@ async function openModel(home: string, log: Logger): Promise<ReadModel | undefin
 }
 
 // The boot adapters' store (#190): rows under the login auth.github reads with, as the server's own store has them. A Settings save that
-// changes auth builds new adapters through the server's factory. notify: the server's readModel event, relayed (#282)
+// changes auth builds new adapters through the server's factory. notify: the server's readModel event, relayed (#282); refetch: the read
+// loop's, relayed the same way (#567)
 // ponytail: one accessFor per poll: in cli mode a stat of gh's hosts.yml, no process (#503)
-function bootItemStore(db: ReadModel, config: Config, log: Logger, ghToken: GhToken, notify: ItemStore['notify']): ItemStore {
-  return { db, source: async () => (await accessFor(config.auth?.github ?? 'cli', { ghToken, log }))?.source, notify };
+function bootItemStore(db: ReadModel, config: Config, log: Logger, ghToken: GhToken, relay: Relay): ItemStore {
+  return {
+    db, source: async () => (await accessFor(config.auth?.github ?? 'cli', { ghToken, log }))?.source,
+    notify: (repository, kinds) => relay.notify(repository, kinds), refetch: (repository, number) => relay.refetch(repository, number),
+  };
 }
 
 // #191: what every source's read model holds, read with no network call before the first rule runs, so the lean tasks state.json loaded
@@ -148,7 +155,7 @@ async function storedItems(sources: ReadonlyMap<string, Source>, log: Logger): P
 }
 
 async function bootHiveMode(
-  home: string, log: Logger, language: Language, deps: BootDeps, config: Config, sources: Map<string, Source>, readModel: ReadModel | undefined, relay: { notify: ItemStore['notify'] },
+  home: string, log: Logger, language: Language, deps: BootDeps, config: Config, sources: Map<string, Source>, readModel: ReadModel | undefined, relay: Relay,
 ): Promise<BootedHive> {
   const names = config.comb.workspaces.map((p) => p.name).join(',');
   log.info(`boot home=${home} workspaces=${names} mode=hive`);
@@ -161,6 +168,7 @@ async function bootHiveMode(
   const state = runMode?.marker.frozen === true ? frozenState(saved) : saved; // #475: an ended run's Hive starts nothing
   const server = createServer({ home, runtime: { config, sources }, state, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }), ...(runMode === undefined ? {} : { runMode }) });
   relay.notify = (repository: string, kinds: SyncKind[]): void => server.notifyReadModel(repository, kinds);
+  relay.refetch = (repository: string, number: number) => server.refetchIssue(repository, number);
   const port = await listenAndRecord(server, home, deps.secret);
   await server.boot(saved); // strays and the boot reducer: the same order as the first POST /settings
   await server.poll();

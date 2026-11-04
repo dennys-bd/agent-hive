@@ -17,7 +17,7 @@ const task = (n: number): SourceItem => ({ item: { itemId: `PVTI_${n}`, id: Stri
 // A sync with every edge recorded: the probe answers `stamps` in order and repeats the last; the clock is the test's
 async function harness(stamps: string[], extra: Partial<ItemsSyncDeps> = {}, source: () => Promise<string | undefined> = async () => SOURCE) {
   const { db } = await openReadModel(':memory:');
-  const store: ItemStore = { db, source, notify: () => undefined };
+  const store: ItemStore = { db, source, notify: () => undefined, refetch: async () => 'skipped' as const };
   const clock = { now: 0 };
   const calls: string[] = [];
   const queue = [...stamps];

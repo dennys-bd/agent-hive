@@ -271,7 +271,7 @@ test('a field write\'s re-read node reaches answer before writeItemField resolve
 
 test('fieldsOf answers from the read model with no call once it holds the item and its repository\'s options; before that, and when asked fresh, it reads ITEM_FIELDS (#282)', async () => {
   const { db } = await openReadModel(':memory:');
-  const items: ItemStore = { db, source: async () => ROWS, notify: () => undefined };
+  const items: ItemStore = { db, source: async () => ROWS, notify: () => undefined, refetch: async () => 'skipped' as const };
   const node: GhItemFieldsNode = { ...itemNode(12, 'Ready'), project: { id: 'PVT_1', fields: { nodes: FIELDS } } };
   const calls: string[] = [];
   const gql: Gql = async (query) => {

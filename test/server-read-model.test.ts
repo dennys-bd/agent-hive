@@ -8,7 +8,8 @@ import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, wo
 import { hiveFetch, SECRET } from './secret-client.js';
 import { join } from 'node:path';
 import { openReadModel, READ_MODEL_FILE } from '../src/read-model/db.js';
-import { REPO, REPO_ROW } from './read-model/fixtures.js';
+import { NO_GQL, NO_REST, REPO, REPO_ROW } from './read-model/fixtures.js';
+import type { ReadAccess } from '../src/read-model/access.js';
 import type { ItemStore } from '../src/read-model/items.js';
 import { tempDir } from './temp-dir.js';
 
@@ -54,4 +55,27 @@ test('a Settings save builds the GitHub adapters with the item store: the daemon
   assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY })).status, 200);
   assert.equal(stores[0]?.db, db);
   assert.equal(await stores[0]?.source(), 'github:github.com:bia');
+});
+
+test('the item store and HiveServer.refetchIssue refetch through the read loop; without a read model the server answers skipped (#567)', async (t: TestContext) => {
+  const { db } = await openReadModel(join(await tempDir(t, 'read-model-'), READ_MODEL_FILE)); // the server's close() closes it
+  const { home, repo } = await tempHive(t);
+  const fake = fakeSourceFactory();
+  const stores: (ItemStore | undefined)[] = [];
+  const sourceFactory: SourceFactory = (spec, items) => {
+    stores.push(items);
+    return fake.factory(spec);
+  };
+  // Every read GitHub would answer fails, so the loop's refetch answers failed: only the loop says that, never a store of its own
+  const failing: ReadAccess = { source: 'github:github.com:bia', rest: NO_REST, gql: NO_GQL };
+  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: fakeSpawn().spawn, exec, readModel: db, ghToken, readAccess: async () => failing });
+  const base = `http://127.0.0.1:${await server.listen(0)}`;
+  t.after(() => server.close());
+  assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY })).status, 200);
+  assert.equal(await stores[0]?.refetch(REPO, 12), 'failed');
+  assert.equal(await server.refetchIssue(REPO, 13), 'failed', 'another number: the cooldown answers skipped for 12');
+
+  const bare = createServer({ secret: SECRET, home: (await tempHive(t)).home, sourceFactory: fake.factory, launchPty: fakeSpawn().spawn, exec, ghToken });
+  t.after(() => bare.close());
+  assert.equal(await bare.refetchIssue(REPO, 12), 'skipped');
 });
