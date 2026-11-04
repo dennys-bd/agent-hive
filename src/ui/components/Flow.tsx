@@ -11,7 +11,7 @@ import { useIsFlowShown } from '@/components/MainDock';
 import { StageFilterDialog, useStageFilters } from '@/components/StageFilter';
 import type { Dragging } from '@/components/task-drag';
 import { MenuBoundaryContext } from '@/components/TaskMenu';
-import { useFlowView } from '@/hooks/use-flow-view';
+import { type DisplayControls, useFlowView } from '@/hooks/use-flow-view';
 import { useTreeFocus } from '@/hooks/use-tree-focus';
 import { t } from '@/i18n';
 import { matchesSearch } from '@/lib/flow-search';
@@ -19,7 +19,7 @@ import { visibleUnderFilter } from '@/lib/stage-filters';
 import { focusTrail } from '@/lib/tree-focus';
 import { hasTree } from '@/lib/tree-groups';
 
-interface FlowProps { state: State; flow: FlowConfig; selectedId?: string; onOpen?(taskId: string): void; stageCaps?: Record<string, number> } // flow: the one drawn (#571); selectedId: the detail panel's task (#542); stageCaps: the effective caps, which a node shows as n/cap (#727)
+interface FlowProps { state: State; flow: FlowConfig; selectedId?: string; onOpen?(taskId: string): void; stageCaps?: Record<string, number>; display?: DisplayControls } // display: Center's one value (#574); absent (a test harness): the stored options, nothing to change them; flow: the one drawn (#571); selectedId: the detail panel's task (#542); stageCaps: the effective caps, which a node shows as n/cap (#727)
 
 /** What a stage shows (#374, #542): its tasks in the Hive's order, those the view filter lets through, and
  * those the search lets through after it. */
@@ -34,7 +34,7 @@ export function stageTasks(state: State, stage: string, rules: FilterRule[], sea
  * list panel over its right. Drag a task to reorder or, for a task canMoveToStage allows, onto another node (#366, #708); the ⋯ offers the
  * source's order back and the stage's view filter (#374). A parent's focus › dims all but its subtree, with a trail to climb back and leave
  * (#35). The canvas is the task menus' collision boundary. */
-export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps }: FlowProps) {
+export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, display }: FlowProps) {
   const drag = useRef<Dragging | undefined>(undefined);
   const filters = useStageFilters(state.stages.map((s) => s.name));
   const [editing, setEditing] = useState<string>(); // the stage whose filter dialog is open (#374)
@@ -49,9 +49,10 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps }: Flow
   const [search, setSearch] = useState(''); // session-only: it survives a view switch on purpose, the flow stays mounted under Atividades (#596), and clears on an app reload (#542)
   const isShown = useIsFlowShown();
   const chart = useFlowView(isShown, drawn.name); // the flowchart's view (#909, #910, #571): loops and the drawn flow's canvas, kept in flowView
-  const isDrawingLoops = chart.view.loops === 'all'; // #574 decision 5: until 3.1 only todas draws
   const inFlow = new Set(drawn.stages.map((s) => s.name));
-  const isTree = chart.view.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
+  const options = display?.options ?? chart.view;
+  const isDrawingLoops = options.loops === 'all'; // #574 decision 5: until 3.1 inner draws as none
+  const isTree = options.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
   const { itemId: focused, focus, focusOn, leave } = useTreeFocus(state.tasks, drawn.name, isShown); // #35: the focus on a subtree, never in flowView
   const shown = state.tasks.filter((c) => c.stage !== undefined && inFlow.has(c.stage)); // #566: a task outside the flow is on no flowchart
   const of = (stage: string) => stageTasks(state, stage, filters.rulesOf(stage), search);
@@ -70,7 +71,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps }: Flow
   const listedTasks = listedStage && of(listedStage.name);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} loops={isDrawingLoops} onLoops={chart.toggleLoops} tree={isTree} onTree={() => chart.toggleTree(isTree)} />
+      <FlowHeader state={state} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} loops={isDrawingLoops} onLoops={display && (() => display.set({ loops: isDrawingLoops ? 'none' : 'all' }))} tree={isTree} onTree={display && (() => display.set({ tree: !isTree }))} />
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 import { Flow } from '@/components/Flow';
+import { readFlowView } from '@/lib/flow-view';
 import { FlowShownContext } from '@/components/MainDock';
 import { setLanguage, t } from '@/i18n';
 import { MARGIN } from '@/lib/flow-layout';
@@ -10,6 +11,7 @@ import type { ActivityRecord, BaseOptions, Item, Session, Stage, Transition, Wor
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { DisplayedFlow } from './displayed-flow.js';
 import { firstFlow } from './flow-of.js';
 
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }, { name: 'review', from: { board: ['In review'] } }];
@@ -400,7 +402,7 @@ test('↺ voltas hides every arrow with its pill, the row falling to the margin,
   resetViewState();
   onTestFinished(() => resetViewState()); // drops the pending post
   const user = userEvent.setup();
-  render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} flow={firstFlow({ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED })} />);
+  render(<DisplayedFlow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} flow={firstFlow({ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED })} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   const row = (): string => canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.parentElement!.style.top;
   const loops = screen.getByRole('button', { name: '↺ voltas' });
@@ -412,16 +414,16 @@ test('↺ voltas hides every arrow with its pill, the row falling to the margin,
   expect(kinds(canvas)).toEqual([]);
   for (const pill of ['falhou · 3x', 'feedback']) expect(within(canvas).queryByText(pill)).not.toBeInTheDocument();
   expect(row()).toBe(`${MARGIN}px`);
-  expect(readView('flowView')).toEqual(storedView({ loops: 'none' }));
+  expect(readFlowView().loops).toBe('none');
   await user.click(loops);
   expect(kinds(canvas)).toEqual(['forward', 'above', 'loop', 'above']);
-  expect(readView('flowView')).toEqual(storedView());
+  expect(readFlowView().loops).toBe('all');
 });
 
 test('a stored flowView with loops off draws the flow without them on the first render, the button not pressed: the reload case (#909)', () => {
   resetViewState({ flowView: { loops: false, zoom: 1, pan: { x: 0, y: 0 } } });
   onTestFinished(() => resetViewState());
-  render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} flow={firstFlow({ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED })} />);
+  render(<DisplayedFlow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} flow={firstFlow({ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED })} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(screen.getByRole('button', { name: '↺ voltas' })).toHaveAttribute('aria-pressed', 'false');
   expect(kinds(canvas)).toEqual([]);
@@ -835,20 +837,20 @@ test('⑂ árvore starts on with a tree in the list and off without one; a click
   resetViewState();
   onTestFinished(() => resetViewState()); // drops the pending post
   const user = userEvent.setup();
-  const { unmount } = render(<Flow state={state([task('1', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev')], [worker('s1')]))} />);
+  const { unmount } = render(<DisplayedFlow state={state([task('1', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev')], [worker('s1')]))} />);
   expect(treeToggle()).toHaveAttribute('aria-pressed', 'false');
   expect(treeToggle()).toHaveAttribute('title', 'agrupar por árvore');
   unmount();
-  const { unmount: unmountTree } = render(<Flow state={forest()} flow={firstFlow(forest())} />);
+  const { unmount: unmountTree } = render(<DisplayedFlow state={forest()} flow={firstFlow(forest())} />);
   expect(treeToggle()).toHaveAttribute('aria-pressed', 'true');
   expect(within(nodeOf('dev')).getByText('⑂ #1 Task 1')).toBeInTheDocument();
   expect(within(nodeOf('review')).getByText('⑂ #1 Task 1')).toBeInTheDocument(); // the root sits in dev; review's group still names it
   expect(within(nodeOf('dev')).getByText('sem árvore')).toBeInTheDocument();
   await user.click(treeToggle());
   expect(within(nodeOf('dev')).queryByText('⑂ #1 Task 1')).not.toBeInTheDocument();
-  expect(readView('flowView')).toEqual(storedView({ tree: false }));
+  expect(readFlowView().tree).toBe(false);
   unmountTree();
-  render(<Flow state={forest()} flow={firstFlow(forest())} />);
+  render(<DisplayedFlow state={forest()} flow={firstFlow(forest())} />);
   expect(treeToggle()).toHaveAttribute('aria-pressed', 'false');
   expect(screen.queryByText('sem árvore')).not.toBeInTheDocument();
 });

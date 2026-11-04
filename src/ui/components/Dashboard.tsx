@@ -33,6 +33,7 @@ import { RepoIssueTable } from '@/components/RepoIssueTable';
 import { RepoPrTable } from '@/components/RepoPrTable';
 import { t } from '@/i18n';
 import { consoleRunsOf, useConsoleChannels } from '@/hooks/use-console';
+import { useDisplayOptions } from '@/hooks/use-flow-view';
 import { useRepositories } from '@/hooks/use-repositories';
 import { centerOfPick, centerOfRepo, type TasksCenter, type TasksNav, useTasksCenter } from '@/hooks/use-tasks-center';
 import { FONT_FAMILY } from '@/lib/xterm-setup';
@@ -100,10 +101,11 @@ function TasksSoon({ state }: { state: State }) {
 
 // The center under Tarefas (#571): what the resolved TasksCenter names. Flow is the same element across flows, so a switch keeps it mounted (decision 9)
 function Center({ state, selected, nav, repositories, onSelect, stageCaps }: CenterProps) {
+  const display = useDisplayOptions(); // #574 decision 13: one owner for Flow and the placeholders
   const { center, repo, source } = nav;
   if (center.kind === 'repo' && repo) return repoCenter(state, nav, repo, center);
   if (center.kind === 'source' && source) return sourceCenter(state, nav, source, repositories, center.issue);
-  if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} />;
+  if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} display={display} />;
   return <TasksSoon state={state} />;
 }
 

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useFlowView } from '@/hooks/use-flow-view';
-import { CANVAS_DEFAULTS, DISPLAY_DEFAULTS, FLOW_VIEW_DEFAULTS, type FlowView, canvasOf, readFlowView, toggleOutline, writeFlowView } from '@/lib/flow-view';
+import { useDisplayOptions, useFlowView } from '@/hooks/use-flow-view';
+import { CANVAS_DEFAULTS, DISPLAY_DEFAULTS, FLOW_VIEW_DEFAULTS, type FlowView, canvasOf, readFlowView, shownOf, toggleOutline, withDisplay, withShown, writeFlowView } from '@/lib/flow-view';
 import { readView, resetViewState } from '@/lib/view-state';
 
 const readStored = (value: unknown) => {
@@ -67,23 +67,18 @@ test('a stored tree and outline are read back; a non-boolean tree reads as unset
   expect(readFlowView()).toEqual({ ...stored, outline: ['I3'] });
 });
 
-test('two flows keep their own zoom, pan and collapsed groups across a switch; loops and tree are shared (#571)', () => {
+test('two flows keep their own zoom, pan and collapsed groups across a switch (#571)', () => {
   resetViewState();
   const { result, rerender } = renderHook(({ flow }) => useFlowView(false, flow), { initialProps: { flow: 'build' } });
   act(() => result.current.zoomTo(1.2));
   act(() => result.current.onPan({ x: 40, y: 0 }));
   act(() => result.current.toggleGroup('dev\u0000I1'));
-  act(() => result.current.toggleLoops());
   rerender({ flow: 'ship' });
-  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, loops: 'none', outline: [], ...CANVAS_DEFAULTS });
+  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, outline: [], ...CANVAS_DEFAULTS });
   act(() => result.current.zoomTo(0.8));
-  act(() => result.current.toggleTree(false));
   rerender({ flow: 'build' });
-  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, loops: 'none', tree: true, outline: [], zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] });
-  expect(readFlowView()).toEqual({
-    ...DISPLAY_DEFAULTS, loops: 'none', tree: true, outline: [],
-    canvas: { build: { zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] }, ship: { ...CANVAS_DEFAULTS, zoom: 0.8 } },
-  });
+  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, outline: [], zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] });
+  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, canvas: { build: { zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] }, ship: { ...CANVAS_DEFAULTS, zoom: 0.8 } } });
 });
 
 test('two collapses before a re-render both stay: toggleGroup reads what was last written, not the render\'s view (#34)', () => {
@@ -98,13 +93,45 @@ test('two collapses before a re-render both stay: toggleGroup reads what was las
   expect(readFlowView().canvas.main.collapsed).toEqual(['dev\u0000I1', 'review\u0000I1']);
 });
 
-test('the flow\'s own writes keep an outline the details wrote after the hook mounted: a toggle through save and a scroll through onPan (#36)', () => {
+test('the flow\'s own writes keep an outline the details wrote after the hook mounted: a zoom through save and a scroll through onPan (#36)', () => {
   resetViewState();
   const { result } = renderHook(() => useFlowView(false, 'main'));
   toggleOutline('I1');
-  act(() => result.current.toggleLoops());
-  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, loops: 'none', outline: ['I1'], canvas: { main: CANVAS_DEFAULTS } });
+  act(() => result.current.zoomTo(1.2));
+  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, outline: ['I1'], canvas: { main: { ...CANVAS_DEFAULTS, zoom: 1.2 } } });
   toggleOutline('I2');
   act(() => result.current.onPan({ x: 5, y: 6 }));
-  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, loops: 'none', outline: ['I1', 'I2'], canvas: { main: { ...CANVAS_DEFAULTS, pan: { x: 5, y: 6 } } } });
+  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, outline: ['I1', 'I2'], canvas: { main: { ...CANVAS_DEFAULTS, zoom: 1.2, pan: { x: 5, y: 6 } } } });
+});
+
+test('withDisplay applies the patch and keeps the canvases and the outline; withShown takes only the canvas from what Flow shows (#574)', () => {
+  const stored: FlowView = { ...FLOW_VIEW_DEFAULTS, loops: 'none', outline: ['I1'], canvas: { build: GOOD } };
+  expect(withDisplay(stored, { sourcesOff: ['hive'], tree: false })).toEqual({ ...stored, sourcesOff: ['hive'], tree: false });
+  const shown = { ...shownOf(stored, 'ship'), loops: 'all' as const, labels: 'none' as const, tree: true, outline: [], zoom: 1.5 };
+  expect(withShown(stored, 'ship', shown)).toEqual({ ...stored, canvas: { build: GOOD, ship: { ...CANVAS_DEFAULTS, zoom: 1.5 } } });
+});
+
+test('useDisplayOptions writes only the display fields from the store, two sets in one act both stay, and a remount reads the choice back (#574)', () => {
+  resetViewState({ flowView: { outline: ['I1'], canvas: { build: GOOD } } });
+  const { result, unmount } = renderHook(() => useDisplayOptions());
+  expect(result.current.options).toEqual(DISPLAY_DEFAULTS);
+  act(() => {
+    result.current.set({ labels: 'outer' });
+    result.current.set({ epics: 'middle', tree: true });
+  });
+  const chosen = { ...DISPLAY_DEFAULTS, labels: 'outer', epics: 'middle', tree: true };
+  expect(result.current.options).toEqual(chosen);
+  expect(readFlowView()).toEqual({ ...chosen, outline: ['I1'], canvas: { build: GOOD } });
+  unmount();
+  expect(renderHook(() => useDisplayOptions()).result.current.options).toEqual(chosen);
+});
+
+test('a zoom and a scroll written after a display change keep it: useFlowView takes the display fields from the store, never its own copy (#574)', () => {
+  resetViewState();
+  const chart = renderHook(() => useFlowView(false, 'main'));
+  const display = renderHook(() => useDisplayOptions());
+  act(() => display.result.current.set({ loops: 'inner', sourcesOff: ['roadmap'] }));
+  act(() => chart.result.current.zoomTo(1.2));
+  act(() => chart.result.current.onPan({ x: 5, y: 6 }));
+  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, loops: 'inner', sourcesOff: ['roadmap'], canvas: { main: { ...CANVAS_DEFAULTS, zoom: 1.2, pan: { x: 5, y: 6 } } } });
 });

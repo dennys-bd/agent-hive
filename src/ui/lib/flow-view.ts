@@ -83,10 +83,18 @@ export function shownOf(view: FlowView, flow: string): ShownFlowView {
   return { ...shared, ...canvasOf(view, flow) };
 }
 
-/** `stored` with the shared fields and `flow`'s canvas taken from `shown`; the outline and every other canvas stay as stored (#36, #571). */
+/** `stored` with only `flow`'s canvas taken from `shown`: the display fields (#574), the outline (#36) and the other canvases stay as stored. */
 export function withShown(stored: FlowView, flow: string, shown: ShownFlowView): FlowView {
-  const { outline: _outline, zoom, pan, collapsed, ...display } = shown;
-  return { ...display, outline: stored.outline, canvas: { ...stored.canvas, [flow]: { zoom, pan, collapsed } } };
+  const { zoom, pan, collapsed } = shown;
+  return { ...stored, canvas: { ...stored.canvas, [flow]: { zoom, pan, collapsed } } };
+}
+
+/** `stored` with the display patch (#574): the canvases and the outline as stored. */
+export const withDisplay = (stored: FlowView, patch: Partial<DisplayOptions>): FlowView => ({ ...stored, ...patch });
+
+export function displayOf(view: FlowView): DisplayOptions {
+  const { outline: _outline, canvas: _canvas, ...options } = view;
+  return options;
 }
 
 
