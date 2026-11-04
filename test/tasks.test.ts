@@ -871,3 +871,11 @@ test('a task outside the flow is never a candidate nor due for an action, and a 
   const tasks = [bareTask(ready), bareTask(task(3, DEV)), bareTask(task(4, DEV))];
   assert.equal(resetOrder(tasks, 'dev', ['item4', 'item3'], NO_RUNS)[0], tasks[0]);
 });
+
+test('a poll keeps a source task outside the flow in sync and never moves it into a stage: a column change updates boardColumn, title and body only (#566)', () => {
+  const { stage: _stage, ...outside } = task(1, DONE, { boardColumn: 'Done' });
+  const seen: SourceItem = { item: { ...item(1), title: 'Renamed', body: 'new body' }, column: 'Ready' };
+  const [after] = merge([outside], STAGES, [seen]);
+  assert.deepEqual([after.stage, after.boardColumn, after.item.title, after.item.body, after.enteredAt], [undefined, 'Ready', 'Renamed', 'new body', undefined]);
+  assert.equal(merge([task(1, DONE, { boardColumn: 'Done' })], STAGES, [seen])[0].stage, 'dev', 'the same move takes a task in the flow through dev\'s door');
+});
