@@ -57,7 +57,7 @@ const state = (tasks: WithWork[], s: Worker): State => withPointedWork({ signal:
 // window.hive as the preload exposes it (#192): the returned function delivers what main's window:select carries, inside act
 function stubBridge(): (selection: unknown) => void {
   let listener: (selection: unknown) => void = () => {};
-  vi.stubGlobal('hive', { chooseFolder: vi.fn(), focusDetached: vi.fn(async () => false), onDock: vi.fn(), onCloseKey: vi.fn(), settingsChanged: vi.fn(async () => {}), onSelect: (callback: (selection: unknown) => void) => { listener = callback; } });
+  vi.stubGlobal('hive', { chooseFolder: vi.fn(), focusTab: vi.fn(async () => false), onDock: vi.fn(), onCloseKey: vi.fn(), settingsChanged: vi.fn(async () => {}), onSelect: (callback: (selection: unknown) => void) => { listener = callback; } });
   return (selection) => { act(() => listener(selection)); };
 }
 

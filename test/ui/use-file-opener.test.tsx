@@ -39,3 +39,14 @@ test('a .hv.html opens in the design pane, any case, unless the click asks for t
     ['I1', 'design/Landing.hv.html', 'changes'], ['I1', 'design/Landing.hv.html', 'preview'], ['I1', 'design/page.html', 'file'],
   ]);
 });
+
+test('with focusOut a file whose tab is out raises its window and opens no tab, keyed as its tab would be; one no window holds opens (#554)', async () => {
+  const focusTab = vi.fn(async (_activity: string, key: string) => key === 'file:src/a.ts');
+  vi.stubGlobal('hive', { focusTab });
+  const open = vi.fn();
+  const { result } = renderHook(() => useFileOpener([tasked], open, { focusOut: true }));
+  expect(result.current('I1', 'src/a.ts')).toBe(true);
+  result.current('I1', '/w/hive-1/src/b.ts', undefined, { preview: true });
+  await waitFor(() => expect(open).toHaveBeenCalledWith('I1', 'src/b.ts', 'preview'));
+  expect([focusTab.mock.calls, open.mock.calls.length]).toEqual([[['I1', 'file:src/a.ts'], ['I1', 'preview:src/b.ts']], 1]);
+});

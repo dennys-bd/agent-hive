@@ -25,8 +25,8 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 
 test('right-click › abrir sessão livre… on any task: disabled on one being cleaned; enabled on a blocked one, where it opens the Start dialog on sessão livre; abrir sessão attaches the run POST /open answered (#283, #249, #491, redesign 11)', async () => {
   const user = userEvent.setup();
-  const focusDetached = vi.fn(async () => true);
-  vi.stubGlobal('hive', { focusDetached });
+  const focusTab = vi.fn(async () => true);
+  vi.stubGlobal('hive', { focusTab });
   const blocked = task({ worktree: '/wt/hive-1-task-1', item: { ...task().item, blockedBy: ['9'] } }); // a blocker holds the stage run only (#491)
   const { rerender } = render(<Flow state={state([task({ deleting: true })])} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
@@ -41,5 +41,5 @@ test('right-click › abrir sessão livre… on any task: disabled on one being 
   await waitFor(() => expect(open).toBeEnabled());
   await user.click(open);
   expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/open', expect.objectContaining({ body: JSON.stringify({ kind: 'claude' }) }));
-  await waitFor(() => expect(focusDetached).toHaveBeenCalledWith('W1'));
+  await waitFor(() => expect(focusTab).toHaveBeenCalledWith('I1', 'W1'));
 });

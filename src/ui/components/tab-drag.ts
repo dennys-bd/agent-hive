@@ -1,8 +1,4 @@
 import { type PointerEvent as ReactPointerEvent, useState } from 'react';
-import type { RunTab } from '@/components/terminal-tabs';
-
-/** A tab on its way to a window of its own (#252), only from the entry's menu (#440). */
-export type Detach = (tab: RunTab) => void;
 
 /** One session-list row for the drag math (#359): its tab's key and its own live getBoundingClientRect. */
 export interface DragRow { key: string; rect: DOMRect }

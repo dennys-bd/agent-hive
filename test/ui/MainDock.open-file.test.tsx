@@ -99,13 +99,17 @@ test('the page asks before it unloads while a buffer holds unsaved edits, and le
   expect(isHeld()).toBe(true);
 });
 
-test('a detached window\'s file link, forwarded by main, opens in its activity\'s editor pane at its line (#717)', async () => {
-  let forward: ((file: unknown) => void) | undefined;
-  vi.stubGlobal('hive', { onDock: () => {}, onCloseKey: () => () => {}, onOpenFile: (callback: (file: unknown) => void) => { forward = callback; return () => {}; } });
+test('window:dock with a file tab and its carry opens it in its activity\'s center, picked, holding the carried text, dirty; one for an activity not listed opens nothing (#554)', async () => {
+  let docked: (tab: unknown) => void = () => undefined;
+  vi.stubGlobal('hive', { onCloseKey: () => () => {}, onDock: (callback: (tab: unknown) => void) => { docked = callback; } });
+  const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   render(<Home />);
-  act(() => forward?.({ task: 'A', path: 'docs/spec.md', line: 4 }));
+  await act(async () => { docked({ activity: 'C', ref: { kind: 'file', path: 'docs/spec.md' } }); });
+  expect([screen.queryByRole('tab', { name: 'spec.md' }), error.mock.calls.length]).toEqual([null, 1]);
+  await act(async () => { docked({ activity: 'A', ref: { kind: 'file', path: 'docs/spec.md' }, carry: { text: 'mine\n', base: 'v1' } }); });
   expect(screen.getByRole('tab', { name: 'spec.md' })).toHaveAttribute('aria-selected', 'true');
-  await waitFor(() => expect(FakeEditor.all[0]?.position).toEqual({ lineNumber: 4, column: 1 }));
+  expect([models.isDirty(activityIdOf('A'), 'docs/spec.md'), models.textOf(activityIdOf('A'), 'docs/spec.md')]).toEqual([true, 'mine\n']);
+  error.mockRestore();
 });
 
 test('a file opened as a preview takes a preview tab of its own beside its editor tab, once (#697)', () => {

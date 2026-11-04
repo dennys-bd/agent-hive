@@ -118,3 +118,10 @@ test('the strip\'s back button on a dirty file docks it with its carry, and once
   expect(bridge.dock).toHaveBeenCalledWith({ activity: 'I1', ref: FILE, carry: expect.objectContaining(CARRY) });
   expect(models.baseOf(ID, 'src/a.ts')).toBeUndefined();
 });
+
+test('the strip\'s back button is disabled while the shown tab shares its buffer with another tab of the window (#554)', async () => {
+  mount();
+  await arrive(bridge, { activity: 'I1', ref: FILE });
+  await arrive(bridge, { activity: 'I1', ref: { kind: 'changes', path: 'src/a.ts' } });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Voltar para a janela principal' })).toBeDisabled());
+});

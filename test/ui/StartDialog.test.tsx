@@ -276,8 +276,8 @@ test('the base list shows no remote branch until a search surfaces it (#131)', a
 
 test('a sessão livre open that answers after the dialog closed attaches nothing: the task carries the session (#351)', async () => {
   const user = userEvent.setup();
-  const focusDetached = vi.fn(async () => true);
-  vi.stubGlobal('hive', { focusDetached });
+  const focusTab = vi.fn(async () => true);
+  vi.stubGlobal('hive', { focusTab });
   let answer: (res: Response) => void = () => undefined;
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -293,7 +293,7 @@ test('a sessão livre open that answers after the dialog closed attaches nothing
   expect(onClose).toHaveBeenCalledTimes(1);
   answer(reply({ ptyId: 'W1' }));
   await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(focusDetached).not.toHaveBeenCalled();
+  expect(focusTab).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 

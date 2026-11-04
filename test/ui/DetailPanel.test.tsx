@@ -214,20 +214,20 @@ test('each session a worker may resume gets abrir, which posts that session\'s r
 
 test('abrir attaches the run the route answered, no extra click on terminal: its detached window when it has one; no run, nothing (#249, #252)', async () => {
   const user = userEvent.setup();
-  const focusDetached = vi.fn(async () => true);
-  vi.stubGlobal('hive', { focusDetached });
+  const focusTab = vi.fn(async () => true);
+  vi.stubGlobal('hive', { focusTab });
   const listed = rec({ sessions: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-24T15:30:00.000Z', stages: ['spec'], agent: 'claude' as const, lastUsedAt: '2026-09-24T15:30:00.000Z' }] });
   fetchMock.mockImplementationOnce(async () => reply({ ok: true, ptyId: 'W1' }));
   const { unmount } = render(<Panel state={movedWork({ ...IDLE, activityRecords: listed })} initial={TASK} />);
   await user.click(screen.getByRole('button', { name: 'abrir' }));
-  await waitFor(() => expect(focusDetached).toHaveBeenCalledWith('W1'));
+  await waitFor(() => expect(focusTab).toHaveBeenCalledWith('I1', 'W1'));
   unmount();
-  focusDetached.mockClear();
+  focusTab.mockClear();
   fetchMock.mockImplementationOnce(async () => reply({ ok: true }));
   render(<Panel state={movedWork({ ...IDLE, activityRecords: listed })} initial={TASK} />);
   await user.click(screen.getByRole('button', { name: 'abrir' }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/activities/a-I1/sessions/${listed[0].sessions[0].id}/open`, posted({})));
-  expect(focusDetached).not.toHaveBeenCalled();
+  expect(focusTab).not.toHaveBeenCalled();
 });
 
 test('the PR row lists every PR of the task, oldest first: #<n> linking to it and its state; sem PR without one (#207, redesign 06)', () => {

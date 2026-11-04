@@ -21,6 +21,7 @@ import * as models from '@/lib/editor-models';
 
 interface ActivityCenterProps { activity: Activity; layout?: CenterLayout; ops: CenterOps; fileLinks: boolean; fontFamily: string; pane?: PaneContext;
   onDock?(item: CenterTabRef): void; // a detached window's dock (#553): its tab menu's Voltar para a janela principal
+  onMove?(item: CenterTabRef): void; // the main window's move (#554): its tab menu's Mover para uma janela
   onOpenRun(ptyId: string): void; // #759: what the home's rows open, as the sidebar's lines open them
 }
 
@@ -31,6 +32,8 @@ interface Shared {
   onWake(ptyId: string): void; // a sleeping tab's or pane's click (#672)
   onClose(item: CenterTabRef): void; // a tab's close, through the unsaved-edits confirm (#717)
   onDock?(item: CenterTabRef): void; // a detached window's dock (#553)
+  onMove?(item: CenterTabRef): void; // the main window's move (#554)
+  isShared(item: CenterTabRef): boolean; // #554: another tab shows its buffer, so it moves to no window and back from none
 }
 
 // A child's key: its group's id, or a split's first group's, so a node keeps its element while the tree around it changes
@@ -97,7 +100,7 @@ function useCloseKey(activity: Activity, layout: CenterLayout | undefined, ops: 
  * side and one above the other by the tab menu or a drag, each group a tab strip over its tabs' views (runs' terminals and the task's diffs).
  * With no tab left, the strip keeps only its + over the activity's home (#759). A run's terminal is an attach of its own, so the Terminal panel may show the same run at
  * once. A tab moved to another group remounts there, still one attach per run in the layout. */
-export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFamily, pane = NO_CONTEXT, onDock, onOpenRun }: ActivityCenterProps) {
+export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFamily, pane = NO_CONTEXT, onDock, onMove, onOpenRun }: ActivityCenterProps) {
   const activity = withRestored(given, layout); // #696: the sleeping tabs a restart left
   const latest = useRef({ ops, activity });
   useEffect(() => {
@@ -132,7 +135,7 @@ export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFa
       <div data-center-root className="flex min-h-0 min-w-0 flex-1">
         <NodeView
           node={layout.root} path={[]}
-          shared={{ activity, groups: groupsOf(layout.root), focused: layout.focused, ops, drag, fileLinks, fontFamily, pane, onSplit, onExit, onWake, onClose: closer.close, onDock }}
+          shared={{ activity, groups: groupsOf(layout.root), focused: layout.focused, ops, drag, fileLinks, fontFamily, pane, onSplit, onExit, onWake, onClose: closer.close, onDock, onMove, isShared: (item) => sharesBuffer(layout, item) }}
         />
       </div>
     );
