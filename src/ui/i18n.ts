@@ -337,6 +337,12 @@ const en = {
   'console.close': 'close the console',
   'console.resize': 'resize the console',
   'console.tab.console': 'console', 'console.tab.problems': 'problems', // #225: the drawer's segmented control
+  'takeToFlow.title': 'Take to flow', // #579
+  'takeToFlow.flow': 'flow',
+  'takeToFlow.stage': 'stage',
+  'takeToFlow.entry': 'entry',
+  'takeToFlow.note': 'the activity and the worktree stay. with auto on, the worker drives from this stage.',
+  'takeToFlow.confirm': 'take to flow',
   'start.newTitle': 'New activity', // redesign 11: the Start dialog
   'start.title': 'Start #{id}',
   'start.subtitle': '{title} · stage {stage}',
@@ -3345,6 +3351,12 @@ const pt: Record<MessageKey, string> = {
   'console.close': 'fechar o console',
   'console.tab.console': 'console', 'console.tab.problems': 'problemas',
   'console.resize': 'redimensionar o console',
+  'takeToFlow.title': 'Levar ao fluxo', // #579
+  'takeToFlow.flow': 'fluxo',
+  'takeToFlow.stage': 'etapa',
+  'takeToFlow.entry': 'entrada',
+  'takeToFlow.note': 'a atividade e a worktree continuam. com auto ligado, o worker conduz a partir desta etapa.',
+  'takeToFlow.confirm': 'levar ao fluxo',
   'start.newTitle': 'Nova atividade', // redesign 11: the Start dialog
   'start.title': 'Iniciar #{id}',
   'start.subtitle': '{title} · etapa {stage}',
