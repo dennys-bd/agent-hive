@@ -57,10 +57,10 @@ export function prCorrelation(state: State, url: string): Correlation {
   return task ? correlationOf(state, undefined, task) : {};
 }
 
-// Who moved a task: by hand, an approval, a merge (reserved), a delete-activity stage's action ending, the source poll (its column changed
+// Who moved a task: by hand (a move-to, or a leave-flow out of the flow, #566), an approval, a merge (reserved), a delete-activity stage's action ending, the source poll (its column changed
 // in the source); any other event is the flow itself (hive_done and its Stop)
 const MOVED_BY: Partial<Record<HiveEvent['type'], MoveBy>> = {
-  moveToStage: 'hand', approve: 'approval', prStates: 'merge', activityDeleted: 'on_finish', activityRemoved: 'on_finish', stageCommandEnded: 'on_finish', ciRead: 'on_finish', poll: 'source', // #755: a passed commands stage; #834: a passed wait
+  moveToStage: 'hand', leaveFlow: 'hand', approve: 'approval', prStates: 'merge', activityDeleted: 'on_finish', activityRemoved: 'on_finish', stageCommandEnded: 'on_finish', ciRead: 'on_finish', poll: 'source', // #755: a passed commands stage; #834: a passed wait
   stageCommandsRefused: 'on_finish', ciFailed: 'on_finish', ciClock: 'on_finish', evaluateEnded: 'on_finish', // #877: a passed or routed evaluation; #134: a routed failure moves the task
 };
 const BY_HAND: readonly HiveEvent['type'][] = ['closeTask', 'closeMissing', 'taskDeleted'];
