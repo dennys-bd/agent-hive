@@ -6,12 +6,12 @@ import type { Flow, Stage, StageAction, Task } from '../../../types';
 import { takeToFlow } from './flow-actions.js';
 
 // A task is taken to a stage a person drives; the end of a flow runs by itself, so those stages are shown but never offered (#579)
-const AUTOMATIC: readonly StageAction[] = ['commands', 'waitForCi', 'evaluate', 'deleteActivity'];
+const AUTOMATIC: ReadonlySet<StageAction | undefined> = new Set<StageAction>(['commands', 'waitForCi', 'evaluate', 'deleteActivity']);
 
 /** The stages to pick from and the run of automatic ones at the end of the flow, folded into one row. */
 function split(stages: readonly Stage[]): { pickable: Stage[]; folded: Stage[] } {
   let cut = stages.length;
-  while (cut > 0 && stages[cut - 1].action !== undefined && AUTOMATIC.includes(stages[cut - 1].action as StageAction)) cut -= 1;
+  while (cut > 0 && AUTOMATIC.has(stages[cut - 1].action)) cut -= 1;
   return { pickable: stages.slice(0, cut), folded: stages.slice(cut) };
 }
 
@@ -27,7 +27,8 @@ export function TakeToFlowDialog({ task, flows, open, onOpenChange }: Props) {
   const [error, setError] = useState<string>();
 
   const confirm = async (): Promise<void> => {
-    const message = await takeToFlow(task, stage as string);
+    if (stage === undefined) return; // the primary is disabled then; this narrows the type
+    const message = await takeToFlow(task, stage);
     if (message === undefined) return;
     setError(message === '' ? undefined : message);
     throw new Error(message); // a rejection holds the dialog open
@@ -49,7 +50,7 @@ export function TakeToFlowDialog({ task, flows, open, onOpenChange }: Props) {
         <fieldset aria-label={t('takeToFlow.stage')} className="flex flex-col gap-1.5">
           {pickable.map((s, i) => (
             <label key={s.name} className="flex items-center gap-2 text-[13px]">
-              <input type="radio" name="take-stage" value={s.name} checked={s.name === stage} onChange={() => setPicked(s.name)} />
+              <input type="radio" name="take-stage" value={s.name} checked={s.name === stage} onChange={() => { setPicked(s.name); setError(undefined); }} />
               {s.name}
               {i === 0 && <span className="text-xs text-muted-foreground">{t('takeToFlow.entry')}</span>}
             </label>
