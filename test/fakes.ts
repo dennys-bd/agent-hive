@@ -19,7 +19,7 @@ import type { KeepAwakeSpawn } from '../src/keep-awake.js';
 import type { GqlJson } from '../src/sources/github-gql.js';
 import type { FactLog, RecordInput } from '../src/facts.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
-import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
+import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, SourceItemRead, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { AGENTS } from '../src/agents.js';
@@ -129,6 +129,9 @@ function queryName(query: string): string {
   if (query === ADD_PROJECT_ITEM) return 'addProjectItem';
   return query.includes('blocking(') ? 'relations' : 'unknown';
 }
+
+/** A Source's item for a double (#567): gone unless the test says otherwise. */
+export const goneItem = async (): Promise<SourceItemRead> => ({ reason: 'gone' });
 
 export interface GqlCall { name: string; query: string; variables?: Record<string, string | number | boolean> }
 
@@ -246,6 +249,7 @@ export function fakeSourceFactory(resolveDelayMs = 0, quota?: SourceQuota, apply
   const factory = (config: SourceSpec): Source => {
     configs.push(config);
     return {
+      item: goneItem,
       async resolveFields() {
         if (resolveDelayMs > 0) await sleep(resolveDelayMs);
         for (const { column, by } of citedColumns(config.stages, config.transitions, config.source.name)) {

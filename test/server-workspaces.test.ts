@@ -10,7 +10,7 @@ import { worktreePath } from '../src/worktree.js';
 import { activityOf } from '../src/activities.js';
 import { slugFor } from '../src/tasks.js';
 import { readyOn, workPath } from './fixtures/work.js';
-import { AUTH, STAGES, bodyFlows, fakeSpawn, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
+import { AUTH, STAGES, bodyFlows, fakeSpawn, goneItem, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // Several workspaces per Comb (#179): two git repos, hive and site, behind one GitHub-shaped source whose listing a test fills.
@@ -60,7 +60,7 @@ async function startTwo(t: TestContext, source: Record<string, unknown> = {}, ma
   const site: Workspace = { name: 'site', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' };
   const listed: SourceItem[] = [];
   const calls: string[][] = [];
-  const sourceFactory = (): Source => ({ resolveFields: async () => {}, listItems: async () => [...listed], setColumn: async () => {}, apply: async () => {}, settingsOptions: async () => OPTIONS });
+  const sourceFactory = (): Source => ({ item: goneItem, resolveFields: async () => {}, listItems: async () => [...listed], setColumn: async () => {}, apply: async () => {}, settingsOptions: async () => OPTIONS });
   const { spawn, workers } = fakeSpawn();
   const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: spawn, exec: twoGit(calls) });
   const port = await server.listen(0);

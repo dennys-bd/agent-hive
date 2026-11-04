@@ -1,4 +1,4 @@
-import type { InheritedBlocker } from '../types.js';
+import type { InheritedBlocker, Item } from '../types.js';
 import type { GhItemNode } from './github-queries.js';
 
 // A Project's tree (#211, #28): what the poll groups and links its items by. Its own file since #190, so github.ts stays under 400 lines
@@ -93,3 +93,14 @@ export function inheritedBlockers(nodes: GhItemNode[], links: Map<string, TreeLi
     return list.length > 0 ? [[node.id, list]] : [];
   }));
 }
+
+// Only what is there (#28): a leaf, and an issue with no parent on the Project, carry none of the three keys
+export const treeFields = ({ parent, children, closedChildren }: TreeLinks): Pick<Item, 'parent' | 'children' | 'closedChildren'> => ({
+  ...(parent === undefined ? {} : { parent }),
+  ...(children.length > 0 ? { children } : {}),
+  ...(closedChildren.length > 0 ? { closedChildren } : {}),
+});
+
+// #28: the last listing with one re-read node in its place (appended when the listing lacked it), so its links equal the next poll's
+export const inPlace = (nodes: GhItemNode[], node: GhItemNode): GhItemNode[] =>
+  nodes.some((n) => n.id === node.id) ? nodes.map((n) => (n.id === node.id ? node : n)) : [...nodes, node];

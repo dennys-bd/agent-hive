@@ -7,8 +7,10 @@ import type { IssueRow } from '../../src/read-model/rows.js';
 import { readOneItem, type ItemReadContext } from '../../src/sources/github-item.js';
 import type { GhItemFieldsNode, GhItemNode } from '../../src/sources/github-queries.js';
 import { statusOf } from '../../src/sources/github-tree.js';
-import type { Gql } from '../../src/types.js';
-import { fakeGql } from '../fakes.js';
+import { parseConfig } from '../../src/config.js';
+import { createSource, sourceSpec } from '../../src/source.js';
+import type { Gql, TaskFilter } from '../../src/types.js';
+import { combConfig, FILTER, fakeGql } from '../fakes.js';
 import { ISSUE_ROW, issueRow, itemNode, SOURCE as ROWS, T1 } from '../read-model/fixtures.js';
 
 // #567: one item past the listing. The context's entry and isListed stand in for the adapter's (the adapter's own are tested below)
@@ -96,4 +98,70 @@ test('off the Project without a store, or with a store with no login: one ISSUE_
     assert.deepEqual(await readOneItem(ctx, 'PVTI_1', URL12), { reason: 'gone' });
     assert.deepEqual(calls.filter((c) => c.name === 'issueByNumber').map((c) => c.variables), Array(3).fill({ owner: 'acme', name: 'hive', number: 12 }));
   }
+});
+
+// The adapter's own entry and filtering (#567): what the context above stood in for
+const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'].map((name) => ({ id: `O_${name}`, name })); // Done: no stage cites it
+const FIELDS = { repositoryOwner: { projectV2: { id: 'PVT_1', field: { id: 'F_status', options: OPTIONS } } } };
+const page = (nodes: GhItemNode[]): unknown => ({ rateLimit: { limit: 5000, remaining: 4000, resetAt: T1 }, repositoryOwner: { projectV2: { fields: { nodes: [] }, items: { pageInfo: { hasNextPage: false }, nodes } } } });
+const specWith = (source: Record<string, unknown> = {}) => {
+  const c = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER, ...source } }));
+  return sourceSpec(c, c.comb.sources[0]);
+};
+const HIVE: TaskFilter = [{ field: 'label', op: 'any', values: ['hive'] }];
+const BLOCKED_9 = { blockedBy: { nodes: [{ number: 9, title: 'T9', state: 'OPEN', repository: { nameWithOwner: 'acme/r' } }] } };
+// The relations query answers an issue per alias; a blocked rule reads it joined with the node's own blockedBy (#441, #282)
+const RELATIONS_OF_1 = { i0: { issue: { blocking: { nodes: [] } } } };
+const EPIC = { subIssuesSummary: { total: 1, completed: 0 }, subIssues: { nodes: [{ id: 'I_2', number: 2, state: 'OPEN' as const }] } };
+
+async function adapterItem(spec: ReturnType<typeof specWith>, node: GhItemNode) {
+  const fake = fakeGql({ fields: FIELDS, itemFields: { node: on(node) }, relations: RELATIONS_OF_1 });
+  const source = createSource(spec, { gql: fake.gql });
+  await source.resolveFields();
+  return { read: await source.item('PVTI_1', URL1), calls: names(fake.calls) };
+}
+
+test('item answers listing with the entry listItems gives for that item, from one item read and its relations, never the listing (#567)', async () => {
+  const node = itemNode(1, 'Ready');
+  const fake = fakeGql({ fields: FIELDS, items: page([node]), itemFields: { node: on(node) }, relations: RELATIONS_OF_1 });
+  const source = createSource(specWith(), { gql: fake.gql });
+  await source.resolveFields();
+  const [listed] = await source.listItems();
+  fake.calls.length = 0;
+  assert.deepEqual(await source.item('PVTI_1', URL1), { reason: 'listing', entry: listed });
+  assert.deepEqual(names(fake.calls), ['itemFields', 'relations']);
+});
+
+test('item answers listing in an uncited column, with that column (#567)', async () => {
+  const { read, calls } = await adapterItem(specWith(), itemNode(1, 'Done'));
+  assert.equal(read.reason, 'listing');
+  assert.equal('entry' in read ? read.entry.column : undefined, 'Done');
+  assert.ok(!calls.includes('items'));
+});
+
+test('item answers filter for a node the other rules reject, one a blocked rule rejects, and an epic under hide; each keeps its entry (#567)', async () => {
+  const cases: [ReturnType<typeof specWith>, GhItemNode][] = [
+    [specWith({ filter: HIVE }), itemNode(1, 'Ready')],
+    [specWith({ filter: [{ field: 'blocked', op: 'none' }] }), itemNode(1, 'Ready', T1, BLOCKED_9)],
+    [specWith({ epics: 'hide' }), itemNode(1, 'Ready', T1, EPIC)],
+  ];
+  for (const [spec, node] of cases) {
+    const { read, calls } = await adapterItem(spec, node);
+    assert.equal(read.reason, 'filter');
+    assert.equal('entry' in read ? read.entry.item.itemId : undefined, 'PVTI_1');
+    assert.ok(!calls.includes('items'));
+  }
+  const shown = await adapterItem(specWith({ epics: 'show' }), itemNode(1, 'Ready', T1, EPIC));
+  assert.equal(shown.read.reason, 'listing');
+  assert.ok('entry' in shown.read && shown.read.entry.item.epic !== undefined, 'under show the epic is stamped, as the poll stamps it');
+});
+
+test('item answers closed with its column for a closed issue on the Project, with no relations query (#567)', async () => {
+  const { read, calls } = await adapterItem(specWith(), itemNode(1, 'Done', T1, { state: 'CLOSED' }));
+  assert.deepEqual(read, { reason: 'closed', item: ISSUE1, column: 'Done' });
+  assert.deepEqual(calls, ['fields', 'itemFields']);
+});
+
+test('item before resolveFields rejects, as fieldsOf does (#567)', async () => {
+  await assert.rejects(createSource(specWith(), { gql: fakeGql({}).gql }).item('PVTI_1', URL1), /source not resolved/);
 });
