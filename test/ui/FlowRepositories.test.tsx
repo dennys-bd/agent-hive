@@ -27,6 +27,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 // The rows in their order, by their title: the full owner/name
 const rowNames = (): string[] => screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed')).map((b) => b.title);
+// The mark a child row hangs under (handoff §4d): fork ⑂ (git-fork), nested ↳ (corner-down-right); none on an ordinary row
+const mark = (title: string): string | null => screen.getByTitle(title).querySelector('[data-child]')?.getAttribute('data-child') ?? null;
 
 test('pinned first in pin order, then the five most recent, the rest behind +N, which expands the list (#757)', async () => {
   const user = userEvent.setup();
@@ -78,7 +80,7 @@ test('a row\'s click picks its repository and the picked row is pressed; with no
   await vi.waitFor(() => expect(screen.queryByText('repositórios')).not.toBeInTheDocument());
 });
 
-test('a fork workspace\'s original and fork stay together, the original first, named in full, the fork under ↳; the pair sorts by its newest activity and a pin on one pins both (#854)', async () => {
+test('a fork workspace\'s original and fork stay together, the original first, named in full, the fork under ⑂; the pair sorts by its newest activity and a pin on one pins both (#854)', async () => {
   const user = userEvent.setup();
   listed = [
     repo('a', 1), { ...repo('b', 9), repository: 'ex/excalidraw', role: 'original', pr: 'original', pair: 'me/excalidraw', workspace: 'excalidraw' },
@@ -88,7 +90,9 @@ test('a fork workspace\'s original and fork stay together, the original first, n
   await screen.findByTitle('ex/excalidraw');
   expect(rowNames()).toEqual(['ex/excalidraw', 'me/excalidraw', 'acme/c', 'acme/a']);
   expect(within(screen.getByTitle('ex/excalidraw')).getByText(/^excalidraw · original/)).toBeInTheDocument();
-  expect(within(screen.getByTitle('me/excalidraw')).getByText('↳')).toBeInTheDocument();
+  expect(mark('me/excalidraw')).toBe('fork');
+  expect(mark('ex/excalidraw')).toBeNull();
+  expect(screen.getByTitle('me/excalidraw')).toHaveClass('-mt-1.5'); // 6px nearer its parent
   expect(within(screen.getByTitle('me/excalidraw')).getByText(/^fork/)).toHaveClass('pl-[34px]');
   screen.getByRole('button', { name: 'ações de me/excalidraw' }).focus();
   await user.keyboard('{Enter}');
@@ -106,7 +110,7 @@ test('a fork pairs with the repository its pair names, not the one GitHub calls 
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('up/old-name');
   expect(rowNames()).toEqual(['up/old-name', 'me/new-name', 'acme/c']);
-  expect(within(screen.getByTitle('me/new-name')).getByText('↳')).toBeInTheDocument();
+  expect(mark('me/new-name')).toBe('fork');
 });
 
 test('an original listed first by another workspace, with no role, still has its fork right after it (#886)', async () => {
@@ -118,10 +122,10 @@ test('an original listed first by another workspace, with no role, still has its
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('up/x');
   expect(rowNames()).toEqual(['up/x', 'me/x', 'acme/c']);
-  expect(within(screen.getByTitle('me/x')).getByText('↳')).toBeInTheDocument();
+  expect(mark('me/x')).toBe('fork');
 });
 
-test('a fork whose original is not listed is an ordinary row: no ↳, no fork label, its workspace and short name, sorted by its own activity (#886)', async () => {
+test('a fork whose original is not listed is an ordinary row: no mark, no fork label, its workspace and short name, sorted by its own activity (#886)', async () => {
   listed = [
     repo('a', 1), repo('c', 5),
     { ...repo('d', 2), repository: 'me/lone', role: 'fork', pr: 'original', pair: 'up/gone', fork: { parent: 'up/gone' }, workspace: 'lone' },
@@ -130,7 +134,7 @@ test('a fork whose original is not listed is an ordinary row: no ↳, no fork la
   await screen.findByTitle('me/lone');
   expect(rowNames()).toEqual(['acme/c', 'me/lone', 'acme/a']);
   const row = within(screen.getByTitle('me/lone'));
-  expect(row.queryByText('↳')).not.toBeInTheDocument();
+  expect(mark('me/lone')).toBeNull();
   expect(row.queryByText(/^fork/)).not.toBeInTheDocument();
   expect(row.getByText('lone')).toBeInTheDocument(); // the short name, as any row without a role
   expect(row.getByText(/^lone · /)).toHaveClass('pl-4'); // its workspace on the second line, not the fork's indent
@@ -192,9 +196,9 @@ test('a nested repo hangs under its workspace\'s repository, after its fork, wit
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('acme/docs');
   expect(rowNames()).toEqual(['ex/excalidraw', 'me/excalidraw', 'acme/docs', 'acme/c', 'acme/lone']);
-  expect(within(screen.getByTitle('acme/docs')).getByText('↳')).toBeInTheDocument();
+  expect(mark('acme/docs')).toBe('nested');
   expect(within(screen.getByTitle('acme/docs')).getByText(/^repo aninhado/)).toHaveClass('pl-[34px]');
-  expect(within(screen.getByTitle('acme/lone')).queryByText('↳')).not.toBeInTheDocument();
+  expect(mark('acme/lone')).toBeNull();
   screen.getByRole('button', { name: 'ações de acme/docs' }).focus();
   await user.keyboard('{Enter}');
   await user.click(screen.getByRole('menuitem', { name: 'fixar' }));
