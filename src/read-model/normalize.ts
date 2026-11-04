@@ -309,7 +309,8 @@ export function checkItemsFromRest(runs: unknown[], status: unknown[]): CheckRow
   const runRows = runs.flatMap((body) => arrayOf(objectOf(body, 'check runs').check_runs, 'check_runs')).map((value): CheckRow => {
     const run = objectOf(value, 'check run');
     const state = run.status === 'completed' ? checkState(nullableText(run, 'conclusion')?.toUpperCase()) : 'pending';
-    return { name: textOf(run, 'name'), state, url: linkOf(run, 'details_url'), startedAt: nullableText(run, 'started_at'), at: nullableText(run, 'completed_at') };
+    const ran = run.status === 'in_progress' || run.status === 'completed'; // #598: as checkOf reads it: a queued job may carry a start before a runner takes it
+    return { name: textOf(run, 'name'), state, url: linkOf(run, 'details_url'), startedAt: ran ? nullableText(run, 'started_at') : null, at: nullableText(run, 'completed_at') };
   });
   const contexts = arrayOf(objectOf(status[0], 'status').statuses, 'statuses').map((value): CheckRow => {
     const context = objectOf(value, 'status context');

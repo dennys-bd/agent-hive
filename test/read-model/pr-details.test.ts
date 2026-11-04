@@ -88,6 +88,11 @@ test('checkItemsFromRest lists the check runs then the status contexts as the pa
   ]);
 });
 
+test('checkItemsFromRest keeps a check run\'s start only once in progress or completed: a queued run has none (#598)', () => {
+  const runs = [{ check_runs: ['queued', 'waiting', 'in_progress'].map((status) => ({ name: status, status, conclusion: null, details_url: '', started_at: T1, completed_at: null })) }];
+  assert.deepEqual(checkItemsFromRest(runs, [{ statuses: [] }]).map((c) => [c.name, c.startedAt]), [['queued', null], ['waiting', null], ['in_progress', T1]]);
+});
+
 test('checkItemsFromRest keeps only https links: a javascript:, an http: or an unparseable target is no link, a non-GitHub host is fine (#187)', () => {
   const runs = [{ check_runs: [
     { name: 'a', status: 'completed', conclusion: 'success', details_url: 'javascript:alert(1)', started_at: T1, completed_at: T2 },
