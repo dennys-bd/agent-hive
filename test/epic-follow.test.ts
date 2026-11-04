@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
 import { followEpics } from '../src/epic-follow.js';
 import { initialState, reduce } from '../src/orchestrator.js';
+import { leave } from '../src/tasks.js';
 import { transitionKey } from '../src/transitions.js';
 import { END, type EpicFollows, type Item, type Stage, type State, type Task, type Transition } from '../src/types.js';
 import { HOUR_MS } from '../src/usage.js';
@@ -175,4 +176,16 @@ test('an epic whose activity is being deleted stays where it is even when its ch
   const { state, effects } = followEpics(deleting);
   assert.equal(state, deleting);
   assert.deepEqual(effects, []);
+});
+
+const outside = (id: string): Task => leave(child(id, 'spec'));
+
+test('children outside the flow say nothing of their epic\'s stage: all of them outside leaves it where it is; the in-flow ones alone decide, done included (#566)', () => {
+  const alone = at([epic('spec', ['c1', 'c2']), outside('c1'), outside('c2')]);
+  assert.equal(followEpics(alone).state, alone, 'every child outside: the epic stays');
+  const mixed = at([epic('spec', ['c1', 'c2']), child('c1', 'build'), outside('c2')]);
+  assert.equal(epicIn(followEpics(mixed).state)?.stage, 'build', 'the one child in the flow decides');
+  const done = followEpics(at([epic('done', ['c1', 'c2']), child('c1', 'done'), outside('c2')], [ENDS]));
+  assert.equal(epicIn(done.state), undefined, 'every child in the flow is done: out through done\'s end');
+  assert.deepEqual(done.effects, [column('Shipped')]);
 });

@@ -78,10 +78,15 @@ export function treeStarted(tasks: readonly Task[], itemId: string, isStarted: (
   return root !== undefined && [root, ...descendants(tasks, root.item.itemId)].some(isStarted);
 }
 
-/** Every direct child done (#31): what sends a show epic out through the last stage's end. A leaf has nothing to be done. */
+/** Every direct child in the flow done (#31, #566): what sends a show epic out through the last stage's end. A child outside the flow says
+ * nothing of where its epic is; a child with no task still counts by the parent's closed list. A leaf, or none to count: not done. */
 export function allDone(tasks: readonly Task[], itemId: string, lastStage: string): boolean {
-  const { done, total } = progress(tasks, itemId, lastStage);
-  return total > 0 && done === total;
+  const parent = taskOf(tasks, itemId);
+  const counted = (parent?.item.children ?? []).filter((id) => {
+    const child = taskOf(tasks, id);
+    return child === undefined || inFlow(child);
+  });
+  return parent !== undefined && counted.length > 0 && counted.every((id) => isDone(tasks, parent, id, lastStage));
 }
 
 /** The stage a show epic's rule puts it in (#31), over its direct children that are tasks in a stage of `stages` (the pipeline order):
