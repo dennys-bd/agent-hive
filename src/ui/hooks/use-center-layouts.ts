@@ -34,7 +34,9 @@ export interface CenterOps {
   moveToWindow(key: string): Promise<boolean>; // #554: to its activity's detached window, closed here once main took it
 }
 // layouts (#533): every activity's stored layout, read-only, for the design layer, which keeps a pane per open design tab of any activity
-export interface CenterLayouts extends CenterOps { layout?: CenterLayout; layouts: Readonly<Record<string, CenterLayout>> }
+// place (#554): a docked tab into any activity's layout, picked there. A functional store update, so two docks in one batch both land, where a
+// single request slot would keep only the last
+export interface CenterLayouts extends CenterOps { layout?: CenterLayout; layouts: Readonly<Record<string, CenterLayout>>; place(activity: Activity, ref: CenterTabRef): void }
 
 // layouts: every activity's, as stored, by activityKey (#590). emptied: the picked task whose last tab just closed, showing the empty line until the pick changes; its
 // entry is absent, so a later pick opens its main run again. holding (#672): the runs a continue is moving a sleeping tab to and from. The
@@ -151,9 +153,10 @@ function useRenamedTabs(activities: Activity[], setStore: Dispatch<SetStateActio
 
 // #554: a tab to its activity's detached window. It closes here only once main took it, or an unsaved edit could be lost, and its carry goes
 // with it. A tab already moving is not sent twice (a double pick of the menu item); keyed by activity too, since two activities share tab keys
-function useMoveToWindow(current: Activity | undefined, layout: CenterLayout | undefined, close: (key: string) => void): (key: string) => Promise<boolean> {
+function useMoveToWindow(current: Activity | undefined, layout: CenterLayout | undefined, close: (key: string) => void, layoutOf: (activity: Activity) => CenterLayout | undefined): (key: string) => Promise<boolean> {
   const moving = useRef(new Map<string, Promise<boolean>>());
   const send = async (activity: Activity, ref: CenterTabRef): Promise<boolean> => {
+    // Taken once, before the await: text typed while main builds the window stays here and goes with the model, as the dock accepts (#553)
     const carry = takeCarry(activity.activity.id, ref);
     try {
       await window.hive?.moveToWindow({ activity: activityKey(activity), ref, ...(carry === undefined ? {} : { carry }) });
@@ -163,8 +166,10 @@ function useMoveToWindow(current: Activity | undefined, layout: CenterLayout | u
       return false;
     }
     // No closeRun: the run goes on in the window. This render's close is bound to `activity`, so a pick changed meanwhile still closes it here
+    // Asked again after the await: a changes tab opened meanwhile shares the buffer, and dropping it would leave that tab on a closed model
+    const isShared = sharesBuffer(layoutOf(activity), ref);
     close(refKey(ref));
-    dropBuffer(ref, activity.activity.id, false); // never shared: a shared buffer does not move (spec decision 4)
+    dropBuffer(ref, activity.activity.id, isShared);
     return true;
   };
   return (key) => {
@@ -209,7 +214,14 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
   };
   const layout = current === undefined ? undefined : viewOf(store, current, fallback);
   const close = (key: string): void => change((shown) => shown && closeRef(shown, key));
-  const moveToWindow = useMoveToWindow(current, layout, close);
+  const latestStore = useRef(store);
+  useEffect(() => { latestStore.current = store; });
+  const moveToWindow = useMoveToWindow(current, layout, close, (activity) => viewOf(latestStore.current, activity, fallback));
+  const place = (activity: Activity, ref: CenterTabRef): void => setStore((s) => {
+    const key = activityKey(activity);
+    const shown = viewOf(s, activity, fallback);
+    return { holding: s.holding, layouts: withEntry(s.layouts, key, shown === undefined ? initialLayout(ref) : openRef(shown, ref)), emptied: s.emptied === key ? undefined : s.emptied };
+  });
   // No dependency list: `change` is new on every render, and `handled` keeps a request from applying twice
   useEffect(() => {
     if (current === undefined || request === undefined || request === handled) return;
@@ -235,5 +247,6 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
     releaseRun: (ptyId) => setStore((s) => ({ ...s, holding: s.holding.filter((held) => held !== ptyId) })),
     replaceRun: (from, to) => setStore((s) => handedOver(s, from, to)),
     moveToWindow,
+    place,
   };
 }

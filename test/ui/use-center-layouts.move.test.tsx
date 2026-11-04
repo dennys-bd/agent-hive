@@ -85,3 +85,24 @@ test('moveToWindow refuses a shared buffer and a key the layout does not hold wi
   await act(async () => { release(); await first; });
   expect([await second, tabsOf(result.current.layout)]).toEqual([true, []]);
 });
+
+test('a changes tab opened while the move is in flight keeps the buffer: the file tab leaves, its model stays (#554)', async () => {
+  let release: () => void = () => undefined;
+  moveToWindow.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+  const { result } = await mount(layoutOf(DIFF, FILE));
+  let moving: Promise<boolean> = Promise.resolve(false);
+  act(() => { moving = result.current.moveToWindow('file:src/a.ts'); });
+  act(() => result.current.open(CHANGES));
+  await act(async () => { release(); await moving; });
+  expect([tabsOf(result.current.layout), models.isDirty(ID, 'src/a.ts')]).toEqual([[DIFF, CHANGES], true]);
+});
+
+test('two tabs placed in one batch both land in the activity\'s layout, the last one picked (#554)', async () => {
+  const { result } = await mount(layoutOf(DIFF));
+  act(() => {
+    result.current.place(ACTIVITY, FILE);
+    result.current.place(ACTIVITY, { kind: 'run', ptyId: 'W1' });
+  });
+  const layout = result.current.layouts.I1;
+  expect(tabsOf(layout).map((ref) => ref.kind)).toEqual(['diff', 'file', 'run']);
+});

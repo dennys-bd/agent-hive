@@ -29,7 +29,6 @@ export interface ActivitySelection {
   pick(key: string): void; // an Activities row
   open(key: string): void; // a worker chip: the pick, and the Activities tab shown
   openRun(key: string, ptyId: string): void; // a run opened from the UI: open, and that run's tab in the center
-  openTab(key: string, ref: CenterTabRef): void; // a tab of any kind (#554): open, and that tab in the center; a docked tab's
   openFile(key: string, path: string, kind?: FileTabKind): void; // one of its files (#717): open, and its editor pane tab in the center, its preview pane tab (#697) or its changes pane tab (#668)
   openDiff(taskId: string, scope: DiffScope, checkpoint?: number): void; // a running task's diff from its menu (#458): open, and the diff's tab in the center
   openConsole(key: string, channel?: string, locked?: boolean, run?: string): void; // the console drawer's abrir como aba (redesign 05), on the drawer's channel; locked: a commands stage's tab (#755)
@@ -93,7 +92,6 @@ export function useActivity(activities: Activity[], onSelect: (selection: Select
   const open = useCallback((key: string) => openWith(key), [openWith]);
   const openRun = useCallback((key: string, ptyId: string) => openWith(key, { tab: { kind: 'run', ptyId } }), [openWith]);
   const openDiff = useCallback((taskId: string, scope: DiffScope, checkpoint?: number) => openWith(taskId, { tab: { kind: 'diff', scope, ...(checkpoint === undefined ? {} : { checkpoint }) } }), [openWith]);
-  const openTab = useCallback((key: string, ref: CenterTabRef) => openWith(key, { tab: ref }), [openWith]);
   const openFile = useCallback((key: string, path: string, kind: FileTabKind = 'file') => openWith(key, { tab: { kind, path } }), [openWith]);
   const openConsole = useCallback((key: string, channel?: string, locked?: boolean, run?: string) => openWith(key, { tab: consoleRef(channel, locked, run) }), [openWith]);
   const openStarted = useCallback((taskId: string) => setPicked({ key: taskId, hasShown: false, request: {}, isDeferred: true }), []);
@@ -108,5 +106,5 @@ export function useActivity(activities: Activity[], onSelect: (selection: Select
     setCenter(panel);
     showPanel(panel);
   }, [activate, showPanel, setCenter]);
-  return { current, center, request: picked?.request, pick, open, openRun, openTab, openDiff, openFile, openConsole, openStarted, activateTab };
+  return { current, center, request: picked?.request, pick, open, openRun, openDiff, openFile, openConsole, openStarted, activateTab };
 }

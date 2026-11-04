@@ -59,10 +59,3 @@ test("benchmark is a view as the others: its tab sets the center and the dock's 
   expect(result.current.dock.layout.open.left).toBe(false);
   expect(result.current.dock.active).toEqual({ left: 'benchmark' });
 });
-
-test('openTab picks the activity with that tab requested, on Atividades (#554)', () => {
-  const { result } = renderHook(() => useBoth(SHARED));
-  act(() => result.current.selection.activateTab('automation'));
-  act(() => result.current.selection.openTab('I1', { kind: 'file', path: 'src/a.ts' }));
-  expect([result.current.selection.center, result.current.selection.request]).toEqual(['activities', { tab: { kind: 'file', path: 'src/a.ts' } }]);
-});

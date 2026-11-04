@@ -32,7 +32,7 @@ import { type HeaderShell, useHeaderShell } from '@/hooks/use-header-shell';
 import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
-import { type CenterTabRef, shownFile, shownRun } from '@/lib/center-layout';
+import { shownFile, shownRun } from '@/lib/center-layout';
 import type { FileAt } from '@/lib/editor-models';
 import { pendingSessions } from '@/lib/home';
 import { applyCarry } from '@/lib/tab-carry';
@@ -99,9 +99,9 @@ type StartRequest = Pick<NewActivity, 'workspace' | 'taskId' | 'title'>;
 // A tab docked back from a detached window (#554): its carry applied, then opened in its activity's center, picked. Main already parsed the
 // payload, so a bad one, or one whose activity the State no longer lists, is a bug: logged, no toast. Subscribed once (the preload holds
 // every window:dock until then); the activities are read at the time
-function useDockedTabs(activities: Activity[], openTab: (key: string, ref: CenterTabRef) => void): void {
-  const latest = useRef({ activities, openTab });
-  useEffect(() => { latest.current = { activities, openTab }; });
+function useDockedTabs(activities: Activity[], place: CenterLayouts['place'], open: (key: string) => void): void {
+  const latest = useRef({ activities, place, open });
+  useEffect(() => { latest.current = { activities, place, open }; });
   useEffect(() => {
     window.hive?.onDock((value) => {
       const tab = parseMovedTab(value);
@@ -111,7 +111,10 @@ function useDockedTabs(activities: Activity[], openTab: (key: string, ref: Cente
         return;
       }
       applyCarry(target.activity.id, tab.ref, tab.carry) // an untitled number taken here comes back renumbered (#551)
-        .then((ref) => latest.current.openTab(tab.activity, ref))
+        .then((ref) => {
+          latest.current.place(target, ref); // into the store at once: a second dock in the same batch cannot replace it
+          latest.current.open(tab.activity);
+        })
         .catch((err: unknown) => console.error('main window: a docked tab did not open', err));
     });
   }, []);
@@ -274,7 +277,7 @@ export function MainDock(props: MainDockProps) {
   }, [openRun]);
   // A session's line (#492): its tab's detached window when one holds it (#554), else its tab here
   const openRunHere = (key: string, ptyId: string): void => focusOrOpen(key, ptyId, () => openRun(key, ptyId));
-  useDockedTabs(activities, selection.openTab);
+  useDockedTabs(activities, layouts.place, selection.open);
   useSleptNotices(activities, openUserRun); // the auto flow's and the idle shutdown's sleeps show their notice here (#672)
   // A task's diff (#270): a tab of its activity's center (#458); the task's menu offers none while it is no activity
   const openTaskDiff: OpenDiff = (task, scope, checkpoint) => openDiff(task.item.itemId, scope, checkpoint);
