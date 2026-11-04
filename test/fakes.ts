@@ -6,7 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
-  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PROBE, PROJECTS, PROJECT_FIELDS, ITEM_FIELDS, SELECT_FIELDS, SET_OPTION, REPOSITORY_ID, CREATE_ISSUE, ADD_PROJECT_ITEM, VIEWER,
+  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_BY_NUMBER, ISSUE_ID, ITEMS, PROBE, PROJECTS, PROJECT_FIELDS, ITEM_FIELDS, SELECT_FIELDS, SET_OPTION, REPOSITORY_ID, CREATE_ISSUE, ADD_PROJECT_ITEM, VIEWER,
 } from '../src/sources/github-queries.js';
 import { type LegacyStage, stripLegacy, transitionsOf } from '../src/config-migrate.js';
 import { citedColumns, onSource } from '../src/tasks.js';
@@ -19,7 +19,7 @@ import type { KeepAwakeSpawn } from '../src/keep-awake.js';
 import type { GqlJson } from '../src/sources/github-gql.js';
 import type { FactLog, RecordInput } from '../src/facts.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
-import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
+import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, SourceItemRead, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { AGENTS } from '../src/agents.js';
@@ -115,6 +115,7 @@ function queryName(query: string): string {
   if (query === ITEMS) return 'items';
   if (query === PROBE) return 'probe';
   if (query === ITEM_FIELDS) return 'itemFields';
+  if (query === ISSUE_BY_NUMBER) return 'issueByNumber';
   if (query === SET_OPTION) return 'setOption';
   if (query === COMMENTS) return 'comments';
   if (query === VIEWER) return 'viewer';
@@ -128,6 +129,9 @@ function queryName(query: string): string {
   if (query === ADD_PROJECT_ITEM) return 'addProjectItem';
   return query.includes('blocking(') ? 'relations' : 'unknown';
 }
+
+/** A Source's item for a double (#567): gone unless the test says otherwise. */
+export const goneItem = async (): Promise<SourceItemRead> => ({ reason: 'gone' });
 
 export interface GqlCall { name: string; query: string; variables?: Record<string, string | number | boolean> }
 
@@ -245,6 +249,7 @@ export function fakeSourceFactory(resolveDelayMs = 0, quota?: SourceQuota, apply
   const factory = (config: SourceSpec): Source => {
     configs.push(config);
     return {
+      item: goneItem,
       async resolveFields() {
         if (resolveDelayMs > 0) await sleep(resolveDelayMs);
         for (const { column, by } of citedColumns(config.stages, config.transitions, config.source.name)) {

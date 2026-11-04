@@ -14,6 +14,7 @@ const PROJECT_PR_LIMIT = 10; // ponytail: an issue closed by more PRs than this 
 const ASSIGNABLE_LIMIT = 100; // ponytail: one page of a repository's assignable users; a login past it is refused as unknown (#686), paging when a repository outgrows it
 const MILESTONE_LIMIT = 100; // ponytail: one page of a repository's open milestones (#686)
 const ISSUE_TYPE_LIMIT = 25; // GitHub's own cap on an organization's issue types: never under-read
+const MAX_ISSUE_DIGITS = 9; // #567: GraphQL's Int is 32-bit
 const ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/issues\/(\d+)$/;
 // #56: what a BlockerRef shows of each side of a relation, and the repository that decides whether its id is short
 const BLOCKER_NODES = 'nodes { number title state repository { nameWithOwner } }';
@@ -315,8 +316,23 @@ export function relationsQuery(items: Item[], kinds: RelationsAsked = ['blocking
   return selections.length > 0 ? `query { ${selections.join(' ')} }` : undefined;
 }
 
+// #567: an issue past the Project when no read model holds it, by its url's number: what Source.item answers project / closed from
+export const ISSUE_BY_NUMBER = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) { number title body url state createdAt } }
+}`;
+export interface IssueByNumberData { repository?: { issue?: { number: number; title: string; body?: string | null; url: string; state: string; createdAt?: string } | null } | null }
+
+/** An issue url's parts (#567); anything but `https://github.com/<owner>/<repo>/issues/<n>` → undefined. */
+export interface IssueRef { owner: string; name: string; number: number }
+export function issueRef(url: string): IssueRef | undefined {
+  const match = ISSUE_URL.exec(url);
+  // A `.` or `..` segment would walk the REST path the refetch builds; past 9 digits the number is no GraphQL Int
+  if (!match || [match[1], match[2]].some((part) => /^\.+$/.test(part)) || match[3].length > MAX_ISSUE_DIGITS) return undefined;
+  return { owner: match[1], name: match[2], number: Number(match[3]) };
+}
+
 /** An issue's repository, from its url (#314); anything but an issue url → undefined. */
 export function issueRepo(url: string): { owner: string; name: string } | undefined {
-  const match = ISSUE_URL.exec(url);
-  return match ? { owner: match[1], name: match[2] } : undefined;
+  const ref = issueRef(url);
+  return ref && { owner: ref.owner, name: ref.name };
 }

@@ -2,7 +2,7 @@ import type { Citation } from '../tasks.js';
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type {
-  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, InheritedBlocker, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef, ReadOptions,
+  Source, SourceItem, SourceItemRead, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, InheritedBlocker, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef, ReadOptions,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
 import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
@@ -20,7 +20,8 @@ import { applyRelations, createItemsSync, fetchRelations, joinRelations, readPro
 import { hasListing, readListing, storedNodes, type ItemStore, type ListingKey } from '../read-model/items.js';
 import { sourceLogin } from '../read-model/rows.js';
 import { readProject, storedProject, type ProjectRead } from './github-project.js';
-import { groupUnderEpics, inheritedBlockers, statusOf, treeLinks, type TreeLinks } from './github-tree.js';
+import { groupUnderEpics, inheritedBlockers, inPlace, statusOf, treeFields, treeLinks, type TreeLinks } from './github-tree.js';
+import { readOneItem } from './github-item.js';
 
 export { groupUnderEpics, treeLinks, type TreeLinks } from './github-tree.js';
 
@@ -81,17 +82,6 @@ async function closeVariables(gql: Gql, issueId: string, url: string | undefined
 // An epic is any issue GitHub itself counts sub-issues for, whatever their state: the field costs nothing extra on the listing, so this is known
 // before a single relations alias is spent. A fixture (or a field GitHub did not return) with no summary reads as not an epic.
 export const isEpicItem = (content: GhItemNode['content']): boolean => (content?.subIssuesSummary?.total ?? 0) > 0;
-
-// Only what is there (#28): a leaf, and an issue with no parent on the Project, carry none of the three keys
-const treeFields = ({ parent, children, closedChildren }: TreeLinks): Pick<Item, 'parent' | 'children' | 'closedChildren'> => ({
-  ...(parent === undefined ? {} : { parent }),
-  ...(children.length > 0 ? { children } : {}),
-  ...(closedChildren.length > 0 ? { closedChildren } : {}),
-});
-
-// #28: the last listing with one re-read node in its place (appended when the listing lacked it), so its links equal the next poll's
-const inPlace = (nodes: GhItemNode[], node: GhItemNode): GhItemNode[] =>
-  nodes.some((n) => n.id === node.id) ? nodes.map((n) => (n.id === node.id ? node : n)) : [...nodes, node];
 
 // What a rule reads on one item (#293, #688): `title`, each label's name for `labels`, else the named Project field's set value, single-select or
 // text, riding the same fieldValues the task filter already fetches (#245); a field the item has no value for reads nothing.
@@ -189,23 +179,28 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return updatedAt;
   }
 
+  // The poll's per-node step (#31, #188): the task of one issue item in one of `columns`, stamped as an epic under show. The filter and the
+  // hidden epics are keep()'s; #567 runs this alone, over every Status option, and judges them apart
+  function taskOf(node: GhItemNode, columns: Set<string>, links: Map<string, TreeLinks>): SourceItem | undefined {
+    const task = issueItem(node, columns, source.taskProps, links.get(node.id));
+    return task !== undefined && epics === 'show' && isEpicItem(node.content) ? asEpic(task, source) : task;
+  }
+
   // The poll's steps on its items (#211, #245, #441), and on the one item a field write re-read (#686): issue items in a cited column, grouped
   // under their epics, then the filter and the hidden epics. The tree links (#28) are read over every node first, before a column or a filter
   // drops one: a child filtered out or in another column is still a child. #191: the boot read skips the filter, which may need `me`
   function keep(items: GhItemNode[], links: Map<string, TreeLinks> = treeLinks(items), filtered = true): SourceItem[] {
     const names = new Set(cited.map((c) => c.column));
     const tasks = new Map(items.flatMap<[GhItemNode, SourceItem]>((item) => {
-      const task = issueItem(item, names, source.taskProps, links.get(item.id));
+      const task = taskOf(item, names, links);
       return task ? [[item, task]] : [];
     }));
     // Grouped before anything is dropped: an epic the Hive does not show still lends its place to its sub-issues (#211)
     return groupUnderEpics([...tasks.keys()]).flatMap<SourceItem>((item) => {
       if (filtered && !matchesFilter(other, me, item)) return []; // filtered out: to the Hive it is simply not on the source
-      const epic = isEpicItem(item.content);
-      if (epics === 'hide' && epic) return []; // #30: not a task for the Hive: its sub-issues take its place; ignore and show list it
+      if (epics === 'hide' && isEpicItem(item.content)) return []; // #30: not a task for the Hive: its sub-issues take its place; ignore and show list it
       const task = tasks.get(item);
-      if (task === undefined) return [];
-      return [epics === 'show' && epic ? asEpic(task, source) : task];
+      return task === undefined ? [] : [task];
     });
   }
 
@@ -331,6 +326,13 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return { statuses, ...storedProject(items.db, key, read) };
   }
 
+  // #28, #424: one node's tree links and inherited blockers, read over the last listing with the node in its place
+  const around = (node: GhItemNode): { links: Map<string, TreeLinks>; inherited: Map<string, InheritedBlocker[]> } => {
+    const whole = inPlace(lastNodes, node);
+    const links = treeLinks(whole);
+    return { links, inherited: inheritedBlockers(whole, links) };
+  };
+
   // #686, #56: what a write on one item needs. related(keep([node])) is the poll's steps on one item. groupUnderEpics only reorders a list,
   // the tree links (#28) and the inherited blockers (#424) are read over the last listing with the re-read node in its place, and the rest of the steps read the item alone, so
   // the one-item entry equals the poll's for that item. #190: answer stores the re-read node, and the relations entry read, in the model
@@ -339,14 +341,29 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     const read = await projectRead();
     let fetched = new Map<string, GhIssueRelations | null>();
     const entry = async (node: GhItemNode): Promise<SourceItem | undefined> => {
-      const whole = inPlace(lastNodes, node);
-      const links = treeLinks(whole);
-      const one = await related(keep([node], links), [node], inheritedBlockers(whole, links));
+      const { links, inherited } = around(node);
+      const one = await related(keep([node], links), [node], inherited);
       fetched = one.relations;
       return one.listed[0];
     };
     const answer = sync && ((node: GhItemNode): Promise<void> => sync.answer(node, fetched, `${read.login}/${number}`));
     return { gql, projectId: resolved.projectId, read, entry, ...(answer === undefined ? {} : { answer }) };
+  }
+
+  // #567: one item past the listing. The poll's steps on it in any Status option, its relations read alongside (#441 needs them); the
+  // source's own filtering (other rules, `me`, blocked rules, a hidden epic) judged apart, so a filtered item keeps its entry. Nothing is
+  // stored and nothing feeds the listing
+  async function item(itemId: string, url: string): Promise<SourceItemRead> {
+    if (!resolved) throw new Error('source not resolved: call resolveFields() first');
+    const columns = new Set(resolved.options.map((o) => o.name));
+    const entry = async (node: GhItemNode): Promise<SourceItem | undefined> => {
+      const { links, inherited } = around(node);
+      const task = taskOf(node, columns, links);
+      return task && applyRelations([task], joinRelations([node], await fetchRelations(gql, [task])), inherited)[0];
+    };
+    const isListed = (node: GhItemNode, one: SourceItem): boolean =>
+      matchesFilter(other, me, node) && matchesRules(blocked, one.item) && !(epics === 'hide' && isEpicItem(node.content));
+    return readOneItem({ gql, projectId: resolved.projectId, entry, isListed, ...(items === undefined ? {} : { store: items }) }, itemId, url);
   }
 
   // #686: a field write, then the item re-read and run through the poll's own steps, so `entry` is what the next poll would list
@@ -373,7 +390,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return stored ?? readItemFields(gql, itemId, resolved.projectId);
   }
   return {
-    resolveFields, listItems, stored, setColumn: written(setColumn), create: written(create), apply: written(apply), settingsOptions, comments, project, fieldsOf,
+    resolveFields, listItems, item, stored, setColumn: written(setColumn), create: written(create), apply: written(apply), settingsOptions, comments, project, fieldsOf,
     setField: written(setField), relate: written(relate), findBlockers: searchBlockers, quota: async () => lastQuota,
   };
 }

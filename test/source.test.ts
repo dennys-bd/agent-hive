@@ -7,8 +7,8 @@ import { ITEMS, ITEM_FIELDS, type GhItemNode } from '../src/sources/github-queri
 import { PROJECT_ITEM_LIMIT } from '../src/sources/github-pages.js';
 import { citedColumns, itemSource } from '../src/tasks.js';
 import { parseConfig } from '../src/config.js';
-import type { FieldWrite, ProjectView, Source, SourceConfig, SourceSpec, TaskFilter, TaskRule } from '../src/types.js';
-import { EPICS, SOURCE, STAGES, FILTER, FIXED, chained, combConfig, fakeGql, fakeLog, move } from './fakes.js';
+import type { FieldWrite, Item, ProjectView, SourceItemRead, Source, SourceConfig, SourceSpec, TaskFilter, TaskRule } from '../src/types.js';
+import { EPICS, SOURCE, STAGES, FILTER, FIXED, chained, combConfig, fakeGql, fakeLog, goneItem, move } from './fakes.js';
 
 const GITHUB_SOURCE = { type: 'github', owner: 'acme', number: 6, filter: FILTER };
 /** The SourceSpec the server would build from a Comb with the GitHub source and `extra` on top (source, columns or a top-level key). */
@@ -636,7 +636,7 @@ test('a listed issue task carries its facets for the columns\' view filter, read
 test('namespaced lists <name>:<id> with the source set, qualifies the id with the prefix (else the name) only under qualifyId, and hands setColumn, apply and comments the adapter\'s own id (#180)', async () => {
   const calls: string[] = [];
   const adapter: Source = {
-    resolveFields: async () => {}, settingsOptions: async () => [],
+    item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [],
     listItems: async () => [{ item: { itemId: 'PVTI_1', id: '12', title: 'T', body: '', url: '' }, column: 'Ready' }],
     setColumn: async (itemId, column) => { calls.push(`${itemId}→${column}`); },
     apply: async (itemId, action) => { calls.push(`apply ${itemId} ${action.type}`); },
@@ -660,7 +660,7 @@ test('namespaced lists <name>:<id> with the source set, qualifies the id with th
 
 test('namespaced prefixes parent, every children id and every closedChildren id with the source\'s name, as it does itemId (#28)', async () => {
   const adapter: Source = {
-    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {},
+    item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {},
     listItems: async () => [{ item: { itemId: 'PVTI_2', id: '2', title: 'T', body: '', url: '', parent: 'PVTI_1', children: ['PVTI_3', 'PVTI_4'], closedChildren: ['PVTI_4'] }, column: 'Ready' }],
   };
   const entry: SourceConfig = { name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
@@ -673,7 +673,7 @@ test('namespaced wraps project only when the adapter has one: its rows under <na
     statuses: [{ name: 'Todo' }], fields: [], builtins: {}, truncated: false,
     items: [{ itemId: 'PVTI_1', id: '12', title: 'T', body: '', url: '', labels: [], assignees: [], fields: {}, pullRequests: [] }],
   };
-  const bare: Source = { resolveFields: async () => {}, settingsOptions: async () => [], listItems: async () => [], setColumn: async () => {}, apply: async () => {} };
+  const bare: Source = { item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], listItems: async () => [], setColumn: async () => {}, apply: async () => {} };
   const entry: SourceConfig = { name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
   assert.equal(namespaced(entry, bare).project, undefined);
   assert.deepEqual(await namespaced(entry, { ...bare, project: async () => view }).project?.(), { ...view, items: [{ ...view.items[0], itemId: 'work:PVTI_1' }] });
@@ -681,7 +681,7 @@ test('namespaced wraps project only when the adapter has one: its rows under <na
 
 test('namespaced wraps fieldsOf and setField only when the adapter has them: the adapter gets its own id, the answer comes back under the listed ids (#686)', async () => {
   const asked: string[] = [];
-  const bare: Source = { resolveFields: async () => {}, settingsOptions: async () => [], listItems: async () => [], setColumn: async () => {}, apply: async () => {} };
+  const bare: Source = { item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], listItems: async () => [], setColumn: async () => {}, apply: async () => {} };
   const entry: SourceConfig = { name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
   const written: FieldWrite = {
     fields: [{ name: 'Priority', type: 'singleSelect', value: 'P0', options: ['P0'] }],
@@ -709,7 +709,7 @@ test('namespaced shows a short blocker id like the item\'s own under qualifyId, 
   const listedItem = { itemId: 'PVTI_1', id: '12', title: 'T', body: '', url: '', blockers };
   const asked: string[] = [];
   const bare: Source = {
-    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {},
+    item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {},
     listItems: async () => [{ item: listedItem, column: 'Ready' }],
   };
   const adapter: Source = { ...bare, relate: async (itemId, change) => { asked.push(`${itemId} ${change.ref}`); return { blockers, entry: { item: listedItem, column: 'Ready' } }; } };
@@ -734,7 +734,7 @@ test('namespaced shows a short blocker id like the item\'s own under qualifyId, 
 test('namespaced hands findBlockers the adapter\'s id and shows a found short id like the item\'s own under qualifyId (#57)', async () => {
   const found = [{ id: '12', title: 'Pager', state: 'open' as const }, { id: 'other/lib#3', title: 'T3', state: 'closed' as const }];
   const asked: string[] = [];
-  const bare: Source = { resolveFields: async () => {}, settingsOptions: async () => [], listItems: async () => [], setColumn: async () => {}, apply: async () => {} };
+  const bare: Source = { item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], listItems: async () => [], setColumn: async () => {}, apply: async () => {} };
   const adapter: Source = { ...bare, findBlockers: async (itemId, text) => { asked.push(`${itemId} ${text}`); return found; } };
   const entry = (qualifyId: boolean): SourceConfig => ({ name: 'work', qualifyId, prefix: 'foo', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS });
   assert.deepEqual(await namespaced(entry(true), adapter).findBlockers?.('work:PVTI_1', 'pag'), [{ ...found[0], id: 'foo-12' }, found[1]]);
@@ -751,7 +751,7 @@ test('createSources builds one namespaced source per entry in order; given the l
   const build = (spec: SourceSpec): Source => {
     built.push(spec.source.name);
     const fails = spec.source.name === 'notes';
-    return { resolveFields: async () => { if (fails) throw new Error('no project'); }, listItems: async () => [], setColumn: async () => {}, apply: async () => {}, settingsOptions: async () => [] };
+    return { item: goneItem, resolveFields: async () => { if (fails) throw new Error('no project'); }, listItems: async () => [], setColumn: async () => {}, apply: async () => {}, settingsOptions: async () => [] };
   };
   const first = configOf({ name: 'work', qualifyId: false, ...GITHUB_SOURCE, taskProps: FIXED });
   const live = createSources(first, build);
@@ -801,7 +801,7 @@ test('listItems reads the issue\'s createdAt into the item; an issue without one
 
 test('namespaced maps stored as it maps listItems: the same prefixed ids, source, qualified id and tree names; no stored, none (#191)', async () => {
   const listed = [{ item: { itemId: 'PVTI_2', id: '2', title: 'T', body: '', url: '', parent: 'PVTI_1' }, column: 'Ready' }];
-  const bare: Source = { resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => listed };
+  const bare: Source = { item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => listed };
   const entry: SourceConfig = { name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
   assert.equal(namespaced(entry, bare).stored, undefined);
   const wrapped = namespaced(entry, { ...bare, stored: async () => listed });
@@ -810,12 +810,29 @@ test('namespaced maps stored as it maps listItems: the same prefixed ids, source
   assert.deepEqual([stored?.[0].item.itemId, stored?.[0].item.id, stored?.[0].item.parent], ['work:PVTI_2', 'W-2', 'work:PVTI_1']);
 });
 
+test('namespaced hands item the adapter\'s own id and the url untouched, and answers the entry\'s and the item\'s ids as listItems does (#567)', async () => {
+  const url = 'https://github.com/acme/r/issues/2';
+  const own: Item = { itemId: 'PVTI_2', id: '2', title: 'T', body: '', url, parent: 'PVTI_1' };
+  const answers: SourceItemRead[] = [{ reason: 'filter', entry: { item: own, column: 'Done' } }, { reason: 'closed', item: own, column: 'Done' }, { reason: 'gone' }];
+  const asked: string[] = [];
+  const bare: Source = {
+    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => [],
+    item: async (itemId, at) => { asked.push(`${itemId} ${at}`); return answers.shift() ?? { reason: 'gone' }; },
+  };
+  const source = namespaced({ name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS }, bare);
+  const shown: Item = { ...own, itemId: 'work:PVTI_2', parent: 'work:PVTI_1', source: 'work', id: 'W-2' };
+  assert.deepEqual(await source.item('work:PVTI_2', url), { reason: 'filter', entry: { item: shown, column: 'Done' } });
+  assert.deepEqual(await source.item('work:PVTI_2', url), { reason: 'closed', item: shown, column: 'Done' });
+  assert.deepEqual(await source.item('work:PVTI_2', url), { reason: 'gone' });
+  assert.deepEqual(asked, Array(3).fill(`PVTI_2 ${url}`));
+});
+
 // #291: a source whose resolveFields fails as `fail` says, every call recorded; gh's words when the network is down
 const OFFLINE = 'gh api graphql: error connecting to api.github.com';
 function resolving(fail: () => Error | undefined): { source: Source; calls: string[] } {
   const calls: string[] = [];
   const source: Source = {
-    resolveFields: async () => {
+    item: goneItem, resolveFields: async () => {
       calls.push('resolve');
       const err = fail();
       if (err) throw err;
@@ -873,7 +890,7 @@ test('namespaced hands project and fieldsOf their read options, so ?fresh=1 and 
   const asked: unknown[] = [];
   const view: ProjectView = { statuses: [], fields: [], builtins: {}, items: [], truncated: false };
   const bare: Source = {
-    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => [],
+    item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => [],
     project: async (options) => { asked.push(options); return view; }, fieldsOf: async (_itemId, options) => { asked.push(options); return []; },
   };
   const source = namespaced({ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS }, bare);

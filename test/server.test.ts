@@ -33,7 +33,7 @@ import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript } from './fakes.js';
+import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -950,6 +950,7 @@ test('POST /settings answers once the config is written and the new stages are r
   // A source whose apply() hangs until the test releases it, standing in for a slow adapter request: reconfigure must not make
   // POST /settings wait on it.
   const factory = (): Source => ({
+    item: goneItem,
     async resolveFields() {},
     async listItems() {
       return [{ item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: 'https://github.com/acme/r/issues/1' }, column: 'Ready' }];
@@ -989,6 +990,7 @@ test('POST /settings answers once the config is written and the new stages are r
 test('a refused close ahead of an archive leaves the task leaving, and the archive\'s success closes it (#515)', async (t) => {
   const applied: string[] = [];
   const factory = (): Source => ({
+    item: goneItem,
     async resolveFields() {},
     async listItems() {
       return [{ item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: 'https://github.com/acme/r/issues/1' }, column: 'Ready' }];
@@ -1018,6 +1020,7 @@ test('a save\'s sourceAction effects stay pinned to that save\'s own runtime eve
   // Lists I1 and I2 on every poll, like the single-task #476 test above: start()'s own poll and the background ones fired
   // by both saves see the same two items throughout, so neither task is ever marked missing.
   const factory = (): Source => ({
+    item: goneItem,
     async resolveFields() {},
     async listItems() {
       return [

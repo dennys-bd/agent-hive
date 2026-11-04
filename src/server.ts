@@ -76,7 +76,7 @@ import { accessFor, type ReadAccess } from './read-model/access.js';
 import type { ReadModel, SyncKind } from './read-model/db.js';
 import type { ItemStore } from './read-model/items.js';
 import type { UsageStore } from './usage-store.js';
-import { createReadModelLoop, readModelEvent } from './read-model/loop.js';
+import { createReadModelLoop, readModelEvent, type RefetchOutcome } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
 import { preloaderOf } from './server-pr-changes.js';
@@ -213,6 +213,7 @@ export interface HiveServer {
   close(reason?: string): Promise<void>; // reason: hive.quit's (#742), `close` by default
   getState(): State | undefined;
   notifyReadModel(repository: string, kinds: SyncKind[]): void; // #282: the readModel event, for the boot adapters' write answers
+  refetchIssue(repository: string, number: number): Promise<RefetchOutcome>; // #567: the read loop's refetch, for the boot adapters' item store
 }
 
 interface Live {
@@ -1282,12 +1283,15 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
-  // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
-  const itemStore: ItemStore | undefined = deps.readModel && { db: deps.readModel, source: async () => (await readAccess())?.source, notify: notifyReadModel };
   const readLoop = deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess,
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
   });
+  // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
+  // #567: after the loop, whose refetch reads an issue the Project no longer holds
+  const itemStore: ItemStore | undefined = deps.readModel && readLoop && {
+    db: deps.readModel, source: async () => (await readAccess())?.source, notify: notifyReadModel, refetch: readLoop.refetch,
+  };
   registerProjectRoutes(app, { requireLive, dispatch, log, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
   // #181: the reads answer from the model, as the login the sync reads with (ponytail: a stat of gh's hosts.yml per read in cli mode); the writes
   // go to GitHub with the Hive's own login (#757), and their answer is upserted and named by the sync's own readModel event (#183)
@@ -1463,5 +1467,6 @@ export function createServer(deps: ServerDeps): HiveServer {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 
-  return { dispatch, poll, boot, refreshPlanLimits, listen, close, getState: () => live?.state, notifyReadModel };
+  return { dispatch, poll, boot, refreshPlanLimits, listen, close, getState: () => live?.state, notifyReadModel,
+    refetchIssue: (repository: string, number: number) => readLoop?.refetch(repository, number) ?? Promise.resolve<RefetchOutcome>('skipped') };
 }

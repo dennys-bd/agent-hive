@@ -679,6 +679,14 @@ export interface SourceItem {
   column: string;
 }
 
+/** Where one item read past the listing stands (#567): on the Project and listed, on the Project but filtered out, off the Project, closed, gone. */
+export type ItemReason = 'listing' | 'filter' | 'project' | 'closed' | 'gone';
+// SourceItemRead, not ItemRead: that name is the catalogue item's read (below)
+export type SourceItemRead =
+  | { reason: 'listing' | 'filter'; entry: SourceItem } // on the Project: entry.column is the item's Status, cited or not
+  | { reason: 'project' | 'closed'; item: Item; column?: string } // the issue; column only for a closed item still on the Project
+  | { reason: 'gone' };
+
 /** Why a session slept (#672): a manual sleep of one session (a close-tab sleep included), the auto flow ending a stage's run, the idle
  * shutdown, a sleep all. Each has its own notice switch. */
 export type SleepCause = 'manual' | 'auto' | 'idle' | 'all';
@@ -1970,6 +1978,7 @@ export interface ReadOptions { fresh?: boolean } // #282: fresh reads GitHub now
 export interface Source {
   resolveFields(): Promise<void>; // every column name the config cites exists on the source
   listItems(): Promise<SourceItem[]>; // tasks in any cited column, in source order
+  item(itemId: string, url: string): Promise<SourceItemRead>; // #567: one item, never a listing; rejects when the read fails
   stored?(): Promise<SourceItem[]>; // #191: the listing the read model holds, read with no network call; [] when there is none
   setColumn(itemId: string, column: string): Promise<void>;
   apply(itemId: string, action: ItemAction): Promise<void>; // what a stage's onStart / a transition's sources ask beyond a move (#286, #515); rejects for an action its type's SOURCE_ACTIONS entry lacks

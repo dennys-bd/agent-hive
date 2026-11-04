@@ -23,7 +23,7 @@ const names = (calls: { name: string }[]): string[] => calls.map((c) => c.name);
 
 async function memoryStore(): Promise<ItemStore> {
   const { db } = await openReadModel(':memory:');
-  return { db, source: async () => ROWS, notify: () => undefined };
+  return { db, source: async () => ROWS, notify: () => undefined, refetch: async () => 'skipped' as const };
 }
 
 test('with a store, a poll whose probe did not move sends only the probe and lists the stored items (#190)', async () => {

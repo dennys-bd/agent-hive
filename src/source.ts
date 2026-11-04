@@ -8,7 +8,7 @@ import { parseAuth } from './config.js';
 import { isNetworkError } from './fork.js';
 import type { Logger } from './log.js';
 import type { ItemStore } from './read-model/items.js';
-import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, ReadOptions, SourceItem } from './types.js';
+import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, ReadOptions, SourceItem, SourceItemRead } from './types.js';
 import { flatten } from './flows.js';
 
 export interface SourceDeps {
@@ -87,9 +87,12 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
   const written = (w: FieldWrite): FieldWrite => ({
     ...w, row: { ...w.row, itemId: `${prefix}${w.row.itemId}` }, ...(w.entry ? { entry: { ...w.entry, item: item(w.entry.item) } } : {}),
   });
+  // #567: one item's read under the listed ids, through listItems' own item mapping; the url passes untouched
+  const read = (r: SourceItemRead): SourceItemRead => ('entry' in r ? { ...r, entry: { ...r.entry, item: item(r.entry.item) } } : 'item' in r ? { ...r, item: item(r.item) } : r);
   return {
     ...adapter,
     listItems: async () => shown(await adapter.listItems()),
+    item: async (itemId, url) => read(await adapter.item(own(itemId), url)),
     ...(stored ? { stored: async () => shown(await stored()) } : {}),
     setColumn: (itemId, column) => adapter.setColumn(own(itemId), column),
     apply: (itemId, action) => adapter.apply(own(itemId), action),

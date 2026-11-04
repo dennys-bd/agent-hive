@@ -11,7 +11,7 @@ import { renamesRefusal } from '../src/settings-save.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Source, SourceItem, SourceSpec, Task, Config, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, combConfig, EPICS, FILTER, FIXED, fakeLog, fakeSpawn, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, combConfig, EPICS, FILTER, FIXED, fakeLog, fakeSpawn, goneItem, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { noCreateMessage, notInFlowNotice } from '../src/create-task.js';
 
@@ -35,7 +35,7 @@ async function startSources(t: TestContext, maxConcurrent = 0, qualifyNotes = tr
     const fake = fakes[spec.source.type === 'github' && spec.source.number === NOTES_PROJECT ? 'notes' : 'work']; // by project (#278): a renamed entry keeps listing the same source
     fake.built += 1;
     return {
-      resolveFields: async () => {}, settingsOptions: async () => OPTIONS,
+      item: goneItem, resolveFields: async () => {}, settingsOptions: async () => OPTIONS,
       listItems: async () => {
         if (fake.failure) throw new Error(fake.failure);
         return [...fake.listed];

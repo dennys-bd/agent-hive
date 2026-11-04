@@ -1,6 +1,7 @@
 import { STATUS } from '../field-values.js';
 import type { GhBlockerRef, GhIssueRelations, GhItemNode, GhProjectField } from '../sources/github-queries.js';
 import type { ReadModel, SyncKind } from './db.js';
+import type { RefetchOutcome } from './loop.js';
 import { blockingOf, rebuildNode } from './items-rebuild.js';
 import { closingPrsFromGql, issueFromGql, WireError } from './normalize.js';
 import type { FieldValueRow, IssueDetails, NormalizedItem, ProjectFieldRow, RelationRow, UpsertOrigin } from './rows.js';
@@ -8,8 +9,12 @@ import type { FieldValueRow, IssueDetails, NormalizedItem, ProjectFieldRow, Rela
 // A Project's items (#190), normalized (#282): what one wire node becomes in the read model's tables. items-rebuild.ts turns them back;
 // listed(), projectItem() and itemFields() run unchanged over the rebuilt node (items-contract.test.ts)
 
-/** What the adapter needs of the model (#190): the rows' source, the database, and the readModel event a write's issue row names (#282). */
-export interface ItemStore { db: ReadModel; source(): Promise<string | undefined>; notify(repository: string, kinds: SyncKind[]): void }
+/** What the adapter needs of the model (#190): the rows' source, the database, the readModel event a write's issue row names (#282) and,
+ * #567, the refetch of one issue past the Project, which stores it as an issue page's refetch does. */
+export interface ItemStore {
+  db: ReadModel; source(): Promise<string | undefined>; notify(repository: string, kinds: SyncKind[]): void;
+  refetch(repository: string, number: number): Promise<RefetchOutcome>;
+}
 /** One listing (#282): the reading account and the Project (`<owner login>/<number>`). The read is unfiltered, so sources over one Project share it. */
 export interface ListingKey { source: string; project: string }
 /** One full read (#282): the Project's fields and its items in order. */

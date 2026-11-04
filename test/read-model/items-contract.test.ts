@@ -94,7 +94,7 @@ test('the contract (#282): projectItem over every wire node deep-equals projectI
 
 test('the contract through the adapter (#190): with a store, a full poll and a probe-only one list what the wire path lists', async () => {
   const db = await memoryModel();
-  const items: ItemStore = { db, source: async () => SOURCE, notify: () => undefined };
+  const items: ItemStore = { db, source: async () => SOURCE, notify: () => undefined, refetch: async () => 'skipped' as const };
   const probe = { rateLimit: null, repositoryOwner: { projectV2: { updatedAt: T1 } } };
   const { gql, calls } = fakeGql({ probe, items: page(WIRE), relations: RELATIONS });
   const stored = createSource(SPEC, { gql, items });
