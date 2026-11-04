@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { UNKNOWN_STAGE_MESSAGE } from './create-task.js';
-import { beforeRefusal, MISSING_MESSAGE, type Refusal, refuse, RUNNING_MESSAGE, type TaskRouteDeps, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
+import { type LeaveBlocker, leaveBlocker } from './leave-flow.js';
+import { beforeRefusal, DELETING_MESSAGE, MISSING_MESSAGE, type Refusal, refuse, RUNNING_MESSAGE, type TaskRouteDeps, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { canMoveToStage, stageOf } from './tasks.js';
 import type { HiveEvent, State, Task } from './types.js';
 
@@ -11,6 +12,12 @@ const HTTP_CONFLICT = 409;
 const HTTP_BAD_REQUEST = 400;
 const DROP_MESSAGE = 'drop precisa ser um objeto, com before em texto'; // #366: a drag's placement on move-to
 const SAME_STAGE_MESSAGE = 'tarefa já está nessa etapa';
+const ALREADY_OUTSIDE_MESSAGE = 'already outside the flow'; // #566: a no-op answers a refusal, as SAME_STAGE_MESSAGE does for move-to
+const EPIC_FOLLOWS_MESSAGE = "an epic follows its children's stages"; // #566: followEpics would put it back on the next event
+// Built on call, not at load: server-tasks.ts imports this module, so its messages are not initialized yet while this one loads
+const leaveMessage = (blocker: LeaveBlocker): string => ({
+  outside: ALREADY_OUTSIDE_MESSAGE, missing: MISSING_MESSAGE, epic: EPIC_FOLLOWS_MESSAGE, deleting: DELETING_MESSAGE, running: RUNNING_MESSAGE,
+})[blocker];
 
 /** Why a move to `stage` would be a no-op in the reducer (#164, #366); the task and the stage already exist. A drop's `before` must be a
  * task of that stage: the drop line only ever shows between the target's tasks. */
@@ -34,6 +41,12 @@ function dropOf(raw: unknown): Drop | undefined | false {
   return typeof before === 'string' ? { before } : false;
 }
 
+/** Why leave-flow would be a no-op in the reducer (#566): leaveBlocker's reason as the route's 409. */
+export function leaveFlowRefusal(state: State, task: Task): Refusal | undefined {
+  const blocker = leaveBlocker(state, task);
+  return blocker === undefined ? undefined : { status: HTTP_CONFLICT, message: leaveMessage(blocker) };
+}
+
 export function registerFlowRoutes(app: Express, { requireLive, dispatch }: TaskRouteDeps): void {
   app.post('/tasks/:id/move-to', async (req: Request, res: Response) => {
     const current = requireLive(res);
@@ -48,6 +61,18 @@ export function registerFlowRoutes(app: Express, { requireLive, dispatch }: Task
     const refusal = moveToRefusal(current.state, task, stage, drop?.before);
     if (refusal) return refuse(res, refusal);
     await dispatch({ type: 'moveToStage', taskId, stage, ...(drop ? { drop } : {}) });
+    res.json({ ok: true });
+  });
+
+  app.post('/tasks/:id/leave-flow', async (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const taskId = req.params.id as string;
+    const task = current.state.tasks.find((c) => c.item.itemId === taskId);
+    if (!task) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE });
+    const refusal = leaveFlowRefusal(current.state, task);
+    if (refusal) return refuse(res, refusal);
+    await dispatch({ type: 'leaveFlow', taskId }); // writes nothing to the source (#566)
     res.json({ ok: true });
   });
 }

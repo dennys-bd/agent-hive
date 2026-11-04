@@ -301,7 +301,7 @@ export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
   registerBaseRoute(app, deps);
   registerDeleteActivityRoute(app, deps);
   registerAutoRoutes(app, deps);
-  registerFlowRoutes(app, deps); // POST /tasks/:id/move-to (#366)
+  registerFlowRoutes(app, deps); // POST /tasks/:id/move-to (#366) and /leave-flow (#566)
   registerRetryRoute(app, deps); // POST /tasks/:id/retry (#915)
   registerDismissErrorRoute(app, deps); // POST /tasks/:id/dismiss-error (#354)
   registerSessionRoutes(app, deps);
