@@ -7,7 +7,7 @@ import { ITEMS, ITEM_FIELDS, type GhItemNode } from '../src/sources/github-queri
 import { PROJECT_ITEM_LIMIT } from '../src/sources/github-pages.js';
 import { citedColumns, itemSource } from '../src/tasks.js';
 import { parseConfig } from '../src/config.js';
-import type { FieldWrite, ProjectView, Source, SourceConfig, SourceSpec, TaskFilter, TaskRule } from '../src/types.js';
+import type { FieldWrite, Item, ProjectView, SourceItemRead, Source, SourceConfig, SourceSpec, TaskFilter, TaskRule } from '../src/types.js';
 import { EPICS, SOURCE, STAGES, FILTER, FIXED, chained, combConfig, fakeGql, fakeLog, goneItem, move } from './fakes.js';
 
 const GITHUB_SOURCE = { type: 'github', owner: 'acme', number: 6, filter: FILTER };
@@ -808,6 +808,23 @@ test('namespaced maps stored as it maps listItems: the same prefixed ids, source
   const stored = await wrapped.stored?.();
   assert.deepEqual(stored, await wrapped.listItems());
   assert.deepEqual([stored?.[0].item.itemId, stored?.[0].item.id, stored?.[0].item.parent], ['work:PVTI_2', 'W-2', 'work:PVTI_1']);
+});
+
+test('namespaced hands item the adapter\'s own id and the url untouched, and answers the entry\'s and the item\'s ids as listItems does (#567)', async () => {
+  const url = 'https://github.com/acme/r/issues/2';
+  const own: Item = { itemId: 'PVTI_2', id: '2', title: 'T', body: '', url, parent: 'PVTI_1' };
+  const answers: SourceItemRead[] = [{ reason: 'filter', entry: { item: own, column: 'Done' } }, { reason: 'closed', item: own, column: 'Done' }, { reason: 'gone' }];
+  const asked: string[] = [];
+  const bare: Source = {
+    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => [],
+    item: async (itemId, at) => { asked.push(`${itemId} ${at}`); return answers.shift() ?? { reason: 'gone' }; },
+  };
+  const source = namespaced({ name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS }, bare);
+  const shown: Item = { ...own, itemId: 'work:PVTI_2', parent: 'work:PVTI_1', source: 'work', id: 'W-2' };
+  assert.deepEqual(await source.item('work:PVTI_2', url), { reason: 'filter', entry: { item: shown, column: 'Done' } });
+  assert.deepEqual(await source.item('work:PVTI_2', url), { reason: 'closed', item: shown, column: 'Done' });
+  assert.deepEqual(await source.item('work:PVTI_2', url), { reason: 'gone' });
+  assert.deepEqual(asked, Array(3).fill(`PVTI_2 ${url}`));
 });
 
 // #291: a source whose resolveFields fails as `fail` says, every call recorded; gh's words when the network is down
