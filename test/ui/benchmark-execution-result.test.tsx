@@ -9,7 +9,7 @@ const execution = TABS.find((tab) => tab.id === 'execution');
 beforeEach(() => setLanguage('pt'));
 
 test("the execution tab's result slot renders the picked run's result (#466)", () => {
-  render(<>{execution?.result?.(RESULT_EXP, RUN_B1.token)}</>);
+  render(execution?.result?.(RESULT_EXP, RUN_B1.token));
   expect(screen.getByRole('region', { name: 'resultado do run' })).toBeInTheDocument();
 });
 

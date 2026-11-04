@@ -64,16 +64,10 @@ const en = {
   'task.moveToWorkspace.locked': 'delete the activity first',
   'task.delete': 'delete task…',
   'task.delete.confirm': 'delete',
-  'flow.allSources': 'all sources', // #542: the flow's header
   'flow.search': 'search tasks',
   'flow.updated': 'updated {time}',
   'flow.refresh': 'refresh',
-  'flow.loops': '↺ loops', // #909: the flow header's toggle of the back edges and loops
-  'flow.loops.hide': 'hide the arrows · the stages sit closer',
-  'flow.loops.show': 'show the loops',
-  'flow.tree': '⑂ tree', // #34: the flow header's toggle of the tree grouping in the stage nodes
-  'flow.tree.ungroup': 'grouped by tree · click to ungroup',
-  'flow.tree.group': 'group by tree',
+  'flow.tree': '⑂ tree', // #34: the focus trail's label
   'flow.tree.children': '{n} children · {done}/{n}', // #34: a parent's card, over its direct children
   'flow.tree.focus': 'focus ›', // #34: on a parent's card; #35 focuses the flow on its subtree
   'flow.tree.none': 'no tree', // #34: a node's group of the tasks in no tree
@@ -3027,6 +3021,32 @@ const en = {
   'back.list': 'back', // #571: a page's way back to the list it was opened from
   'tasks.center.soon': 'coming soon', // #571: the list and outside-flow views, until 3.2 / 3.3
   'tasks.header.source.github': 'github project', // #571: the source header's type, before its owner
+  'tasks.display': 'display', // #574: the tasks header's exibir and its popover (handoff §3)
+  'tasks.display.title': 'how to show the tasks',
+  'tasks.display.sources': 'sources',
+  'tasks.display.all': 'all',
+  'tasks.display.allSources': 'all sources',
+  'tasks.display.noSource': 'no source',
+  'tasks.display.loops': 'loops',
+  'tasks.display.loops.all': 'all',
+  'tasks.display.loops.inner': 'inner only',
+  'tasks.display.loops.none': 'none',
+  'tasks.display.loops.hint.all': 'inner loops join neighbouring stages; outer ones pass over other stages.',
+  'tasks.display.loops.hint.inner': 'only the loops between neighbouring stages. no outer ones and no feedback.',
+  'tasks.display.loops.hint.none': 'no arrows: only the stages.',
+  'tasks.display.labels': 'loop labels',
+  'tasks.display.labels.all': 'all',
+  'tasks.display.labels.outer': 'outer only',
+  'tasks.display.labels.none': 'none',
+  'tasks.display.labels.hint': 'done · 3x, failed · 3x, rejected · 3x, feedback',
+  'tasks.display.tree': '⑂ group the tree in the stage',
+  'tasks.display.epics': 'hide epics',
+  'tasks.display.epics.none': 'none',
+  'tasks.display.epics.middle': 'middle',
+  'tasks.display.epics.all': 'all',
+  'tasks.display.epics.hint.none': 'epics show as cards in the stages.',
+  'tasks.display.epics.hint.middle': 'only the root epic stays. the middle ones leave the view and stay in the flow.',
+  'tasks.display.epics.hint.all': 'no epic in the view. they stay in the flow and their children stay in the stages.',
 };
 
 export type MessageKey = keyof typeof en;
@@ -3093,16 +3113,10 @@ const pt: Record<MessageKey, string> = {
   'task.moveToWorkspace.locked': 'exclua a atividade antes',
   'task.delete': 'excluir tarefa…',
   'task.delete.confirm': 'excluir',
-  'flow.allSources': 'todas as sources', // #542: the flow's header
   'flow.search': 'buscar tarefas',
   'flow.updated': 'atualizado {time}',
   'flow.refresh': 'atualizar',
-  'flow.loops': '↺ voltas',
-  'flow.loops.hide': 'esconder as setas · as etapas ficam mais juntas',
-  'flow.loops.show': 'mostrar as voltas',
   'flow.tree': '⑂ árvore',
-  'flow.tree.ungroup': 'agrupado por árvore · clique para desagrupar',
-  'flow.tree.group': 'agrupar por árvore',
   'flow.tree.children': '{n} filhas · {done}/{n}',
   'flow.tree.focus': 'focar ›',
   'flow.tree.none': 'sem árvore',
@@ -6048,6 +6062,32 @@ const pt: Record<MessageKey, string> = {
   'back.list': 'voltar',
   'tasks.center.soon': 'em breve',
   'tasks.header.source.github': 'github project',
+  'tasks.display': 'exibir',
+  'tasks.display.title': 'como mostrar as tarefas',
+  'tasks.display.sources': 'sources',
+  'tasks.display.all': 'todas',
+  'tasks.display.allSources': 'todas as sources',
+  'tasks.display.noSource': 'nenhuma source',
+  'tasks.display.loops': 'voltas',
+  'tasks.display.loops.all': 'todas',
+  'tasks.display.loops.inner': 'só internas',
+  'tasks.display.loops.none': 'nenhuma',
+  'tasks.display.loops.hint.all': 'internas ligam etapas vizinhas; externas passam por cima de outras etapas.',
+  'tasks.display.loops.hint.inner': 'só as voltas entre etapas vizinhas. sem externas e sem feedback.',
+  'tasks.display.loops.hint.none': 'nenhuma seta: só as etapas.',
+  'tasks.display.labels': 'rótulos das voltas',
+  'tasks.display.labels.all': 'todos',
+  'tasks.display.labels.outer': 'só externas',
+  'tasks.display.labels.none': 'nenhum',
+  'tasks.display.labels.hint': 'terminou · 3x, falhou · 3x, reprovou · 3x, feedback',
+  'tasks.display.tree': '⑂ agrupar a árvore na etapa',
+  'tasks.display.epics': 'esconder epics',
+  'tasks.display.epics.none': 'nenhum',
+  'tasks.display.epics.middle': 'intermediários',
+  'tasks.display.epics.all': 'todos',
+  'tasks.display.epics.hint.none': 'epics aparecem como cards nas etapas.',
+  'tasks.display.epics.hint.middle': 'fica só o epic raiz. os do meio somem da vista e continuam no fluxo.',
+  'tasks.display.epics.hint.all': 'nenhum epic na vista. continuam no fluxo e as filhas seguem nas etapas.',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

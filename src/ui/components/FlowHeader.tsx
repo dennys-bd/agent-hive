@@ -16,10 +16,6 @@ import { binding, isMac } from '@/lib/shortcut-bindings';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 const pad = (n: number): string => String(n).padStart(2, '0');
-// The header toggles' two looks, ↺ loops (#909) and ⑂ tree (#34): the dark twins beat the outline variant's dark:bg-input/30, which would
-// otherwise paint both alike
-const TOGGLE_ON = 'bg-muted text-foreground dark:bg-muted';
-const TOGGLE_OFF = 'bg-transparent text-muted-foreground dark:bg-transparent';
 
 // The bar sits in the window header (#295), which drags the window (#583): its controls opt out to keep their clicks; its text drags with it
 const NO_DRAG_CONTROLS = '[&_:is(button,input)]:[-webkit-app-region:no-drag]';
@@ -148,12 +144,12 @@ function RepoTitle({ header }: { header: RepoHeader }) {
 export type HeaderMode = { kind: 'tasks' } | { kind: 'source'; source: SourceConfig } | { kind: 'repo'; header: RepoHeader };
 const TASKS_MODE: HeaderMode = { kind: 'tasks' };
 
-// fluxo, todas as sources (fixed until 2.5), the display slot, and the chips of the workspaces the shown tasks resolve to (#542)
-function TasksTitle({ state, tasks, display }: { state: State; tasks: Task[]; display?: ReactNode }) {
+// fluxo, the sources legend (#574), the display slot, and the chips of the workspaces the shown tasks resolve to (#542)
+function TasksTitle({ state, tasks, legend, display }: { state: State; tasks: Task[]; legend?: string; display?: ReactNode }) {
   return (
     <>
       <span className="font-semibold text-[13px] text-foreground">{t('header.flow')}</span>
-      <span>{t('flow.allSources')}</span>
+      <span>{legend ?? t('tasks.display.allSources')}</span>
       {display}
       {shownWorkspaces(tasks, state).map((name) => (
         <span key={name} className="flex items-center gap-1.5 rounded-[4px] border px-1.5 py-0.5">
@@ -180,18 +176,17 @@ interface FlowHeaderProps {
   isShown?: boolean;
   onRefresh?(): Promise<unknown>; // #756: what atualizar runs instead of polling every source (the native view reads itself again); never rejects
   mode?: HeaderMode; // #571: tasks (default), a source (#756) or a repository (#757)
-  display?: ReactNode; // #571: the tasks mode's display control, right after the legend; nothing passes it until 2.5 (decision 12)
+  legend?: string; // #574: the tasks mode's sources legend; absent: todas as sources
+  display?: ReactNode; // #571: the tasks mode's display control (exibir, #574), right after the legend
   back?: BackLink; // #911, #380: the way back to the last flow; only the issue and PR pages pass it
   github?: string; // #352: the GitHub page of what the center shows; only the repository views and the issue/PR pages pass it
-  loops?: boolean; onLoops?(): void; // #909: the flowchart's ↺ voltas; only Flow passes them, so the native tab and the repository headers never show it
-  tree?: boolean; onTree?(): void; // #34: the ⑂ tree toggle, the value Flow resolved; only Flow passes them, as with ↺ loops
 }
 
-/** The flow's header (redesign 10, #542): fluxo, todas as sources, the chips of the workspaces the shown tasks resolve
- * to, ⑂ tree with `onTree` (#34), ↺ voltas with `onLoops` (#909), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does. `tasks`: the shown flow's.
+/** The flow's header (redesign 10, #542): fluxo, the sources legend and exibir (#574), the chips of the workspaces the shown tasks resolve
+ * to, buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does. `tasks`: the shown flow's.
  * With `mode` source it is the source header (#756, handoff §2) and with `mode` repo the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. With `github` (#352), GitHub ↗ sits right before atualizar. It renders in the window header's center column (#295, HeaderSlot),
  * the header's 44px and border its own. */
-export function FlowHeader({ state, tasks, search, onSearch, isShown = true, onRefresh, mode = TASKS_MODE, display, back, github, loops = true, onLoops, tree = false, onTree }: FlowHeaderProps) {
+export function FlowHeader({ state, tasks, search, onSearch, isShown = true, onRefresh, mode = TASKS_MODE, legend, display, back, github }: FlowHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isTasks = mode.kind === 'tasks';
   const polled = isTasks ? lastPolled(state.syncs) : undefined;
@@ -206,23 +201,13 @@ export function FlowHeader({ state, tasks, search, onSearch, isShown = true, onR
     refreshKey.current = refresh;
   });
   useEffect(() => (isShown ? onShortcutKey([[true, 'refreshFlow']], () => refreshKey.current()) : undefined), [isShown]);
-  const title = mode.kind === 'repo' ? <RepoTitle header={mode.header} /> : mode.kind === 'source' ? <SourceHeading source={mode.source} /> : <TasksTitle state={state} tasks={tasks} display={display} />;
+  const title = mode.kind === 'repo' ? <RepoTitle header={mode.header} /> : mode.kind === 'source' ? <SourceHeading source={mode.source} /> : <TasksTitle state={state} tasks={tasks} legend={legend} display={display} />;
   return (
     <HeaderSlot>
     <section aria-label={t('header.flow')} className={`flex h-full min-w-0 flex-1 items-center gap-2.5 px-3.5 text-muted-foreground text-xs ${NO_DRAG_CONTROLS}`}>
       {back && <BackButton back={back} />}
       {title}
       <span className="flex-1" />
-      {onTree && (
-        <Button type="button" variant="outline" size="xs" aria-pressed={tree} title={t(tree ? 'flow.tree.ungroup' : 'flow.tree.group')} className={tree ? TOGGLE_ON : TOGGLE_OFF} onClick={onTree}>
-          {t('flow.tree')}
-        </Button>
-      )}
-      {onLoops && (
-        <Button type="button" variant="outline" size="xs" aria-pressed={loops} title={t(loops ? 'flow.loops.hide' : 'flow.loops.show')} className={loops ? TOGGLE_ON : TOGGLE_OFF} onClick={onLoops}>
-          {t('flow.loops')}
-        </Button>
-      )}
       {onSearch && <SearchField label={t(mode.kind === 'repo' ? 'repos.search' : 'flow.search')} value={search ?? ''} isShown={isShown} isNarrow={!isTasks} onChange={onSearch} />}
       {polled !== undefined && <span>{t('flow.updated', { time: polled })}</span>}
       {github !== undefined && !isTasks && <GithubButton url={github} />}

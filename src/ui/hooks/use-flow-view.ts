@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { OperationId } from '../../types';
 import { onShortcutKey } from '@/lib/dock-layout';
-import { type FlowCanvas, type ShownFlowView, readFlowView, shownOf, withShown, writeFlowView } from '@/lib/flow-view';
+import { type DisplayOptions, type FlowCanvas, type ShownFlowView, displayOf, readFlowView, shownOf, withDisplay, withShown, writeFlowView } from '@/lib/flow-view';
 import { stepZoom } from '@/lib/flow-zoom';
 import { isInDialog, isRecording, isTextField } from '@/lib/shortcut-bindings';
 
@@ -30,12 +30,12 @@ function onFitKey(requestFit: () => void): () => void {
   return () => window.removeEventListener('keydown', listener, true);
 }
 
-/** The flowchart's view and what changes it (#909, #910, #34): the loops toggle, the zoom, a fit request the canvas answers with onFit, the
- * scroll's pan, the tree toggle and the collapsed groups, with the three zoom keys and ⇧1 while `isShown` (#910). */
+/** The flowchart's view and what changes it (#909, #910, #34): the zoom, a fit request the canvas answers with onFit, the
+ * scroll's pan and the collapsed groups (the display options are useDisplayOptions'), with the three zoom keys and ⇧1 while `isShown` (#910). */
 export interface FlowViewControls {
   view: ShownFlowView; fitRequest: number;
-  toggleLoops(): void; zoomTo(zoom: number): void; fit(): void;
-  toggleTree(current: boolean): void; toggleGroup(key: string): void; // #34: `current` is the resolved value the header shows
+  zoomTo(zoom: number): void; fit(): void;
+  toggleGroup(key: string): void;
   onPan(pan: FlowCanvas['pan']): void; onFit(zoom: number): void;
 }
 
@@ -52,11 +52,11 @@ export function useFlowView(isShown: boolean, flow: string): FlowViewControls {
   // What was last written, and for which flow: a scroll writes flowView and never renders the flow again, and a handler may be a render older than a zoom or a toggle
   const latest = useRef(shown);
   const last = (): ShownFlowView => (latest.current.flow === flow ? latest.current.view : view);
-  // #36: `outline` is the details' field; the stored one wins over this hook's copy, or a zoom or a toggle would undo a collapse made there
+  // #36, #574: the outline is the details' and the display fields useDisplayOptions'; the stored ones win over this hook's copy, or a zoom would undo them
   const write = (next: ShownFlowView): ShownFlowView => {
-    const stored = readFlowView();
-    const saved = { ...next, outline: stored.outline };
-    writeFlowView(withShown(stored, flow, saved));
+    const written = withShown(readFlowView(), flow, next);
+    writeFlowView(written);
+    const saved = shownOf(written, flow);
     latest.current = { flow, view: saved };
     return saved;
   };
@@ -79,14 +79,26 @@ export function useFlowView(isShown: boolean, flow: string): FlowViewControls {
   }, [isShown]);
   return {
     view, fitRequest, zoomTo, fit: requestFit,
-    toggleLoops: () => save({ ...view, loops: !view.loops }),
-    // #34: the first click stores the opposite of what the header showed, the "a tree exists" default included
-    toggleTree: (current) => save({ ...view, tree: !current }),
     toggleGroup: (key) => {
       const current = last(); // two collapses before a re-render must both stay
       save({ ...current, collapsed: toggled(current.collapsed, key) });
     },
     onPan: (next) => { write({ ...last(), pan: next }); },
     onFit: (zoom) => save({ ...view, zoom }, { x: 0, y: 0 }),
+  };
+}
+
+/** The display options (#574): the only writer of flowView's display fields. Dashboard's Center owns the one instance (decision 13). */
+export interface DisplayControls { options: DisplayOptions; set(patch: Partial<DisplayOptions>): void }
+
+export function useDisplayOptions(): DisplayControls {
+  const [options, setOptions] = useState(() => displayOf(readFlowView()));
+  return {
+    options,
+    set: (patch) => {
+      const next = withDisplay(readFlowView(), patch); // the stored view: a zoom or a set made since stays
+      writeFlowView(next);
+      setOptions(displayOf(next));
+    },
   };
 }
