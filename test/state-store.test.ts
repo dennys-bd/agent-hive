@@ -919,7 +919,7 @@ test('loadState keeps a disable\'s agent and drops one naming an unknown agent (
   assert.deepEqual((await loadState(dir)).disabledRules, [disabledRules[0]]);
 });
 
-test('saveState writes a listed task\'s item as itemId, id and source alone, and a created, a missing and an orphan task whole; every other task field stays (#191)', async (t) => {
+test('saveState writes a listed task\'s item as itemId, id and source alone, and a created, a missing, an orphan and an out-of-listing task whole; every other task field stays (#191, #568)', async (t) => {
   const dir = await tempDir(t, '');
   const at = '2026-10-13T10:00:00.000Z';
   const full: Item = {
@@ -930,10 +930,11 @@ test('saveState writes a listed task\'s item as itemId, id and source alone, and
   const created: Task = { ...listed, item: { ...full, itemId: 'board:I2' }, created: true };
   const missing: Task = { ...listed, item: { ...full, itemId: 'board:I3' }, missing: true };
   const orphan: Task = { ...listed, item: { ...full, itemId: 'board:I4' }, orphan: true };
-  await saveState(dir, { ...initialState(1), tasks: [listed, created, missing, orphan] });
+  const out: Task = { ...listed, item: { ...full, itemId: 'board:I5' }, outOfListing: 'project' };
+  await saveState(dir, { ...initialState(1), tasks: [listed, created, missing, orphan, out] });
   const written = (JSON.parse(await readFile(join(dir, 'state.json'), 'utf8')) as { tasks: Task[] }).tasks;
   assert.deepEqual(written[0], { ...listed, item: { itemId: 'board:I1', id: '1', source: 'board' } }, 'no title, body, url, facets, blockers or blockedBy');
-  assert.deepEqual(written.slice(1), [created, missing, orphan], 'no model row backs them: their items stay whole');
+  assert.deepEqual(written.slice(1), [created, missing, orphan, out], 'no model row backs them: their items stay whole');
 });
 
 test('loadState reads a lean item with \'\' for its title, body and url and a full one of before #191 as it is; save, load, save is stable (#191)', async (t) => {

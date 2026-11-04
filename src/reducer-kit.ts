@@ -94,12 +94,14 @@ export function releaseRun(state: State, worker: Worker, end: number): State {
  * the one stageGone marked (#861), so the mark goes with it. */
 export const stoppedWork = ({ stageGone: _stageGone, ...activity }: Activity): Activity => ({ ...activity, stopped: true, stoppedAt: new Date().toISOString() }); // #580: when, for the status box
 
-// Whether the source still has the task: a kept orphan, a missing task and a local one (#132) are never written, by a move or an action (#286).
+// Whether the source still has the task: an orphan (its source removed, or its item gone, #568), a missing task and a local one (#132) are never
+// written, by a move or an action (#286). An out-of-listing task is: filtered out it is still on the Project, off it the issue still is
 const onTheSource = (task: Task): boolean => !task.orphan && !task.missing && !task.created;
 
-// Whether the source must be told: a target that differs from what the source shows, for a task the source still has.
+// Whether the source must be told: a target that differs from what the source shows, for a task the source still has. Off the Project
+// (#568) the item has no Status to write
 export const shouldWrite = (task: Task, target: string | undefined): target is string =>
-  target !== undefined && target !== task.boardColumn && onTheSource(task);
+  target !== undefined && target !== task.boardColumn && onTheSource(task) && task.outOfListing !== 'project';
 
 interface Written {
   task: Task;
