@@ -679,6 +679,14 @@ export interface SourceItem {
   column: string;
 }
 
+/** Where one item read past the listing stands (#567): on the Project and listed, on the Project but filtered out, off the Project, closed, gone. */
+export type ItemReason = 'listing' | 'filter' | 'project' | 'closed' | 'gone';
+// SourceItemRead, not ItemRead: that name is the catalogue item's read (below)
+export type SourceItemRead =
+  | { reason: 'listing' | 'filter'; entry: SourceItem } // on the Project: entry.column is the item's Status, cited or not
+  | { reason: 'project' | 'closed'; item: Item; column?: string } // the issue; column only for a closed item still on the Project
+  | { reason: 'gone' };
+
 /** Why a session slept (#672): a manual sleep of one session (a close-tab sleep included), the auto flow ending a stage's run, the idle
  * shutdown, a sleep all. Each has its own notice switch. */
 export type SleepCause = 'manual' | 'auto' | 'idle' | 'all';

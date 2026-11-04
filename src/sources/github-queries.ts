@@ -315,8 +315,21 @@ export function relationsQuery(items: Item[], kinds: RelationsAsked = ['blocking
   return selections.length > 0 ? `query { ${selections.join(' ')} }` : undefined;
 }
 
+// #567: an issue past the Project when no read model holds it, by its url's number: what Source.item answers project / closed from
+export const ISSUE_BY_NUMBER = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) { number title body url state createdAt } }
+}`;
+export interface IssueByNumberData { repository?: { issue?: { number: number; title: string; body?: string | null; url: string; state: string; createdAt?: string } | null } | null }
+
+/** An issue url's parts (#567); anything but `https://github.com/<owner>/<repo>/issues/<n>` → undefined. */
+export interface IssueRef { owner: string; name: string; number: number }
+export function issueRef(url: string): IssueRef | undefined {
+  const match = ISSUE_URL.exec(url);
+  return match ? { owner: match[1], name: match[2], number: Number(match[3]) } : undefined;
+}
+
 /** An issue's repository, from its url (#314); anything but an issue url → undefined. */
 export function issueRepo(url: string): { owner: string; name: string } | undefined {
-  const match = ISSUE_URL.exec(url);
-  return match ? { owner: match[1], name: match[2] } : undefined;
+  const ref = issueRef(url);
+  return ref && { owner: ref.owner, name: ref.name };
 }
