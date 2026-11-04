@@ -860,3 +860,14 @@ test('a poll neither stamps enteredAt on a task outside the flow nor sorts it wi
   const merged = merge([outside, task(2, DEV)], [DEV], [{ item: item(2), column: 'Ready' }, { item: item(1), column: 'Ready' }]);
   assert.deepEqual(merged.map((c) => [c.item.itemId, c.stage, c.enteredAt === undefined]), [['item1', undefined, true], ['item2', 'dev', false]]);
 });
+
+test('a task outside the flow is never a candidate nor due for an action, and a reset of a stage leaves it where it is (#566)', () => {
+  const { stage: _a, ...ready } = task(1, DEV, { enteredAt: ago(DAY) });
+  const { stage: _b, ...cleanable } = task(2, DONE, { enteredAt: ago(6 * DAY), worktree: '/wt/2' });
+  assert.deepEqual(cands([ready], STAGES, NOW, NO_RUNS, ONE), []);
+  assert.equal(cands([task(1, DEV, { enteredAt: ago(DAY) })], STAGES, NOW, NO_RUNS, ONE).length, 1, 'the same task in dev is one');
+  assert.deepEqual(dues([cleanable], STAGES, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS), []);
+  assert.equal(dues([task(2, DONE, { enteredAt: ago(6 * DAY), worktree: '/wt/2' })], STAGES, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS).length, 1, 'the same task in done is due');
+  const tasks = [bareTask(ready), bareTask(task(3, DEV)), bareTask(task(4, DEV))];
+  assert.equal(resetOrder(tasks, 'dev', ['item4', 'item3'], NO_RUNS)[0], tasks[0]);
+});
