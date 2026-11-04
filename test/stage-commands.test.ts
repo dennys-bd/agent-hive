@@ -171,11 +171,11 @@ test('deleting the activity stops its commands stage as it closes its terminals 
   assert.deepEqual([live(state)?.deleting, live(state)?.commands, live(state)?.stopped], [true, undefined, true]);
 });
 
-test('closing a missing task kills its commands stage with it (#755)', () => {
+test('closing an out-of-listing task kills its commands stage with it (#755, #568)', () => {
   const s = polled().state;
-  const missing = reduce(s, { type: 'poll', source: 'board', items: [] }).state;
-  assert.equal(missing.tasks[0].missing, true);
-  const { effects } = reduce(missing, { type: 'closeTask', taskId: ID });
+  const out = reduce(s, { type: 'poll', source: 'board', items: [] }).state;
+  assert.equal(out.tasks[0].outOfListing, 'listing');
+  const { effects } = reduce(out, { type: 'closeTask', taskId: ID });
   assert.ok(effects.some((e) => e.type === 'kill' && e.ptyId === live(s)?.commands?.ptyId));
 });
 

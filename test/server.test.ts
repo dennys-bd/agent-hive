@@ -1,5 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -901,35 +902,31 @@ test('POST /tasks/:id/start is 409 for a show epic: it never runs (#31)', async 
   assert.equal(workers.length, 1, 'nothing spawned');
 });
 
-test('POST /tasks/:id/close and /keep answer a missing task: close kills and removes it, keep makes it an orphan; 404 unknown, 409 while it is still on the source', async (t) => {
+test('POST /tasks/:id/close takes a source task out of the listing or an orphan: it kills and removes it; 404 unknown, 409 while it is still listed (#568)', async (t) => {
   const { base, server, workers } = await start(t); // I1 running
   assert.equal((await postJson(`${base}/tasks/nope/close`)).status, 404);
-  const early = await postJson(`${base}/tasks/board:I1/keep`);
+  const early = await postJson(`${base}/tasks/board:I1/close`);
   assert.equal(early.status, 409);
   assert.deepEqual(await early.json(), { error: 'tarefa ainda está na source' });
-  await server.dispatch({ type: 'poll', source: 'board', items: [] }); // the source no longer lists it
-  assert.equal(server.getState()?.tasks[0].missing, true);
-  assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/keep`)), { ok: true });
-  assert.deepEqual([server.getState()?.tasks[0].orphan, server.getState()?.tasks[0].missing], [true, undefined]);
-  assert.equal(workers[0].killed, 0);
+  await server.dispatch({ type: 'poll', source: 'board', items: [] }); // started: kept, marked listing (no read in the event)
+  assert.equal(task0(server).outOfListing, 'listing');
+  assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/close`)), { ok: true });
+  assert.deepEqual([workers[0].killed, server.getState()?.tasks, worker0(server).status], [1, [], 'empty']);
   const again = await start(t);
-  await again.server.dispatch({ type: 'poll', source: 'board', items: [] });
+  await again.server.dispatch({ type: 'poll', source: 'board', items: [], reads: [{ itemId: 'board:I1', read: { reason: 'gone' } }] });
+  assert.equal(task0(again.server).orphan, true);
   assert.deepEqual(await json(postJson(`${again.base}/tasks/board:I1/close`)), { ok: true });
-  assert.equal(again.workers[0].killed, 1);
   assert.deepEqual(again.server.getState()?.tasks, []);
-  assert.equal(worker0(again.server).status, 'empty');
 });
 
-test('POST /tasks/:id/close and /keep answer 409 while the missing task\'s worktree is being removed, so the removal\'s answer still finds the task (#182)', async (t) => {
+test('POST /tasks/:id/close answers 409 while the out-of-listing task\'s worktree is being removed, so the removal\'s answer still finds the task (#182, #568)', async (t) => {
   const { base, server } = await ranOnce(t);
   await server.dispatch({ type: 'poll', source: 'board', items: [] }); // the source no longer lists it
   await server.dispatch({ type: 'deletingActivity', activityId: workId(server.getState()!, 'board:I1') });
-  assert.deepEqual([task0(server).missing, work0(server)?.deleting], [true, true]);
-  for (const action of ['close', 'keep']) {
-    const res = await postJson(`${base}/tasks/board:I1/${action}`);
-    assert.equal(res.status, 409, action);
-    assert.deepEqual(await res.json(), { error: 'atividade sendo excluída' });
-  }
+  assert.deepEqual([task0(server).outOfListing, work0(server)?.deleting], ['listing', true]);
+  const res = await postJson(`${base}/tasks/board:I1/close`);
+  assert.equal(res.status, 409);
+  assert.deepEqual(await res.json(), { error: 'atividade sendo excluída' });
   assert.equal(server.getState()?.tasks.length, 1, 'the task is still there');
 });
 
@@ -1343,24 +1340,6 @@ test('POST /stages/:name/reset-order answers 404 for an unknown stage and puts t
   assert.deepEqual(server.getState()?.tasks.map((c) => c.pinned), [undefined, undefined, undefined], 'the reset frees the whole stage (#123)');
   const saved = JSON.parse(await readFile(join(home, 'state.json'), 'utf8')) as State;
   assert.deepEqual([saved.tasks.map((c) => c.item.id), saved.sourceOrder], [['2', '1', '3'], ['board:I2', 'board:I1', 'board:I3']], 'order and board order survive a restart');
-});
-
-test('POST /stages/:name/close-missing closes the stage\'s stopped missing tasks behind the UI header and answers how many; a running one stays, unkilled; 404 unknown stage, 409 with nothing closable (#279)', async (t) => {
-  const { base, server, workers } = await start(t); // one worker: I1 runs
-  await server.dispatch({ type: 'poll', source: 'board', items: [item('1', 'Ready'), item('2', 'Ready'), item('3', 'Ready')] }); // 2 and 3 wait
-  const nothing = await postJson(`${base}/stages/fila/close-missing`);
-  assert.equal(nothing.status, 409);
-  assert.deepEqual(await nothing.json(), { error: 'nenhuma tarefa dessa etapa saiu da source' });
-  await server.dispatch({ type: 'poll', source: 'board', items: [] }); // the source no longer lists any of them
-  const plain = await hiveFetch(`${base}/stages/fila/close-missing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-  assert.equal(plain.status, 403);
-  const unknown = await postJson(`${base}/stages/nope/close-missing`);
-  assert.equal(unknown.status, 404);
-  assert.deepEqual(await unknown.json(), { error: 'etapa desconhecida' });
-  assert.deepEqual(await json(postJson(`${base}/stages/fila/close-missing`)), { closed: 2 });
-  assert.deepEqual(order(server), ['1'], 'the running missing task stays with its own close / keep');
-  assert.deepEqual([task0(server).missing, work0(server)?.workerId === undefined, workers[0].killed], [true, false, 0], 'nothing is killed in bulk');
-  assert.equal((await postJson(`${base}/stages/fila/close-missing`)).status, 409, 'only a running one left');
 });
 
 test('POST /tasks/:id/close on a running missing task kills it and never touches git, whatever the body: the worktree stays (#182)', async (t) => {
@@ -2024,7 +2003,7 @@ test('a resumed repo session runs in the workspace\'s main repo, not in the task
   assert.deepEqual([workers[1].launch.cwd, plainArgs(workers[1].launch)], [repo, ['--resume', session.id]]);
 });
 
-test('POST /activities/:id/sessions/:session/open opens a listed session in a manual worker on any task, a repo one in the main repo once its transcript moved there; refusals in order: unknown task, missing, deleting, not continuable, a worktree session with no worktree on disk, a repo session whose transcript is gone (#208)', async (t) => {
+test('POST /activities/:id/sessions/:session/open opens a listed session in a manual worker on any task, a repo one in the main repo once its transcript moved there; refusals in order: unknown task, deleting, not continuable, a worktree session with no worktree on disk, a repo session whose transcript is gone (#208)', async (t) => {
   const { base, repo, server, workers } = await ranOnce(t); // I1 stopped, red, not manual, its session listed; ranOnce points CLAUDE_CONFIG_DIR at a temp dir (#586)
   // #629: under the record holding the session, as the panel addresses it: a deleted activity's record once it was removed
   const recordId = (id: string, session: string): string => recordWithSession(server.getState()!, id, session)?.id ?? workId(server.getState()!, id);
@@ -2038,8 +2017,6 @@ test('POST /activities/:id/sessions/:session/open opens a listed session in a ma
   await refused('nope', s, 404, 'atividade desconhecida'); // #629: no record has that id
   await refused('board:I1', 'a1b2c3d4-0000-4000-8000-000000000009', 409, 'sessão já aberta ou desconhecida');
   await server.dispatch({ type: 'deletingActivity', activityId: workId(server.getState()!, 'board:I1') });
-  await server.dispatch({ type: 'poll', source: 'board', items: [] }); // gone from the source while git runs
-  await refused('board:I1', s, 409, 'tarefa sumiu da source: feche ou mantenha'); // missing before deleting
   // back on the source under a new title: the deleted activity's record keeps the slug its dir was named by (#629)
   await server.dispatch({ type: 'poll', source: 'board', items: [item('1', 'Ready')] });
   await refused('board:I1', s, 409, 'atividade sendo excluída');
@@ -2920,7 +2897,7 @@ test('a save that renames a stage carries its tasks: the running one stays in it
 test('a boot whose config lost a stage the saved state uses places its task in the destination instead of stranding it (#861)', async (t) => {
   const { home, repo } = await tempHive(t);
   const parked: Task = { item: { itemId: 'board:I7', source: 'board', id: '7', title: 'Task 7', body: '', url: 'https://github.com/acme/r/issues/7' }, stage: 'gone', boardColumn: 'Nowhere', auto: false };
-  await saveState(home, { ...initialState(0), ...chained([...STAGES, { name: 'gone', from: {} }]), tasks: [parked] });
+  await saveState(home, withWork({ ...initialState(0), ...chained([...STAGES, { name: 'gone', from: {} }]), tasks: [parked] }, 'board:I7', { id: randomUUID(), slug: 'hive-7-task-7' })); // started: the save's poll keeps it past the listing (#568)
   const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit });
   const port = await server.listen(0);
   t.after(() => server.close());

@@ -186,9 +186,10 @@ test('a rename onto the name of a removed source whose task is still in the Hive
   await sources.server.poll();
   const [work] = sources.body.sources ?? [];
   const workOnly: LegacyStage[] = [{ ...STAGES[0], from: { work: ['Ready'] }, onStart: { work: [move('In progress')] } }];
+  await sources.server.dispatch({ type: 'createActivity', taskId: 'notes:7' }); // started: it outlives its source as an orphan (#568)
   assert.equal((await postJson(`${sources.base}/settings`, { ...sources.body, sources: [work], flows: bodyFlows(workOnly) })).status, 200); // notes removed
   await sources.server.poll();
-  assert.equal(sources.server.getState()?.tasks.find((c) => c.item.itemId === 'notes:7')?.missing, true, 'its board is gone');
+  assert.equal(sources.server.getState()?.tasks.find((c) => c.item.itemId === 'notes:7')?.orphan, true, 'its board is gone');
   const saved = await readFile(join(sources.home, CONFIG_FILE), 'utf8');
   const res = await postJson(`${sources.base}/settings`, {
     ...sources.body, sources: [{ ...work, name: 'notes' }], renames: { work: 'notes' },

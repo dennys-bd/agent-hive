@@ -77,9 +77,10 @@ function finishVia(state: State, task: Task): FinishVia {
   return !task.created && actions(true).some((a) => a.type === 'move') ? 'move' : 'none';
 }
 
-// Why a task left: missing from the source, closed or deleted by hand with no leaving action in flight, else finished with its mechanism
+// Why a task left (#568): the poll let it go (closed on its source, never started, or its source removed: the listing lacks it), closed or
+// deleted by hand with no leaving action in flight, else finished with its mechanism
 function goneFields(state: State, task: Task, event: HiveEvent): { reason: GoneReason; via?: FinishVia } {
-  if (task.missing) return { reason: 'missing' };
+  if (event.type === 'poll' && !event.items.some((c) => c.item.itemId === taskId(task))) return { reason: 'closed' };
   if (!task.leaving && BY_HAND.includes(event.type)) return { reason: 'hand' };
   return { reason: 'finished', via: finishVia(state, task) };
 }

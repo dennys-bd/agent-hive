@@ -12,7 +12,7 @@ import { savedWork } from '../src/state-guards.js';
 import { flatten } from '../src/flows.js';
 import { HOUR_MS } from '../src/usage.js';
 import { deriveFacts } from '../src/fact-derive.js';
-import type { SourceItem, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
+import type { SourceItem, SourceItemRead, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
 import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS, SPAWN_FAILED, STAGE_GONE } from '../src/types.js';
 import { behaviourOf } from '../src/signals.js';
 import { transitionKey } from '../src/transitions.js';
@@ -35,6 +35,7 @@ const base = (max: number, stages: LegacyStage[] = STAGES): State => ({ ...initi
 const ONE = { workspaces: ['hive'], sourceWorkspaces: {} };
 const NO_RUNS: Runs = { workers: [], terminals: [], activities: [], activityRecords: [] };
 const polled = (state: State, items: SourceItem[]) => reduce(state, { type: 'poll', source: 'board', items });
+const reading = (state: State, items: SourceItem[], reads: { itemId: string; read: SourceItemRead }[]) => reduce(state, { type: 'poll', source: 'board', items, reads });
 const filled = (max: number, n: number) => polled(base(max), many(n)); // n Backlog tasks into spec; up to max running
 const hook = (state: State, ptyId: string, payload: Partial<HookPayload> & { hook_event_name: string }) =>
   reduce(state, { type: 'hook', ptyId, payload });
@@ -285,54 +286,86 @@ test('poll rules on a known task: same board column nothing; moved by hand into 
 });
 
 test('poll updates the task fields, keeps the running and unlisted tasks in place, moves the untouched ones to their source position and records the source order (#123)', () => {
-  const first = signaled(polled(base(1), [listed(1), listed(2), listed(3)]).state, 'yellow').state;
+  const first = born(signaled(polled(base(1), [listed(1), listed(2), listed(3)]).state, 'yellow').state, 2);
   assert.deepEqual(first.sourceOrder, ['board:item1', 'board:item2', 'board:item3']);
   const { state } = polled(first, [{ item: { ...item(3), title: 'Renamed', blockedBy: ['1'] }, column: 'Backlog' }, listed(1)]);
   assert.deepEqual(state.tasks.map((c) => c.item.id), ['1', '2', '3'], '1 runs, 2 is unlisted, 3 is the only task left to place: nothing moves');
   assert.deepEqual(state.sourceOrder, ['board:item3', 'board:item1'], 'what a reset would sort by');
   assert.equal(task(state, 3)?.item.title, 'Renamed');
   assert.deepEqual(task(state, 3)?.item.blockedBy, ['1']);
-  assert.equal(task(state, 2)?.missing, true, 'not listed: missing, kept at its index');
-  assert.equal(task(state, 1)?.missing, undefined);
+  assert.equal(task(state, 2)?.outOfListing, 'listing', 'not listed but started: kept at its index (#568)');
+  assert.equal(task(state, 1)?.outOfListing, undefined);
   const grown = polled(state, [listed(4), listed(3), listed(2), listed(1)]).state;
   assert.deepEqual(grown.tasks.map((c) => c.item.id), ['1', '4', '3', '2'], 'the running task holds position 0; the rest, the task new to the Hive included, take the board order');
-  assert.equal(task(grown, 2)?.missing, undefined, 'listed again: the mark drops and the task follows the board like any other');
+  assert.equal(task(grown, 2)?.outOfListing, undefined, 'listed again: the mark drops and the task follows the board like any other');
 });
 
-test('a task the source stops listing is missing (out of contention, keeps running); listed again it loses the mark', () => {
-  const first = signaled(polled(base(1), [listed(1), listed(2)]).state, 'yellow').state; // 1 running, 2 stopped
-  const gone = polled(first, []).state;
-  assert.deepEqual(gone.tasks.map((c) => [c.item.id, c.missing, runOf(gone, c)?.workerId !== undefined]), [['1', true, true], ['2', true, false]]);
-  assert.equal(signaled(gone, 'green').effects.length, 0, 'missing: never started');
-  const back = polled(gone, [listed(2)]).state;
-  assert.equal(task(back, 2)?.missing, undefined);
-  const finished = stopped(back, back.workers[0].runId!);
-  assert.deepEqual(finished.effects.map((e) => e.type), ['kill', 'forgetScrollback'], 'a missing task finishes without a board write');
-  assert.equal(task(finished.state, 1)?.stage, 'dev');
+test('a poll that no longer lists a task keeps a started one, marked listing with no read, and drops one that never started; listed again the mark goes (#568)', () => {
+  const first = signaled(polled(base(1), [listed(1), listed(2)]).state, 'yellow').state; // 1 running, 2 never started
+  const gone = polled(first, []);
+  assert.deepEqual(gone.state.tasks.map((c) => [c.item.id, c.outOfListing, runOf(gone.state, c)?.workerId !== undefined]), [['1', 'listing', true]], '2 leaves with this poll');
+  const back = polled(gone.state, [listed(1)]).state;
+  assert.equal(task(back, 1)?.outOfListing, undefined);
 });
 
-test('closeTask removes a missing task, killing its session when it runs; keepTask turns it into an orphan that runs to the end without source writes and is ignored by the poll', () => {
+test('a poll whose listing lacks a task that never started drops it in that reduction, as dropTask does (#568)', () => {
+  const waiting = polled(base(0), [listed(1), listed(2)]).state; // no worker: neither started
+  const after = polled(waiting, [listed(2)]);
+  assert.deepEqual([after.state.tasks.map((c) => c.item.id), after.effects], [['2'], []]);
+});
+
+test('a filter read keeps the task with the entry\'s title, column and fields, marked filter; a later poll with no read keeps the mark and the fields; a listing that brings it back clears it (#568)', () => {
+  const first = signaled(polled(base(1), [listed(1)]).state, 'red').state; // 1 runs spec
+  const entry: SourceItem = { item: { ...item(1), title: 'Renamed', facets: { assignees: ['bia'], labels: [], fields: {} } }, column: 'In review' };
+  const kept = reading(first, [], [{ itemId: 'board:item1', read: { reason: 'filter', entry } }]).state;
+  const one = task(kept, 1);
+  assert.deepEqual([one?.outOfListing, one?.item.title, one?.item.facets?.assignees, one?.boardColumn, one?.stage], ['filter', 'Renamed', ['bia'], 'In review', 'spec'], 'running: the stage waits for its Stop');
+  assert.deepEqual(task(polled(kept, []).state, 1), one, 'no read: as it was');
+  assert.equal(task(polled(kept, [listed(1)]).state, 1)?.outOfListing, undefined);
+});
+
+test('a project read updates the title and body, keeps the column and the fields, and marks project (#568)', () => {
+  const facets = { assignees: ['bia'], labels: ['hive'], fields: {} };
+  const first = signaled(polled(base(1), [{ item: { ...item(1), facets }, column: 'Backlog' }]).state, 'red').state;
+  const issue: Item = { ...item(1), title: 'Off the Project', body: 'new body' };
+  const kept = task(reading(first, [], [{ itemId: 'board:item1', read: { reason: 'project', item: issue } }]).state, 1);
+  assert.deepEqual([kept?.outOfListing, kept?.item.title, kept?.item.body, kept?.item.facets, kept?.boardColumn, kept?.stage], ['project', 'Off the Project', 'new body', facets, 'Backlog', 'spec']);
+});
+
+test('a closed read on a task a worker holds changes nothing; the next closed read after the worker frees removes it (#568)', () => {
+  const first = signaled(polled(base(1), [listed(1)]).state, 'red').state; // 1 runs spec
+  const closed: SourceItemRead = { reason: 'closed', item: item(1) };
+  const held = reading(first, [], [{ itemId: 'board:item1', read: closed }]).state;
+  assert.deepEqual(task(held, 1), task(first, 1), 'its worker holds it: the task as it was');
+  const free = reduce(held, { type: 'exit', ptyId: first.workers[0].runId! }).state; // the worker frees, the task stops
+  assert.deepEqual(reading(free, [], [{ itemId: 'board:item1', read: closed }]).state.tasks, []);
+});
+
+test('a gone read turns a started task orphan: it runs to the end with no source writes and later polls leave it as it is (#568)', () => {
   const first = signaled(polled(base(2), [listed(1), listed(2)]).state, 'red').state; // both running; red: the Stop frees the worker
-  const gone = polled(first, []).state;
-  const closed = reduce(gone, { type: 'closeTask', taskId: 'board:item1' });
-  assert.deepEqual(closed.effects, [{ type: 'kill', slug: 'hive-1-task-1', ptyId: first.workers[0].runId }, { type: 'forgetScrollback', ptyId: first.workers[0].runId }]);
-  assert.deepEqual(closed.state.tasks.map((c) => c.item.id), ['2']);
-  assert.equal(closed.state.workers[0].status, 'empty');
-  const kept = reduce(closed.state, { type: 'keepTask', taskId: 'board:item2' });
-  assert.equal(kept.effects.length, 0);
-  assert.deepEqual([task(kept.state, 2)?.orphan, task(kept.state, 2)?.missing], [true, undefined]);
-  const finished = stopped(kept.state, kept.state.workers[1].runId!);
-  assert.deepEqual(finished.effects.map((e) => e.type), ['kill', 'forgetScrollback']);
+  const gone = reading(first, [], [{ itemId: 'board:item2', read: { reason: 'gone' } }]).state;
+  assert.deepEqual([task(gone, 2)?.orphan, task(gone, 2)?.outOfListing, task(gone, 1)?.outOfListing], [true, undefined, 'listing']);
+  const kept = reduce(gone, { type: 'closeTask', taskId: 'board:item1' }).state;
+  const finished = stopped(kept, kept.workers[1].runId!);
+  assert.deepEqual(finished.effects.map((e) => e.type), ['kill', 'forgetScrollback'], 'no onFinish write');
   assert.equal(task(finished.state, 2)?.stage, 'dev');
   const green = signaled(finished.state, 'green');
   assert.deepEqual(green.effects.map((e) => e.type), ['spawn'], 'orphan in dev: no onStart write');
   assert.equal(polled(green.state, [listed(2, 'In review')]).state.tasks.find((c) => c.item.id === '2')?.stage, 'dev', 'the poll ignores an orphan');
-  assert.equal(reduce(closed.state, { type: 'closeTask', taskId: 'nope' }).state, closed.state, 'unknown: same object');
-  assert.equal(reduce(first, { type: 'closeTask', taskId: 'board:item1' }).state, first, 'not missing: refused');
-  assert.equal(reduce(first, { type: 'keepTask', taskId: 'board:item1' }).state, first);
-  const deleting: State = withLive(gone, 1, { deleting: true }); // git is removing its worktree (#182), the mark on the activity (#629)
-  assert.equal(reduce(deleting, { type: 'closeTask', taskId: 'board:item1' }).state, deleting, 'deleting: refused until git answers');
-  assert.equal(reduce(deleting, { type: 'keepTask', taskId: 'board:item1' }).state, deleting);
+  assert.equal(reading(green.state, [], [{ itemId: 'board:item2', read: { reason: 'closed', item: item(2) } }]).state.tasks.length, 1, 'no read reaches it either');
+});
+
+test('a source removed from syncs: at the next poll its started task turns orphan and one that never started leaves (#568)', () => {
+  const first = signaled(polled(base(1), [listed(1), listed(2)]).state, 'red').state; // 1 runs, 2 never started
+  const removed = reduce({ ...first, syncs: {} }, { type: 'poll', items: [] }).state;
+  assert.deepEqual(removed.tasks.map((c) => [c.item.id, c.orphan, c.outOfListing]), [['1', true, undefined]]);
+});
+
+test('an out-of-listing task is a fill candidate with its own auto (#568)', () => {
+  const waiting = born(polled(base(0), [listed(1)]).state, 1); // started (an activity), no worker
+  const kept = polled(waiting, []).state;
+  assert.equal(task(kept, 1)?.outOfListing, 'listing');
+  assert.deepEqual(cands(kept).map((c) => c.item.id), ['1']);
 });
 
 test('closeTask removes a source task out of the listing or an orphan with every run on it; it still refuses a listed one, and one being deleted (#568)', () => {
@@ -359,6 +392,7 @@ test('reducer never mutates its input', () => {
   const id = first.workers[0].runId!;
   reduce(first, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens: 900 });
   reduce(first, { type: 'poll', source: 'board', items: [] });
+  reduce(first, { type: 'poll', source: 'board', items: [], reads: [{ itemId: 'board:item2', read: { reason: 'gone' } }] });
   reduce(first, { type: 'start', itemId: 'board:item2' }); // no free worker: the start appends a worker over the cap
   reduce(first, { type: 'setStages', ...chained([]) });
   reduce(first, { type: 'done', ptyId: id });
@@ -797,11 +831,11 @@ test('error sets and poll clears state.error', () => {
   assert.equal(polled(withError, []).state.error, undefined);
 });
 
-test('closeTask never removes the worktree: a running missing task leaves with the kill alone; an idle missing task with a worktree leaves with no effect (#182)', () => {
-  const first = signaled(polled(base(1), [listed(1), listed(2)]).state, 'yellow').state; // 1 running, 2 stopped
+test('closeTask never removes the worktree: a running out-of-listing task leaves with the kill alone; an idle one with a worktree leaves with no effect (#182, #568)', () => {
+  const first = born(signaled(polled(base(1), [listed(1), listed(2)]).state, 'yellow').state, 2); // 1 running, 2 stopped but started: it stays past the listing
   const id = first.workers[0].runId!;
   const located = reduce(first, { type: 'hook', ptyId: id, branch: 'hive-1-task-1', payload: { hook_event_name: 'SessionStart', cwd: '/w/hive-1-task-1' } }).state;
-  const gone = polled(located, []).state;
+  const gone = signaled(polled(located, []).state, 'red').state; // red: an out-of-listing task is a fill candidate, the freed worker would take 2 (#568)
   const running = reduce(gone, { type: 'closeTask', taskId: 'board:item1' });
   assert.deepEqual(running.effects, [{ type: 'kill', slug: 'hive-1-task-1', ptyId: id }, { type: 'forgetScrollback', ptyId: id }]);
   assert.deepEqual(running.state.tasks.map((c) => c.item.id), ['2']);
@@ -1172,7 +1206,7 @@ test('start leaves the state as is for an unknown, running, missing or blocked t
   const full = filled(1, 2).state;
   assert.equal(started(full, 'board:item1').state, full, 'already running');
   const gone = polled(full, [listed(1)]).state;
-  assert.equal(started(gone, 'board:item2').state, gone, 'missing');
+  assert.equal(started(gone, 'board:item2').state, gone, 'never started: it left with the poll (#568)');
 });
 
 test('start with no free worker appends a draining worker over the cap and runs the task there: maxConcurrent untouched, setColumn (when due) + spawn, no fill; each such start adds one', () => {
@@ -1723,7 +1757,7 @@ test('a task cleaned on its finish is not left missing with a worktree when the 
   const left = task(after, 1)!;
   const { id: _id, ...fresh } = work(after, 1)!;
   // #629: the activity went; a fresh one carries no worktree: nothing left behind on disk
-  assert.deepEqual([left.stage, left.missing, work(after, 1)?.id === work(finished, 1)?.id, fresh], ['archive', true, false, { kind: 'task', workspace: 'hive', slug: 'hive-1-task-1', via: transitionKey({ from: 'done', when: 'done' }) }], 'missing, but nothing left behind on disk; #134: the arrow it came through stays');
+  assert.deepEqual([left.stage, left.outOfListing, work(after, 1)?.id === work(finished, 1)?.id, fresh], ['archive', 'listing', false, { kind: 'task', workspace: 'hive', slug: 'hive-1-task-1', via: transitionKey({ from: 'done', when: 'done' }) }], 'kept, out of the listing (#568), but nothing left behind on disk; #134: the arrow it came through stays');
 });
 
 test('a finish runs every due delete activity, not only the task that moved: another task already due in the stage is cleaned in the same reduction, in source order (#284)', () => {
@@ -2511,7 +2545,7 @@ test('a source\'s poll merges only its own tasks and stamps its polledAt, cleari
   assert.deepEqual(notes.tasks.map((c) => [c.item.itemId, c.missing === true]), [['board:item1', false]], 'the notes poll leaves board\'s task alone');
   assert.equal(reduce(first, { type: 'poll', source: 'gone', items: [listed(2, 'Ready')] }).state, first);
   const sourceless = reduce({ ...first, syncs: { notes: {} } }, { type: 'poll', items: [] }).state; // source left the Comb (setSources)
-  assert.equal(sourceless.tasks[0].missing, true, 'its board is gone');
+  assert.deepEqual(sourceless.tasks, [], 'its board is gone and it never started: it leaves (#568)');
   assert.deepEqual(sourceless.sourceOrder, first.sourceOrder, 'nothing merged');
 });
 
@@ -3769,11 +3803,10 @@ test('leaveFlow takes a stopped task out of the flow: stage, enteredAt, pin, tri
   assert.deepEqual(effects, []);
 });
 
-test('leaveFlow is ignored while a stage run holds the task, and for a missing task, a show epic, a task already outside and one whose activity is being deleted (#566)', () => {
+test('leaveFlow is ignored while a stage run holds the task, and for a show epic, a task already outside and one whose activity is being deleted (#566)', () => {
   const epic = polled(base(0), [{ item: { ...item(1), epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' }]).state;
   const cases: Record<string, State> = {
     running: filled(1, 1).state,
-    missing: polled(manualState(1), []).state,
     epic,
     outside: reduce(manualState(1), { type: 'leaveFlow', taskId: 'board:item1' }).state,
     deleting: withLive(manualState(1), 1, { deleting: true }),

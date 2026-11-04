@@ -127,9 +127,9 @@ test('stopEvaluate, a delete and the task leaving abort the evaluation and free 
   const deleting = reduce(withTree, { type: 'deletingActivity', activityId: ids(s).activityId });
   assert.ok(deleting.effects.some((e) => e.type === 'abortEvaluate'), 'closeTerminals halts it');
   assert.deepEqual([live(deleting.state)?.evaluate, live(deleting.state)?.stopped, live(deleting.state)?.deleting], [undefined, true, true]);
-  const missing = reduce(s, { type: 'poll', source: 'board', items: [] }).state; // only a missing or leaving task closes
-  assert.equal(missing.tasks[0].missing, true);
-  const closed = reduce(missing, { type: 'closeTask', taskId: ID });
+  const out = reduce(s, { type: 'poll', source: 'board', items: [] }).state; // only an out-of-listing, orphan or leaving task closes
+  assert.equal(out.tasks[0].outOfListing, 'listing');
+  const closed = reduce(out, { type: 'closeTask', taskId: ID });
   assert.ok(closed.effects.some((e) => e.type === 'abortEvaluate'));
   assert.equal(closed.state.workers.filter((w) => w.status !== 'empty').length, 0);
   assert.equal(reduce(s, { type: 'stopEvaluate', activityId: 'other' }).state, s);

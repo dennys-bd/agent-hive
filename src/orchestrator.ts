@@ -170,7 +170,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'rateLimits': return fill(setRateLimits(state, event)); // a reading is an input of the gate: a window that reset can open a job, one that filled can close it
     case 'sourceQuota': return none(withSync(state, event.source, (s) => ({ ...s, quota: event.quota }))); // display and that source's backoff only: no fill, no effects
     case 'pollFailed': return none(withSync(state, event.source, (s) => ({ ...s, error: event.message }))); // its tasks stay as they are
-    case 'setSources': return none({ ...state, syncs: syncsFor(state.syncs, event.sources) }); // a removed source's tasks go missing at the next poll
+    case 'setSources': return none({ ...state, syncs: syncsFor(state.syncs, event.sources) }); // a removed source's tasks turn orphan (started) or leave at the next poll (#568)
     case 'renameSources': return none(renameSources(state, event.renames)); // a save that renamed sources (#278): no fill; setSources and the poll follow
     case 'renameStages': return none(renameStages(state, event.renames)); // #861: no fill; setStages follows, and a running task reads its renamed stage at once
     case 'start': return start(state, event.itemId, event.base, event.workspace, event.local, event.runPick); // no fill: nothing loosened, so nothing else could open
@@ -376,17 +376,27 @@ function withSync(state: State, source: string, change: (status: SourceSync) => 
 }
 
 // A source's listing (#180) merges only its own tasks, swaps its ids in the source order and stamps when it answered, clearing its error.
-// No source (#132) merges nothing but still marks a removed source's tasks and runs the deletions: the poll drives the fill and `after`.
-function poll(state: State, { source, items: listed }: Extract<HiveEvent, { type: 'poll' }>): Reduced {
+// No source (#132) merges nothing but still settles a removed source's tasks and runs the deletions: the poll drives the fill and `after`.
+function poll(state: State, { source, items: listed, reads }: Extract<HiveEvent, { type: 'poll' }>): Reduced {
   const sources = Object.keys(state.syncs);
-  if (source === undefined) return runActions({ ...state, tasks: markRemoved(state.tasks, sources) });
+  if (source === undefined) { const settled = withoutLeft(state, markRemoved(state.tasks, sources, state)); return runActions(settled.state, settled.effects); }
   if (!sources.includes(source)) return none(state);
   const order = replaceSegment(state.sourceOrder, source, listed.map((c) => c.item.itemId)); // what resetOrder sorts by; never written back
   const polledAt = new Date().toISOString();
+  const merged = withoutLeft(state, mergeTasks(state.tasks, state.stages, { source, items: listed, ...(reads === undefined ? {} : { reads }) }, sources, order, state, polledAt));
   return runActions(settleEntries(state.tasks, {
-    ...withSync(state, source, ({ error: _error, ...status }) => ({ ...status, polledAt })),
-    tasks: mergeTasks(state.tasks, state.stages, { source, items: listed }, sources, order, state, polledAt), sourceOrder: order, error: undefined,
-  }));
+    ...withSync(merged.state, source, ({ error: _error, ...status }) => ({ ...status, polledAt })), sourceOrder: order, error: undefined,
+  }), merged.effects);
+}
+
+// #568: the tasks a poll let go (never started, closed on its source, of a removed source) leave as dropTask drops them: their relations closed
+// (#56), their terminals with them. None holds a worker: a held closed read keeps its task
+function withoutLeft(state: State, tasks: Task[]): Reduced {
+  const kept = new Set(tasks.map(taskId));
+  return state.tasks.filter((c) => !kept.has(taskId(c))).reduce<Reduced>((r, left) => {
+    const dropped = dropTask(r.state, left);
+    return { state: dropped.state, effects: [...r.effects, ...dropped.effects] };
+  }, none({ ...state, tasks }));
 }
 
 // #686: one item re-read after a field write: its task (this source's, by item id) as the poll would leave it, through the poll's own one-task
@@ -395,7 +405,7 @@ function itemRead(state: State, { source, itemId, entry }: Extract<HiveEvent, { 
   const task = state.tasks.find((c) => taskId(c) === itemId && c.item.source === source);
   if (task === undefined) return state;
   const seen = seenOne(task, entry, state.stages, state, new Date().toISOString()); // #889: a re-read is held to the poll's stale-read rule
-  return seen === task ? state : settleEntries(state.tasks, { ...state, tasks: state.tasks.map((c) => (c === task ? seen : c)) });
+  return seen === undefined || seen === task ? state : settleEntries(state.tasks, { ...state, tasks: state.tasks.map((c) => (c === task ? seen : c)) }); // #568: undefined is a never-started task the re-read no longer lists: the next poll drops it
 }
 
 // A stopped task in a stage a save turned into a manual gate awaits approval from now, as if it had just entered (#315), on its activity, born

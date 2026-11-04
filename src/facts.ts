@@ -16,7 +16,7 @@ export const LIST_MAX = 50; // items of a list a record carries: a run's models,
 export type RunKind = 'spawn' | 'restart' | 'continue' | 'feedback';
 // source: the poll moved it because its column changed in the source; auto: the flow itself (hive_done and its Stop)
 export type MoveBy = 'auto' | 'hand' | 'approval' | 'merge' | 'on_finish' | 'source';
-export type GoneReason = 'finished' | 'missing' | 'hand';
+export type GoneReason = 'finished' | 'closed' | 'hand';
 // The onFinish mechanism that took a finished task out: a leaving action's type, an onFinish move past the last stage, or no source action
 export type FinishVia = 'move' | 'archive' | 'remove' | 'delete' | 'none';
 // stop: the user's; agent_stop: a stop with no cause, hive_stop's or a command's timeout
