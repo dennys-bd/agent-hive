@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import type { RepoSummary, SidebarsPerView, SourceConfig, SourceSync, EffectiveLimits, State } from '../../types';
 import { behaviourOf } from '../../signals';
-import { inFlow } from '../../tasks';
+import { HIVE_SOURCE, inFlow } from '../../tasks';
 import { CreateTargetsContext, createTargetsOf } from '@/lib/create-targets';
 import { WorkspaceColorsContext } from '@/lib/workspace-color';
 import { ActivityBar } from '@/components/ActivityBar';
@@ -38,7 +38,7 @@ import { hasTree } from '@/lib/tree-groups';
 import { consoleRunsOf, useConsoleChannels } from '@/hooks/use-console';
 import { type DisplayControls, useDisplayOptions } from '@/hooks/use-flow-view';
 import { useRepositories } from '@/hooks/use-repositories';
-import { centerOfPick, centerOfRepo, type TasksCenter, type TasksNav, useTasksCenter } from '@/hooks/use-tasks-center';
+import { centerOfRepo, FIRST_CENTER, type TasksCenter, type TasksNav, useTasksCenter } from '@/hooks/use-tasks-center';
 import { FONT_FAMILY } from '@/lib/xterm-setup';
 
 // tick is not read: its only job is to change every RERENDER_MS so elapsed()/relative readings redraw between events.
@@ -105,11 +105,22 @@ function TasksSoon({ state, isOutside, display, sources }: { state: State; isOut
   );
 }
 
+// #572 decision 14: the hive source's center until 4.2 builds its table: the source header naming hive, over one muted line
+function HiveSoon({ state }: { state: State }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <FlowHeader state={state} tasks={[]} mode={{ kind: 'source', source: HIVE_SOURCE }} />
+      <p className="px-3.5 py-3 text-muted-foreground text-xs">{t('tasks.center.soon')}</p>
+    </div>
+  );
+}
+
 // The center under Tarefas (#571): what the resolved TasksCenter names. Flow is the same element across flows, so a switch keeps it mounted (decision 9)
 function Center({ state, selected, nav, repositories, onSelect, stageCaps, sources }: CenterProps) {
   const display = useDisplayOptions(); // #574 decision 13: one owner for Flow and the placeholders
   const { center, repo, source } = nav;
   if (center.kind === 'repo' && repo) return repoCenter(state, nav, repo, center);
+  if (center.kind === 'source' && center.source === HIVE_SOURCE) return <HiveSoon state={state} />;
   if (center.kind === 'source' && source) return sourceCenter(state, nav, source, repositories, center.issue);
   if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} display={display} sources={sources} />;
   return <TasksSoon state={state} isOutside={center.kind === 'tasks' && center.view === 'outside'} display={display} sources={sources} />;
@@ -163,7 +174,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
           header={(shell) => <><Header shell={shell} state={state} effective={limits} /><RunBand /></>} // #469: the run's band under the header
           automation={() => (
             <AutomationPanel
-              state={state} effective={effective} sources={sources ?? NO_SOURCES} source={centerNav.center.kind === 'source' ? centerNav.center.source : undefined} onSource={(name) => centerNav.show(centerOfPick(name))}
+              state={state} effective={effective} sources={sources ?? NO_SOURCES} source={centerNav.center.kind === 'source' ? centerNav.center.source : undefined} onSource={(name) => centerNav.show(name === undefined ? FIRST_CENTER : { kind: 'source', source: name })}
               repository={centerNav.repo?.repository} onRepository={(name) => centerNav.show(centerOfRepo(name))}
             />
           )}

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 import { Dashboard } from '@/components/Dashboard';
 import type { SourcesNav } from '@/components/FlowSources';
-import { FIRST_CENTER, type TasksCenter, backOf, centerOfPick, centerOfTask, resolveCenter, useTasksCenter } from '@/hooks/use-tasks-center';
+import { FIRST_CENTER, type TasksCenter, backOf, centerOfTask, resolveCenter, useTasksCenter } from '@/hooks/use-tasks-center';
 import { forgetProjects } from '@/hooks/use-project';
 import { setLanguage } from '@/i18n';
 import { resetViewState } from '@/lib/view-state';
@@ -28,19 +28,18 @@ const STATE: State = {
 
 beforeEach(() => setLanguage('pt'));
 
-test('resolveCenter keeps a center whose flow, source and repository exist and reads any other as the first flow (#571)', () => {
-  const live: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'ship' }, { kind: 'tasks', view: 'outside' }, { kind: 'source', source: 'roadmap' }, { kind: 'repo', repository: 'acme/site', tab: 'issues' }];
-  for (const center of live) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE])).toBe(center);
-  const stale: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'gone' }, { kind: 'source', source: 'notes' }, { kind: 'source', source: 'hive' }, { kind: 'repo', repository: 'acme/else', tab: 'prs' }];
-  for (const center of stale) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE])).toEqual(FIRST_CENTER);
+test('resolveCenter keeps a center whose flow, source and repository exist, and the hive source while it is on; any other reads as the first flow (#571, #572)', () => {
+  const live: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'ship' }, { kind: 'tasks', view: 'outside' }, { kind: 'tasks', view: 'list' }, { kind: 'source', source: 'roadmap' }, { kind: 'source', source: 'hive' }, { kind: 'repo', repository: 'acme/site', tab: 'issues' }];
+  for (const center of live) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE], true)).toBe(center);
+  const stale: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'gone' }, { kind: 'source', source: 'notes' }, { kind: 'repo', repository: 'acme/else', tab: 'prs' }];
+  for (const center of stale) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE], true)).toEqual(FIRST_CENTER);
+  expect(resolveCenter({ kind: 'source', source: 'hive' }, FLOWS, [ROADMAP], [SITE], false)).toEqual(FIRST_CENTER);
 });
 
-test('centerOfTask places a task in the flow its stage belongs to, else outside; todas and hive pick the first flow, a source its table (#571)', () => {
+test('centerOfTask places a task in the flow its stage belongs to, else outside (#571)', () => {
   expect(centerOfTask(FLOWS, { stage: 'review' })).toEqual({ kind: 'tasks', view: 'flow', flow: 'ship' });
   expect(centerOfTask(FLOWS, { stage: '' })).toEqual({ kind: 'tasks', view: 'outside' });
   expect(centerOfTask(FLOWS, { stage: 'gone' })).toEqual({ kind: 'tasks', view: 'outside' });
-  expect([centerOfPick(undefined), centerOfPick('hive')]).toEqual([FIRST_CENTER, FIRST_CENTER]);
-  expect(centerOfPick('roadmap')).toEqual({ kind: 'source', source: 'roadmap' });
 });
 
 test('backOf: a page goes back to the list it was opened from, labelled voltar; a list and the tasks view have no way back (#571)', () => {
@@ -107,6 +106,15 @@ test("a page under a source or a repository is the details panel's page and has 
   rerender({ repos: [], nav: NAV });
   expect(result.current.center).toEqual(FIRST_CENTER);
   expect(result.current.back).toBeUndefined();
+});
+
+test('the hive source is a center while it is on, with no SourceConfig resolved; once it is off it reads as the first flow (#572)', () => {
+  const { result, rerender } = renderHook(({ nav }) => useTasksCenter(STATE, nav, [SITE], vi.fn()), { initialProps: { nav: NAV } });
+  act(() => result.current.show({ kind: 'source', source: 'hive' }));
+  expect(result.current.center).toEqual({ kind: 'source', source: 'hive' });
+  expect(result.current.source).toBeUndefined();
+  rerender({ nav: { ...NAV, hiveSource: false } });
+  expect(result.current.center).toEqual(FIRST_CENTER);
 });
 
 vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./xterm-fakes')).FakeTerminal }));

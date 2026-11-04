@@ -23,10 +23,11 @@ export type TasksCenter =
 
 export const FIRST_CENTER: TasksCenter = { kind: 'tasks', view: 'flow' };
 
-/** Decision 7: a center whose flow, source or repository a Settings save or the last read removed reads as the first flow, so a stale one never renders. */
-export function resolveCenter(center: TasksCenter, flows: readonly Flow[], sources: readonly SourceConfig[], repositories: readonly RepoSummary[]): TasksCenter {
+/** Decision 7 (#571): a center whose flow, source or repository a Settings save or the last read removed reads as the first flow, so a stale
+ * one never renders. #572: the hive source is a source while it is on, with no SourceConfig of its own. */
+export function resolveCenter(center: TasksCenter, flows: readonly Flow[], sources: readonly SourceConfig[], repositories: readonly RepoSummary[], hasHive: boolean): TasksCenter {
   if (center.kind === 'tasks') return center.flow === undefined || flows.some((f) => f.name === center.flow) ? center : FIRST_CENTER;
-  if (center.kind === 'source') return sources.some((s) => s.name === center.source) ? center : FIRST_CENTER;
+  if (center.kind === 'source') return (hasHive && center.source === HIVE_SOURCE) || sources.some((s) => s.name === center.source) ? center : FIRST_CENTER;
   return repositories.some((r) => r.repository === center.repository) ? center : FIRST_CENTER;
 }
 
@@ -36,8 +37,6 @@ export function centerOfTask(flows: readonly Flow[], task: Pick<Task, 'stage'>):
   return flow ? { kind: 'tasks', view: 'flow', flow: flow.name } : { kind: 'tasks', view: 'outside' };
 }
 
-// Decision 4, until 2.3's sidebar: todas and hive show the first flow's flowchart, unfiltered; an external source opens its table
-export const centerOfPick = (name?: string): TasksCenter => (name === undefined || name === HIVE_SOURCE ? FIRST_CENTER : { kind: 'source', source: name });
 export const centerOfRepo = (repository: string): TasksCenter => ({ kind: 'repo', repository, tab: 'prs' });
 
 /** Decision 3: a page goes back to the list it was opened from: a source's issue to its table, a repository's page to its list on the same tab. */
@@ -140,7 +139,7 @@ export function useTasksCenter(state: State | undefined, sources: SourcesNav | u
   const [stored, setCenter] = useState<TasksCenter>(FIRST_CENTER);
   const flows = state?.flows ?? [];
   const external = sources?.sources ?? [];
-  const center = resolveCenter(stored, flows, external, repositories);
+  const center = resolveCenter(stored, flows, external, repositories, sources?.hiveSource !== false); // #846: absent (a harness) = hive on
   const goTo = useGoTo(state, setCenter, onSelect);
   const isListed: IsListed = (repository) => repositories.some((r) => r.repository === repository);
   const openIssue = (ref: IssueRef): void => setCenter((c) => withIssue(c, ref));

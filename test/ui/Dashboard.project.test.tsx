@@ -45,7 +45,7 @@ const main = () => within(screen.getByRole('main'));
 const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 const automation = () => within(screen.getByRole('region', { name: 'Tarefas' }));
 
-test('a source row opens its table with no tabs; hive and todas show the flowchart (#571)', async () => {
+test('a source row opens its table with no tabs; hive opens its own center (#571, #572)', async () => {
   const user = userEvent.setup();
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
@@ -55,8 +55,9 @@ test('a source row opens its table with no tabs; hive and todas show the flowcha
   expect(bar().queryAllByRole('tab')).toEqual([]);
   await user.click(automation().getByRole('button', { name: /^hive/ }));
   expect(main().queryByText(/issues ·/)).not.toBeInTheDocument();
-  expect(bar().getByText('todas as sources')).toBeInTheDocument();
-  expect(automation().getByRole('button', { name: /^todas/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(main().getByText('em breve')).toBeInTheDocument();
+  expect(bar().getByText('hive')).toHaveClass('font-semibold');
+  expect(automation().getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('fluxo › in the source table shows the flowchart and selects the task (#756, #571)', async () => {
