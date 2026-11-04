@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { stageChannel } from '../../console';
 import { dropBuffer } from '@/components/CenterGroup';
@@ -215,7 +215,7 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
   const layout = current === undefined ? undefined : viewOf(store, current, fallback);
   const close = (key: string): void => change((shown) => shown && closeRef(shown, key));
   const latestStore = useRef(store);
-  useEffect(() => { latestStore.current = store; });
+  useLayoutEffect(() => { latestStore.current = store; }); // before paint: a move resolving right after a commit must read that commit's tabs
   const moveToWindow = useMoveToWindow(current, layout, close, (activity) => viewOf(latestStore.current, activity, fallback));
   const place = (activity: Activity, ref: CenterTabRef): void => setStore((s) => {
     const key = activityKey(activity);
