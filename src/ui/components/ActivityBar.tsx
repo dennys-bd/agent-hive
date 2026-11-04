@@ -48,13 +48,19 @@ function factsOf({ task, activity }: TaskActivity, state: Pick<State, 'workers' 
   ];
 }
 
+/** The bar's title (#536). */
+export const barTitle = (activity: Activity): string => (activity.kind === 'local' ? t('activities.local') : taskLabel(activity.task));
+
+/** A detached window's title (#553): the bar's two lines in one for a local activity, so two workspaces' windows read apart in the Window menu. */
+export const windowTitle = (activity: Activity): string => (activity.kind === 'local' ? `${barTitle(activity)} · ${activity.workspace}` : barTitle(activity));
+
 // A local activity's bar (#590): local, then its workspace and the branch its checkout has out, in mono once read; dormir and the local
 // menu's ⋯. No stage, no totals and no commands: the workspace's commands are not offered here yet
 function LocalBar({ activity, focusedRun }: { activity: LocalActivity; focusedRun?: string }) {
   const branch = useBranches(true, activity.workspace)[activity.workspace];
   const facts = <>{activity.workspace}{branch && <>{' · '}<span className="font-mono">{branch}</span></>}</>;
   return (
-    <BarLines title={t('activities.local')} facts={facts}>
+    <BarLines title={barTitle(activity)} facts={facts}>
       <SleepButton activity={activity} focusedRun={focusedRun} />
       <LocalMenuButton activity={activity} />
     </BarLines>
@@ -69,7 +75,7 @@ export function ActivityBar({ activity, state, focusedRun, onShowFlow }: Activit
   const { task } = activity;
   const facts = factsOf(activity, state).map((fact, i) => <Fragment key={fact.key}>{i > 0 && ' · '}{fact.node}</Fragment>);
   return (
-    <BarLines title={taskLabel(task)} facts={facts}>
+    <BarLines title={barTitle(activity)} facts={facts}>
       <RunCommands task={task} state={state} />
       <SleepButton activity={activity} focusedRun={focusedRun} />
       <ActivityMenuButton task={task} state={state} onShowFlow={onShowFlow} />
