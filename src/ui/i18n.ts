@@ -144,6 +144,7 @@ const en = {
   'usage.close': 'close',
   'window.dockFailed': "Couldn't move the tab back to the main window", // #553: a dock main refused
   'window.back': 'Back to the main window', // #553: a detached window's tab, or the strip's button
+  'window.move': 'Move to a window', // #554: a main window center tab's menu
   'window.moveFailed': "Couldn't move the tab to a window", // #554: a move main refused
   'window.session': 'session',
   'window.week': 'week',
@@ -3150,6 +3151,7 @@ const pt: Record<MessageKey, string> = {
   'usage.close': 'fechar',
   'window.dockFailed': 'Não foi possível voltar a aba para a janela principal',
   'window.back': 'Voltar para a janela principal',
+  'window.move': 'Mover para uma janela',
   'window.moveFailed': 'Não foi possível mover a aba para uma janela',
   'window.session': 'sessão',
   'window.week': 'semana',

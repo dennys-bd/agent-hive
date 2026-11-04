@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { LiveRun } from '../../src/task-runs';
 import { ActivityCenter } from '@/components/ActivityCenter';
+import { windowMove } from '@/components/CenterGroup';
 import { DesignLayer, DesignLayerProvider } from '@/components/DesignLayer';
 import type { PaneContext } from '@/components/PaneHeader';
 import type { TabRequest } from '@/hooks/use-activity';
@@ -35,8 +36,8 @@ export const SIDE_BY_SIDE: CenterLayout = {
 };
 
 /** The center as MainDock drives it: the task's activity, or with `local` that workspace's local activity (#590), with these runs, sessions
- * and sleeping runs (#672), its layout from useCenterLayouts, a request to apply, and the pane context the Dashboard would hand it, with the design layer MainDock mounts beside it (#533). */
-export function Center({ runs, request, sessions = [], slept = [], keptSessions = [], pane, local, onDock, onOpenRun = () => undefined }: { runs: LiveRun[]; request?: TabRequest; sessions?: ActivitySession[]; slept?: SleepingRun[]; keptSessions?: Session[]; pane?: PaneContext; local?: string; onDock?: (ref: CenterTabRef) => void; onOpenRun?: (ptyId: string) => void }) {
+ * and sleeping runs (#672), its layout from useCenterLayouts, a request to apply, and the pane context the Dashboard would hand it, with the design layer MainDock mounts beside it (#533). `isMain`: the main window's `Mover para uma janela`, gated on `window.hive` as MainDock's (#554). */
+export function Center({ runs, request, sessions = [], slept = [], keptSessions = [], pane, local, onDock, isMain, onOpenRun = () => undefined }: { runs: LiveRun[]; request?: TabRequest; sessions?: ActivitySession[]; slept?: SleepingRun[]; keptSessions?: Session[]; pane?: PaneContext; local?: string; onDock?: (ref: CenterTabRef) => void; isMain?: boolean; onOpenRun?: (ptyId: string) => void }) {
   const asleep = keptSessions.map((session): TaskActivitySession => ({ session, status: 'empty' })); // #696: kept sessions no run holds
   const activity: Activity = local === undefined
     ? { kind: 'task', ...taskPairOf('I1'), task, runs, sessions: [...sessions, ...asleep], slept, status: 'working', worker: true }
@@ -44,7 +45,7 @@ export function Center({ runs, request, sessions = [], slept = [], keptSessions 
   const layouts = useCenterLayouts([activity], activity, request);
   return (
     <DesignLayerProvider>
-      <ActivityCenter activity={activity} layout={layouts.layout} ops={layouts} fileLinks={false} fontFamily="ui-monospace, monospace" pane={pane} onDock={onDock} onOpenRun={onOpenRun} />
+      <ActivityCenter activity={activity} layout={layouts.layout} ops={layouts} fileLinks={false} fontFamily="ui-monospace, monospace" pane={pane} onDock={onDock} onMove={isMain ? windowMove(layouts) : undefined} onOpenRun={onOpenRun} />
       <DesignLayer activities={[activity]} layouts={layouts.layouts} />
     </DesignLayerProvider>
   );

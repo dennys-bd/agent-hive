@@ -3,7 +3,7 @@ import type { Task, EffectiveLimits, Experiment, PlanReadings, SidebarsPerView, 
 import { ActivitiesPanel, type ActivitiesNav, PlusMenu } from '@/components/ActivitiesPanel';
 import { ActivityCenter } from '@/components/ActivityCenter';
 import { useConfirmLoss } from '@/components/AgentLossConfirm';
-import { closePaneOf } from '@/components/CenterGroup';
+import { closePaneOf, windowMove } from '@/components/CenterGroup';
 import { useCloseTab } from '@/components/close-tab-notice';
 import { ConsoleDrawer } from '@/components/ConsoleDrawer';
 import type { DetailNav, Selection } from '@/components/DetailPanel';
@@ -159,7 +159,7 @@ function centerView({ selection, layouts, fileLinks, fontFamily, flow, home, pan
   // one fragment in every view: the flow keeps its place in the tree, so switching does not remount it
   const activityView = selection.center !== 'activities' ? null : current === undefined
     ? home
-    : <ActivityCenter key={activityKey(current)} activity={current} layout={layouts.layout} ops={layouts} fileLinks={fileLinks} fontFamily={fontFamily} pane={pane} onOpenRun={(ptyId) => selection.openRun(activityKey(current), ptyId)} />;
+    : <ActivityCenter key={activityKey(current)} activity={current} layout={layouts.layout} ops={layouts} fileLinks={fileLinks} fontFamily={fontFamily} pane={pane} onMove={windowMove(layouts)} onOpenRun={(ptyId) => selection.openRun(activityKey(current), ptyId)} />;
   return <>{flowView}{activityView}{views}</>;
 }
 
