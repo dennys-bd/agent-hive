@@ -189,3 +189,10 @@ test('children outside the flow say nothing of their epic\'s stage: all of them 
   assert.equal(epicIn(done.state), undefined, 'every child in the flow is done: out through done\'s end');
   assert.deepEqual(done.effects, [column('Shipped')]);
 });
+
+test('an epic outside the flow stays outside: a poll that stamps epic on a stageless task never moves it into a stage (#566)', () => {
+  const before = at([leave(epic('spec', ['c1'])), child('c1', 'build')]);
+  const { state, effects } = followEpics(before);
+  assert.equal(state, before);
+  assert.deepEqual(effects, []);
+});
