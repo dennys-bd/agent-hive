@@ -66,3 +66,22 @@ test('an emptied espera até means no limit; the switch turns the re-run on (#83
   await user.click(screen.getByRole('switch', { name: 'executar de novo uma vez' }));
   expect(onUpdate).toHaveBeenLastCalledWith({ rerunOnce: true });
 });
+
+test('fila até starts on 30m for a new wait, empties to no limit and takes a typed limit; its hint says what it bounds (#598)', async () => {
+  const user = userEvent.setup();
+  const onUpdate = vi.fn();
+  render(<Harness onUpdate={onUpdate} />);
+  const queue = screen.getByRole('textbox', { name: 'fila até' });
+  expect(queue).toHaveValue('30m');
+  expect(queue).toHaveAttribute('placeholder', 'sem limite');
+  await user.clear(queue);
+  expect(onUpdate).toHaveBeenLastCalledWith({ queueTimeout: '' });
+  await user.type(queue, '2h');
+  expect(onUpdate).toHaveBeenLastCalledWith({ queueTimeout: '2h' });
+  expect(screen.getByText('30s, 10m, 1h · quanto um check pode esperar por um runner · esgotar = "falhou"')).toBeInTheDocument();
+});
+
+test('a saved wait without a queue limit shows fila até empty (#598)', () => {
+  render(<Harness initial={{ queueTimeout: '' }} onUpdate={vi.fn()} />);
+  expect(screen.getByRole('textbox', { name: 'fila até' })).toHaveValue('');
+});
