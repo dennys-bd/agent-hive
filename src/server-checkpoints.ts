@@ -2,9 +2,9 @@ import type { Express, Request, Response } from 'express';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { captureCheckpoint, restoreWorktree } from './checkpoints.js';
 import { restartPlan } from './restart.js';
-import { type LiveView, type Refusal, refuse, type TaskRouteDeps, workspaceOf } from './server-tasks.js';
+import { type LiveView, type Refusal, refuse, OUTSIDE_FLOW_MESSAGE, type TaskRouteDeps, workspaceOf } from './server-tasks.js';
 import { capturable, taskBranch } from './task-runs.js';
-import { branchFor, slugFor } from './tasks.js';
+import { branchFor, inFlow, slugFor } from './tasks.js';
 import type { Activity, Checkpoint, CheckpointEnd, Task } from './types.js';
 import { taskDir, workDir } from './worktree.js';
 
@@ -49,12 +49,13 @@ export async function recordCheckpoint(deps: CheckpointDeps, { repo, activity, t
 
 // The checkpoint a restore acts on, the task's repo and worktree, the branch it is on and its template (#619), or why not. `n` comes from the URL and
 // only ever selects among the numbers the activity keeps: nothing of it reaches git, the checkpoint's own (hex-checked) shas do.
-interface RestoreTarget { task: Task; activity: Activity; checkpoint: Checkpoint; repo: string; worktree: string; branch: string; template: string }
+interface RestoreTarget { task: Task & { stage: string }; activity: Activity; checkpoint: Checkpoint; repo: string; worktree: string; branch: string; template: string }
 
 function restoreTarget(current: LiveView, activityId: string, n: string): RestoreTarget | Refusal {
   const target = taskTarget(current.state, activityId);
   if ('status' in target) return target;
   const { task, activity } = target;
+  if (!inFlow(task)) return { status: HTTP_CONFLICT, message: OUTSIDE_FLOW_MESSAGE }; // #566: a checkpoint records the stage it ran in
   const checkpoint = activity.checkpoints?.find((a) => String(a.n) === n);
   if (!checkpoint) return { status: HTTP_NOT_FOUND, message: UNKNOWN_CHECKPOINT_MESSAGE };
   if (!capturable(activity)) return { status: HTTP_CONFLICT, message: NO_WORKTREE_MESSAGE }; // a restore never runs on the workspace's own checkout (#444)

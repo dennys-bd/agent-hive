@@ -21,15 +21,15 @@ export const transitionByKey = (transitions: readonly Transition[], key: string 
 export const isAutomatic = (when: Trigger): boolean => when === 'done' || when === 'verdict';
 
 /** The transitions leaving `stage`, in the config's order. */
-export const outgoing = (transitions: readonly Transition[], stage: string): Transition[] => transitions.filter((t) => t.from === stage);
+export const outgoing = (transitions: readonly Transition[], stage: string | undefined): Transition[] => transitions.filter((t) => t.from === stage);
 
-const matching = (transitions: readonly Transition[], from: string, when: Trigger, verdict?: string): Transition | undefined =>
+const matching = (transitions: readonly Transition[], from: string | undefined, when: Trigger, verdict?: string): Transition | undefined =>
   transitions.find((t) => t.from === from && t.when === when && t.verdict === verdict);
 
 /** The transition a stage end fires (#134): the one whose (from, when, verdict) matches. An agent's verdict with no transition of its own falls
  * back to done on a stage without approval (an approval stage waits for the user instead); a commands or wait-for-CI verdict never falls back,
  * so a failed check never passes as finished. Undefined when nothing matches. */
-export function exitOf(graph: Graph, stage: string, trigger: Trigger, verdict?: string): Transition | undefined {
+export function exitOf(graph: Graph, stage: string | undefined, trigger: Trigger, verdict?: string): Transition | undefined {
   const own = matching(graph.transitions, stage, trigger, trigger === 'verdict' ? verdict : undefined);
   if (own !== undefined || trigger !== 'verdict') return own;
   const origin = graph.stages.find((s) => s.name === stage);

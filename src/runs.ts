@@ -5,7 +5,7 @@ import { withLaunch } from './launch-pick.js';
 import { pendingEnd, withoutPending } from './handoff.js';
 import { activityOf, ensureLocal, localActivityId, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withLocalActivities } from './activities.js';
 import { markFreeRun, sessionBaseline, touchFreeSession, forgetSession, withResult } from './record-kit.js';
-import { canOpenSession, inAction, sessionsOf, taskId, runningFirst, stageOf, continuable } from './tasks.js';
+import { canOpenSession, inAction, inFlow, sessionsOf, taskId, runningFirst, stageOf, continuable } from './tasks.js';
 import { forgetTerminals, slept, terminalSlug } from './terminal-runs.js';
 import { capturable, liveRuns, stageSession, startMode } from './task-runs.js';
 import { clearedError, dropWorker, ensureActivity, releaseWorker, liveWorker, none, occupy, type Reduced, releaseRun, slugTaken, stoppedWork, takeWorker, withError } from './reducer-kit.js';
@@ -139,7 +139,7 @@ function runByHand(state: State, task: Task, run: 'stage' | 'continue'): Reduced
 export function continueStage(state: State, itemId: string): Reduced {
   const task = state.tasks.find((c) => taskId(c) === itemId);
   const mode = task && startMode(task, state);
-  const session = task && typeof mode === 'object' && mode.continue && mode.live === undefined ? stageSession(task, state, task.stage) : undefined; // #812: none after a free run
+  const session = task && inFlow(task) && typeof mode === 'object' && mode.continue && mode.live === undefined ? stageSession(task, state, task.stage) : undefined; // #812: none after a free run
   const born = task && session && ensureActivity(state, task); // a deleted activity's session resumes in a new one
   if (!task || !session || !born) return none(state);
   return runByHand(withActivity(born.state, { ...born.activity, sessionId: session.id }), task, 'continue');
@@ -179,7 +179,7 @@ export function restarting(state: State, itemId: string): Reduced {
  * activity capturable refuses leaves the reduction as it was. */
 export function capturedFirst(before: State, task: Task, reduced: Reduced): Reduced {
   const activity = activityOf(before, taskId(task));
-  if (!capturable(activity)) return reduced;
+  if (!inFlow(task) || !capturable(activity)) return reduced; // #566: a task outside the flow ends no stage
   return { state: reduced.state, effects: [{ type: 'captureCheckpoint', activity, task, stage: task.stage, ended: 'done' }, ...reduced.effects] };
 }
 
@@ -318,8 +318,10 @@ export function openSession(state: State, { activityId, continueId, prompt, agen
 export function freeEndRefused(state: State, worker: Worker, task: Task, verdict?: string): string | undefined {
   const live = activityOf(state, taskId(task));
   const stage = stageOf(state.stages, task.stage);
-  if (!worker.freeSession || live?.handoffPending !== undefined || live?.stageGone !== undefined || task.leaving || !stage || stage.approval) return undefined;
+  if (!worker.freeSession || live?.handoffPending !== undefined || live?.stageGone !== undefined || task.leaving || stage?.approval) return undefined;
   const trigger: Trigger = verdict === undefined ? 'done' : 'verdict';
+  if (!inFlow(task)) return exitName(trigger, verdict); // #566: outside the flow no end goes anywhere
+  if (!stage) return undefined;
   return exitOf(state, task.stage, trigger, verdict) === undefined ? exitName(trigger, verdict) : undefined;
 }
 

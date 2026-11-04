@@ -698,14 +698,14 @@ test('a stopped task whose stage ran offers continuar, which posts continue; rei
 
 test('a task whose stage session is held by a live free session offers no continuar; abrir reaches that run (#402)', async () => {
   const user = userEvent.setup();
-  const focusDetached = vi.fn(async () => true);
-  vi.stubGlobal('hive', { focusDetached });
+  const focusTab = vi.fn(async () => true);
+  vi.stubGlobal('hive', { focusTab });
   const held = sessionWorker('s2', 'cccccccc-0000-4000-8000-000000000003');
   const sessions = [{ id: held.sessionId!, startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-25T10:00:00.000Z' }];
   render(<Flow state={{ ...state([task('1', 'dev', { stopped: true, worktree: '/wt/hive-1-task-1' })], [worker('s1'), held]), activityRecords: rec(sessions) }} flow={firstFlow({ ...state([task('1', 'dev', { stopped: true, worktree: '/wt/hive-1-task-1' })], [worker('s1'), held]), activityRecords: rec(sessions) })} />);
   expect(screen.queryByRole('button', { name: 'continuar' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'abrir' }));
-  expect(focusDetached).toHaveBeenCalledWith('cccccccc-0000-4000-8000-000000000003');
+  expect(focusTab).toHaveBeenCalledWith('I1', 'cccccccc-0000-4000-8000-000000000003');
   expect(fetchMock).not.toHaveBeenCalled();
 });
 

@@ -37,7 +37,8 @@ const holds = (ref: CenterTabRef, key: string): boolean => refKey(ref) === key |
 /** Every group of the tree, in reading order. */
 export const groupsOf = (node: CenterNode): TabGroup[] => leaves(node);
 
-const findRef = (layout: CenterLayout, key: string): CenterTabRef | undefined =>
+/** The tab `key` names anywhere in the layout, or undefined (#554: what a move sends). */
+export const findRef = (layout: CenterLayout, key: string): CenterTabRef | undefined =>
   groupsOf(layout.root).flatMap((group) => group.tabs).find((ref) => refKey(ref) === key);
 
 /** Whether another tab of the layout holds the same file's buffer (#668): a file tab's changes tab, or a changes tab's file tab. The buffer

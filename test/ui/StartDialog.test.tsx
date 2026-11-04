@@ -276,8 +276,8 @@ test('the base list shows no remote branch until a search surfaces it (#131)', a
 
 test('a sessão livre open that answers after the dialog closed attaches nothing: the task carries the session (#351)', async () => {
   const user = userEvent.setup();
-  const focusDetached = vi.fn(async () => true);
-  vi.stubGlobal('hive', { focusDetached });
+  const focusTab = vi.fn(async () => true);
+  vi.stubGlobal('hive', { focusTab });
   let answer: (res: Response) => void = () => undefined;
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -293,7 +293,7 @@ test('a sessão livre open that answers after the dialog closed attaches nothing
   expect(onClose).toHaveBeenCalledTimes(1);
   answer(reply({ ptyId: 'W1' }));
   await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(focusDetached).not.toHaveBeenCalled();
+  expect(focusTab).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
@@ -538,6 +538,14 @@ test('Iniciar #id on a task with no stage left to run opens on sessão livre tho
   expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeDisabled();
   await user.keyboard('{Control>}{Shift>}M{/Shift}{/Control}'); // Ctrl+Shift+M off macOS
   expect(free).toBeChecked();
+});
+
+test('Iniciar #id on a task outside the flow keeps executar etapas off and says it has no flow, never a placeholder stage (#566)', () => {
+  const { stage: _stage, ...outside } = HERO;
+  render(<StartDialog state={state([LANDING, outside])} taskId="I9" initialMode="stages" onClose={vi.fn()} />);
+  expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeDisabled();
+  expect(screen.getByText('a tarefa está sem fluxo: leve-a a uma etapa para executar etapas.')).toBeInTheDocument();
+  expect(screen.queryByText(/nenhuma etapa para executar/)).not.toBeInTheDocument();
 });
 
 test('the dialog\'s children may shrink below their content, so a long title truncates, and the closed task field carries the picked task\'s full label as its tooltip (#774)', async () => {

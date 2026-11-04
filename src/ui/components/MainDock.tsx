@@ -1,9 +1,11 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useEffectEvent, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { parseMovedTab } from '../../tab-carry';
 import type { Task, EffectiveLimits, Experiment, PlanReadings, SidebarsPerView, Terminal, Worker, Stage, State } from '../../types';
 import { ActivitiesPanel, type ActivitiesNav, PlusMenu } from '@/components/ActivitiesPanel';
 import { ActivityCenter } from '@/components/ActivityCenter';
 import { useConfirmLoss } from '@/components/AgentLossConfirm';
-import { closePaneOf } from '@/components/CenterGroup';
+import { closePaneOf, windowMove } from '@/components/CenterGroup';
+import { focusOrOpen } from '@/components/actions';
 import { useCloseTab } from '@/components/close-tab-notice';
 import { ConsoleDrawer } from '@/components/ConsoleDrawer';
 import type { DetailNav, Selection } from '@/components/DetailPanel';
@@ -20,7 +22,7 @@ import { Openers } from '@/components/DockOpeners';
 import { useBenchmarkDock } from '@/components/benchmark/benchmark-dock';
 import { usePluginsDock } from '@/components/plugins/plugins-dock';
 import { DesignLayer, DesignLayerProvider } from '@/components/DesignLayer';
-import { dockedTab, type OpenDiff, type OpenFileHow, type OpenPr, type OpenRun } from '@/components/terminal-tabs';
+import type { OpenDiff, OpenFileHow, OpenPr, OpenRun } from '@/components/terminal-tabs';
 import { type ConsoleChannels, ConsoleChannelsContext, type OpenStageOutput, shownChannel, useConsoleOpener } from '@/hooks/use-console';
 import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
 import { type CenterLayouts, useCenterLayouts } from '@/hooks/use-center-layouts';
@@ -33,6 +35,7 @@ import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf 
 import { shownFile, shownRun } from '@/lib/center-layout';
 import type { FileAt } from '@/lib/editor-models';
 import { pendingSessions } from '@/lib/home';
+import { applyCarry } from '@/lib/tab-carry';
 import { useRememberFocus } from '@/lib/session-focus';
 import { onPanelKey, onShortcutKey, onViewKey, type PanelId, runShortcut, shownBySide } from '@/lib/dock-layout';
 
@@ -93,15 +96,28 @@ export interface SearchSource { state: State; effective?: EffectiveLimits; openS
 export interface NewActivity { workspace?: string; taskId?: string; title?: string; onStarted(taskId: string): void; onClose(): void }
 type StartRequest = Pick<NewActivity, 'workspace' | 'taskId' | 'title'>;
 
-// A detached window docked back (#252): a task's run goes to its activity, a workspace's to its local activity (#590). main's message is IPC,
-// so its shape is checked. onDock hands back no unsubscribe: one subscription per opener, as before.
-function useDockedRuns(open: OpenRun): void {
+// A tab docked back from a detached window (#554): its carry applied, then opened in its activity's center, picked. Main already parsed the
+// payload, so a bad one, or one whose activity the State no longer lists, is a bug: logged, no toast. Subscribed once (the preload holds
+// every window:dock until then); the activities are read at the time
+function useDockedTabs(activities: Activity[], place: CenterLayouts['place'], open: (key: string) => void): void {
+  const latest = useRef({ activities, place, open });
+  useEffect(() => { latest.current = { activities, place, open }; });
   useEffect(() => {
     window.hive?.onDock((value) => {
-      const tab = dockedTab(value);
-      if (tab) open(tab);
+      const tab = parseMovedTab(value);
+      const target = tab && latest.current.activities.find((activity) => activityKey(activity) === tab.activity);
+      if (tab === undefined || target === undefined) {
+        console.error('main window: window:dock dropped', typeof value); // never the payload: a carry holds the user's unsaved text
+        return;
+      }
+      applyCarry(target.activity.id, tab.ref, tab.carry) // an untitled number taken here comes back renumbered (#551)
+        .then((ref) => {
+          latest.current.place(target, ref); // into the store at once: a second dock in the same batch cannot replace it
+          latest.current.open(tab.activity);
+        })
+        .catch((err: unknown) => console.error('main window: a docked tab did not open', err));
     });
-  }, [open]);
+  }, []);
 }
 
 const NO_STAGES: Stage[] = [];
@@ -109,12 +125,12 @@ const NO_RECORDS: State['activityRecords'] = [];
 const NO_ACTIVITIES: State['activities'] = [];
 const NO_EXPERIMENTS: Experiment[] = [];
 
-interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; workspaces: string[]; sourceWorkspaces?: Record<string, string>; stages: Stage[]; workers: Worker[]; nav: ActivitiesNav; isShown: boolean }
+interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; workspaces: string[]; sourceWorkspaces?: Record<string, string>; stages: Stage[]; workers: Worker[]; nav: ActivitiesNav; isShown: boolean; openRun(key: string, ptyId: string): void }
 
 // The Activities tab (#457, redesign 03): the workspaces and their activities; a row's click makes it the window's center, a session's opens
 // that run in it (#492). While the center is Atividades', the session its focused group shows is marked; under Automação none is.
-function activitiesPanel({ activities, selection, layouts, nav, ...rest }: ActivitiesArgs): DockPanel {
-  const { current, center, openRun } = selection;
+function activitiesPanel({ activities, selection, layouts, nav, openRun, ...rest }: ActivitiesArgs): DockPanel {
+  const { current, center } = selection;
   const shown = center === 'activities' ? shownRun(layouts.layout) : undefined;
   const body = (
     <section aria-label={t('dock.activities')} className="flex min-h-0 flex-1 flex-col">
@@ -159,7 +175,7 @@ function centerView({ selection, layouts, fileLinks, fontFamily, flow, home, pan
   // one fragment in every view: the flow keeps its place in the tree, so switching does not remount it
   const activityView = selection.center !== 'activities' ? null : current === undefined
     ? home
-    : <ActivityCenter key={activityKey(current)} activity={current} layout={layouts.layout} ops={layouts} fileLinks={fileLinks} fontFamily={fontFamily} pane={pane} onOpenRun={(ptyId) => selection.openRun(activityKey(current), ptyId)} />;
+    : <ActivityCenter key={activityKey(current)} activity={current} layout={layouts.layout} ops={layouts} fileLinks={fileLinks} fontFamily={fontFamily} pane={pane} onMove={windowMove(layouts)} onOpenRun={(ptyId) => selection.openRun(activityKey(current), ptyId)} />;
   return <>{flowView}{activityView}{views}</>;
 }
 
@@ -253,13 +269,15 @@ export function MainDock(props: MainDockProps) {
   const openStageOutput: OpenStageOutput = useCallback((taskId, channel, run) => openConsoleTab(taskId, channel, true, run), [openConsoleTab]);
   const layouts = useCenterLayouts(activities, current, request); // the picked activity's tabs and splits (#458)
   useRememberFocus(current, shownRun(layouts.layout)); // #113: the design pane's recipient, the last session in focus
-  const openActivityFile = useFileOpener(activities, openFile); // a click on a file: its editor pane tab (#717)
+  const openActivityFile = useFileOpener(activities, openFile, { focusOut: true }); // a click on a file: its editor pane tab (#717), or its window (#554)
   // A run the user opened (#457): a task's becomes its activity, a workspace's its local activity (#590), the center showing it
   const openUserRun: OpenRun = useCallback((tab) => {
     const key = tab.task ?? (tab.project === undefined ? undefined : localKey(tab.project));
     if (key !== undefined) openRun(key, tab.ptyId);
   }, [openRun]);
-  useDockedRuns(openUserRun);
+  // A session's line (#492): its tab's detached window when one holds it (#554), else its tab here
+  const openRunHere = (key: string, ptyId: string): void => focusOrOpen(key, ptyId, () => openRun(key, ptyId));
+  useDockedTabs(activities, layouts.place, selection.open);
   useSleptNotices(activities, openUserRun); // the auto flow's and the idle shutdown's sleeps show their notice here (#672)
   // A task's diff (#270): a tab of its activity's center (#458); the task's menu offers none while it is no activity
   const openTaskDiff: OpenDiff = (task, scope, checkpoint) => openDiff(task.item.itemId, scope, checkpoint);
@@ -341,7 +359,7 @@ export function MainDock(props: MainDockProps) {
   const viewRight = selection.center === 'plugins' ? plugins.right : selection.center === 'benchmark' ? benchmark.right : undefined;
   const panels: DockPanel[] = [
     // First in the list, as in PANELS: the tab a shared side opens on (#457, #746)
-    activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities' }),
+    activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities', openRun: openRunHere }),
     ...automationPanel,
     ...(hasHeader ? [plugins.panel, benchmark.panel] : []), // #313, #461: reached only through the rail and ⌘3 / ⌘4, which only a window with a header has
     viewRight ?? detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, detail, onClose: closeDetail, nav }),

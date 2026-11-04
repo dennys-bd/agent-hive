@@ -9,6 +9,6 @@ export const flatten = (flows: readonly Flow[]): { stages: Stage[]; transitions:
   ({ stages: flows.flatMap((f) => f.stages), transitions: flows.flatMap((f) => f.transitions) });
 
 // Stage names are unique across the comb (decision 4), so a stage name alone places a task in its flow
-export const flowOf = (flows: readonly Flow[], stage: string): Flow | undefined => flows.find((f) => f.stages.some((s) => s.name === stage));
+export const flowOf = (flows: readonly Flow[], stage: string | undefined): Flow | undefined => flows.find((f) => f.stages.some((s) => s.name === stage));
 
 export const isFlowName = (value: unknown): value is string => typeof value === 'string' && value !== '' && value === value.trim();

@@ -2,6 +2,7 @@ import { ChevronDownIcon, PlusIcon, SearchIcon } from 'lucide-react';
 import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
 import { HIVE_SOURCE, taskLabel, resolveWorkspace } from '../../tasks';
 import type { Task } from '../../types';
+import { inFlow } from '../../tasks';
 import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command';
 import { t } from '@/i18n';
@@ -31,7 +32,7 @@ function TaskRow({ task, workspaces, sourceWorkspaces }: { task: Task; workspace
     <>
       <WorkspaceSquare name={workspace} />
       <span className="min-w-0 flex-1 truncate">{taskLabel(task)}</span>
-      <span className="shrink-0 text-muted-foreground text-xs">{task.stage}</span>
+      <span className="shrink-0 text-muted-foreground text-xs">{inFlow(task) ? task.stage : ''}</span>
     </>
   );
 }
@@ -78,7 +79,7 @@ function TaskList({ tasks, workspaces, sourceWorkspaces, onSelect }: Pick<TaskPi
       <CommandEmpty>{t('start.noTask')}</CommandEmpty>
       <CommandGroup>
         {tasks.map((task) => (
-          <CommandItem key={task.item.itemId} value={task.item.itemId} keywords={[taskLabel(task), task.stage]} onSelect={onSelect}>
+          <CommandItem key={task.item.itemId} value={task.item.itemId} keywords={[taskLabel(task), ...(inFlow(task) ? [task.stage] : [])]} onSelect={onSelect}>
             <TaskRow task={task} workspaces={workspaces} sourceWorkspaces={sourceWorkspaces} />
           </CommandItem>
         ))}

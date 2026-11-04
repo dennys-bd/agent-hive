@@ -1,5 +1,5 @@
 import { activityOf, recordWithSession } from '../../activities';
-import { canDismissError, canMoveToStage, SESSION_ID_CHARS } from '../../tasks';
+import { canDismissError, canMoveToStage, inFlow, SESSION_ID_CHARS } from '../../tasks';
 import { transitionKey } from '../../transitions';
 import type { State, Task, TryRecord } from '../../types';
 import { act, continueTaskSession, stageMoves } from '@/components/actions';
@@ -94,6 +94,7 @@ function ExhaustedActions({ task, state, canRetry, sessionId, open }: { task: Ta
 export function ExhaustedBlock({ task, state, locale }: { task: Task; state: State; locale: string }) {
   const open = useOpenTrySession(task, state);
   const shown = exhaustedOf(state, task);
+  if (!inFlow(task)) return null; // #566: tries run out in a stage; a task outside the flow has none
   const records = shown === undefined ? [] : recordsOf(activityOf(state, task.item.itemId), transitionKey(shown.transition));
   const title = t('tries.exhausted.title');
   const text = shown === undefined ? t('tries.exhausted.gone', { stage: task.stage })

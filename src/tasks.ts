@@ -132,7 +132,10 @@ export function isBlocked(item: Pick<Item, 'blockedBy' | 'inheritedBlockedBy'>):
 }
 
 export const taskId = (task: Task): string => task.item.itemId;
-export const stageOf = (stages: Stage[], name: string): Stage | undefined => stages.find((c) => c.name === name);
+/** A task in a stage (#566): the one guard every reader narrows `stage` with; absent = outside the flow (no fill, no transitions, no caps). */
+export const inFlow = <T extends Pick<Task, 'stage'>>(task: T): task is T & { stage: string } => task.stage !== undefined;
+// #566: an absent name (a task outside the flow) names no stage
+export const stageOf = (stages: Stage[], name: string | undefined): Stage | undefined => stages.find((c) => c.name === name);
 
 /** The first Hive stage whose `from` names this column of `source` (#180): the only door a task enters (or is moved) through. A local task
  * (no source) has none. */
@@ -164,6 +167,9 @@ export const canRunIn = (stage: Pick<Stage, 'action' | 'prompt' | 'skill'>): boo
 /** The only way a task changes stage: `after` counts from this moment, and the pin goes with the old stage (a new queue is a new claim). What
  * the stage left behind on the work (a stopped mark, an awaited approval, queued feedback) is settleEntries' (#629). */
 export const enter = ({ pinned: _pinned, ...task }: Task, stage: Stage): Task => ({ ...task, stage: stage.name, enteredAt: new Date().toISOString() });
+
+/** The reducer's half of leaveFlow (#566): what only means something inside a stage goes with it; the activity's own fields are leaveFlow's. */
+export const leave = ({ stage: _stage, enteredAt: _enteredAt, pinned: _pinned, ...task }: Task): Task => task;
 
 /** A stage action in flight on the activity (#755, #834, #877): a commands stage running, a wait for CI or an evaluation. It holds the task as a
  * worker does: not due again, not moved, no workspace change, no start. One rule, so they never drift. */
@@ -230,7 +236,7 @@ function seenAgain(task: Task, seen: SourceItem, stages: Stage[], runs: WorkStat
   const { columnWrite: _columnWrite, ...rest } = present;
   const refreshed: Task = { ...rest, item: seen.item, boardColumn: seen.column };
   const held = activityOf(runs, taskId(task)); // #755, #834: a stage action in flight holds its stage as a worker does
-  const entry = seen.column !== task.boardColumn && held?.workerId === undefined && !inAction(held) ? entryStage(stages, seen.item.source, seen.column) : undefined;
+  const entry = inFlow(task) && seen.column !== task.boardColumn && held?.workerId === undefined && !inAction(held) ? entryStage(stages, seen.item.source, seen.column) : undefined;
   return entry && entry.name !== task.stage ? enter(refreshed, entry) : refreshed; // same stage through another door: the clock keeps running
 }
 
@@ -318,7 +324,7 @@ export function mergeTasks(tasks: Task[], stages: Stage[], { source, items: list
   const known = new Set(tasks.map(taskId));
   const kept = markRemoved(tasks, sources).map((task) => (task.item.source === source ? seenOne(task, seen.get(taskId(task)), stages, runs, now) : task)); // another source's task, or a local one: this poll says nothing about it
   const merged = [...kept, ...listed.flatMap((entry) => (known.has(entry.item.itemId) ? [] : entered(entry, stages)))];
-  const stamped = merged.map((c) => (c.enteredAt === undefined ? { ...c, enteredAt: now } : c));
+  const stamped = merged.map((c) => (inFlow(c) && c.enteredAt === undefined ? { ...c, enteredAt: now } : c));
   return followSource(stamped, order, runs);
 }
 
@@ -349,7 +355,7 @@ export function candidates(state: Pick<State, 'tasks' | 'stages'> & WorkersState
 export function moveTask(tasks: Task[], id: string, before?: string): Task[] {
   const moving = tasks.find((c) => taskId(c) === id);
   const target = before === undefined ? undefined : tasks.find((c) => taskId(c) === before);
-  if (!moving || (before !== undefined && !target) || (target && target.stage !== moving.stage)) return tasks;
+  if (!moving || !inFlow(moving) || (before !== undefined && !target) || (target && target.stage !== moving.stage)) return tasks;
   const rest = tasks.filter((c) => c !== moving);
   // "End of its stage" is right after the last task of that stage: the array is global, a stage's tasks need not be contiguous
   const at = target ? rest.indexOf(target) : rest.reduce((end, c, i) => (c.stage === moving.stage ? i + 1 : end), -1);
@@ -396,7 +402,7 @@ const isAnchored = (task: Task, sourceOrder: string[], runs: Runs): boolean =>
 // source's order. The array is global, so each stage is refilled at the indexes it already holds and the other stages keep theirs (#123).
 function followSource(tasks: Task[], sourceOrder: string[], runs: Runs): Task[] {
   const anchored = (c: Task): boolean => isAnchored(c, sourceOrder, runs);
-  const stages = [...new Set(tasks.map((c) => c.stage))];
+  const stages = [...new Set(tasks.flatMap((c) => (inFlow(c) ? [c.stage] : [])))];
   return stages.reduce((list, stage) => {
     const own = list.filter((c) => c.stage === stage);
     const free = bySource(own.filter((c) => !anchored(c)), sourceOrder);
@@ -427,7 +433,7 @@ export function resetOrder(tasks: Task[], stage: string, sourceOrder: string[], 
  * just started right below them (#117). */
 export function runningFirst(tasks: Task[], id: string, runs: Runs): Task[] {
   const started = tasks.find((c) => taskId(c) === id);
-  if (!started) return tasks;
+  if (!started || !inFlow(started)) return tasks; // #566: no stage, no order
   const live = (c: Task): boolean => isLive(c, runs);
   const stage = tasks.filter((c) => c.stage === started.stage);
   const others = stage.filter((c) => c !== started);

@@ -4,6 +4,7 @@ import { correlationOf, deriveFacts, endedStageRuns, signalRecords, startedFreeR
 import { textRef, type RecordInput, type RunKind } from '../src/facts.js';
 import { renameStages } from '../src/stage-rename.js';
 import { initialState } from '../src/orchestrator.js';
+import { leave } from '../src/tasks.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { HiveEvent, HookPayload, Item, State, Task, UsageRule, Worker } from '../src/types.js';
 import { chained } from './fakes.js';
@@ -243,4 +244,15 @@ test('a free session that leaves is free_session.ended with its worker and its a
   assert.deepEqual(startedFreeRuns(idle, open), [{ ptyId: PTY, correlation: ids, waitedMs: 0, agent: 'codex' }]);
   assert.deepEqual(startedFreeRuns(open, open), [], 'a run already there');
   assert.deepEqual(startedRuns(idle, withWork(open, 'board:I1', {}, { stageRuns: { dev: 1 } }), POLL, NOW), [], 'a free session is no stage run');
+});
+
+test('task.moved out of the flow carries no `to`, into it from no stage no `from`; both by hand (#566)', () => {
+  const placed = withWork(base(), 'board:I1');
+  const outside = withWork(base([leave(task(1))]), 'board:I1');
+  assert.deepEqual(only(deriveFacts(placed, outside, { type: 'leaveFlow', taskId: 'board:I1' }, NOW), 'task.moved'), [
+    { event: 'task.moved', level: 'info', task_id: 'board:I1', task: '1', activity_id: ACTIVITY, from: 'dev', by: 'hand' },
+  ]);
+  assert.deepEqual(only(deriveFacts(outside, placed, { type: 'moveToStage', taskId: 'board:I1', stage: 'dev' }, NOW), 'task.moved'), [
+    { event: 'task.moved', level: 'info', task_id: 'board:I1', task: '1', activity_id: ACTIVITY, stage: 'dev', to: 'dev', by: 'hand' },
+  ]);
 });

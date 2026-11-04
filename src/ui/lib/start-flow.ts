@@ -5,7 +5,7 @@ import type { Stage } from '../../types.js';
 /** The stages ahead of a task, its own first, up to the first that awaits approval (included), else to the last; `approval` says which. */
 export interface StagePath { next: string[]; stop?: string; approval: boolean }
 
-export function stagePath(stage: string, stages: Stage[]): StagePath {
+export function stagePath(stage: string | undefined, stages: Stage[]): StagePath {
   const from = stages.findIndex((s) => s.name === stage);
   if (from < 0) return { next: [], approval: false };
   const ahead = stages.slice(from);
@@ -15,8 +15,9 @@ export function stagePath(stage: string, stages: Stage[]): StagePath {
 }
 
 /** Whether executar etapas has anything to run for a task in `stage` (#774): some stage from its own onward, in the configured order, has a
- * prompt or an action. A stage the flow does not have answers true, so startMode alone decides, as before. */
-export function hasStagesToRun(stage: string, stages: Stage[]): boolean {
+ * prompt or an action. A stage the flow does not have answers true; no stage at all answers false, so startMode alone decides, as before. */
+export function hasStagesToRun(stage: string | undefined, stages: Stage[]): boolean {
+  if (stage === undefined) return false; // #566: a task outside the flow has no stage to run
   const from = stages.findIndex((s) => s.name === stage);
   return from < 0 || stages.slice(from).some((s) => s.prompt !== undefined || s.action !== undefined);
 }

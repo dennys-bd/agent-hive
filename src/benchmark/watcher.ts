@@ -1,4 +1,5 @@
 import { activityOf, resultOf, taskOfWorker } from '../activities.js';
+import { inFlow } from '../tasks.js';
 import type { Intervention, State, Status, Task, TaskProgressState } from '../types.js';
 
 export const DONE_STAGE = 'Delivered'; // #536: a real flow has a Done stage of its own
@@ -43,7 +44,7 @@ function withEntries(watch: WatchState, snapshot: Snapshot, now: Date): WatchSta
   return Object.fromEntries(idsOf(watch).map((id) => {
     const seen = watch.entries[id] ?? [];
     const task = taskOf(snapshot, id);
-    if (!task || seen.at(-1)?.stage === task.stage) return [id, seen];
+    if (!task || !inFlow(task) || seen.at(-1)?.stage === task.stage) return [id, seen]; // #566: no stage, no entry
     return [id, [...seen, { stage: task.stage, at: task.enteredAt ?? now.toISOString() }]];
   }));
 }

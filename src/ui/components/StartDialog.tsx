@@ -2,7 +2,7 @@ import { type KeyboardEvent, type ReactNode, useCallback, useContext, useEffect,
 import { activityOf, workIdOf } from '../../activities';
 import { runsAgent } from '../../stage-agent.js';
 import { startMode, startsFresh } from '../../task-runs';
-import { canOpenSession, HIVE_SOURCE, resolveWorkspace } from '../../tasks';
+import { canOpenSession, HIVE_SOURCE, inFlow, resolveWorkspace } from '../../tasks';
 import { DISCARD_FAILED, type Task, type OpenResult, type SetupRows, type State } from '../../types';
 import { act, attachRun } from '@/components/actions';
 import { DefaultAgentContext } from '@/components/NewRunButton';
@@ -236,7 +236,7 @@ function RunSection({ id, mode, task, state, run, workspace }: { id: string; mod
   // #893: open, the block goes above the box and the box drops its run row, which the block shows in full
   return (
     <div className="flex flex-col gap-2.5">
-      {isOpen && task && (
+      {isOpen && task && inFlow(task) && (
         <RunCustomize stage={task.stage} isChanged={isChanged(run.picks, run.initial)} closeRef={focus.closeRef} onRestore={run.restore} onClose={() => run.setCustomizing(false)}>{fields(run.initial)}</RunCustomize>
       )}
       <StagesBox task={task} stages={state.stages} run={isOpen ? undefined : <RunSummary picks={run.picks} stageModel={run.stageModel} isCustomizable={canCustomize} isOpen={false} onToggle={run.setCustomizing} buttonRef={focus.openRef} />} />
@@ -250,14 +250,14 @@ function StartHeader({ id, task, isNew, isPreparing }: { id: string; task?: Task
   return (
     <DialogHeader>
       <DialogTitle>{title}</DialogTitle>
-      {task && (!isNew || isPreparing) && <DialogDescription id={`${id}-sub`} className="text-[13px]">{t('start.subtitle', { title: task.item.title, stage: task.stage })}</DialogDescription>}
+      {task && (!isNew || isPreparing) && <DialogDescription id={`${id}-sub`} className="text-[13px]">{task.stage === undefined ? task.item.title : t('start.subtitle', { title: task.item.title, stage: task.stage })}</DialogDescription>}
     </DialogHeader>
   );
 }
 
 // The preparing view of the dialog's request (#390): the server's rows, and the session row the dialog's own picks name
-function Preparing({ progress, view, mode, agent, stage, error, onClose, onRetry }: { progress: SetupRows; view: SetupView; mode: StartMode; agent: string; stage: string; error?: string; onClose(): void; onRetry(): void }) {
-  const text = mode === 'stages' ? t('setupProgress.session.stage', { agent, stage }) : t('setupProgress.session.free', { agent });
+function Preparing({ progress, view, mode, agent, stage, error, onClose, onRetry }: { progress: SetupRows; view: SetupView; mode: StartMode; agent: string; stage: string | undefined; error?: string; onClose(): void; onRetry(): void }) {
+  const text = mode === 'stages' && stage !== undefined ? t('setupProgress.session.stage', { agent, stage }) : t('setupProgress.session.free', { agent });
   return <SetupProgressView progress={progress} isLive={view.isLive} isFailed={view.isFailed} error={error} session={{ text, status: sessionStatus(progress.rows, view.isAnswered) }} onClose={onClose} onRetry={onRetry} />;
 }
 
@@ -271,7 +271,9 @@ export function StartDialog(props: StartDialogProps) {
   const id = useId();
   const { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held, view } = useStart(props);
   const progress = task && view.progress;
-  const stagesOff = task === undefined || hasStagesToRun(task.stage, state.stages) ? undefined : t('start.noStages', { stage: task.stage });
+  // #566: a task outside the flow has no stage to run from; the destination block (3.5) moves it into one
+  const stagesOff = task === undefined || hasStagesToRun(task.stage, state.stages) ? undefined
+    : task.stage === undefined ? t('start.outsideFlow') : t('start.noStages', { stage: task.stage });
   // #316: the lists of the workspace the run goes in: the task's, else the one the base field picked
   const runWorkspace = (task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks)) ?? base.choice.workspace;
   // #774: a pick with nothing to run lands on sessão livre; any other pick leaves the mode where the user put it

@@ -196,15 +196,15 @@ test('the status in muted: the worktree setup (iniciando, then its step), a spaw
 
 test('abrir focuses the task\'s activity on its agent session, a waiting one included; the task open in the panel wears its status ring, ring\'s own with no status (#542)', async () => {
   const user = userEvent.setup();
-  const focusDetached = vi.fn(async () => true);
-  vi.stubGlobal('hive', { focusDetached });
+  const focusTab = vi.fn(async () => true);
+  vi.stubGlobal('hive', { focusTab });
   const waiting = working({ status: 'waiting', freeSession: true, sessionId: 'bbbbbbbb-0000-4000-8000-000000000002', runId: 'W2' });
   const terminal = { terminalId: 'W9', activityId: activityIdOf('I1'), startedAt: since, cwd: '/repo' };
   const { rerender } = render(<Flow state={withPointedWork({ ...state(task(), [waiting]), terminals: [terminal] })} flow={firstFlow(withPointedWork({ ...state(task(), [waiting]), terminals: [terminal] }))} selectedId="I1" />);
   expect(tile()).toHaveClass('ring-2', 'ring-waiting/35');
   expect(tile()).toHaveAttribute('aria-current', 'true');
   await user.click(within(tile()).getByRole('button', { name: 'abrir' }));
-  expect(focusDetached).toHaveBeenCalledWith('W2');
+  expect(focusTab).toHaveBeenCalledWith('I1', 'W2');
   rerender(<Flow state={state(task())} flow={firstFlow(state(task()))} selectedId="I1" />);
   expect(tile()).toHaveClass('ring-2', 'ring-ring/35');
   rerender(<Flow state={state(task())} flow={firstFlow(state(task()))} />);

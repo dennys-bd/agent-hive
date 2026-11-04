@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { taskLabel } from '../../tasks';
 import { activityOf } from '../../activities';
 import type { State, Task } from '../../types';
+import { inFlow } from '../../tasks';
 import { discardText, keptStages, keptText, type RestartWork, returnTo } from '@/components/restart-preview';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -64,7 +65,7 @@ export function RestartDialog({ task, state, onStarted, onClose }: RestartDialog
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('restart.title', { stage: task.stage })}</DialogTitle>
+          <DialogTitle>{inFlow(task) && t('restart.title', { stage: task.stage })}</DialogTitle>
           <DialogDescription>{taskLabel(task)}</DialogDescription>
         </DialogHeader>
         <p className="text-sm">{t('restart.lead')}</p>

@@ -174,6 +174,7 @@ test('describeEvent names the hook, worker and tool but never the tool_input, th
 
 test('describeEvent summarises every other event with names, ids and counts only', () => {
   assert.equal(describeEvent({ type: 'boot' }), 'boot');
+  assert.equal(describeEvent({ type: 'leaveFlow', taskId: 'board:I1' }), 'leaveFlow #board:I1'); // #566
   assert.equal(describeEvent({ type: 'poll', source: 'board', items: [item('1'), item('2')].map((t) => ({ item: t, column: 'Ready' })) }), 'poll source=board items=2 ids=1,2');
   const ids = Array.from({ length: 25 }, (_, i) => String(i + 1));
   assert.equal(describeEvent({ type: 'poll', source: 'board', items: ids.map((id) => ({ item: item(id), column: 'Ready' })) }), `poll source=board items=25 ids=${ids.slice(0, 20).join(',')}`);
@@ -524,4 +525,8 @@ test('describeEffect names a cleared run\'s transcript removal by task, slug and
   const at = '2026-10-22T10:00:00.000Z';
   const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: at, stages: ['spec'], lastUsedAt: at, agent: 'claude' as const };
   assert.equal(describeEffect({ type: 'removeTranscripts', task, activity, session }), 'removeTranscripts #1 slug=hive-1-x a1b2c3d4');
+});
+
+test('createTask without a stage logs stage=none (#566)', () => {
+  assert.equal(describeEvent({ type: 'createTask', title: 'x', body: '', prefix: 'HIVE', auto: true }), 'createTask stage=none prefix=HIVE');
 });

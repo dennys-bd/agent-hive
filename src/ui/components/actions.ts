@@ -2,6 +2,7 @@
 import { toast } from 'sonner';
 import type { RunKind } from '../../task-runs';
 import { activityOf } from '../../activities';
+import { localKey } from '@/lib/activities';
 import { taskLabel, resolveWorkspace } from '../../tasks';
 import { commandChannel } from '../../console';
 import type { Task, OpenResult, SessionRef, State } from '../../types';
@@ -26,18 +27,26 @@ export function actThen(path: string, done?: () => void, body?: unknown): Promis
   return act<unknown>(path, body).then((answer) => { if (answer !== undefined) done?.(); });
 }
 
-/** A run's terminal button (#283): its detached window when it has one (#252), else `open`: the dock's run opener, a task's run shown in
- * the center as its activity (#457), or the panel's openTab for a chip dropped there (#340). Inside the viewer the window is asked first; a
- * failed ask opens it, as no window does. A plain browser has no windows to ask about. */
-export function focusRun(tab: RunTab, open?: OpenRun): void {
+/** Focus instead of open (#554): inside the viewer, the detached window that holds the tab `key` names comes forward, and `open` runs only
+ * when no window holds it or the ask fails. A plain browser has no windows, so it opens at once. The ask is made before this returns; a
+ * partial bridge's throw counts as no window, as a rejection does. */
+export function focusOrOpen(activity: string, key: string, open: () => void): void {
   const bridge = window.hive;
   if (!bridge) {
-    open?.(tab);
+    open();
     return;
   }
-  void bridge.focusDetached(tab.ptyId).catch(() => false).then((focused) => {
-    if (!focused) open?.(tab);
+  void new Promise<boolean>((resolve) => resolve(bridge.focusTab(activity, key))).catch(() => false).then((isFocused) => {
+    if (!isFocused) open();
   });
+}
+
+/** A run's terminal button (#283): its tab's detached window when one holds it (#554), else `open`: the dock's run opener, a task's run shown
+ * in the center as its activity (#457), or the panel's openTab for a chip dropped there (#340). Keyed by the run's activity and its pty id. */
+export function focusRun(tab: RunTab, open?: OpenRun): void {
+  const activity = tab.task ?? (tab.project === undefined ? undefined : localKey(tab.project));
+  if (activity === undefined) open?.(tab);
+  else focusOrOpen(activity, tab.ptyId, () => open?.(tab));
 }
 
 /** What POST /tasks/:id/open and .../sessions/:id/open answer with (#249): the run it started, attached at once, no extra click on

@@ -2,7 +2,7 @@
 // CommonJS (.cts → dist/src/window-preload.cjs): a sandboxed preload is loaded as a script with `require`, not as an ES module.
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
-// Electron wraps a handler's throw as "Error invoking remote method 'window:detach': Error: <message>"; the page's toast
+// Electron wraps a handler's throw as "Error invoking remote method 'window:moveToWindow': Error: <message>"; the page's toast
 // shows the message alone.
 const IPC_PREFIX = /^Error invoking remote method '[^']*': (?:Error: )?/;
 
@@ -56,10 +56,6 @@ ipcRenderer.on('window:closing', () => {
 let closeKeyListener: (() => void) | undefined;
 ipcRenderer.on('window:close', () => closeKeyListener?.());
 
-// A file link clicked in a detached window (#717): main sends window:openFile with the window already loaded, so nothing is held
-let openFileListener: ((file: unknown) => void) | undefined;
-ipcRenderer.on('window:openFile', (_event, file: unknown) => openFileListener?.(file));
-
 // Full screen (#295): main sends window:fullScreen on the window's enter and leave; nothing is held, since the page asks isFullScreen at load.
 // Untrusted IPC: only a boolean reaches the page
 let fullScreenListener: ((on: boolean) => void) | undefined;
@@ -76,9 +72,6 @@ const bridge: HiveWindow = {
     heldSelection = undefined;
   },
   settingsChanged: () => invoke('window:settingsChanged'),
-  detach: (tab) => invoke('window:detach', tab),
-  focusDetached: (ptyId) => invoke('window:focusDetached', ptyId),
-  detachedPtys: () => invoke('window:detachedPtys'),
   onDock,
   moveToWindow: (tab) => invoke('window:moveToWindow', tab), // #552
   focusTab: (activity, key) => invoke('window:focusTab', activity, key),
@@ -98,12 +91,6 @@ const bridge: HiveWindow = {
     closeKeyListener = callback;
     return () => {
       if (closeKeyListener === callback) closeKeyListener = undefined;
-    };
-  },
-  onOpenFile: (callback) => {
-    openFileListener = callback;
-    return () => {
-      if (openFileListener === callback) openFileListener = undefined;
     };
   },
   closeWindow: () => invoke('window:closeWindow'), // #585

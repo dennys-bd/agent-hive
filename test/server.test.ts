@@ -2966,3 +2966,22 @@ test('POST /tasks/:id/start with discardOrphan removes what git holds for a task
   assert.deepEqual(await res.json(), { error: words, code: DISCARD_FAILED });
   assert.equal(again.workers.length, 0, 'nothing started');
 });
+
+test('POST /tasks without a stage creates a task outside the flow in hive: 201 (#566)', async (t) => {
+  const { base, server } = await start(t, idle(BODY));
+  assert.equal((await postJson(`${base}/tasks`, { title: 'Loose' })).status, 201);
+  assert.equal(server.getState()!.tasks.find((c) => c.item.itemId === 'local:1')?.stage, undefined);
+});
+
+test('POST /tasks/:id/start on a task outside the flow answers 409 naming the rule, /move too; /open opens a free session on it (#566)', async (t) => {
+  const { base, repo, server } = await start(t, idle(BODY));
+  assert.equal((await postJson(`${base}/tasks`, { title: 'Loose' })).status, 201); // local:1, outside the flow
+  for (const path of ['start', 'move']) {
+    const res = await postJson(`${base}/tasks/local:1/${path}`);
+    assert.deepEqual([res.status, await res.json()], [409, { error: 'the task is outside the flow: move it into a stage first' }], path);
+  }
+  const loose = server.getState()!.tasks.find((c) => c.item.itemId === 'local:1')!;
+  await readyOn(server, 'local:1', { path: worktreePath(repo, slugFor(loose.item)), branch: 'hive/HIVE-1-loose', base: null, local: false });
+  assert.equal((await postJson(`${base}/tasks/local:1/open`, { kind: 'claude' })).status, 200);
+  assert.equal(server.getState()!.workers.filter((s) => s.freeSession).length, 1);
+});
