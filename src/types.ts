@@ -365,7 +365,8 @@ export interface Stage {
   ciChecks?: CiChecks; // #834: with action waitForCi only, required there: which checks the wait counts
   checks?: string[]; // #834: with ciChecks list only, required there: names or patterns (* = any run of characters), case-insensitive
   rerunOnce?: boolean; // #834: with action waitForCi only, required there: re-run the failed Actions jobs once per head commit before failing
-  timeout?: string; // #834: with action waitForCi only: how long the wait may take from the stage's start (TIMEOUT); absent = no limit
+  timeout?: string; // #834, #598: with action waitForCi only: how long one check may run, from its own start (TIMEOUT); absent = no limit
+  queueTimeout?: string; // #598: with action waitForCi only: how long a check may wait for a runner, from its suite's creation (TIMEOUT); absent = no queue limit
   reviewers?: EvaluateRow[]; // #877: with action evaluate only, required there (may be empty): each runs read-only in parallel with its focus
   judge?: EvaluateRow; // #877: with action evaluate only, required there; no focus
   threshold?: number; // #877: with action evaluate only, required there: 0..10, every dimension's score must reach it

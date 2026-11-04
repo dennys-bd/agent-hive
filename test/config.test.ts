@@ -1096,6 +1096,25 @@ test('parseConfig reads a wait-for-CI stage: which checks, the list only with li
   for (const [extra, message] of refused) assert.throws(bad(extra), { message: `hive.config.json: ${message}` }, JSON.stringify(extra));
 });
 
+test('parseConfig reads a wait-for-CI stage\'s optional queueTimeout in the TIMEOUT grammar; refuses it malformed or without the action (#598)', () => {
+  const stage = (extra: Record<string, unknown>) => ({ name: 'ci', from: { board: ['CI'] }, ...extra });
+  const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];
+  const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
+  const ok = { action: 'waitForCi', ciChecks: 'required', rerunOnce: true, timeout: '30m', queueTimeout: '2h' };
+  assert.deepEqual(parsed(ok), { name: 'ci', from: { board: ['CI'] }, ...ok });
+  assert.equal('queueTimeout' in parsed({ ...ok, queueTimeout: undefined }), false, 'absent: no queue limit');
+  const f = '"comb.flows[0].stages[0].queueTimeout"';
+  const malformed = `${f} must be a timeout like "30s", "10m" or "1h", up to 24h`;
+  const refused: [Record<string, unknown>, string][] = [
+    [{ queueTimeout: '1h' }, `${f} needs "action": "waitForCi"`],
+    [{ ...ok, queueTimeout: '1d' }, malformed],
+    [{ ...ok, queueTimeout: '25h' }, malformed],
+    [{ ...ok, queueTimeout: '' }, malformed],
+    [{ ...ok, queueTimeout: 60 }, malformed],
+  ];
+  for (const [extra, message] of refused) assert.throws(bad(extra), { message: `hive.config.json: ${message}` }, JSON.stringify(extra));
+});
+
 test('parseConfig reads an evaluate stage: reviewers with a focus, a judge with none, a 0..10 threshold and a rubric with a line; refuses each key without the action, a bad row and every other key beside it (#877)', () => {
   const stage = (extra: Record<string, unknown>) => ({ name: 'eval', from: { board: ['Eval'] }, ...extra });
   const parsed = (extra: Record<string, unknown>) => parseConfig(github({ stages: [stage(extra)] })).comb.flows[0].stages[0];

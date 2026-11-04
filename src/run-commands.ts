@@ -143,7 +143,7 @@ export function parseStageCommands(raw: Record<string, unknown>, field: string):
 }
 
 const isCiChecks = (value: unknown): value is CiChecks => CI_CHECKS.some((c) => c === value);
-const CI_KEYS = ['ciChecks', 'checks', 'rerunOnce', 'timeout'] as const;
+const CI_KEYS = ['ciChecks', 'checks', 'rerunOnce', 'timeout', 'queueTimeout'] as const;
 
 // The list under ciChecks list (#834): names or patterns, trimmed, distinct, non-empty; a check's name reaches log lines and the output
 function parseCheckList(raw: unknown, field: string): string[] {
@@ -154,9 +154,9 @@ function parseCheckList(raw: unknown, field: string): string[] {
 }
 
 /** A wait-for-CI stage's own keys (#834): which checks count, the list under list only, the re-run switch, all required with
- * `action: "waitForCi"`, and the optional wait (absent = no limit); each refused without the action. model and session mean nothing next to
+ * `action: "waitForCi"`, and the optional wait (absent = no limit) and the optional queue limit (#598); each refused without the action. model and session mean nothing next to
  * it (no agent runs); a commands stage's keys are parseStageCommands' to refuse. */
-export function parseStageCi(raw: Record<string, unknown>, field: string): Pick<Stage, 'ciChecks' | 'checks' | 'rerunOnce' | 'timeout'> {
+export function parseStageCi(raw: Record<string, unknown>, field: string): Pick<Stage, 'ciChecks' | 'checks' | 'rerunOnce' | 'timeout' | 'queueTimeout'> {
   if (raw.action !== 'waitForCi') {
     for (const key of CI_KEYS) {
       if (raw[key] !== undefined) fail(`${field}.${key}`, 'needs "action": "waitForCi"');
@@ -169,10 +169,13 @@ export function parseStageCi(raw: Record<string, unknown>, field: string): Pick<
   const { ciChecks, rerunOnce } = raw;
   if (!isCiChecks(ciChecks)) return fail(`${field}.ciChecks`, 'must be "required", "all" or "list"');
   if (typeof rerunOnce !== 'boolean') return fail(`${field}.rerunOnce`, 'must be true or false');
-  const timeout = raw.timeout === undefined ? {} : { timeout: parseTimeout(raw.timeout, `${field}.timeout`) };
-  if (ciChecks === 'list') return { ciChecks, checks: parseCheckList(raw.checks, `${field}.checks`), rerunOnce, ...timeout };
+  const limits = {
+    ...(raw.timeout === undefined ? {} : { timeout: parseTimeout(raw.timeout, `${field}.timeout`) }),
+    ...(raw.queueTimeout === undefined ? {} : { queueTimeout: parseTimeout(raw.queueTimeout, `${field}.queueTimeout`) }), // #598
+  };
+  if (ciChecks === 'list') return { ciChecks, checks: parseCheckList(raw.checks, `${field}.checks`), rerunOnce, ...limits };
   if (raw.checks !== undefined) fail(`${field}.checks`, 'needs "ciChecks": "list"');
-  return { ciChecks, rerunOnce, ...timeout };
+  return { ciChecks, rerunOnce, ...limits };
 }
 
 const EVALUATE_KEYS = ['reviewers', 'judge', 'threshold', 'rubric'] as const;
