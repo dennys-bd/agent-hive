@@ -34,13 +34,15 @@ async function projectNode(ctx: ItemReadContext, itemId: string): Promise<GhItem
 }
 
 // The refetch stores the issue as an issue page's does, and its row answers; the cooldown's row is fresh enough for a poll. failed rejects,
-// so 1.5 leaves the task as it was, as after a failed poll
-async function modelIssue(store: ItemStore, rows: string, itemId: string, url: string, ref: IssueRef): Promise<SourceItemRead> {
+// so 1.5 leaves the task as it was, as after a failed poll. Only the refetch's own gone ends the item: a skipped refetch (cooldown, backoff,
+// a stopped loop) over an issue the model never held reads the wire, so a transient state never answers gone
+async function modelIssue(ctx: ItemReadContext, store: ItemStore, rows: string, itemId: string, url: string, ref: IssueRef): Promise<SourceItemRead> {
   const repository = `${ref.owner}/${ref.name}`;
   const outcome = await store.refetch(repository, ref.number);
   if (outcome === 'failed') throw new Error(`issue ${repository}#${ref.number} could not be read`);
-  const row = outcome === 'gone' ? undefined : store.db.issue(rows, repository, ref.number);
-  if (row === undefined) return GONE;
+  if (outcome === 'gone') return GONE;
+  const row = store.db.issue(rows, repository, ref.number);
+  if (row === undefined) return wireIssue(ctx.gql, itemId, ref);
   return issueRead(itemId, row.state === 'closed', { id: String(row.number), title: row.title, body: row.body, url, createdAt: row.createdAt });
 }
 
@@ -56,7 +58,7 @@ async function offProject(ctx: ItemReadContext, itemId: string, url: string): Pr
   const ref = issueRef(url);
   if (ref === undefined) return GONE;
   const rows = await ctx.store?.source();
-  return ctx.store !== undefined && rows !== undefined ? modelIssue(ctx.store, rows, itemId, url, ref) : wireIssue(ctx.gql, itemId, ref);
+  return ctx.store !== undefined && rows !== undefined ? modelIssue(ctx, ctx.store, rows, itemId, url, ref) : wireIssue(ctx.gql, itemId, ref);
 }
 
 /** #567: one item read past the listing, never a listing. On the Project: closed first, whatever the filter says, else the poll's entry and

@@ -59,7 +59,10 @@ test('a draft node, and a malformed url off the Project, answer gone with no iss
   assert.deepEqual(await readOneItem(ctxOf(draft.gql), 'PVTI_1', URL1), { reason: 'gone' });
   const malformed = fakeGql({ itemFields: { node: null } });
   assert.deepEqual(await readOneItem(ctxOf(malformed.gql), 'PVTI_1', 'https://github.com/acme/hive/pull/12'), { reason: 'gone' });
-  assert.deepEqual(names(malformed.calls), ['itemFields']);
+  for (const url of ['https://github.com/../x/issues/12', 'https://github.com/acme/./issues/12', 'https://github.com/acme/hive/issues/1234567890']) {
+    assert.deepEqual(await readOneItem(ctxOf(malformed.gql), 'PVTI_1', url), { reason: 'gone' }, url);
+  }
+  assert.deepEqual(names(malformed.calls), ['itemFields', 'itemFields', 'itemFields', 'itemFields']);
 });
 
 test('off the Project with a store: the refetch of owner/repo and the number, then the row answers project or closed under the passed itemId (#567)', async () => {
@@ -79,10 +82,14 @@ test('off the Project with a store: the refetch of owner/repo and the number, th
   assert.equal((await readOneItem(ctxOf(gql, { store: cooled.store }), 'PVTI_1', URL12)).reason, 'project', 'the cooldown reads the row');
 });
 
-test('off the Project with a store: gone, or no row, answers gone; failed rejects (#567)', async () => {
+test('off the Project with a store: the refetch\'s gone answers gone; no row after a skipped refetch reads the wire; failed rejects (#567)', async () => {
   const { gql } = fakeGql({ itemFields: { node: null } });
   assert.deepEqual(await readOneItem(ctxOf(gql, { store: (await modelStore('gone', [ISSUE_ROW])).store }), 'PVTI_1', URL12), { reason: 'gone' });
-  assert.deepEqual(await readOneItem(ctxOf(gql, { store: (await modelStore('skipped')).store }), 'PVTI_1', URL12), { reason: 'gone' });
+  const open = { repository: { issue: { number: 12, title: 'T12', body: 'b', url: URL12, state: 'OPEN', createdAt: T1 } } };
+  const wire = fakeGql({ itemFields: { node: null }, issueByNumber: [open, { repository: { issue: null } }] });
+  const skipped = (await modelStore('skipped')).store;
+  assert.equal((await readOneItem(ctxOf(wire.gql, { store: skipped }), 'PVTI_1', URL12)).reason, 'project', 'a transient skip never answers gone');
+  assert.deepEqual(await readOneItem(ctxOf(wire.gql, { store: skipped }), 'PVTI_1', URL12), { reason: 'gone' }, 'gone only when the wire says so');
   await assert.rejects(readOneItem(ctxOf(gql, { store: (await modelStore('failed')).store }), 'PVTI_1', URL12), /acme\/hive#12 could not be read/);
 });
 
