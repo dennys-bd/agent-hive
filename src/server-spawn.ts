@@ -8,7 +8,7 @@ import { taskBranch } from './task-runs.js';
 import { shownBase } from './setup-rows.js';
 import { type PrepareHooks, runTaskSetup } from './task-setup.js';
 import { withReused } from './worktree-setup.js';
-import { branchFor, LOCAL_SLUG, slugFor } from './tasks.js';
+import { branchFor, inFlow, LOCAL_SLUG, slugFor } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName, requireWorkspace } from './config.js';
 import { commandChannel, type ConsoleStore } from './console.js';
 import { feedConsole } from './console-feed.js';
@@ -285,7 +285,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     // Refused above, before the stage start is recorded: a session that never runs leaves no mark
     // #812: a free session on a task records the stage start when the stage has none, before the agent runs, so Restart can undo its work. A
     // repo session runs in the main repo, and a checkout task in the user's own checkout, which Restart never resets (#444): nothing to record
-    if (task !== undefined && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
+    if (task !== undefined && inFlow(task) && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
     const env = await runEnv(exec, place.workspace); // #854
     const external = await externalMcp(config, place.workspace.name); // #333
     const first = copy?.notice ?? prompt;

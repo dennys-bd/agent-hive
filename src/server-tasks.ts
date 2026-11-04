@@ -2,7 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { activityOf, otherSlugs } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { createTask, UNKNOWN_STAGE_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from './create-task.js';
-import { branchFor, slugFor, canCloseMissing, canOpenSession, canMoveToStage, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
+import { branchFor, inFlow, slugFor, canCloseMissing, canOpenSession, canMoveToStage, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
 import { hiveAction, runsAgent } from './stage-agent.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
 import { baseRemote, workspaceBase } from './fork.js';
@@ -53,6 +53,7 @@ export const LEAVING_MESSAGE = 'tarefa saindo da source'; // #491: an archive, r
 const EPIC_MESSAGE = 'um épico não executa: sua etapa vem das filhas'; // #31: a show epic; the reducer's start ignores it
 const DIFFERENT_STAGES_MESSAGE = 'tarefas em etapas diferentes';
 const NOTHING_MISSING_MESSAGE = 'nenhuma tarefa dessa etapa saiu da source'; // #279: the stage's close all has nothing canCloseMissing allows
+export const OUTSIDE_FLOW_MESSAGE = 'the task is outside the flow: move it into a stage first'; // #566
 const DELETING_MESSAGE = 'atividade sendo excluída'; // a delete-activity stage or route is running git on it (#573)
 const AUTO_BODY_MESSAGE = 'auto precisa ser true ou false';
 const DROP_MESSAGE = 'drop precisa ser um objeto, com before em texto'; // #366: a drag's placement on move-to
@@ -267,6 +268,7 @@ function beforeRefusal(state: State, before: string, stage: string): Refusal | u
 function moveRefusal(state: State, itemId: string, before: string | undefined): Refusal | undefined {
   const task = state.tasks.find((c) => c.item.itemId === itemId);
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
+  if (!inFlow(task)) return { status: HTTP_CONFLICT, message: OUTSIDE_FLOW_MESSAGE }; // #566: no stage to order in
   return before === undefined ? undefined : beforeRefusal(state, before, task.stage);
 }
 

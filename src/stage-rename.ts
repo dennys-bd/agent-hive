@@ -1,3 +1,4 @@
+import { inFlow } from './tasks.js';
 import type { Activity, ActivityRecord, Stage, State, Task, TaskUsage, Transition } from './types.js';
 
 // #861: a save that renamed stages, as one map applied once per value (so A ↔ B swaps), over every State field the audit found naming a
@@ -24,7 +25,7 @@ const keysRenamed = <T>(map: Record<string, T>, rename: Rename): Record<string, 
 
 function renamedTask(task: Task, stage: Rename): Task {
   const { epic } = task.item;
-  return { ...task, stage: stage(task.stage), ...(epic === undefined ? {} : { item: { ...task.item, epic: { ...epic, switchAt: stage(epic.switchAt) } } }) };
+  return { ...task, ...(inFlow(task) ? { stage: stage(task.stage) } : {}), ...(epic === undefined ? {} : { item: { ...task.item, epic: { ...epic, switchAt: stage(epic.switchAt) } } }) };
 }
 
 function renamedActivity(a: Activity, stage: Rename, key: Rename): Activity {

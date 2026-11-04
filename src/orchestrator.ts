@@ -1,5 +1,5 @@
 
-import { canCloseMissing, inAction, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
+import { canCloseMissing, inAction, inFlow, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
 import { benchmarkReduce, isBenchmarkEvent } from './benchmark-reducer.js';
 import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
@@ -810,7 +810,7 @@ const inMainRepo = (state: State, task: Task, worker: Worker): boolean => worker
 function firstSession(state: State, worker: Worker, id: string): State {
   const task = taskOfWorker(state, worker);
   const activity = activityOfWorker(state, worker);
-  if (!task || !activity || activity.sessionId !== undefined) return state;
+  if (!task || !inFlow(task) || !activity || activity.sessionId !== undefined) return state;
   return touchSession(withActivity(state, { ...activity, sessionId: id }), task, id, task.stage, worker.startedAt ?? new Date().toISOString(), ranAgent(worker));
 }
 

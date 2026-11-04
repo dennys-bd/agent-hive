@@ -99,7 +99,7 @@ function taskRecords(prev: State, next: State, event: HiveEvent, now: number): R
     const old = before.get(taskId(task));
     const ids = correlationOf(next, undefined, task);
     if (!old) return [{ event: 'task.discovered', level: 'info', ...ids, source: task.item.source ?? 'local', ...createdAt(task, now) }];
-    return old.stage === task.stage ? [] : [{ event: 'task.moved', level: 'info', ...ids, from: old.stage, to: task.stage, by: MOVED_BY[event.type] ?? 'auto' }];
+    return old.stage === task.stage ? [] : [{ event: 'task.moved', level: 'info', ...ids, ...(old.stage === undefined ? {} : { from: old.stage }), ...(task.stage === undefined ? {} : { to: task.stage }), by: MOVED_BY[event.type] ?? 'auto' }];
   });
   const gone = prev.tasks.filter((t) => !kept.has(taskId(t))).map((task): RecordInput => {
     const fields = { level: 'info' as const, ...correlationOf(prev, undefined, task), ...goneFields(prev, task, event) };

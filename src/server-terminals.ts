@@ -16,6 +16,7 @@ import { errorMessage } from './server-review.js';
 import { exitEvent } from './server-exit.js';
 import { taskProtocol } from './server-spawn.js';
 import { answerOpen, type Refusal, refuse } from './server-tasks.js';
+import { inFlow } from './tasks.js';
 import { strayAgents } from './shell-procs.js';
 import { capturedCwd, liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
@@ -109,7 +110,7 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
   const onTask = activity?.kind === 'task'; // a task's session protocol on a task's activity; the workspace's local one elsewhere (#256)
   const task = onTask ? taskOfWorker(state, worker) : undefined; // #797: its workspace's protocol, the memory under it
   // #812: before the shim starts the agent, as an open's spawn does; never in a checkout task's own checkout (#444)
-  if (task && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
+  if (task && inFlow(task) && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
   // #803: a captured agent is a free session of the terminal's activity, so it loads its workspace's language servers, a local activity's too.
   // #317: and its workspace's plugin folder: a task whose workspace left the config, or a workspace with no folder, refuses the capture (throws)
   const workspace = task === undefined ? activity?.workspace : requireWorkspace(runtime.config, task).name;

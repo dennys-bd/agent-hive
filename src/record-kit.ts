@@ -1,6 +1,6 @@
 import { activityOf, activityOfWorker, addUsage, heldRun, recordOf, recordsOf, recordWithSession, taskOfWorker, usageOf, withActivity, withRecord } from './activities.js';
 import type { Reduced } from './reducer-kit.js';
-import { NO_USAGE, runTime, sessionsOf, taskId, titled, workersOf } from './tasks.js';
+import { NO_USAGE, inFlow, runTime, sessionsOf, taskId, titled, workersOf } from './tasks.js';
 import { recordedIssues } from './decomposition.js';
 import { withLaunch } from './launch-pick.js';
 import type { Activity, ActivityRecord, AgentId, DeleteActivityScope, Item, LaunchPick, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
@@ -48,7 +48,7 @@ export function touchFreeSession(state: State, task: Task, id: string, now: stri
  * alone; its session is recorded at its first SessionStart (#931). */
 export function markFreeRun(state: State, task: Task): State {
   const live = activityOf(state, taskId(task));
-  return live ? withActivity(state, { ...live, freeSessionStage: task.stage }) : state;
+  return live && inFlow(task) ? withActivity(state, { ...live, freeSessionStage: task.stage }) : state;
 }
 
 /** One turn counted (#248, #489, #617): the delta joins the live record's usage, in the part of the stage and agent the worker runs, as it
