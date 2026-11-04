@@ -61,20 +61,20 @@ function linkOf(state: State, sources: readonly string[], url: unknown, origin: 
 }
 
 /** The createTask the body asks for, or why not: a trimmed title of 1 to 200 characters, an optional text body of at most 64 KB, the name
- * of a Comb stage, an optional Comb workspace (#179), and the native view's url and origin (#756), `sources` being the configured source
- * names an origin may name. Shared by POST /tasks and the hive_create_task tool (src/mcp.ts, #99), which hands no sources. */
+ * of a Comb stage or none (#566: absent = outside the flow), an optional Comb workspace (#179), and the native view's url and origin (#756),
+ * `sources` being the configured source names an origin may name. Shared by POST /tasks and the hive_create_task tool (src/mcp.ts, #99), which hands no sources. */
 export function createEvent(state: State, prefix: string, body: unknown, sources: readonly string[] = []): Extract<HiveEvent, { type: 'createTask' }> | Refusal {
   const { title, body: text = '', stage, workspace, auto, url, origin } = (body ?? {}) as { title?: unknown; body?: unknown; stage?: unknown; workspace?: unknown; auto?: unknown; url?: unknown; origin?: unknown };
   const trimmed = typeof title === 'string' ? title.trim() : '';
   if (trimmed === '') return { status: HTTP_BAD_REQUEST, message: TITLE_REQUIRED_MESSAGE };
   if (trimmed.length > TITLE_MAX) return { status: HTTP_BAD_REQUEST, message: TITLE_TOO_LONG_MESSAGE };
   if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > BODY_MAX_BYTES) return { status: HTTP_BAD_REQUEST, message: BODY_MESSAGE };
-  if (typeof stage !== 'string' || stageOf(state.stages, stage) === undefined) return { status: HTTP_BAD_REQUEST, message: UNKNOWN_STAGE_MESSAGE };
+  if (stage !== undefined && (typeof stage !== 'string' || stageOf(state.stages, stage) === undefined)) return { status: HTTP_BAD_REQUEST, message: UNKNOWN_STAGE_MESSAGE };
   if (workspace !== undefined && (typeof workspace !== 'string' || !state.workspaces.includes(workspace))) return { status: HTTP_BAD_REQUEST, message: UNKNOWN_WORKSPACE_MESSAGE }; // #179
   const link = linkOf(state, sources, url, origin);
   if ('status' in link) return link;
   // auto: false keeps the fill off a task its creator starts right away (redesign 03); anything else is the plain create, born auto (#573)
-  return { type: 'createTask', title: trimmed, body: text, stage, prefix, ...(workspace === undefined ? {} : { workspace }), auto: auto !== false, ...link };
+  return { type: 'createTask', title: trimmed, body: text, ...(stage === undefined ? {} : { stage }), prefix, ...(workspace === undefined ? {} : { workspace }), auto: auto !== false, ...link };
 }
 
 type CreatePr = Extract<HiveEvent, { type: 'createTask' }>['pr'];

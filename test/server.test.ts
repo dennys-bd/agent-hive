@@ -2966,3 +2966,9 @@ test('POST /tasks/:id/start with discardOrphan removes what git holds for a task
   assert.deepEqual(await res.json(), { error: words, code: DISCARD_FAILED });
   assert.equal(again.workers.length, 0, 'nothing started');
 });
+
+test('POST /tasks without a stage creates a task outside the flow in hive: 201 (#566)', async (t) => {
+  const { base, server } = await start(t, idle(BODY));
+  assert.equal((await postJson(`${base}/tasks`, { title: 'Loose' })).status, 201);
+  assert.equal(server.getState()!.tasks.find((c) => c.item.itemId === 'local:1')?.stage, undefined);
+});
