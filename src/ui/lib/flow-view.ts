@@ -1,15 +1,18 @@
-// The flowchart's view (#909, #571): the loops toggle, the tree toggle (#34) and the details' collapsed outline parents (#36), one value each and
-// shared by every flowchart, and per flow, by name, its canvas: the zoom and pan #910 applies and the collapsed groups of #34. Per-viewer UI
-// state kept in the view state (#484), never a setting. Each field is read on its own, so an unreadable zoom never resets the toggle. A value
+// The flowchart's view (#909, #571): the display options of #574 (a boolean loops stored before reads as all / none), the tree toggle (#34)
+// and the details' collapsed outline parents (#36), one value each and shared by every flowchart, and per flow, by name, its canvas: the zoom
+// and pan #910 applies and the collapsed groups of #34. Per-viewer UI state kept in the view state (#484), never a setting. Each field is read on its own, so an unreadable zoom never resets the toggle. A value
 // stored before #571 (zoom, pan, collapsed at the top) keeps its shared fields and starts every flow at the defaults: no migration, one user.
 import { ZOOM_MAX, ZOOM_MIN } from './flow-zoom.js';
 import { readView, writeView } from './view-state.js';
 
 /** One flowchart's canvas (#910, #34): collapsed holds one `<stage>\u0000<root itemId | none>` key each. */
 export interface FlowCanvas { zoom: number; pan: { x: number; y: number }; collapsed: string[] }
-export interface FlowView {
-  loops: boolean;
-  tree?: boolean; // #34: unset until the first click, read as "a tree exists" meanwhile
+export type Loops = 'all' | 'inner' | 'none';
+export type LoopLabels = 'all' | 'outer' | 'none';
+export type HiddenEpics = 'none' | 'middle' | 'all';
+/** ui.tasks.display (#574): shared by every task view. `tree` (#34) is unset until the first click, read as "a tree exists" meanwhile. */
+export interface DisplayOptions { sourcesOff: string[]; loops: Loops; labels: LoopLabels; tree?: boolean; epics: HiddenEpics }
+export interface FlowView extends DisplayOptions {
   outline: string[]; // #36: the details' collapsed outline parents; only toggleOutline writes it
   canvas: Record<string, FlowCanvas>; // #571: by flow name
 }
@@ -17,7 +20,11 @@ export interface FlowView {
 export type ShownFlowView = Omit<FlowView, 'canvas'> & FlowCanvas;
 
 export const CANVAS_DEFAULTS: FlowCanvas = { zoom: 1, pan: { x: 0, y: 0 }, collapsed: [] };
-export const FLOW_VIEW_DEFAULTS: FlowView = { loops: true, outline: [], canvas: {} };
+export const LOOPS: readonly Loops[] = ['all', 'inner', 'none'];
+export const LOOP_LABELS: readonly LoopLabels[] = ['all', 'outer', 'none'];
+export const HIDDEN_EPICS: readonly HiddenEpics[] = ['none', 'middle', 'all'];
+export const DISPLAY_DEFAULTS: DisplayOptions = { sourcesOff: [], loops: 'all', labels: 'all', epics: 'none' };
+export const FLOW_VIEW_DEFAULTS: FlowView = { ...DISPLAY_DEFAULTS, outline: [], canvas: {} };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const finiteOr = (value: unknown, fallback: number): number => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
@@ -40,16 +47,25 @@ function readCanvas(value: unknown): FlowCanvas {
 const readCanvases = (value: unknown): Record<string, FlowCanvas> =>
   (isRecord(value) ? Object.fromEntries(Object.entries(value).map(([name, entry]) => [name, readCanvas(entry)])) : {});
 
+const oneOf = <T extends string>(values: readonly T[], value: unknown, fallback: T): T => values.find((v) => v === value) ?? fallback;
+// #574: before the popover, loops was the header's ↺ boolean
+const readLoops = (value: unknown): Loops => (typeof value === 'boolean' ? (value ? 'all' : 'none') : oneOf(LOOPS, value, DISPLAY_DEFAULTS.loops));
+
+function readDisplay(stored: Record<string, unknown>): DisplayOptions {
+  return {
+    sourcesOff: readIds(stored.sourcesOff), // a name that matches no source stays, as collapsed and outline keep theirs
+    loops: readLoops(stored.loops),
+    labels: oneOf(LOOP_LABELS, stored.labels, DISPLAY_DEFAULTS.labels),
+    ...(typeof stored.tree === 'boolean' ? { tree: stored.tree } : {}), // #34: absent, not undefined, until the first click
+    epics: oneOf(HIDDEN_EPICS, stored.epics, DISPLAY_DEFAULTS.epics),
+  };
+}
+
 /** The stored flowView, field by field and canvas by canvas: a field that fails falls back to its default alone; a value that is no plain object reads as the defaults. */
 export function readFlowView(): FlowView {
   const stored = readView('flowView');
-  if (!isRecord(stored)) return { loops: FLOW_VIEW_DEFAULTS.loops, outline: [], canvas: {} };
-  return {
-    loops: typeof stored.loops === 'boolean' ? stored.loops : FLOW_VIEW_DEFAULTS.loops,
-    ...(typeof stored.tree === 'boolean' ? { tree: stored.tree } : {}), // #34: absent, not undefined, until the first click
-    outline: readIds(stored.outline),
-    canvas: readCanvases(stored.canvas),
-  };
+  if (!isRecord(stored)) return { ...DISPLAY_DEFAULTS, sourcesOff: [], outline: [], canvas: {} }; // fresh arrays: a caller's edit never reaches the defaults
+  return { ...readDisplay(stored), outline: readIds(stored.outline), canvas: readCanvases(stored.canvas) };
 }
 
 /** The whole value, so the zoom and pan (#910), the toggles and the other flows' canvases never overwrite one another. */
@@ -69,8 +85,8 @@ export function shownOf(view: FlowView, flow: string): ShownFlowView {
 
 /** `stored` with the shared fields and `flow`'s canvas taken from `shown`; the outline and every other canvas stay as stored (#36, #571). */
 export function withShown(stored: FlowView, flow: string, shown: ShownFlowView): FlowView {
-  const { loops, tree, zoom, pan, collapsed } = shown;
-  return { loops, ...(tree === undefined ? {} : { tree }), outline: stored.outline, canvas: { ...stored.canvas, [flow]: { zoom, pan, collapsed } } };
+  const { outline: _outline, zoom, pan, collapsed, ...display } = shown;
+  return { ...display, outline: stored.outline, canvas: { ...stored.canvas, [flow]: { zoom, pan, collapsed } } };
 }
 
 

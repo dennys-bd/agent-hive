@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useFlowView } from '@/hooks/use-flow-view';
-import { CANVAS_DEFAULTS, FLOW_VIEW_DEFAULTS, canvasOf, readFlowView, toggleOutline, writeFlowView } from '@/lib/flow-view';
+import { CANVAS_DEFAULTS, DISPLAY_DEFAULTS, FLOW_VIEW_DEFAULTS, type FlowView, canvasOf, readFlowView, toggleOutline, writeFlowView } from '@/lib/flow-view';
 import { readView, resetViewState } from '@/lib/view-state';
 
 const readStored = (value: unknown) => {
@@ -9,25 +9,39 @@ const readStored = (value: unknown) => {
   return readFlowView();
 };
 const GOOD = { zoom: 1.2, pan: { x: 30, y: 5 }, collapsed: ['dev\u0000I1'] };
-const SHARED = { loops: false, outline: [] };
+const SHARED = { loops: 'none', outline: [] };
 afterEach(() => resetViewState()); // also drops writeFlowView's pending post
 
-test('writeFlowView puts the whole value under flowView and readFlowView round-trips the shared fields and a canvas per flow (#909, #571)', () => {
+test('writeFlowView puts the whole value under flowView and readFlowView round-trips the display fields and a canvas per flow (#909, #571, #574)', () => {
   resetViewState();
-  const view = { loops: false, tree: true, outline: ['I1'], canvas: { build: GOOD, ship: { zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [] } } };
-  writeFlowView(view);
+  const view = {
+    sourcesOff: ['roadmap'], loops: 'inner', labels: 'outer', tree: true, epics: 'middle', outline: ['I1'],
+    canvas: { build: GOOD, ship: { zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [] } },
+  };
+  writeFlowView(view as FlowView);
   expect(readView('flowView')).toEqual(view);
   expect(readFlowView()).toEqual(view);
 });
 
 test('nothing stored or no plain object reads as the defaults; an old flat value keeps loops, tree and outline and starts every flow at the defaults (#909, #571)', () => {
   resetViewState();
-  expect(readFlowView()).toEqual({ loops: true, outline: [], canvas: {} });
+  expect(readFlowView()).toEqual(FLOW_VIEW_DEFAULTS);
   for (const value of [null, 3, 'loops', [GOOD]]) expect(readStored(value)).toEqual(FLOW_VIEW_DEFAULTS);
   const flat = { loops: false, zoom: 1.2, pan: { x: 30, y: 5 }, tree: true, collapsed: ['dev\u0000I1'], outline: ['I1'] };
-  expect(readStored(flat)).toEqual({ loops: false, tree: true, outline: ['I1'], canvas: {} });
+  expect(readStored(flat)).toEqual({ ...FLOW_VIEW_DEFAULTS, loops: 'none', tree: true, outline: ['I1'] });
   expect(canvasOf(readStored(flat), 'main')).toEqual(CANVAS_DEFAULTS);
   expect(canvasOf(readStored(flat), 'toString')).toEqual(CANVAS_DEFAULTS); // no prototype key reads as a canvas
+});
+
+test('a stored boolean loops reads as all / none; each display field falls back to its default alone; a stale source name stays (#574)', () => {
+  expect([readStored({ loops: true }).loops, readStored({ loops: false }).loops]).toEqual(['all', 'none']);
+  const good = { sourcesOff: ['roadmap'], loops: 'inner', labels: 'outer', epics: 'all' };
+  expect(readStored(good)).toEqual({ ...FLOW_VIEW_DEFAULTS, ...good });
+  expect(readStored({ ...good, loops: 'some' })).toEqual({ ...FLOW_VIEW_DEFAULTS, ...good, loops: 'all' });
+  expect(readStored({ ...good, labels: 3 })).toEqual({ ...FLOW_VIEW_DEFAULTS, ...good, labels: 'all' });
+  expect(readStored({ ...good, epics: 'middle ' })).toEqual({ ...FLOW_VIEW_DEFAULTS, ...good, epics: 'none' });
+  expect(readStored({ ...good, sourcesOff: 'roadmap' })).toEqual({ ...FLOW_VIEW_DEFAULTS, ...good, sourcesOff: [] });
+  expect(readStored({ ...good, sourcesOff: ['gone', 4] }).sourcesOff).toEqual(['gone']);
 });
 
 test('each canvas entry is read on its own: a bad field falls back alone, a non-object entry reads as the defaults, the other flows kept (#909, #571)', () => {
@@ -45,7 +59,7 @@ test('each canvas entry is read on its own: a bad field falls back alone, a non-
 test('a stored tree and outline are read back; a non-boolean tree reads as unset; toggleOutline flips an id and leaves every canvas as stored (#34, #36)', () => {
   expect(readStored({ ...SHARED, tree: 'yes' })).not.toHaveProperty('tree');
   expect(readStored({ ...SHARED, outline: ['I1', 2, null] }).outline).toEqual(['I1']);
-  const stored = { ...SHARED, tree: true, canvas: { build: GOOD } };
+  const stored = { ...FLOW_VIEW_DEFAULTS, ...SHARED, tree: true, canvas: { build: GOOD } };
   resetViewState({ flowView: stored });
   expect(toggleOutline('I2')).toEqual(['I2']);
   expect(toggleOutline('I3')).toEqual(['I2', 'I3']);
@@ -61,13 +75,13 @@ test('two flows keep their own zoom, pan and collapsed groups across a switch; l
   act(() => result.current.toggleGroup('dev\u0000I1'));
   act(() => result.current.toggleLoops());
   rerender({ flow: 'ship' });
-  expect(result.current.view).toEqual({ loops: false, outline: [], ...CANVAS_DEFAULTS });
+  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, loops: 'none', outline: [], ...CANVAS_DEFAULTS });
   act(() => result.current.zoomTo(0.8));
   act(() => result.current.toggleTree(false));
   rerender({ flow: 'build' });
-  expect(result.current.view).toEqual({ loops: false, tree: true, outline: [], zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] });
+  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, loops: 'none', tree: true, outline: [], zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] });
   expect(readFlowView()).toEqual({
-    loops: false, tree: true, outline: [],
+    ...DISPLAY_DEFAULTS, loops: 'none', tree: true, outline: [],
     canvas: { build: { zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] }, ship: { ...CANVAS_DEFAULTS, zoom: 0.8 } },
   });
 });
@@ -89,8 +103,8 @@ test('the flow\'s own writes keep an outline the details wrote after the hook mo
   const { result } = renderHook(() => useFlowView(false, 'main'));
   toggleOutline('I1');
   act(() => result.current.toggleLoops());
-  expect(readFlowView()).toEqual({ loops: false, outline: ['I1'], canvas: { main: CANVAS_DEFAULTS } });
+  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, loops: 'none', outline: ['I1'], canvas: { main: CANVAS_DEFAULTS } });
   toggleOutline('I2');
   act(() => result.current.onPan({ x: 5, y: 6 }));
-  expect(readFlowView()).toEqual({ loops: false, outline: ['I1', 'I2'], canvas: { main: { ...CANVAS_DEFAULTS, pan: { x: 5, y: 6 } } } });
+  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, loops: 'none', outline: ['I1', 'I2'], canvas: { main: { ...CANVAS_DEFAULTS, pan: { x: 5, y: 6 } } } });
 });

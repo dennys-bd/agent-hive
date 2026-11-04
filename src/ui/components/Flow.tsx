@@ -49,6 +49,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps }: Flow
   const [search, setSearch] = useState(''); // session-only: it survives a view switch on purpose, the flow stays mounted under Atividades (#596), and clears on an app reload (#542)
   const isShown = useIsFlowShown();
   const chart = useFlowView(isShown, drawn.name); // the flowchart's view (#909, #910, #571): loops and the drawn flow's canvas, kept in flowView
+  const isDrawingLoops = chart.view.loops === 'all'; // #574 decision 5: until 3.1 only todas draws
   const inFlow = new Set(drawn.stages.map((s) => s.name));
   const isTree = chart.view.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
   const { itemId: focused, focus, focusOn, leave } = useTreeFocus(state.tasks, drawn.name, isShown); // #35: the focus on a subtree, never in flowView
@@ -69,11 +70,11 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps }: Flow
   const listedTasks = listedStage && of(listedStage.name);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} loops={chart.view.loops} onLoops={chart.toggleLoops} tree={isTree} onTree={() => chart.toggleTree(isTree)} />
+      <FlowHeader state={state} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} loops={isDrawingLoops} onLoops={chart.toggleLoops} tree={isTree} onTree={() => chart.toggleTree(isTree)} />
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart
-            key={drawn.name} stages={drawn.stages} transitions={drawn.transitions} loops={chart.view.loops} zoom={chart.view.zoom} pan={chart.view.pan}
+            key={drawn.name} stages={drawn.stages} transitions={drawn.transitions} loops={isDrawingLoops} zoom={chart.view.zoom} pan={chart.view.pan}
             fitRequest={chart.fitRequest} onPan={chart.onPan} onFit={chart.onFit} onZoom={chart.zoomTo} renderNode={node}
           />
           <FlowZoom zoom={chart.view.zoom} onZoom={chart.zoomTo} onFit={chart.fit} />

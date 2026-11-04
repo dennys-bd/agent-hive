@@ -79,7 +79,7 @@ export function useFlowView(isShown: boolean, flow: string): FlowViewControls {
   }, [isShown]);
   return {
     view, fitRequest, zoomTo, fit: requestFit,
-    toggleLoops: () => save({ ...view, loops: !view.loops }),
+    toggleLoops: () => save({ ...view, loops: view.loops === 'all' ? 'none' : 'all' }),
     // #34: the first click stores the opposite of what the header showed, the "a tree exists" default included
     toggleTree: (current) => save({ ...view, tree: !current }),
     toggleGroup: (key) => {
