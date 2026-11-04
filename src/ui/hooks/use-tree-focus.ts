@@ -33,14 +33,13 @@ function useLeaveKey(isActive: boolean, leave: () => void): void {
  * flowView: it is temporary. */
 export interface TreeFocus { itemId?: string; focus?: ReadonlySet<string>; focusOn(itemId: string): void; leave(): void }
 
-/** Flow's focus, kept out of Flow for its size, with its Esc while the flow shows. Leaving the flow unmounts Flow and the focus with it, and
- * so will a switch of flowchart, once Flow is keyed by one. */
-export function useTreeFocus(tasks: readonly Task[], source: string | undefined, isShown: boolean): TreeFocus {
+/** Flow's focus, kept out of Flow for its size, with its Esc while the flow shows. Leaving the flow unmounts Flow and the focus with it; a switch of flowchart, which keeps Flow mounted (#571), drops it too. */
+export function useTreeFocus(tasks: readonly Task[], scope: string, isShown: boolean): TreeFocus {
   const [focused, setFocused] = useState<string>();
-  const [seenSource, setSeenSource] = useState(source);
-  // A new source drops the focus. Adjusted while rendering rather than in an effect, so no frame shows the old source's focus
-  if (seenSource !== source) {
-    setSeenSource(source);
+  const [seenScope, setSeenScope] = useState(scope);
+  // A new flow drops the focus. Adjusted while rendering rather than in an effect, so no frame shows the old flow's focus
+  if (seenScope !== scope) {
+    setSeenScope(scope);
     setFocused(undefined);
   }
   const leave = useCallback(() => setFocused(undefined), []);

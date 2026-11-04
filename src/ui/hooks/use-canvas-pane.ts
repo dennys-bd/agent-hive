@@ -1,9 +1,9 @@
 import { type RefObject, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
-import type { FlowView } from '@/lib/flow-view';
+import type { FlowCanvas } from '@/lib/flow-view';
 import { anchoredScroll, fitZoom, stepZoom } from '@/lib/flow-zoom';
 
 export interface Size { width: number; height: number }
-type Pan = FlowView['pan'];
+type Pan = FlowCanvas['pan'];
 interface CanvasPaneOptions { zoom: number; pan: Pan; fitRequest: number; graph: Size; onPan(pan: Pan): void; onFit(zoom: number): void; onZoom(zoom: number): void }
 interface CanvasPane { pane: RefObject<HTMLDivElement | null>; size: Size; onScroll(): void }
 

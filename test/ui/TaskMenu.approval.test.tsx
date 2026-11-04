@@ -6,6 +6,7 @@ import type { Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, movedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file (#268): Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx), so the menu is opened once
 // and the awaiting state arrives through rerender; selecting an item closes it for good, so one item is clicked.
@@ -26,15 +27,15 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 test('the task menu offers Aprovar and Enviar feedback… only on a task awaiting approval with no session of it live, and Aprovar posts approve (#268, #829)', async () => {
   const onOpen = vi.fn();
   const awaiting = task({ approval: { since: '2026-09-25T10:00:00.000Z' } });
-  const { rerender } = render(<Flow state={state(task())} onOpen={onOpen} />);
+  const { rerender } = render(<Flow state={state(task())} flow={firstFlow(state(task()))} onOpen={onOpen} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   expect(await screen.findByRole('menuitem', { name: 'abrir sessão livre…' })).toBeInTheDocument();
   expect(screen.queryByRole('menuitem', { name: 'aprovar' })).not.toBeInTheDocument();
   expect(screen.queryByRole('menuitem', { name: 'enviar feedback…' })).not.toBeInTheDocument();
-  rerender(<Flow state={state(awaiting, [waiting])} onOpen={onOpen} />);
+  rerender(<Flow state={state(awaiting, [waiting])} flow={firstFlow(state(awaiting, [waiting]))} onOpen={onOpen} />);
   expect(screen.queryByRole('menuitem', { name: 'aprovar' })).not.toBeInTheDocument(); // a session of it waits: the user answers there
   expect(screen.queryByRole('menuitem', { name: 'enviar feedback…' })).not.toBeInTheDocument();
-  rerender(<Flow state={state(awaiting)} onOpen={onOpen} />);
+  rerender(<Flow state={state(awaiting)} flow={firstFlow(state(awaiting))} onOpen={onOpen} />);
   expect(screen.getByRole('menuitem', { name: 'enviar feedback…' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('menuitem', { name: 'aprovar' }));
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/approve', expect.objectContaining({ method: 'POST' })));

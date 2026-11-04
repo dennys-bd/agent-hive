@@ -5,15 +5,15 @@ import { FlowEdges } from '@/components/FlowEdges';
 import { useCanvasPane } from '@/hooks/use-canvas-pane';
 import { showsPill, transitionLabel } from '@/lib/flow-labels';
 import { layoutFlow, maxNodeHeight, NODE_MIN } from '@/lib/flow-layout';
-import type { FlowView } from '@/lib/flow-view';
+import type { FlowCanvas } from '@/lib/flow-view';
 
 export const NODE_WIDTH = 220; // #54: room for a task's ⊘ blocked line and its footer's status beside the button
 
 interface FlowChartProps {
   stages: readonly Stage[]; transitions: readonly Transition[];
   loops: boolean; // #909, #480: false draws no arrow
-  zoom: number; pan: FlowView['pan']; fitRequest: number; // #910: the stored pan is set once; a new fitRequest fits the chart
-  onPan(pan: FlowView['pan']): void; onFit(zoom: number): void; onZoom(zoom: number): void;
+  zoom: number; pan: FlowCanvas['pan']; fitRequest: number; // #910: the stored pan is set once; a new fitRequest fits the chart
+  onPan(pan: FlowCanvas['pan']): void; onFit(zoom: number): void; onZoom(zoom: number): void;
   renderNode(stage: Stage, maxHeight: number): ReactNode;
 }
 

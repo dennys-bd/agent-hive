@@ -8,6 +8,7 @@ import type { ActivityRecord, BaseOptions, Task, Worker, Stage, State } from '..
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Iniciar, Continuar and Reiniciar hand their task to the dock once the server took the start (#457): the dock brings it to the center when
 // its run appears. A refused start or a cancelled dialog hands nothing.
@@ -34,7 +35,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
   return refuse ? reply({ error: 'não' }, 409) : reply({ ok: true });
 });
 const started = vi.fn();
-const board = (tasks: Task[], records: ActivityRecord[] = []) => <StartedTaskContext.Provider value={started}><Flow state={state(tasks, records)} /></StartedTaskContext.Provider>;
+const board = (tasks: Task[], records: ActivityRecord[] = []) => <StartedTaskContext.Provider value={started}><Flow state={state(tasks, records)} flow={firstFlow(state(tasks, records))} /></StartedTaskContext.Provider>;
 
 beforeEach(() => {
   setLanguage('pt');
@@ -103,7 +104,7 @@ test('the Start dialog stays open on the preparing view while its start sets up,
   const { rerender } = render(board([task('3')]));
   await user.click(screen.getByRole('button', { name: 'iniciar' }));
   await runStages(user);
-  const flow = (t: Task) => <StartedTaskContext.Provider value={started}><Flow state={{ ...state([t]), workers: [{ id: 's1', status: 'working', activityId: activityIdOf('I3'), runId: 'W1' }] }} /></StartedTaskContext.Provider>;
+  const flow = (t: Task) => <StartedTaskContext.Provider value={started}><Flow state={{ ...state([t]), workers: [{ id: 's1', status: 'working', activityId: activityIdOf('I3'), runId: 'W1' }] }} flow={firstFlow({ ...state([t]), workers: [{ id: 's1', status: 'working', activityId: activityIdOf('I3'), runId: 'W1' }] })} /></StartedTaskContext.Provider>;
   rerender(flow(task('3', { workerId: 's1', setup: { consoleId: 'setup:I3', step: 'RUN pnpm install', rows: [] } })));
   expect(within(screen.getByRole('dialog', { name: 'Preparando a worktree de #3' })).getByRole('button', { name: 'preparando worktree…' })).toBeDisabled();
   answer(reply({ ok: true }));

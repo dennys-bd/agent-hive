@@ -104,76 +104,69 @@ const pickActivity = async (user: ReturnType<typeof userEvent.setup>): Promise<v
   await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#12 Pager breaks').closest('button') as HTMLElement);
 };
 
-test('the flow on roadmap with #12 selected → issue → PR → issue → PR: one back shows that flow, #12 still selected, onSelect not called (#380)', async () => {
+test("the details' issue link → PR → issue → PR: back shows acme/site's PR list, the selection untouched (#380, #571)", async () => {
   const user = userEvent.setup();
   const calls: (Selection | undefined)[] = [];
   render(<Home shown={withPr} initial={{ taskId: 'roadmap:PVTI_12' }} calls={calls} />);
   showFlow();
   await automation().findByRole('button', { name: /^site/ }); // the repositories are read: the links open pages, not GitHub
-  await user.click(automation().getByRole('button', { name: /^roadmap/ }));
   await user.click(screen.getByRole('link', { name: 'site#12' })); // the details' issue link
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
   await user.click(await main().findByRole('button', { name: 'abrir PR ›' }));
-  expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
   await user.click(await main().findByRole('button', { name: 'tarefa #12 · site' })); // the PR page's task link
-  expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
   await user.click(await main().findByRole('button', { name: 'abrir PR ›' }));
   expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  await user.click(bar().getByRole('button', { name: 'tarefas · roadmap' })); // ‹ is aria-hidden: the name is the label
+  await user.click(bar().getByRole('button', { name: 'voltar' })); // ‹ is aria-hidden: the name is the label
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
-  expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
-  expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(bar().getByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
+  expect(await main().findByText('Fix the pager')).toBeInTheDocument(); // the list's row
   expect(screen.getByRole('heading', { name: '#12 Pager breaks' })).toBeInTheDocument(); // the details, still on the task
   expect(calls).toEqual([]); // an unchanged selection is not picked again: its panel stays as the user left it
 });
 
-test('the flow on hive → a repository\'s issue whose task is roadmap\'s: back reads tarefas · todas and shows every source, so the task is in it (#380)', async () => {
+test('an issue opened from the source table goes back to that table, by ⌘[ too (#380, #571)', async () => {
+  const user = userEvent.setup();
+  render(<Home />);
+  showFlow();
+  await automation().findByRole('button', { name: /^site/ });
+  await user.click(automation().getByRole('button', { name: /^roadmap/ }));
+  await user.click(await main().findByText('Pager breaks'));
+  expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
+  expect(bar().getByRole('button', { name: 'voltar' })).toBeInTheDocument();
+  expect(fireEvent.keyDown(window, BACK_KEY)).toBe(false); // ⌘[ on macOS
+  expect(await main().findByText('2 issues · 0 no fluxo')).toBeInTheDocument();
+  expect(main().queryByRole('heading', { name: 'Pager breaks' })).not.toBeInTheDocument();
+  expect(bar().getByText('github project · acme')).toBeInTheDocument();
+});
+
+test("an issue opened from a repository's issue list goes back to that list, on the issues tab (#380, #571)", async () => {
   const user = userEvent.setup();
   render(<Home shown={working} />);
   showFlow();
-  await user.click(automation().getByRole('button', { name: /^hive/ }));
   await user.click(await automation().findByRole('button', { name: /^site/ }));
   await user.click(await bar().findByRole('tab', { name: 'issues 3' }));
   await user.click(await main().findByText('Issue 12'));
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
-  await user.click(bar().getByRole('button', { name: 'tarefas · todas' }));
+  await user.click(bar().getByRole('button', { name: 'voltar' }));
+  expect(await main().findByText('Issue 12')).toBeInTheDocument();
   expect(main().queryByRole('heading', { name: 'Pager breaks' })).not.toBeInTheDocument();
-  expect(bar().getByText('todas as sources')).toBeInTheDocument(); // the flow's header
-  expect(automation().getByRole('button', { name: /^todas/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(bar().getByRole('tab', { name: 'issues 3' })).toHaveAttribute('aria-selected', 'true');
 });
 
-test('a PR with no task, opened from a repository\'s PR list, goes back to the flow keeping its pick (#380)', async () => {
+test("a PR with no task, opened from a repository's PR list, goes back to that list (#380, #571)", async () => {
   const user = userEvent.setup();
   render(<Home />);
   showFlow();
-  await automation().findByRole('button', { name: /^site/ });
-  await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(automation().getByRole('button', { name: /^site/ }));
+  await user.click(await automation().findByRole('button', { name: /^site/ }));
   await user.click(await main().findByText('Fix the pager'));
   expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  await user.click(bar().getByRole('button', { name: 'tarefas · roadmap' }));
+  await user.click(bar().getByRole('button', { name: 'voltar' }));
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
-  expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
-  expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(bar().getByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
+  expect(await main().findByText('Fix the pager')).toBeInTheDocument();
 });
 
-test('an issue opened from the GitHub Project table goes back to the flow, not the table, by ⌘[ too (#380)', async () => {
-  const user = userEvent.setup();
-  render(<Home />);
-  showFlow();
-  await automation().findByRole('button', { name: /^site/ });
-  await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
-  await user.click(await main().findByText('Pager breaks'));
-  expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
-  expect(bar().getByRole('button', { name: 'tarefas · roadmap' })).toBeInTheDocument();
-  expect(fireEvent.keyDown(window, BACK_KEY)).toBe(false); // ⌘[ on macOS
-  expect(await bar().findByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
-  expect(main().queryByText('2 issues · 0 no fluxo')).not.toBeInTheDocument();
-  expect(main().queryByRole('heading', { name: 'Pager breaks' })).not.toBeInTheDocument();
-});
-
-test('an issue opened from the Atividades view goes back to the flow, not to that view (#380)', async () => {
+test("an issue opened from the Atividades view goes back to acme/site's issue list (#380, #571)", async () => {
   const user = userEvent.setup();
   render(<Home shown={working} />);
   showFlow();
@@ -182,12 +175,12 @@ test('an issue opened from the Atividades view goes back to the flow, not to tha
   sideKey();
   await user.click(within(right()).getByRole('link', { name: 'site#12' }));
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
-  await user.click(bar().getByRole('button', { name: 'tarefas · todas' }));
+  await user.click(bar().getByRole('button', { name: 'voltar' }));
   expect(main().queryByRole('heading', { name: 'Pager breaks' })).not.toBeInTheDocument(); // main() is found: Automação shows
-  expect(bar().getByText('todas as sources')).toBeInTheDocument();
+  expect(bar().getByRole('tab', { name: 'issues 3' })).toHaveAttribute('aria-selected', 'true');
 });
 
-test('the flow, a repository\'s lists and the GitHub Project table show no back button (#380)', async () => {
+test('the flowchart, a repository\'s lists and the source table show no back button (#380)', async () => {
   const user = userEvent.setup();
   render(<Home />);
   showFlow();
@@ -198,10 +191,10 @@ test('the flow, a repository\'s lists and the GitHub Project table show no back 
   await main().findByText('Issue 12');
   expect(backButton()).toBeNull();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  expect(backButton()).toBeNull(); // the flow
-  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await main().findByText('2 issues · 0 no fluxo');
   expect(backButton()).toBeNull();
+  await user.click(automation().getByRole('button', { name: /^todas/ }));
+  expect(backButton()).toBeNull(); // the flowchart
 });
 
 // The PR page's merge button (#69): PR_PAGE allows squash alone
@@ -209,37 +202,36 @@ const merge = async (user: ReturnType<typeof userEvent.setup>): Promise<void> =>
   await user.click(await main().findByRole('button', { name: 'squash e merge' }));
 };
 
-test('a PR opened from the GitHub Project (the task details\' PR link) and merged with the Hive\'s button goes back to the flow on roadmap (#69, #380)', async () => {
+test('a PR opened from the GitHub Project (the task details\' PR link) and merged with the Hive\'s button goes back to the PR list (#69, #380, #571)', async () => {
   const user = userEvent.setup();
   render(<Home shown={withPr} initial={{ taskId: 'roadmap:PVTI_12' }} />);
   showFlow();
   await automation().findByRole('button', { name: /^site/ });
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await main().findByText('Elsewhere'); // the table's row out of the flow
   await user.click(screen.getByRole('link', { name: '#7' }));
   expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  expect(bar().getByRole('button', { name: 'tarefas · roadmap' })).toBeInTheDocument();
+  expect(bar().getByRole('button', { name: 'voltar' })).toBeInTheDocument();
   await merge(user);
-  expect(await bar().findByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
+  expect(await bar().findByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
   expect(main().queryByText('Elsewhere')).not.toBeInTheDocument();
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/pulls/7/merge', expect.objectContaining({ method: 'POST' }));
 });
 
-test('a PR opened from the repository\'s PR list and merged goes back to the flow (#69, #380)', async () => {
+test('a PR opened from the repository\'s PR list and merged goes back to the list (#69, #380, #571)', async () => {
   const user = userEvent.setup();
   render(<Home shown={withPr} initial={{ taskId: 'roadmap:PVTI_12' }} />);
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^site/ }));
   await user.click(await main().findByText('Fix the pager'));
-  expect(await bar().findByRole('button', { name: 'tarefas · todas' })).toBeInTheDocument();
+  expect(await bar().findByRole('button', { name: 'voltar' })).toBeInTheDocument();
   await merge(user);
-  expect(await bar().findByText('todas as sources')).toBeInTheDocument();
+  expect(await bar().findByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
 });
 
-test('a PR opened from the Atividades view and merged goes back to the flow under Automação (#69, #380)', async () => {
+test('a PR opened from the Atividades view and merged goes back to the PR list under Automação (#69, #380, #571)', async () => {
   const user = userEvent.setup();
   render(<Home shown={withPr} />);
   showFlow();
@@ -247,9 +239,9 @@ test('a PR opened from the Atividades view and merged goes back to the flow unde
   await pickActivity(user);
   sideKey();
   await user.click(within(right()).getByRole('link', { name: '#7' }));
-  expect(await bar().findByRole('button', { name: 'tarefas · todas' })).toBeInTheDocument();
+  expect(await bar().findByRole('button', { name: 'voltar' })).toBeInTheDocument();
   await merge(user);
-  expect(await bar().findByText('todas as sources')).toBeInTheDocument();
+  expect(await bar().findByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument(); // main() is found: Automação shows
 });
 
@@ -265,11 +257,11 @@ test('a merge GitHub refuses keeps the PR page, with its message and the way bac
   await merge(user);
   expect(await within(main().getByRole('region', { name: 'mergear' })).findByRole('alert')).toHaveTextContent('Pull request is in a merge queue');
   expect(main().getByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  expect(bar().getByRole('button', { name: 'tarefas · todas' })).toBeInTheDocument();
+  expect(bar().getByRole('button', { name: 'voltar' })).toBeInTheDocument();
   fetchMock.mockImplementation(async (input, init) => (String(input) === '/repositories/acme/site/pulls/7' ? jsonRes({ ...PR_PAGE, state: 'merged' }) : answer(input, init)));
   await user.click(bar().getByRole('button', { name: 'atualizar' }));
   expect(await main().findByText('mergeado: só leitura')).toBeInTheDocument();
   expect(main().getByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  expect(bar().getByRole('button', { name: 'tarefas · todas' })).toBeInTheDocument();
+  expect(bar().getByRole('button', { name: 'voltar' })).toBeInTheDocument();
   expect(main().queryByRole('region', { name: 'mergear' })).not.toBeInTheDocument();
 });

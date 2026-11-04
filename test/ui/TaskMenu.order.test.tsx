@@ -6,6 +6,7 @@ import type { Task, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file: Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx); every state arrives through rerender.
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }, { name: 'review', from: { board: ['In review'] } }];
@@ -30,7 +31,7 @@ beforeEach(() => {
 });
 
 test('the task menu is 236px, in the handoff\'s order: the runs, the diffs, começar sozinho and the moves, excluir atividade…; aprovar and enviar feedback… first while awaiting approval, excluir tarefa… last on a Hive task (#542)', async () => {
-  const { rerender } = render(<Flow state={state(task())} />);
+  const { rerender } = render(<Flow state={state(task())} flow={firstFlow(state(task()))} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   await screen.findByRole('menuitem', { name: 'abrir sessão livre…' });
   expect(menu()).toHaveClass('w-[236px]');
@@ -41,7 +42,7 @@ test('the task menu is 236px, in the handoff\'s order: the runs, the diffs, come
     `excluir atividade… · ${RUNNING}`,
   ]);
   expect(within(menu()).getAllByRole('separator')).toHaveLength(3);
-  rerender(<Flow state={state(task({ created: true, approval: { since: '2026-09-25T10:00:00.000Z' } }), [{ ...session, status: 'approval' }])} />); // #829: the approval is answerable only with no session of the task live
+  rerender(<Flow state={state(task({ created: true, approval: { since: '2026-09-25T10:00:00.000Z' } }), [{ ...session, status: 'approval' }])} flow={firstFlow(state(task({ created: true, approval: { since: '2026-09-25T10:00:00.000Z' } }), [{ ...session, status: 'approval' }]))} />); // #829: the approval is answerable only with no session of the task live
   expect(items()).toEqual([
     'aprovar', 'enviar feedback…',
     'executar etapas…', 'abrir sessão livre…', 'executar', 'dormir',

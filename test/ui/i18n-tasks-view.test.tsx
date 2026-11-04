@@ -3,7 +3,7 @@ import { MESSAGES, type MessageKey } from '@/i18n';
 
 // #570: the ⌘2 view is "tasks" / "tarefas"; "flow" keeps naming only the stages and transitions.
 const VIEW_KEYS: MessageKey[] = [
-  'rail.flow', 'header.flow', 'dock.automation', 'shortcuts.viewFlow', 'back.flow',
+  'rail.flow', 'header.flow', 'dock.automation', 'shortcuts.viewFlow', 'back.list',
   'home.flow', 'shortcuts.scope.flow', 'detail.showFlow', 'settings.sidebarsPerView.rightTab.hint',
 ];
 
@@ -23,7 +23,7 @@ describe('the tasks view copy', () => {
   });
 
   it('keeps flow / fluxo where it names the stages and transitions', () => {
-    for (const key of ['flow.tab.flow', 'settings.section.flow', 'benchmark.arms.row.flow'] as const) {
+    for (const key of ['settings.section.flow', 'benchmark.arms.row.flow'] as const) {
       expect(MESSAGES.en[key], key).toBe('flow');
       expect(MESSAGES.pt[key], key).toBe('fluxo');
     }

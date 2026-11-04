@@ -7,6 +7,7 @@ import type { Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file (#343): Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx).
 const stages: Stage[] = [{ name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'all', rerunOnce: false }];
@@ -23,7 +24,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 
 test('right-click › dormir on a task waiting for CI, with no live run, ends the wait through its own route (#834)', async () => {
   const user = userEvent.setup();
-  render(<Flow state={state()} />);
+  render(<Flow state={state()} flow={firstFlow(state())} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   await user.click(await screen.findByRole('menuitem', { name: 'dormir' }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/activities/${activityIdOf('I1')}/ci/stop`, expect.objectContaining({ method: 'POST' })));

@@ -5,6 +5,7 @@ import { setLanguage } from '@/i18n';
 import type { Task, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file: Radix's ContextMenu opens once per file under jsdom. começar sozinho keeps the menu open, so both flips happen in it.
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
@@ -20,13 +21,13 @@ const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 
 test('começar sozinho is a switch checked on a task with auto; flipping it posts auto with the new value and keeps the menu open (#164, #542, #573)', async () => {
-  const { rerender } = render(<Flow state={state(task())} />);
+  const { rerender } = render(<Flow state={state(task())} flow={firstFlow(state(task()))} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   const on = await screen.findByRole('menuitemcheckbox', { name: 'começar sozinho' });
   expect(on).toHaveAttribute('aria-checked', 'true');
   fireEvent.click(on);
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/auto', posted(false)));
-  rerender(<Flow state={state(task({ auto: false }))} />);
+  rerender(<Flow state={state(task({ auto: false }))} flow={firstFlow(state(task({ auto: false })))} />);
   const off = screen.getByRole('menuitemcheckbox', { name: 'começar sozinho' });
   expect(off).toHaveAttribute('aria-checked', 'false');
   fireEvent.click(off);

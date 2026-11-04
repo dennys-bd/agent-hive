@@ -7,10 +7,11 @@ import { HeaderSlotProvider, useHeaderSlotRef } from '@/components/HeaderSlot';
 import { FlowShownContext } from '@/components/MainDock';
 import { setLanguage } from '@/i18n';
 import { setShortcuts } from '@/lib/shortcut-bindings';
-import type { Task, Stage, State } from '../../src/types';
+import type { SourceConfig, Task, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { type WithWork, movedWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 const stages: Stage[] = [{ name: 'dev', from: { roadmap: ['Ready'], notes: ['todo'] }, prompt: '/hive-build {url}' }];
 const task = (id: string, source: string, extra: Partial<WithWork> = {}): WithWork => ({
@@ -23,6 +24,7 @@ const state = (tasks: Task[], extra: Partial<State> = {}): State => movedWork({
   syncs: { roadmap: { polledAt: at(9, 28) }, notes: { polledAt: at(9, 5) } },
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });
+const ROADMAP: SourceConfig = { name: 'roadmap', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
 const tasks = [task('1', 'roadmap', { branch: 'hive/1-pager' }), task('2', 'notes'), task('3', 'roadmap', { branch: 'hive/3-pager' })];
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
 const header = (): HTMLElement => screen.getByRole('region', { name: 'tarefas' });
@@ -35,23 +37,19 @@ const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
-test('the header names todas as sources or the picked one, one chip per workspace a shown task resolves to in the Comb\'s order, and the latest poll of the shown sources (#542)', () => {
-  const { rerender } = render(<Flow state={state(tasks)} />);
+test('the tasks header reads todas as sources, the chips of the shown tasks\' workspaces and the latest poll of every source (#542, #571)', () => {
+  const { rerender } = render(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} />);
   expect(within(header()).getByText('todas as sources')).toBeInTheDocument();
   expect(chips()).toEqual(['hive', 'site']); // docs has no task
   expect(within(header()).queryByRole('button', { name: /^(hive|site)$/ })).not.toBeInTheDocument(); // a legend, not a filter
   expect(within(header()).getByText('atualizado 09:28')).toBeInTheDocument();
-  rerender(<Flow state={state(tasks)} source="notes" />);
-  expect(within(header()).getByText('notes')).toBeInTheDocument();
-  expect(chips()).toEqual(['site']);
-  expect(within(header()).getByText('atualizado 09:05')).toBeInTheDocument();
-  rerender(<Flow state={state(tasks, { syncs: {} })} />);
+  rerender(<Flow state={state(tasks, { syncs: {} })} flow={firstFlow(state(tasks, { syncs: {} }))} />);
   expect(within(header()).queryByText(/^atualizado/)).not.toBeInTheDocument();
 });
 
 test('buscar tarefas hides the tasks that match neither title, number nor branch, and a drop still reads the full order; ⌘F focuses it and Esc clears and leaves it (#542)', async () => {
   const user = userEvent.setup();
-  render(<Flow state={state(tasks)} />);
+  render(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} />);
   const field = screen.getByRole('textbox', { name: 'buscar tarefas' });
   fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true }); // jsdom is not macOS: CmdOrCtrl is Ctrl
   expect(field).toHaveFocus();
@@ -80,7 +78,7 @@ test('atualizar posts /sources/refresh and stays disabled until it answers (#542
   const user = userEvent.setup();
   let answer: (res: Response) => void = () => undefined;
   fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { answer = resolve; }));
-  render(<Flow state={state(tasks)} />);
+  render(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} />);
   const refresh = within(header()).getByRole('button', { name: 'atualizar' });
   await user.click(refresh);
   expect(fetchMock).toHaveBeenLastCalledWith('/sources/refresh', expect.objectContaining({ method: 'POST' }));
@@ -99,7 +97,7 @@ test('lastPolled is the latest poll of the shown sources in local HH:MM, undefin
 
 test('F5 refreshes the flow as atualizar does while the flow shows; hidden under Atividades the key is not bound (#585)', async () => {
   const f5 = (): boolean => fireEvent.keyDown(window, { key: 'F5', code: 'F5' }); // refreshFlow off macOS
-  const { unmount } = render(<Flow state={state(tasks)} />);
+  const { unmount } = render(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} />);
   expect(f5()).toBe(false);
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/sources/refresh', expect.objectContaining({ method: 'POST' })));
   unmount();
@@ -120,23 +118,20 @@ test('atualizar shows its refreshFlow keys beside its text, out of its name, and
   expect(within(header()).getByRole('button', { name: 'atualizar' })).toHaveTextContent(/^atualizar$/);
 });
 
-test('with tabs the header names the source, drops the workspace chips and the last poll, and its tabs pick fluxo or the native view (#756)', async () => {
-  const user = userEvent.setup();
-  const onPick = vi.fn();
-  render(<FlowHeader state={state(tasks)} source="roadmap" tasks={tasks} search="" onSearch={vi.fn()} tabs={{ label: 'GitHub Project', active: 'flow', onPick }} />);
-  expect(within(header()).getByText('roadmap')).toBeInTheDocument();
+test('in the source mode the header names the source and, muted, its type and owner; no chips, no last poll, no tabs, a narrow buscar tarefas (#571)', () => {
+  render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: ROADMAP }} tasks={tasks} search="" onSearch={vi.fn()} />);
+  expect(within(header()).getByText('roadmap')).toHaveClass('font-semibold', 'text-[13px]');
+  expect(within(header()).getByText('github project · acme')).toBeInTheDocument();
   expect(chips()).toEqual([]);
   expect(within(header()).queryByText(/^atualizado/)).not.toBeInTheDocument();
-  expect(within(header()).getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
-  expect(within(header()).getByRole('tab', { name: 'GitHub Project' })).toHaveAttribute('aria-selected', 'false');
-  await user.click(within(header()).getByRole('tab', { name: 'GitHub Project' }));
-  expect(onPick).toHaveBeenCalledWith('native');
+  expect(within(header()).queryAllByRole('tab')).toEqual([]);
+  expect(within(header()).getByRole('textbox', { name: 'buscar tarefas' }).closest('label')).toHaveClass('flex-[0_1_200px]');
 });
 
 test('with onRefresh, atualizar runs it instead of polling every source (#756)', async () => {
   const user = userEvent.setup();
   const onRefresh = vi.fn(async () => undefined);
-  render(<FlowHeader state={state(tasks)} source="roadmap" tasks={[]} search="" onSearch={vi.fn()} tabs={{ label: 'GitHub Project', active: 'native', onPick: vi.fn() }} onRefresh={onRefresh} />);
+  render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: ROADMAP }} tasks={[]} search="" onSearch={vi.fn()} onRefresh={onRefresh} />);
   await user.click(within(header()).getByRole('button', { name: 'atualizar' }));
   expect(onRefresh).toHaveBeenCalledOnce();
   expect(fetchMock).not.toHaveBeenCalled();
@@ -146,7 +141,7 @@ test('with a repository the header shows its workspace square, its name, its wor
   const user = userEvent.setup();
   const onTab = vi.fn();
   const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
-  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} repository={{ summary, tab: 'prs', onTab }} />);
+  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'prs', onTab } }} />);
   expect(within(header()).getByText('web')).toHaveAttribute('title', 'acme/web');
   expect(within(header()).getByText('workspace site')).toBeInTheDocument();
   expect(chips()).toEqual([]);
@@ -188,8 +183,7 @@ const BACK_KEY = { key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }; // goBac
 test('a back entry starts the header with ‹ and its label, then a 1×14px divider, before the source\'s name; its title names the key as bound, and a click goes back (#911)', async () => {
   const user = userEvent.setup();
   const onBack = vi.fn();
-  const tabs = { label: 'GitHub Project', active: 'native' as const, onPick: vi.fn() };
-  const page = (back?: BackLink) => <FlowHeader state={state(tasks)} source="roadmap" tasks={[]} tabs={tabs} back={back} />;
+  const page = (back?: BackLink) => <FlowHeader state={state(tasks)} mode={{ kind: 'source', source: ROADMAP }} tasks={[]} back={back} />;
   const { rerender } = render(page());
   expect(within(header()).queryByRole('button', { name: 'issue #458' })).not.toBeInTheDocument();
   rerender(page({ label: 'issue #458', onBack }));
@@ -247,7 +241,7 @@ test('⑂ árvore shows only with onTree, right before ↺ voltas, pressed with 
 });
 
 test('⌘F leaves buscar tarefas alone while the Settings page is open, and the key goes on unprevented (#689)', () => {
-  render(<><Flow state={state(tasks)} /><div data-settings-page="" /></>);
+  render(<><Flow state={state(tasks)} flow={firstFlow(state(tasks))} /><div data-settings-page="" /></>);
   const field = screen.getByRole('textbox', { name: 'buscar tarefas' });
   expect(fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true })).toBe(true);
   expect(field).not.toHaveFocus();
@@ -282,7 +276,7 @@ test('with github, GitHub sits right before atualizar, titled abrir no GitHub, i
   const open = vi.spyOn(window, 'open').mockReturnValue(null);
   onTestFinished(() => open.mockRestore());
   const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
-  const page = (github?: string) => <FlowHeader state={state(tasks)} tasks={[]} search="" onSearch={vi.fn()} repository={{ summary, tab: 'issues', onTab: vi.fn() }} github={github} />;
+  const page = (github?: string) => <FlowHeader state={state(tasks)} tasks={[]} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'issues', onTab: vi.fn() } }} github={github} />;
   const { rerender } = render(page());
   expect(within(header()).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
   rerender(page('https://github.com/acme/web/issues'));
@@ -296,4 +290,12 @@ test('with github, GitHub sits right before atualizar, titled abrir no GitHub, i
   setLanguage('en');
   rerender(page('https://github.com/acme/web/issues'));
   expect(within(screen.getByRole('region', { name: 'tasks' })).getByRole('button', { name: 'GitHub' })).toHaveAttribute('title', 'open on GitHub');
+});
+
+test('in the tasks mode the display slot sits right after the sources legend; GitHub never shows there, even when passed (#571)', () => {
+  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} display={<button type="button">exibir</button>} github="https://github.com/acme" />);
+  expect(within(header()).getByText('tarefas', { selector: 'span' })).toHaveClass('font-semibold');
+  expect(within(header()).getByText('todas as sources').nextElementSibling).toBe(within(header()).getByRole('button', { name: 'exibir' }));
+  expect(within(header()).getByRole('textbox', { name: 'buscar tarefas' })).toBeInTheDocument();
+  expect(within(header()).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
 });

@@ -7,6 +7,7 @@ import type { Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file (#343): Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx); the top menu opens once,
 // its dormir submenu is a nested layer that stays reachable until a leaf item is picked, which happens once at the end (dormir todas).
@@ -28,7 +29,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 
 test('two live sessions turn dormir into a submenu listing each plus dormir todas; dormir todas confirms in its dialog and posts one sleep for both (#343, #672)', async () => {
   const user = userEvent.setup();
-  render(<Flow state={state} />);
+  render(<Flow state={state} flow={firstFlow(state)} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   await user.click(await screen.findByRole('menuitem', { name: 'dormir' }));
   expect(await screen.findByRole('menuitem', { name: 'Claude · aaaa1111' })).toBeInTheDocument();

@@ -8,6 +8,7 @@ import type { Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { movedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file: Radix's ContextMenu opens once per file under jsdom. reiniciar etapa… left the task face for the menu (#542).
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
@@ -28,7 +29,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 
 test('reiniciar etapa… opens the restart dialog with the server\'s preview; the restart hands the task over once taken (#283, #457, #542, #580)', async () => {
   const user = userEvent.setup();
-  render(<StartedTaskContext.Provider value={started}><Flow state={state} /></StartedTaskContext.Provider>);
+  render(<StartedTaskContext.Provider value={started}><Flow state={state} flow={firstFlow(state)} /></StartedTaskContext.Provider>);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   fireEvent.click(await screen.findByRole('menuitem', { name: 'reiniciar etapa…' }));
   const dialog = await screen.findByRole('dialog', { name: 'Reiniciar etapa dev' });

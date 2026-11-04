@@ -7,6 +7,7 @@ import type { Stage, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { movedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // Its own file for the reason Flow.contextmenu.test.tsx gives: under jsdom Radix's ContextMenu opens once per file.
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
@@ -24,12 +25,12 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 
 test('right-click › mover para workspace lists the Comb\'s workspaces with the current one marked and posts the choice; disabled with exclua a atividade antes once the task has a worktree (#179, #542)', async () => {
   const user = userEvent.setup();
-  const { rerender } = render(<Flow state={two(task({ worktree: '/w' }))} />);
+  const { rerender } = render(<Flow state={two(task({ worktree: '/w' }))} flow={firstFlow(two(task({ worktree: '/w' })))} />);
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
   const locked = screen.getByRole('menuitem', { name: /^mover para workspace/ });
   expect(locked).toHaveAttribute('data-disabled');
   expect(locked).toHaveTextContent('exclua a atividade antes');
-  rerender(<Flow state={two(task())} />);
+  rerender(<Flow state={two(task())} flow={firstFlow(two(task()))} />);
   await user.click(screen.getByRole('menuitem', { name: 'mover para workspace' }));
   expect(await screen.findByRole('menuitem', { name: 'site' })).toHaveAttribute('aria-current', 'true');
   expect(screen.getByRole('menuitem', { name: 'hive' })).not.toHaveAttribute('aria-current');

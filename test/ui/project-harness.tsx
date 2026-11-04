@@ -52,9 +52,8 @@ export function resetProjectTest(): void {
 }
 
 export const ALL = ['status', 'field:Priority', 'labels', 'assignee', 'field:Estimate', 'field:Target', 'field:Progress', 'field:Sprint', 'pr'];
-export const TABS = { label: 'GitHub Project', active: 'native' as const, onPick: () => undefined };
 export function renderTable({ onGoTo = vi.fn(), onOpenIssue = vi.fn(), tasks = [TASK] }: { onGoTo?: (taskId: string) => void; onOpenIssue?: (item: ProjectItem) => void; tasks?: Task[] } = {}) {
-  return render(<ProjectTable state={state(tasks)} source={SOURCE} tabs={TABS} onGoTo={onGoTo} onOpenIssue={onOpenIssue} />);
+  return render(<ProjectTable state={state(tasks)} source={SOURCE} onGoTo={onGoTo} onOpenIssue={onOpenIssue} />);
 }
 export const rowOf = (id: string): HTMLElement => screen.getByText(id).closest('tr')!;
 // The issue numbers of the rows shown, group rows skipped

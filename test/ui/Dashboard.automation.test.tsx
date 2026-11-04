@@ -57,23 +57,23 @@ test('the brand\'s mark is coloured by the effective signal; without one it fall
   expect(mark()).toHaveAttribute('data-signal', 'red');
 });
 
-test('a hive pick holds with no source configured and leaves only the tasks created in the Hive in the flow (#665)', async () => {
+test("hive reads as the tasks' flowchart until 2.3: todas pressed, every source's tasks shown (#665, #571)", async () => {
   const user = userEvent.setup();
   const taskB: Task = { item: { itemId: 'board:B', id: '2', title: 'Task B', body: '', url: '', source: 'board' }, stage: 'dev', boardColumn: 'Ready', auto: true };
   render(<Dashboard state={{ ...state, tasks: [...state.tasks, taskB] }} locale="pt-BR" tick={0} onSelect={() => {}} />);
   showFlow();
   const automation = within(screen.getByRole('region', { name: 'Tarefas' }));
   await user.click(automation.getByRole('button', { name: /^hive/ }));
-  expect(automation.getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(automation.getByRole('button', { name: /^todas/ })).toHaveAttribute('aria-pressed', 'true');
   expect(within(screen.getByRole('main')).getByText('#1 Task A')).toBeInTheDocument();
-  expect(within(screen.getByRole('main')).queryByText('#2 Task B')).not.toBeInTheDocument();
+  expect(within(screen.getByRole('main')).getByText('#2 Task B')).toBeInTheDocument();
 });
 
 test('a card in a wait-for-CI stage offers tentar de novo only while the effective signal\'s row runs no workerless stage (#304, #727)', () => {
   const ciStage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi' as const, ciChecks: 'all' as const, rerunOnce: false };
   const taskC: Task = { item: { itemId: 'C', id: '3', title: 'Task C', body: '', url: '' }, stage: 'ci', boardColumn: 'CI', auto: false };
   const signals = { ...SIGNALS_DEFAULTS, red: { ...SIGNALS_DEFAULTS.red, workerless: false } };
-  const ci: State = { ...state, signals, stages: [...state.stages, ciStage], tasks: [...state.tasks, taskC] };
+  const ci: State = { ...state, signals, ...flowed([...state.stages, ciStage], state.transitions), tasks: [...state.tasks, taskC] };
   const limits = (signal: 'green' | 'red') => ({ signal, floor: { signal: 'green' as const }, signalRules: [], capRules: [], disabledRules: [], stageCaps: {}, stageCapRules: {} });
   const card = (): HTMLElement => within(screen.getByRole('main')).getByText('#3 Task C').closest('li')!;
   const { rerender } = render(<Dashboard state={ci} effective={limits('green')} locale="pt-BR" tick={0} onSelect={() => {}} />);

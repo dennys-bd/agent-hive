@@ -12,6 +12,7 @@ import type { Activity, BaseOptions, Item, Task, TaskPr, Session, Worker, Stage,
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../../src/types';
 import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { firstFlow } from './flow-of.js';
 
 // The task face (redesign 10, #542), rendered in its board: the task menu, the drag and the Start dialog need what Flow hands them.
 const stages: Stage[] = [
@@ -77,18 +78,18 @@ test('in a wait-for-CI stage the card has no button while the wait starts on its
 test('tentar de novo opens the Start dialog as iniciar does; it reads try again in English (#304)', async () => {
   const user = userEvent.setup();
   const failed = inCi({ stopped: true, error: 'CI failed: build' });
-  render(<Flow state={atCi(failed)} />);
+  render(<Flow state={atCi(failed)} flow={firstFlow(atCi(failed))} />);
   expect(within(tile()).queryByRole('button', { name: 'iniciar' })).not.toBeInTheDocument();
   await user.click(within(tile()).getByRole('button', { name: 'tentar de novo' }));
   expect(await screen.findByRole('dialog', { name: 'Iniciar #1' })).toBeInTheDocument();
   cleanup();
   setLanguage('en');
-  render(<Flow state={atCi(failed)} />);
+  render(<Flow state={atCi(failed)} flow={firstFlow(atCi(failed))} />);
   expect(within(tile()).getByRole('button', { name: 'try again' })).toBeInTheDocument();
 });
 
 test('the face (#134): the workspace square before the id, the workspace\'s name as its title, the title on two lines at most, no workspace line nor branch; the auto badge and the status on one line; the border takes the status colour (#542)', () => {
-  const { rerender } = render(<Flow state={state(task({ workerId: 's1', branch: 'hive/1-task-1' }), [working()])} />);
+  const { rerender } = render(<Flow state={state(task({ workerId: 's1', branch: 'hive/1-task-1' }), [working()])} flow={firstFlow(state(task({ workerId: 's1', branch: 'hive/1-task-1' }), [working()]))} />);
   expect(tile()).toHaveClass('rounded-lg', 'bg-background', 'border-working');
   const title = screen.getByText('#1 Task 1');
   expect(title).toHaveClass('line-clamp-2');
@@ -97,12 +98,12 @@ test('the face (#134): the workspace square before the id, the workspace\'s name
   expect(within(tile()).getByText('auto')).toBeInTheDocument();
   expect(within(tile()).getByText('trabalhando')).toHaveClass('text-working');
   expect(within(tile()).getByText('auto').parentElement).toHaveClass('flex', 'min-w-0', 'items-center'); // one line: the button never wraps below
-  rerender(<Flow state={state(task(), [], { workspaces: ['hive', 'site'] })} />);
+  rerender(<Flow state={state(task(), [], { workspaces: ['hive', 'site'] })} flow={firstFlow(state(task(), [], { workspaces: ['hive', 'site'] }))} />);
   expect(within(screen.getByText('#1 Task 1')).queryByTitle('hive')).not.toBeInTheDocument();
-  rerender(<Flow state={state(task({ auto: false, approval: { since } }))} />);
+  rerender(<Flow state={state(task({ auto: false, approval: { since } }))} flow={firstFlow(state(task({ auto: false, approval: { since } })))} />);
   expect(tile()).toHaveClass('border-approval');
   expect(within(tile()).getByText('aguardando aprovação')).toHaveClass('text-approval');
-  rerender(<Flow state={state(task({ missing: true }))} />);
+  rerender(<Flow state={state(task({ missing: true }))} flow={firstFlow(state(task({ missing: true })))} />);
   expect(tile()).toHaveClass('border-destructive');
   expect(within(tile()).getByRole('button', { name: 'fechar' })).toBeInTheDocument();
 });
@@ -110,64 +111,64 @@ test('the face (#134): the workspace square before the id, the workspace\'s name
 test('a task that came through a transition with tries shows its verdict and n/max beside its status; one with no limit shows nothing (#134)', () => {
   const back = { from: 'review', to: 'dev', when: 'verdict' as const, verdict: 'failed', maxTries: 3 };
   const key = '["review","verdict","failed"]';
-  const { rerender } = render(<Flow state={state(task({ via: key, tries: { [key]: 1 } }), [], { transitions: [back] })} />);
+  const { rerender } = render(<Flow state={state(task({ via: key, tries: { [key]: 1 } }), [], { transitions: [back] })} flow={firstFlow(state(task({ via: key, tries: { [key]: 1 } }), [], { transitions: [back] }))} />);
   expect(within(tile()).getByText('falhou · 1/3')).toBeInTheDocument();
-  rerender(<Flow state={state(task({ via: key }), [], { transitions: [{ ...back, maxTries: undefined }] })} />);
+  rerender(<Flow state={state(task({ via: key }), [], { transitions: [{ ...back, maxTries: undefined }] })} flow={firstFlow(state(task({ via: key }), [], { transitions: [{ ...back, maxTries: undefined }] }))} />);
   expect(within(tile()).queryByText(/\/3/)).not.toBeInTheDocument();
 });
 
 test('a task whose run waits out an API error shows the backoff word and the time left in its colour, in both languages (#805)', () => {
   const until = new Date(Date.now() + 4 * 60_000 + 30_000).toISOString();
   const waiting = working({ status: 'backoff', backoff: { error: 'overloaded', until } });
-  const { rerender } = render(<Flow state={state(task({ workerId: 's1' }), [waiting])} />);
+  const { rerender } = render(<Flow state={state(task({ workerId: 's1' }), [waiting])} flow={firstFlow(state(task({ workerId: 's1' }), [waiting]))} />);
   expect(tile()).toHaveClass('border-backoff');
   expect(within(tile()).getByText('aguardando · 4m')).toHaveClass('text-backoff');
   setLanguage('en');
-  rerender(<Flow state={state(task({ workerId: 's1' }), [waiting])} />);
+  rerender(<Flow state={state(task({ workerId: 's1' }), [waiting])} flow={firstFlow(state(task({ workerId: 's1' }), [waiting]))} />);
   expect(within(tile()).getByText('backing off · 4m')).toBeInTheDocument();
 });
 
 test('the task\'s auto badge is struck through only while the task is stopped; its auto stays on (#735, #727)', () => {
-  const { rerender } = render(<Flow state={state(task())} />);
+  const { rerender } = render(<Flow state={state(task())} flow={firstFlow(state(task()))} />);
   expect(within(tile()).getByText('auto')).not.toHaveClass('line-through');
-  rerender(<Flow state={state(task({ stopped: true }))} />);
+  rerender(<Flow state={state(task({ stopped: true }))} flow={firstFlow(state(task({ stopped: true })))} />);
   expect(within(tile()).getByText('auto')).toHaveClass('opacity-50', 'line-through');
 });
 
 test('a task awaiting approval that is blocked keeps the approval look and adds a muted line with its blocker; without a blocker there is no line (#595)', () => {
   const blocked = task({ approval: { since }, item: { ...task().item, blockedBy: ['#98'] } });
-  const { rerender } = render(<Flow state={state(blocked)} />);
+  const { rerender } = render(<Flow state={state(blocked)} flow={firstFlow(state(blocked))} />);
   expect(tile()).toHaveClass('border-approval');
   expect(within(tile()).getByText('aguardando aprovação')).toHaveClass('text-approval');
   expect(within(tile()).getByRole('button', { name: 'aprovar' })).toBeInTheDocument();
   expect(within(tile()).getByText('⊘ bloqueada por #98')).toHaveClass('text-muted-foreground');
   setLanguage('en');
-  rerender(<Flow state={state(blocked)} />);
+  rerender(<Flow state={state(blocked)} flow={firstFlow(state(blocked))} />);
   expect(within(tile()).getByText('⊘ blocked by #98')).toBeInTheDocument();
-  rerender(<Flow state={state(task({ approval: { since } }))} />);
+  rerender(<Flow state={state(task({ approval: { since } }))} flow={firstFlow(state(task({ approval: { since } })))} />);
   expect(within(tile()).queryByText(/⊘/)).not.toBeInTheDocument();
 });
 
 test('a blocked task shows every blocker once, on its own ⊘ line with the full text as title, outside approval too; the footer keeps its own status and no button (#54)', () => {
   const blocked = task({ item: { ...task().item, blockedBy: ['274', '280'] } });
-  const { rerender } = render(<Flow state={state(blocked)} />);
+  const { rerender } = render(<Flow state={state(blocked)} flow={firstFlow(state(blocked))} />);
   const line = within(tile()).getByText('⊘ bloqueada por 274, 280');
   expect(line).toHaveClass('truncate', 'text-muted-foreground', 'text-xs');
   expect(line).toHaveAttribute('title', '⊘ bloqueada por 274, 280');
   expect(within(tile()).getAllByText(/bloqueada por/)).toHaveLength(1);
   expect(within(tile()).getByText('nova')).toBeInTheDocument(); // the footer's own status, not the blocker
   expect(within(tile()).queryByRole('button', { name: /^(iniciar|abrir|continuar)$/ })).not.toBeInTheDocument();
-  rerender(<Flow state={state(task({ item: { ...task().item, blockedBy: ['274'] } }), [working({ status: 'waiting' })])} />);
+  rerender(<Flow state={state(task({ item: { ...task().item, blockedBy: ['274'] } }), [working({ status: 'waiting' })])} flow={firstFlow(state(task({ item: { ...task().item, blockedBy: ['274'] } }), [working({ status: 'waiting' })]))} />);
   expect(within(tile()).getByText('⊘ bloqueada por 274')).toBeInTheDocument();
 });
 
 test('a task held by an ancestor shows its own blockers, then each inherited one with the ancestor that holds it, and no start button, in both languages (#424)', () => {
   const held = task({ item: { ...task().item, blockedBy: ['274'], inheritedBlockedBy: [{ id: '12', via: '7' }, { id: '15', via: '3' }] } });
-  const { rerender } = render(<Flow state={state(held)} />);
+  const { rerender } = render(<Flow state={state(held)} flow={firstFlow(state(held))} />);
   expect(within(tile()).getByText('⊘ bloqueada por 274, #12 (via #7), #15 (via #3)')).toHaveClass('text-muted-foreground');
   expect(within(tile()).queryByRole('button', { name: 'iniciar' })).not.toBeInTheDocument();
   setLanguage('en');
-  rerender(<Flow state={state(task({ item: { ...task().item, inheritedBlockedBy: [{ id: '12', via: '7' }] } }))} />);
+  rerender(<Flow state={state(task({ item: { ...task().item, inheritedBlockedBy: [{ id: '12', via: '7' }] } }))} flow={firstFlow(state(task({ item: { ...task().item, inheritedBlockedBy: [{ id: '12', via: '7' }] } })))} />);
   expect(within(tile()).getByText('⊘ blocked by #12 (via #7)')).toBeInTheDocument();
 });
 
@@ -175,19 +176,19 @@ test('an epic hides the ⊘ line when its blockers are only its children, and na
   const child = (n: string): Task => ({ ...task(), item: { ...task().item, itemId: `C${n}`, id: n, title: `Child ${n}` } });
   const epic = (blockedBy: string[]): Task => task({ item: { ...task().item, blockedBy, children: ['C2', 'C3'], epic: { follows: 'behind', switchAt: 'dev' } } });
   const withChildren = (e: Task): State => ({ ...state(e), tasks: [e, child('2'), child('3')] });
-  const { rerender } = render(<Flow state={withChildren(epic(['2', '3']))} />);
+  const { rerender } = render(<Flow state={withChildren(epic(['2', '3']))} flow={firstFlow(withChildren(epic(['2', '3'])))} />);
   expect(within(tile()).queryByText(/⊘/)).not.toBeInTheDocument();
-  rerender(<Flow state={withChildren(epic(['2', '274']))} />);
+  rerender(<Flow state={withChildren(epic(['2', '274']))} flow={firstFlow(withChildren(epic(['2', '274'])))} />);
   expect(within(tile()).getByText('⊘ bloqueada por 274')).toBeInTheDocument();
 });
 
 test('the status in muted: the worktree setup (iniciando, then its step), a spawn error in full as its title; iniciar stays on an error (#351, #542)', async () => {
   const user = userEvent.setup();
-  const { rerender } = render(<Flow state={state(task({ setup: { consoleId: 'setup:I1', rows: [] } }))} />);
+  const { rerender } = render(<Flow state={state(task({ setup: { consoleId: 'setup:I1', rows: [] } }))} flow={firstFlow(state(task({ setup: { consoleId: 'setup:I1', rows: [] } })))} />);
   expect(within(tile()).getByText('iniciando')).toBeInTheDocument();
-  rerender(<Flow state={state(task({ setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } }))} />);
+  rerender(<Flow state={state(task({ setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } }))} flow={firstFlow(state(task({ setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } })))} />);
   expect(within(tile()).getByText('preparando: RUN pnpm install')).toHaveClass('text-muted-foreground');
-  rerender(<Flow state={state(task({ error: 'pty: posix_spawnp failed.' }))} />);
+  rerender(<Flow state={state(task({ error: 'pty: posix_spawnp failed.' }))} flow={firstFlow(state(task({ error: 'pty: posix_spawnp failed.' })))} />);
   expect(within(tile()).getByText('pty: posix_spawnp failed.')).toHaveAttribute('title', 'pty: posix_spawnp failed.');
   await user.click(within(tile()).getByRole('button', { name: 'iniciar' }));
   expect(await screen.findByRole('dialog', { name: 'Iniciar #1' })).toBeInTheDocument();
@@ -199,14 +200,14 @@ test('abrir focuses the task\'s activity on its agent session, a waiting one inc
   vi.stubGlobal('hive', { focusTab });
   const waiting = working({ status: 'waiting', freeSession: true, sessionId: 'bbbbbbbb-0000-4000-8000-000000000002', runId: 'W2' });
   const terminal = { terminalId: 'W9', activityId: activityIdOf('I1'), startedAt: since, cwd: '/repo' };
-  const { rerender } = render(<Flow state={withPointedWork({ ...state(task(), [waiting]), terminals: [terminal] })} selectedId="I1" />);
+  const { rerender } = render(<Flow state={withPointedWork({ ...state(task(), [waiting]), terminals: [terminal] })} flow={firstFlow(withPointedWork({ ...state(task(), [waiting]), terminals: [terminal] }))} selectedId="I1" />);
   expect(tile()).toHaveClass('ring-2', 'ring-waiting/35');
   expect(tile()).toHaveAttribute('aria-current', 'true');
   await user.click(within(tile()).getByRole('button', { name: 'abrir' }));
   expect(focusTab).toHaveBeenCalledWith('I1', 'W2');
-  rerender(<Flow state={state(task())} selectedId="I1" />);
+  rerender(<Flow state={state(task())} flow={firstFlow(state(task()))} selectedId="I1" />);
   expect(tile()).toHaveClass('ring-2', 'ring-ring/35');
-  rerender(<Flow state={state(task())} />);
+  rerender(<Flow state={state(task())} flow={firstFlow(state(task()))} />);
   expect(tile()).not.toHaveClass('ring-2');
   expect(tile()).not.toHaveAttribute('aria-current');
 });
@@ -214,13 +215,13 @@ test('abrir focuses the task\'s activity on its agent session, a waiting one inc
 test('continuar posts continue, aprovar posts approve, excluir in a delete-activity stage posts its start; none of them opens the panel (#283, #349, #542)', async () => {
   const user = userEvent.setup();
   const onOpen = vi.fn();
-  const { rerender } = render(<Flow state={state(task({ stopped: true }), [], { activityRecords: records })} onOpen={onOpen} />);
+  const { rerender } = render(<Flow state={state(task({ stopped: true }), [], { activityRecords: records })} flow={firstFlow(state(task({ stopped: true }), [], { activityRecords: records }))} onOpen={onOpen} />);
   await user.click(within(tile()).getByRole('button', { name: 'continuar' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/continue', expect.objectContaining({ method: 'POST' }));
-  rerender(<Flow state={state(task({ approval: { since } }))} onOpen={onOpen} />);
+  rerender(<Flow state={state(task({ approval: { since } }))} flow={firstFlow(state(task({ approval: { since } })))} onOpen={onOpen} />);
   await user.click(within(tile()).getByRole('button', { name: 'aprovar' }));
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/approve', expect.objectContaining({ method: 'POST' })));
-  rerender(<Flow state={state(task({ stage: 'done' }))} onOpen={onOpen} />);
+  rerender(<Flow state={state(task({ stage: 'done' }))} flow={firstFlow(state(task({ stage: 'done' })))} onOpen={onOpen} />);
   const remove = within(tile()).getByRole('button', { name: 'excluir' });
   expect(remove).toHaveAttribute('data-variant', 'destructive');
   await user.click(remove);
@@ -230,14 +231,14 @@ test('continuar posts continue, aprovar posts approve, excluir in a delete-activ
 
 test('continuar after a delete posts continue to the newest record when the task has no live activity (#629)', async () => {
   const user = userEvent.setup();
-  render(<Flow state={state(task(), [], { activityRecords: records })} />);
+  render(<Flow state={state(task(), [], { activityRecords: records })} flow={firstFlow(state(task(), [], { activityRecords: records }))} />);
   await user.click(within(tile()).getByRole('button', { name: 'continuar' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/continue', expect.objectContaining({ method: 'POST' }));
 });
 
 test('a task takes the focus on a click and names its task for the search (#584)', async () => {
   const user = userEvent.setup();
-  render(<Flow state={state(task())} />);
+  render(<Flow state={state(task())} flow={firstFlow(state(task()))} />);
   await user.click(screen.getByText('#1 Task 1'));
   expect(tile()).toHaveFocus();
   expect(tile()).toHaveAttribute('data-task-id', 'I1');
@@ -245,10 +246,10 @@ test('a task takes the focus on a click and names its task for the search (#584)
 
 test('a task with no session left and an open PR wears the review border and word; a session at work wins over it (#663)', () => {
   const reviewed = [{ id: 'a-I1', taskIds: ['I1'], sessions: [], prs: [{ url: 'https://github.com/acme/r/pull/9', state: 'open' as const }] }]; // #629: the record's
-  const { rerender } = render(<Flow state={state(task({ stage: 'review', stopped: true }), [], { activityRecords: reviewed })} />);
+  const { rerender } = render(<Flow state={state(task({ stage: 'review', stopped: true }), [], { activityRecords: reviewed })} flow={firstFlow(state(task({ stage: 'review', stopped: true }), [], { activityRecords: reviewed }))} />);
   expect(tile()).toHaveClass('border-review');
   expect(within(tile()).getByText('aguardando review')).toHaveClass('text-review');
-  rerender(<Flow state={state(task({ stage: 'review', workerId: 's1' }), [working()], { activityRecords: reviewed })} />);
+  rerender(<Flow state={state(task({ stage: 'review', workerId: 's1' }), [working()], { activityRecords: reviewed })} flow={firstFlow(state(task({ stage: 'review', workerId: 's1' }), [working()], { activityRecords: reviewed }))} />);
   expect(tile()).toHaveClass('border-working');
   expect(within(tile()).getByText('trabalhando')).toBeInTheDocument();
 });
@@ -260,15 +261,15 @@ test('the PR line shows the own repository\'s stack and how much of it merged, t
     { url: `${APP}7`, state: 'merged', slice: { k: 1, type: 'stacked' } }, { url: `${APP}8`, state: 'open', slice: { k: 2, type: 'stacked' } },
   ];
   const site: TaskPr = { url: 'https://github.com/acme/site/pull/3', state: 'open' };
-  const { rerender } = render(<Flow state={withPrs([{ url: `${APP}7`, state: 'open' }])} />);
+  const { rerender } = render(<Flow state={withPrs([{ url: `${APP}7`, state: 'open' }])} flow={firstFlow(withPrs([{ url: `${APP}7`, state: 'open' }]))} />);
   expect(tile()).not.toHaveTextContent(/mergeados|\+\d/); // one PR without a slice: as before
-  rerender(<Flow state={withPrs(stack)} />);
+  rerender(<Flow state={withPrs(stack)} flow={firstFlow(withPrs(stack))} />);
   expect(within(tile()).getByText('pilha 1/2 mergeados')).toHaveClass('truncate');
-  rerender(<Flow state={withPrs([...stack, site])} />);
+  rerender(<Flow state={withPrs([...stack, site])} flow={firstFlow(withPrs([...stack, site]))} />);
   expect(within(tile()).getByText('pilha 1/2 mergeados · +1 site')).toBeInTheDocument();
-  rerender(<Flow state={withPrs([...stack, site, { url: 'https://github.com/acme/docs/pull/1', state: 'open' }])} />);
+  rerender(<Flow state={withPrs([...stack, site, { url: 'https://github.com/acme/docs/pull/1', state: 'open' }])} flow={firstFlow(withPrs([...stack, site, { url: 'https://github.com/acme/docs/pull/1', state: 'open' }]))} />);
   expect(within(tile()).getByText('pilha 1/2 mergeados · +2 repos')).toBeInTheDocument();
-  rerender(<Flow state={withPrs([{ url: `${APP}7`, state: 'open' }, site])} />);
+  rerender(<Flow state={withPrs([{ url: `${APP}7`, state: 'open' }, site])} flow={firstFlow(withPrs([{ url: `${APP}7`, state: 'open' }, site]))} />);
   expect(within(tile()).getByText('+1 site')).toBeInTheDocument();
 });
 
@@ -277,7 +278,7 @@ test('a commands stage shows the command running after the setup\'s own line and
   const openOutput = vi.fn();
   const checks: Stage = { name: 'checks', from: { board: ['Checks'] }, action: 'commands', commands: ['build', 'lint'], stopOnFailure: true };
   const at = (work: Partial<Activity>, made: Parameters<typeof withWork>[3] = {}): State => withWork(state(task({ stage: 'checks' }), [], { stages: [...stages, checks] }), 'I1', work, made);
-  const flow = (s: State) => <StageOutputContext.Provider value={openOutput}><Flow state={s} /></StageOutputContext.Provider>;
+  const flow = (s: State) => <StageOutputContext.Provider value={openOutput}><Flow state={s} flow={firstFlow(s)} /></StageOutputContext.Provider>;
   const running = { stage: 'checks', at: 1, ptyId: 'P1', runId: 'R1', failed: [], workerId: 'w1', started: [] };
   const { rerender } = render(flow(at({ commands: running, setup: { consoleId: 'setup:I1', rows: [] } })));
   expect(within(tile()).getByText('iniciando')).toBeInTheDocument(); // the worktree setup's line first
@@ -299,11 +300,11 @@ test('a task waiting for CI reads aguardando PR, then aguardando CI · n/total i
   const ciStage: Stage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'all', rerunOnce: false };
   const at = (work: Partial<Activity>): State => withWork(state(task({ stage: 'ci' }), [], { stages: [...stages, ciStage] }), 'I1', work);
   const wait = { stage: 'ci', since: '2026-10-07T10:00:00.000Z', reran: [] };
-  const { rerender } = render(<Flow state={at({ ci: { ...wait, waitingPr: true } })} />);
+  const { rerender } = render(<Flow state={at({ ci: { ...wait, waitingPr: true } })} flow={firstFlow(at({ ci: { ...wait, waitingPr: true } }))} />);
   expect(within(tile()).getByText('aguardando PR')).toBeInTheDocument();
-  rerender(<Flow state={at({ ci: { ...wait, done: 2, total: 5 } })} />);
+  rerender(<Flow state={at({ ci: { ...wait, done: 2, total: 5 } })} flow={firstFlow(at({ ci: { ...wait, done: 2, total: 5 } }))} />);
   expect(within(tile()).getByText('aguardando CI · 2/5')).toHaveClass('text-working');
-  rerender(<Flow state={at({ stopped: true, error: 'CI failed: build, test' })} />);
+  rerender(<Flow state={at({ stopped: true, error: 'CI failed: build, test' })} flow={firstFlow(at({ stopped: true, error: 'CI failed: build, test' }))} />);
   expect(within(tile()).getByText('CI falhou: build, test')).toBeInTheDocument();
   expect(within(tile()).queryByRole('button', { name: 'ver saída' })).not.toBeInTheDocument();
 });
@@ -311,16 +312,16 @@ test('a task waiting for CI reads aguardando PR, then aguardando CI · n/total i
 test('a failed sync adds sem sync · partiu da base da fork to the card, never its status, and a block to the panel; a wait whose workflows await a maintainer reads CI aguarda mantenedor in muted, one with no re-run CI falhou (#854)', () => {
   const sync = { result: 'diverged' as const, mode: 'github' as const, commits: 2, base: 'me:main', sha: 'a1b2c3d', at: '2026-10-08T10:00:00.000Z' };
   const failed = withWork(state(task()), 'I1', { sync });
-  const { rerender } = render(<Flow state={failed} />);
+  const { rerender } = render(<Flow state={failed} flow={firstFlow(failed)} />);
   expect(within(tile()).getByText('sem sync · partiu da base da fork')).toBeInTheDocument();
-  rerender(<Flow state={withWork(state(task()), 'I1', { sync: { ...sync, result: 'synced' } })} />);
+  rerender(<Flow state={withWork(state(task()), 'I1', { sync: { ...sync, result: 'synced' } })} flow={firstFlow(withWork(state(task()), 'I1', { sync: { ...sync, result: 'synced' } }))} />);
   expect(within(tile()).queryByText('sem sync · partiu da base da fork')).not.toBeInTheDocument();
   const ciStage: Stage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'all', rerunOnce: true };
   const at = (work: Partial<Activity>): State => withWork(state(task({ stage: 'ci' }), [], { stages: [...stages, ciStage] }), 'I1', work);
   const wait = { stage: 'ci', since: '2026-10-07T10:00:00.000Z', reran: [] };
-  rerender(<Flow state={at({ ci: { ...wait, awaiting: 3 } })} />);
+  rerender(<Flow state={at({ ci: { ...wait, awaiting: 3 } })} flow={firstFlow(at({ ci: { ...wait, awaiting: 3 } }))} />);
   expect(within(tile()).getByText('CI aguarda mantenedor')).toHaveClass('text-muted-foreground');
-  rerender(<Flow state={at({ ci: { ...wait, noRerun: true } })} />);
+  rerender(<Flow state={at({ ci: { ...wait, noRerun: true } })} flow={firstFlow(at({ ci: { ...wait, noRerun: true } }))} />);
   expect(within(tile()).getByText('CI falhou')).toHaveClass('text-destructive');
 });
 
@@ -344,21 +345,21 @@ test('the panel\'s sync block says why and from what the worktree started; the C
 });
 
 test('a task stopped with no transition or out of tries reads it in the viewer\'s language (#134)', () => {
-  render(<Flow state={state(task({ stopped: true, error: 'no transition: verdict:failed' }))} />);
+  render(<Flow state={state(task({ stopped: true, error: 'no transition: verdict:failed' }))} flow={firstFlow(state(task({ stopped: true, error: 'no transition: verdict:failed' })))} />);
   expect(within(tile()).getByText('nenhuma transição para "falhou"')).toBeInTheDocument();
   cleanup();
-  render(<Flow state={state(task({ stopped: true, error: 'tries out: verdict:redo · 3' }))} />);
+  render(<Flow state={state(task({ stopped: true, error: 'tries out: verdict:redo · 3' }))} flow={firstFlow(state(task({ stopped: true, error: 'tries out: verdict:redo · 3' })))} />);
   expect(within(tile()).getByText('esgotou · redo 3x')).toBeInTheDocument();
   setLanguage('en');
   cleanup();
-  render(<Flow state={state(task({ stopped: true, error: 'no transition: approved' }))} />);
+  render(<Flow state={state(task({ stopped: true, error: 'no transition: approved' }))} flow={firstFlow(state(task({ stopped: true, error: 'no transition: approved' })))} />);
   expect(within(tile()).getByText('no transition for "approved"')).toBeInTheDocument();
 });
 
 test('a new task\'s face says so in muted text, no status colour; a blocked one too, its blocker on its own line (#727, #54)', () => {
-  const { rerender } = render(<Flow state={state(task())} />);
+  const { rerender } = render(<Flow state={state(task())} flow={firstFlow(state(task()))} />);
   expect(within(tile()).getByText('nova')).toHaveClass('text-muted-foreground');
-  rerender(<Flow state={state(task({ item: { ...task().item, blockedBy: ['9'] } }))} />);
+  rerender(<Flow state={state(task({ item: { ...task().item, blockedBy: ['9'] } }))} flow={firstFlow(state(task({ item: { ...task().item, blockedBy: ['9'] } })))} />);
   expect(within(tile()).getByText('nova')).toBeInTheDocument();
   expect(within(tile()).getByText('⊘ bloqueada por 9')).toBeInTheDocument();
 });
@@ -367,7 +368,7 @@ test('a task out of tries reads destructive: border, ring, the status and abrir,
   const user = userEvent.setup();
   const onOpen = vi.fn();
   const out = task({ stopped: true, error: 'tries out: verdict:failed · 3' });
-  render(<Flow state={state(out, [], { activityRecords: records })} selectedId="I1" onOpen={onOpen} />);
+  render(<Flow state={state(out, [], { activityRecords: records })} flow={firstFlow(state(out, [], { activityRecords: records }))} selectedId="I1" onOpen={onOpen} />);
   expect(tile()).toHaveClass('border-destructive', 'ring-destructive/35');
   const status = within(tile()).getByText('esgotou · falhou 3x');
   expect(status).toHaveClass('text-destructive', 'truncate');
@@ -380,16 +381,16 @@ test('a task out of tries reads destructive: border, ring, the status and abrir,
 
 test('a failed start reads destructive with its short message in the viewer\'s language, never the raw text; iniciar stays; a live worker\'s status wins (#945)', () => {
   const error = `${SPAWN_FAILED}/repo has changes that are not committed:\n M src/app.ts`;
-  const { rerender } = render(<Flow state={state(task({ error }))} />);
+  const { rerender } = render(<Flow state={state(task({ error }))} flow={firstFlow(state(task({ error })))} />);
   expect(tile()).toHaveClass('border-destructive');
   const status = within(tile()).getByText('o workspace tem mudanças não commitadas: faça commit ou stash e inicie de novo');
   expect(status).toHaveClass('text-destructive');
   expect(tile()).not.toHaveTextContent('/repo');
   expect(within(tile()).getByRole('button', { name: 'iniciar' })).toBeInTheDocument();
-  rerender(<Flow state={state(task({ error, workerId: 's1' }), [working()])} />);
+  rerender(<Flow state={state(task({ error, workerId: 's1' }), [working()])} flow={firstFlow(state(task({ error, workerId: 's1' }), [working()]))} />);
   expect(within(tile()).getByText('trabalhando')).toHaveClass('text-working');
   setLanguage('en');
-  rerender(<Flow state={state(task({ error: `${SPAWN_FAILED}pty: posix_spawnp failed.` }))} />);
+  rerender(<Flow state={state(task({ error: `${SPAWN_FAILED}pty: posix_spawnp failed.` }))} flow={firstFlow(state(task({ error: `${SPAWN_FAILED}pty: posix_spawnp failed.` })))} />);
   expect(within(tile()).getByText('the terminal could not start')).toHaveClass('text-destructive');
 });
 
@@ -397,7 +398,7 @@ test('a task with an error shows ✕ dispensar erro after its status, which post
   const user = userEvent.setup();
   const onOpen = vi.fn();
   const erred = task({ stopped: true, error: 'no transition: verdict:failed' });
-  const { rerender } = render(<Flow state={state(erred)} onOpen={onOpen} />);
+  const { rerender } = render(<Flow state={state(erred)} flow={firstFlow(state(erred))} onOpen={onOpen} />);
   const dismiss = within(tile()).getByRole('button', { name: 'dispensar erro' });
   expect(dismiss).toHaveTextContent('✕');
   expect(dismiss).toHaveAttribute('title', 'dispensar erro');
@@ -405,35 +406,35 @@ test('a task with an error shows ✕ dispensar erro after its status, which post
   await user.click(dismiss);
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/dismiss-error', expect.objectContaining({ method: 'POST' })));
   expect(onOpen).not.toHaveBeenCalled();
-  rerender(<Flow state={state(task())} onOpen={onOpen} />);
+  rerender(<Flow state={state(task())} flow={firstFlow(state(task()))} onOpen={onOpen} />);
   expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
-  rerender(<Flow state={state(task({ missing: true, error: 'no transition: done' }))} onOpen={onOpen} />);
+  rerender(<Flow state={state(task({ missing: true, error: 'no transition: done' }))} flow={firstFlow(state(task({ missing: true, error: 'no transition: done' })))} onOpen={onOpen} />);
   expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
   const epic = task({ error: 'archive refused', item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
-  rerender(<Flow state={state(epic)} onOpen={onOpen} />);
+  rerender(<Flow state={state(epic)} flow={firstFlow(state(epic))} onOpen={onOpen} />);
   expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
-  rerender(<Flow state={state(task({ error: 'pty: posix_spawnp failed.', workerId: 's1' }), [working()])} onOpen={onOpen} />);
+  rerender(<Flow state={state(task({ error: 'pty: posix_spawnp failed.', workerId: 's1' }), [working()])} flow={firstFlow(state(task({ error: 'pty: posix_spawnp failed.', workerId: 's1' }), [working()]))} onOpen={onOpen} />);
   expect(within(tile()).getByRole('button', { name: 'dispensar erro' })).toBeDisabled();
   setLanguage('en');
-  rerender(<Flow state={state(erred)} onOpen={onOpen} />);
+  rerender(<Flow state={state(erred)} flow={firstFlow(state(erred))} onOpen={onOpen} />);
   expect(within(tile()).getByRole('button', { name: 'dismiss error' })).toBeInTheDocument();
 });
 
 test('a show epic reads aguarda filhas · done/total in muted, before any other state, with no button and no auto badge, in both languages (#31)', () => {
   const epic = task({ item: { ...task().item, children: ['C1', 'C2', 'C3'], closedChildren: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
-  const { rerender } = render(<Flow state={state(epic)} />);
+  const { rerender } = render(<Flow state={state(epic)} flow={firstFlow(state(epic))} />);
   expect(within(tile()).getByText('aguarda filhas · 1/3')).toHaveClass('text-muted-foreground');
   expect(within(tile()).queryByRole('button', { name: /^(iniciar|abrir|continuar|excluir|aprovar)$/ })).not.toBeInTheDocument();
   expect(within(tile()).queryByText('auto')).not.toBeInTheDocument();
   expect(taskAction(epic, state(epic))).toBeUndefined();
   setLanguage('en');
-  rerender(<Flow state={state(epic)} />);
+  rerender(<Flow state={state(epic)} flow={firstFlow(state(epic))} />);
   expect(within(tile()).getByText('waiting for children · 1/3')).toBeInTheDocument();
 });
 
 test('a show epic whose end action was refused shows its error in destructive instead of the wait (#31)', () => {
   const epic = task({ error: 'archive refused', item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
-  render(<Flow state={state(epic)} />);
+  render(<Flow state={state(epic)} flow={firstFlow(state(epic))} />);
   expect(within(tile()).queryByText(/aguarda filhas/)).not.toBeInTheDocument();
   expect(tile()).toHaveClass('border-destructive');
 });
@@ -452,7 +453,7 @@ const family = (): State => state(FAMILY[0], [working({ activityId: activityIdOf
 const tileOf = (title: string): HTMLElement => screen.getByText(title).closest('li')!;
 
 test('a child shows ↳ before its id and a root does not; a parent shows N filhas · done/N, one segment per direct child in its status colour, and no auto badge (#34)', () => {
-  render(<Flow state={family()} />);
+  render(<Flow state={family()} flow={firstFlow(family())} />);
   expect(within(screen.getByText('#3 Task 3')).getByText('↳')).toHaveClass('font-mono', 'font-normal', 'text-muted-foreground');
   expect(within(screen.getByText('#1 Task 1')).queryByText('↳')).not.toBeInTheDocument();
   const parent = tileOf('#1 Task 1');
@@ -498,7 +499,7 @@ test('a card out of the focus reads at .3; a dragged one reads at the drag\'s .5
 
 // Radix draws the content twice (visible, and a visually hidden role="tooltip" copy): read the role, not the text.
 test('a cut title shows in full in a tooltip on hover, hiding the card\'s drag hint meanwhile; a title that fits leaves only the hint (#91, #284)', async () => {
-  render(<Flow state={state(task())} />);
+  render(<Flow state={state(task())} flow={firstFlow(state(task()))} />);
   const title = screen.getByText('#1 Task 1');
   const card = tile(); // read before the tooltip repeats the text
   const hint = card.getAttribute('title');
@@ -519,8 +520,8 @@ test('an evaluation reads avaliando · n revisores on the card, then its rejecti
   const evalStage: Stage = { name: 'eval', from: { board: ['Eval'] }, action: 'evaluate', reviewers: [{ agent: 'claude', focus: 'a' }, { agent: 'codex', focus: 'b' }], judge: { agent: 'claude' }, threshold: 7, rubric: 'Ok?' };
   const at = (work: Partial<Activity>): State => withWork(state(task({ stage: 'eval' }), [], { stages: [...stages, evalStage] }), 'I1', work);
   const run = { stage: 'eval', runId: 'R', workerId: 'w1', startedAt: '2026-10-21T10:00:00.000Z', phase: 'reviewing' as const };
-  const { rerender } = render(<Flow state={at({ evaluate: run })} />);
+  const { rerender } = render(<Flow state={at({ evaluate: run })} flow={firstFlow(at({ evaluate: run }))} />);
   expect(within(tile()).getByText('avaliando · 2 revisores')).toBeInTheDocument();
-  rerender(<Flow state={at({ stopped: true, error: 'evaluation rejected: Ok?' })} />);
+  rerender(<Flow state={at({ stopped: true, error: 'evaluation rejected: Ok?' })} flow={firstFlow(at({ stopped: true, error: 'evaluation rejected: Ok?' }))} />);
   expect(within(tile()).getByText('avaliação reprovou: Ok?')).toBeInTheDocument();
 });
