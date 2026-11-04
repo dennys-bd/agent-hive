@@ -50,20 +50,6 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
 beforeEach(() => { setLanguage('pt'); bases = WITH_WORKTREE; vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
-test('a missing task offers fechar / manter; fechar asks once, with no worktree question, and posts close with no body; manter posts keep (#182)', async () => {
-  const user = userEvent.setup();
-  render(<Flow state={state([task('1', 'dev', { missing: true })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { missing: true })], [worker('s1')]))} />);
-  expect(screen.getByText('sumiu da source')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'manter' }));
-  expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/keep', expect.objectContaining({ method: 'POST' }));
-  await user.click(screen.getByRole('button', { name: 'fechar' }));
-  expect(screen.getByRole('alertdialog')).toHaveTextContent('fechar essa tarefa? A sessão termina e a tarefa sai do Hive.');
-  await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'fechar' }));
-  expect(fetchMock).toHaveBeenCalledTimes(2);
-  expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/close', expect.objectContaining({ method: 'POST', body: undefined }));
-  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
-});
-
 test('a running task shows abrir and no iniciar; a blocked task and a stage without prompt show no button (#542)', () => {
   const running = task('1', 'dev', { workerId: 's1', branch: 'hive-1-task-1' });
   render(<Flow state={state([running, task('2', 'dev', { item: { ...task('2', 'dev').item, blockedBy: ['1'] } }), task('3', 'review')], [worker('s1', 'I1'), worker('s2')])} flow={firstFlow(state([running, task('2', 'dev', { item: { ...task('2', 'dev').item, blockedBy: ['1'] } }), task('3', 'review')], [worker('s1', 'I1'), worker('s2')]))} />);
@@ -617,10 +603,10 @@ test('a click on a task\'s free area opens it; its buttons, its PR link, a dialo
   const ran = { sessionId: 'a1b2c3d4-0000-4000-8000-000000000001', worktree: '/wt/hive-1-task-1' };
   // #629: the session and the PR are the task's record's
   const records = [{ ...rec([{ id: ran.sessionId, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' }])[0], prs: [{ url: 'https://github.com/o/r/pull/9', state: 'open' as const }] }];
-  render(<Flow state={{ ...state([task('1', 'dev', ran), task('2', 'dev', { missing: true })], [worker('s1')]), activityRecords: records }} flow={firstFlow({ ...state([task('1', 'dev', ran), task('2', 'dev', { missing: true })], [worker('s1')]), activityRecords: records })} onOpen={onOpen} />);
+  render(<Flow state={{ ...state([task('1', 'dev', ran), task('2', 'dev')], [worker('s1')]), activityRecords: records }} flow={firstFlow({ ...state([task('1', 'dev', ran), task('2', 'dev')], [worker('s1')]), activityRecords: records })} onOpen={onOpen} />);
   await user.click(screen.getByRole('button', { name: 'continuar' })); // the task ran: its session is the stage's (#283)
-    await user.click(screen.getByRole('button', { name: 'fechar' }));
-  await user.click(screen.getByRole('alertdialog')); // portaled out of the li, yet its clicks still bubble through React to it
+  await user.click(screen.getByRole('button', { name: 'iniciar' }));
+  await user.click(screen.getByRole('dialog', { name: 'Iniciar #2' })); // portaled out of the li, yet its clicks still bubble through React to it
   await user.keyboard('{Escape}');
   const one = screen.getByText('#1 Task 1').closest('li')!;
   const dt = dataTransfer();
@@ -630,7 +616,7 @@ test('a click on a task\'s free area opens it; its buttons, its PR link, a dialo
   expect(onOpen).not.toHaveBeenCalled();
   await user.click(screen.getByText('#1 Task 1'));
   expect(onOpen).toHaveBeenLastCalledWith('I1');
-  await user.click(screen.getByText('sumiu da source'));
+  await user.click(screen.getByText('#2 Task 2'));
   expect(onOpen).toHaveBeenLastCalledWith('I2');
   expect(onOpen).toHaveBeenCalledTimes(2);
 });
@@ -714,39 +700,6 @@ test('the workspace line names the workspace each task resolves to, and sem work
   render(<Flow state={{ ...state([task('1', 'dev'), hinted], [worker('s1')]), workspaces: ['hive', 'site'] }} flow={firstFlow({ ...state([task('1', 'dev'), hinted], [worker('s1')]), workspaces: ['hive', 'site'] })} />);
   expect(within(screen.getByText('#2 Task 2')).getByTitle('site')).toBeInTheDocument();
   expect(within(screen.getByText('#1 Task 1')).queryByTitle(/./)).not.toBeInTheDocument();
-});
-
-test('a stage with stopped missing tasks shows the strip with their count; close all confirms, naming the running ones, and posts close-missing for that stage (#279)', async () => {
-  const user = userEvent.setup();
-  const tasks = [
-    task('1', 'dev', { missing: true }), task('2', 'dev', { missing: true }), task('3', 'dev', { missing: true, workerId: 's1' }),
-    task('4', 'review', { missing: true, workerId: 's2' }), // review's only missing task runs: no strip there
-  ];
-  render(<Flow state={state(tasks, [worker('s1', 'I3'), worker('s2', 'I4')])} flow={firstFlow(state(tasks, [worker('s1', 'I3'), worker('s2', 'I4')]))} />);
-  expect(screen.getByText(t('stage.missing', { n: 2 }))).toBeInTheDocument();
-  expect(screen.getAllByRole('button', { name: t('stage.closeMissing') })).toHaveLength(1);
-  await user.click(screen.getByRole('button', { name: t('stage.closeMissing') }));
-  const dialog = screen.getByRole('alertdialog');
-  expect(within(dialog).getByText(`${t('confirm.closeMissingAll', { n: 2 })} ${t('confirm.closeMissingRunning', { m: 1 })}`)).toBeInTheDocument();
-  expect(fetchMock).not.toHaveBeenCalled();
-  await user.click(within(dialog).getByRole('button', { name: t('stage.closeMissing') }));
-  expect(fetchMock).toHaveBeenLastCalledWith('/stages/dev/close-missing', expect.objectContaining({ method: 'POST', body: undefined }));
-});
-
-test('no strip while nothing in the stage is closable (a running or deleting missing task, an orphan, a task on the board); with no running missing task the confirm names only what closes (#279)', async () => {
-  const user = userEvent.setup();
-  const { rerender } = render(<Flow state={state([
-    task('1', 'dev', { missing: true, workerId: 's1' }), task('2', 'dev', { missing: true, workerId: 's2' }), task('3', 'dev', { missing: true, deleting: true }),
-    task('4', 'dev', { orphan: true }), task('5', 'dev'),
-  ], [worker('s1', 'I1'), worker('s2', 'I2')])} flow={firstFlow(state([
-    task('1', 'dev', { missing: true, workerId: 's1' }), task('2', 'dev', { missing: true, workerId: 's2' }), task('3', 'dev', { missing: true, deleting: true }),
-    task('4', 'dev', { orphan: true }), task('5', 'dev'),
-  ], [worker('s1', 'I1'), worker('s2', 'I2')]))} />);
-  expect(screen.queryByRole('button', { name: t('stage.closeMissing') })).not.toBeInTheDocument();
-  rerender(<Flow state={state([task('6', 'review', { missing: true })], [worker('s1')])} flow={firstFlow(state([task('6', 'review', { missing: true })], [worker('s1')]))} />);
-  expect(screen.getByText(t('stage.missing', { n: 1 }))).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: t('stage.closeMissing') }));
-  expect(within(screen.getByRole('alertdialog')).getByText(t('confirm.closeMissingAll', { n: 1 }))).toBeInTheDocument();
 });
 
 test('a task awaiting approval shows the approval colour and aguardando aprovação with no Start, Continue or Restart, and aprovar while a held run keeps its worker (#268, #542)', () => {

@@ -11,7 +11,6 @@ import { act, actThen, focusRun } from '@/components/actions';
 import { taskAutoBadge } from '@/lib/auto-badge';
 import { type TaskDragHandlers, dragHint } from '@/components/task-drag';
 import { TaskMenu } from '@/components/TaskMenu';
-import { Confirm } from '@/components/Confirm';
 import { ciProgress, ciTone } from '@/components/CiProgress';
 import { SyncLine } from '@/components/ForkSyncNotice';
 import { commandsProgress, evaluateProgress, isStartFailure, StageOutputButton, taskError } from '@/components/CommandsProgress';
@@ -58,9 +57,8 @@ function ciAction(task: Task, state: ActionState, workerless: boolean): TaskActi
 /** Which button the task shows (#542), by priority: out of tries → abrir, to its details (#913); an approval no live session holds back → aprovar (#829); a live session (aguardando você
  * among them, an approval pending or not) → abrir; the stage already ran and stopped → continuar; a delete-activity stage → excluir, while
  * removalBlocker lets it run (#228); a wait-for-CI stage → none while the wait will start by itself, else tentar de novo (#304); it can start →
- * iniciar. None for a missing task (its fechar / manter), a blocked one and one with nothing to run. */
+ * iniciar. None for a blocked one and one with nothing to run. */
 export function taskAction(task: Task, state: ActionState, workerless = true): TaskAction | undefined {
-  if (task.missing) return undefined;
   if (isExhausted(task, state)) return 'details';
   if (answerableActivity(task, state) !== undefined) return 'approve';
   if (workersOf(state, task).length > 0) return 'open';
@@ -113,12 +111,11 @@ function waitingText(task: Task, state: State): string {
   return t('task.waitingChildren', { done, total });
 }
 
-// What the footer says (#542): in the status colour sumiu da source, then, muted, a show epic's wait for its children (#31: it never runs, so
+// What the footer says (#542): a show epic's wait for its children (#31: it never runs, so
 // no other state is its own), then out of tries (#913), then a failed start (#945), then the task's state (#663: its sessions' worst at work, else aguardando
 // review, else aguardando aprovação), the precedence the border always had (#229, #268, #279); in muted the worktree setup (#351), a spawn
 // error or the blocker. Nothing otherwise
 function taskStatus(task: Task, state: State): TaskStatus {
-  if (task.missing) return { tone: 'destructive', text: t('task.missing') };
   const error = activityOf(state, task.item.itemId)?.error;
   if (task.item.epic !== undefined) { // #31: a refused end action freezes the epic (followEpics skips it), so its error must show over the wait
     return error === undefined ? { text: waitingText(task, state) } : { tone: 'destructive', text: taskError(error) };
@@ -186,7 +183,7 @@ function PrLine({ task, state }: { task: Task; state: State }) {
 // click-to-open skips any click inside a button, so pressing it never opens the task. An epic's card has none: its error is dismissed from
 // its details only (the user's call)
 function DismissErrorButton({ task, state }: { task: Task; state: State }) {
-  if (task.missing || task.item.epic !== undefined || activityOf(state, task.item.itemId)?.error === undefined) return null;
+  if (task.item.epic !== undefined || activityOf(state, task.item.itemId)?.error === undefined) return null;
   const label = t('task.dismissError');
   return (
     <Button
@@ -195,23 +192,6 @@ function DismissErrorButton({ task, state }: { task: Task; state: State }) {
     >
       ✕
     </Button>
-  );
-}
-
-// A missing task's fechar / manter (#182, #279), in place of the one button: nothing else acts on it
-function MissingActions({ task }: { task: Task }) {
-  const id = encodeURIComponent(task.item.itemId);
-  return (
-    <>
-      <Confirm
-        title={t('confirm.title.closeTask')}
-        message={t('confirm.closeMissing')}
-        confirmLabel={t('task.close')}
-        trigger={<Button type="button" size="xs" variant="outline">{t('task.close')}</Button>}
-        onConfirm={() => act(`/tasks/${id}/close`)}
-      />
-      <Button type="button" size="xs" variant="outline" onClick={() => act(`/tasks/${id}/keep`)}>{t('task.keep')}</Button>
-    </>
   );
 }
 
@@ -265,7 +245,7 @@ interface FlowTaskProps {
 /** A task of the flow (redesign 10, #542): the title with the workspace square, and a footer with the auto badge, the status and one button. The
  * border and the selected ring take the status colour, the details' hovered tree row's highlight over both (#36). A child shows ↳ and a parent
  * its children's progress, with no auto badge (#34). Out of the flow's focus it reads at .3, under a drag's .5, which marks the card in hand
- * (#35). Drag, click-to-open and the right-click menu stay; a missing task has no menu. */
+ * (#35). Drag, click-to-open and the right-click menu stay. */
 export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, isSelected, onOpen, indent = 0, onFocusTree, isFaded = false }: FlowTaskProps) {
   const status = taskStatus(task, state);
   const tries = triesText(task, state);
@@ -290,7 +270,7 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
       onClick={openOnClick(task.item.itemId, onOpen)}
       onKeyDown={onKeyDown}
       title={t(dragHint(task, state))} // what a drag may do with it (#366)
-      className={`relative flex cursor-grab outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 flex-col gap-[5px] rounded-lg border bg-background px-2 py-[7px] before:absolute before:inset-x-0 before:-top-1 before:hidden before:h-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block ${frame} ${isDimmed ? 'opacity-50' : isFaded ? 'opacity-30' : task.orphan ? 'opacity-70' : ''}`}
+      className={`relative flex cursor-grab outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 flex-col gap-[5px] rounded-lg border bg-background px-2 py-[7px] before:absolute before:inset-x-0 before:-top-1 before:hidden before:h-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block ${frame} ${isDimmed ? 'opacity-50' : isFaded ? 'opacity-30' : ''}`}
     >
       <TaskTitle task={task} state={state} />
       {isParent && <TreeProgress task={task} state={state} onFocusTree={onFocusTree} />}
@@ -303,9 +283,9 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
         <DismissErrorButton task={task} state={state} />
         {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
         <StageOutputButton task={task} state={state} />
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">{task.missing ? <MissingActions task={task} /> : <TaskButton task={task} state={state} onOpen={onOpen} />}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5"><TaskButton task={task} state={state} onOpen={onOpen} /></span>
       </div>
     </li>
   );
-  return task.missing ? item : <TaskMenu task={task} state={state}>{item}</TaskMenu>;
+  return <TaskMenu task={task} state={state}>{item}</TaskMenu>;
 }
