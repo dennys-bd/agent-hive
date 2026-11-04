@@ -1,9 +1,10 @@
 import { flatten } from '../../flows.js';
 import { destinationOf } from '../../stage-delete.js';
 import { type HiveAction, rubricLines, SCORE_MAX } from '../../stage-agent.js';
-import { isGate, onSource } from '../../tasks.js';
+import { DURATION, isGate, onSource } from '../../tasks.js';
 import { type AgentId, type CiChecks, DEFAULT_AGENT, type EvaluateRow, SOURCE_ACTIONS, type SourceAction, type SourceFields, isLeaving, type ItemAction, LEAVING_ACTIONS, type Flow, type OnMissing, type Stage, type StageAction, type Task } from '../../types.js';
 import { t, tPlural } from '../i18n.js';
+import type { FlowDraft } from './settings-flows.js';
 
 // Settings › fluxo's stage editor (#515): the draft ↔ Stage edges and the action-list rules the entra / executa / sai blocks offer, out of
 // settings-form.ts, as settings-rules.ts and settings-commands.ts are.
@@ -17,8 +18,9 @@ import { t, tPlural } from '../i18n.js';
 // gate (#134): the draft's só aprovação, a stage that runs nothing and awaits approval; verdicts: a prompt stage's own, in order
 // skill (#710): a skill stage's bare skill name, '' = none picked yet; specializedAgent: hive:<name>, '' = none
 // reviewers / judge / threshold / rubric (#877): an evaluate stage's rows, its threshold as typed and its rubric
+// flow (#565): its FlowDraft's id; the draft's lists stay flat
 // clearSession (#494): the stage forgets its run's session when a transition takes the task out; kept as typed, sent only on a stage that runs an agent
-export interface StageDraft { id: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; skill: string; specializedAgent: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; clearSession: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; reviewers: EvaluateRowDraft[]; judge: EvaluateRowDraft; threshold: string; rubric: string; savedName?: string }
+export interface StageDraft { id: string; flow: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; skill: string; specializedAgent: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; clearSession: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; reviewers: EvaluateRowDraft[]; judge: EvaluateRowDraft; threshold: string; rubric: string; savedName?: string }
 /** One reviewer or the judge as the form edits it (#877): '' = absent model / specialized agent; focus unused on the judge. id: a React key, never sent. */
 export interface EvaluateRowDraft { id: string; agent: AgentId; model: string; specializedAgent: string; focus: string }
 /** What a stage's maps are keyed against: a source row's id and its name as typed. */
@@ -32,11 +34,13 @@ const rowFrom = (r: EvaluateRowDraft): EvaluateRow => ({ agent: r.agent, ...opti
 // #475, #877: a stage holding a worker sends its cap: a prompt, a skill or an evaluate stage
 const capKey = (c: StageDraft): Partial<Stage> => (c.maxWorkers.trim() === '' ? {} : { maxWorkers: Number(c.maxWorkers.trim()) });
 
-export const emptyStage = (defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({ id: crypto.randomUUID(), name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: emptyRow(defaultAgent), threshold: '7', rubric: '' });
+export const emptyStage = (flow: string, defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({ id: crypto.randomUUID(), flow, name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: emptyRow(defaultAgent), threshold: '7', rubric: '' });
 
 /** A number field's text: 0 or absent = no limit = empty. */
 export const numberField = (n?: number): string => (n ? String(n) : '');
 const isNonNegativeInt = (text: string): boolean => /^\d+$/.test(text.trim());
+export const isEmptyOrNonNegativeInt = (text: string): boolean => text.trim() === '' || isNonNegativeInt(text);
+export const isEmptyOrDuration = (text: string): boolean => text.trim() === '' || DURATION.test(text.trim());
 /** A limit field as a number: empty or 0 = no limit = undefined. */
 export const limitFrom = (text: string): number | undefined => (isNonNegativeInt(text) && Number(text) > 0 ? Number(text) : undefined);
 /** A trimmed text under `key`, or no key at all when it is blank: hive.config.json never holds an empty optional. */
@@ -52,8 +56,8 @@ export const withEntry = <T>(map: Record<string, T>, key: string, value: T | und
   return value === undefined ? rest : { ...rest, [key]: value };
 };
 
-export const stageDraft = (c: Stage, rows: StageRow[], defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({
-  id: crypto.randomUUID(), name: c.name, savedName: c.name, session: c.session ?? 'new', model: c.model ?? '', agent: c.agent ?? '', // '' = the default agent (#516)
+export const stageDraft = (c: Stage, rows: StageRow[], flow: string, defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({
+  id: crypto.randomUUID(), flow, name: c.name, savedName: c.name, session: c.session ?? 'new', model: c.model ?? '', agent: c.agent ?? '', // '' = the default agent (#516)
   from: byRow(c.from, rows), onStart: byRow(c.onStart, rows), gate: isGate(c), verdicts: c.verdicts ?? [], prompt: c.prompt ?? '', skill: c.skill ?? '', specializedAgent: c.specializedAgent ?? '', // #710
   action: c.action ?? '', after: c.after ?? '', approval: c.approval === true, handoff: c.handoff === true, // #692
   clearSession: c.clearSession === true, // #494
@@ -218,3 +222,19 @@ export const deletionMessage = (moves: readonly StageMove[]): string =>
 /** An evaluate stage the parser would refuse (#877): a reviewer with no focus, a threshold off 0..10 or not whole, a rubric with no dimension. */
 export const badEvaluation = (c: StageDraft): boolean =>
   c.action === 'evaluate' && (c.reviewers.some((r) => r.focus.trim() === '') || !/^\d+$/.test(c.threshold.trim()) || Number(c.threshold.trim()) > SCORE_MAX || rubricLines(c.rubric).length === 0);
+
+/** The name of the other flow already holding stage `id`'s trimmed name (#565): stage names are unique across the comb (#564 decision 4), and the
+ * parser refuses the clash, so the name field says why before the save. */
+export function stageNameClash(stages: readonly StageDraft[], flows: readonly FlowDraft[], id: string): string | undefined {
+  const stage = stages.find((s) => s.id === id);
+  const name = stage?.name.trim() ?? '';
+  if (stage === undefined || name === '') return undefined;
+  const other = stages.find((s) => s.flow !== stage.flow && s.name.trim() === name);
+  return other && flows.find((f) => f.id === other.flow)?.name.trim();
+}
+
+/** How many tasks sit in the saved flow named `flowName` (#565): what excluir fluxo refuses over. A flow the config does not have holds none. */
+export function flowTaskCount(flowName: string, savedFlows: readonly Flow[], tasks: readonly Task[]): number {
+  const flow = savedFlows.find((f) => f.name === flowName);
+  return flow === undefined ? 0 : tasks.filter((task) => flow.stages.some((s) => s.name === task.stage)).length;
+}

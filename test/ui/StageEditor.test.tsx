@@ -8,6 +8,7 @@ import { setLanguage, t } from '@/i18n';
 import { emptyStage, type StageDraft } from '@/lib/settings-form';
 import { stageMeta } from '@/lib/settings-stages';
 import { emptyTransition, type TransitionDraft } from '@/lib/settings-transitions';
+const FLOW = 'f';
 
 beforeEach(() => setLanguage('pt'));
 
@@ -15,7 +16,7 @@ const SOURCES: StageSource[] = [
   { id: 'h', name: 'hive', type: 'github', options: ['Ready', 'In progress', 'Review'] },
   { id: 'c', name: 'core', type: 'github', options: ['todo', 'done'] },
 ];
-const stage = (name: string, extra: Partial<StageDraft> = {}): StageDraft => ({ ...emptyStage(), name, ...extra });
+const stage = (name: string, extra: Partial<StageDraft> = {}): StageDraft => ({ ...emptyStage(FLOW), name, ...extra });
 const STAGES = [
   stage('spec', { prompt: '/hive-spec {url}', from: { h: ['Ready'] } }),
   stage('gate', { approval: true }),
@@ -28,7 +29,7 @@ const AGENTS: AgentAvailability[] = [{ agent: 'claude', available: true }];
 type Flow = { stages: StageDraft[]; transitions: TransitionDraft[] };
 function Harness({ initial, transitions = [], sources = SOURCES, agents = AGENTS, focus, onChange }: { initial: StageDraft[]; transitions?: TransitionDraft[]; sources?: StageSource[]; agents?: AgentAvailability[]; focus?: TransitionFocus; onChange(next: Flow): void }) {
   const [flow, setFlow] = useState<Flow>({ stages: initial, transitions });
-  return <StageEditor stages={flow.stages} transitions={flow.transitions} sources={sources} agents={agents} defaultAgent="claude" commands={[]} workspaces={['hive']} focus={focus} onChange={(next) => { onChange(next); setFlow(next); }} />;
+  return <StageEditor flow="f" stages={flow.stages} transitions={flow.transitions} sources={sources} agents={agents} defaultAgent="claude" commands={[]} workspaces={['hive']} focus={focus} onChange={(next) => { onChange(next); setFlow(next); }} />;
 }
 const setup = (initial: StageDraft[] = STAGES, sources: StageSource[] = SOURCES, agents: AgentAvailability[] = AGENTS) => {
   const user = userEvent.setup();
@@ -221,7 +222,7 @@ test('executar comandos hides the agent, model, session, prompt and switches, di
   function Own() {
     const [flow, setFlow] = useState<Flow>({ stages: [stage('checks', { from: { h: ['Ready'] }, prompt: '/x' })], transitions: [] });
     return (
-      <StageEditor
+      <StageEditor flow="f"
         stages={flow.stages} transitions={flow.transitions} sources={SOURCES} agents={AGENTS} defaultAgent="claude" commands={[{ name: 'build', impls: [{ workspace: null, command: 'pnpm build' }], menu: true, env: {} }]} workspaces={['hive']}
         onChange={(next) => { onChange(next); setFlow(next); }}
       />

@@ -20,7 +20,7 @@ export interface TransitionFocus { transition: string; n: number }
 export interface StageFocus { id: string; n: number }
 
 interface Flow { stages: StageDraft[]; transitions: TransitionDraft[] }
-interface StageEditorProps extends AgentProps, Flow { sources: StageSource[]; commands: Command[]; workspaces: string[]; focus?: TransitionFocus; stage?: StageFocus; onChange(next: Flow): void }
+interface StageEditorProps extends AgentProps, Flow { flow: string; /* #565: the open flow's draft id, which + etapa gives the new stage */ sources: StageSource[]; commands: Command[]; workspaces: string[]; focus?: TransitionFocus; stage?: StageFocus; onChange(next: Flow): void }
 
 // + etapa and + transição in the card's header (#887, 6b); + transição needs a stage to leave from
 function StageActions({ onAddStage, onAddTransition, canAddTransition }: { onAddStage(): void; onAddTransition(): void; canAddTransition: boolean }) {
@@ -60,7 +60,7 @@ function useSelection(stages: readonly StageDraft[], transitions: readonly Trans
 /** Settings › fluxo's etapas card (#134, 6b; its own card since #887): + etapa and + transição in the header, the load hint, the chart, its
  * legend, then the selected stage's or transition's editor. Every update is immutable; the selection is local, and a stale id (a reverted draft)
  * reads as the first stage. A refused save's focus selects its transition (#918). */
-export function StageEditor({ stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, focus, stage: picked, onChange }: StageEditorProps) {
+export function StageEditor({ flow, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, focus, stage: picked, onChange }: StageEditorProps) {
   const [selection, setSelection] = useSelection(stages, transitions, focus, picked);
   const transition = selection.kind === 'transition' ? transitions.find((d) => d.id === selection.id) : undefined;
   const index = Math.max(0, stages.findIndex((s) => s.id === (selection.kind === 'stage' ? selection.id : transition?.from)));
@@ -78,7 +78,7 @@ export function StageEditor({ stages, transitions, sources, commands, workspaces
     setSelection({ kind: 'stage', id: next[Math.min(index, next.length - 1)]?.id ?? '' });
   };
   const addStage = (): void => {
-    const added = emptyStage(defaultAgent);
+    const added = emptyStage(flow, defaultAgent);
     setStages([...stages, added]);
     setSelection({ kind: 'stage', id: added.id });
   };

@@ -4,10 +4,11 @@ import { setLanguage } from '../src/ui/i18n.js';
 import { emptyStage, type StageDraft } from '../src/ui/lib/settings-stages.js';
 import { draftLabel, draftVerdicts, emptyTransition, transitionDraft, transitionFrom, transitionsProblem, triggersOf, withApproval, withoutStage, type TransitionDraft } from '../src/ui/lib/settings-transitions.js';
 import type { Transition, Trigger } from '../src/types.js';
+const FLOW = 'f';
 
 // Settings › fluxo's transitions (#134): keyed by the stage drafts' ids, round-tripped to the config.
 const ROWS = [{ id: 'r1', name: 'board' }];
-const stage = (name: string, extra: Partial<StageDraft> = {}): StageDraft => ({ ...emptyStage(), name, ...extra });
+const stage = (name: string, extra: Partial<StageDraft> = {}): StageDraft => ({ ...emptyStage(FLOW), name, ...extra });
 const STAGES = [stage('Build', { prompt: '/b' }), stage('Checks', { action: 'commands', commands: ['lint'] }), stage('PR', { gate: true, approval: true })];
 const back: Transition = {
   from: 'Checks', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 3, prompt: 'Fix:\n\n{verdict}', session: { continueOf: 'Build' }, label: 'falhou', sources: { board: [{ type: 'move', column: 'In progress' }] },
@@ -15,7 +16,7 @@ const back: Transition = {
 
 test('an evaluate draft gives the fixed verdicts, fires verdict only, and its pills read aprovou / reprovou (#877)', () => {
   setLanguage('pt');
-  const evaluate: StageDraft = { ...emptyStage(), id: 'e', name: 'eval', action: 'evaluate' };
+  const evaluate: StageDraft = { ...emptyStage(FLOW), id: 'e', name: 'eval', action: 'evaluate' };
   assert.deepEqual([draftVerdicts(evaluate), triggersOf(evaluate)], [['passed', 'failed'], ['verdict']]);
   const failed = { ...emptyTransition(evaluate, [evaluate]), verdict: 'failed', maxTries: '3' };
   assert.equal(draftLabel(failed, [evaluate]), 'reprovou · 3x');

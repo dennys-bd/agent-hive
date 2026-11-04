@@ -43,6 +43,7 @@ export function CombTab({ draft, options, githubProjects, github, agents, launch
       )}
       {/* (#515, #134, #887) the stages card: StageEditor owns it, since its header's + etapa and + transição act on its selection */}
       <StageEditor
+        flow={draft.flows[0]?.id ?? ''} // interim (#565): the draft holds one flow until the tabs land
         stages={draft.stages} transitions={draft.transitions}
         sources={draft.sources.map((b, i) => ({ id: b.id, name: b.name.trim() || `#${i + 1}`, type: b.type, options: options[b.id] ?? [] }))}
         commands={commands} workspaces={workspaceNames}
