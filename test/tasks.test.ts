@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
+import { stageOf, branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
 import { COLUMN_WRITE_TIMEOUT_MS } from '../src/column-write.js';
 import { taskTotals, touchSession } from '../src/record-kit.js';
 import { initialState } from '../src/orchestrator.js';
@@ -8,10 +8,11 @@ import { localActivityId } from '../src/activities.js';
 import { activityIdOf, bareTask, movedWork, withKeptRecord, withWork, type WithWork } from './fixtures/work.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, ActivityRecord, Flow, SourceItem, State, Task, Session, DeleteActivityScope, Stage, Effect, Terminal, Transition, Worker, Item } from '../src/types.js';
-import { DELETE_ACTIVITY_DEFAULTS } from '../src/types.js';
+import { DELETE_ACTIVITY_DEFAULTS, END } from '../src/types.js';
 import { move } from './fakes.js';
 import { mainFlows } from './fixtures/main-flow.js';
-import { flatten } from '../src/flows.js';
+import { flatten, flowOf } from '../src/flows.js';
+import { exitOf, outgoing } from '../src/transitions.js';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -831,4 +832,14 @@ test('a skill stage queues like a prompt stage and is never a due action; its ap
   assert.deepEqual(cands([waiting], [DEV, PLAN], NOW, runsOf([]), ONE).map((c) => c.item.id), ['1']);
   assert.deepEqual(dues([waiting], [DEV, PLAN], NOW, runsOf([]), DELETE_ACTIVITY_DEFAULTS), []);
   assert.deepEqual([canRunIn(PLAN), isGate(PLAN)], [true, false]);
+});
+
+test('stageOf, flowOf, outgoing and exitOf read an absent stage name as no stage: a task outside the flow looks nothing up (#566)', () => {
+  const flows: Flow[] = [{ name: 'main', stages: [{ name: 'a', from: {} }], transitions: [{ from: 'a', to: END, when: 'done' }] }];
+  const graph = flatten(flows);
+  assert.equal(stageOf(graph.stages, undefined), undefined);
+  assert.equal(flowOf(flows, undefined), undefined);
+  assert.deepEqual(outgoing(graph.transitions, undefined), []);
+  assert.equal(exitOf(graph, undefined, 'done'), undefined);
+  assert.equal(exitOf(graph, 'a', 'done')?.to, END, 'a named stage still finds its exit');
 });

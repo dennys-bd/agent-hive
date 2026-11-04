@@ -132,7 +132,8 @@ export function isBlocked(item: Pick<Item, 'blockedBy' | 'inheritedBlockedBy'>):
 }
 
 export const taskId = (task: Task): string => task.item.itemId;
-export const stageOf = (stages: Stage[], name: string): Stage | undefined => stages.find((c) => c.name === name);
+// #566: an absent name (a task outside the flow) names no stage
+export const stageOf = (stages: Stage[], name: string | undefined): Stage | undefined => stages.find((c) => c.name === name);
 
 /** The first Hive stage whose `from` names this column of `source` (#180): the only door a task enters (or is moved) through. A local task
  * (no source) has none. */
