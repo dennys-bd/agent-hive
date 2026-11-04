@@ -99,6 +99,19 @@ test('a drag on a handle changes the upper section within 60–560 and writes ta
   expect(section('automação')).toHaveStyle({ height: '560px' }); // the listeners went with the mouseup
 });
 
+test('an unmount mid-drag drops the listeners and writes nothing; a handle click with no move writes nothing (#572)', () => {
+  const { unmount } = renderSidebar();
+  const handle = screen.getByRole('separator', { name: 'redimensionar automação' });
+  fireEvent.mouseDown(handle, { clientY: 300 });
+  fireEvent.mouseUp(window);
+  expect(readView('tasksSidebar')).toBeUndefined();
+  fireEvent.mouseDown(handle, { clientY: 300 });
+  fireEvent.mouseMove(window, { clientY: 350 });
+  unmount();
+  fireEvent.mouseUp(window);
+  expect(readView('tasksSidebar')).toBeUndefined();
+});
+
 test('a reload restores the closed flags and the heights (#572)', () => {
   resetViewState({ tasksSidebar: { closed: { automation: false, tasks: true, sources: false, repos: false }, heights: { automation: 120, tasks: 150, sources: 300, repos: 240 } } });
   renderSidebar();

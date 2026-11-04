@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { EffectiveLimits, State } from '../../../types.js';
 import { FlowRepositories } from '@/components/FlowRepositories';
 import { FlowSources, type SourcesNav } from '@/components/FlowSources';
@@ -38,27 +38,34 @@ function sectionsOf({ state, effective, sources, nav, display, onNewFlow }: Task
 }
 
 // The layout as stored (decision 5): a toggle writes at once; a drag listens on window so it keeps going past the handle, and writes once, on
-// mouseup (decision 4). ponytail: a drag cut short by an unmount leaves its two listeners until the next mouseup, which then writes the layout
+// mouseup (decision 4). The latest view lives in a ref, so a toggle made mid-drag is not undone by the drag's next move; an unmount mid-drag
+// removes the listeners without writing, so a stale layout never overwrites one written since
 function useSidebarView(): { view: TasksSidebarView; toggle(section: SidebarSection): void; startDrag(section: SidebarSection, event: Pick<MouseEvent, 'clientY' | 'preventDefault'>): void } {
   const [view, setView] = useState(readTasksSidebar);
+  const latest = useRef(view);
+  const stopDrag = useRef<() => void>(undefined);
+  useEffect(() => () => stopDrag.current?.(), []);
+  const update = (next: TasksSidebarView): void => { latest.current = next; setView(next); };
   const toggle = (section: SidebarSection): void => {
-    const next = withToggle(view, section);
-    setView(next);
+    const next = withToggle(latest.current, section);
+    update(next);
     writeTasksSidebar(next);
   };
   const startDrag = (section: SidebarSection, event: Pick<MouseEvent, 'clientY' | 'preventDefault'>): void => {
     event.preventDefault(); // no text selection while dragging
-    const from = { y: event.clientY, height: view.heights[section] };
-    let dragged = view;
-    const onMove = (move: MouseEvent): void => {
-      dragged = withResize(view, section, from.height + move.clientY - from.y);
-      setView(dragged);
-    };
-    const onUp = (): void => {
+    const start = latest.current;
+    const from = { y: event.clientY, height: start.heights[section] };
+    const onMove = (move: MouseEvent): void => update(withResize(latest.current, section, from.height + move.clientY - from.y));
+    const detach = (): void => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      writeTasksSidebar(dragged);
+      stopDrag.current = undefined;
     };
+    const onUp = (): void => {
+      detach();
+      if (latest.current !== start) writeTasksSidebar(latest.current); // a click with no move writes nothing
+    };
+    stopDrag.current = detach;
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
