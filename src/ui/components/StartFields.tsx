@@ -32,7 +32,7 @@ interface ModeToggleProps { mode: StartMode; stagesOff?: string; onChange(mode: 
 
 // A segment of the mode toggle (#893, handoff): transparent on the muted track, the active one on the field background. Both read foreground:
 // muted text on muted fails contrast at this size (design-system). The base's rounding per position gives way to one radius
-const SEGMENT = 'h-auto flex-1 rounded-sm! py-[5px] font-medium text-[13px] hover:bg-transparent hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground';
+export const SEGMENT = 'h-auto flex-1 rounded-sm! py-[5px] font-medium text-[13px] hover:bg-transparent hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground';
 
 /** executar etapas or sessão livre as a segmented control (#893), and the chosen mode's hint. `stagesOff` (#774) is why executar etapas is
  * off for the task: the segment is disabled and the reason takes the hint's place. */
