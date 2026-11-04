@@ -365,7 +365,8 @@ export interface Stage {
   ciChecks?: CiChecks; // #834: with action waitForCi only, required there: which checks the wait counts
   checks?: string[]; // #834: with ciChecks list only, required there: names or patterns (* = any run of characters), case-insensitive
   rerunOnce?: boolean; // #834: with action waitForCi only, required there: re-run the failed Actions jobs once per head commit before failing
-  timeout?: string; // #834: with action waitForCi only: how long the wait may take from the stage's start (TIMEOUT); absent = no limit
+  timeout?: string; // #834, #598: with action waitForCi only: how long one check may run, from its own start (TIMEOUT); absent = no limit
+  queueTimeout?: string; // #598: with action waitForCi only: how long a check may wait for a runner, from its suite's creation (TIMEOUT); absent = no queue limit
   reviewers?: EvaluateRow[]; // #877: with action evaluate only, required there (may be empty): each runs read-only in parallel with its focus
   judge?: EvaluateRow; // #877: with action evaluate only, required there; no focus
   threshold?: number; // #877: with action evaluate only, required there: 0..10, every dimension's score must reach it
@@ -513,11 +514,13 @@ export interface CiPrRead {
 }
 /** A failed Actions run to re-run (#834), by its repository (owner/name) and id. */
 export interface CiRerun { repo: string; runId: number }
-/** One considered check as the running block shows it (#914): completedAt only once it finished; url only an https link. */
-export interface StageCiCheck { name: string; state: PrCheck['state']; url?: string; startedAt?: string; completedAt?: string }
+/** One considered check as the running block shows it (#914): completedAt only once it finished; url only an https link; queuedAt: a queued
+ * check run's suite creation, what ciClock judges the queue from (#598). */
+export interface StageCiCheck { name: string; state: PrCheck['state']; url?: string; startedAt?: string; queuedAt?: string; completedAt?: string }
 
-/** A wait-for-CI stage in flight (#834): when it started (the timeout's clock), the head commits whose failures were re-run, the last read's
- * count for the card, and the flags that keep a read from acting twice. Persisted: the wait goes on after a boot. */
+/** A wait-for-CI stage in flight (#834): when it started (the queue's clock for a missing check, an awaiting, a no-PR or a noRerun wait (#598),
+ * and the fact log's duration), the head commits whose failures were re-run, the last read's count for the card, and the flags that keep a
+ * read from acting twice. Persisted: the wait goes on after a boot. */
 export interface StageCi {
   stage: string; since: string; reran: string[];
   rerunAt?: string; // when the last re-run was asked (ISO): a failure on a re-run head completed by then is the old one, still read as pending
@@ -1100,7 +1103,9 @@ export interface PrComment { id: string; author: string; at: string; text: strin
 export interface PrThread { id: string; anchor: LineAnchor; outdated: boolean; resolved: boolean; subject: 'line' | 'file'; more: boolean; comments: PrComment[] }
 /** A check on a PR's head commit (#758): a check run or a status context, as success, failure or pending; url: its page on GitHub; at: when
  * it completed (a status context: when it was set). */
-export interface PrCheck { name: string; state: 'success' | 'failure' | 'pending'; url?: string; at?: string; startedAt?: string } // startedAt: a CheckRun's startedAt, or a pending StatusContext's createdAt (#914)
+// startedAt: a CheckRun's startedAt once IN_PROGRESS or COMPLETED, or a pending StatusContext's createdAt (#914); queuedAt: a queued check run's
+// check suite createdAt, only while queued, when the read asked it (#598)
+export interface PrCheck { name: string; state: 'success' | 'failure' | 'pending'; url?: string; at?: string; startedAt?: string; queuedAt?: string }
 /** The head commit's checks (#758): GitHub's rollup state, the latest completion, each check; awaiting: the workflows awaiting a maintainer's
  * approval (#854). */
 export interface PrChecks { state: PrCheck['state']; at?: string; items: PrCheck[]; awaiting?: string[] }

@@ -41,3 +41,27 @@ test('a check run\'s startedAt and a pending status context\'s createdAt reach s
   assert.deepEqual(checksOf(rollup)?.items.map((c) => [c.name, c.startedAt, c.at]), [['test', AT, undefined], ['deploy', LATER, LATER], ['docs', undefined, LATER]]);
   assert.match(rollupFields(), /detailsUrl startedAt completedAt/);
 });
+
+test('a check run neither in progress nor completed drops startedAt and carries its suite\'s createdAt as queuedAt; in progress and completed keep startedAt; a status context is unchanged (#598)', () => {
+  const suite = { createdAt: AT };
+  const nodes = [
+    { ...run('e2e', 'QUEUED', null, null), startedAt: LATER, checkSuite: suite },
+    ...['WAITING', 'PENDING', 'REQUESTED'].map((status) => ({ ...run(status, status, null, null), startedAt: LATER, checkSuite: suite })),
+    { ...run('test', 'IN_PROGRESS', null, null), startedAt: LATER, checkSuite: suite },
+    { ...run('build', 'COMPLETED', 'SUCCESS'), startedAt: AT, checkSuite: suite },
+    { ...run('lint', 'QUEUED', null, null), startedAt: LATER }, // the PR page's read asks no suite
+    context('deploy', 'PENDING'),
+  ];
+  assert.deepEqual(checksOf({ state: 'PENDING', contexts: { nodes } })?.items.map((c) => [c.name, c.startedAt, c.queuedAt]), [
+    ['e2e', undefined, AT], ['WAITING', undefined, AT], ['PENDING', undefined, AT], ['REQUESTED', undefined, AT],
+    ['test', LATER, undefined], ['build', AT, undefined], ['lint', undefined, undefined], ['deploy', LATER, undefined],
+  ]);
+});
+
+test('a start or a suite creation GitHub sends that is no date is dropped, so the check falls back to the wait\'s own clock (#598)', () => {
+  const nodes = [
+    { ...run('test', 'IN_PROGRESS', null, null), startedAt: 'soon' },
+    { ...run('e2e', 'QUEUED', null, null), checkSuite: { createdAt: 'yesterday' } },
+  ];
+  assert.deepEqual(checksOf({ state: 'PENDING', contexts: { nodes } })?.items.map((c) => [c.name, c.startedAt, c.queuedAt]), [['test', undefined, undefined], ['e2e', undefined, undefined]]);
+});

@@ -25,7 +25,7 @@ test('ciQuery asks each PR, aliased in order, its base branch\'s required checks
   assert.ok(query.includes(`p0: resource(url: "${A}")`) && query.includes(`p1: resource(url: "${B}")`));
   assert.match(query, /requiredStatusCheckContexts/);
   assert.match(query, /headCommit: commits\(last: 1\) \{ nodes \{ commit \{ oid .*statusCheckRollup/);
-  assert.match(query, /completedAt checkSuite \{ workflowRun \{ databaseId \} \}/);
+  assert.match(query, /completedAt checkSuite \{ createdAt workflowRun \{ databaseId \} \}/);
   assert.equal(ROLLUP_FIELDS, rollupFields());
   assert.equal(ROLLUP_FIELDS.includes('oid') || ROLLUP_FIELDS.includes('workflowRun'), false, 'the PR page asks what it asked');
   assert.equal(ciQuery([]), undefined);
@@ -177,4 +177,15 @@ test('parseCi reads the base branch and marks conflicting only on CONFLICTING; M
     assert.deepEqual([read?.conflicting, read?.base], [undefined, 'main'], String(mergeable));
   }
   assert.equal(of({ mergeable: 'CONFLICTING', baseRefName: 7 })?.base, undefined, 'a base that is not a string is not read');
+});
+
+test('the CI read keeps a queued run\'s suite creation as queuedAt and no start; stageChecks carries it and lists the run as queued (#598)', () => {
+  const T0 = '2026-11-04T10:00:00Z';
+  const T1 = '2026-11-04T10:05:00Z';
+  const suite = { createdAt: T0, workflowRun: { databaseId: 11 } };
+  const queued = { ...run('e2e', 'QUEUED', null, 11), startedAt: T1, checkSuite: suite };
+  const running = { ...run('test', 'IN_PROGRESS', null, 11), startedAt: T1, checkSuite: suite };
+  const [only] = parseCi([A], { p0: answer('h', [queued, running]) });
+  assert.deepEqual(only.checks.map((c) => [c.name, c.startedAt, c.queuedAt, c.runId]), [['e2e', undefined, T0, 11], ['test', T1, undefined, 11]]);
+  assert.deepEqual(stageChecks(only.checks).map((c) => [c.name, c.startedAt, c.queuedAt]), [['test', T1, undefined], ['e2e', undefined, T0]]);
 });

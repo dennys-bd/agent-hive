@@ -89,9 +89,9 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   assert.deepEqual(github.commands.map((c) => ({ ...withoutId(c), env: c.env.map(withoutId), impls: c.impls.map(withoutId) })), [
     { name: 'Run Frontend', impls: [{ workspace: github.workspaces[0].id, command: FRONT_LINE }], menu: true, env: [{ name: 'PORT', value: '5173' }, { name: 'HOST', value: 'localhost' }], timeout: '' },
   ], 'comb.commands over the workspace rows: env as rows, in order, each line\'s workspace as a row id (#300, #348, #511, #755)');
-  assert.deepEqual(stageWithoutId(github.stages[0]), { flow: github.flows[0].id, name: 'spec', savedName: 'spec', session: 'new', model: 'opus', agent: '', from: { [work.id]: ['Backlog'] }, onStart: {}, gate: false, verdicts: [], prompt: '/hive-spec {url}', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: { agent: 'claude', model: '', specializedAgent: '', focus: '' }, threshold: '7', rubric: '' });
+  assert.deepEqual(stageWithoutId(github.stages[0]), { flow: github.flows[0].id, name: 'spec', savedName: 'spec', session: 'new', model: 'opus', agent: '', from: { [work.id]: ['Backlog'] }, onStart: {}, gate: false, verdicts: [], prompt: '/hive-spec {url}', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', queueTimeout: '30m', reviewers: [], judge: { agent: 'claude', model: '', specializedAgent: '', focus: '' }, threshold: '7', rubric: '' });
   assert.equal(github.stages[1].session, 'continue');
-  assert.deepEqual(stageWithoutId(github.stages[2]), { flow: github.flows[0].id, name: 'done', savedName: 'done', session: 'new', model: '', agent: '', from: { [work.id]: ['Done'] }, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: 'deleteActivity', after: '5d', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: { agent: 'claude', model: '', specializedAgent: '', focus: '' }, threshold: '7', rubric: '' });
+  assert.deepEqual(stageWithoutId(github.stages[2]), { flow: github.flows[0].id, name: 'done', savedName: 'done', session: 'new', model: '', agent: '', from: { [work.id]: ['Done'] }, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: 'deleteActivity', after: '5d', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', queueTimeout: '30m', reviewers: [], judge: { agent: 'claude', model: '', specializedAgent: '', focus: '' }, threshold: '7', rubric: '' });
   assert.notEqual(github.stages[0].id, github.stages[1].id, 'each row gets its own id');
   assert.deepEqual([github.language, github.budgetHour, github.budgetDay], ['pt', '50000', '']);
   assert.equal(github.baseBranch, 'develop');
@@ -228,7 +228,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
   assert.equal(bare.baseBranch, '', 'always sent, empty included: that is how a cleared field goes back to automatic');
   assert.equal(toSettingsBody({ ...draftFrom(undefined), baseBranch: '  release  ' }).baseBranch, 'release');
   assert.deepEqual(sentOf(toSettingsBody({ ...blank, stages: [{ ...emptyStage(blank.flows[0].id), name: 'a', from: {}, after: '' }] })).stages.map((c) => 'after' in c), [false], 'empty after = key absent');
-  assert.deepEqual(stageWithoutId(emptyStage('f')), { flow: 'f', name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: { agent: 'claude', model: '', specializedAgent: '', focus: '' }, threshold: '7', rubric: '' });
+  assert.deepEqual(stageWithoutId(emptyStage('f')), { flow: 'f', name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', queueTimeout: '30m', reviewers: [], judge: { agent: 'claude', model: '', specializedAgent: '', focus: '' }, threshold: '7', rubric: '' });
   assert.notEqual(emptyStage('f').id, emptyStage('f').id, 'ids are unique per call');
 });
 
@@ -610,6 +610,15 @@ test('validateSettings refuses a wait for CI under só estes with no check, and 
   assert.deepEqual(validateSettings({ ...valid, stages: [valid.stages[0], { ...wait, timeout: '1d' }] }), problem);
   assert.equal(validateSettings({ ...valid, stages: [valid.stages[0], { ...wait, timeout: '' }] }), undefined);
   assert.equal(validateSettings({ ...valid, stages: [valid.stages[0], { ...wait, ciChecks: 'all', checks: [] }] }), undefined);
+});
+
+test('validateSettings refuses a wait whose queue limit the TIMEOUT grammar does not read, naming the stage; an empty one is no limit (#598)', () => {
+  setLanguage('pt');
+  const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
+  const wait = { ...valid.stages[1], action: 'waitForCi' as const, ciChecks: 'all' as const, queueTimeout: '2h' };
+  assert.equal(validateSettings({ ...valid, stages: [valid.stages[0], wait] }), undefined);
+  assert.deepEqual(validateSettings({ ...valid, stages: [valid.stages[0], { ...wait, queueTimeout: '1d' }] }), { section: 'flow', message: t('settings.error.queueTimeout', { stage: wait.name.trim() }) });
+  assert.equal(validateSettings({ ...valid, stages: [valid.stages[0], { ...wait, queueTimeout: '' }] }), undefined);
 });
 
 test('a workspace row keeps its fork and its own base branch through the draft; an empty base branch sends no key; a new row starts undecided (#854)', () => {

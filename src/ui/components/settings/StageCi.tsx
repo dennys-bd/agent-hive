@@ -75,13 +75,18 @@ function CheckChips({ id, checks, onChange }: { id: string; checks: string[]; on
   );
 }
 
-// espera até (mono, 7rem; empty = no limit), the re-run switch and the verdict note
+// espera até and fila até (#598) (mono, 7rem; empty = no limit), the re-run switch and the verdict note
 function WaitSide({ id, stage, onUpdate }: StageCiProps) {
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={`${id}-ciTimeout`}>{t('settings.stages.ci.timeout')}</Label>
       <Input id={`${id}-ciTimeout`} className="w-28 font-mono" placeholder={t('settings.stages.ci.timeout.placeholder')} defaultValue={stage.timeout} onChange={(e) => onUpdate({ timeout: e.target.value })} />
       <Hint text={t('settings.stages.ci.timeout.hint')} />
+      <div className="mt-2 flex flex-col gap-1">
+        <Label htmlFor={`${id}-ciQueueTimeout`}>{t('settings.stages.ci.queueTimeout')}</Label>
+        <Input id={`${id}-ciQueueTimeout`} className="w-28 font-mono" placeholder={t('settings.stages.ci.timeout.placeholder')} defaultValue={stage.queueTimeout} onChange={(e) => onUpdate({ queueTimeout: e.target.value })} />
+        <Hint text={t('settings.stages.ci.queueTimeout.hint')} />
+      </div>
       <div className="mt-2 flex items-center gap-2">
         <Switch id={`${id}-rerunOnce`} checked={stage.rerunOnce} onCheckedChange={(rerunOnce) => onUpdate({ rerunOnce })} />
         <Label htmlFor={`${id}-rerunOnce`}>{t('settings.stages.ci.rerunOnce')}</Label>

@@ -11,7 +11,7 @@ import type { FlowDraft } from './settings-flows.js';
 
 // commands / stopOnFailure / onMissing (#755): a commands stage's names in run order, its switch and what a missing line does; ciChecks / checks /
 // rerunOnce / timeout (#834): a wait for CI's which checks, its list, its switch and its wait ('' = no limit). Each kept as typed while another
-// action is picked, sent only with its own action.
+// action is picked, sent only with its own action. queueTimeout (#598): its queue limit ('' = no limit).
 // savedName (#861): the name the stage was loaded with, absent on a new one: what a rename is read from; never sent
 // id: a per-stage React key, never sent. from / onStart are keyed by source row id (#180): a name the user is still typing never
 // splits an entry. onStart holds an ordered list per row (#515).
@@ -20,7 +20,7 @@ import type { FlowDraft } from './settings-flows.js';
 // reviewers / judge / threshold / rubric (#877): an evaluate stage's rows, its threshold as typed and its rubric
 // flow (#565): its FlowDraft's id; the draft's lists stay flat
 // clearSession (#494): the stage forgets its run's session when a transition takes the task out; kept as typed, sent only on a stage that runs an agent
-export interface StageDraft { id: string; flow: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; skill: string; specializedAgent: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; clearSession: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; reviewers: EvaluateRowDraft[]; judge: EvaluateRowDraft; threshold: string; rubric: string; savedName?: string }
+export interface StageDraft { id: string; flow: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; skill: string; specializedAgent: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; clearSession: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; queueTimeout: string; reviewers: EvaluateRowDraft[]; judge: EvaluateRowDraft; threshold: string; rubric: string; savedName?: string }
 /** One reviewer or the judge as the form edits it (#877): '' = absent model / specialized agent; focus unused on the judge. id: a React key, never sent. */
 export interface EvaluateRowDraft { id: string; agent: AgentId; model: string; specializedAgent: string; focus: string }
 /** What a stage's maps are keyed against: a source row's id and its name as typed. */
@@ -34,7 +34,7 @@ const rowFrom = (r: EvaluateRowDraft): EvaluateRow => ({ agent: r.agent, ...opti
 // #475, #877: a stage holding a worker sends its cap: a prompt, a skill or an evaluate stage
 const capKey = (c: StageDraft): Partial<Stage> => (c.maxWorkers.trim() === '' ? {} : { maxWorkers: Number(c.maxWorkers.trim()) });
 
-export const emptyStage = (flow: string, defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({ id: crypto.randomUUID(), flow, name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: emptyRow(defaultAgent), threshold: '7', rubric: '' });
+export const emptyStage = (flow: string, defaultAgent: AgentId = DEFAULT_AGENT): StageDraft => ({ id: crypto.randomUUID(), flow, name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', queueTimeout: '30m', reviewers: [], judge: emptyRow(defaultAgent), threshold: '7', rubric: '' });
 
 /** A number field's text: 0 or absent = no limit = empty. */
 export const numberField = (n?: number): string => (n ? String(n) : '');
@@ -65,6 +65,7 @@ export const stageDraft = (c: Stage, rows: StageRow[], flow: string, defaultAgen
   commands: c.commands ?? [], stopOnFailure: c.stopOnFailure ?? true, onMissing: c.onMissing ?? 'fail', // #755: the form starts the switch on and onMissing on fail; the file has no default
   ciChecks: c.ciChecks ?? 'required', checks: c.checks ?? [], rerunOnce: c.rerunOnce ?? false, // #834: the form starts on required with the switch off
   timeout: c.action === 'waitForCi' ? c.timeout ?? '' : '60m', // #834: a saved wait with no key has no limit; a stage turned into one starts on 60m
+  queueTimeout: c.action === 'waitForCi' ? c.queueTimeout ?? '' : '30m', // #598: a saved wait with no key has no queue limit; a stage turned into one starts on 30m
   reviewers: (c.reviewers ?? []).map(rowDraft), judge: c.judge === undefined ? emptyRow(defaultAgent) : rowDraft(c.judge),
   threshold: c.threshold === undefined ? '7' : String(c.threshold), rubric: c.rubric ?? '', // #877: the form starts on 7, as the handoff draws it
 });
@@ -76,7 +77,7 @@ function actionKeys(c: StageDraft, action: HiveAction): Partial<Stage> {
   }
   if (action === 'commands') return { action, commands: c.commands, stopOnFailure: c.stopOnFailure, onMissing: c.onMissing };
   if (action !== 'waitForCi') return { action };
-  return { action, ciChecks: c.ciChecks, ...(c.ciChecks === 'list' ? { checks: c.checks } : {}), rerunOnce: c.rerunOnce, ...optional('timeout', c.timeout) };
+  return { action, ciChecks: c.ciChecks, ...(c.ciChecks === 'list' ? { checks: c.checks } : {}), rerunOnce: c.rerunOnce, ...optional('timeout', c.timeout), ...optional('queueTimeout', c.queueTimeout) };
 }
 
 /** A draft map keyed by row id as the config's, keyed by the rows' trimmed names in row order (#180); a removed row's entry and an empty list

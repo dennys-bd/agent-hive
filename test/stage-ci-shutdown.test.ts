@@ -30,22 +30,24 @@ test('shutdown when done stays armed while a task waits for CI with no worker, a
   assert.ok(passed.effects.some((e) => e.type === 'shutdown'));
 });
 
-test('a read past the timeout decides on its checks first: all green passes, a failure fetches the logs, still pending times out (#515)', () => {
+test('a read past the timeout decides on its checks first: all green passes, a failure fetches the logs, a check still running past it times out (#515, #598)', () => {
   const s = polled();
   const green = read(s, [pr([check('build', 'success')])], lateOf(s)).state;
   assert.deepEqual([green.tasks[0].stage, resultOf(green, ID)?.ci], ['review', { verdict: 'passed' }]);
   const failed = read(s, [pr([check('build', 'failure')])], lateOf(s));
   assert.deepEqual([failed.effects.some((e) => e.type === 'ciCollect'), activityOf(failed.state, ID)?.ci?.collecting], [true, true]);
-  const pending = read(s, [pr([check('build', 'pending')])], lateOf(s)).state;
-  assert.equal(activityOf(pending, ID)?.error, 'CI failed: timed out after 60m');
+  const since = activityOf(s, ID)?.ci?.since ?? '';
+  const running = read(s, [pr([{ ...check('build', 'pending'), startedAt: since }])], lateOf(s)).state;
+  assert.equal(activityOf(running, ID)?.error, 'CI failed: build (ran over 60m)');
 });
 
-test('past the timeout a failure under rerunOnce is not re-run: its logs are fetched, whether the login may re-run or not (#515)', () => {
+test('long after the wait\'s start a failure under rerunOnce still re-runs; without push rights it holds, until queueTimeout from the wait\'s start fetches the logs (#515, #598)', () => {
+  const failure = (canPush: boolean): CiPrRead => ({ ...pr([{ ...check('build', 'failure'), runId: 11 }]), canPush });
   const s = polled({ rerunOnce: true });
-  for (const canPush of [true, false]) {
-    const failure = { ...pr([{ ...check('build', 'failure'), runId: 11 }]), canPush };
-    const late = read(s, [failure], lateOf(s));
-    assert.deepEqual(late.effects.map((e) => e.type).filter((t) => t.startsWith('ci')), ['ciCollect'], String(canPush));
-  }
-  assert.equal(activityOf(read(s, [{ ...pr([{ ...check('build', 'failure'), runId: 11 }]), canPush: false }]).state, ID)?.ci?.noRerun, true, 'before the timeout it holds');
+  assert.deepEqual(read(s, [failure(true)], lateOf(s)).effects.map((e) => e.type).filter((t) => t.startsWith('ci')), ['ciRerun']);
+  const held = read(s, [failure(false)], lateOf(s));
+  assert.deepEqual([held.effects, activityOf(held.state, ID)?.ci?.noRerun], [[], true], 'no queueTimeout: the hold waits for a push');
+  const bounded = polled({ rerunOnce: true, queueTimeout: '2h' });
+  const ended = read(bounded, [failure(false)], lateOf(bounded));
+  assert.deepEqual([ended.effects.map((e) => e.type), activityOf(ended.state, ID)?.ci?.collecting], [['ciCollect'], true]);
 });

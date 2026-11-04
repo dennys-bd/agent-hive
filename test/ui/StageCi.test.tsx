@@ -50,7 +50,7 @@ test('de onde has its one option with its hint; the hints and the note read as t
   render(<Harness onUpdate={vi.fn()} />);
   expect(screen.getByRole('combobox', { name: 'de onde' })).toHaveTextContent('checks do PR da tarefa');
   expect(screen.getByText('lidos pelo gh · GitHub Actions e qualquer check reportado no último commit')).toBeInTheDocument();
-  expect(screen.getByText('30s, 10m, 1h · estourar = "falhou"')).toBeInTheDocument();
+  expect(screen.getByText('30s, 10m, 1h · quanto cada check pode executar, desde o próprio início · esgotar = "falhou"')).toBeInTheDocument();
   expect(screen.getByText('re-run dos jobs que falharam antes do veredito, para checks instáveis')).toBeInTheDocument();
   expect(screen.getByText(/entram em \{result\.ci\.output\}$/)).toBeInTheDocument();
 });
@@ -65,4 +65,23 @@ test('an emptied espera até means no limit; the switch turns the re-run on (#83
   expect(wait).toHaveAttribute('placeholder', 'sem limite');
   await user.click(screen.getByRole('switch', { name: 'executar de novo uma vez' }));
   expect(onUpdate).toHaveBeenLastCalledWith({ rerunOnce: true });
+});
+
+test('fila até starts on 30m for a new wait, empties to no limit and takes a typed limit; its hint says what it bounds (#598)', async () => {
+  const user = userEvent.setup();
+  const onUpdate = vi.fn();
+  render(<Harness onUpdate={onUpdate} />);
+  const queue = screen.getByRole('textbox', { name: 'fila até' });
+  expect(queue).toHaveValue('30m');
+  expect(queue).toHaveAttribute('placeholder', 'sem limite');
+  await user.clear(queue);
+  expect(onUpdate).toHaveBeenLastCalledWith({ queueTimeout: '' });
+  await user.type(queue, '2h');
+  expect(onUpdate).toHaveBeenLastCalledWith({ queueTimeout: '2h' });
+  expect(screen.getByText('30s, 10m, 1h · quanto um check pode esperar por um runner · esgotar = "falhou"')).toBeInTheDocument();
+});
+
+test('a saved wait without a queue limit shows fila até empty (#598)', () => {
+  render(<Harness initial={{ queueTimeout: '' }} onUpdate={vi.fn()} />);
+  expect(screen.getByRole('textbox', { name: 'fila até' })).toHaveValue('');
 });
