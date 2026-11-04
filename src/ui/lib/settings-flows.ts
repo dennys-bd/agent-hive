@@ -88,6 +88,9 @@ export function transitionsDraftProblem(draft: SettingsDraft): SettingsProblem |
 const badWait = (c: StageDraft): boolean =>
   c.action === 'waitForCi' && ((c.ciChecks === 'list' && c.checks.length === 0) || (c.timeout.trim() !== '' && timeoutMs(c.timeout) === undefined));
 
+// #598: a wait's queue limit in the TIMEOUT grammar; an empty one is no limit
+const badQueue = (c: StageDraft): boolean => c.action === 'waitForCi' && c.queueTimeout.trim() !== '' && timeoutMs(c.queueTimeout) === undefined;
+
 export function stagesProblem(stages: StageDraft[], defaultAgent: AgentId): SettingsProblem | undefined {
   if (stages.length === 0) return { section: 'flow', message: t('settings.stages.none') };
   const bad = stages.findIndex((c) => c.name.trim() === '' || !isEmptyOrDuration(c.after) || !isEmptyOrNonNegativeInt(c.maxWorkers) || (c.action === 'commands' && c.commands.length === 0)); // #755: the parser refuses an empty list
@@ -98,6 +101,8 @@ export function stagesProblem(stages: StageDraft[], defaultAgent: AgentId): Sett
   if (orphan !== -1) return { section: 'flow', message: t('settings.stages.error.continue', { n: orphan + 1, agent: stages[orphan]?.agent || defaultAgent }) };
   const wait = stages.findIndex(badWait);
   if (wait !== -1) return { section: 'flow', message: t('settings.stages.error.ci', { n: wait + 1 }) };
+  const queued = stages.find(badQueue);
+  if (queued) return { section: 'flow', message: t('settings.error.queueTimeout', { stage: queued.name.trim() }) };
   const judged = stages.findIndex(badEvaluation); // #877: the parser refuses each one
   return judged === -1 ? undefined : { section: 'flow', message: t('settings.stages.error.evaluate', { n: judged + 1 }) };
 }

@@ -1522,7 +1522,9 @@ const en = {
   'settings.stages.ci.checks.hint': 'the name shown on the PR · * matches any part',
   'settings.stages.ci.timeout': 'waits up to',
   'settings.stages.ci.timeout.placeholder': 'no limit',
-  'settings.stages.ci.timeout.hint': '30s, 10m, 1h · running out = "failed"',
+  'settings.stages.ci.timeout.hint': '30s, 10m, 1h · how long each check may run, from its own start · running out = "failed"',
+  'settings.stages.ci.queueTimeout': 'queues up to', // #598
+  'settings.stages.ci.queueTimeout.hint': '30s, 10m, 1h · how long a check may wait for a runner · running out = "failed"',
   'settings.stages.ci.rerunOnce': 're-run once',
   'settings.stages.ci.rerunOnce.hint': 're-runs the failed jobs before the verdict, for flaky checks',
   'settings.stages.ci.note': 'with no open PR or no checks on the commit, the stage waits · verdict: all ok = "passed" · name, link and the end of the log of what failed go into {result.ci.output}', // {result.ci.output} is literal: what a later prompt writes
@@ -1655,6 +1657,7 @@ const en = {
   'settings.transitions.sources': 'on the sources',
   'settings.transitions.sources.pass': 'on passing',
   'settings.stages.error.ci': 'stage {n}: pick at least one check under only these, and a wait like 30s, 10m or 1h, up to 24h', // #834
+  'settings.error.queueTimeout': 'stage {stage}: the queue limit must look like 30s, 10m or 1h, up to 24h', // #598
   'settings.stages.error.skill': 'stage {n}: choose a skill', // #710
   'settings.flows.label': 'flow',
   'settings.flows.add': '+ flow',
@@ -4544,7 +4547,9 @@ const pt: Record<MessageKey, string> = {
   'settings.stages.ci.checks.hint': 'o nome que aparece no PR · * vale qualquer trecho',
   'settings.stages.ci.timeout': 'espera até',
   'settings.stages.ci.timeout.placeholder': 'sem limite',
-  'settings.stages.ci.timeout.hint': '30s, 10m, 1h · estourar = "falhou"',
+  'settings.stages.ci.timeout.hint': '30s, 10m, 1h · quanto cada check pode executar, desde o próprio início · esgotar = "falhou"',
+  'settings.stages.ci.queueTimeout': 'fila até',
+  'settings.stages.ci.queueTimeout.hint': '30s, 10m, 1h · quanto um check pode esperar por um runner · esgotar = "falhou"',
   'settings.stages.ci.rerunOnce': 'executar de novo uma vez',
   'settings.stages.ci.rerunOnce.hint': 're-run dos jobs que falharam antes do veredito, para checks instáveis',
   'settings.stages.ci.note': 'sem PR aberto ou sem checks no commit, a etapa espera · veredito: todos ok = "passou" · nome, link e o fim do log de quem falhou entram em {result.ci.output}',
@@ -4677,6 +4682,7 @@ const pt: Record<MessageKey, string> = {
   'settings.transitions.sources': 'nas sources',
   'settings.transitions.sources.pass': 'ao passar',
   'settings.stages.error.ci': 'etapa {n}: escolha ao menos um check em só estes, e uma espera como 30s, 10m ou 1h, até 24h',
+  'settings.error.queueTimeout': 'etapa {stage}: o limite de fila deve ser como 30s, 10m ou 1h, até 24h',
   'settings.stages.error.skill': 'etapa {n}: escolha uma skill',
   'settings.flows.label': 'fluxo',
   'settings.flows.add': '+ fluxo',

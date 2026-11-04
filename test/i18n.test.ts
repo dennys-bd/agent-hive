@@ -183,6 +183,8 @@ test('the glossary sweep (#573): no settings-screen setup. key and no limits, la
   const CLEAR: readonly string[] = ['detail.clearSession', 'console.clear', 'shortcuts.clear', 'stage.clearFilter', 'field.clear', 'settings.stages.clearSession.hint', 'settings.stages.clearSession.noPrompt'];
   // a benchmark run waiting for its round, na fila (#465, benchmark.hv.html): not a stage's order, which the glossary keeps off queue
   const QUEUED_RUN: readonly string[] = ['benchmark.execution.sub.queued', 'benchmark.execution.sub.queuedAfter', 'benchmark.execution.state.queued'];
+  // a check waiting for a runner, GitHub's own queue and the stage key queueTimeout (#598): not a stage's order either
+  const RUNNER_QUEUE: readonly string[] = ['settings.stages.ci.queueTimeout', 'settings.error.queueTimeout'];
   const retired: Record<'en' | 'pt', RegExp[]> = {
     en: [/\blimits\b/, /\bqueue[ds]?\b/i, /\bclean(?:ing)? ?up\b/i, /\bremove (?:the )?worktree\b/i],
     pt: [
@@ -191,7 +193,7 @@ test('the glossary sweep (#573): no settings-screen setup. key and no limits, la
     ],
   };
   for (const language of ['en', 'pt'] as const) {
-    const found = Object.entries(MESSAGES[language]).filter(([key, text]) => !CLEAR.includes(key) && !QUEUED_RUN.includes(key) && retired[language].some((word) => word.test(text))).map(([key]) => key);
+    const found = Object.entries(MESSAGES[language]).filter(([key, text]) => !CLEAR.includes(key) && !QUEUED_RUN.includes(key) && !RUNNER_QUEUE.includes(key) && retired[language].some((word) => word.test(text))).map(([key]) => key);
     assert.deepEqual(found, [], language);
   }
 });

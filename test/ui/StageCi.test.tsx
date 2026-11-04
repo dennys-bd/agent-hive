@@ -50,7 +50,7 @@ test('de onde has its one option with its hint; the hints and the note read as t
   render(<Harness onUpdate={vi.fn()} />);
   expect(screen.getByRole('combobox', { name: 'de onde' })).toHaveTextContent('checks do PR da tarefa');
   expect(screen.getByText('lidos pelo gh · GitHub Actions e qualquer check reportado no último commit')).toBeInTheDocument();
-  expect(screen.getByText('30s, 10m, 1h · estourar = "falhou"')).toBeInTheDocument();
+  expect(screen.getByText('30s, 10m, 1h · quanto cada check pode executar, desde o próprio início · esgotar = "falhou"')).toBeInTheDocument();
   expect(screen.getByText('re-run dos jobs que falharam antes do veredito, para checks instáveis')).toBeInTheDocument();
   expect(screen.getByText(/entram em \{result\.ci\.output\}$/)).toBeInTheDocument();
 });

@@ -141,6 +141,17 @@ test('a wait-for-CI stage keeps its checks, its switch and its wait through the 
   assert.equal(['ciChecks', 'checks', 'rerunOnce', 'timeout'].some((key) => key in prompt), false);
 });
 
+test('a wait-for-CI stage keeps its queue limit through the draft; a new draft and a stage turned into a wait start on 30m; a saved wait without the key stays without one; an empty one sends no key (#598)', () => {
+  const stage: Stage = { name: 'ci', from: { work: ['CI'] }, action: 'waitForCi', ciChecks: 'required', rerunOnce: false, timeout: '30m', queueTimeout: '2h' };
+  const draft = stageDraft(stage, ROWS, FLOW);
+  assert.deepEqual(stageFrom(draft, ROWS), stage);
+  assert.equal(emptyStage(FLOW).queueTimeout, '30m');
+  assert.equal(stageDraft({ name: 'b', from: {}, prompt: '/b' }, ROWS, FLOW).queueTimeout, '30m');
+  assert.equal(stageDraft({ ...stage, queueTimeout: undefined }, ROWS, FLOW).queueTimeout, '');
+  assert.equal('queueTimeout' in stageFrom({ ...draft, queueTimeout: ' ' }, ROWS), false);
+  assert.equal('queueTimeout' in stageFrom({ ...draft, action: '', prompt: '/x' }, ROWS), false);
+});
+
 test('a gate draft sends approval alone; a prompt stage sends its verdicts when it has some (#134)', () => {
   assert.deepEqual(stageFrom({ ...emptyStage(FLOW), name: 'PR', gate: true, approval: true, prompt: 'left over', model: 'opus' }, ROWS), { name: 'PR', from: {}, approval: true });
   assert.deepEqual(stageFrom({ ...emptyStage(FLOW), name: 'Rev', prompt: '/r', verdicts: ['ok', 'redo'] }, ROWS).verdicts, ['ok', 'redo']);
