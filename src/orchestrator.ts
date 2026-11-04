@@ -403,7 +403,7 @@ function itemRead(state: State, { source, itemId, entry }: Extract<HiveEvent, { 
   const task = state.tasks.find((c) => taskId(c) === itemId && c.item.source === source);
   if (task === undefined) return state;
   const seen = seenOne(task, entry, state.stages, state, new Date().toISOString()); // #889: a re-read is held to the poll's stale-read rule
-  return seen === undefined || seen === task ? state : settleEntries(state.tasks, { ...state, tasks: state.tasks.map((c) => (c === task ? seen : c)) }); // #568: undefined is a never-started task the re-read no longer lists: the next poll drops it
+  return seen === undefined || seen === task ? state : settleEntries(state.tasks, { ...state, tasks: state.tasks.map((c) => (c === task ? seen : c)) }); // #568: undefined only for an unlisted entry, which a re-read never is; the guard narrows the type
 }
 
 // A stopped task in a stage a save turned into a manual gate awaits approval from now, as if it had just entered (#315), on its activity, born

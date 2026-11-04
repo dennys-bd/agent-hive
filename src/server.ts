@@ -658,7 +658,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       await leave(false);
       return;
     }
-    const url = live?.state.tasks.find((c) => c.item.itemId === effect.taskId)?.item.url ?? ''; // #568: an issue off the Project is reached by its url
+    const url = live?.state.tasks.find((c) => taskId(c) === effect.taskId)?.item.url ?? ''; // #568: an issue off the Project is reached by its url
     try {
       await wiring.sourceAction(live?.state, effect.taskId, effect.action.type, source.apply(effect.itemId, effect.action, url)); // source.action (#742)
     } catch (err) {
