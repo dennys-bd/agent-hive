@@ -1,5 +1,5 @@
 
-import { canCloseMissing, inAction, inFlow, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
+import { inAction, inFlow, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
 import { benchmarkReduce, isBenchmarkEvent } from './benchmark-reducer.js';
 import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
@@ -184,8 +184,6 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'restoreFailed': return restoreFailed(state, event.itemId); // no fill: only the mark goes (#619)
     case 'clearSessions': return clearSessions(state, event); // no fill: the fill never reads sessions (#283)
     case 'closeTask': return fill(closeTask(state, event.taskId));
-    case 'keepTask': return fill(keepTask(state, event.taskId));
-    case 'closeMissing': return closeMissing(state, event.stage); // no fill: nothing freed, and a missing task was never a candidate
     case 'worktreeGone': return worktreeGone(state, event.activityId); // no fill, no effects: fill never looks at the path
     case 'deletingActivity': return deletingActivity(state, liveTaskId(state, event.activityId)); // no fill: nothing freed, one task less to pick
     case 'activityRemoved': return fill(activityRemoved(state, liveTaskId(state, event.activityId))); // the task may be a candidate again, here or in the stage it advanced to (#210)
@@ -235,7 +233,7 @@ function setRateLimits(state: State, { agent, ptyId, rateLimits, replace = false
   return !worker || worker.status === 'empty' ? none(state) : kept(merged);
 }
 
-// The human override: no signal, cap, budget or `after` check; the task runs in the stage it is in. Unknown, running, deleting, missing or
+// The human override: no signal, cap, budget or `after` check; the task runs in the stage it is in. Unknown, running, deleting or
 // leaving (#286) task, or one awaiting approval (approve or feedback moves it, #268), or running a stage action (#755, #834): unchanged; a non-auto task starts like any other (#283). A delete-activity stage acts at once, with no worker and whatever the blockers (they are about starting work), and never
 // gets a base; a commands stage too, and an evaluate stage (#877), keeping the popup's base and switch for its worktree (#755). A wait for CI starts over, with a new clock and no re-run spent (#834). A prompt stage, or a manual gate carrying queued feedback (HIVE-2), needs an unblocked task; with a free worker it takes it, without one it opens a worker over the cap that leaves
 // when its own worker ends: maxConcurrent is untouched and the extra worker is a draining one, as a setMax below the occupied count leaves
@@ -248,7 +246,7 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
   const task = placed?.task;
   const stage = task && stageOf(state.stages, task.stage);
   const activity = activityOf(state, itemId);
-  if (!placed || !task || !stage || task.item.epic !== undefined || activity?.workerId !== undefined || activity?.deleting || inAction(activity) || task.missing || task.leaving || activity?.approval || activity?.setup) return none(state); // setup: #351; #31: a show epic never runs
+  if (!placed || !task || !stage || task.item.epic !== undefined || activity?.workerId !== undefined || activity?.deleting || inAction(activity) || task.leaving || activity?.approval || activity?.setup) return none(state); // setup: #351; #31: a show epic never runs
   if (resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) === undefined) return none(state); // the route asks for one first (#179)
   // a manual start clears the last failure (spawn, delete activity or a commands stage's) and tries again
   if (stage.action === 'deleteActivity') return startDeleteActivity(clearedError(state, task), task);
@@ -267,7 +265,7 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
 
 // A task created in the Hive (#132): the next local number (never reused: localCount only grows), entered into the stage like a polled task
 // (enteredAt now, so `after` counts from creation) and appended right after the stage's last task, unpinned. `local` keeps it off every source
-// write and out of the poll's missing mark. Unknown stage: nothing (the route checked; a race is a no-op). With pr (#67) the task holds that PR
+// write and out of the poll's merge. Unknown stage: nothing (the route checked; a race is a no-op). With pr (#67) the task holds that PR
 // from birth, in a record with no live activity: the shape a deleted activity leaves, which taskOfPr, prsOf and the PR poll already read.
 // No stage (#566): the task is outside the flow, never entered, appended to the list.
 function createTask(state: State, { title, body, stage: name, prefix, workspace, auto, url, origin, pr }: Extract<HiveEvent, { type: 'createTask' }>): Reduced {
@@ -286,13 +284,13 @@ function createTask(state: State, { title, body, stage: name, prefix, workspace,
 }
 
 // The auto switch (#164, #573): off takes the task out of the fill, the delete-activity stages (unless nonAutoTasks, #496) and every automatic
-// prompt, but not out of a wait for CI, which holds no worker (#304); a worker already running is left to finish its stage. Unknown or missing
+// prompt, but not out of a wait for CI, which holds no worker (#304); a worker already running is left to finish its stage. Unknown
 // task: nothing (the route refused it; a race is a no-op).
 // On hands the task back to the fill, which never picks a stopped activity, so its stopped mark goes (#892); off leaves the mark. A failure's
 // stop keeps it: its error still bars the fill until a manual start or retry, and the mark is what shows that stop.
 function setAuto(state: State, id: string, auto: boolean): Reduced {
   const task = state.tasks.find((c) => taskId(c) === id);
-  if (!task || task.missing) return none(state);
+  if (!task) return none(state);
   const switched = withTask(state, { ...task, auto });
   const activity = auto ? activityOf(state, task.item.itemId) : undefined;
   if (!activity?.stopped || activity.error !== undefined) return none(switched);
@@ -686,7 +684,7 @@ function drainForShutdown(reduced: Reduced, now: number): Reduced {
 function closeTask(state: State, id: string): Reduced {
   const task = state.tasks.find((c) => taskId(c) === id);
   // deleting: the removal's answer must still find the task (#182); canRemoveCreated already refuses a deleting local task
-  if (!task || activityOf(state, id)?.deleting || !(task.missing || task.outOfListing !== undefined || task.orphan || task.leaving || canRemoveCreated(task, state) || isWrittenGoal(state, task))) return none(state);
+  if (!task || activityOf(state, id)?.deleting || !(task.outOfListing !== undefined || task.orphan || task.leaving || canRemoveCreated(task, state) || isWrittenGoal(state, task))) return none(state);
   return dropTask(state, task);
 }
 
@@ -709,20 +707,6 @@ function dropTask(state: State, task: Task): Reduced {
     state: { ...closed.state, tasks: closeRefsTo(closed.state.tasks.filter((c) => c !== task), task), workers: held.reduce(releaseWorker, closed.state.workers) }, // #56: its relations stay, closed
     effects: [...kills, ...closed.effects],
   };
-}
-
-function keepTask(state: State, id: string): Reduced {
-  const task = state.tasks.find((c) => taskId(c) === id);
-  if (!task?.missing || activityOf(state, id)?.deleting) return none(state); // deleting: the removal's answer must still find the task (#182)
-  const { missing: _missing, ...rest } = task;
-  return none(withTask(state, { ...rest, orphan: true }));
-}
-
-// A stage's close all (#279): every missing task of the stage canCloseMissing allows goes in this one reduction, so no worker can start on
-// one between the route's check and the close. None holds a worker: nothing to kill or free. The worktrees stay on disk (#182).
-function closeMissing(state: State, stage: string): Reduced {
-  const closable = (c: Task): boolean => c.stage === stage && canCloseMissing(c, state);
-  return state.tasks.some(closable) ? none({ ...state, tasks: state.tasks.filter((c) => !closable(c)) }) : none(state);
 }
 
 // The server saw the worktree gone from disk and the Hive did not remove it (#208): a stopped task is only marked, which hides its session

@@ -183,7 +183,7 @@ export const inAction = (activity: Pick<Activity, 'commands' | 'ci' | 'evaluate'
  * user or by a run that died (#283), not leaving the source (#286), not awaiting approval (#268), not running its worktree setup (#351) or a stage
  * action (#755, #834), and not a show epic (#31: its children run, it never does, by the fill or by a stage action). */
 const isIdle = (task: Task, activity: Activity | undefined, nonAutoToo = false): boolean =>
-  activity?.workerId === undefined && !activity?.deleting && !task.missing && activity?.error === undefined && (nonAutoToo || task.auto) && !activity?.stopped
+  activity?.workerId === undefined && !activity?.deleting && activity?.error === undefined && (nonAutoToo || task.auto) && !activity?.stopped
   && !task.leaving && !activity?.approval && !activity?.setup && !inAction(activity) && task.item.epic === undefined;
 
 /** Started (#727): the task has a live activity, whatever made it: a stage run, a free session, a first open. What a signal's resume picks up
@@ -232,7 +232,7 @@ function parentWorkspace(task: Pick<Task, 'item'>, scope: WorkspaceScope, walked
 // compare against a value the source no longer holds; any other read confirms, overrides or outlives the write, and its mark goes.
 export function seenAgain(task: Task, seen: SourceItem, stages: Stage[], runs: WorkState, now: string): Task {
   if (task.orphan) return task;
-  const { missing: _missing, outOfListing: _outOfListing, ...present } = task;
+  const { outOfListing: _outOfListing, ...present } = task;
   if (staleRead(task, seen.column, now)) return { ...present, item: seen.item };
   const { columnWrite: _columnWrite, ...rest } = present;
   const refreshed: Task = { ...rest, item: seen.item, boardColumn: seen.column };
@@ -295,7 +295,7 @@ export function renameSource(task: Task, renames: Record<string, string>): Task 
   return to === undefined ? task : { ...task, item: { ...task.item, source: to, itemId: renamedId(task.item.itemId, renames) } };
 }
 
-/** The state after a rename in Settings (#278), as one map (a swap rewrites each task once): every task of a renamed source (missing and
+/** The state after a rename in Settings (#278), as one map (a swap rewrites each task once): every task of a renamed source (out-of-listing and
  * orphan ones too), the records' task ids (the workers point at activities, #629) and the source order under the new ids, and each status under its new key; a stale status already under a
  * new name (a removed source's) gives way. One event, so a running worker never sees an old id. An empty map: the same state. */
 export function renameSources(state: State, renames: Record<string, string>): State {
@@ -464,7 +464,7 @@ export function differsFromSource(tasks: Task[], stage: string, sourceOrder: str
 /** Abrir sessão (#283): any task still on the source and not leaving it, whose worktree no git is removing and no setup is preparing (#351).
  * A blocker holds the stage run only (#491): the user opens a session or a terminal on a blocked task by hand. The reducer, the route and the
  * task menu share this one rule; a running stage, its auto setting or a stopped task changes nothing. */
-export const canOpenSession = (task: Task, activity: Activity | undefined): boolean => !task.missing && !activity?.deleting && !task.leaving && !activity?.setup;
+export const canOpenSession = (task: Task, activity: Activity | undefined): boolean => !activity?.deleting && !task.leaving && !activity?.setup;
 
 /** Why delete activity (#182, #210, #573) may not run, in the order the user would ask: a run holds the task (its stage run or a session,
  * #164; a terminal does not, #573), the activity is already being deleted, nothing the scope covers is on it (#236). */
@@ -485,7 +485,7 @@ export const terminalsOf = (state: Pick<State, 'terminals' | 'activities' | 'act
  * deleting the activity closes it. */
 const hasSessionRun = (task: Task, state: WorkersState): boolean => activityOf(state, taskId(task))?.workerId !== undefined || workersOf(state, task).length > 0;
 
-/** The first RemovalBlocker the task hits, or undefined when delete activity may run. A missing task qualifies: its activity can be deleted
+/** The first RemovalBlocker the task hits, or undefined when delete activity may run. An out-of-listing task qualifies: its activity can be deleted
  * before it is closed. In a delete-activity stage nothing to delete never blocks (#236): the click moves the task on by hand. The reducer,
  * the route (its 409) and the menu item (its reason) share this one rule, so they never disagree. */
 export function removalBlocker(task: Task, state: Pick<State, 'workers' | 'stages' | 'deleteActivity' | 'activities' | 'activityRecords'>): RemovalBlocker | undefined {
@@ -511,13 +511,6 @@ export function createdRemovalBlocker(task: Task, runs: Runs): 'running' | 'dele
 export function canRemoveCreated(task: Task, runs: Runs): boolean {
   return task.created === true && createdRemovalBlocker(task, runs) === undefined;
 }
-
-/** A missing task the stage's close all may take (#279): stopped, not being deleted, held by no run, nor running a stage action, whose commands
- * run holds a worker (#755, #727). The reducer, the
- * route and the stage's strip share this one rule, so the count they show is what closes. */
-export const canCloseMissing = (task: Task, state: WorkersState): boolean =>
-  task.missing === true && !activityOf(state, taskId(task))?.deleting && activityOf(state, taskId(task))?.workerId === undefined && workersOf(state, task).length === 0
-  && !inAction(activityOf(state, taskId(task)));
 
 /** How a task is named on screen: `#12 Title` for a source task, `HIVE-3 Title` for a local one (#132): there is no issue number to point at. */
 export const taskLabel = (task: Pick<Task, 'item' | 'created'>): string => {
@@ -626,7 +619,7 @@ export const previousSession = (task: Task, state: WorkersState): Session | unde
 /** A task whose error the user may dismiss (#354): what canMoveToStage asks, an epic included: its refused end action (#31) freezes it and
  * a dismiss unfreezes it without moving it. */
 export const canDismissError = (task: Task, state: WorkersState): boolean =>
-  !task.missing && !task.leaving && activityOf(state, taskId(task))?.workerId === undefined && !inAction(activityOf(state, taskId(task))) // #755, #834
+  !task.leaving && activityOf(state, taskId(task))?.workerId === undefined && !inAction(activityOf(state, taskId(task))) // #755, #834
   && !workersOf(state, task).some((s) => !s.freeSession);
 
 /** A task the user may move to another stage (#164, #366, #708), by right-click → move to or by a drag, auto on or off: still on the

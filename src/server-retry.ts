@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { activityOf } from './activities.js';
-import { LEAVING_MESSAGE, MISSING_MESSAGE, type Refusal, refuse, RUNNING_MESSAGE, type TaskRouteDeps, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
+import { LEAVING_MESSAGE, type Refusal, refuse, RUNNING_MESSAGE, type TaskRouteDeps, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { canDismissError, canMoveToStage, type WorkersState } from './tasks.js';
 import { retryTransition } from './transitions.js';
 import { TRIES_OUT, type State, type Task } from './types.js';
@@ -24,7 +24,6 @@ const taskOf = (state: State, taskId: string): Task | undefined => state.tasks.f
 // asks, or the dismiss's canDismissError, which lets an epic through (#354)
 function heldRefusal(state: State, task: Task | undefined, canAct: (task: Task, state: WorkersState) => boolean): Refusal | undefined {
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
-  if (task.missing) return { status: HTTP_CONFLICT, message: MISSING_MESSAGE };
   if (!canAct(task, state)) return { status: HTTP_CONFLICT, message: task.leaving ? LEAVING_MESSAGE : RUNNING_MESSAGE };
   return undefined;
 }

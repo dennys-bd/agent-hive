@@ -36,7 +36,7 @@ test('the copy opens once the new activity has its directory', () => {
   expect(onReady).toHaveBeenCalledWith({ from: FROM, to: { activityId: 'a-N1' } }); // #629: the new task's live activity
 });
 
-test.each([['an error', { error: 'pty: no' }], ['gone missing', { missing: true as const }], ['leaving', { leaving: true as const }]])('the wait ends when the activity gets %s: a directory later opens nothing', (_name, extra) => {
+test.each([['an error', { error: 'pty: no' }], ['leaving', { leaving: true as const }]])('the wait ends when the activity gets %s: a directory later opens nothing', (_name, extra) => {
   const { onReady, hook } = awaitN1(stateWith(task('N1')));
   hook.rerender({ state: stateWith(task('N1', extra)) });
   hook.rerender({ state: stateWith(READY) });

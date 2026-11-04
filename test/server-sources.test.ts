@@ -136,7 +136,7 @@ test('renamesRefusal (#278): 400 for a map the running Hive cannot apply, 409 wh
     }));
   const on = (board: string, n: number, extra: Partial<Task> = {}): Task =>
     ({ item: { itemId: `${board}:${n}`, id: String(n), title: `Task ${n}`, body: '', url: '', source: board }, stage: 'fila', boardColumn: 'Ready', auto: true, ...extra });
-  const live = { config: configOf('work', 'notes'), state: { ...initialState(0), tasks: [on('work', 1), on('old', 2, { missing: true })] } }; // old: removed by an earlier save
+  const live = { config: configOf('work', 'notes'), state: { ...initialState(0), tasks: [on('work', 1), on('old', 2, { orphan: true })] } }; // old: removed by an earlier save
   const next = configOf('job', 'notes');
   const bad = (renames: unknown, config: Config, message: string): void =>
     assert.deepEqual(renamesRefusal(renames, config, live), { status: 400, message }, JSON.stringify(renames));
@@ -175,7 +175,7 @@ test('a save that renames a source carries its running task over: the same workt
   assert.deepEqual(state.tasks.map((c) => c.item.itemId), ['job:12'], 'no task missing, no duplicate');
   const [after] = state.tasks;
   // #629: the same activity, its sessionId and workerId with it; its record lists the new id
-  assert.deepEqual([activityOf(state, 'job:12'), after.stage, after.missing], [was, before.stage, undefined], 'the same activity: its record lists the new id (#629)');
+  assert.deepEqual([activityOf(state, 'job:12'), after.stage, after.outOfListing], [was, before.stage, undefined], 'the same activity: its record lists the new id (#629)');
   assert.equal(taskOfWorker(state, state.workers.find((s) => s.id === worker.id)!)?.item.itemId, 'job:12', 'the worker keeps its activity, whose record lists the new id (#629)');
   assert.deepEqual(Object.keys(state.syncs).sort(), ['job', 'notes']);
 });

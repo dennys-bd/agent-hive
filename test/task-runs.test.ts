@@ -20,7 +20,7 @@ type Work = Pick<Activity, 'worktree' | 'branch' | 'worktreeGone' | 'local' | 'b
 type Fixture = Task & { sessions?: Session[] } & Partial<Work>;
 const task = (stage: string, extra: Partial<Fixture> = {}): Fixture =>
   ({ item: { itemId: 'board:1', id: '1', title: 'T', body: '', url: '' }, stage, boardColumn: '', auto: true, ...extra });
-const liveOf = ({ item: _item, stage: _stage, boardColumn: _column, auto: _auto, sessions: _sessions, missing: _m, orphan: _o, enteredAt: _e, leaving: _l, pinned: _p, created: _c, workspace: _w, ...work }: Fixture): Activity => {
+const liveOf = ({ item: _item, stage: _stage, boardColumn: _column, auto: _auto, sessions: _sessions, orphan: _o, enteredAt: _e, leaving: _l, pinned: _p, created: _c, workspace: _w, ...work }: Fixture): Activity => {
   return { id: 'a-1', kind: 'task', workspace: 'hive', slug: 'hive-1-t', ...work };
 };
 const canRunCommand = (c: Fixture) => runs.canRunCommand(c, liveOf(c));
@@ -51,7 +51,7 @@ test('startMode: none for a blocked, missing or deleting task and a stage with n
   const state = { stages, workers: [] };
   const blocked = task('spec', { item: { ...task('spec').item, blockedBy: ['9'] } });
   const none: [Fixture, string][] = [
-    [blocked, 'blocked'], [task('spec', { missing: true }), 'missing'], [task('spec', { deleting: true }), 'deleting'],
+    [blocked, 'blocked'], [task('spec', { deleting: true }), 'deleting'],
     [task('review'), 'no prompt, no action'], [task('gone'), 'a stage the Comb lost'],
   ];
   for (const [c, why] of none) assert.equal(startMode(c, state), 'none', why);
@@ -177,7 +177,7 @@ test('canRunCommand: only a task open to a session whose worktree is on disk; a 
   assert.equal(canRunCommand(task('spec', { worktree: '/wt', item: { ...task('spec').item, blockedBy: ['9'] } })), true, 'a blocker holds the stage run only');
   const refused: [Fixture, string][] = [
     [task('spec'), 'no worktree'], [task('spec', { worktree: '/wt', worktreeGone: true }), 'gone from disk'],
-    [task('spec', { worktree: '/wt', missing: true }), 'missing'], [task('spec', { worktree: '/wt', deleting: true }), 'deleting'],
+    [task('spec', { worktree: '/wt', deleting: true }), 'deleting'],
   ];
   for (const [c, why] of refused) assert.equal(canRunCommand(c), false, why);
 });

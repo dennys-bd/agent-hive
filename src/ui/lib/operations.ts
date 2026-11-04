@@ -109,7 +109,7 @@ function focusOperations(focus: FocusTarget): Operation[] {
   return [
     { ...on, id: 'focus.feedback', label: () => t('task.sendFeedback'), available: awaits, run: (c) => c.nav.dialog({ kind: 'feedback', task: live(c) }) },
     { ...on, id: 'focus.approve', label: () => t('approval.approve'), available: awaits, run: (c) => void act(`${workOf(c)}/approve`) },
-    { ...on, id: 'focus.autoStart', label: () => t('detail.menu.autoStart'), available: (c) => !live(c).missing, checked: (c) => live(c).auto, run: (c) => void act(`${pathOf(c)}/auto`, { auto: !live(c).auto }) },
+    { ...on, id: 'focus.autoStart', label: () => t('detail.menu.autoStart'), available: () => true, checked: (c) => live(c).auto, run: (c) => void act(`${pathOf(c)}/auto`, { auto: !live(c).auto }) },
   ];
 }
 

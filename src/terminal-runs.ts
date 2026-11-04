@@ -60,7 +60,7 @@ export function forgetTerminals(state: State, own: Terminal[], slug: (terminal: 
 
 /** The terminals of an activity that is gone (#696): pruneWork drops a task's once all its tasks left, withLocalActivities a removed workspace's
  * local one, and neither knows about terminals. A task activity pruneWork keeps with no task (#861) is reached from no row, so its terminals
- * go too: closeMissing and the last stage close none. `before` is the state that still had the activity, for the kill's slug. */
+ * go too: the last stage closes none. `before` is the state that still had the activity, for the kill's slug. */
 export function dropOrphanTerminals(state: State, before: State): Reduced {
   const ids = new Set(state.activities.filter((a) => a.kind !== 'task' || taskOfActivity(state, a.id) !== undefined).map((a) => a.id));
   return forgetTerminals(state, state.terminals.filter((t) => !ids.has(t.activityId)), (t) => terminalSlug(before, t));

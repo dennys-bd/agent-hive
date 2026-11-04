@@ -244,10 +244,10 @@ export async function loadState(hiveDir: string, scope?: WorkspaceNames): Promis
 type SavedTask = Omit<Task, 'item'> & { item: Pick<Item, 'itemId' | 'id' | 'source'> };
 
 // #191: the read model holds a listed task's source fields and boot hydrates them back, so the file keeps only what names the item. A
-// created task's data is the Hive's own, and a missing or orphan one has no model row left, so those keep their whole item; so does an
+// created task's data is the Hive's own, and an orphan one has no model row left, so those keep their whole item; so does an
 // out-of-listing one, which may have no row in the listing it left (#568)
 function leanTask(task: Task): Task | SavedTask {
-  if (task.created || task.missing || task.orphan || task.outOfListing !== undefined) return task;
+  if (task.created || task.orphan || task.outOfListing !== undefined) return task;
   const { itemId, id, source } = task.item;
   return { ...task, item: { itemId, id, ...(source === undefined ? {} : { source }) } };
 }

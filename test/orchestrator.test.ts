@@ -178,17 +178,17 @@ test('occupy writes onStart only when it differs from boardColumn, generates a s
   assert.equal(again.effects[0].type === 'spawn' && again.effects[0].session, 'continue');
 });
 
-test('candidates skips running, missing, blocked tasks and stages without a prompt, a later stage first (#316)', () => {
+test('candidates skips running and blocked tasks and stages without a prompt, an out-of-listing one is a candidate, a later stage first (#316, #568)', () => {
   const tasks: WithWork[] = [
     { item: item(1), stage: 'review', boardColumn: 'In review', auto: true },
     { item: item(2), stage: 'dev', boardColumn: 'Ready', auto: true },
     { item: { ...item(3), blockedBy: ['9'] }, stage: 'spec', boardColumn: 'Backlog', auto: true },
-    { item: item(4), stage: 'spec', boardColumn: 'Backlog', auto: true, missing: true },
+    { item: item(4), stage: 'spec', boardColumn: 'Backlog', auto: true, outOfListing: 'filter' },
     { item: item(5), stage: 'spec', boardColumn: 'Backlog', auto: true, workerId: 's1' },
     { item: item(6), stage: 'dev', boardColumn: 'Ready', auto: true },
     { item: item(7), stage: 'spec', boardColumn: 'Backlog', auto: true },
   ];
-  assert.deepEqual(candidates(movedWork({ tasks, stages: STAGES, ...NO_RUNS, ...ONE }), Date.now()).map((c) => c.item.id), ['2', '6', '7']); // #629: 5's run on its activity
+  assert.deepEqual(candidates(movedWork({ tasks, stages: STAGES, ...NO_RUNS, ...ONE }), Date.now()).map((c) => c.item.id), ['2', '6', '4', '7']); // #629: 5's run on its activity
 });
 
 test('Stop kills the session, writes onFinish when it differs, moves the task to the next stage and frees the worker; fill then runs the next stage', () => {
@@ -216,7 +216,7 @@ test('a stage finishing with close emits sourceAction and advances like a finish
   assert.deepEqual([task(failed, 1)?.stage, work(failed, 1)?.error], ['dev', 'Could not resolve to an Issue']);
 });
 
-test('a stage finishing with archive holds the task in its stage, leaving: sourceAction emitted, the worker closed instead of continued, out of the fill and of the missing mark; start refuses it, closeTask removes it (#286)', () => {
+test('a stage finishing with archive holds the task in its stage, leaving: sourceAction emitted, the worker closed instead of continued, out of the fill and of the merge; start refuses it, closeTask removes it (#286)', () => {
   const stages: LegacyStage[] = [{ ...STAGES[0], onFinish: { board: [{ type: 'archive' }] } }, STAGES[1], STAGES[2]];
   const first = polled(base(1, stages), many(1)).state; // green, one worker, dev continues: a move here would continue in place
   const id = first.workers[0].runId!;
@@ -226,7 +226,7 @@ test('a stage finishing with archive holds the task in its stage, leaving: sourc
   assert.deepEqual([held.stage, held.leaving, work(state, 1)?.workerId, held.boardColumn], ['spec', true, undefined, 'Backlog']);
   assert.equal(state.workers[0].status, 'empty', 'the worker closes as at the end of the pipeline');
   assert.deepEqual(reduce(state, { type: 'setSignal', signal: 'green' }).effects, [], 'fill skips a leaving task');
-  assert.equal(task(polled(state, []).state, 1)?.missing, undefined, 'gone from the listing: not marked missing, the write answers');
+  assert.equal(task(polled(state, []).state, 1)?.outOfListing, undefined, 'gone from the listing: not marked, the write answers');
   assert.equal(started(state, 'board:item1').state, state, 'start refuses it');
   assert.equal(startMode(held, state), 'none', 'the task offers no run while it leaves');
   assert.deepEqual(reduce(state, { type: 'closeTask', taskId: 'board:item1' }).state.tasks, [], 'closeTask takes it out');
@@ -420,7 +420,6 @@ test('reducer never mutates its input', () => {
   const goneSnapshot = JSON.stringify(gone);
   reduce(gone, { type: 'closeTask', taskId: 'board:item1' });
   reduce(gone, { type: 'stop', ptyId: gone.workers[0].runId! });
-  reduce(gone, { type: 'keepTask', taskId: 'board:item2' });
   assert.equal(JSON.stringify(gone), goneSnapshot);
 });
 
@@ -1790,7 +1789,7 @@ test('canOpenSession: any task on the source not being deleted, set up or leavin
   assert.equal(canOpenSession({ ...ok, auto: false }, { ...live, workerId: 's1', stopped: true }), true); // #629: the run fields are the activity's
   assert.equal(canOpenSession({ ...ok, item: { ...item(1), blockedBy: ['9'] } }, live), true, 'a blocker holds the stage run, not what the user opens (#491)');
   const refused: [Task, Activity, string][] = [
-    [{ ...ok, missing: true }, live, 'missing'], [ok, { ...live, deleting: true }, 'deleting'], [{ ...ok, leaving: true }, live, 'leaving'], [ok, { ...live, setup: { consoleId: 'C1', rows: [] } }, 'setting up'],
+    [ok, { ...live, deleting: true }, 'deleting'], [{ ...ok, leaving: true }, live, 'leaving'], [ok, { ...live, setup: { consoleId: 'C1', rows: [] } }, 'setting up'],
   ];
   for (const [c, a, why] of refused) assert.equal(canOpenSession(c, a), false, why);
 });
@@ -1802,7 +1801,7 @@ test('a delete activity stage skips a task a manual Claude session holds, and cl
   assert.deepEqual(polled(parked, [listed(1, 'Done')]).effects.map((e) => e.type), ['deleteActivity']);
 });
 
-test('canDeleteActivity needs something to clean, no worker (a manual session counts, #164) and not deleting; a missing task qualifies (#182, #236)', () => {
+test('canDeleteActivity needs something to clean, no worker (a manual session counts, #164) and not deleting; an out-of-listing task qualifies (#182, #236)', () => {
   const ok: Task = { item: item(1), stage: 'spec', boardColumn: 'Backlog', auto: false };
   const WT: Partial<Activity> = { worktree: '/wt/a' };
   // #629: what the workers point at; task 1's activity holds the worktree and the mark
@@ -1811,7 +1810,6 @@ test('canDeleteActivity needs something to clean, no worker (a manual session co
     return { workers, stages: STAGES, deleteActivity: DELETE_ACTIVITY_DEFAULTS, terminals: [], activities, activityRecords };
   };
   assert.equal(canDeleteActivity(ok, at([])), true);
-  assert.equal(canDeleteActivity({ ...ok, missing: true }, at([])), true, 'a task that left the board can drop its worktree before it is closed');
   const sessionWorker: Worker = { id: 's2', status: 'working', runId: 'w2', activityId: activityIdOf('board:item1'), sessionId: 'manual-session-0001', freeSession: true };
   const refused: [Task, Worker[], Partial<Activity>, string][] = [
     [ok, [], {}, 'nothing to clean'], [ok, [], { ...WT, workerId: 's1' }, 'running'], [ok, [], { ...WT, deleting: true }, 'deleting'],
@@ -1831,7 +1829,6 @@ test('removalBlocker names why the delete activity button cannot run, in the ord
   const deleting = { ...WT, deleting: true as const };
   const cases: [Task, Partial<Activity>, Worker[], DeleteActivityScope, RemovalBlocker | undefined, string][] = [
     [ok, WT, [], DELETE_ACTIVITY_DEFAULTS, undefined, 'stopped with a worktree'],
-    [{ ...ok, missing: true }, WT, [], DELETE_ACTIVITY_DEFAULTS, undefined, 'a task that left the board can still be cleaned'],
     [ok, { ...WT, workerId: 's1' }, [], DELETE_ACTIVITY_DEFAULTS, 'running', 'its worker'],
     [ok, WT, [sessionWorker], DELETE_ACTIVITY_DEFAULTS, 'running', 'a manual claude session (#164)'],
     [ok, deleting, [], DELETE_ACTIVITY_DEFAULTS, 'deleting', 'git already runs on it'],
@@ -2089,7 +2086,7 @@ const manualState = (max: number, extra: Manual = {}): State => {
   return Object.keys(live).length === 0 ? placed : withLive(placed, 1, live);
 };
 
-test('setAuto turns auto off and on: off keeps a free worker under green from taking the task and emits nothing; on fills at once; unknown and missing tasks change nothing (#164, #573)', () => {
+test('setAuto turns auto off and on: off keeps a free worker under green from taking the task and emits nothing; on fills at once; an unknown task changes nothing (#164, #573)', () => {
   const queued = polled(signaled(base(1), 'yellow').state, [listed(1)]).state;
   const off = reduce(queued, { type: 'setAuto', taskId: 'board:item1', auto: false });
   assert.equal(task(off.state, 1)?.auto, false);
@@ -2100,8 +2097,6 @@ test('setAuto turns auto off and on: off keeps a free worker under green from ta
   assert.equal(task(on.state, 1)?.auto, true);
   assert.deepEqual(on.effects.map((e) => e.type), ['spawn'], 'the fill takes it with the stage\'s prompt');
   assert.equal(reduce(queued, { type: 'setAuto', taskId: 'nope', auto: false }).state, queued);
-  const gone: State = { ...queued, tasks: queued.tasks.map((c) => ({ ...c, missing: true as const })) };
-  assert.equal(reduce(gone, { type: 'setAuto', taskId: 'board:item1', auto: false }).state, gone);
 });
 
 test('setAuto on clears the activity\'s stopped mark so the fill may pick the task; off leaves the mark (#892)', () => {
@@ -2372,34 +2367,12 @@ test('closeTask kills every worker of the task, the manual ones too, and frees t
   const one = reduce(given, { type: 'openSession', activityId: workId(given, 'board:item1') }).state;
   const two = reduce(one, { type: 'openSession', activityId: workId(one, 'board:item1') }).state; // appended too, outside the cap (#459)
   const ids = occupied(two).map((s) => s.runId);
-  const gone = polled(two, []).state; // off the source: missing
+  const gone = polled(two, []).state; // off the source: never-started tasks leave, a started one stays out of the listing (#568)
   const { state, effects } = reduce(gone, { type: 'closeTask', taskId: 'board:item1' });
   assert.deepEqual(effects, [...ids.map((ptyId) => ({ type: 'kill', slug: 'hive-1-task-1', ptyId })), ...ids.map((ptyId) => ({ type: 'forgetScrollback', ptyId }))]);
   assert.deepEqual([state.tasks, state.workers.length, occupied(state).length], [[], 1, 0]);
   const local: State = { ...two, tasks: two.tasks.map((c) => ({ ...c, created: true as const })) };
   assert.equal(reduce(local, { type: 'closeTask', taskId: 'board:item1' }).state, local);
-});
-
-test('closeMissing closes the stopped missing tasks of the stage in one reduction, with no effect, and leaves the running and deleting ones, orphans, tasks on the source and other stages; nothing closable keeps the same state (#279)', () => {
-  const at = (n: number, stage: string, extra: Partial<Task> = {}): Task => ({ item: item(n), stage, boardColumn: 'Backlog', auto: true, ...extra });
-  const workers: Worker[] = [
-    { id: 's1', status: 'working', runId: 'worker-2', activityId: activityIdOf('board:item2') }, // task 2's automatic worker
-    { id: 's2', status: 'working', runId: 'worker-3', activityId: activityIdOf('board:item3'), freeSession: true }, // a Claude session on task 3 (#164)
-  ];
-  const state: State = {
-    ...withWork(withWork(withWork(base(2), 'board:item2', { workerId: 's1' }), 'board:item3'), 'board:item5', { deleting: true }), workers, // #629: the activities the workers point at; 2's holds its run, 5's the mark
-    tasks: [
-      at(1, 'spec', { missing: true }), at(2, 'spec', { missing: true }), at(3, 'spec', { missing: true }),
-      at(4, 'spec', { missing: true }), at(5, 'spec', { missing: true }), at(6, 'spec', { orphan: true }),
-      at(7, 'spec'), at(8, 'dev', { missing: true }), at(9, 'spec', { missing: true }),
-    ],
-  };
-  const closed = reduce(state, { type: 'closeMissing', stage: 'spec' });
-  assert.deepEqual(closed.state.tasks.map((c) => c.item.id), ['2', '3', '5', '6', '7', '8']);
-  assert.deepEqual(closed.effects, [], 'none of them holds a worker: nothing to kill, and the worktrees stay (#182)');
-  assert.equal(closed.state.workers, state.workers, 'no worker freed');
-  assert.equal(reduce(closed.state, { type: 'closeMissing', stage: 'spec' }).state, closed.state, 'nothing closable left: same object');
-  assert.equal(reduce(state, { type: 'closeMissing', stage: 'nope' }).state, state, 'unknown stage: same object');
 });
 
 const twoWorkspaces = (max: number): State => ({ ...base(max), workspaces: ['hive', 'site'] });
@@ -2542,7 +2515,7 @@ test('a source\'s poll merges only its own tasks and stamps its polledAt, cleari
   assert.equal('error' in first.syncs.board, false);
   assert.deepEqual(first.syncs.notes, {});
   const notes = reduce(first, { type: 'poll', source: 'notes', items: [] }).state;
-  assert.deepEqual(notes.tasks.map((c) => [c.item.itemId, c.missing === true]), [['board:item1', false]], 'the notes poll leaves board\'s task alone');
+  assert.deepEqual(notes.tasks.map((c) => [c.item.itemId, c.outOfListing]), [['board:item1', undefined]], 'the notes poll leaves board\'s task alone');
   assert.equal(reduce(first, { type: 'poll', source: 'gone', items: [listed(2, 'Ready')] }).state, first);
   const sourceless = reduce({ ...first, syncs: { notes: {} } }, { type: 'poll', items: [] }).state; // source left the Comb (setSources)
   assert.deepEqual(sourceless.tasks, [], 'its board is gone and it never started: it leaves (#568)');
@@ -2559,21 +2532,21 @@ test('pollFailed records the error on its source and leaves every task as it is;
   assert.equal(reduce(first, { type: 'pollFailed', source: 'gone', message: 'x' }).state, first, 'a removed board records nothing');
 });
 
-test('renameSources carries a source to its new name (#278): every task of it, missing and orphan ones too, the running one\'s worker, the source order and its status; another source\'s task stays; a poll of the new name then matches every task', () => {
+test('renameSources carries a source to its new name (#278): every task of it, out-of-listing and orphan ones too, the running one\'s worker, the source order and its status; another source\'s task stays; a poll of the new name then matches every task', () => {
   const first = filled(1, 3).state; // item1 runs in spec, item2 and item3 wait
   const notes: Task = { item: { ...item(9), itemId: 'notes:item9', source: 'notes' }, stage: 'review', boardColumn: 'In review', auto: true };
   const marked: State = {
     ...first,
     syncs: { ...first.syncs, notes: {}, work: { error: 'a removed board of that name' } },
     tasks: [
-      ...first.tasks.map((c) => (c.item.itemId === 'board:item2' ? { ...c, missing: true as const } : c.item.itemId === 'board:item3' ? { ...c, orphan: true as const } : c)),
+      ...first.tasks.map((c) => (c.item.itemId === 'board:item2' ? { ...c, outOfListing: 'filter' as const } : c.item.itemId === 'board:item3' ? { ...c, orphan: true as const } : c)),
       notes,
     ],
   };
   const { state, effects } = reduce(marked, { type: 'renameSources', renames: { board: 'work' } });
   assert.deepEqual(effects, []);
-  assert.deepEqual(state.tasks.map((c) => [c.item.itemId, c.item.source, c.missing, c.orphan]), [
-    ['work:item1', 'work', undefined, undefined], ['work:item2', 'work', true, undefined], ['work:item3', 'work', undefined, true], ['notes:item9', 'notes', undefined, undefined],
+  assert.deepEqual(state.tasks.map((c) => [c.item.itemId, c.item.source, c.outOfListing, c.orphan]), [
+    ['work:item1', 'work', undefined, undefined], ['work:item2', 'work', 'filter', undefined], ['work:item3', 'work', undefined, true], ['notes:item9', 'notes', undefined, undefined],
   ]);
   assert.deepEqual(state.tasks.map((c) => [c.stage, c.item.id]), marked.tasks.map((c) => [c.stage, c.item.id]), 'stage and the shown id stay');
   assert.equal(activityOf(state, 'work:item1')?.slug, work(marked, 1)?.slug, 'the slug stays: its activity\'s, whose record follows the rename (#629)');
@@ -2585,8 +2558,8 @@ test('renameSources carries a source to its new name (#278): every task of it, m
   assert.equal(reduce(marked, { type: 'renameSources', renames: {} }).state, marked, 'an empty map: the same state');
   const onWork = (n: number): SourceItem => ({ item: { ...item(n), itemId: `work:item${n}`, source: 'work' }, column: 'Backlog' });
   const next = reduce(state, { type: 'poll', source: 'work', items: [onWork(1), onWork(2), onWork(3)] }).state;
-  assert.deepEqual(next.tasks.map((c) => [c.item.itemId, c.missing === true]), [
-    ['work:item1', false], ['work:item2', false], ['work:item3', false], ['notes:item9', false],
+  assert.deepEqual(next.tasks.map((c) => [c.item.itemId, c.outOfListing]), [
+    ['work:item1', undefined], ['work:item2', undefined], ['work:item3', undefined], ['notes:item9', undefined],
   ], 'seen again under the new name: no task lost, none added');
 });
 
@@ -3132,7 +3105,7 @@ test('clearSessions: the stage reads as not run again only once no other session
   assert.equal(typeof startMode(task(one, 1)!, one), 'object', 'the other session still ran spec: Continue');
 });
 
-test('openSession claude opens the user\'s own session on any task with a worktree, manual or not, running or not: a free session past red, the session appended, spawnSession emitted; a missing or worktree-less task is refused (#283, #491)', () => {
+test('openSession claude opens the user\'s own session on any task with a worktree, manual or not, running or not: a free session past red, the session appended, spawnSession emitted; a worktree-less task is refused (#283, #491)', () => {
   const red = signaled(manualState(1, { auto: true }), 'red').state;
   const { state, effects } = reduce(red, { type: 'openSession', activityId: workId(red, 'board:item1') });
   const [worker] = occupied(state);
@@ -3142,7 +3115,6 @@ test('openSession claude opens the user\'s own session on any task with a worktr
   const located: State = everyLive(running, { worktree: WORKTREE });
   assert.deepEqual(reduce(located, { type: 'openSession', activityId: workId(located, 'board:item1') }).effects.map((e) => e.type), ['spawnSession'], 'beside its stage run, over the cap');
   const refused: [State, string][] = [
-    [manualState(1, { missing: true }), 'missing'],
     [manualState(1, { worktree: undefined }), 'no worktree yet: the route creates it first'],
   ];
   for (const [s, why] of refused) assert.equal(reduce(s, { type: 'openSession', activityId: workId(s, 'board:item1') }).state, s, why);

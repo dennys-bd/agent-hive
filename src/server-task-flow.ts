@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { UNKNOWN_STAGE_MESSAGE } from './create-task.js';
 import { type LeaveBlocker, leaveBlocker } from './leave-flow.js';
-import { beforeRefusal, DELETING_MESSAGE, MISSING_MESSAGE, type Refusal, refuse, RUNNING_MESSAGE, type TaskRouteDeps, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
+import { beforeRefusal, DELETING_MESSAGE, type Refusal, refuse, RUNNING_MESSAGE, type TaskRouteDeps, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { canMoveToStage, stageOf } from './tasks.js';
 import type { HiveEvent, State, Task } from './types.js';
 
@@ -16,13 +16,12 @@ const ALREADY_OUTSIDE_MESSAGE = 'already outside the flow'; // #566: a no-op ans
 const EPIC_FOLLOWS_MESSAGE = "an epic follows its children's stages"; // #566: followEpics would put it back on the next event
 // Built on call, not at load: server-tasks.ts imports this module, so its messages are not initialized yet while this one loads
 const leaveMessage = (blocker: LeaveBlocker): string => ({
-  outside: ALREADY_OUTSIDE_MESSAGE, missing: MISSING_MESSAGE, epic: EPIC_FOLLOWS_MESSAGE, deleting: DELETING_MESSAGE, running: RUNNING_MESSAGE,
+  outside: ALREADY_OUTSIDE_MESSAGE, epic: EPIC_FOLLOWS_MESSAGE, deleting: DELETING_MESSAGE, running: RUNNING_MESSAGE,
 })[blocker];
 
 /** Why a move to `stage` would be a no-op in the reducer (#164, #366); the task and the stage already exist. A drop's `before` must be a
  * task of that stage: the drop line only ever shows between the target's tasks. */
 function moveToRefusal(state: State, task: Task, stage: string, before?: string): Refusal | undefined {
-  if (task.missing) return { status: HTTP_CONFLICT, message: MISSING_MESSAGE };
   if (!canMoveToStage(task, state)) return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // its stage run holds it, or it is leaving (#286)
   if (stage === task.stage) return { status: HTTP_CONFLICT, message: SAME_STAGE_MESSAGE };
   return before === undefined ? undefined : beforeRefusal(state, before, stage);

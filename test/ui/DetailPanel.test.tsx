@@ -76,7 +76,7 @@ const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200, h
 beforeEach(() => { setLanguage('pt'); comments = { kind: 'unsupported' }; files = []; vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => { vi.unstubAllGlobals(); setShortcuts({}); });
 
-test('excluir atividade is always in ⋯: disabled with the reason in its label for a running task, one with manual sessions, one being cleaned and one with nothing to delete (#236); enabled for a stopped task with a worktree, a missing one included (#182, #210, redesign 06)', async () => {
+test('excluir atividade is always in ⋯: disabled with the reason in its label for a running task, one with manual sessions, one being cleaned and one with nothing to delete (#236); enabled for a stopped task with a worktree (#182, #210, redesign 06)', async () => {
   const user = userEvent.setup();
   const { worktree: _worktree, ...noWorktree } = STOPPED;
   const cases: [State, string | undefined][] = [
@@ -85,7 +85,6 @@ test('excluir atividade is always in ⋯: disabled with the reason in its label 
     [withTasks(IDLE, [{ ...STOPPED, deleting: true }]), BLOCKED.deleting], // #629: the mark and the worktree are the activity's
     [withTasks(IDLE, [noWorktree]), BLOCKED.nothingToDelete],
     [IDLE, undefined],
-    [movedWork({ ...IDLE, tasks: [{ ...STOPPED, missing: true }] }), undefined],
   ];
   for (const [s, reason] of cases) {
     const { unmount } = render(<Panel state={s} initial={TASK} />);

@@ -85,7 +85,7 @@ const isKept = (a: Activity): boolean =>
   a.worktree !== undefined && a.worktreeGone === undefined && a.workerId === undefined && a.deleting === undefined && a.local === undefined
   && a.setup === undefined && a.ci === undefined;
 
-/** A task's activity outlives none of its tasks (#629): once every task its record lists has left the Hive (dropTask, closeTask, closeMissing,
+/** A task's activity outlives none of its tasks (#629): once every task its record lists has left the Hive (dropTask, closeTask,
  * the last stage, a stage that vanished), it goes, and then pruneRecords, unless isKept holds it (#861). Local activities stay. The same object when nothing goes. */
 export function pruneWork(state: State): State {
   const tasks = new Set(state.tasks.map((t) => t.item.itemId));

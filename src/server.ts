@@ -1248,7 +1248,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The protocol routes (#336): blocks, passages and a workspace's render; a passage write rewrites the protocol files on the settings chain
   registerProtocolRoutes(app, { requireLive, queueSave, passages, memory, protocolFor, log });
 
-  // create, start, bases, close, keep, session, session exit, delete-activity, move, reset-order, close-missing, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
+  // create, start, bases, close, session, session exit, delete-activity, move, reset-order, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
   const taskDeps = { treeWatch, exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same

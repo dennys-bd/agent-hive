@@ -37,10 +37,10 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test('the + is disabled while the task sets up, is being cleaned or is gone from the board, and enabled on a blocked task (#491)', () => {
+test('the + is disabled while the task sets up, or is being cleaned, and enabled on a blocked task (#491)', () => {
   const { rerender } = render(wrapped(task({ setup: { consoleId: 'C1', rows: [] } })));
   expect(plus()).toBeDisabled();
-  const refused: Partial<WithWork>[] = [{ deleting: true }, { missing: true }];
+  const refused: Partial<WithWork>[] = [{ deleting: true }];
   for (const extra of refused) {
     rerender(wrapped(task(extra)));
     expect(plus()).toBeDisabled();

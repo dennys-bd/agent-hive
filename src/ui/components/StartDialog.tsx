@@ -41,7 +41,7 @@ export interface StartDialogProps {
 
 const taskPath = (itemId: string): string => `/tasks/${encodeURIComponent(itemId)}`;
 // Candidates: every task the Hive holds, but those leaving it or gone from their source
-const pickable = (state: State): Task[] => state.tasks.filter((c) => !c.missing && !c.leaving && !activityOf(state, c.item.itemId)?.deleting);
+const pickable = (state: State): Task[] => state.tasks.filter((c) => !c.leaving && !activityOf(state, c.item.itemId)?.deleting);
 
 // executar etapas: the stage's start with the base chosen and the run picks (#290: {} while they are the stage's), or its continue once the
 // stage already ran (#283), which resumes the stage's session as it ran. A task this dialog created

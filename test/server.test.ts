@@ -698,6 +698,11 @@ test('a poll reads item() for each started task its listing lacks, by the adapte
   assert.deepEqual([task0(server).outOfListing, task0(server).item.title], ['filter', 'Renamed'], 'a rejected read: the task as it was');
 });
 
+test('POST /tasks/:id/keep and /stages/:name/close-missing are gone: 404 (#568)', async (t) => {
+  const { base } = await start(t);
+  assert.deepEqual([(await postJson(`${base}/tasks/board:I1/keep`)).status, (await postJson(`${base}/stages/fila/close-missing`)).status], [404, 404]);
+});
+
 test('the timer skips the source while nothing could start, and reads it again once the last poll is 5 min old', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval', 'Date'], now: Date.now() }); // the timer and the clock shouldPoll reads
   let polls = 0;
