@@ -64,16 +64,10 @@ const en = {
   'task.moveToWorkspace.locked': 'delete the activity first',
   'task.delete': 'delete task…',
   'task.delete.confirm': 'delete',
-  'flow.allSources': 'all sources', // #542: the flow's header
   'flow.search': 'search tasks',
   'flow.updated': 'updated {time}',
   'flow.refresh': 'refresh',
-  'flow.loops': '↺ loops', // #909: the flow header's toggle of the back edges and loops
-  'flow.loops.hide': 'hide the arrows · the stages sit closer',
-  'flow.loops.show': 'show the loops',
-  'flow.tree': '⑂ tree', // #34: the flow header's toggle of the tree grouping in the stage nodes
-  'flow.tree.ungroup': 'grouped by tree · click to ungroup',
-  'flow.tree.group': 'group by tree',
+  'flow.tree': '⑂ tree', // #34: the focus trail's label
   'flow.tree.children': '{n} children · {done}/{n}', // #34: a parent's card, over its direct children
   'flow.tree.focus': 'focus ›', // #34: on a parent's card; #35 focuses the flow on its subtree
   'flow.tree.none': 'no tree', // #34: a node's group of the tasks in no tree
@@ -3119,16 +3113,10 @@ const pt: Record<MessageKey, string> = {
   'task.moveToWorkspace.locked': 'exclua a atividade antes',
   'task.delete': 'excluir tarefa…',
   'task.delete.confirm': 'excluir',
-  'flow.allSources': 'todas as sources', // #542: the flow's header
   'flow.search': 'buscar tarefas',
   'flow.updated': 'atualizado {time}',
   'flow.refresh': 'atualizar',
-  'flow.loops': '↺ voltas',
-  'flow.loops.hide': 'esconder as setas · as etapas ficam mais juntas',
-  'flow.loops.show': 'mostrar as voltas',
   'flow.tree': '⑂ árvore',
-  'flow.tree.ungroup': 'agrupado por árvore · clique para desagrupar',
-  'flow.tree.group': 'agrupar por árvore',
   'flow.tree.children': '{n} filhas · {done}/{n}',
   'flow.tree.focus': 'focar ›',
   'flow.tree.none': 'sem árvore',
