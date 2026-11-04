@@ -39,6 +39,12 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps }: Flow
   const filters = useStageFilters(state.stages.map((s) => s.name));
   const [editing, setEditing] = useState<string>(); // the stage whose filter dialog is open (#374)
   const [listed, setListed] = useState<string>(); // the node whose list panel is open (#134)
+  // #571: Flow stays mounted across a flow switch, so a panel opened in one flow would reopen on coming back to it; the switch closes it
+  const [listedIn, setListedIn] = useState(drawn.name);
+  if (listedIn !== drawn.name) {
+    setListedIn(drawn.name);
+    setListed(undefined);
+  }
   const [canvas, setCanvas] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState(''); // session-only: it survives a view switch on purpose, the flow stays mounted under Atividades (#596), and clears on an app reload (#542)
   const isShown = useIsFlowShown();

@@ -1000,6 +1000,20 @@ test('a passed flow draws only its stages and its tasks; switching flows keeps t
   expect(screen.getByRole('textbox', { name: 'buscar tarefas' })).toHaveValue('Task');
 });
 
+test('a flow switch closes the open list panel; coming back does not reopen it (#571)', async () => {
+  const user = userEvent.setup();
+  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(400); // lista › shows only on a node that overflows
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(200);
+  onTestFinished(() => vi.restoreAllMocks());
+  const s = twoFlows([task('1', 'dev')]);
+  const { rerender } = render(<Flow state={s} flow={s.flows[0]} />);
+  await user.click(within(screen.getByRole('region', { name: 'fluxograma' })).getByRole('button', { name: 'lista ›' }));
+  expect(screen.getByRole('region', { name: 'dev' })).toBeInTheDocument();
+  rerender(<Flow state={s} flow={s.flows[1]} />);
+  rerender(<Flow state={s} flow={s.flows[0]} />);
+  expect(screen.queryByRole('region', { name: 'dev' })).not.toBeInTheDocument();
+});
+
 test('each flow shows its own stored zoom on a switch (#571)', () => {
   resetViewState({ flowView: { loops: true, canvas: { build: { zoom: 0.8 }, ship: { zoom: 1.2 } } } });
   onTestFinished(() => resetViewState());
