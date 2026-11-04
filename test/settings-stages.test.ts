@@ -5,8 +5,10 @@ import {
   actionLabel, addableActions, badEvaluation, canContinueSession, deletionMoves, emptyRow, emptyStage, entryKey, entryKeys, entryLabel, fromKeys, stageDraft, stageFrom, stageMeta, stageRenamesFrom, withAction, withEntry, withoutAction,
 } from '../src/ui/lib/settings-stages.js';
 import { draftVerdicts } from '../src/ui/lib/settings-transitions.js';
-import type { SourceAction, Stage, Task } from '../src/types.js';
+import type { Flow, SourceAction, Stage, Task } from '../src/types.js';
 
+const task = (n: number, stage: string, column: string): Task => ({ item: { itemId: `work:${n}`, id: String(n), title: '', body: '', url: '', source: 'work' }, stage, boardColumn: column, auto: true });
+const inMain = (stages: Stage[]): Flow[] => [{ name: 'main', stages, transitions: [] }];
 const move = (column: string): SourceAction => ({ type: 'move', column });
 const CLOSE: SourceAction = { type: 'close' };
 const ARCHIVE: SourceAction = { type: 'archive' };
@@ -156,9 +158,16 @@ test('deletionMoves counts the tasks of the deleted stages by destination, under
   const saved: Stage[] = [{ name: 'spec', from: { work: ['Backlog'] } }, { name: 'dev', from: { work: ['Ready'] } }, { name: 'qa', from: { work: ['QA'] } }, { name: 'done', from: { work: ['Done'] } }];
   const drafts = [{ ...stageDraft(saved[0], ROWS), name: 'Spec' }, stageDraft(saved[3], ROWS)]; // spec renamed, dev and qa deleted
   const next = drafts.map((d) => stageFrom(d, ROWS));
-  const at = (n: number, stage: string, column: string): Task => ({ item: { itemId: `work:${n}`, id: String(n), title: '', body: '', url: '', source: 'work' }, stage, boardColumn: column, auto: true });
-  assert.deepEqual(deletionMoves(drafts, saved, next, [at(1, 'dev', 'Ready'), at(2, 'qa', 'QA'), at(3, 'done', 'Done'), at(4, 'qa', 'Done')]), [{ stage: 'Spec', n: 2 }, { stage: 'done', n: 1 }]);
-  assert.deepEqual(deletionMoves(drafts, saved, next, [at(3, 'done', 'Done')]), [], 'no deleted stage holds a task');
+  assert.deepEqual(deletionMoves(drafts, inMain(saved), inMain(next), [task(1, 'dev', 'Ready'), task(2, 'qa', 'QA'), task(3, 'done', 'Done'), task(4, 'qa', 'Done')]), [{ stage: 'Spec', n: 2 }, { stage: 'done', n: 1 }]);
+  assert.deepEqual(deletionMoves(drafts, inMain(saved), inMain(next), [task(3, 'done', 'Done')]), [], 'no deleted stage holds a task');
+});
+
+test('deletionMoves keeps a deleted stage\'s tasks in its own flow (#565)', () => {
+  const s = (name: string): Stage => ({ name, from: {} });
+  const saved: Flow[] = [{ name: 'feature', stages: [s('spec'), s('build')], transitions: [] }, { name: 'bug', stages: [s('triage'), s('fix')], transitions: [] }];
+  const drafts = [saved[0].stages[0], saved[0].stages[1], saved[1].stages[1]].map((c) => stageDraft(c, ROWS));
+  const next: Flow[] = [saved[0], { ...saved[1], stages: [saved[1].stages[1]] }];
+  assert.deepEqual(deletionMoves(drafts, saved, next, [task(1, 'triage', '')]), [{ stage: 'fix', n: 1 }]);
 });
 
 test('a skill stage keeps its skill, its specialized agent and every prompt key through the draft, and sends no prompt (#710)', () => {

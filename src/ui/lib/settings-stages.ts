@@ -1,7 +1,8 @@
+import { flatten } from '../../flows.js';
 import { destinationOf } from '../../stage-delete.js';
 import { type HiveAction, rubricLines, SCORE_MAX } from '../../stage-agent.js';
 import { isGate, onSource } from '../../tasks.js';
-import { type AgentId, type CiChecks, DEFAULT_AGENT, type EvaluateRow, SOURCE_ACTIONS, type SourceAction, type SourceFields, isLeaving, type ItemAction, LEAVING_ACTIONS, type OnMissing, type Stage, type StageAction, type Task } from '../../types.js';
+import { type AgentId, type CiChecks, DEFAULT_AGENT, type EvaluateRow, SOURCE_ACTIONS, type SourceAction, type SourceFields, isLeaving, type ItemAction, LEAVING_ACTIONS, type Flow, type OnMissing, type Stage, type StageAction, type Task } from '../../types.js';
 import { t, tPlural } from '../i18n.js';
 
 // Settings › fluxo's stage editor (#515): the draft ↔ Stage edges and the action-list rules the entra / executa / sai blocks offer, out of
@@ -194,14 +195,16 @@ export const stageRenamesFrom = (drafts: readonly StageDraft[]): Record<string, 
 /** How many tasks a save's deleted stages send to one stage (#861). */
 export interface StageMove { stage: string; n: number }
 
-/** Where a save's deleted stages send their tasks (#861), per destination, under the new names: `saved` is the config's stages, `next` the ones
+/** Where a save's deleted stages send their tasks (#861), per destination, under the new names: `saved` is the config's flows, `next` the ones
  * the save sends; [] when no deleted stage holds a task. The reducer's own rule, so the confirmation says what the save will do. */
-export function deletionMoves(drafts: readonly StageDraft[], saved: readonly Stage[], next: Stage[], tasks: readonly Task[]): StageMove[] {
+export function deletionMoves(drafts: readonly StageDraft[], saved: readonly Flow[], next: readonly Flow[], tasks: readonly Task[]): StageMove[] {
   const renames = stageRenamesFrom(drafts);
   const kept = new Set(drafts.flatMap((d) => (d.savedName === undefined ? [] : [d.savedName])));
-  const old = saved.map((s) => ({ name: Object.hasOwn(renames, s.name) ? renames[s.name] : s.name }));
+  const renamed = (name: string): string => (Object.hasOwn(renames, name) ? renames[name] : name);
+  const old = saved.map((f) => ({ ...f, stages: f.stages.map((s) => ({ ...s, name: renamed(s.name) })) }));
+  const savedStages = flatten(saved).stages;
   const destinations = tasks.flatMap((task) => {
-    if (kept.has(task.stage) || !saved.some((s) => s.name === task.stage)) return [];
+    if (kept.has(task.stage) || !savedStages.some((s) => s.name === task.stage)) return [];
     const to = destinationOf(task, task.stage, old, next);
     return to === undefined ? [] : [to.name];
   });
