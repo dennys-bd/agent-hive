@@ -3003,6 +3003,7 @@ const en = {
   'benchmark.run.origin': 'origin local',
   'benchmark.run.environment': 'environment · local',
   'benchmark.run.arm': 'arm {letter} · pair {round} of {pairs}',
+  'back.list': 'back', // #571: a page's way back to the list it was opened from
 };
 
 export type MessageKey = keyof typeof en;
@@ -6000,6 +6001,7 @@ const pt: Record<MessageKey, string> = {
   'benchmark.run.origin': 'origin local',
   'benchmark.run.environment': 'ambiente · local',
   'benchmark.run.arm': 'braço {letter} · par {round} de {pairs}',
+  'back.list': 'voltar',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
