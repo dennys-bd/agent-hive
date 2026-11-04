@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 // The rows in their order, by their title: the full owner/name
-const rowNames = (): string[] => screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed')).map((b) => b.title);
+const rowNames = (): string[] => screen.queryAllByRole('button').filter((b) => b.hasAttribute('aria-pressed')).map((b) => b.title);
 // The mark a child row hangs under (handoff §4d): fork ⑂ (git-fork), nested ↳ (corner-down-right); none on an ordinary row
 const mark = (title: string): string | null => screen.getByTitle(title).querySelector('[data-child]')?.getAttribute('data-child') ?? null;
 
@@ -64,7 +64,7 @@ test('pin and unpin in the ⋯ move a row and save the pins; abrir no github ope
   expect(open).toHaveBeenCalledWith('https://github.com/acme/g', '_blank', 'noreferrer');
 });
 
-test('a row\'s click picks its repository and the picked row is pressed; with nothing listed the section is hidden (#757)', async () => {
+test('a row\'s click picks its repository and the picked row is pressed; with nothing listed no row shows (#757, #572)', async () => {
   const user = userEvent.setup();
   const onPick = vi.fn();
   const { unmount } = render(<FlowRepositories selected="acme/c" onPick={onPick} />);
@@ -77,7 +77,7 @@ test('a row\'s click picks its repository and the picked row is pressed; with no
   render(<FlowRepositories onPick={onPick} />);
   await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   // the module's list still holds the last read until the empty answer lands
-  await vi.waitFor(() => expect(screen.queryByText('repositórios')).not.toBeInTheDocument());
+  await vi.waitFor(() => expect(rowNames()).toEqual([]));
 });
 
 test('a fork workspace\'s original and fork stay together, the original first, named in full, the fork under ⑂; the pair sorts by its newest activity and a pin on one pins both (#854)', async () => {

@@ -193,7 +193,7 @@ test('the flowchart, a repository\'s lists and the source table show no back but
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
   await main().findByText('2 issues · 0 no fluxo');
   expect(backButton()).toBeNull();
-  await user.click(automation().getByRole('button', { name: /^todas/ }));
+  await user.click(automation().getByRole('button', { name: /^main/ }));
   expect(backButton()).toBeNull(); // the flowchart
 });
 

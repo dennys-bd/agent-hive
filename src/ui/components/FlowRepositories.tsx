@@ -68,7 +68,7 @@ function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
 }
 
 /** The repositories of the flow sidebar (#757, handoff 02), below the sources: the pinned ones in pin order, then the rest by last activity,
- * RECENT_SHOWN of them and +N for the others. Read when it mounts; a pick here clears the source pick. Hidden while none is listed. */
+ * RECENT_SHOWN of them and +N for the others. Its header is the tasks sidebar's section (#572); with none listed it renders nothing inside it. Read when it mounts. */
 export function FlowRepositories({ selected, onPick }: { selected?: string; onPick(repository: string): void }) {
   const repositories = useRepositories();
   const [pinned, pin] = usePinned();
@@ -83,8 +83,7 @@ export function FlowRepositories({ selected, onPick }: { selected?: string; onPi
     <RepoRow key={repo.repository} repo={repo} isSelected={selected === repo.repository} isPinned={pinned.includes(repo.repository)} onPick={onPick} onPin={pin} />
   );
   return (
-    <section aria-label={t('repos.title')} className="flex min-h-0 flex-col gap-0.5">
-      <div className="flex items-center justify-between pb-1.5 text-muted-foreground text-xs"><span>{t('repos.title')}</span><span>{t('repos.prs')}</span></div>
+    <div className="flex flex-col gap-0.5">
       {groups.pinned.length > 0 && <p className={GROUP}>{t('repos.pinned')}</p>}
       {groups.pinned.map(row)}
       {recent.length > 0 && <p className={`${GROUP} ${groups.pinned.length > 0 ? 'pt-2' : ''}`}>{t('repos.recent')}</p>}
@@ -94,6 +93,6 @@ export function FlowRepositories({ selected, onPick }: { selected?: string; onPi
           {t('repos.more', { n: hidden })}
         </button>
       )}
-    </section>
+    </div>
   );
 }

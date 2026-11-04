@@ -6,7 +6,7 @@ import type { SourcesNav } from '@/components/FlowSources';
 import { FIRST_CENTER, type TasksCenter, backOf, centerOfTask, resolveCenter, useTasksCenter } from '@/hooks/use-tasks-center';
 import { forgetProjects } from '@/hooks/use-project';
 import { setLanguage } from '@/i18n';
-import { resetViewState } from '@/lib/view-state';
+import { readView, resetViewState } from '@/lib/view-state';
 import { flatten } from '../../src/flows';
 import type { Flow, ProjectView, RepoSummary, SourceConfig, Stage, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../../src/types';
@@ -144,7 +144,7 @@ const goToRow = async (user: ReturnType<typeof userEvent.setup>, title: string):
   await user.click(within((await main().findByText(title)).closest('tr')!).getByRole('button', { name: 'fluxo ›' }));
 };
 
-test("a source row opens its table under the source header, with no tabs; todas shows the first flow's flowchart (#571)", async () => {
+test("a source row opens its table under the source header, with no tabs; the first flow's row shows its flowchart (#571)", async () => {
   const user = userEvent.setup();
   render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showTasks();
@@ -156,9 +156,9 @@ test("a source row opens its table under the source header, with no tabs; todas 
   expect(bar().getByText('github project · acme')).toBeInTheDocument();
   expect(bar().queryAllByRole('tab')).toEqual([]);
   expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
-  await user.click(automation().getByRole('button', { name: /^todas/ }));
+  await user.click(automation().getByRole('button', { name: /^build/ }));
   expect(stageNode('dev')).not.toBeNull();
-  expect(automation().getByRole('button', { name: /^todas/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(automation().getByRole('button', { name: /^build/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('fluxo › on a task of the second flow shows that flowchart and selects it; on a task in no flow, the outside placeholder (#571)', async () => {
@@ -207,11 +207,36 @@ test('the outside placeholder has exibir with no voltas rows, counting only the 
   await user.click(pop.getByRole('checkbox', { name: 'hive' }));
   expect(bar().getByText('roadmap')).toBeInTheDocument();
   await user.keyboard('{Escape}');
-  await user.click(automation().getByRole('button', { name: /^todas/ }));
+  await user.click(automation().getByRole('button', { name: /^build/ }));
   expect(stageNode('dev')).not.toBeNull();
   expect(bar().getByText('roadmap')).toBeInTheDocument(); // one value for every view
   await user.click(bar().getByRole('button', { name: 'exibir' }));
   pop = within(screen.getByRole('dialog'));
   expect(pop.getByRole('radiogroup', { name: 'voltas' })).toBeInTheDocument();
   expect(pop.getByRole('checkbox', { name: 'hive' })).not.toBeChecked();
+});
+
+test('⌥0 opens todas em lista and ⌥1 the hive source, while the tasks view shows (#572)', () => {
+  render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
+  showTasks();
+  fireEvent.keyDown(window, { key: '™', code: 'Digit0', altKey: true });
+  expect(automation().getByRole('button', { name: /^todas em lista/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(main().getByText('em breve')).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: '™', code: 'Digit1', altKey: true });
+  expect(automation().getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(bar().getByText('hive')).toHaveClass('font-semibold');
+});
+
+test('mostrar só esta in a source\'s ⋯ leaves only that source on: the header legend names it and the center stays (#572)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const user = userEvent.setup();
+  render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
+  showTasks();
+  automation().getByRole('button', { name: 'ações de roadmap' }).focus();
+  await user.keyboard('{Enter}');
+  await user.click(screen.getByRole('menuitem', { name: 'mostrar só esta' }));
+  expect(bar().getByText('roadmap')).toBeInTheDocument(); // the legend: the one source on (#574 decision 10)
+  expect(stageNode('dev')).not.toBeNull();
+  expect(readView('flowView')).toMatchObject({ sourcesOff: ['hive'] });
 });
