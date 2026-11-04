@@ -3,6 +3,8 @@ import { activityOf } from '../../activities';
 import type { Flow as FlowConfig, FilterRule, Stage, State, Task } from '../../types';
 import { FlowChart } from '@/components/FlowChart';
 import { FlowHeader } from '@/components/FlowHeader';
+import type { SourcesNav } from '@/components/FlowSources';
+import { displayProps } from '@/components/tasks/DisplayPopover';
 import { FlowListPanel } from '@/components/FlowListPanel';
 import { FlowNode } from '@/components/FlowNode';
 import { FlowZoom } from '@/components/FlowZoom';
@@ -19,7 +21,7 @@ import { visibleUnderFilter } from '@/lib/stage-filters';
 import { focusTrail } from '@/lib/tree-focus';
 import { hasTree } from '@/lib/tree-groups';
 
-interface FlowProps { state: State; flow: FlowConfig; selectedId?: string; onOpen?(taskId: string): void; stageCaps?: Record<string, number>; display?: DisplayControls } // display: Center's one value (#574); absent (a test harness): the stored options, nothing to change them; flow: the one drawn (#571); selectedId: the detail panel's task (#542); stageCaps: the effective caps, which a node shows as n/cap (#727)
+interface FlowProps { state: State; flow: FlowConfig; selectedId?: string; onOpen?(taskId: string): void; stageCaps?: Record<string, number>; display?: DisplayControls; sources?: SourcesNav } // display: Center's one value (#574); absent (a test harness): the stored options, nothing to change them; sources: the popover's rows (#574), absent: hive alone; flow: the one drawn (#571); selectedId: the detail panel's task (#542); stageCaps: the effective caps, which a node shows as n/cap (#727)
 
 /** What a stage shows (#374, #542): its tasks in the Hive's order, those the view filter lets through, and
  * those the search lets through after it. */
@@ -34,7 +36,7 @@ export function stageTasks(state: State, stage: string, rules: FilterRule[], sea
  * list panel over its right. Drag a task to reorder or, for a task canMoveToStage allows, onto another node (#366, #708); the ⋯ offers the
  * source's order back and the stage's view filter (#374). A parent's focus › dims all but its subtree, with a trail to climb back and leave
  * (#35). The canvas is the task menus' collision boundary. */
-export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, display }: FlowProps) {
+export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, display, sources }: FlowProps) {
   const drag = useRef<Dragging | undefined>(undefined);
   const filters = useStageFilters(state.stages.map((s) => s.name));
   const [editing, setEditing] = useState<string>(); // the stage whose filter dialog is open (#374)
@@ -71,7 +73,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
   const listedTasks = listedStage && of(listedStage.name);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} loops={isDrawingLoops} onLoops={display && (() => display.set({ loops: isDrawingLoops ? 'none' : 'all' }))} tree={isTree} onTree={display && (() => display.set({ tree: !isTree }))} />
+      <FlowHeader state={state} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} {...(display ? displayProps({ display, sources, tasks: shown, isTree, hasLoops: true }) : {})} />
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart

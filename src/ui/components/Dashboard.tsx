@@ -60,7 +60,7 @@ function SyncErrors({ syncs }: { syncs: Record<string, SourceSync> }) {
   );
 }
 
-interface CenterProps { state: State; selected?: Selection; nav: TasksNav; repositories: RepoSummary[]; onSelect(selection: Selection): void; stageCaps: Record<string, number> }
+interface CenterProps { state: State; selected?: Selection; nav: TasksNav; repositories: RepoSummary[]; onSelect(selection: Selection): void; stageCaps: Record<string, number>; sources: SourcesNav }
 type RepoCenter = Extract<TasksCenter, { kind: 'repo' }>;
 
 // The center under a repository (#757, #758): its PR list or one PR's page under PRs, its issues or one issue's page under issues. A page keeps
@@ -100,12 +100,12 @@ function TasksSoon({ state }: { state: State }) {
 }
 
 // The center under Tarefas (#571): what the resolved TasksCenter names. Flow is the same element across flows, so a switch keeps it mounted (decision 9)
-function Center({ state, selected, nav, repositories, onSelect, stageCaps }: CenterProps) {
+function Center({ state, selected, nav, repositories, onSelect, stageCaps, sources }: CenterProps) {
   const display = useDisplayOptions(); // #574 decision 13: one owner for Flow and the placeholders
   const { center, repo, source } = nav;
   if (center.kind === 'repo' && repo) return repoCenter(state, nav, repo, center);
   if (center.kind === 'source' && source) return sourceCenter(state, nav, source, repositories, center.issue);
-  if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} display={display} />;
+  if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} display={display} sources={sources} />;
   return <TasksSoon state={state} />;
 }
 
@@ -171,7 +171,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         >
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             {hasSource && <SyncErrors syncs={state.syncs} />}
-            <Center state={state} selected={selected} nav={centerNav} repositories={repositories} onSelect={onSelect} stageCaps={limits.stageCaps} />
+            <Center state={state} selected={selected} nav={centerNav} repositories={repositories} onSelect={onSelect} stageCaps={limits.stageCaps} sources={sources ?? NO_SOURCES} />
           </main>
         </MainDock>
       </WorkerlessContext.Provider>

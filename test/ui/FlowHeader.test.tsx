@@ -6,11 +6,13 @@ import { Flow } from '@/components/Flow';
 import { HeaderSlotProvider, useHeaderSlotRef } from '@/components/HeaderSlot';
 import { FlowShownContext } from '@/components/MainDock';
 import { setLanguage } from '@/i18n';
+import { resetViewState } from '@/lib/view-state';
 import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { SourceConfig, Task, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { type WithWork, movedWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { DisplayedFlow } from './displayed-flow.js';
 import { firstFlow } from './flow-of.js';
 
 const stages: Stage[] = [{ name: 'dev', from: { roadmap: ['Ready'], notes: ['todo'] }, prompt: '/hive-build {url}' }];
@@ -154,32 +156,6 @@ test('with a repository the header shows its workspace square, its name, its wor
   expect(onTab).toHaveBeenCalledWith('issues');
 });
 
-test('↺ voltas shows only with onLoops, after the spacer and before the search: pressed with its hide title while on, its show title while off; a click calls onLoops (#909)', async () => {
-  const user = userEvent.setup();
-  const onLoops = vi.fn();
-  const { rerender } = render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} />);
-  expect(within(header()).queryByRole('button', { name: '↺ voltas' })).not.toBeInTheDocument();
-  rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops onLoops={onLoops} />);
-  const loops = within(header()).getByRole('button', { name: '↺ voltas' });
-  expect(loops.nextElementSibling).toBe(screen.getByRole('textbox', { name: 'buscar tarefas' }).closest('label'));
-  expect(loops).toHaveAttribute('aria-pressed', 'true');
-  expect(loops).toHaveAttribute('title', 'esconder as setas · as etapas ficam mais juntas');
-  expect(loops).toHaveClass('bg-muted', 'text-foreground');
-  await user.click(loops);
-  expect(onLoops).toHaveBeenCalledOnce();
-  rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops={false} onLoops={onLoops} />);
-  expect(loops).toHaveAttribute('aria-pressed', 'false');
-  expect(loops).toHaveAttribute('title', 'mostrar as voltas');
-  expect(loops).toHaveClass('bg-transparent', 'text-muted-foreground');
-  setLanguage('en');
-  rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops={false} onLoops={onLoops} />);
-  expect(screen.getByRole('button', { name: '↺ loops' })).toHaveAttribute('title', 'show the loops');
-  rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops onLoops={onLoops} />);
-  expect(screen.getByRole('button', { name: '↺ loops' })).toHaveAttribute('title', 'hide the arrows · the stages sit closer');
-});
-
-const BACK_KEY = { key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }; // goBack off macOS: jsdom is not macOS
-
 test('a back entry starts the header with ‹ and its label, then a 1×14px divider, before the source\'s name; its title names the key as bound, and a click goes back (#911)', async () => {
   const user = userEvent.setup();
   const onBack = vi.fn();
@@ -202,6 +178,8 @@ test('a back entry starts the header with ‹ and its label, then a 1×14px divi
   expect(back).toHaveAttribute('title', 'voltar · Alt+['); // a rebound key shows
 });
 
+const BACK_KEY = { key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }; // goBack off macOS: jsdom is not macOS
+
 test('Alt+Left and the mouse\'s back button go back only while a back button shows on a shown flow; another mouse button does nothing (#911)', () => {
   const onBack = vi.fn();
   const page = (isShown: boolean, back?: BackLink) => (
@@ -219,25 +197,6 @@ test('Alt+Left and the mouse\'s back button go back only while a back button sho
   expect(fireEvent.keyDown(window, BACK_KEY)).toBe(true);
   expect(fireEvent.mouseUp(window, { button: 3 })).toBe(true);
   expect(onBack).toHaveBeenCalledTimes(2);
-});
-
-test('⑂ árvore shows only with onTree, right before ↺ voltas, pressed with its ungroup title when on and its group title when off; a click calls onTree (#34)', async () => {
-  const user = userEvent.setup();
-  const onTree = vi.fn();
-  const { rerender } = render(<FlowHeader state={state(tasks)} tasks={tasks} onLoops={() => {}} />);
-  expect(screen.queryByRole('button', { name: '⑂ árvore' })).not.toBeInTheDocument();
-  rerender(<FlowHeader state={state(tasks)} tasks={tasks} tree onTree={onTree} onLoops={() => {}} />);
-  const tree = screen.getByRole('button', { name: '⑂ árvore' });
-  expect(tree).toHaveAttribute('aria-pressed', 'true');
-  expect(tree).toHaveAttribute('title', 'agrupado por árvore · clique para desagrupar');
-  expect(tree).toHaveClass('bg-muted', 'text-foreground');
-  expect(tree.nextElementSibling).toBe(screen.getByRole('button', { name: '↺ voltas' }));
-  rerender(<FlowHeader state={state(tasks)} tasks={tasks} tree={false} onTree={onTree} onLoops={() => {}} />);
-  expect(tree).toHaveAttribute('aria-pressed', 'false');
-  expect(tree).toHaveAttribute('title', 'agrupar por árvore');
-  expect(tree).toHaveClass('bg-transparent', 'text-muted-foreground');
-  await user.click(tree);
-  expect(onTree).toHaveBeenCalledOnce();
 });
 
 test('⌘F leaves buscar tarefas alone while the Settings page is open, and the key goes on unprevented (#689)', () => {
@@ -298,4 +257,31 @@ test('in the tasks mode the display slot sits right after the sources legend; Gi
   expect(within(header()).getByText('todas as sources').nextElementSibling).toBe(within(header()).getByRole('button', { name: 'exibir' }));
   expect(within(header()).getByRole('textbox', { name: 'buscar tarefas' })).toBeInTheDocument();
   expect(within(header()).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
+});
+
+const legendOf = (): Element | null => within(header()).getByText('tarefas', { selector: 'span' }).nextElementSibling;
+
+test('the tasks legend reads what it is given, todas as sources without one, right before the display slot; no ↺ or ⑂ button is left (#574)', () => {
+  const slot = <button type="button">exibir</button>;
+  const { rerender } = render(<FlowHeader state={state(tasks)} tasks={tasks} display={slot} />);
+  expect(legendOf()).toHaveTextContent('todas as sources');
+  rerender(<FlowHeader state={state(tasks)} tasks={tasks} legend="hive · roadmap" display={slot} />);
+  expect(legendOf()).toHaveTextContent('hive · roadmap');
+  expect(legendOf()?.nextElementSibling).toBe(within(header()).getByRole('button', { name: 'exibir' }));
+  expect(within(header()).queryByRole('button', { name: /^(↺ voltas|⑂ árvore)$/ })).not.toBeInTheDocument();
+});
+
+test('the flowchart\'s exibir counts the flow\'s tasks by source and the legend follows its checkboxes (#574)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const user = userEvent.setup();
+  render(<DisplayedFlow state={state(tasks)} flow={firstFlow(state(tasks))} sources={{ sources: [ROADMAP], auth: 'cli' }} />);
+  await user.click(within(header()).getByRole('button', { name: 'exibir' }));
+  const pop = within(screen.getByRole('dialog'));
+  expect(pop.getByRole('checkbox', { name: 'roadmap' }).closest('label')).toHaveTextContent(/2$/); // #1 and #3; #2's notes is no configured source
+  expect(pop.getByRole('radiogroup', { name: 'voltas' })).toBeInTheDocument();
+  await user.click(pop.getByRole('checkbox', { name: 'hive' }));
+  expect(legendOf()).toHaveTextContent('roadmap');
+  await user.click(pop.getByRole('checkbox', { name: 'roadmap' }));
+  expect(legendOf()).toHaveTextContent('nenhuma source');
 });
