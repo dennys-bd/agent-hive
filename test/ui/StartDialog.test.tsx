@@ -540,6 +540,14 @@ test('Iniciar #id on a task with no stage left to run opens on sessão livre tho
   expect(free).toBeChecked();
 });
 
+test('Iniciar #id on a task outside the flow keeps executar etapas off and says it has no flow, never a placeholder stage (#566)', () => {
+  const { stage: _stage, ...outside } = HERO;
+  render(<StartDialog state={state([LANDING, outside])} taskId="I9" initialMode="stages" onClose={vi.fn()} />);
+  expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeDisabled();
+  expect(screen.getByText('a tarefa está sem fluxo: leve-a a uma etapa para executar etapas.')).toBeInTheDocument();
+  expect(screen.queryByText(/nenhuma etapa para executar/)).not.toBeInTheDocument();
+});
+
 test('the dialog\'s children may shrink below their content, so a long title truncates, and the closed task field carries the picked task\'s full label as its tooltip (#774)', async () => {
   const user = userEvent.setup();
   render(<StartDialog state={state()} onClose={vi.fn()} />);

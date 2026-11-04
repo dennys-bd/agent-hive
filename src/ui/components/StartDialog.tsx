@@ -271,7 +271,9 @@ export function StartDialog(props: StartDialogProps) {
   const id = useId();
   const { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held, view } = useStart(props);
   const progress = task && view.progress;
-  const stagesOff = task === undefined || hasStagesToRun(task.stage, state.stages) ? undefined : t('start.noStages', { stage: task.stage ?? '—' });
+  // #566: a task outside the flow has no stage to run from; the destination block (3.5) moves it into one
+  const stagesOff = task === undefined || hasStagesToRun(task.stage, state.stages) ? undefined
+    : task.stage === undefined ? t('start.outsideFlow') : t('start.noStages', { stage: task.stage });
   // #316: the lists of the workspace the run goes in: the task's, else the one the base field picked
   const runWorkspace = (task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks)) ?? base.choice.workspace;
   // #774: a pick with nothing to run lands on sessão livre; any other pick leaves the mode where the user put it
