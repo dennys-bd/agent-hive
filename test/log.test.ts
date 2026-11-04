@@ -174,6 +174,7 @@ test('describeEvent names the hook, worker and tool but never the tool_input, th
 
 test('describeEvent summarises every other event with names, ids and counts only', () => {
   assert.equal(describeEvent({ type: 'boot' }), 'boot');
+  assert.equal(describeEvent({ type: 'leaveFlow', taskId: 'board:I1' }), 'leaveFlow #board:I1'); // #566
   assert.equal(describeEvent({ type: 'poll', source: 'board', items: [item('1'), item('2')].map((t) => ({ item: t, column: 'Ready' })) }), 'poll source=board items=2 ids=1,2');
   const ids = Array.from({ length: 25 }, (_, i) => String(i + 1));
   assert.equal(describeEvent({ type: 'poll', source: 'board', items: ids.map((id) => ({ item: item(id), column: 'Ready' })) }), `poll source=board items=25 ids=${ids.slice(0, 20).join(',')}`);

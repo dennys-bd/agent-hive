@@ -3741,3 +3741,29 @@ test('createTask without a stage creates a task outside the flow: no stage, no e
   assert.deepEqual([made.item.id, made.stage, made.enteredAt, made.item.origin, state.localCount], ['HIVE-1', undefined, undefined, 'board:item9', 1]);
   assert.deepEqual(effects, [], 'a free worker, and still no spawn');
 });
+
+test('leaveFlow takes a stopped task out of the flow: stage, enteredAt, pin, tries, tryLog, the arrow, an awaited approval and the handoff marks go; worktree, sessions, error and stage start stay; no effect (#566)', () => {
+  const given = withMade(manualState(1, { pinned: true, enteredAt: PAST }), 1, { sessions: [keptSession('s1')] });
+  const marked = withLive(given, 1, {
+    tries: { k: 1 }, tryLog: [], via: 'k', approval: { since: PAST }, handoffPending: 'k', handoffFeedback: 'f', error: 'boom', stageStart: { stage: 'spec', commit: 'a'.repeat(40) },
+  });
+  const { state, effects } = reduce(marked, { type: 'leaveFlow', taskId: 'board:item1' });
+  const left = task(state, 1)!;
+  assert.deepEqual([left.stage, left.enteredAt, left.pinned], [undefined, undefined, undefined]);
+  for (const key of ['tries', 'tryLog', 'via', 'approval', 'handoffPending', 'handoffFeedback'] as const) assert.equal(holds(state, 1, key), false, key);
+  assert.deepEqual([work(state, 1)?.worktree, work(state, 1)?.error, work(state, 1)?.stageStart?.stage], [WORKTREE, 'boom', 'spec']);
+  assert.deepEqual(sessionsN(state, 1).map((s) => s.id), ['s1']);
+  assert.deepEqual(effects, []);
+});
+
+test('leaveFlow is ignored while a stage run holds the task, and for a missing task, a show epic, a task already outside and one whose activity is being deleted (#566)', () => {
+  const epic = polled(base(0), [{ item: { ...item(1), epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' }]).state;
+  const cases: Record<string, State> = {
+    running: filled(1, 1).state,
+    missing: polled(manualState(1), []).state,
+    epic,
+    outside: reduce(manualState(1), { type: 'leaveFlow', taskId: 'board:item1' }).state,
+    deleting: withLive(manualState(1), 1, { deleting: true }),
+  };
+  for (const [name, s] of Object.entries(cases)) assert.equal(reduce(s, { type: 'leaveFlow', taskId: 'board:item1' }).state, s, name);
+});

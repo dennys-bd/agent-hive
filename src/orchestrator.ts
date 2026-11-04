@@ -18,6 +18,7 @@ import { answer, answerFeedback, approvalExpired, approve, awaitApproval, extend
 import { askHandoff, needsHandoff, pendingEnd, withoutPending } from './handoff.js';
 import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
 import { exitOf, transitionByKey } from './transitions.js';
+import { leaveFlow } from './leave-flow.js';
 import { beingDeleted, clearedError, deletingOf, sourceWrites, continueInPlace, dropActivity, dropWorker, keptMarks, ensureActivity, emptyWorker, takeWorker, releaseWorker, liveWorker, none, occupiedCount, occupy, workerCount, patch, type Reduced, releaseRun, settleEntries, shouldWrite, slugTaken, unmarked, withError, withTask } from './reducer-kit.js';
 import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, forgetUnopenedLocal, newLocalSession, openLocalSession, settleCopy, withLocalTurn } from './session-copy.js';
 import { clearSession, renameSession } from './session-clear.js';
@@ -209,6 +210,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'createActivity': return createActivity(state, event); // no fill: the work is born, no run starts (#629)
     case 'worktreeReady': return worktreeReady(state, event); // no fill: a task with auto off is never a candidate
     case 'moveToStage': return fill(moveToStage(state, event)); // any task with auto that entered a prompt stage may take a free worker (#366, #708)
+    case 'leaveFlow': return leaveFlow(state, event.taskId); // #566: frees no worker, so no fill
     case 'approve': return fill(approve(state, liveTaskId(state, event.activityId), canContinue)); // a held worker goes on in place when canContinue allows (#321); else the fill decides
     case 'feedback': return feedback(state, event);
     case 'extendApproval': return extendApproval(state, liveTaskId(state, event.activityId)); // no fill: nothing freed (#268)

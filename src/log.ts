@@ -258,6 +258,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'captureSession': return `captureSession pty=${shortId(event.terminalId)} run=${shortId(event.runId)}${event.resume === undefined ? '' : ` resume=${shortId(event.resume.sessionId)}`}`; // #696, #347
     case 'worktreeReady': return `worktreeReady activity=${shortId(event.activityId)} branch=${event.branch}`;
     case 'moveToStage': return `moveToStage #${event.taskId} stage=${event.stage}`;
+    case 'leaveFlow': return `leaveFlow #${event.taskId}`;
     case 'approve': return `approve ${act(event.activityId)}`;
     case 'feedback': return `feedback ${act(event.activityId)} ${event.start ? 'start' : 'queue'} chars=${event.text.length}`; // the text is the user's: never logged
     case 'extendApproval': return `extendApproval ${act(event.activityId)}`;
