@@ -670,13 +670,13 @@ function drainForShutdown(reduced: Reduced, now: number): Reduced {
   return { state: off, effects: [...closed.effects, { type: 'shutdown' }] };
 }
 
-// The user's answer to a task that left the source, or the remove of a stopped local task (#132), or a leaving task whose source action
-// succeeded (#286), or a local goal whose decomposition is on GitHub (#865). Close: the task goes, every session on
-// it with it (the stage run, every session and its terminals, #164, #283); the worktree stays on disk (#182). Keep: it runs to the end on its own.
+// The remove of a source task out of the listing or an orphan (#568), or of a stopped local task (#132), or a leaving task whose source action
+// succeeded (#286), or a local goal whose decomposition is on GitHub (#865): the task goes, every session on
+// it with it (the stage run, every session and its terminals, #164, #283); the worktree stays on disk (#182).
 function closeTask(state: State, id: string): Reduced {
   const task = state.tasks.find((c) => taskId(c) === id);
   // deleting: the removal's answer must still find the task (#182); canRemoveCreated already refuses a deleting local task
-  if (!task || activityOf(state, id)?.deleting || !(task.missing || task.leaving || canRemoveCreated(task, state) || isWrittenGoal(state, task))) return none(state);
+  if (!task || activityOf(state, id)?.deleting || !(task.missing || task.outOfListing !== undefined || task.orphan || task.leaving || canRemoveCreated(task, state) || isWrittenGoal(state, task))) return none(state);
   return dropTask(state, task);
 }
 

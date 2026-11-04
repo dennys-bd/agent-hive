@@ -335,6 +335,18 @@ test('closeTask removes a missing task, killing its session when it runs; keepTa
   assert.equal(reduce(deleting, { type: 'keepTask', taskId: 'board:item1' }).state, deleting);
 });
 
+test('closeTask removes a source task out of the listing or an orphan with every run on it; it still refuses a listed one, and one being deleted (#568)', () => {
+  const first = signaled(polled(base(2), [listed(1), listed(2)]).state, 'red').state; // both running
+  const marked: State = { ...first, tasks: first.tasks.map((c) => (c.item.id === '1' ? { ...c, outOfListing: 'project' as const } : { ...c, orphan: true as const })) };
+  const closed = reduce(marked, { type: 'closeTask', taskId: 'board:item1' });
+  assert.deepEqual(closed.effects, [{ type: 'kill', slug: 'hive-1-task-1', ptyId: first.workers[0].runId }, { type: 'forgetScrollback', ptyId: first.workers[0].runId }]);
+  assert.deepEqual(closed.state.tasks.map((c) => c.item.id), ['2']);
+  assert.deepEqual(reduce(closed.state, { type: 'closeTask', taskId: 'board:item2' }).state.tasks, [], 'an orphan closes too');
+  assert.equal(reduce(first, { type: 'closeTask', taskId: 'board:item1' }).state, first, 'listed: refused');
+  const deleting = withLive(marked, 1, { deleting: true });
+  assert.equal(reduce(deleting, { type: 'closeTask', taskId: 'board:item1' }).state, deleting, 'git is removing its worktree (#182)');
+});
+
 test('reducer never mutates its input', () => {
   const before = base(2);
   const snapshot = JSON.stringify(before);

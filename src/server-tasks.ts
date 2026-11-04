@@ -158,12 +158,12 @@ function taskRefusal(state: State, itemId: string): Refusal | undefined {
   return activityOf(state, itemId)?.deleting ? { status: HTTP_CONFLICT, message: DELETING_MESSAGE } : undefined; // git is removing its worktree (#182)
 }
 
-/** Why a close would be a no-op in the reducer: a source task closes once it left the source, a local one (#132) once it stopped. */
+/** Why a close would be a no-op in the reducer: a source task closes once it is out of the listing or orphan (#568), a local one (#132) once it stopped. */
 function closeRefusal(state: State, itemId: string): Refusal | undefined {
   const task = state.tasks.find((c) => c.item.itemId === itemId);
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
   if (activityOf(state, itemId)?.deleting) return { status: HTTP_CONFLICT, message: DELETING_MESSAGE }; // git is removing its worktree (#182)
-  if (task.missing || canRemoveCreated(task, state)) return undefined;
+  if (task.missing || task.outOfListing !== undefined || task.orphan || canRemoveCreated(task, state)) return undefined;
   if (!task.created) return { status: HTTP_CONFLICT, message: TASK_ON_SOURCE_MESSAGE };
   return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // a run of any kind holds it (#164, #283); deleting was refused above
 }
