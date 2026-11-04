@@ -109,3 +109,18 @@ test('dockAll docks every tab in the layout\'s order and stops at the first reje
   await act(async () => { isDone = await result.current.dockAll(); });
   expect([isDone, dock.mock.calls.map(([tab]) => tab.ref), result.current.isEmpty]).toEqual([true, [DIFF, DIFF, FILE], true]);
 });
+
+test('a second dock of a tab still docking, or a second dockAll while one runs, waits for the first and sends nothing again (#553)', async () => {
+  const { result } = mount();
+  await arrive({ activity: 'A', ref: FILE, carry: CARRY });
+  await waitFor(() => expect(tabsOf(result.current.layout)).toEqual([FILE]));
+  let settle: () => void = () => undefined;
+  dock.mockImplementationOnce(() => new Promise<void>((resolve) => { settle = resolve; }));
+  let answers: boolean[] = [];
+  await act(async () => {
+    const both = Promise.all([result.current.dock(FILE), result.current.dockAll(), result.current.dockAll()]);
+    settle();
+    answers = await both;
+  });
+  expect([answers, dock.mock.calls.length, result.current.isEmpty]).toEqual([[true, true, true], 1, true]);
+});

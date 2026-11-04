@@ -43,7 +43,7 @@ function useArrivals(key: string | undefined, receive: (tab: MovedTab) => Promis
     window.hive?.onOpen((value) => {
       const tab = parseMovedTab(value);
       if (tab === undefined || tab.activity !== key) {
-        console.error('detached window: window:open dropped', value);
+        console.error('detached window: window:open dropped', typeof value); // never the payload: a carry holds the user's unsaved text
         return;
       }
       latest.current(tab).catch((err: unknown) => console.error('detached window: a moved tab did not open', err));
@@ -68,8 +68,20 @@ export function useDetachedLayout(activities: Activity[], activity: Activity | u
     latest.current.layouts.open(ref); // into the focused group, picked
   };
   useArrivals(activity && activityKey(activity), receive);
-  // The tab and its unsaved edits leave only once main took them
-  const dock = async (ref: CenterTabRef): Promise<boolean> => {
+  // A tab already docking, and a dockAll already running, are shared, never sent twice: a double click on the back button, or the menu's
+  // back during a window:closing, would hand main the same tab twice
+  const docking = useRef(new Map<string, Promise<boolean>>());
+  const dockingAll = useRef<Promise<boolean>>(undefined);
+  const once = (key: string, run: () => Promise<boolean>): Promise<boolean> => {
+    const pending = docking.current.get(key);
+    if (pending !== undefined) return pending;
+    const started = run().finally(() => docking.current.delete(key));
+    docking.current.set(key, started);
+    return started;
+  };
+  // The tab and its unsaved edits leave only once main took them. Edits typed while the dock is in flight go with the tab's model: main
+  // already holds the text taken here
+  const sendBack = async (ref: CenterTabRef): Promise<boolean> => {
     const shown = latest.current.activity;
     if (shown === undefined) return false;
     const carry = takeCarry(shown.activity.id, ref);
@@ -86,12 +98,17 @@ export function useDetachedLayout(activities: Activity[], activity: Activity | u
     dropBuffer(ref, shown.activity.id, isShared);
     return true;
   };
+  const dock = (ref: CenterTabRef): Promise<boolean> => once(refKey(ref), () => sendBack(ref));
   // One after another in the layout's order; a refused one stops it, and the tabs left stay
-  const dockAll = async (): Promise<boolean> => {
+  const dockEach = async (): Promise<boolean> => {
     for (const ref of tabsOf(latest.current.layouts.layout)) {
       if (!(await dock(ref))) return false;
     }
     return true;
+  };
+  const dockAll = (): Promise<boolean> => {
+    if (dockingAll.current === undefined) dockingAll.current = dockEach().finally(() => { dockingAll.current = undefined; });
+    return dockingAll.current;
   };
   const requestTab = useCallback((tab?: CenterTabRef) => setRequest(tab === undefined ? {} : { tab }), []);
   return { ...layouts, request: requestTab, receive, dock, dockAll, isEmpty: hasHeld && !isHolding };

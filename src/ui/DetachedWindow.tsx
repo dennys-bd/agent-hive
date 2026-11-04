@@ -53,6 +53,8 @@ function useWindowOpeners(activities: Activity[], key: string, request: (tab?: C
 // land; beforeunload guards a dirty buffer, #552). window:closing only docks: a dock refused leaves tabs, so the window stays
 function useWindowClose(isGone: boolean, { isEmpty, dockAll }: Pick<DetachedLayout, 'isEmpty' | 'dockAll'>): void {
   useEffect(() => {
+    // ponytail: a window:open sent while the last tab docked closes with the window (its carry lost, its run going on); a hold until main
+    // confirms no tab is in flight, if that race ever shows
     if (isGone || isEmpty) window.hive?.closeWindow().catch((err: unknown) => console.error('detached window: closeWindow refused', err));
   }, [isGone, isEmpty]);
   const latest = useRef(dockAll);
