@@ -55,6 +55,13 @@ test('POST /view-state/repoLists is accepted, and GET then holds each repository
   assert.deepEqual(await answer(hiveFetch(`${base}/view-state`)), [200, { repoLists: lists }]);
 });
 
+test('POST /view-state/tasksSidebar is accepted, and GET then holds the sections\' flags and heights under it (#572)', async (t) => {
+  const { base } = await start(t);
+  const sidebar = { closed: { automation: false, tasks: true, sources: false, repos: false }, heights: { automation: 200, tasks: 150, sources: 260, repos: 240 } };
+  assert.deepEqual(await answer(post(`${base}/view-state/tasksSidebar`, { value: sidebar })), [200, { ok: true }]);
+  assert.deepEqual(await answer(hiveFetch(`${base}/view-state`)), [200, { tasksSidebar: sidebar }]);
+});
+
 test('POST /view-state/:key answers 400 for a key not in the list, a body without value, or a value over 256 KiB, and writes nothing (#484)', async (t) => {
   const { base, home } = await start(t);
   for (const key of ['columnFilters', 'theme', '__proto__']) {
