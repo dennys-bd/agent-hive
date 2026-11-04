@@ -38,8 +38,8 @@ function approvalSession(task: Task, state: Pick<State, 'activities' | 'activity
 
 /** The session feedback resumes (#268, HIVE-2, #685): the free session that ended the stage when the approval names one (#812); in a manual gate
  * gateSession's, otherwise the stage's own latest. `stage` defaults to the task's: a spawn names the stage it runs. */
-export function feedbackSession(task: Task, state: Pick<State, 'stages' | 'activities' | 'activityRecords'>, stage = task.stage): Session | undefined {
-  return approvalSession(task, state) ?? (isGate(stageOf(state.stages, stage)) ? gateSession(task, state) : stageSession(task, state, stage));
+export function feedbackSession(task: Task, state: Pick<State, 'stages' | 'activities' | 'activityRecords'>, stage: string | undefined = task.stage): Session | undefined {
+  return approvalSession(task, state) ?? (isGate(stageOf(state.stages, stage)) ? gateSession(task, state) : stage === undefined ? undefined : stageSession(task, state, stage));
 }
 
 /** The user's own session open on the conversation feedback would resume (#483): a live free session on the task whose session is
@@ -97,7 +97,7 @@ export function startMode(task: Task, state: Pick<State, 'stages' | 'workers' | 
   if (activity?.workerId !== undefined || inAction(activity)) return 'running'; // #755, #834: a commands stage or a wait for CI in flight runs too
   if (activity?.setup) return 'none'; // a first open's worktree setup runs (#351): nothing to start, continue or restart until it ends
   if (activity?.approval) return 'approval'; // the stage waits for the user's approve or feedback (#268): nothing to start, continue or restart
-  const session = hiveAction(stage) === undefined ? stageSession(task, state, task.stage) : undefined;
+  const session = hiveAction(stage) === undefined ? stageSession(task, state, stage.name) : undefined;
   const holder = session && workersOf(state, task).find((s) => s.sessionId === session.id);
   const restart = !activity?.local && stage.session !== 'continue' && activity?.stageStart?.stage === task.stage; // #444: never a reset of the user's checkout
   // #812: after a free run in this stage there is nothing of a stage run's to go on with, and continue would send the stage's continue prompt:

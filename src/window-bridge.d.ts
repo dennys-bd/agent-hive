@@ -1,14 +1,3 @@
-/** A panel tab on its way to a window of its own and back (#252): the panel's RunTab plus its label, the window's title. main checks it
- * (detach-ipc.ts) before any use: untrusted IPC. A task's run carries its task; a project's shell (#292, #400) its project, never both. */
-interface DetachedTab {
-  ptyId: string;
-  kind: 'stage' | 'session' | 'terminal';
-  task?: string; // exactly one of task / project
-  project?: string;
-  title: string;
-  label: string;
-}
-
 /** What the main window's preload exposes as `window.hive` (contextBridge, #632): present only inside the Electron viewer; a
  * plain browser opens every run in the panel. Ambient on purpose: the preload (main-side tsc)
  * and src/ui/components/actions.ts (UI tsc) share it without either importing the other. */
@@ -18,9 +7,6 @@ interface HiveWindow {
   // subscribes; untrusted IPC, so the page checks its shape. A later call replaces the callback.
   onSelect(callback: (selection: unknown) => void): void;
   settingsChanged(): Promise<void>; // the settings form saved: the viewer re-reads onClose (#513) and adds or removes its menu bar icon
-  detach(tab: DetachedTab): Promise<void>; // main no longer handles it (#552): a call rejects; node 4 removes it with its callers
-  focusDetached(ptyId: string): Promise<boolean>; // main no longer handles it (#552): a call rejects; node 4 removes it with its callers
-  detachedPtys(): Promise<string[]>; // main no longer handles it (#552): a call rejects; node 4 removes it with its callers
   // Main window only (#552): a center tab's move to its activity's detached window, built or reused, focused. It resolves once main sent the
   // tab there, and only then may the page close it; it rejects on a malformed tab, a page that failed to load, or a port with no secret
   moveToWindow(tab: import('./tab-carry.js').MovedTab): Promise<void>;
@@ -46,9 +32,6 @@ interface HiveWindow {
   // Cmd+W / Window → Close on this main window (#358): the callback closes the shown panel tab, or does nothing; the close key never closes
   // the window (#612). Returns the unsubscribe.
   onCloseKey(callback: () => void): () => void;
-  // main no longer sends window:openFile (#552): a detached window opens its file links in its own editor; node 4 removes it.
-  // Returns the unsubscribe.
-  onOpenFile(callback: (file: unknown) => void): () => void;
   closeWindow(): Promise<void>; // the closeWindow shortcut on the page (#585): window:closeWindow, the only key that closes the main window
   // a Finder drop on the files sidebar (#594): the dropped file's absolute path, which contextIsolation hides from the page as File.path;
   // '' for a File the disk does not back

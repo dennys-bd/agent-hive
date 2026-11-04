@@ -8,6 +8,7 @@ import { parentOf } from '../../task-tree';
 import { continuable, SESSION_ID_CHARS, sessionsOf, taskLabel, workersOf } from '../../tasks';
 import { prGroups, prNumber, repoName, type PrGroup, type PrLine } from '../../pull-requests';
 import type { Task, TaskFile, TaskUsage, Session, OpenResult, State, UsagePart } from '../../types';
+import { inFlow } from '../../tasks';
 import type { TaskState } from '@/lib/status';
 import { baseText } from '@/components/ForkSyncNotice';
 import { act, actThen, attachRun } from '@/components/actions';
@@ -88,7 +89,7 @@ export function StatusBox({ task, state, isActivity }: { task: Task; state: Stat
     <section aria-label={word} className={`flex flex-col gap-2.5 rounded-lg border p-2.5 ${STATUS_BOX[status]}`}>
       <div className="flex items-center gap-2 text-xs">
         <span className={`font-medium ${STATUS_WORD[status]}`}>{word}</span>
-        <span className={`ml-auto ${MUTED}`}>{[t('detail.stage', { stage: task.stage }), ...since].join(' · ')}</span>
+        <span className={`ml-auto ${MUTED}`}>{[...(inFlow(task) ? [t('detail.stage', { stage: task.stage })] : []), ...since].join(' · ')}</span>
       </div>
       {isActivity && <RunLines task={task} state={state} />}
       <CommandsLine task={task} state={state} /> {/* #755: a commands stage's progress or failure, with ver saída */}

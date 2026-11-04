@@ -5,6 +5,7 @@ import { flatten, flowOf } from './flows.js';
 import { destinationOf } from './stage-delete.js';
 import { DEFAULT_CONFIG, taskWorkspace, loadConfigIfPresent, parseConfig } from './config.js';
 import type { Refusal } from './server-tasks.js';
+import { inFlow } from './tasks.js';
 import { parseSetup } from './setup-script.js';
 import { nestedProblemText, nestedRepoProblem } from './nested-check.js';
 import type { CombConfig, Config, Flow, Language, Workspace, SettingsBody, SourceConfig, Stage, State, UsageRule } from './types.js';
@@ -238,6 +239,7 @@ export function strandedTasks(state: Pick<State, 'tasks'>, saved: readonly Flow[
   const old = saved.map((f) => ({ ...f, stages: f.stages.map((s) => ({ ...s, name: renamedStage(s.name, stageRenames) })) }));
   const kept = flatten(next).stages;
   const lost = state.tasks.flatMap((task) => {
+    if (!inFlow(task)) return []; // #566: a task outside the flow is in no flow a save could strand
     const stage = renamedStage(task.stage, stageRenames);
     if (kept.some((s) => s.name === stage)) return [];
     const flow = flowOf(old, stage);

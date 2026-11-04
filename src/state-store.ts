@@ -99,10 +99,11 @@ function onLoadedWork(worker: Worker, ids: ReadonlySet<string>): Worker {
 // The worker's run id reaches argv, a file path and a pkill pattern, so it is checked against what randomUUID produces: a value it could not
 // have written empties the worker in normalizeWorker above. The slug and the session id are the activity's (#629): loadActivity and the
 // migration check them.
+// A task outside the flow has no stage (#566), so an absent stage is a valid saved task
 const isTask = (value: unknown): value is Task => {
   if (typeof value !== 'object' || value === null) return false;
   const { item, stage, boardColumn } = value as Task;
-  return typeof item === 'object' && item !== null && typeof item.itemId === 'string' && typeof stage === 'string' && typeof boardColumn === 'string';
+  return typeof item === 'object' && item !== null && typeof item.itemId === 'string' && (stage === undefined || typeof stage === 'string') && typeof boardColumn === 'string';
 };
 
 // A task saved before #286 carries its Hive stage as `column`: read as `stage`, so a running Hive keeps its tasks across the rename.

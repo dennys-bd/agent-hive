@@ -5,7 +5,7 @@ import type { LiveRun, RunKind } from '../../task-runs';
 import type { Task, DiffScope } from '../../types';
 import { DIFF_SCOPE_KEY } from '@/components/DiffView';
 import { type MessageKey, t } from '@/i18n';
-import { localKey, type RunTarget } from '@/lib/activities';
+import type { RunTarget } from '@/lib/activities';
 import type { FileAt } from '@/lib/editor-models';
 
 /** One run's terminal as the main window knows it: what the panel's tab shows and what focusRun routes on. */
@@ -124,10 +124,10 @@ const isKind = (value: unknown): value is RunKind => value === 'stage' || value 
 export const localRunTab = (ptyId: string, project: string, kind: RunKind = 'terminal'): RunTab =>
   ({ ptyId, kind, project, title: project });
 
-/** A window:dock payload as a tab (#252), or undefined for any other shape: main's message is IPC, checked like onSelect's. The label
- * main carried for the window's title is dropped: the panel names its tabs itself. Exactly one of task / project (#400): a workspace's run
- * comes back as localRunTab builds it. */
-export function dockedTab(value: unknown): RunTab | undefined {
+/** A chip's run payload as a tab (#340), or undefined for any other shape: a drag's text is untrusted, checked like onSelect's. A label it
+ * carries is dropped: the panel names its tabs itself. Exactly one of task / project (#400): a workspace's run comes back as localRunTab
+ * builds it. */
+export function chipTab(value: unknown): RunTab | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const { ptyId, kind, task, project, title } = value as Record<string, unknown>;
   if (!isText(ptyId) || !isText(title) || !isKind(kind)) return undefined;
@@ -136,30 +136,11 @@ export function dockedTab(value: unknown): RunTab | undefined {
   return { ptyId, kind, task, title };
 }
 
-// A detached window's tab names its task or its workspace (#400): the activity's key either way (#590)
-function keyOf(task: unknown, project: unknown): string | undefined {
-  if (isText(task)) return task;
-  return isText(project) ? localKey(project) : undefined;
-}
-
-const isLine = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0;
-
-/** A window:openFile payload (#717): a detached window's file link as main forwarded it, checked like a dock's. Its activity's key, the
- * path and the position; undefined for any other shape. */
-export function openedFile(value: unknown): { key: string; path: string; at?: FileAt } | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  const { task, project, path, line, col } = value as Record<string, unknown>;
-  const key = keyOf(task, project);
-  if (key === undefined || !isText(path)) return undefined;
-  if (!isLine(line)) return { key, path };
-  return { key, path, at: { line, ...(isLine(col) ? { col } : {}) } };
-}
-
-/** A worker chip's drop payload as a tab (#340), checked like a dock's; undefined for anything that is not a task run's JSON. A chip is
+/** A worker chip's drop payload as a tab (#340), checked by chipTab; undefined for anything that is not a task run's JSON. A chip is
  * always a task's run (#400): a foreign drag carrying a project opens no project shell. */
 export function droppedTab(text: string): RunTab | undefined {
   try {
-    const tab = dockedTab(JSON.parse(text));
+    const tab = chipTab(JSON.parse(text));
     return tab?.task === undefined ? undefined : tab;
   } catch {
     return undefined; // not JSON: nothing the Hive wrote

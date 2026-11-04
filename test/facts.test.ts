@@ -123,7 +123,7 @@ test('the sink gets every record stamped and bounded as its line is, whatever th
   assert.deepEqual(records(dir), [kept[1]], 'the line and the sink hold the same record, ts included');
   const [moved] = kept;
   assert.ok(moved?.event === 'task.moved');
-  assert.deepEqual([moved.schema_version, moved.to.length, moved.to.includes('\n')], [SCHEMA_VERSION, RAW_TEXT_MAX, false]);
+  assert.deepEqual([moved.schema_version, moved.to?.length, moved.to?.includes('\n')], [SCHEMA_VERSION, RAW_TEXT_MAX, false]);
   const broken = join(await tempDir(t, 'facts-'), '.hive');
   await writeFile(broken, 'not a directory');
   const after: FactRecord[] = [];

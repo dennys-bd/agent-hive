@@ -144,6 +144,8 @@ const en = {
   'usage.close': 'close',
   'window.dockFailed': "Couldn't move the tab back to the main window", // #553: a dock main refused
   'window.back': 'Back to the main window', // #553: a detached window's tab, or the strip's button
+  'window.move': 'Move to a window', // #554: a main window center tab's menu
+  'window.moveFailed': "Couldn't move the tab to a window", // #554: a move main refused
   'window.session': 'session',
   'window.week': 'week',
   'window.thirtyDay': '30 days', // #929: Codex's free plan window
@@ -354,6 +356,7 @@ const en = {
   'start.hint.stages': 'the agent gets each stage\'s prompt and moves the task on until it needs you.',
   'start.hint.free': 'no automatic prompts. you drive the work on the task and move its stage when you want.',
   'start.noStages': 'no stage to run from {stage}.', // #774: why executar etapas is off for the picked task
+  'start.outsideFlow': 'the task is outside the flow: move it into a stage to run stages.', // #566
   'start.base': 'base',
   'start.local': 'run in the local checkout, no worktree',
   'start.orphan.worktree': 'A worktree for this task already exists with no activity', // #861
@@ -3164,6 +3167,8 @@ const pt: Record<MessageKey, string> = {
   'usage.close': 'fechar',
   'window.dockFailed': 'Não foi possível voltar a aba para a janela principal',
   'window.back': 'Voltar para a janela principal',
+  'window.move': 'Mover para uma janela',
+  'window.moveFailed': 'Não foi possível mover a aba para uma janela',
   'window.session': 'sessão',
   'window.week': 'semana',
   'window.thirtyDay': '30 dias',
@@ -3374,6 +3379,7 @@ const pt: Record<MessageKey, string> = {
   'start.hint.stages': 'o agente recebe o prompt de cada etapa e avança a tarefa até precisar de você.',
   'start.hint.free': 'sem prompts automáticos. você conduz o trabalho na tarefa e move a etapa quando quiser.',
   'start.noStages': 'nenhuma etapa para executar a partir de {stage}.',
+  'start.outsideFlow': 'a tarefa está sem fluxo: leve-a a uma etapa para executar etapas.',
   'start.base': 'base',
   'start.local': 'executar no local, sem worktree',
   'start.orphan.worktree': 'Já existe uma worktree desta tarefa sem atividade',

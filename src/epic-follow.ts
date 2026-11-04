@@ -2,7 +2,7 @@ import { activityOf } from './activities.js';
 import { withColumnWrite } from './column-write.js';
 import { none, type Reduced, settleEntries, shouldWrite, sourceWrites, withTask } from './reducer-kit.js';
 import { allDone, depthOf, epicStage } from './task-tree.js';
-import { enter, isDue, onSource, stageOf, taskId } from './tasks.js';
+import { enter, inFlow, isDue, onSource, stageOf, taskId } from './tasks.js';
 import { follow } from './transit.js';
 import { exitOf, outgoing } from './transitions.js';
 import { END, type Stage, type State, type Task } from './types.js';
@@ -66,10 +66,11 @@ function followed(state: State, task: Task): Reduced {
 
 // A leaving epic waits for its source's answer, a missing one for the user, and one whose source action failed keeps its error: taking the
 // exit again would write the same refused action after every event. One whose activity is being deleted waits for that delete, as isIdle
-// does (#353): an archive taken now answers before it and its closeTask is refused by the mark; activityDeleted's advance takes the exit then
+// does (#353): an archive taken now answers before it and its closeTask is refused by the mark; activityDeleted's advance takes the exit then.
+// One outside the flow stays there (#566): a poll that stamps epic on it must not move it in; only move-to brings it back
 const follows = (state: State, task: Task): boolean => {
   const activity = activityOf(state, taskId(task));
-  return task.item.epic !== undefined && !task.leaving && !task.missing && activity?.error === undefined && !activity?.deleting;
+  return task.item.epic !== undefined && inFlow(task) && !task.leaving && !task.missing && activity?.error === undefined && !activity?.deleting;
 };
 
 /** Every show epic moved where its children put it (#31), deepest first, so a parent epic reads its sub-epics already moved. reduce runs it

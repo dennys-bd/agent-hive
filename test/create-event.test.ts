@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, isUuid, reduce } from '../src/orchestrator.js';
-import { createEvent, createTask, HIVE_OFF_MESSAGE, notInFlowNotice, noColumnMessage, noCreateMessage, PR_HIVE_ONLY_MESSAGE, PR_TAKEN_MESSAGE, PR_URL_MESSAGE, UNKNOWN_SOURCE_MESSAGE, WORKSPACE_ON_SOURCE_MESSAGE, type CreateDeps } from '../src/create-task.js';
+import { createEvent, createTask, HIVE_OFF_MESSAGE, NO_STAGE_ON_SOURCE_MESSAGE, notInFlowNotice, noColumnMessage, noCreateMessage, PR_HIVE_ONLY_MESSAGE, PR_TAKEN_MESSAGE, PR_URL_MESSAGE, UNKNOWN_SOURCE_MESSAGE, UNKNOWN_STAGE_MESSAGE, WORKSPACE_ON_SOURCE_MESSAGE, type CreateDeps } from '../src/create-task.js';
 import { taskOfPr } from '../src/activities.js';
 import { GITHUB_ENTRY } from './fakes.js';
 import type { HiveEvent, Source, State, Task } from '../src/types.js';
@@ -138,4 +138,21 @@ test('createTask with pr refuses a source, a link that is no GitHub PR and a PR 
   const off = reducingDeps({ ...COMB, hiveSource: false });
   assert.deepEqual(await createTask(off.deps, { title: 'x', stage: 'fila', pr: PR }), { status: 409, message: HIVE_OFF_MESSAGE });
   assert.deepEqual([again.events, sourced.events, off.events, sourced.made], [[], [], [], []]);
+});
+
+test('createEvent without a stage is a task outside the flow, its origin kept; a stage it names must still exist (#566)', () => {
+  const { stage: _stage, ...loose } = BASE;
+  assert.deepEqual(createEvent(STATE, 'HIVE', loose, SOURCES), { type: 'createTask', title: 'Fix login', body: 'steps', prefix: 'HIVE', auto: false });
+  assert.deepEqual(createEvent(STATE, 'HIVE', { ...loose, origin: 'roadmap:PVTI_12' }, SOURCES), { type: 'createTask', title: 'Fix login', body: 'steps', prefix: 'HIVE', auto: false, origin: 'roadmap:PVTI_12' });
+  for (const stage of ['nope', 7, null]) assert.deepEqual(createEvent(STATE, 'HIVE', { ...BASE, stage }), { status: 400, message: UNKNOWN_STAGE_MESSAGE }, String(stage));
+});
+
+test('createTask without a stage on a source answers 400 naming the rule and never calls Source.create; in hive it creates one outside the flow (#566)', async () => {
+  const sourced = fakeDeps();
+  assert.deepEqual(await createTask(sourced.deps, { title: 'x', source: 'roadmap' }), { status: 400, message: NO_STAGE_ON_SOURCE_MESSAGE });
+  assert.deepEqual([sourced.made, sourced.polled], [[], []]);
+  assert.equal(NO_STAGE_ON_SOURCE_MESSAGE, 'a task outside the flow is created only in hive');
+  const hive = reducingDeps();
+  assert.deepEqual(await createTask(hive.deps, { title: 'Loose' }), { id: 'HIVE-1', itemId: 'local:1' });
+  assert.equal(hive.latest().tasks.find((c) => c.item.itemId === 'local:1')?.stage, undefined);
 });

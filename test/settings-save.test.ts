@@ -78,6 +78,8 @@ test('strandedTasks passes an empty flow\'s deletion, a flow rename and a stage 
   assert.equal(strandedTasks(holding('fix'), TWO, [TWO[0], { ...TWO[1], name: 'hotfix' }], {}), undefined);
   const renamed: Flow = { ...TWO[1], stages: [{ name: 'patch', from: {} }], transitions: [] };
   assert.equal(strandedTasks(holding('fix'), TWO, [TWO[0], renamed], { fix: 'patch' }), undefined, 'fix → patch is a rename, not a deletion');
+  const { stage: _, ...outside } = inStage('fix', 9);
+  assert.equal(strandedTasks({ tasks: [outside] }, TWO, [TWO[0]], {}), undefined, 'a task outside the flow (#566) is in no flow to strand');
 });
 
 test('strandedMessage counts one task in the singular and several in the plural (#565)', () => {

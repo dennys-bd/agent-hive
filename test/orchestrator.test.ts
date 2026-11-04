@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { candidates, canOpenSession, sessionsOf, canDeleteActivity, differsFromSource, isBlocked, isQueued, mergeTasks, moveTask, removalBlocker, type RemovalBlocker, resetOrder, type Runs, slugFor } from '../src/tasks.js';
+import { candidates, canOpenSession, leave, sessionsOf, canDeleteActivity, differsFromSource, isBlocked, isQueued, mergeTasks, moveTask, removalBlocker, type RemovalBlocker, resetOrder, type Runs, slugFor } from '../src/tasks.js';
 import { canSchedule, canStart, effectiveLimits, extractPrUrl, initialState, isChildSession, isFree, reduce, type Reduced, WAITING_NOTIFICATIONS } from '../src/orchestrator.js';
 import { startMode } from '../src/task-runs.js';
 import { localSessionsOf } from '../src/local-sessions.js';
@@ -9,6 +9,7 @@ import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, ActivityRecord, Flow, ForkSyncResult } from '../src/types.js';
 import { describeEvent } from '../src/log.js';
 import { savedWork } from '../src/state-guards.js';
+import { flatten } from '../src/flows.js';
 import { HOUR_MS } from '../src/usage.js';
 import { deriveFacts } from '../src/fact-derive.js';
 import type { SourceItem, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
@@ -3714,4 +3715,71 @@ test('setStages takes the flows and sets their flattened stages and transitions 
   assert.deepEqual(state.flows, flows);
   assert.deepEqual(state.stages.map((s) => s.name), ['spec', 'fix']);
   assert.deepEqual(state.transitions, flows[0].transitions);
+});
+
+test('a save of the same flows and a stage rename leave a task outside the flow outside it (#566)', () => {
+  const given = polled(base(0), [listed(1)]).state; // 1 in spec, its column Backlog: the door a vanished-stage placement would read
+  const outside: State = { ...given, tasks: given.tasks.map((c) => leave(c)) };
+  assert.equal(task(reduce(outside, { type: 'setStages', flows: given.flows }).state, 1)?.stage, undefined);
+  assert.equal(task(reduce(outside, { type: 'renameStages', renames: { spec: 'specs' } }).state, 1)?.stage, undefined);
+});
+
+test('hive_done in a free session on a task outside the flow ends nothing: no stage, no halt, its plain result kept (#566)', () => {
+  const given = manualState(1);
+  const outside: State = { ...given, tasks: given.tasks.map((c) => leave(c)) };
+  const open = reduce(outside, { type: 'openSession', activityId: workId(outside, 'board:item1') }).state;
+  const [session] = occupied(open);
+  const ended = reduce(open, { type: 'done', ptyId: session.runId!, result: { a: 1 } });
+  assert.equal(task(ended.state, 1)?.stage, undefined);
+  assert.equal(work(ended.state, 1)?.error, undefined, 'no STAGE_GONE halt');
+  assert.deepEqual(resultN(ended.state, 1), { a: 1 });
+});
+
+test('createTask without a stage creates a task outside the flow: no stage, no enteredAt, its origin kept, appended, never started by the fill (#566)', () => {
+  const given = polled(base(1), [listed(1, 'In review')]).state; // review runs nothing; one free worker
+  const { state, effects } = reduce(given, { type: 'createTask', title: 'Loose', body: '', prefix: 'HIVE', auto: true, origin: 'board:item9' });
+  const made = state.tasks.at(-1)!;
+  assert.deepEqual([made.item.id, made.stage, made.enteredAt, made.item.origin, state.localCount], ['HIVE-1', undefined, undefined, 'board:item9', 1]);
+  assert.deepEqual(effects, [], 'a free worker, and still no spawn');
+});
+
+test('leaveFlow takes a stopped task out of the flow: stage, enteredAt, pin, tries, tryLog, the arrow, an awaited approval and the handoff marks go; worktree, sessions, error and stage start stay; no effect (#566)', () => {
+  const given = withMade(manualState(1, { pinned: true, enteredAt: PAST }), 1, { sessions: [keptSession('s1')] });
+  const marked = withLive(given, 1, {
+    tries: { k: 1 }, tryLog: [], via: 'k', approval: { since: PAST }, handoffPending: 'k', handoffFeedback: 'f', error: 'boom', stageStart: { stage: 'spec', commit: 'a'.repeat(40) },
+  });
+  const { state, effects } = reduce(marked, { type: 'leaveFlow', taskId: 'board:item1' });
+  const left = task(state, 1)!;
+  assert.deepEqual([left.stage, left.enteredAt, left.pinned], [undefined, undefined, undefined]);
+  for (const key of ['tries', 'tryLog', 'via', 'approval', 'handoffPending', 'handoffFeedback'] as const) assert.equal(holds(state, 1, key), false, key);
+  assert.deepEqual([work(state, 1)?.worktree, work(state, 1)?.error, work(state, 1)?.stageStart?.stage], [WORKTREE, 'boom', 'spec']);
+  assert.deepEqual(sessionsN(state, 1).map((s) => s.id), ['s1']);
+  assert.deepEqual(effects, []);
+});
+
+test('leaveFlow is ignored while a stage run holds the task, and for a missing task, a show epic, a task already outside and one whose activity is being deleted (#566)', () => {
+  const epic = polled(base(0), [{ item: { ...item(1), epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' }]).state;
+  const cases: Record<string, State> = {
+    running: filled(1, 1).state,
+    missing: polled(manualState(1), []).state,
+    epic,
+    outside: reduce(manualState(1), { type: 'leaveFlow', taskId: 'board:item1' }).state,
+    deleting: withLive(manualState(1), 1, { deleting: true }),
+  };
+  for (const [name, s] of Object.entries(cases)) assert.equal(reduce(s, { type: 'leaveFlow', taskId: 'board:item1' }).state, s, name);
+});
+
+const BUG: Flow = { name: 'bug', stages: [{ name: 'triage', from: { board: ['Bugs'] }, prompt: '/triage {url}' }], transitions: [] };
+const withBugFlow = (s: State): State => { const flows = [...s.flows, BUG]; return { ...s, flows, ...flatten(flows) }; };
+
+test('moveToStage takes a task outside the flow into a stage of a second flow: a source task gets the target\'s first from written and loses its tries, a hive task writes nothing (#566)', () => {
+  const given = withBugFlow(polled(base(0), [listed(1)]).state);
+  const outside = withLive(reduce(given, { type: 'leaveFlow', taskId: 'board:item1' }).state, 1, { tries: { k: 1 }, via: 'k' });
+  const { state, effects } = reduce(outside, { type: 'moveToStage', taskId: 'board:item1', stage: 'triage' });
+  assert.deepEqual([task(state, 1)?.stage, task(state, 1)?.boardColumn, task(state, 1)?.enteredAt !== undefined], ['triage', 'Bugs', true]);
+  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:item1', column: 'Bugs' }]);
+  assert.equal(holds(state, 1, 'tries'), false, 'a move by hand drops the tries');
+  const local = reduce(withBugFlow(base(0)), { type: 'createTask', title: 'Loose', body: '', prefix: 'HIVE', auto: false }).state;
+  const quiet = reduce(local, { type: 'moveToStage', taskId: 'local:1', stage: 'triage' });
+  assert.deepEqual([quiet.state.tasks[0].stage, quiet.effects], ['triage', []]);
 });

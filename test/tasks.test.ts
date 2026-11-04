@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
+import { inFlow, leave, stageOf, branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
 import { COLUMN_WRITE_TIMEOUT_MS } from '../src/column-write.js';
 import { taskTotals, touchSession } from '../src/record-kit.js';
 import { initialState } from '../src/orchestrator.js';
@@ -8,10 +8,11 @@ import { localActivityId } from '../src/activities.js';
 import { activityIdOf, bareTask, movedWork, withKeptRecord, withWork, type WithWork } from './fixtures/work.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, ActivityRecord, Flow, SourceItem, State, Task, Session, DeleteActivityScope, Stage, Effect, Terminal, Transition, Worker, Item } from '../src/types.js';
-import { DELETE_ACTIVITY_DEFAULTS } from '../src/types.js';
+import { DELETE_ACTIVITY_DEFAULTS, END } from '../src/types.js';
 import { move } from './fakes.js';
 import { mainFlows } from './fixtures/main-flow.js';
-import { flatten } from '../src/flows.js';
+import { flatten, flowOf } from '../src/flows.js';
+import { exitOf, outgoing } from '../src/transitions.js';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -831,4 +832,50 @@ test('a skill stage queues like a prompt stage and is never a due action; its ap
   assert.deepEqual(cands([waiting], [DEV, PLAN], NOW, runsOf([]), ONE).map((c) => c.item.id), ['1']);
   assert.deepEqual(dues([waiting], [DEV, PLAN], NOW, runsOf([]), DELETE_ACTIVITY_DEFAULTS), []);
   assert.deepEqual([canRunIn(PLAN), isGate(PLAN)], [true, false]);
+});
+
+test('stageOf, flowOf, outgoing and exitOf read an absent stage name as no stage: a task outside the flow looks nothing up (#566)', () => {
+  const flows: Flow[] = [{ name: 'main', stages: [{ name: 'a', from: {} }], transitions: [{ from: 'a', to: END, when: 'done' }] }];
+  const graph = flatten(flows);
+  assert.equal(stageOf(graph.stages, undefined), undefined);
+  assert.equal(flowOf(flows, undefined), undefined);
+  assert.deepEqual(outgoing(graph.transitions, undefined), []);
+  assert.equal(exitOf(graph, undefined, 'done'), undefined);
+  assert.equal(exitOf(graph, 'a', 'done')?.to, END, 'a named stage still finds its exit');
+});
+
+test('inFlow holds for a task in a stage (#566)', () => {
+  assert.equal(inFlow(bareTask(task(1, DEV))), true);
+});
+
+test('leave drops stage, enteredAt and the pin and keeps the rest; inFlow is false after it (#566)', () => {
+  const placed: Task = { item: item(1), stage: 'dev', boardColumn: 'Ready', auto: true, enteredAt: ago(HOUR), pinned: true, workspace: 'hive' };
+  const left = leave(placed);
+  assert.deepEqual([inFlow(placed), inFlow(left)], [true, false]);
+  assert.deepEqual(left, { item: item(1), boardColumn: 'Ready', auto: true, workspace: 'hive' });
+});
+
+test('a poll neither stamps enteredAt on a task outside the flow nor sorts it with a stage\'s tasks (#566)', () => {
+  const { stage: _stage, ...outside } = task(1, DEV, { boardColumn: 'Ready' });
+  const merged = merge([outside, task(2, DEV)], [DEV], [{ item: item(2), column: 'Ready' }, { item: item(1), column: 'Ready' }]);
+  assert.deepEqual(merged.map((c) => [c.item.itemId, c.stage, c.enteredAt === undefined]), [['item1', undefined, true], ['item2', 'dev', false]]);
+});
+
+test('a task outside the flow is never a candidate nor due for an action, and a reset of a stage leaves it where it is (#566)', () => {
+  const { stage: _a, ...ready } = task(1, DEV, { enteredAt: ago(DAY) });
+  const { stage: _b, ...cleanable } = task(2, DONE, { enteredAt: ago(6 * DAY), worktree: '/wt/2' });
+  assert.deepEqual(cands([ready], STAGES, NOW, NO_RUNS, ONE), []);
+  assert.equal(cands([task(1, DEV, { enteredAt: ago(DAY) })], STAGES, NOW, NO_RUNS, ONE).length, 1, 'the same task in dev is one');
+  assert.deepEqual(dues([cleanable], STAGES, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS), []);
+  assert.equal(dues([task(2, DONE, { enteredAt: ago(6 * DAY), worktree: '/wt/2' })], STAGES, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS).length, 1, 'the same task in done is due');
+  const tasks = [bareTask(ready), bareTask(task(3, DEV)), bareTask(task(4, DEV))];
+  assert.equal(resetOrder(tasks, 'dev', ['item4', 'item3'], NO_RUNS)[0], tasks[0]);
+});
+
+test('a poll keeps a source task outside the flow in sync and never moves it into a stage: a column change updates boardColumn, title and body only (#566)', () => {
+  const { stage: _stage, ...outside } = task(1, DONE, { boardColumn: 'Done' });
+  const seen: SourceItem = { item: { ...item(1), title: 'Renamed', body: 'new body' }, column: 'Ready' };
+  const [after] = merge([outside], STAGES, [seen]);
+  assert.deepEqual([after.stage, after.boardColumn, after.item.title, after.item.body, after.enteredAt], [undefined, 'Ready', 'Renamed', 'new body', undefined]);
+  assert.equal(merge([task(1, DONE, { boardColumn: 'Done' })], STAGES, [seen])[0].stage, 'dev', 'the same move takes a task in the flow through dev\'s door');
 });

@@ -196,7 +196,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'continue': return `continue ${act(event.activityId)}`;
     case 'restarting': return `restarting ${act(event.activityId)}`;
     case 'restart': return `restart ${act(event.activityId)}${event.branch === undefined ? '' : ` branch=${event.branch}`}`;
-    case 'stageStarted': return `stageStarted activity=${shortId(event.activityId)} stage=${event.stage} commit=${shortId(event.commit)}`;
+    case 'stageStarted': return `stageStarted activity=${shortId(event.activityId)} stage=${event.stage ?? 'none'} commit=${shortId(event.commit)}`;
     case 'checkpointCaptured': return `checkpointCaptured activity=${shortId(event.activityId)} n=${event.checkpoint.n} stage=${event.checkpoint.stage} ended=${event.checkpoint.ended}`; // #619: never a sha
     case 'restoring': return `restoring #${event.itemId}`;
     case 'restored': return `restored #${event.itemId}${event.branch === undefined ? '' : ` branch=${event.branch}`}`;
@@ -240,7 +240,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'taskDeleted': return `taskDeleted #${event.taskId}`;
     case 'moveTask': return `moveTask #${event.taskId} before=${event.before === undefined ? 'end' : `#${event.before}`}`;
     case 'resetOrder': return `resetOrder stage=${event.stage}`;
-    case 'createTask': return `createTask stage=${event.stage} prefix=${event.prefix}${event.pr === undefined ? '' : ' pr=yes'}`; // the title is the user's text and the link a third party's: never logged
+    case 'createTask': return `createTask stage=${event.stage ?? 'none'} prefix=${event.prefix}${event.pr === undefined ? '' : ' pr=yes'}`; // the title is the user's text and the link a third party's: never logged
     case 'setAuto': return `setAuto #${event.taskId} ${event.auto}`;
     case 'openSession': return `openSession ${act(event.activityId)}${event.continueId === undefined ? '' : ` continue=${shortId(event.continueId)}`}`;
     case 'openTerminal': return `openTerminal ${act(event.activityId)}`; // the command's name reaches only the spawn's line (#300)
@@ -258,6 +258,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'captureSession': return `captureSession pty=${shortId(event.terminalId)} run=${shortId(event.runId)}${event.resume === undefined ? '' : ` resume=${shortId(event.resume.sessionId)}`}`; // #696, #347
     case 'worktreeReady': return `worktreeReady activity=${shortId(event.activityId)} branch=${event.branch}`;
     case 'moveToStage': return `moveToStage #${event.taskId} stage=${event.stage}`;
+    case 'leaveFlow': return `leaveFlow #${event.taskId}`;
     case 'approve': return `approve ${act(event.activityId)}`;
     case 'feedback': return `feedback ${act(event.activityId)} ${event.start ? 'start' : 'queue'} chars=${event.text.length}`; // the text is the user's: never logged
     case 'extendApproval': return `extendApproval ${act(event.activityId)}`;

@@ -209,7 +209,7 @@ export interface DetachHub {
 /**
  * The detach channels (spec decision 17). Main-only: window:moveToWindow, window:focusTab, window:detachedTabs. Detached-only: window:dock,
  * window:openTask, window:tabs. Every payload is checked before use; a refusal reaches the page's toast, in Portuguese like main.ts's own.
- * window:detach, window:focusDetached and window:detachedPtys are no longer handled: a call rejects, which focusRun reads as no window.
+ * window:detach, window:focusDetached and window:detachedPtys are no longer handled: a call rejects (#552; their callers left in #554).
  */
 export function registerDetachIpc({ handle, on, senderWindow }: DetachIpcDeps): DetachHub {
   handle('window:moveToWindow', (event, value) => {

@@ -32,8 +32,8 @@ beforeEach(() => {
   resetViewState();
   closeKey = undefined;
   vi.mocked(showCloseTabNotice).mockClear();
-  // focusDetached: a run's open asks the bridge for its detached window first, and answers none
-  vi.stubGlobal('hive', { onCloseKey: (callback: () => void) => { closeKey = callback; return () => undefined; }, focusDetached: async () => false });
+  // focusTab: a run's open asks the bridge for its detached window first (#554), and answers none
+  vi.stubGlobal('hive', { onCloseKey: (callback: () => void) => { closeKey = callback; return () => undefined; }, focusTab: async () => false });
 });
 afterEach(() => {
   vi.unstubAllGlobals();

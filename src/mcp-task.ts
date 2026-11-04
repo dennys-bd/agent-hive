@@ -16,7 +16,7 @@ export interface TaskComments { comments?: TaskComment[]; commentsError?: string
 export interface HeldTask extends TaskComments {
   id: string; itemId: string; title: string; body: string; url: string;
   source?: string; workspace?: string; repository?: string;
-  stage: string; result?: Record<string, unknown>;
+  stage?: string; result?: Record<string, unknown>;
   parent?: TaskRef; children?: TaskRef[];
   blockers?: { blockedBy: TaskBlockerRef[]; blocking: TaskBlockerRef[] };
 }
@@ -61,7 +61,7 @@ export function taskAnswer(state: Pick<State, 'tasks' | 'activityRecords'>, work
     task: {
       id: item.id, itemId: item.itemId, title: item.title, body: item.body, url: item.url,
       ...(item.source === undefined ? {} : { source: item.source }), ...(workspace === undefined ? {} : { workspace }),
-      stage: task.stage, ...(result === undefined ? {} : { result }), ...treeOf(state.tasks, item),
+      ...(task.stage === undefined ? {} : { stage: task.stage }), ...(result === undefined ? {} : { result }), ...treeOf(state.tasks, item),
     },
   };
 }

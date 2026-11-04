@@ -80,12 +80,13 @@ interface DragLine {
 
 // Per-task drag/drop for a stage: dragover shows where the task would land (in the stage's own state, via `line`), and drop
 // recomputes the same target fresh from the event rather than trusting the state, so the request always matches.
-function taskDragProps(drag: DragRef, task: Task, tasks: Task[], line: DragLine, state: WorkersState): Omit<TaskDragHandlers, 'draggable'> {
+function taskDragProps(drag: DragRef, task: Task, tasks: Task[], line: DragLine, state: WorkersState, listStage: string): Omit<TaskDragHandlers, 'draggable'> {
   const itemId = task.item.itemId;
+  const stage = task.stage ?? listStage; // #566: a task outside the flow is never listed in a stage; the list's own stage keeps this total
   return {
     onDragStart: (e: DragEvent): void => {
       e.dataTransfer.setData('text/plain', itemId); // Firefox starts no drag without data
-      drag.current = { id: itemId, stage: task.stage, movable: canMoveToStage(task, state) };
+      drag.current = { id: itemId, stage, movable: canMoveToStage(task, state) };
       line.setDraggedId(itemId);
     },
     onDragEnd: (): void => {
@@ -94,10 +95,10 @@ function taskDragProps(drag: DragRef, task: Task, tasks: Task[], line: DragLine,
     },
     onDragOver: (e: DragEvent): void => {
       const from = drag.current;
-      if (!accepts(from, task.stage)) return;
+      if (!accepts(from, stage)) return;
       e.preventDefault();
       e.stopPropagation(); // the list behind would otherwise see the same event and show the end instead
-      const target = shownTarget(from, task.stage, dropTargetAt(e, task, tasks), tasks);
+      const target = shownTarget(from, stage, dropTargetAt(e, task, tasks), tasks);
       if (target !== line.dropBefore) line.setDropBefore(target); // only re-render when the line actually moves
     },
     onDrop: (e: DragEvent): void => {
@@ -105,7 +106,7 @@ function taskDragProps(drag: DragRef, task: Task, tasks: Task[], line: DragLine,
       e.stopPropagation(); // the list behind would post the same move without before
       const target = dropTargetAt(e, task, tasks);
       line.clearDrag();
-      postDrop(drag, e.dataTransfer.getData('text/plain'), task.stage, target, tasks);
+      postDrop(drag, e.dataTransfer.getData('text/plain'), stage, target, tasks);
     },
   };
 }
@@ -147,5 +148,5 @@ export function useStageDrag(drag: DragRef, stage: Stage, tasks: Task[], state: 
     if (!related || !e.currentTarget.contains(related)) clearDropLine();
   };
 
-  return { draggedId, dropBefore, taskDragProps: (task) => taskDragProps(drag, task, tasks, line, state), dropAtEnd, dragOverEnd, onListDragLeave };
+  return { draggedId, dropBefore, taskDragProps: (task) => taskDragProps(drag, task, tasks, line, state, stage.name), dropAtEnd, dragOverEnd, onListDragLeave };
 }

@@ -1,7 +1,7 @@
 import { flatten } from '../../flows.js';
 import { destinationOf } from '../../stage-delete.js';
 import { type HiveAction, rubricLines, SCORE_MAX } from '../../stage-agent.js';
-import { DURATION, isGate, onSource } from '../../tasks.js';
+import { DURATION, inFlow, isGate, onSource } from '../../tasks.js';
 import { type AgentId, type CiChecks, DEFAULT_AGENT, type EvaluateRow, SOURCE_ACTIONS, type SourceAction, type SourceFields, isLeaving, type ItemAction, LEAVING_ACTIONS, type Flow, type OnMissing, type Stage, type StageAction, type Task } from '../../types.js';
 import { t, tPlural } from '../i18n.js';
 import type { FlowDraft } from './settings-flows.js';
@@ -208,7 +208,7 @@ export function deletionMoves(drafts: readonly StageDraft[], saved: readonly Flo
   const old = saved.map((f) => ({ ...f, stages: f.stages.map((s) => ({ ...s, name: renamed(s.name) })) }));
   const savedStages = flatten(saved).stages;
   const destinations = tasks.flatMap((task) => {
-    if (kept.has(task.stage) || !savedStages.some((s) => s.name === task.stage)) return [];
+    if (!inFlow(task) || kept.has(task.stage) || !savedStages.some((s) => s.name === task.stage)) return [];
     const to = destinationOf(task, task.stage, old, next);
     return to === undefined ? [] : [to.name];
   });
