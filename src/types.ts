@@ -1100,7 +1100,9 @@ export interface PrComment { id: string; author: string; at: string; text: strin
 export interface PrThread { id: string; anchor: LineAnchor; outdated: boolean; resolved: boolean; subject: 'line' | 'file'; more: boolean; comments: PrComment[] }
 /** A check on a PR's head commit (#758): a check run or a status context, as success, failure or pending; url: its page on GitHub; at: when
  * it completed (a status context: when it was set). */
-export interface PrCheck { name: string; state: 'success' | 'failure' | 'pending'; url?: string; at?: string; startedAt?: string } // startedAt: a CheckRun's startedAt, or a pending StatusContext's createdAt (#914)
+// startedAt: a CheckRun's startedAt once IN_PROGRESS or COMPLETED, or a pending StatusContext's createdAt (#914); queuedAt: a queued check run's
+// check suite createdAt, only while queued, when the read asked it (#598)
+export interface PrCheck { name: string; state: 'success' | 'failure' | 'pending'; url?: string; at?: string; startedAt?: string; queuedAt?: string }
 /** The head commit's checks (#758): GitHub's rollup state, the latest completion, each check; awaiting: the workflows awaiting a maintainer's
  * approval (#854). */
 export interface PrChecks { state: PrCheck['state']; at?: string; items: PrCheck[]; awaiting?: string[] }

@@ -18,7 +18,7 @@ export function readable<T>(nodes: unknown[], read: (node: unknown) => T, skip: 
 }
 
 /** The head commit's checks as the page and its poll ask them (#758), with what another reader adds (#834: the wait for CI adds the head's
- * `oid ` before the rollup and ` checkSuite { workflowRun { databaseId } }` to each check run). ponytail: the first 100 contexts, no
+ * `oid ` before the rollup and ` checkSuite { workflowRun { databaseId } }` to each check run; #598: and `createdAt` inside that `checkSuite`). ponytail: the first 100 contexts, no
  * pagination past them. */
 export const rollupFields = (commit = '', checkRun = ''): string =>
   `headCommit: commits(last: 1) { nodes { commit { ${commit}statusCheckRollup { state contexts(first: 100) { nodes { __typename `
@@ -43,13 +43,20 @@ function withLinks(check: Pick<PrCheck, 'name' | 'state'>, url: unknown, at: unk
   return { ...check, ...(link === undefined ? {} : { url: link }), ...(time === undefined ? {} : { at: time }), ...(start === undefined ? {} : { startedAt: start }) };
 }
 
+// #598: GitHub may fill an Actions job's startedAt when it creates the job, before a runner takes it, so only a run in progress or done has
+// started; a queued one (QUEUED, WAITING, PENDING, REQUESTED) carries its suite's creation instead, the start of its queue, when the read asked it
+function runOf(node: Record<string, unknown>, name: string): PrCheck {
+  const ran = node.status === 'IN_PROGRESS' || node.status === 'COMPLETED';
+  const check = withLinks({ name, state: node.status === 'COMPLETED' ? checkState(node.conclusion) : 'pending' }, node.detailsUrl, node.completedAt, ran ? node.startedAt : undefined);
+  const queuedAt = ran || !isObject(node.checkSuite) ? undefined : filled(node.checkSuite.createdAt);
+  return queuedAt === undefined ? check : { ...check, queuedAt };
+}
+
 // A check run not completed yet is pending whatever its conclusion says; ci-checks.ts reads the wait's checks with it (#834). A status context has
 // one time: its start while pending, its end once finished (#914)
 export function checkOf(node: unknown): PrCheck {
   if (!isObject(node)) throw new Error('check is not an object');
-  if (node.__typename === 'CheckRun' && typeof node.name === 'string') {
-    return withLinks({ name: node.name, state: node.status === 'COMPLETED' ? checkState(node.conclusion) : 'pending' }, node.detailsUrl, node.completedAt, node.startedAt);
-  }
+  if (node.__typename === 'CheckRun' && typeof node.name === 'string') return runOf(node, node.name);
   if (node.__typename === 'StatusContext' && typeof node.context === 'string') {
     const state = checkState(node.state);
     return withLinks({ name: node.context, state }, node.targetUrl, node.createdAt, state === 'pending' ? node.createdAt : undefined);
