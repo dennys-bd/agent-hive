@@ -3733,3 +3733,11 @@ test('hive_done in a free session on a task outside the flow ends nothing: no st
   assert.equal(work(ended.state, 1)?.error, undefined, 'no STAGE_GONE halt');
   assert.deepEqual(resultN(ended.state, 1), { a: 1 });
 });
+
+test('createTask without a stage creates a task outside the flow: no stage, no enteredAt, its origin kept, appended, never started by the fill (#566)', () => {
+  const given = polled(base(1), [listed(1, 'In review')]).state; // review runs nothing; one free worker
+  const { state, effects } = reduce(given, { type: 'createTask', title: 'Loose', body: '', prefix: 'HIVE', auto: true, origin: 'board:item9' });
+  const made = state.tasks.at(-1)!;
+  assert.deepEqual([made.item.id, made.stage, made.enteredAt, made.item.origin, state.localCount], ['HIVE-1', undefined, undefined, 'board:item9', 1]);
+  assert.deepEqual(effects, [], 'a free worker, and still no spawn');
+});

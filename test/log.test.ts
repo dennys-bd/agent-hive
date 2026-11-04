@@ -525,3 +525,7 @@ test('describeEffect names a cleared run\'s transcript removal by task, slug and
   const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: at, stages: ['spec'], lastUsedAt: at, agent: 'claude' as const };
   assert.equal(describeEffect({ type: 'removeTranscripts', task, activity, session }), 'removeTranscripts #1 slug=hive-1-x a1b2c3d4');
 });
+
+test('createTask without a stage logs stage=none (#566)', () => {
+  assert.equal(describeEvent({ type: 'createTask', title: 'x', body: '', prefix: 'HIVE', auto: true }), 'createTask stage=none prefix=HIVE');
+});
