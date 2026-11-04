@@ -1,9 +1,9 @@
 // The dock's file opener (#717): a click on one of an activity's files opens it as an editor pane tab of that activity, at the click's line when
-// it carries one, a detached window's links included. Also what the open files need of the page: a gone activity's models closed, and an
+// it carries one. Also what the open files need of the page: a gone activity's models closed, and an
 // unload over unsaved edits asked about.
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { focusOrOpen } from '@/components/actions';
-import { isHiveDesign, type OpenFile, type OpenFileHow, openedFile } from '@/components/terminal-tabs';
+import { isHiveDesign, type OpenFile, type OpenFileHow } from '@/components/terminal-tabs';
 import type { FileTabKind } from '@/hooks/use-activity';
 import { type Activity, activityKey } from '@/lib/activities';
 import { fileRefPath, refKey } from '@/lib/center-layout';
@@ -68,15 +68,5 @@ export function useFileOpener(activities: Activity[], open: (key: string, path: 
     });
     return true;
   };
-  const latest = useRef(opener);
-  useEffect(() => {
-    latest.current = opener;
-  });
-  // A detached window's file link (#717): main focused this window and forwards it; untrusted IPC, checked by openedFile
-  // optional call: a page's bridge from before this event, or a test's partial stub, has none
-  useEffect(() => window.hive?.onOpenFile?.((value) => {
-    const file = openedFile(value);
-    if (file !== undefined) latest.current(file.key, file.path, file.at);
-  }), []);
   return opener;
 }

@@ -48,7 +48,7 @@ export function stubBridge(): Bridge {
     onOpen: (callback: (tab: unknown) => void) => { on.open = callback; },
     onClosing: (callback: () => void) => { on.closing = callback; },
     onCloseKey: (callback: () => void) => { on.closeKey = callback; return () => undefined; },
-    onOpenFile: () => () => undefined, onFullScreen: () => () => undefined, isFullScreen: async () => false, saveDialog: vi.fn(async () => undefined),
+    focusTab: vi.fn(async () => false), onFullScreen: () => () => undefined, isFullScreen: async () => false, saveDialog: vi.fn(async () => undefined),
   };
   vi.stubGlobal('hive', fake);
   return { ...fake, open: (tab) => on.open(tab), closing: () => on.closing(), closeKey: () => on.closeKey() };
