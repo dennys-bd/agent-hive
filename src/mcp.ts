@@ -97,8 +97,8 @@ function workerStage(deps: McpDeps, ptyId: string): Stage | undefined {
 }
 
 // #339: a free session's end its stage has no transition for: nothing ended, and the user decides what comes next
-const noTransitionMessage = (stage: string, exit: string, hasResult: boolean): string =>
-  `The task is in stage \`${stage}\`, which has no transition for \`${exit}\`: no stage ended.${hasResult ? ' Your result was recorded.' : ''} Ask the user what to do next with hive_ask.`;
+const noTransitionMessage = (stage: string | undefined, exit: string, hasResult: boolean): string =>
+  stage === undefined ? 'The task is outside the flow: no stage ended.' : `The task is in stage \`${stage}\`, which has no transition for \`${exit}\`: no stage ended.${hasResult ? ' Your result was recorded.' : ''} Ask the user what to do next with hive_ask.`;
 
 // hive_done and hive_pr: the stage's end and its PR, the intent-carrying paths over the hooks' safety net.
 function registerStageTools(server: McpServer, deps: McpDeps, header: string | undefined): void {

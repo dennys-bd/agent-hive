@@ -602,7 +602,7 @@ export interface ColumnWrite {
 
 export interface Task {
   item: Item;
-  stage: string; // the Hive stage the task sits in (#286: the Hive's own columns are stages)
+  stage?: string; // the Hive stage the task sits in (#286: the Hive's own columns are stages); absent = outside the flow (#566): no fill, no transitions, no caps
   boardColumn: string; // where the Hive last saw or left it on the source; the poll compares against it
   missing?: true; // gone from the source; waits for close or keep
   orphan?: true; // kept after going missing: runs to the end, no source writes, ignored by the poll
@@ -1583,7 +1583,7 @@ export type HiveEvent =
   | { type: 'restored'; itemId: string; branch?: string } // #619: the restore's git ended well; `branch` when it checked out a new -r<n>
   | { type: 'restoreFailed'; itemId: string } // #619: the restore's git failed: the mark goes
   | { type: 'clearSessions'; activityId: string; sessionId: string } // one session's limpar in the panel (#304); a record id (#629)
-  | { type: 'createTask'; title: string; body: string; stage: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string } } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67)
+  | { type: 'createTask'; title: string; body: string; stage?: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string } } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67)
   | { type: 'closeTask'; taskId: string } // close on a missing task, remove on a stopped local one (#132): the task and its session go; a missing task's worktree stays (#182), a local task's goes first, in the route (#542)
   | { type: 'keepTask'; taskId: string } // manter on a missing task
   | { type: 'closeMissing'; stage: string } // close all in a stage's missing strip (#279): every closable missing task of the stage goes
@@ -1634,6 +1634,7 @@ export type HiveEvent =
   | { type: 'captureSession'; terminalId: string; runId: string; agent: AgentId; sessionId?: string; resume?: { sessionId?: string; activityId?: string } } // #696: the shim's register: a free session in that terminal; #932: the agent the shim named, and no id for one that picks its own (Codex); #347: a resume: the held session's id and its record's id (SessionRef's activityId), both, or neither while its first SessionStart has to name it
   | { type: 'worktreeReady'; activityId: string; path: string; branch: string; base: TaskBase | null; local: boolean } // POST /tasks/:id/worktree created it (#164); local = it runs in its workspace's own checkout (#444)
   | { type: 'moveToStage'; taskId: string; stage: string; drop?: { before?: string } } // right-click → move to, or a drag across stages (#164, #366); `drop` pins the task before `before`, or at the end without it
+  | { type: 'leaveFlow'; taskId: string } // #566: out of the flow by hand; POST /tasks/:id/leave-flow checked leaveBlocker
   | { type: 'retry'; taskId: string } // #915: POST /tasks/:id/retry on a task stopped with TRIES_OUT: the spent transition again, its counter back at 0
   | { type: 'dismissError'; taskId: string } // #354: POST /tasks/:id/dismiss-error: the activity's error goes, and its stop too in a stage with an action
   | { type: 'approve'; activityId: string } // Aprovar on a task awaiting approval (#268): the approved transition's sources and the move; a held worker goes on in place

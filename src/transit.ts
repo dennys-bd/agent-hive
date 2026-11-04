@@ -4,7 +4,7 @@ import { forgetSession } from './record-kit.js';
 import { ensureActivity, type Reduced, settleEntries, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
 import { renderPrompt, verdictsLine } from './spawn.js';
 import { stageSession } from './task-runs.js';
-import { canDismissError, canMoveToStage, enter, onSource, sessionsOf, stageOf, taskId } from './tasks.js';
+import { canDismissError, canMoveToStage, enter, inFlow, onSource, sessionsOf, stageOf, taskId } from './tasks.js';
 import { hasFixedVerdicts, hiveAction, runsAgent } from './stage-agent.js';
 import { exitName, exitOf, isAutomatic, needsHandover, resolveSession, retryTransition, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
 import {
@@ -221,6 +221,7 @@ export function unrouted(state: State, id: string): State {
  * deleted under it (stageGone), or a stage this state does not have, halts the task with STAGE_GONE (#861): no transition, no source write. */
 export function advance(state: State, task: Task, end: EndOf): Advanced {
   if (task.leaving) return held(state, task);
+  if (!inFlow(task)) return held(state, task); // #566: no stage, no transition
   const gone = activityOf(state, taskId(task))?.stageGone;
   if (gone !== undefined || stageOf(state.stages, task.stage) === undefined) return haltGone(state, task, gone ?? task.stage);
   const transition = exitOf(state, task.stage, end.trigger, end.verdict);

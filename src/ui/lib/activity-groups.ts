@@ -1,5 +1,6 @@
 // How a workspace's activities group in the Activities tab (#586): by stage, by status or not at all, done always last in a group of its own.
 // Pure: the tab renders what this answers.
+import { inFlow } from '../../tasks.js';
 import { runsAgent } from '../../stage-agent.js';
 import type { Task, Stage, Status } from '../../types';
 import { statusText, t } from '@/i18n';
@@ -49,7 +50,7 @@ const statusName = (status: StatusGroup): string => (status === 'stopped' ? t('d
 
 // The flow's stages in order, then any stage a task still names after it left the flow
 function byStage(items: TaskActivity[], stages: Stage[]): ActivityGroup[] {
-  const names = new Set([...stages.map((stage) => stage.name), ...items.map((a) => a.task.stage)]);
+  const names = new Set([...stages.map((stage) => stage.name), ...items.flatMap((a) => (inFlow(a.task) ? [a.task.stage] : []))]);
   return [...names].map((name) => ({ key: `stage:${name}`, name, items: items.filter((a) => a.task.stage === name), isDone: false }));
 }
 

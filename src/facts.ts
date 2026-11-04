@@ -57,7 +57,7 @@ export interface FactFields {
   'free_session.ended': Timed & { worker: number; agent?: AgentId } & Partial<RunUsage>;
   'terminal.ended': Timed & { command?: string }; // command: the Command's name when it ran one, never its line
   'task.discovered': { source: string; source_created_at?: string };
-  'task.moved': { from: string; to: string; by: MoveBy };
+  'task.moved': { from?: string; to?: string; by: MoveBy };
   'task.closed': Gone;
   'task.deleted': Gone;
   // #797: the workspace memory its launch got, only when non-empty. memory_chars: the rendered section's length, what the run received

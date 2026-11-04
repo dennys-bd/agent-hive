@@ -15,14 +15,14 @@ import { MEMORY_KINDS, type MemoryOrigin, type MemoryUse, OPTIONAL_TOOLS, type O
 // hive_create_task: a new local task in the Comb (#132).
 function registerCreateTaskTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_create_task', {
-    description: 'Create a task in the Hive. stage defaults to the first stage. Optional workspace: a Comb workspace name, for a task created in hive. '
+    description: 'Create a task in the Hive. Without stage the task is created outside the flow, in hive only. Optional workspace: a Comb workspace name, for a task created in hive. '
       + "Optional source: where the task is created; defaults to the Hive's setting. Answers the new task id, or a notice when the source's filter leaves it out of the flow.",
     inputSchema: { title: z.string(), body: z.string().optional(), stage: z.string().optional(), workspace: z.string().optional(), source: z.string().optional() },
   }, async ({ title, body, stage, workspace, source }) => recorded(deps, header, 'hive_create_task', async () => {
     const current = deps.live();
     if (!livePtyId(deps, header) || !current) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
     const { state, config, sources } = current;
-    const request = { title, body, stage: stage ?? state.stages[0]?.name, ...(workspace === undefined ? {} : { workspace }), ...(source === undefined ? {} : { source }) };
+    const request = { title, body, ...(stage === undefined ? {} : { stage }), ...(workspace === undefined ? {} : { workspace }), ...(source === undefined ? {} : { source }) };
     // POST /tasks' own resolution (#846): the two cannot drift
     const created = await createTask({ state, config, sources, dispatch: deps.dispatch, poll: deps.poll, latest: () => deps.live()?.state }, request);
     if ('status' in created) return refuse('event', created.message);

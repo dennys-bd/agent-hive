@@ -5,7 +5,8 @@ import type { LegacyStage } from '../src/config-migrate.js';
 import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
 import { SIGNALS_DEFAULTS, STAGE_GONE, type Item, type Signal, type SignalBehaviour, type SignalSettings, type State, type Task, type Transition } from '../src/types.js';
 import { chained, move } from './fakes.js';
-import { withWork, workId } from './fixtures/work.js';
+import { activityIdOf, withWork, workId } from './fixtures/work.js';
+import { leave } from '../src/tasks.js';
 
 // The signal table in the reducer (#727): what each row lets the Hive start, resume, continue and run on its own. spec hands over to build,
 // which goes on in the session, as in stage-caps.test.ts; the stages become #134's flowchart through chained.
@@ -279,4 +280,17 @@ test('a task a blocked stop left is idle again once its blockers are gone: the n
   const exited = reduce(halted, { type: 'exit', ptyId }).state;
   assert.deepEqual(spawned(filled(exited)), [], 'still blocked');
   assert.deepEqual(spawned(filled(ungated(exited))), ['1']);
+});
+
+const outsideTask = (n: number): Task => leave(waiting(n, 'build'));
+
+test('the fill never starts a task outside the flow, however idle and auto it is (#566)', () => {
+  assert.deepEqual(spawned(filled(hive('green', [outsideTask(1), waiting(2, 'spec')], { max: 2 }))), ['2']);
+});
+
+test('a task outside the flow counts against no stage cap: a stale run on it leaves build\'s one seat to a build task (#566)', () => {
+  const capped = STAGES.map((s) => (s.name === 'build' ? { ...s, maxWorkers: 1 } : s));
+  const given = withWork(hive('green', [outsideTask(1), waiting(2, 'build')], { max: 2, stages: capped }), 'board:item1', { workerId: 'w1' });
+  const held: State = { ...given, workers: [{ id: 'w1', status: 'working', runId: 'p1', activityId: activityIdOf('board:item1') }, ...given.workers.slice(1)] };
+  assert.deepEqual(spawned(filled(held)), ['2']);
 });

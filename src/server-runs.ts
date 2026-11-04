@@ -2,7 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { activityOf, isLocalActivityId, localWorkspaceOf } from './activities.js';
 import { activityParam, keptTarget, LOCAL_ACTIVITY_MESSAGE, taskTarget, UNKNOWN_ACTIVITY_MESSAGE } from './activity-routes.js';
 import { taskBranch, liveRuns, startMode } from './task-runs.js';
-import { branchFor, continuable } from './tasks.js';
+import { branchFor, continuable, inFlow } from './tasks.js';
 import { taskWorkspace, workspaceByName } from './config.js';
 import { continuableLocal } from './local-sessions.js';
 import { discarded, type RestartPlan, restartPlan, restartWorktree } from './restart.js';
@@ -130,12 +130,13 @@ function registerContinueRoute(app: Express, { requireLive, dispatch }: TaskRout
 }
 
 // The task a Restart acts on, its repo and worktree, the branch it is on and the stage's starting commit (#283), or why not.
-interface RestartTarget { task: Task; activity: Activity; repo: string; worktree: string; branch: string; template: string; commit: string }
+interface RestartTarget { task: Task & { stage: string }; activity: Activity; repo: string; worktree: string; branch: string; template: string; commit: string }
 
 function restartTarget(current: LiveView, activityId: string): RestartTarget | Refusal {
   const target = taskTarget(current.state, activityId);
   if ('status' in target) return target;
   const { task, activity } = target;
+  if (!inFlow(task)) return { status: HTTP_CONFLICT, message: NO_RESTART_MESSAGE }; // #566: no stage, no restart
   if (activity.setup) return { status: HTTP_CONFLICT, message: SETUP_RUNNING_MESSAGE }; // #351
   const mode = startMode(task, current.state);
   if (mode === 'approval') return { status: HTTP_CONFLICT, message: AWAITING_MESSAGE }; // #268

@@ -72,3 +72,11 @@ test('a task queued to run with an open PR is not review: empty, or new without 
   expect(taskState(TASK, stateOf([], { prs: ['open'], stages: [RUNS], live: { stopped: true } }))).toBe('review');
   expect(taskState(TASK, stateOf([], { approval: true, prs: ['open'], stages: [RUNS] }))).toBe('review'); // a held approval is not queued
 });
+
+test('a task outside the flow reads its status from its activity as any task does (#566)', () => {
+  const { stage: _stage, ...outside } = TASK;
+  expect(taskState(outside, { workers: [], activities: [], activityRecords: [] })).toBe('new');
+  expect(taskState(outside, stateOf([]))).toBe('empty');
+  expect(taskState(outside, stateOf([run('working')]))).toBe('working');
+  expect(taskState(outside, stateOf([], { prs: ['open'] }))).toBe('review');
+});

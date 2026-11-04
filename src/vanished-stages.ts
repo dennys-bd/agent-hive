@@ -3,7 +3,7 @@ import { releaseRun, releaseWorker, withTask } from './reducer-kit.js';
 import { haltCi } from './stage-ci.js';
 import { destinationOf } from './stage-delete.js';
 import { haltEvaluate } from './stage-evaluate.js';
-import { enter, inAction, stageOf, taskId } from './tasks.js';
+import { enter, inAction, inFlow, stageOf, taskId } from './tasks.js';
 import { haltGone } from './transit.js';
 import type { Activity, Effect, Stage, State, Task, Worker } from './types.js';
 
@@ -24,7 +24,7 @@ function endHold(state: State, moved: Task, live: Activity, worker: Worker & { r
 // A task a worker or a stage action holds: a plain rewrite of its stage and entry, no enter, so no gate, action or onStart fires mid-run. A
 // worker's run is marked stageGone and halts at its Stop; a wait for CI or an evaluation holds no process of the Hive's to Stop at and its stage is
 // gone, so it halts now, an evaluation's runs aborted (#877)
-function placeHeld(acc: Placed, task: Task, to: Stage): Placed {
+function placeHeld(acc: Placed, task: Task & { stage: string }, to: Stage): Placed {
   const moved: Task = { ...task, stage: to.name, enteredAt: new Date().toISOString() };
   const before = acc.before.map((c) => (taskId(c) === taskId(task) ? moved : c));
   const state = withTask(acc.state, moved);
@@ -48,7 +48,7 @@ function placeHeld(acc: Placed, task: Task, to: Stage): Placed {
  * all the task is left where it is: the save refuses an empty flow. */
 export function placeVanished(state: State, stages: Stage[]): Placed {
   return state.tasks.reduce<Placed>((acc, task) => {
-    if (stageOf(stages, task.stage) !== undefined) return acc;
+    if (!inFlow(task) || stageOf(stages, task.stage) !== undefined) return acc; // #566: a task outside the flow never moves into one on its own
     const to = destinationOf(task, task.stage, state.stages, stages);
     if (to === undefined) return acc;
     const live = activityOf(acc.state, taskId(task));

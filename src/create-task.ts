@@ -22,6 +22,7 @@ export const UNKNOWN_STAGE_MESSAGE = 'etapa desconhecida';
 export const UNKNOWN_WORKSPACE_MESSAGE = 'unknown workspace';
 export const HIVE_OFF_MESSAGE = 'hive is turned off: create the task in a source';
 export const UNKNOWN_SOURCE_MESSAGE = 'source must be "hive" or a configured source';
+export const NO_STAGE_ON_SOURCE_MESSAGE = 'a task outside the flow is created only in hive'; // #566: the column a source task is born in is its stage's
 export const WORKSPACE_ON_SOURCE_MESSAGE = "a source's task properties set its workspace: leave workspace out";
 export const PR_HIVE_ONLY_MESSAGE = 'pr creates in hive only: leave source out or set it to "hive"';
 export const PR_URL_MESSAGE = 'pr must be a GitHub pull request link';
@@ -60,20 +61,20 @@ function linkOf(state: State, sources: readonly string[], url: unknown, origin: 
 }
 
 /** The createTask the body asks for, or why not: a trimmed title of 1 to 200 characters, an optional text body of at most 64 KB, the name
- * of a Comb stage, an optional Comb workspace (#179), and the native view's url and origin (#756), `sources` being the configured source
- * names an origin may name. Shared by POST /tasks and the hive_create_task tool (src/mcp.ts, #99), which hands no sources. */
+ * of a Comb stage or none (#566: absent = outside the flow), an optional Comb workspace (#179), and the native view's url and origin (#756),
+ * `sources` being the configured source names an origin may name. Shared by POST /tasks and the hive_create_task tool (src/mcp.ts, #99), which hands no sources. */
 export function createEvent(state: State, prefix: string, body: unknown, sources: readonly string[] = []): Extract<HiveEvent, { type: 'createTask' }> | Refusal {
   const { title, body: text = '', stage, workspace, auto, url, origin } = (body ?? {}) as { title?: unknown; body?: unknown; stage?: unknown; workspace?: unknown; auto?: unknown; url?: unknown; origin?: unknown };
   const trimmed = typeof title === 'string' ? title.trim() : '';
   if (trimmed === '') return { status: HTTP_BAD_REQUEST, message: TITLE_REQUIRED_MESSAGE };
   if (trimmed.length > TITLE_MAX) return { status: HTTP_BAD_REQUEST, message: TITLE_TOO_LONG_MESSAGE };
   if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > BODY_MAX_BYTES) return { status: HTTP_BAD_REQUEST, message: BODY_MESSAGE };
-  if (typeof stage !== 'string' || stageOf(state.stages, stage) === undefined) return { status: HTTP_BAD_REQUEST, message: UNKNOWN_STAGE_MESSAGE };
+  if (stage !== undefined && (typeof stage !== 'string' || stageOf(state.stages, stage) === undefined)) return { status: HTTP_BAD_REQUEST, message: UNKNOWN_STAGE_MESSAGE };
   if (workspace !== undefined && (typeof workspace !== 'string' || !state.workspaces.includes(workspace))) return { status: HTTP_BAD_REQUEST, message: UNKNOWN_WORKSPACE_MESSAGE }; // #179
   const link = linkOf(state, sources, url, origin);
   if ('status' in link) return link;
   // auto: false keeps the fill off a task its creator starts right away (redesign 03); anything else is the plain create, born auto (#573)
-  return { type: 'createTask', title: trimmed, body: text, stage, prefix, ...(workspace === undefined ? {} : { workspace }), auto: auto !== false, ...link };
+  return { type: 'createTask', title: trimmed, body: text, ...(stage === undefined ? {} : { stage }), prefix, ...(workspace === undefined ? {} : { workspace }), auto: auto !== false, ...link };
 }
 
 type CreatePr = Extract<HiveEvent, { type: 'createTask' }>['pr'];
@@ -118,6 +119,7 @@ async function createInSource(deps: CreateDeps, body: unknown, name: string): Pr
   if (((body ?? {}) as { workspace?: unknown }).workspace !== undefined) return { status: HTTP_BAD_REQUEST, message: WORKSPACE_ON_SOURCE_MESSAGE };
   const event = createEvent(deps.state, deps.config.comb.prefix, body);
   if ('status' in event) return event;
+  if (event.stage === undefined) return { status: HTTP_BAD_REQUEST, message: NO_STAGE_ON_SOURCE_MESSAGE };
   const column = onSource(stageOf(deps.state.stages, event.stage)?.from, name)?.[0];
   if (column === undefined) return { status: HTTP_BAD_REQUEST, message: noColumnMessage(event.stage, name) };
   let itemId: string;

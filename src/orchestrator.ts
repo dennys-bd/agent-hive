@@ -1,5 +1,5 @@
 
-import { canCloseMissing, inAction, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
+import { canCloseMissing, inAction, inFlow, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
 import { benchmarkReduce, isBenchmarkEvent } from './benchmark-reducer.js';
 import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
@@ -18,6 +18,7 @@ import { answer, answerFeedback, approvalExpired, approve, awaitApproval, extend
 import { askHandoff, needsHandoff, pendingEnd, withoutPending } from './handoff.js';
 import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
 import { exitOf, transitionByKey } from './transitions.js';
+import { leaveFlow } from './leave-flow.js';
 import { beingDeleted, clearedError, deletingOf, sourceWrites, continueInPlace, dropActivity, dropWorker, keptMarks, ensureActivity, emptyWorker, takeWorker, releaseWorker, liveWorker, none, occupiedCount, occupy, workerCount, patch, type Reduced, releaseRun, settleEntries, shouldWrite, slugTaken, unmarked, withError, withTask } from './reducer-kit.js';
 import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, forgetUnopenedLocal, newLocalSession, openLocalSession, settleCopy, withLocalTurn } from './session-copy.js';
 import { clearSession, renameSession } from './session-clear.js';
@@ -209,6 +210,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'createActivity': return createActivity(state, event); // no fill: the work is born, no run starts (#629)
     case 'worktreeReady': return worktreeReady(state, event); // no fill: a task with auto off is never a candidate
     case 'moveToStage': return fill(moveToStage(state, event)); // any task with auto that entered a prompt stage may take a free worker (#366, #708)
+    case 'leaveFlow': return leaveFlow(state, event.taskId); // #566: frees no worker, so no fill
     case 'approve': return fill(approve(state, liveTaskId(state, event.activityId), canContinue)); // a held worker goes on in place when canContinue allows (#321); else the fill decides
     case 'feedback': return feedback(state, event);
     case 'extendApproval': return extendApproval(state, liveTaskId(state, event.activityId)); // no fill: nothing freed (#268)
@@ -267,15 +269,17 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
 // (enteredAt now, so `after` counts from creation) and appended right after the stage's last task, unpinned. `local` keeps it off every source
 // write and out of the poll's missing mark. Unknown stage: nothing (the route checked; a race is a no-op). With pr (#67) the task holds that PR
 // from birth, in a record with no live activity: the shape a deleted activity leaves, which taskOfPr, prsOf and the PR poll already read.
+// No stage (#566): the task is outside the flow, never entered, appended to the list.
 function createTask(state: State, { title, body, stage: name, prefix, workspace, auto, url, origin, pr }: Extract<HiveEvent, { type: 'createTask' }>): Reduced {
-  const stage = stageOf(state.stages, name);
-  if (!stage) return none(state);
+  const stage = name === undefined ? undefined : stageOf(state.stages, name);
+  if (name !== undefined && !stage) return none(state);
   const n = state.localCount + 1;
   const item: Item = { itemId: `local:${n}`, id: `${prefix}-${n}`, title, body, url: url ?? '', ...(origin === undefined ? {} : { origin }) }; // #756: a copy of a source's issue keeps its link
   const placed = workspace !== undefined && state.workspaces.includes(workspace) ? { workspace } : {}; // a known workspace only (#179)
-  const task = enter({ item, stage: stage.name, boardColumn: '', created: true, auto, ...placed }, stage);
+  const born: Task = { item, boardColumn: '', created: true, auto, ...placed };
+  const task = stage ? enter(born, stage) : born;
   // "End of its stage" is right after the last task of that stage, as moveTask reads it; an empty stage appends to the list
-  const at = state.tasks.reduce((end, c, i) => (c.stage === stage.name ? i + 1 : end), state.tasks.length);
+  const at = stage ? state.tasks.reduce((end, c, i) => (c.stage === stage.name ? i + 1 : end), state.tasks.length) : state.tasks.length;
   const held: ActivityRecord | undefined = pr && { id: pr.recordId, taskIds: [item.itemId], sessions: [], prs: [{ url: pr.url, state: 'open' }] };
   const activityRecords = held === undefined ? state.activityRecords : [...state.activityRecords, held];
   return none(settleEntries(state.tasks, { ...state, localCount: n, tasks: [...state.tasks.slice(0, at), task, ...state.tasks.slice(at)], activityRecords }));
@@ -810,7 +814,7 @@ const inMainRepo = (state: State, task: Task, worker: Worker): boolean => worker
 function firstSession(state: State, worker: Worker, id: string): State {
   const task = taskOfWorker(state, worker);
   const activity = activityOfWorker(state, worker);
-  if (!task || !activity || activity.sessionId !== undefined) return state;
+  if (!task || !inFlow(task) || !activity || activity.sessionId !== undefined) return state;
   return touchSession(withActivity(state, { ...activity, sessionId: id }), task, id, task.stage, worker.startedAt ?? new Date().toISOString(), ranAgent(worker));
 }
 

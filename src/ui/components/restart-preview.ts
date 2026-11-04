@@ -1,6 +1,6 @@
 import { activityOf } from '../../activities';
 import { stageSession } from '../../task-runs';
-import { SESSION_ID_CHARS, SHORT_SHA, sessionsOf } from '../../tasks';
+import { SESSION_ID_CHARS, SHORT_SHA, inFlow, sessionsOf } from '../../tasks';
 import type { Stage, State, Task } from '../../types';
 import { t, tPlural } from '@/i18n';
 
@@ -16,7 +16,7 @@ interface Discarded { mode: 'reset' | 'branch'; commits: number; files: number }
 /** The descarta row: the commits (reset only: in branch mode they stay on the published branch), the files, and the stage's session, which
  * the restart abandons, not deletes: the panel still lists it. */
 export function discardText(task: Task, work: RestartWork, { mode, commits, files }: Discarded): string {
-  const session = stageSession(task, work, task.stage);
+  const session = inFlow(task) ? stageSession(task, work, task.stage) : undefined; // #566: a restart is only ever of a stage
   return [
     ...(mode === 'reset' ? [tPlural('restart.commits', commits, { n: commits })] : []),
     tPlural('diff.files', files, { n: files }),
@@ -28,7 +28,7 @@ export function discardText(task: Task, work: RestartWork, { mode, commits, file
  * Undefined without a recorded start. */
 export function returnTo(task: Task, work: RestartWork): { sha: string; label: string } | undefined {
   const start = activityOf(work, task.item.itemId)?.stageStart;
-  if (!start) return undefined;
+  if (!start || !inFlow(task)) return undefined;
   const label = start.after === undefined ? t('restart.stageStart', { stage: task.stage }) : t('restart.stageEnd', { stage: start.after });
   return { sha: start.commit.slice(0, SHORT_SHA), label };
 }

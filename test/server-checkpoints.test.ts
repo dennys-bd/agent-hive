@@ -5,6 +5,7 @@ import { activityOf } from '../src/activities.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
+import { OUTSIDE_FLOW_MESSAGE } from '../src/server-tasks.js';
 import { branchFor } from '../src/tasks.js';
 import { worktreePath } from '../src/worktree.js';
 import type { Activity, Checkpoint, Exec, SettingsBody } from '../src/types.js';
@@ -143,4 +144,10 @@ test('POST …/restore stops when the safety capture records nothing: 500, the m
   assert.equal(res.status, 500);
   assert.deepEqual(f.calls.filter((c) => ['reset', 'clean', 'read-tree', 'switch'].includes(c[0])), []);
   assert.deepEqual([work(f).deleting, work(f).checkpoints?.length], [undefined, 1]);
+});
+
+test('POST …/restore refuses with 409 a task outside the flow: a checkpoint records its stage; no mark, no git (#566)', async (t) => {
+  const f = await startRestores(t, { stage: undefined });
+  const res = await postJson(route(f, 1));
+  assert.deepEqual([res.status, await res.json(), f.calls, work(f).deleting], [409, { error: OUTSIDE_FLOW_MESSAGE }, [], undefined]);
 });

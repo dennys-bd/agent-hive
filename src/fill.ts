@@ -4,7 +4,7 @@
 // of this. Pure: every function returns new objects.
 import { liveDefaultAgent } from './agents.js';
 import { behaviourOf, mayContinue, mayResume } from './signals.js';
-import { candidates, isPastFirstStage, isStarted, stageOf, taskId } from './tasks.js';
+import { candidates, inFlow, isPastFirstStage, isStarted, stageOf, taskId } from './tasks.js';
 import { holdsWorker, runsAgent } from './stage-agent.js';
 import { treeStarted } from './task-tree.js';
 import { hasBudget } from './usage.js';
@@ -69,7 +69,7 @@ function mayStartNew(state: State, behaviour: SignalBehaviour, task: Task): bool
 // passes whatever the resume says. Only a task whose stage has room under its cap (#475), counted on `state`.
 function startable(state: State, gate: Gate, now: number, keep?: string): Task[] {
   const allowed = (c: Task): boolean => taskId(c) === keep || (isStarted(state, c) ? mayResume(gate.behaviour) : mayStartNew(state, gate.behaviour, c));
-  return candidates(state, now).filter((c) => allowed(c) && stageHasRoom(state, c.stage, gate.stageCaps));
+  return candidates(state, now).filter((c) => inFlow(c) && allowed(c) && stageHasRoom(state, c.stage, gate.stageCaps));
 }
 
 /** A held stage's first move in worker `index` (#727, #877): a commands run or an evaluation; what the fill, a continuation and a manual start call. */
