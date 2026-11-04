@@ -3050,6 +3050,8 @@ const en = {
   'tasks.display.epics.hint.none': 'epics show as cards in the stages.',
   'tasks.display.epics.hint.middle': 'only the root epic stays. the middle ones leave the view and stay in the flow.',
   'tasks.display.epics.hint.all': 'no epic in the view. they stay in the flow and their children stay in the stages.',
+  'tasks.sidebar.list': 'all as a list', // #572: the tasks section's rows (handoff §4b)
+  'tasks.sidebar.outside': 'no flow',
 };
 
 export type MessageKey = keyof typeof en;
@@ -6094,6 +6096,8 @@ const pt: Record<MessageKey, string> = {
   'tasks.display.epics.hint.none': 'epics aparecem como cards nas etapas.',
   'tasks.display.epics.hint.middle': 'fica só o epic raiz. os do meio somem da vista e continuam no fluxo.',
   'tasks.display.epics.hint.all': 'nenhum epic na vista. continuam no fluxo e as filhas seguem nas etapas.',
+  'tasks.sidebar.list': 'todas em lista',
+  'tasks.sidebar.outside': 'sem fluxo',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
