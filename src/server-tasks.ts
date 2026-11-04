@@ -111,6 +111,7 @@ function startRefusal(state: State, itemId: string): Refusal | undefined {
   const task = state.tasks.find((c) => c.item.itemId === itemId);
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
   if (task.item.epic !== undefined) return { status: HTTP_CONFLICT, message: EPIC_MESSAGE };
+  if (!inFlow(task)) return { status: HTTP_CONFLICT, message: OUTSIDE_FLOW_MESSAGE }; // #566: /start runs a stage; the Start dialog moves it first (3.5)
   const activity = activityOf(state, itemId);
   if (activity?.setup) return { status: HTTP_CONFLICT, message: SETUP_RUNNING_MESSAGE }; // before RUNNING: both paths answer the same (#351)
   if (activity?.workerId !== undefined || inAction(activity)) return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // #755, #834: a stage action runs
