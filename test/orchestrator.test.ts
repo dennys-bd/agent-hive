@@ -9,6 +9,7 @@ import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, ActivityRecord, Flow, ForkSyncResult } from '../src/types.js';
 import { describeEvent } from '../src/log.js';
 import { savedWork } from '../src/state-guards.js';
+import { flatten } from '../src/flows.js';
 import { HOUR_MS } from '../src/usage.js';
 import { deriveFacts } from '../src/fact-derive.js';
 import type { SourceItem, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
@@ -3766,4 +3767,19 @@ test('leaveFlow is ignored while a stage run holds the task, and for a missing t
     deleting: withLive(manualState(1), 1, { deleting: true }),
   };
   for (const [name, s] of Object.entries(cases)) assert.equal(reduce(s, { type: 'leaveFlow', taskId: 'board:item1' }).state, s, name);
+});
+
+const BUG: Flow = { name: 'bug', stages: [{ name: 'triage', from: { board: ['Bugs'] }, prompt: '/triage {url}' }], transitions: [] };
+const withBugFlow = (s: State): State => { const flows = [...s.flows, BUG]; return { ...s, flows, ...flatten(flows) }; };
+
+test('moveToStage takes a task outside the flow into a stage of a second flow: a source task gets the target\'s first from written and loses its tries, a hive task writes nothing (#566)', () => {
+  const given = withBugFlow(polled(base(0), [listed(1)]).state);
+  const outside = withLive(reduce(given, { type: 'leaveFlow', taskId: 'board:item1' }).state, 1, { tries: { k: 1 }, via: 'k' });
+  const { state, effects } = reduce(outside, { type: 'moveToStage', taskId: 'board:item1', stage: 'triage' });
+  assert.deepEqual([task(state, 1)?.stage, task(state, 1)?.boardColumn, task(state, 1)?.enteredAt !== undefined], ['triage', 'Bugs', true]);
+  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:item1', column: 'Bugs' }]);
+  assert.equal(holds(state, 1, 'tries'), false, 'a move by hand drops the tries');
+  const local = reduce(withBugFlow(base(0)), { type: 'createTask', title: 'Loose', body: '', prefix: 'HIVE', auto: false }).state;
+  const quiet = reduce(local, { type: 'moveToStage', taskId: 'local:1', stage: 'triage' });
+  assert.deepEqual([quiet.state.tasks[0].stage, quiet.effects], ['triage', []]);
 });

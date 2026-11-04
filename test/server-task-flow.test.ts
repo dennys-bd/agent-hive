@@ -58,6 +58,8 @@ test('POST /tasks/:id/leave-flow takes a stopped task out of the flow and writes
   assert.equal(task()?.stage, undefined);
   assert.deepEqual(effects, [], 'no source write');
   assert.deepEqual(await post(ID, 'leave-flow'), { status: 409, body: { error: 'already outside the flow' } });
+  assert.deepEqual(await post(ID, 'move-to', { stage: 'fila' }), { status: 200, body: { ok: true } }); // back in from no stage (#566)
+  assert.equal(task()?.stage, 'fila');
   const held = await route(t, at(TASK, { workerId: 'w1' }));
   assert.deepEqual(await held.post(ID, 'leave-flow'), { status: 409, body: { error: 'tarefa já está executando' } });
 });
