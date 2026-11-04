@@ -45,7 +45,7 @@ test('loadState keeps every fixture task and every variant the board draws diffe
   assert.equal(state.tasks.length, raw.tasks.length, 'loadState drops a bad task, or the whole file, silently');
   const stages = flatten(config.comb.flows).stages.map((s) => s.name);
   for (const task of state.tasks) {
-    assert.ok(stages.includes(task.stage), `${task.item.id} sits in ${task.stage}`);
+    assert.ok(task.stage !== undefined && stages.includes(task.stage), `${task.item.id} sits in ${task.stage}`);
     assert.equal(activityOf(state, task.item.itemId)?.slug ?? slugFor(task.item), slugFor(task.item), task.item.id); // #629: its activity's, when it has one
     assert.deepEqual([task.created, task.workspace], [true, 'agent-hive'], task.item.id);
   }

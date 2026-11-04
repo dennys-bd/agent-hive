@@ -22,6 +22,7 @@ export const UNKNOWN_STAGE_MESSAGE = 'etapa desconhecida';
 export const UNKNOWN_WORKSPACE_MESSAGE = 'unknown workspace';
 export const HIVE_OFF_MESSAGE = 'hive is turned off: create the task in a source';
 export const UNKNOWN_SOURCE_MESSAGE = 'source must be "hive" or a configured source';
+export const NO_STAGE_ON_SOURCE_MESSAGE = 'a task outside the flow is created only in hive'; // #566: the column a source task is born in is its stage's
 export const WORKSPACE_ON_SOURCE_MESSAGE = "a source's task properties set its workspace: leave workspace out";
 export const PR_HIVE_ONLY_MESSAGE = 'pr creates in hive only: leave source out or set it to "hive"';
 export const PR_URL_MESSAGE = 'pr must be a GitHub pull request link';
@@ -118,6 +119,7 @@ async function createInSource(deps: CreateDeps, body: unknown, name: string): Pr
   if (((body ?? {}) as { workspace?: unknown }).workspace !== undefined) return { status: HTTP_BAD_REQUEST, message: WORKSPACE_ON_SOURCE_MESSAGE };
   const event = createEvent(deps.state, deps.config.comb.prefix, body);
   if ('status' in event) return event;
+  if (event.stage === undefined) return { status: HTTP_BAD_REQUEST, message: NO_STAGE_ON_SOURCE_MESSAGE };
   const column = onSource(stageOf(deps.state.stages, event.stage)?.from, name)?.[0];
   if (column === undefined) return { status: HTTP_BAD_REQUEST, message: noColumnMessage(event.stage, name) };
   let itemId: string;

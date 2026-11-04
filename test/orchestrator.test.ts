@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { candidates, canOpenSession, sessionsOf, canDeleteActivity, differsFromSource, isBlocked, isQueued, mergeTasks, moveTask, removalBlocker, type RemovalBlocker, resetOrder, type Runs, slugFor } from '../src/tasks.js';
+import { candidates, canOpenSession, leave, sessionsOf, canDeleteActivity, differsFromSource, isBlocked, isQueued, mergeTasks, moveTask, removalBlocker, type RemovalBlocker, resetOrder, type Runs, slugFor } from '../src/tasks.js';
 import { canSchedule, canStart, effectiveLimits, extractPrUrl, initialState, isChildSession, isFree, reduce, type Reduced, WAITING_NOTIFICATIONS } from '../src/orchestrator.js';
 import { startMode } from '../src/task-runs.js';
 import { localSessionsOf } from '../src/local-sessions.js';
@@ -3714,4 +3714,22 @@ test('setStages takes the flows and sets their flattened stages and transitions 
   assert.deepEqual(state.flows, flows);
   assert.deepEqual(state.stages.map((s) => s.name), ['spec', 'fix']);
   assert.deepEqual(state.transitions, flows[0].transitions);
+});
+
+test('a save of the same flows and a stage rename leave a task outside the flow outside it (#566)', () => {
+  const given = polled(base(0), [listed(1)]).state; // 1 in spec, its column Backlog: the door a vanished-stage placement would read
+  const outside: State = { ...given, tasks: given.tasks.map((c) => leave(c)) };
+  assert.equal(task(reduce(outside, { type: 'setStages', flows: given.flows }).state, 1)?.stage, undefined);
+  assert.equal(task(reduce(outside, { type: 'renameStages', renames: { spec: 'specs' } }).state, 1)?.stage, undefined);
+});
+
+test('hive_done in a free session on a task outside the flow ends nothing: no stage, no halt, its plain result kept (#566)', () => {
+  const given = manualState(1);
+  const outside: State = { ...given, tasks: given.tasks.map((c) => leave(c)) };
+  const open = reduce(outside, { type: 'openSession', activityId: workId(outside, 'board:item1') }).state;
+  const [session] = occupied(open);
+  const ended = reduce(open, { type: 'done', ptyId: session.runId!, result: { a: 1 } });
+  assert.equal(task(ended.state, 1)?.stage, undefined);
+  assert.equal(work(ended.state, 1)?.error, undefined, 'no STAGE_GONE halt');
+  assert.deepEqual(resultN(ended.state, 1), { a: 1 });
 });

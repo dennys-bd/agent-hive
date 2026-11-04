@@ -168,6 +168,9 @@ export const canRunIn = (stage: Pick<Stage, 'action' | 'prompt' | 'skill'>): boo
  * the stage left behind on the work (a stopped mark, an awaited approval, queued feedback) is settleEntries' (#629). */
 export const enter = ({ pinned: _pinned, ...task }: Task, stage: Stage): Task => ({ ...task, stage: stage.name, enteredAt: new Date().toISOString() });
 
+/** The reducer's half of leaveFlow (#566): what only means something inside a stage goes with it; the activity's own fields are leaveFlow's. */
+export const leave = ({ stage: _stage, enteredAt: _enteredAt, pinned: _pinned, ...task }: Task): Task => task;
+
 /** A stage action in flight on the activity (#755, #834, #877): a commands stage running, a wait for CI or an evaluation. It holds the task as a
  * worker does: not due again, not moved, no workspace change, no start. One rule, so they never drift. */
 export const inAction = (activity: Pick<Activity, 'commands' | 'ci' | 'evaluate'> | undefined): boolean =>

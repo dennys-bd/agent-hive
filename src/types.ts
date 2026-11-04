@@ -602,7 +602,7 @@ export interface ColumnWrite {
 
 export interface Task {
   item: Item;
-  stage: string; // the Hive stage the task sits in (#286: the Hive's own columns are stages)
+  stage?: string; // the Hive stage the task sits in (#286: the Hive's own columns are stages); absent = outside the flow (#566): no fill, no transitions, no caps
   boardColumn: string; // where the Hive last saw or left it on the source; the poll compares against it
   missing?: true; // gone from the source; waits for close or keep
   orphan?: true; // kept after going missing: runs to the end, no source writes, ignored by the poll
@@ -1583,7 +1583,7 @@ export type HiveEvent =
   | { type: 'restored'; itemId: string; branch?: string } // #619: the restore's git ended well; `branch` when it checked out a new -r<n>
   | { type: 'restoreFailed'; itemId: string } // #619: the restore's git failed: the mark goes
   | { type: 'clearSessions'; activityId: string; sessionId: string } // one session's limpar in the panel (#304); a record id (#629)
-  | { type: 'createTask'; title: string; body: string; stage: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string } } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67)
+  | { type: 'createTask'; title: string; body: string; stage?: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string } } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67)
   | { type: 'closeTask'; taskId: string } // close on a missing task, remove on a stopped local one (#132): the task and its session go; a missing task's worktree stays (#182), a local task's goes first, in the route (#542)
   | { type: 'keepTask'; taskId: string } // manter on a missing task
   | { type: 'closeMissing'; stage: string } // close all in a stage's missing strip (#279): every closable missing task of the stage goes

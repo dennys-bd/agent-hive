@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inFlow, stageOf, branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
+import { inFlow, leave, stageOf, branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
 import { COLUMN_WRITE_TIMEOUT_MS } from '../src/column-write.js';
 import { taskTotals, touchSession } from '../src/record-kit.js';
 import { initialState } from '../src/orchestrator.js';
@@ -846,4 +846,17 @@ test('stageOf, flowOf, outgoing and exitOf read an absent stage name as no stage
 
 test('inFlow holds for a task in a stage (#566)', () => {
   assert.equal(inFlow(bareTask(task(1, DEV))), true);
+});
+
+test('leave drops stage, enteredAt and the pin and keeps the rest; inFlow is false after it (#566)', () => {
+  const placed: Task = { item: item(1), stage: 'dev', boardColumn: 'Ready', auto: true, enteredAt: ago(HOUR), pinned: true, workspace: 'hive' };
+  const left = leave(placed);
+  assert.deepEqual([inFlow(placed), inFlow(left)], [true, false]);
+  assert.deepEqual(left, { item: item(1), boardColumn: 'Ready', auto: true, workspace: 'hive' });
+});
+
+test('a poll neither stamps enteredAt on a task outside the flow nor sorts it with a stage\'s tasks (#566)', () => {
+  const { stage: _stage, ...outside } = task(1, DEV, { boardColumn: 'Ready' });
+  const merged = merge([outside, task(2, DEV)], [DEV], [{ item: item(2), column: 'Ready' }, { item: item(1), column: 'Ready' }]);
+  assert.deepEqual(merged.map((c) => [c.item.itemId, c.stage, c.enteredAt === undefined]), [['item1', undefined, true], ['item2', 'dev', false]]);
 });
