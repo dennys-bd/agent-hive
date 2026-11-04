@@ -13,6 +13,7 @@ import { isUuid } from './orchestrator.js';
 import type { PluginRender } from './plugin-render.js';
 import type { Runtime } from './server.js';
 import { errorMessage } from './server-review.js';
+import { exitEvent } from './server-exit.js';
 import { taskProtocol } from './server-spawn.js';
 import { answerOpen, type Refusal, refuse } from './server-tasks.js';
 import { strayAgents } from './shell-procs.js';
@@ -177,7 +178,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     if (!after || !worker) return refuse(res, { status: HTTP_CONFLICT, message: NO_CAPTURE_MESSAGE });
     // A refusal ends the run it just made: the shim runs the agent unregistered, and no run is left behind
     const unregister = async (message: string): Promise<void> => {
-      await deps.dispatch({ type: 'exit', ptyId: runId });
+      await deps.dispatch(await exitEvent(deps.live(), runId)); // #586: one builder for every exit; a captured run is never flagged
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
     // #927, #932: Codex trusts the run's folder up front: the posted one after a cd inside the terminal's folder, never one outside it

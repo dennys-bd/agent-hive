@@ -1,7 +1,9 @@
 import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
   ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PROBE, PROJECTS, PROJECT_FIELDS, ITEM_FIELDS, SELECT_FIELDS, SET_OPTION, REPOSITORY_ID, CREATE_ISSUE, ADD_PROJECT_ITEM, VIEWER,
@@ -19,6 +21,7 @@ import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, Ta
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { AGENTS } from '../src/agents.js';
+import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { runners } from '../src/agents/registry.js';
 import type { AgentRun } from '../src/agents/runner.js';
 
@@ -360,4 +363,14 @@ export function fakeKeepAwakeSpawn(): { spawn: KeepAwakeSpawn; children: FakeKee
     return child;
   };
   return { spawn, children };
+}
+
+/** A session's transcript as Claude Code leaves it in `cwd`'s transcript dir once a prompt ran (#586): a run whose session has none is
+ * forgotten at its exit. CLAUDE_CONFIG_DIR must point at a temp dir first. */
+export async function writeTranscript(cwd: string, sessionId: string): Promise<string> {
+  const dir = transcriptDir(cwd);
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, `${sessionId}.jsonl`);
+  await writeFile(path, '{}\n');
+  return path;
 }

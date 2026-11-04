@@ -1,4 +1,5 @@
-import { activityOf, addUsage, heldRun, recordOf, recordsOf, recordWithSession, usageOf, withActivity, withRecord } from './activities.js';
+import { activityOf, activityOfWorker, addUsage, heldRun, recordOf, recordsOf, recordWithSession, taskOfWorker, usageOf, withActivity, withRecord } from './activities.js';
+import type { Reduced } from './reducer-kit.js';
 import { NO_USAGE, runTime, sessionsOf, taskId, titled, workersOf } from './tasks.js';
 import { recordedIssues } from './decomposition.js';
 import { withLaunch } from './launch-pick.js';
@@ -162,6 +163,29 @@ export function forgetFailedFreeRun(state: State, task: Task, worker: Worker): S
   if (live?.freeSessionStage === undefined || otherFreeRun(forgotten, task, worker)) return forgotten;
   const { freeSessionStage: _free, ...rest } = live;
   return withActivity(forgotten, rest);
+}
+
+/** The session a run holds (#586): its own once a SessionStart named it; before that, a stage run's is its activity's, which the spawn set. A free
+ * run's id comes with its open, so it has none to borrow. */
+export const runSessionId = (state: Pick<State, 'activities'>, worker: Worker): string | undefined =>
+  worker.sessionId ?? (worker.freeSession ? undefined : activityOfWorker(state, worker)?.sessionId);
+
+// Whether `worker`'s run started session `id`: its entry was appended at the run's own start, the rule forgetFailedSession reads (#586)
+const startedBy = (state: State, task: Task, worker: Worker, id: string): boolean =>
+  sessionsOf(state, taskId(task)).some((s) => s.id === id && s.startedAt === worker.startedAt);
+
+/** The exit of a task's run whose session never wrote a transcript (#586), as a failed spawn's (#283): the session this run started goes, so the
+ * stage reads as not run, the task offers Start and no continue ever resumes it. A continued session is older than the run and stays, and so
+ * does a free run's mark with it. An exit that left the run live (a Quit's) changes nothing. */
+export function forgetUnwritten(before: State, event: { ptyId: string; noTranscript?: true }, reduced: Reduced): Reduced {
+  if (!event.noTranscript) return reduced;
+  const worker = before.workers.find((w) => w.runId === event.ptyId && w.status !== 'empty');
+  if (!worker || reduced.state.workers.some((w) => w.runId === event.ptyId && w.status !== 'empty')) return reduced;
+  const id = runSessionId(before, worker);
+  const task = taskOfWorker(reduced.state, worker); // the task as exit left it, as spawnFailed reads it: one source, never two
+  if (id === undefined || !task || !startedBy(reduced.state, task, worker, id)) return reduced;
+  const state = worker.freeSession ? forgetFailedFreeRun(reduced.state, task, worker) : forgetFailedSession(reduced.state, task, worker, id);
+  return { ...reduced, state };
 }
 
 /** One more stage run of `stage` on the task, in its live record (#742): a spawn, a restart, a continue and a feedback run each count, so the

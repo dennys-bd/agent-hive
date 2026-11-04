@@ -4,7 +4,7 @@ import { benchmarkReduce, isBenchmarkEvent } from './benchmark-reducer.js';
 import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
-import { forgetFailedFreeRun, forgetFailedSession, keepRecord, touchSession, withDecompositionIssue, withEpic, withPr, withResult, withTurn } from './record-kit.js';
+import { forgetFailedFreeRun, forgetFailedSession, forgetUnwritten, keepRecord, touchSession, withDecompositionIssue, withEpic, withPr, withResult, withTurn } from './record-kit.js';
 import { AGENTS, liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionWritten } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
@@ -133,7 +133,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setWorkspaces': return fill(setWorkspaces(state, event)); // a task that resolved to none may be a candidate now
     case 'setWorkspace': return fill(none(setWorkspace(state, event.taskId, event.workspace))); // idem
     case 'hook': return settleCopy(state, event.ptyId, event.payload.hook_event_name, applyHook(state, event.ptyId, event.payload, event.branch, event.tokens, event.title)); // a copy's SessionStart or early end drops its temporary transcript (#587)
-    case 'exit': return settleCopy(state, event.ptyId, undefined, forgetUnopenedLocal(state, event.ptyId, ended(exit(state, event.ptyId))));
+    case 'exit': return settleCopy(state, event.ptyId, undefined, forgetUnopenedLocal(state, event.ptyId, ended(forgetUnwritten(state, event, exit(state, event.ptyId))))); // #586: forgotten before the fill, which must never continue it
     case 'done': return done(state, event.ptyId, event.result, event.verdict, event.evidence); // no fill: nothing freed, nothing loosened
     case 'pr': return markPr(state, event.ptyId, event.url, event.slice); // no fill: a PR frees nothing
     case 'prStates': return prStates(state, event.states); // no fill: a merged PR frees no worker (#207)

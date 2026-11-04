@@ -178,6 +178,7 @@ test('describeEvent summarises every other event with names, ids and counts only
   const ids = Array.from({ length: 25 }, (_, i) => String(i + 1));
   assert.equal(describeEvent({ type: 'poll', source: 'board', items: ids.map((id) => ({ item: item(id), column: 'Ready' })) }), `poll source=board items=25 ids=${ids.slice(0, 20).join(',')}`);
   assert.equal(describeEvent({ type: 'exit', ptyId: PTY }), 'exit pty=1a2b3c4d');
+  assert.equal(describeEvent({ type: 'exit', ptyId: PTY, noTranscript: true }), 'exit pty=1a2b3c4d noTranscript'); // #586
   assert.equal(describeEvent({ type: 'continue', activityId: 'fedcba98-0000-4000-8000-000000000002' }), 'continue activity=fedcba98'); // #629: the activity's short id
   assert.equal(describeEvent({ type: 'restart', activityId: 'fedcba98-0000-4000-8000-000000000002', branch: 'hive/1-x-r2' }), 'restart activity=fedcba98 branch=hive/1-x-r2');
   assert.equal(describeEvent({ type: 'stageStarted', activityId: 'fedcba98-0000-4000-8000-000000000001', stage: 'dev', commit: '0123456789abcdef' }), 'stageStarted activity=fedcba98 stage=dev commit=01234567'); // #629: the activity's

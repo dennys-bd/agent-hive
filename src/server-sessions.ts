@@ -12,6 +12,7 @@ import { answerOpen, type LiveView, type TaskRouteDeps, openTask, workspaceOf, t
 import { adoptTranscript, findTranscript } from './transcript.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import { runners } from './agents/registry.js';
+import { cwdsOf } from './server-exit.js';
 import { treeRoot } from './server-tree.js';
 import { treeFolder } from './tree-paths.js';
 import { AGENT_IDS, type ActivityRecord, type Task, type Session, type State } from './types.js';
@@ -159,6 +160,11 @@ async function openTaskSession(deps: OpenDeps, current: LiveView, record: Activi
   }
   if (session.repo && !(await adoptTranscript(dir, workspace.path, resume, session.agent))) {
     return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE }); // opening would start an empty conversation under that id
+  }
+  // #586: a worktree session with no transcript would open an empty conversation under its id too; an agent with no dir per cwd (Codex,
+  // #931) finds its own, as openLocal skips it
+  if (!session.repo && runners[session.agent].transcriptDir(dir) !== undefined && (await findTranscript(await cwdsOf(dir), resume, session.agent)) === undefined) {
+    return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE });
   }
   await answerOpen(deps, await deps.dispatch({ type: 'openSession', activityId: record.id, continueId: resume }, size), res);
 }

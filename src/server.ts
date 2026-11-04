@@ -54,6 +54,7 @@ import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-reque
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { deleteActivityOnDisk, registerTaskRoutes } from './server-tasks.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
+import { exitEvent } from './server-exit.js';
 import { readCredentials, writeCredentials } from './credentials.js';
 import { cachedProbe, PROBE_TIMEOUT_MS, type Probe, probeServer } from './mcp-probe.js';
 import { registerMcpRoutes } from './server-mcp.js';
@@ -296,7 +297,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
-  const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later
+  const spawner = createRunSpawner({ pool, exec, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ exec, pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
@@ -499,7 +500,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         spawner.abortSetup(effect.ptyId); // a Stop during the run's worktree setup kills its running step (#351)
         // Awaited: a spawn of the same slug later in this batch only starts once the session is gone (no `duplicate session`).
         // Unknown to the pool (started by a previous Hive): nothing to signal, free the worker ourselves.
-        if (!(await pool.kill(effect.ptyId))) await dispatch({ type: 'exit', ptyId: effect.ptyId });
+        if (!(await pool.kill(effect.ptyId))) await dispatch(await exitEvent(live, effect.ptyId));
         return;
       case 'spawn':
         // A spawn queued behind a slow effect can reach here after close() began (#476): pool.killAll() already ran, and
@@ -574,7 +575,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         // session id also matches a `claude --resume <id>`, a tail or a grep elsewhere, and a /clear changes it. The exit frees the worker even when pkill missed
         log.info(describeEffect(effect));
         await killStray(strayOf(effect.ptyId), exec).catch((err) => fail('kill', err));
-        await dispatch({ type: 'exit', ptyId: effect.ptyId });
+        await dispatch(await exitEvent(live, effect.ptyId));
         return;
       case 'captureCheckpoint': { // #619: awaited, so a continue later in this batch answers the Stop only after the capture; a failure is logged
         log.info(describeEffect(effect));
@@ -992,7 +993,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   app.post('/hooks/exit', async (req: Request, res: Response) => {
     res.sendStatus(200);
     const ptyId = req.header('x-hive-pty');
-    if (ptyId && !pool.exit(ptyId)) await dispatch({ type: 'exit', ptyId });
+    if (ptyId && !pool.exit(ptyId)) await dispatch(await exitEvent(live, ptyId));
   });
 
   // The worker's status line posts its whole JSON here; only `rate_limits` is kept, and the reply is the line the worker's tab shows.
