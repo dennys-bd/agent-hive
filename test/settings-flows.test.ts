@@ -1,0 +1,62 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { parseConfig } from '../src/config.js';
+import type { Flow, SettingsInfo } from '../src/types.js';
+import { t } from '../src/ui/i18n.js';
+import { draftFrom, emptyStage, toSettingsBody, validateSettings } from '../src/ui/lib/settings-form.js';
+import { scopedFlow, withFlowEdit, withNewFlow, withoutFlow } from '../src/ui/lib/settings-flows.js';
+import { combConfig } from './fakes.js';
+
+// Two flows, as #564 saves them: the draft's flat lists in flow order, each stage tagged with its flow (#565)
+const FLOWS: Flow[] = [
+  { name: 'feature', stages: [{ name: 'spec', from: {} }, { name: 'build', from: {} }], transitions: [{ from: 'spec', to: 'build', when: 'done' }, { from: 'build', to: 'end', when: 'done' }] },
+  { name: 'bug', stages: [{ name: 'triage', from: {} }], transitions: [{ from: 'triage', to: 'end', when: 'done' }] },
+];
+const info = (flows: Flow[]): SettingsInfo => ({ configured: true, home: '/home', language: 'pt', agents: [{ agent: 'claude', available: true }], config: parseConfig(combConfig({ flows })) });
+
+test('draftFrom drafts one flow per saved flow and tags each stage with its flow; an empty config gets one main flow (#565)', () => {
+  const draft = draftFrom(info(FLOWS));
+  assert.deepEqual(draft.flows.map((f) => f.name), ['feature', 'bug']);
+  assert.deepEqual(draft.stages.map((s) => [s.name, draft.flows.findIndex((f) => f.id === s.flow)]), [['spec', 0], ['build', 0], ['triage', 1]]);
+  assert.deepEqual(draft.transitions.map((d) => draft.stages.find((s) => s.id === d.from)?.flow), [draft.flows[0].id, draft.flows[0].id, draft.flows[1].id]);
+  const blank = draftFrom(undefined);
+  assert.deepEqual([blank.flows.map((f) => f.name), blank.stages], [['main'], []]);
+});
+
+test('scopedFlow is one flow\'s stages and transitions; withFlowEdit replaces only those, keeping the flat lists in flow order (#565)', () => {
+  const draft = draftFrom(info(FLOWS));
+  const bug = draft.flows[1].id;
+  const scope = scopedFlow(draft, bug);
+  assert.deepEqual([scope.stages.map((s) => s.name), scope.transitions.length], [['triage'], 1]);
+  const next = withFlowEdit(draft, bug, { stages: [...scope.stages, { ...emptyStage(bug), name: 'verify' }], transitions: [] });
+  assert.deepEqual(next.stages.map((s) => s.name), ['spec', 'build', 'triage', 'verify']);
+  assert.deepEqual(next.transitions, draft.transitions.slice(0, 2), 'feature\'s arrows stay, bug\'s one was removed');
+  assert.deepEqual(withFlowEdit(draft, bug, scope), { stages: draft.stages, transitions: draft.transitions }, 'an edit that changes nothing keeps the lists as they were');
+});
+
+test('withNewFlow adds a trimmed flow with one empty stage and no transition; withoutFlow drops a flow with its stages and transitions (#565)', () => {
+  const draft = draftFrom(info(FLOWS));
+  const { id, patch } = withNewFlow(draft, ' hotfix ', 'claude');
+  assert.deepEqual(patch.flows.at(-1), { id, name: 'hotfix' });
+  assert.deepEqual(patch.stages.filter((s) => s.flow === id).map((s) => s.name), ['']);
+  const gone = withoutFlow(draft, draft.flows[1].id);
+  assert.deepEqual([gone.flows.map((f) => f.name), gone.stages.map((s) => s.name), gone.transitions.length], [['feature'], ['spec', 'build'], 2]);
+});
+
+test('validateSettings refuses a blank or duplicate flow name, a flow with no stage and a stage name another flow holds, before the stages (#565)', () => {
+  const draft = draftFrom(info(FLOWS));
+  const [feature, bug] = draft.flows;
+  assert.equal(validateSettings(draft), undefined);
+  assert.deepEqual(validateSettings({ ...draft, flows: [feature, { ...bug, name: ' ' }] }), { section: 'flow', message: t('settings.flows.error.name') });
+  assert.deepEqual(validateSettings({ ...draft, flows: [feature, { ...bug, name: 'feature ' }] }), { section: 'flow', message: t('settings.flows.error.duplicate', { name: 'feature' }) });
+  const emptied = { ...draft, stages: draft.stages.filter((s) => s.flow !== bug.id), transitions: draft.transitions.slice(0, 2) };
+  assert.deepEqual(validateSettings(emptied), { section: 'flow', message: t('settings.flows.error.empty', { flow: 'bug' }) });
+  const clash = draft.stages.map((s) => (s.name === 'triage' ? { ...s, name: ' spec' } : s));
+  assert.deepEqual(validateSettings({ ...draft, stages: clash }), { section: 'flow', message: t('settings.stages.error.otherFlow', { flow: 'feature' }), stage: draft.stages[2].id });
+});
+
+test('an untouched form sends every flow back as saved, each transition under its from stage\'s flow, and no flat pair (#565)', () => {
+  const body = toSettingsBody(draftFrom(info(FLOWS)));
+  assert.deepEqual(body.flows, FLOWS);
+  assert.equal('stages' in body || 'transitions' in body, false);
+});

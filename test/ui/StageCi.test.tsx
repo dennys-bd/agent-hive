@@ -5,12 +5,13 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { StageCi } from '@/components/settings/StageCi';
 import { setLanguage } from '@/i18n';
 import { emptyStage, type StageDraft } from '@/lib/settings-form';
+const FLOW = 'f';
 
 beforeEach(() => setLanguage('pt'));
 
 // The block over its own draft, as StageEditor holds it: every update is seen and applied
 function Harness({ initial = {}, onUpdate }: { initial?: Partial<StageDraft>; onUpdate(patch: Partial<StageDraft>): void }) {
-  const [stage, setStage] = useState<StageDraft>({ ...emptyStage(), action: 'waitForCi', ...initial });
+  const [stage, setStage] = useState<StageDraft>({ ...emptyStage(FLOW), action: 'waitForCi', ...initial });
   return <StageCi id="s" stage={stage} onUpdate={(patch) => { onUpdate(patch); setStage((s) => ({ ...s, ...patch })); }} />;
 }
 

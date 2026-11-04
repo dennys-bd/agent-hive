@@ -9,7 +9,7 @@ import type { Activity, AgentAvailability, McpSettings, Task, Exec, SettingsBody
 import { activityOf, localActivityId } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, move, onOwnStages, plainArgs, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, move, onOwnStages, plainArgs, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { CODEX_TURN, codexHook } from './fixtures/codex-hooks.js';
 import { tempDir } from './temp-dir.js';
@@ -17,7 +17,7 @@ import { tempDir } from './temp-dir.js';
 // The agent a stage run starts (#516), end to end through the server: the detection, the resolution and the refusal before any worktree.
 const REFUSAL = 'agent claude is not on PATH: install it, then restart the Hive';
 const BODY: Omit<SettingsBody, 'workspaces'> = {
-  prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], stages: STAGES,
+  prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], flows: bodyFlows(STAGES),
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true,
   defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
 };
@@ -66,7 +66,7 @@ test('an agent boot did not find is refused before any worktree: the task keeps 
 
 test("a stage's agent and modelo reach the launch as typed; claude's command line is unchanged (#516)", async (t) => {
   const stage = { ...STAGES[0], agent: 'claude' as const, model: 'sonnet' };
-  const { server, workers } = await start(t, { ...BODY, stages: [stage] });
+  const { server, workers } = await start(t, { ...BODY, flows: bodyFlows([stage] )});
   await waitFor(() => workers.length === 1);
   const { launch } = workers[0];
   assert.deepEqual(plainArgs(launch), ['--model', 'sonnet', '--session-id', work0(server)!.sessionId!]);
@@ -95,7 +95,7 @@ test('the stage run\'s worker records the agent it runs (#925)', async (t) => {
 
 test('agentArgs of the stage\'s agent reaches its launch after the Hive\'s flags and before the model and the session (#924)', async (t) => {
   const stage = { ...STAGES[0], model: 'sonnet' };
-  const { server, workers } = await start(t, { ...BODY, stages: [stage], agentArgs: { claude: ['--permission-mode', 'auto'], codex: [] } });
+  const { server, workers } = await start(t, { ...BODY, flows: bodyFlows([stage]), agentArgs: { claude: ['--permission-mode', 'auto'], codex: [] } });
   await waitFor(() => workers.length === 1);
   assert.deepEqual(plainArgs(workers[0].launch), ['--permission-mode', 'auto', '--model', 'sonnet', '--session-id', work0(server)!.sessionId!]);
   assert.match(ptyCommand(workers[0].launch), / '--permission-mode' 'auto' '--model' 'sonnet' '--session-id' /);
@@ -103,7 +103,7 @@ test('agentArgs of the stage\'s agent reaches its launch after the Hive\'s flags
 
 test('a codex stage starts codex with its overrides, the trust bypass and the stage\'s model; the MCP secret is in its env and in no argv word (#927)', async (t) => {
   const stage = { ...STAGES[0], agent: 'codex' as const, model: 'gpt-5.6-terra' };
-  const { workers } = await start(t, { ...BODY, stages: [stage] });
+  const { workers } = await start(t, { ...BODY, flows: bodyFlows([stage] )});
   await waitFor(() => workers.length === 1);
   const { launch } = workers[0];
   const pairs = (launch.agent?.argv ?? []).flatMap((arg) => (typeof arg === 'string' ? [] : [arg[1]]));
@@ -127,7 +127,7 @@ const CODEX_CONTINUE: LegacyStage[] = [
 ];
 
 test('a codex stage\'s Stop after hive_done with a continue stage next is answered with the block reply, and the worker is working again (#928, finding §2)', async (t) => {
-  const { base, server, workers } = await start(t, onOwnStages({ ...BODY, stages: CODEX_CONTINUE }));
+  const { base, server, workers } = await start(t, onOwnStages({ ...BODY, flows: bodyFlows(CODEX_CONTINUE )}));
   await waitFor(() => workers.length === 1);
   const ptyId = worker0(server).runId!;
   assert.equal((await hookEvent(base, ptyId, CODEX_TURN.SessionStart)).status, 204);
@@ -140,7 +140,7 @@ test('a codex stage\'s Stop after hive_done with a continue stage next is answer
 
 test('a codex worker\'s SessionEnd is dropped at the route: 204, a debug line, and the worker keeps running (#928, finding §8)', async (t) => {
   const { log, lines } = fakeLog();
-  const { base, server, workers } = await start(t, { ...BODY, stages: [{ ...STAGES[0], agent: 'codex' as const }] }, { log });
+  const { base, server, workers } = await start(t, { ...BODY, flows: bodyFlows([{ ...STAGES[0], agent: 'codex' as const }] )}, { log });
   await waitFor(() => workers.length === 1);
   const ptyId = worker0(server).runId!;
   await hookEvent(base, ptyId, CODEX_TURN.SessionStart);
@@ -150,7 +150,7 @@ test('a codex worker\'s SessionEnd is dropped at the route: 204, a debug line, a
 });
 
 test('a forged hook whose event name is not a string never reaches the runner or the log line, and never errors (#928)', async (t) => {
-  const { base, server, workers } = await start(t, { ...BODY, stages: [{ ...STAGES[0], agent: 'codex' as const }] });
+  const { base, server, workers } = await start(t, { ...BODY, flows: bodyFlows([{ ...STAGES[0], agent: 'codex' as const }] )});
   await waitFor(() => workers.length === 1);
   const ptyId = worker0(server).runId!;
   for (const name of [{ toString: 'x' }, ['Stop'], 7]) {
@@ -172,7 +172,7 @@ async function storedValue(t: TestContext): Promise<NodeJS.ProcessEnv> {
 
 test('a codex stage run gets its workspace\'s switched-on servers as -c overrides and the header value in its env, never an argv word (#333)', async (t) => {
   const stage = { ...STAGES[0], agent: 'codex' as const };
-  const { workers } = await start(t, { ...BODY, stages: [stage], mcp: MCP_ON }, { credentialsEnv: await storedValue(t) });
+  const { workers } = await start(t, { ...BODY, flows: bodyFlows([stage]), mcp: MCP_ON }, { credentialsEnv: await storedValue(t) });
   await waitFor(() => workers.length === 1);
   const { launch } = workers[0];
   const pairs = (launch.agent?.argv ?? []).flatMap((arg) => (typeof arg === 'string' ? [] : [arg[1]]));

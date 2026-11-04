@@ -411,7 +411,7 @@ function awaitGate(state: State, task: Task): State {
 // deleteActivity acts now.
 function setStages(state: State, flows: Flow[]): Reduced {
   const { stages, transitions } = flatten(flows);
-  const placed = placeVanished(state, stages);
+  const placed = placeVanished(state, flows);
   const staged = settleEntries(placed.before, { ...placed.state, flows, stages, transitions });
   return runActions(staged.tasks.reduce(awaitGate, staged), placed.effects);
 }

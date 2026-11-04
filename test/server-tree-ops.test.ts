@@ -12,7 +12,7 @@ import { GIT_MESSAGE, MISSING_FILE_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-
 import { worktreePath } from '../src/worktree.js';
 import type { Exec, SettingsBody, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, CLOSE_TAB_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, EDITOR_FILE_MAX, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS } from '../src/types.js';
-import { LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
+import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedTasks, type WithWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -27,7 +27,7 @@ const SLUG_OF = (c: Task): string => `hive-${c.item.id.replace('HIVE-', '')}-tas
 const postJson = (url: string, body?: unknown): Promise<Response> =>
   hiveFetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body ?? {}) });
 const setupBody = (repo: string): SettingsBody => ({
-  prefix: 'HIVE', workspaces: workspacesAt(repo), sources: [], stages: LOCAL_STAGES, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
+  prefix: 'HIVE', workspaces: workspacesAt(repo), sources: [], flows: bodyFlows(LOCAL_STAGES), onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
   shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, ...CLOSE_TAB_DEFAULTS, ...SLEEP_NOTICE_DEFAULTS, defaultAgent: 'claude',
   theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
 });

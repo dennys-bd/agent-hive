@@ -5,10 +5,11 @@ import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem } f
 import { draftFrom, toSettingsBody } from '../src/ui/lib/settings-form.js';
 import { emptyRow, emptyStage } from '../src/ui/lib/settings-stages.js';
 import { setLanguage, t } from '../src/ui/i18n.js';
+const FLOW = 'f';
 
 setLanguage('en');
 const ON = { claude: true, codex: true };
-const draft = (extra = {}) => ({ agentModels: { claude: '', codex: '' }, agentEnabled: ON, stages: [{ ...emptyStage(), prompt: '/x' }], ...extra });
+const draft = (extra = {}) => ({ agentModels: { claude: '', codex: '' }, agentEnabled: ON, stages: [{ ...emptyStage(FLOW), prompt: '/x' }], ...extra });
 
 test('the draft holds each agent\'s model as typed and its switch; the payload sends a blank as null, trimmed (#482)', () => {
   assert.deepEqual(agentModelsDraft({ claude: 'opus', codex: null }), { claude: 'opus', codex: '' });
@@ -25,11 +26,11 @@ test('agentsProblem names a bad model and a Claude model on codex in execution, 
   assert.deepEqual(agentsProblem(draft({ agentModels: { claude: '-x', codex: '' } })), { section: 'execution', message: t('settings.agents.error.model', { agent: 'claude' }) });
   assert.deepEqual(agentsProblem(draft({ agentModels: { claude: '', codex: 'opus' } })), { section: 'execution', message: t('settings.agents.error.claudeModel', { agent: 'codex', model: 'opus' }) });
   const off = { claude: true, codex: false };
-  const codexStage = { ...emptyStage(), prompt: '/x', agent: 'codex' as const };
+  const codexStage = { ...emptyStage(FLOW), prompt: '/x', agent: 'codex' as const };
   assert.deepEqual(agentsProblem(draft({ agentEnabled: off, stages: [draft().stages[0], codexStage] })), { section: 'flow', stage: codexStage.id, message: t('settings.agents.error.stage', { n: 2, agent: 'codex' }) });
-  const judged = { ...emptyStage(), action: 'evaluate' as const, judge: emptyRow('codex') };
+  const judged = { ...emptyStage(FLOW), action: 'evaluate' as const, judge: emptyRow('codex') };
   assert.equal(agentsProblem(draft({ agentEnabled: off, stages: [judged] }))?.stage, judged.id);
-  assert.equal(agentsProblem(draft({ agentEnabled: off, stages: [{ ...emptyStage(), approval: true, agent: 'codex' as const }] })), undefined, 'a gate runs no agent: its leftover agent is not sent');
+  assert.equal(agentsProblem(draft({ agentEnabled: off, stages: [{ ...emptyStage(FLOW), approval: true, agent: 'codex' as const }] })), undefined, 'a gate runs no agent: its leftover agent is not sent');
 });
 
 test('offeredAgents drops the agents the config disables and keeps boot\'s availability; no config offers every agent (#482)', () => {

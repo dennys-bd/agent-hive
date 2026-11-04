@@ -1653,6 +1653,21 @@ const en = {
   'settings.transitions.sources.pass': 'on passing',
   'settings.stages.error.ci': 'stage {n}: pick at least one check under only these, and a wait like 30s, 10m or 1h, up to 24h', // #834
   'settings.stages.error.skill': 'stage {n}: choose a skill', // #710
+  'settings.flows.label': 'flow',
+  'settings.flows.add': '+ flow',
+  'settings.flows.newName': "new flow's name",
+  'settings.flows.name': 'flow name',
+  'settings.flows.unnamed': 'unnamed flow',
+  'settings.flows.create': 'create',
+  'settings.flows.cancel': 'cancel',
+  'settings.flows.remove': 'delete flow',
+  'settings.flows.holdsTasks.one': '1 task is in this flow: move it before deleting',
+  'settings.flows.holdsTasks.other': '{n} tasks are in this flow: move them before deleting',
+  'settings.flows.lastFlow': 'Settings needs at least one flow',
+  'settings.flows.error.name': "enter the flow's name",
+  'settings.flows.error.duplicate': '"{name}" is already a flow',
+  'settings.flows.error.empty': 'flow {flow}: add a stage',
+  'settings.stages.error.otherFlow': 'already a stage of flow {flow}', // #565
   'settings.stages.error.continue': 'stage {n}: no earlier stage runs {agent}, so there is no session to continue', // #710
   'settings.stages.loadHint': '"load" fills the selects below with the source columns.',
   'main.confirm.quit.one': '1 worker is running and will be stopped. Quit anyway?',
@@ -4654,6 +4669,21 @@ const pt: Record<MessageKey, string> = {
   'settings.transitions.sources.pass': 'ao passar',
   'settings.stages.error.ci': 'etapa {n}: escolha ao menos um check em só estes, e uma espera como 30s, 10m ou 1h, até 24h',
   'settings.stages.error.skill': 'etapa {n}: escolha uma skill',
+  'settings.flows.label': 'fluxo',
+  'settings.flows.add': '+ fluxo',
+  'settings.flows.newName': 'nome do novo fluxo',
+  'settings.flows.name': 'nome do fluxo',
+  'settings.flows.unnamed': 'fluxo sem nome',
+  'settings.flows.create': 'criar',
+  'settings.flows.cancel': 'cancelar',
+  'settings.flows.remove': 'excluir fluxo',
+  'settings.flows.holdsTasks.one': '1 tarefa está neste fluxo: mova-a antes de excluir',
+  'settings.flows.holdsTasks.other': '{n} tarefas estão neste fluxo: mova-as antes de excluir',
+  'settings.flows.lastFlow': 'é preciso ao menos um fluxo',
+  'settings.flows.error.name': 'informe o nome do fluxo',
+  'settings.flows.error.duplicate': '"{name}" já é um fluxo',
+  'settings.flows.error.empty': 'fluxo {flow}: adicione uma etapa',
+  'settings.stages.error.otherFlow': 'já é uma etapa do fluxo {flow}', // #565
   'settings.stages.error.continue': 'etapa {n}: nenhuma etapa anterior executa o {agent}, então não há sessão para continuar',
   'settings.stages.loadHint': '"carregar" preenche os selects abaixo com as colunas da source.',
   'main.confirm.quit.one': '1 worker está executando e será parado. Sair mesmo assim?',
@@ -6043,7 +6073,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580), or the report tab's counts (#467), or the wake dialog's sleeps (#468). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

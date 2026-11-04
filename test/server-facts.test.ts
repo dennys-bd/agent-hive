@@ -13,7 +13,7 @@ import { createServerFacts } from '../src/server-facts.js';
 import type { MemoryFile } from '../src/types.js';
 import type { HookPayload, SettingsBody, State, Worker } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, STAGES, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, tempHive, WORKSPACE, workspacesAt } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, tempHive, WORKSPACE, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { withWork, withLocal } from './fixtures/work.js';
 import { tempDir } from './temp-dir.js';
@@ -21,7 +21,7 @@ import { localDay, OTHER, SESSION, sessionMeta, turnContext, usageRecord, writeR
 
 // One worker and one stage (fila): the fake source's task spawns at the green signal
 const BODY: Omit<SettingsBody, 'workspaces'> = {
-  prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], stages: STAGES, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
+  prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], flows: bodyFlows(STAGES), onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
   shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep',
   closeSessionTabNotice: true, closeStageTabNotice: true, closeTerminalTab: 'keep', closeTerminalTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true,
   defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
@@ -307,7 +307,7 @@ async function codexHome(t: TestContext): Promise<string> {
 
 test('a Codex Stop naming its own rollout adds the turn\'s tokens to the usage and to the stage run; a rollout of another session id reads nothing (#929)', async (t) => {
   const home = await codexHome(t);
-  const { base, server, records, ptyId } = await start(t, undefined, { ...BODY, stages: [{ ...STAGES[0], agent: 'codex' }] });
+  const { base, server, records, ptyId } = await start(t, undefined, { ...BODY, flows: bodyFlows([{ ...STAGES[0], agent: 'codex' }] )});
   const used = (): number => server.getState()!.usage.reduce((sum, sample) => sum + sample.tokens, 0);
   await postHook(base, ptyId, { hook_event_name: 'SessionStart', session_id: SESSION, source: 'startup' });
   const at = new Date(Date.now() + 1000).toISOString(); // after the stage run's start

@@ -10,7 +10,7 @@ import {
 } from '../src/sources/github-queries.js';
 import { type LegacyStage, stripLegacy, transitionsOf } from '../src/config-migrate.js';
 import { citedColumns, onSource } from '../src/tasks.js';
-import { MAIN_FLOW } from '../src/flows.js';
+import { flatten, MAIN_FLOW } from '../src/flows.js';
 import { flowed } from './fixtures/main-flow.js';
 import { initialState } from '../src/orchestrator.js';
 import { saveState } from '../src/state-store.js';
@@ -19,7 +19,7 @@ import type { KeepAwakeSpawn } from '../src/keep-awake.js';
 import type { GqlJson } from '../src/sources/github-gql.js';
 import type { FactLog, RecordInput } from '../src/facts.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
-import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
+import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { AGENTS } from '../src/agents.js';
@@ -203,11 +203,16 @@ const withEpics = (stages: unknown) => (entry: unknown): unknown =>
 
 /** A setup body whose sources switch at one of its own stages (#30): a source whose switchAt names none takes the first. What a server test posts
  * with its own flow, so the switchAt check config.test covers never trips an unrelated test. */
-export function onOwnStages<T extends { sources?: SourceConfig[]; stages?: readonly { name: string }[] }>(body: T): T {
-  const names = (body.stages ?? []).map((s) => s.name);
+export function onOwnStages<T extends { sources?: SourceConfig[]; flows?: readonly Flow[] }>(body: T): T {
+  const names = flatten(body.flows ?? []).stages.map((s) => s.name);
   if (names.length === 0 || body.sources === undefined) return body;
   return { ...body, sources: body.sources.map((s) => (names.includes(s.switchAt) ? s : { ...s, switchAt: names[0] })) };
 }
+
+/** A settings body's `flows` (#565): one main flow around `stages`, its transitions the migration's over them unless given, so a legacy fixture's
+ * onFinish still becomes its transitions' sources. */
+export const bodyFlows = (stages: readonly LegacyStage[], transitions?: Transition[]): Flow[] =>
+  [{ name: MAIN_FLOW, stages: [...stages] as unknown as Stage[], transitions: transitions ?? transitionsOf(stages) }];
 
 /**
  * A raw hive.config.json around a Comb: `prefix` (HIVE), one workspace at `path` (/repo), `sources` ([] unless given; `board` is shorthand for

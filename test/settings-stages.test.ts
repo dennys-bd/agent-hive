@@ -2,11 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import {
-  actionLabel, addableActions, badEvaluation, canContinueSession, deletionMoves, emptyRow, emptyStage, entryKey, entryKeys, entryLabel, fromKeys, stageDraft, stageFrom, stageMeta, stageRenamesFrom, withAction, withEntry, withoutAction,
+  actionLabel, addableActions, badEvaluation, canContinueSession, deletionMoves, emptyRow, emptyStage, entryKey, entryKeys, entryLabel, flowTaskCount, fromKeys, stageDraft, stageNameClash, stageFrom, stageMeta, stageRenamesFrom, withAction, withEntry, withoutAction,
 } from '../src/ui/lib/settings-stages.js';
 import { draftVerdicts } from '../src/ui/lib/settings-transitions.js';
-import type { SourceAction, Stage, Task } from '../src/types.js';
+import type { Flow, SourceAction, Stage, Task } from '../src/types.js';
+const FLOW = 'f';
 
+const task = (n: number, stage: string, column: string): Task => ({ item: { itemId: `work:${n}`, id: String(n), title: '', body: '', url: '', source: 'work' }, stage, boardColumn: column, auto: true });
+const inMain = (stages: Stage[]): Flow[] => [{ name: 'main', stages, transitions: [] }];
 const move = (column: string): SourceAction => ({ type: 'move', column });
 const CLOSE: SourceAction = { type: 'close' };
 const ARCHIVE: SourceAction = { type: 'archive' };
@@ -16,7 +19,7 @@ const types = (list: SourceAction[]): string[] => list.map((a) => (a.type === 'm
 
 test('the draft keeps the action lists by row and stageFrom sends them by name; empty lists are left out (#515)', () => {
   const stage: Stage = { name: 'dev', from: { work: ['Ready'] }, onStart: { work: [move('In progress'), CLOSE] }, prompt: 'x' };
-  const draft = stageDraft(stage, ROWS);
+  const draft = stageDraft(stage, ROWS, FLOW);
   assert.deepEqual(draft.onStart, { r1: [move('In progress'), CLOSE] });
   assert.deepEqual(stageFrom(draft, ROWS), stage);
   const emptied = stageFrom({ ...draft, onStart: { r1: [] } }, ROWS);
@@ -26,11 +29,11 @@ test('the draft keeps the action lists by row and stageFrom sends them by name; 
 
 test('a commands stage keeps its names, its switch and onMissing through the draft; a new draft starts the switch on and onMissing on fail; another action sends none of them (#755)', () => {
   const stage: Stage = { name: 'checks', from: { work: ['Checks'] }, action: 'commands', commands: ['build', 'lint'], stopOnFailure: false, onMissing: 'skip' };
-  const draft = stageDraft(stage, ROWS);
+  const draft = stageDraft(stage, ROWS, FLOW);
   assert.deepEqual([draft.action, draft.commands, draft.stopOnFailure, draft.onMissing], ['commands', ['build', 'lint'], false, 'skip']);
   assert.deepEqual(stageFrom(draft, ROWS), stage);
-  assert.deepEqual([emptyStage().commands, emptyStage().stopOnFailure, emptyStage().onMissing], [[], true, 'fail']);
-  const turned = stageDraft({ name: 'dev', from: {}, prompt: 'x' }, ROWS);
+  assert.deepEqual([emptyStage(FLOW).commands, emptyStage(FLOW).stopOnFailure, emptyStage(FLOW).onMissing], [[], true, 'fail']);
+  const turned = stageDraft({ name: 'dev', from: {}, prompt: 'x' }, ROWS, FLOW);
   assert.deepEqual([turned.stopOnFailure, turned.onMissing], [true, 'fail'], 'a stage turned into commands in the form starts with the switch on and onMissing on fail');
   const prompt = stageFrom({ ...draft, action: '', prompt: '/x' }, ROWS);
   assert.equal('commands' in prompt || 'stopOnFailure' in prompt || 'onMissing' in prompt, false);
@@ -60,7 +63,7 @@ test('withAction keeps a leaving action last; withoutAction returns a new list (
 
 test('stageMeta reads what a stage does in one line (#515)', () => {
   setLanguage('pt');
-  const stage = { ...emptyStage(), name: 'dev' };
+  const stage = { ...emptyStage(FLOW), name: 'dev' };
   assert.equal(stageMeta({ ...stage, action: 'deleteActivity' }, 'claude'), t('settings.stages.meta.deleteActivity'));
   assert.equal(stageMeta({ ...stage, approval: true }, 'claude'), t('settings.stages.meta.gate'));
   assert.equal(stageMeta({ ...stage, prompt: '  ' }, 'claude'), t('settings.stages.meta.show'));
@@ -70,14 +73,14 @@ test('stageMeta reads what a stage does in one line (#515)', () => {
 });
 
 test("a stage's agent round-trips: '' is no key, a pin is kept, a cleanup sends none (#516)", () => {
-  assert.equal(emptyStage().agent, '');
+  assert.equal(emptyStage(FLOW).agent, '');
   const base: Stage = { name: 'dev', from: { work: ['Ready'] }, prompt: 'x' };
-  assert.equal(stageDraft(base, ROWS).agent, '', 'absent = the default');
-  assert.equal('agent' in stageFrom(stageDraft(base, ROWS), ROWS), false);
+  assert.equal(stageDraft(base, ROWS, FLOW).agent, '', 'absent = the default');
+  assert.equal('agent' in stageFrom(stageDraft(base, ROWS, FLOW), ROWS), false);
   const pinned: Stage = { ...base, agent: 'claude' };
-  assert.equal(stageDraft(pinned, ROWS).agent, 'claude');
-  assert.deepEqual(stageFrom(stageDraft(pinned, ROWS), ROWS), pinned, 'kept even when it equals the default');
-  const cleanup = stageFrom({ ...stageDraft(pinned, ROWS), prompt: '', action: 'deleteActivity' }, ROWS);
+  assert.equal(stageDraft(pinned, ROWS, FLOW).agent, 'claude');
+  assert.deepEqual(stageFrom(stageDraft(pinned, ROWS, FLOW), ROWS), pinned, 'kept even when it equals the default');
+  const cleanup = stageFrom({ ...stageDraft(pinned, ROWS, FLOW), prompt: '', action: 'deleteActivity' }, ROWS);
   assert.equal('agent' in cleanup, false, 'the parser refuses an agent next to an action');
 });
 
@@ -98,18 +101,18 @@ test('actionLabel names each action in the user\'s language (#515)', () => {
 
 test('stageFrom sends handoff only on a prompt stage that starts a new session; stageDraft reads it back (#692)', () => {
   const stage: Stage = { name: 'plan', from: {}, prompt: '/hive:new-plan {url}', handoff: true };
-  const draft = stageDraft(stage, ROWS);
+  const draft = stageDraft(stage, ROWS, FLOW);
   assert.equal(draft.handoff, true);
   assert.deepEqual(stageFrom(draft, ROWS), stage);
   assert.equal('handoff' in stageFrom({ ...draft, session: 'continue' }, ROWS), false, 'the parser refuses it next to continue');
   assert.equal('handoff' in stageFrom({ ...draft, action: 'deleteActivity' }, ROWS), false, 'nor next to an action');
   assert.equal('handoff' in stageFrom({ ...draft, prompt: '  ' }, ROWS), false, 'nor on a stage without a prompt: a gate never spawns');
-  assert.equal(emptyStage().handoff, false);
+  assert.equal(emptyStage(FLOW).handoff, false);
 });
 
 test('stageFrom sends clearSession on a prompt or a skill stage, a continued session included, never on a stage that runs nothing; stageDraft reads it back (#494)', () => {
   const stage: Stage = { name: 'spec', from: {}, prompt: '/hive:new-spec {url}', clearSession: true };
-  const draft = stageDraft(stage, ROWS);
+  const draft = stageDraft(stage, ROWS, FLOW);
   assert.equal(draft.clearSession, true);
   assert.deepEqual(stageFrom(draft, ROWS), stage);
   assert.equal(stageFrom({ ...draft, session: 'continue' }, ROWS).clearSession, true, 'the continued session is cleared when the stage ends');
@@ -117,62 +120,69 @@ test('stageFrom sends clearSession on a prompt or a skill stage, a continued ses
   for (const off of [{ prompt: '  ' }, { action: 'deleteActivity' as const }, { approval: true, prompt: '' }]) {
     assert.equal('clearSession' in stageFrom({ ...draft, ...off }, ROWS), false, JSON.stringify(off));
   }
-  assert.equal(emptyStage().clearSession, false);
+  assert.equal(emptyStage(FLOW).clearSession, false);
 });
 
 test('a commands stage\'s meta lists its names, or the action with none (#755)', () => {
   setLanguage('pt');
-  assert.equal(stageMeta({ ...emptyStage(), action: 'commands', commands: ['build', 'lint'] }, 'claude'), 'build, lint');
-  assert.equal(stageMeta({ ...emptyStage(), action: 'commands' }, 'claude'), 'executar comandos');
+  assert.equal(stageMeta({ ...emptyStage(FLOW), action: 'commands', commands: ['build', 'lint'] }, 'claude'), 'build, lint');
+  assert.equal(stageMeta({ ...emptyStage(FLOW), action: 'commands' }, 'claude'), 'executar comandos');
 });
 
 test('a wait-for-CI stage keeps its checks, its switch and its wait through the draft; a new draft starts on required, 60m and the switch off; checks go only with list and an empty wait sends no key (#834)', () => {
   const stage: Stage = { name: 'ci', from: { work: ['CI'] }, action: 'waitForCi', ciChecks: 'list', checks: ['build', 'e2e-*'], rerunOnce: true, timeout: '30m' };
-  const draft = stageDraft(stage, ROWS);
+  const draft = stageDraft(stage, ROWS, FLOW);
   assert.deepEqual(stageFrom(draft, ROWS), stage);
-  const fresh = emptyStage();
+  const fresh = emptyStage(FLOW);
   assert.deepEqual([fresh.ciChecks, fresh.checks, fresh.rerunOnce, fresh.timeout], ['required', [], false, '60m']);
   assert.deepEqual(stageFrom({ ...draft, ciChecks: 'required', timeout: ' ' }, ROWS), { name: 'ci', from: { work: ['CI'] }, action: 'waitForCi', ciChecks: 'required', rerunOnce: true });
-  assert.equal(stageDraft({ ...stage, timeout: undefined }, ROWS).timeout, '', 'a saved wait with no limit stays without one');
+  assert.equal(stageDraft({ ...stage, timeout: undefined }, ROWS, FLOW).timeout, '', 'a saved wait with no limit stays without one');
   const prompt = stageFrom({ ...draft, action: '', prompt: '/x' }, ROWS);
   assert.equal(['ciChecks', 'checks', 'rerunOnce', 'timeout'].some((key) => key in prompt), false);
 });
 
 test('a gate draft sends approval alone; a prompt stage sends its verdicts when it has some (#134)', () => {
-  assert.deepEqual(stageFrom({ ...emptyStage(), name: 'PR', gate: true, approval: true, prompt: 'left over', model: 'opus' }, ROWS), { name: 'PR', from: {}, approval: true });
-  assert.deepEqual(stageFrom({ ...emptyStage(), name: 'Rev', prompt: '/r', verdicts: ['ok', 'redo'] }, ROWS).verdicts, ['ok', 'redo']);
-  assert.equal('verdicts' in stageFrom({ ...emptyStage(), name: 'Rev', prompt: '/r' }, ROWS), false);
-  assert.deepEqual([stageDraft({ name: 'PR', from: {}, approval: true }, ROWS).gate, stageDraft({ name: 'B', from: {}, prompt: '/b', verdicts: ['ok'] }, ROWS).verdicts], [true, ['ok']]);
+  assert.deepEqual(stageFrom({ ...emptyStage(FLOW), name: 'PR', gate: true, approval: true, prompt: 'left over', model: 'opus' }, ROWS), { name: 'PR', from: {}, approval: true });
+  assert.deepEqual(stageFrom({ ...emptyStage(FLOW), name: 'Rev', prompt: '/r', verdicts: ['ok', 'redo'] }, ROWS).verdicts, ['ok', 'redo']);
+  assert.equal('verdicts' in stageFrom({ ...emptyStage(FLOW), name: 'Rev', prompt: '/r' }, ROWS), false);
+  assert.deepEqual([stageDraft({ name: 'PR', from: {}, approval: true }, ROWS, FLOW).gate, stageDraft({ name: 'B', from: {}, prompt: '/b', verdicts: ['ok'] }, ROWS, FLOW).verdicts], [true, ['ok']]);
 });
 
 test('stageRenamesFrom sends each saved stage whose trimmed name changed; a new stage renames nothing (#861)', () => {
-  const spec = stageDraft({ name: 'spec', from: {} }, ROWS);
+  const spec = stageDraft({ name: 'spec', from: {} }, ROWS, FLOW);
   assert.equal(spec.savedName, 'spec');
-  assert.equal('savedName' in emptyStage(), false);
-  assert.deepEqual(stageRenamesFrom([{ ...spec, name: ' Spec ' }, { ...emptyStage(), name: 'new' }, stageDraft({ name: 'dev', from: {} }, ROWS)]), { spec: 'Spec' });
+  assert.equal('savedName' in emptyStage(FLOW), false);
+  assert.deepEqual(stageRenamesFrom([{ ...spec, name: ' Spec ' }, { ...emptyStage(FLOW), name: 'new' }, stageDraft({ name: 'dev', from: {} }, ROWS, FLOW)]), { spec: 'Spec' });
 });
 
 test('deletionMoves counts the tasks of the deleted stages by destination, under the new names; adjacent deletions meet on one survivor (#861)', () => {
   const saved: Stage[] = [{ name: 'spec', from: { work: ['Backlog'] } }, { name: 'dev', from: { work: ['Ready'] } }, { name: 'qa', from: { work: ['QA'] } }, { name: 'done', from: { work: ['Done'] } }];
-  const drafts = [{ ...stageDraft(saved[0], ROWS), name: 'Spec' }, stageDraft(saved[3], ROWS)]; // spec renamed, dev and qa deleted
+  const drafts = [{ ...stageDraft(saved[0], ROWS, FLOW), name: 'Spec' }, stageDraft(saved[3], ROWS, FLOW)]; // spec renamed, dev and qa deleted
   const next = drafts.map((d) => stageFrom(d, ROWS));
-  const at = (n: number, stage: string, column: string): Task => ({ item: { itemId: `work:${n}`, id: String(n), title: '', body: '', url: '', source: 'work' }, stage, boardColumn: column, auto: true });
-  assert.deepEqual(deletionMoves(drafts, saved, next, [at(1, 'dev', 'Ready'), at(2, 'qa', 'QA'), at(3, 'done', 'Done'), at(4, 'qa', 'Done')]), [{ stage: 'Spec', n: 2 }, { stage: 'done', n: 1 }]);
-  assert.deepEqual(deletionMoves(drafts, saved, next, [at(3, 'done', 'Done')]), [], 'no deleted stage holds a task');
+  assert.deepEqual(deletionMoves(drafts, inMain(saved), inMain(next), [task(1, 'dev', 'Ready'), task(2, 'qa', 'QA'), task(3, 'done', 'Done'), task(4, 'qa', 'Done')]), [{ stage: 'Spec', n: 2 }, { stage: 'done', n: 1 }]);
+  assert.deepEqual(deletionMoves(drafts, inMain(saved), inMain(next), [task(3, 'done', 'Done')]), [], 'no deleted stage holds a task');
+});
+
+test('deletionMoves keeps a deleted stage\'s tasks in its own flow (#565)', () => {
+  const s = (name: string): Stage => ({ name, from: {} });
+  const saved: Flow[] = [{ name: 'feature', stages: [s('spec'), s('build')], transitions: [] }, { name: 'bug', stages: [s('triage'), s('fix')], transitions: [] }];
+  const drafts = [saved[0].stages[0], saved[0].stages[1], saved[1].stages[1]].map((c, i) => stageDraft(c, ROWS, i < 2 ? 'a' : 'b'));
+  const next: Flow[] = [saved[0], { ...saved[1], stages: [saved[1].stages[1]] }];
+  assert.deepEqual(deletionMoves(drafts, saved, next, [task(1, 'triage', '')]), [{ stage: 'fix', n: 1 }]);
 });
 
 test('a skill stage keeps its skill, its specialized agent and every prompt key through the draft, and sends no prompt (#710)', () => {
   const stage: Stage = { name: 'plan', from: { work: ['Plan'] }, action: 'skill', skill: 'new-plan', agent: 'codex', model: 'gpt-5.6-terra', specializedAgent: 'hive:planner', session: 'continue', approval: true, verdicts: ['redo'], maxWorkers: 2 };
-  const draft = stageDraft(stage, ROWS);
+  const draft = stageDraft(stage, ROWS, FLOW);
   assert.deepEqual([draft.action, draft.skill, draft.specializedAgent, draftVerdicts(draft)], ['skill', 'new-plan', 'hive:planner', ['redo']]);
   assert.deepEqual(stageFrom(draft, ROWS), stage);
   assert.equal('prompt' in stageFrom({ ...draft, prompt: 'left over' }, ROWS), false);
-  assert.deepEqual([emptyStage().skill, emptyStage().specializedAgent], ['', '']);
+  assert.deepEqual([emptyStage(FLOW).skill, emptyStage(FLOW).specializedAgent], ['', '']);
 });
 
 test('a prompt stage sends its specialized agent only with a prompt to run, a Hive action sends neither key, and a skill stage\'s chip names its skill (#710)', () => {
   setLanguage('pt');
-  const draft = { ...emptyStage(), name: 'dev', specializedAgent: 'hive:designer' };
+  const draft = { ...emptyStage(FLOW), name: 'dev', specializedAgent: 'hive:designer' };
   assert.equal(stageFrom({ ...draft, prompt: '/x' }, ROWS).specializedAgent, 'hive:designer');
   assert.equal('specializedAgent' in stageFrom(draft, ROWS), false, 'a blank prompt runs nothing: the parser refuses it there');
   const commands = stageFrom({ ...draft, prompt: '/x', skill: 'new-plan', action: 'commands', commands: ['lint'] }, ROWS);
@@ -182,11 +192,11 @@ test('a prompt stage sends its specialized agent only with a prompt to run, a Hi
 });
 
 test('a stage may continue the previous session only when an earlier stage runs the same agent: never the first, never the first with its agent (#710)', () => {
-  const run = (extra: Partial<ReturnType<typeof emptyStage>>) => ({ ...emptyStage(), name: 'x', prompt: '/x', ...extra });
-  const stages = [run({}), { ...emptyStage(), name: 'gate', gate: true, approval: true }, run({ agent: 'codex' }), run({}), run({ agent: 'codex' }), run({ action: 'skill', skill: 'new-plan' })];
+  const run = (extra: Partial<ReturnType<typeof emptyStage>>) => ({ ...emptyStage(FLOW), name: 'x', prompt: '/x', ...extra });
+  const stages = [run({}), { ...emptyStage(FLOW), name: 'gate', gate: true, approval: true }, run({ agent: 'codex' }), run({}), run({ agent: 'codex' }), run({ action: 'skill', skill: 'new-plan' })];
   assert.deepEqual(stages.map((_, i) => canContinueSession(stages, i, 'claude')), [false, false, false, true, true, true]);
   assert.equal(canContinueSession(stages, 2, 'codex'), true, "the default agent is codex: the first stage's agent");
-  assert.equal(canContinueSession([{ ...emptyStage(), name: 'c', action: 'commands' }, run({})], 1, 'claude'), false, 'a commands stage opens no session');
+  assert.equal(canContinueSession([{ ...emptyStage(FLOW), name: 'c', action: 'commands' }, run({})], 1, 'claude'), false, 'a commands stage opens no session');
 });
 
 test('an evaluate stage keeps its reviewers, judge, threshold and rubric through the draft, its cap too; a new draft has no reviewer, the judge on the default agent and 7; an empty pick sends no key (#877)', () => {
@@ -196,20 +206,29 @@ test('an evaluate stage keeps its reviewers, judge, threshold and rubric through
     reviewers: [{ agent: 'claude', specializedAgent: 'hive:security-reviewer', focus: 'security' }, { agent: 'codex', model: 'gpt-5.6-terra', focus: 'the spec' }],
     judge: { agent: 'claude', model: 'opus' }, threshold: 8, rubric: 'a\nb',
   };
-  const draft = stageDraft(stage, ROWS);
+  const draft = stageDraft(stage, ROWS, FLOW);
   assert.deepEqual(stageFrom(draft, ROWS), stage);
   assert.deepEqual(draft.reviewers.map((r) => [r.agent, r.model, r.specializedAgent, r.focus]), [['claude', '', 'hive:security-reviewer', 'security'], ['codex', 'gpt-5.6-terra', '', 'the spec']]);
-  const fresh = emptyStage('codex');
+  const fresh = emptyStage(FLOW, 'codex');
   assert.deepEqual([fresh.reviewers, fresh.judge.agent, fresh.judge.model, fresh.threshold, fresh.rubric], [[], 'codex', '', '7', '']);
-  assert.equal(stageDraft({ name: 'p', from: {}, prompt: '/x' }, ROWS, 'codex').judge.agent, 'codex', 'a stage turned into one starts its judge on the default');
+  assert.equal(stageDraft({ name: 'p', from: {}, prompt: '/x' }, ROWS, FLOW, 'codex').judge.agent, 'codex', 'a stage turned into one starts its judge on the default');
   const prompt = stageFrom({ ...draft, action: '', prompt: '/x' }, ROWS);
   assert.equal(['reviewers', 'judge', 'threshold', 'rubric'].some((key) => key in prompt), false);
   assert.equal(stageMeta(draft, 'claude'), '2 revisores e um juiz');
 });
 
 test('badEvaluation: a blank focus, a threshold off 0..10 or not whole, a rubric with no line (#877)', () => {
-  const ok = { ...emptyStage(), action: 'evaluate' as const, reviewers: [{ ...emptyRow('claude'), focus: 'x' }], rubric: 'a' };
+  const ok = { ...emptyStage(FLOW), action: 'evaluate' as const, reviewers: [{ ...emptyRow('claude'), focus: 'x' }], rubric: 'a' };
   assert.equal(badEvaluation(ok), false);
   for (const bad of [{ reviewers: [{ ...emptyRow('claude'), focus: ' ' }] }, { threshold: '11' }, { threshold: '6.5' }, { threshold: '' }, { rubric: ' \n ' }]) assert.equal(badEvaluation({ ...ok, ...bad }), true, JSON.stringify(bad));
   assert.equal(badEvaluation({ ...ok, action: 'commands' as const, rubric: '' }), false, 'only an evaluate stage');
+});
+
+test('stageNameClash names the other flow holding a stage\'s trimmed name; flowTaskCount counts a saved flow\'s tasks (#565)', () => {
+  const flows = [{ id: 'a', name: 'feature' }, { id: 'b', name: 'bug' }];
+  const stages = [{ ...emptyStage('a'), name: 'spec' }, { ...emptyStage('b'), name: ' spec ' }, { ...emptyStage('b'), name: 'fix' }];
+  assert.deepEqual(stages.map((s) => stageNameClash(stages, flows, s.id)), ['bug', 'feature', undefined]);
+  const saved: Flow[] = [{ name: 'feature', stages: [{ name: 'spec', from: {} }], transitions: [] }, { name: 'bug', stages: [{ name: 'fix', from: {} }], transitions: [] }];
+  const tasks = ['fix', 'fix', 'spec'].map((stage, n) => task(n, stage, ''));
+  assert.deepEqual(['bug', 'feature', 'new'].map((name) => flowTaskCount(name, saved, tasks)), [2, 1, 0]);
 });

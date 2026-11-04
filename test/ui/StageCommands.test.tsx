@@ -6,6 +6,7 @@ import { StageCommands } from '@/components/settings/StageCommands';
 import { setLanguage } from '@/i18n';
 import { emptyStage, type StageDraft } from '@/lib/settings-form';
 import type { Command, OnMissing } from '../../src/types';
+const FLOW = 'f';
 
 beforeEach(() => setLanguage('pt'));
 
@@ -17,7 +18,7 @@ const OPTIONS: Command[] = [
 
 // The block over its own draft, as StageEditor holds it: every update is seen and applied
 function Harness({ initial, onMissing = 'fail', onUpdate }: { initial: string[]; onMissing?: OnMissing; onUpdate(patch: Partial<StageDraft>): void }) {
-  const [stage, setStage] = useState<StageDraft>({ ...emptyStage(), action: 'commands', commands: initial, onMissing });
+  const [stage, setStage] = useState<StageDraft>({ ...emptyStage(FLOW), action: 'commands', commands: initial, onMissing });
   return <StageCommands id="s" stage={stage} options={OPTIONS} workspaces={['hive', 'site']} onUpdate={(patch) => { onUpdate(patch); setStage((s) => ({ ...s, ...patch })); }} />;
 }
 const rows = (): string[] => screen.getAllByRole('listitem').map((li) => li.textContent ?? '');

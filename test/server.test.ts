@@ -33,7 +33,7 @@ import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript } from './fakes.js';
+import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -45,7 +45,7 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE',
   auth: AUTH,
   sources: [GITHUB_ENTRY],
-  stages: STAGES,
+  flows: bodyFlows(STAGES),
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
 };
 
@@ -407,7 +407,7 @@ test('feedback on a task awaiting approval whose stage session is open in the us
   const { log, lines } = fakeLog();
   const { spawnPty, ptys } = fakePtys();
   // no worker for the automation: the only run is the user's own session
-  const { repo, server, workers } = await start(t, idle({ ...BODY, stages: [{ ...STAGES[0], approval: true }] }), log, {}, { spawnPty });
+  const { repo, server, workers } = await start(t, idle({ ...BODY, flows: bodyFlows([{ ...STAGES[0], approval: true }] )}), log, {}, { spawnPty });
   await readyOn(server, 'board:I1', { path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, base: null, local: false });
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'board:I1') });
   const ptyId = server.getState()!.workers.find((s) => s.freeSession)!.runId!;
@@ -933,11 +933,11 @@ test('POST /tasks/:id/close and /keep answer 409 while the missing task\'s workt
   assert.equal(server.getState()?.tasks.length, 1, 'the task is still there');
 });
 
-test('POST /settings with different stages dispatches setStages: the state follows and a stopped task in a vanished stage is dropped until the next poll re-enters it', async (t) => {
+test('POST /settings with renamed stages dispatches setStages: the state follows, the rename carries the stopped task and the next poll keeps it there (#565: replacing every stage of a flow that holds tasks is a 409)', async (t) => {
   const { base, server } = await start(t, idle()); // I1 stopped in fila
   assert.equal(server.getState()?.tasks[0].stage, 'fila');
   const stages = [{ name: 'triagem', from: { board: ['Ready'] }, prompt: 'x' }];
-  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, stages }))).status, 200);
+  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, flows: bodyFlows(stages), stageRenames: { fila: 'triagem' } }))).status, 200); // a rename: the task's only stage may not just vanish (#565)
   await server.poll(); // reconfigure's poll runs in the background (#59)
   assert.deepEqual(server.getState()?.stages, stages);
   assert.equal(server.getState()?.tasks[0].stage, 'triagem', 'reconfigure polls: the task came back through the new from');
@@ -969,7 +969,7 @@ test('POST /settings answers once the config is written and the new stages are r
   // Turns `fila` into a delete activity stage whose onFinish archives: with nothing on the task to clean, setStages' own reduction (fill's
   // runDeletions) advances it straight into a leaving sourceAction (#286), the effect this bug used to block the answer on.
   const stages: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, action: 'deleteActivity', onFinish: { board: [{ type: 'archive' }] } }];
-  const setup = postJson(`${base}/settings`, onOwnStages({ ...BODY, stages }));
+  const setup = postJson(`${base}/settings`, onOwnStages({ ...BODY, flows: bodyFlows(stages) }));
   const TIMEOUT = Symbol('timeout');
   const race = await Promise.race([setup, sleep(300).then(() => TIMEOUT)]);
   try {
@@ -1005,7 +1005,7 @@ test('a refused close ahead of an archive leaves the task leaving, and the archi
   const { base, server } = await start(t, idle(), undefined, {}, { sourceFactory: factory });
   // A delete activity stage with nothing to delete advances at once into its onFinish: close (refused), then archive.
   const stages: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, action: 'deleteActivity', onFinish: { board: [{ type: 'close' }, { type: 'archive' }] } }];
-  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, stages }))).status, 200);
+  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, flows: bodyFlows(stages) }))).status, 200);
   await waitFor(() => server.getState()?.tasks.length === 0);
   assert.deepEqual(applied, ['I1 archive']);
 });
@@ -1041,14 +1041,14 @@ test('a save\'s sourceAction effects stay pinned to that save\'s own runtime eve
   // Turns `fila` into a delete activity stage: both tasks' onFinish archives in the same setStages reduction, one sourceAction effect
   // each, run in order by dispatch's effect loop (#476).
   const stages: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, action: 'deleteActivity', onFinish: { board: [{ type: 'archive' }] } }];
-  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, stages }))).status, 200);
+  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, flows: bodyFlows(stages) }))).status, 200);
   await waitFor(() => started.includes('I1')); // I1's sourceAction is running and held; I2's has not started yet
 
   // Save #2 renames `board` away while I1's effect is still in flight: the running batch's still-pending I2 effect must
   // resolve against save #1's own source instance, not whatever live.runtime holds once save #2 lands.
   const renamed: LegacyStage[] = [{ name: 'fila', from: { board2: ['Ready'] }, onStart: { board2: [move('In progress')] }, onFinish: { board2: [move('In review')] }, prompt: 'x' }];
   const save2 = await postJson(`${base}/settings`, {
-    ...BODY, stages: renamed, sources: [{ ...GITHUB_ENTRY, name: 'board2' }], renames: { board: 'board2' },
+    ...BODY, flows: bodyFlows(renamed), sources: [{ ...GITHUB_ENTRY, name: 'board2' }], renames: { board: 'board2' },
   });
   assert.equal(save2.status, 200, await save2.clone().text());
 
@@ -1097,7 +1097,7 @@ test('the kill effect waits for the pool before the next effect: a new stage of 
     { name: 'plan', from: { board: ['Ready'] }, onFinish: { board: [move('In progress')] }, prompt: '/hive-plan {url}' },
     { name: 'dev', from: { board: ['In progress'] }, onFinish: { board: [move('In review')] }, prompt: '/hive-build {url}' },
   ];
-  const { base, server, workers } = await start(t, { ...BODY, stages }, undefined, { holdKills: true });
+  const { base, server, workers } = await start(t, { ...BODY, flows: bodyFlows(stages) }, undefined, { holdKills: true });
   const ptyId = worker0(server).runId!;
   await markDone(server, ptyId);
   const stop = hookEvent(base, ptyId, { hook_event_name: 'Stop' }); // answered only after every effect ran
@@ -1118,7 +1118,7 @@ test('a spawn queued behind a slow kill is dropped once close() has begun, never
     { name: 'plan', from: { board: ['Ready'] }, onFinish: { board: [move('In progress')] }, prompt: '/hive-plan {url}' },
     { name: 'dev', from: { board: ['In progress'] }, onFinish: { board: [move('In review')] }, prompt: '/hive-build {url}' },
   ];
-  const { server, workers } = await start(t, { ...BODY, stages }, undefined, { holdKills: true });
+  const { server, workers } = await start(t, { ...BODY, flows: bodyFlows(stages) }, undefined, { holdKills: true });
   const ptyId = worker0(server).runId!;
   await markDone(server, ptyId);
   // Dispatched directly (not through /hooks/event): close() below drops every open connection, and this test cares about
@@ -1144,7 +1144,7 @@ const CONTINUE_STAGES: LegacyStage[] = [
 ];
 
 test('POST /hooks/done is gone; done marks the worker, is idempotent and ignores an unknown worker; a Stop without done answers an empty 204 and leaves the worker waiting with the session alive', async (t) => {
-  const { base, server, workers } = await start(t, { ...BODY, stages: CONTINUE_STAGES });
+  const { base, server, workers } = await start(t, { ...BODY, flows: bodyFlows(CONTINUE_STAGES )});
   const ptyId = worker0(server).runId!;
   const idle = await hookEvent(base, ptyId, { hook_event_name: 'Stop' });
   assert.equal(idle.status, 204);
@@ -1166,7 +1166,7 @@ test('POST /hooks/done is gone; done marks the worker, is idempotent and ignores
 
 test('a Stop with done and a next continue stage answers 200 { decision: block, reason } with the next prompt alone (#167): same worker, no kill, no spawn, the task moves', async (t) => {
   const { log, lines } = fakeLog();
-  const { base, home, server, workers } = await start(t, { ...BODY, stages: CONTINUE_STAGES }, log);
+  const { base, home, server, workers } = await start(t, { ...BODY, flows: bodyFlows(CONTINUE_STAGES )}, log);
   const { id, runId: ptyId } = worker0(server);
   await markDone(server, ptyId!);
   const stop = await hookEvent(base, ptyId!, { hook_event_name: 'Stop' });
@@ -1188,7 +1188,7 @@ test('a Stop with done and a next continue stage answers 200 { decision: block, 
 
 test('a stage prompt with {result.spec} receives what the previous stage passed with its done (#99)', async (t) => {
   const stages: LegacyStage[] = [CONTINUE_STAGES[0], { ...CONTINUE_STAGES[1], prompt: '/hive-build {result.spec}' }];
-  const { base, server } = await start(t, { ...BODY, stages });
+  const { base, server } = await start(t, { ...BODY, flows: bodyFlows(stages) });
   const ptyId = worker0(server).runId!;
   await server.dispatch({ type: 'done', ptyId, result: { spec: 'docs/superpowers/specs/x-design.md' } });
   const stop = await hookEvent(base, ptyId, { hook_event_name: 'Stop' });
@@ -1214,7 +1214,7 @@ test('the deleteActivity effect runs git inside the batch: deleteActivityFailed 
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: workspacesAt(repo), stages })).status, 200); // boot polls: I1 in fila, nothing to delete
+  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: workspacesAt(repo), flows: bodyFlows(stages) })).status, 200); // boot polls: I1 in fila, nothing to delete
   assert.equal(listings.length, 0);
   // something to clean (#236): a task with nothing the scope covers just moves on. Not the rendered branch, so git's listing alone decides;
   // on disk, or the boot poll's gone-worktree check (still running in the background) drops it
@@ -1266,7 +1266,7 @@ test('a poll marks the worktree of a stopped task whose directory left the disk 
 test('POST /tasks/:id/move answers 404 for an unknown task or before, 409 for tasks in different stages, and moves otherwise: before a task, or to the end without before; nothing reaches the board', async (t) => {
   const stages: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, prompt: 'x' }, { name: 'review', from: { board: ['In review'] } }];
   const { log, lines } = fakeLog();
-  const { base, server } = await start(t, idle({ ...BODY, stages }), log); // no worker: the order is all that changes
+  const { base, server } = await start(t, idle({ ...BODY, flows: bodyFlows(stages) }), log); // no worker: the order is all that changes
   await server.dispatch({ type: 'poll', source: 'board', items: [item('1', 'Ready'), item('2', 'Ready'), item('3', 'In review'), item('4', 'Ready')] });
   assert.deepEqual(order(server), ['1', '2', '3', '4']);
   const unknown = await postJson(`${base}/tasks/nope/move`, { before: 'board:I1' });
@@ -1615,7 +1615,7 @@ test('a forced removal git fails answers 500 with the message and unmarks the ta
 test('in a delete activity stage the delete-activity route finishes the stage\'s job: a refusal leaves the cleanupFailed task in place with its error; a forced removal advances it to the next stage with onFinish written, the error gone and the session kept (#210)', async (t) => {
   const git = listedGit('--is-ancestor'); // exit 1: the branch is not merged into HEAD, for the stage's delete activity and the button alike
   const stages: LegacyStage[] = [STAGES[0], { name: 'done', from: { board: ['In review'] }, onFinish: { board: [move('Done')] }, action: 'deleteActivity' }, { name: 'archive', from: { board: ['Done'] } }];
-  const { base, repo, server } = await start(t, { ...BODY, stages }, undefined, {}, { exec: git.exec }); // I1 runs in fila
+  const { base, repo, server } = await start(t, { ...BODY, flows: bodyFlows(stages) }, undefined, {}, { exec: git.exec }); // I1 runs in fila
   await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
   const { runId: ptyId } = worker0(server);
   await hookEvent(base, ptyId!, { hook_event_name: 'SessionStart', cwd: repo });
@@ -1707,7 +1707,7 @@ test('with transcripts in scope a delete removes every record\'s transcripts, a 
 test('POST /activities/:id/continue takes a deleted activity\'s record id: its kept session resumes in the task\'s live activity (#629)', async (t) => {
   claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const git = listedGit();
-  const { base, repo, server, workers } = await start(t, { ...BODY, stages: [{ ...STAGES[0], session: 'continue' }, ...STAGES.slice(1)] }, undefined, {}, { exec: git.exec });
+  const { base, repo, server, workers } = await start(t, { ...BODY, flows: bodyFlows([{ ...STAGES[0], session: 'continue' }, ...STAGES.slice(1)] )}, undefined, {}, { exec: git.exec });
   await server.dispatch({ type: 'setSignal', signal: 'red' });
   await hookEvent(base, worker0(server).runId!, { hook_event_name: 'SessionStart', cwd: repo });
   await wrote(server, workers[0]);
@@ -1728,7 +1728,7 @@ test('the deleteActivity effect removes the worktree and the branch whatever the
   const git = listedGit(); // lists the task's worktree on its branch, so the branch is known and goes
   const stages: LegacyStage[] = [STAGES[0], { name: 'done', from: { board: ['In review'] }, action: 'deleteActivity' }, { name: 'archive', from: { board: ['Done'] } }];
   const scope = { session: true, transcripts: true, nonAutoTasks: false };
-  const { base, repo, server } = await start(t, { ...BODY, stages, deleteActivity: scope }, log, {}, { exec: git.exec }); // I1 runs in fila
+  const { base, repo, server } = await start(t, { ...BODY, flows: bodyFlows(stages), deleteActivity: scope }, log, {}, { exec: git.exec }); // I1 runs in fila
   const { runId: ptyId } = worker0(server);
   await hookEvent(base, ptyId!, { hook_event_name: 'SessionStart', cwd: repo });
   await markDone(server, ptyId!);
@@ -2100,7 +2100,7 @@ test('POST /tasks/:id/open on a manual task whose worktree is gone from disk ref
 test('POST /tasks/:id/move-to moves a task with auto off to another Hive stage and writes that stage\'s first from on the source, with a Claude session open on it or not: 404 unknown task, 400 unknown stage, 409 for the same stage (#164, #366, #573)', async (t) => {
   const { log, lines } = fakeLog();
   const stages: LegacyStage[] = [STAGES[0], { name: 'review', from: { board: ['In review'] } }];
-  const { base, repo, server, workers } = await start(t, idle({ ...BODY, stages }), log);
+  const { base, repo, server, workers } = await start(t, idle({ ...BODY, flows: bodyFlows(stages) }), log);
   const refused = async (body: unknown, status: number, error: string, id = 'board:I1'): Promise<void> => {
     const res = await postJson(`${base}/tasks/${id}/move-to`, body);
     assert.equal(res.status, status, error);
@@ -2121,7 +2121,7 @@ test('POST /tasks/:id/move-to moves a task with auto off to another Hive stage a
 test('POST /tasks/:id/move-to moves a task created in the Hive, with auto, writing nothing on the source, and places it with drop: 400 for a malformed drop, 404 for an unknown before, 409 for a before in another stage or while a stage run holds the task, auto on or off (#366, #708)', async (t) => {
   const { log, lines } = fakeLog();
   const stages: LegacyStage[] = [STAGES[0], { name: 'review', from: { board: ['In review'] } }];
-  const { base, server } = await start(t, idle({ ...BODY, stages }), log);
+  const { base, server } = await start(t, idle({ ...BODY, flows: bodyFlows(stages) }), log);
   const refused = async (id: string, body: unknown, status: number, error: string): Promise<void> => {
     const res = await postJson(`${base}/tasks/${id}/move-to`, body);
     assert.equal(res.status, status, error);
@@ -2143,7 +2143,7 @@ test('POST /tasks/:id/move-to moves a task created in the Hive, with auto, writi
 test('POST /tasks/:id/move-to moves a source task with auto on and writes the target\'s first from on the source; auto stays on (#708)', async (t) => {
   const { log, lines } = fakeLog();
   const stages: LegacyStage[] = [STAGES[0], { name: 'review', from: { board: ['In review'] } }];
-  const { base, server } = await start(t, idle({ ...BODY, stages }), log);
+  const { base, server } = await start(t, idle({ ...BODY, flows: bodyFlows(stages) }), log);
   assert.equal(task0(server).auto, true);
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/move-to`, { stage: 'review' })), { ok: true });
   assert.deepEqual([task0(server).stage, task0(server).boardColumn, task0(server).auto], ['review', 'In review', true]);
@@ -2507,7 +2507,7 @@ test('Restart on a published branch that moved checks out <branch>-r2 and the ta
 
 test('a stage end captures its checkpoint inside the Stop\'s batch, before the continuation records the next stage\'s start (#619)', async (t) => {
   const git = restartGit(HEAD_SHA);
-  const { base, repo, server } = await start(t, { ...BODY, stages: CONTINUE_STAGES }, undefined, {}, { exec: git.exec });
+  const { base, repo, server } = await start(t, { ...BODY, flows: bodyFlows(CONTINUE_STAGES )}, undefined, {}, { exec: git.exec });
   const ptyId = worker0(server).runId!;
   await hookEvent(base, ptyId, { hook_event_name: 'SessionStart', cwd: repo }); // the worktree recorded: something to capture
   git.calls.length = 0;
@@ -2548,7 +2548,7 @@ test('Restart captures the checkpoint it throws away before its git, and still r
 
 test('an in-place continuation records the next stage\'s starting commit before the Stop is answered (#283)', async (t) => {
   const git = restartGit(HEAD_SHA);
-  const { base, server } = await start(t, { ...BODY, stages: CONTINUE_STAGES }, undefined, {}, { exec: git.exec });
+  const { base, server } = await start(t, { ...BODY, flows: bodyFlows(CONTINUE_STAGES )}, undefined, {}, { exec: git.exec });
   assert.equal(work0(server)?.stageStart?.stage, 'plan');
   const ptyId = worker0(server).runId!;
   await markDone(server, ptyId);
@@ -2682,7 +2682,7 @@ async function heldStop(base: string, server: HiveServer, ptyId: string): Promis
 }
 
 test('a Stop after hive_done in an approval stage is held until POST /activities/:id/approve answers it with the next stage\'s prompt: same worker, no kill, no spawn, the task moves (#268)', async (t) => {
-  const { base, server, workers } = await start(t, { ...BODY, stages: APPROVAL_STAGES });
+  const { base, server, workers } = await start(t, { ...BODY, flows: bodyFlows(APPROVAL_STAGES )});
   const { runId: ptyId } = worker0(server);
   const { stop } = await heldStop(base, server, ptyId!);
   assert.ok(work0(server)?.approval?.until);
@@ -2695,7 +2695,7 @@ test('a Stop after hive_done in an approval stage is held until POST /activities
 });
 
 test('a held Stop answered by feedback goes on in the same stage with the text; a held Stop whose run is stopped (Parar) gets no decision and the task keeps awaiting (#268)', async (t) => {
-  const { base, server } = await start(t, { ...BODY, stages: APPROVAL_STAGES });
+  const { base, server } = await start(t, { ...BODY, flows: bodyFlows(APPROVAL_STAGES )});
   const { runId: ptyId } = worker0(server);
   const first = await heldStop(base, server, ptyId!);
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/feedback`, { text: 'split the plan', start: false })), { ok: true });
@@ -2709,7 +2709,7 @@ test('a held Stop answered by feedback goes on in the same stage with the text; 
 });
 
 test('the approval routes answer 404 for an unknown task, 409 for a task not awaiting, extend only on a held session, 400 for a bad feedback body; start, continue and restart refuse an awaiting task (#268)', async (t) => {
-  const { base, server } = await start(t, { ...BODY, stages: LAST_APPROVAL });
+  const { base, server } = await start(t, { ...BODY, flows: bodyFlows(LAST_APPROVAL )});
   // #629: start stays on the task; the rest act on its live activity, `nope` naming none
   const refused = async (path: string, body: unknown, status: number, error: string): Promise<void> => {
     const [id, ...rest] = path.split('/');
@@ -2738,7 +2738,7 @@ test('the approval routes answer 404 for an unknown task, 409 for a task not awa
 });
 
 test('approve and feedback with no transition of their own answer 409 and keep the task awaiting (#134)', async (t) => {
-  const { base, server } = await start(t, { ...BODY, stages: LAST_APPROVAL, transitions: [] });
+  const { base, server } = await start(t, { ...BODY, flows: bodyFlows(LAST_APPROVAL, []) });
   const { runId: ptyId } = worker0(server);
   await markDone(server, ptyId!);
   await hookEvent(base, ptyId!, { hook_event_name: 'Stop' });
@@ -2751,7 +2751,7 @@ test('approve and feedback with no transition of their own answer 409 and keep t
 });
 
 test('feedback with start on a task whose run ended resumes the stage\'s session at once with the text as the prompt (#268)', async (t) => {
-  const { base, server, workers } = await start(t, { ...BODY, stages: LAST_APPROVAL });
+  const { base, server, workers } = await start(t, { ...BODY, flows: bodyFlows(LAST_APPROVAL )});
   const { runId: ptyId } = worker0(server);
   const session = work0(server)!.sessionId!;
   await markDone(server, ptyId!);
@@ -2764,7 +2764,7 @@ test('feedback with start on a task whose run ended resumes the stage\'s session
 });
 
 test('feedback with prompt mergeBase sends the merge-from-base text, rendered on the workspace\'s base remote, as started feedback (#379)', async (t) => {
-  const { base, server, workers } = await start(t, { ...BODY, stages: LAST_APPROVAL });
+  const { base, server, workers } = await start(t, { ...BODY, flows: bodyFlows(LAST_APPROVAL )});
   const { runId: ptyId } = worker0(server);
   const session = work0(server)!.sessionId!;
   await markDone(server, ptyId!);
@@ -2776,7 +2776,7 @@ test('feedback with prompt mergeBase sends the merge-from-base text, rendered on
 });
 
 test('feedback with a prompt and a text, another prompt or a bad promptBase answers 400 and the task keeps awaiting (#379)', async (t) => {
-  const { base, server } = await start(t, { ...BODY, stages: LAST_APPROVAL });
+  const { base, server } = await start(t, { ...BODY, flows: bodyFlows(LAST_APPROVAL )});
   const { runId: ptyId } = worker0(server);
   await markDone(server, ptyId!);
   await hookEvent(base, ptyId!, { hook_event_name: 'Stop' });
@@ -2795,7 +2795,7 @@ test('feedback with a prompt and a text, another prompt or a bad promptBase answ
 const MANUAL_GATE: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, onFinish: { board: [move('In review')] }, approval: true }]; // approval, no prompt (#315)
 
 test('a task polled into a manual gate awaits approval with no worker, and approve moves it out after the last stage (#315)', async (t) => {
-  const { base, server, workers } = await start(t, { ...BODY, stages: MANUAL_GATE });
+  const { base, server, workers } = await start(t, { ...BODY, flows: bodyFlows(MANUAL_GATE )});
   assert.deepEqual([workers.length, worker0(server).status, typeof work0(server)?.approval?.since], [0, 'empty', 'string']);
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/approve`)), { ok: true });
   assert.deepEqual(server.getState()?.tasks, [], 'the last stage: approved out of the Hive');
@@ -2803,7 +2803,7 @@ test('a task polled into a manual gate awaits approval with no worker, and appro
 
 test('a leaving sourceAction (#286): the source applies it and the task leaves the Hive through closeTask; a refusal keeps the task in its stage with the adapter\'s words, logged and on the bar', async (t) => {
   const leaving: LegacyStage = { ...STAGES[0], onFinish: { board: [{ type: 'archive' }] } };
-  const archived: Omit<SettingsBody, 'workspaces'> = { ...BODY, stages: [leaving] };
+  const archived: Omit<SettingsBody, 'workspaces'> = { ...BODY, flows: bodyFlows([leaving] )};
   const { log, lines } = fakeLog();
   const accepting = fakeSourceFactory();
   const { base, server } = await start(t, archived, log, {}, { sourceFactory: accepting.factory });
@@ -2834,7 +2834,7 @@ test('a poll whose read began before a leaving action answered does not bring th
     return { ...source, async listItems() { const held = gate; if (held) await held; return source.listItems(); } };
   };
   const { log, lines } = fakeLog();
-  const { base, server } = await start(t, { ...BODY, stages: [leaving] }, log, {}, { sourceFactory: factory });
+  const { base, server } = await start(t, { ...BODY, flows: bodyFlows([leaving] )}, log, {}, { sourceFactory: factory });
   let open!: () => void;
   gate = new Promise<void>((resolve) => { open = resolve; });
   const stale = server.poll(); // reads the board before the archive below answers
@@ -2903,7 +2903,7 @@ test('a save that renames a stage carries its tasks: the running one stays in it
   const { log, lines } = fakeLog();
   const { base, repo, server, workers } = await start(t, BODY, log);
   const ptyId = worker0(server).runId!;
-  const renamed = { ...BODY, workspaces: workspacesAt(repo), stages: [{ ...STAGES[0], name: 'Spec' }], stageRenames: { fila: 'Spec' } };
+  const renamed = { ...BODY, workspaces: workspacesAt(repo), flows: bodyFlows([{ ...STAGES[0], name: 'Spec' }]), stageRenames: { fila: 'Spec' } };
   assert.equal((await postJson(`${base}/settings`, onOwnStages(renamed))).status, 200);
   assert.deepEqual([task0(server).stage, worker0(server).runId, work0(server)?.stageGone], ['Spec', ptyId, undefined]);
   await markDone(server, ptyId);

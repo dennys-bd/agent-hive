@@ -43,7 +43,7 @@ import { FONT_FAMILY } from '@/lib/xterm-setup';
 
 // tick is not read: its only job is to change every RERENDER_MS so elapsed()/relative readings redraw between events.
 export interface DashboardProps {
-  state: State | undefined; effective?: EffectiveLimits; selected?: Selection; locale: string; tick: number; hasSource?: boolean; fileLinks?: boolean; fontFamily?: string; sources?: SourcesNav; onSelect(selection?: Selection): void; onEditRules?(): void; onAddWorkspace?(): void; onOpenSettings?(): void; openShortcuts?(): void; onOpenFlowSettings?(): void; // #536: the benchmark base dialog's link to Settings > fluxo
+  state: State | undefined; effective?: EffectiveLimits; selected?: Selection; locale: string; tick: number; hasSource?: boolean; fileLinks?: boolean; fontFamily?: string; sources?: SourcesNav; onSelect(selection?: Selection): void; onEditRules?(): void; onAddWorkspace?(): void; onOpenSettings?(): void; openShortcuts?(): void; onOpenFlowSettings?(): void; onNewFlow?(): void; // #536: the benchmark base dialog's link to Settings > fluxo; #565: onNewFlow is the tasks sidebar's + (2.3), landing on a new flow
   sidebarsPerView?: SidebarsPerView; // #821: what each view keeps of its sidebars; absent (the tests' harness): every side shared
 }
 

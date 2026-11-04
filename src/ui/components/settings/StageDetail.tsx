@@ -85,12 +85,13 @@ function OnStart({ stage, sources, onUpdate }: { stage: StageDraft; sources: Sta
 
 export interface StageDetailProps extends AgentProps {
   stage: StageDraft; index: number; total: number; stages: StageDraft[]; transitions: TransitionDraft[]; sources: StageSource[]; commands: Command[]; workspaces: string[];
+  clash?: string; // #565: the flow that already has a stage of this name
   onUpdate(patch: Partial<StageDraft>): void; onMove(to: number): void; onRemove(): void; onSelectTransition(id: string): void; onAddTransition(): void;
 }
 
 /** One stage's name and place in the fill order, then its 1 · entra / 2 · ao começar / 3 · executa / 4 · saídas blocks, in the order a run goes through them (#515, #134, #266). */
 export function StageDetail(props: StageDetailProps) {
-  const { stage, index, total, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, onUpdate, onMove, onRemove, onSelectTransition, onAddTransition } = props;
+  const { stage, clash, index, total, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, onUpdate, onMove, onRemove, onSelectTransition, onAddTransition } = props;
   const id = useId();
   return (
     <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
@@ -98,6 +99,7 @@ export function StageDetail(props: StageDetailProps) {
         <div id={settingAnchor('settings.stages.name', stage.id)} className="flex min-w-0 flex-1 flex-col gap-1 md:max-w-80">
           <Label htmlFor={`${id}-name`}>{t('settings.stages.name')}</Label>
           <Input id={`${id}-name`} defaultValue={stage.name} onChange={(e) => onUpdate({ name: e.target.value })} />
+          {clash !== undefined && <p className="text-destructive text-xs">{t('settings.stages.error.otherFlow', { flow: clash })}</p>}
         </div>
         <div className="ml-auto flex items-center gap-1">
           <Button type="button" variant="ghost" size="icon-xs" aria-label={t('settings.stages.moveEarlier')} disabled={index === 0} onClick={() => onMove(index - 1)}><ArrowLeftIcon /></Button>

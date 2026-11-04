@@ -7,6 +7,7 @@ import { StageEditor } from '@/components/settings/StageEditor';
 import { setLanguage, t } from '@/i18n';
 import { emptyStage, type StageDraft } from '@/lib/settings-form';
 import type { TransitionDraft } from '@/lib/settings-transitions';
+const FLOW = 'f';
 
 // #710: a prompt or skill stage's run fields, as the Start dialog draws them, and the skill picker
 beforeEach(() => setLanguage('pt'));
@@ -19,14 +20,14 @@ const OPTIONS: LaunchOptions = {
   codex: { aliases: [], versions: [], specializedAgents: [PLANNER], skills: SKILLS, args: [] },
 };
 type Flow = { stages: StageDraft[]; transitions: TransitionDraft[] };
-const stage = (extra: Partial<StageDraft>): StageDraft => ({ ...emptyStage(), name: 'plan', ...extra });
+const stage = (extra: Partial<StageDraft>): StageDraft => ({ ...emptyStage(FLOW), name: 'plan', ...extra });
 
 function setup(initial: StageDraft, launchOptions: LaunchOptions | undefined = OPTIONS) {
   const onChange = vi.fn();
   function Harness() {
     const [flow, setFlow] = useState<Flow>({ stages: [initial], transitions: [] });
     return (
-      <StageEditor
+      <StageEditor flow="f"
         stages={flow.stages} transitions={flow.transitions} sources={[]} agents={AGENTS} defaultAgent="claude" launchOptions={launchOptions}
         commands={[]} workspaces={['hive']} onChange={(next) => { onChange(next); setFlow(next); }}
       />

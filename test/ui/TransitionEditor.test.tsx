@@ -7,9 +7,10 @@ import type { StageSource } from '@/components/settings/StageEditor';
 import { setLanguage } from '@/i18n';
 import { emptyStage, type StageDraft } from '@/lib/settings-stages';
 import { emptyTransition, type TransitionDraft } from '@/lib/settings-transitions';
+const FLOW = 'f';
 
 // The transition editor (#134, 6b): de, para, quando, veredito, tries or the user's note, the prompt, the session and the sources.
-const stage = (name: string, extra: Partial<StageDraft> = {}): StageDraft => ({ ...emptyStage(), name, ...extra });
+const stage = (name: string, extra: Partial<StageDraft> = {}): StageDraft => ({ ...emptyStage(FLOW), name, ...extra });
 const STAGES = [stage('Build', { prompt: '/b' }), stage('Checks', { action: 'commands', commands: ['lint'] }), stage('PR', { gate: true, approval: true })];
 const SOURCES: StageSource[] = [{ id: 'r1', name: 'board', type: 'github', options: ['Ready', 'Done'] }];
 function Harness({ initial, onChange, onRemove = () => {} }: { initial: TransitionDraft; onChange(d: TransitionDraft): void; onRemove?(): void }) {

@@ -5,9 +5,10 @@ import { StageChart } from '@/components/settings/StageChart';
 import { setLanguage } from '@/i18n';
 import { emptyStage, type StageDraft } from '@/lib/settings-stages';
 import { emptyTransition } from '@/lib/settings-transitions';
+const FLOW = 'f';
 
 // Settings' chart (#134, 6b): a button per stage with its action's icon and summary, a pill per transition, both selectable.
-const stage = (name: string, extra: Partial<StageDraft> = {}): StageDraft => ({ ...emptyStage(), name, ...extra });
+const stage = (name: string, extra: Partial<StageDraft> = {}): StageDraft => ({ ...emptyStage(FLOW), name, ...extra });
 beforeEach(() => setLanguage('pt'));
 
 test('each stage is a pressed-or-not button with its summary; each transition a pill; a click selects either (#134)', async () => {

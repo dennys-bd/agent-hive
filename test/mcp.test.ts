@@ -22,7 +22,8 @@ import { createServer, type HiveServer, type ServerDeps } from '../src/server.js
 import type { Activity, Config, Exec, SourceConfig, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
 import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
-import { AUTH, STAGES, fakeFacts, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
+import type { LegacyStage } from '../src/config-migrate.js';
+import { AUTH, STAGES, bodyFlows, fakeFacts, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
 import type { RecordInput } from '../src/facts.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { reviewEventDuring, send } from './review-server.js';
@@ -30,9 +31,10 @@ import { hiveFetch, SECRET } from './secret-client.js';
 import { flowed } from './fixtures/main-flow.js';
 
 // One worker: the fake source's task runs in it, so its worker is the live one. `later` is a second Comb stage without a prompt.
+const MCP_STAGES = [...STAGES, { name: 'later', from: {} }];
 const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY],
-  stages: [...STAGES, { name: 'later', from: {} }], onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
+  flows: bodyFlows(MCP_STAGES), onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
   shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
 };
 const EVENT_TYPES = ['done', 'pr', 'ask', 'createTask', 'stop'];
@@ -46,7 +48,7 @@ const work0 = (server: HiveServer): Activity | undefined => activityOf(server.ge
 // dispatch logs every event it reduces at debug; the fake log keeps every level
 const dispatched = (lines: string[]): string[] => lines.filter((line) => EVENT_TYPES.some((type) => line.startsWith(`DEBUG ${type} `)));
 
-async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], workspace: Partial<Workspace> = {}, stages: unknown[] = BODY.stages ?? [], extra: Partial<ServerDeps> = {}): Promise<Hive> {
+async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], workspace: Partial<Workspace> = {}, stages: LegacyStage[] = MCP_STAGES, extra: Partial<ServerDeps> = {}): Promise<Hive> {
   const { home, repo } = await tempHive(t, 1);
   const { log, lines } = fakeLog();
   const { factory, actions } = fakeSourceFactory();
@@ -56,7 +58,7 @@ async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], w
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   const workspaces = workspacesAt(repo).map((w) => ({ ...w, ...workspace })); // what the workspace card saves: memoryCap (#73)
-  const saved = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, sources, workspaces, stages }) });
+  const saved = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, sources, workspaces, flows: bodyFlows(stages) }) });
   assert.equal(saved.status, 200);
   await server.poll();
   await server.dispatch({ type: 'setSignal', signal: 'green' }); // the task spawns into the one worker
@@ -578,7 +580,7 @@ const PR9 = 'https://github.com/acme/r/pull/9';
 test('hive_pr answers without waiting for its preload, which it starts with the url; a refused call preloads nothing (#497)', async (t) => {
   const urls: string[] = [];
   const pending = (url: string): Promise<void> => { urls.push(url); return new Promise<void>(() => undefined); }; // never settles
-  const { base, ptyId } = await start(t, [GITHUB_ENTRY], {}, BODY.stages ?? [], { preloadPr: pending });
+  const { base, ptyId } = await start(t, [GITHUB_ENTRY], {}, MCP_STAGES, { preloadPr: pending });
   const client = await connect(t, base, ptyId);
   assert.deepEqual(await call(client, 'hive_pr', { url: PR9 }), { text: 'ok', isError: false });
   assert.deepEqual(urls, [PR9]);
@@ -587,7 +589,7 @@ test('hive_pr answers without waiting for its preload, which it starts with the 
 });
 
 test('a rejected preload changes nothing in hive_pr\'s answer or its record (#497)', async (t) => {
-  const { base, server, ptyId } = await start(t, [GITHUB_ENTRY], {}, BODY.stages ?? [], { preloadPr: async () => { throw new Error('boom'); } });
+  const { base, server, ptyId } = await start(t, [GITHUB_ENTRY], {}, MCP_STAGES, { preloadPr: async () => { throw new Error('boom'); } });
   const client = await connect(t, base, ptyId);
   assert.deepEqual(await call(client, 'hive_pr', { url: PR9 }), { text: 'ok', isError: false });
   assert.deepEqual(prsOf(server.getState()!, task0(server).item.itemId), [{ url: PR9, state: 'open' }]);

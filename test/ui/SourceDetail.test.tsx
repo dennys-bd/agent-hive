@@ -6,11 +6,12 @@ import { SourceDetail } from '@/components/settings/SourceDetail';
 import { setLanguage, t } from '@/i18n';
 import { type SourceDraft, type StageDraft, emptySource, emptyStage } from '@/lib/settings-form';
 import type { FilterOptions, GithubAuth } from '../../src/types';
+const FLOW = 'f';
 
 beforeEach(() => setLanguage('pt'));
 
 // The flow the block's switchAt picks from (#30): Build is the default, review the last stage
-const STAGES: StageDraft[] = [{ ...emptyStage(), name: 'fila' }, { ...emptyStage(), name: 'Build' }, { ...emptyStage(), name: 'review' }];
+const STAGES: StageDraft[] = [{ ...emptyStage(FLOW), name: 'fila' }, { ...emptyStage(FLOW), name: 'Build' }, { ...emptyStage(FLOW), name: 'review' }];
 const work = (): SourceDraft => ({ ...emptySource('hive'), name: 'work', number: '1' });
 
 interface HarnessProps {

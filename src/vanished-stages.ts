@@ -1,11 +1,12 @@
 import { activityOf, withActivity } from './activities.js';
 import { releaseRun, releaseWorker, withTask } from './reducer-kit.js';
+import { flatten } from './flows.js';
 import { haltCi } from './stage-ci.js';
 import { destinationOf } from './stage-delete.js';
 import { haltEvaluate } from './stage-evaluate.js';
 import { enter, inAction, inFlow, stageOf, taskId } from './tasks.js';
 import { haltGone } from './transit.js';
-import type { Activity, Effect, Stage, State, Task, Worker } from './types.js';
+import type { Activity, Effect, Flow, Stage, State, Task, Worker } from './types.js';
 
 // The tasks of the stages a setStages removes (#861), placed before the new stages land: out of orchestrator.ts, which is past 400 lines.
 // Pure: new objects only.
@@ -44,12 +45,14 @@ function placeHeld(acc: Placed, task: Task & { stage: string }, to: Stage): Plac
 }
 
 /** Every task whose stage `stages` lacks, placed in destinationOf's stage (#861): a stopped one enters it as a move by hand would, keeping its
- * activity (setStages' settleEntries and gates follow); a held one through placeHeld. The old stages are still `state.stages`. With no stage at
+ * activity (setStages' settleEntries and gates follow); a held one through placeHeld. The old flows are still `state.flows`. With no stage at
  * all the task is left where it is: the save refuses an empty flow. */
-export function placeVanished(state: State, stages: Stage[]): Placed {
+export function placeVanished(state: State, flows: Flow[]): Placed {
+  const { stages } = flatten(flows);
   return state.tasks.reduce<Placed>((acc, task) => {
     if (!inFlow(task) || stageOf(stages, task.stage) !== undefined) return acc; // #566: a task outside the flow never moves into one on its own
-    const to = destinationOf(task, task.stage, state.stages, stages);
+    // #565: a save that would strand a task was refused (strandedRefusal); only a boot over a hand-edited file falls back to the comb's first stage
+    const to = destinationOf(task, task.stage, state.flows, flows) ?? stages[0];
     if (to === undefined) return acc;
     const live = activityOf(acc.state, taskId(task));
     const isHeld = live?.workerId !== undefined || inAction(live);

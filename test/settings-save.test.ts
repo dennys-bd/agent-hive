@@ -1,12 +1,13 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, savedFlows, SEVERAL_FLOWS, stageRenamesOf } from '../src/settings-save.js';
-import type { Flow, SourceConfig, Stage } from '../src/types.js';
-import { GITHUB_ENTRY, workspacesAt } from './fakes.js';
+import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, configFrom, stageRenamesOf, strandedMessage, strandedTasks } from '../src/settings-save.js';
+import type { Flow, SourceConfig, Stage, Task } from '../src/types.js';
+import { CONFIG_FILE } from '../src/config.js';
+import { combConfig, GITHUB_ENTRY, workspacesAt } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
 const SAVED: Stage[] = [{ name: 'spec', from: {} }, { name: 'dev', from: {} }, { name: 'qa', from: {} }];
@@ -48,18 +49,40 @@ const TWO: Flow[] = [
   { name: 'bug', stages: [{ name: 'fix', from: {} }], transitions: [] },
 ];
 
-test('with two flows, an unchanged flat pair keeps both flows and a body without stages keeps them too (#564)', () => {
-  const pair = { stages: [{ name: 'spec', from: {} }, { name: 'fix', from: {}, prompt: undefined }], transitions: [{ from: 'spec', to: 'end', when: 'done' }] };
-  assert.equal(savedFlows(TWO, pair), TWO, 'the same flows, untouched');
-  assert.equal(savedFlows(TWO, undefined), TWO);
+const savedHome = async (t: TestContext, flows: Flow[]): Promise<string> => {
+  const home = await tempDir(t, 'home-');
+  await writeFile(join(home, CONFIG_FILE), JSON.stringify(combConfig({ flows })));
+  return home;
+};
+
+test('configFrom writes the flows the body sends, a flow without transitions getting them from its stages; no flows keeps the saved ones (#565)', async (t) => {
+  const home = await savedHome(t, TWO);
+  assert.deepEqual((await configFrom(home, { prefix: 'HIVE' })).comb.flows, TWO, 'an API caller that omits flows');
+  const sent: Flow[] = [{ ...TWO[1], name: 'hotfix' }, TWO[0]];
+  assert.deepEqual((await configFrom(home, { prefix: 'HIVE', flows: sent })).comb.flows, sent);
+  const bare = [{ name: 'main', stages: [{ name: 'dev', from: {} }] }] as unknown as Flow[]; // an API caller's flow with no transitions key
+  assert.deepEqual((await configFrom(home, { prefix: 'HIVE', flows: bare })).comb.flows, [{ name: 'main', stages: [{ name: 'dev', from: {} }], transitions: [{ from: 'dev', to: 'end', when: 'done' }] }]);
 });
 
-test('with two flows, a changed flat pair is refused (#564)', () => {
-  assert.throws(() => savedFlows(TWO, { stages: [{ name: 'spec', from: {} }], transitions: [] }), { message: SEVERAL_FLOWS });
+const inStage = (stage: string, n = 1): Task => ({ item: { itemId: `board:${n}`, id: String(n), title: 'T', body: '', url: '', source: 'board' }, stage, boardColumn: 'Ready', auto: true });
+const holding = (...stages: string[]): { tasks: Task[] } => ({ tasks: stages.map((s, i) => inStage(s, i + 1)) });
+
+test('strandedTasks names the first flow whose tasks a save leaves with no stage of their flow, with the count (#565)', () => {
+  assert.deepEqual(strandedTasks(holding('fix', 'fix', 'spec'), TWO, [TWO[0]], {}), { flow: 'bug', count: 2 }, 'a deleted flow holding tasks');
+  const replaced: Flow = { ...TWO[1], stages: [{ name: 'patch', from: {} }], transitions: [] };
+  assert.deepEqual(strandedTasks(holding('fix'), TWO, [TWO[0], replaced], {}), { flow: 'bug', count: 1 }, 'every stage of the flow replaced');
 });
 
-test('with one flow, or none saved, the pair replaces it and keeps its name (#564)', () => {
-  const pair = { stages: [{ name: 'dev', from: {} }], transitions: [] };
-  assert.deepEqual(savedFlows([{ ...TWO[0] }], pair), [{ name: 'feature', ...pair }]);
-  assert.deepEqual(savedFlows(undefined, pair), [{ name: 'main', ...pair }], 'a first setup gets main');
+test('strandedTasks passes an empty flow\'s deletion, a flow rename and a stage rename (#565)', () => {
+  assert.equal(strandedTasks(holding('spec'), TWO, [TWO[0]], {}), undefined, 'bug held nothing');
+  assert.equal(strandedTasks(holding('fix'), TWO, [TWO[0], { ...TWO[1], name: 'hotfix' }], {}), undefined);
+  const renamed: Flow = { ...TWO[1], stages: [{ name: 'patch', from: {} }], transitions: [] };
+  assert.equal(strandedTasks(holding('fix'), TWO, [TWO[0], renamed], { fix: 'patch' }), undefined, 'fix → patch is a rename, not a deletion');
+  const { stage: _, ...outside } = inStage('fix', 9);
+  assert.equal(strandedTasks({ tasks: [outside] }, TWO, [TWO[0]], {}), undefined, 'a task outside the flow (#566) is in no flow to strand');
+});
+
+test('strandedMessage counts one task in the singular and several in the plural (#565)', () => {
+  assert.match(strandedMessage('bug', 1), /^Flow "bug" holds 1 task and none of its stages survives/);
+  assert.match(strandedMessage('bug', 3), /^Flow "bug" holds 3 tasks and none of its stages survives/);
 });

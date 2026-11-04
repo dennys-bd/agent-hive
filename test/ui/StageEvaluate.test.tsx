@@ -5,12 +5,13 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { StageEvaluate } from '@/components/settings/StageEvaluate';
 import { setLanguage } from '@/i18n';
 import { emptyStage, type StageDraft } from '@/lib/settings-form';
+const FLOW = 'f';
 
 beforeEach(() => setLanguage('pt'));
 
 const AGENTS = [{ agent: 'claude' as const, available: true }, { agent: 'codex' as const, available: true }]; // AgentAvailability's shape
 function Harness({ initial = {}, onUpdate }: { initial?: Partial<StageDraft>; onUpdate(patch: Partial<StageDraft>): void }) {
-  const [stage, setStage] = useState<StageDraft>({ ...emptyStage('claude'), action: 'evaluate', ...initial });
+  const [stage, setStage] = useState<StageDraft>({ ...emptyStage(FLOW, 'claude'), action: 'evaluate', ...initial });
   return <StageEvaluate id="s" stage={stage} agents={AGENTS} defaultAgent="claude" onUpdate={(patch) => { onUpdate(patch); setStage((s) => ({ ...s, ...patch })); }} />;
 }
 

@@ -10,6 +10,8 @@ import type { AgentAvailability, FilterOptions, GithubAuthStatus, ProjectSummary
 
 export interface FlowProps {
   focus?: TransitionFocus;
+  newFlow?: boolean; // #565: the view's newFlow
+  flowTasks(id: string): number; // #565: a draft flow's saved tasks
   stage?: StageFocus; // #689: the stage the Settings search opens
   options: Record<string, string[]>; githubProjects: Record<string, ProjectSummary[]>; github?: GithubAuthStatus; filterOptions: Record<string, FilterOptions>;
   onConnectGithub(): void; onLoadProjects(source: SourceDraft): void; onLoadColumns(source: SourceDraft): void;
@@ -22,7 +24,7 @@ export function FlowSection({ draft, source, flow, agents, launchWorkspace, onCh
   if (!source) {
     return (
       <CombTab
-        draft={draft} options={flow.options} githubProjects={flow.githubProjects} github={flow.github} agents={agents} launchWorkspace={launchWorkspace} focus={flow.focus} stage={flow.stage} onChange={onChange}
+        draft={draft} options={flow.options} githubProjects={flow.githubProjects} github={flow.github} agents={agents} launchWorkspace={launchWorkspace} focus={flow.focus} stage={flow.stage} newFlow={flow.newFlow} flowTasks={flow.flowTasks} onChange={onChange}
         onConnectGithub={flow.onConnectGithub} onEditSource={flow.onOpenSource} onAddSource={flow.onAddSource} onOpenRules={flow.onOpenRules}
       />
     );

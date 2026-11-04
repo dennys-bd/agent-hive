@@ -8,10 +8,12 @@ import { DEFAULT_CONFIG } from '../src/config.js';
 import { readCredentials } from '../src/credentials.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
-import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, SourceConfig, Workspace, SettingsBody, SettingsInfo, State } from '../src/types.js';
+import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, SourceConfig, Workspace, SettingsBody, SettingsInfo, State, Flow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, type McpSettings } from '../src/types.js';
 import { isDeepStrictEqual } from 'node:util';
-import { AUTH, STAGES, FILTER, FIXED, fakeSourceFactory, fakeGql, GITHUB_ENTRY, EPICS, onOwnStages, fakeSpawn, jsonResponse, move, OPTIONS, workspacesAt, tempHive, chained, WORKSPACE } from './fakes.js';
+import { flatten } from '../src/flows.js';
+import { strandedMessage } from '../src/settings-save.js';
+import { AUTH, STAGES, FILTER, FIXED, fakeSourceFactory, fakeGql, GITHUB_ENTRY, EPICS, onOwnStages, fakeSpawn, jsonResponse, move, OPTIONS, workspacesAt, tempHive, chained, bodyFlows, WORKSPACE } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -20,7 +22,7 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE',
   auth: AUTH,
   sources: [GITHUB_ENTRY],
-  stages: STAGES,
+  flows: bodyFlows(STAGES),
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system',
   terminalFont: '',
   consoleLines: 5000,
@@ -166,8 +168,8 @@ test('POST /settings writes the config with defaults and boots the runtime on th
   const res = await postSettings(base, BODY);
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true });
-  const { prefix, sources, stages, commands, hiveSource, createIn, ...rest } = BODY;
-  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, comb: { prefix, workspaces: workspacesAt(repo), sources, flows: [{ name: 'main', stages: chained(stages ?? []).stages, transitions: chained(stages ?? []).transitions }], commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
+  const { prefix, sources, flows, commands, hiveSource, createIn, ...rest } = BODY;
+  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, comb: { prefix, workspaces: workspacesAt(repo), sources, flows: [{ name: 'main', stages: chained(flatten(flows ?? []).stages).stages, transitions: chained(flatten(flows ?? []).stages).transitions }], commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
   await server.poll(); // the first poll runs in the background (#59); wait for it before reading tasks
   const state = server.getState();
   assert.equal(state?.workers.length, 0);
@@ -189,7 +191,7 @@ test('a save writes hive.config.json without a terminal key, even over a file th
 
 test('POST /settings with a column the source does not have answers 400 and writes nothing', async (t) => {
   const { base, home, server } = await start(t);
-  const res = await postSettings(base, { ...BODY, stages: [{ ...STAGES[0], from: { board: ['Todo'] } }] });
+  const res = await postSettings(base, { ...BODY, flows: bodyFlows([{ ...STAGES[0], from: { board: ['Todo'] } }]) });
   assert.equal(res.status, 400);
   assert.match((await json<{ error: string }>(res)).error, /"Todo" \(fila\.from\).*Ready, In progress, In review, Done/);
   await assert.rejects(stat(configFile(home)));
@@ -211,7 +213,7 @@ test('a second POST /settings reconfigures in memory, keeps agentArgs and drops 
   assert.equal((await postSettings(base, BODY)).status, 200);
   const saved = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
   await writeFile(configFile(home), JSON.stringify({ ...saved, port: 5000, agentArgs: { claude: ['--model', 'sonnet'] } })); // port: a key from before #466
-  const res = await postSettings(base, { ...BODY, stages: [{ ...STAGES[0], from: { board: ['Done'] } }] });
+  const res = await postSettings(base, { ...BODY, flows: bodyFlows([{ ...STAGES[0], from: { board: ['Done'] } }]) });
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true });
   const rewritten = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
@@ -227,10 +229,10 @@ test('a second POST /settings with the same source and status keeps the live sou
   const { base, configs } = await start(t);
   assert.equal((await postSettings(base, BODY)).status, 200);
   const afterFirst = configs.length; // the one source this save resolves and activates
-  assert.equal((await postSettings(base, { ...BODY, stages: [{ ...STAGES[0], prompt: 'só {title}' }] })).status, 200);
+  assert.equal((await postSettings(base, { ...BODY, flows: bodyFlows([{ ...STAGES[0], prompt: 'só {title}' }]) })).status, 200);
   assert.equal(configs.length, afterFirst, 'same board and status: the live board is reused, no new instance');
   assert.equal(
-    (await postSettings(base, { ...BODY, stages: [{ ...STAGES[0], from: { board: ['Done'] } }] })).status,
+    (await postSettings(base, { ...BODY, flows: bodyFlows([{ ...STAGES[0], from: { board: ['Done'] } }]) })).status,
     200,
   );
   assert.equal(configs.length, afterFirst + 1, 'a different status needs a new board');
@@ -329,7 +331,7 @@ test('a save resolves the source exactly once, and only builds a new one when th
   assert.equal(resolves(), 1, 'the first save (configure) resolves the board once');
   assert.equal(configs.length, 1, 'and builds exactly one board');
   const afterFirst = resolves();
-  assert.equal((await postSettings(base, { ...BODY, stages: [{ ...STAGES[0], from: { board: ['Done'] } }] })).status, 200); // a different board
+  assert.equal((await postSettings(base, { ...BODY, flows: bodyFlows([{ ...STAGES[0], from: { board: ['Done'] } }]) })).status, 200); // a different board
   assert.equal(resolves(), afterFirst + 1, 'a reconfigure onto a changed board still resolves it once, not twice');
   assert.equal(configs.length, 2, 'a changed board needs a new instance, still just one');
 });
@@ -361,7 +363,7 @@ test('concurrent POST /settings calls run one at a time and the last one wins on
   const { base, home } = await start(t, 30);
   const [first, second] = await Promise.all([
     postSettings(base, BODY),
-    postSettings(base, { ...BODY, stages: [{ ...STAGES[0], from: { board: ['Done'] } }] }),
+    postSettings(base, { ...BODY, flows: bodyFlows([{ ...STAGES[0], from: { board: ['Done'] } }]) }),
   ]);
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
@@ -420,7 +422,7 @@ test('POST /settings takes agentModels and agentEnabled from the body, keeps the
   assert.equal((await postSettings(base, { ...BODY, agentModels: models, agentEnabled: enabled })).status, 200);
   assert.equal((await postSettings(base, BODY)).status, 200);
   assert.deepEqual([(await onDisk()).agentModels, (await onDisk()).agentEnabled], [models, enabled], 'an omitted key keeps the saved one');
-  const refused = await postSettings(base, { ...BODY, stages: [{ ...STAGES[0], agent: 'codex' }] });
+  const refused = await postSettings(base, { ...BODY, flows: bodyFlows([{ ...STAGES[0], agent: 'codex' }]) });
   assert.equal(refused.status, 400);
   assert.deepEqual((await onDisk()).agentEnabled, enabled);
 });
@@ -457,13 +459,13 @@ test('POST /settings with stages persists them, GET /settings returns them, an o
   const { base, home } = await start(t);
   const posted: LegacyStage[] = [{ name: 'spec', from: { board: ['Ready'] }, onFinish: { board: [move('In review')] }, prompt: '/hive-spec {url}', session: 'new' }, { name: 'review', from: { board: ['In review'] } }];
   const { stages } = chained(posted); // #134: onFinish is saved as the transitions' sources
-  assert.equal((await postSettings(base, onOwnStages({ ...BODY, stages: posted }))).status, 200);
+  assert.equal((await postSettings(base, onOwnStages({ ...BODY, flows: bodyFlows(posted) }))).status, 200);
   assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.flows[0].stages, stages);
   assert.deepEqual((await json<SettingsInfo>(hiveFetch(`${base}/settings`))).config?.comb.flows[0].stages, stages);
-  const { stages: _omitted, ...withoutStages } = BODY;
-  assert.equal((await postSettings(base, { ...withoutStages, sources: [{ ...GITHUB_ENTRY, switchAt: 'spec' }] })).status, 200);
+  const { flows: _omitted, ...withoutFlows } = BODY;
+  assert.equal((await postSettings(base, { ...withoutFlows, sources: [{ ...GITHUB_ENTRY, switchAt: 'spec' }] })).status, 200);
   assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.flows[0].stages, stages, 'an API caller that omits it keeps the saved ones');
-  const bad = await postSettings(base, { ...BODY, stages: [{ name: 'a', from: { board: ['Ready'] }, session: 'resume' }] });
+  const bad = await postSettings(base, { ...BODY, flows: bodyFlows([{ name: 'a', from: { board: ['Ready'] }, session: 'resume' as never }]) });
   assert.equal(bad.status, 400);
   assert.match((await json<{ error: string }>(bad)).error, /stages\[0\]\.session/);
 });
@@ -1281,4 +1283,21 @@ test('POST /settings writes mcp\'s defaults on a first save, keeps the saved mcp
   assert.equal(renamed.status, 400);
   assert.deepEqual(await json(renamed), { error: `hive.config.json: "mcp.servers": figma is scoped to ${WORKSPACE}, which no longer exists` });
   assert.deepEqual(await onDisk(), mcp, 'refused before the write');
+});
+
+test('POST /settings refuses to delete a flow that holds tasks, naming it and the count, and deletes an empty one (#565)', async (t) => {
+  const { base, home, server } = await start(t);
+  const [main] = bodyFlows(STAGES);
+  const spare: Flow = { name: 'spare', stages: [{ name: 'later', from: { board: ['Done'] } }], transitions: [{ from: 'later', to: 'end', when: 'done' }] }; // a column no stage of main uses
+  assert.equal((await postSettings(base, onOwnStages({ ...BODY, flows: [main, spare] }))).status, 200);
+  await server.poll();
+  const n = server.getState()?.tasks.filter((c) => c.stage === STAGES[0].name).length ?? 0;
+  assert.ok(n > 0, 'the poll put a task in main');
+  const names = async (): Promise<string[]> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.flows.map((f) => f.name);
+  const refused = await postSettings(base, onOwnStages({ ...BODY, flows: [spare] }));
+  assert.equal(refused.status, 409);
+  assert.deepEqual(await json(refused), { error: strandedMessage('main', n) });
+  assert.deepEqual(await names(), ['main', 'spare'], 'nothing written');
+  assert.equal((await postSettings(base, onOwnStages({ ...BODY, flows: [main] }))).status, 200);
+  assert.deepEqual(await names(), ['main'], 'the empty flow is gone');
 });

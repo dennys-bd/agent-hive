@@ -2,7 +2,7 @@
 // Strings as typed: only the shown Settings section is mounted (#510), so native validation cannot reach another section's fields.
 import { isRuleComplete } from '../../task-filter.js';
 import { createInProblem } from '../../create-in.js';
-import { branchProblem, COMB_PREFIX, HIVE_SOURCE, DEFAULT_PREFIX, DURATION, WORKSPACE_NAME, workspaceNameFor, isReservedSource } from '../../tasks.js';
+import { branchProblem, COMB_PREFIX, HIVE_SOURCE, DEFAULT_PREFIX, WORKSPACE_NAME, workspaceNameFor, isReservedSource } from '../../tasks.js';
 import { shortcutDef } from '../../shortcut-registry.js';
 import { collisions } from '../../shortcuts.js';
 import { type AgentId, type BenchmarkPrIn, BENCHMARK_PR_IN_NEW, MEMORY_CAP_DEFAULT, APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, DEFAULT_AGENT, FILE_ICONS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_DEFAULT, SHUTDOWN_IDLE_MAX, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type SourceConfig, type DeleteActivityScope, type CloseTabAction, type EpicFollows, type EpicsMode, NEW_SOURCE_EPICS, type FileIcons, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type WorkspaceFork, type SettingsBody, type SettingsInfo, type OperationId, type Shortcuts, type SidebarsPerView, type SignalSettings, type Theme } from '../../types.js';
@@ -20,12 +20,14 @@ import { type CommandDraft, commandDraft, commandFrom, commandsProblem, type Env
 import { agentArgsDraft, agentArgsFrom } from './settings-agent-args.js';
 import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem } from './settings-agents.js';
 import { type RuleDraft, renamedRuleDrafts, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
-import { badEvaluation, limitFrom, numberField, optional, orphanContinue, type StageDraft, stageDraft, stageFrom, stageRenamesFrom } from './settings-stages.js';
-import { draftTitle, type TransitionDraft, transitionDraft, transitionFrom, transitionsProblem } from './settings-transitions.js';
+import { isEmptyOrNonNegativeInt, limitFrom, numberField, optional, type StageDraft, stageDraft, stageRenamesFrom } from './settings-stages.js';
+import { type TransitionDraft, transitionDraft } from './settings-transitions.js';
+import { type FlowDraft, flowDrafts, flowsFrom, flowsProblem, stagesProblem, transitionsDraftProblem } from './settings-flows.js';
 import { flatten } from '../../flows.js';
 
 export { emptyStage, type StageDraft } from './settings-stages.js';
 export type { TransitionDraft } from './settings-transitions.js';
+export type { FlowDraft } from './settings-flows.js';
 
 // Every row's id is a React key, generated once when the draft row is created and never sent to the server (toSettingsBody never spreads the
 // draft, only picks named fields), so move/remove never leaves a surviving row showing another row's stale text. Stages: settings-stages.ts (#515).
@@ -48,7 +50,8 @@ export interface SettingsDraft {
   prefix: string; workspaces: WorkspaceDraft[]; sources: SourceDraft[]; auth: GithubAuth;
   editor: EditorDraft; // #780: the one editor config, by language
   commands: CommandDraft[]; // the Comb's run commands (#511), edited on workspaces
-  stages: StageDraft[]; transitions: TransitionDraft[]; // #134: by stage draft id
+  flows: FlowDraft[]; // #565: in order; each stage draft names its flow's id
+  stages: StageDraft[]; transitions: TransitionDraft[]; // #134: by stage draft id; #565: flat in flow order, each stage tagged with its flow
   language: Language; branch: string; baseBranch: string;
   budgetHour: string; budgetDay: string; rules: RuleDraft[]; onClose: OnClose; notifications: NotificationSettings; /* #199: one switch per kind, edited on app beside onClose */ showGithubQuota: boolean; deleteActivity: DeleteActivityScope;
   closeSessionTab: CloseTabAction; closeStageTab: CloseTabAction; closeTerminalTab: CloseTabAction; closeSessionTabNotice: boolean; closeStageTabNotice: boolean; closeTerminalTabNotice: boolean; // #614, #696: what closing a tab does, and whether it warns
@@ -81,8 +84,6 @@ const workspaceDraft = (p: Workspace): WorkspaceDraft => ({
 const proposedRow = (path?: string): WorkspaceDraft => ({ ...emptyWorkspace(), ...(path === undefined ? {} : { name: workspaceNameFor(path), path }) });
 
 const isNonNegativeInt = (text: string): boolean => /^\d+$/.test(text.trim());
-const isEmptyOrNonNegativeInt = (text: string): boolean => text.trim() === '' || isNonNegativeInt(text);
-const isEmptyOrDuration = (text: string): boolean => text.trim() === '' || DURATION.test(text.trim());
 
 /** The chips with `text` added (#513): trimmed and lowercased like the parser, a repeat left out; undefined when it is not a bare host. */
 export function withHost(hosts: readonly string[], text: string): string[] | undefined {
@@ -114,7 +115,9 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
   const config = info?.config;
   const workspaces = config ? config.comb.workspaces.map(workspaceDraft) : [proposedRow(info?.proposedWorkspace)]; // the saved workspaces, else the proposal (#179)
   const rows = config ? config.comb.sources.map(sourceDraft) : [emptySource(workspaces[0].name)]; // a first setup: one GitHub row (#180), its default workspace the proposal (#293, #688)
-  const stages = flatten(config?.comb.flows ?? []).stages.map((c) => stageDraft(c, rows, config?.defaultAgent));
+  const saved = config?.comb.flows ?? [];
+  const flows = flowDrafts(saved); // #565
+  const stages = saved.flatMap((f, i) => f.stages.map((c) => stageDraft(c, rows, flows[i].id, config?.defaultAgent)));
   // #30: switchAt as its stage draft's id; the ids are kept, so the stages' from still finds each row
   const sources = config ? rows.map((row, i) => ({ ...row, switchAt: switchAtId(config.comb.sources[i].switchAt, stages) })) : rows;
   return {
@@ -126,6 +129,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     commands: (config?.comb.commands ?? []).map((c) => commandDraft(c, workspaces)), // #511: workspaces as row ids
     sources,
     auth: config?.auth?.github ?? 'cli', // a form opened with no config starts on cli, the transport that needs nothing
+    flows,
     stages,
     transitions: flatten(config?.comb.flows ?? []).transitions.map((t) => transitionDraft(t, stages, sources)),
     language: info?.language ?? 'en',
@@ -198,34 +202,6 @@ function sourcesProblem(sources: SourceDraft[]): SettingsProblem | undefined {
   return filterProblem(sources);
 }
 
-// #134, #918: the first arrow the parser would refuse, named as the chart names it, with its id so Settings selects it
-function transitionsDraftProblem(draft: SettingsDraft): SettingsProblem | undefined {
-  const bad = transitionsProblem(draft.transitions, draft.stages);
-  const transition = draft.transitions.find((d) => d.id === bad?.id);
-  if (bad === undefined || transition === undefined) return undefined;
-  const stage = draft.stages.find((s) => s.id === transition.from)?.name.trim() || t('settings.stages.unnamed');
-  const message = t(`settings.transitions.error.${bad.reason}`, { name: draftTitle(transition, draft.stages), stage });
-  return { section: 'flow', message, transition: bad.id };
-}
-
-// #834: a wait for CI needs a check under só estes, and its wait in the TIMEOUT grammar; an empty wait is no limit
-const badWait = (c: StageDraft): boolean =>
-  c.action === 'waitForCi' && ((c.ciChecks === 'list' && c.checks.length === 0) || (c.timeout.trim() !== '' && timeoutMs(c.timeout) === undefined));
-
-function stagesProblem(stages: StageDraft[], defaultAgent: AgentId): SettingsProblem | undefined {
-  if (stages.length === 0) return { section: 'flow', message: t('settings.stages.none') };
-  const bad = stages.findIndex((c) => c.name.trim() === '' || !isEmptyOrDuration(c.after) || !isEmptyOrNonNegativeInt(c.maxWorkers) || (c.action === 'commands' && c.commands.length === 0)); // #755: the parser refuses an empty list
-  if (bad !== -1) return { section: 'flow', message: t('settings.stages.error', { n: bad + 1 }) };
-  const unpicked = stages.findIndex((c) => c.action === 'skill' && c.skill === ''); // #710: a skill stage with none runs nothing; the parser refuses it
-  if (unpicked !== -1) return { section: 'flow', message: t('settings.stages.error.skill', { n: unpicked + 1 }) };
-  const orphan = orphanContinue(stages, defaultAgent); // #710: the first stage of an agent has no session of it to continue
-  if (orphan !== -1) return { section: 'flow', message: t('settings.stages.error.continue', { n: orphan + 1, agent: stages[orphan]?.agent || defaultAgent }) };
-  const wait = stages.findIndex(badWait);
-  if (wait !== -1) return { section: 'flow', message: t('settings.stages.error.ci', { n: wait + 1 }) };
-  const judged = stages.findIndex(badEvaluation); // #877: the parser refuses each one
-  return judged === -1 ? undefined : { section: 'flow', message: t('settings.stages.error.evaluate', { n: judged + 1 }) };
-}
-
 function budgetProblem(draft: SettingsDraft): SettingsProblem | undefined {
   const bad = [draft.budgetHour, draft.budgetDay].some((v) => !isEmptyOrNonNegativeInt(v));
   return bad ? { section: 'rules', message: t('settings.budgetHint') } : undefined;
@@ -292,11 +268,11 @@ function silentSourceProblem(draft: SettingsDraft): SettingsProblem | undefined 
   return silent === undefined ? undefined : { section: 'flow', message: t('settings.error.sourceSilent', { source: silent.name.trim() }) };
 }
 
-/** The first problem in today's order (prefix, sources, create in, stages, rules, budget, console lines, workspaces, editor, task properties, branch, shutdown
+/** The first problem in today's order (prefix, sources, create in, flows, stages, rules, budget, console lines, workspaces, editor, task properties, branch, shutdown
  * window, approval window, run commands, shortcuts, silent sources) with the section to reveal (#510); undefined when the server may judge the
  * rest. A bad trusted-domain host is refused inline by its own chip field (#513), so it is not in this chain. */
 export function validateSettings(draft: SettingsDraft): SettingsProblem | undefined {
-  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages, draft.defaultAgent) ?? agentsProblem(draft) ?? transitionsDraftProblem(draft) ?? rulesProblem(renamedRuleDrafts(draft.rules, stageRenamesFrom(draft.stages)), draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
+  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? flowsProblem(draft) ?? stagesProblem(draft.stages, draft.defaultAgent) ?? agentsProblem(draft) ?? transitionsDraftProblem(draft) ?? rulesProblem(renamedRuleDrafts(draft.rules, stageRenamesFrom(draft.stages)), draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
 }
 
 /** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the
@@ -342,8 +318,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     renames: renamesFrom(draft.sources), // always sent (#278), {} included
     // only the GitHub adapter logs in: with no GitHub source no auth is sent, and a saved one stays as the server has it
     ...(draft.sources.some((b) => b.type === 'github') ? { auth: { github: draft.auth } } : {}),
-    stages: draft.stages.map((c) => stageFrom(c, draft.sources)), ...(Object.keys(stageRenames).length === 0 ? {} : { stageRenames }),
-    transitions: draft.transitions.map((d) => transitionFrom(d, draft.stages, draft.sources)), // #134: always sent, [] included
+    flows: flowsFrom(draft), ...(Object.keys(stageRenames).length === 0 ? {} : { stageRenames }), // #565: always sent, every flow
     budget: { ...(hour ? { maxTokensPerHour: hour } : {}), ...(day ? { maxTokensPerDay: day } : {}) },
     usageRules: rulesFrom(renamedRuleDrafts(draft.rules, stageRenames), draft.defaultAgent), language: draft.language, ...optional('branch', draft.branch),
     // always sent, '' included: optional() would omit the key and saveSettings would keep the old branch, so clearing the field could never work
