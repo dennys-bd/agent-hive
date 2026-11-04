@@ -1,46 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activityOf, resultOf, withActivity } from '../src/activities.js';
+import { resultOf, withActivity } from '../src/activities.js';
 import { deriveFacts } from '../src/fact-derive.js';
 import { describeEffect, describeEvent } from '../src/log.js';
-import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
+import { reduce } from '../src/orchestrator.js';
 import { savedWork } from '../src/state-guards.js';
 import { startMode } from '../src/task-runs.js';
-import type { LegacyStage } from '../src/config-migrate.js';
-import type { Activity, CiCheck, CiPrRead, Effect, HiveEvent, Item, SourceItem, Stage, State, TaskPr, Transition } from '../src/types.js';
+import type { Activity, CiCheck, CiPrRead, HiveEvent, State, Transition } from '../src/types.js';
 import { chained } from './fakes.js';
 import { withWork } from './fixtures/work.js';
+import { base, check, ci, deepFreeze, effectOf, failedOf, ID, LATER, listed, live, outputOf, polled, pr, read, readOf, REVIEW, URL, withPrs } from './fixtures/stage-ci.js';
 
 // A wait-for-CI stage (#834): the reducer's side, end to end through reduce. The task is polled into the stage under red, so no fill spawns
 // anything and every effect below is the stage's own. A check's state is #758's: success, failure or pending.
-
-const ID = 'board:item1';
-const URL = 'https://github.com/o/r/pull/7';
-const item: Item = { itemId: ID, id: '1', title: 'Task 1', body: '', url: 'https://github.com/o/r/issues/1', source: 'board' };
-const listed = (column: string, extra: Partial<Item> = {}): SourceItem => ({ item: { ...item, ...extra }, column });
-const ci = (extra: Partial<Stage> = {}): LegacyStage => ({ name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'all', rerunOnce: false, ...extra });
-const REVIEW: LegacyStage = { name: 'review', from: { board: ['Review'] } };
-const base = (extra: Partial<Stage> = {}, state: Partial<State> = {}): State =>
-  ({ ...initialState(1), signal: 'red', workspaces: ['hive'], syncs: { board: {} }, ...chained([ci(extra), REVIEW]), ...state });
-const polled = (extra: Partial<Stage> = {}, state: Partial<State> = {}): Reduced => reduce(base(extra, state), { type: 'poll', source: 'board', items: [listed('CI')] });
-const live = (s: State): Activity | undefined => activityOf(s, ID);
-const check = (name: string, state: CiCheck['state'], extra: Partial<CiCheck> = {}): CiCheck => ({ name, pr: URL, state, ...extra });
-const pr = (checks: CiCheck[], head = 'h1'): CiPrRead => ({ url: URL, head, checks });
-const readOf = (s: State, prs: CiPrRead[], at = new Date().toISOString()): Extract<HiveEvent, { type: 'ciRead' }> =>
-  ({ type: 'ciRead', activityId: live(s)?.id ?? 'none', at, prs });
-const read = (s: State, prs: CiPrRead[], at?: string): Reduced => reduce(s, readOf(s, prs, at));
-const failedOf = (s: State, names: string[], output = 'logs'): Reduced => reduce(s, { type: 'ciFailed', activityId: live(s)?.id ?? 'none', names, output });
-const effectOf = <T extends Effect['type']>(effects: Effect[], type: T): Extract<Effect, { type: T }> | undefined =>
-  effects.find((e): e is Extract<Effect, { type: T }> => e.type === type);
-const LATER = '2100-01-01T00:00:00Z'; // a failure completed after any re-run the tests ask
-const outputOf = (s: State): unknown => (resultOf(s, ID)?.ci as { output?: unknown } | undefined)?.output;
-// The task's records holding `prs` (#304): what the PR poll leaves once it has read their states
-const withPrs = (s: State, prs: TaskPr[]): State => ({ ...s, activityRecords: s.activityRecords.map((r) => (r.taskIds.includes(ID) ? { ...r, prs } : r)) });
-// Every fixture is frozen deep: a rule that wrote to its input would throw here (ESM is strict mode)
-function deepFreeze<T>(value: T): T {
-  if (typeof value === 'object' && value !== null) for (const child of Object.values(value)) deepFreeze(child);
-  return Object.freeze(value);
-}
 
 test('a due task in a wait-for-CI stage starts waiting: ci on its activity, one ciRead effect, no worker, no worktree; it is not due again (#834)', () => {
   const { state, effects } = polled();
@@ -120,37 +92,6 @@ test('ciFailed stops the task in its stage with the first three names and +n; th
   assert.equal(effectOf(reduce(state, { type: 'poll', source: 'board', items: [listed('CI')] }).effects, 'ciRead'), undefined);
 });
 
-test('past its timeout, counted from the stage\'s start, the wait fails with the pending names; with no timeout it never fails on time (#834)', () => {
-  const s = polled({ timeout: '60m' }).state;
-  const late = new Date(Date.parse(live(s)?.ci?.since ?? '') + 61 * 60_000).toISOString();
-  const { state } = read(s, [pr([check('build', 'success'), check('test', 'pending')])], late);
-  assert.deepEqual([live(state)?.ci, live(state)?.stopped, live(state)?.error], [undefined, true, 'CI failed: timed out after 60m']);
-  assert.equal(outputOf(state), 'CI did not finish in 60m · pending: test');
-  assert.equal(outputOf(read(s, [], late).state), 'CI did not finish in 60m · pending: no open PR');
-  const forged = read(s, [pr([check('test\n## fake', 'pending')])], late).state;
-  assert.equal(outputOf(forged), 'CI did not finish in 60m · pending: test ## fake');
-  const unlimited = polled().state;
-  const later = new Date(Date.parse(live(unlimited)?.ci?.since ?? '') + 48 * 3_600_000).toISOString();
-  assert.equal(live(read(unlimited, [], later).state)?.ci?.waitingPr, true);
-});
-
-test('ciClock, when no read came, fails a wait past its timeout with the last count\'s state and changes nothing before it (#834)', () => {
-  const s = polled({ timeout: '60m' }).state;
-  const since = Date.parse(live(s)?.ci?.since ?? '');
-  const clock = (state: State, minutes: number): Reduced => reduce(state, { type: 'ciClock', activityId: live(state)?.id ?? 'none', at: new Date(since + minutes * 60_000).toISOString() });
-  const early = clock(s, 59);
-  assert.deepEqual([early.state, early.effects], [s, []]);
-  const { state, effects } = clock(s, 61);
-  assert.deepEqual([effects, live(state)?.ci, live(state)?.stopped, live(state)?.error], [[], undefined, true, 'CI failed: timed out after 60m']);
-  assert.equal(outputOf(state), 'CI did not finish in 60m · pending: none');
-  assert.equal(outputOf(clock(read(s, []).state, 61).state), 'CI did not finish in 60m · pending: no open PR');
-  assert.equal(clock(polled().state, 48 * 60).state.activities[0]?.ci?.stage, 'ci', 'no timeout, no end');
-  const ticked = { type: 'ciClock', activityId: live(s)?.id ?? '', at: new Date(since + 61 * 60_000).toISOString() } as const;
-  assert.ok(deriveFacts(s, reduce(s, ticked).state, ticked, Date.now()).some((r) => r.event === 'ci.ended' && r.verdict === 'failed'));
-  assert.equal(describeEvent({ type: 'ciClock', activityId: 'abcdef123456', at: 'x' }), 'ciClock activity=abcdef12');
-  reduce(deepFreeze(polled({ timeout: '1m' }).state), { ...ticked, at: '2100-01-01T00:00:00.000Z' });
-});
-
 test('a read while the logs are fetched, a read for another activity and ciFailed with no fetch under way change nothing (#834)', () => {
   const s = polled().state;
   const collecting = read(s, [pr([check('build', 'failure')])]).state;
@@ -192,7 +133,7 @@ test('a waiting task cannot be moved by hand or by its source column, and offers
 });
 
 test('the wait\'s rules never mutate the state they are given (#834)', () => {
-  const frozen = deepFreeze(polled({ rerunOnce: true, timeout: '1m' }).state);
+  const frozen = deepFreeze(polled({ rerunOnce: true, timeout: '1m', queueTimeout: '1m' }).state);
   read(frozen, []);
   read(frozen, [pr([check('build', 'success')])]);
   read(frozen, [pr([check('build', 'failure', { runId: 1 })])]);
@@ -273,8 +214,8 @@ test('stopCi ends the wait, stopped, with no verdict, and is ignored where nothi
   reduce(frozen, { type: 'stopCi', activityId: live(frozen)?.id ?? '' });
 });
 
-test('a read whose workflows await a maintainer\'s approval keeps waiting with ci.awaiting, writes nothing more while it holds, drops it on a read without any, and still times out (#854)', () => {
-  const s = polled({ timeout: '10m' }).state;
+test('a read whose workflows await a maintainer\'s approval keeps waiting with ci.awaiting, writes nothing more while it holds, drops it on a read without any, and still ends on queueTimeout (#854, #598)', () => {
+  const s = polled({ queueTimeout: '10m' }).state;
   const since = live(s)?.ci?.since ?? '';
   const awaiting = read(s, [{ ...pr([]), awaiting: ['CI', 'Lint'] }]);
   assert.deepEqual([awaiting.effects, live(awaiting.state)?.ci?.awaiting, awaiting.state.tasks[0].stage], [[], 2, 'ci']);
@@ -285,7 +226,7 @@ test('a read whose workflows await a maintainer\'s approval keeps waiting with c
   const late = new Date(Date.parse(since) + 11 * 60_000).toISOString();
   const timedOut = read(awaiting.state, [{ ...pr([]), awaiting: ['CI'] }], late);
   assert.equal(live(timedOut.state)?.stopped, true);
-  assert.match(String(outputOf(timedOut.state)), /pending: CI \(awaiting approval\)/);
+  assert.match(String(outputOf(timedOut.state)), /CI \(awaiting approval\) \(queued over 10m\)/);
 });
 
 test('with rerunOnce and no push rights a failure re-runs nothing and fetches nothing: ci.noRerun and the wait goes on; a read gone pending drops it; without rerunOnce it fails as before (#854)', () => {

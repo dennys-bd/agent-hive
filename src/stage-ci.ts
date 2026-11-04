@@ -64,22 +64,34 @@ function passCi(state: State, { activity, task }: Wait): Reduced {
   return { state: advanced, effects };
 }
 
-// The clock is the stage's start: a new push never resets it; no timeout, no limit
-function timedOut(stage: Stage, ci: StageCi, at: string): boolean {
-  const limit = stage.timeout === undefined ? undefined : timeoutMs(stage.timeout);
-  return limit !== undefined && Date.parse(at) - Date.parse(ci.since) > limit;
+// #598: each check runs on its own clock, read from GitHub at every read, so a push or a re-run restarts it. A running check is bounded by
+// timeout from its start; a queued one by queueTimeout from its suite's creation, or from the wait's start for a required name no check reports
+// yet, and never from before the last re-run's ask, since a re-run keeps its suite. A wait with no check to time (awaiting approval, no open PR)
+// waits on someone, not on a runner: queueTimeout from the wait's start. An absent key bounds nothing.
+const limitOf = (text: string | undefined): number | undefined => (text === undefined ? undefined : timeoutMs(text));
+const over = (from: string, limit: number | undefined, at: string): boolean => limit !== undefined && Date.parse(at) - Date.parse(from) > limit;
+const latest = (a: string, b: string | undefined): string => (b !== undefined && Date.parse(b) > Date.parse(a) ? b : a);
+const queueOver = (stage: Stage, ci: StageCi, at: string): boolean => over(ci.since, limitOf(stage.queueTimeout), at);
+
+function overdue(stage: Stage, ci: StageCi, checks: readonly StageCiCheck[], waits: readonly string[], at: string): string[] {
+  const [run, queue] = [limitOf(stage.timeout), limitOf(stage.queueTimeout)];
+  const queued = `(queued over ${stage.queueTimeout ?? ''})`;
+  const timed = checks.flatMap((c) => {
+    if (c.state !== 'pending') return [];
+    if (c.startedAt !== undefined) return over(c.startedAt, run, at) ? [`${c.name} (ran over ${stage.timeout ?? ''})`] : [];
+    return over(latest(c.queuedAt ?? ci.since, ci.rerunAt), queue, at) ? [`${c.name} ${queued}`] : [];
+  });
+  return [...timed, ...(queueOver(stage, ci, at) ? waits.map((w) => `${w} ${queued}`) : [])];
 }
 
-// The output after a timeout, written in English as a commands stage's lines are
-function timeoutOutput(stage: Stage, pending: readonly string[]): string {
-  return `CI did not finish in ${stage.timeout ?? ''} · pending: ${pending.join(', ') || 'none'}`;
-}
+// The output after a timeout, in English as a commands stage's lines are: every check or wait that ran out, with its limit
+const timeoutOutput = (names: readonly string[]): string => `CI timed out · ${names.join(', ')}`;
 
-const pendingOf = (verdict: CiVerdict): string[] => {
-  if (verdict.kind === 'awaiting') return verdict.workflows.map((w) => `${cleanName(w)} (awaiting approval)`); // #854: what a timeout names
-  return verdict.kind !== 'pending' ? [] : verdict.waitingPr ? ['no open PR'] : verdict.pending.map(cleanName);
+// #854: the waits with no check to time, as a timeout names them
+const waitsOf = (verdict: CiVerdict): string[] => {
+  if (verdict.kind === 'awaiting') return verdict.workflows.map((w) => `${cleanName(w)} (awaiting approval)`);
+  return verdict.kind === 'pending' && verdict.waitingPr ? ['no open PR'] : [];
 };
-const timeoutNames = (stage: Stage): string[] => [`timed out after ${stage.timeout ?? ''}`];
 
 // #914: both lists come from stageChecks in one order, so equal JSON means no check changed state or time
 const sameChecks = (a: readonly StageCiCheck[] | undefined, b: readonly StageCiCheck[] | undefined): boolean => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
@@ -103,7 +115,7 @@ function awaited(state: State, activity: Activity, ci: StageCi, workflows: reado
   return none(same ? state : withActivity(state, { ...activity, ci: { ...rest, awaiting: workflows.length, checks } }));
 }
 
-// #854: rerunOnce asked for a re-run the login may not ask: the wait holds for a new push or a maintainer's re-run, until its timeout
+// #854: rerunOnce asked for a re-run the login may not ask: the wait holds for a new push or a maintainer's re-run, until queueTimeout from the wait's start (#598)
 function withoutRerun(state: State, activity: Activity, ci: StageCi): Reduced {
   const was = activity.ci;
   if (was?.noRerun === true && was.awaiting === undefined && was.fellBack === ci.fellBack && sameChecks(was.checks, ci.checks)) return none(state);
@@ -121,7 +133,8 @@ interface Read { activity: Activity; ci: StageCi; at: string }
 function sinceRerun({ reran, rerunAt }: StageCi, prs: readonly CiPrRead[], at: string): CiPrRead[] {
   if (rerunAt === undefined || Date.parse(at) - Date.parse(rerunAt) > RERUN_GRACE_MS) return [...prs];
   const old = (c: CiCheck): boolean => c.state === 'failure' && (c.at === undefined || Date.parse(c.at) <= Date.parse(rerunAt));
-  return prs.map((p) => (reran.includes(p.head) ? { ...p, checks: p.checks.map((c) => (old(c) ? { ...c, state: 'pending' as const } : c)) } : p));
+  const requeued = ({ startedAt: _startedAt, ...c }: CiCheck): CiCheck => ({ ...c, state: 'pending' }); // #598: the old run's start is not the re-run's: the failure is queued until GitHub reports the new run
+  return prs.map((p) => (reran.includes(p.head) ? { ...p, checks: p.checks.map((c) => (old(c) ? requeued(c) : c)) } : p));
 }
 
 // failed: a re-run once per head when every failure is an Actions run on a head not re-run yet, each run once; else the logs are fetched and
@@ -147,7 +160,7 @@ function conflictOf(prs: readonly CiPrRead[]): { names: string[]; output: string
   };
 }
 
-/** One read of the wait's PRs (#834): a conflict first (#264), then a final verdict, then the timeout for a wait still open (#515). With no open PR, a task whose PRs are all merged passes (#304). A wait fetching its logs, an unknown
+/** One read of the wait's PRs (#834): a conflict first (#264), then a final verdict, then each check's clock for a wait still open (#515, #598). With no open PR, a task whose PRs are all merged passes (#304). A wait fetching its logs, an unknown
  * activity and a Quit ignore it. The first read whose required fell back marks it, so the fact log says so once. */
 export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent, { type: 'ciRead' }>): Reduced {
   const wait = waitOf(state, activityId);
@@ -161,23 +174,27 @@ export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent,
   if (verdict.kind === 'passed') return passCi(state, wait);
   if (verdict.kind === 'failed') {
     const shown: StageCi = { ...ci, checks: verdict.checks }; // #914: the ✕ lines stay on the block while a re-run is awaited
-    if (timedOut(stage, ci, at)) return failedRead(state, { activity: wait.activity, ci: shown, at }, { ...stage, rerunOnce: false }, verdict.failed, prs); // #515: no time left for a re-run
-    if (stage.rerunOnce === true && cannotRerun(verdict.failed, prs)) return withoutRerun(state, wait.activity, shown);
+    if (stage.rerunOnce === true && cannotRerun(verdict.failed, prs)) { // #598: a hold for a push or a maintainer ends on queueTimeout, logs fetched
+      if (!queueOver(stage, ci, at)) return withoutRerun(state, wait.activity, shown);
+      return failedRead(state, { activity: wait.activity, ci: shown, at }, { ...stage, rerunOnce: false }, verdict.failed, prs);
+    }
     return failedRead(state, { activity: wait.activity, ci: shown, at }, stage, verdict.failed, prs);
   }
-  // #515: only a wait still open times out, so the first read after a boot judges the checks that finished while the Hive was off
-  if (timedOut(stage, ci, at)) return failCi(state, wait, timeoutOutput(stage, pendingOf(verdict)), timeoutNames(stage));
+  // #515, #598: only a wait still open times out, after the verdict, so the first read after a boot judges the checks that finished while the Hive was off
+  const late = overdue(stage, ci, verdict.checks, waitsOf(verdict), at);
+  if (late.length > 0) return failCi(state, wait, timeoutOutput(late), late);
   if (verdict.kind === 'awaiting') return awaited(state, wait.activity, ci, verdict.workflows, verdict.checks);
   return counted(state, wait.activity, ci, verdict);
 }
 
-/** A tick with no read (#834): the query failed or left a PR out, so only the timeout is checked. The names pending are unknown without a
- * read; the last one's no open PR is kept. */
+/** A tick with no read (#834): the query failed or left a PR out, so only the clocks are judged, on the last read's checks (#598). With none yet
+ * (after a boot, before the first read) only a no-PR wait's queue is; a noRerun hold is left to the next read, which has the failures to collect. */
 export function ciClock(state: State, { activityId, at }: Extract<HiveEvent, { type: 'ciClock' }>): Reduced {
   const wait = waitOf(state, activityId);
   const stage = wait && stageOf(state.stages, wait.ci.stage);
-  if (!wait || !stage || wait.ci.collecting || !timedOut(stage, wait.ci, at)) return none(state);
-  return failCi(state, wait, timeoutOutput(stage, wait.ci.waitingPr ? ['no open PR'] : []), timeoutNames(stage));
+  if (!wait || !stage || wait.ci.collecting) return none(state);
+  const late = overdue(stage, wait.ci, wait.ci.checks ?? [], wait.ci.waitingPr ? ['no open PR'] : [], at);
+  return late.length === 0 ? none(state) : failCi(state, wait, timeoutOutput(late), late);
 }
 
 /** The failed logs are in (#834): the wait ends failed. Only for a wait that is fetching them. */

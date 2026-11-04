@@ -518,8 +518,9 @@ export interface CiRerun { repo: string; runId: number }
  * check run's suite creation, what ciClock judges the queue from (#598). */
 export interface StageCiCheck { name: string; state: PrCheck['state']; url?: string; startedAt?: string; queuedAt?: string; completedAt?: string }
 
-/** A wait-for-CI stage in flight (#834): when it started (the timeout's clock), the head commits whose failures were re-run, the last read's
- * count for the card, and the flags that keep a read from acting twice. Persisted: the wait goes on after a boot. */
+/** A wait-for-CI stage in flight (#834): when it started (the queue's clock for a missing check, an awaiting, a no-PR or a noRerun wait (#598),
+ * and the fact log's duration), the head commits whose failures were re-run, the last read's count for the card, and the flags that keep a
+ * read from acting twice. Persisted: the wait goes on after a boot. */
 export interface StageCi {
   stage: string; since: string; reran: string[];
   rerunAt?: string; // when the last re-run was asked (ISO): a failure on a re-run head completed by then is the old one, still read as pending
