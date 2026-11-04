@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { OperationId } from '../../types';
 import { onShortcutKey } from '@/lib/dock-layout';
-import { type FlowView, readFlowView, writeFlowView } from '@/lib/flow-view';
+import { type FlowCanvas, type ShownFlowView, readFlowView, shownOf, withShown, writeFlowView } from '@/lib/flow-view';
 import { stepZoom } from '@/lib/flow-zoom';
 import { isInDialog, isRecording, isTextField } from '@/lib/shortcut-bindings';
 
@@ -33,26 +33,34 @@ function onFitKey(requestFit: () => void): () => void {
 /** The flowchart's view and what changes it (#909, #910, #34): the loops toggle, the zoom, a fit request the canvas answers with onFit, the
  * scroll's pan, the tree toggle and the collapsed groups, with the three zoom keys and ⇧1 while `isShown` (#910). */
 export interface FlowViewControls {
-  view: FlowView; fitRequest: number;
+  view: ShownFlowView; fitRequest: number;
   toggleLoops(): void; zoomTo(zoom: number): void; fit(): void;
   toggleTree(current: boolean): void; toggleGroup(key: string): void; // #34: `current` is the resolved value the header shows
-  onPan(pan: FlowView['pan']): void; onFit(zoom: number): void;
+  onPan(pan: FlowCanvas['pan']): void; onFit(zoom: number): void;
 }
 
-/** `flowView` as Flow keeps it: every change writes the whole value, so the toggles, the zoom, the pan and the collapsed groups never overwrite one another. */
-export function useFlowView(isShown: boolean): FlowViewControls {
-  const [view, setView] = useState(readFlowView);
+const toggled = (keys: string[], key: string): string[] => (keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key]);
+
+/** `flowView` as Flow keeps it for the flow named `flow` (#571): every change writes the whole value back with only that flow's canvas
+ * changed, so the toggles, the zoom, the pan, the collapsed groups and the other flows' canvases never overwrite one another. */
+export function useFlowView(isShown: boolean, flow: string): FlowViewControls {
+  const [shown, setShown] = useState(() => ({ flow, view: shownOf(readFlowView(), flow) }));
+  // #571: another flow's canvas is read when the name changes, while rendering (as useTreeFocus adjusts its scope), so no frame shows the old flow's zoom
+  if (shown.flow !== flow) setShown({ flow, view: shownOf(readFlowView(), flow) });
+  const view = shown.flow === flow ? shown.view : shownOf(readFlowView(), flow);
   const [fitRequest, setFitRequest] = useState(0);
-  // The scroll's latest pan, out of state: a scroll writes flowView and never renders the flow again; `view.pan` is what the canvas restores
-  const pan = useRef(view.pan);
-  const latest = useRef(view); // what was last written: a scroll's handler may be a render older than a zoom or a toggle
-  const save = (next: FlowView): void => {
-    // #36: `outline` is the details' field; the stored one wins over this hook's copy, or a zoom or a toggle would undo a collapse made there
-    const saved = { ...next, pan: pan.current, outline: readFlowView().outline };
-    latest.current = saved;
-    writeFlowView(saved);
-    setView(saved);
+  // What was last written, and for which flow: a scroll writes flowView and never renders the flow again, and a handler may be a render older than a zoom or a toggle
+  const latest = useRef(shown);
+  const last = (): ShownFlowView => (latest.current.flow === flow ? latest.current.view : view);
+  // #36: `outline` is the details' field; the stored one wins over this hook's copy, or a zoom or a toggle would undo a collapse made there
+  const write = (next: ShownFlowView): ShownFlowView => {
+    const stored = readFlowView();
+    const saved = { ...next, outline: stored.outline };
+    writeFlowView(withShown(stored, flow, saved));
+    latest.current = { flow, view: saved };
+    return saved;
   };
+  const save = (next: ShownFlowView, pan: FlowCanvas['pan'] = last().pan): void => setShown({ flow, view: write({ ...next, pan }) });
   const zoomTo = (zoom: number): void => save({ ...view, zoom });
   const requestFit = (): void => setFitRequest((n) => n + 1);
   // Bound only while the flow shows (it stays mounted under Atividades, #596), as searchTasks; the listener reads the latest render's zoom
@@ -74,19 +82,11 @@ export function useFlowView(isShown: boolean): FlowViewControls {
     toggleLoops: () => save({ ...view, loops: !view.loops }),
     // #34: the first click stores the opposite of what the header showed, the "a tree exists" default included
     toggleTree: (current) => save({ ...view, tree: !current }),
-    // From what was last written, not this render's view: two collapses before a re-render must both stay
     toggleGroup: (key) => {
-      const { collapsed } = latest.current;
-      save({ ...latest.current, collapsed: collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key] });
+      const current = last(); // two collapses before a re-render must both stay
+      save({ ...current, collapsed: toggled(current.collapsed, key) });
     },
-    onPan: (next) => {
-      pan.current = next;
-      latest.current = { ...latest.current, pan: next, outline: readFlowView().outline }; // #36: as in save, a scroll keeps the details' collapses
-      writeFlowView(latest.current);
-    },
-    onFit: (zoom) => {
-      pan.current = { x: 0, y: 0 };
-      save({ ...view, zoom });
-    },
+    onPan: (next) => { write({ ...last(), pan: next }); },
+    onFit: (zoom) => save({ ...view, zoom }, { x: 0, y: 0 }),
   };
 }

@@ -21,6 +21,8 @@ const worker = (id: string, taskId?: string): Worker => ({ id, status: taskId ? 
 const state = (tasks: WithWork[], workers: Worker[], cols: Stage[] = stages, sourceOrder: string[] = []): State =>
   withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, ...flowed(cols, []), tasks, sourceOrder, localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
+// #571: flowView as stored for the fixtures' one flow (flowed → MAIN_FLOW 'main')
+const storedView = (shared: object = {}, canvas: object = {}) => ({ loops: true, outline: [], ...shared, canvas: { main: { zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], ...canvas } } });
 const header = (name: string): HTMLElement => screen.getByRole('heading', { level: 3, name }).parentElement!; // a stage's header row (#542)
 
 // jsdom has no DataTransfer: the stub carries what dragStart set to the drop, as the browser's would. Reused across the events of one drag.
@@ -409,10 +411,10 @@ test('↺ voltas hides every arrow with its pill, the row falling to the margin,
   expect(kinds(canvas)).toEqual([]);
   for (const pill of ['falhou · 3x', 'feedback']) expect(within(canvas).queryByText(pill)).not.toBeInTheDocument();
   expect(row()).toBe(`${MARGIN}px`);
-  expect(readView('flowView')).toEqual({ loops: false, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
+  expect(readView('flowView')).toEqual(storedView({ loops: false }));
   await user.click(loops);
   expect(kinds(canvas)).toEqual(['forward', 'above', 'loop', 'above']);
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
+  expect(readView('flowView')).toEqual(storedView());
 });
 
 test('a stored flowView with loops off draws the flow without them on the first render, the button not pressed: the reload case (#909)', () => {
@@ -454,7 +456,7 @@ test('− and + move the zoom by 10% and the number goes back to 100%; the chart
   await user.click(zoomIn);
   expect(screen.getByRole('button', { name: '110%' })).toHaveAttribute('title', 'voltar a 100% · Ctrl+0');
   expect(scaledOf(canvas).style.transform).toBe('scale(1.1)');
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1.1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
+  expect(readView('flowView')).toEqual(storedView({}, { zoom: 1.1 }));
   await user.click(within(canvas).getAllByRole('button', { name: 'lista ›' })[0]);
   const panel = screen.getByRole('region', { name: 'dev' });
   expect(scaledOf(canvas).contains(panel)).toBe(false);
@@ -464,7 +466,7 @@ test('− and + move the zoom by 10% and the number goes back to 100%; the chart
   expect(scaledOf(canvas).style.transform).toBe('scale(0.9)');
   await user.click(screen.getByRole('button', { name: '90%' }));
   expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument();
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
+  expect(readView('flowView')).toEqual(storedView());
 });
 
 test('ajustar on a chart wider than the canvas zooms out until it fits and scrolls to the start, the nodes still reaching the bottom; on a small chart it is 100% (#910)', async () => {
@@ -480,7 +482,7 @@ test('ajustar on a chart wider than the canvas zooms out until it fits and scrol
   expect(sizerOf(canvas).style.width).toBe('416px');
   expect([paneOf(canvas).scrollLeft, paneOf(canvas).scrollTop]).toEqual([0, 0]);
   expect(canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.style.maxHeight).toBe(`${600 / 0.8 - 2 * MARGIN}px`);
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
+  expect(readView('flowView')).toEqual(storedView({}, { zoom: 0.8 }));
   unmount();
   viewport(1000, 600);
   render(<Flow state={twoStages()} />);
@@ -494,7 +496,7 @@ test('ajustar on a chart wider than the canvas zooms out until it fits and scrol
 test('a stored flowView with zoom 0.8 and a pan draws the chart at 80% scrolled to that pan, and a scroll keeps the new pan: the come-back case (#910)', () => {
   onTestFinished(() => { vi.restoreAllMocks(); });
   viewport(400, 600);
-  resetViewState({ flowView: { loops: true, zoom: 0.8, pan: { x: 120, y: 15 } } });
+  resetViewState({ flowView: { loops: true, canvas: { main: { zoom: 0.8, pan: { x: 120, y: 15 } } } } });
   render(<Flow state={twoStages()} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument();
@@ -502,7 +504,7 @@ test('a stored flowView with zoom 0.8 and a pan draws the chart at 80% scrolled 
   expect([paneOf(canvas).scrollLeft, paneOf(canvas).scrollTop]).toEqual([120, 15]);
   paneOf(canvas).scrollLeft = 50;
   fireEvent.scroll(paneOf(canvas));
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 50, y: 15 }, collapsed: [], outline: [] });
+  expect(readView('flowView')).toEqual(storedView({}, { zoom: 0.8, pan: { x: 50, y: 15 } }));
 });
 
 test('a zoom keeps the centre of the last scroll, not of the offsets the browser already clamped to the smaller chart (#910)', async () => {
@@ -545,7 +547,7 @@ test('a wheel zoom keeps the point under the pointer in place; one at the bound 
   onTestFinished(() => { vi.restoreAllMocks(); });
   const user = userEvent.setup();
   viewport(400, 600);
-  resetViewState({ flowView: { loops: true, zoom: 1.4, pan: { x: 100, y: 0 } } });
+  resetViewState({ flowView: { loops: true, canvas: { main: { zoom: 1.4, pan: { x: 100, y: 0 } } } } });
   render(<Flow state={twoStages()} />);
   const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
   vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ left: 50, top: 20 } as DOMRect);
@@ -832,7 +834,7 @@ test('Ctrl+=, Ctrl+-, Ctrl+0 and ⇧1 do what +, −, the number and ajustar do,
   expect(scale()).toBe('scale(1)');
   expect(fireEvent.keyDown(window, ZOOM_FIT)).toBe(false); // prevented: matched by hand, since Shift+1 is no binding
   expect(scale()).toBe('scale(0.8)');
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
+  expect(readView('flowView')).toEqual(storedView({}, { zoom: 0.8 }));
   fireEvent.keyDown(window, ZOOM_RESET); // back to 100%, so a fit while hidden would show
   rerender(flow(false)); // under Atividades the flow stays mounted (#596), its keys unbound
   expect(fireEvent.keyDown(window, ZOOM_IN)).toBe(true);
@@ -864,7 +866,7 @@ test('⑂ árvore starts on with a tree in the list and off without one; a click
   expect(within(nodeOf('dev')).getByText('sem árvore')).toBeInTheDocument();
   await user.click(treeToggle());
   expect(within(nodeOf('dev')).queryByText('⑂ #1 Task 1')).not.toBeInTheDocument();
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, tree: false, collapsed: [], outline: [] });
+  expect(readView('flowView')).toEqual(storedView({ tree: false }));
   unmountTree();
   render(<Flow state={forest()} />);
   expect(treeToggle()).toHaveAttribute('aria-pressed', 'false');
@@ -880,7 +882,7 @@ test('the chevron collapses a tree\'s group in its own node only, and the collap
   expect(within(nodeOf('dev')).queryByText('#2 Task 2')).not.toBeInTheDocument();
   expect(within(nodeOf('dev')).getByRole('button', { name: /^expandir/ })).toHaveAttribute('aria-expanded', 'false');
   expect(within(nodeOf('review')).getByText('#3 Task 3')).toBeInTheDocument();
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: ['dev\u0000I1'], outline: [] });
+  expect(readView('flowView')).toEqual(storedView({}, { collapsed: ['dev\u0000I1'] }));
   unmount();
   render(<Flow state={forest()} />);
   expect(within(nodeOf('dev')).queryByText('#1 Task 1')).not.toBeInTheDocument();

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { activityOf } from '../../activities';
+import { MAIN_FLOW } from '../../flows';
 import { sourceOf } from '../../tasks';
 import type { FilterRule, Stage, State, Task } from '../../types';
 import { FlowChart } from '@/components/FlowChart';
@@ -44,7 +45,7 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
   const [canvas, setCanvas] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState(''); // session-only: it survives a view switch on purpose, the flow stays mounted under Atividades (#596), and clears on an app reload (#542)
   const isShown = useIsFlowShown();
-  const flow = useFlowView(isShown); // the flowchart's view (#909, #910): loops, zoom and pan, kept in flowView
+  const flow = useFlowView(isShown, state.flows[0]?.name ?? MAIN_FLOW); // the flowchart's view (#909, #910, #571): loops and the first flow's canvas, kept in flowView
   const isTree = flow.view.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
   const { itemId: focused, focus, focusOn, leave } = useTreeFocus(state.tasks, source, isShown); // #35: the focus on a subtree, never in flowView
   const shown = source === undefined ? state.tasks : state.tasks.filter((c) => sourceOf(c) === source);
