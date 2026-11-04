@@ -16,7 +16,7 @@ import { landOn } from '@/lib/settings-jump';
 import { type SettingEntry, settingAnchor } from '@/lib/settings-search';
 import { SETTINGS_SECTIONS, type SettingsView, unsavedKeys } from '@/lib/settings-sections';
 import { type SourceDraft, sourceColumnsUrl, draftFrom, filterOptionsUrl, projectsUrl, toSettingsBody, validateSettings, type SettingsDraft } from '@/lib/settings-form';
-import { deletionMessage, deletionMoves, type StageMove } from '@/lib/settings-stages';
+import { deletionMessage, deletionMoves, flowTaskCount, type StageMove } from '@/lib/settings-stages';
 import { isRecording } from '@/lib/shortcut-bindings';
 import { SETTINGS_CHROME } from '@/lib/window-chrome';
 import type { FilterOptions, GithubAuthStatus, ProjectSummary, SettingsInfo, SettingsResult, State } from '../../../types';
@@ -34,7 +34,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
   const [view, setView] = useState<SettingsView>(() => {
     if (newSource) return { section: 'flow', source: newSource.source.id };
     const source = opening?.source === undefined ? undefined : saved.sources.find((b) => b.savedName === opening.source)?.id;
-    return { section: opening?.section ?? 'workspaces', source, ...(opening?.language ? { language: opening.language } : {}) };
+    return { section: opening?.section ?? 'workspaces', source, ...(opening?.language ? { language: opening.language } : {}), ...(opening?.newFlow ? { newFlow: true as const } : {}) };
   });
   const [saveError, setSaveError] = useState<string | undefined>(); // #739: shown in the footer, which stays in view; `error` is for the section's own actions
   const [focus, setFocus] = useState<TransitionFocus | undefined>(); // #918: the transition a refused save selects on the chart
@@ -232,6 +232,9 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
             <SectionContent
               key={revision} section={view.section} language={view.language} onLanguage={(language) => setView({ section: 'editor', language })} draft={draft} info={info} state={state} error={error} source={source} onChange={applyEdit} onCapSaved={capSaved}
               flow={{
+                newFlow: view.newFlow === true,
+                // #565: by the saved draft's id, so a flow renamed in the draft still counts its saved tasks; a new one counts none
+                flowTasks: (id) => flowTaskCount(saved.flows.find((f) => f.id === id)?.name ?? '', info.config?.comb.flows ?? [], state?.tasks ?? []),
                 options, githubProjects, github, filterOptions, focus, stage: view.stage === undefined ? undefined : { id: view.stage, n: jump?.n ?? 0 },
                 onConnectGithub: () => void connect(), onLoadProjects: (row) => void loadProjects(row), onLoadColumns: (row) => void loadColumns(draft, row),
                 onOpenSource: (id) => setView({ section: 'flow', source: id }), onAddSource: addSource, onOpenRules: () => setView({ section: 'rules' }),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import type { AgentProps } from '@/components/settings/StageBlocks';
 import { type ChartSelection, StageChart } from '@/components/settings/StageChart';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
@@ -20,7 +20,7 @@ export interface TransitionFocus { transition: string; n: number }
 export interface StageFocus { id: string; n: number }
 
 interface Flow { stages: StageDraft[]; transitions: TransitionDraft[] }
-interface StageEditorProps extends AgentProps, Flow { flow: string; /* #565: the open flow's draft id, which + etapa gives the new stage */ sources: StageSource[]; commands: Command[]; workspaces: string[]; focus?: TransitionFocus; stage?: StageFocus; onChange(next: Flow): void }
+interface StageEditorProps extends AgentProps, Flow { flow: string; /* #565: the open flow's draft id, which + etapa gives the new stage */ sources: StageSource[]; commands: Command[]; workspaces: string[]; focus?: TransitionFocus; stage?: StageFocus; flowRow?: ReactNode /* #565: the flow row, the card's first row as the design draws it */; clashOf?(id: string): string | undefined; onChange(next: Flow): void }
 
 // + etapa and + transição in the card's header (#887, 6b); + transição needs a stage to leave from
 function StageActions({ onAddStage, onAddTransition, canAddTransition }: { onAddStage(): void; onAddTransition(): void; canAddTransition: boolean }) {
@@ -60,7 +60,7 @@ function useSelection(stages: readonly StageDraft[], transitions: readonly Trans
 /** Settings › fluxo's etapas card (#134, 6b; its own card since #887): + etapa and + transição in the header, the load hint, the chart, its
  * legend, then the selected stage's or transition's editor. Every update is immutable; the selection is local, and a stale id (a reverted draft)
  * reads as the first stage. A refused save's focus selects its transition (#918). */
-export function StageEditor({ flow, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, focus, stage: picked, onChange }: StageEditorProps) {
+export function StageEditor({ flow, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, focus, stage: picked, flowRow, clashOf, onChange }: StageEditorProps) {
   const [selection, setSelection] = useSelection(stages, transitions, focus, picked);
   const transition = selection.kind === 'transition' ? transitions.find((d) => d.id === selection.id) : undefined;
   const index = Math.max(0, stages.findIndex((s) => s.id === (selection.kind === 'stage' ? selection.id : transition?.from)));
@@ -90,6 +90,7 @@ export function StageEditor({ flow, stages, transitions, sources, commands, work
   };
   return (
     <SettingsGroup title="settings.stages" hint="settings.transitions.hint" action={<StageActions onAddStage={addStage} onAddTransition={addTransition} canAddTransition={stage !== undefined} />}>
+      {flowRow}
       {sources.length > 0 && <p className="text-muted-foreground text-xs">{t('settings.stages.loadHint')}</p>}
       <StageChart stages={stages} transitions={transitions} selection={transition ? selection : { kind: 'stage', id: stage?.id ?? '' }} defaultAgent={defaultAgent} onSelect={setSelection} />
       <p className="text-muted-foreground text-xs">{t('settings.transitions.legend')}</p>
@@ -104,7 +105,7 @@ export function StageEditor({ flow, stages, transitions, sources, commands, work
       {!transition && stage && (
         <StageDetail
           key={stage.id} stage={stage} index={index} total={stages.length} stages={stages} transitions={transitions} sources={sources} commands={commands} workspaces={workspaces}
-          agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} onUpdate={(patch) => onChange(patched({ stages, transitions }, index, patch))} onMove={move} onRemove={removeStage}
+          agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} clash={clashOf?.(stage.id)} onUpdate={(patch) => onChange(patched({ stages, transitions }, index, patch))} onMove={move} onRemove={removeStage}
           onSelectTransition={(id) => setSelection({ kind: 'transition', id, back: stage.id })} onAddTransition={addTransition}
         />
       )}
