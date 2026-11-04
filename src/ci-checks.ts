@@ -7,10 +7,11 @@ import type { CiCheck, CiChecks, CiPrRead, Stage, StageCiCheck } from './types.j
 // needs (the head commit, the Actions run behind each check run, the base branch's required checks) and the verdict. Pure.
 
 /** Per PR: its mergeability and base branch name (#264), its base branch's required checks, the login's permission on its repository (#854),
- * the default branch's workflows folder (#11) and #758's rollup, with the head's oid, its check suites (#854) and each check run's workflow run. */
+ * the default branch's workflows folder (#11) and #758's rollup, with the head's oid, its check suites (#854) and each check run's workflow run
+ * and suite creation (#598). */
 export const CI_FIELDS = 'mergeable baseRefName baseRef { refUpdateRule { requiredStatusCheckContexts } } '
   + 'repository { viewerPermission workflows: object(expression: "HEAD:.github/workflows") { ... on Tree { entries { name } } } } '
-  + rollupFields(`oid ${SUITE_FIELDS} `, ' checkSuite { workflowRun { databaseId } }');
+  + rollupFields(`oid ${SUITE_FIELDS} `, ' checkSuite { createdAt workflowRun { databaseId } }');
 
 
 // GitHub's text reaches the output and the card: ANSI and every control character but the tab and the line break go, and a check's name
@@ -111,9 +112,10 @@ const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0); 
 // A status context's targetUrl is any integration's text and becomes a link the user clicks: only https reaches the page
 const isHttps = (url: string | undefined): url is string => url?.startsWith('https://') === true;
 
-function stageCheck({ name, state, url, startedAt, at }: CiCheck): StageCiCheck {
+function stageCheck({ name, state, url, startedAt, queuedAt, at }: CiCheck): StageCiCheck {
   return {
     name: cleanName(name), state, ...(isHttps(url) ? { url } : {}), ...(startedAt === undefined ? {} : { startedAt }),
+    ...(state !== 'pending' || queuedAt === undefined ? {} : { queuedAt }), // #598: the queue's clock, only while it waits
     ...(state === 'pending' || at === undefined ? {} : { completedAt: at }),
   };
 }
