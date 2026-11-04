@@ -142,6 +142,7 @@ const en = {
   'usage.ago.hours': '{n} h ago',
   'usage.ago.days': '{n} d ago',
   'usage.close': 'close',
+  'window.back': 'Back to the main window', // #553: a detached window's tab, or the strip's button
   'window.session': 'session',
   'window.week': 'week',
   'window.thirtyDay': '30 days', // #929: Codex's free plan window
@@ -3145,6 +3146,7 @@ const pt: Record<MessageKey, string> = {
   'usage.ago.hours': 'há {n} h',
   'usage.ago.days': 'há {n} d',
   'usage.close': 'fechar',
+  'window.back': 'Voltar para a janela principal',
   'window.session': 'sessão',
   'window.week': 'semana',
   'window.thirtyDay': '30 dias',
