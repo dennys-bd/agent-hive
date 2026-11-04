@@ -933,7 +933,7 @@ test('POST /tasks/:id/close and /keep answer 409 while the missing task\'s workt
   assert.equal(server.getState()?.tasks.length, 1, 'the task is still there');
 });
 
-test('POST /settings with different stages dispatches setStages: the state follows and a stopped task in a vanished stage is dropped until the next poll re-enters it', async (t) => {
+test('POST /settings with renamed stages dispatches setStages: the state follows, the rename carries the stopped task and the next poll keeps it there (#565: replacing every stage of a flow that holds tasks is a 409)', async (t) => {
   const { base, server } = await start(t, idle()); // I1 stopped in fila
   assert.equal(server.getState()?.tasks[0].stage, 'fila');
   const stages = [{ name: 'triagem', from: { board: ['Ready'] }, prompt: 'x' }];

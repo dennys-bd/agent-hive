@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, configFrom, stageRenamesOf, strandedTasks } from '../src/settings-save.js';
+import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, configFrom, stageRenamesOf, strandedMessage, strandedTasks } from '../src/settings-save.js';
 import type { Flow, SourceConfig, Stage, Task } from '../src/types.js';
 import { CONFIG_FILE } from '../src/config.js';
 import { combConfig, GITHUB_ENTRY, workspacesAt } from './fakes.js';
@@ -78,4 +78,9 @@ test('strandedTasks passes an empty flow\'s deletion, a flow rename and a stage 
   assert.equal(strandedTasks(holding('fix'), TWO, [TWO[0], { ...TWO[1], name: 'hotfix' }], {}), undefined);
   const renamed: Flow = { ...TWO[1], stages: [{ name: 'patch', from: {} }], transitions: [] };
   assert.equal(strandedTasks(holding('fix'), TWO, [TWO[0], renamed], { fix: 'patch' }), undefined, 'fix → patch is a rename, not a deletion');
+});
+
+test('strandedMessage counts one task in the singular and several in the plural (#565)', () => {
+  assert.match(strandedMessage('bug', 1), /^Flow "bug" holds 1 task and none of its stages survives/);
+  assert.match(strandedMessage('bug', 3), /^Flow "bug" holds 3 tasks and none of its stages survives/);
 });

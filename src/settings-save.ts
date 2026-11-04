@@ -247,11 +247,15 @@ export function strandedTasks(state: Pick<State, 'tasks'>, saved: readonly Flow[
   return first === undefined ? undefined : { flow: first, count: lost.filter((f) => f === first).length };
 }
 
+/** The 409 text (#565): a deleted flow and one whose stages were all replaced read alike, since neither keeps a stage for its tasks. */
+export const strandedMessage = (flow: string, count: number): string =>
+  `Flow "${flow}" holds ${count} ${count === 1 ? 'task' : 'tasks'} and none of its stages survives this save: move them to another flow, or keep one of its stages`;
+
 /** Why a save cannot drop a flow's tasks (#565): the live state holds a task strandedTasks finds (409). Without the check, a save by API or over
  * stale state would let setStages move them into another flow. A first setup has no task. */
 export function strandedRefusal(next: Config, state: State | undefined, stageRenames: Record<string, string>): Refusal | undefined {
   const lost = state && strandedTasks(state, state.flows, next.comb.flows, stageRenames);
-  return lost && { status: HTTP_CONFLICT, message: `Flow "${lost.flow}" holds ${lost.count} tasks: move them to another flow before deleting it` };
+  return lost && { status: HTTP_CONFLICT, message: strandedMessage(lost.flow, lost.count) };
 }
 
 /** The saved usage rules with each stage cap under its stage's new name (#861): what a body that omits usageRules keeps. The form sends its own,

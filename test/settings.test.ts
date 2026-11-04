@@ -12,6 +12,7 @@ import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAut
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, type McpSettings } from '../src/types.js';
 import { isDeepStrictEqual } from 'node:util';
 import { flatten } from '../src/flows.js';
+import { strandedMessage } from '../src/settings-save.js';
 import { AUTH, STAGES, FILTER, FIXED, fakeSourceFactory, fakeGql, GITHUB_ENTRY, EPICS, onOwnStages, fakeSpawn, jsonResponse, move, OPTIONS, workspacesAt, tempHive, chained, bodyFlows, WORKSPACE } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
@@ -1295,7 +1296,7 @@ test('POST /settings refuses to delete a flow that holds tasks, naming it and th
   const names = async (): Promise<string[]> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.flows.map((f) => f.name);
   const refused = await postSettings(base, onOwnStages({ ...BODY, flows: [spare] }));
   assert.equal(refused.status, 409);
-  assert.deepEqual(await json(refused), { error: `Flow "main" holds ${n} tasks: move them to another flow before deleting it` });
+  assert.deepEqual(await json(refused), { error: strandedMessage('main', n) });
   assert.deepEqual(await names(), ['main', 'spare'], 'nothing written');
   assert.equal((await postSettings(base, onOwnStages({ ...BODY, flows: [main] }))).status, 200);
   assert.deepEqual(await names(), ['main'], 'the empty flow is gone');
