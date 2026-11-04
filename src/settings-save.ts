@@ -2,7 +2,8 @@ import { realpath } from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import { migrateTransitions } from './config-migrate.js';
-import { flatten, MAIN_FLOW } from './flows.js';
+import { flatten, flowOf, MAIN_FLOW } from './flows.js';
+import { destinationOf } from './stage-delete.js';
 import { DEFAULT_CONFIG, taskWorkspace, loadConfigIfPresent, parseConfig } from './config.js';
 import type { Refusal } from './server-tasks.js';
 import { parseSetup } from './setup-script.js';
@@ -240,6 +241,31 @@ export function stageRenamesOf(raw: unknown, saved: readonly Stage[], next: read
 }
 
 const renamedStage = (name: string, renames: Record<string, string>): string => (Object.hasOwn(renames, name) ? renames[name] : name);
+
+/** The first flow a save strands tasks of (#565), and how many. */
+export interface Stranded { flow: string; count: number }
+
+/** The first flow whose tasks a save leaves with no destination (#565), and how many: each task's stage under the save's renames is gone, and
+ * destinationOf finds no stage of its own flow, because the flow went or none of its stages survives. A task in no saved flow is setStages'. */
+export function strandedTasks(state: Pick<State, 'tasks'>, saved: readonly Flow[], next: readonly Flow[], stageRenames: Record<string, string>): Stranded | undefined {
+  const old = saved.map((f) => ({ ...f, stages: f.stages.map((s) => ({ ...s, name: renamedStage(s.name, stageRenames) })) }));
+  const kept = flatten(next).stages;
+  const lost = state.tasks.flatMap((task) => {
+    const stage = renamedStage(task.stage, stageRenames);
+    if (kept.some((s) => s.name === stage)) return [];
+    const flow = flowOf(old, stage);
+    return flow !== undefined && destinationOf(task, stage, old, next) === undefined ? [flow.name] : [];
+  });
+  const [first] = lost;
+  return first === undefined ? undefined : { flow: first, count: lost.filter((f) => f === first).length };
+}
+
+/** Why a save cannot drop a flow's tasks (#565): the live state holds a task strandedTasks finds (409). Without the check, a save by API or over
+ * stale state would let setStages move them into another flow. A first setup has no task. */
+export function strandedRefusal(next: Config, state: State | undefined, stageRenames: Record<string, string>): Refusal | undefined {
+  const lost = state && strandedTasks(state, state.flows, next.comb.flows, stageRenames);
+  return lost && { status: HTTP_CONFLICT, message: `Flow "${lost.flow}" holds ${lost.count} tasks: move them to another flow before deleting it` };
+}
 
 /** The saved usage rules with each stage cap under its stage's new name (#861): what a body that omits usageRules keeps. The form sends its own,
  * already under the new names. */

@@ -937,7 +937,7 @@ test('POST /settings with different stages dispatches setStages: the state follo
   const { base, server } = await start(t, idle()); // I1 stopped in fila
   assert.equal(server.getState()?.tasks[0].stage, 'fila');
   const stages = [{ name: 'triagem', from: { board: ['Ready'] }, prompt: 'x' }];
-  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, stages }))).status, 200);
+  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, stages, stageRenames: { fila: 'triagem' } }))).status, 200); // a rename: the task's only stage may not just vanish (#565)
   await server.poll(); // reconfigure's poll runs in the background (#59)
   assert.deepEqual(server.getState()?.stages, stages);
   assert.equal(server.getState()?.tasks[0].stage, 'triagem', 'reconfigure polls: the task came back through the new from');

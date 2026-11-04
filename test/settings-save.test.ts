@@ -4,8 +4,8 @@ import { execFile } from 'node:child_process';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, savedFlows, SEVERAL_FLOWS, stageRenamesOf } from '../src/settings-save.js';
-import type { Flow, SourceConfig, Stage } from '../src/types.js';
+import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, savedFlows, SEVERAL_FLOWS, stageRenamesOf, strandedTasks } from '../src/settings-save.js';
+import type { Flow, SourceConfig, Stage, Task } from '../src/types.js';
 import { GITHUB_ENTRY, workspacesAt } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -62,4 +62,20 @@ test('with one flow, or none saved, the pair replaces it and keeps its name (#56
   const pair = { stages: [{ name: 'dev', from: {} }], transitions: [] };
   assert.deepEqual(savedFlows([{ ...TWO[0] }], pair), [{ name: 'feature', ...pair }]);
   assert.deepEqual(savedFlows(undefined, pair), [{ name: 'main', ...pair }], 'a first setup gets main');
+});
+
+const inStage = (stage: string, n = 1): Task => ({ item: { itemId: `board:${n}`, id: String(n), title: 'T', body: '', url: '', source: 'board' }, stage, boardColumn: 'Ready', auto: true });
+const holding = (...stages: string[]): { tasks: Task[] } => ({ tasks: stages.map((s, i) => inStage(s, i + 1)) });
+
+test('strandedTasks names the first flow whose tasks a save leaves with no stage of their flow, with the count (#565)', () => {
+  assert.deepEqual(strandedTasks(holding('fix', 'fix', 'spec'), TWO, [TWO[0]], {}), { flow: 'bug', count: 2 }, 'a deleted flow holding tasks');
+  const replaced: Flow = { ...TWO[1], stages: [{ name: 'patch', from: {} }], transitions: [] };
+  assert.deepEqual(strandedTasks(holding('fix'), TWO, [TWO[0], replaced], {}), { flow: 'bug', count: 1 }, 'every stage of the flow replaced');
+});
+
+test('strandedTasks passes an empty flow\'s deletion, a flow rename and a stage rename (#565)', () => {
+  assert.equal(strandedTasks(holding('spec'), TWO, [TWO[0]], {}), undefined, 'bug held nothing');
+  assert.equal(strandedTasks(holding('fix'), TWO, [TWO[0], { ...TWO[1], name: 'hotfix' }], {}), undefined);
+  const renamed: Flow = { ...TWO[1], stages: [{ name: 'patch', from: {} }], transitions: [] };
+  assert.equal(strandedTasks(holding('fix'), TWO, [TWO[0], renamed], { fix: 'patch' }), undefined, 'fix → patch is a rename, not a deletion');
 });
