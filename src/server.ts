@@ -52,6 +52,7 @@ import { shutdownCommand } from './platform-commands.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-requests.js';
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
+import { readUnlisted, unlistedStarted } from './poll-reads.js';
 import { deleteActivityOnDisk, registerTaskRoutes } from './server-tasks.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
 import { exitEvent } from './server-exit.js';
@@ -716,8 +717,10 @@ export function createServer(deps: ServerDeps): HiveServer {
       const items = leftItems.filter(name, startedAt, listed);
       const kept = new Set(items);
       for (const { item } of listed.filter((entry) => !kept.has(entry))) log.debug(`poll source=${name} dropped ${item.itemId}: closed after the read began`);
+      const reads = live === undefined ? [] : await readUnlisted(source, unlistedStarted(live.state, name, items), log); // #568: before the dispatch, so the reducer stays pure
+      if (isStale(runtime)) return;
       log.info(`poll source=${name} items=${items.length}`);
-      await dispatch({ type: 'poll', source: name, items: items.map(unattended) });
+      await dispatch({ type: 'poll', source: name, items: items.map(unattended), ...(reads.length === 0 ? {} : { reads }) });
     } catch (err) {
       if (isStale(runtime)) return;
       const message = errorMessage(err);

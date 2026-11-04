@@ -32,7 +32,7 @@ import { renderPrompt } from '../src/spawn.js';
 import { mergeBasePrompt } from '../src/merge-prompt.js';
 import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
+import type { Activity, Source, SourceItemRead, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
 import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem } from './fakes.js';
 import { tempDir } from './temp-dir.js';
@@ -676,6 +676,26 @@ test('the manual poll is POST /sources/refresh; POST /board/refresh is gone, wit
   const { base } = await start(t);
   assert.equal((await postJson(`${base}/board/refresh`)).status, 404);
   assert.deepEqual(await json(postJson(`${base}/sources/refresh`)), { ok: true });
+});
+
+test('a poll reads item() for each started task its listing lacks, by the adapter\'s own id and the task\'s url; the answer reaches the state; a rejected read leaves the task as it was (#568)', async (t) => {
+  const reads: string[] = [];
+  let isListed = true;
+  let answer = async (): Promise<SourceItemRead> => ({ reason: 'filter', entry: { item: { itemId: 'I1', id: '1', title: 'Renamed', body: '', url: 'https://github.com/acme/r/issues/1' }, column: 'Ready' } });
+  const fakes = fakeSourceFactory();
+  const sourceFactory = (config: SourceSpec): Source => {
+    const fake = fakes.factory(config);
+    return { ...fake, listItems: async () => (isListed ? fake.listItems() : []), item: async (itemId, url) => { reads.push(`${itemId} ${url}`); return answer(); } };
+  };
+  const { server } = await start(t, BODY, undefined, {}, { sourceFactory }); // I1 running: started
+  assert.deepEqual(reads, [], 'listed: nothing to read');
+  isListed = false;
+  await server.poll();
+  assert.deepEqual(reads, ['I1 https://github.com/acme/r/issues/1']);
+  assert.deepEqual([task0(server).outOfListing, task0(server).item.title], ['filter', 'Renamed']);
+  answer = async () => { throw new Error('rate limited'); };
+  await server.poll();
+  assert.deepEqual([task0(server).outOfListing, task0(server).item.title], ['filter', 'Renamed'], 'a rejected read: the task as it was');
 });
 
 test('the timer skips the source while nothing could start, and reads it again once the last poll is 5 min old', async (t) => {

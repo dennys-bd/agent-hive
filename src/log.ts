@@ -152,7 +152,7 @@ export function describeEvent(event: HiveEvent): string {
   if (isBenchmarkEvent(event)) return describeBenchmark(event); // #458
   switch (event.type) {
     case 'boot': return 'boot';
-    case 'poll': return `poll source=${event.source ?? '-'} items=${event.items.length} ids=${event.items.slice(0, POLL_IDS_MAX).map((c) => c.item.id).join(',')}`;
+    case 'poll': return `poll source=${event.source ?? '-'} items=${event.items.length} ids=${event.items.slice(0, POLL_IDS_MAX).map((c) => c.item.id).join(',')}${event.reads === undefined ? '' : ` reads=${event.reads.map((r) => `${r.itemId}:${r.read.reason}`).join(',')}`}`;
     case 'setMax': return `setMax ${event.max}`;
     case 'setSignal': return `setSignal ${event.signal}`;
     case 'setSignals': return `setSignals onOpen=${event.signals.onOpen}`; // #727: the rows are the config's
