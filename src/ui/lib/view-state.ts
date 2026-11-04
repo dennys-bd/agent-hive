@@ -7,6 +7,7 @@ import { getJson, postJson } from './api.js';
 export const VIEW_WRITE_DELAY_MS = 250;
 
 let snapshot: ViewState = {};
+let isWriting = true; // a detached window reads the main window's habits and never writes them (#553)
 const timers = new Map<ViewKey, ReturnType<typeof setTimeout>>();
 
 // The key's whole value as the snapshot holds it now. Nothing is retried: the next change of the key posts all of it again.
@@ -31,9 +32,15 @@ export async function loadViewState(): Promise<ViewState> {
 /** The key's value in the snapshot, as stored: each consumer parses its own. */
 export const readView = (key: ViewKey): unknown => snapshot[key];
 
+/** Off in a detached window (#553): the snapshot still changes, so the page reads its own writes, but nothing is posted. */
+export function setViewWrites(on: boolean): void {
+  isWriting = on;
+}
+
 /** A new snapshot with the key's value, then the key's debounce restarted. */
 export function writeView(key: ViewKey, value: unknown): void {
   snapshot = { ...snapshot, [key]: value };
+  if (!isWriting) return; // no timer: flush on pagehide finds nothing to post
   clearTimeout(timers.get(key));
   timers.set(key, setTimeout(() => {
     timers.delete(key);
@@ -51,8 +58,9 @@ function flush(): void {
   timers.clear();
 }
 
-/** Tests only: drops every pending post and sets the snapshot to `seed`. */
+/** Tests only: drops every pending post, turns writes back on and sets the snapshot to `seed`. */
 export function resetViewState(seed: ViewState = {}): void {
+  isWriting = true;
   for (const timer of timers.values()) clearTimeout(timer);
   timers.clear();
   snapshot = seed;

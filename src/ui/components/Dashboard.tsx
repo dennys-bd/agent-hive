@@ -37,7 +37,7 @@ import { ProjectTable } from '@/components/ProjectTable';
 import { RepoIssueTable } from '@/components/RepoIssueTable';
 import { RepoPrTable } from '@/components/RepoPrTable';
 import { t } from '@/i18n';
-import { useConsoleChannels } from '@/hooks/use-console';
+import { consoleRunsOf, useConsoleChannels } from '@/hooks/use-console';
 import { useRepositories } from '@/hooks/use-repositories';
 import { FONT_FAMILY } from '@/lib/xterm-setup';
 
@@ -265,10 +265,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
   const { picks, goTo, back, openPr, openIssue, page } = useCenterNav(state, sources, repositories, selected, onSelect); // #380
   // #353: the live command runs, and #351: the running worktree setups, as one key, so a run or a setup starting or ending anywhere reads
   // the console's channels again. Before the early return: a hook runs on every render.
-  const consoleChannels = useConsoleChannels([
-    ...(state?.terminals ?? []).flatMap((s) => (s.command === undefined ? [] : [s.terminalId])),
-    ...(state?.activities ?? []).flatMap((a) => (a.setup ? [a.setup.consoleId] : [])),
-  ].join(' '));
+  const consoleChannels = useConsoleChannels(consoleRunsOf(state));
   if (!state) return null;
   const limits = effective ?? manualSignal(state); // the header's hexagon and the footer show the same signal (#533)
   return (

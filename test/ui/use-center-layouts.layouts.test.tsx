@@ -6,7 +6,7 @@ import type { CenterLayout } from '@/lib/center-layout';
 import { resetViewState } from '@/lib/view-state';
 import type { State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
-import { withWork } from '../fixtures/work';
+import { activityIdOf, withWork } from '../fixtures/work';
 
 // #533: the design layer reads every activity's stored layout, not only the picked one's
 const task = (itemId: string, id: string): Task => ({ item: { itemId, id, title: `Task ${id}`, body: '', url: '' }, stage: 'dev', boardColumn: '', auto: true });
@@ -24,4 +24,14 @@ test('every listed activity\'s stored layout leaves the hook, the picked one\'s 
   const list = activitiesOf(withWork(withWork(BASE, 'A', { worktree: '/a' }), 'B', { worktree: '/b' })); // a worktree keeps an activity listed
   const { result } = renderHook(() => useCenterLayouts(list, list[0], undefined));
   expect(result.current.layouts).toEqual(STORED);
+});
+
+test('with seed {} and fallback off no stored layout is read and an activity with a live run shows none; the defaults show its main run (#553)', () => {
+  const live: State = { ...withWork(BASE, 'A', { worktree: '/a' }), workers: [{ id: 's1', status: 'working', activityId: activityIdOf('A'), runId: 'W1' }] };
+  const list = activitiesOf(live);
+  resetViewState({ centerLayouts: { B: STORED.B } }); // A has no entry; B's stays unread by the window
+  const main = renderHook(() => useCenterLayouts(list, list[0], undefined));
+  const detached = renderHook(() => useCenterLayouts(list, list[0], undefined, { seed: {}, fallback: false }));
+  expect(main.result.current.layout).toEqual({ root: { kind: 'group', id: 'g1', tabs: [{ kind: 'run', ptyId: 'W1' }], active: 0 }, focused: 'g1' });
+  expect([detached.result.current.layout, detached.result.current.layouts]).toEqual([undefined, {}]);
 });

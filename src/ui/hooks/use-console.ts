@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { CHANNEL_KINDS, CHANNEL_STATUSES, type ChannelEntry, type ChannelKind, type ChannelStatus } from '../../console';
 import type { ConsoleSelection } from '@/components/ConsolePanel';
+import type { State } from '../../types';
 import { getJson } from '@/lib/api';
 import { onConsoleChange } from '@/lib/console-events';
 
@@ -90,3 +91,10 @@ export type OpenStageOutput = (taskId: string, channel: string, run: string) => 
 export const StageOutputContext = createContext<OpenStageOutput | undefined>(undefined);
 
 export const useOpenStageOutput = (): OpenStageOutput | undefined => useContext(StageOutputContext);
+
+/** What the console's channels are read again on (#353, #351): the live command runs and the running worktree setups, as one string.
+ *  The Dashboard's and a detached window's (#553). */
+export const consoleRunsOf = (state: State | undefined): string => [
+  ...(state?.terminals ?? []).flatMap((s) => (s.command === undefined ? [] : [s.terminalId])),
+  ...(state?.activities ?? []).flatMap((a) => (a.setup ? [a.setup.consoleId] : [])),
+].join(' ');
