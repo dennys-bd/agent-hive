@@ -114,19 +114,23 @@ export function withStageConsole(layout: CenterLayout | undefined, channel: stri
   return settle(rebuild(layout.root, add), layout.focused) ?? layout;
 }
 
+/** The focused group's shown tab (#553: what the detached window's back button docks); undefined with no layout. */
+export function shownTab(layout: CenterLayout | undefined): CenterTabRef | undefined {
+  const focused = layout === undefined ? undefined : groupsOf(layout.root).find((group) => group.id === layout.focused);
+  return focused?.tabs[focused.active];
+}
+
 /** The run in focus (#492): the focused group's shown tab's, its focused pane's on a split tab (#641); undefined when that group shows a
  * diff or there is no layout. */
 export function shownRun(layout: CenterLayout | undefined): string | undefined {
-  const focused = layout === undefined ? undefined : groupsOf(layout.root).find((group) => group.id === layout.focused);
-  const ref = focused?.tabs[focused.active];
+  const ref = shownTab(layout);
   if (ref?.kind !== 'run') return undefined;
   return ref.panes?.focused ?? ref.ptyId;
 }
 
 /** The file in focus (#295): the focused group's shown tab's path when it is a file; what the footer's checkers follow. */
 export function shownFile(layout: CenterLayout | undefined): string | undefined {
-  const focused = layout === undefined ? undefined : groupsOf(layout.root).find((group) => group.id === layout.focused);
-  const ref = focused?.tabs[focused.active];
+  const ref = shownTab(layout);
   return ref?.kind === 'file' ? ref.path : undefined;
 }
 

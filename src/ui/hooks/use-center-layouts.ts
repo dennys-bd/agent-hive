@@ -46,13 +46,13 @@ export function mainRef(activity: Activity): CenterTabRef | undefined {
 const tabRuns = (activity: Activity): string[] => [...activity.runs, ...(activity.slept ?? []).map((s) => s.run)].map((run) => run.ptyId);
 
 // What the picked activity shows: its stored layout without the runs that ended, else its main run alone; nothing once emptied
-function viewOf(store: Store, activity: Activity): CenterLayout | undefined {
+function viewOf(store: Store, activity: Activity, fallback: boolean): CenterLayout | undefined {
   const id = activityKey(activity);
   if (store.emptied === id) return undefined;
   const entry = store.layouts[id];
   const kept = entry === undefined ? undefined : prune(entry, new Set([...tabRuns(activity), ...store.holding]), new Set(sleepingSessions(activity))); // #696: a sleeping session's tab stays
   const main = mainRef(activity);
-  return kept ?? (main === undefined ? undefined : initialLayout(main));
+  return kept ?? (!fallback || main === undefined ? undefined : initialLayout(main)); // a detached window shows only what it was sent (#553)
 }
 
 // A request's tab once it can open (#457): anything but a run at once (a diff, a PR, the console, a file, #717); a run once it is live, a
@@ -144,11 +144,18 @@ function useRenamedTabs(activities: Activity[], setStore: Dispatch<SetStateActio
   }), [setStore]);
 }
 
+export interface CenterLayoutsOptions {
+  seed?: Record<string, CenterLayout>; // the layouts the store starts from; default readCenterLayouts()
+  fallback?: boolean; // an activity with no entry shows its main run; default true
+}
+
 /** Every activity's center layout (#458), kept in the view state (#484) and written back on every change. The layouts follow the live runs: an
  * ended run's tab goes, and a task no longer an activity loses its entry. For the picked activity it gives the layout and the operations
- * on it, and it applies a request (#457) once its tab can open, into the focused group. */
-export function useCenterLayouts(activities: Activity[], current: Activity | undefined, request: TabRequest | undefined): CenterLayouts {
-  const [store, setStore] = useState<Store>(() => ({ layouts: readCenterLayouts(), holding: [] }));
+ * on it, and it applies a request (#457) once its tab can open, into the focused group. A detached window (#553) starts from `seed: {}` with
+ * `fallback: false`: it shows only the tabs it was sent. */
+export function useCenterLayouts(activities: Activity[], current: Activity | undefined, request: TabRequest | undefined, options: CenterLayoutsOptions = {}): CenterLayouts {
+  const { seed, fallback = true } = options;
+  const [store, setStore] = useState<Store>(() => ({ layouts: seed ?? readCenterLayouts(), holding: [] }));
   const [handled, setHandled] = useState<TabRequest>();
   const id = current && activityKey(current);
   const live = liveKey(activities);
@@ -161,7 +168,7 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
     if (current === undefined) return;
     const key = activityKey(current);
     setStore((s) => {
-      const layout = next(viewOf(s, current));
+      const layout = next(viewOf(s, current, fallback));
       return { holding: s.holding, layouts: withEntry(s.layouts, key, layout), emptied: layout === undefined ? key : undefined };
     });
   };
@@ -174,7 +181,7 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
     change((layout) => (layout === undefined ? initialLayout(ref) : openRef(layout, ref)));
   });
   return {
-    layout: current === undefined ? undefined : viewOf(store, current),
+    layout: current === undefined ? undefined : viewOf(store, current, fallback),
     layouts: store.layouts,
     select: (group, index) => change((layout) => layout && selectRef(layout, group, index)),
     close: (key) => change((layout) => layout && closeRef(layout, key)),
