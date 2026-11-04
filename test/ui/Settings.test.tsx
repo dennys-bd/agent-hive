@@ -9,6 +9,7 @@ import type { SettingsSection } from '@/lib/settings-sections';
 import { draftFrom } from '@/lib/settings-form';
 import { fmt } from '@/lib/usage';
 import type { FilterOptions, SettingsInfo, State, Task } from '../../src/types';
+import { flatten } from '../../src/flows';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
 const open = (user: UserEvent, s: SettingsSection) => user.click(screen.getByRole('button', { name: t(`settings.section.${s}`) }));
@@ -350,7 +351,7 @@ test('the local source edits the prefix; removing the only source hides the GitH
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   const [, init] = fetchMock.mock.calls.find(([url]) => url === '/settings')!;
   const body = JSON.parse(String(init?.body));
-  expect([body.prefix, body.sources, 'auth' in body, body.stages]).toEqual(['T2', [], false, [{ name: 'fila', from: {} }]]);
+  expect([body.prefix, body.sources, 'auth' in body, flatten(body.flows ?? []).stages]).toEqual(['T2', [], false, [{ name: 'fila', from: {} }]]);
 });
 
 test('the stage fields follow the sources list: a source added through the dialog gets its own row in sai and its own entry columns, filled by its own load (#180, #514, #515)', async () => {

@@ -11,7 +11,7 @@ import { renamesRefusal } from '../src/settings-save.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Source, SourceItem, SourceSpec, Task, Config, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, combConfig, EPICS, FILTER, FIXED, fakeLog, fakeSpawn, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, combConfig, EPICS, FILTER, FIXED, fakeLog, fakeSpawn, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { noCreateMessage, notInFlowNotice } from '../src/create-task.js';
 
@@ -51,7 +51,7 @@ async function startSources(t: TestContext, maxConcurrent = 0, qualifyNotes = tr
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   const body: SettingsBody = {
-    prefix: 'HIVE', auth: AUTH, workspaces: workspacesAt(repo), stages, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
+    prefix: 'HIVE', auth: AUTH, workspaces: workspacesAt(repo), flows: bodyFlows(stages), onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
     shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
     sources: [
       { name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS, switchAt: stages[0].name },
@@ -132,7 +132,7 @@ test('renamesRefusal (#278): 400 for a map the running Hive cannot apply, 409 wh
   const configOf = (...names: string[]): Config =>
     parseConfig(combConfig({
       sources: names.map((name, i) => ({ name, qualifyId: false, type: 'github', owner: 'acme', number: i + 1, filter: FILTER, taskProps: FIXED })),
-      stages: [{ ...LOCAL_STAGES[0], from: Object.fromEntries(names.map((name) => [name, ['Ready']])) }],
+      flows: bodyFlows([{ ...LOCAL_STAGES[0], from: Object.fromEntries(names.map((name) => [name, ['Ready']])) }]),
     }));
   const on = (board: string, n: number, extra: Partial<Task> = {}): Task =>
     ({ item: { itemId: `${board}:${n}`, id: String(n), title: `Task ${n}`, body: '', url: '', source: board }, stage: 'fila', boardColumn: 'Ready', auto: true, ...extra });
@@ -167,7 +167,7 @@ test('a save that renames a source carries its running task over: the same workt
   const [work, notes] = sources.body.sources ?? [];
   const renamed: SettingsBody = {
     ...sources.body, sources: [{ ...work, name: 'job' }, notes], renames: { work: 'job' },
-    stages: [{ ...STAGES[0], from: { job: ['Ready'], notes: ['Ready'] }, onStart: { job: [move('In progress')], notes: [move('In progress')] } }],
+    flows: bodyFlows([{ ...STAGES[0], from: { job: ['Ready'], notes: ['Ready'] }, onStart: { job: [move('In progress')], notes: [move('In progress')] } }]),
   };
   assert.equal((await postJson(`${sources.base}/settings`, renamed)).status, 200);
   await sources.server.poll();
@@ -186,13 +186,13 @@ test('a rename onto the name of a removed source whose task is still in the Hive
   await sources.server.poll();
   const [work] = sources.body.sources ?? [];
   const workOnly: LegacyStage[] = [{ ...STAGES[0], from: { work: ['Ready'] }, onStart: { work: [move('In progress')] } }];
-  assert.equal((await postJson(`${sources.base}/settings`, { ...sources.body, sources: [work], stages: workOnly })).status, 200); // notes removed
+  assert.equal((await postJson(`${sources.base}/settings`, { ...sources.body, sources: [work], flows: bodyFlows(workOnly) })).status, 200); // notes removed
   await sources.server.poll();
   assert.equal(sources.server.getState()?.tasks.find((c) => c.item.itemId === 'notes:7')?.missing, true, 'its board is gone');
   const saved = await readFile(join(sources.home, CONFIG_FILE), 'utf8');
   const res = await postJson(`${sources.base}/settings`, {
     ...sources.body, sources: [{ ...work, name: 'notes' }], renames: { work: 'notes' },
-    stages: [{ ...STAGES[0], from: { notes: ['Ready'] }, onStart: { notes: [move('In progress')] } }],
+    flows: bodyFlows([{ ...STAGES[0], from: { notes: ['Ready'] }, onStart: { notes: [move('In progress')] } }]),
   });
   assert.equal(res.status, 409);
   assert.deepEqual(await res.json(), { error: 'source notes is still used by 1 tasks of a removed source: close them first' });
@@ -264,7 +264,7 @@ test('a save that renames the create-in source and omits createIn writes the new
   const { createIn: _omitted, ...rest } = sources.body;
   const renamed = {
     ...rest, sources: [{ ...withRepo, name: 'job' }, notes], renames: { work: 'job' },
-    stages: [{ ...STAGES[0], from: { job: ['Ready'], notes: ['Ready'] }, onStart: { job: [move('In progress')], notes: [move('In progress')] } }],
+    flows: bodyFlows([{ ...STAGES[0], from: { job: ['Ready'], notes: ['Ready'] }, onStart: { job: [move('In progress')], notes: [move('In progress')] } }]),
   };
   assert.equal((await postJson(`${sources.base}/settings`, renamed)).status, 200);
   assert.equal(JSON.parse(await readFile(join(sources.home, CONFIG_FILE), 'utf8')).comb.createIn, 'job');

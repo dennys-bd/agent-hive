@@ -7,7 +7,7 @@ import { createServer, type HiveServer, type ServerDeps } from '../src/server.js
 import { saveState } from '../src/state-store.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, SLEEP_NOTICE_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, type Stage, type Task, type Exec, type SettingsBody } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
-import { LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { withLocal, withWork, savedActivityId } from './fixtures/work.js';
@@ -24,7 +24,7 @@ export interface Reviews { base: string; home: string; server: HiveServer }
 
 /** A first setup's body (#591, #592): one workspace at `repo`, no source, these stages. */
 export const settingsBody = (repo: string, stages: Stage[] = LOCAL_STAGES): SettingsBody => ({
-  prefix: 'HIVE', workspaces: workspacesAt(repo), sources: [], stages, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
+  prefix: 'HIVE', workspaces: workspacesAt(repo), sources: [], flows: bodyFlows(stages), onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
   approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, ...CLOSE_TAB_DEFAULTS, ...SLEEP_NOTICE_DEFAULTS, defaultAgent: 'claude', theme: 'system',
   terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
 });

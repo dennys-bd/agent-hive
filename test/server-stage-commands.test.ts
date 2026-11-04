@@ -10,7 +10,7 @@ import { createStageCommandRunner, OUTPUT_MAX, OUTPUT_THROTTLE_MS, outputTail } 
 import type { Activity, Command, Effect, HiveEvent, SettingsBody, Stage, StageCommands, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { taskDir } from '../src/worktree.js';
-import { AUTH, combConfig, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, plainArgs, SOURCE, tempHive, WORKSPACE } from './fakes.js';
+import { bodyFlows, AUTH, combConfig, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, plainArgs, SOURCE, tempHive, WORKSPACE } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // A commands stage's commands on the server (#755): the runner alone over fakes, then end to end through a server over fake ptys.
@@ -156,7 +156,7 @@ const CHECKS: Stage = { name: 'checks', from: { [SOURCE]: ['Ready'] }, action: '
 const REVIEW: Stage = { name: 'review', from: { [SOURCE]: ['In review'] } };
 const TASK_ID = 'board:I1';
 const BODY: Omit<SettingsBody, 'workspaces'> = {
-  prefix: 'HIVE', auth: AUTH, sources: [{ ...GITHUB_ENTRY, switchAt: 'checks' }], stages: [CHECKS, REVIEW], commands: [TEST],
+  prefix: 'HIVE', auth: AUTH, sources: [{ ...GITHUB_ENTRY, switchAt: 'checks' }], flows: bodyFlows([CHECKS, REVIEW]), commands: [TEST],
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} },
 };
 const postJson = (url: string, body?: unknown): Promise<Response> =>

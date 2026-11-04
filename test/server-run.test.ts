@@ -9,7 +9,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import { ptyCommand } from '../src/spawn.js';
 import type { Exec, OpenResult, Command, SettingsBody, WorkspaceFork } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, WORKSPACE, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, tempHive } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { workId, workPath } from './fixtures/work.js';
@@ -20,7 +20,7 @@ const FRONT: Command = { name: 'Run Frontend', impls: [{ workspace: WORKSPACE, c
 const TASK = 'board:I1'; // the fake board's task
 // No worker: the fake source's task waits in fila, so every run below is a terminal the test opened.
 const BODY: Omit<SettingsBody, 'workspaces' | 'commands'> = {
-  prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], stages: STAGES,
+  prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], flows: bodyFlows(STAGES),
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} },
 };
 const noGit: Exec = async () => ({ stdout: '' }); // the worktree step's git answers nothing: the task still gets its path

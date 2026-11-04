@@ -20,7 +20,6 @@ import { deletionMessage, deletionMoves, type StageMove } from '@/lib/settings-s
 import { isRecording } from '@/lib/shortcut-bindings';
 import { SETTINGS_CHROME } from '@/lib/window-chrome';
 import type { FilterOptions, GithubAuthStatus, ProjectSummary, SettingsInfo, SettingsResult, State } from '../../../types';
-import { MAIN_FLOW } from '../../../flows.js';
 
 interface SettingsProps { info: SettingsInfo; state?: State; newSource?: NewSource; view?: SettingsView; onSaved(result: SettingsResult): Promise<void>; onCancel?(): void }
 
@@ -185,7 +184,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
     }
     const body = toSettingsBody(draft);
     // #861: a deleted stage holding tasks asks first, naming how many go where; Cancel keeps the form as it is
-    const pending = confirmed ? [] : deletionMoves(draft.stages, info.config?.comb.flows ?? [], [{ name: MAIN_FLOW, stages: body.stages ?? [], transitions: [] }], state?.tasks ?? []);
+    const pending = confirmed ? [] : deletionMoves(draft.stages, info.config?.comb.flows ?? [], body.flows ?? [], state?.tasks ?? []);
     if (pending.length > 0) { setMoves(pending); return; }
     setSaving(true);
     setSaveError(undefined);

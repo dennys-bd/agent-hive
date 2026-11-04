@@ -6,13 +6,14 @@ import { sourceColumnsUrl, draftFrom, emptySource, emptyStage, emptyWorkspace, f
 import { withMemoryCap } from '../src/ui/lib/memory-cap.js';
 import { withEntry } from '../src/ui/lib/settings-stages.js';
 import { emptyRule, type RuleDraft } from '../src/ui/lib/settings-rules.js';
-import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRule, Command, SettingsInfo } from '../src/types.js';
+import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRule, Command, SettingsInfo, SettingsBody } from '../src/types.js';
+import { flatten } from '../src/flows.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, DELETE_ACTIVITY_DEFAULTS, CONSOLE_LINES_DEFAULT, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { FIXED } from './fakes.js';
 import { mainFlows } from './fixtures/main-flow.js';
-import { savedFlows } from '../src/settings-save.js';
 
 // #30: not a new source's keys, so draftFrom visibly reads them; switchAt on STAGES' second stage
+const sentOf = (body: SettingsBody) => flatten(body.flows ?? []);
 const EPICS = { epics: 'hide', epicFollows: 'ahead', switchAt: 'dev' } as const;
 
 // A saved run command (#300), two env entries so the draft's lines keep their order
@@ -125,7 +126,7 @@ test('the onStart drafts hold the actions as written, keyed by row, and toSettin
   assert.deepEqual(draft.stages[1].onStart, { [work.id]: [{ type: 'move', column: 'In progress' }] });
   assert.deepEqual(draft.transitions[1].sources, { [work.id]: [{ type: 'move', column: 'In review' }] });
   const body = toSettingsBody(draft);
-  assert.deepEqual([body.stages?.[1].onStart, body.transitions?.[1].sources], [{ work: [{ type: 'move', column: 'In progress' }] }, { work: [{ type: 'move', column: 'In review' }] }]);
+  assert.deepEqual([sentOf(body).stages[1].onStart, sentOf(body).transitions[1].sources], [{ work: [{ type: 'move', column: 'In progress' }] }, { work: [{ type: 'move', column: 'In review' }] }]);
   const map = { a: 1, b: 2 };
   assert.deepEqual([withEntry(map, 'a', 3), withEntry(map, 'a', undefined), withEntry(map, 'c', 4)], [{ a: 3, b: 2 }, { b: 2 }, { a: 1, b: 2, c: 4 }]);
   assert.deepEqual(map, { a: 1, b: 2 }, 'the input is not mutated');
@@ -175,7 +176,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
     auth: { github: 'api' },
     sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
     renames: {},
-    stages: STAGES, transitions: TRANSITIONS,
+    flows: CONFIG.comb.flows,
     budget: { maxTokensPerHour: 50_000 }, usageRules: CONFIG.usageRules, language: 'pt', baseBranch: 'develop', onClose: 'quit',
     deleteActivity: { session: true, transcripts: true, nonAutoTasks: true },
     shutdownIdleMinutes: 45,
@@ -204,13 +205,13 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
     shortcuts: { toggleRight: 'CmdOrCtrl+Shift+Y', clear: null },
     consoleLines: 20000,
   });
-  assert.equal('id' in body.stages[0]!, false, 'id is a draft-only field, never sent to the server');
+  assert.equal('id' in sentOf(body).stages[0]!, false, 'id is a draft-only field, never sent to the server');
   assert.equal('id' in body.usageRules![0]!, false, 'id is a draft-only field, never sent to the server');
   const row: SourceDraft = { ...emptySource('hive'), name: 'notes', number: '7' };
   const blank = draftFrom(undefined);
   const bare = toSettingsBody({ ...blank, sources: [row], stages: [{ ...emptyStage(blank.flows[0].id), name: 'fila', from: { [row.id]: ['Ready'] } }], rules: [{ ...emptyRule('day'), percent: '80', kind: 'signal', value: 'red' }] });
   assert.deepEqual(bare.sources, [{ name: 'notes', qualifyId: false, type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }]);
-  assert.deepEqual(bare.stages, [{ name: 'fila', from: { notes: ['Ready'] } }], 'session=new, empty model / onStart / prompt stay absent');
+  assert.deepEqual(sentOf(bare).stages, [{ name: 'fila', from: { notes: ['Ready'] } }], 'session=new, empty model / onStart / prompt stay absent');
   assert.deepEqual(bare.usageRules, [{ source: 'day', percent: 80, signal: 'red' }], 'the consequence list folds back into keys; the absent one stays absent');
   assert.deepEqual(bare.budget, {});
   assert.deepEqual(bare.commands, [], 'always sent, [] included (#511)');
@@ -220,13 +221,13 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
   assert.deepEqual(bare.shortcuts, {}, 'always sent, {} included: every default (#449)');
   assert.deepEqual([bare.closeSessionTab, bare.closeStageTab, bare.closeSessionTabNotice, bare.closeStageTabNotice], ['keep', 'keep', true, true], 'always sent, the new form\'s defaults included (#614)');
   assert.deepEqual(toSettingsBody({ ...draftFrom(undefined), trustedDomains: ['github.com', 'docs.example.com'] }).trustedDomains, ['github.com', 'docs.example.com'], '[] sent as is: the chips already normalize (#513)');
-  assert.equal('id' in bare.stages[0]!, false);
+  assert.equal('id' in sentOf(bare).stages[0]!, false);
   assert.equal('id' in bare.usageRules![0]!, false);
   const cleanup = toSettingsBody({ ...blank, stages: [{ ...emptyStage(blank.flows[0].id), name: 'done', from: {}, action: 'deleteActivity', after: ' 5d ', prompt: '/x', session: 'continue', model: 'opus' }] });
-  assert.deepEqual(cleanup.stages, [{ name: 'done', from: {}, action: 'deleteActivity', after: '5d' }], 'under delete activity the prompt, session and model never leave the form; after is trimmed');
+  assert.deepEqual(sentOf(cleanup).stages, [{ name: 'done', from: {}, action: 'deleteActivity', after: '5d' }], 'under delete activity the prompt, session and model never leave the form; after is trimmed');
   assert.equal(bare.baseBranch, '', 'always sent, empty included: that is how a cleared field goes back to automatic');
   assert.equal(toSettingsBody({ ...draftFrom(undefined), baseBranch: '  release  ' }).baseBranch, 'release');
-  assert.deepEqual(toSettingsBody({ ...blank, stages: [{ ...emptyStage(blank.flows[0].id), name: 'a', from: {}, after: '' }] }).stages?.map((c) => 'after' in c), [false], 'empty after = key absent');
+  assert.deepEqual(sentOf(toSettingsBody({ ...blank, stages: [{ ...emptyStage(blank.flows[0].id), name: 'a', from: {}, after: '' }] })).stages.map((c) => 'after' in c), [false], 'empty after = key absent');
   assert.deepEqual(stageWithoutId(emptyStage('f')), { flow: 'f', name: '', session: 'new', model: '', agent: '', from: {}, onStart: {}, gate: false, verdicts: [], prompt: '', skill: '', specializedAgent: '', action: '', after: '', approval: false, handoff: false, clearSession: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m', reviewers: [], judge: { agent: 'claude', model: '', specializedAgent: '', focus: '' }, threshold: '7', rubric: '' });
   assert.notEqual(emptyStage('f').id, emptyStage('f').id, 'ids are unique per call');
 });
@@ -310,7 +311,7 @@ test('no sources: a Comb saved without sources drafts none, and the body carries
   assert.equal(validateSettings(none), undefined, 'no workspace or path to ask for');
   const body = toSettingsBody(none);
   assert.deepEqual([body.sources, 'auth' in body], [[], false]);
-  assert.deepEqual(body.stages, [
+  assert.deepEqual(sentOf(body).stages, [
     { name: 'spec', from: {}, prompt: '/hive-spec {url}', model: 'opus' },
     { name: 'dev', from: {}, prompt: '/hive-build {url}', session: 'continue' },
     { name: 'done', from: {}, action: 'deleteActivity', after: '5d' },
@@ -394,8 +395,8 @@ test('source rows: a valid name (not "local" or "hive"), unique, a prefix like t
   const stage = { ...emptyStage(valid.flows[0].id), name: 'dev', from: { [work.id]: ['Ready'], [notes.id]: ['todo'] }, onStart: { [notes.id]: [{ type: 'move' as const, column: 'doing' }] } };
   const body = toSettingsBody({ ...valid, sources: [work, notes], stages: [stage] });
   assert.deepEqual(body.sources?.[1], { name: 'notes', qualifyId: true, prefix: 'N', type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'dev' });
-  assert.deepEqual(body.stages?.[0], { name: 'dev', from: { work: ['Ready'], notes: ['todo'] }, onStart: { notes: [{ type: 'move', column: 'doing' }] } }, 'no entry, no key');
-  assert.deepEqual(toSettingsBody({ ...valid, sources: [notes], stages: [stage] }).stages?.[0].from, { notes: ['todo'] }, 'a removed row\'s entries go with it');
+  assert.deepEqual(sentOf(body).stages[0], { name: 'dev', from: { work: ['Ready'], notes: ['todo'] }, onStart: { notes: [{ type: 'move', column: 'doing' }] } }, 'no entry, no key');
+  assert.deepEqual(sentOf(toSettingsBody({ ...valid, sources: [notes], stages: [stage] })).stages[0].from, { notes: ['todo'] }, 'a removed row\'s entries go with it');
   assert.deepEqual(toSettingsBody({ ...valid, sources: [notes] }).auth, { github: 'api' }, 'a GitHub source sends auth');
 });
 
@@ -485,9 +486,9 @@ test('a stage\'s approval (#268): the draft reads it, the body sends approval: t
   const approving: Config = { ...CONFIG, comb: { ...CONFIG.comb, flows: mainFlows([{ ...STAGES[0], approval: true }, ...STAGES.slice(1)], TRANSITIONS) } };
   const draft = draftFrom(info(approving));
   assert.deepEqual(draft.stages.map((c) => c.approval), [true, false, false]);
-  assert.deepEqual(toSettingsBody(draft).stages, approving.comb.flows[0].stages, 'the saved stages come back as they were');
+  assert.deepEqual(sentOf(toSettingsBody(draft)).stages, approving.comb.flows[0].stages, 'the saved stages come back as they were');
   const cleanup = toSettingsBody({ ...draft, stages: [{ ...draft.stages[2], approval: true }] });
-  assert.equal('approval' in cleanup.stages![0], false, 'parseStage would refuse it next to the action');
+  assert.equal('approval' in sentOf(cleanup).stages[0], false, 'parseStage would refuse it next to the action');
 });
 
 test('a renamed source row (#278): savedName holds the loaded name, the body sends renames only for a saved row whose trimmed name changed, and the row\'s from / onStart and the transitions\' sources come out under the new name', () => {
@@ -499,7 +500,7 @@ test('a renamed source row (#278): savedName holds the loaded name, the body sen
   const added: SourceDraft = { ...emptySource(), name: 'notes' };
   const body = toSettingsBody({ ...saved, sources: [{ ...work, name: ' job ' }, added] });
   assert.deepEqual(body.renames, { work: 'job' }, 'trimmed; the new row is no rename');
-  assert.deepEqual(body.stages?.map((c) => [c.from, c.onStart]), [
+  assert.deepEqual(sentOf(body).stages.map((c) => [c.from, c.onStart]), [
     [{ job: ['Backlog'] }, undefined],
     [{ job: ['Ready'] }, { job: [{ type: 'move', column: 'In progress' }] }],
     [{ job: ['Done'] }, undefined],
@@ -567,10 +568,10 @@ test('a stage\'s maxWorkers and a rule\'s stage round-trip through the draft: an
   assert.deepEqual(draft.stages.map((s) => s.maxWorkers), ['', '0', '']);
   assert.deepEqual(draft.rules.map((r) => r.stage), ['', '', '', 'dev']);
   const body = toSettingsBody(draft);
-  assert.deepEqual([body.stages, body.usageRules], [capped.comb.flows[0].stages, capped.usageRules], 'an untouched form saves what it loaded');
+  assert.deepEqual([sentOf(body).stages, body.usageRules], [capped.comb.flows[0].stages, capped.usageRules], 'an untouched form saves what it loaded');
   assert.equal('stage' in body.usageRules![0]!, false, 'a global rule sends no stage key');
   const cleared = toSettingsBody({ ...draft, stages: draft.stages.map((s) => ({ ...s, maxWorkers: ' ' })) });
-  assert.equal(cleared.stages?.some((s) => 'maxWorkers' in s), false, 'an empty field is no cap: no key');
+  assert.equal(sentOf(cleared).stages.some((s) => 'maxWorkers' in s), false, 'an empty field is no cap: no key');
 });
 
 test('validateSettings refuses a stage cap that is not an integer ≥ 0, a rule naming no stage of the form and a stage rule with a signal, on their tabs (#475)', () => {
@@ -648,7 +649,7 @@ test('the form loads the saved transitions by stage id and sends them back; a br
   const saved: Config = { ...CONFIG, comb: { ...CONFIG.comb, flows: mainFlows([{ name: 'Build', from: {}, prompt: '/b' }], [{ from: 'Build', to: 'end', when: 'done' }]) } };
   const draft = draftFrom(info(saved));
   assert.equal(draft.transitions[0].from, draft.stages[0].id);
-  assert.deepEqual(toSettingsBody(draft).transitions, [{ from: 'Build', to: 'end', when: 'done' }]);
+  assert.deepEqual(sentOf(toSettingsBody(draft)).transitions, [{ from: 'Build', to: 'end', when: 'done' }]);
   const ends = { ...draft.transitions[0], to: 'gone' };
   const name = (to: string): string => `Build → ${to} · ${t('flow.trigger.done')}`;
   assert.deepEqual(validateSettings({ ...draft, transitions: [ends] }), { section: 'flow', message: t('settings.transitions.error.ends', { name: name(t('settings.stages.unnamed')), stage: 'Build' }), transition: ends.id });
@@ -716,17 +717,4 @@ test('validateSettings refuses a skill stage with no skill, on flow (#710)', () 
   const skill = { ...valid.stages[1], action: 'skill' as const, skill: '' };
   assert.deepEqual(validateSettings({ ...valid, stages: [valid.stages[0], skill] }), { section: 'flow', message: t('settings.stages.error.skill', { n: 2 }) });
   assert.equal(validateSettings({ ...valid, stages: [valid.stages[0], { ...skill, skill: 'new-plan' }] }), undefined);
-});
-
-// #564 decision 15: with several flows the form still sends the flat pair, and an untouched form must give back exactly the saved one,
-// or every save of any other setting would be refused
-test('an untouched form over several flows sends the pair savedFlows keeps', () => {
-  const flows = [
-    { name: 'main', stages: [STAGES[0], STAGES[1]], transitions: [TRANSITIONS[0], { from: 'dev', to: 'end', when: 'done' } as Transition] },
-    { name: 'bug', stages: [STAGES[2]], transitions: [TRANSITIONS[2]] },
-  ];
-  const config: Config = { ...CONFIG, comb: { ...CONFIG.comb, flows } };
-  const body = toSettingsBody(draftFrom(info(config)));
-  assert.ok(body.stages !== undefined && body.transitions !== undefined);
-  assert.deepEqual(savedFlows(flows, { stages: body.stages, transitions: body.transitions }), flows);
 });

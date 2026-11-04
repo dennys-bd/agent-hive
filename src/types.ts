@@ -1742,10 +1742,9 @@ export interface SettingsBody {
   sources?: SourceConfig[];
   /** The form always sends it; an API caller that omits it keeps the current one. A first setup without it is a parse error naming auth.github. */
   auth?: AuthConfig;
-  /** The form always sends it; an API caller that omits it keeps the current stages (#286: was columns). */
-  stages?: Stage[];
-  /** comb.transitions (#134). The form always sends it; a caller that sends stages without it gets them from those stages, one that sends neither keeps the saved ones. */
-  transitions?: Transition[];
+  /** comb.flows (#565): every flow with its stages and transitions. The form always sends it; an API caller that omits it keeps the saved flows.
+   * A flow sent without transitions gets them from its stages, as a file from before #134 does. */
+  flows?: Flow[];
   /** The form always sends it (empty field = key absent); an API caller that omits it keeps the current budget. */
   budget?: Budget;
   /** The form always sends it (empty table = []); an API caller that omits it keeps the current rules. */

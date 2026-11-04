@@ -10,7 +10,7 @@ import { worktreePath } from '../src/worktree.js';
 import { activityOf } from '../src/activities.js';
 import { slugFor } from '../src/tasks.js';
 import { readyOn, workPath } from './fixtures/work.js';
-import { AUTH, STAGES, fakeSpawn, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
+import { AUTH, STAGES, bodyFlows, fakeSpawn, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // Several workspaces per Comb (#179): two git repos, hive and site, behind one GitHub-shaped source whose listing a test fills.
@@ -67,7 +67,7 @@ async function startTwo(t: TestContext, source: Record<string, unknown> = {}, ma
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   const body = {
-    prefix: 'HIVE', auth: AUTH, sources: [{ ...GITHUB_ENTRY, taskProps: ROUTED, ...source }], stages, onClose: 'menuBar',
+    prefix: 'HIVE', auth: AUTH, sources: [{ ...GITHUB_ENTRY, taskProps: ROUTED, ...source }], flows: bodyFlows(stages), onClose: 'menuBar',
     deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [], workspaces: [hive, site],
   } as SettingsBody;
   assert.equal((await postJson(`${base}/settings`, body)).status, 200);

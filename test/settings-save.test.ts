@@ -1,12 +1,13 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, savedFlows, SEVERAL_FLOWS, stageRenamesOf, strandedTasks } from '../src/settings-save.js';
+import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, configFrom, stageRenamesOf, strandedTasks } from '../src/settings-save.js';
 import type { Flow, SourceConfig, Stage, Task } from '../src/types.js';
-import { GITHUB_ENTRY, workspacesAt } from './fakes.js';
+import { CONFIG_FILE } from '../src/config.js';
+import { combConfig, GITHUB_ENTRY, workspacesAt } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
 const SAVED: Stage[] = [{ name: 'spec', from: {} }, { name: 'dev', from: {} }, { name: 'qa', from: {} }];
@@ -48,20 +49,19 @@ const TWO: Flow[] = [
   { name: 'bug', stages: [{ name: 'fix', from: {} }], transitions: [] },
 ];
 
-test('with two flows, an unchanged flat pair keeps both flows and a body without stages keeps them too (#564)', () => {
-  const pair = { stages: [{ name: 'spec', from: {} }, { name: 'fix', from: {}, prompt: undefined }], transitions: [{ from: 'spec', to: 'end', when: 'done' }] };
-  assert.equal(savedFlows(TWO, pair), TWO, 'the same flows, untouched');
-  assert.equal(savedFlows(TWO, undefined), TWO);
-});
+const savedHome = async (t: TestContext, flows: Flow[]): Promise<string> => {
+  const home = await tempDir(t, 'home-');
+  await writeFile(join(home, CONFIG_FILE), JSON.stringify(combConfig({ flows })));
+  return home;
+};
 
-test('with two flows, a changed flat pair is refused (#564)', () => {
-  assert.throws(() => savedFlows(TWO, { stages: [{ name: 'spec', from: {} }], transitions: [] }), { message: SEVERAL_FLOWS });
-});
-
-test('with one flow, or none saved, the pair replaces it and keeps its name (#564)', () => {
-  const pair = { stages: [{ name: 'dev', from: {} }], transitions: [] };
-  assert.deepEqual(savedFlows([{ ...TWO[0] }], pair), [{ name: 'feature', ...pair }]);
-  assert.deepEqual(savedFlows(undefined, pair), [{ name: 'main', ...pair }], 'a first setup gets main');
+test('configFrom writes the flows the body sends, a flow without transitions getting them from its stages; no flows keeps the saved ones (#565)', async (t) => {
+  const home = await savedHome(t, TWO);
+  assert.deepEqual((await configFrom(home, { prefix: 'HIVE' })).comb.flows, TWO, 'an API caller that omits flows');
+  const sent: Flow[] = [{ ...TWO[1], name: 'hotfix' }, TWO[0]];
+  assert.deepEqual((await configFrom(home, { prefix: 'HIVE', flows: sent })).comb.flows, sent);
+  const bare = [{ name: 'main', stages: [{ name: 'dev', from: {} }] }] as unknown as Flow[]; // an API caller's flow with no transitions key
+  assert.deepEqual((await configFrom(home, { prefix: 'HIVE', flows: bare })).comb.flows, [{ name: 'main', stages: [{ name: 'dev', from: {} }], transitions: [{ from: 'dev', to: 'end', when: 'done' }] }]);
 });
 
 const inStage = (stage: string, n = 1): Task => ({ item: { itemId: `board:${n}`, id: String(n), title: 'T', body: '', url: '', source: 'board' }, stage, boardColumn: 'Ready', auto: true });

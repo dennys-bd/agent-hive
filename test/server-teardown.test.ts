@@ -9,7 +9,7 @@ import type { Exec, SettingsBody, Stage, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
 import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
-import { AUTH, fakeLog, fakeSourceFactory, fakeSpawn, GITHUB_ENTRY, STAGES, tempHive, workspacesAt } from './fakes.js';
+import { bodyFlows, AUTH, fakeLog, fakeSourceFactory, fakeSpawn, GITHUB_ENTRY, STAGES, tempHive, workspacesAt } from './fakes.js';
 import { readyOn, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -21,7 +21,7 @@ const ORPHAN_SLUG = 'hive-9-gone';
 const BRANCHES: [string, string][] = [[SLUG, 'hive/1-from-ready'], [LOCAL_SLUG, 'hive/HIVE-1-local'], [ORPHAN_SLUG, 'hive/9-gone']];
 const FAILED = 'teardown failed at step 1 of 1 (line 1, RUN exit 3): the command exited with code 3 and printed nothing; if the line sends its errors to /dev/null, remove that to see why';
 const BODY: Omit<SettingsBody, 'workspaces'> = {
-  prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], stages: STAGES,
+  prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], flows: bodyFlows(STAGES),
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
   showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
 };
@@ -115,7 +115,7 @@ test('excluir task… on a local task whose teardown fails answers 409 with the 
 
 test('the delete activity stage\'s teardown failure is deleteActivityFailed: the task stays in the stage with the message (#654)', async (t) => {
   const stages: Stage[] = [STAGES[0], { name: 'done', from: { board: ['In review'] }, action: 'deleteActivity' }, { name: 'archive', from: { board: ['Done'] } }];
-  const s = await start(t, 'RUN exit 3', { stages }, 1); // I1 runs in fila, in a worktree the spawn made
+  const s = await start(t, 'RUN exit 3', { flows: bodyFlows(stages) }, 1); // I1 runs in fila, in a worktree the spawn made
   const ptyId = s.server.getState()!.workers[0].runId!;
   await hookEvent(s.base, ptyId, { hook_event_name: 'SessionStart', cwd: s.repo });
   await s.server.dispatch({ type: 'done', ptyId });

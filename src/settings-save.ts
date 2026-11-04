@@ -1,8 +1,7 @@
 import { realpath } from 'node:fs/promises';
-import { isDeepStrictEqual } from 'node:util';
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import { migrateTransitions } from './config-migrate.js';
-import { flatten, flowOf, MAIN_FLOW } from './flows.js';
+import { flatten, flowOf } from './flows.js';
 import { destinationOf } from './stage-delete.js';
 import { DEFAULT_CONFIG, taskWorkspace, loadConfigIfPresent, parseConfig } from './config.js';
 import type { Refusal } from './server-tasks.js';
@@ -21,37 +20,25 @@ const isNameMap = (raw: unknown): raw is Record<string, string> =>
 const renamedCreateIn = (createIn: string | undefined, renames: unknown): string | undefined =>
   (createIn !== undefined && isNameMap(renames) && Object.hasOwn(renames, createIn) ? renames[createIn] : createIn);
 
-/** What POST /settings sends of the flow until #565: the flat pair, already through migrateTransitions. */
-export interface SentPair { stages: unknown; transitions: unknown }
-export const SEVERAL_FLOWS = 'Settings edits one flow only: edit several flows in hive.config.json until Settings supports them (#565)';
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const plain = (value: unknown): unknown => JSON.parse(JSON.stringify(value)); // a key the form writes as undefined is no change
-
-/** The flows a save writes (decision 15): none sent keeps the saved ones; one saved flow (or none) takes the pair under its name; several
- * keep their flows when the pair is their flattened one, and a changed pair is refused. */
-export function savedFlows(current: readonly Flow[] | undefined, sent: SentPair | undefined): unknown {
-  if (sent === undefined) return current;
-  if (current === undefined || current.length <= 1) return [{ name: current?.[0]?.name ?? MAIN_FLOW, ...sent }];
-  if (isDeepStrictEqual(plain(sent), plain(flatten(current)))) return current;
-  throw new Error(SEVERAL_FLOWS); // configFrom's caller answers every throw as a 400
-}
+// #134 per flow (#565): a flow sent without transitions gets them from its stages, and onFinish leaves them; a value that is not a list of flows is the parser's to name
+const migratedFlows = (flows: unknown): unknown =>
+  (Array.isArray(flows) ? flows.map((f: unknown) => (isRecord(f) ? { ...f, ...(migrateTransitions({ comb: { stages: f.stages, transitions: f.transitions } }) as { comb: object }).comb } : f)) : flows);
 
 /** The body over the saved file: a key the body omits keeps the saved value (the form always sends the ones it owns). A file that does
  * not parse (one from before the Comb, or from before workspace names) is no current config: the body is all there is. */
 export async function configFrom(home: string, body: Partial<SettingsBody>): Promise<Config> {
   const current = await loadConfigIfPresent(home).catch(() => undefined);
   const saved = flatten(current?.comb.flows ?? []);
-  // #134: a body that sends stages without transitions (an API caller) gets them from those stages, as a file from before #134 does; one that
-  // sends neither keeps the saved flows (#564)
-  const sent = body.stages === undefined ? undefined : (migrateTransitions({ comb: { stages: body.stages, transitions: body.transitions } }) as { comb: SentPair }).comb;
-  // #861: the stage renames, checked against the saved and the sent stages; what the saved file names by a stage follows them
-  const stageRenames = stageRenamesOf(body.stageRenames, saved.stages, body.stages ?? saved.stages);
+  // #861: the stage renames, checked against the saved and the sent stages (#565: every sent flow's); what the saved file names by a stage follows them
+  const stageRenames = stageRenamesOf(body.stageRenames, saved.stages, Array.isArray(body.flows) ? flatten(body.flows).stages : saved.stages);
   return parseConfig({
     comb: {
       prefix: body.prefix,
       workspaces: body.workspaces ?? current?.comb.workspaces, // the form's workspaces list (#179)
       sources: body.sources ?? renamedSwitchAt(current?.comb.sources, stageRenames), // the form's sources list (#180); [] = no source
-      flows: savedFlows(current?.comb.flows, sent),
+      flows: body.flows === undefined ? current?.comb.flows : migratedFlows(body.flows), // #565: the form always sends it; an API caller that omits it keeps the saved flows
       commands: body.commands ?? current?.comb.commands, // the form always sends it (#511), [] included
       hiveSource: body.hiveSource ?? current?.comb.hiveSource, // #846
       createIn: body.createIn ?? renamedCreateIn(current?.comb.createIn, body.renames),

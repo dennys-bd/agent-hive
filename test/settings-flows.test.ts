@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parseConfig } from '../src/config.js';
 import type { Flow, SettingsInfo } from '../src/types.js';
 import { t } from '../src/ui/i18n.js';
-import { draftFrom, emptyStage, validateSettings } from '../src/ui/lib/settings-form.js';
+import { draftFrom, emptyStage, toSettingsBody, validateSettings } from '../src/ui/lib/settings-form.js';
 import { scopedFlow, withFlowEdit, withNewFlow, withoutFlow } from '../src/ui/lib/settings-flows.js';
 import { combConfig } from './fakes.js';
 
@@ -53,4 +53,10 @@ test('validateSettings refuses a blank or duplicate flow name, a flow with no st
   assert.deepEqual(validateSettings(emptied), { section: 'flow', message: t('settings.flows.error.empty', { flow: 'bug' }) });
   const clash = draft.stages.map((s) => (s.name === 'triage' ? { ...s, name: ' spec' } : s));
   assert.deepEqual(validateSettings({ ...draft, stages: clash }), { section: 'flow', message: t('settings.stages.error.otherFlow', { flow: 'feature' }), stage: draft.stages[2].id });
+});
+
+test('an untouched form sends every flow back as saved, each transition under its from stage\'s flow, and no flat pair (#565)', () => {
+  const body = toSettingsBody(draftFrom(info(FLOWS)));
+  assert.deepEqual(body.flows, FLOWS);
+  assert.equal('stages' in body || 'transitions' in body, false);
 });

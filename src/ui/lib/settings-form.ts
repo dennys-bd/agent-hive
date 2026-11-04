@@ -20,9 +20,9 @@ import { type CommandDraft, commandDraft, commandFrom, commandsProblem, type Env
 import { agentArgsDraft, agentArgsFrom } from './settings-agent-args.js';
 import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem } from './settings-agents.js';
 import { type RuleDraft, renamedRuleDrafts, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
-import { isEmptyOrNonNegativeInt, limitFrom, numberField, optional, type StageDraft, stageDraft, stageFrom, stageRenamesFrom } from './settings-stages.js';
-import { type TransitionDraft, transitionDraft, transitionFrom } from './settings-transitions.js';
-import { type FlowDraft, flowDrafts, flowsProblem, stagesProblem, transitionsDraftProblem } from './settings-flows.js';
+import { isEmptyOrNonNegativeInt, limitFrom, numberField, optional, type StageDraft, stageDraft, stageRenamesFrom } from './settings-stages.js';
+import { type TransitionDraft, transitionDraft } from './settings-transitions.js';
+import { type FlowDraft, flowDrafts, flowsFrom, flowsProblem, stagesProblem, transitionsDraftProblem } from './settings-flows.js';
 import { flatten } from '../../flows.js';
 
 export { emptyStage, type StageDraft } from './settings-stages.js';
@@ -318,8 +318,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     renames: renamesFrom(draft.sources), // always sent (#278), {} included
     // only the GitHub adapter logs in: with no GitHub source no auth is sent, and a saved one stays as the server has it
     ...(draft.sources.some((b) => b.type === 'github') ? { auth: { github: draft.auth } } : {}),
-    stages: draft.stages.map((c) => stageFrom(c, draft.sources)), ...(Object.keys(stageRenames).length === 0 ? {} : { stageRenames }),
-    transitions: draft.transitions.map((d) => transitionFrom(d, draft.stages, draft.sources)), // #134: always sent, [] included
+    flows: flowsFrom(draft), ...(Object.keys(stageRenames).length === 0 ? {} : { stageRenames }), // #565: always sent, every flow
     budget: { ...(hour ? { maxTokensPerHour: hour } : {}), ...(day ? { maxTokensPerDay: day } : {}) },
     usageRules: rulesFrom(renamedRuleDrafts(draft.rules, stageRenames), draft.defaultAgent), language: draft.language, ...optional('branch', draft.branch),
     // always sent, '' included: optional() would omit the key and saveSettings would keep the old branch, so clearing the field could never work
