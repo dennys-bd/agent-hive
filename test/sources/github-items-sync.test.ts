@@ -70,6 +70,26 @@ test('list answers the listing read back from the model, each node with its stor
   assert.deepEqual(read.relations.get('PVTI_1'), ISSUE);
 });
 
+test('an empty full read over a stored listing with nodes stores nothing and answers the stored listing; the next list reads in full again though the probe has not moved (#568)', async () => {
+  let fullReads = 0;
+  const answers: GhItemNode[][] = [[node(1), node(2)]];
+  const { sync, db } = await harness(['S1', 'S2'], { listNodes: async () => { fullReads += 1; return { nodes: answers.shift() ?? [], fields: [] }; } });
+  await sync.list(KEY); // S1: the first full read stores 1 and 2
+  const ids = async (): Promise<string[]> => (await sync.list(KEY)).nodes.map((n) => n.id);
+  assert.deepEqual(await ids(), ['PVTI_1', 'PVTI_2'], 'S2 moved: the full read came back empty, the stored listing answers');
+  assert.deepEqual(await ids(), ['PVTI_1', 'PVTI_2'], 'S2 again: no stamp was kept, so it reads in full again');
+  assert.equal(fullReads, 3);
+  assert.deepEqual(readListing(db, KEY).nodes.map((n) => n.id), ['PVTI_1', 'PVTI_2'], 'nothing stored over it');
+});
+
+test('an empty full read with nothing stored stores the empty listing as today: the next list only probes (#568)', async () => {
+  let fullReads = 0;
+  const { sync } = await harness(['S1'], { listNodes: async () => { fullReads += 1; return { nodes: [], fields: [] }; } });
+  assert.deepEqual((await sync.list(KEY)).nodes, []);
+  await sync.list(KEY);
+  assert.equal(fullReads, 1);
+});
+
 test('a failed relations query stores nothing and rejects the poll; the next poll reads in full again (#190)', async () => {
   let isRefused = true;
   const fetchRelations = async (tasks: SourceItem[]): Promise<Map<string, GhIssueRelations | null>> => {
