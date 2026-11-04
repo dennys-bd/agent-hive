@@ -266,7 +266,7 @@ export function MainDock(props: MainDockProps) {
   const openStageOutput: OpenStageOutput = useCallback((taskId, channel, run) => openConsoleTab(taskId, channel, true, run), [openConsoleTab]);
   const layouts = useCenterLayouts(activities, current, request); // the picked activity's tabs and splits (#458)
   useRememberFocus(current, shownRun(layouts.layout)); // #113: the design pane's recipient, the last session in focus
-  const openActivityFile = useFileOpener(activities, openFile); // a click on a file: its editor pane tab (#717)
+  const openActivityFile = useFileOpener(activities, openFile, { focusOut: true }); // a click on a file: its editor pane tab (#717), or its window (#554)
   // A run the user opened (#457): a task's becomes its activity, a workspace's its local activity (#590), the center showing it
   const openUserRun: OpenRun = useCallback((tab) => {
     const key = tab.task ?? (tab.project === undefined ? undefined : localKey(tab.project));
