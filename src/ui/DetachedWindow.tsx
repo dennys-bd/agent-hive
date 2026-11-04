@@ -1,7 +1,7 @@
 // A detached window's page (#553): one activity's center in a window of its own, the main window's per-viewer habits read and never written
 // (main.tsx turns view-state writes off). The setup is App's (app-setup.tsx) minus what acts on the main window's frame: no Settings, no
 // reviewer, no view or panel keys, no search, no dock.
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { activityPane } from '@/components/PaneHeader';
 import { ActivityCenter } from '@/components/ActivityCenter';
@@ -48,6 +48,20 @@ function useWindowOpeners(activities: Activity[], key: string, request: (tab?: C
   return { openRun, openStarted, openDiff, openFile, openConsole, openStageOutput };
 }
 
+// Spec decisions 13-15 through one close (decision 5 of the plan): the window closes once its layout held a tab and holds none, a dockAll that
+// docked everything included, or once a loaded State no longer lists its activity, without docking (its runs ended, its files have nowhere to
+// land; beforeunload guards a dirty buffer, #552). window:closing only docks: a dock refused leaves tabs, so the window stays
+function useWindowClose(isGone: boolean, { isEmpty, dockAll }: Pick<DetachedLayout, 'isEmpty' | 'dockAll'>): void {
+  useEffect(() => {
+    if (isGone || isEmpty) window.hive?.closeWindow().catch((err: unknown) => console.error('detached window: closeWindow refused', err));
+  }, [isGone, isEmpty]);
+  const latest = useRef(dockAll);
+  useEffect(() => { latest.current = dockAll; });
+  useEffect(() => {
+    window.hive?.onClosing(() => { void latest.current(); });
+  }, []);
+}
+
 interface WindowPageProps { state: State; activityKey: string; fontFamily: string }
 
 // The center the page is (spec decision 5): ActivityCenter whole over the window's layout, with the design layer over its slots (#533) and
@@ -56,6 +70,7 @@ function WindowPage({ state, activityKey: key, fontFamily }: WindowPageProps) {
   const activities = activitiesOf(state);
   const activity = activities.find((a) => activityKey(a) === key);
   const layouts: DetachedLayout = useDetachedLayout(activities, activity);
+  useWindowClose(activity === undefined, layouts); // WindowPage only renders with a loaded State, so undefined means the State lost it
   const channels = useConsoleChannels(consoleRunsOf(state));
   const openers = useWindowOpeners(activities, key, layouts.request, channels);
   const title = activity && windowTitle(activity);
