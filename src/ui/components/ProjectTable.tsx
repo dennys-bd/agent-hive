@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import type { ProjectItem, ProjectView, SourceConfig, State, Task } from '../../types';
 import { ColumnScroll, HeaderHandles, useColumnWidths } from '@/components/ColumnDividers';
-import { FlowHeader, type SourceTabs } from '@/components/FlowHeader';
+import { FlowHeader } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { ProjectColumnsMenu } from '@/components/ProjectColumnsMenu';
 import { ProjectGroupMenu, ProjectGroupRow } from '@/components/ProjectGroupMenu';
@@ -170,12 +170,12 @@ function groupingOf(rows: ProjectItem[], view: ProjectView | undefined, { prefs,
   return { groups: groupItems(rows, option, view), collapsed, onToggle };
 }
 
-export interface ProjectTableProps { state: State; source: SourceConfig; tabs: SourceTabs; onGoTo(taskId: string): void; onOpenIssue(item: ProjectItem, task?: Task): void }
+export interface ProjectTableProps { state: State; source: SourceConfig; onGoTo(taskId: string): void; onOpenIssue(item: ProjectItem, task?: Task): void }
 
 /** A source's native view (#756, handoff 01, 01b): every issue of its project, unfiltered, as a table of issue, the visible columns and the
  * action. Read on opening and on atualizar, never polled; the search lives and dies with the tab, the grouping, columns, sort and widths
  * are saved per source. A failed read with nothing cached leaves its reason in place of the table. */
-export function ProjectTable({ state, source, tabs, onGoTo, onOpenIssue }: ProjectTableProps) {
+export function ProjectTable({ state, source, onGoTo, onOpenIssue }: ProjectTableProps) {
   const { project, reload, replaceRow } = useProject(source.name);
   const [search, setSearch] = useState('');
   const isShown = useIsFlowShown();
@@ -195,7 +195,7 @@ export function ProjectTable({ state, source, tabs, onGoTo, onOpenIssue }: Proje
   const { widths, onDrag, onResize } = useColumnWidths(prefs.widths, (next) => update({ widths: next }));
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} source={source.name} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} onRefresh={() => reload({ fresh: true })} />
+      <FlowHeader state={state} mode={{ kind: 'source', source }} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} onRefresh={() => reload({ fresh: true })} />
       <Subbar project={project} linked={linked}>
         <ProjectGroupMenu options={view === undefined ? [] : groupOptions(view)} groupBy={prefs.groupBy} onChange={(groupBy) => update({ groupBy })} />
         <ProjectColumnsMenu columns={columns} visible={prefs.columns} onChange={(next) => update({ columns: next })} />

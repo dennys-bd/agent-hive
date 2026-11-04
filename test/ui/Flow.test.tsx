@@ -6,7 +6,7 @@ import { FlowShownContext } from '@/components/MainDock';
 import { setLanguage, t } from '@/i18n';
 import { MARGIN } from '@/lib/flow-layout';
 import { readView, resetViewState } from '@/lib/view-state';
-import type { ActivityRecord, BaseOptions, Item, Task, Session, Stage, Transition, Worker, State } from '../../src/types';
+import type { ActivityRecord, BaseOptions, Item, Session, Stage, Transition, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
@@ -779,30 +779,6 @@ test('a task running its worktree setup says so from task.setup: iniciando with 
   expect(screen.queryByText(/preparando|iniciando/)).not.toBeInTheDocument();
 });
 
-test('a picked source shows only its tasks and counts them in the stage header; none picked shows every source (redesign 09)', () => {
-  const onSource = (id: string, board?: string): Task => { const c = task(id, 'dev'); return { ...c, item: { ...c.item, source: board } }; };
-  const tasks = [onSource('1', 'roadmap'), onSource('2', 'notes'), onSource('3')];
-  const { rerender } = render(<Flow state={state(tasks, [])} flow={firstFlow(state(tasks, []))} source="roadmap" />);
-  expect(titles()).toEqual(['#1 Task 1']);
-  expect(within(header('dev')).getByText('1')).toBeInTheDocument();
-  rerender(<Flow state={state(tasks, [])} flow={firstFlow(state(tasks, []))} />);
-  expect(titles()).toEqual(['#1 Task 1', '#2 Task 2', '#3 Task 3']);
-});
-
-test('with hive picked, only the tasks with no source show, in every stage and its count; the header reads hive and shows no last poll (#665)', () => {
-  const onSource = (id: string, stage: string, board?: string): Task => { const c = task(id, stage); return { ...c, item: { ...c.item, source: board } }; };
-  const tasks = [onSource('1', 'dev', 'roadmap'), onSource('2', 'dev'), onSource('3', 'review'), onSource('4', 'review', 'notes')];
-  // one workspace other than hive, so its chip never reads as the pick's label
-  const picked = { ...state(tasks, []), workspaces: ['site'], syncs: { roadmap: { polledAt: '2026-10-02T09:28:00.000Z' } } };
-  render(<Flow state={picked} flow={firstFlow(picked)} source="hive" />);
-  expect(titles()).toEqual(['#2 Task 2', '#3 Task 3']);
-  expect(within(header('dev')).getByText('1')).toBeInTheDocument();
-  expect(within(header('review')).getByText('1')).toBeInTheDocument();
-  const flowHeader = screen.getByRole('region', { name: 'tarefas' });
-  expect(within(flowHeader).getByText('hive')).toBeInTheDocument();
-  expect(within(flowHeader).queryByText(/^atualizado/)).not.toBeInTheDocument();
-});
-
 test('a capped stage\'s node shows n/cap after its count; over the cap the number reads in foreground and its title says how many were started by hand (#727)', () => {
   const s = state([task('1', 'dev'), task('2', 'dev')], [worker('w1', 'I1'), worker('w2', 'I2')]);
   const { rerender } = render(<Flow state={s} flow={firstFlow(s)} stageCaps={{ dev: 1 }} />);
@@ -924,7 +900,7 @@ test('focar › on #872 fades every card but #872, #875 and #876, keeps the node
   expect(screen.getByText('3 tarefas · o resto esmaecido')).toHaveClass('text-muted-foreground');
 });
 
-test('#870 in the trail widens the focus to the whole tree; × leaves it; a new source drops it for good; a focused task that leaves the list takes the trail with it (#35)', async () => {
+test('#870 in the trail widens the focus to the whole tree; × leaves it; a switch of flow drops it for good; a focused task that leaves the list takes the trail with it (#35)', async () => {
   resetViewState();
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
@@ -938,10 +914,10 @@ test('#870 in the trail widens the focus to the whole tree; × leaves it; a new 
   expect(trail()).not.toBeInTheDocument();
   expect(faded()).toEqual([]);
   await user.click(focusOn('872'));
-  rerender(<Flow state={s} flow={firstFlow(s)} source="hive" />);
+  rerender(<Flow state={s} flow={{ name: 'other', stages: firstFlow(s).stages, transitions: [] }} />);
   expect(trail()).not.toBeInTheDocument();
   rerender(<Flow state={s} flow={firstFlow(s)} />);
-  expect(trail()).not.toBeInTheDocument(); // back on the first source the focus stays dropped
+  expect(trail()).not.toBeInTheDocument(); // back on the first flow the focus stays dropped
   expect(faded()).toEqual([]);
   await user.click(focusOn('872'));
   rerender(<Flow state={{ ...s, tasks: s.tasks.filter((c) => c.item.itemId !== 'I872') }} flow={firstFlow({ ...s, tasks: s.tasks.filter((c) => c.item.itemId !== 'I872') })} />);

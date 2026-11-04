@@ -1,11 +1,6 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
-import type { ProjectItem, RepoSummary, SidebarsPerView, SourceConfig, SourceSync, EffectiveLimits, State, Task } from '../../types';
-import { taskOfPr } from '../../activities';
-import { issueOfLink, issueUrl, taskOfIssue } from '../../repos/issue-task';
-import { prLink, prNumber, prRepo } from '../../pull-requests';
+import { type ReactNode, useState } from 'react';
+import type { RepoSummary, SidebarsPerView, SourceConfig, SourceSync, EffectiveLimits, State } from '../../types';
 import { behaviourOf } from '../../signals';
-import { HIVE_SOURCE, sourceOf } from '../../tasks';
 import { CreateTargetsContext, createTargetsOf } from '@/lib/create-targets';
 import { WorkspaceColorsContext } from '@/lib/workspace-color';
 import { ActivityBar } from '@/components/ActivityBar';
@@ -17,11 +12,11 @@ import { ConsoleChip } from '@/components/ConsoleDrawer';
 import { RunBand } from '@/components/benchmark/run-mode/RunChrome';
 import { RunModeHost } from '@/components/benchmark/run-mode/RunModeHost';
 import { CrashDialog } from '@/components/CrashDialog';
-import { type DetailPage, DetailPanel, type Selection } from '@/components/DetailPanel';
+import { DetailPanel, type Selection } from '@/components/DetailPanel';
 import { DetailSlotProvider } from '@/components/DetailSlot';
 import { HeaderSlotProvider } from '@/components/HeaderSlot';
 import type { SourcesNav } from '@/components/FlowSources';
-import { type BackLink, FlowHeader, type RepoHeader, type RepoTab, type SourceTab, type SourceTabs } from '@/components/FlowHeader';
+import { FlowHeader, type HeaderMode } from '@/components/FlowHeader';
 import { Footer } from '@/components/Footer';
 import { Checkers } from '@/components/footer/Checkers';
 import { ProblemsButton } from '@/components/footer/ProblemsButton';
@@ -32,13 +27,14 @@ import { StartDialog } from '@/components/StartDialog';
 import { TreeHoverContext } from '@/components/tree-hover';
 import { Flow } from '@/components/Flow';
 import { WorkerlessContext } from '@/components/FlowTask';
-import { PrPage, type PrRef } from '@/components/PrPage';
+import { PrPage } from '@/components/PrPage';
 import { ProjectTable } from '@/components/ProjectTable';
 import { RepoIssueTable } from '@/components/RepoIssueTable';
 import { RepoPrTable } from '@/components/RepoPrTable';
 import { t } from '@/i18n';
 import { consoleRunsOf, useConsoleChannels } from '@/hooks/use-console';
 import { useRepositories } from '@/hooks/use-repositories';
+import { centerOfPick, centerOfRepo, type TasksCenter, type TasksNav, useTasksCenter } from '@/hooks/use-tasks-center';
 import { FONT_FAMILY } from '@/lib/xterm-setup';
 
 // tick is not read: its only job is to change every RERENDER_MS so elapsed()/relative readings redraw between events.
@@ -63,186 +59,52 @@ function SyncErrors({ syncs }: { syncs: Record<string, SourceSync> }) {
   );
 }
 
-/** What the center shows under Automação: the pick, its tabs and the page. */
-interface PickScreen { source?: string; repository?: string; tab: SourceTab; repoTab: RepoTab; issue?: IssueRef; pr?: PrRef }
-const FIRST: PickScreen = { tab: 'flow', repoTab: 'prs' };
+interface CenterProps { state: State; selected?: Selection; nav: TasksNav; repositories: RepoSummary[]; onSelect(selection: Selection): void; stageCaps: Record<string, number> }
+type RepoCenter = Extract<TasksCenter, { kind: 'repo' }>;
 
-// The flow sidebar's pick (redesign 09): a source or a repository (#757), one at a time; for an external source its header's tab (#756);
-// and the issue or the PR whose page shows (#757, #758). A new pick starts on its default tab with no page, a tab's click closes the page, and nothing of it
-// is saved. A pick whose source a Settings save renamed or removed reads as todas, not as an empty flow; hive is a row while it is on (#665, #846). A
-// repository the last read no longer lists reads as no pick.
-function useSourcePick(sources: SourcesNav | undefined, repositories: RepoSummary[]) {
-  const [screen, setScreen] = useState<PickScreen>(FIRST);
-  const { source, repository, tab, repoTab, issue, pr } = screen;
-  const repo = repositories.find((r) => r.repository === repository);
-  const hasHive = sources?.hiveSource !== false;
-  const picked = (source === HIVE_SOURCE && hasHive) || sources?.sources.some((b) => b.name === source) ? source : undefined;
-  const external: SourceConfig | undefined = sources?.sources.find((b) => b.name === picked); // todas and hive have no native view
-  const choose = (next: Pick<PickScreen, 'source' | 'repository'>, page: Partial<PickScreen> = {}): void => setScreen({ ...FIRST, ...next, ...page });
-  const onRepoTab = (next: RepoTab): void => setScreen((s) => ({ ...s, repoTab: next, issue: undefined, pr: undefined }));
-  const onTab = (next: SourceTab): void => setScreen((s) => ({ ...s, tab: next, issue: undefined })); // the active tab again: back to its list
-  const tabs: SourceTabs | undefined = external ? { label: t(`flow.tab.native.${external.type}`), active: tab, onPick: onTab } : undefined;
-  return {
-    picked, external, tabs, repo, issue, pr, repoTab, onRepoTab, openIssue: (ref: IssueRef) => setScreen((s) => ({ ...s, issue: ref })),
-    pick: (name?: string) => choose({ source: name }), pickRepository: (name: string) => choose({ repository: name }),
-    showFlow: () => choose({ source }), // the flow, keeping the source pick
-    openPrPage: (ref: PrRef) => choose({ repository: ref.repository }, { pr: ref }), // #758: a PR's page under its repository's PRs tab
-    openIssueIn: (ref: IssueRef) => choose({ repository: ref.repository }, { repoTab: 'issues', issue: ref }), // #758: the PR page's task #N
-  };
-}
-type SourcePick = ReturnType<typeof useSourcePick>;
-
-// fluxo ›, a task's row and a task created from the native view or an issue page (#756, #757): the flow tab, then the task in the detail
-// panel once the state holds it. A task just created reaches the state after POST /tasks answers, and App drops a selection whose task the
-// state lacks. A task of another source than the picked one (a hive task made from an issue) moves the pick to its source, or the flow would hide it
-function useGoTo(state: State | undefined, picked: string | undefined, follow: (source: string) => void, onSelect: (selection: Selection) => void, showFlow: () => void): (taskId: string) => void {
-  const [goingTo, setGoingTo] = useState<string>();
-  useEffect(() => {
-    const task = goingTo === undefined ? undefined : state?.tasks.find((c) => c.item.itemId === goingTo);
-    if (!task) return;
-    setGoingTo(undefined);
-    if (picked !== undefined && sourceOf(task) !== picked) follow(sourceOf(task));
-    onSelect({ taskId: task.item.itemId });
-  }, [state, goingTo, picked, follow, onSelect]);
-  return (taskId) => {
-    showFlow();
-    setGoingTo(taskId);
-  };
+// The center under a repository (#757, #758): its PR list or one PR's page under PRs, its issues or one issue's page under issues. A page keeps
+// the header; #911: only a page's header carries the way back; #69: a merge goes back as that button does, to the PR list (decision 3)
+function repoCenter(state: State, nav: TasksNav, repo: RepoSummary, center: RepoCenter): ReactNode {
+  const onRepository = (name: string): void => nav.show(centerOfRepo(name));
+  const mode: HeaderMode = { kind: 'repo', header: { summary: repo, tab: center.tab, onTab: nav.onRepoTab, onRepository } };
+  const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} mode={mode} tasks={[]} onRefresh={reload} back={nav.back} github={github} />;
+  const { issue, pr } = center;
+  if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={nav.goTo} onOpenIssue={nav.openIssueUrl} onOpenPr={nav.openPrUrl} onMerged={nav.back?.onBack} />;
+  if (issue) return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onGoTo={nav.goTo} onOpenPr={nav.openPrUrl} />;
+  if (center.tab === 'prs') return <RepoPrTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} onOpen={(row) => nav.openPr({ repository: repo.repository, number: row.number })} />;
+  return <RepoIssueTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} onOpen={(read) => nav.openIssue({ repository: repo.repository, number: read.number })} />;
 }
 
-// A native view row (#757): its issue's page when the Hive lists the issue's repository; otherwise GitHub, as before, since every
-// repository route answers 404 outside the list
-function projectOpener(picks: SourcePick, repositories: RepoSummary[], goTo: (taskId: string) => void): (item: ProjectItem, task?: Task) => void {
-  return (item, task) => {
-    const { repository } = item;
-    if (repository === undefined || !repositories.some((r) => r.repository === repository)) {
-      // not listed, not read yet or its read failed: a task still has its detail to go to; only a row out of the flow falls back to GitHub
-      return task ? goTo(task.item.itemId) : void window.open(item.url, '_blank', 'noreferrer');
-    }
-    picks.openIssue({ repository, number: Number(item.id), itemId: item.itemId }); // #686: its fields, Priority among them, are read by the page
-  };
-}
-
-// The PR page's task #N (#758): its issue's page under its repository when the Hive lists it, else GitHub
-function issueOpener(picks: SourcePick, repositories: RepoSummary[]): (url: string) => void {
-  return (url) => {
-    const ref = issueOfLink(url);
-    if (ref !== undefined && repositories.some((r) => r.repository === ref.repository)) return picks.openIssueIn(ref);
-    window.open(url, '_blank', 'noreferrer');
-  };
-}
-
-/** Every way into a PR (#758): its page under its repository when the Hive lists it; else GitHub, saying why. ponytail: decided on the list as
- * read; a PR opened before the sidebar's first read opens on GitHub */
-function prOpener(picks: SourcePick, repositories: RepoSummary[]): (url: string) => void {
-  return (url) => {
-    const repository = prRepo(url);
-    if (repositories.some((r) => r.repository === repository)) return picks.openPrPage({ repository, number: Number(prNumber(url)) });
-    toast(t('pr.notListed'));
-    window.open(url, '_blank', 'noreferrer');
-  };
-}
-
-// The page the center shows under Automação (#64), read with Center's own guards, so the details panel never hosts a page that is not on
-// screen: under a listed repository its PR, else its issue; under a source's native tab its issue. The task comes from the ref, so the
-// panel's top shows before the page's read answers; the page matches on the read issue's url, the same link
-function shownPage(state: State, picks: SourcePick): DetailPage | undefined {
-  const { repo, external, tabs, issue, pr } = picks;
-  if (repo && pr) {
-    const url = prLink(pr.repository, pr.number);
-    return { kind: 'pr', url, task: taskOfPr(state, url) };
-  }
-  if (issue === undefined || !(repo || (external && tabs?.active === 'native'))) return undefined;
-  const url = issueUrl(issue.repository, issue.number);
-  return { kind: 'issue', url, task: taskOfIssue(state.tasks, url, issue.itemId) };
-}
-
-/** The flow last shown under Automação (#380): its pick and the task selected on it, what back on a page returns to. */
-interface LastFlow { source?: string; selected?: Selection }
-
-// Back on a PR or issue page (#380): the last flow, whatever led to the page. A page whose task the recorded pick would hide goes back to
-// todas instead, and says so; a page with no task keeps the pick. Only a changed selection is picked again: every onSelect opens the panel
-// holding Detalhes, which the user may have closed since (#911)
-function backToFlow(last: LastFlow, page: DetailPage, picks: SourcePick, selected: Selection | undefined, onSelect: (selection?: Selection) => void): BackLink {
-  const isHidden = last.source !== undefined && page.task !== undefined && sourceOf(page.task) !== last.source;
-  const source = isHidden ? undefined : last.source;
-  return {
-    label: t('back.flow', { pick: source ?? t('flow.sources.all') }),
-    onBack: () => {
-      picks.pick(source);
-      if (last.selected?.taskId !== selected?.taskId) onSelect(last.selected);
-    },
-  };
-}
-
-/** The center's navigation (#380): the pick itself, and a page's way back to the last flow. */
-interface CenterNav {
-  picks: SourcePick; goTo(taskId: string): void; back?: BackLink; openPr(url: string): void; openIssue(url: string): void;
-  page?: DetailPage; // #64: what the details panel hosts while the center is under Automação
-}
-
-function useCenterNav(state: State | undefined, sources: SourcesNav | undefined, repositories: RepoSummary[], selected: Selection | undefined, onSelect: (selection?: Selection) => void): CenterNav {
-  const picks = useSourcePick(sources, repositories);
-  const goTo = useGoTo(state, picks.picked, picks.pick, onSelect, picks.showFlow);
-  // Before any flow was left it is the first screen, todas; Center shows the flow under no repository and off the native tab
-  const lastFlow = useRef<LastFlow>({});
-  const isFlow = picks.repo === undefined && picks.tabs?.active !== 'native';
-  useEffect(() => {
-    if (isFlow) lastFlow.current = { source: picks.picked, selected };
-  });
-  const page = state && shownPage(state, picks);
-  return {
-    picks, goTo, page,
-    back: page && backToFlow(lastFlow.current, page, picks, selected, onSelect), // a page is never the flow: the ref holds the last one
-    openPr: prOpener(picks, repositories), openIssue: issueOpener(picks, repositories),
-  };
-}
-
-interface CenterProps { state: State; selected?: Selection; picks: SourcePick; repositories: RepoSummary[]; onSelect(selection: Selection): void; goTo(taskId: string): void; stageCaps: Record<string, number>; back?: BackLink }
-
-interface RepoCenterArgs { state: State; picks: SourcePick; repo: RepoSummary; goTo(taskId: string): void; onOpenIssue(url: string): void; onOpenPr(url: string): void; back?: BackLink }
-
-// The center under a repository (#757, #758): its PR list or one PR's page under PRs; its issues or one issue's page under issues. A page
-// keeps the header
-function repoCenter({ state, picks, repo, goTo, onOpenIssue, onOpenPr, back }: RepoCenterArgs): ReactNode {
-  const heading: RepoHeader = { summary: repo, tab: picks.repoTab, onTab: picks.onRepoTab, onRepository: picks.pickRepository };
-  // #911: a page's header carries the way back, never a list's; #352: the page names its own GitHub URL
-  const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} tasks={[]} mode={{ kind: 'repo', header: heading }} onRefresh={reload} back={back} github={github} />;
-  const { issue, pr } = picks;
-  // #69: the merge goes back as the header's button does, to the last flow (#380)
-  if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={goTo} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} onMerged={back?.onBack} />;
-  if (issue) {
-    return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onGoTo={goTo} onOpenPr={onOpenPr} />;
-  }
-  if (picks.repoTab === 'prs') {
-    return <RepoPrTable key={repo.repository} state={state} summary={repo} onTab={picks.onRepoTab} onRepository={picks.pickRepository} onOpen={(row) => picks.openPrPage({ repository: repo.repository, number: row.number })} />;
-  }
+// A source's table (#756, handoff §5), or one of its issues' pages (#757) under the source header
+function sourceCenter(state: State, nav: TasksNav, source: SourceConfig, repositories: RepoSummary[], issue?: IssueRef): ReactNode {
+  if (!issue) return <ProjectTable state={state} source={source} onGoTo={nav.goTo} onOpenIssue={nav.openProjectItem} />;
   return (
-    <RepoIssueTable
-      key={repo.repository} state={state} summary={repo} onTab={picks.onRepoTab} onRepository={picks.pickRepository}
-      onOpen={(read) => picks.openIssue({ repository: repo.repository, number: read.number })}
+    <IssuePage
+      key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={source.name}
+      workspace={repositories.find((r) => r.repository === issue.repository)?.workspace}
+      header={(reload, github) => <FlowHeader state={state} mode={{ kind: 'source', source }} tasks={[]} onRefresh={reload} back={nav.back} github={github} />}
+      onGoTo={nav.goTo} onOpenPr={nav.openPrUrl}
     />
   );
 }
 
-// The center under Automação: a repository's lists and pages (#757, #758), a source's native view or one issue's page (#756, #757), else the
-// flow. A page keeps the header it was opened from
-function Center({ state, selected, picks, repositories, onSelect, goTo, stageCaps, back }: CenterProps) {
-  const { picked, external, tabs, repo, issue } = picks;
-  if (repo) return repoCenter({ state, picks, repo, goTo, onOpenIssue: issueOpener(picks, repositories), onOpenPr: prOpener(picks, repositories), back });
-  if (external && tabs?.active === 'native') {
-    if (issue) {
-      return (
-        <IssuePage
-          key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={external.name}
-          workspace={repositories.find((r) => r.repository === issue.repository)?.workspace}
-          header={(reload, github) => <FlowHeader state={state} source={external.name} tasks={[]} tabs={tabs} onRefresh={reload} back={back} github={github} />} onGoTo={goTo} onOpenPr={prOpener(picks, repositories)}
-        />
-      );
-    }
-    return <ProjectTable state={state} source={external} tabs={tabs} onGoTo={goTo} onOpenIssue={projectOpener(picks, repositories, goTo)} />;
-  }
-  return <Flow state={state} flow={state.flows[0]} source={picked} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} tabs={tabs} stageCaps={stageCaps} />;
+// Decision 11: the list and outside-flow views, until 3.2 / 3.3: the tasks header over one muted line
+function TasksSoon({ state }: { state: State }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <FlowHeader state={state} tasks={[]} />
+      <p className="px-3.5 py-3 text-muted-foreground text-xs">{t('tasks.center.soon')}</p>
+    </div>
+  );
+}
+
+// The center under Tarefas (#571): what the resolved TasksCenter names. Flow is the same element across flows, so a switch keeps it mounted (decision 9)
+function Center({ state, selected, nav, repositories, onSelect, stageCaps }: CenterProps) {
+  const { center, repo, source } = nav;
+  if (center.kind === 'repo' && repo) return repoCenter(state, nav, repo, center);
+  if (center.kind === 'source' && source) return sourceCenter(state, nav, source, repositories, center.issue);
+  if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} />;
+  return <TasksSoon state={state} />;
 }
 
 // #36: the details' tree row under the pointer, shared by the details (which set it) and the flow's cards (which light up). A component of its
@@ -262,7 +124,7 @@ export function Dashboard(props: DashboardProps) {
 
 function DashboardView({ state, effective, selected, locale, hasSource, fileLinks, fontFamily, sources, onSelect, onEditRules, onAddWorkspace, onOpenSettings, openShortcuts, onOpenFlowSettings, sidebarsPerView }: DashboardProps) {
   const repositories = useRepositories();
-  const { picks, goTo, back, openPr, openIssue, page } = useCenterNav(state, sources, repositories, selected, onSelect); // #380
+  const centerNav = useTasksCenter(state, sources, repositories, onSelect); // #571
   // #353: the live command runs, and #351: the running worktree setups, as one key, so a run or a setup starting or ending anywhere reads
   // the console's channels again. Before the early return: a hook runs on every render.
   const consoleChannels = useConsoleChannels(consoleRunsOf(state));
@@ -278,10 +140,10 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
       {/* #304: the cards hide a CI stage's button while the wait starts on its own, by the reducer's own rule (gateOf's workerless row) */}
       <WorkerlessContext.Provider value={behaviourOf(limits.signal, state.signals).workerless}>
         <MainDock
-          showTask={goTo}
+          showTask={centerNav.goTo}
           sidebarsPerView={sidebarsPerView}
-          fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} experiments={state.benchmark.experiments} rateLimits={state.rateLimits} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue} openFlowSettings={onOpenFlowSettings}
-          tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
+          fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} experiments={state.benchmark.experiments} rateLimits={state.rateLimits} onAddWorkspace={onAddWorkspace} openPr={centerNav.openPrUrl} openIssue={centerNav.openIssueUrl} openFlowSettings={onOpenFlowSettings}
+          tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={centerNav.page?.url}
           // redesign 02 and #225: the signal, the workers, the rules, the shown activity's checkers and problems, the console and shut down; the manual
           // signal and the worker cap stay in the flow sidebar (redesign 09)
           footer={(shown, file) => (
@@ -293,8 +155,8 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
           header={(shell) => <><Header shell={shell} state={state} effective={limits} /><RunBand /></>} // #469: the run's band under the header
           automation={() => (
             <AutomationPanel
-              state={state} effective={effective} sources={sources ?? NO_SOURCES} source={picks.picked} onSource={picks.pick}
-              repository={picks.repo?.repository} onRepository={picks.pickRepository}
+              state={state} effective={effective} sources={sources ?? NO_SOURCES} source={centerNav.center.kind === 'source' ? centerNav.center.source : undefined} onSource={(name) => centerNav.show(centerOfPick(name))}
+              repository={centerNav.repo?.repository} onRepository={(name) => centerNav.show(centerOfRepo(name))}
             />
           )}
           search={{ state, effective: limits, openSettings: onOpenSettings, openShortcuts }}
@@ -303,11 +165,11 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
           activityBar={(activity, focusedRun, showFlow) => <ActivityBar activity={activity} state={state} focusedRun={focusedRun} onShowFlow={showFlow} />}
           paneContext={(activity) => activityPane(activity, state)}
           copySession={(shown, children) => <CopySessionHost state={state} shown={shown}>{children}</CopySessionHost>}
-          detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} onOpenTask={(taskId) => onSelect({ taskId })} page={view.nav.center === 'automation' ? page : undefined} onOpenIssue={issueOpener(picks, repositories)} />}
+          detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} onOpenTask={(taskId) => onSelect({ taskId })} page={view.nav.center === 'automation' ? centerNav.page : undefined} onOpenIssue={centerNav.openIssueUrl} />}
         >
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             {hasSource && <SyncErrors syncs={state.syncs} />}
-            <Center state={state} selected={selected} picks={picks} repositories={repositories} onSelect={onSelect} goTo={goTo} stageCaps={limits.stageCaps} back={back} />
+            <Center state={state} selected={selected} nav={centerNav} repositories={repositories} onSelect={onSelect} stageCaps={limits.stageCaps} />
           </main>
         </MainDock>
       </WorkerlessContext.Provider>

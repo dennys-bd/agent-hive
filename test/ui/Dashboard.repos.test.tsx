@@ -86,7 +86,7 @@ test('picking a repository clears the source pick, todas included, and picking a
   expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('a picked repository takes the center with its header on the PRs tab and its open PRs; issues shows its open issues; picking a source shows the flow again (#757, #758)', async () => {
+test('a picked repository takes the center with its header on the PRs tab and its open PRs; issues shows its open issues; picking todas shows the flowchart again (#757, #758)', async () => {
   const user = userEvent.setup();
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
@@ -97,9 +97,9 @@ test('a picked repository takes the center with its header on the PRs tab and it
   await user.click(bar().getByRole('tab', { name: 'issues 3' }));
   expect(await main().findByText('Issue 12')).toBeInTheDocument();
   expect(bar().getByRole('tab', { name: 'issues 3' })).toHaveAttribute('aria-selected', 'true');
-  await user.click(automation().getByRole('button', { name: /^roadmap/ }));
+  await user.click(automation().getByRole('button', { name: /^todas/ }));
   expect(main().queryByText('Issue 12')).not.toBeInTheDocument();
-  expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
+  expect(bar().getByText('todas as sources')).toBeInTheDocument();
 });
 
 test('a repository\'s row opens the issue page under the repository header; its issues tab returns to the list (#757)', async () => {
@@ -116,21 +116,20 @@ test('a repository\'s row opens the issue page under the repository header; its 
   expect(main().queryByRole('heading', { name: 'Pager breaks' })).not.toBeInTheDocument();
 });
 
-test('a native view row opens the issue page under the source header when the Hive lists its repository, else GitHub; the active tab returns to the table (#757)', async () => {
+test('a native view row opens the issue page under the source header when the Hive lists its repository, else GitHub; voltar returns to the table (#757, #571)', async () => {
   const user = userEvent.setup();
   const open = vi.spyOn(window, 'open').mockReturnValue(null);
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
   await automation().findByRole('button', { name: /^site/ }); // the repositories are read
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await user.click(await main().findByText('Elsewhere'));
   expect(open).toHaveBeenCalledWith('https://github.com/acme/else/issues/5', '_blank', 'noreferrer');
   await user.click(main().getByText('Pager breaks'));
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
   expect(main().getByText('roadmap · hive')).toBeInTheDocument();
-  expect(bar().getByRole('tab', { name: 'GitHub Project' })).toHaveAttribute('aria-selected', 'true');
-  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
+  expect(bar().getByText('github project · acme')).toBeInTheDocument();
+  await user.click(bar().getByRole('button', { name: 'voltar' }));
   expect(await main().findByText('2 issues · 0 no fluxo')).toBeInTheDocument();
   open.mockRestore();
 });
@@ -144,7 +143,6 @@ test('a native view row of a task whose repository the Hive does not list goes t
   showFlow();
   await automation().findByRole('button', { name: /^site/ });
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await user.click(await main().findByText('Elsewhere'));
   await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith({ taskId: 'roadmap:PVTI_5' }));
   expect(open).not.toHaveBeenCalled();
@@ -234,7 +232,6 @@ test('a native view\'s issue page shows GitHub in its source header; the flow an
   await automation().findByRole('button', { name: /^site/ }); // the repositories are read
   expect(bar().queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await main().findByText('Pager breaks');
   expect(bar().queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
   await user.click(main().getByText('Pager breaks'));

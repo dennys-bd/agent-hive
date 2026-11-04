@@ -87,10 +87,7 @@ const en = {
   'flow.zoom.in': 'zoom in',
   'flow.zoom.reset': 'back to 100%',
   'flow.zoom.fit': 'fit',
-  'flow.tab.flow': 'flow', // #756: the source header's tabs, with an external source picked
-  'flow.tab.native.github': 'GitHub Project', // the native view of a github source: a product name, the same in every language
   'back.title': 'back · {key}', // #911: the page header's back button
-  'back.flow': 'tasks · {pick}', // #911, #380, #570: the tasks view a page goes back to
   'footer.rules': 'rules',
   'footer.rule.cap': 'max {n} workers',
   'footer.rule.stageCap': '{stage} max {n}',
@@ -3004,6 +3001,8 @@ const en = {
   'benchmark.run.environment': 'environment · local',
   'benchmark.run.arm': 'arm {letter} · pair {round} of {pairs}',
   'back.list': 'back', // #571: a page's way back to the list it was opened from
+  'tasks.center.soon': 'coming soon', // #571: the list and outside-flow views, until 3.2 / 3.3
+  'tasks.header.source.github': 'github project', // #571: the source header's type, before its owner
 };
 
 export type MessageKey = keyof typeof en;
@@ -3093,10 +3092,7 @@ const pt: Record<MessageKey, string> = {
   'flow.zoom.in': 'aproximar',
   'flow.zoom.reset': 'voltar a 100%',
   'flow.zoom.fit': 'ajustar',
-  'flow.tab.flow': 'fluxo',
-  'flow.tab.native.github': 'GitHub Project',
   'back.title': 'voltar · {key}',
-  'back.flow': 'tarefas · {pick}',
   'footer.rules': 'regras',
   'footer.rule.cap': 'máx {n} workers',
   'footer.rule.stageCap': '{stage} máx {n}',
@@ -6002,6 +5998,8 @@ const pt: Record<MessageKey, string> = {
   'benchmark.run.environment': 'ambiente · local',
   'benchmark.run.arm': 'braço {letter} · par {round} de {pairs}',
   'back.list': 'voltar',
+  'tasks.center.soon': 'em breve',
+  'tasks.header.source.github': 'github project',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

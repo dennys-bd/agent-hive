@@ -35,7 +35,8 @@ const working: State = withPointedWork({ ...state, workers: [WORKER], tasks: [TA
 
 const jsonRes = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const PRS = { counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z', rows: [] };
-const ANSWERS: Record<string, unknown> = { '/repositories': [SITE], '/repositories/acme/site/pulls?state=open': PRS };
+const EMPTY_VIEW = { statuses: [], fields: [], builtins: {}, truncated: false, items: [] }; // the source tables open directly now (#571)
+const ANSWERS: Record<string, unknown> = { '/repositories': [SITE], '/repositories/acme/site/pulls?state=open': PRS, '/sources/roadmap/project': EMPTY_VIEW, '/sources/other/project': EMPTY_VIEW };
 const answer = async (input: RequestInfo | URL): Promise<Response> => jsonRes(Object.hasOwn(ANSWERS, String(input)) ? ANSWERS[String(input)] : { ok: true });
 
 beforeEach(() => {
@@ -79,15 +80,16 @@ test('from a repository page, see in flow lands on the task\'s source flow with 
   expect(bar().queryByTitle(/^voltar( · |$)/)).not.toBeInTheDocument(); // the back button's title (#911)
 });
 
-test('with another source picked, see in flow moves the pick to the task\'s source', async () => {
+test('with a source\'s table shown, see in flow shows the tasks\' flowchart, todas pressed, the task selected (#571)', async () => {
   const user = userEvent.setup();
   render(<Home />);
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^other/ }));
-  await bar().findByText(/other/);
+  await bar().findByText('other');
   await seeInFlow(user);
-  expect(await bar().findByRole('tab', { name: 'GitHub Project' })).toBeInTheDocument();
-  expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
+  await bar().findByText('todas as sources');
+  expect(automation().getByRole('button', { name: /^todas/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'false');
   expect(automation().getByRole('button', { name: /^other/ })).toHaveAttribute('aria-pressed', 'false');
   expect(screen.getByRole('heading', { name: '#12 Pager breaks' })).toBeInTheDocument();
 });

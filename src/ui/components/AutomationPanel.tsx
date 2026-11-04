@@ -10,8 +10,8 @@ interface AutomationPanelProps {
   repository?: string; onRepository?(name: string): void; // #757: the repositories section, one pick with the sources'; absent: no section
 }
 
-/** The flow sidebar (redesign 09), the Automação dock tab (#456): the manual signal, the worker cap, the sources, whose pick filters the
- * flow, and the repositories (#757). Workspaces are not here: they belong to atividades. A region named like its tab; the picks are the Dashboard's. */
+/** The flow sidebar (redesign 09), the Automação dock tab (#456): the manual signal, the worker cap, the sources, a row opening its table (todas and hive the flowchart, until 2.3),
+ * and the repositories (#757). Workspaces are not here: they belong to atividades. A region named like its tab; the picks are the Dashboard's. */
 export function AutomationPanel({ state, effective, sources, source, onSource, repository, onRepository }: AutomationPanelProps) {
   return (
     <section aria-label={t('dock.automation')} className="flex min-h-0 flex-1 flex-col gap-[18px] p-3">
