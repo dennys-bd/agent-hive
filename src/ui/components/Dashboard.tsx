@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import type { RepoSummary, SidebarsPerView, SourceConfig, SourceSync, EffectiveLimits, State } from '../../types';
 import { behaviourOf } from '../../signals';
+import { inFlow } from '../../tasks';
 import { CreateTargetsContext, createTargetsOf } from '@/lib/create-targets';
 import { WorkspaceColorsContext } from '@/lib/workspace-color';
 import { ActivityBar } from '@/components/ActivityBar';
@@ -26,14 +27,16 @@ import { activityPane } from '@/components/PaneHeader';
 import { StartDialog } from '@/components/StartDialog';
 import { TreeHoverContext } from '@/components/tree-hover';
 import { Flow } from '@/components/Flow';
+import { displayProps } from '@/components/tasks/DisplayPopover';
 import { WorkerlessContext } from '@/components/FlowTask';
 import { PrPage } from '@/components/PrPage';
 import { ProjectTable } from '@/components/ProjectTable';
 import { RepoIssueTable } from '@/components/RepoIssueTable';
 import { RepoPrTable } from '@/components/RepoPrTable';
 import { t } from '@/i18n';
+import { hasTree } from '@/lib/tree-groups';
 import { consoleRunsOf, useConsoleChannels } from '@/hooks/use-console';
-import { useDisplayOptions } from '@/hooks/use-flow-view';
+import { type DisplayControls, useDisplayOptions } from '@/hooks/use-flow-view';
 import { useRepositories } from '@/hooks/use-repositories';
 import { centerOfPick, centerOfRepo, type TasksCenter, type TasksNav, useTasksCenter } from '@/hooks/use-tasks-center';
 import { FONT_FAMILY } from '@/lib/xterm-setup';
@@ -89,11 +92,14 @@ function sourceCenter(state: State, nav: TasksNav, source: SourceConfig, reposit
   );
 }
 
-// Decision 11: the list and outside-flow views, until 3.2 / 3.3: the tasks header over one muted line
-function TasksSoon({ state }: { state: State }) {
+// Decision 11 (#571): the list and outside-flow views, until 3.2 / 3.3: the tasks header, with exibir minus its voltas rows (#574), over one
+// muted line. The popover counts what the view will show: every task, or the stageless ones outside
+function TasksSoon({ state, isOutside, display, sources }: { state: State; isOutside: boolean; display: DisplayControls; sources: SourcesNav }) {
+  const tasks = isOutside ? state.tasks.filter((c) => !inFlow(c)) : state.tasks;
+  const isTree = display.options.tree ?? hasTree(state.tasks);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={[]} />
+      <FlowHeader state={state} tasks={[]} {...displayProps({ display, sources, tasks, isTree, hasLoops: false })} />
       <p className="px-3.5 py-3 text-muted-foreground text-xs">{t('tasks.center.soon')}</p>
     </div>
   );
@@ -106,7 +112,7 @@ function Center({ state, selected, nav, repositories, onSelect, stageCaps, sourc
   if (center.kind === 'repo' && repo) return repoCenter(state, nav, repo, center);
   if (center.kind === 'source' && source) return sourceCenter(state, nav, source, repositories, center.issue);
   if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} display={display} sources={sources} />;
-  return <TasksSoon state={state} />;
+  return <TasksSoon state={state} isOutside={center.kind === 'tasks' && center.view === 'outside'} display={display} sources={sources} />;
 }
 
 // #36: the details' tree row under the pointer, shared by the details (which set it) and the flow's cards (which light up). A component of its

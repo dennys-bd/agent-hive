@@ -1,11 +1,12 @@
 import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 import { Dashboard } from '@/components/Dashboard';
 import type { SourcesNav } from '@/components/FlowSources';
 import { FIRST_CENTER, type TasksCenter, backOf, centerOfPick, centerOfTask, resolveCenter, useTasksCenter } from '@/hooks/use-tasks-center';
 import { forgetProjects } from '@/hooks/use-project';
 import { setLanguage } from '@/i18n';
+import { resetViewState } from '@/lib/view-state';
 import { flatten } from '../../src/flows';
 import type { Flow, ProjectView, RepoSummary, SourceConfig, Stage, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../../src/types';
@@ -179,4 +180,30 @@ test('a Settings save that renames the shown flow brings the first flow back (#5
   rerender(<Dashboard state={{ ...STATE, flows: [FLOWS[0], { ...FLOWS[1], name: 'deliver' }] }} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   expect(stageNode('dev')).not.toBeNull();
   expect(stageNode('review')).toBeNull();
+});
+
+test('the outside placeholder has exibir with no voltas rows, counting only the stageless tasks; its choice is the flowchart\'s too (#574)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const user = userEvent.setup();
+  const stageless: Task = { item: { itemId: 'roadmap:PVTI_4', id: '4', title: 'Issue 4', body: '', url: 'https://github.com/acme/r/issues/4', source: 'roadmap' }, boardColumn: 'Ready', auto: true };
+  render(<Dashboard state={{ ...STATE, tasks: [...STATE.tasks, stageless] }} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
+  showTasks();
+  await user.click(automation().getByRole('button', { name: /^roadmap/ }));
+  await goToRow(user, 'Issue 3'); // a stage of no flow: the outside view
+  await user.click(bar().getByRole('button', { name: 'exibir' }));
+  let pop = within(screen.getByRole('dialog'));
+  expect(pop.queryByRole('radiogroup', { name: 'voltas' })).not.toBeInTheDocument();
+  expect(pop.queryByRole('radiogroup', { name: 'rótulos das voltas' })).not.toBeInTheDocument();
+  expect(pop.getByRole('checkbox', { name: 'roadmap' }).closest('label')).toHaveTextContent(/1$/); // #4 alone has no stage
+  await user.click(pop.getByRole('checkbox', { name: 'hive' }));
+  expect(bar().getByText('roadmap')).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await user.click(automation().getByRole('button', { name: /^todas/ }));
+  expect(stageNode('dev')).not.toBeNull();
+  expect(bar().getByText('roadmap')).toBeInTheDocument(); // one value for every view
+  await user.click(bar().getByRole('button', { name: 'exibir' }));
+  pop = within(screen.getByRole('dialog'));
+  expect(pop.getByRole('radiogroup', { name: 'voltas' })).toBeInTheDocument();
+  expect(pop.getByRole('checkbox', { name: 'hive' })).not.toBeChecked();
 });
