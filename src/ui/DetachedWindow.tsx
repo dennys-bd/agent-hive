@@ -18,7 +18,7 @@ import { useFileOpener } from '@/hooks/use-file-opener';
 import { type ConsoleChannels, ConsoleChannelsContext, consoleRunsOf, type OpenConsole, type OpenStageOutput, useConsoleChannels } from '@/hooks/use-console';
 import { type DetachedLayout, useDetachedLayout } from '@/hooks/use-detached-layout';
 import { type Activity, activitiesOf, activityKey, localKey } from '@/lib/activities';
-import { type CenterTabRef, consoleRef, shownTab } from '@/lib/center-layout';
+import { type CenterTabRef, consoleRef, sharesBuffer, shownTab } from '@/lib/center-layout';
 import { terminalFontStack } from '@/lib/xterm-setup';
 import type { State } from '../types';
 
@@ -78,12 +78,12 @@ function WindowPage({ state, activityKey: key, fontFamily }: WindowPageProps) {
   const title = activity && windowTitle(activity);
   useEffect(() => { if (title !== undefined) document.title = title; }, [title]); // main names the window by it (#552 decision 14)
   if (activity === undefined) return null;
-  const shown = shownTab(layouts.layout);
+  const shown = shownTab(layouts.layout); // #554: the strip's back button follows the tab menu's rule: a buffer two tabs show stays
   return (
     <Openers {...openers}>
       <ConsoleChannelsContext.Provider value={channels}>
         <div className="flex h-screen flex-col overflow-hidden">
-          <DetachedStrip title={windowTitle(activity)} canGoBack={shown !== undefined} onBack={() => { if (shown) void layouts.dock(shown); }} />
+          <DetachedStrip title={windowTitle(activity)} canGoBack={shown !== undefined && !sharesBuffer(layouts.layout, shown)} onBack={() => { if (shown) void layouts.dock(shown); }} />
           <div className="relative flex min-h-0 min-w-0 flex-1">
             <DesignLayerProvider>
               <ActivityCenter

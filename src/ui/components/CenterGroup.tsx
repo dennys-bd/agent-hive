@@ -40,6 +40,7 @@ export interface CenterGroupProps {
   onClose(item: CenterTabRef): void; // a tab's close, through the unsaved-edits confirm (#717)
   onDock?(item: CenterTabRef): void; // a detached window's tab back to the main window (#553); absent: no such item
   onMove?(item: CenterTabRef): void; // the main window's move to its activity's detached window (#554); absent: no such item
+  isShared(item: CenterTabRef): boolean; // #554: another tab of the layout shows its buffer, so neither window item may move it
 }
 
 const baseName = (path: string): string => path.split('/').at(-1) ?? path;
@@ -184,12 +185,12 @@ function useShownInView(isShown: boolean) {
   return ref;
 }
 
-interface CenterTabProps { item: CenterTabRef; index: number; group: TabGroup; groups: TabGroup[]; activity: Activity; ops: CenterOps; drag: CenterDrag; onClose(item: CenterTabRef): void; onDock?(item: CenterTabRef): void; onMove?(item: CenterTabRef): void; onWake(ptyId: string): void }
+interface CenterTabProps { item: CenterTabRef; index: number; group: TabGroup; groups: TabGroup[]; activity: Activity; ops: CenterOps; drag: CenterDrag; onClose(item: CenterTabRef): void; onDock?(item: CenterTabRef): void; onMove?(item: CenterTabRef): void; isShared: boolean; onWake(ptyId: string): void }
 
 // One tab (#458): its dot and text show it, its X or a middle-click closes it (#612), and it drags (center-drag.ts). Right-click: split
 // right or down (disabled alone in its group: nothing is left to split from), one move per other group (named by the tab it shows), Mover para uma janela in
 // the main window (#554), Voltar para a janela principal in a detached window (#553), and Fechar.
-function CenterTab({ item, index, group, groups, activity, ops, drag, onClose, onDock, onMove, onWake }: CenterTabProps) {
+function CenterTab({ item, index, group, groups, activity, ops, drag, onClose, onDock, onMove, isShared, onWake }: CenterTabProps) {
   const key = refKey(item);
   const text = refText(item, activity);
   const tone = useFileTone(activity.activity.id, item.kind === 'file' ? item.path : undefined); // #780: a file's diagnostics; infos never colour it
@@ -237,8 +238,9 @@ function CenterTab({ item, index, group, groups, activity, ops, drag, onClose, o
         ))}
         {source && <CopyToSub source={source} kit={CONTEXT_KIT} separated />}
         <ContextMenuSeparator />
-        {onMove && <ContextMenuItem onSelect={() => onMove(item)}>{t('window.move')}</ContextMenuItem>}
-        {onDock && <ContextMenuItem onSelect={() => onDock(item)}>{t('window.back')}</ContextMenuItem>}
+        {/* #554: two windows are two renderers, and a Monaco model cannot be shared across them: a buffer two tabs show moves in neither direction */}
+        {onMove && <ContextMenuItem disabled={isShared} onSelect={() => onMove(item)}>{t('window.move')}</ContextMenuItem>}
+        {onDock && <ContextMenuItem disabled={isShared} onSelect={() => onDock(item)}>{t('window.back')}</ContextMenuItem>}
         <ContextMenuItem onSelect={close}>{t('center.close')}</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -298,7 +300,7 @@ function TabBody({ item, activity, active, fileLinks, fontFamily, ops, groupId, 
 /** One group of the center (#458), VS Code's editor group and the handoff's pane (#536): its 34px tab strip with the + right after the tabs and dividir ⌄ at its right end,
  * its header, then every tab's view with only the shown one visible. A pointer down anywhere in it (capture phase, so a terminal's own
  * handlers cannot hide it) focuses it, and the next open lands here. The whole strip row is the drag's strip. */
-export function CenterGroup({ group, activity, groups, focused, ops, drag, fileLinks, fontFamily, pane, onSplit, onExit, onWake, onClose, onDock, onMove }: CenterGroupProps) {
+export function CenterGroup({ group, activity, groups, focused, ops, drag, fileLinks, fontFamily, pane, onSplit, onExit, onWake, onClose, onDock, onMove, isShared }: CenterGroupProps) {
   const shade = shadeOf(drag.landing, group.id);
   const isEnd = drag.landing?.kind === 'strip' && drag.landing.group === group.id && drag.landing.target === 'end';
   const shown = group.tabs[group.active];
@@ -314,7 +316,7 @@ export function CenterGroup({ group, activity, groups, focused, ops, drag, fileL
     <section data-center-group={group.id} data-focused={focused === group.id ? 'true' : undefined} onPointerDownCapture={focus} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div data-center-strip className="flex h-[34px] shrink-0 items-stretch border-b">
         <div role="tablist" aria-label={t('terminal.panel.tabs')} aria-orientation="horizontal" data-drop={isEnd ? 'end' : undefined} className={`flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden ${LINE_END}`}>
-          {group.tabs.map((item, index) => <CenterTab key={refKey(item)} item={item} index={index} group={group} groups={groups} activity={activity} ops={ops} drag={drag} onClose={onClose} onDock={onDock} onMove={onMove} onWake={onWake} />)}
+          {group.tabs.map((item, index) => <CenterTab key={refKey(item)} item={item} index={index} group={group} groups={groups} activity={activity} ops={ops} drag={drag} onClose={onClose} onDock={onDock} onMove={onMove} isShared={isShared(item)} onWake={onWake} />)}
         </div>
         {/* Beside the tablist, never in it: ARIA allows only tabs there, as DockGroup keeps its actions (#491). Right after the tabs
             (redesign 04); a click focuses this group first, so the run it opens lands here */}

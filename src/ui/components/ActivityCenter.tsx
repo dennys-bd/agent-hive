@@ -33,6 +33,7 @@ interface Shared {
   onClose(item: CenterTabRef): void; // a tab's close, through the unsaved-edits confirm (#717)
   onDock?(item: CenterTabRef): void; // a detached window's dock (#553)
   onMove?(item: CenterTabRef): void; // the main window's move (#554)
+  isShared(item: CenterTabRef): boolean; // #554: another tab shows its buffer, so it moves to no window and back from none
 }
 
 // A child's key: its group's id, or a split's first group's, so a node keeps its element while the tree around it changes
@@ -134,7 +135,7 @@ export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFa
       <div data-center-root className="flex min-h-0 min-w-0 flex-1">
         <NodeView
           node={layout.root} path={[]}
-          shared={{ activity, groups: groupsOf(layout.root), focused: layout.focused, ops, drag, fileLinks, fontFamily, pane, onSplit, onExit, onWake, onClose: closer.close, onDock, onMove }}
+          shared={{ activity, groups: groupsOf(layout.root), focused: layout.focused, ops, drag, fileLinks, fontFamily, pane, onSplit, onExit, onWake, onClose: closer.close, onDock, onMove, isShared: (item) => sharesBuffer(layout, item) }}
         />
       </div>
     );
