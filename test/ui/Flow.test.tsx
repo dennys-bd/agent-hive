@@ -1004,7 +1004,7 @@ test('a flow switch closes the open list panel; coming back does not reopen it (
   const user = userEvent.setup();
   vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(400); // lista › shows only on a node that overflows
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(200);
-  onTestFinished(() => vi.restoreAllMocks());
+  onTestFinished(() => { vi.restoreAllMocks(); });
   const s = twoFlows([task('1', 'dev')]);
   const { rerender } = render(<Flow state={s} flow={s.flows[0]} />);
   await user.click(within(screen.getByRole('region', { name: 'fluxograma' })).getByRole('button', { name: 'lista ›' }));

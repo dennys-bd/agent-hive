@@ -52,7 +52,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps }: Flow
   const inFlow = new Set(drawn.stages.map((s) => s.name));
   const isTree = chart.view.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
   const { itemId: focused, focus, focusOn, leave } = useTreeFocus(state.tasks, drawn.name, isShown); // #35: the focus on a subtree, never in flowView
-  const shown = state.tasks.filter((c) => inFlow.has(c.stage));
+  const shown = state.tasks.filter((c) => c.stage !== undefined && inFlow.has(c.stage)); // #566: a task outside the flow is on no flowchart
   const of = (stage: string) => stageTasks(state, stage, filters.rulesOf(stage), search);
   const node = (stage: Stage, maxHeight: number) => {
     const { all, filtered, tasks } = of(stage.name);
