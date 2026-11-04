@@ -150,13 +150,13 @@ test('hive_done refuses a result whose merge with the task result would pass 64 
   assert.deepEqual(Object.keys(resultOf(server.getState()!, task0(server).item.itemId) ?? {}), ['a']);
 });
 
-test('hive_create_task lands in the first Comb stage without a stage, in the named one with it, and answers the new id; GET is 405 (#99)', async (t) => {
+test('hive_create_task without a stage creates a task outside the flow, in the named stage with it, and answers the new id; GET is 405 (#99, #566)', async (t) => {
   const { base, server, ptyId } = await start(t);
   const client = await connect(t, base, ptyId);
   assert.deepEqual(await call(client, 'hive_create_task', { title: 'Follow-up', body: 'details' }), { text: 'HIVE-1', isError: false });
   assert.deepEqual(await call(client, 'hive_create_task', { title: 'Later', stage: 'later' }), { text: 'HIVE-2', isError: false });
   const created = server.getState()!.tasks.filter((c) => c.created).map((c) => [c.item.id, c.item.title, c.item.body, c.stage]);
-  assert.deepEqual(created, [['HIVE-1', 'Follow-up', 'details', 'fila'], ['HIVE-2', 'Later', '', 'later']]);
+  assert.deepEqual(created, [['HIVE-1', 'Follow-up', 'details', undefined], ['HIVE-2', 'Later', '', 'later']]);
   assert.equal((await hiveFetch(`${base}/hooks/mcp`)).status, 405, 'stateless: no SSE stream to open');
 });
 
