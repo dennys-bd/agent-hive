@@ -551,14 +551,6 @@ test('Iniciar #id on a task with no stage left to run opens on sessão livre tho
   expect(free).toBeChecked();
 });
 
-test('Iniciar #id on a task outside the flow keeps executar etapas off and says it has no flow, never a placeholder stage (#566)', () => {
-  const { stage: _stage, ...outside } = HERO;
-  render(<StartDialog state={state([LANDING, outside])} taskId="I9" initialMode="stages" onClose={vi.fn()} />);
-  expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeDisabled();
-  expect(screen.getByText('a tarefa está sem fluxo: leve-a a uma etapa para executar etapas.')).toBeInTheDocument();
-  expect(screen.queryByText(/nenhuma etapa para executar/)).not.toBeInTheDocument();
-});
-
 test('the dialog\'s children may shrink below their content, so a long title truncates, and the closed task field carries the picked task\'s full label as its tooltip (#774)', async () => {
   const user = userEvent.setup();
   render(<StartDialog state={state()} onClose={vi.fn()} />);
@@ -846,4 +838,59 @@ test('abrir sessão on a task outside the flow preselects sem fluxo: a free sess
   await user.click(open);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts().map(([url]) => url)).toEqual(['/tasks/I9/open']);
+});
+
+test('a flow chosen with executar etapas reads its entry: the stages box shows the path from there, and the start moves the task to the entry first (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeEnabled();
+  expect(screen.getByText('backlog → dev → in review')).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: /^fluxo bug/ }));
+  expect(screen.queryByText('backlog → dev → in review')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I9/move-to', { stage: 'triage' }], ['/tasks/I9/start', { base: null, local: false }]]);
+});
+
+test('a flow chosen with sessão livre moves the task to the entry, then opens the session (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" initialMode="free" onClose={onClose} />);
+  await user.click(screen.getByRole('radio', { name: /^fluxo main/ }));
+  expect(screen.getByRole('radio', { name: 'sessão livre' })).toBeChecked();
+  const open = screen.getByRole('button', { name: /sessão livre/ });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I9/move-to', { stage: 'backlog' }], ['/tasks/I9/open', { kind: 'claude', base: null, local: false }]]);
+});
+
+test('a move-to the route refuses shows its words and starts nothing (#580)', async () => {
+  const user = userEvent.setup();
+  const original = fetchMock.getMockImplementation()!;
+  onTestFinished(() => { fetchMock.mockImplementation(original); });
+  fetchMock.mockImplementation(async (input, init) => (String(input).endsWith('/move-to') ? reply({ error: 'tarefa já está nessa etapa' }, 409) : original(input, init)));
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('tarefa já está nessa etapa');
+  expect(posts().map(([url]) => url)).toEqual(['/tasks/I9/move-to']);
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test('a start refused after the move-to shows its error and leaves the task in the flow: nothing posts leave-flow (#580)', async () => {
+  const user = userEvent.setup();
+  const original = fetchMock.getMockImplementation()!;
+  onTestFinished(() => { fetchMock.mockImplementation(original); });
+  fetchMock.mockImplementation(async (input, init) => (String(input).endsWith('/start') ? reply({ error: 'spawn failed: no agent' }, 500) : original(input, init)));
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('spawn failed: no agent');
+  expect(posts().map(([url]) => url)).toEqual(['/tasks/I9/move-to', '/tasks/I9/start']);
+  expect(onClose).not.toHaveBeenCalled();
 });
