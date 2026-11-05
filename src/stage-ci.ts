@@ -151,26 +151,37 @@ function failedRead(state: State, { activity, ci, at }: Read, stage: Stage, fail
   return { state: withActivity(state, { ...activity, ci: { ...ci, reran, rerunAt: at } }), effects: [{ type: 'ciRerun', activityId: activity.id, runs }] };
 }
 
-// #264: GitHub runs no checks on a PR that conflicts with its base, so waiting could only time out: one cause and one line per conflicting PR.
-// cleanName: the base is GitHub's text and reaches the cause and the Dev prompt, so it keeps no control character and no line break
-function conflictOf(prs: readonly CiPrRead[]): { names: string[]; output: string } | undefined {
-  const found = prs.filter((p) => p.conflicting === true);
-  if (found.length === 0) return undefined;
-  const baseOf = (p: CiPrRead): string => cleanName(p.base ?? 'the base branch');
-  return {
-    names: found.map((p) => `conflict with ${baseOf(p)}`),
-    output: found.map((p) => `PR #${prNumber(p.url)} conflicts with ${baseOf(p)}: update the branch from ${baseOf(p)} and resolve the conflicts, then push.`).join('\n'),
-  };
+// #264, #669: what keeps a PR from merging that a push clears, judged on every read before the checks: GitHub runs no checks on a conflicting
+// PR, and a behind or unsigned one passes its checks yet cannot merge, so waiting could only reach review unmergeable. Per PR: conflict, behind,
+// unsigned, one cause and one line each. cleanName: the base is GitHub's text and reaches the cause and the Dev prompt, so it keeps no control
+// character and no line break; the shas passed parseCi's hex check
+function blocksOf(p: CiPrRead): { name: string; line: string }[] {
+  const base = cleanName(p.base ?? 'the base branch');
+  const pr = `PR #${prNumber(p.url)}`;
+  const unsigned = p.unsigned ?? [];
+  return [
+    ...(p.conflicting === true ? [{ name: `conflict with ${base}`, line: `${pr} conflicts with ${base}: update the branch from ${base} and resolve the conflicts, then push.` }] : []),
+    ...(p.behind === true ? [{ name: `behind ${base}`, line: `${pr} is behind ${base}, which requires branches to be up to date: update the branch from ${base}, then push.` }] : []),
+    ...(unsigned.length > 0
+      ? [{ name: 'unsigned commits', line: `${pr} has commits without a verified signature, which ${base} requires: ${unsigned.join(', ')}. Re-sign them and push with --force-with-lease.` }]
+      : []),
+  ];
 }
 
-/** One read of the wait's PRs (#834): a conflict first (#264), then a final verdict, then each check's clock for a wait still open (#515, #598). With no open PR, a task whose PRs are all merged passes (#304). A wait fetching its logs, an unknown
+// Every PR's blocks in read order, as the card's error and the Dev prompt list them; none when no PR is blocked
+function blockOf(prs: readonly CiPrRead[]): { names: string[]; output: string } | undefined {
+  const found = prs.flatMap(blocksOf);
+  return found.length === 0 ? undefined : { names: found.map((b) => b.name), output: found.map((b) => b.line).join('\n') };
+}
+
+/** One read of the wait's PRs (#834): a merge block first (#264, #669), then a final verdict, then each check's clock for a wait still open (#515, #598). With no open PR, a task whose PRs are all merged passes (#304). A wait fetching its logs, an unknown
  * activity and a Quit ignore it. The first read whose required fell back marks it, so the fact log says so once. */
 export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent, { type: 'ciRead' }>): Reduced {
   const wait = waitOf(state, activityId);
   const stage = wait && stageOf(state.stages, wait.ci.stage);
   if (!wait || !stage || wait.ci.collecting) return none(state);
-  const conflict = conflictOf(prs); // before the verdict, so a conflicting read marks no fellBack; no re-run and no logs: there are no runs
-  if (conflict) return failCi(state, wait, conflict.output, conflict.names);
+  const block = blockOf(prs); // before the verdict, so a blocked read marks no fellBack; no re-run and no logs: the fix is a push, which restarts CI
+  if (block) return failCi(state, wait, block.output, block.names);
   const verdict = ciVerdict(sinceRerun(wait.ci, prs, at), stage);
   const ci: StageCi = verdict.fellBack && !wait.ci.fellBack ? { ...wait.ci, fellBack: true } : wait.ci;
   if (prs.length === 0 && mergedOnly(recordsOf(state, taskId(wait.task)))) return passCi(state, wait); // #304: every PR merged leaves CI nothing to decide

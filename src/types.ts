@@ -507,9 +507,12 @@ export const DISCARD_FAILED = 'discard_failed';
  * PR it was read on and, for a check run, the Actions run behind it: what a re-run and the log fetch name. */
 export interface CiCheck extends PrCheck { pr: string; runId?: number }
 /** One open PR's CI as one read saw it (#834): its last commit and that commit's checks; required: its base branch's required check names,
- * absent when the branch protects none; awaiting: workflows awaiting a maintainer's approval; canPush false: the login may not re-run there (#854). */
+ * absent when the branch protects none; awaiting: workflows awaiting a maintainer's approval; canPush false: the login may not re-run there (#854);
+ * behind and unsigned: merge blocks a push clears (#669). */
 export interface CiPrRead {
   url: string; head: string; base?: string; conflicting?: true; // #264: base is the PR's baseRefName; conflicting only on CONFLICTING
+  behind?: true; // #669: mergeStateStatus BEHIND
+  unsigned?: string[]; // #669: short shas of commits without a verified signature, only when the base requires signatures; absent when none
   required?: string[]; checks: CiCheck[]; awaiting?: string[]; canPush?: boolean; noCi?: true; // noCi: #11
 }
 /** A failed Actions run to re-run (#834), by its repository (owner/name) and id. */

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resultOf, withActivity } from '../src/activities.js';
+import { parseCi } from '../src/ci-checks.js';
 import { deriveFacts } from '../src/fact-derive.js';
 import { describeEffect, describeEvent } from '../src/log.js';
 import { reduce } from '../src/orchestrator.js';
@@ -310,6 +311,33 @@ test('without a failed transition a conflict stops the task with CI failed: conf
   assert.equal(outputOf(read(s, [unread]).state), 'PR #7 conflicts with the base branch: update the branch from the base branch and resolve the conflicts, then push.');
   const waiting = read(s, [{ ...pr([check('build', 'pending')]), base: 'main' }]);
   assert.deepEqual([waiting.effects, waiting.state.tasks[0].stage, live(waiting.state)?.ci?.total, live(waiting.state)?.stopped], [[], 'ci', 1, undefined]);
+});
+
+const passing = [check('build', 'success')];
+const BEHIND = 'PR #7 is behind main, which requires branches to be up to date: update the branch from main, then push.';
+const unsignedLine = (shas: string): string => `PR #7 has commits without a verified signature, which main requires: ${shas}. Re-sign them and push with --force-with-lease.`;
+
+test('a read whose checks all pass fails the wait when its PR is behind its base, or has commits its base\'s signatures rule refuses, with the shas; no re-run, no log fetch (#669)', () => {
+  const s = polled().state;
+  const behind = read(s, [{ ...pr(passing), base: 'main', behind: true }]);
+  assert.deepEqual([behind.effects, behind.state.tasks[0].stage, live(behind.state)?.error, outputOf(behind.state)], [[], 'ci', 'CI failed: behind main', BEHIND]);
+  const unsigned = read(s, [{ ...pr(passing), base: 'main', unsigned: ['abc1234', 'def5678'] }]);
+  assert.deepEqual([unsigned.effects, live(unsigned.state)?.error, outputOf(unsigned.state)], [[], 'CI failed: unsigned commits', unsignedLine('abc1234, def5678')]);
+});
+
+test('a PR conflicting, behind and with unsigned commits names every cause, conflict first, then behind, then unsigned, one line each (#669)', () => {
+  const { state } = read(polled().state, [{ ...conflicting(passing), behind: true, unsigned: ['abc1234'] }]);
+  assert.equal(live(state)?.error, 'CI failed: conflict with main, behind main, unsigned commits');
+  assert.equal(outputOf(state), [CONFLICT, BEHIND, unsignedLine('abc1234')].join('\n'));
+});
+
+test('unsigned commits pass the wait when the base has no signatures rule, and fail it under one (#669)', () => {
+  const answered = (requiresSignatures: boolean): CiPrRead[] => parseCi([URL], { p0: {
+    baseRefName: 'main', baseRef: { refUpdateRule: { requiresSignatures } }, signatures: { nodes: [{ commit: { oid: 'abc1234def', signature: null } }] },
+    headCommit: { nodes: [{ commit: { oid: 'h1', statusCheckRollup: { state: 'SUCCESS', contexts: { nodes: [{ __typename: 'CheckRun', name: 'build', status: 'COMPLETED', conclusion: 'SUCCESS' }] } } } }] },
+  } });
+  assert.equal(read(polled().state, answered(false)).state.tasks[0].stage, 'review');
+  assert.equal(live(read(polled().state, answered(true)).state)?.error, 'CI failed: unsigned commits');
 });
 
 test('ci.ended says failed for a failure a transition routes and for one that stops the task, and passed for a pass (#264)', () => {
