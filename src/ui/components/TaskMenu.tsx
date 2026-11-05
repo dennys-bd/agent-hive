@@ -152,6 +152,31 @@ function useDeleteTask(task: Task, runs: Runs): { item: ReactNode; dialog: React
   return { item, dialog };
 }
 
+// tirar do fluxo (#576 decisions 11, 12): leave-flow, disabled while canMoveToStage refuses, as the route does (#566), with the reason on a
+// second line. A refusal the route still answers (a delete activity under way) is act's toast. The view stays; the next state moves the card
+const leaveReason = (task: Task, state: State): string | undefined =>
+  canMoveToStage(task, state) ? undefined : t(task.item.epic === undefined ? 'detail.deleteActivityBlocked.running' : 'tasks.menu.leaveFlow.epic');
+
+function LeaveFlowItem({ task, state }: { task: Task; state: State }) {
+  const reason = leaveReason(task, state);
+  return (
+    <ContextMenuItem disabled={reason !== undefined} onSelect={() => void act(`/tasks/${encodeURIComponent(task.item.itemId)}/leave-flow`)}>
+      <Reasoned label={t('tasks.menu.leaveFlow')} reason={reason} />
+    </ContextMenuItem>
+  );
+}
+
+// The flow's items (#576 decision 10, handoff menuFluxo): começar sozinho, mover para etapa ›, tirar do fluxo
+function FlowItems({ task, state }: { task: Task; state: State }) {
+  return (
+    <>
+      <AutoStartItem task={task} kit={CONTEXT_KIT} />
+      <StageSub task={task} state={state} />
+      <LeaveFlowItem task={task} state={state} />
+    </>
+  );
+}
+
 // mover para etapa › (#164, #366, #708): on every task, auto on or off, disabled while canMoveToStage refuses (a stage run holds it, or it
 // is leaving); the drag shares canMoveToStage; its items are stageMoves', which the exhausted block's mover para… lists too (#916)
 function StageSub({ task, state }: { task: Task; state: State }) {
@@ -190,7 +215,7 @@ function WorkspaceSub({ task, state, id }: { task: Task; state: State; id: strin
 /** Right-click on a task still in the flow (redesign 10, #542), 236px, in the handoff's order: aprovar and enviar feedback… while the stage
  * awaits approval (#268, #315); executar etapas… and abrir sessão livre…, the Start dialog on the task in either mode (#543), disabled while
  * canOpenSession says no; reiniciar etapa…, today's restart dialog, only when startMode offers it (#283); executar › (#300) and dormir › (the
- * task's agent sessions, #343); the two diffs (#270); começar sozinho, mover para etapa › and mover para workspace ›; excluir atividade… and,
+ * task's agent sessions, #343); the two diffs (#270); começar sozinho, mover para etapa ›, tirar do fluxo and mover para workspace ›; excluir atividade… and,
  * on a Hive task, excluir task…. Every dialog and confirm lives beside the menu, which closes on the pick, so a click in them never reaches
  * the task. */
 export function TaskMenu({ task, state, children }: { task: Task; state: State; children: ReactNode }) {
@@ -223,8 +248,7 @@ export function TaskMenu({ task, state, children }: { task: Task; state: State; 
           <ContextMenuSeparator />
           <DiffItems task={task} state={state} />
           <ContextMenuSeparator />
-          <AutoStartItem task={task} kit={CONTEXT_KIT} />
-          <StageSub task={task} state={state} />
+          <FlowItems task={task} state={state} />
           <WorkspaceSub task={task} state={state} id={id} />
           {(deleteActivity.item || deleteTask.item) && <ContextMenuSeparator />}
           {deleteActivity.item}

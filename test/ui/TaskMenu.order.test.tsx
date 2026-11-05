@@ -38,7 +38,7 @@ test('the task menu is 236px, in the handoff\'s order: the runs, the diffs, come
   expect(items()).toEqual([
     'executar etapas…', 'abrir sessão livre…', 'reiniciar etapa…', 'executar', 'dormir',
     'diff da etapa', 'diff da worktree', 'mostrar PR',
-    'começar sozinho', 'mover para etapa', 'mover para workspaceexclua a atividade antes',
+    'começar sozinho', 'mover para etapa', 'tirar do fluxo', 'mover para workspaceexclua a atividade antes',
     `excluir atividade…${RUNNING}`,
   ]);
   const blocked = within(menu()).getByRole('menuitem', { name: /^excluir atividade…/ });
@@ -49,7 +49,7 @@ test('the task menu is 236px, in the handoff\'s order: the runs, the diffs, come
     'aprovar', 'enviar feedback…',
     'executar etapas…', 'abrir sessão livre…', 'executar', 'dormir',
     'diff da etapa', 'diff da worktree', 'mostrar PR',
-    'começar sozinho', 'mover para etapa', 'mover para workspaceexclua a atividade antes',
+    'começar sozinho', 'mover para etapa', 'tirar do fluxo', 'mover para workspaceexclua a atividade antes',
     `excluir atividade…${RUNNING}`, `excluir tarefa…${RUNNING}`,
   ]);
   expect(within(menu()).getAllByRole('separator')).toHaveLength(4);
