@@ -21,7 +21,7 @@ const agentText = (agent: string): Promise<string> => readFile(join(PLUGIN, agen
 const VARIABLES: Record<string, string[]> = {
   'new-spec': ['docsRepo', 'specsDir', 'docsLanguage', 'chatLanguage', 'sliceMin', 'sliceMax', 'featureFlags'],
   'new-plan': ['docsRepo', 'specsDir', 'plansDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'sliceMin', 'sliceMax', 'featureFlags', 'testCommand'],
-  'new-build': ['specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'uiCheck', 'testCommand'],
+  'new-build': ['specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'uiCheck', 'testCommand'],
   'new-pr': ['docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'testCommand'],
   decomposition: ['specsDir', 'docsLanguage', 'chatLanguage', 'decompositionLabel'],
 };
@@ -202,18 +202,19 @@ test('every shipped skill parses with no error, declares the variables its text 
   }
 });
 
-// #431: new-build interpolates each value where it is used; a delivery mode renders only its own branching
+// #431: new-build interpolates each value where it is used, reads no reference, and builds everything on the task's branch: no slices
 const NEW_BUILD_VALUES: Record<string, string> = {
   specsDir: 'design/specs', plansDir: 'design/plans', walkthroughsDir: 'design/walkthroughs', designsDir: 'design/screens', docsLanguage: 'Spanish', chatLanguage: 'Portuguese',
-  delivery: 'stacked', uiCheck: 'run pnpm start and capture each screen as docs/ui-check.md says', testCommand: 'pnpm test',
+  uiCheck: 'run pnpm start and capture each screen as docs/ui-check.md says', testCommand: 'pnpm test',
 };
 
-test('/hive:new-build declares its own variables, interpolated where used, and reads no reference: no docsRepo, no source, no Hive tool but hive_task (#7), no model and no agent instructions file by name (#431)', async () => {
+test('/hive:new-build declares its own variables, interpolated where used, and reads no reference: no docsRepo, no source, no Hive tool but hive_task (#7), no model, no slices and no agent instructions file by name (#431)', async () => {
   const text = await skillText('new-build');
   assert.doesNotMatch(text, /docsRepo|conventions\.md|reference\/|CLAUDE\.md|AGENTS\.md|hiveLanguage/, 'no docsRepo (a nested docs repo is reached through the folders), no reference a user of the skill cannot see or edit, no agent instructions file by name');
   assert.doesNotMatch(text, /gh issue/, 'the task is read through the Hive, whatever its source');
   for (const tool of ['hive_done', 'hive_ask', 'hive_conventions', 'hive_stop', 'hive_pr', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);
   assert.doesNotMatch(text, /\b(opus|sonnet|haiku)\b|## Model routing/, 'no model alias: a stage\'s model is set in the Hive (#446)');
+  assert.doesNotMatch(text, /slice|stacked|integration|delivery/i, 'everything is built on the task\'s branch, reviewed once and opened as one PR: no slices and no delivery mode');
   // what it used to read in the reference is said in the skill itself
   for (const part of ['as `hive_task` answers it', '`git -C <checkout> diff --name-only --diff-filter=A <its base>...HEAD -- <folder>`', '`git -C <folder> rev-parse --show-toplevel`', "its key in the task's `result`",
     '(`git symbolic-ref --short refs/remotes/origin/HEAD`, without `origin/`)', '`CONTRIBUTING.md`, `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md`']) assert.ok(text.includes(part), part);
@@ -221,6 +222,7 @@ test('/hive:new-build declares its own variables, interpolated where used, and r
   assert.match(text, /When rules disagree, the most specific wins: the prompt that invoked\s+this skill and the values set on it for this workspace; the instructions\s+at `\{\{ walkthroughsDir \}\}` \(its agent instructions file or its\s+`README\.md`\) when there are any; the plan's `## Global Constraints` and\s+the spec; CONTRIBUTING\.md; the repository's agent instructions file; then\s+this skill, which fills what those leave open/, 'the walkthroughs folder and the repository win over the skill');
   assert.match(text, /^## Subagents$/m);
   for (const agent of ['hive:tdd', 'hive:build-fixer', 'hive:code-reviewer', 'hive:security-reviewer']) assert.ok(text.includes(`| \`${agent}\``), `the Subagents table names ${agent}`);
+  assert.match(text, /dispatch `hive:code-reviewer` on the whole\s+diff, `git diff <base>\.\.\.HEAD`/, 'one code review, of the whole diff');
   assert.match(text, /The run's result is\s+`walkthrough`, the file's path relative to the worktree, and `pr`/, 'the keys the reference\'s Results table names, with no tool named');
   assert.match(text, /one per task: when "Input" found one, update\s+that file/, 'an existing walkthrough is updated, never doubled');
   assert.match(text, /tests \(the test command, when none is named above\)/, 'with testCommand unset, the test command is the repository\'s');
@@ -228,20 +230,17 @@ test('/hive:new-build declares its own variables, interpolated where used, and r
   const rendered = renderedFor(text);
   assert.doesNotMatch(rendered, /\{\{|\{%/, 'no Liquid is left');
   assert.doesNotMatch(rendered, /## Conventions/, 'no list of values: each is interpolated where it is used');
-  for (const part of ['Plan: under `docs/hive/plans`', 'else under `docs/hive/specs`', 'a `handoff.md` under `docs/hive/design`', 'Walkthrough: under `docs/hive/walkthroughs`', 'Write `docs/hive/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in English',
-    'in the `single` delivery', 'every slice stays on `<branch>`, as a group of commits', '`git diff <base>...HEAD` on `<branch>`.', 'first:\n`<branch>`, `git checkout <branch>`.\nThen commit']) assert.ok(rendered.includes(part), part);
-  for (const part of ['Talk in', 'The test command, wherever', 'Run the app and capture', '<branch>-s<k>', "the last slice's"]) assert.ok(!rendered.includes(part), `with no value, nothing says ${part}`);
+  for (const part of ['Plan: under `docs/hive/plans`', 'else under `docs/hive/specs`', 'a `handoff.md` under `docs/hive/design`', 'Walkthrough: under `docs/hive/walkthroughs`', 'Write `docs/hive/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in English']) assert.ok(rendered.includes(part), part);
+  for (const part of ['Talk in', 'The test command, wherever', 'Run the app and capture']) assert.ok(!rendered.includes(part), `with no value, nothing says ${part}`);
 });
 
 test('/hive:new-build rendered with a value for each variable carries each where it is used; another workspace keeps the defaults (#431)', async () => {
   const text = valued(await skillText('new-build'), NEW_BUILD_VALUES);
   const mine = renderedFor(text);
   for (const part of ['Plan: under `design/plans`', 'else under `design/specs`', 'a `handoff.md` under `design/screens`', 'Walkthrough: under `design/walkthroughs`', 'Write `design/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in Spanish', 'Talk in Portuguese.',
-    'The test command, wherever this skill says so, is `pnpm test`.', 'in the `stacked` delivery', "`git checkout -b <branch>-s<k>` from slice k − 1's branch", "`git diff <base>...HEAD` on the last slice's branch.",
-    "first:\nthe last slice's, `git checkout <branch>-s<last>`.\nThen commit", 'Run the app and capture its screens as this says: run pnpm start and capture each screen as docs/ui-check.md says.']) assert.ok(mine.includes(part), part);
-  assert.ok(!mine.includes('every slice stays on `<branch>`'), 'only the stacked branching is said');
+    'The test command, wherever this skill says so, is `pnpm test`.', 'Run the app and capture its screens as this says: run pnpm start and capture each screen as docs/ui-check.md says.']) assert.ok(mine.includes(part), part);
   const other = renderedFor(text, 'b');
-  assert.ok(other.includes('in the `single` delivery') && !other.includes('Talk in') && other.includes('Write `docs/hive/walkthroughs/'), 'b keeps the defaults');
+  assert.ok(!other.includes('Talk in') && other.includes('Write `docs/hive/walkthroughs/') && !other.includes('The test command, wherever'), 'b keeps the defaults');
 });
 
 // #416: the designer's conventions; #439: no docsRepo, no conventions list: each value is interpolated where it is used

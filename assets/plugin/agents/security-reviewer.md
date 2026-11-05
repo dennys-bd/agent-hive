@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Reviews a delivery's diff for security problems. Dispatched by /hive:new-build once, on the whole diff after the slice reviews; not dispatched when the diff is only prose. Flags secrets, injection, unsafe argv and path handling, and the OWASP Top 10.
+description: Reviews a delivery's diff for security problems. Dispatched by /hive:new-build once, on the whole diff after the code review; not dispatched when the diff is only prose. Flags secrets, injection, unsafe argv and path handling, and the OWASP Top 10.
 tools: Read, Grep, Glob, Bash
 basedOn:
   - { name: "ecc:security-reviewer", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/security-reviewer.md }
