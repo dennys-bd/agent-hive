@@ -161,7 +161,7 @@ test("a source row opens its table under the source header, with no tabs; the fi
   expect(automation().getByRole('button', { name: /^build/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('the task column on a task of the second flow shows that flowchart and selects it; on a task in no flow, the outside placeholder (#571)', async () => {
+test('the task column on a task of the second flow shows that flowchart and selects it; on a task in no flow, the outside view (#571, #578)', async () => {
   const user = userEvent.setup();
   const onSelect = vi.fn();
   render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
@@ -173,7 +173,8 @@ test('the task column on a task of the second flow shows that flowchart and sele
   expect(onSelect).toHaveBeenCalledWith({ taskId: 'roadmap:PVTI_2' });
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
   await goToRow(user, 'Issue 3');
-  expect(main().getByText('em breve')).toHaveClass('text-muted-foreground');
+  expect(main().getByText('nenhuma tarefa fora do fluxo')).toHaveClass('text-muted-foreground'); // #578: Issue 3 sits in a stage of no flow, which is not stageless
+  expect(main().queryByText('em breve')).not.toBeInTheDocument();
   expect(document.querySelector('[aria-label="fluxograma"]')).toBeNull();
   expect(onSelect).toHaveBeenCalledWith({ taskId: 'roadmap:PVTI_3' });
 });
@@ -190,7 +191,7 @@ test('a Settings save that renames the shown flow brings the first flow back (#5
   expect(stageNode('review')).toBeNull();
 });
 
-test('the outside placeholder has exibir with no voltas rows, counting only the stageless tasks; its choice is the flowchart\'s too (#574)', async () => {
+test('the outside grid has exibir with no voltas rows, counting only the stageless tasks; its choice is the flowchart\'s too (#574)', async () => {
   resetViewState();
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
@@ -199,6 +200,7 @@ test('the outside placeholder has exibir with no voltas rows, counting only the 
   showTasks();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
   await goToRow(user, 'Issue 3'); // a stage of no flow: the outside view
+  expect(within(main().getByRole('region', { name: 'novas' })).getByText('#4 Issue 4')).toBeInTheDocument(); // #578: the stageless task's card
   await user.click(bar().getByRole('button', { name: 'exibir' }));
   let pop = within(screen.getByRole('dialog'));
   expect(pop.queryByRole('radiogroup', { name: 'voltas' })).not.toBeInTheDocument();
