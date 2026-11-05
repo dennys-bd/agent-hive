@@ -105,21 +105,11 @@ function TasksSoon({ state, isOutside, display, sources }: { state: State; isOut
   );
 }
 
-// #572 decision 14: the hive source's center until 4.2 builds its table: the source header naming hive, over one muted line
-function HiveSoon({ state }: { state: State }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={[]} mode={{ kind: 'source', source: HIVE_SOURCE }} />
-      <p className="px-3.5 py-3 text-muted-foreground text-xs">{t('tasks.center.soon')}</p>
-    </div>
-  );
-}
-
 // The center under Tarefas (#571): what the resolved TasksCenter names. Flow is the same element across flows, so a switch keeps it mounted (decision 9)
 function Center({ state, selected, nav, repositories, onSelect, stageCaps, sources, display }: CenterProps) {
   const { center, repo, source } = nav;
   if (center.kind === 'repo' && repo) return repoCenter(state, nav, repo, center);
-  if (center.kind === 'source' && center.source === HIVE_SOURCE) return <HiveSoon state={state} />;
+  if (center.kind === 'source' && center.source === HIVE_SOURCE) return <ProjectTable state={state} source={HIVE_SOURCE} onGoTo={nav.goTo} onOpenIssue={nav.openProjectItem} />; // #583
   if (center.kind === 'source' && source) return sourceCenter(state, nav, source, repositories, center.issue);
   if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} display={display} sources={sources} />;
   return <TasksSoon state={state} isOutside={center.kind === 'tasks' && center.view === 'outside'} display={display} sources={sources} />;

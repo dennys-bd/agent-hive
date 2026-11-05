@@ -57,16 +57,18 @@ test('the brand\'s mark is coloured by the effective signal; without one it fall
   expect(mark()).toHaveAttribute('data-signal', 'red');
 });
 
-test('the hive row opens the hive source\'s center: hive in the header over em breve, the row pressed, no flowchart (#665, #572)', async () => {
+test('the hive row opens the hive table: hive · tarefas do hive · sem sync externo in the header, the row pressed, no flowchart (#665, #572, #583)', async () => {
   const user = userEvent.setup();
   render(<Dashboard state={state} locale="pt-BR" tick={0} onSelect={() => {}} />);
   showFlow();
   const automation = within(screen.getByRole('region', { name: 'Tarefas' }));
   await user.click(automation.getByRole('button', { name: /^hive/ }));
   expect(automation.getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
-  expect(within(screen.getByRole('main')).getByText('em breve')).toHaveClass('text-muted-foreground');
+  expect(within(screen.getByRole('main')).getByRole('columnheader', { name: 'Workspace' })).toBeInTheDocument();
   expect(document.querySelector('[aria-label="fluxograma"]')).toBeNull();
-  expect(within(document.querySelector<HTMLElement>('[data-header-column="center"]')!).getByText('hive')).toHaveClass('font-semibold');
+  const bar = within(document.querySelector<HTMLElement>('[data-header-column="center"]')!);
+  expect(bar.getByText('hive')).toHaveClass('font-semibold');
+  expect(bar.getByText('tarefas do hive · sem sync externo')).toBeInTheDocument();
 });
 
 test('a card in a wait-for-CI stage offers tentar de novo only while the effective signal\'s row runs no workerless stage (#304, #727)', () => {

@@ -45,7 +45,7 @@ const main = () => within(screen.getByRole('main'));
 const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 const automation = () => within(screen.getByRole('region', { name: 'Tarefas' }));
 
-test('a source row opens its table with no tabs; hive opens its own center; the flow row shows the flowchart (#571, #572)', async () => {
+test('a source row opens its table with no tabs; hive opens the hive table; the flow row shows the flowchart (#571, #572, #583)', async () => {
   const user = userEvent.setup();
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
@@ -54,9 +54,11 @@ test('a source row opens its table with no tabs; hive opens its own center; the 
   expect(await main().findByText('1 itens · 1 tarefas')).toBeInTheDocument();
   expect(bar().queryAllByRole('tab')).toEqual([]);
   await user.click(automation().getByRole('button', { name: /^hive/ }));
-  expect(main().queryByText(/itens ·/)).not.toBeInTheDocument();
-  expect(main().getByText('em breve')).toBeInTheDocument();
+  expect(await main().findByText('0 itens · 0 tarefas')).toBeInTheDocument(); // the state holds no hive task
+  expect(main().getByRole('columnheader', { name: 'Workspace' })).toBeInTheDocument();
   expect(bar().getByText('hive')).toHaveClass('font-semibold');
+  expect(bar().getByText('tarefas do hive · sem sync externo')).toBeInTheDocument();
+  expect(main().queryByText('em breve')).not.toBeInTheDocument();
   expect(automation().getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
   await user.click(automation().getByRole('button', { name: /^main/ }));
   expect(bar().getByText('todas as sources')).toBeInTheDocument();

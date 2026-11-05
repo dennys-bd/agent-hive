@@ -3,12 +3,13 @@ import { prsOf } from '../../activities';
 import { isReadOnly } from '../../field-values';
 import { prNumber } from '../../pull-requests';
 import { flowOf } from '../../flows';
-import { resolveWorkspace } from '../../tasks';
+import { HIVE_SOURCE, resolveWorkspace } from '../../tasks';
 import type { Flow, ItemField, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, State, Task } from '../../types';
 import type { ReactNode } from 'react';
 import { BlockedByCell } from '@/components/BlockedByCell';
 import { CreateTaskButton } from '@/components/CreateTaskButton';
 import { FieldEditor } from '@/components/FieldEditor';
+import { HiveStageMenu } from '@/components/HiveStageMenu';
 import { ProjectStatusSelect } from '@/components/ProjectStatusSelect';
 import { Button } from '@/components/ui/button';
 import type { FieldAnswer } from '@/hooks/use-item-fields';
@@ -126,6 +127,8 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
   const written = (answer: FieldAnswer): void => onRow(answer.row);
   if (field !== undefined) {
     const shown = <FieldDisplay field={field} value={Object.hasOwn(item.fields, field.name) ? item.fields[field.name] : undefined} />;
+    // #583 decision 5: the hive's Workspace is read-only text: changing a task's workspace has its own rules (canSetWorkspace)
+    if (source === HIVE_SOURCE) return { className: 'flex min-w-0', cell: shown };
     return { className: 'flex min-w-0', cell: <FieldEditor itemId={item.itemId} field={itemField(field, item)} display={shown} onWritten={written} /> };
   }
   if (Object.hasOwn(DATES, column.key)) {
@@ -134,6 +137,8 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
   }
   switch (column.key) {
     case 'status':
+      // #583 decision 4: a hive row's status is its task's stage, moved through the task routes
+      if (source === HIVE_SOURCE && task !== undefined) return { className: 'min-w-0', cell: <HiveStageMenu task={task} flows={state.flows} /> };
       return { className: 'min-w-0', cell: <ProjectStatusSelect source={source} itemId={item.itemId} status={item.status} statuses={statuses} onRow={onRow} /> };
     case 'labels': {
       const labels: ItemField = { name: LABELS, type: 'labels', value: item.labels };
@@ -150,17 +155,20 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
   }
 }
 
-/** One issue of the native view (#756, handoff 01). Any row opens its issue's page (#757); fluxo › goes to its task; ⇧↵ on the focused
- * row opens the issue on GitHub. */
+/** One issue of the native view (#756, handoff 01), or one task of the hive's (#583). A source row opens its issue's page (#757); a hive row,
+ * which has no source issue, goes to its task (decision 16), as the task column does; ⇧↵ on the focused row opens its link on GitHub. */
 export function ProjectRow(props: ProjectRowProps) {
-  const { item, task, visible, columns, state, onGoTo, onOpenIssue } = props;
+  const { item, task, visible, columns, state, onGoTo, source, onOpenIssue } = props;
   // a click on a cell's own control or input (#686), or inside a menu or popover it portaled out (still bubbling through React), is not the row's
   const onClick = (e: MouseEvent<HTMLTableRowElement>): void => {
     const target = e.target as Element;
-    if (e.currentTarget.contains(target) && !target.closest('button, a, input')) onOpenIssue(item, task);
+    if (!e.currentTarget.contains(target) || target.closest('button, a, input')) return;
+    if (source === HIVE_SOURCE && task) onGoTo(task.item.itemId);
+    else onOpenIssue(item, task);
   };
+  // a hive task made from nothing has no link: ⇧↵ would open a blank window
   const onKeyDown = (e: KeyboardEvent<HTMLTableRowElement>): void => {
-    if (e.key !== 'Enter' || !e.shiftKey || e.target !== e.currentTarget) return;
+    if (e.key !== 'Enter' || !e.shiftKey || e.target !== e.currentTarget || item.url === '') return;
     e.preventDefault();
     window.open(item.url, '_blank', 'noreferrer');
   };
