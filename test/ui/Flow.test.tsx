@@ -392,7 +392,7 @@ const exibir = async (user: ReturnType<typeof userEvent.setup>): Promise<Scope> 
 const loopsChoice = (pop: Scope, name: string): HTMLElement => within(pop.getByRole('radiogroup', { name: 'voltas' })).getByRole('radio', { name });
 const LOOPED_STATE = (): State => ({ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED });
 
-test('voltas nenhuma hides every arrow with its pill, the row falling to the margin; só internas draws as nenhuma until 3.1; todas brings them back; flowView keeps each (#909, #574)', async () => {
+test('voltas nenhuma hides every arrow with its pill, the row falling to the margin; só internas draws the neighbour arrows, forward and back, without the loop and the skip; todas brings them back; flowView keeps each (#909, #574, #576)', async () => {
   resetViewState();
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
@@ -410,7 +410,9 @@ test('voltas nenhuma hides every arrow with its pill, the row falling to the mar
   expect(row()).toBe(`${MARGIN}px`);
   expect(readFlowView().loops).toBe('none');
   await user.click(loopsChoice(pop, 'só internas'));
-  expect(kinds(canvas)).toEqual([]);
+  expect(kinds(canvas)).toEqual(['forward', 'above']); // dev → review and review → dev; pr's feedback loop and the dev → pr skip are outer
+  expect(within(canvas).getByText('falhou · 3x')).toBeInTheDocument();
+  expect(within(canvas).queryByText('feedback')).not.toBeInTheDocument();
   expect(readFlowView().loops).toBe('inner');
   await user.click(loopsChoice(pop, 'todas'));
   expect(kinds(canvas)).toEqual(['forward', 'above', 'loop', 'above']);

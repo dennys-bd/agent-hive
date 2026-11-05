@@ -53,7 +53,6 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
   const chart = useFlowView(isShown, drawn.name); // the flowchart's view (#909, #910, #571): loops and the drawn flow's canvas, kept in flowView
   const inFlow = new Set(drawn.stages.map((s) => s.name));
   const options = display?.options ?? chart.view;
-  const isDrawingLoops = options.loops === 'all'; // #574 decision 5: until 3.1 inner draws as none
   const isTree = options.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
   const { itemId: focused, focus, focusOn, leave } = useTreeFocus(state.tasks, drawn.name, isShown); // #35: the focus on a subtree, never in flowView
   const shown = state.tasks.filter((c) => c.stage !== undefined && inFlow.has(c.stage)); // #566: a task outside the flow is on no flowchart
@@ -77,7 +76,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart
-            key={drawn.name} stages={drawn.stages} transitions={drawn.transitions} loops={isDrawingLoops} zoom={chart.view.zoom} pan={chart.view.pan}
+            key={drawn.name} stages={drawn.stages} transitions={drawn.transitions} loops={options.loops} labels={options.labels} zoom={chart.view.zoom} pan={chart.view.pan}
             fitRequest={chart.fitRequest} onPan={chart.onPan} onFit={chart.onFit} onZoom={chart.zoomTo} renderNode={node}
           />
           <FlowZoom zoom={chart.view.zoom} onZoom={chart.zoomTo} onFit={chart.fit} />
