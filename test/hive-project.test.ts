@@ -23,7 +23,7 @@ const TASKS: Task[] = [
 ];
 const RECORDS: ActivityRecord[] = [
   { id: 'a1', taskIds: ['local:1'], sessions: [], prs: [{ url: 'https://github.com/acme/r/pull/12', state: 'open' }, { url: 'https://example.com/not-a-pr', state: 'merged' }] },
-  { id: 'a2', taskIds: ['local:1'], sessions: [], prs: [{ url: 'https://github.com/acme/r/pull/14', state: 'merged' }] },
+  { id: 'a2', taskIds: ['local:1'], sessions: [], prs: [{ url: 'https://github.com/acme/r/pull/14', state: 'merged' }, { url: 'https://github.com/acme/r/pull/12', state: 'open' }] }, // #12 again: a re-run on the same branch
   { id: 'a3', taskIds: ['work:PVTI_9'], sessions: [], prs: [{ url: 'https://github.com/acme/r/pull/13', state: 'open' }] },
 ];
 const STATE: State = { ...initialState(0), flows: FLOWS, tasks: TASKS, activityRecords: RECORDS };

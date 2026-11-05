@@ -8,9 +8,10 @@ const PR_NUMBER = /\/pull\/(\d+)/;
 const LOCAL_PARENT = /^local:(\d+)$/;
 
 // The task's PRs as the PR column shows them (#582): what its activity records hold, no checks (they stay with the PR views). A link
-// without /pull/<n> has no number to show, so it is dropped
+// without /pull/<n> has no number to show, so it is dropped; two records holding one PR (a re-run on the same branch) show it once, the latest
 function prsOf(itemId: string, records: ActivityRecord[]): ProjectPr[] {
-  return records.filter((r) => r.taskIds.includes(itemId)).flatMap((r) => r.prs ?? []).flatMap((pr) => {
+  const byUrl = new Map(records.filter((r) => r.taskIds.includes(itemId)).flatMap((r) => r.prs ?? []).map((pr) => [pr.url, pr]));
+  return [...byUrl.values()].flatMap((pr) => {
     const match = PR_NUMBER.exec(pr.url);
     return match ? [{ number: Number(match[1]), url: pr.url, state: pr.state }] : [];
   });
