@@ -13,7 +13,7 @@ export const TRAFFIC_LIGHTS = { x: 14, y: 16 };
 const HEADER_HEIGHT = 44; // h-11: the overlay must sit inside the header
 
 export interface TitleBarOverlay { color: string; symbolColor: string; height: number }
-export type WindowChrome = Pick<BrowserWindowConstructorOptions, 'titleBarStyle' | 'titleBarOverlay' | 'trafficLightPosition' | 'autoHideMenuBar' | 'backgroundColor'>;
+export type WindowChrome = Pick<BrowserWindowConstructorOptions, 'titleBarStyle' | 'titleBarOverlay' | 'trafficLightPosition' | 'backgroundColor'>;
 
 /** Windows' caption buttons in the theme's colours: at a window's creation, and again at every theme the page resolves (window:theme). */
 export const titleBarOverlayFor = (theme: ResolvedTheme): TitleBarOverlay =>
@@ -24,5 +24,5 @@ export const titleBarOverlayFor = (theme: ResolvedTheme): TitleBarOverlay =>
 export function windowChromeOptions(platform: NodeJS.Platform, theme: ResolvedTheme): WindowChrome {
   const backgroundColor = WINDOW_BACKGROUND[theme];
   if (platform !== 'win32') return { titleBarStyle: 'hiddenInset', trafficLightPosition: TRAFFIC_LIGHTS, backgroundColor };
-  return { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlayFor(theme), autoHideMenuBar: true, backgroundColor };
+  return { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlayFor(theme), backgroundColor };
 }

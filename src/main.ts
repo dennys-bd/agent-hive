@@ -121,7 +121,7 @@ function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
   const win = new BrowserWindow({
     ...rect, ...(fullScreen ? { fullscreen: true } : {}), minWidth: MIN_WIDTH, ...windowChromeOptions(process.platform, windowTheme()), webPreferences: { preload: WINDOW_PRELOAD },
   });
-  if (process.platform === 'win32') win.setMenuBarVisibility(false); // #648: Alt never brings the menu bar back; its accelerators stay
+  if (process.platform === 'win32') win.setMenuBarVisibility(false); // #648: hidden, not auto-hidden, so Alt cannot bring it back; its accelerators stay
   if (maximized && !fullScreen) win.maximize();
   const detached = createDetachedWindowsFor({ port: () => port, boundsFile: join(app.getPath('userData'), DETACHED_BOUNDS_FILE), theme: windowTheme, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), log });
   mainWindows.set(port, { win, detached });
