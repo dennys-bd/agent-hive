@@ -36,9 +36,9 @@ test('testFiles picks what the globs match under dist/, sorted, and skips a file
   assert.deepEqual(testFiles({ root }), ['test/a.test.js', 'test/agents/c.test.js', 'test/b.test.js', 'test/benchmark/d.test.js']);
 });
 
-test('a list replaces the globs and skips blank and # lines (#624)', async (t) => {
+test('a list replaces the globs, skips blank and # lines and reads `\\` as `/` (#624)', async (t) => {
   const root = await distRoot(t);
-  const list = await listFile(t, '# the lane\n\ntest/fixtures/runner/e.js\r\ntest/b.test.js\n   \n');
+  const list = await listFile(t, '# the lane\n\ntest/fixtures/runner/e.js\r\ntest\\b.test.js\n   \n');
   assert.deepEqual(testFiles({ root, list }), ['test/b.test.js', 'test/fixtures/runner/e.js']);
 });
 

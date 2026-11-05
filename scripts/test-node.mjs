@@ -16,7 +16,7 @@ export const GLOBS = Object.freeze([
 ]);
 
 function listed(file) {
-  return readFileSync(file, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '' && !line.startsWith('#'));
+  return readFileSync(file, 'utf8').split(/\r?\n/).map((line) => line.trim().replaceAll('\\', '/')).filter((line) => line !== '' && !line.startsWith('#'));
 }
 
 // globSync answers with the platform's separator; lists, excludes and the sort all speak `/`
@@ -32,7 +32,9 @@ export function testFiles({ root, list, exclude = [] }) {
   return files;
 }
 
-const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
+// the repo root, as the old `node --test dist/...` line ran from it: tests that read process.cwd() keep seeing the root
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
+const DIST = join(ROOT, 'dist');
 const OPTIONS = { shard: { type: 'string' }, list: { type: 'string' }, exclude: { type: 'string', multiple: true } };
 
 // Every boot copies the Hive's plugin into CODEX_HOME (#934), so a run gets a throwaway one and never touches the user's.
@@ -41,15 +43,20 @@ function run(args) {
   const files = testFiles({ root: DIST, list: values.list, exclude: values.exclude });
   const shard = values.shard === undefined ? [] : [`--test-shard=${values.shard}`];
   const home = mkdtempSync(join(tmpdir(), 'hive-test-'));
-  const child = spawn(process.execPath, ['--test', ...shard, ...files], {
-    cwd: DIST,
+  const child = spawn(process.execPath, ['--test', ...shard, ...files.map((file) => `dist/${file}`)], {
+    cwd: ROOT,
     stdio: 'inherit',
     env: { ...process.env, CODEX_HOME: home, CLAUDE_CONFIG_DIR: join(home, 'claude') },
   });
   // the home goes only once the child is gone, so a test still writing into it never loses it mid-write
+  // a handle still open in the home (win32, an antivirus) must not turn the run's result into an uncaught throw
   const finish = (code) => {
-    rmSync(home, { recursive: true, force: true });
     process.exitCode = code;
+    try {
+      rmSync(home, { recursive: true, force: true, maxRetries: 3 });
+    } catch (error) {
+      console.error(`test-node: could not remove ${home}: ${error.message}`);
+    }
   };
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));
   child.on('error', (error) => {
