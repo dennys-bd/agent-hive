@@ -729,6 +729,10 @@ const en = {
   'confirm.deleteActivity.nothing': 'nothing to delete on this task: it moves on to the next stage.',
   'confirm.title.forceDelete': 'Force the removal',
   'confirm.forceDeleteActivity': 'force the removal? Uncommitted changes and commits not pushed are lost for good.',
+  'deleteActivity.refused.dirty': '{path} has changes that are not committed:\n{files}', // #660: the force popup's first paragraph, per refusal code
+  'deleteActivity.refused.unmerged': 'the branch {branch} is not merged into {target}',
+  'deleteActivity.refused.unexpected': 'Unexpected error',
+  'deleteActivity.failed': 'Unexpected error', // #660: a failed delete's toast; git's words are in hive.log
   'confirm.removeOrphanWorktree': 'remove this worktree? No task owns it. The worktree and its local branch are deleted.',
   'confirm.cleanOrphans': 'remove {n} orphan worktrees without force? The worktrees and their local branches are deleted, and the tasks that own them keep their saved sessions; whatever git refuses stays, to be forced one at a time.',
   'worktrees.empty': 'no orphan worktrees',
@@ -3806,6 +3810,10 @@ const pt: Record<MessageKey, string> = {
   'confirm.deleteActivity.nothing': 'nada para excluir nessa tarefa: ela segue para a próxima etapa.',
   'confirm.title.forceDelete': 'Forçar remoção',
   'confirm.forceDeleteActivity': 'forçar a remoção? Mudanças não commitadas e commits não enviados são perdidos de vez.',
+  'deleteActivity.refused.dirty': '{path} tem mudanças não commitadas:\n{files}',
+  'deleteActivity.refused.unmerged': 'o branch {branch} não está mergeado em {target}',
+  'deleteActivity.refused.unexpected': 'Erro inesperado',
+  'deleteActivity.failed': 'Erro inesperado',
   'confirm.removeOrphanWorktree': 'remover essa worktree? Nenhuma tarefa é dona dela. A worktree e o branch local são apagados.',
   'confirm.cleanOrphans': 'remover {n} worktrees órfãs sem forçar? As worktrees e seus branches locais são apagados, e as tarefas donas mantêm a sessão gravada; o que o git recusar fica, para forçar uma de cada vez.',
   'worktrees.empty': 'nenhuma worktree órfã',
