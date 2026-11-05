@@ -1,3 +1,4 @@
+import { ChevronDownIcon, ChevronRightIcon, CornerDownRightIcon, GitForkIcon } from 'lucide-react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import { prsOf } from '../../activities';
 import { isReadOnly } from '../../field-values';
@@ -14,6 +15,7 @@ import { ProjectStatusSelect } from '@/components/ProjectStatusSelect';
 import { Button } from '@/components/ui/button';
 import type { FieldAnswer } from '@/hooks/use-item-fields';
 import { statusText, t } from '@/i18n';
+import type { SubIssueCount } from '@/lib/project-tree';
 import { type DateKey, DATES, type ProjectColumn } from '@/lib/project-columns';
 import { STATUS_TEXT } from '@/lib/status';
 import { taskState } from '@/lib/task-state';
@@ -59,17 +61,54 @@ export function PrCell({ prs }: { prs: ProjectPr[] }) {
   );
 }
 
-// The issue cell (handoff 01): the workspace square (the task's, else the issue's hint when the Comb has it), the number, the title and,
-// on a task, its session status in its colour
-function IssueCell({ item, task, state }: { item: ProjectItem; task?: Task; state: State }) {
+/** A row's place in its list's tree (#584): how deep it nests and, on a parent with a child in the same list, its count and its fold. */
+export interface RowTree { depth: number; parent?: { count: SubIssueCount; isExpanded: boolean; onToggle(): void } }
+
+const INDENT = 20; // px per level (handoff §5 Hierarquia)
+
+// Before the number (decision 11): a parent's 16px chevron, which folds without opening the row; a child's ↳. A child that is a parent
+// keeps the chevron: it still folds
+function TreeMark({ tree }: { tree: RowTree }) {
+  const { parent } = tree;
+  if (parent === undefined) return tree.depth > 0 ? <CornerDownRightIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" /> : null;
+  const Chevron = parent.isExpanded ? ChevronDownIcon : ChevronRightIcon;
+  const onClick = (e: MouseEvent<HTMLButtonElement>): void => {
+    e.stopPropagation();
+    parent.onToggle();
+  };
+  return (
+    <button
+      type="button" aria-expanded={parent.isExpanded} aria-label={t(parent.isExpanded ? 'project.tree.collapse' : 'project.tree.expand')} onClick={onClick}
+      className="flex size-4 shrink-0 items-center justify-center rounded-[4px] text-muted-foreground hover:text-foreground"
+    >
+      <Chevron aria-hidden="true" className="size-3.5" />
+    </button>
+  );
+}
+
+// After the title (decision 12): ⑂ {n} sub-issues · {done}/{n}, 12px muted
+function SubIssueBadge({ count }: { count: SubIssueCount }) {
+  return (
+    <span className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+      <GitForkIcon aria-hidden="true" className="size-3" />
+      {t('project.tree.subIssues', { n: count.n, done: count.done })}
+    </span>
+  );
+}
+
+// The issue cell (handoff 01): the workspace square (the task's, else the issue's hint when the Comb has it), the tree mark, the number, the title
+// and, on a task, its session status in its colour; indented by its depth and, on a parent, followed by its sub-issue badge (#584)
+function IssueCell({ item, task, state, tree }: { item: ProjectItem; task?: Task; state: State; tree: RowTree }) {
   const hint = item.workspaceHint !== undefined && state.workspaces.includes(item.workspaceHint) ? item.workspaceHint : undefined;
   const workspace = task ? resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) : hint;
   const status = task ? taskState(task, state) : 'empty';
   return (
-    <span className="flex min-w-0 items-center gap-1.5">
+    <span className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: tree.depth * INDENT }}>
       <WorkspaceSquare name={workspace} />
+      <TreeMark tree={tree} />
       <span className="shrink-0 font-medium">#{item.id}</span>
       <span className="min-w-0 truncate">{item.title}</span>
+      {tree.parent && <SubIssueBadge count={tree.parent.count} />}
       {status !== 'empty' && <span className={`shrink-0 text-xs ${STATUS_TEXT[status]}`}>{statusText(status)}</span>}
     </span>
   );
@@ -119,6 +158,7 @@ export interface ProjectRowProps {
   item: ProjectItem; task?: Task; visible: ProjectColumn[]; columns: string; state: State; onGoTo(taskId: string): void;
   source: string; statuses: ProjectView['statuses']; onRow(row: ProjectItem): void; // #756, #686: a cell's write answers its re-read row, which replaces this one
   onOpenIssue(item: ProjectItem, task?: Task): void; // #757: the issue's page
+  tree: RowTree; // #584: its place in its list's tree
 }
 
 // A visible column's cell (#756): its class and what it shows; a field's, the labels' and the assignees' through their editor (#686, #60), the blocked-by refs through theirs (#61)
@@ -158,7 +198,7 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
 /** One issue of the native view (#756, handoff 01), or one task of the hive's (#583). A source row opens its issue's page (#757); a hive row,
  * which has no source issue, goes to its task (decision 16), as the task column does; ⇧↵ on the focused row opens its link on GitHub. */
 export function ProjectRow(props: ProjectRowProps) {
-  const { item, task, visible, columns, state, onGoTo, source, onOpenIssue } = props;
+  const { item, task, visible, columns, state, onGoTo, source, onOpenIssue, tree } = props;
   // a click on a cell's own control or input (#686), or inside a menu or popover it portaled out (still bubbling through React), is not the row's
   const onClick = (e: MouseEvent<HTMLTableRowElement>): void => {
     const target = e.target as Element;
@@ -178,7 +218,7 @@ export function ProjectRow(props: ProjectRowProps) {
       onClick={onClick} onKeyDown={onKeyDown} style={{ gridTemplateColumns: columns }}
       className="grid h-10 cursor-pointer items-center gap-3 border-b px-3 text-[13px] outline-none hover:bg-muted focus:bg-muted"
     >
-      <td className="min-w-0"><IssueCell item={item} task={task} state={state} /></td>
+      <td className="min-w-0"><IssueCell item={item} task={task} state={state} tree={tree} /></td>
       {visible.map((column) => {
         const { className, cell } = cellOf(column, props);
         return <td key={column.key} className={className}>{cell}</td>;

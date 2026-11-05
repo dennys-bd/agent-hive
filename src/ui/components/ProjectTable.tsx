@@ -1,21 +1,23 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import { hiveProject } from '../../hive-project';
 import { HIVE_SOURCE } from '../../tasks';
-import type { ProjectItem, ProjectView, SourceConfig, State, Task } from '../../types';
+import type { Flow, ProjectItem, ProjectView, SourceConfig, State, Task } from '../../types';
 import { ColumnScroll, HeaderHandles, useColumnWidths } from '@/components/ColumnDividers';
 import { FlowHeader } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { ProjectColumnsMenu } from '@/components/ProjectColumnsMenu';
 import { ProjectGroupMenu, ProjectGroupRow } from '@/components/ProjectGroupMenu';
-import { ProjectRow } from '@/components/ProjectRow';
+import { ProjectRow, type RowTree } from '@/components/ProjectRow';
 import { type ProjectState, useProject } from '@/hooks/use-project';
 import { t } from '@/i18n';
 import { gridTemplate, withWidths } from '@/lib/column-widths';
 import { ACTION_WIDTH, columnLabel, DATES, defaultColumns, FIELD_KEY, hiveColumns, openFirst, type ProjectColumn, projectColumns } from '@/lib/project-columns';
 import { defaultCollapsed, type GroupOption, groupItems, groupOptions, hiveGroups, type ProjectGroup } from '@/lib/project-groups';
+import { subIssueCount, type TreeRow, treeRows } from '@/lib/project-tree';
 import { type ProjectSort, type ProjectViewPrefs, readProjectView, writeProjectView } from '@/lib/project-views';
 
-const SUBBAR = 'flex h-10 shrink-0 items-center gap-2 px-3.5 text-muted-foreground text-xs';
+const NOTHING_OPEN: ReadonlySet<string> = new Set();
+const SUBBAR ='flex h-10 shrink-0 items-center gap-2 px-3.5 text-muted-foreground text-xs';
 
 // What a column sorts by: the number, the Status option's place, the first label or assignee, the first PR's number, an ISO date, a field's value, the first blocker's number (#61)
 function sortValue(item: ProjectItem, key: string, view: ProjectView): string | number | undefined {
@@ -95,28 +97,40 @@ function Subbar({ project, linked, children }: { project: ProjectState; linked: 
 /** The groups shown (#756, handoff 01b), the ones folded and how a group row folds or unfolds. */
 interface Grouping { groups: ProjectGroup[]; collapsed: string[]; onToggle(key: string): void }
 
+/** The parents unfolded (#584 decision 4): session state, not saved with the view; every parent starts folded. */
+interface Tree { expanded: ReadonlySet<string>; onToggle(itemId: string): void }
+
+// A line's place in the tree (#584): a parent that nests gets its count from the whole view, not its group (decision 9), and its fold
+function rowTree({ item, depth, childCount }: TreeRow, view: ProjectView | undefined, flows: readonly Flow[], tree: Tree): RowTree {
+  if (childCount === 0 || view === undefined) return { depth };
+  return { depth, parent: { count: subIssueCount(item, view, flows), isExpanded: tree.expanded.has(item.itemId), onToggle: () => tree.onToggle(item.itemId) } };
+}
+
 interface ProjectGridProps {
   view?: ProjectView; visible: ProjectColumn[]; rows: ProjectItem[]; grouping?: Grouping; linked: Map<string, Task>; state: State; sort?: ProjectSort;
   onSort(key: string): void; onDrag(key: string, width?: number): void; onResize(key: string, width?: number): void; onGoTo(taskId: string): void;
   source: string; onRow(row: ProjectItem): void; onOpenIssue(item: ProjectItem, task?: Task): void;
+  tree: Tree;
 }
 
-// The rows, each group's under its group row unless it is folded; ungrouped, the rows alone
-function GridBody({ view, visible, rows, grouping, linked, state, onGoTo, source, onRow, onOpenIssue }: Omit<ProjectGridProps, 'sort' | 'onSort' | 'onDrag' | 'onResize'>) {
+// The rows, each group's under its group row unless it is folded, nested under their parents (#584); ungrouped, the rows alone, nested too
+function GridBody({ view, visible, rows, grouping, linked, state, onGoTo, source, onRow, onOpenIssue, tree }: Omit<ProjectGridProps, 'sort' | 'onSort' | 'onDrag' | 'onResize'>) {
   const columns = gridTemplate(visible, ACTION_WIDTH);
-  const row = (item: ProjectItem) => (
+  const row = (line: TreeRow) => (
     <ProjectRow
-      key={item.itemId} item={item} task={linked.get(item.itemId)} visible={visible} columns={columns} state={state} onGoTo={onGoTo}
-      source={source} statuses={view?.statuses ?? []} onRow={onRow} onOpenIssue={onOpenIssue}
+      key={line.item.itemId} item={line.item} task={linked.get(line.item.itemId)} tree={rowTree(line, view, state.flows, tree)} visible={visible} columns={columns}
+      state={state} onGoTo={onGoTo} source={source} statuses={view?.statuses ?? []} onRow={onRow} onOpenIssue={onOpenIssue}
     />
   );
-  if (grouping === undefined) return <tbody className="block">{rows.map(row)}</tbody>;
+  // #584 decision 7: every list nests on its own, each group's and the ungrouped one; a group's pill still counts g.items (decision 13)
+  const lines = (items: ProjectItem[]) => treeRows(items, tree.expanded).map(row);
+  if (grouping === undefined) return <tbody className="block">{lines(rows)}</tbody>;
   const { groups, collapsed, onToggle } = grouping;
   return (
     <tbody className="block">
       {groups.flatMap((g) => [
         <ProjectGroupRow key={`group:${g.key}`} group={g} isCollapsed={collapsed.includes(g.key)} onToggle={() => onToggle(g.key)} />,
-        ...(collapsed.includes(g.key) ? [] : g.items.map(row)),
+        ...(collapsed.includes(g.key) ? [] : lines(g.items)),
       ])}
     </tbody>
   );
@@ -185,6 +199,12 @@ function TableView({ state, source, onGoTo, onOpenIssue, project, onRefresh, rep
   const name = typeof source === 'string' ? source : source.name;
   const isHive = name === HIVE_SOURCE;
   const [search, setSearch] = useState('');
+  // #584 decision 4: the table is not remounted between sources, so the unfolded parents belong to one source and fold again on a switch
+  const [open, setOpen] = useState<{ source: string; ids: ReadonlySet<string> }>(() => ({ source: name, ids: NOTHING_OPEN }));
+  if (open.source !== name) setOpen({ source: name, ids: NOTHING_OPEN }); // React's reset-on-prop-change during render, no effect
+  const expanded = open.source === name ? open.ids : NOTHING_OPEN;
+  const onToggleRow = (itemId: string): void =>
+    setOpen({ source: name, ids: expanded.has(itemId) ? new Set([...expanded].filter((id) => id !== itemId)) : new Set([...expanded, itemId]) });
   const isShown = useIsFlowShown();
   const view = project.kind === 'view' ? project.view : undefined;
   const columns = view === undefined ? [] : isHive ? hiveColumns(view) : projectColumns(view);
@@ -215,6 +235,7 @@ function TableView({ state, source, onGoTo, onOpenIssue, project, onRefresh, rep
           <ProjectGrid
             view={view} visible={withWidths(columns.filter((c) => shownKeys.includes(c.key)), widths)} rows={rows} grouping={groupingOf(rows, view, options, shape, isHive)} linked={linked} state={state} sort={shownSort}
             onSort={onSort} onDrag={onDrag} onResize={onResize} onGoTo={onGoTo} source={name} onRow={replaceRow} onOpenIssue={onOpenIssue}
+            tree={{ expanded, onToggle: onToggleRow }}
           />
         )}
     </div>
