@@ -3072,6 +3072,9 @@ const en = {
   'tasks.list.col.action': 'action',
   'tasks.list.outsideHint': 'no stages · no worker drives',
   'tasks.list.more': '+{n} tasks',
+  'project.tree.subIssues': '{n} sub-issues · {done}/{n}', // #584: a parent's badge (handoff §5 Hierarquia); "sub-issues" is GitHub's term
+  'project.tree.expand': 'expand sub-issues',
+  'project.tree.collapse': 'collapse sub-issues',
 };
 
 export type MessageKey = keyof typeof en;
@@ -6138,6 +6141,9 @@ const pt: Record<MessageKey, string> = {
   'tasks.list.col.action': 'ação',
   'tasks.list.outsideHint': 'sem etapas · nenhum worker conduz',
   'tasks.list.more': '+{n} tarefas',
+  'project.tree.subIssues': '{n} sub-issues · {done}/{n}',
+  'project.tree.expand': 'expandir sub-issues',
+  'project.tree.collapse': 'recolher sub-issues',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
