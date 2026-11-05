@@ -13,7 +13,7 @@ import { t } from '@/i18n';
 import { gridTemplate, withWidths } from '@/lib/column-widths';
 import { ACTION_WIDTH, columnLabel, DATES, defaultColumns, FIELD_KEY, hiveColumns, openFirst, type ProjectColumn, projectColumns } from '@/lib/project-columns';
 import { defaultCollapsed, type GroupOption, groupItems, groupOptions, hiveGroups, type ProjectGroup } from '@/lib/project-groups';
-import { subIssueCount, type TreeRow, treeRows } from '@/lib/project-tree';
+import { PROJECT_KEYS, subIssueCount, type TreeRow, treeRows } from '@/lib/project-tree';
 import { type ProjectSort, type ProjectViewPrefs, readProjectView, writeProjectView } from '@/lib/project-views';
 
 const NOTHING_OPEN: ReadonlySet<string> = new Set();
@@ -101,7 +101,7 @@ interface Grouping { groups: ProjectGroup[]; collapsed: string[]; onToggle(key: 
 interface Tree { expanded: ReadonlySet<string>; onToggle(itemId: string): void }
 
 // A line's place in the tree (#584): a parent that nests gets its count from the whole view, not its group (decision 9), and its fold
-function rowTree({ item, depth, childCount }: TreeRow, view: ProjectView | undefined, flows: readonly Flow[], tree: Tree): RowTree {
+function rowTree({ item, depth, childCount }: TreeRow<ProjectItem>, view: ProjectView | undefined, flows: readonly Flow[], tree: Tree): RowTree {
   if (childCount === 0 || view === undefined) return { depth };
   return { depth, parent: { count: subIssueCount(item, view, flows), isExpanded: tree.expanded.has(item.itemId), onToggle: () => tree.onToggle(item.itemId) } };
 }
@@ -116,14 +116,14 @@ interface ProjectGridProps {
 // The rows, each group's under its group row unless it is folded, nested under their parents (#584); ungrouped, the rows alone, nested too
 function GridBody({ view, visible, rows, grouping, linked, state, onGoTo, source, onRow, onOpenIssue, tree }: Omit<ProjectGridProps, 'sort' | 'onSort' | 'onDrag' | 'onResize'>) {
   const columns = gridTemplate(visible, ACTION_WIDTH);
-  const row = (line: TreeRow) => (
+  const row = (line: TreeRow<ProjectItem>) => (
     <ProjectRow
       key={line.item.itemId} item={line.item} task={linked.get(line.item.itemId)} tree={rowTree(line, view, state.flows, tree)} visible={visible} columns={columns}
       state={state} onGoTo={onGoTo} source={source} statuses={view?.statuses ?? []} onRow={onRow} onOpenIssue={onOpenIssue}
     />
   );
   // #584 decision 7: every list nests on its own, each group's and the ungrouped one; a group's pill still counts g.items (decision 13)
-  const lines = (items: ProjectItem[]) => treeRows(items, tree.expanded).map(row);
+  const lines = (items: ProjectItem[]) => treeRows(items, tree.expanded, PROJECT_KEYS).map(row);
   if (grouping === undefined) return <tbody className="block">{lines(rows)}</tbody>;
   const { groups, collapsed, onToggle } = grouping;
   return (

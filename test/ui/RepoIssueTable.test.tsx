@@ -6,7 +6,7 @@ import { RepoIssueTable } from '@/components/RepoIssueTable';
 import { resetRepoIssues } from '@/hooks/use-repo-issues';
 import { setLanguage } from '@/i18n';
 import { readView } from '@/lib/view-state';
-import type { RepoIssue, RepoIssues, RepoSummary, State, Task } from '../../src/types';
+import type { RepoIssue, RepoIssues, RepoSummary, Stage, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { flowed } from '../fixtures/main-flow.js';
 
@@ -56,18 +56,18 @@ const renderTable = (onOpen?: (issue: RepoIssue) => void) => render(<RepoIssueTa
 const rowOf = (text: string): HTMLElement => screen.getByText(text).closest('tr') as HTMLElement;
 const numbers = (): (string | null)[] => screen.getAllByRole('row').slice(1).map((r) => within(r).getAllByText(/^#\d+$/)[0].textContent);
 
-test('the list reads the open issues: GitHub\'s counts, each column, a task\'s stage or out of the flow, a draft PR, the footer (#757)', async () => {
+test('the list reads the open issues: GitHub\'s counts, each column, a task\'s {flow} · {stage}, no flow cell with no task, a draft PR, the footer (#757, #585)', async () => {
   renderTable();
   expect(await screen.findByText('Issue 12')).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/issues?state=open');
   expect(screen.getByRole('radio', { name: 'abertas 2' })).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByRole('radio', { name: 'fechadas 1' })).toHaveAttribute('aria-checked', 'false');
-  expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['issue', 'labels', 'resp.', 'no fluxo', 'PR', 'atualizado']);
+  expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['issue', 'labels', 'resp.', 'fluxo', 'PR', 'atualizado']);
   const twelve = within(rowOf('Issue 12'));
   expect(twelve.getByText('bug')).toBeInTheDocument();
   expect(twelve.getByText('AN')).toHaveAttribute('title', 'ana');
-  expect(twelve.getByText('dev')).toHaveClass('text-foreground');
-  expect(within(rowOf('Issue 30')).getByText('fora do fluxo')).toHaveClass('text-muted-foreground');
+  expect(twelve.getByText('main · dev')).toHaveClass('text-foreground');
+  expect(rowOf('Issue 30').children[3]).toBeEmptyDOMElement(); // #30 has no task
   expect(within(rowOf('Issue 30')).getByText('#7 rascunho')).toHaveClass('text-muted-foreground');
   expect(screen.getByText('2 de 2')).toBeInTheDocument();
   expect(screen.getByText('↵ abre a issue')).toBeInTheDocument();
@@ -138,7 +138,7 @@ test('each column but the issue has a handle on its left edge, a divider at the 
   await screen.findByText('Issue 12');
   expect(tracks()).toEqual(['minmax(160px,1fr)', '132px', '40px', '112px', '120px', '80px']);
   expect(screen.getAllByRole('separator').map((h) => h.getAttribute('aria-label'))).toEqual([
-    'redimensionar labels', 'redimensionar resp.', 'redimensionar no fluxo', 'redimensionar PR', 'redimensionar atualizado',
+    'redimensionar labels', 'redimensionar resp.', 'redimensionar fluxo', 'redimensionar PR', 'redimensionar atualizado',
   ]);
   expect(handle('labels').style.right).toBe('550px'); // 18 + 4×12 + 484
   expect(lines()).toEqual(['550px', '406px', '354px', '230px', '98px']);
@@ -206,4 +206,81 @@ test('the header\'s GitHub opens the repository\'s issues; a fork\'s opens the f
   await user.click(screen.getByRole('button', { name: 'GitHub' }));
   expect(open).toHaveBeenLastCalledWith('https://github.com/me/site/issues', '_blank', 'noreferrer');
   open.mockRestore();
+});
+
+// #585: #40 holds #41; #50 names #99, which is not in the list
+const NESTED: RepoIssues = { ...OPEN, total: 3, issues: [issue(40), issue(41, { parent: 40 }), issue(50, { parent: 99 })] };
+const answerNested = async (input: RequestInfo | URL): Promise<Response> =>
+  (String(input) === '/repositories/acme/site/issues?state=open' ? jsonRes(NESTED) : answer(input));
+const childMark = (text: string): Element | null => rowOf(text).querySelector('svg.lucide-corner-down-right');
+
+async function openNested(onOpen?: (issue: RepoIssue) => void): Promise<void> {
+  fetchMock.mockImplementation(answerNested);
+  renderTable(onOpen);
+  await screen.findByText('Issue 40');
+}
+
+test('a parent starts folded with its chevron and its child hidden; a child whose parent is not in the list renders flat; no sub-issue badge (#585)', async () => {
+  await openNested();
+  expect(numbers()).toEqual(['#40', '#50']);
+  const forty = within(rowOf('Issue 40'));
+  expect(forty.getByRole('button', { name: 'expandir sub-issues' })).toHaveAttribute('aria-expanded', 'false');
+  expect(forty.queryByText(/sub-issues ·/)).not.toBeInTheDocument();
+  expect(within(rowOf('Issue 50')).queryByRole('button', { name: /sub-issues/ })).not.toBeInTheDocument();
+  expect(childMark('Issue 50')).toBeNull();
+  expect(screen.getByText('#50').parentElement).toHaveStyle({ paddingLeft: '0px' });
+  expect(screen.getByText('3 de 3')).toBeInTheDocument();
+});
+
+test('the chevron unfolds the child under its parent, 20px in with ↳, without opening the issue; again it folds it (#585)', async () => {
+  const user = userEvent.setup();
+  const onOpen = vi.fn<(issue: RepoIssue) => void>();
+  await openNested(onOpen);
+  await user.click(within(rowOf('Issue 40')).getByRole('button', { name: 'expandir sub-issues' }));
+  expect(numbers()).toEqual(['#40', '#41', '#50']);
+  expect(childMark('Issue 41')).not.toBeNull();
+  expect(screen.getByText('#41').parentElement).toHaveStyle({ paddingLeft: '20px' });
+  expect(onOpen).not.toHaveBeenCalled();
+  await user.click(within(rowOf('Issue 40')).getByRole('button', { name: 'recolher sub-issues' }));
+  expect(numbers()).toEqual(['#40', '#50']);
+});
+
+test('the search filters first: a child whose parent does not match is a root; a parent whose child does not match has no chevron (#585 decision 5)', async () => {
+  const user = userEvent.setup();
+  await openNested();
+  const search = screen.getByRole('textbox', { name: 'buscar no repositório' });
+  await user.type(search, 'Issue 41');
+  expect(numbers()).toEqual(['#41']);
+  expect(childMark('Issue 41')).toBeNull();
+  expect(screen.getByText('#41').parentElement).toHaveStyle({ paddingLeft: '0px' });
+  await user.clear(search);
+  await user.type(search, '#40');
+  expect(numbers()).toEqual(['#40']);
+  expect(within(rowOf('Issue 40')).queryByRole('button', { name: /sub-issues/ })).not.toBeInTheDocument();
+});
+
+test('the unfolded parents fold again when the state tab changes (#585 decision 4)', async () => {
+  const user = userEvent.setup();
+  await openNested();
+  await user.click(within(rowOf('Issue 40')).getByRole('button', { name: 'expandir sub-issues' }));
+  expect(screen.getByText('Issue 41')).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: 'fechadas 1' }));
+  await screen.findByText('Issue 4');
+  await user.click(screen.getByRole('radio', { name: 'abertas 2' }));
+  expect(await screen.findByText('Issue 40')).toBeInTheDocument();
+  expect(screen.queryByText('Issue 41')).not.toBeInTheDocument();
+});
+
+test('the flow cell reads {flow} · {stage} in the foreground for a task in a flow, sem fluxo muted for a stageless task, each whole in its title (#585 decision 7)', async () => {
+  const SPEC: Stage = { name: 'spec', from: {}, prompt: 'x' };
+  const stageless: Task = { item: { ...TASK.item, itemId: 'roadmap:PVTI_30', id: '30', title: 'Issue 30', url: 'https://github.com/acme/site/issues/30' }, boardColumn: 'Ready', auto: true };
+  const featured: State = { ...state, flows: [{ name: 'feature', stages: [SPEC], transitions: [] }], tasks: [{ ...TASK, stage: 'spec' }, stageless] };
+  render(<RepoIssueTable state={featured} summary={SITE} onTab={vi.fn()} />);
+  await screen.findByText('Issue 12');
+  const inFlow = within(rowOf('Issue 12')).getByText('feature · spec');
+  expect(inFlow).toHaveClass('text-foreground');
+  expect(inFlow).toHaveAttribute('title', 'feature · spec');
+  const outside = within(rowOf('Issue 30')).getByText('sem fluxo');
+  expect(outside).toHaveClass('text-muted-foreground');
+  expect(outside).toHaveAttribute('title', 'sem fluxo');
 });

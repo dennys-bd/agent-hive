@@ -1836,8 +1836,7 @@ const en = {
   'repos.search': 'search in repository',
   'repos.issues.open': 'open',
   'repos.issues.closed': 'closed',
-  'repos.col.issue': 'issue', 'repos.col.labels': 'labels', 'repos.col.assignee': 'assignee', 'repos.col.flow': 'in the flow', 'repos.col.pr': 'PR', 'repos.col.updated': 'updated',
-  'repos.outOfFlow': 'out of the flow',
+  'repos.col.issue': 'issue', 'repos.col.labels': 'labels', 'repos.col.assignee': 'assignee', 'repos.col.flow': 'flow', 'repos.col.pr': 'PR', 'repos.col.updated': 'updated',
   'repos.prDraft': '#{n} draft',
   'repos.footer.open': '↵ opens the issue',
   'repos.syncing': 'syncing…', // #182: a repository the read model never synced; the spinner's label
@@ -3080,6 +3079,8 @@ const en = {
   'project.tree.subIssues': '{n} sub-issues · {done}/{n}', // #584: a parent's badge (handoff §5 Hierarquia); "sub-issues" is GitHub's term
   'project.tree.expand': 'expand sub-issues',
   'project.tree.collapse': 'collapse sub-issues',
+  'repos.task.inFlow': '{flow} · {stage}', // #585: the repository issue list's flow cell (handoff §7); project.task.* carry a button's ›
+  'repos.task.outside': 'no flow',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4911,8 +4912,7 @@ const pt: Record<MessageKey, string> = {
   'repos.search': 'buscar no repositório',
   'repos.issues.open': 'abertas',
   'repos.issues.closed': 'fechadas',
-  'repos.col.issue': 'issue', 'repos.col.labels': 'labels', 'repos.col.assignee': 'resp.', 'repos.col.flow': 'no fluxo', 'repos.col.pr': 'PR', 'repos.col.updated': 'atualizado',
-  'repos.outOfFlow': 'fora do fluxo',
+  'repos.col.issue': 'issue', 'repos.col.labels': 'labels', 'repos.col.assignee': 'resp.', 'repos.col.flow': 'fluxo', 'repos.col.pr': 'PR', 'repos.col.updated': 'atualizado',
   'repos.prDraft': '#{n} rascunho',
   'repos.footer.open': '↵ abre a issue',
   'repos.syncing': 'sincronizando…',
@@ -6154,6 +6154,8 @@ const pt: Record<MessageKey, string> = {
   'project.tree.subIssues': '{n} sub-issues · {done}/{n}',
   'project.tree.expand': 'expandir sub-issues',
   'project.tree.collapse': 'recolher sub-issues',
+  'repos.task.inFlow': '{flow} · {stage}',
+  'repos.task.outside': 'sem fluxo',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

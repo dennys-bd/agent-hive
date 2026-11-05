@@ -1,16 +1,29 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import type { RepoIssue, State, Task } from '../../types';
-import { AssigneeCell, PrCell, taskPrs } from '@/components/ProjectRow';
+import { flowOf } from '../../flows';
+import type { Flow, RepoIssue, State, Task } from '../../types';
+import { AssigneeCell, PrCell, type RowTree, TREE_INDENT, TreeMark, taskPrs } from '@/components/ProjectRow';
 import { t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
 
 const CHIP = 'max-w-full shrink-0 truncate rounded-[4px] border px-1.5 text-muted-foreground text-xs';
 
-export interface RepoIssueRowProps { issue: RepoIssue; task?: Task; columns: string; state: State; onOpen?(issue: RepoIssue): void }
+// The flow cell (#585 decision 7): a task in a flow as {flow} · {stage}, the flow the one whose stages hold its stage (flowOf); a task outside
+// the flow as sem fluxo, muted; no task, nothing. Cut with … and whole in its title; no click of its own, the row opens the issue
+function FlowCell({ task, flows }: { task?: Task; flows: readonly Flow[] }) {
+  if (task === undefined) return null;
+  const { stage } = task;
+  const flow = flowOf(flows, stage)?.name;
+  const isOutside = flow === undefined || stage === undefined;
+  const label = isOutside ? t('repos.task.outside') : t('repos.task.inFlow', { flow, stage });
+  return <span title={label} className={isOutside ? 'text-muted-foreground' : 'text-foreground'}>{label}</span>;
+}
 
-/** One issue of a repository's list (#757, handoff 02): its number and title, labels, first assignee, the stage of its task or out of the
- * flow, its PRs and when it last changed. A click or ↵ opens its issue page; ⇧↵ opens it on GitHub. */
-export function RepoIssueRow({ issue, task, columns, state, onOpen }: RepoIssueRowProps) {
+export interface RepoIssueRowProps { issue: RepoIssue; task?: Task; columns: string; state: State; tree: RowTree; onOpen?(issue: RepoIssue): void }
+
+/** One issue of a repository's list (#757, handoff 02): its number and title, labels, first assignee, the flow and stage of its
+ * task or sem fluxo (#585), its PRs and when it last changed, indented under its parent with the source table's chevron or ↳ (#585). A click
+ * or ↵ opens its issue page; ⇧↵ opens it on GitHub. */
+export function RepoIssueRow({ issue, task, columns, state, tree, onOpen }: RepoIssueRowProps) {
   // a click on a cell's own control is not the row's
   const onClick = (e: MouseEvent<HTMLTableRowElement>): void => {
     const target = e.target as Element;
@@ -27,10 +40,13 @@ export function RepoIssueRow({ issue, task, columns, state, onOpen }: RepoIssueR
       tabIndex={0} onClick={onClick} onKeyDown={onKeyDown} style={{ gridTemplateColumns: columns }}
       className="grid h-10 cursor-pointer items-center gap-3 border-b px-3 text-[13px] outline-none hover:bg-muted focus:bg-muted"
     >
-      <td className="flex min-w-0 items-center gap-1.5"><span className="shrink-0 font-medium">#{issue.number}</span><span className="min-w-0 truncate">{issue.title}</span></td>
+      <td className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: tree.depth * TREE_INDENT }}>
+        <TreeMark tree={tree} />
+        <span className="shrink-0 font-medium">#{issue.number}</span><span className="min-w-0 truncate">{issue.title}</span>
+      </td>
       <td className="flex min-w-0 gap-1 overflow-hidden">{issue.labels.map((label) => <span key={label} className={CHIP}>{label}</span>)}</td>
       <td><AssigneeCell logins={issue.assignees} /></td>
-      <td className="min-w-0 truncate">{task ? <span className="text-foreground">{task.stage}</span> : <span className="text-muted-foreground">{t('repos.outOfFlow')}</span>}</td>
+      <td className="min-w-0 truncate"><FlowCell task={task} flows={state.flows} /></td>
       <td className="min-w-0"><PrCell prs={taskPrs(issue.pullRequests, task, state)} /></td>
       <td className="truncate text-muted-foreground text-xs">{relativeTime(issue.updatedAt)}</td>
     </tr>
