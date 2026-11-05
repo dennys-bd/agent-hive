@@ -32,6 +32,10 @@ A task's spec, plan and walkthrough are committed in its docs worktree and reach
 
 A task's design folder (`docs/agent/hive/design/<date>-<slug>/`) is committed there too, run from inside the folder so git addresses the nested worktree (`git -C <folder> add <files>`, `git -C <folder> commit`): `docs: design for #<n>` for the folder's first commit, `docs: update design for #<n>` after; without an issue, name the slug.
 
+## The Windows lane
+
+The only Windows machine is CI's `windows-latest` job, which runs the test files listed in `test/windows-lane.txt` (#625). A win32 branch lives in a function that takes `platform: NodeJS.Platform` and uses `path.win32` or `path.posix` explicitly for that platform's paths; `process.platform` is read at the call site only, so `node --test` covers the branch on every OS. A module ported to Windows adds its test file to `test/windows-lane.txt` (compiled path, sorted) and owns every failure of that file there.
+
 ## What counts as bounded here
 
 Bounded: one or two files, no new type in `src/types.ts`, no new source adapter, no new UI panel, no new rule in the orchestrator's reducer. Everything else is architectural and gets a spec: a new `Board` adapter, a change to `Task` / `Config` / `State` / `Card`, a new reducer rule, a new panel or route.

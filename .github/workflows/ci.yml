@@ -52,3 +52,23 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: ${{ matrix.run }}
+
+  # a job of its own, not a matrix entry: its steps differ, and it runs only the files test/windows-lane.txt names until the whole suite passes there
+  windows:
+    name: ci (windows)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0, version comes from packageManager in package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # vite build now, so a leaf that lists a test reading dist/ui touches only the list
+      - run: pnpm exec tsc && pnpm exec vite build && node scripts/test-node.mjs --list test/windows-lane.txt
