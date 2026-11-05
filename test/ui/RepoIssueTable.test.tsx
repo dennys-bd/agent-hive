@@ -207,3 +207,66 @@ test('the header\'s GitHub opens the repository\'s issues; a fork\'s opens the f
   expect(open).toHaveBeenLastCalledWith('https://github.com/me/site/issues', '_blank', 'noreferrer');
   open.mockRestore();
 });
+
+// #585: #40 holds #41; #50 names #99, which is not in the list
+const NESTED: RepoIssues = { ...OPEN, total: 3, issues: [issue(40), issue(41, { parent: 40 }), issue(50, { parent: 99 })] };
+const answerNested = async (input: RequestInfo | URL): Promise<Response> =>
+  (String(input) === '/repositories/acme/site/issues?state=open' ? jsonRes(NESTED) : answer(input));
+const childMark = (text: string): Element | null => rowOf(text).querySelector('svg.lucide-corner-down-right');
+
+async function openNested(onOpen?: (issue: RepoIssue) => void): Promise<void> {
+  fetchMock.mockImplementation(answerNested);
+  renderTable(onOpen);
+  await screen.findByText('Issue 40');
+}
+
+test('a parent starts folded with its chevron and its child hidden; a child whose parent is not in the list renders flat; no sub-issue badge (#585)', async () => {
+  await openNested();
+  expect(numbers()).toEqual(['#40', '#50']);
+  const forty = within(rowOf('Issue 40'));
+  expect(forty.getByRole('button', { name: 'expandir sub-issues' })).toHaveAttribute('aria-expanded', 'false');
+  expect(forty.queryByText(/sub-issues ·/)).not.toBeInTheDocument();
+  expect(within(rowOf('Issue 50')).queryByRole('button', { name: /sub-issues/ })).not.toBeInTheDocument();
+  expect(childMark('Issue 50')).toBeNull();
+  expect(screen.getByText('#50').parentElement).toHaveStyle({ paddingLeft: '0px' });
+  expect(screen.getByText('3 de 3')).toBeInTheDocument();
+});
+
+test('the chevron unfolds the child under its parent, 20px in with ↳, without opening the issue; again it folds it (#585)', async () => {
+  const user = userEvent.setup();
+  const onOpen = vi.fn<(issue: RepoIssue) => void>();
+  await openNested(onOpen);
+  await user.click(within(rowOf('Issue 40')).getByRole('button', { name: 'expandir sub-issues' }));
+  expect(numbers()).toEqual(['#40', '#41', '#50']);
+  expect(childMark('Issue 41')).not.toBeNull();
+  expect(screen.getByText('#41').parentElement).toHaveStyle({ paddingLeft: '20px' });
+  expect(onOpen).not.toHaveBeenCalled();
+  await user.click(within(rowOf('Issue 40')).getByRole('button', { name: 'recolher sub-issues' }));
+  expect(numbers()).toEqual(['#40', '#50']);
+});
+
+test('the search filters first: a child whose parent does not match is a root; a parent whose child does not match has no chevron (#585 decision 5)', async () => {
+  const user = userEvent.setup();
+  await openNested();
+  const search = screen.getByRole('textbox', { name: 'buscar no repositório' });
+  await user.type(search, 'Issue 41');
+  expect(numbers()).toEqual(['#41']);
+  expect(childMark('Issue 41')).toBeNull();
+  expect(screen.getByText('#41').parentElement).toHaveStyle({ paddingLeft: '0px' });
+  await user.clear(search);
+  await user.type(search, '#40');
+  expect(numbers()).toEqual(['#40']);
+  expect(within(rowOf('Issue 40')).queryByRole('button', { name: /sub-issues/ })).not.toBeInTheDocument();
+});
+
+test('the unfolded parents fold again when the state tab changes (#585 decision 4)', async () => {
+  const user = userEvent.setup();
+  await openNested();
+  await user.click(within(rowOf('Issue 40')).getByRole('button', { name: 'expandir sub-issues' }));
+  expect(screen.getByText('Issue 41')).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: 'fechadas 1' }));
+  await screen.findByText('Issue 4');
+  await user.click(screen.getByRole('radio', { name: 'abertas 2' }));
+  expect(await screen.findByText('Issue 40')).toBeInTheDocument();
+  expect(screen.queryByText('Issue 41')).not.toBeInTheDocument();
+});
