@@ -3009,7 +3009,7 @@ const en = {
   'benchmark.run.environment': 'environment · local',
   'benchmark.run.arm': 'arm {letter} · pair {round} of {pairs}',
   'back.list': 'back', // #571: a page's way back to the list it was opened from
-  'tasks.center.soon': 'coming soon', // #571: the outside-flow view, until 3.3
+  'tasks.center.soon': 'coming soon', // #571: the flow view while no flow resolves
   'tasks.header.source.github': 'github project', // #571: the source header's type, before its owner
   'tasks.header.hive': 'hive tasks · no external sync', // #583: the hive source header's second part (handoff §5)
   'tasks.display': 'display', // #574: the tasks header's exibir and its popover (handoff §3)
@@ -3072,6 +3072,11 @@ const en = {
   'tasks.list.col.action': 'action',
   'tasks.list.outsideHint': 'no stages · no worker drives',
   'tasks.list.more': '+{n} tasks',
+  'tasks.outside.started': 'started', // #578: the outside-the-flow grid's groups and their hints (handoff §7)
+  'tasks.outside.startedHint': 'started · stay until you remove them or take them to a flow',
+  'tasks.outside.new': 'new',
+  'tasks.outside.newHint': 'no activity · they go if they leave the listing',
+  'tasks.outside.empty': 'no task outside the flow',
   'project.tree.subIssues': '{n} sub-issues · {done}/{n}', // #584: a parent's badge (handoff §5 Hierarquia); "sub-issues" is GitHub's term
   'project.tree.expand': 'expand sub-issues',
   'project.tree.collapse': 'collapse sub-issues',
@@ -6141,6 +6146,11 @@ const pt: Record<MessageKey, string> = {
   'tasks.list.col.action': 'ação',
   'tasks.list.outsideHint': 'sem etapas · nenhum worker conduz',
   'tasks.list.more': '+{n} tarefas',
+  'tasks.outside.started': 'com atividade',
+  'tasks.outside.startedHint': 'iniciadas · ficam até você remover ou levar ao fluxo',
+  'tasks.outside.new': 'novas',
+  'tasks.outside.newHint': 'sem atividade · somem se saírem da listagem',
+  'tasks.outside.empty': 'nenhuma tarefa fora do fluxo',
   'project.tree.subIssues': '{n} sub-issues · {done}/{n}',
   'project.tree.expand': 'expandir sub-issues',
   'project.tree.collapse': 'recolher sub-issues',

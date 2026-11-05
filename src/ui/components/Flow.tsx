@@ -42,8 +42,8 @@ function shownWorkspaces(tasks: readonly Task[], state: Pick<State, 'workspaces'
   return state.workspaces.filter((name) => used.has(name));
 }
 
-// #576 decision 9: the workspaces of the tasks the canvas draws, bottom right (the zoom sits bottom left). The list panel, rendered after it, covers it while open
-function WorkspacesLegend({ state, tasks }: { state: State; tasks: readonly Task[] }) {
+// #576 decision 9: the workspaces of the tasks the canvas draws, bottom right (the zoom sits bottom left); also the outside-the-flow grid's (#578). The list panel, rendered after it, covers it while open
+export function WorkspacesLegend({ state, tasks }: { state: State; tasks: readonly Task[] }) {
   const names = shownWorkspaces(tasks, state);
   if (names.length === 0) return null;
   return (

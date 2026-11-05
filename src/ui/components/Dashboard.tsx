@@ -1,13 +1,14 @@
 import { type ReactNode, useState } from 'react';
 import type { RepoSummary, SidebarsPerView, SourceConfig, SourceSync, EffectiveLimits, State } from '../../types';
 import { behaviourOf } from '../../signals';
-import { HIVE_SOURCE, inFlow } from '../../tasks';
+import { HIVE_SOURCE } from '../../tasks';
 import { CreateTargetsContext, createTargetsOf } from '@/lib/create-targets';
 import { WorkspaceColorsContext } from '@/lib/workspace-color';
 import { ActivityBar } from '@/components/ActivityBar';
 import { ActivityMenu } from '@/components/ActivityMenu';
 import { AutomationPanel } from '@/components/AutomationPanel';
 import { MainDock } from '@/components/MainDock';
+import { OutsideFlow } from '@/components/tasks/OutsideFlow';
 import { CopySessionHost } from '@/components/CopySession';
 import { ConsoleChip } from '@/components/ConsoleDrawer';
 import { RunBand } from '@/components/benchmark/run-mode/RunChrome';
@@ -93,14 +94,12 @@ function sourceCenter(state: State, nav: TasksNav, source: SourceConfig, reposit
   );
 }
 
-// Decision 11 (#571): the outside-flow view, until 3.3: the tasks header, with exibir minus its voltas rows (#574), over one
-// muted line. The popover counts what the view will show: the stageless tasks, or every task while no flow resolves
-function TasksSoon({ state, isOutside, display, sources }: { state: State; isOutside: boolean; display: DisplayControls; sources: SourcesNav }) {
-  const tasks = isOutside ? state.tasks.filter((c) => !inFlow(c)) : state.tasks;
+// Decision 11 (#571): the flow view while no flow resolves: the tasks header, with exibir minus its voltas rows (#574), over one muted line
+function TasksSoon({ state, display, sources }: { state: State; display: DisplayControls; sources: SourcesNav }) {
   const isTree = display.options.tree ?? hasTree(state.tasks);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} {...displayProps({ display, sources, tasks, isTree, hasLoops: false })} />
+      <FlowHeader state={state} {...displayProps({ display, sources, tasks: state.tasks, isTree, hasLoops: false })} />
       <p className="px-3.5 py-3 text-muted-foreground text-xs">{t('tasks.center.soon')}</p>
     </div>
   );
@@ -114,7 +113,8 @@ function Center({ state, selected, nav, repositories, onSelect, stageCaps, sourc
   if (center.kind === 'source' && source) return sourceCenter(state, nav, source, repositories, center.issue);
   if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} display={display} sources={sources} />;
   if (center.kind === 'tasks' && center.view === 'list') return <TaskList state={state} display={display} sources={sources} onOpen={(taskId) => onSelect({ taskId })} />; // #577
-  return <TasksSoon state={state} isOutside={center.kind === 'tasks' && center.view === 'outside'} display={display} sources={sources} />;
+  if (center.kind === 'tasks' && center.view === 'outside') return <OutsideFlow state={state} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} display={display} sources={sources} />; // #578
+  return <TasksSoon state={state} display={display} sources={sources} />;
 }
 
 // #36: the details' tree row under the pointer, shared by the details (which set it) and the flow's cards (which light up). A component of its
