@@ -249,6 +249,25 @@ test('a save closes the settings page (#294)', async () => {
   await waitFor(() => expect(screen.queryByText('configuração')).not.toBeInTheDocument());
 });
 
+test('a row edited in the automação section posts the table with the config\'s prefix, no Settings opened (#573)', async () => {
+  const user = userEvent.setup();
+  setupInfoBox.info = savableSetupInfo;
+  const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+  currentState = { ...state([], worker()), signal: 'yellow' };
+  render(<App />);
+  const row = t('settings.signal.control', { row: t('settings.signal.workerless'), signal: 'yellow' });
+  await user.click(screen.getByRole('button', { name: 'tarefas' })); // the window opens on Atividades (#746)
+  await user.click(within(screen.getByRole('region', { name: 'Tarefas' })).getByRole('switch', { name: row }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings', expect.anything()));
+  const body = JSON.parse(String(fetchMock.mock.calls.find(([url]) => String(url) === '/settings')?.[1]?.body));
+  expect(body).toEqual({
+    prefix: 'HIVE',
+    signals: { ...SIGNALS_DEFAULTS, yellow: { ...SIGNALS_DEFAULTS.yellow, workerless: false }, red: { ...SIGNALS_DEFAULTS.red, workerless: false } },
+  });
+  expect(screen.queryByText(t('settings.title'))).not.toBeInTheDocument();
+});
+
 test('an unconfigured info renders the full-page setup, with no dashboard mounted (#294)', () => {
   setupInfoBox.info = { ...defaultSetupInfo, configured: false };
   currentState = undefined;

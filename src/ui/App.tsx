@@ -7,6 +7,7 @@ import { Dashboard } from '@/components/Dashboard';
 import type { Selection } from '@/components/DetailPanel';
 import { Settings } from '@/components/settings/Settings';
 import { ReviewerContext, type ReviewerSettings, reviewerSaver } from '@/hooks/use-reviewer';
+import { SignalsContext, type SignalsSettings, signalsSaver } from '@/hooks/use-signals';
 import { useHiveState } from '@/hooks/use-hive-state';
 import { useSettingsInfo } from '@/hooks/use-settings-info';
 import { LOCALE } from '@/i18n';
@@ -67,6 +68,11 @@ export function App() {
     config: info?.config?.reviewer ?? REVIEWER_DEFAULTS,
     save: reviewerSaver(info?.config?.comb.prefix, () => reload().catch((err: Error) => { toast.error(err.message); })),
   }), [info, reload]);
+  // The signal table's write for the tasks sidebar's automação (#573), built like the reviewer's: the prefix, then the info reloaded so
+  // Settings opens on the saved table
+  const signalsSettings = useMemo<SignalsSettings>(() => ({
+    save: signalsSaver(info?.config?.comb.prefix, () => reload().catch((err: Error) => { toast.error(err.message); })),
+  }), [info, reload]);
   if (settingsError) return <p className="p-4 pt-11 text-destructive">{settingsError}</p>;
   if (!info || !setup.language) return null;
   const openSettings = (view: SettingsView): void => { setSettingsView(view); setSettingsOpen(true); };
@@ -100,7 +106,9 @@ export function App() {
       <div className="contents" inert={settingsOpen}>
         <SetupProviders info={info} setup={setup} closeTab={closeTab} taskRefs={taskRefs}>
           <ReviewerContext.Provider value={reviewer}>
+            <SignalsContext.Provider value={signalsSettings}>
             <Dashboard state={state} effective={effective} selected={selected} locale={LOCALE[setup.language]} tick={tick} hasSource={(info.config?.comb.sources.length ?? 0) > 0} fileLinks fontFamily={terminalFontStack(info.config?.terminalFont ?? '')} sources={sources} onSelect={setSelected} onEditRules={() => openSettings({ section: 'rules' })} onAddWorkspace={() => openSettings({ section: 'workspaces' })} onOpenSettings={() => setSettingsOpen(true)} openShortcuts={() => openSettings({ section: 'shortcuts' })} onOpenFlowSettings={() => openSettings({ section: 'flow' })} onNewFlow={() => openSettings({ section: 'flow', newFlow: true })} sidebarsPerView={info.config?.sidebarsPerView} />
+            </SignalsContext.Provider>
           </ReviewerContext.Provider>
         </SetupProviders>
       </div>
