@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { WINDOW_BACKGROUND, WINDOW_FOREGROUND } from '../src/window-options.js';
 
-// Runs from dist/test: the sources are read as text, since neither is a module node can load (a stylesheet; main.ts needs Electron).
+// Runs from dist/test: the sources are read as text, since a stylesheet is not a module node can load.
 const source = (path: string): string => readFileSync(fileURLToPath(new URL(`../../src/${path}`, import.meta.url)), 'utf8');
 const CSS = source('ui/theme.css').replace(/\/\*[\s\S]*?\*\//g, ''); // comments may carry ; or {
 const LIGHT_BLOCK = ':root[data-theme="light"]';
@@ -54,9 +55,9 @@ test('in both themes the signal ink reads at 4.5:1 on green, yellow and red, and
   }
 });
 
-test('WINDOW_BACKGROUND in main.ts holds the two --background values: the window paints them before the page (#296)', () => {
-  const match = /WINDOW_BACKGROUND = \{ dark: '(#[0-9a-f]{6})', light: '(#[0-9a-f]{6})' \}/i.exec(source('main.ts'));
-  assert.deepEqual(match?.slice(1), [DARK.get('--background'), LIGHT.get('--background')]);
+test('WINDOW_BACKGROUND and WINDOW_FOREGROUND hold the two --background and --foreground values: the window paints the first before the page (#296), and Windows\' caption buttons take both (#648)', () => {
+  assert.deepEqual([WINDOW_BACKGROUND.dark, WINDOW_BACKGROUND.light], [DARK.get('--background'), LIGHT.get('--background')]);
+  assert.deepEqual([WINDOW_FOREGROUND.dark, WINDOW_FOREGROUND.light], [DARK.get('--foreground'), LIGHT.get('--foreground')]);
 });
 
 test('in both themes the text reads at 4.5:1 on an added and on a deleted diff line (#270)', () => {
