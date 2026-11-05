@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
+import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import type { DetachedWindows } from '../src/detach-ipc.js';
 import { type MainWindow, registerWindowIpc, type WindowScope } from '../src/window-ipc.js';
+import { titleBarOverlayFor } from '../src/window-options.js';
 
 // The IPC every Hive page shares (#552) over fakes: one main window on PORT, Electron's dialogs recorded
 
@@ -12,13 +13,15 @@ const SHARED = ['window:chooseFolder', 'window:settingsChanged', 'window:clipboa
 // A BrowserWindow as the handlers read it: its page, its close and its full screen
 function fakeWindow(isFull: boolean) {
   const calls: string[] = [];
+  const overlays: unknown[] = [];
   const webContents = {};
-  const win = { webContents, close: () => { calls.push('close'); }, isFullScreen: () => isFull } as unknown as BrowserWindow;
-  return { win, webContents, calls };
+  const win = { webContents, close: () => { calls.push('close'); }, isFullScreen: () => isFull, setTitleBarOverlay: (options: unknown) => { overlays.push(options); } } as unknown as BrowserWindow;
+  return { win, webContents, calls, overlays };
 }
 
-function rig() {
+function rig(platform: NodeJS.Platform = 'darwin') {
   const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>();
+  const ons = new Map<string, (event: IpcMainEvent, ...args: unknown[]) => void>();
   const main = fakeWindow(false);
   const other = fakeWindow(true); // a detached window of this main window, in full screen
   const closedBy: unknown[] = [];
@@ -28,6 +31,8 @@ function rig() {
   const counts = { settings: 0 };
   const senderWindow = registerWindowIpc({
     handle: (channel, listener) => { handlers.set(channel, listener); },
+    on: (channel, listener) => { ons.set(channel, listener); },
+    platform,
     mainWindows: new Map([[PORT, entry]]),
     fromWebContents: (webContents) => (webContents === other.webContents ? other.win : null),
     dialog: {
@@ -45,7 +50,13 @@ function rig() {
     assert.ok(handler, `no handler for ${channel}`);
     return handler(ev, ...args);
   };
-  return { senderWindow, event, invoke, main, entry, parents, counts, other, closedBy };
+  // a sent message (ipcMain.on): nothing comes back
+  const send = (channel: string, ev: IpcMainInvokeEvent, ...args: unknown[]): void => {
+    const listener = ons.get(channel);
+    assert.ok(listener, `no listener for ${channel}`);
+    listener(ev as unknown as IpcMainEvent, ...args);
+  };
+  return { senderWindow, event, invoke, send, main, entry, parents, counts, other, closedBy };
 }
 
 test('senderWindow answers a main window\'s page for the main and shared scopes, and refuses the detached scope, a stranger, a frame off its port and no frame (#552)', () => {
@@ -97,4 +108,26 @@ test('a detached window\'s page is found through its main window\'s registry: it
   assert.equal(h.invoke('window:isFullScreen', ev), true);
   h.invoke('window:closeWindow', ev);
   assert.deepEqual([h.closedBy.length === 1 && h.closedBy[0] === h.other.webContents, h.other.calls, h.main.calls], [true, [], []], 'destroyed by its registry, never closed again');
+});
+
+test('window:theme on win32 recolours the sender\'s own caption overlay, a main window\'s or a detached one\'s, in the theme\'s colours (#648)', () => {
+  const h = rig('win32');
+  h.send('window:theme', h.event(h.main.webContents), 'light');
+  h.send('window:theme', h.event(h.other.webContents), 'dark');
+  assert.deepEqual(h.main.overlays, [titleBarOverlayFor('light')]);
+  assert.deepEqual(h.other.overlays, [titleBarOverlayFor('dark')]);
+});
+
+test('window:theme ignores a value that is not light or dark, and a sender that is no Hive page, without throwing (#648)', () => {
+  const h = rig('win32');
+  for (const value of ['blue', undefined, 42, { theme: 'dark' }]) h.send('window:theme', h.event(h.main.webContents), value);
+  assert.doesNotThrow(() => h.send('window:theme', h.event({}), 'dark'));
+  assert.doesNotThrow(() => h.send('window:theme', h.event(h.main.webContents, 'https://example.com/'), 'dark'));
+  assert.deepEqual([h.main.overlays, h.other.overlays], [[], []]);
+});
+
+test('window:theme does nothing on darwin: no caption overlay to recolour (#648)', () => {
+  const h = rig('darwin');
+  h.send('window:theme', h.event(h.main.webContents), 'dark');
+  assert.deepEqual(h.main.overlays, []);
 });

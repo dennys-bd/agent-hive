@@ -502,6 +502,8 @@ async function showSettings(): Promise<void> {
 // The IPC both kinds of page share, with its sender check (#552): in window-ipc.ts
 const senderWindow = registerWindowIpc({
   handle: (channel, listener) => ipcMain.handle(channel, listener),
+  on: (channel, listener) => ipcMain.on(channel, listener),
+  platform: process.platform,
   mainWindows,
   fromWebContents: (webContents) => BrowserWindow.fromWebContents(webContents),
   dialog,

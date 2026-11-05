@@ -2,9 +2,10 @@
 // the scope is checked here, never by which preload loaded. Out of main.ts, past its 400 lines. Electron's dialog and clipboard come in as
 // deps, so node:test drives it with fakes. Every handler resolves its sender first: a page the daemon redirected elsewhere keeps the preload
 // but gets nothing.
-import type { BrowserWindow, IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron';
+import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron';
 import { clipboardFilesPlist, isClipboardPathList, parseClipboardFiles } from './clipboard-files.js';
 import type { DetachedWindows } from './detach-ipc.js';
+import { titleBarOverlayFor } from './window-options.js';
 
 /** Which pages may call a channel (#552): a main window's, a detached window's, or either. */
 export type WindowScope = 'main' | 'detached' | 'shared';
@@ -31,6 +32,8 @@ export interface WindowClipboard { read(format: string): string; writeBuffer(for
 
 export interface WindowIpcDeps {
   handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void; // ipcMain.handle
+  on(channel: string, listener: (event: IpcMainEvent, ...args: unknown[]) => void): void; // ipcMain.on: window:theme is sent, never invoked
+  platform: NodeJS.Platform; // process.platform: only win32 has a caption overlay to recolour (#648)
   mainWindows: ReadonlyMap<number, MainWindow>;
   fromWebContents(webContents: IpcMainInvokeEvent['sender']): BrowserWindow | null; // BrowserWindow.fromWebContents: a detached sender's own window
   dialog: WindowDialogs;
@@ -72,7 +75,20 @@ function registerClipboard(handle: WindowIpcDeps['handle'], sender: SenderWindow
   });
 }
 
-/** The shared handlers (#202, #295, #513, #585, #594, #818), each scoped `shared` (spec decision 17); answers the sender check for the
+// The page's resolved theme (#648): on Windows the caption buttons follow it live, a forced theme or the system's appearance changing.
+// Untrusted IPC: only light or dark is used. A refused sender is swallowed, as window:tabs does: a sent message has no caller to refuse to.
+function registerThemeOverlay({ on, platform }: Pick<WindowIpcDeps, 'on' | 'platform'>, sender: SenderWindow): void {
+  on('window:theme', (event, theme) => {
+    if (platform !== 'win32' || (theme !== 'light' && theme !== 'dark')) return;
+    try {
+      sender(event, 'shared').win.setTitleBarOverlay(titleBarOverlayFor(theme));
+    } catch {
+      // no Hive page of ours: nothing to recolour
+    }
+  });
+}
+
+/** The shared handlers (#202, #295, #513, #585, #594, #648, #818), each scoped `shared` (spec decision 17); answers the sender check for the
  *  handlers of detach-ipc.ts. */
 export function registerWindowIpc(deps: WindowIpcDeps): SenderWindow {
   const { handle, dialog } = deps;
@@ -88,6 +104,7 @@ export function registerWindowIpc(deps: WindowIpcDeps): SenderWindow {
     await deps.settingsChanged();
   });
   registerClipboard(handle, sender, deps.clipboard);
+  registerThemeOverlay(deps, sender);
   // An untitled file's ⌘S (#818): the OS's save dialog as a sheet on the window that asked; its own Replace? confirms an existing file
   handle('window:saveDialog', async (event, defaultPath: unknown) => {
     const { win } = sender(event, 'shared');
