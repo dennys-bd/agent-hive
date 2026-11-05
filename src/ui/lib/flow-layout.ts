@@ -1,4 +1,5 @@
 import { END } from '../../types.js';
+import type { Loops } from './flow-view.js';
 
 // The flowchart's geometry (#134, #908): one row of nodes in the stages' order, top-aligned. Forward arrows between neighbours run straight on
 // the node header's line; every other arrow (back edges, forward skips) runs above the row on a level, levels shared by arrows that do not
@@ -19,8 +20,8 @@ export const NODE_MIN = 160; // the least a node is given, however little room t
 const CORNER = 8;
 
 export interface LayoutNode { id: string; height: number }
-export interface LayoutEdge { id: string; from: string; to: string; automatic: boolean; unlabelled?: boolean } // unlabelled: carries no pill (#480)
-export interface LayoutOptions { end?: boolean; loops?: boolean } // end: the end circle, Settings only (#908); loops: false draws no arrow (#909, #480)
+export interface LayoutEdge { id: string; from: string; to: string; automatic: boolean; unlabelled?: boolean; feedback?: boolean } // unlabelled: carries no pill (#480); feedback: never inner (#576)
+export interface LayoutOptions { end?: boolean; loops?: Loops } // end: the end circle, Settings only (#908); loops (#576): absent reads 'all'; 'none' draws no arrow (#909, #480)
 export interface Box { id: string; x: number; y: number; width: number; height: number }
 export type EdgeKind = 'forward' | 'above' | 'loop';
 export interface Routed { id: string; kind: EdgeKind; path: string; label: { x: number; y: number }; dashed: boolean }
@@ -31,6 +32,8 @@ interface Placed extends Span { a: Box; b: Box }
 
 const bottom = (b: Box): number => b.y + b.height;
 const centre = (b: Box): number => b.x + b.width / 2;
+/** #576 decision 1: neighbours in the row, forward or back, and never feedback. */
+export const isInner = (i: number, j: number, feedback: boolean): boolean => !feedback && Math.abs(i - j) === 1;
 const kindOf = (i: number, j: number): EdgeKind => (i === j ? 'loop' : j === i + 1 ? 'forward' : 'above');
 const range = (e: Span): [number, number] => [Math.min(e.i, e.j), Math.max(e.i, e.j)];
 
@@ -105,14 +108,18 @@ function over(e: Placed, xa: number, xb: number, level: number, dashed: boolean)
 }
 
 /** The chart (#134, #908): `nodes` in the stages' order, each `nodeWidth` wide and as tall as given; `edges` between their ids or to END, which
- * only `{ end: true }` draws. An edge naming an unknown node is left out. Dashed: an automatic arrow that goes back. With `{ loops: false }`
+ * only `{ end: true }` draws. An edge naming an unknown node is left out. Dashed: an automatic arrow that goes back. With `{ loops: 'none' }`
  * (#909, #480) no arrow is drawn, so the row starts at the margin and the nodes sit GAP_BARE apart, with no pill to make room for; with them
- * on, two nodes whose arrows all go `unlabelled` sit GAP_ARROW apart. */
+ * on, two nodes whose arrows all go `unlabelled` sit GAP_ARROW apart. With { loops: 'inner' } only isInner's arrows are drawn (#576). */
 export function layoutFlow(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[], nodeWidth: number, options: LayoutOptions = {}): Layout {
   const hasEnd = options.end === true && edges.some((e) => e.to === END);
   const all = spansOf(nodes, edges, hasEnd);
-  const bare = options.loops === false;
-  const spans = bare ? [] : all;
+  const loops = options.loops ?? 'all';
+  const bare = loops === 'none';
+  // #576 decision 2: só internas drops the outer spans before levels and offsets, so the room above the row shrinks with them; END sits after the
+  // last node, which isInner alone would call a neighbour, and decision 1 calls an arrow to end outer
+  const drawn = loops === 'inner' ? all.filter((e) => e.to !== END && isInner(e.i, e.j, e.feedback === true)) : all;
+  const spans = bare ? [] : drawn;
   const xs = xsOf(nodes.length, nodeWidth, gapsOf(nodes.length, all, bare));
   const levels = levelsOf(spans.filter((e) => kindOf(e.i, e.j) === 'above'));
   const count = Math.max(0, ...levels.values());
