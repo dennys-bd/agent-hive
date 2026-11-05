@@ -76,7 +76,7 @@ export function newTaskRule(draft: SourceTaskPropsDraft, workspaces: readonly st
 
 /** The first problem of one source's task properties against the workspace rows' names, as the text to show; undefined when there is none.
  * A workspace removed in Settings is refused, never dropped: dropping it would change routing without the user seeing it (#293). */
-export function sourceTaskPropsProblem(source: string, draft: SourceTaskPropsDraft, workspaces: readonly string[]): string | undefined {
+export function sourceTaskPropsProblem(source: string, draft: SourceTaskPropsDraft, workspaces: readonly string[], scope: FlowScope): string | undefined {
   const { defaults, rules } = draft;
   const nth = (bad: (r: TaskRuleDraft) => boolean): number => rules.findIndex(bad) + 1; // 0: no such rule
   const blank = nth((r) => r.field.trim() === '' || r.value.trim() === '');
@@ -86,6 +86,9 @@ export function sourceTaskPropsProblem(source: string, draft: SourceTaskPropsDra
   if (defaults.workspace !== '' && !workspaces.includes(defaults.workspace)) return t('settings.error.sourceWorkspace', { source });
   const gone = nth((r) => r.set.workspace !== undefined && !workspaces.includes(r.set.workspace));
   if (gone > 0) return t('settings.error.workspaceRuleGone', { source, n: gone });
+  if (entryGone(defaults.entry, scope)) return t('settings.error.entryGone', { source }); // #670: refused, never dropped, as a removed workspace is
+  const lost = nth((r) => r.set.entry !== undefined && entryGone(r.set.entry, scope));
+  if (lost > 0) return t('settings.error.entryRuleGone', { source, n: lost });
   const placed = defaults.workspace !== '' || propMode(draft, 'workspace') !== 'fixed';
   return placed ? undefined : t('settings.error.taskPropsNoWorkspace', { source });
 }

@@ -3089,6 +3089,8 @@ const en = {
   'settings.taskProps.entry.footer': 'applies at entry only: a task already in a flow stays where it is',
   'settings.taskProps.prop.entry': 'enters at',
   'settings.taskProps.note.entry': 'flow and stage',
+  'settings.error.entryGone': 'source {source}: enters at points at a removed flow or stage',
+  'settings.error.entryRuleGone': 'source {source}: rule {n} points at a removed flow or stage',
 };
 
 export type MessageKey = keyof typeof en;
@@ -6172,6 +6174,8 @@ const pt: Record<MessageKey, string> = {
   'settings.taskProps.entry.footer': 'vale só na entrada: a tarefa que já está num fluxo fica onde está',
   'settings.taskProps.prop.entry': 'entra em',
   'settings.taskProps.note.entry': 'fluxo e etapa',
+  'settings.error.entryGone': 'source {source}: entra em aponta para um fluxo ou etapa removidos',
+  'settings.error.entryRuleGone': 'source {source}: a regra {n} aponta para um fluxo ou etapa removidos',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

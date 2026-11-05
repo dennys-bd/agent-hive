@@ -222,7 +222,7 @@ function workspacesProblem(workspaces: WorkspaceDraft[]): SettingsProblem | unde
 // Each source's task properties against the workspace rows (#293, #688): after workspacesProblem, so the names it is judged against are valid ones.
 function taskPropsProblem(draft: SettingsDraft): SettingsProblem | undefined {
   const listed = draft.workspaces.map((p) => p.name.trim());
-  const message = draft.sources.map((b) => sourceTaskPropsProblem(b.name.trim(), b.taskProps, listed)).find((m) => m !== undefined);
+  const message = draft.sources.map((b) => sourceTaskPropsProblem(b.name.trim(), b.taskProps, listed, draft)).find((m) => m !== undefined);
   return message === undefined ? undefined : { section: 'flow', message };
 }
 

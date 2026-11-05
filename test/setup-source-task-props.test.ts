@@ -46,9 +46,9 @@ test('propMode is derived from the rules; a new rule sets the first property no 
 test('sourceTaskPropsProblem names, in order: a blank rule, a rule that sets nothing, a gone default or rule workspace, then no workspace anywhere (#688)', () => {
   setLanguage('pt');
   const draft = taskPropsDraft(SAVED, SCOPE);
-  const problem = (d: SourceTaskPropsDraft) => sourceTaskPropsProblem('main', d, ['api', 'site']);
+  const problem = (d: SourceTaskPropsDraft) => sourceTaskPropsProblem('main', d, ['api', 'site'], SCOPE);
   assert.equal(problem(draft), undefined, 'no default workspace is fine while a rule sets one');
-  assert.equal(problem(emptyTaskProps('api')), undefined, 'zero rules is fine');
+  assert.equal(problem(emptyTaskProps('api', 'd')), undefined, 'zero rules is fine');
   const second = (patch: Partial<TaskRuleDraft>): SourceTaskPropsDraft => ({ ...draft, rules: [draft.rules[0], { ...draft.rules[1], ...patch }] });
   for (const blank of [{ field: '  ' }, { value: '' }]) assert.equal(problem(second(blank)), 'source main: a regra 2 precisa de campo e valor', JSON.stringify(blank));
   assert.equal(problem(second({ set: {} })), 'source main: a regra 2 não define nenhuma propriedade');

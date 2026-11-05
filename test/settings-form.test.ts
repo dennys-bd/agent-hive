@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import { emptyCommand, emptyEnvRow, emptyImpl, type EnvRowDraft } from '../src/ui/lib/settings-commands.js';
 import { sourceColumnsUrl, draftFrom, emptySource, emptyStage, emptyWorkspace, filterOptionsUrl, isMinutes, projectsUrl, type SourceDraft, type SettingsDraft, type StageDraft, toSettingsBody, validateSettings, withHost } from '../src/ui/lib/settings-form.js';
+import { sourceTaskPropsProblem } from '../src/ui/lib/setup-source-task-props.js';
 import { withMemoryCap } from '../src/ui/lib/memory-cap.js';
 import { withEntry } from '../src/ui/lib/settings-stages.js';
 import { emptyRule, type RuleDraft } from '../src/ui/lib/settings-rules.js';
@@ -742,4 +743,19 @@ test('a new source row enters at the first flow; a first setup\'s row too (#670)
   assert.deepEqual(emptySource('hive', draft.flows[0].id).taskProps.defaults.entry, { flowId: draft.flows[0].id });
   const fresh = draftFrom(info(undefined, false));
   assert.deepEqual(fresh.sources[0].taskProps.defaults.entry, { flowId: fresh.flows[0].id });
+});
+
+test('an entry whose flow or stage is gone is a problem on the property and blocks the save; another value clears it (#670)', () => {
+  const GH = { name: 'work', qualifyId: false, type: 'github' as const, owner: 'acme', number: 6, filter: [] as FilterRule[], ...EPICS };
+  const ENTERED: SourceTaskProps = { ...FIXED, defaults: { ...FIXED.defaults, entry: { flow: MAIN_FLOW, stage: 'dev' } }, rules: [{ field: 'labels', op: 'icontains', value: 'idea', set: { entry: null } }] };
+  const draft = draftFrom(info(withSources([{ ...GH, taskProps: ENTERED }])));
+  const props = draft.sources[0].taskProps;
+  const dev = draft.stages.find((s) => s.name === 'dev')!;
+  const noDev = { flows: draft.flows, stages: draft.stages.filter((s) => s.id !== dev.id) };
+  assert.equal(sourceTaskPropsProblem('work', props, ['hive'], noDev), t('settings.error.entryGone', { source: 'work' }));
+  const ruled = { ...props, defaults: { ...props.defaults, entry: null }, rules: [{ ...props.rules[0], set: { entry: { flowId: 'gone' } } }] };
+  assert.equal(sourceTaskPropsProblem('work', ruled, ['hive'], draft), t('settings.error.entryRuleGone', { source: 'work', n: 1 }));
+  const gone = { ...draft, sources: [{ ...draft.sources[0], taskProps: { ...props, defaults: { ...props.defaults, entry: { flowId: 'gone' } } } }] };
+  assert.deepEqual(validateSettings(gone), { section: 'flow', message: t('settings.error.entryGone', { source: 'work' }) });
+  assert.equal(validateSettings({ ...gone, sources: [{ ...gone.sources[0], taskProps: { ...props, defaults: { ...props.defaults, entry: null } } }] }), undefined);
 });

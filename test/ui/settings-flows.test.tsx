@@ -38,8 +38,9 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 afterEach(() => vi.unstubAllGlobals());
 
 const infoWith = (flows: Flow[]): SettingsInfo => {
+  // #670: the source's entry must name a flow this file's flows have, or the form refuses the save
   const config = baseInfo.config!;
-  return { ...baseInfo, config: { ...config, comb: { ...config.comb, flows, sources: config.comb.sources.map((b) => ({ ...b, switchAt: 'spec' })) } } };
+  return { ...baseInfo, config: { ...config, comb: { ...config.comb, flows, sources: config.comb.sources.map((b) => ({ ...b, switchAt: 'spec', taskProps: { ...b.taskProps, defaults: { ...b.taskProps.defaults, entry: { flow: flows[0].name } } } })) } } };
 };
 
 const FLOWS: Flow[] = [
