@@ -238,12 +238,16 @@ export async function cleanWorktree(
   else await gitOrWords(repo, ['branch', '-d', '--', found], exec);
 }
 
-// What `branch -d` checks (#182), by git's own rule: merged into the branch's upstream when it has one, else into HEAD of the main checkout.
-// merge-base --is-ancestor exits 1 for "not merged"; any other failure is git's words. Both refs are built here, never read off the task, so
-// neither can start with `-`.
+// %(upstream:track) when the remote branch is gone (GitHub deletes the head branch after a merge): branch -d then checks HEAD, and so do we (#660)
+const GONE = '[gone]';
+
+// What `branch -d` checks (#182), by git's own rule: merged into the branch's upstream when it has one that still exists, else into HEAD of the
+// main checkout. merge-base --is-ancestor exits 1 for "not merged"; any other failure is git's words. Both refs are built here, never read off
+// the task, so neither can start with `-`.
 async function mergeCheck(repo: string, branch: string, exec: Exec): Promise<{ merged: boolean; target: string }> {
   const ref = `refs/heads/${branch}`;
-  const target = (await gitOrWords(repo, ['for-each-ref', '--format=%(upstream)', ref], exec)).trim() || 'HEAD';
+  const [upstream = '', track = ''] = (await gitOrWords(repo, ['for-each-ref', '--format=%(upstream)%00%(upstream:track)', ref], exec)).trimEnd().split('\0');
+  const target = upstream === '' || track.includes(GONE) ? 'HEAD' : upstream;
   return { merged: await gitAnswers(repo, ['merge-base', '--is-ancestor', ref, target], exec), target };
 }
 

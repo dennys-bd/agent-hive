@@ -485,10 +485,13 @@ const porcelain = (repo: string, entries: [string, string?][]): string =>
     .map(([path, branch]) => `worktree ${path}\nHEAD 0123456789abcdef0123456789abcdef01234567\n${branch ? `branch refs/heads/${branch}` : 'detached'}\n`)
     .join('\n');
 
+const UPSTREAM_FORMAT = '--format=%(upstream)%00%(upstream:track)'; // mergeCheck's one read: the upstream and whether git calls it gone (#660)
+const GONE_UPSTREAM = 'refs/remotes/origin/hive/58-clear-worktree';
+
 // cleanWorktree's git: lists `listed`, knows `branches`, answers the status read inside the worktree with `answers.status` and the
-// branch's upstream with `answers.upstream`, refuses the commands in `refuse` (key: the first two words) with their stderr and exit
+// branch's upstream and its track with `answers.upstream` / `answers.track`, refuses the commands in `refuse` (key: the first two words) with their stderr and exit
 // code 1, and records every argv after `-C <dir>`.
-function cleanGit(repo: string, listed: string, branches: string[], refuse: Record<string, string> = {}, answers: { status?: string; upstream?: string } = {}): { exec: Exec; calls: string[][] } {
+function cleanGit(repo: string, listed: string, branches: string[], refuse: Record<string, string> = {}, answers: { status?: string; upstream?: string; track?: string } = {}): { exec: Exec; calls: string[][] } {
   const calls: string[][] = [];
   const fail = (command: string[], stderr: string): never => {
     throw Object.assign(new Error(`Command failed: git ${command.join(' ')}`), { stderr, code: 1 });
@@ -504,14 +507,14 @@ function cleanGit(repo: string, listed: string, branches: string[], refuse: Reco
     if (key === 'worktree list') return { stdout: listed };
     if (key === 'rev-parse --verify') return branches.includes(command.at(-1)!.replace('refs/heads/', '')) ? { stdout: '0123456\n' } : fail(command, '');
     if (key === 'status --porcelain') return { stdout: answers.status ?? '' };
-    if (key === 'for-each-ref --format=%(upstream)') return { stdout: `${answers.upstream ?? ''}\n` };
+    if (key === `for-each-ref ${UPSTREAM_FORMAT}`) return { stdout: `${answers.upstream ?? ''}\0${answers.track ?? ''}\n` };
     return { stdout: '' };
   };
   return { exec, calls };
 }
 
 // What the pre-check runs for CLEAN_BRANCH with no upstream: the upstream lookup, then the ancestry test against HEAD.
-const MERGE_CHECK = [['for-each-ref', '--format=%(upstream)', `refs/heads/${CLEAN_BRANCH}`], ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`, 'HEAD']];
+const MERGE_CHECK = [['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${CLEAN_BRANCH}`], ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`, 'HEAD']];
 
 async function cleanRepo(t: AfterHost, worktree: boolean): Promise<{ repo: string; path: string }> {
   const repo = await tempDir(t, 'wt-');
@@ -581,10 +584,24 @@ test('the path is always <repo>/.hive/worktrees/<slug>: the activity\'s worktree
     await cleanWorktree(repo, activity, CLEAN_BRANCH, exec);
     assert.deepEqual(calls.map((c) => c.slice(0, 3)), [
       ['worktree', 'list', '--porcelain'], ['rev-parse', '--verify', '--quiet'], ['status', '--porcelain'],
-      ['for-each-ref', '--format=%(upstream)', `refs/heads/${CLEAN_BRANCH}`], ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`],
+      ['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${CLEAN_BRANCH}`], ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`],
       ['worktree', 'remove', '--'], ['branch', '-d', '--'],
     ], String(worktree));
   }
+});
+
+test('an upstream git reads [gone] (GitHub deleted the remote branch after the merge) counts as none: merged into HEAD, the worktree and the branch go (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const gone = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], {}, { upstream: GONE_UPSTREAM, track: '[gone]' });
+  await cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, gone.exec);
+  assert.deepEqual(gone.calls.slice(3), [...MERGE_CHECK, ['worktree', 'remove', '--', path], ['branch', '-d', '--', CLEAN_BRANCH]], 'checked against HEAD, never the gone ref');
+});
+
+test('an upstream git reads [gone] with the branch not in HEAD refuses with unmerged and HEAD as its target, removing nothing (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const gone = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' }, { upstream: GONE_UPSTREAM, track: '[gone]' });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, gone.exec), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' } });
+  assert.equal(gone.calls.some((c) => c[1] === 'remove' || c[0] === 'branch'), false);
 });
 
 test('a task.branch that is neither the name the Hive\'s template renders nor what the listing names is never deleted: it came from a hook', async (t) => {

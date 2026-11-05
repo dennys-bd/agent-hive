@@ -197,6 +197,7 @@ function refsGit(answers: { listing?: string; heads?: string[]; remotes?: string
 }
 
 const TASK_SLUG = 'hive-1-from-ready'; // the fake source's task
+const UPSTREAM_FORMAT = '--format=%(upstream)%00%(upstream:track)'; // mergeCheck's read (#660)
 const TASK_BRANCH = 'hive/1-from-ready'; // what the default template renders for it
 const ORPHAN_SLUG = 'hive-9-gone'; // a worktree git lists under .hive/worktrees that no task owns (#181)
 const ORPHAN_BRANCH = 'hive/9-gone';
@@ -1549,7 +1550,7 @@ test('POST /activities/:id/delete without a literal force checks what git would 
     ['worktree', 'list', '--porcelain'],
     ['rev-parse', '--verify', '--quiet', `refs/heads/${TASK_BRANCH}`],
     ['status', '--porcelain'], // run with -C <worktree>
-    ['for-each-ref', '--format=%(upstream)', `refs/heads/${TASK_BRANCH}`],
+    ['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${TASK_BRANCH}`],
     ['merge-base', '--is-ancestor', `refs/heads/${TASK_BRANCH}`, 'HEAD'],
     ['worktree', 'remove', '--', worktree],
     ['branch', '-d', '--', TASK_BRANCH],
@@ -1670,7 +1671,7 @@ test('POST /activities/:id/delete follows the delete-activity scope (#236, #573)
     ['worktree', 'list', '--porcelain'],
     ['rev-parse', '--verify', '--quiet', `refs/heads/${TASK_BRANCH}`],
     ['status', '--porcelain'],
-    ['for-each-ref', '--format=%(upstream)', `refs/heads/${TASK_BRANCH}`],
+    ['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${TASK_BRANCH}`],
     ['merge-base', '--is-ancestor', `refs/heads/${TASK_BRANCH}`, 'HEAD'],
     ['worktree', 'remove', '--', worktree],
     ['branch', '-d', '--', TASK_BRANCH],
@@ -1792,7 +1793,7 @@ test('POST /worktrees/:slug/remove without a literal force runs the delete activ
     ['worktree', 'list', '--porcelain'], // cleanWorktree's
     ['rev-parse', '--verify', '--quiet', `refs/heads/${ORPHAN_BRANCH}`],
     ['status', '--porcelain'], // run with -C <worktree>
-    ['for-each-ref', '--format=%(upstream)', `refs/heads/${ORPHAN_BRANCH}`],
+    ['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${ORPHAN_BRANCH}`],
     ['merge-base', '--is-ancestor', `refs/heads/${ORPHAN_BRANCH}`, 'HEAD'],
     ['worktree', 'remove', '--', path],
     ['branch', '-d', '--', ORPHAN_BRANCH],
@@ -2623,7 +2624,7 @@ test('deleteActivityOnDisk also checks and deletes the own branches a Restart le
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: `${TASK_BRANCH}-r3`, stageStart: { stage: 'fila', commit: 'a1b2c3d' } }; // #629: the activity's
   const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
   await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
-  const check = (b: string): string[][] => [['for-each-ref', '--format=%(upstream)', `refs/heads/${b}`], ['merge-base', '--is-ancestor', `refs/heads/${b}`, 'HEAD']];
+  const check = (b: string): string[][] => [['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${b}`], ['merge-base', '--is-ancestor', `refs/heads/${b}`, 'HEAD']];
   assert.deepEqual(calls, [
     ['for-each-ref', '--format=%(refname:lstrip=2)', `refs/heads/${TASK_BRANCH}`, `refs/heads/${TASK_BRANCH}-r*`],
     ...check(TASK_BRANCH), ...check(`${TASK_BRANCH}-r2`),
