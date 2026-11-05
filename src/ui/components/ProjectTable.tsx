@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { hiveProject } from '../../hive-project';
 import { HIVE_SOURCE } from '../../tasks';
 import type { ProjectItem, ProjectView, SourceConfig, State, Task } from '../../types';
@@ -154,7 +154,9 @@ function ProjectGrid(props: ProjectGridProps) {
 interface Prefs { prefs: ProjectViewPrefs; update(patch: Partial<ProjectViewPrefs>): void }
 function usePrefs(source: string, view: ProjectView | undefined, columns: ProjectColumn[]): Prefs {
   const [saved, setSaved] = useState(() => readProjectView(source));
-  const prefs = saved ?? { groupBy: 'status', collapsed: defaultCollapsed(view), columns: defaultColumns(columns), sort: null, widths: {}, blockedByShown: true as const };
+  // the hive's statuses are stages: a stage named Done holds live tasks, so nothing starts folded there
+  const collapsed = source === HIVE_SOURCE ? [] : defaultCollapsed(view);
+  const prefs = saved ?? { groupBy: 'status', collapsed,columns: defaultColumns(columns), sort: null, widths: {}, blockedByShown: true as const };
   const update = (patch: Partial<ProjectViewPrefs>): void => {
     const next = { ...prefs, ...patch };
     setSaved(next);
@@ -225,7 +227,9 @@ const NO_ROW = (): void => undefined; // the hive's cells write through the task
 // #583 decision 2: the hive's view from the live state, the same function GET /sources/hive/project answers with, so the two never disagree.
 // No useProject: it would read that endpoint
 function HiveTable(props: ProjectTableProps) {
-  const project: ProjectState = { kind: 'view', view: hiveProject(props.state) };
+  const { state } = props;
+  // one view per state: rows stay the same objects between renders that did not change the state
+  const project = useMemo((): ProjectState => ({ kind: 'view', view: hiveProject(state) }), [state]);
   return <TableView {...props} project={project} onRefresh={NOTHING_TO_READ} replaceRow={NO_ROW} />;
 }
 
