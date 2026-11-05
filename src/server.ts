@@ -18,7 +18,7 @@ import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFo
 import { createGhToken, type GhToken } from './github-token.js';
 import { listFilterOptions, listProjects } from './sources/github.js';
 import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js';
-import { activityOfWorker, taskOfActivity, taskOfWorker } from './activities.js';
+import { activityOfWorker, recordOf, taskOfActivity, taskOfWorker } from './activities.js';
 import { createLeftItems } from './left-items.js';
 import { CONFIG_FILE, taskWorkspace, parseSource, workspaceByName, workspaceScope, requireWorkspace } from './config.js';
 import { createConsoleStore } from './console.js';
@@ -614,7 +614,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         const { activity, task, scope } = effect;
         const activityId = activity.id;
         // In the task's own workspace (#179); none, or one gone, is a failure a manual start retries, like a git refusal. What goes is the scope's (#236).
-        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, dispatch, facts: wiring.facts });
+        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], prs: live ? recordOf(live.state, activity.id)?.prs ?? [] : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, dispatch, facts: wiring.facts });
         // Awaited, like kill: the answer is reduced inside this batch, so the next tick sees the task moved or errored, never mid-deletion.
         await clean().then(
           () => dispatch({ type: 'activityDeleted', activityId }),

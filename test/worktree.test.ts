@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Activity, Exec } from '../src/types.js';
+import type { Activity, Exec, TaskPr } from '../src/types.js';
 import { baseOptions, branchAt, taskDir, checkBase, cleanWorktree, ensureCheckout, ensureWorktree, listWorktrees, workspacePathProblem, removeWorktree, worktreePath } from '../src/worktree.js';
 import type { WorkspaceBase } from '../src/fork.js';
 import { workspaceBase } from '../src/fork.js';
@@ -485,10 +485,13 @@ const porcelain = (repo: string, entries: [string, string?][]): string =>
     .map(([path, branch]) => `worktree ${path}\nHEAD 0123456789abcdef0123456789abcdef01234567\n${branch ? `branch refs/heads/${branch}` : 'detached'}\n`)
     .join('\n');
 
+const UPSTREAM_FORMAT = '--format=%(upstream)%00%(upstream:track)'; // mergeCheck's one read: the upstream and whether git calls it gone (#660)
+const GONE_UPSTREAM = 'refs/remotes/origin/hive/58-clear-worktree';
+
 // cleanWorktree's git: lists `listed`, knows `branches`, answers the status read inside the worktree with `answers.status` and the
-// branch's upstream with `answers.upstream`, refuses the commands in `refuse` (key: the first two words) with their stderr and exit
+// branch's upstream and its track with `answers.upstream` / `answers.track`, refuses the commands in `refuse` (key: the first two words) with their stderr and exit
 // code 1, and records every argv after `-C <dir>`.
-function cleanGit(repo: string, listed: string, branches: string[], refuse: Record<string, string> = {}, answers: { status?: string; upstream?: string } = {}): { exec: Exec; calls: string[][] } {
+function cleanGit(repo: string, listed: string, branches: string[], refuse: Record<string, string> = {}, answers: { status?: string; upstream?: string; track?: string } = {}): { exec: Exec; calls: string[][] } {
   const calls: string[][] = [];
   const fail = (command: string[], stderr: string): never => {
     throw Object.assign(new Error(`Command failed: git ${command.join(' ')}`), { stderr, code: 1 });
@@ -504,14 +507,14 @@ function cleanGit(repo: string, listed: string, branches: string[], refuse: Reco
     if (key === 'worktree list') return { stdout: listed };
     if (key === 'rev-parse --verify') return branches.includes(command.at(-1)!.replace('refs/heads/', '')) ? { stdout: '0123456\n' } : fail(command, '');
     if (key === 'status --porcelain') return { stdout: answers.status ?? '' };
-    if (key === 'for-each-ref --format=%(upstream)') return { stdout: `${answers.upstream ?? ''}\n` };
+    if (key === `for-each-ref ${UPSTREAM_FORMAT}`) return { stdout: `${answers.upstream ?? ''}\0${answers.track ?? ''}\n` };
     return { stdout: '' };
   };
   return { exec, calls };
 }
 
 // What the pre-check runs for CLEAN_BRANCH with no upstream: the upstream lookup, then the ancestry test against HEAD.
-const MERGE_CHECK = [['for-each-ref', '--format=%(upstream)', `refs/heads/${CLEAN_BRANCH}`], ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`, 'HEAD']];
+const MERGE_CHECK = [['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${CLEAN_BRANCH}`], ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`, 'HEAD']];
 
 async function cleanRepo(t: AfterHost, worktree: boolean): Promise<{ repo: string; path: string }> {
   const repo = await tempDir(t, 'wt-');
@@ -581,10 +584,108 @@ test('the path is always <repo>/.hive/worktrees/<slug>: the activity\'s worktree
     await cleanWorktree(repo, activity, CLEAN_BRANCH, exec);
     assert.deepEqual(calls.map((c) => c.slice(0, 3)), [
       ['worktree', 'list', '--porcelain'], ['rev-parse', '--verify', '--quiet'], ['status', '--porcelain'],
-      ['for-each-ref', '--format=%(upstream)', `refs/heads/${CLEAN_BRANCH}`], ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`],
+      ['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${CLEAN_BRANCH}`], ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`],
       ['worktree', 'remove', '--'], ['branch', '-d', '--'],
     ], String(worktree));
   }
+});
+
+test('an upstream git reads [gone] (GitHub deleted the remote branch after the merge) counts as none: merged into HEAD, the worktree and the branch go (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const gone = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], {}, { upstream: GONE_UPSTREAM, track: '[gone]' });
+  await cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, gone.exec);
+  assert.deepEqual(gone.calls.slice(3), [...MERGE_CHECK, ['worktree', 'remove', '--', path], ['branch', '-d', '--', CLEAN_BRANCH]], 'checked against HEAD, never the gone ref');
+});
+
+test('an upstream git reads [gone] with the branch not in HEAD refuses with unmerged and HEAD as its target, removing nothing (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const gone = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' }, { upstream: GONE_UPSTREAM, track: '[gone]' });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, gone.exec), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' } });
+  assert.equal(gone.calls.some((c) => c[1] === 'remove' || c[0] === 'branch'), false);
+});
+
+const PR = 'https://github.com/acme/app/pull/58';
+const OPEN_PR = 'https://github.com/acme/app/pull/59';
+const CLOSED_PR = 'https://github.com/acme/app/pull/57';
+const TIP = '0123456'; // what cleanGit's rev-parse --verify answers for a branch it knows
+const mergedPr = (url = PR): TaskPr => ({ url, state: 'merged' });
+
+// cleanGit's exec with gh in front (#660): `gh pr view <url>` answers heads[url] as a MERGED PR at that head; any other url fails as gh does.
+// Every gh argv is recorded.
+function withGh(git: Exec, heads: Record<string, string>): { exec: Exec; gh: string[][] } {
+  const gh: string[][] = [];
+  const exec: Exec = async (file, args, opts) => {
+    if (file !== 'gh') return git(file, args, opts);
+    gh.push(args);
+    const head = heads[args[2] ?? ''];
+    if (head === undefined) throw Object.assign(new Error('Command failed: gh pr view'), { stderr: 'GraphQL: Could not resolve to a PullRequest\n', code: 1 });
+    return { stdout: JSON.stringify({ state: 'MERGED', headRefOid: head }) };
+  };
+  return { exec, gh };
+}
+
+// A squash-merged branch as git sees it: never an ancestor of HEAD; gh answers `heads`
+function squashed(repo: string, path: string, heads: Record<string, string>): { exec: Exec; calls: string[][]; gh: string[][] } {
+  const git = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' });
+  const { exec, gh } = withGh(git.exec, heads);
+  return { exec, calls: git.calls, gh };
+}
+
+test('a squashed branch whose tip is the head its merged PR merged goes with update-ref -d at that tip after its worktree, the PR read once through gh (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const f = squashed(repo, path, { [PR]: TIP });
+  await cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, f.exec, undefined, { prs: [mergedPr()] });
+  assert.deepEqual(f.gh, [['pr', 'view', PR, '--json', 'state,headRefOid']]);
+  assert.deepEqual(f.calls.slice(5), [['rev-parse', '--verify', `refs/heads/${CLEAN_BRANCH}`], ['worktree', 'remove', '--', path], ['update-ref', '-d', `refs/heads/${CLEAN_BRANCH}`, TIP]]);
+});
+
+test('a squashed branch whose tip moved past its merged PR\'s head (a commit made after the merge) refuses with unmerged and removes nothing (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const f = squashed(repo, path, { [PR]: 'fedcba9' });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, f.exec, undefined, { prs: [mergedPr()] }), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' } });
+  assert.equal(f.calls.some((c) => c[1] === 'remove' || c[0] === 'branch'), false);
+});
+
+test('a PR still open keeps the branch: unmerged, and no gh call at all (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const f = squashed(repo, path, { [PR]: TIP });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, f.exec, undefined, { prs: [mergedPr(), { url: OPEN_PR, state: 'open' }] }), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' } });
+  assert.deepEqual(f.gh, []);
+});
+
+test('a gh read that fails counts as not merged: unmerged, and the PR\'s url with gh\'s words logged at info (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const f = squashed(repo, path, {});
+  const lines: string[] = [];
+  const log = { info: (line: string): void => { lines.push(line); } };
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, f.exec, undefined, { prs: [mergedPr()], log }), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' } });
+  assert.deepEqual(lines, [`mergedByPr ${PR}: GraphQL: Could not resolve to a PullRequest`]);
+});
+
+test('a PR closed without a merge beside a merged one neither blocks nor is read: the branch goes at its verified tip (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const f = squashed(repo, path, { [PR]: TIP });
+  await cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, f.exec, undefined, { prs: [{ url: CLOSED_PR, state: 'closed' }, mergedPr()] });
+  assert.deepEqual(f.gh.map((args) => args[2]), [PR]);
+  assert.deepEqual(f.calls.at(-1), ['update-ref', '-d', `refs/heads/${CLEAN_BRANCH}`, TIP]);
+});
+
+test('a PR the record holds as merged that GitHub no longer calls MERGED (reopened since the poll) counts as not merged, logged at info (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const git = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' });
+  const exec: Exec = async (file, args, opts) => (file === 'gh' ? { stdout: JSON.stringify({ state: 'OPEN', headRefOid: TIP }) } : git.exec(file, args, opts));
+  const lines: string[] = [];
+  const log = { info: (line: string): void => { lines.push(line); } };
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, exec, undefined, { prs: [mergedPr()], log }), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' } });
+  assert.equal(git.calls.some((c) => c[1] === 'remove' || c[0] === 'branch' || c[0] === 'update-ref'), false);
+  assert.deepEqual(lines, [`mergedByPr ${PR}: not merged on GitHub`]);
+});
+
+test('a live upstream ahead and behind is still the merge target: only [gone] falls back to HEAD (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const live = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' }, { upstream: GONE_UPSTREAM, track: '[ahead 1, behind 2]' });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, live.exec), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: GONE_UPSTREAM } });
+  assert.ok(live.calls.some((c) => c.join(' ') === `merge-base --is-ancestor refs/heads/${CLEAN_BRANCH} ${GONE_UPSTREAM}`));
 });
 
 test('a task.branch that is neither the name the Hive\'s template renders nor what the listing names is never deleted: it came from a hook', async (t) => {
@@ -600,7 +701,10 @@ test('a task.branch that is neither the name the Hive\'s template renders nor wh
 test('all or nothing (#182): a worktree with changes is refused before anything is removed, and the reason lists git\'s status lines', async (t) => {
   const { repo, path } = await cleanRepo(t, true);
   const dirty = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], {}, { status: ' M src/login.ts\n?? notes.md\n' });
-  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, dirty.exec), { message: `${path} has changes that are not committed:\n M src/login.ts\n?? notes.md` });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, dirty.exec), {
+    message: `${path} has changes that are not committed:\n M src/login.ts\n?? notes.md`,
+    refusal: { reason: 'dirty', path, files: ' M src/login.ts\n?? notes.md' }, // #660: the route answers the code, the UI words it
+  });
   assert.deepEqual(dirty.calls, [
     ['worktree', 'list', '--porcelain'], ['rev-parse', '--verify', '--quiet', `refs/heads/${CLEAN_BRANCH}`], ['status', '--porcelain'],
   ], 'nothing removed, nothing deleted');
@@ -610,12 +714,18 @@ test('all or nothing (#182): a branch not merged into HEAD, or into its upstream
   const { repo, path } = await cleanRepo(t, true);
   const listed = porcelain(repo, [[path, CLEAN_BRANCH]]);
   const intoHead = cleanGit(repo, listed, [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' }); // exit 1: not an ancestor
-  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, intoHead.exec), { message: `the branch '${CLEAN_BRANCH}' is not fully merged into HEAD` });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, intoHead.exec), {
+    message: `the branch '${CLEAN_BRANCH}' is not fully merged into HEAD`,
+    refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' },
+  });
   assert.deepEqual(intoHead.calls.slice(-2), MERGE_CHECK);
   assert.equal(intoHead.calls.some((c) => c[1] === 'remove' || c[0] === 'branch'), false, 'the worktree and the branch both stay');
   const upstream = 'refs/remotes/origin/hive/58-clear-worktree';
   const intoUpstream = cleanGit(repo, listed, [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' }, { upstream });
-  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, intoUpstream.exec), { message: `the branch '${CLEAN_BRANCH}' is not fully merged into ${upstream}` });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, intoUpstream.exec), {
+    message: `the branch '${CLEAN_BRANCH}' is not fully merged into ${upstream}`,
+    refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: upstream },
+  });
   assert.deepEqual(intoUpstream.calls.at(-1), ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`, upstream], 'the upstream, not HEAD');
 });
 

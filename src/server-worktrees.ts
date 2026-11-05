@@ -11,7 +11,8 @@ import { activityOf, keptActivity, worktreeOwner } from './activities.js';
 import type { PtyHost } from './pty-host.js';
 import { removeInRun } from './task-setup.js';
 import type { Activity, Task, Config, Effect, Exec, HiveEvent, State, Workspace, WorktreeRow } from './types.js';
-import { taskDir, cleanWorktree, listWorktrees, removeWorktree } from './worktree.js';
+import { taskDir, cleanWorktree, listWorktrees, removeWorktree, wordsOf } from './worktree.js';
+import { refusalOf, UNEXPECTED } from './worktree-base.js';
 import type { FactLog } from './facts.js';
 
 const HTTP_NOT_FOUND = 404;
@@ -24,7 +25,7 @@ const UNKNOWN_WORKSPACE_MESSAGE = 'unknown workspace';
 
 export interface WorktreeRouteDeps {
   exec: Exec; // git; tests inject a fake and see the calls
-  log: Pick<Logger, 'info'>;
+  log: Pick<Logger, 'info' | 'error'>;
   /** The workspace is read at call time: a POST /settings may have moved it (#202). baseBranch: what the activities' worktree line counts from (#586). */
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb' | 'baseBranch'>; promptsDir: string } } | undefined;
   ptys: Pick<PtyHost, 'adopt' | 'subscribe'>; // the teardown's console run (#654)
@@ -153,7 +154,7 @@ function removeListed(deps: WorktreeRouteDeps, workspace: Workspace, slug: strin
   const target = { id: orphanTeardownRunId(workspace.name, slug), label: slug, workspace, force: force !== undefined };
   return removeInRun(deps, target, (before) => (force
     ? removeWorktree(workspace.path, { slug }, branch, force.promptsDir, deps.exec, workspace.nestedRepos)
-    : cleanWorktree(workspace.path, { slug }, branch, deps.exec, before, 'refuse', workspace.nestedRepos))); // #653
+    : cleanWorktree(workspace.path, { slug }, branch, deps.exec, before, { nested: workspace.nestedRepos }))); // #653
 }
 
 async function removeOrphan(req: Request, res: Response, deps: WorktreeRouteDeps, name: string, slug: string): Promise<void> {
@@ -190,8 +191,9 @@ async function removeOrphan(req: Request, res: Response, deps: WorktreeRouteDeps
     await removeListed(deps, workspace, slug, branch, force ? { promptsDir } : undefined);
   } catch (err) {
     log.info(`worktreeKept ${slug}`);
-    if (force) res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
-    else res.json({ removed: false, refused: errorMessage(err) });
+    if (!force) return void res.json({ removed: false, refused: refusalOf(err, log, `worktreeRemove ${slug}`) });
+    log.error(`worktreeRemove ${slug} forced: ${wordsOf(err)}`);
+    res.status(HTTP_SERVER_ERROR).json({ error: UNEXPECTED }); // #660: git's words are in hive.log
     return;
   }
   log.info(`worktreeRemoved ${slug}`);

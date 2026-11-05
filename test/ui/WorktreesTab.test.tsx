@@ -108,7 +108,7 @@ test('apagar órfãs confirms with the count and posts each cleanable orphan wit
   const user = userEvent.setup();
   const blocked: WorktreeRow = { ...FAILED, slug: 'hive-4-open', task: { ...FAILED.task!, id: 'I4', activityId: 'a-I4', title: '#4 Open', removable: false } };
   rows = [ORPHAN, FAILED, blocked, RUNNING];
-  answers = { '/activities/a-I3/delete': { removed: false, refused: REFUSAL } };
+  answers = { '/activities/a-I3/delete': { removed: false, refused: { reason: 'unmerged', branch: 'hive/3-done', target: 'HEAD' } } };
   render(<WorktreesTab />);
   await screen.findByText('hive/9-gone');
   const cleanAllButton = screen.getByRole('button', { name: t('worktrees.cleanOrphans') });
@@ -117,7 +117,7 @@ test('apagar órfãs confirms with the count and posts each cleanable orphan wit
   expect(dialog()).toHaveTextContent('remover 2 worktrees órfãs sem forçar?');
   await user.click(within(dialog()).getByRole('button', { name: t('worktrees.cleanOrphans') }));
   expect(await screen.findByText('removidas: hive-9-gone')).toBeInTheDocument();
-  expect(screen.getByText(`o git recusou hive-3-done: ${REFUSAL}`)).toBeInTheDocument();
+  expect(screen.getByText(`o git recusou hive-3-done: o branch hive/3-done não está mergeado em HEAD`)).toBeInTheDocument();
   expect(posts()).toEqual([['/worktrees/hive/hive-9-gone/remove', undefined], ['/activities/a-I3/delete', undefined]]);
   await waitFor(() => expect(gets()).toBe(2));
 });

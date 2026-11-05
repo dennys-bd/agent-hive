@@ -2,17 +2,17 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { taskLabel } from '../../tasks';
 import { Confirm } from '@/components/Confirm';
-import { activityDeletionUrl, type Removal } from '@/components/DeleteActivity';
+import { activityDeletionUrl, refusalText, type Removal, UNEXPECTED_REFUSAL } from '@/components/DeleteActivity';
 import { t } from '@/i18n';
 import type { TaskActivity } from '@/lib/activities';
 import { postJson } from '@/lib/api';
 
-// One delete after another (#586), never forced: a refusal or a failure keeps that activity with git's words, and the rest still run
+// One delete after another (#586), never forced: a refusal or a failure keeps that activity with its refusal's copy (#660), and the rest still run
 async function deleteEach(activities: TaskActivity[]): Promise<string[]> {
   const kept: string[] = [];
   for (const { task, activity } of activities) {
-    const answer = await postJson<Removal>(activityDeletionUrl(activity.id)).catch((err: Error): Removal => ({ removed: false, refused: err.message }));
-    if (!answer.removed) kept.push(`${taskLabel(task)}: ${answer.refused}`);
+    const answer = await postJson<Removal>(activityDeletionUrl(activity.id)).catch((): Removal => ({ removed: false, refused: UNEXPECTED_REFUSAL }));
+    if (!answer.removed) kept.push(`${taskLabel(task)}: ${refusalText(answer.refused)}`);
   }
   return kept;
 }

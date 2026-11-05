@@ -8,8 +8,23 @@ import { activityOf } from '../../activities';
 import { type RemovalBlocker, removalBlocker } from '../../tasks';
 import type { State, Task } from '../../types';
 
-/** What both removal routes answer with a 200: git removed it, or refused with its own words. */
-export type Removal = { removed: true } | { removed: false; refused: string };
+/** Why a removal without force was refused (#660): the routes' codes, the UI's own copy of src/worktree-base.ts's union. */
+export type Refusal = { reason: 'dirty'; path: string; files: string } | { reason: 'unmerged'; branch: string; target: string } | { reason: 'unexpected' };
+
+/** What both removal routes answer with a 200: removed, or refused with a code this file words (#660). */
+export type Removal = { removed: true } | { removed: false; refused: Refusal };
+
+/** What a caller that posts by itself keeps for a post that failed (#660): the server's words are never shown. */
+export const UNEXPECTED_REFUSAL: Refusal = { reason: 'unexpected' };
+
+/** A refusal's copy in the user's language (#660); git's own words are in hive.log. */
+export function refusalText(refused: Refusal): string {
+  switch (refused.reason) {
+    case 'dirty': return t('deleteActivity.refused.dirty', { path: refused.path, files: refused.files });
+    case 'unmerged': return t('deleteActivity.refused.unmerged', { branch: refused.branch, target: refused.target });
+    case 'unexpected': return t('deleteActivity.refused.unexpected');
+  }
+}
 
 /** The #182 route of a task's live activity (#629): the ⋯ menu and the worktrees tab's task-owned rows both post here (#573). */
 export const activityDeletionUrl = (activityId: string): string => `/activities/${encodeURIComponent(activityId)}/delete`;
@@ -41,20 +56,20 @@ interface DeleteActivityProps {
 
 /**
  * The delete activity button (#182, #181, #210, #573): it removes the worktree. The confirmed click runs git without force (all or nothing); a refusal,
- * which removed nothing, opens a second confirm (#75) with git's words and the warning, where `cancel` (or Escape) keeps everything and `force` (Enter)
+ * which removed nothing, opens a second confirm (#75) with the refusal's copy (#660) and the warning, where `cancel` (or Escape) keeps everything and `force` (Enter)
  * repeats the request with force. The details panel always shows the trigger and disables it with the reason as a tooltip
  * (`title` on a span: a disabled button fires no pointer events); the Settings row hides it through `available`. The popup is mounted
  * whatever either says: the task route marks the task deleting before git runs and that mark reaches the panel before the answer, so only
- * the trigger follows it; the popup must outlive it. Errors go to the toast, as `act` does.
+ * the trigger follows it; the popup must outlive it. A failure toasts the unexpected error.
  */
 export function DeleteActivity({ url, message, title = t('confirm.title.deleteActivity'), available, disabledReason, size, onDone, trigger, confirm }: DeleteActivityProps) {
-  const [refused, setRefused] = useState<string>();
+  const [refused, setRefused] = useState<Refusal>();
   const reasonId = useId();
   const label = t('detail.deleteActivity');
   const remove = (body?: { force: true }): void => {
     postJson<Removal>(url, body)
       .then((answer) => setRefused(answer.removed ? undefined : answer.refused))
-      .catch((err: Error) => toast.error(err.message))
+      .catch(() => toast.error(t('deleteActivity.failed'))) // #660: never the server's message; git's words are in hive.log
       .finally(() => onDone?.());
   };
   return (
@@ -78,7 +93,7 @@ export function DeleteActivity({ url, message, title = t('confirm.title.deleteAc
       )}
       <Confirm
         open={refused !== undefined} onOpenChange={(open) => { if (!open) setRefused(undefined); }}
-        title={t('confirm.title.forceDelete')} message={`${refused ?? ''}\n\n${t('confirm.forceDeleteActivity')}`}
+        title={t('confirm.title.forceDelete')} message={`${refused === undefined ? '' : refusalText(refused)}\n\n${t('confirm.forceDeleteActivity')}`}
         confirmLabel={t('task.force')} onConfirm={() => remove({ force: true })}
       />
     </>

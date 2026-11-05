@@ -2,7 +2,7 @@ import { XIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Confirm } from '@/components/Confirm';
 import { taskError } from '@/components/CommandsProgress';
-import { activityDeletionUrl, type Removal, DeleteActivity } from '@/components/DeleteActivity';
+import { activityDeletionUrl, refusalText, type Removal, DeleteActivity, UNEXPECTED_REFUSAL } from '@/components/DeleteActivity';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -27,15 +27,15 @@ const isCleanable = (row: WorktreeRow): boolean => row.orphan === 'noTask' || ro
 
 const workspacesOf = (rows: WorktreeRow[]): string[] => [...new Set(rows.map((r) => r.workspace))]; // #179: in the order the server lists them
 
-// One after another and never forced (a bulk force is never one click): git's refusal, or a route's error, is kept with the slug and
+// One after another and never forced (a bulk force is never one click): git's refusal, worded (#660), or a route's error, is kept with the slug and
 // the row stays in the list to be forced by hand.
 async function cleanAll(rows: WorktreeRow[]): Promise<Outcome> {
   let outcome: Outcome = { removed: [], refused: [] };
   for (const row of rows) {
-    const answer = await postJson<Removal>(removalUrl(row)).catch((err: Error): Removal => ({ removed: false, refused: err.message }));
+    const answer = await postJson<Removal>(removalUrl(row)).catch((): Removal => ({ removed: false, refused: UNEXPECTED_REFUSAL }));
     outcome = answer.removed
       ? { ...outcome, removed: [...outcome.removed, row.slug] }
-      : { ...outcome, refused: [...outcome.refused, { slug: row.slug, reason: answer.refused }] };
+      : { ...outcome, refused: [...outcome.refused, { slug: row.slug, reason: refusalText(answer.refused) }] };
   }
   return outcome;
 }

@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from 'express';
-import { activityOf, otherSlugs } from './activities.js';
+import { activityOf, otherSlugs, recordOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { createTask, UNKNOWN_STAGE_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from './create-task.js';
 import { branchFor, inFlow, slugFor, canOpenSession, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
@@ -27,10 +27,11 @@ import { registerSessionRoutes } from './server-sessions.js';
 import { registerDismissErrorRoute, registerRetryRoute } from './server-retry.js';
 import { registerFlowRoutes } from './server-task-flow.js';
 import { parseRunPick } from './run-pick.js';
-import type { Activity, AgentAvailability, BaseOptions, Source, Task, Session, DeleteActivityScope, Config, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
+import type { Activity, AgentAvailability, BaseOptions, Source, Task, TaskPr, Session, DeleteActivityScope, Config, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
 import { dropCheckpoints } from './checkpoints.js';
 import { dropBranches, dropStageStart, leftBehind } from './restart.js';
-import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree } from './worktree.js';
+import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree, wordsOf } from './worktree.js';
+import { refusalOf, RemovalRefusal, UNEXPECTED } from './worktree-base.js';
 import type { Logger } from './log.js';
 import { type ConsoleStore, teardownRunId } from './console.js';
 import type { PtyHost } from './pty-host.js';
@@ -157,11 +158,19 @@ function closeRefusal(state: State, itemId: string): Refusal | undefined {
   return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // a run of any kind holds it (#164, #283); deleting was refused above
 }
 
+// #660: act toasts the 409's message, so a known refusal answers its own sentence and git's words, for anything else, go to hive.log only
+const CLOSE_UNEXPECTED = 'Unexpected error';
+function closeFailure(err: unknown, log: Pick<Logger, 'error'>, id: string): string {
+  if (err instanceof RemovalRefusal) return err.message;
+  log.error(`close #${id}: ${wordsOf(err)}`);
+  return CLOSE_UNEXPECTED;
+}
+
 /** excluir task… (#542): a local task with a worktree loses it and its branch before it leaves the Hive, through the removal the
  * delete-activity route runs; both always go, as the glossary's delete activity says, the sessions and transcripts per the delete-activity scope.
  * deletingTask's mark holds the fill off while git runs, and taskDeleted drops the task in the reduction that drops the mark, so no fill in
  * between can hand it a worker: 'deleted', the close is done. deletingTask closes its terminals first (#573): git never runs under one.
- * A git refusal or failure is the 409 with git's words, and the task stays. Any other task has nothing to remove: undefined. */
+ * A git refusal is the 409 with its sentence, any other failure the 409 with "Unexpected error" and git's words in hive.log; the task stays. Any other task has nothing to remove: undefined. */
 async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, taskId: string): Promise<Refusal | 'deleted' | undefined> {
   const task = current.state.tasks.find((c) => c.item.itemId === taskId);
   const activity = activityOf(current.state, taskId);
@@ -171,10 +180,10 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
   const scope = current.state.deleteActivity; // the worktree and its branch always go (#573)
   await deps.dispatch({ type: 'deletingTask', taskId });
   try {
-    await deleteActivityOnDisk({ workspace, activity, task, sessions: sessionsOf(current.state, task.item.itemId), branch: branchFor(current.runtime.config, task.item), scope }, deps);
+    await deleteActivityOnDisk({ workspace, activity, task, sessions: sessionsOf(current.state, task.item.itemId), prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
   } catch (err) {
     await deps.dispatch({ type: 'activityKept', activityId: activity.id });
-    return { status: HTTP_CONFLICT, message: errorMessage(err) };
+    return { status: HTTP_CONFLICT, message: closeFailure(err, deps.log, task.item.id) };
   }
   await deps.dispatch({ type: 'taskDeleted', taskId });
   return 'deleted';
@@ -423,10 +432,10 @@ export type DeleteActivityDeps = WorktreeRunDeps & { log: Pick<Logger, 'debug' |
  * and excluir task… (#542) share it. A local task (#444) runs no git and no teardown: its branch is usually the one the user's checkout
  * holds, which `branch -d` refuses. */
 export async function deleteActivityOnDisk(
-  // sessions: every record's of the task (#629), since a git job holds no state
-  job: { workspace: Workspace; activity: Activity; task: Task; sessions: Session[]; branch: string; scope: DeleteActivityScope; force?: { promptsDir: string } }, deps: DeleteActivityDeps,
+  // sessions: every record's of the task (#629), since a git job holds no state; prs (#660): the live activity record's, which mergedByPr reads for a branch git calls unmerged
+  job: { workspace: Workspace; activity: Activity; task: Task; sessions: Session[]; prs: readonly TaskPr[]; branch: string; scope: DeleteActivityScope; force?: { promptsDir: string } }, deps: DeleteActivityDeps,
 ): Promise<void> {
-  const { workspace, activity, task, sessions, branch, scope, force } = job;
+  const { workspace, activity, task, sessions, prs, branch, scope, force } = job;
   const { exec, log } = deps;
   const repo = workspace.path;
   if (!activity.local) {
@@ -435,7 +444,7 @@ export async function deleteActivityOnDisk(
     const target = { id: teardownRunId(task.item.itemId), label: `#${task.item.id}`, workspace, force: force !== undefined };
     await removeInRun(deps, target, (before) => (force
       ? removeWorktree(repo, activity, branch, force.promptsDir, exec, workspace.nestedRepos)
-      : cleanWorktree(repo, activity, branch, exec, before, 'refuse', workspace.nestedRepos))); // #653
+      : cleanWorktree(repo, activity, branch, exec, before, { nested: workspace.nestedRepos, prs, log }))); // #653, #660
     await dropBranches(repo, extras, force !== undefined, exec);
     await dropStageStart(repo, activity.slug ?? slugFor(task.item), exec); // #812: a stage entry clears stageStart, never the ref; a missing ref is nothing
     await dropCheckpoints(repo, activity.slug ?? slugFor(task.item), exec); // #619: every checkpoint's restore point goes with the activity; none is nothing
@@ -448,13 +457,13 @@ export async function deleteActivityOnDisk(
 // The ⋯ menu's delete activity (#182, #210, #573), also posted by the Settings worktree row and `clean up all orphans` (#181). The task is
 // marked deleting before git, so no fill, manual start or delete-activity stage touches it while git runs; the answer drops the mark. Without
 // force it is the delete-activity stage's git (no --force, branch -d), all or nothing: a refusal removes nothing and is an expected answer, 200
-// with the reason, which the UI turns into the force popup. With a literal force: true it is the destructive removal; a failure there is a
-// 500. Either failure leaves the task's fields: nothing was confirmed gone. A success forgets what the scope removed (#236); nothing to
+// with its code (#660), which the UI words and turns into the force popup. With a literal force: true it is the destructive removal; a failure
+// there is a 500 `unexpected`. Either failure leaves the task's fields: nothing was confirmed gone. A success forgets what the scope removed (#236); nothing to
 // delete (a delete-activity stage only) runs no git and just moves the task on. In a delete-activity stage a success advances the task as the
 // stage's own deletion would (the reducer's activityRemoved, so every caller gets it). The mark lands synchronously inside dispatch, right after
 // the check, so the check and the mark cannot be split by another request.
 function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
-  const { requireLive, dispatch } = deps;
+  const { requireLive, dispatch, log } = deps;
   app.post('/activities/:id/delete', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -472,11 +481,13 @@ function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
     const { config, promptsDir } = current.runtime;
     await dispatch({ type: 'deletingActivity', activityId: live.id });
     try {
-      if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions: sessionsOf(current.state, task.item.itemId), branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
+      if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions: sessionsOf(current.state, task.item.itemId), prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
     } catch (err) {
       await dispatch({ type: 'activityKept', activityId: live.id });
-      if (force) res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
-      else res.json({ removed: false, refused: errorMessage(err) });
+      const label = `deleteActivity #${task.item.id}`;
+      if (!force) return void res.json({ removed: false, refused: refusalOf(err, log, label) });
+      log.error(`${label} forced: ${wordsOf(err)}`);
+      res.status(HTTP_SERVER_ERROR).json({ error: UNEXPECTED }); // #660: the UI toasts its own copy; git's words are in hive.log
       return;
     }
     await dispatch({ type: 'activityRemoved', activityId: live.id });

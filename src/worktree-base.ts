@@ -1,3 +1,4 @@
+import type { Logger } from './log.js';
 import { type ForkRepos, failureOf, forkRepos, ownerOf, syncFork, type WorkspaceBase } from './fork.js';
 import { type BranchRelation, type Exec, type ForkSyncAnswer, type ForkSyncResult, isBranchName } from './types.js';
 
@@ -14,6 +15,31 @@ export const wordsOf = (err: unknown): string => {
   const e = err as { stderr?: string; message: string };
   return (e.stderr ?? '').trim() || e.message;
 };
+
+/** Why a removal without force was refused (#660): a code the UI words in the user's language, never git's own text. */
+export type Refusal = { reason: 'dirty'; path: string; files: string } | { reason: 'unmerged'; branch: string; target: string } | { reason: 'unexpected' };
+export type KnownRefusal = Exclude<Refusal, { reason: 'unexpected' }>;
+
+/** A removal refused for a reason the Hive knows (#660). The message stays the English sentence, so hive.log and the delete-activity stage's
+ * error read as before. */
+export class RemovalRefusal extends Error {
+  readonly refusal: KnownRefusal;
+  constructor(message: string, refusal: KnownRefusal) {
+    super(message);
+    this.name = 'RemovalRefusal';
+    this.refusal = refusal;
+  }
+}
+
+export const UNEXPECTED = 'unexpected';
+
+/** What a removal route answers for a failure without force (#660): a known refusal as it is; anything else is `unexpected`, with git's words in
+ * hive.log under `label`. An unexpected refusal still opens the force popup, the user's way out. */
+export function refusalOf(err: unknown, log: Pick<Logger, 'error'>, label: string): Refusal {
+  if (err instanceof RemovalRefusal) return err.refusal;
+  log.error(`${label}: ${wordsOf(err)}`);
+  return { reason: UNEXPECTED };
+}
 
 // A failure carries git's own words (stderr) so the task says why; restart.ts runs its git the same way (#283).
 export async function gitOrWords(repo: string, args: string[], exec: Exec): Promise<string> {
@@ -50,7 +76,7 @@ export function branchAt(porcelain: string, path: string): string | null | undef
 // the lines are git's own, so the refusal names the files.
 export async function refuseDirty(path: string, exec: Exec): Promise<void> {
   const status = (await gitOrWords(path, ['status', '--porcelain'], exec)).trimEnd();
-  if (status !== '') throw new Error(`${path} has changes that are not committed:\n${status}`);
+  if (status !== '') throw new RemovalRefusal(`${path} has changes that are not committed:\n${status}`, { reason: 'dirty', path, files: status });
 }
 
 /** The branch's upstream, short (`origin/main`): what a reused branch started from (#653). None: undefined. The ref is built here. */

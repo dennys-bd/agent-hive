@@ -641,3 +641,12 @@ test('the agents\' save errors read in both languages, agent-neutral (#482)', ()
   assert.equal(MESSAGES.pt['settings.agents.error.stage'], 'a etapa {n} executa o {agent}, que está desabilitado: habilite-o em execução › agentes ou escolha outro agente');
   assert.equal(MESSAGES.en['settings.agents.error.claudeModel'], '"{model}" is not a {agent} model');
 });
+
+test('a removal refusal reads as the spec writes it, in both languages, and never says rodar (#660)', () => {
+  const keys = ['deleteActivity.refused.dirty', 'deleteActivity.refused.unmerged', 'deleteActivity.refused.unexpected', 'deleteActivity.failed'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['{path} has changes that are not committed:\n{files}', 'the branch {branch} is not merged into {target}', 'Unexpected error', 'Unexpected error']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['{path} tem mudanças não commitadas:\n{files}', 'o branch {branch} não está mergeado em {target}', 'Erro inesperado', 'Erro inesperado']);
+  assert.equal(keys.some((key) => /\brod(ar|ando|am|ou)\b/.test(MESSAGES.pt[key])), false);
+  setLanguage('en');
+  assert.equal(t('deleteActivity.refused.unmerged', { branch: 'hive/1-x', target: 'HEAD' }), 'the branch hive/1-x is not merged into HEAD');
+});

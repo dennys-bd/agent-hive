@@ -142,10 +142,10 @@ test('cleanWorktree with setAside keeps an unmerged branch as <branch>-old-<sha7
   const { repo, root } = await repoWithOrigin(t);
   const old = await unrelatedBranch(repo);
   const kept = `${BRANCH}-old-${old.slice(0, 7)}`;
-  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'setAside');
+  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, { unmerged: 'setAside' });
   assert.deepEqual([await git(repo, 'branch', '--list', BRANCH), await git(repo, 'rev-parse', kept)], ['', old]);
   await git(repo, 'branch', BRANCH, root); // merged into HEAD: delete activity's own rule deletes it
-  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'setAside');
+  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, { unmerged: 'setAside' });
   assert.equal(await git(repo, 'branch', '--list', `${BRANCH}*`), kept, 'deleted, and nothing new was kept');
 });
 
@@ -156,4 +156,17 @@ test('deleting an activity removes its branch, so the task\'s next worktree is o
   assert.equal(await git(repo, 'branch', '--list', BRANCH), '');
   const again = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
   assert.deepEqual([again.path, again.reused, await git(repo, 'rev-parse', BRANCH)], [first.path, undefined, tip]);
+});
+
+test('with the real git, the branch of a merged PR whose remote branch was deleted goes with its worktree: an upstream git reads [gone] counts as none (#660)', async (t) => {
+  const { repo } = await repoWithOrigin(t);
+  const path = worktreePath(repo, SLUG);
+  await git(repo, 'worktree', 'add', '--quiet', '-b', BRANCH, '--', path, 'main');
+  await commit(path, 'c.txt');
+  await git(path, 'push', '--quiet', '-u', 'origin', BRANCH);
+  await git(repo, 'merge', '--quiet', '--ff-only', BRANCH); // the PR merged into main
+  await git(repo, 'push', '--quiet', 'origin', '--delete', BRANCH); // GitHub deletes the head branch after the merge
+  assert.equal(await git(repo, 'for-each-ref', '--format=%(upstream:track)', `refs/heads/${BRANCH}`), '[gone]');
+  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec);
+  assert.deepEqual([await git(repo, 'branch', '--list', BRANCH), (await git(repo, 'worktree', 'list', '--porcelain')).includes(path)], ['', false]);
 });
