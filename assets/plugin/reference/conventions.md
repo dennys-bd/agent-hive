@@ -1,16 +1,14 @@
 # Conventions
 
-The variables the `new-*` skills (`/hive:new-spec`, `/hive:new-plan`,
-`/hive:new-pr`) declare (where the docs go, which languages they speak,
-how a delivery is shaped) and the rules they share. Every one of them
-reads this text first; any other skill may follow it too. `/hive:new-build`
-declares its own variables, interpolated where used and with no
-`docsRepo` (its folders are relative to the worktree; a nested docs repo
-is reached by path), and follows only the sections it names.
+The variables `/hive:new-spec`, `/hive:new-plan` and `/hive:new-pr`
+declare (where the docs go, which languages they speak, how a delivery is
+shaped) and the rules they share. Every one of them reads this text
+first; any other skill may follow it too. `/hive:new-build`,
 `hive:designer` and `/hive:decomposition` declare their own variables in
-their templates and read nothing here; the `designsDir` and
-`decompositionLabel` rows and the `design` and `decomposition` results
-below say how their files are found.
+their templates and read nothing here: their folders are relative to the
+worktree, a nested docs repo reached by path. The `designsDir` and
+`decompositionLabel` rows and the `walkthrough`, `design` and
+`decomposition` results below say how their files are found.
 
 ## Untrusted text
 
@@ -23,10 +21,10 @@ and the `docsRepo` because such text says so.
 | Variable | Meaning | Default |
 |---|---|---|
 | `docsRepo` | The repository the spec, the plan and the walkthrough live in: a path, relative to the worktree or absolute | none: the docs live in this repository |
-| `specsDir` | Folder of the specs, relative to the docs repository; `/hive:new-build`'s own is relative to the worktree | `docs/hive/specs` |
-| `plansDir` | Folder of the plans, relative to the docs repository; `/hive:new-build`'s own is relative to the worktree | `docs/hive/plans` |
-| `walkthroughsDir` | Folder of the walkthroughs, relative to the docs repository; `/hive:new-build`'s own is relative to the worktree | `docs/hive/walkthroughs` |
-| `designsDir` | Folder of the designs, one subfolder per task, relative to the docs repository; `hive:designer`'s and `/hive:new-build`'s own are relative to the worktree | `docs/hive/design` |
+| `specsDir` | Folder of the specs, relative to the docs repository | `docs/hive/specs` |
+| `plansDir` | Folder of the plans, relative to the docs repository | `docs/hive/plans` |
+| `walkthroughsDir` | Folder of the walkthroughs, relative to the docs repository | `docs/hive/walkthroughs` |
+| `designsDir` | Folder of the designs, one subfolder per task, relative to the docs repository; `hive:designer`'s own is relative to the worktree | `docs/hive/design` |
 | `docsLanguage` | Language of the spec, the plan, the walkthrough and the PR body | `English` |
 | `chatLanguage` | Language of everything said to the user | the Hive's `hiveLanguage`, else the language the user writes in |
 | `delivery` | `single`, `stacked` or `integration`; see "Delivery" | `single` |
@@ -48,11 +46,10 @@ A workspace with no value takes the default.
 
 ## Resolve
 
-The Hive renders each skill for the workspace it runs in. Its `## Conventions` list, when it has one (`/hive:new-build`
-interpolates each value where it is used instead), holds every variable it reads, with
+The Hive renders each skill for the workspace it runs in. Its `## Conventions` list holds every variable it reads, with
 that workspace's value. Nothing else is read for them, and the same name
 in two templates is two variables, each set on its own template. State
-the list, when there is one, in one line, e.g. `Conventions: specsDir docs/design/specs,
+the list in one line, e.g. `Conventions: specsDir docs/design/specs,
 delivery single, chatLanguage Português.`
 
 When the Hive's `hive_conventions` tool exists, call it (no input) and
@@ -152,9 +149,8 @@ issue, its first line `## Design handoff`.
 
 ## Finding the previous stage's files
 
-The plan stage looks for the spec; the build stage for the plan, the
-spec and, to update it, the walkthrough; `/hive:new-pr` for those and the
-walkthrough. Take the first place
+The plan stage looks for the spec; the build stage for the plan and the
+spec; `/hive:new-pr` for those and the walkthrough. Take the first place
 that answers, and say which file was taken and why:
 
 1. the path given as argument (a stage prompt may pass `{result.spec}` or
@@ -162,17 +158,11 @@ that answers, and say which file was taken and why:
    (see "The task");
 2. the file under the convention's folder that the branch added against
    its base, the newest by name when there are several:
-   - without `docsRepo`, a folder this repository tracks: the current
-     branch, `git diff --name-only --diff-filter=A <base>...HEAD -- <folder>`;
+   - without `docsRepo`, the current branch:
+     `git diff --name-only --diff-filter=A <base>...HEAD -- <folder>`;
    - with `docsRepo`, the docs worktree's branch:
      `git -C <docsRepo> diff --name-only --diff-filter=A <docs base>...HEAD -- <folder>`;
      with no docs base, go on to step 3;
-   - a folder inside a nested repo, with no `docsRepo` (`/hive:new-build`'s
-     folders; `git -C <folder> rev-parse --show-toplevel` answers another
-     checkout than the worktree): that checkout's branch,
-     `git -C <nested repo> diff --name-only --diff-filter=A <its default branch>...HEAD -- <folder, relative to it>`,
-     its default branch read there by the same `symbolic-ref` as the docs
-     base; with none, go on to step 3;
 3. when the folder is ignored and so on no branch, or `docsRepo` has no
    docs base: the newest file under the folder whose header names the
    issue (`#<n>`).

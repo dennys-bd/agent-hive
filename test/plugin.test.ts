@@ -7,10 +7,8 @@ import { parseTemplate, renderTemplate } from '../src/template.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
-// #430: the decomposition skill declares its own variables and reads no reference; the new-* skills still read conventions.md
-const CONVENTIONS_SKILLS = SKILLS.filter((skill) => skill !== 'decomposition');
-// #431: new-build reads the reference for the sections it names but lists no values: each is interpolated where it is used
-const LISTED_SKILLS = CONVENTIONS_SKILLS.filter((skill) => skill !== 'new-build');
+// #430, #431: decomposition and new-build declare their own variables and read no reference; the other new-* skills still read conventions.md
+const CONVENTIONS_SKILLS = SKILLS.filter((skill) => skill !== 'decomposition' && skill !== 'new-build');
 const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
 
 const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
@@ -199,7 +197,7 @@ test('every shipped skill parses with no error, declares the variables its text 
     assert.deepEqual(parsed.errors, [], skill);
     assert.deepEqual(parsed.variables.map((v) => v.name), VARIABLES[skill], skill);
     const rendered = renderedFor(text);
-    if (LISTED_SKILLS.includes(skill)) for (const name of VARIABLES[skill]) assert.ok(rendered.includes(`\n- \`${name}\`: ${NO_VALUE[name]}\n`), `${skill}: ${name}`);
+    if (CONVENTIONS_SKILLS.includes(skill)) for (const name of VARIABLES[skill]) assert.ok(rendered.includes(`\n- \`${name}\`: ${NO_VALUE[name]}\n`), `${skill}: ${name}`);
     assert.doesNotMatch(rendered, /\{\{|\{%/, `${skill}: no Liquid is left`);
   }
 });
@@ -210,24 +208,27 @@ const NEW_BUILD_VALUES: Record<string, string> = {
   delivery: 'stacked', uiCheck: 'run pnpm start and capture each screen as docs/ui-check.md says', testCommand: 'pnpm test',
 };
 
-test('/hive:new-build declares its own variables, interpolated where used, follows the reference sections it names, and carries no docsRepo, no Hive tool, no model and no agent instructions file by name (#431)', async () => {
+test('/hive:new-build declares its own variables, interpolated where used, and reads no reference: no docsRepo, no source, no Hive tool but hive_task (#7), no model and no agent instructions file by name (#431)', async () => {
   const text = await skillText('new-build');
-  assert.doesNotMatch(text, /docsRepo|CLAUDE\.md|AGENTS\.md|hiveLanguage/, 'no docsRepo (a nested docs repo is reached through the folders), no agent instructions file by name');
+  assert.doesNotMatch(text, /docsRepo|conventions\.md|reference\/|CLAUDE\.md|AGENTS\.md|hiveLanguage/, 'no docsRepo (a nested docs repo is reached through the folders), no reference a user of the skill cannot see or edit, no agent instructions file by name');
+  assert.doesNotMatch(text, /gh issue/, 'the task is read through the Hive, whatever its source');
   for (const tool of ['hive_done', 'hive_ask', 'hive_conventions', 'hive_stop', 'hive_pr', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);
   assert.doesNotMatch(text, /\b(opus|sonnet|haiku)\b|## Model routing/, 'no model alias: a stage\'s model is set in the Hive (#446)');
-  for (const heading of ['"Finding the previous stage\'s files"', '"The task"', '"CONTRIBUTING.md"', '"Resolve"']) assert.ok(text.includes(heading), `it names the reference section ${heading}`);
+  // what it used to read in the reference is said in the skill itself
+  for (const part of ['as `hive_task` answers it', '`git -C <checkout> diff --name-only --diff-filter=A <its base>...HEAD -- <folder>`', '`git -C <folder> rev-parse --show-toplevel`', "its key in the task's `result`",
+    '(`git symbolic-ref --short refs/remotes/origin/HEAD`, without `origin/`)', '`CONTRIBUTING.md`, `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md`']) assert.ok(text.includes(part), part);
   assert.match(text, /^## Rules$/m);
-  assert.match(text, /When rules disagree, the most specific wins: the prompt that invoked\s+this skill and the values set on it for this workspace; the instructions\s+at `\{\{ walkthroughsDir \}\}` \(its agent instructions file or its\s+`README\.md`\) when there are any; the plan's `## Global Constraints` and\s+the spec; CONTRIBUTING\.md; the repository's agent instructions file; then\s+this skill and the reference/, 'the walkthroughs folder and the repository win over the skill');
+  assert.match(text, /When rules disagree, the most specific wins: the prompt that invoked\s+this skill and the values set on it for this workspace; the instructions\s+at `\{\{ walkthroughsDir \}\}` \(its agent instructions file or its\s+`README\.md`\) when there are any; the plan's `## Global Constraints` and\s+the spec; CONTRIBUTING\.md; the repository's agent instructions file; then\s+this skill, which fills what those leave open/, 'the walkthroughs folder and the repository win over the skill');
   assert.match(text, /^## Subagents$/m);
   for (const agent of ['hive:tdd', 'hive:build-fixer', 'hive:code-reviewer', 'hive:security-reviewer']) assert.ok(text.includes(`| \`${agent}\``), `the Subagents table names ${agent}`);
   assert.match(text, /The run's result is\s+`walkthrough`, the file's path relative to the worktree, and `pr`/, 'the keys the reference\'s Results table names, with no tool named');
-  assert.match(text, /one per task: when the branch already added\s+one there/, 'an existing walkthrough is updated, never doubled');
+  assert.match(text, /one per task: when "Input" found one, update\s+that file/, 'an existing walkthrough is updated, never doubled');
   assert.match(text, /tests \(the test command, when none is named above\)/, 'with testCommand unset, the test command is the repository\'s');
   assert.match(text, /A visual check compares a built screen with its reference/, 'what a visual check is does not depend on uiCheck');
   const rendered = renderedFor(text);
   assert.doesNotMatch(rendered, /\{\{|\{%/, 'no Liquid is left');
   assert.doesNotMatch(rendered, /## Conventions/, 'no list of values: each is interpolated where it is used');
-  for (const part of ['in `docs/hive/plans`', 'lookup in\n  `docs/hive/specs`', 'under `docs/hive/design`', 'Write `docs/hive/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in English',
+  for (const part of ['Plan: under `docs/hive/plans`', 'else under `docs/hive/specs`', 'a `handoff.md` under `docs/hive/design`', 'Walkthrough: under `docs/hive/walkthroughs`', 'Write `docs/hive/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in English',
     'in the `single` delivery', 'every slice stays on `<branch>`, as a group of commits', '`git diff <base>...HEAD` on `<branch>`.', 'first:\n`<branch>`, `git checkout <branch>`.\nThen commit']) assert.ok(rendered.includes(part), part);
   for (const part of ['Talk in', 'The test command, wherever', 'Run the app and capture', '<branch>-s<k>', "the last slice's"]) assert.ok(!rendered.includes(part), `with no value, nothing says ${part}`);
 });
@@ -235,7 +236,7 @@ test('/hive:new-build declares its own variables, interpolated where used, follo
 test('/hive:new-build rendered with a value for each variable carries each where it is used; another workspace keeps the defaults (#431)', async () => {
   const text = valued(await skillText('new-build'), NEW_BUILD_VALUES);
   const mine = renderedFor(text);
-  for (const part of ['in `design/plans`', 'lookup in\n  `design/specs`', 'under `design/screens`', 'Write `design/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in Spanish', 'Talk in Portuguese.',
+  for (const part of ['Plan: under `design/plans`', 'else under `design/specs`', 'a `handoff.md` under `design/screens`', 'Walkthrough: under `design/walkthroughs`', 'Write `design/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in Spanish', 'Talk in Portuguese.',
     'The test command, wherever this skill says so, is `pnpm test`.', 'in the `stacked` delivery', "`git checkout -b <branch>-s<k>` from slice k − 1's branch", "`git diff <base>...HEAD` on the last slice's branch.",
     "first:\nthe last slice's, `git checkout <branch>-s<last>`.\nThen commit", 'Run the app and capture its screens as this says: run pnpm start and capture each screen as docs/ui-check.md says.']) assert.ok(mine.includes(part), part);
   assert.ok(!mine.includes('every slice stays on `<branch>`'), 'only the stacked branching is said');
