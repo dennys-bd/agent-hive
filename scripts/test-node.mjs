@@ -1,6 +1,10 @@
 // The node test run (#624): which files run, in plain node so cmd, PowerShell and sh run it alike. The only place the globs are written.
-import { existsSync, globSync, readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, globSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, matchesGlob, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 export const GLOBS = Object.freeze([
   'test/*.test.js',
@@ -27,3 +31,32 @@ export function testFiles({ root, list, exclude = [] }) {
   if (files.length === 0) throw new Error('test-node: no test file selected');
   return files;
 }
+
+const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
+const OPTIONS = { shard: { type: 'string' }, list: { type: 'string' }, exclude: { type: 'string', multiple: true } };
+
+// Every boot copies the Hive's plugin into CODEX_HOME (#934), so a run gets a throwaway one and never touches the user's.
+function run(args) {
+  const { values } = parseArgs({ args, options: OPTIONS, strict: true });
+  const files = testFiles({ root: DIST, list: values.list, exclude: values.exclude });
+  const shard = values.shard === undefined ? [] : [`--test-shard=${values.shard}`];
+  const home = mkdtempSync(join(tmpdir(), 'hive-test-'));
+  const child = spawn(process.execPath, ['--test', ...shard, ...files], {
+    cwd: DIST,
+    stdio: 'inherit',
+    env: { ...process.env, CODEX_HOME: home, CLAUDE_CONFIG_DIR: join(home, 'claude') },
+  });
+  // the home goes only once the child is gone, so a test still writing into it never loses it mid-write
+  const finish = (code) => {
+    rmSync(home, { recursive: true, force: true });
+    process.exitCode = code;
+  };
+  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));
+  child.on('error', (error) => {
+    console.error(`test-node: ${error.message}`);
+    finish(1);
+  });
+  child.on('exit', (code) => finish(code ?? 1));
+}
+
+if (import.meta.main) run(process.argv.slice(2));

@@ -1,8 +1,12 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type * as TestNode from '../scripts/test-node.mjs';
+import { until } from './lsp-helpers.js';
 import { tempDir } from './temp-dir.js';
 
 // .mjs files are not copied to dist/: this file, run from dist/test/, climbs back to the repo's scripts/ (#624).
@@ -56,4 +60,49 @@ test('a selection with no file fails instead of passing green (#624)', async (t)
   assert.throws(() => testFiles({ root: noTests }), /no test file selected/);
   const root = await distRoot(t);
   assert.throws(() => testFiles({ root, exclude: ['test/**'] }), /no test file selected/);
+});
+
+// Compiled to dist/test/fixtures/runner/, outside every glob: only a list reaches it.
+const PROBE = 'test/fixtures/runner/env-probe.js';
+
+interface Seen { codexHome: string; claudeConfigDir: string }
+
+async function startRunner(t: TestContext, mode: 'pass' | 'fail' | 'wait') {
+  const list = await listFile(t, `${PROBE}\n`);
+  const out = join(dirname(list), 'probe.json');
+  // inherited, NODE_TEST_CONTEXT would make the runner's node --test report to this run instead of running
+  const { NODE_TEST_CONTEXT: _runner, ...env } = process.env;
+  // ignored: the inner run's report must not mix into this file's own output
+  const child = spawn(process.execPath, [fileURLToPath(RUNNER), `--list=${list}`], { env: { ...env, PROBE_OUT: out, PROBE_MODE: mode }, stdio: 'ignore' });
+  return { child, out, exited: once(child, 'exit') };
+}
+
+function assertHomeGone(out: string): void {
+  const { codexHome, claudeConfigDir }: Seen = JSON.parse(readFileSync(out, 'utf8'));
+  assert.equal(claudeConfigDir, join(codexHome, 'claude'));
+  assert.match(basename(codexHome), /^hive-test-/);
+  assert.equal(existsSync(codexHome), false, 'the runner removes its throwaway home');
+}
+
+test('the runner gives a passing run its throwaway homes, exits 0 and removes them (#624)', async (t) => {
+  const { out, exited } = await startRunner(t, 'pass');
+  const [code] = await exited;
+  assert.equal(code, 0);
+  assertHomeGone(out);
+});
+
+test('the runner exits with a failing run\'s code and still removes the homes (#624)', async (t) => {
+  const { out, exited } = await startRunner(t, 'fail');
+  const [code] = await exited;
+  assert.equal(code, 1);
+  assertHomeGone(out);
+});
+
+test('an interrupted runner forwards SIGINT, fails and removes the homes once the run is gone (#624)', { skip: process.platform === 'win32' && 'win32 has no POSIX signal to forward' }, async (t) => {
+  const { child, out, exited } = await startRunner(t, 'wait');
+  await until(() => existsSync(out));
+  child.kill('SIGINT');
+  const [code] = await exited;
+  assert.notEqual(code, 0);
+  assertHomeGone(out);
 });
