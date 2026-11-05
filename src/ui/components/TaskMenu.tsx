@@ -154,9 +154,13 @@ function useDeleteTask(task: Task, runs: Runs): { item: ReactNode; dialog: React
 }
 
 // tirar do fluxo (#576 decisions 11, 12): leave-flow, disabled while canMoveToStage refuses, as the route does (#566), with the reason on a
-// second line. A refusal the route still answers (a delete activity under way) is act's toast. The view stays; the next state moves the card
-const leaveReason = (task: Task, state: State): string | undefined =>
-  canMoveToStage(task, state) ? undefined : t(task.item.epic === undefined ? 'detail.deleteActivityBlocked.running' : 'tasks.menu.leaveFlow.epic');
+// second line. A refusal the route still answers (a delete activity under way) is act's toast. The view stays; the next state moves the card.
+// The reason reads canMoveToStage's own causes in its order: an epic, a source action in flight (task.leaving), else a run holding the task
+function leaveReason(task: Task, state: State): string | undefined {
+  if (canMoveToStage(task, state)) return undefined;
+  if (task.item.epic !== undefined) return t('tasks.menu.leaveFlow.epic');
+  return t(task.leaving ? 'tasks.menu.leaveFlow.leaving' : 'detail.deleteActivityBlocked.running');
+}
 
 function LeaveFlowItem({ task, state }: { task: Task; state: State }) {
   const reason = leaveReason(task, state);

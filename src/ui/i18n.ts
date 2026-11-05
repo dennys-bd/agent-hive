@@ -3057,6 +3057,7 @@ const en = {
   'tasks.listing.listing.tip': 'the last read did not bring this item · keeps syncing by the item',
   'tasks.menu.leaveFlow': 'take out of the flow', // #576: the task menu's flow items (handoff menuFluxo / menuSem)
   'tasks.menu.leaveFlow.epic': 'an epic follows its children\'s stages',
+  'tasks.menu.leaveFlow.leaving': 'an action on its source is under way',
   'tasks.menu.takeToFlow': 'take to flow…',
   'start.destination': 'destination', // #580: the Start dialog's destination block, while its task is outside the flow
   'start.destination.flow': '{flow} flow',
@@ -6115,6 +6116,7 @@ const pt: Record<MessageKey, string> = {
   'tasks.listing.listing.tip': 'a última leitura não trouxe este item · segue sincronizando pelo item',
   'tasks.menu.leaveFlow': 'tirar do fluxo',
   'tasks.menu.leaveFlow.epic': 'um epic segue as etapas das filhas',
+  'tasks.menu.leaveFlow.leaving': 'uma ação na source está em andamento',
   'tasks.menu.takeToFlow': 'levar ao fluxo…',
   'start.destination': 'destino',
   'start.destination.flow': 'fluxo {flow}',

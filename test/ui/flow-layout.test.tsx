@@ -145,3 +145,9 @@ test('loops inner keeps the neighbour arrows, forward and back; a forward skip, 
   expect([none.edges, none.levels, none.top]).toEqual([[], 0, MARGIN]);
   expect(none.nodes[1].x).toBe(MARGIN + W + GAP_BARE);
 });
+
+test('loops inner packs a pair by its drawn arrows: a dropped feedback pill beside an unlabelled one leaves GAP_ARROW (#576)', () => {
+  const edges = [{ ...edge('d', 'build', 'checks'), unlabelled: true }, { ...edge('fb', 'build', 'checks'), feedback: true }];
+  const gap = (loops: 'all' | 'inner'): number => { const { nodes } = layoutFlow(NODES, edges, W, { loops }); return nodes[2].x - nodes[1].x - W; };
+  expect([gap('all'), gap('inner')]).toEqual([GAP, GAP_ARROW]);
+});

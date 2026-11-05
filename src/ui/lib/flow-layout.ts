@@ -120,7 +120,7 @@ export function layoutFlow(nodes: readonly LayoutNode[], edges: readonly LayoutE
   // last node, which isInner alone would call a neighbour, and decision 1 calls an arrow to end outer
   const drawn = loops === 'inner' ? all.filter((e) => e.to !== END && isInner(e.i, e.j, e.feedback === true)) : all;
   const spans = bare ? [] : drawn;
-  const xs = xsOf(nodes.length, nodeWidth, gapsOf(nodes.length, all, bare));
+  const xs = xsOf(nodes.length, nodeWidth, gapsOf(nodes.length, drawn, bare));
   const levels = levelsOf(spans.filter((e) => kindOf(e.i, e.j) === 'above'));
   const count = Math.max(0, ...levels.values());
   // The room above the row holds the levels, the outermost at MARGIN, and a loop's arc and pill (#887): with neither the row starts at the margin

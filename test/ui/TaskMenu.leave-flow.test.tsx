@@ -23,7 +23,7 @@ const leave = (): HTMLElement => screen.getByRole('menuitem', { name: /^tirar do
 const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 
-test('in the flow, tirar do fluxo follows mover para etapa; disabled with its reason on a second line while a run holds the task or it is an epic; picked, it posts leave-flow and the view stays (#576 decisions 10, 11, 12)', async () => {
+test('in the flow, tirar do fluxo follows mover para etapa; disabled with its reason on a second line while a run holds the task, it is an epic or a source action is under way; picked, it posts leave-flow and the view stays (#576 decisions 10, 11, 12)', async () => {
   const user = userEvent.setup();
   const { rerender } = render(view(task({ workerId: 's1' }), [RUNNING]));
   fireEvent.contextMenu(screen.getByText('#1 Task 1').closest('li')!);
@@ -33,6 +33,8 @@ test('in the flow, tirar do fluxo follows mover para etapa; disabled with its re
   expect(within(leave()).getByText('um worker ou sessão está executando nessa tarefa')).toHaveClass('text-muted-foreground', 'text-xs');
   rerender(view({ ...task(), item: { ...task().item, epic: { follows: 'behind', switchAt: 'dev' } } }));
   expect(within(leave()).getByText('um epic segue as etapas das filhas')).toBeInTheDocument();
+  rerender(view(task({ leaving: true })));
+  expect(within(leave()).getByText('uma ação na source está em andamento')).toBeInTheDocument();
   rerender(view(task()));
   expect(leave()).not.toHaveAttribute('data-disabled');
   expect(leave()).toHaveTextContent(/^tirar do fluxo$/);
