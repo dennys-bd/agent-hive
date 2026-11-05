@@ -94,13 +94,24 @@ test('traySignal: the view carries the plan reading when the payload has one (#1
   assert.deepEqual(traySignal({ ...payload('green', 'red', 'red'), rateLimits: { claude: read } }), { ...HELD, rateLimits: { claude: read } });
 });
 
-test('trayIconFile: the template with no signal; otherwise the effective signal\'s badge, the white comb on a dark bar and the black one on a light bar (#196)', () => {
-  assert.equal(trayIconFile(undefined, false), 'trayTemplate.png');
-  assert.equal(trayIconFile(undefined, true), 'trayTemplate.png');
-  for (const effective of ['green', 'yellow', 'red'] as const) {
-    const view: TraySignal = { manual: 'green', effective, floor: effective }; // the effective signal, never the manual one
-    assert.equal(trayIconFile(view, true), `tray-light-${effective}.png`);
-    assert.equal(trayIconFile(view, false), `tray-dark-${effective}.png`);
+const SIGNALS_SEEN = ['green', 'yellow', 'red'] as const;
+const viewOf = (effective: (typeof SIGNALS_SEEN)[number]): TraySignal => ({ manual: 'green', effective, floor: effective }); // the effective signal, never the manual one
+
+test('trayIconFile on macOS: the template with no signal; otherwise the effective signal\'s badge, the white comb on a dark bar and the black one on a light bar (#196)', () => {
+  assert.equal(trayIconFile(undefined, false, 'darwin'), 'trayTemplate.png');
+  assert.equal(trayIconFile(undefined, true, 'darwin'), 'trayTemplate.png');
+  for (const effective of SIGNALS_SEEN) {
+    assert.equal(trayIconFile(viewOf(effective), true, 'darwin'), `tray-light-${effective}.png`);
+    assert.equal(trayIconFile(viewOf(effective), false, 'darwin'), `tray-dark-${effective}.png`);
+  }
+});
+
+test('trayIconFile on Windows: the coloured comb with no signal, never the template Windows would not tint; with one, the badged files as on macOS (#648)', () => {
+  assert.equal(trayIconFile(undefined, false, 'win32'), 'tray-windows.png');
+  assert.equal(trayIconFile(undefined, true, 'win32'), 'tray-windows.png');
+  for (const effective of SIGNALS_SEEN) {
+    assert.equal(trayIconFile(viewOf(effective), true, 'win32'), `tray-light-${effective}.png`);
+    assert.equal(trayIconFile(viewOf(effective), false, 'win32'), `tray-dark-${effective}.png`);
   }
 });
 
