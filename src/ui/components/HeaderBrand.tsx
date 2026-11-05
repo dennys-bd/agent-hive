@@ -38,9 +38,10 @@ const brandTitle = (signal: Signal, effect: string | undefined): string =>
 export const workersLine = (state: State, effective: EffectiveLimits): string =>
   t('header.workers', { active: workerCount(state.workers), max: effective.maxWorkers ?? state.maxConcurrent });
 
-// One popover in both states (header-estados.md): the mark, hive, the workers on the right; a separator; then the flow sidebar's own toggle,
-// with its fired rules' floor lock and the effect the signal settings name
+// One popover in both states (header-estados.md): the mark, hive, the workers on the right; a separator; then the signal's label, the
+// toggle with its fired rules' floor lock, and the effect the signal settings name. The popover has no rows, so it keeps the hint (#573)
 function PopoverBody({ state, effective, workers }: Omit<HeaderBrandProps, 'isCompact'> & { workers: string }) {
+  const hint = signalEffect(state.signal, state.signals);
   return (
     <>
       <div className="flex items-center gap-1.5 px-2 py-1.5">
@@ -49,7 +50,11 @@ function PopoverBody({ state, effective, workers }: Omit<HeaderBrandProps, 'isCo
         <span className="ml-auto text-muted-foreground text-xs">{workers}</span>
       </div>
       <hr className="my-1 h-px border-0 bg-border" />
-      <div className="px-2 pt-1 pb-2"><SignalToggle signal={state.signal} signals={state.signals} effective={effective} /></div>
+      <div className="flex flex-col gap-2 px-2 pt-1 pb-2">
+        <span className="text-muted-foreground text-xs">{t('flow.signal')}</span>
+        <SignalToggle signal={state.signal} effective={effective} />
+        {hint && <span className="text-muted-foreground text-xs">{hint}</span>}
+      </div>
     </>
   );
 }

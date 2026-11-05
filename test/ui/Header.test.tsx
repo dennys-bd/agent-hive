@@ -109,6 +109,16 @@ test('a click on the open brand opens the signal popover: hive and workers {acti
   expect(within(popover).getAllByRole('radio').map((item) => [item.textContent, (item as HTMLButtonElement).disabled])).toEqual([['green', true], ['yellow', false], ['red', false]]);
 });
 
+test('the popover names the signal over its toggle and says under it what the signal holds back (#573: moved out of the toggle)', async () => {
+  const user = userEvent.setup();
+  render(<FullScreenContext.Provider value={false}><Header shell={shellOf()} state={{ ...STATE, signal: 'yellow' }} effective={limits('yellow')} /></FullScreenContext.Provider>);
+  await user.click(brand());
+  const popover = await screen.findByRole('dialog');
+  expect(within(popover).getByText('sinal')).toBeInTheDocument();
+  expect(within(popover).getByRole('radiogroup', { name: 'sinal' })).toBeInTheDocument();
+  expect(within(popover).getByText('tarefas novas só de árvore iniciada')).toBeInTheDocument();
+});
+
 test('with the left side closed, hovering, focusing or clicking the ⬢ opens the same popover; the pointer leaving the ⬢ and the popover closes it, as Escape does (#295)', async () => {
   const user = userEvent.setup();
   render(header(shellOf({ layout: LEFT_CLOSED })));

@@ -13,7 +13,7 @@ const floored = (signal: RuleSignal): EffectiveLimits => ({ signal, floor: { sig
 beforeEach(() => setLanguage('en'));
 
 test('the pressed toggle item carries the signal it is pressed for; every item carries its own data-signal regardless of press state', () => {
-  render(<SignalToggle signals={SIGNALS_DEFAULTS} signal="yellow" />);
+  render(<SignalToggle signal="yellow" />);
   const pressed = screen.getByRole('radio', { checked: true });
   expect(pressed).toHaveAttribute('data-signal', 'yellow');
   for (const signal of ['green', 'yellow', 'red']) expect(screen.getByRole('radio', { name: signal })).toHaveAttribute('data-signal', signal);
@@ -21,7 +21,7 @@ test('the pressed toggle item carries the signal it is pressed for; every item c
 });
 
 test('under a floor the looser toggle items are disabled and name the rule; the pressed item stays the manual signal; nothing is locked without effective', () => {
-  const { rerender } = render(<SignalToggle signals={SIGNALS_DEFAULTS} signal="green" effective={floored('yellow')} />);
+  const { rerender } = render(<SignalToggle signal="green" effective={floored('yellow')} />);
   const green = screen.getByRole('radio', { name: 'green' });
   expect(green).toBeDisabled();
   expect(green).toHaveAttribute('title', 'locked by rule: session ≥ 80%');
@@ -29,26 +29,25 @@ test('under a floor the looser toggle items are disabled and name the rule; the 
   expect(screen.getByRole('radio', { name: 'yellow' })).toBeEnabled();
   expect(screen.getByRole('radio', { name: 'red' })).toBeEnabled();
   expect(screen.getByRole('radio', { name: 'red' })).not.toHaveAttribute('title');
-  rerender(<SignalToggle signals={SIGNALS_DEFAULTS} signal="green" effective={floored('red')} />);
+  rerender(<SignalToggle signal="green" effective={floored('red')} />);
   expect(screen.getByRole('radio', { name: 'green' })).toBeDisabled();
   expect(screen.getByRole('radio', { name: 'yellow' })).toBeDisabled();
   expect(screen.getByRole('radio', { name: 'red' })).toBeEnabled();
-  rerender(<SignalToggle signals={SIGNALS_DEFAULTS} signal="green" />);
+  rerender(<SignalToggle signal="green" />);
   for (const signal of ['green', 'yellow', 'red']) expect(screen.getByRole('radio', { name: signal })).toBeEnabled();
 });
 
-test('the label names the group; the hint says what the yellow and red rows hold back, and green has none (redesign 09, #727)', () => {
-  const { rerender } = render(<SignalToggle signals={SIGNALS_DEFAULTS} signal="yellow" />);
+test('the group is named signal, with no visible label and no effect hint: the header popover and the automação rows show those (#573)', () => {
+  const { rerender } = render(<SignalToggle signal="yellow" />);
   expect(screen.getByRole('radiogroup', { name: 'signal' })).toBeInTheDocument();
-  expect(screen.getByText(t('signal.effect.newTasksFromTree'))).toBeVisible();
-  rerender(<SignalToggle signals={SIGNALS_DEFAULTS} signal="red" />);
-  expect(screen.getByText(`${t('signal.effect.noNewTasks')} · ${t('signal.effect.noMoveOn')}`)).toBeVisible();
-  rerender(<SignalToggle signals={SIGNALS_DEFAULTS} signal="green" />);
-  expect(screen.queryByText(/no new|like green/)).not.toBeInTheDocument();
+  expect(screen.queryByText('signal')).not.toBeInTheDocument();
+  expect(screen.queryByText(t('signal.effect.newTasksFromTree'))).not.toBeInTheDocument();
+  rerender(<SignalToggle signal="red" />);
+  expect(screen.queryByText(new RegExp(t('signal.effect.noNewTasks')))).not.toBeInTheDocument();
 });
 
 test('the toggle items render at the xs size', () => {
-  render(<SignalToggle signals={SIGNALS_DEFAULTS} signal="green" />);
+  render(<SignalToggle signal="green" />);
   for (const signal of ['green', 'yellow', 'red']) expect(screen.getByRole('radio', { name: signal })).toHaveAttribute('data-size', 'xs');
 });
 

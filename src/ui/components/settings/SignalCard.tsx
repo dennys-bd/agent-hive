@@ -4,9 +4,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { type MessageKey, t } from '@/i18n';
 import { settingAnchor } from '@/lib/settings-search';
-import { behaviourOf, clamped, isOrdered } from '../../../signals';
+import { behaviourOf, isRefused, patchedSignals } from '../../../signals';
 import {
-  NEW_TASKS, SIGNAL_ON_OPEN, STARTED_BEHAVIOURS, type NewTasks, type RuleSignal, type Signal, type SignalBehaviour, type SignalOnOpen,
+  NEW_TASKS, SIGNAL_ON_OPEN, STARTED_BEHAVIOURS, type NewTasks, type RuleSignal, type Signal, type SignalOnOpen,
   type SignalSettings, type StartedBehaviour,
 } from '../../../types';
 
@@ -16,29 +16,18 @@ type Row = 'newTasks' | 'started' | 'workerless';
 // The handoff's table (Configuracao.dc.html, screen 06): the row's label, then green, yellow and red
 const GRID = 'grid grid-cols-[minmax(0,1fr)_repeat(3,10rem)] items-center gap-3 px-3 py-2';
 const PILLS = ['green', 'yellow', 'red'] as const;
-const STARTED_LABEL: Record<StartedBehaviour, MessageKey> = {
+// Also the tasks sidebar's automação rows (#573): one set of labels and option orders for both editors
+export const STARTED_LABEL: Record<StartedBehaviour, MessageKey> = {
   resumeAndContinue: 'settings.signal.started.resumeAndContinue', continueOnly: 'settings.signal.started.continueOnly', stay: 'settings.signal.started.stay',
 };
-const NEW_TASKS_LABEL: Record<NewTasks, MessageKey> = {
+export const NEW_TASKS_LABEL: Record<NewTasks, MessageKey> = {
   always: 'settings.signal.newTasks.always', tree: 'settings.signal.newTasks.tree', never: 'settings.signal.newTasks.never',
 };
 // Both menus read loosest first, as the green column does
-const STARTED_OPTIONS = [...STARTED_BEHAVIOURS].reverse();
-const NEW_TASKS_OPTIONS = [...NEW_TASKS].reverse();
+export const STARTED_OPTIONS = [...STARTED_BEHAVIOURS].reverse();
+export const NEW_TASKS_OPTIONS = [...NEW_TASKS].reverse();
 
-// One signal's row patched (#727, #32); each stricter row is clamped down to the one above it, so a looser edit keeps green ≥ yellow ≥ red
-function patched(signals: SignalSettings, signal: Signal, patch: Partial<SignalBehaviour>): SignalSettings {
-  const green = signal === 'green' ? { newTasks: patch.newTasks ?? signals.green.newTasks } : signals.green;
-  const yellow = signal === 'yellow' ? { ...signals.yellow, ...patch } : clamped(behaviourOf('green', { ...signals, green }), signals.yellow);
-  const red = signal === 'red' ? { ...signals.red, ...patch } : clamped(yellow, signals.red);
-  return { ...signals, green, yellow, red };
-}
-
-// A value the order would refuse: its control is disabled, as parseConfig would refuse the save. Only an edit can break the order against the
-// signal above it; the ones below are clamped
-const refused = (signals: SignalSettings, signal: Signal, patch: Partial<SignalBehaviour>): boolean => !isOrdered(patched(signals, signal, patch));
-
-const controlLabel = (row: Exclude<Row, 'newTasks'>, signal: RuleSignal): string => t('settings.signal.control', { row: t(`settings.signal.${row}`), signal });
+export const controlLabel = (row: Exclude<Row, 'newTasks'>, signal: RuleSignal): string => t('settings.signal.control', { row: t(`settings.signal.${row}`), signal });
 
 interface CellProps { signals: SignalSettings; signal: RuleSignal; onChange(signals: SignalSettings): void }
 
@@ -46,18 +35,18 @@ function WorkerlessSwitch({ signals, signal, onChange }: CellProps) {
   const value = signals[signal].workerless;
   return (
     <Switch
-      aria-label={controlLabel('workerless', signal)} checked={value} disabled={refused(signals, signal, { workerless: !value })}
-      onCheckedChange={(checked) => onChange(patched(signals, signal, { workerless: checked }))}
+      aria-label={controlLabel('workerless', signal)} checked={value} disabled={isRefused(signals, signal, { workerless: !value })}
+      onCheckedChange={(checked) => onChange(patchedSignals(signals, signal, { workerless: checked }))}
     />
   );
 }
 
 function NewTasksSelect({ signals, signal, onChange }: Omit<CellProps, 'signal'> & { signal: Signal }) {
   return (
-    <Select value={behaviourOf(signal, signals).newTasks} onValueChange={(v) => onChange(patched(signals, signal, { newTasks: v as NewTasks }))}>
+    <Select value={behaviourOf(signal, signals).newTasks} onValueChange={(v) => onChange(patchedSignals(signals, signal, { newTasks: v as NewTasks }))}>
       <SelectTrigger size="sm" aria-label={t('settings.signal.newTasks.control', { signal })} className="w-full"><SelectValue /></SelectTrigger>
       <SelectContent>
-        {NEW_TASKS_OPTIONS.map((o) => <SelectItem key={o} value={o} disabled={refused(signals, signal, { newTasks: o })}>{t(NEW_TASKS_LABEL[o])}</SelectItem>)}
+        {NEW_TASKS_OPTIONS.map((o) => <SelectItem key={o} value={o} disabled={isRefused(signals, signal, { newTasks: o })}>{t(NEW_TASKS_LABEL[o])}</SelectItem>)}
       </SelectContent>
     </Select>
   );
@@ -65,10 +54,10 @@ function NewTasksSelect({ signals, signal, onChange }: Omit<CellProps, 'signal'>
 
 function StartedSelect({ signals, signal, onChange }: CellProps) {
   return (
-    <Select value={signals[signal].started} onValueChange={(v) => onChange(patched(signals, signal, { started: v as StartedBehaviour }))}>
+    <Select value={signals[signal].started} onValueChange={(v) => onChange(patchedSignals(signals, signal, { started: v as StartedBehaviour }))}>
       <SelectTrigger size="sm" aria-label={controlLabel('started', signal)} className="w-full"><SelectValue /></SelectTrigger>
       <SelectContent>
-        {STARTED_OPTIONS.map((o) => <SelectItem key={o} value={o} disabled={refused(signals, signal, { started: o })}>{t(STARTED_LABEL[o])}</SelectItem>)}
+        {STARTED_OPTIONS.map((o) => <SelectItem key={o} value={o} disabled={isRefused(signals, signal, { started: o })}>{t(STARTED_LABEL[o])}</SelectItem>)}
       </SelectContent>
     </Select>
   );
