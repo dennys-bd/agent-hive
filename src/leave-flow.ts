@@ -21,7 +21,7 @@ const outOfStage = ({ tries: _t, tryLog: _l, via: _v, approval: _a, handoffPendi
 export function leaveFlow(state: State, id: string): Reduced {
   const task = state.tasks.find((c) => taskId(c) === id);
   if (task === undefined || leaveBlocker(state, task) !== undefined) return none(state); // a stale event, as a stale move is
-  const left = withTask(state, leave(task));
+  const left = withTask(state, { ...leave(task), placedByHand: true }); // #670: the hand wins over the entry property
   const live = activityOf(left, id);
   return none(live === undefined ? left : withActivity(left, outOfStage(live)));
 }

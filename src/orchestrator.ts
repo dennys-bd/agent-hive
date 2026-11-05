@@ -358,7 +358,7 @@ function moveToStage(state: State, { taskId: id, stage: name, drop }: Extract<Hi
   const [entry] = onSource(target.from, task.item.source) ?? []; // the task's source's first door (#180)
   const write = shouldWrite(task, entry);
   const written = write ? withColumnWrite(task, entry, new Date().toISOString()) : task; // #889: marked until a poll shows the new column
-  const entered = withTask(state, enter(written, target));
+  const entered = withTask(state, { ...enter(written, target), placedByHand: true }); // #670: the hand wins over the entry property
   const tasks = drop ? moveTask(entered.tasks, id, drop.before) : entered.tasks; // `before` is in the target stage now: the route checked it
   return { state: unrouted(settleEntries(state.tasks, { ...entered, tasks }), id), effects: write ? [{ type: 'setColumn', itemId: id, column: entry }] : [] }; // #134: a move by hand drops the tries and the arrow
 }
