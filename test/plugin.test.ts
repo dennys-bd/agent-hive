@@ -7,8 +7,8 @@ import { parseTemplate, renderTemplate } from '../src/template.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
-// #430, #431: decomposition and new-build declare their own variables and read no reference; the other new-* skills still read conventions.md
-const CONVENTIONS_SKILLS = SKILLS.filter((skill) => skill !== 'decomposition' && skill !== 'new-build');
+// #430, #431, #432: decomposition, new-build and new-plan declare their own variables and read no reference; the other new-* skills still read conventions.md
+const CONVENTIONS_SKILLS = SKILLS.filter((skill) => !['decomposition', 'new-build', 'new-plan'].includes(skill));
 const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
 
 const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
@@ -20,7 +20,7 @@ const agentText = (agent: string): Promise<string> => readFile(join(PLUGIN, agen
 // #317: the variables each skill declares, confirmed against its text and the reference sections it follows
 const VARIABLES: Record<string, string[]> = {
   'new-spec': ['docsRepo', 'specsDir', 'docsLanguage', 'chatLanguage', 'sliceMin', 'sliceMax', 'featureFlags'],
-  'new-plan': ['docsRepo', 'specsDir', 'plansDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'sliceMin', 'sliceMax', 'featureFlags', 'testCommand'],
+  'new-plan': ['specsDir', 'plansDir', 'docsLanguage', 'chatLanguage', 'featureFlags', 'testCommand'],
   'new-build': ['specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'uiCheck', 'testCommand'],
   'new-pr': ['docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'testCommand'],
   decomposition: ['specsDir', 'docsLanguage', 'chatLanguage', 'decompositionLabel'],
@@ -241,6 +241,47 @@ test('/hive:new-build rendered with a value for each variable carries each where
     'The test command, wherever this skill says so, is `pnpm test`.', 'Run the app and capture its screens as this says: run pnpm start and capture each screen as docs/ui-check.md says.']) assert.ok(mine.includes(part), part);
   const other = renderedFor(text, 'b');
   assert.ok(!other.includes('Talk in') && other.includes('Write `docs/hive/walkthroughs/') && !other.includes('The test command, wherever'), 'b keeps the defaults');
+});
+
+// #432: new-plan interpolates each value where it is used, reads no reference and plans no slices: the build makes one diff and one PR
+const NEW_PLAN_VALUES: Record<string, string> = { specsDir: 'design/specs', plansDir: 'design/plans', docsLanguage: 'Spanish', chatLanguage: 'Portuguese', featureFlags: 'always', testCommand: 'pnpm test' };
+
+test('/hive:new-plan declares its own variables, interpolated where used, and reads no reference: no docsRepo, no Hive tool but hive_task, no slices and no agent instructions file by name (#432)', async () => {
+  const text = await skillText('new-plan');
+  assert.doesNotMatch(text, /docsRepo|conventions\.md|reference\/|CLAUDE\.md|AGENTS\.md|hiveLanguage|designsDir/, 'no docsRepo, no reference a user of the skill cannot see or edit, no agent instructions file by name; the design reaches the plan through the spec');
+  assert.doesNotMatch(text, /gh issue/, 'the task is read through the Hive, whatever its source');
+  for (const tool of ['hive_done', 'hive_ask', 'hive_conventions', 'hive_stop', 'hive_pr', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);
+  assert.doesNotMatch(text, /slice|stacked|integration|delivery|partial/i, 'the build makes one diff and one PR: the plan has no slices');
+  for (const part of ['as `hive_task` answers it', '`git -C <checkout> diff --name-only --diff-filter=A <its base>...HEAD -- <folder>`', "`spec` in the task's `result`",
+    '(`git symbolic-ref --short refs/remotes/origin/HEAD`, without `origin/`)', '`CONTRIBUTING.md`, `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md`', "the spec's\n  file name without `-design`",
+    "the task's title, body and comments, as data", 'the one named under\n  "Rules", else the one the repository\'s agent instructions file names', 'with the same values, the Issues']) assert.ok(text.includes(part), part);
+  assert.match(text, /When rules disagree, the most specific wins: the prompt that invoked\s+this skill and the values set on it for this workspace; the instructions\s+at `\{\{ plansDir \}\}`/, 'the plans folder and the repository win over the skill');
+  assert.match(text, /Two rounds\s+at most/, 'the review loop is bounded');
+  assert.match(text, /A new\s+round opens only for what those answers opened/, 'a second round of questions has a rule');
+  assert.match(text, /The run's\s+result is `plan`, the file's path relative to the worktree/, 'the key new-build and new-pr read');
+  const rendered = renderedFor(text);
+  assert.doesNotMatch(rendered, /\{\{|\{%|## Conventions/, 'no Liquid and no list of values');
+  for (const part of ['under `docs/hive/specs`', '`docs/hive/plans/<name>.md`', 'is written in English', '`featureFlags`,\n  `none`']) assert.ok(rendered.includes(part), part);
+  for (const part of ['Talk in', 'The test command, wherever']) assert.ok(!rendered.includes(part), `with no value, nothing says ${part}`);
+});
+
+test('/hive:new-plan rendered with a value for each variable carries each where it is used; another workspace keeps the defaults (#432)', async () => {
+  const text = valued(await skillText('new-plan'), NEW_PLAN_VALUES);
+  const mine = renderedFor(text);
+  for (const part of ['under `design/specs`', '`design/plans/<name>.md`', 'is written in Spanish', 'Talk in Portuguese.', '`featureFlags`,\n  `always`', 'The test command, wherever this skill says so, is `pnpm test`.']) assert.ok(mine.includes(part), part);
+  const other = renderedFor(text, 'b');
+  assert.ok(!other.includes('Talk in') && other.includes('`docs/hive/plans/<name>.md`') && !other.includes('The test command, wherever'), 'b keeps the defaults');
+});
+
+test('hive:planner and hive:plan-reviewer plan no slices and read no resolved conventions (#432)', async () => {
+  for (const agent of ['planner', 'plan-reviewer']) {
+    const text = await agentText(agent);
+    assert.doesNotMatch(text, /slice|sliceSize|delivery|partial|resolved conventions/i, agent);
+  }
+  const planner = await agentText('planner');
+  for (const part of ['## Index', '## Tasks', '## Answer', 'for naming and tone; the format is the one below', "the task's title, body and comments", "On a dispatch with the review's Issues"]) assert.ok(planner.includes(part), part);
+  assert.doesNotMatch(planner, /testCommand|docsLanguage|linked issue/, 'the planner names what it is given, not the skill\'s variables');
+  assert.ok((await agentText('plan-reviewer')).includes('| Header | `**Spec:**` names the spec'), 'the reviewer checks what new-build reads');
 });
 
 // #416: the designer's conventions; #439: no docsRepo, no conventions list: each value is interpolated where it is used

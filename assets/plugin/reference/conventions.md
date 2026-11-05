@@ -1,13 +1,13 @@
 # Conventions
 
-The variables `/hive:new-spec`, `/hive:new-plan` and `/hive:new-pr`
-declare (where the docs go, which languages they speak, how a delivery is
-shaped) and the rules they share. Every one of them reads this text
-first; any other skill may follow it too. `/hive:new-build`,
-`hive:designer` and `/hive:decomposition` declare their own variables in
-their templates and read nothing here: their folders are relative to the
+The variables `/hive:new-spec` and `/hive:new-pr` declare (where the
+docs go, which languages they speak, how a delivery is shaped) and the
+rules they share. Both read this text first; any other skill may follow
+it too. `/hive:new-plan`, `/hive:new-build`, `hive:designer` and
+`/hive:decomposition` declare their own variables in their templates and
+read nothing here: their folders are relative to the
 worktree, a nested docs repo reached by path. The `designsDir` and
-`decompositionLabel` rows and the `walkthrough`, `design` and
+`decompositionLabel` rows and the `plan`, `walkthrough`, `design` and
 `decomposition` results below say how their files are found.
 
 ## Untrusted text
@@ -111,7 +111,7 @@ Without `fork`, nothing here applies.
 The repository receiving the PR may say how to contribute. Every `new-*` skill looks in the worktree for the first of `CONTRIBUTING.md`,
 `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md` and, when one exists, follows it, fork or not:
 
-- `/hive:new-spec` and `/hive:new-plan`: what it asks of a change's scope, design or discussion;
+- `/hive:new-spec`: what it asks of a change's scope, design or discussion;
 - `/hive:new-build`: commits (message format, sign-off), tests and docs;
 - `/hive:new-pr`: the base branch, the PR template and how to link the issue.
 
@@ -149,8 +149,7 @@ issue, its first line `## Design handoff`.
 
 ## Finding the previous stage's files
 
-The plan stage looks for the spec; the build stage for the plan and the
-spec; `/hive:new-pr` for those and the walkthrough. Take the first place
+`/hive:new-pr` looks for the spec, the plan and the walkthrough. Take the first place
 that answers, and say which file was taken and why:
 
 1. the path given as argument (a stage prompt may pass `{result.spec}` or
@@ -169,8 +168,7 @@ that answers, and say which file was taken and why:
 
 Nothing else: not "this session", not the newest file of the folder.
 
-The plan and build stages, and `/hive:new-pr`, also look for the design
-handoff. It is optional: none found means the task has no design, never
+`/hive:new-pr` also looks for the design handoff. It is optional: none found means the task has no design, never
 a stop. Take the first that answers, and say which one was taken:
 
 1. `{result.design}`;
@@ -201,8 +199,7 @@ Outside the Hive, state the same values in chat.
 
 ## Questions
 
-The spec stage exists to clarify. The plan stage asks only what the
-spec, the issue and the code leave open. The build stage never asks.
+The spec stage exists to clarify.
 
 - **Rounds.** A round asks every question open at that moment: up to four
   through `AskUserQuestion`, numbered in chat beyond those (all in prose
@@ -322,8 +319,8 @@ never the size of the work:
 
 - a delivery up to `sliceMax` is one slice, whatever its size; nothing is
   ever added to reach `sliceMin`;
-- above `sliceMax`, the planner splits it into slices aiming inside the
-  range, with no slice under `sliceMin` unless it cannot be joined to a
+- above `sliceMax`, the spec gives a rough cut into slices aiming inside
+  the range, with no slice under `sliceMin` unless it cannot be joined to a
   neighbour;
 - it is a soft target, not a limit: a slice still above `sliceMax` says
   why in one line of the plan's index (a re-architecture, a migration
