@@ -3009,7 +3009,7 @@ const en = {
   'benchmark.run.environment': 'environment · local',
   'benchmark.run.arm': 'arm {letter} · pair {round} of {pairs}',
   'back.list': 'back', // #571: a page's way back to the list it was opened from
-  'tasks.center.soon': 'coming soon', // #571: the list and outside-flow views, until 3.2 / 3.3
+  'tasks.center.soon': 'coming soon', // #571: the outside-flow view, until 3.3
   'tasks.header.source.github': 'github project', // #571: the source header's type, before its owner
   'tasks.header.hive': 'hive tasks · no external sync', // #583: the hive source header's second part (handoff §5)
   'tasks.display': 'display', // #574: the tasks header's exibir and its popover (handoff §3)

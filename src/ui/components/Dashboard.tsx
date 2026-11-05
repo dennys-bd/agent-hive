@@ -28,6 +28,7 @@ import { StartDialog } from '@/components/StartDialog';
 import { TreeHoverContext } from '@/components/tree-hover';
 import { Flow } from '@/components/Flow';
 import { displayProps } from '@/components/tasks/DisplayPopover';
+import { TaskList } from '@/components/tasks/TaskList';
 import { WorkerlessContext } from '@/components/FlowTask';
 import { PrPage } from '@/components/PrPage';
 import { ProjectTable } from '@/components/ProjectTable';
@@ -92,8 +93,8 @@ function sourceCenter(state: State, nav: TasksNav, source: SourceConfig, reposit
   );
 }
 
-// Decision 11 (#571): the list and outside-flow views, until 3.2 / 3.3: the tasks header, with exibir minus its voltas rows (#574), over one
-// muted line. The popover counts what the view will show: every task, or the stageless ones outside
+// Decision 11 (#571): the outside-flow view, until 3.3: the tasks header, with exibir minus its voltas rows (#574), over one
+// muted line. The popover counts what the view will show: the stageless tasks, or every task while no flow resolves
 function TasksSoon({ state, isOutside, display, sources }: { state: State; isOutside: boolean; display: DisplayControls; sources: SourcesNav }) {
   const tasks = isOutside ? state.tasks.filter((c) => !inFlow(c)) : state.tasks;
   const isTree = display.options.tree ?? hasTree(state.tasks);
@@ -112,6 +113,7 @@ function Center({ state, selected, nav, repositories, onSelect, stageCaps, sourc
   if (center.kind === 'source' && center.source === HIVE_SOURCE) return <ProjectTable state={state} source={HIVE_SOURCE} onGoTo={nav.goTo} onOpenIssue={nav.openProjectItem} />; // #583
   if (center.kind === 'source' && source) return sourceCenter(state, nav, source, repositories, center.issue);
   if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} display={display} sources={sources} />;
+  if (center.kind === 'tasks' && center.view === 'list') return <TaskList state={state} display={display} sources={sources} onOpen={(taskId) => onSelect({ taskId })} />; // #577
   return <TasksSoon state={state} isOutside={center.kind === 'tasks' && center.view === 'outside'} display={display} sources={sources} />;
 }
 
