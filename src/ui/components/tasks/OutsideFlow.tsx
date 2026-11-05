@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { activityOf } from '../../../activities.js';
 import { inFlow } from '../../../tasks.js';
 import type { State, Task } from '../../../types.js';
-import { viewedTasks, WorkspacesLegend } from '@/components/Flow';
+import { WorkspacesLegend } from '@/components/Flow';
 import { FlowHeader } from '@/components/FlowHeader';
 import type { SourcesNav } from '@/components/FlowSources';
 import { useIsFlowShown } from '@/components/MainDock';
@@ -14,6 +14,7 @@ import { t } from '@/i18n';
 import { matchesSearch } from '@/lib/flow-search';
 import type { DisplayOptions } from '@/lib/flow-view';
 import { taskState } from '@/lib/task-state';
+import { viewedTasks } from '@/lib/task-list';
 import { hasTree } from '@/lib/tree-groups';
 
 // Decisions 2, 3: the stageless tasks (counted: exibir's counts, before sourcesOff, as the flowchart's), then what the view and the search
