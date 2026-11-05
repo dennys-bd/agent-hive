@@ -70,7 +70,7 @@ const WORKTREES = [{ itemId: 'I1', changed: 3, ahead: 1 }, { itemId: 'I2', chang
 const answer = (url: string): unknown => {
   if (url === '/workspaces/branches') return [{ name: 'hive', branch: 'docs/design-system' }, { name: 'site', branch: null }];
   if (url === '/activities/worktrees') return WORKTREES;
-  if (url === '/activities/a-6/delete') return { removed: false, refused: 'worktree has changes' };
+  if (url === '/activities/a-6/delete') return { removed: false, refused: { reason: 'unmerged', branch: 'hive/6-task-6', target: 'HEAD' } };
   if (url.endsWith('/delete')) return { removed: true };
   return { ok: true };
 };
@@ -286,7 +286,7 @@ test('excluir todas… confirms the list, deletes each activity in turn, skips t
   expect(posts()).toEqual([]);
   expect(dialog).toHaveAccessibleName('Excluir atividades finalizadas');
   await user.click(within(dialog).getByRole('button', { name: 'excluir' }));
-  await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Estas atividades ficaram:\n#6 Task 6: worktree has changes', { className: 'whitespace-pre-line', duration: Infinity }));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Estas atividades ficaram:\n#6 Task 6: o branch hive/6-task-6 não está mergeado em HEAD', { className: 'whitespace-pre-line', duration: Infinity }));
   expect(posts()).toEqual(['/activities/a-4/delete', '/activities/a-6/delete']);
   expect(vi.mocked(fetch).mock.calls.find(([url]) => String(url) === '/activities/a-4/delete')?.[1]?.body).toBeUndefined(); // never forced
 });

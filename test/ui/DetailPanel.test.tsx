@@ -26,7 +26,8 @@ const state: State = withPointedWork({
 const TASK: Selection = { taskId: 'I1' };
 const STOPPED: WithWork = { ...task, workerId: undefined }; // ran once: session, branch and worktree kept
 const IDLE: State = withPointedWork({ ...state, workers: [{ id: 's1', status: 'empty' }], tasks: [STOPPED] });
-const MERGED = "the branch 'hive/1-task-1' is not fully merged into HEAD"; // the pre-check's reason, as the route answers it
+const UNMERGED = { reason: 'unmerged', branch: 'hive/1-task-1', target: 'HEAD' } as const; // the pre-check's refusal, as the route answers it (#660)
+const UNMERGED_TEXT = 'o branch hive/1-task-1 não está mergeado em HEAD';
 // The details panel's tooltip for each removalBlocker (#210)
 const BLOCKED = {
   running: 'um worker ou sessão está executando nessa tarefa',
@@ -94,7 +95,7 @@ test('excluir atividade is always in ⋯: disabled with the reason in its label 
   }
 });
 
-test('limpar confirms, then posts with no body; a refusal opens the force popup with git\'s words even when it lands while the task is marked, the × focused; cancelar posts nothing more (#182, #75)', async () => {
+test('limpar confirms, then posts with no body; a refusal opens the force popup with the refusal\'s copy even when it lands while the task is marked, the × focused; cancelar posts nothing more (#182, #75)', async () => {
   const user = userEvent.setup();
   let answer: (res: Response) => void = () => {};
   fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { answer = resolve; }));
@@ -107,9 +108,9 @@ test('limpar confirms, then posts with no body; a refusal opens the force popup 
   rerender(<Panel state={withTasks(IDLE, [{ ...STOPPED, deleting: true }])} initial={TASK} />); // the route's mark reaches the panel before its answer
   expect(removeItem(await menu(user))).toHaveTextContent(`excluir atividade · ${BLOCKED.deleting}`);
   await user.keyboard('{Escape}');
-  answer(reply({ removed: false, refused: MERGED }));
+  answer(reply({ removed: false, refused: UNMERGED }));
   const popup = await screen.findByRole('alertdialog', { name: 'Forçar remoção' });
-  expect(popup).toHaveTextContent(MERGED);
+  expect(popup).toHaveTextContent(UNMERGED_TEXT);
   expect(popup).toHaveTextContent('perdidos de vez');
   const [close, cancel] = within(popup).getAllByRole('button', { name: 'cancelar' });
   expect(close).toHaveFocus();
@@ -121,7 +122,7 @@ test('limpar confirms, then posts with no body; a refusal opens the force popup 
 
 test('forçar closes the popup and posts again with force true (#182)', async () => {
   const user = userEvent.setup();
-  fetchMock.mockImplementationOnce(async () => reply({ removed: false, refused: MERGED }));
+  fetchMock.mockImplementationOnce(async () => reply({ removed: false, refused: UNMERGED }));
   render(<Panel state={IDLE} initial={TASK} />);
   await askRemoval(user);
   await user.click(within(dialog()).getByRole('button', { name: 'excluir atividade' }));
