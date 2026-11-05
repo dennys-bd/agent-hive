@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
-import { treeRows } from '@/lib/project-tree';
+import { subIssueCount, treeRows } from '@/lib/project-tree';
 import { hiveProject } from '../../src/hive-project';
 import type { Flow, ProjectItem, Stage, Task } from '../../src/types';
-import { row } from './project-harness';
+import { row, VIEW } from './project-harness';
 
 // #584: what a list draws, as [id, depth, childCount] per visible line
 const lines = (items: readonly ProjectItem[], expanded: readonly ProjectItem[] = items) =>
@@ -42,4 +42,21 @@ test('a cycle in parent yields roots; a row hanging off the cycle still nests; a
 test('a hive row nests under the task its local:<n> names (#584 decision 7)', () => {
   const { items } = hiveProject({ flows: FLOWS, tasks: [hiveTask(1, 'spec'), hiveTask(2, 'spec', 1)], activityRecords: [] });
   expect(lines(items)).toEqual([['HIVE-1', 0, 1], ['HIVE-2', 1, 0]]);
+});
+
+test('the count is the parent\'s own progress field, found by kind, not by name (#584 decision 8)', () => {
+  expect(subIssueCount(row(1, { fields: { Progress: '2/5' } }), VIEW, [])).toEqual({ done: 2, n: 5 });
+  const renamed = { fields: [{ name: 'Sub-issues', type: 'progress' as const }], items: [] };
+  expect(subIssueCount(row(1, { fields: { 'Sub-issues': '0/3' } }), renamed, [])).toEqual({ done: 0, n: 3 });
+});
+
+test('with no progress value, the count is the parent\'s children in the whole view and the closed ones; a source row is never done by its status (#584 decision 9)', () => {
+  const items = [row(1), row(2, { parent: 1, closedAt: '2026-10-04T10:00:00Z' }), row(3, { parent: 1, status: 'review' }), row(4, { parent: 9 })];
+  expect(subIssueCount(items[0], { fields: [], items }, FLOWS)).toEqual({ done: 1, n: 2 });
+  expect(subIssueCount(items[0], { ...VIEW, items }, FLOWS)).toEqual({ done: 1, n: 2 }); // the field exists, the parent has no value
+});
+
+test('a hive child is done at the last stage of its flow (#584 decision 9)', () => {
+  const view = hiveProject({ flows: FLOWS, tasks: [hiveTask(1, 'spec'), hiveTask(2, 'dev', 1), hiveTask(3, 'review', 1), hiveTask(4, 'spec', 1)], activityRecords: [] });
+  expect(subIssueCount(view.items[0], view, FLOWS)).toEqual({ done: 2, n: 3 }); // dev ends build, review ends ship; spec does not
 });
