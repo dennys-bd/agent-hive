@@ -4,8 +4,10 @@ import { execFile } from 'node:child_process';
 import { mkdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { assemble, OUTPUT_MAX, PART_BYTES_MAX, PART_REASONS, SLOTS_MAX, type PartReason, partNotice, type ReadPart, readPartFrom } from '../src/design-parts.js';
+import { assemble, OUTPUT_MAX, PART_BYTES_MAX, PART_REASONS, SLOTS_MAX, type PartReason, partNotice, type ReadPart, readPartFrom, readPartFromGit } from '../src/design-parts.js';
 import { tempDir } from './temp-dir.js';
+
+const run = promisify(execFile);
 
 // An in-memory design folder: a path it does not hold is not found, and every path asked for is recorded
 function memory(files: Record<string, string>): { read: ReadPart; reads: string[] } {
@@ -199,4 +201,27 @@ test('readPartFrom does not hang on a FIFO named .html and refuses it (#421)', a
   const folder = await realpath(await tempDir(t, 'parts-'));
   await promisify(execFile)('mkfifo', [join(folder, 'x.html')]);
   assert.deepEqual(await readPartFrom(folder)('x.html'), { refused: PART_REASONS.missing });
+});
+
+test('readPartFromGit reads a part from the commit, not the disk, and refuses a symbolic link, a folder, a part past PART_BYTES_MAX and one the commit lacks (#675)', async (t) => {
+  const root = await realpath(await tempDir(t, 'parts-git-'));
+  const git = async (...args: string[]): Promise<string> =>
+    (await run('git', ['-C', root, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args])).stdout.trim();
+  const parts = join(root, 'design', 'parts');
+  await git('init', '--quiet');
+  await mkdir(join(parts, 'folder.html'), { recursive: true });
+  await writeFile(join(parts, 'folder.html', 'x.html'), '<p>x</p>');
+  await writeFile(join(parts, 'nav.html'), '<nav>One</nav>');
+  await writeFile(join(parts, 'big.html'), 'a'.repeat(PART_BYTES_MAX + 1));
+  await symlink('nav.html', join(parts, 'link.html'));
+  await git('add', '--all');
+  await git('commit', '--quiet', '-m', 'parts');
+  const commit = await git('rev-parse', 'HEAD');
+  await writeFile(join(parts, 'nav.html'), '<nav>Disk</nav>'); // the disk moves on; the commit does not
+  const read = readPartFromGit(root, commit, 'design');
+  assert.deepEqual(await read('parts/nav.html'), { text: '<nav>One</nav>' });
+  assert.deepEqual(await read('parts/link.html'), { refused: PART_REASONS.symlink });
+  assert.deepEqual(await read('parts/folder.html'), { refused: PART_REASONS.missing });
+  assert.deepEqual(await read('parts/big.html'), { refused: PART_REASONS.tooLarge });
+  assert.deepEqual(await read('parts/gone.html'), { refused: PART_REASONS.missing });
 });
