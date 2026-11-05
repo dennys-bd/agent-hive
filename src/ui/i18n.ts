@@ -1794,7 +1794,7 @@ const en = {
   'shortcuts.soon': '(soon)', // #585: an operation that does not exist yet
   'shortcutMap.title': 'shortcuts', // #639: the shortcut map's dialog
   'shortcutMap.edit': 'edit in settings › shortcuts',
-  'project.count': '{n} issues · {m} in the flow', // #756: the native view's subbar
+  'project.count': '{n} items · {m} tasks', // #756, #583: the bar: what was read and how many of its rows have a task, in or out of the flow
   'project.truncated': 'first {n}',
   'project.loading': 'reading…',
   'project.col.issue': 'issue', 'project.col.status': 'status', 'project.col.labels': 'labels', 'project.col.assignee': 'resp.', 'project.col.pr': 'PR',
@@ -1802,7 +1802,7 @@ const en = {
   'project.col.blockedBy': 'blocked by', // #61: the issue's blocked-by relations
   'project.col.resize': 'resize {column}', // #756, addendum 2: a header's drag handle
   'project.footer.count': '{x} of {n}',
-  'project.footer.hint': 'cells with ⌄ are editable · drag the dividers to resize · ⇧↵ opens the issue', // #60
+  'project.footer.hint': 'cells with ⌄ are editable · drag the dividers to resize · changing the status moves the task to the stage tied to it', // #60, #583: ⇧↵ still opens the issue, it only left the hint
   'project.action.goto': 'flow ›',
   'project.error.quota': 'GitHub quota is low; try again after {time}',
   'project.status.head': 'status', // #756: the status select's menu
@@ -4835,7 +4835,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.soon': '(em breve)',
   'shortcutMap.title': 'atalhos',
   'shortcutMap.edit': 'editar em configurações › atalhos',
-  'project.count': '{n} issues · {m} no fluxo',
+  'project.count': '{n} itens · {m} tarefas',
   'project.truncated': 'primeiros {n}',
   'project.loading': 'lendo…',
   'project.col.issue': 'issue', 'project.col.status': 'status', 'project.col.labels': 'labels', 'project.col.assignee': 'resp.', 'project.col.pr': 'PR',
@@ -4843,7 +4843,7 @@ const pt: Record<MessageKey, string> = {
   'project.col.blockedBy': 'bloqueada por',
   'project.col.resize': 'redimensionar {column}',
   'project.footer.count': '{x} de {n}',
-  'project.footer.hint': 'células com ⌄ são editáveis · arraste as divisões para redimensionar · ⇧↵ abre a issue',
+  'project.footer.hint': 'células com ⌄ são editáveis · arraste as divisões para redimensionar · mudar o status move a tarefa para a etapa ligada a ele',
   'project.action.goto': 'fluxo ›',
   'project.error.quota': 'quota do GitHub baixa; tente depois de {time}',
   'project.status.head': 'status',

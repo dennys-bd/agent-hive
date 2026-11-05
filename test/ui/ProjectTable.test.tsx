@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 test('the table reads the source\'s view on opening: issue first, status, labels and resp. at their project position among the field columns, PR then the action last, each value by its kind, the counts and the footer (#756)', async () => {
   renderTable();
-  expect(await screen.findByText('3 issues · 1 no fluxo')).toBeInTheDocument();
+  expect(await screen.findByText('3 itens · 1 tarefas')).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith('/sources/roadmap/project');
   expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'Sprint', 'PR', '']);
   const twelve = within(rowOf('#12'));
@@ -28,7 +28,7 @@ test('the table reads the source\'s view on opening: issue first, status, labels
   expect(within(rowOf('#40')).getByText('✓')).toHaveClass('text-working');
   expect(twelve.getByText('—')).toBeInTheDocument(); // a task row shows the task's own PRs: none here
   expect(screen.getByText('3 de 3')).toBeInTheDocument();
-  expect(screen.getByText('células com ⌄ são editáveis · arraste as divisões para redimensionar · ⇧↵ abre a issue')).toBeInTheDocument();
+  expect(screen.getByText('células com ⌄ são editáveis · arraste as divisões para redimensionar · mudar o status move a tarefa para a etapa ligada a ele')).toBeInTheDocument();
 });
 
 test('a header sorts by its column and again reverses; the project\'s own order is the default (#756)', async () => {
@@ -85,7 +85,7 @@ test('lendo… while the view reads, and the subbar names the cap when the read 
   renderTable();
   expect(screen.getByText('lendo…')).toBeInTheDocument();
   settle(jsonRes({ ...VIEW, truncated: true }));
-  expect(await screen.findByText('3 issues · 1 no fluxo · primeiros 3')).toBeInTheDocument();
+  expect(await screen.findByText('3 itens · 1 tarefas · primeiros 3')).toBeInTheDocument();
 });
 
 test('a refused read shows its reason in place of the table and as a toast; inside the quota backoff it names the reset time (#756)', async () => {
@@ -122,7 +122,7 @@ test('an issue a Hive task was created from counts in the flow and shows fluxo �
   const onGoTo = vi.fn();
   const copy: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 3', body: '', url: '', origin: 'roadmap:PVTI_3' }, stage: 'dev', boardColumn: '', auto: false, created: true };
   renderTable({ onGoTo, tasks: [TASK, copy] });
-  expect(await screen.findByText('3 issues · 2 no fluxo')).toBeInTheDocument();
+  expect(await screen.findByText('3 itens · 2 tarefas')).toBeInTheDocument();
   expect(within(rowOf('#3')).queryByRole('button', { name: 'fluxo…' })).not.toBeInTheDocument();
   await user.click(within(rowOf('#3')).getByRole('button', { name: 'fluxo ›' }));
   expect(onGoTo).toHaveBeenCalledWith('local:1');
@@ -131,7 +131,7 @@ test('an issue a Hive task was created from counts in the flow and shows fluxo �
 test('with nothing saved every column shows but the iteration and number fields, at the handoff\'s widths, under a header that stays as the body scrolls, in a box that fills the pane with no visible scrollbar (#756, #59)', async () => {
   resetViewState();
   renderTable();
-  await screen.findByText('3 issues · 1 no fluxo');
+  await screen.findByText('3 itens · 1 tarefas');
   expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
   const head = screen.getAllByRole('row')[0];
   expect(head.style.gridTemplateColumns).toBe('minmax(160px,1fr) 128px 64px 136px 56px 72px 56px 112px 104px 76px'); // Priority 64, date 72, progress 56, blocked by 112
@@ -145,7 +145,7 @@ test('the columns menu lists every hideable column in project order with its ori
   const user = userEvent.setup();
   resetViewState();
   const { unmount } = renderTable();
-  await screen.findByText('3 issues · 1 no fluxo');
+  await screen.findByText('3 itens · 1 tarefas');
   await openMenu(user, /^colunas/);
   const items = screen.getAllByRole('menuitemcheckbox');
   expect(items.map((i) => i.textContent)).toEqual([
@@ -162,7 +162,7 @@ test('the columns menu lists every hideable column in project order with its ori
   expect(readView('projectViews')).toEqual({ roadmap: expect.objectContaining({ columns: ['status', 'labels', 'assignee', 'field:Estimate', 'field:Target', 'field:Progress', 'blockedBy', 'pr'] }) });
   unmount();
   renderTable();
-  await screen.findByText('3 issues · 1 no fluxo');
+  await screen.findByText('3 itens · 1 tarefas');
   expect(heads()).toEqual(['issue', 'status', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
 });
 
@@ -182,7 +182,7 @@ test('with nothing saved the rows group by status in Status order with counts an
   fetchMock.mockImplementation(answerGrouped);
   resetViewState();
   renderTable();
-  await screen.findByText('5 issues · 1 no fluxo');
+  await screen.findByText('5 itens · 1 tarefas');
   expect(groups()).toEqual(['Todo2sem etapa', 'Ready1→ dev', 'Done1sem etapa', 'sem status1']);
   expect(groupRows()[0]).toHaveClass('sticky', 'z-[5]', 'bg-card'); // opaque and above the overlay: a divider stops at it
   expect(group(/^Done/)).toHaveAttribute('aria-expanded', 'false');
@@ -257,8 +257,9 @@ test('a field cell writes through its editor and the answer\'s row replaces its 
   expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/sources/roadmap/project')).toHaveLength(1);
 });
 
-test('the footer explains the table in English too: ⌄ cells edit, the dividers resize, ⇧↵ opens the issue (#60)', async () => {
+test('the footer explains the table in English too: ⌄ cells edit, the dividers resize, a status change moves the task (#60, #583)', async () => {
   setLanguage('en');
   renderTable();
-  expect(await screen.findByText('cells with ⌄ are editable · drag the dividers to resize · ⇧↵ opens the issue')).toBeInTheDocument();
+  expect(await screen.findByText('cells with ⌄ are editable · drag the dividers to resize · changing the status moves the task to the stage tied to it')).toBeInTheDocument();
+  expect(screen.getByText('3 items · 1 tasks')).toBeInTheDocument();
 });

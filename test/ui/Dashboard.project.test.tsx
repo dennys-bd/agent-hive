@@ -51,10 +51,10 @@ test('a source row opens its table with no tabs; hive opens its own center; the 
   showFlow();
   expect(bar().queryAllByRole('tab')).toEqual([]);
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  expect(await main().findByText('1 issues · 1 no fluxo')).toBeInTheDocument();
+  expect(await main().findByText('1 itens · 1 tarefas')).toBeInTheDocument();
   expect(bar().queryAllByRole('tab')).toEqual([]);
   await user.click(automation().getByRole('button', { name: /^hive/ }));
-  expect(main().queryByText(/issues ·/)).not.toBeInTheDocument();
+  expect(main().queryByText(/itens ·/)).not.toBeInTheDocument();
   expect(main().getByText('em breve')).toBeInTheDocument();
   expect(bar().getByText('hive')).toHaveClass('font-semibold');
   expect(automation().getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
@@ -69,7 +69,7 @@ test('fluxo › in the source table shows the flowchart and selects the task (#7
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
   showFlow();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await main().findByText('1 issues · 1 no fluxo');
+  await main().findByText('1 itens · 1 tarefas');
   await user.click(main().getByRole('button', { name: 'fluxo ›' }));
   expect(onSelect).toHaveBeenCalledWith({ taskId: 'roadmap:PVTI_1' });
   expect(bar().getByText('todas as sources')).toBeInTheDocument();

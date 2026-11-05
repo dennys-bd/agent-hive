@@ -26,7 +26,7 @@ test('every new kind and the issue\'s dates are listed in the columns menu, hidd
   fetchMock.mockImplementation(answerEvery);
   resetViewState();
   renderTable();
-  await screen.findByText('2 issues · 1 no fluxo');
+  await screen.findByText('2 itens · 1 tarefas');
   expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
   await openMenu(user, /^colunas/);
   const added = ['Milestone', 'Type', 'Reviewers', 'criada', 'atualizada', 'fechada'];

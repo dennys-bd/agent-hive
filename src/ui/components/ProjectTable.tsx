@@ -76,8 +76,8 @@ function HeadCell({ id, label, sort, onSort }: HeadCellProps) {
   );
 }
 
-// The subbar (handoff 01, 01b): what was read and how much of it is in the flow, and the cap when the read stopped at it; lendo… while it
-// reads. On the right, the menus that shape the view, once there is one
+// The subbar (handoff 01, 01b, §5): what was read and how many of its rows have a task, in or out of the flow (#583), and the cap when the read
+// stopped at it; lendo… while it reads. On the right, the menus that shape the view, once there is one
 function Subbar({ project, linked, children }: { project: ProjectState; linked: Map<string, Task>; children: ReactNode }) {
   if (project.kind !== 'view') return <div className={SUBBAR}>{project.kind === 'loading' ? t('project.loading') : null}</div>;
   const { items, truncated } = project.view;

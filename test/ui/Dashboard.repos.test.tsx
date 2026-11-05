@@ -129,7 +129,7 @@ test('a native view row opens the issue page under the source header when the Hi
   expect(main().getByText('roadmap · hive')).toBeInTheDocument();
   expect(bar().getByText('github project · acme')).toBeInTheDocument();
   await user.click(bar().getByRole('button', { name: 'voltar' }));
-  expect(await main().findByText('2 issues · 0 no fluxo')).toBeInTheDocument();
+  expect(await main().findByText('2 itens · 0 tarefas')).toBeInTheDocument();
   open.mockRestore();
 });
 
