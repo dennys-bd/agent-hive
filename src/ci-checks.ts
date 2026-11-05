@@ -10,7 +10,7 @@ import type { CiCheck, CiChecks, CiPrRead, Stage, StageCiCheck } from './types.j
  * login's permission on its repository (#854), the default branch's workflows folder (#11), its last commits' signatures (#669) and #758's rollup,
  * with the head's oid, its check suites (#854) and each check run's workflow run and suite creation (#598). */
 // ponytail: the last 100 commits only (#669): a PR with more is judged on its last 100; page `signatures` when one shows up
-export const CI_FIELDS = 'mergeable baseRefName mergeStateStatus baseRef { refUpdateRule { requiredStatusCheckContexts requiresSignatures } } '
+export const CI_FIELDS = 'mergeable baseRefName mergeStateStatus baseRef { refUpdateRule { requiredStatusCheckContexts requiresSignatures } rules(first: 100) { nodes { type } } } '
   + 'repository { viewerPermission workflows: object(expression: "HEAD:.github/workflows") { ... on Tree { entries { name } } } } '
   + 'signatures: commits(last: 100) { nodes { commit { oid signature { isValid } } } } '
   + rollupFields(`oid ${SUITE_FIELDS} `, ' checkSuite { createdAt workflowRun { databaseId } }');
@@ -40,7 +40,7 @@ function headOf(alias: Alias): string | undefined {
   return typeof oid === 'string' ? oid : undefined;
 }
 
-// The base branch's rules for the login, branch protection and rulesets merged: what GitHub enforces on a merge into it
+// The base branch's protection rule as the login sees it; null for an admin on a ruleset-only branch (seen on this repository's main, #669)
 const ruleOf = (alias: Alias): Record<string, unknown> | undefined =>
   (isObject(alias.baseRef) && isObject(alias.baseRef.refUpdateRule) ? alias.baseRef.refUpdateRule : undefined);
 
@@ -83,9 +83,16 @@ function shortUnsigned(node: unknown): string[] {
   return SHORT_SHA.test(sha) ? [sha] : [];
 }
 
-// #669: only a base whose rule answers requiresSignatures true judges the commits; absent or anything else keeps today's wait
+// #669: a signatures rule from branch protection (refUpdateRule) or from a ruleset (rules), which refUpdateRule does not always reflect
+function requiresSignatures(alias: Alias): boolean {
+  if (ruleOf(alias)?.requiresSignatures === true) return true;
+  const rules = isObject(alias.baseRef) ? nodesOf(alias.baseRef.rules) : [];
+  return rules.some((r) => isObject(r) && r.type === 'REQUIRED_SIGNATURES');
+}
+
+// #669: only a base requiring signatures judges the commits; absent or anything else keeps today's wait
 function unsignedOf(alias: Alias): { unsigned?: string[] } {
-  if (ruleOf(alias)?.requiresSignatures !== true) return {};
+  if (!requiresSignatures(alias)) return {};
   const unsigned = nodesOf(alias.signatures).flatMap(shortUnsigned);
   return unsigned.length > 0 ? { unsigned } : {};
 }

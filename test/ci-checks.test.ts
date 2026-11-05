@@ -214,3 +214,10 @@ test('parseCi lists the short shas of the commits without a verified signature, 
   assert.equal(parseCi([A], { p0: signed(true, [commit('ZZZZZZZ9999', null)]) })[0].unsigned, undefined, 'no sha survives the check');
   assert.equal(parseCi([A], { p0: { ...answer('abc', []), signatures: { nodes: commits } } })[0].unsigned, undefined, 'no rule read');
 });
+
+test('parseCi reads a signatures rule from the base\'s rulesets too, which refUpdateRule leaves null; another rule type is not one (#669)', () => {
+  assert.match(ciQuery([A]) ?? '', /rules\(first: 100\) \{ nodes \{ type \} \}/);
+  const ruled = (types: unknown[]) => ({ ...answer('abc', []), baseRef: { refUpdateRule: null, rules: { nodes: types.map((type) => ({ type })) } }, signatures: { nodes: [commit('bbbbbbb2222', null)] } });
+  assert.deepEqual(parseCi([A], { p0: ruled(['PULL_REQUEST', 'REQUIRED_SIGNATURES']) })[0].unsigned, ['bbbbbbb']);
+  assert.equal(parseCi([A], { p0: ruled(['PULL_REQUEST', 'DELETION', 7]) })[0].unsigned, undefined);
+});
