@@ -3012,6 +3012,7 @@ const en = {
   'back.list': 'back', // #571: a page's way back to the list it was opened from
   'tasks.center.soon': 'coming soon', // #571: the list and outside-flow views, until 3.2 / 3.3
   'tasks.header.source.github': 'github project', // #571: the source header's type, before its owner
+  'tasks.header.hive': 'hive tasks · no external sync', // #583: the hive source header's second part (handoff §5)
   'tasks.display': 'display', // #574: the tasks header's exibir and its popover (handoff §3)
   'tasks.display.title': 'how to show the tasks',
   'tasks.display.sources': 'sources',
@@ -6054,6 +6055,7 @@ const pt: Record<MessageKey, string> = {
   'back.list': 'voltar',
   'tasks.center.soon': 'em breve',
   'tasks.header.source.github': 'github project',
+  'tasks.header.hive': 'tarefas do hive · sem sync externo',
   'tasks.display': 'exibir',
   'tasks.display.title': 'como mostrar as tarefas',
   'tasks.display.sources': 'sources',

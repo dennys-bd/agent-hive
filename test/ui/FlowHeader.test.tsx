@@ -130,9 +130,10 @@ test('in the source mode the header names the source and, muted, its type and ow
   expect(within(header()).getByRole('textbox', { name: 'buscar tarefas' }).closest('label')).toHaveClass('flex-[0_1_200px]');
 });
 
-test('the hive source header names hive alone: no type or owner line, no chips, no last poll (#572)', () => {
+test('the hive source header: hive, then tarefas do hive · sem sync externo; no type or owner line, no last poll (#572, #583)', () => {
   render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: 'hive' }} tasks={[]} search="" onSearch={vi.fn()} />);
   expect(within(header()).getByText('hive')).toHaveClass('font-semibold', 'text-[13px]');
+  expect(within(header()).getByText('tarefas do hive · sem sync externo')).toBeInTheDocument();
   expect(within(header()).queryByText(/github project/)).not.toBeInTheDocument();
   expect(within(header()).queryByText(/^atualizado/)).not.toBeInTheDocument();
 });
