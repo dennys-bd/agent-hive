@@ -88,9 +88,9 @@ test('a group shows 25 rows and +N tarefas for the rest; the button shows the ne
   const user = userEvent.setup();
   render(<Harness state={state(Array.from({ length: 30 }, (_, i) => task(String(i + 1), 'spec')))} />);
   expect(rowIds()).toHaveLength(25);
-  await user.click(screen.getByRole('button', { name: '+5 tarefas' }));
+  await user.click(screen.getByRole('button', { name: /^\+5 tarefas · / }));
   expect(rowIds()).toHaveLength(30);
-  expect(screen.queryByRole('button', { name: /^\+\d+ tarefas$/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^\+\d+ tarefas · / })).not.toBeInTheDocument();
 });
 
 test('the list reads exibir\'s sources and the header\'s search, and a group left with no task goes (#577 decision 1)', async () => {

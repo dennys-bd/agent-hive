@@ -39,7 +39,12 @@ export function TaskListGroup({ group, state, isCollapsed, onToggle, onOpen }: T
       {!isCollapsed && hidden > 0 && (
         <tr className="flex h-8 items-center border-b px-3">
           <td>
-            <button type="button" className="text-muted-foreground text-xs hover:text-foreground" onClick={() => setShown(cut + LIST_PAGE)}>{t('tasks.list.more', { n: hidden })}</button>
+            <button
+              type="button" className="text-muted-foreground text-xs hover:text-foreground" onClick={() => setShown(cut + LIST_PAGE)}
+              aria-label={`${t('tasks.list.more', { n: hidden })} · ${group.flow?.name ?? t('tasks.sidebar.outside')}`} // every group's +N would read alike
+            >
+              {t('tasks.list.more', { n: hidden })}
+            </button>
           </td>
         </tr>
       )}
