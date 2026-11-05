@@ -104,12 +104,12 @@ test('a failing teardown step is the ⋯ route\'s refusal: nothing removed, no m
   assert.match(await history(s.base), /teardown skipped: forced/);
 });
 
-test('excluir task… on a local task whose teardown fails answers 409 with the message and the task stays (#542, #654)', async (t) => {
+test('excluir task… on a local task whose teardown fails answers 409 "Unexpected error" (the console run shows why) and the task stays (#542, #654, #660)', async (t) => {
   const s = await start(t, 'RUN exit 3');
   assert.equal((await postJson(`${s.base}/tasks`, { title: 'Local', stage: 'fila' })).status, 201);
   const path = await withWorktree(s, 'local:1', LOCAL_SLUG, BRANCHES[1][1]);
   const res = await postJson(`${s.base}/tasks/${encodeURIComponent('local:1')}/close`);
-  assert.deepEqual([res.status, await res.json()], [409, { error: FAILED }]);
+  assert.deepEqual([res.status, await res.json()], [409, { error: 'Unexpected error' }]);
   assert.equal(work(s.server, 'local:1')?.worktree, path);
 });
 

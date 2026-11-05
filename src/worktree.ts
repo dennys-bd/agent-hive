@@ -216,7 +216,7 @@ export interface CleanOptions { unmerged?: Unmerged; nested?: readonly string[];
  * `beforeRemove` (#654) runs between the checks and the removal; its rejection removes nothing. `options.unmerged: 'setAside'` (#267) keeps an
  * unmerged branch under setAside's name instead of refusing. `options.nested` (#653): the workspace's nestedRepos, whose worktrees in this one go first
  * (removeNested); [] removes none. `options.prs` (#660): a branch git calls unmerged that mergedByPr says its PRs merged is not refused and goes
- * with `branch -D`.
+ * with `update-ref -d` at the tip it verified.
  */
 export async function cleanWorktree(
   repo: string, activity: Pick<Activity, 'slug' | 'branch'>, branch: string, exec: Exec = execFileAsync, beforeRemove?: BeforeRemove,
@@ -235,13 +235,15 @@ export async function cleanWorktree(
   }
   const check = found === undefined ? undefined : await mergeCheck(repo, found, exec);
   // #660: a squash leaves the branch off HEAD; its PRs say whether it was merged anyway
-  const byPr = found !== undefined && check?.merged === false && (await mergedByPr(repo, found, prs, exec, log));
-  if (found !== undefined && check?.merged === false && !byPr && unmerged === 'refuse') throw unmergedError(found, check.target);
+  const byPr = found !== undefined && check?.merged === false ? await mergedByPr(repo, found, prs, exec, log) : undefined;
+  if (found !== undefined && check?.merged === false && byPr === undefined && unmerged === 'refuse') throw unmergedError(found, check.target);
   await beforeRemove?.(path, present); // #654: after every refusal check, so a teardown never runs for a removal git would refuse
   await removeNested(nestedOf, path, named, false, exec); // #653: inside out; a gone outer folder holds none, so this only prunes
   if (listed !== undefined) await gitOrWords(repo, present ? ['worktree', 'remove', '--', path] : ['worktree', 'prune'], exec);
   if (found === undefined) return;
-  if (byPr) await gitOrWords(repo, ['branch', '-D', '--', found], exec); // #660: branch -d refuses a squashed branch whatever was checked
+  // #660: branch -d refuses a squashed branch whatever was checked; update-ref deletes only the tip mergedByPr verified, so a commit made since
+  // (the teardown runs in between) makes git refuse instead of losing it
+  if (byPr !== undefined) await gitOrWords(repo, ['update-ref', '-d', `refs/heads/${found}`, byPr], exec);
   // #267: an unmerged branch the discard clears is kept as <branch>-old-<sha7>, after its worktree went, so the rename touches no checkout
   else if (check?.merged === false) await setAside(repo, found, exec);
   else await gitOrWords(repo, ['branch', '-d', '--', found], exec);
@@ -273,14 +275,15 @@ const PR_READ_TIMEOUT_MS = 30_000; // one gh pr view: a hung read must not hold 
 
 /** A branch git calls unmerged that its PRs merged (#660): no PR still open, at least one merged, and the local tip is the head GitHub merged
  * for one of them, so a commit made after the merge still refuses. Only the PRs the record holds as merged are read, at delete time, since the
- * record may be a poll behind; a read that fails, or an answer that is not MERGED, counts as not merged: a failing read never deletes. */
-export async function mergedByPr(repo: string, branch: string, prs: readonly TaskPr[], exec: Exec, log?: Pick<Logger, 'info'>): Promise<boolean> {
+ * record may be a poll behind; a read that fails, or an answer that is not MERGED, counts as not merged: a failing read never deletes.
+ * Answers the verified tip, which the deletion passes to update-ref; undefined = not merged by its PRs. */
+export async function mergedByPr(repo: string, branch: string, prs: readonly TaskPr[], exec: Exec, log?: Pick<Logger, 'info'>): Promise<string | undefined> {
   // the record's links passed isPrUrl when stored; https:// only keeps a `-` off gh's argv anyway
   const merged = prs.filter((pr) => pr.state === 'merged' && pr.url.startsWith('https://'));
-  if (merged.length === 0 || prs.some((pr) => pr.state === 'open')) return false;
+  if (merged.length === 0 || prs.some((pr) => pr.state === 'open')) return undefined;
   const tip = (await gitOrWords(repo, ['rev-parse', '--verify', `refs/heads/${branch}`], exec)).trim();
   const heads = await Promise.all(merged.map((pr) => mergedHead(pr.url, exec, log)));
-  return heads.includes(tip);
+  return heads.includes(tip) ? tip : undefined;
 }
 
 // The head GitHub merged for the PR, undefined when gh fails or GitHub does not call it MERGED; either is logged with the url

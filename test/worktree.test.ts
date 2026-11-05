@@ -631,12 +631,12 @@ function squashed(repo: string, path: string, heads: Record<string, string>): { 
   return { exec, calls: git.calls, gh };
 }
 
-test('a squashed branch whose tip is the head its merged PR merged goes with branch -D after its worktree, the PR read once through gh (#660)', async (t) => {
+test('a squashed branch whose tip is the head its merged PR merged goes with update-ref -d at that tip after its worktree, the PR read once through gh (#660)', async (t) => {
   const { repo, path } = await cleanRepo(t, true);
   const f = squashed(repo, path, { [PR]: TIP });
   await cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, f.exec, undefined, { prs: [mergedPr()] });
   assert.deepEqual(f.gh, [['pr', 'view', PR, '--json', 'state,headRefOid']]);
-  assert.deepEqual(f.calls.slice(5), [['rev-parse', '--verify', `refs/heads/${CLEAN_BRANCH}`], ['worktree', 'remove', '--', path], ['branch', '-D', '--', CLEAN_BRANCH]]);
+  assert.deepEqual(f.calls.slice(5), [['rev-parse', '--verify', `refs/heads/${CLEAN_BRANCH}`], ['worktree', 'remove', '--', path], ['update-ref', '-d', `refs/heads/${CLEAN_BRANCH}`, TIP]]);
 });
 
 test('a squashed branch whose tip moved past its merged PR\'s head (a commit made after the merge) refuses with unmerged and removes nothing (#660)', async (t) => {
@@ -662,12 +662,30 @@ test('a gh read that fails counts as not merged: unmerged, and the PR\'s url wit
   assert.deepEqual(lines, [`mergedByPr ${PR}: GraphQL: Could not resolve to a PullRequest`]);
 });
 
-test('a PR closed without a merge beside a merged one neither blocks nor is read: the branch goes with branch -D (#660)', async (t) => {
+test('a PR closed without a merge beside a merged one neither blocks nor is read: the branch goes at its verified tip (#660)', async (t) => {
   const { repo, path } = await cleanRepo(t, true);
   const f = squashed(repo, path, { [PR]: TIP });
   await cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, f.exec, undefined, { prs: [{ url: CLOSED_PR, state: 'closed' }, mergedPr()] });
   assert.deepEqual(f.gh.map((args) => args[2]), [PR]);
-  assert.deepEqual(f.calls.at(-1), ['branch', '-D', '--', CLEAN_BRANCH]);
+  assert.deepEqual(f.calls.at(-1), ['update-ref', '-d', `refs/heads/${CLEAN_BRANCH}`, TIP]);
+});
+
+test('a PR the record holds as merged that GitHub no longer calls MERGED (reopened since the poll) counts as not merged, logged at info (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const git = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' });
+  const exec: Exec = async (file, args, opts) => (file === 'gh' ? { stdout: JSON.stringify({ state: 'OPEN', headRefOid: TIP }) } : git.exec(file, args, opts));
+  const lines: string[] = [];
+  const log = { info: (line: string): void => { lines.push(line); } };
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, exec, undefined, { prs: [mergedPr()], log }), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' } });
+  assert.equal(git.calls.some((c) => c[1] === 'remove' || c[0] === 'branch' || c[0] === 'update-ref'), false);
+  assert.deepEqual(lines, [`mergedByPr ${PR}: not merged on GitHub`]);
+});
+
+test('a live upstream ahead and behind is still the merge target: only [gone] falls back to HEAD (#660)', async (t) => {
+  const { repo, path } = await cleanRepo(t, true);
+  const live = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' }, { upstream: GONE_UPSTREAM, track: '[ahead 1, behind 2]' });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, live.exec), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: GONE_UPSTREAM } });
+  assert.ok(live.calls.some((c) => c.join(' ') === `merge-base --is-ancestor refs/heads/${CLEAN_BRANCH} ${GONE_UPSTREAM}`));
 });
 
 test('a task.branch that is neither the name the Hive\'s template renders nor what the listing names is never deleted: it came from a hook', async (t) => {

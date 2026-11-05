@@ -31,7 +31,7 @@ import type { Activity, AgentAvailability, BaseOptions, Source, Task, TaskPr, Se
 import { dropCheckpoints } from './checkpoints.js';
 import { dropBranches, dropStageStart, leftBehind } from './restart.js';
 import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree, wordsOf } from './worktree.js';
-import { refusalOf, UNEXPECTED } from './worktree-base.js';
+import { refusalOf, RemovalRefusal, UNEXPECTED } from './worktree-base.js';
 import type { Logger } from './log.js';
 import { type ConsoleStore, teardownRunId } from './console.js';
 import type { PtyHost } from './pty-host.js';
@@ -158,11 +158,19 @@ function closeRefusal(state: State, itemId: string): Refusal | undefined {
   return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // a run of any kind holds it (#164, #283); deleting was refused above
 }
 
+// #660: act toasts the 409's message, so a known refusal answers its own sentence and git's words, for anything else, go to hive.log only
+const CLOSE_UNEXPECTED = 'Unexpected error';
+function closeFailure(err: unknown, log: Pick<Logger, 'error'>, id: string): string {
+  if (err instanceof RemovalRefusal) return err.message;
+  log.error(`close #${id}: ${wordsOf(err)}`);
+  return CLOSE_UNEXPECTED;
+}
+
 /** excluir task… (#542): a local task with a worktree loses it and its branch before it leaves the Hive, through the removal the
  * delete-activity route runs; both always go, as the glossary's delete activity says, the sessions and transcripts per the delete-activity scope.
  * deletingTask's mark holds the fill off while git runs, and taskDeleted drops the task in the reduction that drops the mark, so no fill in
  * between can hand it a worker: 'deleted', the close is done. deletingTask closes its terminals first (#573): git never runs under one.
- * A git refusal or failure is the 409 with git's words, and the task stays. Any other task has nothing to remove: undefined. */
+ * A git refusal is the 409 with its sentence, any other failure the 409 with "Unexpected error" and git's words in hive.log; the task stays. Any other task has nothing to remove: undefined. */
 async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, taskId: string): Promise<Refusal | 'deleted' | undefined> {
   const task = current.state.tasks.find((c) => c.item.itemId === taskId);
   const activity = activityOf(current.state, taskId);
@@ -175,7 +183,7 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
     await deleteActivityOnDisk({ workspace, activity, task, sessions: sessionsOf(current.state, task.item.itemId), prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
   } catch (err) {
     await deps.dispatch({ type: 'activityKept', activityId: activity.id });
-    return { status: HTTP_CONFLICT, message: errorMessage(err) };
+    return { status: HTTP_CONFLICT, message: closeFailure(err, deps.log, task.item.id) };
   }
   await deps.dispatch({ type: 'taskDeleted', taskId });
   return 'deleted';

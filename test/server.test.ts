@@ -2227,7 +2227,7 @@ test('removing a local task a manual Claude session holds is refused with tarefa
   assert.equal(server.getState()!.tasks.some((c) => c.created), false);
 });
 
-test('POST /tasks/:id/close on a local task with a worktree removes the worktree and its branch first, then the task leaves; a git failure answers 409 with git\'s words and the task stays (#542)', async (t) => {
+test('POST /tasks/:id/close on a local task with a worktree removes the worktree and its branch first, then the task leaves; a git failure answers 409 with "Unexpected error", git\'s words only in the log, and the task stays (#542, #660)', async (t) => {
   const git = localGit('hive-hive-1-local', 'hive/HIVE-1-local');
   const { base, repo, server } = await start(t, idle(), undefined, {}, { exec: git.exec });
   assert.equal((await postJson(`${base}/tasks`, { title: 'Local', stage: 'fila' })).status, 201);
@@ -2241,7 +2241,7 @@ test('POST /tasks/:id/close on a local task with a worktree removes the worktree
   git.refuse = 'remove';
   const refused = await postJson(path);
   assert.equal(refused.status, 409);
-  assert.deepEqual(await refused.json(), { error: 'fatal: boom' });
+  assert.deepEqual(await refused.json(), { error: 'Unexpected error' }); // #660: act toasts it; git's words are hive.log's
   assert.equal(local()?.deleting, undefined, 'the mark goes with the answer');
   assert.equal(local()?.worktree, worktree, 'nothing was confirmed gone: the task stays with its worktree');
 
@@ -2676,7 +2676,7 @@ test('deleteActivityOnDisk drops the stage-start ref of an activity whose start 
   assert.deepEqual(calls.slice(-3), [['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`], ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`]]);
 });
 
-test('deleteActivityOnDisk hands the record\'s PRs to the clean: a branch its merged PR squashed goes with branch -D, no refusal (#660)', async (t) => {
+test('deleteActivityOnDisk hands the record\'s PRs to the clean: a branch its merged PR squashed goes at its verified tip, no refusal (#660)', async (t) => {
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
     calls.push([file, ...(file === 'git' ? args.slice(2) : args)]);
@@ -2690,7 +2690,7 @@ test('deleteActivityOnDisk hands the record\'s PRs to the clean: a branch its me
   const pr = 'https://github.com/acme/r/pull/7';
   await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [{ url: pr, state: 'merged' }], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
   assert.deepEqual(calls.filter((c) => c[0] === 'gh'), [['gh', 'pr', 'view', pr, '--json', 'state,headRefOid']]);
-  assert.ok(calls.some((c) => c.join(' ') === `git branch -D -- ${TASK_BRANCH}`), calls.map((c) => c.join(' ')).join('\n'));
+  assert.ok(calls.some((c) => c.join(' ') === `git update-ref -d refs/heads/${TASK_BRANCH} c0ffee1`), calls.map((c) => c.join(' ')).join('\n'));
 });
 
 test('Restart is refused while a session or a terminal runs on the task; while its git runs the task is marked, so a continue or a start is refused (#283)', async (t) => {
