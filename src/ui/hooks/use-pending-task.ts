@@ -8,11 +8,12 @@ export interface HeldTask { title: string; source: string }
 type CreateAnswer = { id: string; itemId: string } | { itemId: string; notice: string };
 
 /** The held entry, its create through POST /tasks with its source at the start, and the task it became, awaited until the state holds it. The
+ * stage is read when the entry is created, so it is the destination chosen at that moment. The
  * entry goes with its create, whatever the answer, so a second start never creates the issue twice; a notice or an error is the dialog's line. */
-export function usePendingTask(stage: string | undefined, onError: (message: string) => void) {
+export function usePendingTask(onError: (message: string) => void) {
   const [entry, setEntry] = useState<HeldTask>();
   const [awaiting, setAwaiting] = useState<string>();
-  const create = (): Promise<string | undefined> => {
+  const create = (stage: string | undefined): Promise<string | undefined> => {
     if (entry === undefined) return Promise.resolve(undefined);
     setEntry(undefined);
     return postJson<CreateAnswer>('/tasks', { title: entry.title, stage, auto: false, source: entry.source }).then((answer) => {

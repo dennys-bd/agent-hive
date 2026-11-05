@@ -928,3 +928,17 @@ test('sem fluxo hides the mode and the stages box, keeps the base, ignores the s
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts()).toEqual([['/tasks/I9/open', { kind: 'claude', base: null, local: false }]]);
 });
+
+test('a held source entry offers only the flows whose entry reads a column of its source, never sem fluxo, and is created in the chosen flow\'s entry (#580)', async () => {
+  const user = userEvent.setup();
+  render(toBoard(<StartDialog state={multi()} onStarted={vi.fn()} onClose={vi.fn()} />));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
+  await user.keyboard('landing');
+  await user.click(screen.getAllByRole('option', { name: /criar tarefa "landing"/ })[0]);
+  const group = within(screen.getByRole('radiogroup', { name: 'destino' }));
+  expect(group.getAllByRole('radio').map((r) => r.textContent)).toEqual(['fluxo mainentra em backlog', 'fluxo opsentra em deploy']);
+  expect(group.getByRole('radio', { name: /^fluxo main/ })).toHaveAttribute('aria-checked', 'true');
+  await user.click(group.getByRole('radio', { name: /^fluxo ops/ }));
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  await waitFor(() => expect(posts()).toEqual([['/tasks', { title: 'landing', stage: 'deploy', auto: false, source: 'board' }]]));
+});

@@ -121,10 +121,10 @@ function useCreateOnOpen(title: string | undefined, create: (title: string) => v
 
 // The create row (#846): the destinations the context offers, the tasks created in the hive at once, and the entry held for a source. A
 // source creates nothing until the activity starts, so a cancel leaves no issue behind
-function useCreateRow(state: State, workspace: string | undefined, done: { current: boolean }, onError: (message: string) => void, pick: (itemId: string) => void, unpick: () => void) {
+function useCreateRow(workspace: string | undefined, done: { current: boolean }, onError: (message: string) => void, pick: (itemId: string) => void, unpick: () => void) {
   const choices = destinations(useContext(CreateTargetsContext));
   const created = useCreatedTasks(workspace, done, onError);
-  const held = usePendingTask(destinationFlows(state.flows)[0]?.entry, onError);
+  const held = usePendingTask(onError);
   const create = (text: string, destination = choices[0].name): void => {
     if (destination !== HIVE_SOURCE) { unpick(); held.hold({ title: text, source: destination }); return; }
     held.hold(undefined);
@@ -175,10 +175,10 @@ const endOf = (deps: EndDeps, task: Task) => (answer: Answer): void => {
 function useHeldStart(held: ReturnType<typeof usePendingTask>, done: { current: boolean }, pick: (itemId: string) => void, setPending: (pending: boolean) => void, setError: (message: string | undefined) => void) {
   const [isCreating, setIsCreating] = useState(false);
   const ids = useRef(new Set<string>()); // the source tasks the held entry became: created with auto off, like the hive ones
-  const start = async (): Promise<void> => {
+  const start = async (stage: string | undefined): Promise<void> => {
     setPending(true); setIsCreating(true); setError(undefined);
     try {
-      const itemId = await held.create();
+      const itemId = await held.create(stage);
       if (itemId === undefined || done.current) return;
       ids.current.add(itemId);
       pick(itemId);
@@ -196,7 +196,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
   const done = useRef(false); // started or closed: a late answer changes nothing
   const onError = useCallback((message: string) => setError(message), []);
   const { picked, setPicked, mode: pickedMode, setMode, pick, task } = useTaskPick(state, taskId, initialMode, setError);
-  const { choices, created, held, create, pickTask } = useCreateRow(state, workspace, done, onError, pick, () => setPicked(undefined));
+  const { choices, created, held, create, pickTask } = useCreateRow(workspace, done, onError, pick, () => setPicked(undefined));
   const dest = useStartDestination(state, task, held.entry, initialMode);
   const mode: StartMode = dest.isNone ? 'free' : pickedMode; // #580: sem fluxo is a free session (decision 9); leaving the radio gives the user's mode back
   const run = useRunPick(state, dest.effective, useContext(DefaultAgentContext));
@@ -213,7 +213,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
     onClose();
   };
   const submit = (): void => {
-    if (held.entry !== undefined) return void heldStart.start();
+    if (held.entry !== undefined) return void heldStart.start(dest.entry);
     const effective = dest.effective;
     if (task === undefined || effective === undefined || pending || isBlocked) return;
     held.clearAwaiting(); setPending(true); setError(undefined);
