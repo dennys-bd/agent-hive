@@ -54,3 +54,16 @@ test('outside App the save rejects: an edit is the toast, never a write (#573)',
   expect(fetchMock).not.toHaveBeenCalled();
   errorSpy.mockRestore();
 });
+
+test('two edits before the state moves on build on each other; a new state.signals ends that window (#573 review)', () => {
+  const save = vi.fn(async (_signals: SignalSettings) => {});
+  const wrapper = ({ children }: { children: ReactNode }) => <SignalsContext.Provider value={{ save }}>{children}</SignalsContext.Provider>;
+  const { result } = renderHook(() => useSignalEdit(), { wrapper });
+  result.current(SIGNALS_DEFAULTS, 'yellow', { started: 'continueOnly' });
+  result.current(SIGNALS_DEFAULTS, 'yellow', { workerless: false });
+  const both = { ...CLAMPED, yellow: { ...CLAMPED.yellow, started: 'continueOnly' }, red: { ...CLAMPED.red, started: 'stay' } };
+  expect(save).toHaveBeenLastCalledWith(both);
+  const pushed: SignalSettings = { ...SIGNALS_DEFAULTS };
+  result.current(pushed, 'red', { workerless: false });
+  expect(save).toHaveBeenLastCalledWith({ ...SIGNALS_DEFAULTS, red: { ...SIGNALS_DEFAULTS.red, workerless: false } });
+});
