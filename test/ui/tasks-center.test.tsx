@@ -161,7 +161,7 @@ test("a source row opens its table under the source header, with no tabs; the fi
   expect(automation().getByRole('button', { name: /^build/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('the task column on a task of the second flow shows that flowchart and selects it; on a task in no flow, the outside view (#571, #578)', async () => {
+test('the task column on a task of the second flow shows that flowchart and selects it; on a task in a stage of no flow, the outside view, which lists only stageless tasks (#571, #578)', async () => {
   const user = userEvent.setup();
   const onSelect = vi.fn();
   render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);

@@ -25,7 +25,7 @@ function outsideTasks(state: State, options: Pick<DisplayOptions, 'sourcesOff' |
   return { counted, shown, started: shown.filter((c) => !isNew(c)), fresh: shown.filter(isNew) };
 }
 
-interface GroupProps { kind: 'started' | 'new'; tasks: Task[]; state: State; selectedId?: string; onOpen?(taskId: string): void }
+interface GroupProps { kind: 'started' | 'new'; tasks: readonly Task[]; state: State; selectedId?: string; onOpen?(taskId: string): void }
 
 // Decision 4: the screen's .m-head, its name in 500, its count, its hint pushed right; decision 5: no card, no group
 function Group({ kind, tasks, state, selectedId, onOpen }: GroupProps) {
@@ -55,7 +55,7 @@ export function OutsideFlow({ state, selectedId, onOpen, display, sources }: Out
   const isShown = useIsFlowShown();
   const { counted, shown, started, fresh } = outsideTasks(state, display.options, search);
   const isTree = display.options.tree ?? hasTree(state.tasks);
-  const groupOf = (kind: GroupProps['kind'], tasks: Task[]) => <Group kind={kind} tasks={tasks} state={state} selectedId={selectedId} onOpen={onOpen} />;
+  const groupOf = (kind: GroupProps['kind'], tasks: readonly Task[]) => <Group kind={kind} tasks={tasks} state={state} selectedId={selectedId} onOpen={onOpen} />;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <FlowHeader state={state} search={search} onSearch={setSearch} isShown={isShown} {...displayProps({ display, sources, tasks: counted, isTree, hasLoops: false })} />

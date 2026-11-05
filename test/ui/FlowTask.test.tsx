@@ -66,6 +66,10 @@ test('a task outside the flow: abrir to its session while one is live, abrir to 
   expect(taskAction(stopped, state(stopped, [], { activityRecords: records }))).toBe('details'); // /continue refuses a stageless task
   expect(taskAction(stageless(), state(stageless()))).toBe('start');
   expect(taskAction(task({ stopped: true }), state(task({ stopped: true }), [], { activityRecords: records }))).toBe('continue');
+  const epic = stageless({ item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  expect(taskAction(epic, state(epic))).toBeUndefined(); // a show epic never runs
+  const leaving = stageless({ leaving: true });
+  expect(taskAction(leaving, state(leaving))).toBeUndefined();
 });
 
 const ciStage: Stage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'all', rerunOnce: false };
