@@ -3091,6 +3091,8 @@ const en = {
   'settings.taskProps.note.entry': 'flow and stage',
   'settings.error.entryGone': 'source {source}: enters at points at a removed flow or stage',
   'settings.error.entryRuleGone': 'source {source}: rule {n} points at a removed flow or stage',
+  'settings.taskProps.entry.hint': 'outside the flow = the task shows in tasks › outside the flow, and you take it into a flow when you want',
+  'settings.stages.from.firstHint': "a new task enters through the source's properties, among the stages that accept its column",
 };
 
 export type MessageKey = keyof typeof en;
@@ -6176,6 +6178,8 @@ const pt: Record<MessageKey, string> = {
   'settings.taskProps.note.entry': 'fluxo e etapa',
   'settings.error.entryGone': 'source {source}: entra em aponta para um fluxo ou etapa removidos',
   'settings.error.entryRuleGone': 'source {source}: a regra {n} aponta para um fluxo ou etapa removidos',
+  'settings.taskProps.entry.hint': 'sem fluxo = a tarefa aparece em tarefas › sem fluxo, e você a leva ao fluxo quando quiser',
+  'settings.stages.from.firstHint': 'a tarefa nova entra pelas propriedades da fonte, entre as etapas que aceitam sua coluna',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

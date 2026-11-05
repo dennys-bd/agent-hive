@@ -34,11 +34,13 @@ export function Field({ id, anchor, label, hint, children }: { id: string; ancho
 }
 
 /** Entra: the entry columns of every source in one select, then when the stage may run, how many tasks show, how many run at once. */
-export function StageEnter({ id, stage, sources, onUpdate }: BlockProps & { sources: StageSource[] }) {
+export function StageEnter({ id, stage, sources, first, onUpdate }: BlockProps & { sources: StageSource[]; first: boolean }) {
   const options = sources.flatMap((b) => b.options.map((o) => entryKey(b.id, o)));
+  // #670: a new task enters through the source's properties; a flow still needs a column on a stage to be reachable
+  const fromHint = t(first ? 'settings.stages.from.firstHint' : 'settings.stages.from.hint');
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_9rem_10rem]">
-      <Field id={`${id}-from`} anchor={settingAnchor('settings.stages.from', stage.id)} label={t('settings.stages.from')} hint={t('settings.stages.from.hint')}>
+      <Field id={`${id}-from`} anchor={settingAnchor('settings.stages.from', stage.id)} label={t('settings.stages.from')} hint={fromHint}>
         <MultiSelect
           ariaLabel={t('settings.stages.from')} value={entryKeys(stage.from, sources)} options={options} placeholder={t('settings.stages.from.add')}
           labelOf={(key) => entryLabel(key, sources)} onChange={(keys) => onUpdate({ from: fromKeys(keys) })}

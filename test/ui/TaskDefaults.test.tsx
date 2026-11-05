@@ -31,6 +31,7 @@ test('one row per property in registry order, with its note, its default and its
   expect(within(entry).getByText('fixo')).toBeInTheDocument();
   expect(screen.getByText(t('settings.taskProps.defaults'))).toBeInTheDocument();
   expect(screen.getByText(t('settings.taskProps.defaultsHint'))).toBeInTheDocument();
+  expect(screen.getByText(t('settings.taskProps.entry.hint'))).toBeInTheDocument(); // #670
 });
 
 test('the workspace select offers sem workspace before the Comb\'s workspaces; it and auto não reach onChange as a new draft (#688)', async () => {

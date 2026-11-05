@@ -69,6 +69,7 @@ export function TaskDefaults({ id, scope, draft, workspaces, onChange }: TaskDef
         ))}
       </div>
       <p className={MUTED}>{t('settings.taskProps.defaultsHint')}</p>
+      <p className={MUTED}>{t('settings.taskProps.entry.hint')}</p>
     </div>
   );
 }

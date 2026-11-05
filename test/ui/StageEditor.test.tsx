@@ -91,6 +91,15 @@ test('entra: one entry select over every source, "source · column" chips, and t
   expect(screen.getByLabelText(t('settings.stages.maxWorkers'))).toBeDisabled();
 });
 
+test("the first stage's entry columns hint says a new task enters through the source's properties; a later stage keeps the plain hint (#670)", async () => {
+  const { user } = setup();
+  expect(screen.getByText(t('settings.stages.from.firstHint'))).toBeInTheDocument(); // the first stage is selected
+  expect(screen.queryByText(t('settings.stages.from.hint'))).toBeNull();
+  await user.click(chip('gate'));
+  expect(screen.getByText(t('settings.stages.from.hint'))).toBeInTheDocument();
+  expect(screen.queryByText(t('settings.stages.from.firstHint'))).toBeNull();
+});
+
 test('each field carries its own short hint; the help paragraph is gone (#524)', async () => {
   setup();
   expect(screen.getByText(t('settings.stages.maxWorkers.hint'))).toBeInTheDocument();
