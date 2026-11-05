@@ -61,14 +61,15 @@ export function PrCell({ prs }: { prs: ProjectPr[] }) {
   );
 }
 
-/** A row's place in its list's tree (#584): how deep it nests and, on a parent with a child in the same list, its count and its fold. */
-export interface RowTree { depth: number; parent?: { count: SubIssueCount; isExpanded: boolean; onToggle(): void } }
+/** A row's place in its list's tree (#584, #585): how deep it nests and, on a parent with a child in the same list, its fold and, in the
+ * source table, its count (the repository list has none, #585 decision 3). */
+export interface RowTree { depth: number; parent?: { count?: SubIssueCount; isExpanded: boolean; onToggle(): void } }
 
-const INDENT = 20; // px per level (handoff §5 Hierarquia)
+export const TREE_INDENT = 20; // px per level (handoff §5 Hierarquia), the repository list's too (#585 decision 6)
 
 // Before the number (decision 11): a parent's 16px chevron, which folds without opening the row; a child's ↳. A child that is a parent
 // keeps the chevron: it still folds
-function TreeMark({ tree }: { tree: RowTree }) {
+export function TreeMark({ tree }: { tree: RowTree }) {
   const { parent } = tree;
   if (parent === undefined) return tree.depth > 0 ? <CornerDownRightIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" /> : null;
   const Chevron = parent.isExpanded ? ChevronDownIcon : ChevronRightIcon;
@@ -103,12 +104,12 @@ function IssueCell({ item, task, state, tree }: { item: ProjectItem; task?: Task
   const workspace = task ? resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) : hint;
   const status = task ? taskState(task, state) : 'empty';
   return (
-    <span className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: tree.depth * INDENT }}>
+    <span className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: tree.depth * TREE_INDENT }}>
       <WorkspaceSquare name={workspace} />
       <TreeMark tree={tree} />
       <span className="shrink-0 font-medium">#{item.id}</span>
       <span className="min-w-0 truncate">{item.title}</span>
-      {tree.parent && <SubIssueBadge count={tree.parent.count} />}
+      {tree.parent?.count && <SubIssueBadge count={tree.parent.count} />}
       {status !== 'empty' && <span className={`shrink-0 text-xs ${STATUS_TEXT[status]}`}>{statusText(status)}</span>}
     </span>
   );
