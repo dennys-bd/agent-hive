@@ -16,17 +16,18 @@ type Row = 'newTasks' | 'started' | 'workerless';
 // The handoff's table (Configuracao.dc.html, screen 06): the row's label, then green, yellow and red
 const GRID = 'grid grid-cols-[minmax(0,1fr)_repeat(3,10rem)] items-center gap-3 px-3 py-2';
 const PILLS = ['green', 'yellow', 'red'] as const;
-const STARTED_LABEL: Record<StartedBehaviour, MessageKey> = {
+// Also the tasks sidebar's automação rows (#573): one set of labels and option orders for both editors
+export const STARTED_LABEL: Record<StartedBehaviour, MessageKey> = {
   resumeAndContinue: 'settings.signal.started.resumeAndContinue', continueOnly: 'settings.signal.started.continueOnly', stay: 'settings.signal.started.stay',
 };
-const NEW_TASKS_LABEL: Record<NewTasks, MessageKey> = {
+export const NEW_TASKS_LABEL: Record<NewTasks, MessageKey> = {
   always: 'settings.signal.newTasks.always', tree: 'settings.signal.newTasks.tree', never: 'settings.signal.newTasks.never',
 };
 // Both menus read loosest first, as the green column does
-const STARTED_OPTIONS = [...STARTED_BEHAVIOURS].reverse();
-const NEW_TASKS_OPTIONS = [...NEW_TASKS].reverse();
+export const STARTED_OPTIONS = [...STARTED_BEHAVIOURS].reverse();
+export const NEW_TASKS_OPTIONS = [...NEW_TASKS].reverse();
 
-const controlLabel = (row: Exclude<Row, 'newTasks'>, signal: RuleSignal): string => t('settings.signal.control', { row: t(`settings.signal.${row}`), signal });
+export const controlLabel = (row: Exclude<Row, 'newTasks'>, signal: RuleSignal): string => t('settings.signal.control', { row: t(`settings.signal.${row}`), signal });
 
 interface CellProps { signals: SignalSettings; signal: RuleSignal; onChange(signals: SignalSettings): void }
 

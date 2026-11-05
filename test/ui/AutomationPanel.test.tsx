@@ -37,11 +37,12 @@ function renderPanel(nav: Partial<SourcesNav> = {}, center: TasksCenter = FIRST_
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
-test('the Tarefas panel is the tasks sidebar: automação holds the signal and the workers, then tarefas, sources and repositórios (#572, #573)', () => {
+test('the Tarefas panel is the tasks sidebar: automação holds the signal, the active signal\'s rows and the workers, then tarefas, sources and repositórios (#572, #573)', () => {
   renderPanel();
   const signal = within(panel()).getByRole('radiogroup', { name: 'sinal' });
   const cap = within(panel()).getByLabelText('máx.');
   const tasksTitle = within(panel()).getByRole('button', { name: 'seção tarefas' });
+  expect(within(panel()).getByRole('combobox', { name: 'tarefas novas no yellow' })).toHaveTextContent('só da árvore');
   expect(within(panel()).getByText('workers 1/5')).toBeInTheDocument();
   expect([follows(within(panel()).getByRole('button', { name: 'seção automação' }), signal), follows(signal, cap), follows(cap, tasksTitle)]).toEqual([true, true, true]);
   const rows = within(panel()).getAllByRole('button', { name: /^(roadmap|notes)/ });
