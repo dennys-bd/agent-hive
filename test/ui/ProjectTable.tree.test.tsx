@@ -5,7 +5,7 @@ import { ProjectTable } from '@/components/ProjectTable';
 import { resetViewState } from '@/lib/view-state';
 import { flatten } from '../../src/flows';
 import type { Flow, ProjectView, Stage, State, Task } from '../../src/types';
-import { ALL, fetchMock, jsonRes, numbers, renderTable, resetProjectTest, row, rowOf, state, VIEW } from './project-harness';
+import { ALL, fetchMock, jsonRes, numbers, renderTable, resetProjectTest, row, rowOf, SOURCE, state, VIEW } from './project-harness';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
@@ -96,4 +96,18 @@ test('the hive table nests by the local parent; the badge counts the children of
   await user.click(within(rowOf('#HIVE-1')).getByRole('button', { name: 'expandir sub-issues' }));
   expect(onGoTo).not.toHaveBeenCalled();
   expect(childMark('#HIVE-2')).not.toBeNull();
+});
+
+test('switching to another source and back folds every parent again: the table is not remounted between sources (#584 decision 4)', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockImplementation(answerTree);
+  const { rerender } = renderTable({ tasks: [] });
+  await screen.findByText('4 de 4');
+  await user.click(within(rowOf('#12')).getByRole('button', { name: 'expandir sub-issues' }));
+  expect(numbers()).toContain('#13');
+  const other = { ...SOURCE, name: 'other' };
+  rerender(<ProjectTable state={state([])} source={other} onGoTo={vi.fn()} onOpenIssue={vi.fn()} />);
+  rerender(<ProjectTable state={state([])} source={SOURCE} onGoTo={vi.fn()} onOpenIssue={vi.fn()} />);
+  await screen.findByText('4 de 4');
+  expect(numbers()).not.toContain('#13');
 });

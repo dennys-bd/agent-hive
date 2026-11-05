@@ -16,7 +16,8 @@ import { defaultCollapsed, type GroupOption, groupItems, groupOptions, hiveGroup
 import { subIssueCount, type TreeRow, treeRows } from '@/lib/project-tree';
 import { type ProjectSort, type ProjectViewPrefs, readProjectView, writeProjectView } from '@/lib/project-views';
 
-const SUBBAR = 'flex h-10 shrink-0 items-center gap-2 px-3.5 text-muted-foreground text-xs';
+const NOTHING_OPEN: ReadonlySet<string> = new Set();
+const SUBBAR ='flex h-10 shrink-0 items-center gap-2 px-3.5 text-muted-foreground text-xs';
 
 // What a column sorts by: the number, the Status option's place, the first label or assignee, the first PR's number, an ISO date, a field's value, the first blocker's number (#61)
 function sortValue(item: ProjectItem, key: string, view: ProjectView): string | number | undefined {
@@ -198,9 +199,12 @@ function TableView({ state, source, onGoTo, onOpenIssue, project, onRefresh, rep
   const name = typeof source === 'string' ? source : source.name;
   const isHive = name === HIVE_SOURCE;
   const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  // #584 decision 4: the table is not remounted between sources, so the unfolded parents belong to one source and fold again on a switch
+  const [open, setOpen] = useState<{ source: string; ids: ReadonlySet<string> }>(() => ({ source: name, ids: NOTHING_OPEN }));
+  if (open.source !== name) setOpen({ source: name, ids: NOTHING_OPEN }); // React's reset-on-prop-change during render, no effect
+  const expanded = open.source === name ? open.ids : NOTHING_OPEN;
   const onToggleRow = (itemId: string): void =>
-    setExpanded((was) => (was.has(itemId) ? new Set([...was].filter((id) => id !== itemId)) : new Set([...was, itemId])));
+    setOpen({ source: name, ids: expanded.has(itemId) ? new Set([...expanded].filter((id) => id !== itemId)) : new Set([...expanded, itemId]) });
   const isShown = useIsFlowShown();
   const view = project.kind === 'view' ? project.view : undefined;
   const columns = view === undefined ? [] : isHive ? hiveColumns(view) : projectColumns(view);
