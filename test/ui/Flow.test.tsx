@@ -25,7 +25,7 @@ const state = (tasks: WithWork[], workers: Worker[], cols: Stage[] = stages, sou
   withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, ...flowed(cols, []), tasks, sourceOrder, localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
 // #571: flowView as stored for the fixtures' one flow (flowed → MAIN_FLOW 'main')
-const storedView = (shared: object = {}, canvas: object = {}) => ({ sourcesOff: [], loops: 'all', labels: 'all', epics: 'none', outline: [], ...shared, canvas: { main: { zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], ...canvas } } });
+const storedView = (shared: object = {}, canvas: object = {}) => ({ sourcesOff: [], loops: 'all', labels: 'all', epics: 'none', outline: [], listCollapsed: [], ...shared, canvas: { main: { zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], ...canvas } } });
 const header = (name: string): HTMLElement => screen.getByRole('heading', { level: 3, name }).parentElement!; // a stage's header row (#542)
 
 // jsdom has no DataTransfer: the stub carries what dragStart set to the drop, as the browser's would. Reused across the events of one drag.

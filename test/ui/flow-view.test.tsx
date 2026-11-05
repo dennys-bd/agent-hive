@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useDisplayOptions, useFlowView } from '@/hooks/use-flow-view';
-import { CANVAS_DEFAULTS, DISPLAY_DEFAULTS, FLOW_VIEW_DEFAULTS, type FlowView, canvasOf, readFlowView, shownOf, toggleOutline, withDisplay, withShown, writeFlowView } from '@/lib/flow-view';
+import { CANVAS_DEFAULTS, DISPLAY_DEFAULTS, FLOW_VIEW_DEFAULTS, type FlowView, canvasOf, readFlowView, shownOf, toggleListGroup, toggleOutline, withDisplay, withShown, writeFlowView } from '@/lib/flow-view';
 import { readView, resetViewState } from '@/lib/view-state';
 
 const readStored = (value: unknown) => {
@@ -15,7 +15,7 @@ afterEach(() => resetViewState()); // also drops writeFlowView's pending post
 test('writeFlowView puts the whole value under flowView and readFlowView round-trips the display fields and a canvas per flow (#909, #571, #574)', () => {
   resetViewState();
   const view = {
-    sourcesOff: ['roadmap'], loops: 'inner', labels: 'outer', tree: true, epics: 'middle', outline: ['I1'],
+    sourcesOff: ['roadmap'], loops: 'inner', labels: 'outer', tree: true, epics: 'middle', outline: ['I1'], listCollapsed: ['', 'build'],
     canvas: { build: GOOD, ship: { zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [] } },
   };
   writeFlowView(view as FlowView);
@@ -74,10 +74,10 @@ test('two flows keep their own zoom, pan and collapsed groups across a switch (#
   act(() => result.current.onPan({ x: 40, y: 0 }));
   act(() => result.current.toggleGroup('dev\u0000I1'));
   rerender({ flow: 'ship' });
-  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, outline: [], ...CANVAS_DEFAULTS });
+  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, outline: [], listCollapsed: [], ...CANVAS_DEFAULTS });
   act(() => result.current.zoomTo(0.8));
   rerender({ flow: 'build' });
-  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, outline: [], zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] });
+  expect(result.current.view).toEqual({ ...DISPLAY_DEFAULTS, outline: [], listCollapsed: [], zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] });
   expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, canvas: { build: { zoom: 1.2, pan: { x: 40, y: 0 }, collapsed: ['dev\u0000I1'] }, ship: { ...CANVAS_DEFAULTS, zoom: 0.8 } } });
 });
 
@@ -121,7 +121,7 @@ test('useDisplayOptions writes only the display fields from the store, two sets 
   });
   const chosen = { ...DISPLAY_DEFAULTS, labels: 'outer', epics: 'middle', tree: true };
   expect(result.current.options).toEqual(chosen);
-  expect(readFlowView()).toEqual({ ...chosen, outline: ['I1'], canvas: { build: GOOD } });
+  expect(readFlowView()).toEqual({ ...chosen, outline: ['I1'], listCollapsed: [], canvas: { build: GOOD } });
   unmount();
   expect(renderHook(() => useDisplayOptions()).result.current.options).toEqual(chosen);
 });
@@ -134,4 +134,26 @@ test('a zoom and a scroll written after a display change keep it: useFlowView ta
   act(() => chart.result.current.zoomTo(1.2));
   act(() => chart.result.current.onPan({ x: 5, y: 6 }));
   expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, loops: 'inner', sourcesOff: ['roadmap'], canvas: { main: { ...CANVAS_DEFAULTS, zoom: 1.2, pan: { x: 5, y: 6 } } } });
+});
+
+test('listCollapsed reads as [] when absent or malformed, keeps only strings, sem fluxo\'s \'\' among them; toggleListGroup flips a key and leaves the rest as stored (#577 decision 4)', () => {
+  expect(readStored({ ...SHARED }).listCollapsed).toEqual([]);
+  expect(readStored({ ...SHARED, listCollapsed: 'feature' }).listCollapsed).toEqual([]);
+  expect(readStored({ ...SHARED, listCollapsed: ['feature', 3, null, ''] }).listCollapsed).toEqual(['feature', '']);
+  const stored = { ...FLOW_VIEW_DEFAULTS, ...SHARED, outline: ['I1'], canvas: { build: GOOD } };
+  resetViewState({ flowView: stored });
+  expect(toggleListGroup('feature')).toEqual(['feature']);
+  expect(toggleListGroup('')).toEqual(['feature', '']);
+  expect(toggleListGroup('feature')).toEqual(['']);
+  expect(readFlowView()).toEqual({ ...stored, listCollapsed: [''] });
+});
+
+test('a display change and a zoom keep listCollapsed, and the display options never carry it (#577)', () => {
+  resetViewState({ flowView: { listCollapsed: ['bug'] } });
+  const display = renderHook(() => useDisplayOptions());
+  expect(display.result.current.options).toEqual(DISPLAY_DEFAULTS);
+  act(() => display.result.current.set({ epics: 'all' }));
+  const chart = renderHook(() => useFlowView(false, 'main'));
+  act(() => chart.result.current.zoomTo(1.2));
+  expect(readFlowView().listCollapsed).toEqual(['bug']);
 });
