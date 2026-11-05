@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { inFlow } from '../../tasks';
 import type { State, Task } from '../../types';
-import type { StartMode } from '@/components/StartFields';
 import type { HeldTask } from '@/hooks/use-pending-task';
-import { defaultDestination, type Destination, destinationFlows, effectiveStage } from '@/lib/start-flow';
+import { defaultDestination, type Destination, destinationFlows, effectiveStage, type StartMode } from '@/lib/start-flow';
 
 /** The Start dialog's destination (#580): shown while its task has no stage or the create row holds a source entry. The choice is kept per
  * pick or held entry, so another one starts from decision 5's default (the dialog remembers no last destination, decision 6). `effective`

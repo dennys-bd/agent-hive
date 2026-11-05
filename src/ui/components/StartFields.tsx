@@ -12,10 +12,9 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type BaseChoice, stackedOn } from '@/hooks/use-start-base';
 import { statusText, t } from '@/i18n';
 import { pressed } from '@/lib/shortcut-bindings';
-import { type Destination, type DestinationFlow, stagePath } from '@/lib/start-flow';
+import { type Destination, type DestinationFlow, type StartMode, stagePath } from '@/lib/start-flow';
 
-/** executar etapas follows the flow, one prompt per stage; sessão livre opens the agent with no automatic prompt (redesign 11). */
-export type StartMode = 'stages' | 'free';
+export type { StartMode };
 
 /** The mode the switchStartMode key (#585) leaves the dialog in: the other one, or undefined for any other key. While executar etapas is off
  * for the task (#774) the key does nothing on sessão livre, so it never reaches a mode the toggle refuses. */

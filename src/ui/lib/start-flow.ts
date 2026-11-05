@@ -3,7 +3,6 @@
 import { runsAgent } from '../../stage-agent.js';
 import { onSource } from '../../tasks.js';
 import type { Flow, Stage, Task } from '../../types.js';
-import type { StartMode } from '@/components/StartFields';
 
 /** The stages ahead of a task, its own first, up to the first that awaits approval (included), else to the last; `approval` says which. */
 export interface StagePath { next: string[]; stop?: string; approval: boolean }
@@ -24,6 +23,10 @@ export function hasStagesToRun(stage: string | undefined, stages: Stage[]): bool
   const from = stages.findIndex((s) => s.name === stage);
   return from < 0 || stages.slice(from).some((s) => s.prompt !== undefined || s.action !== undefined);
 }
+
+/** executar etapas follows the flow, one prompt per stage; sessão livre opens the agent with no automatic prompt (redesign 11). Lives here, not in
+ * StartFields, so the plain-node build can read it without the React component. */
+export type StartMode = 'stages' | 'free';
 
 /** Where the Start dialog sends a stageless task (#580): a flow, entering at its entry stage, or nowhere. */
 export type Destination = { flow: string } | 'none';
