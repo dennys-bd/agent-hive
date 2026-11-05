@@ -105,6 +105,12 @@ function BlockedLine({ task, state }: { task: Task; state: State }) {
   return <span className="truncate text-muted-foreground text-xs" title={text}>{text}</span>;
 }
 
+// #576 decision 8: started and out of the source's listing (#568). The ◌ line here, the dashed border on the card: the two go together
+function ListingLine({ task }: { task: Task }) {
+  if (task.outOfListing === undefined) return null;
+  return <div className="text-muted-foreground text-xs" title={t(`tasks.listing.${task.outOfListing}.tip`)}>{`◌ ${t(`tasks.listing.${task.outOfListing}`)}`}</div>;
+}
+
 // #31: a show epic's line: its direct children done over all of them, against the flow's last stage
 function waitingText(task: Task, state: State): string {
   const { done, total } = progress(state.tasks, task.item.itemId, state.stages.at(-1)?.name ?? '');
@@ -270,13 +276,14 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
       onClick={openOnClick(task.item.itemId, onOpen)}
       onKeyDown={onKeyDown}
       title={t(dragHint(task, state))} // what a drag may do with it (#366)
-      className={`relative flex cursor-grab outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 flex-col gap-[5px] rounded-lg border bg-background px-2 py-[7px] before:absolute before:inset-x-0 before:-top-1 before:hidden before:h-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block ${frame} ${isDimmed ? 'opacity-50' : isFaded ? 'opacity-30' : ''}`}
+      className={`relative flex cursor-grab outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 flex-col gap-[5px] rounded-lg border bg-background px-2 py-[7px] before:absolute before:inset-x-0 before:-top-1 before:hidden before:h-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block ${frame}${task.outOfListing === undefined ? '' : ' border-dashed'} ${isDimmed ? 'opacity-50' : isFaded ? 'opacity-30' : ''}`}
     >
       <TaskTitle task={task} state={state} />
       {isParent && <TreeProgress task={task} state={state} onFocusTree={onFocusTree} />}
       <PrLine task={task} state={state} />
       <SyncLine task={task} state={state} /> {/* #854 */}
       <BlockedLine task={task} state={state} />
+      <ListingLine task={task} />
       <div className="flex min-w-0 items-center gap-1.5 text-xs">
         {task.auto && !isParent && task.item.epic === undefined && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
         {status.text !== undefined && <span className={`min-w-0 truncate ${tone ? TONE_TEXT[tone] : 'text-muted-foreground'}`} title={status.text}>{status.text}</span>}

@@ -3049,6 +3049,12 @@ const en = {
   'tasks.automation.workerless': 'stages without a worker', // #573: the automação row; Settings keeps its longer label
   'tasks.automation.notSaved': 'Signal settings not saved', // #573: a sidebar save the server refused or never got
   'tasks.legend.workspaces': 'workspaces', // #576: the flowchart's workspaces legend, its box's accessible name
+  'tasks.listing.filter': 'out of the filter', // #576: the out-of-listing hint (#568, handoff "Pista visual")
+  'tasks.listing.filter.tip': 'no longer passes the source\'s filter · keeps syncing by the item',
+  'tasks.listing.project': 'out of the Project',
+  'tasks.listing.project.tip': 'the item left the Project · keeps syncing by the issue',
+  'tasks.listing.listing': 'out of the listing',
+  'tasks.listing.listing.tip': 'the last read did not bring this item · keeps syncing by the item',
   'start.destination': 'destination', // #580: the Start dialog's destination block, while its task is outside the flow
   'start.destination.flow': '{flow} flow',
   'start.destination.enters': 'enters {stage}',
@@ -6098,6 +6104,12 @@ const pt: Record<MessageKey, string> = {
   'tasks.automation.workerless': 'etapas sem worker',
   'tasks.automation.notSaved': 'Configuração do sinal não salva',
   'tasks.legend.workspaces': 'workspaces',
+  'tasks.listing.filter': 'fora do filtro',
+  'tasks.listing.filter.tip': 'não passa mais no filtro da source · segue sincronizando pelo item',
+  'tasks.listing.project': 'fora do Project',
+  'tasks.listing.project.tip': 'o item saiu do Project · segue sincronizando pelo issue',
+  'tasks.listing.listing': 'fora da listagem',
+  'tasks.listing.listing.tip': 'a última leitura não trouxe este item · segue sincronizando pelo item',
   'start.destination': 'destino',
   'start.destination.flow': 'fluxo {flow}',
   'start.destination.enters': 'entra em {stage}',
