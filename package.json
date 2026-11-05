@@ -22,7 +22,7 @@
     "run:headless": "pnpm build && node dist/src/run.js",
     "run:test-hive": "pnpm build && node dist/scripts/test-hive.js",
     "seed:test-board": "pnpm build && node dist/scripts/seed-test-board.js",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper"
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "dependencies": {
     "@iconify-json/vscode-icons": "^1.2.84",
