@@ -57,15 +57,34 @@ async function blobText(folder: string, oid: string, exec: Exec): Promise<string
   return text === undefined ? undefined : holdableText(text);
 }
 
-// The answer (#668): no text without a base; '' for a file the base does not have (all of it added); the id alone when the page holds it
-async function fileBaseOf(located: Located, against: ChangesBase, held: string | undefined, config: Pick<Config, 'baseBranch' | 'comb'>, exec: Exec): Promise<FileBase> {
+type Live = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
+/** The repository holding the file, the file's path in it, and the base's commit as a sha; no commit when the base has none (an unborn HEAD). */
+export interface BaseRepo { top: string; path: string; commit?: string }
+/** What a file compares against (#668, #675): located as the editor locates it, the base's label, and its repository when it has one. */
+export interface BaseCommit { located: Located; against: ChangesBase; label: string; repo?: BaseRepo }
+
+/** The one definition of "the base" for a file: the file-base route and the before frame's mint both read it. Refusals in order: locate's,
+ *  an `against` other than head or task, task on a local activity. */
+export async function baseCommit(current: Live, id: string, path: unknown, against: unknown, exec: Exec): Promise<BaseCommit | Refusal> {
+  const located = await locate(current, id, path);
+  if ('status' in located) return located;
+  if (!isChangesBase(against)) return { status: HTTP_BAD_REQUEST, message: AGAINST_MESSAGE };
+  if (against === 'task' && located.task === undefined) return { status: HTTP_BAD_REQUEST, message: LOCAL_MESSAGE };
   const repo = await repoOf(located, exec);
   // git's top is real; the folder may not be (macOS's tmpdir, a symlinked workspace), and a missed nested repository would read the outer base
   const folder = await realpath(located.folder).catch(() => located.folder);
-  const { commit, label } = await commitOf(located, against, repo !== undefined && isInside(folder, repo.top), config, exec);
+  const { commit, label } = await commitOf(located, against, repo !== undefined && isInside(folder, repo.top), current.runtime.config, exec);
+  if (repo === undefined) return { located, against, label };
+  // A sha, not a ref: a before frame minted on it keeps showing that commit after HEAD moves (#675)
+  const sha = (await gitOut(repo.top, ['rev-parse', '--verify', '--quiet', `${commit}^{commit}`], exec))?.trim();
+  return { located, against, label, repo: { ...repo, commit: sha === undefined || sha === '' ? undefined : sha } };
+}
+
+// The answer (#668): no text without a base; '' for a file the base does not have (all of it added); the id alone when the page holds it
+async function fileBaseOf({ against, label, repo }: BaseCommit, held: string | undefined, exec: Exec): Promise<FileBase> {
   const none: FileBase = { against, label };
   if (repo === undefined) return none;
-  const oid = (await gitOut(repo.top, ['rev-parse', '--verify', '--quiet', `${commit}:${repo.path}`], exec))?.trim();
+  const oid = repo.commit === undefined ? undefined : (await gitOut(repo.top, ['rev-parse', '--verify', '--quiet', `${repo.commit}:${repo.path}`], exec))?.trim();
   if (oid === undefined || oid === '') return { ...none, text: '' };
   if (oid === held) return { ...none, oid };
   const text = await blobText(repo.top, oid, exec);
@@ -80,13 +99,11 @@ export function registerFileBaseRoutes(app: Express, { requireLive, exec }: Pick
     const current = requireLive(res);
     if (!current) return;
     try {
-      const located = await locate(current, activityParam(req), req.query.path);
-      if ('status' in located) return refuse(res, located);
-      const { against, oid } = req.query;
-      if (!isChangesBase(against)) return refuse(res, { status: HTTP_BAD_REQUEST, message: AGAINST_MESSAGE });
-      if (against === 'task' && located.task === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: LOCAL_MESSAGE });
+      const base = await baseCommit(current, activityParam(req), req.query.path, req.query.against, exec);
+      if ('status' in base) return refuse(res, base);
+      const { oid } = req.query;
       const held = typeof oid === 'string' && oid !== '' ? oid : undefined;
-      res.json(await fileBaseOf(located, against, held, current.runtime.config, exec));
+      res.json(await fileBaseOf(base, held, exec));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
     }
