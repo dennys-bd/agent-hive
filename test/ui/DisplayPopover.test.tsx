@@ -9,7 +9,7 @@ import { readFlowView } from '@/lib/flow-view';
 import { resetViewState } from '@/lib/view-state';
 import type { SourceConfig, Task } from '../../src/types';
 
-const source = (name: string): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
+const source = (name: string): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
 const NAV: SourcesNav = { sources: [source('roadmap'), source('site')], auth: 'cli' };
 const task = (id: string, from?: string): Task => ({ item: { itemId: `I${id}`, id, title: `Task ${id}`, body: '', url: '', ...(from === undefined ? {} : { source: from }) }, stage: 'dev', boardColumn: 'Ready', auto: true });
 const TASKS = [task('1', 'roadmap'), task('2', 'roadmap'), task('3'), task('4', 'gone')]; // #3 is the Hive's own; gone is no configured source

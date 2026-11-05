@@ -10,12 +10,13 @@ import { Switch } from '@/components/ui/switch';
 import { t } from '@/i18n';
 import { sourceSummary, type NewSource, TYPE_LABEL } from '@/lib/flow-sources';
 import type { SourceDraft } from '@/lib/settings-form';
+import type { FlowScope } from '@/lib/setup-source-task-props';
 import { settingAnchor } from '@/lib/settings-search';
 import { DEFAULT_PREFIX, HIVE_SOURCE } from '../../../tasks';
 import type { GithubAuth, ProjectSummary } from '../../../types';
 
 interface SourcesGroupProps {
-  sources: SourceDraft[]; githubProjects: Record<string, ProjectSummary[]>; auth: GithubAuth; workspaces: string[]; prefix: string;
+  sources: SourceDraft[]; scope: FlowScope; githubProjects: Record<string, ProjectSummary[]>; auth: GithubAuth; workspaces: string[]; prefix: string;
   onEdit(id: string): void; onAdd(added: NewSource): void; onPrefix(prefix: string): void;
   hiveSource: boolean; createIn: string; onHiveSource(on: boolean): void; onCreateIn(createIn: string): void; // #846: createIn is HIVE_SOURCE or a source row's id
 }
@@ -67,7 +68,7 @@ const titleOf = (source: SourceDraft, loaded: ProjectSummary[]): string | undefi
 
 /** sources (#514): the local source, then one row per source, its type badge and one-line summary, `editar →` to its detail page,
  * `+ source` to the new-source dialog (#524). */
-export function SourcesGroup({ sources, githubProjects, auth, workspaces, prefix, hiveSource, createIn, onEdit, onAdd, onPrefix, onHiveSource, onCreateIn }: SourcesGroupProps) {
+export function SourcesGroup({ sources, scope, githubProjects, auth, workspaces, prefix, hiveSource, createIn, onEdit, onAdd, onPrefix, onHiveSource, onCreateIn }: SourcesGroupProps) {
   const [open, setOpen] = useState(false);
   // hive off while it is the destination would leave the Select on a value that is no longer an option: the first source with a repository takes over
   const turnHive = (on: boolean): void => {
@@ -89,14 +90,14 @@ export function SourcesGroup({ sources, githubProjects, auth, workspaces, prefix
           <div key={b.id} data-testid="source-row" className="grid grid-cols-[10rem_auto_1fr_auto] items-center gap-4 border-t px-5 py-3">
             <span className="truncate font-medium text-sm">{name}</span>
             <Badge variant="outline">{t(TYPE_LABEL[b.type])}</Badge>
-            <span className="truncate text-muted-foreground text-xs">{sourceSummary(b, titleOf(b, githubProjects[b.id] ?? []))}</span>
+            <span className="truncate text-muted-foreground text-xs">{sourceSummary(b, scope, titleOf(b, githubProjects[b.id] ?? []))}</span>
             <button type="button" className="text-review text-xs" aria-label={t('settings.sources.editSource', { source: name })} onClick={() => onEdit(b.id)}>
               {t('settings.sources.edit')}
             </button>
           </div>
         );
       })}
-      <NewSourceDialog open={open} onOpenChange={setOpen} auth={auth} workspaces={workspaces} takenNames={sources.map((b) => b.name.trim())} onAdd={(added) => { setOpen(false); onAdd(added); }} />
+      <NewSourceDialog open={open} onOpenChange={setOpen} auth={auth} workspaces={workspaces} takenNames={sources.map((b) => b.name.trim())} flowId={scope.flows[0]?.id ?? ''} onAdd={(added) => { setOpen(false); onAdd(added); }} />
     </SettingsGroup>
   );
 }

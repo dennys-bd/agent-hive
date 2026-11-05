@@ -1,7 +1,8 @@
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { EntrySelect } from '@/components/settings/EntrySelect';
 import { t } from '@/i18n';
-import { PROP_LABEL, PROP_NOTE, type PropMode, propMode, type PropValue, type SourceTaskPropsDraft, withProp } from '@/lib/setup-source-task-props';
+import { type FlowScope, PROP_LABEL, PROP_NOTE, type PropMode, propMode, type PropValue, type SourceTaskPropsDraft, withProp } from '@/lib/setup-source-task-props';
 import { TASK_PROPS, type TaskProp } from '../../../types';
 
 const NONE = '__none__'; // Radix Select rejects value=""; '' (no workspace) travels as this
@@ -11,9 +12,9 @@ const MUTED = 'text-muted-foreground text-xs';
 /** A part's heading inside the task properties group (#688), as a stage block's (`1 · entra`). */
 export const PART_TITLE = 'font-semibold text-muted-foreground text-xs uppercase tracking-widest';
 
-interface PropSelectProps { id?: string; prop: TaskProp; value: PropValue; workspaces: string[]; allowNone?: boolean; small?: boolean; label?: string; onChange(value: PropValue): void }
+interface PropSelectProps { id?: string; prop: TaskProp; value: string | boolean; workspaces: string[]; allowNone?: boolean; small?: boolean; label?: string; onChange(value: string | boolean): void }
 
-const asText = (value: PropValue): string => (typeof value === 'boolean' ? (value ? YES : NO) : value || NONE);
+const asText = (value: string | boolean): string => (typeof value === 'boolean' ? (value ? YES : NO) : value || NONE);
 
 /** One property's value (#688): a Comb workspace (and no workspace where allowed), or auto's yes / no. The defaults and the rule chips share it. */
 export function PropSelect({ id, prop, value, workspaces, allowNone = false, small = false, label, onChange }: PropSelectProps) {
@@ -34,13 +35,21 @@ export function PropSelect({ id, prop, value, workspaces, allowNone = false, sma
   );
 }
 
+interface PropControlProps extends Omit<PropSelectProps, 'value' | 'onChange'> { value: PropValue; scope: FlowScope; onChange(value: PropValue): void }
+
+/** One property's control (#670): entry has its own menu (EntrySelect); workspace and auto PropSelect. The defaults row and a rule's chip share it. */
+export function PropControl({ scope, value, onChange, ...rest }: PropControlProps) {
+  if (rest.prop === 'entry') return value === undefined || typeof value === 'string' || typeof value === 'boolean' ? null : <EntrySelect id={rest.id} value={value} scope={scope} small={rest.small} label={rest.label} onChange={onChange} />;
+  return typeof value === 'object' ? null : <PropSelect {...rest} value={value} onChange={onChange} />;
+}
+
 const modeText = (mode: PropMode): string =>
   mode === 'fixed' ? t('settings.taskProps.mode.fixed') : t(mode === 1 ? 'settings.taskProps.mode.one' : 'settings.taskProps.mode.other', { n: mode });
 
-interface TaskDefaultsProps { id: string; draft: SourceTaskPropsDraft; workspaces: string[]; onChange(draft: SourceTaskPropsDraft): void }
+interface TaskDefaultsProps { id: string; scope: FlowScope; draft: SourceTaskPropsDraft; workspaces: string[]; onChange(draft: SourceTaskPropsDraft): void }
 
 /** The default part (#688): one row per property in registry order, its default and its derived mode. A property no rule sets is fixed. */
-export function TaskDefaults({ id, draft, workspaces, onChange }: TaskDefaultsProps) {
+export function TaskDefaults({ id, scope, draft, workspaces, onChange }: TaskDefaultsProps) {
   return (
     <div className="flex flex-col gap-3">
       <h3 className={PART_TITLE}>{t('settings.taskProps.defaults')}</h3>
@@ -51,8 +60,8 @@ export function TaskDefaults({ id, draft, workspaces, onChange }: TaskDefaultsPr
               <Label htmlFor={`${id}-${prop}`}>{t(PROP_LABEL[prop])}</Label>
               <span className={MUTED}>{t(PROP_NOTE[prop])}</span>
             </div>
-            <PropSelect
-              id={`${id}-${prop}`} prop={prop} value={draft.defaults[prop]} workspaces={workspaces} allowNone
+            <PropControl
+              id={`${id}-${prop}`} prop={prop} value={draft.defaults[prop]} scope={scope} workspaces={workspaces} allowNone label={t(PROP_LABEL[prop])}
               onChange={(value) => onChange({ ...draft, defaults: withProp(draft.defaults, prop, value) })}
             />
             <span className={MUTED}>{modeText(propMode(draft, prop))}</span>

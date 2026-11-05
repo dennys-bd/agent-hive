@@ -11,13 +11,13 @@ import { Switch } from '@/components/ui/switch';
 import { type MessageKey, t } from '@/i18n';
 import { TYPE_LABEL } from '@/lib/flow-sources';
 import { switchAtStage } from '@/lib/settings-epics';
-import type { SourceDraft, StageDraft } from '@/lib/settings-form';
+import type { FlowDraft, SourceDraft, StageDraft } from '@/lib/settings-form';
 import { contextEntries, named, type SettingEntry, settingAnchor } from '@/lib/settings-search';
 import type { SourceTaskPropsDraft } from '@/lib/setup-source-task-props';
 import { EPIC_FOLLOWS, EPICS_MODES, type EpicFollows, type EpicsMode, type FilterOptions, type GithubAuth, type ProjectSummary } from '../../../types';
 
 interface SourceDetailProps {
-  source: SourceDraft; stages: readonly StageDraft[]; // #30: what switchAt picks from, by stage draft id
+  source: SourceDraft; flows: readonly FlowDraft[]; stages: readonly StageDraft[]; // #670: the entry menu's flows; #30: what switchAt picks from, by stage draft id
   workspaces: string[]; githubProjects: ProjectSummary[]; needsToken: boolean; auth: GithubAuth;
   filterOptions?: FilterOptions; // #245: the source's real values, loaded with its columns
   onChange(patch: Partial<SourceDraft>): void; onRemove(): void; onLoadProjects(): void;
@@ -200,17 +200,18 @@ function FilterGroup({ id, source, stages, filterOptions, onChange }: FilterGrou
   );
 }
 
-type TaskPropsGroupProps = Pick<SourceDetailProps, 'source' | 'workspaces' | 'onChange'> & { id: string };
+type TaskPropsGroupProps = Pick<SourceDetailProps, 'source' | 'flows' | 'stages' | 'workspaces' | 'onChange'> & { id: string };
 
 /** What the source sets on each task it lists, on entry (#688): the defaults, then the rules that replace them when they match. The mode of
  * each property is derived from the rules, never chosen. */
-function TaskPropsGroup({ id, source, workspaces, onChange }: TaskPropsGroupProps) {
+function TaskPropsGroup({ id, source, flows, stages, workspaces, onChange }: TaskPropsGroupProps) {
+  const scope = { flows, stages };
   const put = (taskProps: SourceTaskPropsDraft): void => onChange({ taskProps });
   return (
     <SettingsGroup title="settings.taskProps.title" hint="settings.taskProps.hint" flush anchor={settingAnchor('settings.taskProps.title', source.id)}>
       <div className="flex flex-col gap-5 p-5">
-        <TaskDefaults id={`${id}-defaults`} draft={source.taskProps} workspaces={workspaces} onChange={put} />
-        <TaskRules draft={source.taskProps} workspaces={workspaces} onChange={put} />
+        <TaskDefaults id={`${id}-defaults`} scope={scope} draft={source.taskProps} workspaces={workspaces} onChange={put} />
+        <TaskRules scope={scope} draft={source.taskProps} workspaces={workspaces} onChange={put} />
       </div>
     </SettingsGroup>
   );
@@ -218,7 +219,7 @@ function TaskPropsGroup({ id, source, workspaces, onChange }: TaskPropsGroupProp
 
 /** One source's detail page, Settings › fluxo › sources › <source> (#514, #524): its fields, its task filter and epics block (github only, #30), and its
  * task properties group (#688), each its own SettingsGroup. The page around it supplies the column and the breadcrumb, so this returns a fragment. */
-export function SourceDetail({ source, stages, workspaces, githubProjects, needsToken, auth, filterOptions, onChange, onRemove, onLoadProjects, onLoadColumns, onOpenList }: SourceDetailProps) {
+export function SourceDetail({ source, flows, stages, workspaces, githubProjects, needsToken, auth, filterOptions, onChange, onRemove, onLoadProjects, onLoadColumns, onOpenList }: SourceDetailProps) {
   const id = useId();
   return (
     <>
@@ -226,7 +227,7 @@ export function SourceDetail({ source, stages, workspaces, githubProjects, needs
       {source.type === 'github' && (
         <FilterGroup id={id} source={source} stages={stages} filterOptions={filterOptions} onChange={onChange} />
       )}
-      <TaskPropsGroup id={id} source={source} workspaces={workspaces} onChange={onChange} />
+      <TaskPropsGroup id={id} source={source} flows={flows} stages={stages} workspaces={workspaces} onChange={onChange} />
       <Button type="button" variant="outline" className="self-start text-destructive" onClick={onRemove}>{t('settings.sources.remove')}</Button>
     </>
   );

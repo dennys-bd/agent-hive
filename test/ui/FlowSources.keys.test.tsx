@@ -7,8 +7,8 @@ import { setLanguage } from '@/i18n';
 const nav: SourcesNav = {
   auth: 'cli',
   sources: [
-    { name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' },
-    { name: 'core', qualifyId: false, type: 'github', owner: 'acme', number: 2, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' },
+    { name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' },
+    { name: 'core', qualifyId: false, type: 'github', owner: 'acme', number: 2, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' },
   ],
 };
 // Alt types a symbol on macOS, so the digit is read from code (#585)

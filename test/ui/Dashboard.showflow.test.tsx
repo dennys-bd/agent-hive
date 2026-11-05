@@ -21,7 +21,7 @@ vi.mock('@/hooks/use-task-files', () => ({ useTaskFiles: () => [] }));
 vi.mock('@/hooks/use-task-tree', () => ({ useTaskTree: () => ({ status: 'loading' }) }));
 
 // "ver nas tarefas" (#229): the task of roadmap must show in the flow whatever the center held before
-const source = (name: string): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
+const source = (name: string): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
 const NAV: SourcesNav = { sources: [source('roadmap'), source('other')], auth: 'cli' };
 const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
 const state: State = {

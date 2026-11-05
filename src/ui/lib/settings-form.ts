@@ -15,7 +15,7 @@ import { nextWorkspaceColor } from './workspace-color.js';
 import { switchAtId, switchAtName } from './settings-epics.js';
 import type { SettingsSection } from './settings-sections.js';
 import { isMac } from './shortcut-bindings.js';
-import { type SourceTaskPropsDraft, emptyTaskProps, sourceTaskPropsProblem, taskPropsDraft, taskPropsFrom } from './setup-source-task-props.js';
+import { type FlowScope, type SourceTaskPropsDraft, emptyTaskProps, sourceTaskPropsProblem, taskPropsDraft, taskPropsFrom } from './setup-source-task-props.js';
 import { type CommandDraft, commandDraft, commandFrom, commandsProblem, type EnvRowDraft, envFrom, envRows } from './settings-commands.js';
 import { agentArgsDraft, agentArgsFrom } from './settings-agent-args.js';
 import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem } from './settings-agents.js';
@@ -94,13 +94,13 @@ export function withHost(hosts: readonly string[], text: string): string[] | und
 
 // A new row's default workspace is `workspace` (#293, #688): the Comb's first, which is what a source with one workspace meant before; auto on;
 // a new source's epics keys, switchAt on the default (#30).
-export const emptySource = (workspace = ''): SourceDraft => ({
+export const emptySource = (workspace = '', flowId = ''): SourceDraft => ({
   id: crypto.randomUUID(), name: '', savedName: '', qualifyId: false, prefix: '', type: 'github', owner: DEFAULT_OWNER, number: '', repository: '',
-  filter: [], taskProps: emptyTaskProps(workspace), ...NEW_SOURCE_EPICS, switchAt: '',
+  filter: [], taskProps: emptyTaskProps(workspace, flowId), ...NEW_SOURCE_EPICS, switchAt: '',
 });
-// switchAt is set by draftFrom once the stages are drafted (#30): their ids come from the rows
+// switchAt is set by draftFrom once the stages are drafted (#30): their ids come from the rows; taskProps too, once the flows and stages are (#670)
 const sourceDraft = (b: SourceConfig): SourceDraft => ({
-  ...emptySource(), name: b.name, savedName: b.name, qualifyId: b.qualifyId, prefix: b.prefix ?? '', type: b.type, taskProps: taskPropsDraft(b.taskProps),
+  ...emptySource(), name: b.name, savedName: b.name, qualifyId: b.qualifyId, prefix: b.prefix ?? '', type: b.type,
   owner: b.owner, number: String(b.number), repository: b.repository ?? '', filter: b.filter, epics: b.epics, epicFollows: b.epicFollows,
 });
 
@@ -114,12 +114,12 @@ const createInName = (draft: Pick<SettingsDraft, 'createIn' | 'sources'>): strin
 export function draftFrom(info?: SettingsInfo): SettingsDraft {
   const config = info?.config;
   const workspaces = config ? config.comb.workspaces.map(workspaceDraft) : [proposedRow(info?.proposedWorkspace)]; // the saved workspaces, else the proposal (#179)
-  const rows = config ? config.comb.sources.map(sourceDraft) : [emptySource(workspaces[0].name)]; // a first setup: one GitHub row (#180), its default workspace the proposal (#293, #688)
   const saved = config?.comb.flows ?? [];
   const flows = flowDrafts(saved); // #565
+  const rows = config ? config.comb.sources.map(sourceDraft) : [emptySource(workspaces[0].name, flows[0].id)]; // a first setup: one GitHub row (#180), its default workspace the proposal (#293, #688), entering at the first flow (#670)
   const stages = saved.flatMap((f, i) => f.stages.map((c) => stageDraft(c, rows, flows[i].id, config?.defaultAgent)));
   // #30: switchAt as its stage draft's id; the ids are kept, so the stages' from still finds each row
-  const sources = config ? rows.map((row, i) => ({ ...row, switchAt: switchAtId(config.comb.sources[i].switchAt, stages) })) : rows;
+  const sources = config ? rows.map((row, i) => ({ ...row, switchAt: switchAtId(config.comb.sources[i].switchAt, stages), taskProps: taskPropsDraft(config.comb.sources[i].taskProps, { flows, stages }) })) : rows;
   return {
     hiveSource: config?.comb.hiveSource ?? true, // the new form's default; the parser still requires the key (#846)
     createIn: createInRow(config?.comb.createIn, sources),
@@ -277,11 +277,11 @@ export function validateSettings(draft: SettingsDraft): SettingsProblem | undefi
 
 /** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the
  * name it resolves to among `stages` (#30). */
-export function sourceFrom(row: SourceDraft, stages: readonly StageDraft[]): SourceConfig {
+export function sourceFrom(row: SourceDraft, scope: FlowScope): SourceConfig {
   const key = { name: row.name.trim(), qualifyId: row.qualifyId, ...optional('prefix', row.prefix) };
   return {
-    ...key, type: 'github', owner: row.owner.trim(), number: Number(row.number), ...optional('repository', row.repository), filter: row.filter, taskProps: taskPropsFrom(row.taskProps),
-    epics: row.epics, epicFollows: row.epicFollows, switchAt: switchAtName(row.switchAt, stages),
+    ...key, type: 'github', owner: row.owner.trim(), number: Number(row.number), ...optional('repository', row.repository), filter: row.filter, taskProps: taskPropsFrom(row.taskProps, scope),
+    epics: row.epics, epicFollows: row.epicFollows, switchAt: switchAtName(row.switchAt, scope.stages),
   };
 }
 
@@ -314,7 +314,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     prefix: draft.prefix.trim(),
     workspaces: draft.workspaces.map(workspaceFrom),
     commands: draft.commands.map((c) => commandFrom(c, draft.workspaces)), // always sent (#511), [] included
-    sources: draft.sources.map((row) => sourceFrom(row, draft.stages)),
+    sources: draft.sources.map((row) => sourceFrom(row, draft)),
     renames: renamesFrom(draft.sources), // always sent (#278), {} included
     // only the GitHub adapter logs in: with no GitHub source no auth is sent, and a saved one stays as the server has it
     ...(draft.sources.some((b) => b.type === 'github') ? { auth: { github: draft.auth } } : {}),

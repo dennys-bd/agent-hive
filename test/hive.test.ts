@@ -204,6 +204,16 @@ test('a hive.config.json whose source carries the workspace setting of #293 open
   assert.equal(info.config, undefined);
 });
 
+test('a hive.config.json whose source taskProps lacks defaults.entry opens setup mode with the parse error (#670)', async (t) => {
+  const taskProps = { defaults: { workspace: 'hive', auto: true }, rules: [] };
+  const { home } = await hiveWithConfig(t, { sources: [{ ...GITHUB_ENTRY, taskProps }], stages: STAGES });
+  const { server, port } = await bootHive(home);
+  t.after(() => server.close());
+  const info = await settingsInfo(home, port);
+  assert.equal(info.configured, false);
+  assert.equal(info.error, 'hive.config.json: "comb.sources[0].taskProps.defaults.entry" is required: a flow, a flow and one of its stages, or null for outside the flow');
+});
+
 test('a hive.config.json with none of onClose, menuBar and stopOnClose opens setup mode prefilled with onClose menuBar; a wrong onClose still fails the boot (#198, #513)', async (t) => {
   const { home } = await hiveWithConfig(t, { prefix: 'OLD', onClose: undefined });
   const { server, port } = await bootHive(home);

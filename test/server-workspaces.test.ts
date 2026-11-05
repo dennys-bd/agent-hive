@@ -16,7 +16,7 @@ import { hiveFetch, SECRET } from './secret-client.js';
 // Several workspaces per Comb (#179): two git repos, hive and site, behind one GitHub-shaped source whose listing a test fills.
 const ORPHAN = 'hive-9-gone'; // a worktree every repo's git lists under .hive/worktrees, owned by no task
 // A source with one rule (#293, #688) no test lists a Repo for, and no default workspace: a task's workspace is the hint a test lists, or none.
-const ROUTED: SourceTaskProps = { defaults: { auto: true }, rules: [{ field: 'Repo', op: 'equals', value: 'hive', set: { workspace: 'hive' } }] };
+const ROUTED: SourceTaskProps = { defaults: { auto: true, entry: { flow: 'main' } }, rules: [{ field: 'Repo', op: 'equals', value: 'hive', set: { workspace: 'hive' } }] };
 
 interface Two {
   base: string; server: HiveServer; workers: FakeWorker[]; hive: Workspace; site: Workspace;
@@ -82,7 +82,7 @@ test('a save that changes the source default dispatches setWorkspaces: a task no
   await two.server.poll();
   assert.equal(two.workers.length, 0, 'two workspaces, no hint, a dynamic board with no default: the task waits');
   assert.deepEqual(two.server.getState()?.workspaces, ['hive', 'site']);
-  const withDefault = { ...two.body, sources: [{ ...two.body.sources![0], taskProps: { ...ROUTED, defaults: { workspace: 'site', auto: true } } }] }; // the rule stays: the default is its fallback (#688)
+  const withDefault = { ...two.body, sources: [{ ...two.body.sources![0], taskProps: { ...ROUTED, defaults: { workspace: 'site', auto: true, entry: { flow: 'main' } } } }] }; // the rule stays: the default is its fallback (#688)
   assert.equal((await postJson(`${two.base}/settings`, withDefault)).status, 200);
   await waitFor(() => two.workers.length === 1);
   assert.deepEqual(two.server.getState()?.sourceWorkspaces, { board: 'site' });
@@ -126,7 +126,7 @@ test('a save refuses to remove or re-path a workspace a running task resolves to
     assert.equal(res.status, 409, JSON.stringify(workspaces));
     assert.deepEqual(await res.json(), { error: 'workspace site has a running worker' });
   }
-  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.site], sources: [{ ...two.body.sources![0], taskProps: { defaults: { workspace: 'site', auto: true }, rules: [] } }] })).status, 200, 'hive has no running task: it may go, the board with it');
+  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.site], sources: [{ ...two.body.sources![0], taskProps: { defaults: { workspace: 'site', auto: true, entry: { flow: 'main' } }, rules: [] } }] })).status, 200, 'hive has no running task: it may go, the board with it');
   assert.deepEqual(two.server.getState()?.workspaces, ['site']);
 });
 

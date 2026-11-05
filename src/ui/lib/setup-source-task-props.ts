@@ -2,36 +2,46 @@
 // the checks. Out of settings-form.ts, which it would push toward 400 lines. Pure: no DOM, so node:test covers it.
 import { TASK_PROPS, type RuleOp, type SourceTaskProps, type TaskEntry, type TaskProp, type TaskProps } from '../../types.js';
 import { type MessageKey, t } from '../i18n.js';
-import type { SettingsDraft } from './settings-form.js';
+import type { FlowDraft, StageDraft } from './settings-form.js';
 
 /** One rule block (#688); id is its React key, never sent. */
-export interface TaskRuleDraft { id: string; field: string; op: RuleOp; value: string; set: Partial<TaskProps> }
+export interface TaskRuleDraft { id: string; field: string; op: RuleOp; value: string; set: TaskSetDraft }
+/** A rule's set as edited (#670): entry travels as an EntryDraft. */
+export type TaskSetDraft = Omit<Partial<TaskProps>, 'entry'> & { entry?: EntryDraft };
 /** The defaults as edited (#688): workspace '' = no workspace. */
-export interface TaskDefaultsDraft { workspace: string; auto: boolean }
+export interface TaskDefaultsDraft { workspace: string; auto: boolean; entry: EntryDraft }
 export interface SourceTaskPropsDraft { defaults: TaskDefaultsDraft; rules: TaskRuleDraft[] }
 /** A property's value as the form edits it: a workspace name ('' = none) or auto's on / off. */
-export type PropValue = string | boolean;
+export type PropValue = string | boolean | EntryDraft;
 /** fixed when no rule sets the property, else how many rules do (#688): derived, never stored. */
 export type PropMode = 'fixed' | number;
 
-export const PROP_LABEL: Record<TaskProp, MessageKey> = { workspace: 'settings.taskProps.prop.workspace', auto: 'settings.taskProps.prop.auto' };
-export const PROP_NOTE: Record<TaskProp, MessageKey> = { workspace: 'settings.taskProps.note.workspace', auto: 'settings.taskProps.note.auto' };
+export const PROP_LABEL: Record<TaskProp, MessageKey> = { workspace: 'settings.taskProps.prop.workspace', auto: 'settings.taskProps.prop.auto', entry: 'settings.taskProps.prop.entry' };
+export const PROP_NOTE: Record<TaskProp, MessageKey> = { workspace: 'settings.taskProps.note.workspace', auto: 'settings.taskProps.note.auto', entry: 'settings.taskProps.note.entry' };
 
 const NEW_RULE_OP: RuleOp = 'icontains'; // the issue's own example: a tag anywhere in the title, whatever its case
 
-/** A new row's (#688): `workspace` as its default, auto on, no rules. */
-export const emptyTaskProps = (workspace = ''): SourceTaskPropsDraft => ({ defaults: { workspace, auto: true }, rules: [] });
+/** A new row's (#688): `workspace` as its default, auto on, entering at `flowId` (#670: '' when none is given, which shows as a problem), no rules. */
+export const emptyTaskProps = (workspace = '', flowId = ''): SourceTaskPropsDraft => ({ defaults: { workspace, auto: true, entry: { flowId } }, rules: [] });
 
-export function taskPropsDraft(saved: SourceTaskProps): SourceTaskPropsDraft {
-  return { defaults: { workspace: saved.defaults.workspace ?? '', auto: saved.defaults.auto }, rules: saved.rules.map((r) => ({ id: crypto.randomUUID(), ...r })) };
+const setDraft = ({ entry, ...rest }: Partial<TaskProps>, scope: FlowScope): TaskSetDraft => (entry === undefined ? rest : { ...rest, entry: entryDraft(entry, scope) });
+
+export function taskPropsDraft(saved: SourceTaskProps, scope: FlowScope): SourceTaskPropsDraft {
+  const { workspace, auto, entry } = saved.defaults;
+  return {
+    defaults: { workspace: workspace ?? '', auto, entry: entryDraft(entry, scope) },
+    rules: saved.rules.map((r) => ({ id: crypto.randomUUID(), field: r.field, op: r.op, value: r.value, set: setDraft(r.set, scope) })),
+  };
 }
 
+const setFrom = ({ entry, ...rest }: TaskSetDraft, scope: FlowScope): Partial<TaskProps> => (entry === undefined ? rest : { ...rest, entry: entryFrom(entry, scope) });
+
 /** Rules in order with field and value trimmed, no id; validateSettings ran first and the server parses again. */
-export function taskPropsFrom({ defaults, rules }: SourceTaskPropsDraft): SourceTaskProps {
-  const { workspace, auto } = defaults;
+export function taskPropsFrom({ defaults, rules }: SourceTaskPropsDraft, scope: FlowScope): SourceTaskProps {
+  const { workspace, auto, entry } = defaults;
   return {
-    defaults: workspace === '' ? { auto } : { workspace, auto },
-    rules: rules.map((r) => ({ field: r.field.trim(), op: r.op, value: r.value.trim(), set: r.set })),
+    defaults: { ...(workspace === '' ? {} : { workspace }), auto, entry: entryFrom(entry, scope) },
+    rules: rules.map((r) => ({ field: r.field.trim(), op: r.op, value: r.value.trim(), set: setFrom(r.set, scope) })),
   };
 }
 
@@ -41,24 +51,27 @@ export function propMode({ rules }: SourceTaskPropsDraft, prop: TaskProp): PropM
 }
 
 /** `target` with `prop` at `value`, as a new object (#688): the defaults and a rule's set share it. */
-export function withProp<T extends Partial<TaskProps>>(target: T, prop: TaskProp, value: PropValue): T {
+export function withProp<T extends TaskSetDraft>(target: T, prop: TaskProp, value: PropValue): T {
+  if (prop === 'entry') return typeof value === 'object' ? { ...target, entry: value } : target;
   return prop === 'auto' ? { ...target, auto: value === true } : { ...target, workspace: String(value) };
 }
 
 /** `set` without `prop`: a chip's ×. */
-export function withoutProp(set: Partial<TaskProps>, prop: TaskProp): Partial<TaskProps> {
+export function withoutProp(set: TaskSetDraft, prop: TaskProp): TaskSetDraft {
   const { [prop]: _gone, ...rest } = set;
   return rest;
 }
 
 /** What a property starts at in a new rule or chip (#688): its default; for workspace, the Comb's first one when the default is empty. */
-export const propDefault = ({ defaults }: SourceTaskPropsDraft, prop: TaskProp, workspaces: readonly string[]): PropValue =>
-  prop === 'auto' ? defaults.auto : defaults.workspace || (workspaces[0] ?? '');
+export function propDefault({ defaults }: SourceTaskPropsDraft, prop: TaskProp, workspaces: readonly string[]): PropValue {
+  if (prop === 'entry') return defaults.entry;
+  return prop === 'auto' ? defaults.auto : defaults.workspace || (workspaces[0] ?? '');
+}
 
 /** A new rule is never empty (#688): it sets the first property no rule sets yet, or workspace when every one is set somewhere. */
 export function newTaskRule(draft: SourceTaskPropsDraft, workspaces: readonly string[]): TaskRuleDraft {
   const prop = TASK_PROPS.find((p) => propMode(draft, p) === 'fixed') ?? 'workspace';
-  return { id: crypto.randomUUID(), field: '', op: NEW_RULE_OP, value: '', set: withProp<Partial<TaskProps>>({}, prop, propDefault(draft, prop, workspaces)) };
+  return { id: crypto.randomUUID(), field: '', op: NEW_RULE_OP, value: '', set: withProp<TaskSetDraft>({}, prop, propDefault(draft, prop, workspaces)) };
 }
 
 /** The first problem of one source's task properties against the workspace rows' names, as the text to show; undefined when there is none.
@@ -81,7 +94,7 @@ export function sourceTaskPropsProblem(source: string, draft: SourceTaskPropsDra
  * null = outside the flow. An id no draft has is a removed flow or stage: entryGone. */
 export type EntryDraft = { flowId: string; stageId?: string } | null;
 /** The flow and stage drafts an entry resolves against. */
-export type FlowScope = Pick<SettingsDraft, 'flows' | 'stages'>;
+export interface FlowScope { flows: readonly FlowDraft[]; stages: readonly StageDraft[] }
 
 /** A saved entry as its draft; a name no draft has resolves to '' and entryGone flags it, so a bad value is shown, never changed. */
 export function entryDraft(entry: TaskEntry, { flows, stages }: FlowScope): EntryDraft {

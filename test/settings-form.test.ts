@@ -7,7 +7,7 @@ import { withMemoryCap } from '../src/ui/lib/memory-cap.js';
 import { withEntry } from '../src/ui/lib/settings-stages.js';
 import { emptyRule, type RuleDraft } from '../src/ui/lib/settings-rules.js';
 import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRule, Command, SettingsInfo, SettingsBody } from '../src/types.js';
-import { flatten } from '../src/flows.js';
+import { flatten, MAIN_FLOW } from '../src/flows.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, DELETE_ACTIVITY_DEFAULTS, CONSOLE_LINES_DEFAULT, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { FIXED } from './fakes.js';
 import { mainFlows } from './fixtures/main-flow.js';
@@ -83,7 +83,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   assert.deepEqual(github.sidebarsPerView, { left: false, right: true, rightTab: false }, 'the saved sides (#821)');
   assert.deepEqual(github.signals, CONFIG.signals, 'the saved signal table (#727)');
   assert.deepEqual([github.closeSessionTab, github.closeStageTab, github.closeSessionTabNotice, github.closeStageTabNotice], ['sleep', 'sleep', false, false], 'the saved choices (#614)');
-  assert.deepEqual(github.sources.map(withoutId), [{ ...GH_ROW, switchAt: github.stages[1].id }], 'switchAt as the dev stage draft\'s id (#30)');
+  assert.deepEqual(github.sources.map(withoutId), [{ ...GH_ROW, taskProps: { ...GH_ROW.taskProps, defaults: { ...GH_ROW.taskProps.defaults, entry: { flowId: github.flows[0].id } } }, switchAt: github.stages[1].id }], 'switchAt as the dev stage draft\'s id (#30)');
   const [work] = github.sources;
   assert.deepEqual(github.workspaces.map(withoutId), [{ name: 'hive', path: '/repo', env: [], ...NO_SETUP }]);
   assert.deepEqual(github.commands.map((c) => ({ ...withoutId(c), env: c.env.map(withoutId), impls: c.impls.map(withoutId) })), [
@@ -107,7 +107,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   const empty = draftFrom(info(undefined, false));
   assert.deepEqual({ ...empty, flows: empty.flows.map(withoutId), workspaces: empty.workspaces.map(withoutId), sources: empty.sources.map(withoutId) }, {
     hiveSource: true, createIn: 'hive',
-    prefix: 'HIVE', workspaces: [{ name: '', path: '', env: [], ...NO_SETUP }], commands: [], editor: EDITOR_DEFAULTS, sources: [{ ...GH_ROW, name: '', savedName: '', owner: '@me', number: '', epics: 'show', epicFollows: 'aheadThenBehind', taskProps: { defaults: { workspace: '', auto: true }, rules: [] } }],
+    prefix: 'HIVE', workspaces: [{ name: '', path: '', env: [], ...NO_SETUP }], commands: [], editor: EDITOR_DEFAULTS, sources: [{ ...GH_ROW, name: '', savedName: '', owner: '@me', number: '', epics: 'show', epicFollows: 'aheadThenBehind', taskProps: { defaults: { workspace: '', auto: true, entry: { flowId: empty.flows[0].id } }, rules: [] } }],
     flows: [{ name: 'main' }], stages: [], transitions: [], language: 'en', branch: '', baseBranch: '', budgetHour: '', budgetDay: '', rules: [], auth: 'cli', onClose: 'menuBar',
     deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: String(SHUTDOWN_IDLE_DEFAULT), approvalMinutes: String(APPROVAL_MINUTES_DEFAULT), rateLimitWaitMinutes: String(RATE_LIMIT_WAIT_DEFAULT), showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, theme: 'system', terminalFont: '', trustedDomains: [], consoleLines: String(CONSOLE_LINES_DEFAULT), shortcuts: {},
     defaultAgent: 'claude', // DEFAULT_AGENT on a first run (#516)
@@ -207,8 +207,8 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
   });
   assert.equal('id' in sentOf(body).stages[0]!, false, 'id is a draft-only field, never sent to the server');
   assert.equal('id' in body.usageRules![0]!, false, 'id is a draft-only field, never sent to the server');
-  const row: SourceDraft = { ...emptySource('hive'), name: 'notes', number: '7' };
   const blank = draftFrom(undefined);
+  const row: SourceDraft = { ...emptySource('hive', blank.flows[0].id), name: 'notes', number: '7' };
   const bare = toSettingsBody({ ...blank, sources: [row], stages: [{ ...emptyStage(blank.flows[0].id), name: 'fila', from: { [row.id]: ['Ready'] } }], rules: [{ ...emptyRule('day'), percent: '80', kind: 'signal', value: 'red' }] });
   assert.deepEqual(bare.sources, [{ name: 'notes', qualifyId: false, type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }]);
   assert.deepEqual(sentOf(bare).stages, [{ name: 'fila', from: { notes: ['Ready'] } }], 'session=new, empty model / onStart / prompt stay absent');
@@ -361,7 +361,7 @@ test('env rows (#348, #511): a blank row is dropped, the name trimmed, the value
 test('each row\'s task properties (#688): read from its saved source and sent back; a new row starts on the workspace it is given with auto on, a first setup\'s on the proposed folder; a problem is a flow problem, judged after the source fields and the workspaces', () => {
   setLanguage('pt');
   const GH = { name: 'work', qualifyId: false, type: 'github' as const, owner: 'acme', number: 6, filter: [] as FilterRule[], ...EPICS };
-  const ROUTED: SourceTaskProps = { defaults: { auto: false }, rules: [{ field: 'title', op: 'icontains', value: '[api]', set: { workspace: 'hive' } }] };
+  const ROUTED: SourceTaskProps = { defaults: { auto: false, entry: { flow: MAIN_FLOW } }, rules: [{ field: 'title', op: 'icontains', value: '[api]', set: { workspace: 'hive' } }] };
   const body = (row: SourceDraft, draft: SettingsDraft) => toSettingsBody({ ...draft, sources: [row] }).sources?.[0];
   const routedDraft = draftFrom(info(withSources([{ ...GH, taskProps: ROUTED }])));
   const [routed] = routedDraft.sources;
@@ -370,9 +370,9 @@ test('each row\'s task properties (#688): read from its saved source and sent ba
   const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
   const [fixed] = valid.sources;
   assert.deepEqual(body(fixed, valid), { ...GH, taskProps: FIXED });
-  assert.deepEqual([emptySource('hive').taskProps, emptySource().taskProps.defaults.workspace], [{ defaults: { workspace: 'hive', auto: true }, rules: [] }, '']);
+  assert.deepEqual([emptySource('hive').taskProps, emptySource().taskProps.defaults.workspace], [{ defaults: { workspace: 'hive', auto: true, entry: { flowId: '' } }, rules: [] }, '']);
   assert.equal(draftFrom({ ...info(undefined, false), proposedWorkspace: '/work/app' }).sources[0].taskProps.defaults.workspace, 'app');
-  const at = (workspace: string): SourceDraft => ({ ...fixed, taskProps: { ...fixed.taskProps, defaults: { workspace, auto: true } } });
+  const at = (workspace: string): SourceDraft => ({ ...fixed, taskProps: { ...fixed.taskProps, defaults: { workspace, auto: true, entry: fixed.taskProps.defaults.entry } } });
   assert.deepEqual(validateSettings({ ...valid, sources: [at('gone')] }), { section: 'flow', message: t('settings.error.sourceWorkspace', { source: 'work' }) });
   assert.deepEqual(validateSettings({ ...valid, sources: [at('')] }), { section: 'flow', message: t('settings.error.taskPropsNoWorkspace', { source: 'work' }) });
   assert.deepEqual(validateSettings({ ...valid, sources: [{ ...at('gone'), number: '' }] }), { section: 'flow', message: t('settings.error.project') }, 'the source fields first');
@@ -382,7 +382,7 @@ test('each row\'s task properties (#688): read from its saved source and sent ba
 test('source rows: a valid name (not "local" or "hive"), unique, a prefix like the Comb\'s when set, checked on the comb tab; the column maps are keyed by row in the draft and by name in the body, a removed row\'s entries dropped (#180)', () => {
   setLanguage('pt');
   const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
-  const notes: SourceDraft = { ...emptySource('hive'), name: 'notes', number: '7', qualifyId: true, prefix: 'N' };
+  const notes: SourceDraft = { ...emptySource('hive', valid.flows[0].id), name: 'notes', number: '7', qualifyId: true, prefix: 'N' };
   const fed = valid.stages.map((s, i) => (i === 0 ? { ...s, from: { ...s.from, [notes.id]: ['todo'] } } : s)); // #514: a stage must enter from it too
   assert.equal(validateSettings({ ...valid, sources: [...valid.sources, notes], stages: fed }), undefined);
   for (const name of ['', '-x', 'local', 'hive', 'a:b']) {
@@ -402,7 +402,7 @@ test('source rows: a valid name (not "local" or "hive"), unique, a prefix like t
 
 test('validateSettings refuses a source no stage enters from, last in the chain, naming it on flow (#514)', () => {
   const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
-  const notes: SourceDraft = { ...emptySource('hive'), name: 'notes', number: '3' };
+  const notes: SourceDraft = { ...emptySource('hive', valid.flows[0].id), name: 'notes', number: '3' };
   assert.deepEqual(validateSettings({ ...valid, sources: [...valid.sources, notes] }), { section: 'flow', message: t('settings.error.sourceSilent', { source: 'notes' }) });
   const fed = valid.stages.map((s, i) => (i === 0 ? { ...s, from: { ...s.from, [notes.id]: ['Ready'] } } : s));
   assert.equal(validateSettings({ ...valid, sources: [...valid.sources, notes], stages: fed }), undefined);
@@ -726,4 +726,20 @@ test('validateSettings refuses a skill stage with no skill, on flow (#710)', () 
   const skill = { ...valid.stages[1], action: 'skill' as const, skill: '' };
   assert.deepEqual(validateSettings({ ...valid, stages: [valid.stages[0], skill] }), { section: 'flow', message: t('settings.stages.error.skill', { n: 2 }) });
   assert.equal(validateSettings({ ...valid, stages: [valid.stages[0], { ...skill, skill: 'new-plan' }] }), undefined);
+});
+
+test('entry travels by draft id: it round-trips, and a renamed flow and stage save under their new names (#670)', () => {
+  const GH = { name: 'work', qualifyId: false, type: 'github' as const, owner: 'acme', number: 6, filter: [] as FilterRule[], ...EPICS };
+  const ENTERED: SourceTaskProps = { ...FIXED, defaults: { ...FIXED.defaults, entry: { flow: MAIN_FLOW, stage: 'dev' } }, rules: [{ field: 'labels', op: 'icontains', value: 'idea', set: { entry: null } }] };
+  const draft = draftFrom(info(withSources([{ ...GH, taskProps: ENTERED }])));
+  assert.deepEqual(toSettingsBody(draft).sources?.[0].taskProps, ENTERED);
+  const renamed: SettingsDraft = { ...draft, flows: draft.flows.map((f) => ({ ...f, name: 'delivery' })), stages: draft.stages.map((s) => (s.name === 'dev' ? { ...s, name: 'build' } : s)) };
+  assert.deepEqual(toSettingsBody(renamed).sources?.[0].taskProps.defaults.entry, { flow: 'delivery', stage: 'build' });
+});
+
+test('a new source row enters at the first flow; a first setup\'s row too (#670)', () => {
+  const draft = draftFrom(info(CONFIG));
+  assert.deepEqual(emptySource('hive', draft.flows[0].id).taskProps.defaults.entry, { flowId: draft.flows[0].id });
+  const fresh = draftFrom(info(undefined, false));
+  assert.deepEqual(fresh.sources[0].taskProps.defaults.entry, { flowId: fresh.flows[0].id });
 });

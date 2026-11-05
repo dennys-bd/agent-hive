@@ -28,8 +28,8 @@ const info: SettingsInfo = {
     comb: {
       prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }],
       sources: [
-        { name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' },
-        { name: 'core', qualifyId: false, type: 'github', owner: 'acme', number: 2, filter: [{ field: 'assignee', op: 'any', values: ['@me'] }], taskProps: { defaults: { auto: true }, rules: CORE_RULES }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' },
+        { name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' },
+        { name: 'core', qualifyId: false, type: 'github', owner: 'acme', number: 2, filter: [{ field: 'assignee', op: 'any', values: ['@me'] }], taskProps: { defaults: { auto: true, entry: { flow: 'main' } }, rules: CORE_RULES }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' },
       ],
       flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'], core: ['Ready'] } }], transitions: [] }], commands: [],
     },
@@ -66,9 +66,9 @@ test('sources lists one row per source with its badge and summary (#514)', async
   await waitFor(() => expect(within(rows[0]).getByText(/#1 One/)).toBeInTheDocument());
   expect(within(rows[0]).getByText('board')).toBeInTheDocument();
   expect(within(rows[0]).getByText('GitHub Project')).toBeInTheDocument();
-  expect(within(rows[0]).getByText(`#1 One · ${t('settings.sources.noFilter')} · ${t('settings.sources.prop.fixed', { prop: 'workspace', value: 'hive' })} · ${t('settings.sources.prop.fixed', { prop: 'auto', value: t('settings.taskProps.yes') })}`)).toBeInTheDocument();
+  expect(within(rows[0]).getByText(`#1 One · ${t('settings.sources.noFilter')} · ${t('settings.sources.prop.fixed', { prop: 'workspace', value: 'hive' })} · ${t('settings.sources.prop.fixed', { prop: t('settings.taskProps.prop.entry'), value: 'main' })} · ${t('settings.sources.prop.fixed', { prop: 'auto', value: t('settings.taskProps.yes') })}`)).toBeInTheDocument();
   await waitFor(() => expect(within(rows[1]).getByText(/#2 Two/)).toBeInTheDocument());
-  expect(within(rows[1]).getByText(new RegExp(`^#2 Two · filtro: .+ · ${t('settings.sources.prop.other', { prop: 'workspace', n: 2 })} · ${t('settings.sources.prop.fixed', { prop: 'auto', value: t('settings.taskProps.yes') })}$`))).toBeInTheDocument();
+  expect(within(rows[1]).getByText(new RegExp(`^#2 Two · filtro: .+ · ${t('settings.sources.prop.other', { prop: 'workspace', n: 2 })} · ${t('settings.sources.prop.fixed', { prop: t('settings.taskProps.prop.entry'), value: 'main' })} · ${t('settings.sources.prop.fixed', { prop: 'auto', value: t('settings.taskProps.yes') })}$`))).toBeInTheDocument();
 
   const edit = within(rows[0]).getByText(t('settings.sources.edit'));
   expect(edit).toHaveAccessibleName(t('settings.sources.editSource', { source: 'board' }));
@@ -207,7 +207,7 @@ test('remover source on the detail drops it and returns to the list (#514)', asy
 });
 
 test('opened with newSource (from the header), the page starts on that source (#514)', async () => {
-  const newSource = { source: newSourceDraft({ owner: 'acme', number: '2', name: 'extra', workspace: 'hive' }), projects: [{ number: 2, title: 'Two', url: '' }] };
+  const newSource = { source: newSourceDraft({ owner: 'acme', number: '2', name: 'extra', workspace: 'hive' }, 'f1'), projects: [{ number: 2, title: 'Two', url: '' }] };
   render(<Settings info={info} newSource={newSource} onSaved={vi.fn()} onCancel={vi.fn()} />);
 
   const nav = screen.getByRole('navigation', { name: t('settings.nav') });

@@ -24,7 +24,7 @@ const pick = async (user: ReturnType<typeof userEvent.setup>, option: string): P
 
 test('the fields and the description (#514)', () => {
   stubFetch();
-  render(<NewSourceDialog open auth="cli" workspaces={['hive', 'site']} takenNames={[]} onOpenChange={vi.fn()} onAdd={vi.fn()} />);
+  render(<NewSourceDialog open auth="cli" workspaces={['hive', 'site']} flowId="f1" takenNames={[]} onOpenChange={vi.fn()} onAdd={vi.fn()} />);
 
   expect(within(dialog()).getByText(t('newSource.description'))).toBeInTheDocument();
   const radios = screen.getAllByRole('radio');
@@ -41,7 +41,7 @@ test('the fields and the description (#514)', () => {
 test('carregar lists the owner\'s projects, the pick prefills the name until it is typed (#514)', async () => {
   const user = userEvent.setup();
   const fetchMock = stubFetch();
-  render(<NewSourceDialog open auth="cli" workspaces={['hive']} takenNames={[]} onOpenChange={vi.fn()} onAdd={vi.fn()} />);
+  render(<NewSourceDialog open auth="cli" workspaces={['hive']} flowId="f1" takenNames={[]} onOpenChange={vi.fn()} onAdd={vi.fn()} />);
 
   await user.click(screen.getByRole('button', { name: t('settings.load') }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/projects?owner=%40me&auth=cli'));
@@ -59,7 +59,7 @@ test('adicionar source validates and hands over the row (#514)', async () => {
   const user = userEvent.setup();
   stubFetch();
   const onAdd = vi.fn();
-  const { rerender } = render(<NewSourceDialog open auth="cli" workspaces={['hive']} takenNames={[]} onOpenChange={vi.fn()} onAdd={onAdd} />);
+  const { rerender } = render(<NewSourceDialog open auth="cli" workspaces={['hive']} flowId="f1" takenNames={[]} onOpenChange={vi.fn()} onAdd={onAdd} />);
 
   await user.click(screen.getByRole('button', { name: t('newSource.add') }));
   expect(await screen.findByRole('alert')).toHaveTextContent(t('settings.error.project'));
@@ -67,18 +67,18 @@ test('adicionar source validates and hands over the row (#514)', async () => {
 
   await user.click(screen.getByRole('button', { name: t('settings.load') }));
   await pick(user, '#7 agent-hive');
-  rerender(<NewSourceDialog open auth="cli" workspaces={['hive']} takenNames={['agent-hive']} onOpenChange={vi.fn()} onAdd={onAdd} />);
+  rerender(<NewSourceDialog open auth="cli" workspaces={['hive']} flowId="f1" takenNames={['agent-hive']} onOpenChange={vi.fn()} onAdd={onAdd} />);
   await user.click(screen.getByRole('button', { name: t('newSource.add') }));
   expect(await screen.findByRole('alert')).toHaveTextContent(t('settings.error.sourceDuplicate', { name: 'agent-hive' }));
   expect(onAdd).not.toHaveBeenCalled();
 
-  rerender(<NewSourceDialog open auth="cli" workspaces={['hive']} takenNames={[]} onOpenChange={vi.fn()} onAdd={onAdd} />);
+  rerender(<NewSourceDialog open auth="cli" workspaces={['hive']} flowId="f1" takenNames={[]} onOpenChange={vi.fn()} onAdd={onAdd} />);
   await user.clear(screen.getByLabelText(t('newSource.name')));
   await user.type(screen.getByLabelText(t('newSource.name')), 'hive2');
   await user.click(screen.getByRole('button', { name: t('newSource.add') }));
 
   expect(onAdd).toHaveBeenCalledWith({
-    source: expect.objectContaining({ type: 'github', owner: '@me', number: '7', name: 'hive2', taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] } }),
+    source: expect.objectContaining({ type: 'github', owner: '@me', number: '7', name: 'hive2', taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flowId: 'f1' } }, rules: [] } }),
     projects: PROJECTS,
   });
 });
@@ -86,7 +86,7 @@ test('adicionar source validates and hands over the row (#514)', async () => {
 test('a failing carregar shows the server\'s message, and the dialog stays open (#514)', async () => {
   const user = userEvent.setup();
   stubFetch(async () => jsonResponse({ error: 'no token' }, 500));
-  render(<NewSourceDialog open auth="cli" workspaces={['hive']} takenNames={[]} onOpenChange={vi.fn()} onAdd={vi.fn()} />);
+  render(<NewSourceDialog open auth="cli" workspaces={['hive']} flowId="f1" takenNames={[]} onOpenChange={vi.fn()} onAdd={vi.fn()} />);
 
   await user.click(screen.getByRole('button', { name: t('settings.load') }));
 
@@ -96,7 +96,7 @@ test('a failing carregar shows the server\'s message, and the dialog stays open 
 
 test('nova source: its copy, the fields fill their width and the description matches the field hints (#528)', () => {
   stubFetch();
-  render(<NewSourceDialog open auth="cli" workspaces={['hive', 'site']} takenNames={[]} onOpenChange={vi.fn()} onAdd={vi.fn()} />);
+  render(<NewSourceDialog open auth="cli" workspaces={['hive', 'site']} flowId="f1" takenNames={[]} onOpenChange={vi.fn()} onAdd={vi.fn()} />);
   expect(screen.getByRole('dialog', { name: 'nova source' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'adicionar source' })).toBeInTheDocument();
   expect(screen.getByText(t('newSource.description'))).toHaveTextContent('de onde vêm as tarefas. filtros, workspace dinâmico e etapas ficam para depois, em configuração › fluxo.');
@@ -110,7 +110,7 @@ test('a source named hive shows the name error: the flow sidebar\'s row for the 
   const user = userEvent.setup();
   stubFetch();
   const onAdd = vi.fn();
-  render(<NewSourceDialog open auth="cli" workspaces={['hive']} takenNames={[]} onOpenChange={vi.fn()} onAdd={onAdd} />);
+  render(<NewSourceDialog open auth="cli" workspaces={['hive']} flowId="f1" takenNames={[]} onOpenChange={vi.fn()} onAdd={onAdd} />);
 
   await user.click(screen.getByRole('button', { name: t('settings.load') }));
   await pick(user, '#7 agent-hive');

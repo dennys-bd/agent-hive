@@ -1,9 +1,9 @@
 // Settings › fluxo › sources (#514): the row summary, and the new-source dialog's types, rules and row. Pure, so node:test checks it.
 import { WORKSPACE_NAME, isReservedSource } from '../../tasks.js';
-import { TASK_PROPS, type SourceFields, type FilterRule, type GithubAuth, type GithubAuthStatus, type ProjectSummary, type TaskProp } from '../../types.js';
+import type { SourceFields, FilterRule, GithubAuth, GithubAuthStatus, ProjectSummary, TaskProp } from '../../types.js';
 import { type MessageKey, t } from '../i18n.js';
 import { type SourceDraft, emptySource } from './settings-form.js';
-import { PROP_LABEL, propMode } from './setup-source-task-props.js';
+import { entryLabel, type FlowScope, PROP_LABEL, propMode } from './setup-source-task-props.js';
 
 /** The types the dialog offers (#514): Jira has no adapter yet; a new adapter joins here with its spec. */
 export const NEW_SOURCE_TYPES = ['github'] as const satisfies readonly SourceFields['type'][];
@@ -23,8 +23,8 @@ export function newSourceProblem(f: NewSourceFields, taken: readonly string[]): 
   return f.workspace === '' ? t('newSource.error.workspace') : undefined;
 }
 
-export const newSourceDraft = (f: NewSourceFields): SourceDraft =>
-  ({ ...emptySource(f.workspace), type: 'github', name: f.name.trim(), owner: f.owner.trim(), number: f.number });
+export const newSourceDraft = (f: NewSourceFields, flowId: string): SourceDraft =>
+  ({ ...emptySource(f.workspace, flowId), type: 'github', name: f.name.trim(), owner: f.owner.trim(), number: f.number });
 
 function ruleText(rule: FilterRule): string {
   if (rule.field === 'blocked') return `${t(rule.op === 'any' ? 'settings.filter.op.is' : 'settings.filter.op.isNot')} ${t('settings.filter.field.blocked')}`;
@@ -44,17 +44,23 @@ function filterPart(source: SourceDraft): string {
   return source.filter.length === 1 ? t('settings.sources.filter', { rule: ruleText(source.filter[0]) }) : t('settings.sources.filters', { n: source.filter.length });
 }
 
-// One part per task property (#688), in registry order: fixed reads its default, dynamic counts the rules that set it.
-function propPart({ taskProps }: SourceDraft, prop: TaskProp): string {
+// The summary's order (#670, handoff): the entry part right after the workspace part, before auto; not TASK_PROPS' order.
+const SUMMARY_PROPS: readonly TaskProp[] = ['workspace', 'entry', 'auto'];
+
+function fixedValue({ workspace, auto, entry }: SourceDraft['taskProps']['defaults'], prop: TaskProp, scope: FlowScope): string {
+  if (prop === 'entry') return entryLabel(entry, scope);
+  return prop === 'auto' ? t(auto ? 'settings.taskProps.yes' : 'settings.taskProps.no') : workspace || '—';
+}
+
+// One part per task property (#688): fixed reads its default, dynamic counts the rules that set it.
+function propPart({ taskProps }: SourceDraft, prop: TaskProp, scope: FlowScope): string {
   const name = t(PROP_LABEL[prop]);
   const mode = propMode(taskProps, prop);
   if (mode !== 'fixed') return t(mode === 1 ? 'settings.sources.prop.one' : 'settings.sources.prop.other', { prop: name, n: mode });
-  const { workspace, auto } = taskProps.defaults;
-  const value = prop === 'auto' ? t(auto ? 'settings.taskProps.yes' : 'settings.taskProps.no') : workspace || '—';
-  return t('settings.sources.prop.fixed', { prop: name, value });
+  return t('settings.sources.prop.fixed', { prop: name, value: fixedValue(taskProps.defaults, prop, scope) });
 }
 
-/** A sources row's one-line summary (#514, #688): project · filter · one part per task property, joined by " · ". `title` is the loaded
+/** A sources row's one-line summary (#514, #688): project · filter · one part per task property (workspace, entry, auto), joined by " · ". `title` is the loaded
  * project's, when it has joined the row yet. */
-export const sourceSummary = (source: SourceDraft, title?: string): string =>
-  [projectPart(source, title), filterPart(source), ...TASK_PROPS.map((prop) => propPart(source, prop))].join(' · ');
+export const sourceSummary = (source: SourceDraft, scope: FlowScope, title?: string): string =>
+  [projectPart(source, title), filterPart(source), ...SUMMARY_PROPS.map((prop) => propPart(source, prop, scope))].join(' · ');

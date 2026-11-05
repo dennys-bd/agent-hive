@@ -7,7 +7,7 @@ import { activityIdOf, type WithWork, withPointedWork, withTasks } from '../fixt
 
 const stage = (name: string, column: string): Stage => ({ name, from: { roadmap: [column] }, prompt: 'x' });
 export const FLOWS: Flow[] = [{ name: 'build', stages: [stage('dev', 'Ready')], transitions: [] }, { name: 'ship', stages: [stage('review', 'Review')], transitions: [] }];
-const source = (name: string, number: number): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
+const source = (name: string, number: number): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
 export const ROADMAP = source('roadmap', 6);
 export const NOTES = source('notes', 8);
 

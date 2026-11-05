@@ -238,10 +238,11 @@ export type RuleOp = 'equals' | 'iequals' | 'contains' | 'icontains';
 /** Where a new task enters (#670): a flow (its first stage) or one of its stages; null = outside the flow (#566). */
 export type TaskEntry = { flow: string; stage?: string } | null;
 /** What a source sets on each task it lists, on entry (#688). The registry's order is the UI's order. */
-export const TASK_PROPS = ['workspace', 'auto'] as const;
+export const TASK_PROPS = ['workspace', 'auto', 'entry'] as const;
 export type TaskProp = (typeof TASK_PROPS)[number];
 /** A task's properties as a source sets them (#688): workspace absent = no workspace. */
-export interface TaskProps { workspace?: string; auto: boolean }
+// entry: #670, required in the defaults; absent in a rule's set = the rule does not set it
+export interface TaskProps { workspace?: string; auto: boolean; entry: TaskEntry }
 /** A rule (#688): when its field matches, it sets the 1+ properties in `set`. */
 export interface TaskRule { field: string; op: RuleOp; value: string; set: Partial<TaskProps> }
 /** A source's task properties (#688): the defaults and 0 to RULES_MAX rules; per property, the first matching rule that sets it wins. */

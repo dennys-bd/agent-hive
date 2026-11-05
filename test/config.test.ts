@@ -16,7 +16,7 @@ const GITHUB_SOURCE = { type: 'github', owner: '@me', number: 6, filter: FILTER 
 const github = (extra: Record<string, unknown> = {}) => combConfig({ source: GITHUB_SOURCE, ...extra });
 const GITHUB = github();
 const FRONT = { name: 'Run Frontend', impls: [{ workspace: 'hive', command: 'pnpm run dev -- --port $PORT' }], menu: true, env: { PORT: '5173' } };
-const DYNAMIC: SourceTaskProps = { defaults: { auto: true }, rules: [{ field: 'title', op: 'icontains', value: '[site]', set: { workspace: 'site' } }] };
+const DYNAMIC: SourceTaskProps = { defaults: { auto: true, entry: { flow: 'main' } }, rules: [{ field: 'title', op: 'icontains', value: '[site]', set: { workspace: 'site' } }] };
 const TWO = [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 70)' }];
 
 test('parseConfig applies defaults on top of a minimal config', () => {
@@ -723,11 +723,16 @@ test('comb.sources holds named sources: a name like a workspace\'s but not "loca
     assert.throws(second({ prefix }), { message: 'hive.config.json: "comb.sources[1].prefix" must be a letter followed by up to 9 letters or digits' }, prefix);
   }
   assert.throws(second({ number: undefined }), /"comb\.sources\[1\]\.number"/);
-  assert.throws(second({ taskProps: { defaults: { workspace: 'nope', auto: true }, rules: [] } }), { message: 'hive.config.json: "comb.sources[1].taskProps.defaults.workspace" must name one of "comb.workspaces"' });
+  assert.throws(second({ taskProps: { defaults: { workspace: 'nope', auto: true, entry: { flow: 'main' } }, rules: [] } }), { message: 'hive.config.json: "comb.sources[1].taskProps.defaults.workspace" must name one of "comb.workspaces"' });
   assert.throws(() => parseConfig(combConfig({ sources: 'x' })), { message: 'hive.config.json: "comb.sources" must be an array' });
   const withOld = { ...GITHUB, comb: { ...(GITHUB.comb as Record<string, unknown>), board: GITHUB_SOURCE } };
   assert.throws(() => parseConfig(withOld), { message: 'hive.config.json: "comb.board" moved to "comb.sources"' });
   assert.equal(predatesComb(withOld), true, 'boot opens the settings form with that error');
+});
+
+test('a source entry naming a flow the comb lacks is refused once the flows are parsed (#670)', () => {
+  const bad = { ...FIXED, defaults: { ...FIXED.defaults, entry: { flow: 'nope' } } };
+  assert.throws(() => parseConfig(github({ source: { ...GITHUB_SOURCE, taskProps: bad } })), { message: 'hive.config.json: "comb.sources[0].taskProps.defaults.entry" must name a flow of "comb.flows"' });
 });
 
 test('comb.prefix is a letter then up to 9 letters or digits, and comb.workspaces holds one or more named absolute paths, names and paths unique (#179)', () => {
@@ -745,7 +750,7 @@ test('comb.prefix is a letter then up to 9 letters or digits, and comb.workspace
   for (const name of [undefined, '', '-x', '.x', 'a b', 'a/b', 'x'.repeat(41), 7]) {
     assert.throws(() => parseConfig(github({ workspaces: [two[0], { name, path: '/b', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }] })), { message: nameMessage }, JSON.stringify(name));
   }
-  assert.doesNotThrow(() => parseConfig(github({ workspaces: [{ name: 'x'.repeat(40), path: '/b', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'x'.repeat(40), auto: true }, rules: [] } } })), '40 characters is the cap');
+  assert.doesNotThrow(() => parseConfig(github({ workspaces: [{ name: 'x'.repeat(40), path: '/b', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'x'.repeat(40), auto: true, entry: { flow: 'main' } }, rules: [] } } })), '40 characters is the cap');
   const pathMessage = 'hive.config.json: "comb.workspaces[0].path" must be an absolute path';
   for (const path of ['relative/repo', '', undefined]) {
     assert.throws(() => parseConfig(github({ workspaces: [{ name: 'hive', path, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }] })), { message: pathMessage }, JSON.stringify(path));
@@ -835,7 +840,7 @@ test('a workspace env or a command env that sets a name the Hive sets is refused
 });
 
 test('comb.sources[i].taskProps is required, parsed at its path; the #293 workspace setting is refused; unnamedWorkspacePath spots a file from before names (#179, #688)', () => {
-  const site: SourceTaskProps = { defaults: { workspace: 'site', auto: false }, rules: [] };
+  const site: SourceTaskProps = { defaults: { workspace: 'site', auto: false, entry: { flow: 'main' } }, rules: [] };
   assert.deepEqual(parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: site } })).comb.sources[0], { name: 'board', qualifyId: false, ...GITHUB_SOURCE, ...EPICS, taskProps: site });
   assert.deepEqual(parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: DYNAMIC } })).comb.sources[0].taskProps, DYNAMIC);
   const message = 'hive.config.json: "comb.sources[0].taskProps" must be an object like { "defaults": { "auto": true }, "rules": [] }';
@@ -866,13 +871,13 @@ test('workspaceByName finds a Comb workspace by its name', () => {
 });
 
 test('taskWorkspace resolves a task against the config\'s workspaces and source default; workspaceScope takes each source\'s default workspace, none without one; requireWorkspace names why there is none (#179, #688)', () => {
-  const config = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'site', auto: true }, rules: [] } } }));
+  const config = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'site', auto: true, entry: { flow: 'main' } }, rules: [] } } }));
   const task = { item: { itemId: 'I1', id: '1', title: 'T', body: '', url: '', source: 'board' } };
   assert.deepEqual(taskWorkspace(config, task), { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 70)' }, 'the source default');
   assert.deepEqual(workspaceScope(config), { workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: { hive: [], site: [] }, workspaceColors: { hive: 'oklch(0.72 0.12 25)', site: 'oklch(0.72 0.12 70)' } });
   const routed = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: DYNAMIC } }));
   assert.deepEqual(workspaceScope(routed).sourceWorkspaces, {}, 'no default workspace: its rules route through the hint (#293)');
-  const both = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: { ...DYNAMIC, defaults: { workspace: 'hive', auto: true } } } }));
+  const both = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: { ...DYNAMIC, defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } } } } }));
   assert.deepEqual(workspaceScope(both).sourceWorkspaces, { board: 'hive' }, 'a default next to rules is still the fallback (#688)');
   assert.deepEqual(workspaceScope(parseConfig(GITHUB)), { workspaces: ['hive'], sourceWorkspaces: { board: 'hive' }, commands: { hive: [] }, workspaceColors: { hive: 'oklch(0.72 0.12 25)' } }, 'the default source is fixed on the Comb\'s only workspace');
   assert.deepEqual(workspaceScope(parseConfig(github({ commands: [FRONT] }))).commands, { hive: ['Run Frontend'] }, 'names only: never the line nor the env (#300)');
@@ -887,7 +892,7 @@ test('workspaceScope lists, per workspace, only what the task menu offers there:
     cmd('y', [{ workspace: 'b', command: 'b' }, { workspace: null, command: 'true' }]),
     cmd('z', [{ workspace: null, command: 'true' }], false),
   ];
-  const config = parseConfig(github({ workspaces: [{ name: 'a', path: '/a', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, { name: 'b', path: '/b', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'a', auto: true }, rules: [] } }, commands }));
+  const config = parseConfig(github({ workspaces: [{ name: 'a', path: '/a', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, { name: 'b', path: '/b', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'a', auto: true, entry: { flow: 'main' } }, rules: [] } }, commands }));
   assert.deepEqual(workspaceScope(config).commands, { a: ['x', 'y'], b: ['y'] });
 });
 

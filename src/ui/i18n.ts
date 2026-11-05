@@ -3087,6 +3087,8 @@ const en = {
   'repos.task.outside': 'no flow',
   'settings.taskProps.entry.first': 'at its first stage, {stage}', // #670: the entry menu's note on a flow
   'settings.taskProps.entry.footer': 'applies at entry only: a task already in a flow stays where it is',
+  'settings.taskProps.prop.entry': 'enters at',
+  'settings.taskProps.note.entry': 'flow and stage',
 };
 
 export type MessageKey = keyof typeof en;
@@ -6168,6 +6170,8 @@ const pt: Record<MessageKey, string> = {
   'repos.task.outside': 'sem fluxo',
   'settings.taskProps.entry.first': 'na primeira etapa, {stage}',
   'settings.taskProps.entry.footer': 'vale só na entrada: a tarefa que já está num fluxo fica onde está',
+  'settings.taskProps.prop.entry': 'entra em',
+  'settings.taskProps.note.entry': 'fluxo e etapa',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

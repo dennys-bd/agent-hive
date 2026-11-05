@@ -95,9 +95,10 @@ function issueItem(node: GhItemNode, names: Set<string>, taskProps: SourceTaskPr
     ...(typeof c.createdAt === 'string' ? { createdAt: c.createdAt } : {}), // #742: lead time counts from the issue's own creation
     ...(links === undefined ? {} : treeFields(links)),
   };
-  const { workspace, auto } = matchTaskProps(taskProps.rules, itemReader(node));
+  const { workspace, auto, entry } = matchTaskProps(taskProps.rules, itemReader(node));
   const hinted = workspace === undefined ? item : { ...item, workspaceHint: workspace };
-  return { item: { ...hinted, autoOnEntry: auto ?? taskProps.defaults.auto }, column };
+  // #670: read on every poll; never ??: a rule's null (outside the flow) is a value
+  return { item: { ...hinted, autoOnEntry: auto ?? taskProps.defaults.auto, entry: entry === undefined ? taskProps.defaults.entry : entry }, column };
 }
 
 // #31: under show an issue with sub-issues is an epic: it never runs and its stage follows its children, by the source's own rule

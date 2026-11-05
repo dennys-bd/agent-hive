@@ -15,7 +15,7 @@ import { FakeWebSocket, resetFakes } from './xterm-fakes';
 // #571: two flows, dev in build and review in ship; #3 sits in a stage of no flow
 const stage = (name: string, column: string): Stage => ({ name, from: { roadmap: [column] }, prompt: 'x' });
 const FLOWS: Flow[] = [{ name: 'build', stages: [stage('dev', 'Ready')], transitions: [] }, { name: 'ship', stages: [stage('review', 'Review')], transitions: [] }];
-const ROADMAP: SourceConfig = { name: 'roadmap', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
+const ROADMAP: SourceConfig = { name: 'roadmap', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
 const NAV: SourcesNav = { sources: [ROADMAP], auth: 'cli' };
 const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
 const task = (n: string, at: string): Task => ({ item: { itemId: `roadmap:PVTI_${n}`, id: n, title: `Issue ${n}`, body: '', url: `https://github.com/acme/r/issues/${n}`, source: 'roadmap' }, stage: at, boardColumn: 'Ready', auto: true });
