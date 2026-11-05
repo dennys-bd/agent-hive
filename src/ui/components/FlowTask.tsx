@@ -85,15 +85,15 @@ const ACTION_LABEL: Record<TaskAction, MessageKey> = {
   retry: 'task.retry',
 };
 
-type Tone = Status | 'destructive';
+export type Tone = Status | 'destructive';
 const TONE_BORDER: Record<Tone, string> = { ...STATUS_BORDER, destructive: 'border-destructive' };
-const TONE_TEXT: Record<Tone, string> = { ...STATUS_TEXT, destructive: 'text-destructive' };
+export const TONE_TEXT: Record<Tone, string> = { ...STATUS_TEXT, destructive: 'text-destructive' };
 // The selected task's ring (redesign 10): its status colour at 35%, ring's with none. Literal per tone, so Tailwind's scanner finds each
 const TONE_RING: Record<Tone, string> = {
   empty: 'ring-ring/35', working: 'ring-working/35', waiting: 'ring-waiting/35', review: 'ring-review/35', approval: 'ring-approval/35', backoff: 'ring-backoff/35', destructive: 'ring-destructive/35',
 };
 
-interface TaskStatus { tone?: Tone; text?: string }
+export interface TaskStatus { tone?: Tone; text?: string }
 
 // #54: the blockers the ⊘ line names. An epic's blockedBy holds its open sub-issues too, and its footer already counts its children, so
 // those are left out; a sub-issue off the Project is not a task here and still shows, until #55's Item.blockers tells them apart
@@ -129,7 +129,7 @@ function waitingText(task: Task, state: State): string {
 // no other state is its own), then out of tries (#913), then a failed start (#945), then the task's state (#663: its sessions' worst at work, else aguardando
 // review, else aguardando aprovação), the precedence the border always had (#229, #268, #279); in muted the worktree setup (#351), a spawn
 // error or the blocker. Nothing otherwise
-function taskStatus(task: Task, state: State): TaskStatus {
+export function taskStatus(task: Task, state: State): TaskStatus {
   const error = activityOf(state, task.item.itemId)?.error;
   if (task.item.epic !== undefined) { // #31: a refused end action freezes the epic (followEpics skips it), so its error must show over the wait
     return error === undefined ? { text: waitingText(task, state) } : { tone: 'destructive', text: taskError(error) };
@@ -157,7 +157,7 @@ function taskStatus(task: Task, state: State): TaskStatus {
 // The title (#134, 1b): the workspace's colour square before the id, its name as the square's title, two lines at most. No square when no rule
 // resolves a workspace (#179). A child's ↳ after the square, whether the tree toggle is on or off; a root has none (#34). A cut title shows in
 // full on hover (#91), in a tooltip over the card's drag hint while the pointer is on it; not selectable, so the card keeps its grab cursor (#284)
-function TaskTitle({ task, state }: { task: Task; state: State }) {
+export function TaskTitle({ task, state }: { task: Task; state: State }) {
   const titleRef = useRef<HTMLSpanElement>(null);
   const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
   const isChild = parentOf(state.tasks, task.item.itemId) !== undefined;
