@@ -1821,6 +1821,7 @@ const en = {
   'project.columns': 'columns', // #756, handoff 01b: the subbar's columns menu
   'project.columns.note': "fields come from the project. their order is the project's.",
   'project.columns.origin.project': 'project', 'project.columns.origin.hive': 'hive',
+  'project.noFlow': 'no flow', // #583: the hive's stageless group and its stage menu's last entry
   'repos.title': 'repositories', // #757: the flow sidebar's repositories section
   'repos.prs': 'PRs',
   'repos.pinned': 'pinned',
@@ -4862,6 +4863,7 @@ const pt: Record<MessageKey, string> = {
   'project.columns': 'colunas',
   'project.columns.note': 'os campos vêm do project. a ordem segue a do project.',
   'project.columns.origin.project': 'project', 'project.columns.origin.hive': 'hive',
+  'project.noFlow': 'sem fluxo',
   'repos.title': 'repositórios',
   'repos.prs': 'PRs',
   'repos.pinned': 'fixados',
