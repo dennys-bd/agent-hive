@@ -17,6 +17,8 @@ const item = (role: Role, key: MessageKey): MenuItemConstructorOptions => ({ rol
 const editItem = (role: Role, key: MessageKey, isMac: boolean): MenuItemConstructorOptions =>
   (isMac ? item(role, key) : { ...item(role, key), registerAccelerator: false });
 const SEPARATOR: MenuItemConstructorOptions = { type: 'separator' };
+// The app menu's macOS-only roles (#648): off macOS there is no About panel and no app to hide or show
+const macOnly = (isMac: boolean, items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] => (isMac ? items : []);
 // Close's binding as its item's accelerator (#449); turned off leaves the item without any, still reachable by a click.
 const accelerator = (binding: string | null): Pick<MenuItemConstructorOptions, 'accelerator'> => (binding === null ? {} : { accelerator: binding });
 
@@ -31,15 +33,15 @@ function fullScreenItem(binding: string | null): MenuItemConstructorOptions {
 /** The app menu, Edit and Window, labelled in the current language. Settings… has no role: onSettings opens the settings form, as the menu
  *  bar's Settings… does. Quit's role emits before-quit, which goes through quitHive like Cmd+Q. Close gets the window the click names (the
  *  focused one for Cmd+W, undefined with none) and hands it to onClose. The app menu has no label: macOS titles it with the app's name.
- *  isMac: whether Edit's keys are registered (#644). */
+ *  isMac: whether Edit's keys are registered (#644), and whether the app menu carries its macOS-only roles (#648). */
 export function appMenuTemplate(onSettings: () => void, onClose: (win: BaseWindow | undefined) => void, bindings: Bindings, isMac: boolean): MenuItemConstructorOptions[] {
   return [
     {
       role: 'appMenu',
       submenu: [
-        item('about', 'main.menu.about'), SEPARATOR,
+        ...macOnly(isMac, [item('about', 'main.menu.about'), SEPARATOR]),
         { label: t('main.settings'), accelerator: FIXED_BINDINGS.settings, click: onSettings }, SEPARATOR,
-        item('hide', 'main.menu.hide'), item('hideOthers', 'main.menu.hideOthers'), item('unhide', 'main.menu.showAll'), SEPARATOR,
+        ...macOnly(isMac, [item('hide', 'main.menu.hide'), item('hideOthers', 'main.menu.hideOthers'), item('unhide', 'main.menu.showAll'), SEPARATOR]),
         item('quit', 'main.quit'),
       ],
     },
