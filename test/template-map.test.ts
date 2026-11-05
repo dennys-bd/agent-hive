@@ -217,37 +217,35 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
   const map = buildMap(parseTemplate(NEW_BUILD), { skills: [], agents: SHIPPED_AGENTS });
   assert.deepEqual(map.errors, []);
   const [introduction, ...sections] = map.blocks;
-  // #312 dropped the intro's `/hive:flow` (no such skill), so it names nothing
-  assert.deepEqual(introduction, { kind: 'introduction', line: 20, endLine: 24, references: [] });
+  // #312 dropped the intro's `/hive:flow` (no such skill); since #431 it names `/hive:new-pr`, the one way it touches GitHub
+  assert.deepEqual(introduction, { kind: 'introduction', line: 19, endLine: 25, references: [{ kind: 'skill', name: 'hive:new-pr', line: 21 }] });
   const headings = sections.filter((block): block is HeadingBlock => block.kind === 'heading');
   assert.equal(headings.length, sections.length, 'no chain in this file');
   assert.deepEqual(
     headings.map((block) => [block.level, block.title, block.line, block.count]),
     [
-      [2, 'Input', 25, 0],
-      [2, 'Conventions', 40, 0],
-      [2, 'No questions', 64, 0],
-      [2, 'Working tree', 71, 0],
-      [2, 'Model routing', 75, 0],
-      [2, 'Stage 1 — Slices', 89, 0],
-      [2, 'Stage 2 — Security review', 126, 0],
-      [2, "Stage 3 — Check against the spec's Done", 136, 0],
-      [2, 'Stage 4 — UI check', 144, 0],
-      [2, 'Stage 5 — Walkthrough', 153, 0],
-      [2, 'Stage 6 — PR', 176, 0],
-      [2, 'End', 183, 0],
-      [2, 'Subagent substitution', 191, 0],
-      [2, 'Stops', 198, 0],
+      // #431: count is the chains a section holds, one per value interpolated by condition (testCommand, delivery, uiCheck)
+      [2, 'Input', 26, 0],
+      [2, 'Rules', 63, 1],
+      [2, 'Working tree', 92, 0],
+      [2, 'Subagents', 98, 0],
+      [2, 'Stage 1 — Slices', 113, 3],
+      [2, 'Stage 2 — Security review', 157, 3],
+      [2, "Stage 3 — Check against the spec's Done", 176, 0],
+      [2, 'Stage 4 — UI check', 184, 1],
+      [2, 'Stage 5 — Walkthrough', 198, 2],
+      [2, 'Stage 6 — PR', 230, 0],
+      [2, 'End', 237, 0],
+      [2, 'Stops', 244, 0],
     ],
   );
   const agentsOf = (block: HeadingBlock) => block.references.filter((reference) => reference.kind === 'agent');
   const named = Object.fromEntries(headings.map((block) => [block.title, agentsOf(block).map((reference) => reference.name)]));
   assert.deepEqual(named, {
     Input: [],
-    Conventions: [],
-    'No questions': [],
+    Rules: [],
     'Working tree': [],
-    'Model routing': ['hive:tdd', 'hive:build-fixer', 'hive:code-reviewer', 'hive:security-reviewer'],
+    Subagents: ['hive:tdd', 'hive:build-fixer', 'hive:code-reviewer', 'hive:security-reviewer'],
     'Stage 1 — Slices': ['hive:tdd', 'hive:build-fixer', 'hive:code-reviewer'],
     'Stage 2 — Security review': ['hive:security-reviewer'],
     "Stage 3 — Check against the spec's Done": [],
@@ -255,16 +253,15 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
     'Stage 5 — Walkthrough': [],
     'Stage 6 — PR': [],
     End: [],
-    'Subagent substitution': [],
     Stops: ['hive:build-fixer'],
   });
   const section = (title: string): HeadingBlock => headings.filter((block) => block.title === title)[0];
   assert.deepEqual(agentsOf(section('Stage 1 — Slices')), [
-    { kind: 'agent', name: 'hive:tdd', line: 106 },
-    { kind: 'agent', name: 'hive:build-fixer', line: 113 },
-    { kind: 'agent', name: 'hive:code-reviewer', line: 116 },
+    { kind: 'agent', name: 'hive:tdd', line: 136 },
+    { kind: 'agent', name: 'hive:build-fixer', line: 143 },
+    { kind: 'agent', name: 'hive:code-reviewer', line: 147 },
   ]);
-  assert.deepEqual(agentsOf(section('Stage 2 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 134 }]);
+  assert.deepEqual(agentsOf(section('Stage 2 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 173 }]);
 });
 
 test('a marker line with thousands of spaces maps in linear time (#311)', () => {

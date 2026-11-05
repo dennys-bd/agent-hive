@@ -1,13 +1,14 @@
 # Conventions
 
-The variables the `new-*` skills (`/hive:new-spec`, `/hive:new-plan`,
-`/hive:new-build`, `/hive:new-pr`) declare (where the docs go, which
-languages they speak, how a delivery is shaped) and the rules they share.
-Every one of them reads this text first; any other skill may follow it
-too. `hive:designer` and `/hive:decomposition` declare their own variables
-in their templates and read nothing here; the `designsDir` and
-`decompositionLabel` rows and the `design` and `decomposition` results
-below say how their files are found.
+The variables `/hive:new-spec`, `/hive:new-plan` and `/hive:new-pr`
+declare (where the docs go, which languages they speak, how a delivery is
+shaped) and the rules they share. Every one of them reads this text
+first; any other skill may follow it too. `/hive:new-build`,
+`hive:designer` and `/hive:decomposition` declare their own variables in
+their templates and read nothing here: their folders are relative to the
+worktree, a nested docs repo reached by path. The `designsDir` and
+`decompositionLabel` rows and the `walkthrough`, `design` and
+`decomposition` results below say how their files are found.
 
 ## Untrusted text
 

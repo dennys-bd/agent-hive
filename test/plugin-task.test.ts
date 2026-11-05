@@ -18,8 +18,11 @@ test('reference/conventions.md says once to read the task with hive_task, and wh
   assert.match(text, /result` `hive_task` answers/, 'the previous stage\'s files are looked up in the task\'s result too');
 });
 
-test('each new-* skill reads the task as the reference says; decomposition calls hive_task itself and keeps gh issue view as its fallback (#7)', async () => {
-  for (const name of NEW_SKILLS) assert.match(await skill(name), /under "The task"/, name);
+test('each new-* skill but new-build reads the task as the reference says; new-build reads it through hive_task alone, whatever its source; decomposition calls hive_task itself and keeps gh issue view as its fallback (#7, #431)', async () => {
+  for (const name of NEW_SKILLS.filter((skillName) => skillName !== 'new-build')) assert.match(await skill(name), /under "The task"/, name);
+  const build = await skill('new-build');
+  assert.ok(build.includes('as `hive_task` answers it'), 'new-build names the task tool itself');
+  assert.doesNotMatch(build, /gh issue|branch name|under "The task"/, 'new-build has no source of its own to fall back on: outside the Hive it has only its argument');
   const decomposition = await skill('decomposition');
   for (const part of ['`hive_task`', '`task: null`', 'gh issue view', 'branch name']) assert.ok(decomposition.includes(part), part);
   assert.ok((await skill('new-spec')).includes('gh issue view'), 'new-spec keeps its fallback fetch');
