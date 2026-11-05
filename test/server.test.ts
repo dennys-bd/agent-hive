@@ -1591,7 +1591,7 @@ test('a refusal answers 200 { removed: false, refused } with the reason and remo
   const before = task0(server);
   const ran = work0(server)?.sessionId; // #629: the activity's
   git.clear();
-  assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: false, refused: `the branch '${TASK_BRANCH}' is not fully merged into HEAD` });
+  assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: false, refused: { reason: 'unmerged', branch: TASK_BRANCH, target: 'HEAD' } });
   assert.equal(git.calls.some((c) => c.includes('remove') || c[0] === 'branch'), false, 'all or nothing: the worktree and the branch both stay');
   assert.deepEqual(task0(server), before, 'nothing forgotten; the mark is gone');
   git.clear();
@@ -1608,16 +1608,29 @@ test('a refusal answers 200 { removed: false, refused } with the reason and remo
   assert.deepEqual([work0(server)?.sessionId, sessions0(server).map((s) => [s.id, s.repo]), work0(server)?.worktree, work0(server)?.deleting], [undefined, [[ran, true]], undefined, undefined]);
 });
 
-test('a forced removal git fails answers 500 with the message and unmarks the task, which keeps its fields (#182)', async (t) => {
+test('a forced removal git fails answers 500 { error: unexpected }, logs git\'s words at error with the task and unmarks the task, which keeps its fields (#182, #660)', async (t) => {
   const git = listedGit('--force');
-  const { base, repo, server } = await ranOnce(t, { exec: git.exec });
+  const { log, lines } = fakeLog();
+  const { base, repo, server } = await ranOnce(t, { exec: git.exec, log });
   const worktree = worktreePath(repo, TASK_SLUG);
   await mkdir(worktree, { recursive: true });
   const before = task0(server);
   const res = await postJson(`${base}${workPath(server, 'board:I1')}/delete`, { force: true });
   assert.equal(res.status, 500);
-  assert.deepEqual(await res.json(), { error: `Command failed: git worktree remove --force --force -- ${worktree}` });
+  assert.deepEqual(await res.json(), { error: 'unexpected' });
+  assert.ok(lines.includes(`ERROR deleteActivity #1 forced: Command failed: git worktree remove --force --force -- ${worktree}`), lines.join('\n'));
   assert.deepEqual(task0(server), before, 'nothing was confirmed gone');
+});
+
+test('a removal git refuses for a reason the Hive does not know answers refused { reason: unexpected }, logs git\'s words at error with the task, and removes nothing (#660)', async (t) => {
+  const git = listedGit('remove', 'fatal: cannot remove a locked working tree\n'); // past every check: git refuses the remove itself
+  const { log, lines } = fakeLog();
+  const { base, repo, server } = await ranOnce(t, { exec: git.exec, log });
+  await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
+  const before = task0(server);
+  assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: false, refused: { reason: 'unexpected' } });
+  assert.ok(lines.includes('ERROR deleteActivity #1: fatal: cannot remove a locked working tree'), lines.join('\n'));
+  assert.deepEqual(task0(server), before, 'nothing forgotten; the mark is gone');
 });
 
 test('in a delete activity stage the delete-activity route finishes the stage\'s job: a refusal leaves the cleanupFailed task in place with its error; a forced removal advances it to the next stage with onFinish written, the error gone and the session kept (#210)', async (t) => {
@@ -1634,7 +1647,7 @@ test('in a delete activity stage the delete-activity route finishes the stage\'s
   const refusal = `the branch '${TASK_BRANCH}' is not fully merged into HEAD`;
   const failed = task0(server);
   assert.deepEqual([failed.stage, work0(server)?.error, work0(server)?.worktree], ['done', refusal, repo], 'a cleanupFailed task');
-  assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: false, refused: refusal });
+  assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: false, refused: { reason: 'unmerged', branch: TASK_BRANCH, target: 'HEAD' } });
   assert.deepEqual(task0(server), failed, 'refused: it stays in done with its error');
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`, { force: true })), { removed: true });
   const moved = task0(server);
@@ -1808,7 +1821,7 @@ test('a refusal answers 200 { removed: false, refused } with the reason and remo
   const path = worktreePath(repo, ORPHAN_SLUG);
   await mkdir(path, { recursive: true });
   git.clear();
-  assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`)), { removed: false, refused: `the branch '${ORPHAN_BRANCH}' is not fully merged into HEAD` });
+  assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`)), { removed: false, refused: { reason: 'unmerged', branch: ORPHAN_BRANCH, target: 'HEAD' } });
   assert.equal(git.calls.some((c) => c.includes('remove') || c[0] === 'branch'), false, 'all or nothing: the worktree and the branch both stay');
   assert.ok(lines.includes(`INFO worktreeKept ${ORPHAN_SLUG}`));
   git.clear();
@@ -1821,6 +1834,19 @@ test('a refusal answers 200 { removed: false, refused } with the reason and remo
     ['branch', '-D', '--', ORPHAN_BRANCH],
   ], 'force skips the pre-check');
   assert.ok(lines.includes(`INFO worktreeRemoved ${ORPHAN_SLUG}`));
+});
+
+test('POST /worktrees/:workspace/:slug/remove answers a failure it has no reason for as refused { reason: unexpected } and a forced one as 500 { error: unexpected }, git\'s words logged at error both times (#660)', async (t) => {
+  const git = listedGit('remove', 'fatal: cannot remove a locked working tree\n');
+  const { log, lines } = fakeLog();
+  const { base, repo } = await start(t, BODY, log, {}, { exec: git.exec });
+  await mkdir(worktreePath(repo, ORPHAN_SLUG), { recursive: true });
+  assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`)), { removed: false, refused: { reason: 'unexpected' } });
+  const forced = await postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`, { force: true });
+  assert.deepEqual([forced.status, await forced.json()], [500, { error: 'unexpected' }]);
+  for (const line of [`ERROR worktreeRemove ${ORPHAN_SLUG}: fatal: cannot remove a locked working tree`, `ERROR worktreeRemove ${ORPHAN_SLUG} forced: fatal: cannot remove a locked working tree`]) {
+    assert.ok(lines.includes(line), lines.join('\n'));
+  }
 });
 
 test('a second removal of the same slug while git runs on the first answers 409 and runs no git (#181)', async (t) => {
@@ -1838,7 +1864,7 @@ test('a second removal of the same slug while git runs on the first answers 409 
   assert.deepEqual(await json(first), { removed: true });
 });
 
-test('a forced removal git fails answers 500 with the message and logs worktreeKept <slug> (#181)', async (t) => {
+test('a forced removal git fails answers 500 { error: unexpected }, git\'s words in the log, and logs worktreeKept <slug> (#181, #660)', async (t) => {
   const git = listedGit('--force');
   const { log, lines } = fakeLog();
   const { base, repo } = await start(t, BODY, log, {}, { exec: git.exec });
@@ -1846,8 +1872,9 @@ test('a forced removal git fails answers 500 with the message and logs worktreeK
   await mkdir(path, { recursive: true });
   const res = await postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`, { force: true });
   assert.equal(res.status, 500);
-  assert.deepEqual(await res.json(), { error: `Command failed: git worktree remove --force --force -- ${path}` });
+  assert.deepEqual(await res.json(), { error: 'unexpected' });
   assert.ok(lines.includes(`INFO worktreeKept ${ORPHAN_SLUG}`));
+  assert.ok(lines.includes(`ERROR worktreeRemove ${ORPHAN_SLUG} forced: Command failed: git worktree remove --force --force -- ${path}`), lines.join('\n'));
 });
 
 test('POST /tasks creates a local task in a Comb stage: 201 with the id, the task in the stage, no source write; a 400 names what is wrong and creates nothing', async (t) => {

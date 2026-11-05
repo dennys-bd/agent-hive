@@ -1,3 +1,4 @@
+import type { Logger } from './log.js';
 import { type ForkRepos, failureOf, forkRepos, ownerOf, syncFork, type WorkspaceBase } from './fork.js';
 import { type BranchRelation, type Exec, type ForkSyncAnswer, type ForkSyncResult, isBranchName } from './types.js';
 
@@ -28,6 +29,16 @@ export class RemovalRefusal extends Error {
     this.name = 'RemovalRefusal';
     this.refusal = refusal;
   }
+}
+
+export const UNEXPECTED = 'unexpected';
+
+/** What a removal route answers for a failure without force (#660): a known refusal as it is; anything else is `unexpected`, with git's words in
+ * hive.log under `label`. An unexpected refusal still opens the force popup, the user's way out. */
+export function refusalOf(err: unknown, log: Pick<Logger, 'error'>, label: string): Refusal {
+  if (err instanceof RemovalRefusal) return err.refusal;
+  log.error(`${label}: ${wordsOf(err)}`);
+  return { reason: UNEXPECTED };
 }
 
 // A failure carries git's own words (stderr) so the task says why; restart.ts runs its git the same way (#283).

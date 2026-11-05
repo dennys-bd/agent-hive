@@ -30,7 +30,8 @@ import { parseRunPick } from './run-pick.js';
 import type { Activity, AgentAvailability, BaseOptions, Source, Task, TaskPr, Session, DeleteActivityScope, Config, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
 import { dropCheckpoints } from './checkpoints.js';
 import { dropBranches, dropStageStart, leftBehind } from './restart.js';
-import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree } from './worktree.js';
+import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree, wordsOf } from './worktree.js';
+import { refusalOf, UNEXPECTED } from './worktree-base.js';
 import type { Logger } from './log.js';
 import { type ConsoleStore, teardownRunId } from './console.js';
 import type { PtyHost } from './pty-host.js';
@@ -448,13 +449,13 @@ export async function deleteActivityOnDisk(
 // The ⋯ menu's delete activity (#182, #210, #573), also posted by the Settings worktree row and `clean up all orphans` (#181). The task is
 // marked deleting before git, so no fill, manual start or delete-activity stage touches it while git runs; the answer drops the mark. Without
 // force it is the delete-activity stage's git (no --force, branch -d), all or nothing: a refusal removes nothing and is an expected answer, 200
-// with the reason, which the UI turns into the force popup. With a literal force: true it is the destructive removal; a failure there is a
-// 500. Either failure leaves the task's fields: nothing was confirmed gone. A success forgets what the scope removed (#236); nothing to
+// with its code (#660), which the UI words and turns into the force popup. With a literal force: true it is the destructive removal; a failure
+// there is a 500 `unexpected`. Either failure leaves the task's fields: nothing was confirmed gone. A success forgets what the scope removed (#236); nothing to
 // delete (a delete-activity stage only) runs no git and just moves the task on. In a delete-activity stage a success advances the task as the
 // stage's own deletion would (the reducer's activityRemoved, so every caller gets it). The mark lands synchronously inside dispatch, right after
 // the check, so the check and the mark cannot be split by another request.
 function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
-  const { requireLive, dispatch } = deps;
+  const { requireLive, dispatch, log } = deps;
   app.post('/activities/:id/delete', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -475,8 +476,10 @@ function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
       if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions: sessionsOf(current.state, task.item.itemId), prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
     } catch (err) {
       await dispatch({ type: 'activityKept', activityId: live.id });
-      if (force) res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
-      else res.json({ removed: false, refused: errorMessage(err) });
+      const label = `deleteActivity #${task.item.id}`;
+      if (!force) return void res.json({ removed: false, refused: refusalOf(err, log, label) });
+      log.error(`${label} forced: ${wordsOf(err)}`);
+      res.status(HTTP_SERVER_ERROR).json({ error: UNEXPECTED }); // #660: the UI toasts its own copy; git's words are in hive.log
       return;
     }
     await dispatch({ type: 'activityRemoved', activityId: live.id });

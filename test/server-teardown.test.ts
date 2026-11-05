@@ -97,7 +97,7 @@ test('a failing teardown step is the ⋯ route\'s refusal: nothing removed, no m
   const s = await start(t, 'RUN exit 3');
   const path = await withWorktree(s, 'board:I1', SLUG, BRANCHES[0][1]);
   s.calls.length = 0;
-  assert.deepEqual(await json(postJson(deletePath(s, 'board:I1'))), { removed: false, refused: FAILED });
+  assert.deepEqual(await json(postJson(deletePath(s, 'board:I1'))), { removed: false, refused: { reason: 'unexpected' } });
   assert.equal(s.calls.some((c) => c[1] === 'remove' || c[0] === 'branch'), false, 'all or nothing');
   assert.deepEqual([await exists(join(s.gitDir, TEARDOWN_MARKER)), work(s.server, 'board:I1')?.worktree, work(s.server, 'board:I1')?.deleting], [false, path, undefined]);
   assert.deepEqual(await json(postJson(deletePath(s, 'board:I1'), { force: true })), { removed: true });
@@ -127,7 +127,7 @@ test('an orphan\'s removal runs the teardown in a run labelled by its slug: a fa
   const s = await start(t, 'RUN exit 3');
   const path = worktreePath(s.repo, ORPHAN_SLUG);
   await mkdir(path, { recursive: true });
-  assert.deepEqual(await json(postJson(`${s.base}/worktrees/hive/${ORPHAN_SLUG}/remove`)), { removed: false, refused: FAILED });
+  assert.deepEqual(await json(postJson(`${s.base}/worktrees/hive/${ORPHAN_SLUG}/remove`)), { removed: false, refused: { reason: 'unexpected' } });
   assert.match(await history(s.base), /── hive-9-gone · teardown · /);
   assert.equal((await postJson(`${s.base}/settings`, settingsWith(s.repo, 'RUN true'))).status, 200);
   s.calls.length = 0;
