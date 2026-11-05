@@ -89,7 +89,7 @@ test('while acquireLock holds a home, a second acquireLock of it in the same pro
   assert.equal(await readFile(join(home, LOCK_FILE), 'utf8'), `${process.pid}\n`, 'a second open file description conflicts under flock');
 });
 
-test('the takeover of #479: a lock left by a holder killed with SIGKILL is taken by the next acquireLock, and of two started together exactly one resolves', POSIX_ONLY, async (t) => {
+test('the takeover of #479: a lock left by a holder killed with SIGKILL is taken by the next acquireLock, and of two started together exactly one resolves (#479, #627)', async (t) => {
   const home = await tempDir(t, 'files-');
   await crashedHolder(home);
   assert.notEqual(readLockPid(home), process.pid, 'the dead holder\'s pid is still in the file');
@@ -230,13 +230,6 @@ test('win32: a second acquireLock of a held home is refused, and a release frees
   await assert.rejects(acquireLock(home, noop), /já está em execução/);
   releaseLock(home);
   await hold(t, home);
-});
-
-test('win32: a holder killed without releasing frees the home for the next acquireLock (#627)', WIN32_ONLY, async (t) => {
-  const home = await tempDir(t, 'files-');
-  await crashedHolder(home);
-  await hold(t, home);
-  assert.equal(readLockPid(home), process.pid);
 });
 
 test('win32: acquireLock refuses a symlink at hive.lock and leaves its target untouched (#627)', WIN32_ONLY, async (t) => {

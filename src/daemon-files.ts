@@ -133,8 +133,8 @@ function ensureLockFile(lock: string): void {
 // In place: the helper holds the lock on this inode, and a rename would swap it for another. O_NOFOLLOW refuses a symlink put at the path
 // since ensureLockFile's check instead of writing through it (#479).
 function writeLockPid(lock: string): void {
-  // Windows has no O_NOFOLLOW (0): the check ensureLockFile made is repeated right before the open, narrowing the window
-  if (constants.O_NOFOLLOW === 0 && !lstatSync(lock).isFile()) throw new Error(`${lock} não é um arquivo comum`);
+  // Windows has no O_NOFOLLOW (undefined there, or 0): the check ensureLockFile made is repeated right before the open, narrowing the window
+  if (!constants.O_NOFOLLOW && !lstatSync(lock).isFile()) throw new Error(`${lock} não é um arquivo comum`);
   const fd = openSync(lock, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW);
   try {
     writeFileSync(fd, `${process.pid}\n`);

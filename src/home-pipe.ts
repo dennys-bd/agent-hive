@@ -17,18 +17,20 @@ const servers = new Map<string, Server>();
 /** Listens on the home's pipe for this process's lifetime, or rejects with `refuse()` when something already holds it. No lost-lock callback
  *  exists on win32: the posix helper is an outside process someone can kill, and the pipe has none. */
 export function holdPipe(home: string, refuse: () => Error): Promise<void> {
-  if (servers.has(home)) return Promise.reject(refuse()); // the same process twice: the pipe would say so too, this just never depends on it
+  if (servers.has(home)) return Promise.reject(refuse()); // the same process twice, even two calls started together: never left to the pipe
   const name = homePipeName(realpathSync.native(home)); // the real path, so a symlinked or 8.3-short spelling of the home is the same lock
-  const server = createServer((socket) => socket.destroy()); // nobody talks over it: connecting only proves the pipe is held
+  // Nobody talks over it: connecting only proves the pipe is held. A client's reset must not throw from the socket and end the daemon
+  const server = createServer((socket) => socket.on('error', () => undefined).destroy());
+  servers.set(home, server); // before listen, so a concurrent call is refused here
   return new Promise((resolve, reject) => {
     server.once('error', (err: NodeJS.ErrnoException) => {
+      servers.delete(home);
       reject(err.code === 'EADDRINUSE' ? refuse() : new Error(`Agent Hive não pegou o pipe ${name}: ${err.message}`));
     });
     server.listen(name, () => {
       server.removeAllListeners('error');
       server.on('error', () => undefined); // a later error must not crash the daemon: the pipe is already held
       server.unref(); // held for the daemon's lifetime, never the reason its event loop stays alive
-      servers.set(home, server);
       resolve();
     });
   });
