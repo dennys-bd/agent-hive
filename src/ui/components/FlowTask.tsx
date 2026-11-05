@@ -4,7 +4,7 @@ import { activityOf, prsOf, workIdOf } from '../../activities';
 import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
 import { progress } from '../../task-tree';
-import { taskLabel, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction, canDismissError } from '../../tasks';
+import { taskLabel, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction, canDismissError, canOpenSession, inFlow } from '../../tasks';
 import { parentOf } from '../../task-tree';
 import type { Task, State, Status } from '../../types';
 import { act, actThen, focusRun } from '@/components/actions';
@@ -57,11 +57,14 @@ function ciAction(task: Task, state: ActionState, workerless: boolean): TaskActi
 /** Which button the task shows (#542), by priority: out of tries → abrir, to its details (#913); an approval no live session holds back → aprovar (#829); a live session (aguardando você
  * among them, an approval pending or not) → abrir; the stage already ran and stopped → continuar; a delete-activity stage → excluir, while
  * removalBlocker lets it run (#228); a wait-for-CI stage → none while the wait will start by itself, else tentar de novo (#304); it can start →
- * iniciar. None for a blocked one and one with nothing to run. */
+ * iniciar. A task outside the flow (#577): iniciar while canOpenSession allows it. None for a blocked one and one with nothing to run. */
 export function taskAction(task: Task, state: ActionState, workerless = true): TaskAction | undefined {
   if (isExhausted(task, state)) return 'details';
   if (answerableActivity(task, state) !== undefined) return 'approve';
   if (workersOf(state, task).length > 0) return 'open';
+  // #577: startMode has no stage to read outside the flow; iniciar opens the Start dialog, whose destination block (#580) asks where it goes,
+  // under the menu's executar etapas… rule
+  if (!inFlow(task)) return canOpenSession(task, activityOf(state, task.item.itemId)) ? 'start' : undefined;
   const mode = startMode(task, state);
   if (typeof mode === 'object' && mode.continue) return 'continue';
   if (mode !== 'start' && typeof mode !== 'object') return undefined; // #812: { continue: false } offers iniciar; reiniciar etapa… is in the menu
@@ -105,8 +108,8 @@ function BlockedLine({ task, state }: { task: Task; state: State }) {
   return <span className="truncate text-muted-foreground text-xs" title={text}>{text}</span>;
 }
 
-// #576 decision 8: started and out of the source's listing (#568). The ◌ line here, the dashed border on the card: the two go together
-function ListingLine({ task }: { task: Task }) {
+// #576 decision 8: started and out of the source's listing (#568). The ◌ line here, the dashed border on the card: the two go together; the list's row shows the line too (#577)
+export function ListingLine({ task }: { task: Task }) {
   if (task.outOfListing === undefined) return null;
   return <div className="text-muted-foreground text-xs" title={t(`tasks.listing.${task.outOfListing}.tip`)}>{`◌ ${t(`tasks.listing.${task.outOfListing}`)}`}</div>;
 }
@@ -201,9 +204,14 @@ function DismissErrorButton({ task, state }: { task: Task; state: State }) {
   );
 }
 
+interface TaskButtonProps {
+  task: Task; state: State; onOpen?(taskId: string): void;
+  variant?: 'default' | 'outline'; // #577 decision 9: the list fills it only while the task needs you; the card keeps default
+}
+
 // The one button (#542) and the Start dialog iniciar opens on executar etapas (#543). The dialog outlives the button: its start takes a worker
-// at once, so iniciar turns into abrir while the dialog still shows the worktree's setup (#351)
-function TaskButton({ task, state, onOpen }: { task: Task; state: State; onOpen?(taskId: string): void }) {
+// at once, so iniciar turns into abrir while the dialog still shows the worktree's setup (#351). The list's row renders it too (#577)
+export function TaskButton({ task, state, onOpen, variant = 'default' }: TaskButtonProps) {
   const [isStarting, setIsStarting] = useState(false);
   const opener = useOpenStarted();
   const openActivity = useOpenActivity(task, state);
@@ -224,7 +232,7 @@ function TaskButton({ task, state, onOpen }: { task: Task; state: State; onOpen?
   return (
     <>
       {action && (
-        <Button type="button" size="xs" variant={action === 'delete' ? 'destructive' : 'default'} onClick={press[action]}>{t(ACTION_LABEL[action])}</Button>
+        <Button type="button" size="xs" variant={action === 'delete' ? 'destructive' : variant} onClick={press[action]}>{t(ACTION_LABEL[action])}</Button>
       )}
       {isStarting && <StartDialog state={state} taskId={task.item.itemId} initialMode="stages" onStarted={started} onClose={() => setIsStarting(false)} />}
     </>
@@ -232,8 +240,8 @@ function TaskButton({ task, state, onOpen }: { task: Task; state: State; onOpen?
 }
 
 // A click on the task's free area opens it in the panel. Its buttons keep doing only their own thing, and a click inside a dialog one of them
-// opened (portaled out of the li, yet still bubbling through React) is not the task's either. A drag fires no click.
-const openOnClick = (itemId: string, onOpen?: (taskId: string) => void) => (e: MouseEvent<HTMLLIElement>): void => {
+// opened (portaled out of the element, yet still bubbling through React) is not the task's either. A drag fires no click. The list's row shares it (#577)
+export const openOnClick = (itemId: string, onOpen?: (taskId: string) => void) => (e: MouseEvent<HTMLElement>): void => {
   const target = e.target as Element;
   if (!onOpen || !e.currentTarget.contains(target) || target.closest('button, a')) return;
   onOpen(itemId);
