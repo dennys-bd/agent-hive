@@ -302,8 +302,8 @@ export function StartDialog(props: StartDialogProps) {
   const { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held, view, dest } = useStart(props);
   const progress = task && view.progress;
   // #774: the stages from the task's own (or the chosen entry, #580) onward have nothing to run
-  const effective = dest.effective;
-  const stagesOff = effective?.stage !== undefined && !hasStagesToRun(effective.stage, state.stages) ? t('start.noStages', { stage: effective.stage }) : undefined;
+  const stage = dest.effective?.stage;
+  const stagesOff = stage !== undefined && !hasStagesToRun(stage, state.stages) ? t('start.noStages', { stage }) : undefined;
   // #316: the lists of the workspace the run goes in: the task's, else the one the base field picked
   const runWorkspace = (task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks)) ?? base.choice.workspace;
   // #774: a pick with nothing to run lands on sessão livre; any other pick leaves the mode where the user put it
@@ -319,8 +319,7 @@ export function StartDialog(props: StartDialogProps) {
   // #580: another destination is another stage: the run picks go back to that stage's own, and an entry with nothing to run lands on sessão livre (#774)
   const choose = (next: Destination): void => {
     dest.choose(next); run.restore();
-    const stage = effectiveStage(undefined, next, dest.offered);
-    if (stage !== undefined && !hasStagesToRun(stage, state.stages)) setMode('free');
+    const entry = effectiveStage(undefined, next, dest.offered);  if (entry !== undefined && !hasStagesToRun(entry, state.stages)) setMode('free');
   };
   const label = t(mode === 'stages' ? 'start.mode.stages' : 'start.mode.free');
   return (
@@ -334,7 +333,7 @@ export function StartDialog(props: StartDialogProps) {
             {dest.isShown && <DestinationField id={id} offered={dest.offered} allowNone={dest.allowsNone} value={dest.destination} onChange={choose} />}
             {!dest.isNone && <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />}
             <BaseField id={id} mode={mode} choice={base.choice} workspaces={state.workspaces} onChange={base.setChoice} onWorkspace={base.pickWorkspace} />
-            <RunSection id={id} mode={mode} task={effective} state={state} run={run} workspace={runWorkspace} />
+            <RunSection id={id} mode={mode} task={dest.effective} state={state} run={run} workspace={runWorkspace} />
             {error && <p role="alert" className="whitespace-pre-line text-destructive text-sm">{error}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" disabled={isCreating} onClick={close}>{t('base.cancel')}</Button>
