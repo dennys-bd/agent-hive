@@ -894,3 +894,19 @@ test('a start refused after the move-to shows its error and leaves the task in t
   expect(posts().map(([url]) => url)).toEqual(['/tasks/I9/move-to', '/tasks/I9/start']);
   expect(onClose).not.toHaveBeenCalled();
 });
+
+test('sem fluxo hides the mode and the stages box, keeps the base, ignores the switchStartMode key and opens a free session with no move (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" onClose={onClose} />);
+  expect(screen.getByText('backlog → dev → in review')).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: /^sem fluxo/ }));
+  expect(screen.queryByRole('radio', { name: 'executar etapas' })).not.toBeInTheDocument();
+  expect(screen.queryByText('backlog → dev → in review')).not.toBeInTheDocument();
+  expect(await screen.findByRole('combobox', { name: 'origin/main' })).toBeInTheDocument();
+  await user.keyboard('{Control>}{Shift>}M{/Shift}{/Control}'); // Ctrl+Shift+M off macOS
+  expect(screen.queryByRole('radio', { name: 'executar etapas' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /sessão livre/ }));
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I9/open', { kind: 'claude', base: null, local: false }]]);
+});

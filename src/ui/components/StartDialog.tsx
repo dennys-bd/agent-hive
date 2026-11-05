@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { useLaunchOptions } from '@/hooks/use-launch-options';
 import { type Answer, sessionStatus, type SetupView, useSetupView } from '@/hooks/use-setup-view';
-import { usePendingTask, useAutoStart } from '@/hooks/use-pending-task';
+import { type HeldTask, usePendingTask, useAutoStart } from '@/hooks/use-pending-task';
 import { isChanged, openBody, resumedLaunch, type RunPicks, type RunPickState, startBody, useRunPick } from '@/hooks/use-run-pick';
 import { baseBody, type BaseChoice, useStartBase } from '@/hooks/use-start-base';
 import { useStartDestination } from '@/hooks/use-start-destination';
@@ -198,9 +198,10 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
   const [pending, setPending] = useState(false);
   const done = useRef(false); // started or closed: a late answer changes nothing
   const onError = useCallback((message: string) => setError(message), []);
-  const { picked, setPicked, mode, setMode, pick, task } = useTaskPick(state, taskId, initialMode, setError);
+  const { picked, setPicked, mode: pickedMode, setMode, pick, task } = useTaskPick(state, taskId, initialMode, setError);
   const { choices, created, held, create, pickTask } = useCreateRow(state, workspace, done, onError, pick, () => setPicked(undefined));
   const dest = useStartDestination(state, task, held.entry, initialMode);
+  const mode: StartMode = dest.isNone ? 'free' : pickedMode; // #580: sem fluxo is a free session (decision 9); leaving the radio gives the user's mode back
   const run = useRunPick(state, dest.effective, useContext(DefaultAgentContext));
   const view = useSetupView(task && activityOf(state, task.item.itemId)); // #390
   const base = useStartBase(picked, onError);
@@ -282,6 +283,17 @@ function Preparing({ progress, view, mode, agent, stage, error, onClose, onRetry
   return <SetupProgressView progress={progress} isLive={view.isLive} isFailed={view.isFailed} error={error} session={{ text, status: sessionStatus(progress.rows, view.isAnswered) }} onClose={onClose} onRetry={onRetry} />;
 }
 
+// Nova atividade's task field (2c): pick a task or create one, in the hive at once or held for a source (#846)
+function TaskField({ id, state, picked, choices, held, onPick, onCreate }: { id: string; state: State; picked?: string; choices: ReturnType<typeof destinations>; held?: HeldTask; onPick(itemId: string): void; onCreate(text: string, destination?: string): void }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={`${id}-task`}>{t('start.task')}</Label>
+      <TaskPicker id={`${id}-task`} tasks={pickable(state)} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} value={picked} destinations={choices} heldLabel={held && t('start.held', { title: held.title, source: held.source })} onPick={onPick} onCreate={onCreate} />
+      <p className="text-muted-foreground text-xs leading-4">{t('start.taskHint')}</p>
+    </div>
+  );
+}
+
 /** The Start dialog (redesign 11): Iniciar #id from a task's iniciar, abrir sessão and executar etapas… (2a, 2b), or Nova atividade from the
  * activities' +, ⌘N and the home (2c), where the task is picked or created in the Hive; then executar etapas or sessão livre, the base with
  * the stacked-PR and local switches while the task has no worktree, and the stages box or the agent and session. the confirm key submits and switchStartMode flips the mode (#585). A task created
@@ -301,7 +313,7 @@ export function StartDialog(props: StartDialogProps) {
   const pickTask = (itemId: string): void => { pick(itemId); if (nothingToRun(state, itemId, mode)) setMode('free'); };
   // confirm starts (#585: was a fixed ⌘↵), switchStartMode flips the mode; both read their binding at each key
   const onKeyDown = (e: KeyboardEvent): void => {
-    const next = progress ? undefined : modeAfterKey(e.nativeEvent, mode, stagesOff !== undefined); // #390: the preparing view has no mode
+    const next = progress || dest.isNone ? undefined : modeAfterKey(e.nativeEvent, mode, stagesOff !== undefined); // #390, #580: neither has a mode
     if (!pressed(e.nativeEvent, 'confirm') && next === undefined) return;
     e.preventDefault();
     if (next === undefined) submit();
@@ -321,15 +333,9 @@ export function StartDialog(props: StartDialogProps) {
         <StartHeader id={id} task={task} isNew={taskId === undefined} isPreparing={progress !== undefined} />
         {progress && task ? <Preparing progress={progress} view={view} mode={mode} agent={run.picks.agent} stage={task.stage} error={error} onClose={close} onRetry={submit} /> : (
           <>
-            {taskId === undefined && (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`${id}-task`}>{t('start.task')}</Label>
-                <TaskPicker id={`${id}-task`} tasks={pickable(state)} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} value={picked} destinations={choices} heldLabel={held && t('start.held', { title: held.title, source: held.source })} onPick={pickTask} onCreate={create} />
-                <p className="text-muted-foreground text-xs leading-4">{t('start.taskHint')}</p>
-              </div>
-            )}
+            {taskId === undefined && <TaskField id={id} state={state} picked={picked} choices={choices} held={held} onPick={pickTask} onCreate={create} />}
             {dest.isShown && <DestinationField id={id} offered={dest.offered} allowNone={dest.allowsNone} value={dest.destination} onChange={choose} />}
-            <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />
+            {!dest.isNone && <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />}
             <BaseField id={id} mode={mode} choice={base.choice} workspaces={state.workspaces} onChange={base.setChoice} onWorkspace={base.pickWorkspace} />
             <RunSection id={id} mode={mode} task={effective} state={state} run={run} workspace={runWorkspace} />
             {error && <p role="alert" className="whitespace-pre-line text-destructive text-sm">{error}</p>}
