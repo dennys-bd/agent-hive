@@ -19,7 +19,7 @@ export function useStartDestination(state: State, task: Task | undefined, held: 
   return {
     isShown, offered, allowsNone: !isHeld, destination, effective,
     entry: effectiveStage(undefined, destination, offered), // the chosen flow's entry: the move-to's stage, the held entry's create stage
-    isNone: isShown && destination === 'none',
+    isNone: isShown && !isHeld && destination === 'none', // a held entry with no flow to enter is not sem fluxo: it cannot start at all
     choose: (next: Destination): void => setChosen({ key, destination: next }),
   };
 }

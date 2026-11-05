@@ -3050,6 +3050,7 @@ const en = {
   'start.destination.enters': 'enters {stage}',
   'start.destination.none': 'outside the flow',
   'start.destination.noneHint': 'no stages · you drive',
+  'start.destination.noFlow': 'no flow enters through a column of {source}',
 };
 
 export type MessageKey = keyof typeof en;
@@ -6094,6 +6095,7 @@ const pt: Record<MessageKey, string> = {
   'start.destination.enters': 'entra em {stage}',
   'start.destination.none': 'sem fluxo',
   'start.destination.noneHint': 'sem etapas · você conduz',
+  'start.destination.noFlow': 'nenhum fluxo entra por uma coluna de {source}',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

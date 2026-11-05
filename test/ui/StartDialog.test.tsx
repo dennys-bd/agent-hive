@@ -942,3 +942,17 @@ test('a held source entry offers only the flows whose entry reads a column of it
   await user.click(screen.getByRole('button', { name: /executar etapas/ }));
   await waitFor(() => expect(posts()).toEqual([['/tasks', { title: 'landing', stage: 'deploy', auto: false, source: 'board' }]]));
 });
+
+test('a held source entry no flow enters through says why and cannot start: it keeps the mode and creates nothing (#580)', async () => {
+  const user = userEvent.setup();
+  const only = { ...state(), flows: [{ name: 'bug', stages: [TRIAGE], transitions: [] }], stages: [TRIAGE] };
+  render(toBoard(<StartDialog state={only} onStarted={vi.fn()} onClose={vi.fn()} />));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
+  await user.keyboard('landing');
+  await user.click(screen.getAllByRole('option', { name: /criar tarefa "landing"/ })[0]);
+  expect(screen.queryByRole('radio', { name: /^sem fluxo/ })).not.toBeInTheDocument();
+  expect(screen.getByText('nenhum fluxo entra por uma coluna de board')).toBeInTheDocument();
+  expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /executar etapas/ })).toBeDisabled();
+  expect(posts()).toEqual([]);
+});

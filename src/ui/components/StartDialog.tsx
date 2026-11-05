@@ -204,7 +204,8 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
   const base = useStartBase(picked, onError);
   const heldStart = useHeldStart(held, done, pick, setPending, setError);
   useCreateOnOpen(taskId === undefined ? title : undefined, create);
-  const isBlocked = held.entry === undefined && blocker(dest.effective, state, mode, base.choice);
+  // a held entry starts by its create, which needs a flow whose entry reads a column of its source (#580)
+  const isBlocked = held.entry === undefined ? blocker(dest.effective, state, mode, base.choice) : dest.entry === undefined;
   const close = (): void => {
     if (heldStart.isCreating) return;
     // created here and never started: they go. A start on its way keeps its task, and so does one the preparing view shows failed (#390)
@@ -307,7 +308,8 @@ export function StartDialog(props: StartDialogProps) {
   // #316: the lists of the workspace the run goes in: the task's, else the one the base field picked
   const runWorkspace = (task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks)) ?? base.choice.workspace;
   // #774: a pick with nothing to run lands on sessão livre; any other pick leaves the mode where the user put it
-  const pickTask = (itemId: string): void => { pick(itemId); if (nothingToRun(state, itemId, mode)) setMode('free'); };
+  // #580: read at the default destination the hook gives the pick, which follows the mode the dialog opened in
+  const pickTask = (itemId: string): void => { pick(itemId); if (nothingToRun(state, itemId, props.initialMode ?? 'stages')) setMode('free'); };
   // confirm starts (#585: was a fixed ⌘↵), switchStartMode flips the mode; both read their binding at each key
   const onKeyDown = (e: KeyboardEvent): void => {
     const next = progress || dest.isNone ? undefined : modeAfterKey(e.nativeEvent, mode, stagesOff !== undefined); // #390, #580: neither has a mode
@@ -319,7 +321,8 @@ export function StartDialog(props: StartDialogProps) {
   // #580: another destination is another stage: the run picks go back to that stage's own, and an entry with nothing to run lands on sessão livre (#774)
   const choose = (next: Destination): void => {
     dest.choose(next); run.restore();
-    const entry = effectiveStage(undefined, next, dest.offered);  if (entry !== undefined && !hasStagesToRun(entry, state.stages)) setMode('free');
+    const entry = effectiveStage(undefined, next, dest.offered);
+    if (entry !== undefined && !hasStagesToRun(entry, state.stages)) setMode('free');
   };
   const label = t(mode === 'stages' ? 'start.mode.stages' : 'start.mode.free');
   return (
@@ -330,7 +333,7 @@ export function StartDialog(props: StartDialogProps) {
         {progress && task ? <Preparing progress={progress} view={view} mode={mode} agent={run.picks.agent} stage={task.stage} error={error} onClose={close} onRetry={submit} /> : (
           <>
             {taskId === undefined && <TaskField id={id} state={state} picked={picked} choices={choices} held={held} onPick={pickTask} onCreate={create} />}
-            {dest.isShown && <DestinationField id={id} offered={dest.offered} allowNone={dest.allowsNone} value={dest.destination} onChange={choose} />}
+            {dest.isShown && <DestinationField id={id} offered={dest.offered} allowNone={dest.allowsNone} value={dest.destination} onChange={choose} empty={held && t('start.destination.noFlow', { source: held.source })} />}
             {!dest.isNone && <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />}
             <BaseField id={id} mode={mode} choice={base.choice} workspaces={state.workspaces} onChange={base.setChoice} onWorkspace={base.pickWorkspace} />
             <RunSection id={id} mode={mode} task={dest.effective} state={state} run={run} workspace={runWorkspace} />

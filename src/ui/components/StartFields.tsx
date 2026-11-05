@@ -184,11 +184,11 @@ const RADIO = 'flex items-center gap-2.5 rounded-md border px-2.5 py-[7px] text-
 const STEP: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
 const isSame = (a: Destination, b: Destination): boolean => (a === 'none' || b === 'none' ? a === b : a.flow === b.flow);
 
-interface DestinationFieldProps { id: string; offered: DestinationFlow[]; allowNone: boolean; value: Destination; onChange(value: Destination): void }
+interface DestinationFieldProps { id: string; offered: DestinationFlow[]; allowNone: boolean; value: Destination; empty?: string; onChange(value: Destination): void }
 
 /** Where a task outside the flow goes (#580): one radio per flow with the stage it enters, and sem fluxo unless a source entry is held. A
  * radiogroup of buttons, as the design draws it: the arrows move the choice and the focus; the confirm key stays the dialog's. */
-export function DestinationField({ id, offered, allowNone, value, onChange }: DestinationFieldProps) {
+export function DestinationField({ id, offered, allowNone, value, empty, onChange }: DestinationFieldProps) {
   const options: { value: Destination; label: string; hint: string }[] = [
     ...offered.map((f) => ({ value: { flow: f.flow }, label: t('start.destination.flow', { flow: f.flow }), hint: t('start.destination.enters', { stage: f.entry }) })),
     ...(allowNone ? [{ value: 'none' as const, label: t('start.destination.none'), hint: t('start.destination.noneHint') }] : []),
@@ -205,6 +205,8 @@ export function DestinationField({ id, offered, allowNone, value, onChange }: De
   return (
     <div className="flex flex-col gap-2">
       <Label id={`${id}-destination`}>{t('start.destination')}</Label>
+      {/* no radio to offer (a held entry no flow enters through): `empty` says why the start is off */}
+      {options.length === 0 && empty !== undefined && <p className="text-muted-foreground text-xs leading-4">{empty}</p>}
       <div role="radiogroup" aria-labelledby={`${id}-destination`} className="flex flex-col gap-1">
         {options.map((o, i) => (
           // biome-ignore lint/a11y/useSemanticElements: the design's radio is a styled button, as the PR list's segments; the group keeps its role for a screen reader
