@@ -16,7 +16,7 @@ import { gridTemplate, type WidthColumn, withWidths } from '@/lib/column-widths'
 import { readRepoListWidths, writeRepoListWidths } from '@/lib/repo-list-views';
 
 interface ListColumn extends WidthColumn { head: MessageKey }
-// handoff 02's widths (the handoff gives no defaults of its own for the lists): labels · resp. · in the flow · PR · updated, after the issue
+// handoff 02's widths (the handoff gives no defaults of its own for the lists): labels · resp. · flow · PR · updated, after the issue
 const COLUMNS: ListColumn[] = [
   { key: 'labels', width: 132, head: 'repos.col.labels' }, { key: 'assignee', width: 40, head: 'repos.col.assignee' },
   { key: 'flow', width: 112, head: 'repos.col.flow' }, { key: 'pr', width: 120, head: 'repos.col.pr' }, { key: 'updated', width: 80, head: 'repos.col.updated' },
