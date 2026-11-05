@@ -1,12 +1,12 @@
 import { expect, test } from 'vitest';
-import { subIssueCount, treeRows } from '@/lib/project-tree';
+import { PROJECT_KEYS, subIssueCount, type TreeKeys, treeRows } from '@/lib/project-tree';
 import { hiveProject } from '../../src/hive-project';
 import type { Flow, ProjectItem, Stage, Task } from '../../src/types';
 import { row, VIEW } from './project-harness';
 
 // #584: what a list draws, as [id, depth, childCount] per visible line
 const lines = (items: readonly ProjectItem[], expanded: readonly ProjectItem[] = items) =>
-  treeRows(items, new Set(expanded.map((i) => i.itemId))).map((l) => [l.item.id, l.depth, l.childCount]);
+  treeRows(items, new Set(expanded.map((i) => i.itemId)), PROJECT_KEYS).map((l) => [l.item.id, l.depth, l.childCount]);
 
 const stage = (name: string): Stage => ({ name, from: {}, prompt: 'x' });
 const FLOWS: Flow[] = [{ name: 'build', stages: [stage('spec'), stage('dev')], transitions: [] }, { name: 'ship', stages: [stage('review')], transitions: [] }];
@@ -59,4 +59,14 @@ test('with no progress value, the count is the parent\'s children in the whole v
 test('a hive child is done at the last stage of its flow (#584 decision 9)', () => {
   const view = hiveProject({ flows: FLOWS, tasks: [hiveTask(1, 'spec'), hiveTask(2, 'dev', 1), hiveTask(3, 'review', 1), hiveTask(4, 'spec', 1)], activityRecords: [] });
   expect(subIssueCount(view.items[0], view, FLOWS)).toEqual({ done: 2, n: 3 }); // dev ends build, review ends ship; spec does not
+});
+
+// #585 decision 1: a repository's issue is its number, and a child's parent names that number
+interface Issue { number: number; parent?: number }
+const BY_NUMBER: TreeKeys<Issue> = { idOf: (i) => String(i.number), keyOf: (i) => String(i.number) };
+
+test('treeRows runs over any row with a parent number, read by the keys it is given: a repository\'s issues by their number (#585 decision 1)', () => {
+  const issues: readonly Issue[] = Object.freeze([{ number: 40 }, { number: 41, parent: 40 }, { number: 50, parent: 99 }]);
+  expect(treeRows(issues, new Set(['40']), BY_NUMBER).map((l) => [l.item.number, l.depth, l.childCount])).toEqual([[40, 0, 1], [41, 1, 0], [50, 0, 0]]);
+  expect(treeRows(issues, new Set(), BY_NUMBER).map((l) => l.item.number)).toEqual([40, 50]);
 });
