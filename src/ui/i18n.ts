@@ -3044,6 +3044,8 @@ const en = {
   'tasks.sidebar.toggle': '{name} section', // the title's accessible name: the rail's tarefas and the header's region already hold the bare word
   'tasks.sidebar.resize': 'resize {name}',
   'tasks.sidebar.newFlow': 'new flow',
+  'tasks.automation.workerless': 'stages without a worker', // #573: the automação row; Settings keeps its longer label
+  'tasks.automation.notSaved': 'Signal settings not saved', // #573: a sidebar save the server refused or never got
 };
 
 export type MessageKey = keyof typeof en;
@@ -6082,6 +6084,8 @@ const pt: Record<MessageKey, string> = {
   'tasks.sidebar.toggle': 'seção {name}',
   'tasks.sidebar.resize': 'redimensionar {name}',
   'tasks.sidebar.newFlow': 'novo fluxo',
+  'tasks.automation.workerless': 'etapas sem worker',
+  'tasks.automation.notSaved': 'Configuração do sinal não salva',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
