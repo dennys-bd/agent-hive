@@ -40,26 +40,6 @@ function parseFlowStages(raw: unknown, f: number, parse: FlowParsers, before: re
   return { name, stages, transitions: raw.transitions };
 }
 
-// A source column leads into one flow only (decision 5): two stages of one flow may share it, a stage of another flow may not
-function checkDoors(flows: readonly NamedFlow[]): void {
-  const doors = new Map<string, { stage: string; flow: string }>();
-  for (const [f, flow] of flows.entries()) {
-    for (const [i, stage] of flow.stages.entries()) {
-      for (const source of Object.keys(stage.from)) {
-        for (const column of onSource(stage.from, source) ?? []) {
-          const key = JSON.stringify([source, column]);
-          const door = doors.get(key);
-          if (door === undefined) doors.set(key, { stage: stage.name, flow: flow.name });
-          else if (door.flow !== flow.name) {
-            fail(`comb.flows[${f}].stages[${i}].from.${source}`,
-              `"${column}" already enters stage "${door.stage}" of flow "${door.flow}": stage "${stage.name}" of flow "${flow.name}" cannot enter from it too`);
-          }
-        }
-      }
-    }
-  }
-}
-
 /** comb.flows (#564): required, non-empty, each flow named, with stages and transitions. */
 export function parseFlows(comb: Record<string, unknown>, sourceNames: readonly string[], parse: FlowParsers): Flow[] {
   for (const flat of ['stages', 'transitions']) {
@@ -69,7 +49,6 @@ export function parseFlows(comb: Record<string, unknown>, sourceNames: readonly 
   if (!Array.isArray(comb.flows) || comb.flows.length === 0) fail('comb.flows', 'must be a non-empty array');
   const parsed: Array<NamedFlow & { transitions: unknown }> = []; // each flow is judged against the ones before it
   for (const [f, raw] of (comb.flows as unknown[]).entries()) parsed.push(parseFlowStages(raw, f, parse, parsed));
-  checkDoors(parsed);
   const flows = parsed.map((flow, f): Flow => {
     const others = parsed.filter((_, o) => o !== f).map((o) => ({ name: o.name, stages: o.stages, transitions: [] }));
     const scope = { field: `comb.flows[${f}].transitions`, flow: flow.name, stages: flow.stages, others };
