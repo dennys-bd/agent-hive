@@ -105,6 +105,7 @@ const bridge: HiveWindow = {
       if (fullScreenListener === callback) fullScreenListener = undefined;
     };
   },
+  themeResolved: (theme) => ipcRenderer.send('window:theme', theme), // #648: sent, nothing to answer
 };
 
 contextBridge.exposeInMainWorld('hive', bridge);

@@ -47,6 +47,8 @@ interface HiveWindow {
   // window:fullScreen on the window's enter-full-screen and leave-full-screen (#295); the preload drops a payload that is no boolean.
   // Returns the unsubscribe, which clears only its own callback.
   onFullScreen(callback: (on: boolean) => void): () => void;
+  // every theme the page resolves (#648): main recolours Windows' caption buttons with it; sent, nothing to answer, a no-op off Windows
+  themeResolved(theme: import('./ui/lib/theme.js').ResolvedTheme): void;
 }
 
 interface Window {
