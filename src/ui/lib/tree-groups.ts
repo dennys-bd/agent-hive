@@ -2,6 +2,7 @@
 // per child. Pure, read off the whole task list through task-tree's walks (#28), so a node holding only a deep child still names its real root.
 import { depthOf, descendants, isDone, parentOf, rootOf } from '../../task-tree.js';
 import type { State, Task } from '../../types.js';
+import type { HiddenEpics } from './flow-view.js';
 import type { TaskState } from './status.js';
 import { type TaskStateInput, taskState } from './task-state.js';
 
@@ -19,6 +20,15 @@ export const inTree = (all: readonly Task[], task: Task): boolean =>
 
 /** Whether any task of the list has a parent or a child in it: what the tree toggle reads while flowView holds no choice (#34). */
 export const hasTree = (all: readonly Task[]): boolean => all.some((task) => inTree(all, task));
+
+/** esconder epics (#576 decision 5): an epic is a task with a child task in the list, stamped or not. middle hides each one that has a parent
+ * task, so every tree keeps its root; all hides every one; a leaf always shows. Read off the whole list, as the grouping is. */
+export function hiddenEpics(all: readonly Task[], mode: HiddenEpics): Set<string> {
+  if (mode === 'none') return new Set();
+  const epics = all.filter((task) => descendants(all, idOf(task)).length > 0);
+  const hidden = mode === 'all' ? epics : epics.filter((task) => parentOf(all, idOf(task)) !== undefined);
+  return new Set(hidden.map(idOf));
+}
 
 /** A group's collapse key (#34): per node, so collapsing a tree in one stage never hides it in another. */
 export const collapseKey = (stage: string, root?: Task): string => `${stage}\u0000${root === undefined ? NO_TREE : idOf(root)}`;

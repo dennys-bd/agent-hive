@@ -71,7 +71,7 @@ type RepoCenter = Extract<TasksCenter, { kind: 'repo' }>;
 function repoCenter(state: State, nav: TasksNav, repo: RepoSummary, center: RepoCenter): ReactNode {
   const onRepository = (name: string): void => nav.show(centerOfRepo(name));
   const mode: HeaderMode = { kind: 'repo', header: { summary: repo, tab: center.tab, onTab: nav.onRepoTab, onRepository } };
-  const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} mode={mode} tasks={[]} onRefresh={reload} back={nav.back} github={github} />;
+  const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} mode={mode} onRefresh={reload} back={nav.back} github={github} />;
   const { issue, pr } = center;
   if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={nav.goTo} onOpenIssue={nav.openIssueUrl} onOpenPr={nav.openPrUrl} onMerged={nav.back?.onBack} />;
   if (issue) return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onOpenPr={nav.openPrUrl} />;
@@ -86,7 +86,7 @@ function sourceCenter(state: State, nav: TasksNav, source: SourceConfig, reposit
     <IssuePage
       key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={source.name}
       workspace={repositories.find((r) => r.repository === issue.repository)?.workspace}
-      header={(reload, github) => <FlowHeader state={state} mode={{ kind: 'source', source }} tasks={[]} onRefresh={reload} back={nav.back} github={github} />}
+      header={(reload, github) => <FlowHeader state={state} mode={{ kind: 'source', source }} onRefresh={reload} back={nav.back} github={github} />}
       onOpenPr={nav.openPrUrl}
     />
   );
@@ -99,7 +99,7 @@ function TasksSoon({ state, isOutside, display, sources }: { state: State; isOut
   const isTree = display.options.tree ?? hasTree(state.tasks);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={[]} {...displayProps({ display, sources, tasks, isTree, hasLoops: false })} />
+      <FlowHeader state={state} {...displayProps({ display, sources, tasks, isTree, hasLoops: false })} />
       <p className="px-3.5 py-3 text-muted-foreground text-xs">{t('tasks.center.soon')}</p>
     </div>
   );

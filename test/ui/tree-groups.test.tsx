@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { collapseKey, groupTasks, hasTree, inTree, nodeRows, outlineRows, segmentTone, treeSegments, type TreeGroup } from '@/lib/tree-groups';
+import { collapseKey, groupTasks, hasTree, hiddenEpics, inTree, nodeRows, outlineRows, segmentTone, treeSegments, type TreeGroup } from '@/lib/tree-groups';
+import type { HiddenEpics } from '@/lib/flow-view';
 import type { Item, Task } from '../../src/types';
 import { activityIdOf, taskPairOf } from '../fixtures/work';
 
@@ -81,4 +82,18 @@ test('outlineRows lists the root and its descendant tasks with their depths, ski
   expect(rows(['T'])).toEqual(['T:0›']);
   expect(outlineRows(FAMILY, 'gone', [])).toEqual([]);
   expect([inTree(FAMILY, T2), inTree(ALL, X)]).toEqual([true, false]);
+});
+
+test('hiddenEpics: none hides nothing; middle the epics with a parent task, each tree keeping its root; all every task with a child task, stamped item.epic or not; a leaf never (#576)', () => {
+  const ids = (mode: HiddenEpics): string[] => [...hiddenEpics(ALL, mode)].sort();
+  expect(ids('none')).toEqual([]);
+  expect(ids('middle')).toEqual(['B']);
+  expect(ids('all')).toEqual(['B', 'R', 'S']);
+});
+
+test('after hiding, a stage whose only tree tasks were hidden epics has no group for that tree; a group whose root is hidden keeps its header, found through the whole list (#576)', () => {
+  const hidden = hiddenEpics(ALL, 'all');
+  const left = (shown: Task[]): Task[] => shown.filter((t) => !hidden.has(t.item.itemId));
+  expect(shape(groupTasks(ALL, left([R, B, X])))).toEqual([['none', ['X:0']]]);
+  expect(shape(groupTasks(ALL, left([B, B1])))).toEqual([['R', ['B1:2']]]);
 });

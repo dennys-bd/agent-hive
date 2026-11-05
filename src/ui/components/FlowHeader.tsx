@@ -2,8 +2,8 @@ import { ExternalLinkIcon, SearchIcon } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { repoName } from '../../pull-requests';
 import { displayBinding } from '../../shortcuts';
-import { type HIVE_SOURCE, resolveWorkspace } from '../../tasks';
-import type { RepoSummary, SourceConfig, SourceSync, Task, State } from '../../types';
+import type { HIVE_SOURCE } from '../../tasks';
+import type { RepoSummary, SourceConfig, SourceSync, State } from '../../types';
 import { act } from '@/components/actions';
 import { ButtonKeyHint, KeyHint } from '@/components/KeyHint';
 import { HeaderSlot } from '@/components/HeaderSlot';
@@ -55,13 +55,6 @@ function BackButton({ back }: { back: BackLink }) {
       <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
     </>
   );
-}
-
-// The workspaces the shown tasks resolve to, in the Comb's order: a legend of the colours the tasks carry, never a filter (the source is the
-// flow's only one)
-function shownWorkspaces(tasks: Task[], state: Pick<State, 'workspaces' | 'sourceWorkspaces' | 'tasks'>): string[] {
-  const used = new Set(tasks.map((c) => resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks)));
-  return state.workspaces.filter((name) => used.has(name));
 }
 
 // buscar tarefas (#542), or the repository's search (#757): the searchTasks key focuses it; the header stays mounted under Atividades (#596), so the key is bound only while the flow shows. Esc clears
@@ -142,19 +135,13 @@ function RepoTitle({ header }: { header: RepoHeader }) {
 export type HeaderMode = { kind: 'tasks' } | { kind: 'source'; source: SourceConfig | typeof HIVE_SOURCE } | { kind: 'repo'; header: RepoHeader };
 const TASKS_MODE: HeaderMode = { kind: 'tasks' };
 
-// fluxo, the sources legend (#574), the display slot, and the chips of the workspaces the shown tasks resolve to (#542)
-function TasksTitle({ state, tasks, legend, display }: { state: State; tasks: Task[]; legend?: string; display?: ReactNode }) {
+// fluxo, the sources legend (#574) and the display slot; the workspaces are the canvas legend's (#576)
+function TasksTitle({ legend, display }: { legend?: string; display?: ReactNode }) {
   return (
     <>
       <span className="font-semibold text-[13px] text-foreground">{t('header.flow')}</span>
       <span>{legend ?? t('tasks.display.allSources')}</span>
       {display}
-      {shownWorkspaces(tasks, state).map((name) => (
-        <span key={name} className="flex items-center gap-1.5 rounded-[4px] border px-1.5 py-0.5">
-          <WorkspaceSquare name={name} />
-          {name}
-        </span>
-      ))}
     </>
   );
 }
@@ -170,7 +157,7 @@ function GithubButton({ url }: { url: string }) {
 }
 
 interface FlowHeaderProps {
-  state: State; tasks: Task[]; search?: string; onSearch?(term: string): void; // #757: absent on the issue page, which has nothing to search
+  state: State; search?: string; onSearch?(term: string): void; // #757: absent on the issue page, which has nothing to search
   isShown?: boolean;
   onRefresh?(): Promise<unknown>; // #756: what atualizar runs instead of polling every source (the native view reads itself again); never rejects
   mode?: HeaderMode; // #571: tasks (default), a source (#756) or a repository (#757)
@@ -180,11 +167,10 @@ interface FlowHeaderProps {
   github?: string; // #352: the GitHub page of what the center shows; only the repository views and the issue/PR pages pass it
 }
 
-/** The flow's header (redesign 10, #542): fluxo, the sources legend and exibir (#574), the chips of the workspaces the shown tasks resolve
- * to, buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does. `tasks`: the shown flow's.
- * With `mode` source it is the source header (#756, handoff §2) and with `mode` repo the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. With `github` (#352), GitHub ↗ sits right before atualizar. It renders in the window header's center column (#295, HeaderSlot),
+/** The flow's header (redesign 10, #542): fluxo, the sources legend and exibir (#574), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does.
+ * With `mode` source it is the source header (#756, handoff §2) and with `mode` repo the repository header (#757, handoff 02): no last poll, a narrower search. With `back` (#911) it starts with the back button. With `github` (#352), GitHub ↗ sits right before atualizar. It renders in the window header's center column (#295, HeaderSlot),
  * the header's 44px and border its own. */
-export function FlowHeader({ state, tasks, search, onSearch, isShown = true, onRefresh, mode = TASKS_MODE, legend, display, back, github }: FlowHeaderProps) {
+export function FlowHeader({ state, search, onSearch, isShown = true, onRefresh, mode = TASKS_MODE, legend, display, back, github }: FlowHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isTasks = mode.kind === 'tasks';
   const polled = isTasks ? lastPolled(state.syncs) : undefined;
@@ -199,7 +185,7 @@ export function FlowHeader({ state, tasks, search, onSearch, isShown = true, onR
     refreshKey.current = refresh;
   });
   useEffect(() => (isShown ? onShortcutKey([[true, 'refreshFlow']], () => refreshKey.current()) : undefined), [isShown]);
-  const title = mode.kind === 'repo' ? <RepoTitle header={mode.header} /> : mode.kind === 'source' ? <SourceHeading source={mode.source} /> : <TasksTitle state={state} tasks={tasks} legend={legend} display={display} />;
+  const title = mode.kind === 'repo' ? <RepoTitle header={mode.header} /> : mode.kind === 'source' ? <SourceHeading source={mode.source} /> : <TasksTitle legend={legend} display={display} />;
   return (
     <HeaderSlot>
     <section aria-label={t('header.flow')} className={`flex h-full min-w-0 flex-1 items-center gap-2.5 px-3.5 text-muted-foreground text-xs ${NO_DRAG_CONTROLS}`}>

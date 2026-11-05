@@ -38,17 +38,19 @@ test('the task menu is 236px, in the handoff\'s order: the runs, the diffs, come
   expect(items()).toEqual([
     'executar etapas…', 'abrir sessão livre…', 'reiniciar etapa…', 'executar', 'dormir',
     'diff da etapa', 'diff da worktree', 'mostrar PR',
-    'começar sozinho', 'mover para etapa', 'mover para workspaceexclua a atividade antes',
-    `excluir atividade… · ${RUNNING}`,
+    'começar sozinho', 'mover para etapa', 'tirar do fluxo', 'mover para workspaceexclua a atividade antes',
+    `excluir atividade…${RUNNING}`,
   ]);
+  const blocked = within(menu()).getByRole('menuitem', { name: /^excluir atividade…/ });
+  expect(within(blocked).getByText(RUNNING)).toHaveClass('text-muted-foreground', 'text-xs'); // #576 decision 15: the reason's own line
   expect(within(menu()).getAllByRole('separator')).toHaveLength(3);
   rerender(<Flow state={state(task({ created: true, approval: { since: '2026-09-25T10:00:00.000Z' } }), [{ ...session, status: 'approval' }])} flow={firstFlow(state(task({ created: true, approval: { since: '2026-09-25T10:00:00.000Z' } }), [{ ...session, status: 'approval' }]))} />); // #829: the approval is answerable only with no session of the task live
   expect(items()).toEqual([
     'aprovar', 'enviar feedback…',
     'executar etapas…', 'abrir sessão livre…', 'executar', 'dormir',
     'diff da etapa', 'diff da worktree', 'mostrar PR',
-    'começar sozinho', 'mover para etapa', 'mover para workspaceexclua a atividade antes',
-    `excluir atividade… · ${RUNNING}`, `excluir tarefa… · ${RUNNING}`,
+    'começar sozinho', 'mover para etapa', 'tirar do fluxo', 'mover para workspaceexclua a atividade antes',
+    `excluir atividade…${RUNNING}`, `excluir tarefa…${RUNNING}`,
   ]);
   expect(within(menu()).getAllByRole('separator')).toHaveLength(4);
 });

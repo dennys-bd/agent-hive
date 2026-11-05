@@ -33,10 +33,13 @@ test('right-click › excluir tarefa…: absent on a board task; last on a Hive 
   expect(within(menu()).queryByRole('menuitem', { name: /^excluir tarefa/ })).not.toBeInTheDocument();
 
   rerender(<Flow state={state(task({ created: true, workerId: 's1' }), [RUNNING])} flow={firstFlow(state(task({ created: true, workerId: 's1' }), [RUNNING]))} />);
-  expect(within(menu()).getByRole('menuitem', { name: 'excluir tarefa… · um worker ou sessão está executando nessa tarefa' })).toHaveAttribute('data-disabled');
+  const running = within(menu()).getByRole('menuitem', { name: /^excluir tarefa…/ });
+  expect(running).toHaveAttribute('data-disabled');
+  expect(within(running).getByText('um worker ou sessão está executando nessa tarefa')).toHaveClass('text-muted-foreground', 'text-xs');
 
   rerender(<Flow state={state(task({ created: true, deleting: true }))} flow={firstFlow(state(task({ created: true, deleting: true })))} />);
-  const blocked = within(menu()).getByRole('menuitem', { name: 'excluir tarefa… · a atividade já está sendo excluída' });
+  const blocked = within(menu()).getByRole('menuitem', { name: /^excluir tarefa…/ });
+  expect(within(blocked).getByText('a atividade já está sendo excluída')).toHaveClass('text-xs');
   expect(blocked).toHaveAttribute('data-disabled');
   expect(blocked).toHaveClass('text-destructive');
 

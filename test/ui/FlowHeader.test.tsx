@@ -39,10 +39,10 @@ const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
-test('the tasks header reads todas as sources, the chips of the shown tasks\' workspaces and the latest poll of every source (#542, #571)', () => {
+test('the tasks header reads todas as sources and the latest poll of every source, and no workspace chips (#542, #571, #576)', () => {
   const { rerender } = render(<Flow state={state(tasks)} flow={firstFlow(state(tasks))} />);
   expect(within(header()).getByText('todas as sources')).toBeInTheDocument();
-  expect(chips()).toEqual(['hive', 'site']); // docs has no task
+  expect(chips()).toEqual([]);
   expect(within(header()).queryByRole('button', { name: /^(hive|site)$/ })).not.toBeInTheDocument(); // a legend, not a filter
   expect(within(header()).getByText('atualizado 09:28')).toBeInTheDocument();
   rerender(<Flow state={state(tasks, { syncs: {} })} flow={firstFlow(state(tasks, { syncs: {} }))} />);
@@ -104,24 +104,24 @@ test('F5 refreshes the flow as atualizar does while the flow shows; hidden under
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/sources/refresh', expect.objectContaining({ method: 'POST' })));
   unmount();
   fetchMock.mockClear();
-  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} isShown={false} />);
+  render(<FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} isShown={false} />);
   expect(f5()).toBe(true);
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
 test('atualizar shows its refreshFlow keys beside its text, out of its name, and none while the shortcut is off (#670)', () => {
-  const { unmount } = render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} />);
+  const { unmount } = render(<FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} />);
   const refresh = within(header()).getByRole('button', { name: 'atualizar' }); // the hint is aria-hidden, so the name stays the text
   expect(refresh).toHaveTextContent('F5'); // jsdom is not macOS
   unmount();
   setShortcuts({ refreshFlow: null });
   onTestFinished(() => setShortcuts({}));
-  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} />);
+  render(<FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} />);
   expect(within(header()).getByRole('button', { name: 'atualizar' })).toHaveTextContent(/^atualizar$/);
 });
 
 test('in the source mode the header names the source and, muted, its type and owner; no chips, no last poll, no tabs, a narrow buscar tarefas (#571)', () => {
-  render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: ROADMAP }} tasks={tasks} search="" onSearch={vi.fn()} />);
+  render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: ROADMAP }} search="" onSearch={vi.fn()} />);
   expect(within(header()).getByText('roadmap')).toHaveClass('font-semibold', 'text-[13px]');
   expect(within(header()).getByText('github project · acme')).toBeInTheDocument();
   expect(chips()).toEqual([]);
@@ -131,7 +131,7 @@ test('in the source mode the header names the source and, muted, its type and ow
 });
 
 test('the hive source header: hive, then tarefas do hive · sem sync externo; no type or owner line, no last poll (#572, #583)', () => {
-  render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: 'hive' }} tasks={[]} search="" onSearch={vi.fn()} />);
+  render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: 'hive' }} search="" onSearch={vi.fn()} />);
   expect(within(header()).getByText('hive')).toHaveClass('font-semibold', 'text-[13px]');
   expect(within(header()).getByText('tarefas do hive · sem sync externo')).toBeInTheDocument();
   expect(within(header()).queryByText(/github project/)).not.toBeInTheDocument();
@@ -141,7 +141,7 @@ test('the hive source header: hive, then tarefas do hive · sem sync externo; no
 test('with onRefresh, atualizar runs it instead of polling every source (#756)', async () => {
   const user = userEvent.setup();
   const onRefresh = vi.fn(async () => undefined);
-  render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: ROADMAP }} tasks={[]} search="" onSearch={vi.fn()} onRefresh={onRefresh} />);
+  render(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: ROADMAP }} search="" onSearch={vi.fn()} onRefresh={onRefresh} />);
   await user.click(within(header()).getByRole('button', { name: 'atualizar' }));
   expect(onRefresh).toHaveBeenCalledOnce();
   expect(fetchMock).not.toHaveBeenCalled();
@@ -151,7 +151,7 @@ test('with a repository the header shows its workspace square, its name, its wor
   const user = userEvent.setup();
   const onTab = vi.fn();
   const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
-  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'prs', onTab } }} />);
+  render(<FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'prs', onTab } }} />);
   expect(within(header()).getByText('web')).toHaveAttribute('title', 'acme/web');
   expect(within(header()).getByText('workspace site')).toBeInTheDocument();
   expect(chips()).toEqual([]);
@@ -167,7 +167,7 @@ test('with a repository the header shows its workspace square, its name, its wor
 test('a back entry starts the header with ‹ and its label, then a 1×14px divider, before the source\'s name; its title names the key as bound, and a click goes back (#911)', async () => {
   const user = userEvent.setup();
   const onBack = vi.fn();
-  const page = (back?: BackLink) => <FlowHeader state={state(tasks)} mode={{ kind: 'source', source: ROADMAP }} tasks={[]} back={back} />;
+  const page = (back?: BackLink) => <FlowHeader state={state(tasks)} mode={{ kind: 'source', source: ROADMAP }} back={back} />;
   const { rerender } = render(page());
   expect(within(header()).queryByRole('button', { name: 'issue #458' })).not.toBeInTheDocument();
   rerender(page({ label: 'issue #458', onBack }));
@@ -191,7 +191,7 @@ const BACK_KEY = { key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }; // goBac
 test('Alt+Left and the mouse\'s back button go back only while a back button shows on a shown flow; another mouse button does nothing (#911)', () => {
   const onBack = vi.fn();
   const page = (isShown: boolean, back?: BackLink) => (
-    <FlowShownContext.Provider value={isShown}><FlowHeader state={state(tasks)} tasks={[]} back={back} /></FlowShownContext.Provider>
+    <FlowShownContext.Provider value={isShown}><FlowHeader state={state(tasks)} back={back} /></FlowShownContext.Provider>
   );
   const { rerender } = render(page(true));
   expect(fireEvent.keyDown(window, BACK_KEY)).toBe(true); // no button: not bound
@@ -221,7 +221,7 @@ function Slot() {
 const inSlot = (hasSlot: boolean, isShown = true) => (
   <HeaderSlotProvider>
     {hasSlot && <Slot />}
-    <FlowShownContext.Provider value={isShown}><div data-testid="page"><FlowHeader state={state([])} tasks={[]} /></div></FlowShownContext.Provider>
+    <FlowShownContext.Provider value={isShown}><div data-testid="page"><FlowHeader state={state([])} /></div></FlowShownContext.Provider>
   </HeaderSlotProvider>
 );
 
@@ -243,7 +243,7 @@ test('with github, GitHub sits right before atualizar, titled abrir no GitHub, i
   const open = vi.spyOn(window, 'open').mockReturnValue(null);
   onTestFinished(() => open.mockRestore());
   const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
-  const page = (github?: string) => <FlowHeader state={state(tasks)} tasks={[]} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'issues', onTab: vi.fn() } }} github={github} />;
+  const page = (github?: string) => <FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'issues', onTab: vi.fn() } }} github={github} />;
   const { rerender } = render(page());
   expect(within(header()).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
   rerender(page('https://github.com/acme/web/issues'));
@@ -260,7 +260,7 @@ test('with github, GitHub sits right before atualizar, titled abrir no GitHub, i
 });
 
 test('in the tasks mode the display slot sits right after the sources legend; GitHub never shows there, even when passed (#571)', () => {
-  render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} display={<button type="button">exibir</button>} github="https://github.com/acme" />);
+  render(<FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} display={<button type="button">exibir</button>} github="https://github.com/acme" />);
   expect(within(header()).getByText('tarefas', { selector: 'span' })).toHaveClass('font-semibold');
   expect(within(header()).getByText('todas as sources').nextElementSibling).toBe(within(header()).getByRole('button', { name: 'exibir' }));
   expect(within(header()).getByRole('textbox', { name: 'buscar tarefas' })).toBeInTheDocument();
@@ -271,9 +271,9 @@ const legendOf = (): Element | null => within(header()).getByText('tarefas', { s
 
 test('the tasks legend reads what it is given, todas as sources without one, right before the display slot; no ↺ or ⑂ button is left (#574)', () => {
   const slot = <button type="button">exibir</button>;
-  const { rerender } = render(<FlowHeader state={state(tasks)} tasks={tasks} display={slot} />);
+  const { rerender } = render(<FlowHeader state={state(tasks)} display={slot} />);
   expect(legendOf()).toHaveTextContent('todas as sources');
-  rerender(<FlowHeader state={state(tasks)} tasks={tasks} legend="hive · roadmap" display={slot} />);
+  rerender(<FlowHeader state={state(tasks)} legend="hive · roadmap" display={slot} />);
   expect(legendOf()).toHaveTextContent('hive · roadmap');
   expect(legendOf()?.nextElementSibling).toBe(within(header()).getByRole('button', { name: 'exibir' }));
   expect(within(header()).queryByRole('button', { name: /^(↺ voltas|⑂ árvore)$/ })).not.toBeInTheDocument();
