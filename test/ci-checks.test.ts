@@ -189,3 +189,28 @@ test('the CI read keeps a queued run\'s suite creation as queuedAt and no start;
   assert.deepEqual(only.checks.map((c) => [c.name, c.startedAt, c.queuedAt, c.runId]), [['e2e', undefined, T0, 11], ['test', T1, undefined, 11]]);
   assert.deepEqual(stageChecks(only.checks).map((c) => [c.name, c.startedAt, c.queuedAt]), [['test', T1, undefined], ['e2e', undefined, T0]]);
 });
+
+test('parseCi marks behind only on BEHIND; BLOCKED, UNKNOWN, a new status or no answer leave it unset; ciQuery asks mergeStateStatus (#669)', () => {
+  assert.match(ciQuery([A]) ?? '', /mergeable baseRefName mergeStateStatus baseRef/);
+  const of = (mergeStateStatus: unknown) => parseCi([A], { p0: { ...answer('abc', []), mergeStateStatus } })[0]?.behind;
+  assert.equal(of('BEHIND'), true);
+  for (const status of ['BLOCKED', 'UNKNOWN', 'CLEAN', 'SOMETHING_NEW', undefined]) assert.equal(of(status), undefined, String(status));
+});
+
+const signed = (requiresSignatures: unknown, commits: unknown[]) => ({ ...answer('abc', []), baseRef: { refUpdateRule: { requiresSignatures } }, signatures: { nodes: commits } });
+const commit = (oid: unknown, signature: unknown) => ({ commit: { oid, signature } });
+
+test('parseCi lists the short shas of the commits without a verified signature, in order, only when the base requires signatures; ciQuery asks the last 100 commits apart from the head (#669)', () => {
+  const query = ciQuery([A]) ?? '';
+  assert.match(query, /refUpdateRule \{ requiredStatusCheckContexts requiresSignatures \}/);
+  assert.match(query, /signatures: commits\(last: 100\) \{ nodes \{ commit \{ oid signature \{ isValid \} \} \} \}/);
+  const commits = [
+    commit('aaaaaaa1111', { isValid: true }), commit('bbbbbbb2222', null), commit('ccccccc3333', { isValid: false }),
+    commit(7, null), { commit: null }, commit('ZZZZZZZ9999', null), commit('ddddddd4444', {}),
+  ];
+  assert.deepEqual(parseCi([A], { p0: signed(true, commits) })[0].unsigned, ['bbbbbbb', 'ccccccc', 'ddddddd']);
+  for (const rule of [false, null, undefined, 'true']) assert.equal(parseCi([A], { p0: signed(rule, commits) })[0].unsigned, undefined, String(rule));
+  assert.equal(parseCi([A], { p0: signed(true, [commit('aaaaaaa1111', { isValid: true })]) })[0].unsigned, undefined, 'every commit verified');
+  assert.equal(parseCi([A], { p0: signed(true, [commit('ZZZZZZZ9999', null)]) })[0].unsigned, undefined, 'no sha survives the check');
+  assert.equal(parseCi([A], { p0: { ...answer('abc', []), signatures: { nodes: commits } } })[0].unsigned, undefined, 'no rule read');
+});

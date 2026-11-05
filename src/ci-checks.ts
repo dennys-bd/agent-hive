@@ -1,16 +1,18 @@
 import { stripVTControlCharacters } from 'node:util';
-import { awaitingOf, canPushOf, checkOf, headRollup, isObject, nodesOf, readable, rollupFields, SUITE_FIELDS } from './pr-checks.js';
+import { awaitingOf, canPushOf, checkOf, headRollup, isObject, mergeState, nodesOf, readable, rollupFields, SUITE_FIELDS } from './pr-checks.js';
 import { type Alias, aliasedQuery, aliasOf } from './pull-requests.js';
 import type { CiCheck, CiChecks, CiPrRead, Stage, StageCiCheck } from './types.js';
 
 // A PR's CI for a wait-for-CI stage (#834), on top of #758's checks (pr-checks.ts): the same rollup and the same states, plus what the stage
 // needs (the head commit, the Actions run behind each check run, the base branch's required checks) and the verdict. Pure.
 
-/** Per PR: its mergeability and base branch name (#264), its base branch's required checks, the login's permission on its repository (#854),
- * the default branch's workflows folder (#11) and #758's rollup, with the head's oid, its check suites (#854) and each check run's workflow run
- * and suite creation (#598). */
-export const CI_FIELDS = 'mergeable baseRefName baseRef { refUpdateRule { requiredStatusCheckContexts } } '
+/** Per PR: its mergeability, merge state and base branch name (#264, #669), its base branch's required checks and signatures rule (#669), the
+ * login's permission on its repository (#854), the default branch's workflows folder (#11), its last commits' signatures (#669) and #758's rollup,
+ * with the head's oid, its check suites (#854) and each check run's workflow run and suite creation (#598). */
+// ponytail: the last 100 commits only (#669): a PR with more is judged on its last 100; page `signatures` when one shows up
+export const CI_FIELDS = 'mergeable baseRefName mergeStateStatus baseRef { refUpdateRule { requiredStatusCheckContexts requiresSignatures } } '
   + 'repository { viewerPermission workflows: object(expression: "HEAD:.github/workflows") { ... on Tree { entries { name } } } } '
+  + 'signatures: commits(last: 100) { nodes { commit { oid signature { isValid } } } } '
   + rollupFields(`oid ${SUITE_FIELDS} `, ' checkSuite { createdAt workflowRun { databaseId } }');
 
 
@@ -38,10 +40,13 @@ function headOf(alias: Alias): string | undefined {
   return typeof oid === 'string' ? oid : undefined;
 }
 
+// The base branch's rules for the login, branch protection and rulesets merged: what GitHub enforces on a merge into it
+const ruleOf = (alias: Alias): Record<string, unknown> | undefined =>
+  (isObject(alias.baseRef) && isObject(alias.baseRef.refUpdateRule) ? alias.baseRef.refUpdateRule : undefined);
+
 // The base branch's required check names, branch protection and rulesets alike; absent when the branch protects none
 function requiredOf(alias: Alias): { required?: string[] } {
-  const rule = isObject(alias.baseRef) && isObject(alias.baseRef.refUpdateRule) ? alias.baseRef.refUpdateRule : undefined;
-  const names = rule?.requiredStatusCheckContexts;
+  const names = ruleOf(alias)?.requiredStatusCheckContexts;
   return Array.isArray(names) ? { required: names.filter((n): n is string => typeof n === 'string') } : {};
 }
 
@@ -56,12 +61,33 @@ function noCiOf(repository: unknown, required: readonly string[] = []): { noCi?:
   return names !== undefined && !names.some((n) => typeof n === 'string' && /\.ya?ml$/i.test(n)) ? { noCi: true } : {};
 }
 
-// #264: GitHub runs no checks on a PR that conflicts with its base, so the wait reads the conflict; UNKNOWN is GitHub still computing, not one
-function mergeOf(alias: Alias): Pick<CiPrRead, 'base' | 'conflicting'> {
+// #264: GitHub runs no checks on a PR that conflicts with its base, so the wait reads the conflict; UNKNOWN is GitHub still computing, not one.
+// #669: BEHIND only on a base requiring up-to-date branches; any other merge state, UNKNOWN included, is not behind
+function mergeOf(alias: Alias): Pick<CiPrRead, 'base' | 'conflicting' | 'behind'> {
   return {
     ...(typeof alias.baseRefName === 'string' ? { base: alias.baseRefName } : {}),
     ...(alias.mergeable === 'CONFLICTING' ? { conflicting: true as const } : {}),
+    ...(mergeState(alias.mergeStateStatus) === 'behind' ? { behind: true as const } : {}),
   };
+}
+
+// The output reaches the card and the Dev prompt: a sha that is not 7 hex characters is dropped, never shown
+const SHORT_SHA = /^[0-9a-f]{7}$/;
+
+// One commit's short sha when it has no verified signature (#669): a null signature or an isValid that is not true; none for a node with no oid
+function shortUnsigned(node: unknown): string[] {
+  const commit: Record<string, unknown> = isObject(node) && isObject(node.commit) ? node.commit : {};
+  const signature: Record<string, unknown> = isObject(commit.signature) ? commit.signature : {};
+  const { oid } = commit;
+  const sha = typeof oid === 'string' && signature.isValid !== true ? oid.slice(0, 7) : '';
+  return SHORT_SHA.test(sha) ? [sha] : [];
+}
+
+// #669: only a base whose rule answers requiresSignatures true judges the commits; absent or anything else keeps today's wait
+function unsignedOf(alias: Alias): { unsigned?: string[] } {
+  if (ruleOf(alias)?.requiresSignatures !== true) return {};
+  const unsigned = nodesOf(alias.signatures).flatMap(shortUnsigned);
+  return unsigned.length > 0 ? { unsigned } : {};
 }
 
 /** Each PR's last commit and checks, alias p<i> for urls[i], each check as #758 reads it. A null or missing alias, one with no commit, and one
@@ -77,7 +103,7 @@ export function parseCi(urls: string[], data: unknown): CiPrRead[] {
     const permission = isObject(alias.repository) ? alias.repository.viewerPermission : undefined;
     const { required } = requiredOf(alias);
     const pr: CiPrRead = {
-      url, head, ...mergeOf(alias), ...(required === undefined ? {} : { required }), checks, awaiting: awaitingOf(alias.headCommit), canPush: canPushOf(permission),
+      url, head, ...mergeOf(alias), ...unsignedOf(alias), ...(required === undefined ? {} : { required }), checks, awaiting: awaitingOf(alias.headCommit), canPush: canPushOf(permission),
       ...noCiOf(alias.repository, required),
     };
     return skipped ? [] : [pr];
