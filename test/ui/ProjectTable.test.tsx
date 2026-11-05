@@ -128,20 +128,20 @@ test('an issue a Hive task was created from counts in the flow and shows fluxo �
   expect(onGoTo).toHaveBeenCalledWith('local:1');
 });
 
-test('with nothing saved every column shows but the iteration and number fields, at the handoff\'s widths, under a header that stays as the body scrolls, in a box that fills the pane with no visible scrollbar (#756, #59)', async () => {
+test('with nothing saved: status, labels, the progress field and PR, at the handoff\'s widths with the 150px task column, under a header that stays as the body scrolls, in a box that fills the pane with no visible scrollbar (#756, #59, #583)', async () => {
   resetViewState();
   renderTable();
   await screen.findByText('3 itens · 1 tarefas');
-  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
+  expect(heads()).toEqual(['issue', 'status', 'labels', 'Progress', 'PR', '']);
   const head = screen.getAllByRole('row')[0];
-  expect(head.style.gridTemplateColumns).toBe('minmax(160px,1fr) 128px 64px 136px 56px 72px 56px 112px 104px 76px'); // Priority 64, date 72, progress 56, blocked by 112
+  expect(head.style.gridTemplateColumns).toBe('minmax(160px,1fr) 128px 136px 56px 104px 150px');
   expect(head.closest('thead')).toHaveClass('sticky');
   const scroller = screen.getByRole('table').parentElement?.parentElement;
   expect(scroller).toHaveClass('[scrollbar-width:none]');
   expect(scroller?.parentElement).toHaveClass('flex-1');
 });
 
-test('the columns menu lists every hideable column in project order with its origin, never issue nor action; a toggle shows or hides it and is saved for the source (#756)', async () => {
+test('the columns menu lists every hideable column in project order with its origin, never issue nor action; a toggle shows or hides it and is saved for the source (#756, #583)', async () => {
   const user = userEvent.setup();
   resetViewState();
   const { unmount } = renderTable();
@@ -152,18 +152,18 @@ test('the columns menu lists every hideable column in project order with its ori
     'statusproject', 'Priorityproject', 'labelsproject', 'resp.project', 'Estimateproject', 'Targetproject', 'Progressproject', 'Sprintproject',
     'criadaproject', 'atualizadaproject', 'fechadaproject', 'bloqueada porproject', 'PRhive',
   ]);
-  expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'true', 'true', 'true', 'false', 'true', 'true', 'false', 'false', 'false', 'false', 'true', 'true']);
+  expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'false', 'true', 'false', 'false', 'false', 'true', 'false', 'false', 'false', 'false', 'false', 'true']);
   expect(screen.getByText('os campos vêm do project. a ordem segue a do project.')).toBeInTheDocument();
   await user.click(screen.getByRole('menuitemcheckbox', { name: /^Priority/ }));
   await user.click(screen.getByRole('menuitemcheckbox', { name: /^Estimate/ }));
   expect(screen.getByRole('menuitemcheckbox', { name: /^Estimate/ })).toHaveAttribute('aria-checked', 'true'); // the menu stays open
   await user.keyboard('{Escape}');
-  expect(heads()).toEqual(['issue', 'status', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
-  expect(readView('projectViews')).toEqual({ roadmap: expect.objectContaining({ columns: ['status', 'labels', 'assignee', 'field:Estimate', 'field:Target', 'field:Progress', 'blockedBy', 'pr'] }) });
+  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'Estimate', 'Progress', 'PR', '']);
+  expect(readView('projectViews')).toEqual({ roadmap: expect.objectContaining({ columns: ['status', 'field:Priority', 'labels', 'field:Estimate', 'field:Progress', 'pr'] }) });
   unmount();
   renderTable();
   await screen.findByText('3 itens · 1 tarefas');
-  expect(heads()).toEqual(['issue', 'status', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
+  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'Estimate', 'Progress', 'PR', '']);
 });
 
 // Blocked has no issue; #7 has no Status, two assignees and P0; #5 is a second Todo

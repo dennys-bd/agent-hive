@@ -21,27 +21,27 @@ const EVERY: ProjectView = {
 };
 const answerEvery = async (input: RequestInfo | URL): Promise<Response> => jsonRes(String(input).endsWith('/project') ? EVERY : { ok: true });
 
-test('every new kind and the issue\'s dates are listed in the columns menu, hidden with nothing saved; shown, each renders its value, — when an unknown kind has none (#756)', async () => {
+test('a fresh source shows status, labels, every milestone and progress field and PR; the other kinds and the issue\'s dates are listed in the columns menu, hidden; shown, each renders its value, — when an unknown kind has none (#756, #583)', async () => {
   const user = userEvent.setup();
   fetchMock.mockImplementation(answerEvery);
   resetViewState();
   renderTable();
   await screen.findByText('2 itens · 1 tarefas');
-  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
+  expect(heads()).toEqual(['issue', 'status', 'labels', 'Progress', 'Milestone', 'PR', '']);
   await openMenu(user, /^colunas/);
-  const added = ['Milestone', 'Type', 'Reviewers', 'criada', 'atualizada', 'fechada'];
+  const added = ['Type', 'Reviewers', 'criada', 'atualizada', 'fechada'];
   const items = screen.getAllByRole('menuitemcheckbox').map((i) => [i.textContent, i.getAttribute('aria-checked')]);
-  expect(items.slice(-8)).toEqual([...added.map((name) => [`${name}project`, 'false']), ['bloqueada porproject', 'true'], ['PRhive', 'true']]);
+  expect(items.slice(-8)).toEqual([['Milestoneproject', 'true'], ...added.map((name) => [`${name}project`, 'false']), ['bloqueada porproject', 'false'], ['PRhive', 'true']]);
   for (const name of added) await user.click(screen.getByRole('menuitemcheckbox', { name: new RegExp(`^${name}`) }));
   await user.keyboard('{Escape}');
-  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', ...added, 'bloqueada por', 'PR', '']);
+  expect(heads()).toEqual(['issue', 'status', 'labels', 'Progress', 'Milestone', ...added, 'PR', '']);
   const twelve = within(rowOf('#12'));
   expect(twelve.getByText('v1')).toBeInTheDocument();
   expect(twelve.getByText('Bug')).toBeInTheDocument();
   expect(twelve.getByText('01/10')).toBeInTheDocument();
   expect(twelve.getByText('05/10')).toBeInTheDocument();
   expect(within(rowOf('#3')).getByText('04/10')).toBeInTheDocument();
-  expect(within(rowOf('#3')).getAllByText('—')).toHaveLength(4); // no status, Reviewers (an issue has none), no blocker and PR; an empty milestone stays blank
+  expect(within(rowOf('#3')).getAllByText('—')).toHaveLength(3); // no status, Reviewers (an issue has none) and no PR; an empty milestone stays blank
 });
 
 test('a header sort is saved for the source and restored on reopening; nothing saved keeps the project\'s order (#756)', async () => {
@@ -99,12 +99,12 @@ test('the handoff\'s defaults; the handles and the body dividers sit at the same
   const user = userEvent.setup();
   renderTable();
   await screen.findByText('3 de 3');
-  expect(tracks()).toEqual(['minmax(160px,1fr)', '128px', '64px', '136px', '56px', '72px', '72px', '56px', '88px', '104px', '76px']);
-  expect(handle('status').style.right).toBe('978px'); // 18 + 9×12 + 852
-  expect(handle('PR').style.right).toBe('210px'); // 18 + 12 + 104 + 76
+  expect(tracks()).toEqual(['minmax(160px,1fr)', '128px', '64px', '136px', '56px', '72px', '72px', '56px', '88px', '104px', '150px']);
+  expect(handle('status').style.right).toBe('1052px'); // 18 + 9×12 + 926
+  expect(handle('PR').style.right).toBe('284px'); // 18 + 12 + 104 + 150
   expect(lines()).toHaveLength(9);
-  expect([lines()[0], lines()[8]]).toEqual(['978px', '210px']);
-  expect(screen.getByRole('table').parentElement).toHaveStyle({ minWidth: '1156px' }); // 160 + 852 + 10×12 + 24
+  expect([lines()[0], lines()[8]]).toEqual(['1052px', '284px']);
+  expect(screen.getByRole('table').parentElement).toHaveStyle({ minWidth: '1230px' }); // 160 + 926 + 10×12 + 24
   await user.type(screen.getByRole('textbox', { name: 'buscar tarefas' }), 'nada');
   expect(screen.getByText('0 de 3')).toBeInTheDocument();
   expect(screen.queryByTestId('column-dividers')).not.toBeInTheDocument();

@@ -68,7 +68,7 @@ test('the blocked-by cell shows the open refs first in foreground, the closed on
   expect(within(cell12()).getByTitle('#274, #521 · fechada')).toHaveTextContent('#274, #521 · fechada');
   expect(cell12().querySelector('svg')).not.toBeNull(); // the ⌄ of an editable cell
   for (const id of ['#3', '#40']) expect(within(rowOf(id)).getByRole('button', { name: CELL })).toHaveTextContent(/^—$/);
-  expect(screen.getAllByRole('row')[0].style.gridTemplateColumns.split(' ').slice(-3)).toEqual(['112px', '104px', '76px']);
+  expect(screen.getAllByRole('row')[0].style.gridTemplateColumns.split(' ').slice(-3)).toEqual(['112px', '104px', '150px']);
   expect(screen.getByRole('separator', { name: 'redimensionar bloqueada por' })).toBeInTheDocument();
 });
 
