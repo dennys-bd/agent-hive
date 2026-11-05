@@ -20,7 +20,11 @@ const BOTH: CenterLayout = {
 };
 // The stage's run and a.ts's editor tab, a.ts shown
 const FILE: CenterLayout = { root: { kind: 'group', id: 'g1', tabs: [{ kind: 'run', ptyId: 'W1' }, { kind: 'file', path: 'src/a.ts' }], active: 1 }, focused: 'g1' };
-const fetchMock = vi.fn(async (url: string) => (url.includes('/file-base')
+// The stage's run and a design's tab, the design shown (#675)
+const DESIGN: CenterLayout = { root: { kind: 'group', id: 'g1', tabs: [{ kind: 'run', ptyId: 'W1' }, { kind: 'design', path: 'design/home.hv.html' }], active: 1 }, focused: 'g1' };
+const fetchMock = vi.fn(async (url: string) => (url.includes('/design-frame')
+  ? jsonResponse({ url: '/design-frame/tok/home.hv.html' })
+  : url.includes('/file-base')
   ? jsonResponse({ against: 'head', label: 'HEAD', oid: 'o1', text: 'one\n' })
   : jsonResponse({ path: 'src/a.ts', text: 'two\n', version: 'v1' })));
 
@@ -65,4 +69,13 @@ test('abrir alterações shows at the strip\'s right end only over a file tab, a
   expect(openFile).toHaveBeenCalledWith('I1', 'src/a.ts', undefined, { changes: true });
   await user.click(screen.getByRole('tab', { name: 'Claude' }));
   expect(screen.queryByRole('button', { name: 'abrir alterações' })).not.toBeInTheDocument();
+});
+
+test('abrir alterações shows over a design tab too, and opens that screen\'s changes in its group (#675)', async () => {
+  const user = userEvent.setup();
+  const openFile = vi.fn(() => true);
+  seed(DESIGN);
+  render(<FileOpenerContext.Provider value={openFile}><Center runs={[STAGE]} /></FileOpenerContext.Provider>);
+  await user.click(screen.getByRole('button', { name: 'abrir alterações' }));
+  expect(openFile).toHaveBeenCalledWith('I1', 'design/home.hv.html', undefined, { changes: true });
 });

@@ -149,7 +149,8 @@ function DesignView({ comments, ...props }: DesignPaneProps & { comments: Design
     if (!takeCommentKey(event, marks) && !takeSendKey(event, comments, marks.isPanelShown)) zoom.onKeyDown(event);
   };
   return (
-    <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
+    // the search's focus reads the pane as its file (#697): Git: Open Changes is offered over a design (#675)
+    <section data-design-pane data-file-activity={props.activity.activity.id} data-file-path={path} aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
       <DesignBar
         path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} viewports={view.viewports} theme={theme} zoom={zoom} onViewport={view.pickViewport} onTheme={view.pickTheme}
         comments={{ count: comments.open.length, isShown: marks.isPanelShown, onToggle: () => marks.setPanelShown(!marks.isPanelShown), isCommenting: marks.isCommenting, onComment: marks.toggle }}

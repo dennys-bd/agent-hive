@@ -67,6 +67,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test('the pane\'s root names its activity and file, as the editor\'s does, so the search\'s focus reads it as that file (#675)', () => {
+  render(pane());
+  const root = screen.getByRole('region', { name: LABEL });
+  expect([root.dataset.fileActivity, root.dataset.filePath]).toEqual([activity.activity.id, PATH]);
+});
+
 test('mints the frame with the activity and the path, renders it sandboxed at 1280 px and 800 high, scaled to fit; a size from its frame sets the height, any other is ignored (#109)', async () => {
   render(pane());
   const iframe = await screen.findByTitle(NAME);
