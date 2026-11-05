@@ -28,24 +28,37 @@ type Live = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
 interface FrameDeps { tokens: DesignFrameTokens; log: Pick<Logger, 'debug'> }
 interface MintDeps { requireLive: TaskRouteDeps['requireLive']; tokens: DesignFrameTokens }
 
-/** This boot's design frame tokens (#108). Minting a folder again answers its token, so the map stays bounded by the folders the user
- *  opened. Memory only: a restart voids every URL. */
-export interface DesignFrameTokens { mint(folder: string): string; folderOf(token: string): string | undefined }
+/** A before frame's folder (#675): `folder` of `commit` in the repository at `top`, in git's path space (posix, relative to top). */
+export interface BaseFolder { top: string; commit: string; folder: string }
 
-export function createDesignFrameTokens(): DesignFrameTokens {
-  const folderByToken = new Map<string, string>();
-  const tokenByFolder = new Map<string, string>();
+/** This boot's design frame tokens (#108, #675). Minting a value again answers its token, so a map stays bounded by what the user opened.
+ *  Memory only: a restart voids every URL. */
+export interface DesignFrameTokens {
+  mint(folder: string): string; folderOf(token: string): string | undefined;
+  mintBase(base: BaseFolder): string; baseOf(token: string): BaseFolder | undefined;
+}
+
+function tokenMap<T>(keyOf: (value: T) => string): { mint(value: T): string; of(token: string): T | undefined } {
+  const byToken = new Map<string, T>();
+  const byKey = new Map<string, string>();
   return {
-    mint(folder) {
-      const held = tokenByFolder.get(folder);
+    mint(value) {
+      const key = keyOf(value);
+      const held = byKey.get(key);
       if (held !== undefined) return held;
       const token = newSecret(); // 32 random bytes in hex, as the boot's own secret
-      folderByToken.set(token, folder);
-      tokenByFolder.set(folder, token);
+      byToken.set(token, value);
+      byKey.set(key, token);
       return token;
     },
-    folderOf: (token) => folderByToken.get(token),
+    of: (token) => byToken.get(token),
   };
+}
+
+export function createDesignFrameTokens(): DesignFrameTokens {
+  const folders = tokenMap<string>((folder) => folder);
+  const bases = tokenMap<BaseFolder>(({ top, commit, folder }) => JSON.stringify([top, commit, folder]));
+  return { mint: folders.mint, folderOf: folders.of, mintBase: bases.mint, baseOf: bases.of };
 }
 
 /** The route's policy (#108). `sandbox` in the header holds even when the URL is opened outside the iframe. 'self' is unreliable in an

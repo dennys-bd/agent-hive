@@ -27,6 +27,17 @@ test('the token store answers one 64-hex token per folder for the whole boot, an
   assert.notEqual(createDesignFrameTokens().mint('/work/design'), one, 'another boot, another token');
 });
 
+test('the token store answers one token per base folder for the boot, apart from the disk folders: a disk token is no base token, nor the reverse (#675)', () => {
+  const tokens = createDesignFrameTokens();
+  const base = { top: '/repo', commit: 'a'.repeat(40), folder: 'design' };
+  const one = tokens.mintBase(base);
+  assert.match(one, /^[0-9a-f]{64}$/);
+  assert.equal(tokens.mintBase({ ...base }), one, 'the same triple again');
+  assert.notEqual(tokens.mintBase({ ...base, commit: 'b'.repeat(40) }), one, 'another commit, another token');
+  const disk = tokens.mint('/repo/design');
+  assert.deepEqual([tokens.baseOf(one), tokens.folderOf(one), tokens.baseOf(disk)], [base, undefined, undefined]);
+});
+
 test('framePolicy sandboxes the frame to scripts, names the route in every source it allows, and closes connections, frames, forms and base (#108)', () => {
   const route = 'http://127.0.0.1:4242/design-frame/abc/';
   assert.equal(framePolicy('127.0.0.1:4242', 'abc'), [
