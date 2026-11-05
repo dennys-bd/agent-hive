@@ -5,7 +5,7 @@ import express from 'express';
 import { initialState } from '../src/orchestrator.js';
 import { ItemNotOnSourceError, PartialWriteError } from '../src/field-values.js';
 import { registerProjectRoutes, type ProjectRouteDeps } from '../src/server-project.js';
-import type { FieldValue, FieldWrite, HiveEvent, ItemField, ProjectItem, ProjectView, Source, SourceItem, Stage, State } from '../src/types.js';
+import type { FieldValue, FieldWrite, HiveEvent, ItemField, ProjectItem, ProjectView, Source, SourceItem, Stage, State, Task } from '../src/types.js';
 import { flowed } from './fixtures/main-flow.js';
 
 // Two stages let work's Ready and In review in; Todo is cited by none
@@ -73,6 +73,20 @@ test('GET /sources/:name/project is a 429 with the reset inside the source\'s qu
   const past = routes(t, { work }, { syncs: { work: { quota: { ...LOW, resetsAt: '2020-01-01T00:00:00.000Z' } } } });
   assert.equal((await fetch(`${past}/sources/work/project`)).status, 200);
   assert.equal(reads, 2);
+});
+
+test('GET /sources/hive/project answers the hive\'s view from the state, with no source named hive: ?fresh=1 and a quota backoff change nothing (#582)', async (t) => {
+  const task: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Mine', body: '', url: '' }, stage: 'dev', boardColumn: '', auto: false, created: true };
+  const refreshed: string[][] = [];
+  const base = routes(t, {}, { tasks: [task], syncs: { hive: { quota: LOW } } }, [], false, { refreshOptions: async (repositories) => { refreshed.push(repositories); } });
+  for (const path of ['/sources/hive/project', '/sources/hive/project?fresh=1']) {
+    const res = await fetch(`${base}${path}`);
+    assert.equal(res.status, 200, path);
+    const view = (await res.json()) as ProjectView;
+    assert.deepEqual(view.statuses, [{ name: 'dev', stage: 'dev' }, { name: 'review', stage: 'review' }], path);
+    assert.deepEqual(view.items.map((i) => [i.itemId, i.status]), [['local:1', 'dev']], path);
+  }
+  assert.deepEqual(refreshed, [], 'the hive reads nothing remote');
 });
 
 test('GET …/items/:itemId/fields answers the item\'s fields, asked with its namespaced id (#686)', async (t) => {

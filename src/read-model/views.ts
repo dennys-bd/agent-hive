@@ -21,7 +21,7 @@ const latest = (dates: (string | null | undefined)[]): string | undefined =>
 // Only the list's fields: the row's body and the rest stay off the wire
 const repoIssueOf = (issue: IssueView): RepoIssue => ({
   number: issue.number, title: issue.title, url: issueUrl(issue.repository, issue.number), labels: issue.labels, assignees: issue.assignees,
-  updatedAt: issue.updatedAt, pullRequests: issue.pullRequests,
+  updatedAt: issue.updatedAt, pullRequests: issue.pullRequests, ...(issue.parentNumber === null ? {} : { parent: issue.parentNumber }),
 });
 
 const commentOf = (comment: CommentRow): TaskComment => ({ author: comment.author ?? GHOST, createdAt: comment.createdAt, body: comment.body, url: comment.url });

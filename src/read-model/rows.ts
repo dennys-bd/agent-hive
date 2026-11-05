@@ -19,7 +19,7 @@ export interface CommentRow {
 }
 
 /** An issue as the views read it: its row and the PRs that close it. */
-export interface IssueView extends IssueRow { pullRequests: ProjectPr[] }
+export interface IssueView extends IssueRow { pullRequests: ProjectPr[]; parentNumber: number | null }
 
 /** Where a write comes from: a sync page, or a write's confirmed answer. */
 export type UpsertOrigin = 'sync' | 'write';

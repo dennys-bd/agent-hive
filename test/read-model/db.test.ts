@@ -142,7 +142,7 @@ test('setClosingPrs replaces the set, and a later REST upsert of the issue leave
   assert.deepEqual(db.issue(SOURCE, REPO, 12)?.pullRequests, CLOSING_PRS, 'by number');
   db.setClosingPrs(SOURCE, 'I_12', [CLOSING_PRS[0]]);
   assert.equal(db.upsertIssue(issueFromRest(SOURCE, REPO, { ...REST_ISSUE, title: 'renamed', updated_at: T2 }), 'sync'), true);
-  assert.deepEqual(db.issue(SOURCE, REPO, 12), { ...ISSUE_ROW, title: 'renamed', updatedAt: T2, pullRequests: [CLOSING_PRS[0]] });
+  assert.deepEqual(db.issue(SOURCE, REPO, 12), { ...ISSUE_ROW, title: 'renamed', updatedAt: T2, pullRequests: [CLOSING_PRS[0]], parentNumber: null });
 });
 
 test('issues and issue answer assignees and closing PRs, leave PRs out, and never another source\'s rows (#178)', async () => {
@@ -153,12 +153,12 @@ test('issues and issue answer assignees and closing PRs, leave PRs out, and neve
   db.upsertIssue(issueRow(2, T3, { state: 'open', source: OTHER_SOURCE, title: 'theirs' }), 'sync');
   db.setClosingPrs(SOURCE, 'I_2', CLOSING_PRS);
   assert.deepEqual(db.issues(SOURCE, REPO, 'open'), [
-    { ...issueRow(2, T3, { state: 'open' }), pullRequests: CLOSING_PRS },
-    { ...issueRow(1, T1, { state: 'open' }), pullRequests: [] },
+    { ...issueRow(2, T3, { state: 'open' }), pullRequests: CLOSING_PRS, parentNumber: null },
+    { ...issueRow(1, T1, { state: 'open' }), pullRequests: [], parentNumber: null },
   ]);
   assert.deepEqual(db.issue(SOURCE, REPO, 2)?.assignees, ['bia', 'caio']);
   assert.equal(db.issue(SOURCE, REPO, 3), undefined, 'a PR is no issue');
-  assert.deepEqual(db.issue(OTHER_SOURCE, REPO, 2), { ...issueRow(2, T3, { state: 'open', source: OTHER_SOURCE, title: 'theirs' }), pullRequests: [] });
+  assert.deepEqual(db.issue(OTHER_SOURCE, REPO, 2), { ...issueRow(2, T3, { state: 'open', source: OTHER_SOURCE, title: 'theirs' }), pullRequests: [], parentNumber: null });
   assert.deepEqual(db.issues(OTHER_SOURCE, REPO, 'open').map((i) => i.title), ['theirs']);
 });
 

@@ -89,6 +89,7 @@ test('the contract (#282): projectItem over every wire node deep-equals projectI
   const rebuilt = await storedAndRebuilt(WIRE);
   assert.equal(rebuilt.length, WIRE.length);
   assert.deepEqual(rebuilt.map((node) => projectItem(node, fields, READ)), WIRE.map((node) => projectItem(node, fields, READ)));
+  assert.equal(rebuilt.map((node) => projectItem(node, fields, READ))[2]?.parent, 1, 'the stored parent_number rebuilds the parent of #3');
   assert.deepEqual(WIRE.map((node) => projectItem(node, fields, READ) === undefined), [false, false, false, false, false, true, true, true, false], 'the fixtures reach every branch');
 });
 

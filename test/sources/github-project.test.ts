@@ -213,3 +213,13 @@ test('with a store, project answers the stored listing and fields with no call; 
   assert.deepEqual(calls.map((c) => c.name), ['probe', 'items', 'relations']);
   assert.deepEqual(fresh.items.map((i) => i.status), ['In review']);
 });
+
+test('project answers each issue\'s parent by its number; an issue with no parent, null or absent, has no parent key (#582)', async () => {
+  const nodes = [issue(1, { parent: { number: 2, title: 'Epic' } }), issue(2, { parent: null }), issue(3)];
+  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, items: page(nodes) }).gql });
+  await source.resolveFields();
+  const { items } = await source.project!();
+  assert.deepEqual(items.map((i) => i.parent), [2, undefined, undefined]);
+  assert.equal('parent' in items[1], false);
+  assert.equal('parent' in items[2], false);
+});

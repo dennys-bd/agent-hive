@@ -30,7 +30,7 @@ const REMOVALS = [ // values and relations first: the relations are found throug
 ];
 const VALUE_KINDS: readonly FieldValueRow['kind'][] = ['name', 'text', 'number', 'date', 'title'];
 const RELATION_KINDS: readonly RelationKind[] = ['blockedBy', 'blocking', 'subIssue'];
-const count = (row: Row, key: string): number | null => (row[key] === null ? null : Number(row[key]));
+export const count = (row: Row, key: string): number | null => (row[key] === null ? null : Number(row[key]));
 
 function relationsOf(db: DatabaseSync): Pick<ReadModel, 'setIssueRelations' | 'setBlocking'> {
   const drop = db.prepare(`DELETE FROM issue_relations WHERE source = ? AND issue_node_id = ? AND kind ${IN_IDS}`);
