@@ -17,7 +17,6 @@ export interface IssuePageProps {
   meta: string; // the source's name, or the repository's owner/name: where the page was opened from
   workspace?: string; // the repository's workspace: the issue's when it is no task
   header(reload: () => Promise<void>, github: string): ReactNode; // the header it was opened from; its atualizar reads the issue again, its GitHub ↗ opens `github` (#352)
-  onGoTo(taskId: string): void;
   onOpenPr(url: string): void; // #65: the task's PRs' "open", the dashboard's PR opener: its page when its repository is listed, else GitHub
 }
 
@@ -27,7 +26,7 @@ export interface IssuePageProps {
  * them, the task's PRs (#65): here and not in IssueProperties, which the PR page shares, where the stack lists them. One tree for every
  * state, so the PRs list stays mounted when the read lands and its checks are read once. */
 export function IssuePage(props: IssuePageProps) {
-  const { state, issue: ref, meta, workspace, header, onGoTo, onOpenPr } = props;
+  const { state, issue: ref, meta, workspace, header, onOpenPr } = props;
   const { load, reload, optimistic } = useIssue(ref.repository, ref.number);
   const issue = load.kind === 'issue' ? load.issue : undefined;
   // Before the read answers, the URL from the ref (#64): the task as the dashboard finds it, whose PRs the details grid leaves to this slot
@@ -48,7 +47,7 @@ export function IssuePage(props: IssuePageProps) {
         {issue ? (
           <>
             {task === undefined && <SlotTitle>{issue.title}</SlotTitle>}
-            <IssueProperties issue={issue} task={task} state={state} workspace={shownWorkspace} itemId={ref.itemId} meta={meta} onGoTo={onGoTo} onChanged={reload} optimistic={optimistic} />
+            <IssueProperties issue={issue} task={task} state={state} workspace={shownWorkspace} itemId={ref.itemId} meta={meta} onChanged={reload} optimistic={optimistic} />
           </>
         ) : <p className="text-muted-foreground text-xs">{line}</p>}
         {task && <TaskPrList task={task} state={state} onOpenPr={onOpenPr} />}

@@ -43,7 +43,7 @@ const onOpenPr = vi.fn();
 
 // With `slotted`, beside the details panel's slot, as the dock mounts it (#64)
 const renderPage = (tasks: Task[] = [], extra: Partial<State> = {}, slotted = false) => render(
-  <IssuePage state={state(tasks, extra)} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => <div>HEADER</div>} onGoTo={vi.fn()} onOpenPr={onOpenPr} />,
+  <IssuePage state={state(tasks, extra)} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => <div>HEADER</div>} onOpenPr={onOpenPr} />,
   slotted ? { wrapper: WithSlot } : {},
 );
 const TASK12: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: '', url: URL12, source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
@@ -90,7 +90,7 @@ test('an issue out of the flow: while it is read the slot shows the read line; t
   expect(slot().getByText('lendo…')).toBeInTheDocument();
   answerRead(jsonRes(ISSUE));
   expect(await slot().findByRole('heading', { name: 'Pager breaks' })).toHaveClass('text-[15px]');
-  expect(slot().getByRole('button', { name: 'fluxo…' })).toBeInTheDocument();
+  expect(slot().getByRole('button', { name: '+ tarefa' })).toBeInTheDocument();
   expect(slot().getByText('fluxo', { selector: 'dt' })).toBeInTheDocument();
   expect(slot().queryByRole('region', { name: 'atividade' })).not.toBeInTheDocument();
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
@@ -129,14 +129,14 @@ test('a failed read of a task\'s issue still lists its PRs under the message: th
 
 test('an issue out of the flow lists no PRs in the slot (#65)', async () => {
   renderPage([], {}, true);
-  expect(await slot().findByRole('button', { name: 'fluxo…' })).toBeInTheDocument();
+  expect(await slot().findByRole('button', { name: '+ tarefa' })).toBeInTheDocument();
   expect(slot().queryByRole('region', { name: 'PRs' })).not.toBeInTheDocument();
 });
 
 test('the header gets the issue\'s GitHub URL: from its ref before the read, then the URL GitHub answers (#352)', async () => {
   const MOVED = 'https://github.com/acme/web/issues/12'; // a renamed repository: GitHub answers the new URL
   fetchMock.mockImplementation(async (input) => jsonRes(String(input) === '/repositories/acme/site/issues/12' ? { ...ISSUE, url: MOVED } : { ok: true }));
-  render(<IssuePage state={state()} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" header={(_reload, github) => <p>{`github ${github}`}</p>} onGoTo={vi.fn()} onOpenPr={onOpenPr} />);
+  render(<IssuePage state={state()} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" header={(_reload, github) => <p>{`github ${github}`}</p>} onOpenPr={onOpenPr} />);
   expect(screen.getByText(`github ${URL12}`)).toBeInTheDocument();
   expect(await screen.findByText(`github ${MOVED}`)).toBeInTheDocument();
 });

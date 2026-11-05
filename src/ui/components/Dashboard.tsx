@@ -74,7 +74,7 @@ function repoCenter(state: State, nav: TasksNav, repo: RepoSummary, center: Repo
   const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} mode={mode} tasks={[]} onRefresh={reload} back={nav.back} github={github} />;
   const { issue, pr } = center;
   if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={nav.goTo} onOpenIssue={nav.openIssueUrl} onOpenPr={nav.openPrUrl} onMerged={nav.back?.onBack} />;
-  if (issue) return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onGoTo={nav.goTo} onOpenPr={nav.openPrUrl} />;
+  if (issue) return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onOpenPr={nav.openPrUrl} />;
   if (center.tab === 'prs') return <RepoPrTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} onOpen={(row) => nav.openPr({ repository: repo.repository, number: row.number })} />;
   return <RepoIssueTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} onOpen={(read) => nav.openIssue({ repository: repo.repository, number: read.number })} />;
 }
@@ -87,7 +87,7 @@ function sourceCenter(state: State, nav: TasksNav, source: SourceConfig, reposit
       key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={source.name}
       workspace={repositories.find((r) => r.repository === issue.repository)?.workspace}
       header={(reload, github) => <FlowHeader state={state} mode={{ kind: 'source', source }} tasks={[]} onRefresh={reload} back={nav.back} github={github} />}
-      onGoTo={nav.goTo} onOpenPr={nav.openPrUrl}
+      onOpenPr={nav.openPrUrl}
     />
   );
 }

@@ -1807,9 +1807,7 @@ const en = {
   'project.status.head': 'status', // #756: the status select's menu
   'project.status.stage': 'stage in the flow',
   'project.status.note': 'options come from the project. mapping to stages lives in configure › sources.',
-  'project.action.create': 'flow…', // #756: an issue the filter keeps out becomes a task of the hive source
   'project.create.title': 'create task in the flow',
-  'project.create.body': "{issue} doesn't pass {source}'s filters. the task is created in the hive source, **without sync**: project changes don't reach the flow, and the flow doesn't write to the project.",
   'project.create.cancel': 'cancel',
   'project.create.confirm': 'create task',
   'project.group': 'group', // #756, handoff 01b: the subbar's group menu and the group rows
@@ -1823,6 +1821,8 @@ const en = {
   'project.noFlow': 'no flow', // #583: the hive's stageless group and its stage menu's last entry
   'project.task.inFlow': '{flow} · {stage} ›', // #583: the task column (handoff §5)
   'project.task.outside': 'no flow ›',
+  'project.task.create': '+ task', // #583: one click, a hive task outside the flow (handoff §5)
+  'project.task.createHint': 'becomes a Hive task, outside the flow',
   'repos.title': 'repositories', // #757: the flow sidebar's repositories section
   'repos.prs': 'PRs',
   'repos.pinned': 'pinned',
@@ -4850,9 +4850,7 @@ const pt: Record<MessageKey, string> = {
   'project.status.head': 'status',
   'project.status.stage': 'etapa no fluxo',
   'project.status.note': 'as opções vêm do project. o mapeamento para etapas fica em configurar › sources.',
-  'project.action.create': 'fluxo…',
   'project.create.title': 'criar tarefa no fluxo',
-  'project.create.body': '{issue} não passa pelos filtros de {source}. a tarefa é criada na source hive, **sem sync**: mudanças no project não chegam ao fluxo, e o fluxo não escreve no project.',
   'project.create.cancel': 'cancelar',
   'project.create.confirm': 'criar tarefa',
   'project.group': 'agrupar',
@@ -4866,6 +4864,8 @@ const pt: Record<MessageKey, string> = {
   'project.noFlow': 'sem fluxo',
   'project.task.inFlow': '{flow} · {stage} ›',
   'project.task.outside': 'sem fluxo ›',
+  'project.task.create': '+ tarefa',
+  'project.task.createHint': 'vira tarefa do Hive, fora do fluxo',
   'repos.title': 'repositórios',
   'repos.prs': 'PRs',
   'repos.pinned': 'fixados',

@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 import { itemSource, sourceOf } from '../../tasks';
 import type { IssuePage, State, Task } from '../../types';
+import { CreateTaskButton, type CreateFrom } from '@/components/CreateTaskButton';
 import { IssueFieldsBox } from '@/components/IssueFieldsBox';
 import { IssueLabelsPopover, writeLabels } from '@/components/IssueLabelsPopover';
-import { ProjectCreatePopover } from '@/components/ProjectCreatePopover';
 import { type FieldAnswer, useItemFields } from '@/hooks/use-item-fields';
 import type { Optimistic } from '@/hooks/use-issue';
 import { t } from '@/i18n';
@@ -58,24 +58,23 @@ export interface IssuePropertiesProps {
   issue: IssuePage; task?: Task; state: State;
   workspace?: string; // the task's, else the repository's
   itemId?: string; // the native view item the page came from: a task created here records it as its origin
-  meta: string; // the source or owner/name the page was opened from: what fluxo…'s warning names
-  onGoTo(taskId: string): void;
+  meta: string; // the source or owner/name the page was opened from: where the issue's fields are read when the item names no source
   onChanged(): Promise<void>; // the page's reload, after a label or field write
   optimistic: Optimistic; // the page's pending changes (#183): a label write shows at once
 }
 
 /** The issue's block in the details panel's slot (#64). With the fields of its source item read (the task's, else the native view item the
- * page came from, #686), the this issue box (#65); otherwise #757's rows. An issue out of the flow shows fluxo… first (handoff 02). The
+ * page came from, #686), the this issue box (#65); otherwise #757's rows. An issue out of the flow shows + tarefa first, which creates outside the flow and stays on the page (#583 decision 11). The
  * stage is moved on the flow's own menu: no stage select here (#65). */
-export function IssueProperties({ issue, task, state, workspace, itemId, meta, onGoTo, onChanged, optimistic }: IssuePropertiesProps) {
+export function IssueProperties({ issue, task, state, workspace, itemId, meta, onChanged, optimistic }: IssuePropertiesProps) {
   const sourced = task?.item.source === undefined ? undefined : task;
   const fieldsItem = sourced?.item.itemId ?? itemId;
   const { fields, replace } = useItemFields(fieldsItem);
-  const from = {
-    id: String(issue.number), title: issue.title, body: issue.body, url: issue.url,
+  const from: CreateFrom = {
+    title: issue.title, body: issue.body, url: issue.url,
     ...(workspace === undefined ? {} : { workspaceHint: workspace }), ...(itemId === undefined ? {} : { itemId }),
   };
-  const create = task === undefined ? <ProjectCreatePopover item={from} source={meta} state={state} onCreated={onGoTo} /> : undefined;
+  const create = task === undefined ? <CreateTaskButton item={from} state={state} /> : undefined;
   if (fieldsItem === undefined || fields === undefined) return <IssueRows issue={issue} task={task} workspace={workspace} create={create} onChanged={onChanged} optimistic={optimistic} />;
   // The answer's fields at once, then the page's reload: the center reads the issue, not the item, so its labels and assignees follow
   const written = (answer: FieldAnswer): void => {

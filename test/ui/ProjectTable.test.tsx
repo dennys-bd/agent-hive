@@ -100,30 +100,13 @@ test('a refused read shows its reason in place of the table and as a toast; insi
   expect(await screen.findByText('quota do GitHub baixa; tente depois de 14:05')).toBeInTheDocument();
 });
 
-test('fluxo… shows on an issue kept out that no task came from; confirming posts /tasks with its title, body, url, origin, auto off and the first stage, then goes to the new task (#756)', async () => {
-  const user = userEvent.setup();
-  const onGoTo = vi.fn();
-  fetchMock.mockImplementation(async (input) => (String(input).endsWith('/project') ? jsonRes(VIEW) : jsonRes({ id: 'HIVE-1', itemId: 'local:1' }, 201)));
-  renderTable({ onGoTo });
-  await screen.findByText('3 de 3');
-  expect(within(rowOf('#40')).queryByRole('button', { name: 'fluxo…' })).not.toBeInTheDocument(); // passes the filter: its way in is the Status
-  await user.click(within(rowOf('#3')).getByRole('button', { name: 'fluxo…' }));
-  expect(screen.getByText('criar tarefa no fluxo')).toBeInTheDocument();
-  expect(screen.getByText('sem sync')).toHaveClass('text-foreground');
-  await user.click(screen.getByRole('button', { name: 'criar tarefa' }));
-  await waitFor(() => expect(onGoTo).toHaveBeenCalledWith('local:1'));
-  expect(fetchMock).toHaveBeenCalledWith('/tasks', expect.objectContaining({
-    method: 'POST', body: JSON.stringify({ title: 'Issue 3', body: 'body 3', stage: 'dev', auto: false, url: 'https://github.com/acme/r/issues/3', source: 'hive', origin: 'roadmap:PVTI_3' }),
-  }));
-});
-
-test('an issue a Hive task was created from counts in the flow and shows its task\'s flow and stage, not fluxo… (#756, #583)', async () => {
+test('an issue a Hive task was created from counts in the flow and shows its task\'s flow and stage, not + tarefa (#756, #583)', async () => {
   const user = userEvent.setup();
   const onGoTo = vi.fn();
   const copy: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 3', body: '', url: '', origin: 'roadmap:PVTI_3' }, stage: 'dev', boardColumn: '', auto: false, created: true };
   renderTable({ onGoTo, tasks: [TASK, copy] });
   expect(await screen.findByText('3 itens · 2 tarefas')).toBeInTheDocument();
-  expect(within(rowOf('#3')).queryByRole('button', { name: 'fluxo…' })).not.toBeInTheDocument();
+  expect(within(rowOf('#3')).queryByRole('button', { name: '+ tarefa' })).not.toBeInTheDocument();
   await user.click(within(rowOf('#3')).getByRole('button', { name: 'main · dev ›' }));
   expect(onGoTo).toHaveBeenCalledWith('local:1');
 });

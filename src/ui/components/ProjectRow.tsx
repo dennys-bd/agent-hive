@@ -7,8 +7,8 @@ import { resolveWorkspace } from '../../tasks';
 import type { Flow, ItemField, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, State, Task } from '../../types';
 import type { ReactNode } from 'react';
 import { BlockedByCell } from '@/components/BlockedByCell';
+import { CreateTaskButton } from '@/components/CreateTaskButton';
 import { FieldEditor } from '@/components/FieldEditor';
-import { ProjectCreatePopover } from '@/components/ProjectCreatePopover';
 import { ProjectStatusSelect } from '@/components/ProjectStatusSelect';
 import { Button } from '@/components/ui/button';
 import type { FieldAnswer } from '@/hooks/use-item-fields';
@@ -153,7 +153,7 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
 /** One issue of the native view (#756, handoff 01). Any row opens its issue's page (#757); fluxo › goes to its task; ⇧↵ on the focused
  * row opens the issue on GitHub. */
 export function ProjectRow(props: ProjectRowProps) {
-  const { item, task, visible, columns, state, onGoTo, source, onOpenIssue } = props;
+  const { item, task, visible, columns, state, onGoTo, onOpenIssue } = props;
   // a click on a cell's own control or input (#686), or inside a menu or popover it portaled out (still bubbling through React), is not the row's
   const onClick = (e: MouseEvent<HTMLTableRowElement>): void => {
     const target = e.target as Element;
@@ -175,11 +175,9 @@ export function ProjectRow(props: ProjectRowProps) {
         const { className, cell } = cellOf(column, props);
         return <td key={column.key} className={className}>{cell}</td>;
       })}
-      {/* #583 decision 8: the task column to the row's task; fluxo… for an issue kept out, until + tarefa replaces it */}
+      {/* #583 decisions 8–10: the task column: the row's task, else + tarefa on every row with no task, in or out of the filter */}
       <td className="flex min-w-0 justify-end">
-        {task
-          ? <TaskCell task={task} flows={state.flows} onGoTo={onGoTo} />
-          : item.out && <ProjectCreatePopover item={item} source={source} state={state} onCreated={onGoTo} />}
+        {task ? <TaskCell task={task} flows={state.flows} onGoTo={onGoTo} /> : <CreateTaskButton item={item} state={state} />}
       </td>
     </tr>
   );

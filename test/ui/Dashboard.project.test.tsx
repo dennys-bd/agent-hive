@@ -75,7 +75,7 @@ test('the task column in the source table shows the flowchart and selects the ta
   expect(bar().getByText('todas as sources')).toBeInTheDocument();
 });
 
-test('a task created from the native view is selected once the state holds it, on the flowchart (#756, #571)', async () => {
+test('+ tarefa creates a hive task outside the flow and stays on the table; once the state holds it the cell reads sem fluxo › (#583)', async () => {
   const user = userEvent.setup();
   const onSelect = vi.fn();
   const out = { ...VIEW.items[0], itemId: 'roadmap:PVTI_2', id: '2', title: 'Issue 2', url: 'https://github.com/acme/r/issues/2', out: 'filter' as const };
@@ -86,13 +86,12 @@ test('a task created from the native view is selected once the state holds it, o
   const { rerender } = render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
   showFlow();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(await main().findByRole('button', { name: 'fluxo…' }));
-  await user.click(screen.getByRole('button', { name: 'criar tarefa' }));
-  await waitFor(() => expect(bar().getByText('todas as sources')).toBeInTheDocument());
-  expect(onSelect).not.toHaveBeenCalledWith({ taskId: 'local:1' }); // App would drop a selection the state does not hold yet
-  const created: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 2', body: '', url: out.url, origin: out.itemId }, stage: 'dev', boardColumn: '', auto: false, created: true };
+  await user.click(await main().findByRole('button', { name: '+ tarefa' }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/tasks', expect.objectContaining({ method: 'POST' })));
+  expect(bar().getByText('github project · acme')).toBeInTheDocument(); // still the source's table
+  const created: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 2', body: '', url: out.url, origin: out.itemId }, boardColumn: '', auto: false, created: true };
   rerender(<Dashboard state={{ ...state, tasks: [...state.tasks, created] }} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
-  await waitFor(() => expect(onSelect).toHaveBeenCalledWith({ taskId: 'local:1' }));
-  // a hive task lands on its flow's row
-  expect(automation().getByRole('button', { name: /^main/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(await main().findByRole('button', { name: 'sem fluxo ›' })).toBeInTheDocument();
+  expect(main().queryByRole('button', { name: '+ tarefa' })).not.toBeInTheDocument();
+  expect(onSelect).not.toHaveBeenCalled();
 });
