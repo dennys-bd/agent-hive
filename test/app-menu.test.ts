@@ -102,3 +102,14 @@ test('appMenuTemplate off macOS: every Edit item keeps its role and shows its ke
   const others = appMenuTemplate(() => {}, () => {}, effectiveBindings({}, false), false).filter((menu) => menu.role !== 'editMenu');
   assert.deepEqual(others.flatMap(items).filter((item) => 'registerAccelerator' in item), [], 'only the Edit menu changes');
 });
+
+test('appMenuTemplate off macOS: the app menu drops about, hide, hide others and show all, and keeps Settings… on its fixed key and Quit; Close and Close window keep their bindings; on macOS, as before (#648)', () => {
+  const bindings = effectiveBindings({}, false);
+  const menus = appMenuTemplate(() => {}, () => {}, bindings, false);
+  assert.deepEqual(items(menus[0]).map((item) => item.role ?? item.accelerator), [SETTINGS_KEY, 'quit']);
+  assert.equal((menus[0].submenu as MenuItemConstructorOptions[]).filter((item) => item.type === 'separator').length, 1, 'no leading, trailing or doubled separator');
+  const window = items(menus[2]);
+  const keyOf = (key: 'main.menu.close' | 'main.menu.closeWindow') => window.find((item) => item.label === t(key))?.accelerator;
+  assert.deepEqual([keyOf('main.menu.close'), keyOf('main.menu.closeWindow')], [bindings.close, bindings.closeWindow]);
+  assert.deepEqual(items(appMenuTemplate(() => {}, () => {}, DEFAULTS, true)[0]).map((item) => item.role ?? item.accelerator), ['about', SETTINGS_KEY, 'hide', 'hideOthers', 'unhide', 'quit']);
+});

@@ -9,6 +9,12 @@
    (a sm button's 10px padding, then the 16px icon) centred on 22px, where the header's panel-left and the rail's icons sit. */
 :root { --radius: 0.5rem; --window-inset: 84px; --settings-inset: 84px; }
 :root[data-fullscreen] { --window-inset: 12px; --settings-inset: 4px; }
+/* Windows' caption buttons (#648): titleBarOverlay draws them over the window's top right. Chromium exposes the title bar's free part as
+   titlebar-area-*, which follows DPI and the system's button size; 138px (3 × 46px) stands in without it. The header pads only its last
+   column, so its % columns keep their borders on the panes'; the strip, with no columns, pads itself. 0.5rem keeps the controls off the
+   buttons. The left inset needs nothing: off macOS data-fullscreen is always set (#295). */
+:root { --window-overlay: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
+[data-window-overlay="strip"], [data-window-overlay="columns"] > :last-child { padding-right: calc(var(--window-overlay) + 0.5rem); }
 
 @theme inline {
   --color-background: var(--background);

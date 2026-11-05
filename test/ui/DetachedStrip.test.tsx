@@ -1,12 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { windowTitle } from '@/components/ActivityBar';
 import { DetachedStrip } from '@/components/DetachedStrip';
 import { setLanguage } from '@/i18n';
 import type { Activity } from '@/lib/activities';
 
 beforeEach(() => setLanguage('pt'));
+afterEach(() => vi.restoreAllMocks());
 
 test('the strip drags the window, names the activity, and its back button, out of the drag region, docks only while a tab shows (#553)', async () => {
   const user = userEvent.setup();
@@ -28,4 +29,14 @@ test('windowTitle reads local · <workspace> for a local activity and the bar ti
   const task = { kind: 'task', task: { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' } } } as unknown as Activity;
   expect(windowTitle(local)).toBe('local · hive');
   expect(windowTitle(task)).toBe('#1 Task 1');
+});
+
+test('on Windows the strip carries data-window-overlay="strip"; not on macOS (#648)', () => {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Win32');
+  const { unmount } = render(<DetachedStrip title="#1 Task 1" canGoBack onBack={vi.fn()} />);
+  expect(screen.getByRole('banner')).toHaveAttribute('data-window-overlay', 'strip');
+  unmount();
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+  render(<DetachedStrip title="#1 Task 1" canGoBack onBack={vi.fn()} />);
+  expect(screen.getByRole('banner')).not.toHaveAttribute('data-window-overlay');
 });

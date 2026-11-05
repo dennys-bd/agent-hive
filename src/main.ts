@@ -5,7 +5,9 @@ import { appMenuTemplate } from './app-menu.js';
 import { loadConfigIfPresent } from './config.js';
 import { activeWorkers, configuredTheme, type DaemonAddress, type DaemonStatus, daemonStatus, ensureDaemon, menuLabel, ourDaemon, livePtys, setSignal, stopDaemon } from './daemon.js';
 import { type DetachedWindows, registerDetachIpc } from './detach-ipc.js';
-import { createDetachedWindowsFor, externalLinksToBrowser, TRAFFIC_LIGHTS, WINDOW_PRELOAD } from './detached-window.js';
+import { createDetachedWindowsFor, externalLinksToBrowser, WINDOW_PRELOAD } from './detached-window.js';
+import { windowChromeOptions } from './window-options.js';
+import type { ResolvedTheme } from './ui/lib/theme.js';
 import { hiveHome } from './home.js';
 import { languageFrom } from './language.js';
 import { guardUnsavedEdits } from './main-window-guards.js';
@@ -22,17 +24,13 @@ import { type MainWindow, registerWindowIpc } from './window-ipc.js';
 import { homeLog } from './home-log.js';
 
 const APP_NAME = 'Agent Hive';
-// The two --background values of src/ui/theme.css (test/theme.test.ts keeps them in sync): a window paints before its page, so it takes
-// the saved theme's background and never flashes white or the other theme (#296).
-const WINDOW_BACKGROUND = { dark: '#111418', light: '#f5f6f8' } as const;
 const DETACHED_BOUNDS_FILE = 'detached-window-bounds.json'; // under userData: where the last detached window closed (#552; not terminal-bounds.json, not migrated)
 const MAIN_WINDOW_BOUNDS_FILE = 'main-window-bounds.json'; // under userData; the main window's own, next to the detached windows' (#398)
 // runs from dist/src/main.js; the asset is not copied by the build, the preload is tsc's CommonJS output of window-preload.cts
 const ICON = fileURLToPath(new URL('../../assets/icon.png', import.meta.url));
-// the menu bar template image (#191); Electron loads trayTemplate@2x.png next to it and tints it for the bar
-const TRAY_ICON = fileURLToPath(new URL('../../assets/trayTemplate.png', import.meta.url));
-// the menu bar icon with the effective signal's badge (#196), or trayTemplate with no signal: every tray image sits next to TRAY_ICON
 const trayAsset = (file: string): string => fileURLToPath(new URL(`../../assets/${file}`, import.meta.url));
+// the no-signal tray image of this platform (#191, #648): trayTemplate on macOS, which tints it; the coloured comb on Windows. Others sit next to it
+const TRAY_ICON = trayAsset(trayIconFile(undefined, false, process.platform));
 // the menu's worker dots (#192), in the main window's status colors and not template images; Electron loads dot-<status>@2x.png next to each.
 // createFromPath never throws: a file that fails to load is an empty image, which dotFor leaves out of its line.
 const dotIcon = (status: Exclude<LivePty['status'], 'terminal'>): NativeImage =>
@@ -93,11 +91,11 @@ if (process.env.HIVE_HOME) app.setPath('userData', join(hiveHome(), 'electron'))
 // The main window of one daemon plus its detached windows (#252). Closing the main window closes them (the runs go on in the daemon)
 // and, when it was the last main window, the Dock icon: with onClose menuBar the viewer stays there (#191); with onClose quit closing the last
 // main window is a quit (#513). A detached window never outlives its main window, so "a window is open" and "a main window is open" are the same thing.
-// The saved theme resolved for a window about to open (#296): system reads nativeTheme, truthful because the Hive never sets its themeSource.
-function windowBackground(): string {
+// The saved theme resolved for a window about to open (#296, #648): system reads nativeTheme, truthful because the Hive never sets its themeSource.
+function windowTheme(): ResolvedTheme {
   const theme = configuredTheme(hiveHome());
   const dark = theme === 'system' ? nativeTheme.shouldUseDarkColors : theme === 'dark';
-  return WINDOW_BACKGROUND[dark ? 'dark' : 'light'];
+  return dark ? 'dark' : 'light';
 }
 
 // #227: below this the footer's last step (handoff §6) stops fitting the usual content; a saved rectangle narrower than it is widened by Electron
@@ -118,13 +116,14 @@ function closesDetachedFirst(event: { preventDefault(): void }, win: BrowserWind
 function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
   const origin = `http://127.0.0.1:${port}`;
   const { maximized, fullScreen, ...rect } = bounds;
-  // The native title bar is hidden (#533): the header draws it, with the traffic lights centred in its 44px and inside its 84px left inset (#295: 12px in full screen, where macOS hides them).
+  // The native title bar is hidden (#533): the header draws it (on Windows the caption buttons sit over its right end, #648), with the traffic lights centred in its 44px and inside its 84px left inset (#295: 12px in full screen, where macOS hides them).
   // fullscreen only when true: an explicit false makes the window not fullscreenable on macOS (the green light's +, no full screen key, #585)
   const win = new BrowserWindow({
-    ...rect, ...(fullScreen ? { fullscreen: true } : {}), minWidth: MIN_WIDTH, titleBarStyle: 'hiddenInset', trafficLightPosition: TRAFFIC_LIGHTS, backgroundColor: windowBackground(), webPreferences: { preload: WINDOW_PRELOAD },
+    ...rect, ...(fullScreen ? { fullscreen: true } : {}), minWidth: MIN_WIDTH, ...windowChromeOptions(process.platform, windowTheme()), webPreferences: { preload: WINDOW_PRELOAD },
   });
+  if (process.platform === 'win32') win.setMenuBarVisibility(false); // #648: hidden, not auto-hidden, so Alt cannot bring it back; its accelerators stay
   if (maximized && !fullScreen) win.maximize();
-  const detached = createDetachedWindowsFor({ port: () => port, boundsFile: join(app.getPath('userData'), DETACHED_BOUNDS_FILE), background: windowBackground, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), log });
+  const detached = createDetachedWindowsFor({ port: () => port, boundsFile: join(app.getPath('userData'), DETACHED_BOUNDS_FILE), theme: windowTheme, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), log });
   mainWindows.set(port, { win, detached });
   showDock();
   // With onClose quit (#513) the last main window's close goes through before-quit like Cmd+Q: the settings decide whether the Hive stops,
@@ -196,7 +195,7 @@ function createTray(): void {
   }
   tray.setToolTip(APP_NAME);
   const show = (): void => void showMenu().catch(reportError);
-  tray.on('click', show);
+  tray.on('click', process.platform === 'win32' ? (): void => void open().catch(reportError) : show); // #648: Windows' left click opens the Hive, the right shows the menu; macOS shows the menu on both
   tray.on('right-click', show);
   paintTray(); // the stream runs from ready (#199): a new icon starts on the signal it already has
   nativeTheme.on('updated', paintTray); // the bar went light or dark: the badged comb swaps its ink
@@ -230,7 +229,7 @@ function watchDaemon(): void {
 // template, which macOS tints by itself. createFromPath never throws: a file that fails to load is an empty image, and TRAY_ICON stands in.
 function paintTray(): void {
   if (!tray) return; // the stream runs without the icon too (#199)
-  const image = nativeImage.createFromPath(trayAsset(trayIconFile(latestSignal, nativeTheme.shouldUseDarkColors)));
+  const image = nativeImage.createFromPath(trayAsset(trayIconFile(latestSignal, nativeTheme.shouldUseDarkColors, process.platform)));
   tray?.setImage(image.isEmpty() ? TRAY_ICON : image);
 }
 
@@ -501,6 +500,8 @@ async function showSettings(): Promise<void> {
 // The IPC both kinds of page share, with its sender check (#552): in window-ipc.ts
 const senderWindow = registerWindowIpc({
   handle: (channel, listener) => ipcMain.handle(channel, listener),
+  on: (channel, listener) => ipcMain.on(channel, listener),
+  platform: process.platform,
   mainWindows,
   fromWebContents: (webContents) => BrowserWindow.fromWebContents(webContents),
   dialog,

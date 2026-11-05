@@ -6,17 +6,17 @@ import { isOpenableExternal } from './external-url.js';
 import type { Logger } from './log.js';
 import { guardUnsavedEdits } from './main-window-guards.js';
 import { readBounds, writeBounds } from './terminal-wire.js';
+import type { ResolvedTheme } from './ui/lib/theme.js';
+import { windowChromeOptions } from './window-options.js';
 
 // runs from dist/src/detached-window.js: tsc's CommonJS output of window-preload.cts, the one preload of both kinds of window (#552)
 export const WINDOW_PRELOAD = fileURLToPath(new URL('./window-preload.cjs', import.meta.url));
-// The handoff's: 12px lights 16px from the top of a 44px header. A detached window hides its title bar as the main window does (#533, #552)
-export const TRAFFIC_LIGHTS = { x: 14, y: 16 };
 
 /** A main window's detached windows' deps. DockTarget: onDock sends a docked tab back to this main window's page (detach-ipc.ts's mainWindowDeps). */
 export interface DetachedWindowDeps extends DockTarget {
   port: () => number; // the main window's port, where the page is served; read at open time
   boundsFile: string; // <userData>/detached-window-bounds.json
-  background(): string; // the saved theme's --background (#296), read as each window opens: no white flash before the page paints
+  theme(): ResolvedTheme; // the saved theme resolved (#296, #648), read as each window opens: its background and, on Windows, its caption buttons
   // What the viewer set as the cookie of the main window's port (#467): the page carries that cookie. Never hive.secret read afresh: a daemon
   // that moved wrote a secret the main window's old port must not get
   secretOf(port: number): string | undefined;
@@ -91,8 +91,9 @@ function detachedWindows(deps: DetachedWindowDeps): BuildDetached {
     // the main window's cookie is already in the session: its page opened with it, and a new boot on the same port re-set it (#467)
     if (deps.secretOf(deps.port()) === undefined) throw new Error('a janela principal não tem o segredo do daemon'); // no empty window
     const win = new BrowserWindow({
-      ...bounds, title: 'Agent Hive', titleBarStyle: 'hiddenInset', trafficLightPosition: TRAFFIC_LIGHTS, backgroundColor: deps.background(), webPreferences: { preload: WINDOW_PRELOAD },
+      ...bounds, title: 'Agent Hive', ...windowChromeOptions(process.platform, deps.theme()), webPreferences: { preload: WINDOW_PRELOAD },
     });
+    if (process.platform === 'win32') win.setMenuBarVisibility(false); // #648: a detached window never shows the menu either
     const origin = `http://127.0.0.1:${deps.port()}`;
     externalLinksToBrowser(win, origin, deps.log);
     wire(win, on, deps);

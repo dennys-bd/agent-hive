@@ -63,7 +63,11 @@ export function useAppSetup({ info, reload, state, connected, openLanguage }: Ap
   }, [info, applyLanguage]);
   useEffect(() => { if (language) document.documentElement.lang = LOCALE[language]; }, [language]);
   // The saved theme at once (#296), the way the language switches: a save re-runs it through the reloaded info; system follows macOS live.
-  useEffect(() => applyTheme(theme, setResolvedTheme), [theme]);
+  // ...and every resolved theme reaches the window's caption buttons on Windows (#648); a plain browser has no bridge
+  useEffect(() => applyTheme(theme, (resolved) => {
+    setResolvedTheme(resolved);
+    window.hive?.themeResolved(resolved);
+  }), [theme]);
   // The panel's trusted link domains (#404), from the saved config like the theme. A trust from a tab's link dialog reloads info, so the
   // next Settings form drafts the list with the new host and its save cannot drop it.
   useEffect(() => setTrustedDomains(info?.config?.trustedDomains ?? []), [info]);

@@ -20,6 +20,8 @@ export const binding = (id: OperationId): string | null => bindingOf(saved, shor
 
 // Cmd is the shortcut modifier on macOS; elsewhere CmdOrCtrl is Ctrl. jsdom's platform is '', so the UI tests run as off macOS.
 export const isMac = (): boolean => /Mac/.test(navigator.platform);
+// Windows (#648): the header clears its caption buttons. The same source of truth as isMac; #649 and #650 read it too.
+export const isWindows = (): boolean => /Win/.test(navigator.platform);
 
 /** Whether a keydown is shortcut `id` on this platform, with exactly its modifiers; a shortcut turned off never is, nor a soon one, whose
  * operation does not exist yet (#585). */

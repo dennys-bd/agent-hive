@@ -53,10 +53,10 @@ export function sseFrames(buffer: string): { frames: string[]; rest: string } {
   return { frames, rest };
 }
 
-/** The icon for a signal: the template (macOS tints it) with none, otherwise the badged comb. `light` ink (white) for a dark bar and
- *  `dark` ink (black) for a light one. */
-export function trayIconFile(signal: TraySignal | undefined, dark: boolean): string {
-  if (!signal) return 'trayTemplate.png';
+/** The icon for a signal: with none, the template on macOS (it tints it) and the coloured comb on Windows, which tints nothing (#648);
+ *  otherwise the badged comb, `light` ink (white) for a dark bar and `dark` ink (black) for a light one. */
+export function trayIconFile(signal: TraySignal | undefined, dark: boolean, platform: NodeJS.Platform): string {
+  if (!signal) return platform === 'win32' ? 'tray-windows.png' : 'trayTemplate.png';
   return `tray-${dark ? 'light' : 'dark'}-${signal.effective}.png`;
 }
 

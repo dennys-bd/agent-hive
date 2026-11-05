@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-264 -264 528 528" width="528" height="528">
+  <title>Agent Hive</title>
+  <!-- Notification area icon on Windows (#648): the honeycomb of trayTemplate.svg in icon.svg's amber. Not a template: Windows draws it as is,
+       on a light or a dark taskbar. Stroke 40 so the walls survive 16 px. -->
+  <defs>
+    <polygon id="hex" points="0,-88 76,-44 76,44 0,88 -76,44 -76,-44"/>
+  </defs>
+  <g stroke="#f5b431" stroke-width="40" stroke-linejoin="round" fill="none">
+    <use href="#hex" x="-84" y="-146"/>
+    <use href="#hex" x="84" y="-146"/>
+    <use href="#hex" x="168" y="0"/>
+    <use href="#hex" x="84" y="146"/>
+    <use href="#hex" x="-84" y="146"/>
+    <use href="#hex" x="-168" y="0"/>
+    <use href="#hex" fill="#f5b431"/>
+  </g>
+</svg>

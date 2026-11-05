@@ -15,6 +15,9 @@
 //                              bar icon with the effective signal's badge (#196):
 //                              a black (dark) or white (light) comb, green, yellow
 //                              or red; drawn in sRGB like the dots
+//   assets/tray-windows.svg -> assets/tray-windows.png (16x16) and
+//                              assets/tray-windows@2x.png (32x32), the notification
+//                              area icon on Windows (#648); drawn in sRGB like the dots
 // Paths are resolved relative to the current working directory, so run this
 // from the repo root.
 import AppKit
@@ -50,6 +53,8 @@ func render(_ svg: String, to png: String, size: Int, colorSpace: NSColorSpace? 
 try render("assets/icon.svg", to: "assets/icon.png", size: 1024)
 try render("assets/trayTemplate.svg", to: "assets/trayTemplate.png", size: 16)
 try render("assets/trayTemplate.svg", to: "assets/trayTemplate@2x.png", size: 32)
+try render("assets/tray-windows.svg", to: "assets/tray-windows.png", size: 16, colorSpace: .sRGB)
+try render("assets/tray-windows.svg", to: "assets/tray-windows@2x.png", size: 32, colorSpace: .sRGB)
 
 for status in ["working", "waiting", "review", "approval", "backoff"] {
     try render("assets/dot-\(status).svg", to: "assets/dot-\(status).png", size: 16, colorSpace: .sRGB)
