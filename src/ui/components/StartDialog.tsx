@@ -11,7 +11,7 @@ import { SetupProgressView, SetupSubmit } from '@/components/SetupProgress';
 import { ButtonKeyHint } from '@/components/KeyHint';
 import { RunFields, type RunFieldsProps } from '@/components/RunFields';
 import { RunCustomize, RunSummary, useCustomizeFocus } from '@/components/RunSummary';
-import { BaseField, modeAfterKey, ModeToggle, StagesBox, type StartMode } from '@/components/StartFields';
+import { BaseField, DestinationField, modeAfterKey, ModeToggle, StagesBox, type StartMode } from '@/components/StartFields';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -21,6 +21,7 @@ import { type Answer, sessionStatus, type SetupView, useSetupView } from '@/hook
 import { usePendingTask, useAutoStart } from '@/hooks/use-pending-task';
 import { isChanged, openBody, resumedLaunch, type RunPicks, type RunPickState, startBody, useRunPick } from '@/hooks/use-run-pick';
 import { baseBody, type BaseChoice, useStartBase } from '@/hooks/use-start-base';
+import { useStartDestination } from '@/hooks/use-start-destination';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
 import { CreateTargetsContext, destinations } from '@/lib/create-targets';
@@ -171,10 +172,11 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
   const heldIds = useRef(new Set<string>()); // the source tasks the held entry became: created with auto off, like the hive ones
   const onError = useCallback((message: string) => setError(message), []);
   const { picked, setPicked, mode, setMode, pick, task } = useTaskPick(state, taskId, initialMode, setError);
+  const { choices, created, held, create, pickTask } = useCreateRow(state, workspace, done, onError, pick, () => setPicked(undefined));
+  const dest = useStartDestination(state, task, held.entry, initialMode);
   const run = useRunPick(state, task, useContext(DefaultAgentContext));
   const view = useSetupView(task && activityOf(state, task.item.itemId)); // #390
   const base = useStartBase(picked, onError);
-  const { choices, created, held, create, pickTask } = useCreateRow(state, workspace, done, onError, pick, () => setPicked(undefined));
   useCreateOnOpen(taskId === undefined ? title : undefined, create);
   const isBlocked = held.entry === undefined && blocker(task, state, mode, base.choice);
   const close = (): void => {
@@ -209,7 +211,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
     });
   };
   useAutoStart(held.awaiting, task, isBlocked || pending || done.current, () => { held.clearAwaiting(); submit(); });
-  return { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick: pickTask, create, close, submit, choices, held: held.entry, view };
+  return { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick: pickTask, create, close, submit, choices, held: held.entry, view, dest };
 }
 
 // Whether personalizar is offered (#290): only on a start; never on a continue, whose session is fixed, nor while a handover decides the run (#134)
@@ -269,7 +271,7 @@ function Preparing({ progress, view, mode, agent, stage, error, onClose, onRetry
 export function StartDialog(props: StartDialogProps) {
   const { state, taskId } = props;
   const id = useId();
-  const { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held, view } = useStart(props);
+  const { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held, view, dest } = useStart(props);
   const progress = task && view.progress;
   // #566: a task outside the flow has no stage to run from; the destination block (3.5) moves it into one
   const stagesOff = task === undefined || hasStagesToRun(task.stage, state.stages) ? undefined
@@ -301,6 +303,7 @@ export function StartDialog(props: StartDialogProps) {
                 <p className="text-muted-foreground text-xs leading-4">{t('start.taskHint')}</p>
               </div>
             )}
+            {dest.isShown && <DestinationField id={id} offered={dest.offered} allowNone={dest.allowsNone} value={dest.destination} onChange={dest.choose} />}
             <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />
             <BaseField id={id} mode={mode} choice={base.choice} workspaces={state.workspaces} onChange={base.setChoice} onWorkspace={base.pickWorkspace} />
             <RunSection id={id} mode={mode} task={task} state={state} run={run} workspace={runWorkspace} />

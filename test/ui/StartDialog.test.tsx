@@ -11,7 +11,7 @@ import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { BaseOptions, SetupRow, Task, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DISCARD_FAILED, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
-import { flowed } from '../fixtures/main-flow.js';
+import { flowed, mainFlows } from '../fixtures/main-flow.js';
 
 const stages: Stage[] = [
   { name: 'inbox', from: { board: ['Inbox'] } }, // no prompt: a task created here skips it
@@ -23,9 +23,20 @@ const task = (itemId: string, id: string, title: string, extra: Partial<WithWork
 });
 const LANDING = task('I4', 'SITE-4', 'Landing copy review', { stage: 'dev' });
 const HERO = task('I9', 'SITE-9', 'Landing hero for teams');
+const TRIAGE: Stage = { name: 'triage', from: { tracker: ['Triage'] }, prompt: 'x' };
+const DEPLOY: Stage = { name: 'deploy', from: { board: ['Deploy'] }, prompt: 'x' };
+// #566: a task outside the flow is a task with no stage
+const outside = (w: WithWork): WithWork => { const { stage: _stage, ...rest } = w; return rest; };
+const OUTSIDE = outside(HERO);
 const state = (tasks: Task[] = [LANDING, HERO]): State => withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['hive', 'site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
+});
+// #580: three flows; bug's entry reads no column of board, so a board entry is offered main and ops alone
+const multi = (tasks: Task[] = [LANDING, OUTSIDE]): State => ({
+  ...state(tasks),
+  flows: [...mainFlows(stages), { name: 'bug', stages: [TRIAGE], transitions: [] }, { name: 'ops', stages: [DEPLOY], transitions: [] }],
+  stages: [...stages, TRIAGE, DEPLOY],
 });
 const SHIPPED = task('I7', 'SITE-7', 'Shipped pricing page', { stage: 'done' });
 // #774: done with no prompt, the last stage: a task there has no stage left to run
@@ -806,4 +817,33 @@ test('executar etapas names the agent\'s default model in the summary when the s
   render(<AgentModelsContext.Provider value={{ claude: 'opus' }}><StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={vi.fn()} /></AgentModelsContext.Provider>);
   await screen.findByRole('combobox', { name: 'origin/main' });
   expect(screen.getByText('claude · padrão · opus · sessão nova')).toBeInTheDocument();
+});
+
+test('a task in a flow shows no destination; one outside the flow shows a radio per flow, with the stage it enters, and sem fluxo; the arrows move the choice (#580)', async () => {
+  const user = userEvent.setup();
+  const { unmount } = render(<StartDialog state={multi()} taskId="I4" onClose={vi.fn()} />);
+  expect(screen.queryByRole('radiogroup', { name: 'destino' })).not.toBeInTheDocument();
+  unmount();
+  render(<StartDialog state={multi()} taskId="I9" onClose={vi.fn()} />);
+  const group = within(screen.getByRole('radiogroup', { name: 'destino' }));
+  expect(group.getAllByRole('radio').map((r) => r.textContent)).toEqual(['fluxo mainentra em backlog', 'fluxo bugentra em triage', 'fluxo opsentra em deploy', 'sem fluxosem etapas · você conduz']);
+  const main = group.getByRole('radio', { name: /^fluxo main/ });
+  expect(main).toHaveAttribute('aria-checked', 'true');
+  await user.click(main);
+  await user.keyboard('{ArrowDown}');
+  const bug = group.getByRole('radio', { name: /^fluxo bug/ });
+  expect(bug).toHaveAttribute('aria-checked', 'true');
+  expect(bug).toHaveFocus();
+});
+
+test('abrir sessão on a task outside the flow preselects sem fluxo: a free session moves nothing unless asked (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" initialMode="free" onClose={onClose} />);
+  expect(screen.getByRole('radio', { name: /^sem fluxo/ })).toHaveAttribute('aria-checked', 'true');
+  const open = screen.getByRole('button', { name: /sessão livre/ });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts().map(([url]) => url)).toEqual(['/tasks/I9/open']);
 });

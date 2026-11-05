@@ -3046,6 +3046,11 @@ const en = {
   'tasks.sidebar.newFlow': 'new flow',
   'tasks.automation.workerless': 'stages without a worker', // #573: the automação row; Settings keeps its longer label
   'tasks.automation.notSaved': 'Signal settings not saved', // #573: a sidebar save the server refused or never got
+  'start.destination': 'destination', // #580: the Start dialog's destination block, while its task is outside the flow
+  'start.destination.flow': '{flow} flow',
+  'start.destination.enters': 'enters {stage}',
+  'start.destination.none': 'outside the flow',
+  'start.destination.noneHint': 'no stages · you drive',
 };
 
 export type MessageKey = keyof typeof en;
@@ -6086,6 +6091,11 @@ const pt: Record<MessageKey, string> = {
   'tasks.sidebar.newFlow': 'novo fluxo',
   'tasks.automation.workerless': 'etapas sem worker',
   'tasks.automation.notSaved': 'Configuração do sinal não salva',
+  'start.destination': 'destino',
+  'start.destination.flow': 'fluxo {flow}',
+  'start.destination.enters': 'entra em {stage}',
+  'start.destination.none': 'sem fluxo',
+  'start.destination.noneHint': 'sem etapas · você conduz',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
