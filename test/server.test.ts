@@ -2623,7 +2623,7 @@ test('deleteActivityOnDisk also checks and deletes the own branches a Restart le
   };
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: `${TASK_BRANCH}-r3`, stageStart: { stage: 'fila', commit: 'a1b2c3d' } }; // #629: the activity's
   const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
+  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
   const check = (b: string): string[][] => [['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${b}`], ['merge-base', '--is-ancestor', `refs/heads/${b}`, 'HEAD']];
   assert.deepEqual(calls, [
     ['for-each-ref', '--format=%(refname:lstrip=2)', `refs/heads/${TASK_BRANCH}`, `refs/heads/${TASK_BRANCH}-r*`],
@@ -2645,8 +2645,25 @@ test('deleteActivityOnDisk drops the stage-start ref of an activity whose start 
   const task: Task = { item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true };
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH }; // entered a stage: no stageStart
   const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
+  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
   assert.deepEqual(calls.slice(-3), [['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`], ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`]]);
+});
+
+test('deleteActivityOnDisk hands the record\'s PRs to the clean: a branch its merged PR squashed goes with branch -D, no refusal (#660)', async (t) => {
+  const calls: string[][] = [];
+  const exec: Exec = async (file, args) => {
+    calls.push([file, ...(file === 'git' ? args.slice(2) : args)]);
+    if (file === 'gh') return { stdout: JSON.stringify({ state: 'MERGED', headRefOid: 'c0ffee1' }) };
+    if (args.includes('--is-ancestor')) throw Object.assign(new Error('Command failed: git merge-base'), { code: 1 }); // squashed: never an ancestor
+    return { stdout: args.includes('rev-parse') ? 'c0ffee1\n' : '' };
+  };
+  const task: Task = { item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true };
+  const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH };
+  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
+  const pr = 'https://github.com/acme/r/pull/7';
+  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [{ url: pr, state: 'merged' }], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
+  assert.deepEqual(calls.filter((c) => c[0] === 'gh'), [['gh', 'pr', 'view', pr, '--json', 'state,headRefOid']]);
+  assert.ok(calls.some((c) => c.join(' ') === `git branch -D -- ${TASK_BRANCH}`), calls.map((c) => c.join(' ')).join('\n'));
 });
 
 test('Restart is refused while a session or a terminal runs on the task; while its git runs the task is marked, so a continue or a start is refused (#283)', async (t) => {
