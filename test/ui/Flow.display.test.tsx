@@ -53,3 +53,20 @@ test('esconder epics: intermediários drops the middle epic and keeps the root; 
   expect(within(nodeOf('review')).getByText('⑂ #1 Task 1')).toBeInTheDocument();
   expect(within(nodeOf('dev')).queryByText('⑂ #1 Task 1')).not.toBeInTheDocument();
 });
+
+const legend = (): string[] => [...screen.getByRole('group', { name: 'workspaces' }).children].map((row) => row.textContent ?? '');
+
+test('the legend lists the workspaces of the tasks drawn, in the Comb\'s order; a task left out takes its workspace with it; no task resolving to one, no box (#576 decision 9)', () => {
+  const s = state([task('1', 'dev', { source: 'roadmap' }, { workspace: 'site' }), task('2', 'review', {}, { workspace: 'hive' })], [], ['hive', 'docs', 'site']);
+  resetViewState();
+  const { unmount } = show(s);
+  expect(legend()).toEqual(['hive', 'site']);
+  unmount();
+  resetViewState({ flowView: stored({ sourcesOff: ['roadmap'] }) });
+  const { unmount: second } = show(s);
+  expect(legend()).toEqual(['hive']);
+  second();
+  resetViewState({ flowView: stored({ sourcesOff: ['roadmap', 'hive'] }) });
+  show(s);
+  expect(screen.queryByRole('group', { name: 'workspaces' })).not.toBeInTheDocument();
+});

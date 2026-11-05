@@ -204,7 +204,7 @@ function TableView({ state, source, onGoTo, onOpenIssue, project, onRefresh, rep
   const { widths, onDrag, onResize } = useColumnWidths(prefs.widths, (next) => update({ widths: next }));
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} mode={{ kind: 'source', source }} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} onRefresh={onRefresh} />
+      <FlowHeader state={state} mode={{ kind: 'source', source }} search={search} onSearch={setSearch} isShown={isShown} onRefresh={onRefresh} />
       <Subbar project={project} linked={linked}>
         <ProjectGroupMenu options={options} groupBy={prefs.groupBy} onChange={(groupBy) => update({ groupBy })} />
         {!isHive && <ProjectColumnsMenu columns={columns} visible={prefs.columns} onChange={(next) => update({ columns: next })} />}

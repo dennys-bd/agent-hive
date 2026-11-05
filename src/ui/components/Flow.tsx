@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { activityOf } from '../../activities';
-import { sourceOf } from '../../tasks';
+import { resolveWorkspace, sourceOf } from '../../tasks';
 import type { Flow as FlowConfig, FilterRule, Stage, State, Task } from '../../types';
 import { FlowChart } from '@/components/FlowChart';
 import { FlowHeader } from '@/components/FlowHeader';
@@ -14,6 +14,7 @@ import { useIsFlowShown } from '@/components/MainDock';
 import { StageFilterDialog, useStageFilters } from '@/components/StageFilter';
 import type { Dragging } from '@/components/task-drag';
 import { MenuBoundaryContext } from '@/components/TaskMenu';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import { type DisplayControls, useFlowView } from '@/hooks/use-flow-view';
 import { useTreeFocus } from '@/hooks/use-tree-focus';
 import { t } from '@/i18n';
@@ -39,6 +40,24 @@ export function stageTasks(state: State, tasks: readonly Task[], stage: string, 
   const filtered = visibleUnderFilter(all, rules);
   const shown = filtered.filter((c) => matchesSearch(c, activityOf(state, c.item.itemId)?.branch ?? '', search));
   return { all, filtered, tasks: shown };
+}
+
+// The workspaces the shown tasks resolve to, in the Comb's order: a legend of the colours the tasks carry, never a filter (the source is the
+// flow's only one)
+function shownWorkspaces(tasks: readonly Task[], state: Pick<State, 'workspaces' | 'sourceWorkspaces' | 'tasks'>): string[] {
+  const used = new Set(tasks.map((c) => resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks)));
+  return state.workspaces.filter((name) => used.has(name));
+}
+
+// #576 decision 9: the workspaces of the tasks the canvas draws, bottom right (the zoom sits bottom left). The list panel, rendered after it, covers it while open
+function WorkspacesLegend({ state, tasks }: { state: State; tasks: readonly Task[] }) {
+  const names = shownWorkspaces(tasks, state);
+  if (names.length === 0) return null;
+  return (
+    <fieldset aria-label={t('tasks.legend.workspaces')} className="absolute right-2.5 bottom-2.5 flex flex-col gap-1 rounded-md border bg-card px-2 py-1.5 text-muted-foreground text-xs">
+      {names.map((name) => <span key={name} className="flex items-center gap-1.5"><WorkspaceSquare name={name} />{name}</span>)}
+    </fieldset>
+  );
 }
 
 /** The flow (#134, 1b): a canvas that pans both ways, each stage a node holding its tasks, the transitions as arrows between them, and a node's
@@ -83,7 +102,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
   const listedTasks = listedStage && of(listedStage.name);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={viewed} search={search} onSearch={setSearch} isShown={isShown} {...(display ? displayProps({ display, sources, tasks: counted, isTree, hasLoops: true }) : {})} />
+      <FlowHeader state={state} search={search} onSearch={setSearch} isShown={isShown} {...(display ? displayProps({ display, sources, tasks: counted, isTree, hasLoops: true }) : {})} />
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart
@@ -91,6 +110,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
             fitRequest={chart.fitRequest} onPan={chart.onPan} onFit={chart.onFit} onZoom={chart.zoomTo} renderNode={node}
           />
           <FlowZoom zoom={chart.view.zoom} onZoom={chart.zoomTo} onFit={chart.fit} />
+          <WorkspacesLegend state={state} tasks={drawn.stages.flatMap((s) => of(s.name).tasks)} />
           {focus && focused !== undefined && <FocusTrail trail={focusTrail(state.tasks, focused)} count={viewed.filter((c) => focus.has(c.item.itemId)).length} onFocus={focusOn} onLeave={leave} />}
           {listedStage && listedTasks && (
             <FlowListPanel stage={listedStage} state={state} tasks={listedTasks.tasks} order={listedTasks.all} drag={drag} selectedId={selectedId} onOpen={onOpen} onClose={() => setListed(undefined)} />

@@ -3048,6 +3048,7 @@ const en = {
   'tasks.sidebar.newFlow': 'new flow',
   'tasks.automation.workerless': 'stages without a worker', // #573: the automação row; Settings keeps its longer label
   'tasks.automation.notSaved': 'Signal settings not saved', // #573: a sidebar save the server refused or never got
+  'tasks.legend.workspaces': 'workspaces', // #576: the flowchart's workspaces legend, its box's accessible name
   'start.destination': 'destination', // #580: the Start dialog's destination block, while its task is outside the flow
   'start.destination.flow': '{flow} flow',
   'start.destination.enters': 'enters {stage}',
@@ -6096,6 +6097,7 @@ const pt: Record<MessageKey, string> = {
   'tasks.sidebar.newFlow': 'novo fluxo',
   'tasks.automation.workerless': 'etapas sem worker',
   'tasks.automation.notSaved': 'Configuração do sinal não salva',
+  'tasks.legend.workspaces': 'workspaces',
   'start.destination': 'destino',
   'start.destination.flow': 'fluxo {flow}',
   'start.destination.enters': 'entra em {stage}',
