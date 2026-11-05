@@ -121,6 +121,7 @@ export function projectItem(node: GhItemNode, fields: ProjectField[], read: Proj
     fields: valuesOf(node, fields),
     pullRequests: (c.closedByPullRequestsReferences?.nodes ?? []).map(pullRequest),
     ...(blockedBy === undefined ? {} : { blockedBy }),
+    ...(c.parent ? { parent: c.parent.number } : {}),
     ...(out === undefined ? {} : { out }),
     ...(c.createdAt ? { createdAt: c.createdAt } : {}), ...(c.updatedAt ? { updatedAt: c.updatedAt } : {}), ...(c.closedAt ? { closedAt: c.closedAt } : {}),
   };
