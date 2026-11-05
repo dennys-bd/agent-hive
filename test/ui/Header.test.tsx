@@ -31,7 +31,10 @@ const brand = (): HTMLElement => screen.getByRole('button', { name: 'hive · wor
 const mark = (): HTMLElement => screen.getByRole('button', { name: 'hive' }); // the closed side's ⬢ (#295)
 
 beforeEach(() => setLanguage('pt'));
-afterEach(() => setShortcuts({}));
+afterEach(() => {
+  setShortcuts({});
+  vi.restoreAllMocks();
+});
 
 test('the brand reads hive · workers {active}/{max} in the left column, the max the effective cap when a rule sets one (#221)', () => {
   const { rerender } = render(header());
@@ -261,4 +264,14 @@ test('in benchmark every pane is disabled at .35: arquivos and detalhes unavaila
   }
   rerender(header(shellOf({ center: 'plugins', panes: { active: 'variables', enabled: { files: false, details: false, variables: true }, pick: vi.fn() } })));
   expect(buttons()[0]).toHaveAttribute('title', 'arquivos · indisponível em plugins');
+});
+
+test('on Windows the header carries data-window-overlay="columns", so index.css clears the caption buttons in its last column and its borders stay on the panes\'; not on macOS (#648)', () => {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Win32');
+  const { unmount } = render(header());
+  expect(banner()).toHaveAttribute('data-window-overlay', 'columns');
+  unmount();
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+  render(header());
+  expect(banner()).not.toHaveAttribute('data-window-overlay');
 });

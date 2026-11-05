@@ -94,3 +94,8 @@ test('the window insets: 84px for the header and for Settings in a window; under
   assert.deepEqual(Object.fromEntries(block(':root', INDEX)), { '--radius': '0.5rem', '--window-inset': '84px', '--settings-inset': '84px' });
   assert.deepEqual(Object.fromEntries(block(':root[data-fullscreen]', INDEX)), { '--window-inset': '12px', '--settings-inset': '4px' });
 });
+
+test('the caption buttons\' room: --window-overlay from titlebar-area-x / -width with 138px (3 × 46px) without them; the strip pads itself, the header only its last column (#648)', () => {
+  assert.match(INDEX, /--window-overlay:\s*calc\(100vw - env\(titlebar-area-x, 0px\) - env\(titlebar-area-width, calc\(100vw - 138px\)\)\)/);
+  assert.match(INDEX, /\[data-window-overlay="strip"\],\s*\[data-window-overlay="columns"\] > :last-child\s*\{[^}]*padding-right:\s*calc\(var\(--window-overlay\) \+ 0\.5rem\)/);
+});

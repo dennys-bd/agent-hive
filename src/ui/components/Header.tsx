@@ -14,7 +14,7 @@ import { t } from '@/i18n';
 import { runShortcut } from '@/lib/dock-layout';
 import { headerColumns } from '@/lib/header-columns';
 import { binding } from '@/lib/shortcut-bindings';
-import { WINDOW_DRAG, WINDOW_INSET } from '@/lib/window-chrome';
+import { WINDOW_DRAG, WINDOW_INSET, windowOverlay } from '@/lib/window-chrome';
 
 interface BrandProps { state: State; effective: EffectiveLimits; brand?: ReactNode }
 interface HeaderProps extends BrandProps { shell: HeaderShell }
@@ -105,7 +105,7 @@ function RightColumn({ width, center, panes }: { width?: string; center: CenterM
 /** The window's top bar (#533, #221, #295): three columns whose borders fall on the panes' borders below, from the shown view's layout. Left,
  * per header-estados.md's four states: the brand and panel-left with the left side open; closed, the window buttons' block then panel-left, a divider and the ⬢
  * at the center's start; closed in full screen, panel-left over the rail, then the ⬢. Center, the activity's bar, empty without one; right, the right panes'
- * icons while the right group holds Detalhes, else panel-right. In a benchmark run's Hive (#469) the run's brand, its centre (RunHeader) and no right column. The view switch moved to the rail (#220), the agents' usage to the footer (#223). */
+ * icons while the right group holds Detalhes, else panel-right. On Windows (#648) its last column clears the caption buttons (data-window-overlay). In a benchmark run's Hive (#469) the run's brand, its centre (RunHeader) and no right column. The view switch moved to the rail (#220), the agents' usage to the footer (#223). */
 export function Header({ shell, state, effective }: HeaderProps) {
   const isFullScreen = useIsFullScreen();
   const widths = headerColumns(shell.layout, shell.rightShown, isFullScreen);
@@ -114,7 +114,7 @@ export function Header({ shell, state, effective }: HeaderProps) {
   const run = useRunHive();
   const brand = run && <RunBrand run={run} />; // #469: a run's Hive names the run where the ⬢ and the workers sit
   return (
-    <header className={`flex shrink-0 items-stretch border-b ${WINDOW_DRAG}`}>
+    <header {...windowOverlay('columns')} className={`flex shrink-0 items-stretch border-b ${WINDOW_DRAG}`}>
       <LeftColumn width={widths.left} isOpen={isLeftOpen} isFullScreen={isFullScreen} state={state} effective={effective} brand={brand} />
       <div data-header-column="center" className={`flex min-w-0 flex-1 items-center ${!isLeftOpen && isFullScreen ? 'pl-3' : ''}`}>
         {!isLeftOpen && <ClosedLead state={state} effective={effective} isFullScreen={isFullScreen} brand={brand} />}
