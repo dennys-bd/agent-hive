@@ -29,8 +29,7 @@ const MAIN_WINDOW_BOUNDS_FILE = 'main-window-bounds.json'; // under userData; th
 // runs from dist/src/main.js; the asset is not copied by the build, the preload is tsc's CommonJS output of window-preload.cts
 const ICON = fileURLToPath(new URL('../../assets/icon.png', import.meta.url));
 const trayAsset = (file: string): string => fileURLToPath(new URL(`../../assets/${file}`, import.meta.url));
-// every tray image sits next to TRAY_ICON, the no-signal image of this platform (#191, #648): trayTemplate on macOS, which tints it for the bar, the coloured comb on Windows;
-// Electron loads its @2x next to it. With a signal, the effective signal's badge (#196) takes over
+// the no-signal tray image of this platform (#191, #648): trayTemplate on macOS, which tints it; the coloured comb on Windows. Others sit next to it
 const TRAY_ICON = trayAsset(trayIconFile(undefined, false, process.platform));
 // the menu's worker dots (#192), in the main window's status colors and not template images; Electron loads dot-<status>@2x.png next to each.
 // createFromPath never throws: a file that fails to load is an empty image, which dotFor leaves out of its line.
@@ -196,8 +195,7 @@ function createTray(): void {
   }
   tray.setToolTip(APP_NAME);
   const show = (): void => void showMenu().catch(reportError);
-  // Windows' convention (#648): the left click opens or focuses the Hive, the right click shows the menu; macOS shows the menu on both
-  tray.on('click', process.platform === 'win32' ? (): void => void open().catch(reportError) : show);
+  tray.on('click', process.platform === 'win32' ? (): void => void open().catch(reportError) : show); // #648: Windows' left click opens the Hive, the right shows the menu; macOS shows the menu on both
   tray.on('right-click', show);
   paintTray(); // the stream runs from ready (#199): a new icon starts on the signal it already has
   nativeTheme.on('updated', paintTray); // the bar went light or dark: the badged comb swaps its ink
