@@ -2,7 +2,8 @@ import { activityOf, holdsSlug, keptActivity, recordsOf, taskOfActivity, termina
 import { staleRead } from './column-write.js';
 import { parentOf } from './task-tree.js';
 import { outOfRead } from './out-of-listing.js';
-import { flowOf } from './flows.js';
+import { flatten, flowOf } from './flows.js';
+import { entryFor, placed, placesAgain } from './task-entry.js';
 import { hiveAction, holdsWorker, runsAgent } from './stage-agent.js';
 import type { Activity, Flow, SourceAction, SourceItem, SourceItemRead, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
 
@@ -230,21 +231,22 @@ function parentWorkspace(task: Pick<Task, 'item'>, scope: WorkspaceScope, walked
 // source (source column differs from the one the Hive last saw or wrote) follows into the Hive only while the task is stopped. A read from
 // before the Hive's own column write (#889) refreshes everything but the column, so it can neither move the task back nor make shouldWrite
 // compare against a value the source no longer holds; any other read confirms, overrides or outlives the write, and its mark goes.
-export function seenAgain(task: Task, seen: SourceItem, stages: Stage[], runs: WorkState, now: string): Task {
+export function seenAgain(task: Task, seen: SourceItem, flows: readonly Flow[], runs: WorkState, now: string): Task {
   if (task.orphan) return task;
   const { outOfListing: _outOfListing, ...present } = task;
   if (staleRead(task, seen.column, now)) return { ...present, item: seen.item };
   const { columnWrite: _columnWrite, ...rest } = present;
   const refreshed: Task = { ...rest, item: seen.item, boardColumn: seen.column };
+  if (placesAgain(task, runs)) return placed(refreshed, entryFor(flows, seen)); // #670: a new task follows its entry until it starts or is placed by hand
   const held = activityOf(runs, taskId(task)); // #755, #834: a stage action in flight holds its stage as a worker does
-  const entry = inFlow(task) && seen.column !== task.boardColumn && held?.workerId === undefined && !inAction(held) ? entryStage(stages, seen.item.source, seen.column) : undefined;
+  const entry = inFlow(task) && seen.column !== task.boardColumn && held?.workerId === undefined && !inAction(held) ? entryStage(flatten(flows).stages, seen.item.source, seen.column) : undefined; // #670: a new task is placed by its source's entry instead (task-entry.ts)
   return entry && entry.name !== task.stage ? enter(refreshed, entry) : refreshed; // same stage through another door: the clock keeps running
 }
 
-const entered = (seen: SourceItem, stages: Stage[]): Task[] => {
-  const entry = entryStage(stages, seen.item.source, seen.column);
-  // born with its source's auto (#688), on when the item carries none (#573); seenAgain never touches it again
-  return entry ? [enter({ item: seen.item, stage: entry.name, boardColumn: seen.column, auto: seen.item.autoOnEntry ?? true }, entry)] : [];
+const entered = (seen: SourceItem, flows: readonly Flow[]): Task[] => {
+  const entry = entryFor(flows, seen);
+  const born: Task = { item: seen.item, boardColumn: seen.column, auto: seen.item.autoOnEntry ?? true }; // born with its source's auto (#688), on when the item carries none (#573)
+  return entry === undefined ? [] : [entry === null ? born : enter({ ...born, stage: entry.name }, entry)]; // #670: null = outside the flow (#566)
 };
 
 /** One source's poll (#180): which source listed what; reads (#568): item() of the started tasks it lacks. */
@@ -314,11 +316,11 @@ export function renameSources(state: State, renames: Record<string, string>): St
 /** One known task against its source's latest word (#180, #686, #568): listed, seen again; an orphan, a leaving or a created task as it is;
  * unlisted and never started, gone (undefined); unlisted and started, what item() answered (outOfRead). What mergeTasks runs on each of the
  * polled source's tasks, and itemRead on the one item a field write re-read. */
-export function seenOne(task: Task, entry: SourceItem | undefined, stages: Stage[], runs: Runs, now: string, read?: SourceItemRead): Task | undefined {
+export function seenOne(task: Task, entry: SourceItem | undefined, flows: readonly Flow[], runs: Runs, now: string, read?: SourceItemRead): Task | undefined {
   if (task.orphan) return task;
-  if (entry) return seenAgain(task, entry, stages, runs, now);
+  if (entry) return seenAgain(task, entry, flows, runs, now);
   if (task.leaving || task.created) return task; // closeTask or sourceActionFailed answers a leaving one (#286)
-  return isStarted(runs, task) ? outOfRead(task, read, stages, runs, now) : undefined;
+  return isStarted(runs, task) ? outOfRead(task, read, flows, runs, now) : undefined;
 }
 
 /** One source's poll (#180): that source's known tasks are updated (seen again, or read past the listing, #568) or let go, its new items enter
@@ -327,12 +329,12 @@ export function seenOne(task: Task, entry: SourceItem | undefined, stages: Stage
  * is then put back in `order` (the whole flat source order, this listing already swapped in) except for the tasks that hold their position
  * (`followSource`: pinned, live in `runs`, #356, or unlisted). A task without `enteredAt` (saved before the field existed) is stamped `now`,
  * the poll's time, which seenAgain also measures a column write's window by (#889). */
-export function mergeTasks(tasks: Task[], stages: Stage[], { source, items: listed, reads = [] }: Listing, sources: string[], order: string[], runs: Runs, now: string): Task[] {
+export function mergeTasks(tasks: Task[], flows: readonly Flow[], { source, items: listed, reads = [] }: Listing, sources: string[], order: string[], runs: Runs, now: string): Task[] {
   const seen = new Map(listed.map((entry) => [entry.item.itemId, entry]));
   const known = new Set(tasks.map(taskId));
   const answers = new Map(reads.map((r) => [r.itemId, r.read]));
-  const kept = markRemoved(tasks, sources, runs).flatMap((task) => (task.item.source === source ? seenOne(task, seen.get(taskId(task)), stages, runs, now, answers.get(taskId(task))) ?? [] : task)); // another source's task, or a local one: this poll says nothing about it
-  const merged = [...kept, ...listed.flatMap((entry) => (known.has(entry.item.itemId) ? [] : entered(entry, stages)))];
+  const kept = markRemoved(tasks, sources, runs).flatMap((task) => (task.item.source === source ? seenOne(task, seen.get(taskId(task)), flows, runs, now, answers.get(taskId(task))) ?? [] : task)); // another source's task, or a local one: this poll says nothing about it
+  const merged = [...kept, ...listed.flatMap((entry) => (known.has(entry.item.itemId) ? [] : entered(entry, flows)))];
   const stamped = merged.map((c) => (inFlow(c) && c.enteredAt === undefined ? { ...c, enteredAt: now } : c));
   return followSource(stamped, order, runs);
 }

@@ -17,6 +17,7 @@ import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS, SPAWN_FAILED, STAGE_GONE } 
 import { behaviourOf } from '../src/signals.js';
 import { transitionKey } from '../src/transitions.js';
 import { move, chained } from './fakes.js';
+import { mainFlows } from './fixtures/main-flow.js';
 import { activityIdOf, movedWork, withLocal, withWork, type WithWork, workId } from './fixtures/work.js';
 
 const GREEN = behaviourOf('green', SIGNALS_DEFAULTS);
@@ -1325,9 +1326,9 @@ test('a poll takes a grouped listing as the source order: sourceOrder in that or
 
 test('mergeTasks is pure: an empty listing over no tasks is no tasks, and a task in an unknown stage is left alone apart from the enteredAt stamp', () => {
   const at = '2026-10-09T12:00:00.000Z';
-  assert.deepEqual(mergeTasks([], STAGES, { source: 'board', items: [] }, ['board'], [], NO_RUNS, at), []);
-  const stray: Task = { item: item(1), stage: 'gone', boardColumn: 'Backlog', auto: true };
-  const [{ enteredAt, ...merged }] = mergeTasks([stray], STAGES, { source: 'board', items: [listed(1)] }, ['board'], ['board:item1'], NO_RUNS, at);
+  assert.deepEqual(mergeTasks([], mainFlows(STAGES), { source: 'board', items: [] }, ['board'], [], NO_RUNS, at), []);
+  const stray: Task = { item: item(1), stage: 'gone', boardColumn: 'Backlog', auto: true, placedByHand: true }; // a new task would be placed again by its entry (#670); this one is the stray the poll must leave
+  const [{ enteredAt, ...merged }] = mergeTasks([stray], mainFlows(STAGES), { source: 'board', items: [listed(1)] }, ['board'], ['board:item1'], NO_RUNS, at);
   assert.equal(enteredAt, at, 'a task without enteredAt gets the poll time');
   assert.deepEqual(merged, { ...stray, item: item(1) });
 });
@@ -2339,9 +2340,10 @@ test('a source task with auto on moved by hand stays where the user put it until
   const stages: LegacyStage[] = [...STAGES, { name: 'parked', from: {} }];
   const queued = polled(signaled(base(1, stages), 'yellow').state, [listed(1)]).state; // auto on, in spec
   const parked = reduce(queued, { type: 'moveToStage', taskId: 'board:item1', stage: 'parked' });
+  const byHand = (state: State): State => ({ ...state, tasks: state.tasks.map((c) => ({ ...c, placedByHand: true as const })) }); // moveToStage sets it from #670's next task on; until then the fixture does
   assert.deepEqual([task(parked.state, 1)?.stage, task(parked.state, 1)?.boardColumn, parked.effects], ['parked', 'Backlog', []], 'no from on its source: nothing written');
-  assert.equal(task(polled(parked.state, [listed(1)]).state, 1)?.stage, 'parked', 'the source column did not change');
-  assert.equal(task(polled(parked.state, [listed(1, 'Ready')]).state, 1)?.stage, 'dev', 'the source moved it: the task follows, as any source task');
+  assert.equal(task(polled(byHand(parked.state), [listed(1)]).state, 1)?.stage, 'parked', 'the source column did not change');
+  assert.equal(task(polled(byHand(parked.state), [listed(1, 'Ready')]).state, 1)?.stage, 'dev', 'the source moved it: the task follows, as any source task');
 });
 
 test('moveToStage clears stopped on a source task with auto on, so the fill starts it in the prompt stage it entered (#708)', () => {

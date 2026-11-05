@@ -2,7 +2,7 @@
 // this module and this one imports tasks.ts: neither calls the other at load time, as task-tree.ts and tasks.ts already do
 import { activityOf } from './activities.js';
 import { inAction, type Runs, seenAgain, taskId, workersOf } from './tasks.js';
-import type { Item, SourceItemRead, Stage, Task } from './types.js';
+import type { Flow, Item, SourceItemRead, Task } from './types.js';
 
 // A worker holds it: a close on the source never kills a live session; the next poll reads it again. A terminal holds nothing
 const isHeld = (task: Task, runs: Runs): boolean => {
@@ -17,12 +17,12 @@ const issueFields = (item: Item, read: Item): Item =>
 /** A started task the listing lacks against item()'s answer (#568): listing and filter merge as seenAgain does, project refreshes the issue
  * alone, closed lets it go (undefined) unless a worker holds it, gone turns it orphan. No answer (a rejected read, or a task that started after
  * the listing): marked listing once, else as it is. */
-export function outOfRead(task: Task, read: SourceItemRead | undefined, stages: Stage[], runs: Runs, now: string): Task | undefined {
+export function outOfRead(task: Task, read: SourceItemRead | undefined, flows: readonly Flow[], runs: Runs, now: string): Task | undefined {
   if (read === undefined) return task.outOfListing === undefined ? { ...task, outOfListing: 'listing' } : task;
   switch (read.reason) {
     case 'listing':
     case 'filter':
-      return { ...seenAgain(task, read.entry, stages, runs, now), outOfListing: read.reason };
+      return { ...seenAgain(task, read.entry, flows, runs, now), outOfListing: read.reason };
     case 'project':
       return { ...task, item: issueFields(task.item, read.item), outOfListing: 'project' };
     case 'closed':
