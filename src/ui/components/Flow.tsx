@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { activityOf } from '../../activities';
+import { sourceOf } from '../../tasks';
 import type { Flow as FlowConfig, FilterRule, Stage, State, Task } from '../../types';
 import { FlowChart } from '@/components/FlowChart';
 import { FlowHeader } from '@/components/FlowHeader';
@@ -17,19 +18,27 @@ import { type DisplayControls, useFlowView } from '@/hooks/use-flow-view';
 import { useTreeFocus } from '@/hooks/use-tree-focus';
 import { t } from '@/i18n';
 import { matchesSearch } from '@/lib/flow-search';
+import type { DisplayOptions } from '@/lib/flow-view';
 import { visibleUnderFilter } from '@/lib/stage-filters';
 import { focusTrail } from '@/lib/tree-focus';
-import { hasTree } from '@/lib/tree-groups';
+import { hasTree, hiddenEpics } from '@/lib/tree-groups';
 
 interface FlowProps { state: State; flow: FlowConfig; selectedId?: string; onOpen?(taskId: string): void; stageCaps?: Record<string, number>; display?: DisplayControls; sources?: SourcesNav } // display: Center's one value (#574); absent (a test harness): the stored options, nothing to change them; sources: the popover's rows (#574), absent: hive alone; flow: the one drawn (#571); selectedId: the detail panel's task (#542); stageCaps: the effective caps, which a node shows as n/cap (#727)
 
-/** What a stage shows (#374, #542): its tasks in the Hive's order, those the view filter lets through, and
+/** What the view leaves of `tasks` (#576 decisions 6, 7), before the stage filter and the search: a task of a source unchecked in exibir goes,
+ * and so does an epic esconder epics hides, read off the whole list `all` so a child outside the flow still makes its parent an epic. */
+export function viewedTasks(all: readonly Task[], tasks: readonly Task[], options: Pick<DisplayOptions, 'sourcesOff' | 'epics'>): Task[] {
+  const hidden = hiddenEpics(all, options.epics);
+  return tasks.filter((c) => !options.sourcesOff.includes(sourceOf(c)) && !hidden.has(c.item.itemId));
+}
+
+/** What a stage shows (#374, #542): its tasks of `tasks` (the viewed ones, #576) in the Hive's order, those the view filter lets through, and
  * those the search lets through after it. */
-export function stageTasks(state: State, stage: string, rules: FilterRule[], search: string): { all: Task[]; filtered: Task[]; tasks: Task[] } {
-  const all = state.tasks.filter((c) => c.stage === stage);
+export function stageTasks(state: State, tasks: readonly Task[], stage: string, rules: FilterRule[], search: string): { all: Task[]; filtered: Task[]; tasks: Task[] } {
+  const all = tasks.filter((c) => c.stage === stage);
   const filtered = visibleUnderFilter(all, rules);
-  const tasks = filtered.filter((c) => matchesSearch(c, activityOf(state, c.item.itemId)?.branch ?? '', search));
-  return { all, filtered, tasks };
+  const shown = filtered.filter((c) => matchesSearch(c, activityOf(state, c.item.itemId)?.branch ?? '', search));
+  return { all, filtered, tasks: shown };
 }
 
 /** The flow (#134, 1b): a canvas that pans both ways, each stage a node holding its tasks, the transitions as arrows between them, and a node's
@@ -56,7 +65,9 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
   const isTree = options.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
   const { itemId: focused, focus, focusOn, leave } = useTreeFocus(state.tasks, drawn.name, isShown); // #35: the focus on a subtree, never in flowView
   const shown = state.tasks.filter((c) => c.stage !== undefined && inFlow.has(c.stage)); // #566: a task outside the flow is on no flowchart
-  const of = (stage: string) => stageTasks(state, stage, filters.rulesOf(stage), search);
+  const viewed = viewedTasks(state.tasks, shown, options); // #576: what the nodes, the list panel and the focus count read
+  const counted = shown; // #574: the popover's counts stay before sourcesOff
+  const of = (stage: string) => stageTasks(state, viewed, stage, filters.rulesOf(stage), search);
   const node = (stage: Stage, maxHeight: number) => {
     const { all, filtered, tasks } = of(stage.name);
     return (
@@ -72,7 +83,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
   const listedTasks = listedStage && of(listedStage.name);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} {...(display ? displayProps({ display, sources, tasks: shown, isTree, hasLoops: true }) : {})} />
+      <FlowHeader state={state} tasks={viewed} search={search} onSearch={setSearch} isShown={isShown} {...(display ? displayProps({ display, sources, tasks: counted, isTree, hasLoops: true }) : {})} />
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart
@@ -80,7 +91,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
             fitRequest={chart.fitRequest} onPan={chart.onPan} onFit={chart.onFit} onZoom={chart.zoomTo} renderNode={node}
           />
           <FlowZoom zoom={chart.view.zoom} onZoom={chart.zoomTo} onFit={chart.fit} />
-          {focus && focused !== undefined && <FocusTrail trail={focusTrail(state.tasks, focused)} count={shown.filter((c) => focus.has(c.item.itemId)).length} onFocus={focusOn} onLeave={leave} />}
+          {focus && focused !== undefined && <FocusTrail trail={focusTrail(state.tasks, focused)} count={viewed.filter((c) => focus.has(c.item.itemId)).length} onFocus={focusOn} onLeave={leave} />}
           {listedStage && listedTasks && (
             <FlowListPanel stage={listedStage} state={state} tasks={listedTasks.tasks} order={listedTasks.all} drag={drag} selectedId={selectedId} onOpen={onOpen} onClose={() => setListed(undefined)} />
           )}
