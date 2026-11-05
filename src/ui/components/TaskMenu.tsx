@@ -108,13 +108,23 @@ export function useDeleteActivity(task: Task, state: State, { Item }: MenuKit = 
   const label = t('activity.delete');
   const item = (
     <Item className={DESTRUCTIVE} disabled={blocker !== undefined} onSelect={() => setIsDeleting(true)}>
-      {blocker ? `${label} · ${t(`detail.deleteActivityBlocked.${blocker}`)}` : label}
+      <Reasoned label={label} reason={blocker && t(`detail.deleteActivityBlocked.${blocker}`)} />
     </Item>
   );
   const dialog = (
     <DeleteActivity url={taskDeletionUrl(task, state)} message={deleteActivityMessage(task, state)} available confirm={{ open: isDeleting, onOpenChange: setIsDeleting }} />
   );
   return { item, dialog };
+}
+
+// #576 decision 15: a disabled item's reason on a second line in 12px muted, the one shape mover para workspace › has had since #179
+function Reasoned({ label, reason }: { label: string; reason?: string }) {
+  return (
+    <span className="flex flex-col">
+      {label}
+      {reason !== undefined && <span className="text-muted-foreground text-xs">{reason}</span>}
+    </span>
+  );
 }
 
 // excluir task… (#355, #542): a Hive task only (#132), disabled with the reason while createdRemovalBlocker answers. Its confirm, beside the
@@ -126,7 +136,7 @@ function useDeleteTask(task: Task, runs: Runs): { item: ReactNode; dialog: React
   const label = t('task.delete');
   const item = (
     <ContextMenuItem className={DESTRUCTIVE} disabled={blocker !== undefined} onSelect={() => setIsConfirming(true)}>
-      {blocker ? `${label} · ${t(`detail.deleteActivityBlocked.${blocker}`)}` : label}
+      <Reasoned label={label} reason={blocker && t(`detail.deleteActivityBlocked.${blocker}`)} />
     </ContextMenuItem>
   );
   const dialog = isConfirming && (
@@ -163,10 +173,7 @@ function WorkspaceSub({ task, state, id }: { task: Task; state: State; id: strin
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger disabled={!settable}>
-        <span className="flex flex-col">
-          {t('task.moveToWorkspace')}
-          {!settable && <span className="text-muted-foreground text-xs">{t('task.moveToWorkspace.locked')}</span>}
-        </span>
+        <Reasoned label={t('task.moveToWorkspace')} reason={settable ? undefined : t('task.moveToWorkspace.locked')} />
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
         {state.workspaces.map((p) => (
