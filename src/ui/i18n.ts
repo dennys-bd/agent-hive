@@ -3065,6 +3065,13 @@ const en = {
   'start.destination.none': 'outside the flow',
   'start.destination.noneHint': 'no stages · you drive',
   'start.destination.noFlow': 'no flow enters through a column of {source}',
+  'tasks.list.col.task': 'task', // #577: the list view's column headers, sem fluxo's hint and a group's next page (handoff §6 "Lista")
+  'tasks.list.col.stage': 'stage',
+  'tasks.list.col.status': 'status',
+  'tasks.list.col.source': 'source',
+  'tasks.list.col.action': 'action',
+  'tasks.list.outsideHint': 'no stages · no worker drives',
+  'tasks.list.more': '+{n} tasks',
 };
 
 export type MessageKey = keyof typeof en;
@@ -6124,6 +6131,13 @@ const pt: Record<MessageKey, string> = {
   'start.destination.none': 'sem fluxo',
   'start.destination.noneHint': 'sem etapas · você conduz',
   'start.destination.noFlow': 'nenhum fluxo entra por uma coluna de {source}',
+  'tasks.list.col.task': 'tarefa',
+  'tasks.list.col.stage': 'etapa',
+  'tasks.list.col.status': 'status',
+  'tasks.list.col.source': 'source',
+  'tasks.list.col.action': 'ação',
+  'tasks.list.outsideHint': 'sem etapas · nenhum worker conduz',
+  'tasks.list.more': '+{n} tarefas',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
