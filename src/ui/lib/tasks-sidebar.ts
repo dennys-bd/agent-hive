@@ -59,8 +59,10 @@ export interface EntryCount { total: number; needsYou: number }
 
 // Decision 9: "needs you" is a session waiting for the user or an approval to answer
 const NEEDS_YOU: ReadonlySet<TaskState> = new Set<TaskState>(['waiting', 'approval']);
+/** Whether the task waits for the user (decision 9): the sidebar's counts and the list's group headers (#577) read this one rule. */
+export const needsYou = (task: Task, state: State): boolean => NEEDS_YOU.has(taskState(task, state));
 const countOf = (tasks: readonly Task[], state: State): EntryCount =>
-  ({ total: tasks.length, needsYou: tasks.filter((c) => NEEDS_YOU.has(taskState(c, state))).length });
+  ({ total: tasks.length, needsYou: tasks.filter((c) => needsYou(c, state)).length });
 
 /** The tasks section's counts (decisions 9, 10): every task, each flow's by its stage, and the ones in no flow: no stage, or a stage of no
  * flow, as centerOfTask reads it, so a count agrees with where goTo sends the task. sourcesOff is not read: it filters only the center. */
