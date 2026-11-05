@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { DesignPane, designFrameRoute } from '@/components/DesignPane';
+import { designFrameRoute } from '@/components/design-frame';
+import { DesignPane } from '@/components/DesignPane';
 import { showCommentsPanel } from '@/hooks/use-design-pins';
 import { setLanguage } from '@/i18n';
 import { activityKey, type LocalActivity } from '@/lib/activities';
