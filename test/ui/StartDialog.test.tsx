@@ -11,7 +11,7 @@ import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { BaseOptions, SetupRow, Task, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DISCARD_FAILED, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
-import { flowed } from '../fixtures/main-flow.js';
+import { flowed, mainFlows } from '../fixtures/main-flow.js';
 
 const stages: Stage[] = [
   { name: 'inbox', from: { board: ['Inbox'] } }, // no prompt: a task created here skips it
@@ -23,9 +23,20 @@ const task = (itemId: string, id: string, title: string, extra: Partial<WithWork
 });
 const LANDING = task('I4', 'SITE-4', 'Landing copy review', { stage: 'dev' });
 const HERO = task('I9', 'SITE-9', 'Landing hero for teams');
+const TRIAGE: Stage = { name: 'triage', from: { tracker: ['Triage'] }, prompt: 'x' };
+const DEPLOY: Stage = { name: 'deploy', from: { board: ['Deploy'] }, prompt: 'x' };
+// #566: a task outside the flow is a task with no stage
+const outside = (w: WithWork): WithWork => { const { stage: _stage, ...rest } = w; return rest; };
+const OUTSIDE = outside(HERO);
 const state = (tasks: Task[] = [LANDING, HERO]): State => withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['hive', 'site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
+});
+// #580: three flows; bug's entry reads no column of board, so a board entry is offered main and ops alone
+const multi = (tasks: Task[] = [LANDING, OUTSIDE]): State => ({
+  ...state(tasks),
+  flows: [...mainFlows(stages), { name: 'bug', stages: [TRIAGE], transitions: [] }, { name: 'ops', stages: [DEPLOY], transitions: [] }],
+  stages: [...stages, TRIAGE, DEPLOY],
 });
 const SHIPPED = task('I7', 'SITE-7', 'Shipped pricing page', { stage: 'done' });
 // #774: done with no prompt, the last stage: a task there has no stage left to run
@@ -86,7 +97,7 @@ test('Nova atividade opens on the closed task field; Enter opens the search, eac
   expect(onStarted).toHaveBeenCalledWith('I9');
 });
 
-test('a typed term offers + criar tarefa in hive: the task is created manual in the first stage with a prompt and the workspace, started, then handed to the flow (redesign 11)', async () => {
+test('a typed term offers + criar tarefa in hive: the task is created manual, outside the flow, with the workspace; the start moves it to the flow\'s entry, starts it, then hands it to the flow (redesign 11, #580)', async () => {
   const user = userEvent.setup();
   const onClose = vi.fn();
   const { rerender } = render(<StartDialog state={state()} workspace="site" onStarted={vi.fn()} onClose={onClose} />);
@@ -95,12 +106,30 @@ test('a typed term offers + criar tarefa in hive: the task is created manual in 
   const create = screen.getByRole('option', { name: /criar tarefa "landing".*em hive/ });
   expect(screen.getAllByRole('option').at(-1)).toBe(create);
   await user.click(create);
-  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', stage: 'backlog', auto: false, workspace: 'site', source: 'hive' }]));
-  rerender(<StartDialog state={state([LANDING, HERO, task('local:1', 'HIVE-1', 'landing', { created: true, auto: false })])} workspace="site" onStarted={vi.fn()} onClose={onClose} />);
+  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', auto: false, workspace: 'site', source: 'hive' }]));
+  rerender(<StartDialog state={state([LANDING, HERO, outside(task('local:1', 'HIVE-1', 'landing', { created: true, auto: false }))])} workspace="site" onStarted={vi.fn()} onClose={onClose} />);
   await screen.findByRole('combobox', { name: 'origin/main' });
+  expect(screen.getByRole('radio', { name: /^fluxo main/ })).toHaveAttribute('aria-checked', 'true');
   await user.keyboard('{Control>}{Enter}{/Control}'); // ⌘↵
   await waitFor(() => expect(onClose).toHaveBeenCalled());
-  expect(posts().slice(1)).toEqual([['/tasks/local%3A1/start', { base: null, local: false }], ['/tasks/local%3A1/auto', { auto: true }]]);
+  expect(posts().slice(1)).toEqual([['/tasks/local%3A1/move-to', { stage: 'backlog' }], ['/tasks/local%3A1/start', { base: null, local: false }], ['/tasks/local%3A1/auto', { auto: true }]]);
+});
+
+test('a task created here with sem fluxo opens as it is: no move, no stage (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  const { rerender } = render(<StartDialog state={state()} onStarted={vi.fn()} onClose={onClose} />);
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
+  await user.keyboard('landing');
+  await user.click(screen.getByRole('option', { name: /criar tarefa "landing"/ }));
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  rerender(<StartDialog state={state([LANDING, HERO, outside(task('local:1', 'HIVE-1', 'landing', { created: true, auto: false }))])} onStarted={vi.fn()} onClose={onClose} />);
+  await user.click(screen.getByRole('radio', { name: /^sem fluxo/ }));
+  const open = screen.getByRole('button', { name: /sessão livre/ });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts().slice(1)).toEqual([['/tasks/local%3A1/open', { kind: 'claude', base: null, local: false }]]);
 });
 
 test('a task created here and never started is removed on cancel; a picked task is left alone (redesign 11)', async () => {
@@ -481,7 +510,7 @@ test('a task whose worktree is already set up never shows the preparing view: th
 test('a title from the search\'s + criar tarefa creates that task once on arrival and picks it (#584)', async () => {
   const onClose = vi.fn();
   const { rerender } = render(<StartDialog state={state()} title="Fix login" onStarted={vi.fn()} onClose={onClose} />);
-  await waitFor(() => expect(posts()).toEqual([['/tasks', { title: 'Fix login', stage: 'backlog', auto: false, source: 'hive' }]]));
+  await waitFor(() => expect(posts()).toEqual([['/tasks', { title: 'Fix login', auto: false, source: 'hive' }]]));
   rerender(<StartDialog state={state([LANDING, HERO, task('local:1', 'HIVE-1', 'Fix login', { created: true, auto: false })])} title="Fix login" onStarted={vi.fn()} onClose={onClose} />);
   expect(screen.getByRole('button', { name: 'tarefas' })).toHaveTextContent('HIVE-1 Fix login');
   expect(posts()).toHaveLength(1);
@@ -540,14 +569,6 @@ test('Iniciar #id on a task with no stage left to run opens on sessão livre tho
   expect(free).toBeChecked();
 });
 
-test('Iniciar #id on a task outside the flow keeps executar etapas off and says it has no flow, never a placeholder stage (#566)', () => {
-  const { stage: _stage, ...outside } = HERO;
-  render(<StartDialog state={state([LANDING, outside])} taskId="I9" initialMode="stages" onClose={vi.fn()} />);
-  expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeDisabled();
-  expect(screen.getByText('a tarefa está sem fluxo: leve-a a uma etapa para executar etapas.')).toBeInTheDocument();
-  expect(screen.queryByText(/nenhuma etapa para executar/)).not.toBeInTheDocument();
-});
-
 test('the dialog\'s children may shrink below their content, so a long title truncates, and the closed task field carries the picked task\'s full label as its tooltip (#774)', async () => {
   const user = userEvent.setup();
   render(<StartDialog state={state()} onClose={vi.fn()} />);
@@ -583,7 +604,7 @@ test('picking hive in the chip\'s criar em menu and pressing the row creates the
   await user.click(screen.getByRole('button', { name: 'criar em board' }));
   await user.click(screen.getByRole('option', { name: /^hive/ }));
   await user.click(screen.getByRole('option', { name: /criar tarefa "landing".*em hive/ }));
-  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', stage: 'backlog', auto: false, workspace: 'site', source: 'hive' }]));
+  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', auto: false, workspace: 'site', source: 'hive' }]));
 });
 
 test('starting a held task creates it on its source, then starts it once the state holds it (#846)', async () => {
@@ -806,4 +827,132 @@ test('executar etapas names the agent\'s default model in the summary when the s
   render(<AgentModelsContext.Provider value={{ claude: 'opus' }}><StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={vi.fn()} /></AgentModelsContext.Provider>);
   await screen.findByRole('combobox', { name: 'origin/main' });
   expect(screen.getByText('claude · padrão · opus · sessão nova')).toBeInTheDocument();
+});
+
+test('a task in a flow shows no destination; one outside the flow shows a radio per flow, with the stage it enters, and sem fluxo; the arrows move the choice (#580)', async () => {
+  const user = userEvent.setup();
+  const { unmount } = render(<StartDialog state={multi()} taskId="I4" onClose={vi.fn()} />);
+  expect(screen.queryByRole('radiogroup', { name: 'destino' })).not.toBeInTheDocument();
+  unmount();
+  render(<StartDialog state={multi()} taskId="I9" onClose={vi.fn()} />);
+  const group = within(screen.getByRole('radiogroup', { name: 'destino' }));
+  expect(group.getAllByRole('radio').map((r) => r.textContent)).toEqual(['fluxo mainentra em backlog', 'fluxo bugentra em triage', 'fluxo opsentra em deploy', 'sem fluxosem etapas · você conduz']);
+  const main = group.getByRole('radio', { name: /^fluxo main/ });
+  expect(main).toHaveAttribute('aria-checked', 'true');
+  await user.click(main);
+  await user.keyboard('{ArrowDown}');
+  const bug = group.getByRole('radio', { name: /^fluxo bug/ });
+  expect(bug).toHaveAttribute('aria-checked', 'true');
+  expect(bug).toHaveFocus();
+});
+
+test('abrir sessão on a task outside the flow preselects sem fluxo: a free session moves nothing unless asked (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" initialMode="free" onClose={onClose} />);
+  expect(screen.getByRole('radio', { name: /^sem fluxo/ })).toHaveAttribute('aria-checked', 'true');
+  const open = screen.getByRole('button', { name: /sessão livre/ });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts().map(([url]) => url)).toEqual(['/tasks/I9/open']);
+});
+
+test('a flow chosen with executar etapas reads its entry: the stages box shows the path from there, and the start moves the task to the entry first (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeEnabled();
+  expect(screen.getByText('backlog → dev → in review')).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: /^fluxo bug/ }));
+  expect(screen.queryByText('backlog → dev → in review')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I9/move-to', { stage: 'triage' }], ['/tasks/I9/start', { base: null, local: false }]]);
+});
+
+test('a flow chosen with sessão livre moves the task to the entry, then opens the session (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" initialMode="free" onClose={onClose} />);
+  await user.click(screen.getByRole('radio', { name: /^fluxo main/ }));
+  expect(screen.getByRole('radio', { name: 'sessão livre' })).toBeChecked();
+  const open = screen.getByRole('button', { name: /sessão livre/ });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I9/move-to', { stage: 'backlog' }], ['/tasks/I9/open', { kind: 'claude', base: null, local: false }]]);
+});
+
+test('a move-to the route refuses shows its words and starts nothing (#580)', async () => {
+  const user = userEvent.setup();
+  const original = fetchMock.getMockImplementation()!;
+  onTestFinished(() => { fetchMock.mockImplementation(original); });
+  fetchMock.mockImplementation(async (input, init) => (String(input).endsWith('/move-to') ? reply({ error: 'tarefa já está nessa etapa' }, 409) : original(input, init)));
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('tarefa já está nessa etapa');
+  expect(posts().map(([url]) => url)).toEqual(['/tasks/I9/move-to']);
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test('a start refused after the move-to shows its error and leaves the task in the flow: nothing posts leave-flow (#580)', async () => {
+  const user = userEvent.setup();
+  const original = fetchMock.getMockImplementation()!;
+  onTestFinished(() => { fetchMock.mockImplementation(original); });
+  fetchMock.mockImplementation(async (input, init) => (String(input).endsWith('/start') ? reply({ error: 'spawn failed: no agent' }, 500) : original(input, init)));
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('spawn failed: no agent');
+  expect(posts().map(([url]) => url)).toEqual(['/tasks/I9/move-to', '/tasks/I9/start']);
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test('sem fluxo hides the mode and the stages box, keeps the base, ignores the switchStartMode key and opens a free session with no move (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={multi()} taskId="I9" onClose={onClose} />);
+  expect(screen.getByText('backlog → dev → in review')).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: /^sem fluxo/ }));
+  expect(screen.queryByRole('radio', { name: 'executar etapas' })).not.toBeInTheDocument();
+  expect(screen.queryByText('backlog → dev → in review')).not.toBeInTheDocument();
+  expect(await screen.findByRole('combobox', { name: 'origin/main' })).toBeInTheDocument();
+  await user.keyboard('{Control>}{Shift>}M{/Shift}{/Control}'); // Ctrl+Shift+M off macOS
+  expect(screen.queryByRole('radio', { name: 'executar etapas' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /sessão livre/ }));
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I9/open', { kind: 'claude', base: null, local: false }]]);
+});
+
+test('a held source entry offers only the flows whose entry reads a column of its source, never sem fluxo, and is created in the chosen flow\'s entry (#580)', async () => {
+  const user = userEvent.setup();
+  render(toBoard(<StartDialog state={multi()} onStarted={vi.fn()} onClose={vi.fn()} />));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
+  await user.keyboard('landing');
+  await user.click(screen.getAllByRole('option', { name: /criar tarefa "landing"/ })[0]);
+  const group = within(screen.getByRole('radiogroup', { name: 'destino' }));
+  expect(group.getAllByRole('radio').map((r) => r.textContent)).toEqual(['fluxo mainentra em backlog', 'fluxo opsentra em deploy']);
+  expect(group.getByRole('radio', { name: /^fluxo main/ })).toHaveAttribute('aria-checked', 'true');
+  await user.click(group.getByRole('radio', { name: /^fluxo ops/ }));
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  await waitFor(() => expect(posts()).toEqual([['/tasks', { title: 'landing', stage: 'deploy', auto: false, source: 'board' }]]));
+});
+
+test('a held source entry no flow enters through says why and cannot start: it keeps the mode and creates nothing (#580)', async () => {
+  const user = userEvent.setup();
+  const only = { ...state(), flows: [{ name: 'bug', stages: [TRIAGE], transitions: [] }], stages: [TRIAGE] };
+  render(toBoard(<StartDialog state={only} onStarted={vi.fn()} onClose={vi.fn()} />));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
+  await user.keyboard('landing');
+  await user.click(screen.getAllByRole('option', { name: /criar tarefa "landing"/ })[0]);
+  expect(screen.queryByRole('radio', { name: /^sem fluxo/ })).not.toBeInTheDocument();
+  expect(screen.getByText('nenhum fluxo entra por uma coluna de board')).toBeInTheDocument();
+  expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /executar etapas/ })).toBeDisabled();
+  expect(posts()).toEqual([]);
 });

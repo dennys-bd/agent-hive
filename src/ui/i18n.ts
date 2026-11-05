@@ -349,7 +349,6 @@ const en = {
   'start.hint.stages': 'the agent gets each stage\'s prompt and moves the task on until it needs you.',
   'start.hint.free': 'no automatic prompts. you drive the work on the task and move its stage when you want.',
   'start.noStages': 'no stage to run from {stage}.', // #774: why executar etapas is off for the picked task
-  'start.outsideFlow': 'the task is outside the flow: move it into a stage to run stages.', // #566
   'start.base': 'base',
   'start.local': 'run in the local checkout, no worktree',
   'start.orphan.worktree': 'A worktree for this task already exists with no activity', // #861
@@ -3046,6 +3045,12 @@ const en = {
   'tasks.sidebar.newFlow': 'new flow',
   'tasks.automation.workerless': 'stages without a worker', // #573: the automação row; Settings keeps its longer label
   'tasks.automation.notSaved': 'Signal settings not saved', // #573: a sidebar save the server refused or never got
+  'start.destination': 'destination', // #580: the Start dialog's destination block, while its task is outside the flow
+  'start.destination.flow': '{flow} flow',
+  'start.destination.enters': 'enters {stage}',
+  'start.destination.none': 'outside the flow',
+  'start.destination.noneHint': 'no stages · you drive',
+  'start.destination.noFlow': 'no flow enters through a column of {source}',
 };
 
 export type MessageKey = keyof typeof en;
@@ -3397,7 +3402,6 @@ const pt: Record<MessageKey, string> = {
   'start.hint.stages': 'o agente recebe o prompt de cada etapa e avança a tarefa até precisar de você.',
   'start.hint.free': 'sem prompts automáticos. você conduz o trabalho na tarefa e move a etapa quando quiser.',
   'start.noStages': 'nenhuma etapa para executar a partir de {stage}.',
-  'start.outsideFlow': 'a tarefa está sem fluxo: leve-a a uma etapa para executar etapas.',
   'start.base': 'base',
   'start.local': 'executar no local, sem worktree',
   'start.orphan.worktree': 'Já existe uma worktree desta tarefa sem atividade',
@@ -6086,6 +6090,12 @@ const pt: Record<MessageKey, string> = {
   'tasks.sidebar.newFlow': 'novo fluxo',
   'tasks.automation.workerless': 'etapas sem worker',
   'tasks.automation.notSaved': 'Configuração do sinal não salva',
+  'start.destination': 'destino',
+  'start.destination.flow': 'fluxo {flow}',
+  'start.destination.enters': 'entra em {stage}',
+  'start.destination.none': 'sem fluxo',
+  'start.destination.noneHint': 'sem etapas · você conduz',
+  'start.destination.noFlow': 'nenhum fluxo entra por uma coluna de {source}',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

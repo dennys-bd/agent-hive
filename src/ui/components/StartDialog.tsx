@@ -1,31 +1,32 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { activityOf, workIdOf } from '../../activities';
-import { runsAgent } from '../../stage-agent.js';
 import { startMode, startsFresh } from '../../task-runs';
 import { canOpenSession, HIVE_SOURCE, inFlow, resolveWorkspace } from '../../tasks';
 import { DISCARD_FAILED, type Task, type OpenResult, type SetupRows, type State } from '../../types';
 import { act, attachRun } from '@/components/actions';
 import { DefaultAgentContext } from '@/components/NewRunButton';
+import { takeToFlow } from '@/components/tasks/flow-actions';
 import { TaskPicker } from '@/components/TaskPicker';
 import { SetupProgressView, SetupSubmit } from '@/components/SetupProgress';
 import { ButtonKeyHint } from '@/components/KeyHint';
 import { RunFields, type RunFieldsProps } from '@/components/RunFields';
 import { RunCustomize, RunSummary, useCustomizeFocus } from '@/components/RunSummary';
-import { BaseField, modeAfterKey, ModeToggle, StagesBox, type StartMode } from '@/components/StartFields';
+import { BaseField, DestinationField, modeAfterKey, ModeToggle, StagesBox, type StartMode } from '@/components/StartFields';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useLaunchOptions } from '@/hooks/use-launch-options';
 import { type Answer, sessionStatus, type SetupView, useSetupView } from '@/hooks/use-setup-view';
-import { usePendingTask, useAutoStart } from '@/hooks/use-pending-task';
+import { type HeldTask, usePendingTask, useAutoStart } from '@/hooks/use-pending-task';
 import { isChanged, openBody, resumedLaunch, type RunPicks, type RunPickState, startBody, useRunPick } from '@/hooks/use-run-pick';
 import { baseBody, type BaseChoice, useStartBase } from '@/hooks/use-start-base';
+import { useStartDestination } from '@/hooks/use-start-destination';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
 import { CreateTargetsContext, destinations } from '@/lib/create-targets';
 import { pressed } from '@/lib/shortcut-bindings';
-import { hasStagesToRun } from '@/lib/start-flow';
+import { defaultDestination, type Destination, destinationFlows, effectiveStage, hasStagesToRun } from '@/lib/start-flow';
 import { shownSize } from '@/lib/xterm-setup';
 
 export interface StartDialogProps {
@@ -45,8 +46,8 @@ const pickable = (state: State): Task[] => state.tasks.filter((c) => !c.leaving 
 
 // executar etapas: the stage's start with the base chosen and the run picks (#290: {} while they are the stage's), or its continue once the
 // stage already ran (#283), which resumes the stage's session as it ran. A task this dialog created
-// was created with auto off, so the fill left it alone until now; the start taken, it becomes a task like any other and the flow goes on (redesign 11)
-async function runStages(task: Task, state: State, base: BaseChoice, created: boolean, picks: Record<string, unknown>): Promise<void> {
+// was created outside the flow and with auto off: it is moved to the flow's entry first, and the fill left it alone until the start; the start taken, it becomes a task like any other and the flow goes on (redesign 11)
+async function runStages(task: Task, state: State, base: BaseChoice, created: boolean, picks: Record<string, unknown>): Promise<undefined> {
   const path = taskPath(task.item.itemId);
   const work = workIdOf(state, task.item.itemId); // the live activity, else a deleted one's record whose session the continue resumes (#629)
   const mode = startMode(task, state);
@@ -63,13 +64,20 @@ function openFree(task: Task, state: State, base: BaseChoice, picks: RunPicks): 
   return postJson<OpenResult>(`${taskPath(task.item.itemId)}/open`, body);
 }
 
-// The stage a task created here enters: the first stage that runs an agent (#710: a skill stage too), so executar etapas has something to run
-const createStage = (state: State): string | undefined => (state.stages.find(runsAgent) ?? state.stages[0])?.name;
 // A task with no stage left to run (#774): executar etapas is off for it, so the dialog lands on sessão livre on its arrival and on its pick
-const nothingToRun = (state: State, itemId: string | undefined): boolean => {
+// A task outside the flow is read at its default destination's entry (#580); under sem fluxo there is no toggle to turn off
+const nothingToRun = (state: State, itemId: string | undefined, mode: StartMode): boolean => {
   const task = state.tasks.find((c) => c.item.itemId === itemId);
-  return task !== undefined && !hasStagesToRun(task.stage, state.stages);
+  if (task === undefined) return false;
+  const offered = destinationFlows(state.flows);
+  const stage = effectiveStage(task, defaultDestination(offered, mode, false), offered);
+  return stage !== undefined && !hasStagesToRun(stage, state.stages);
 };
+
+// #580: a task outside the flow enters the chosen flow before the mode's request. A refusal rejects with the route's words, and a cancelled
+// intervention (#469) with '', which the error line shows as nothing; the request then never goes
+const moveFirst = (task: Task, entry: string | undefined): Promise<void> => (entry === undefined || inFlow(task) ? Promise.resolve()
+  : takeToFlow(task, entry).then((message) => { if (message !== undefined) throw new Error(message); }));
 
 // Why the start cannot go yet, or undefined: no task, bases still loading or asking for the workspace, or a task with nothing to run in the
 // mode. The button and ⌘↵ both read it
@@ -82,10 +90,10 @@ function blocker(task: Task | undefined, state: State, mode: StartMode, base: Ba
 
 // Every task this dialog created (redesign 11), created with auto off so the fill leaves it alone: the ones not started go when the dialog ends,
 // and one created after the dialog ended goes at once
-function useCreatedTasks(state: State, workspace: string | undefined, done: { current: boolean }, onError: (message: string) => void) {
+function useCreatedTasks(workspace: string | undefined, done: { current: boolean }, onError: (message: string) => void) {
   const created = useRef(new Set<string>());
   const create = (title: string, then: (itemId: string) => void): void => {
-    const body = { title, stage: createStage(state), auto: false, source: HIVE_SOURCE, ...(workspace === undefined ? {} : { workspace }) };
+    const body = { title, auto: false, source: HIVE_SOURCE, ...(workspace === undefined ? {} : { workspace }) };
     postJson<{ itemId: string }>('/tasks', body).then(({ itemId }) => {
       if (done.current) return void act(`${taskPath(itemId)}/close`);
       created.current.add(itemId);
@@ -113,10 +121,10 @@ function useCreateOnOpen(title: string | undefined, create: (title: string) => v
 
 // The create row (#846): the destinations the context offers, the tasks created in the hive at once, and the entry held for a source. A
 // source creates nothing until the activity starts, so a cancel leaves no issue behind
-function useCreateRow(state: State, workspace: string | undefined, done: { current: boolean }, onError: (message: string) => void, pick: (itemId: string) => void, unpick: () => void) {
+function useCreateRow(workspace: string | undefined, done: { current: boolean }, onError: (message: string) => void, pick: (itemId: string) => void, unpick: () => void) {
   const choices = destinations(useContext(CreateTargetsContext));
-  const created = useCreatedTasks(state, workspace, done, onError);
-  const held = usePendingTask(createStage(state), onError);
+  const created = useCreatedTasks(workspace, done, onError);
+  const held = usePendingTask(onError);
   const create = (text: string, destination = choices[0].name): void => {
     if (destination !== HIVE_SOURCE) { unpick(); held.hold({ title: text, source: destination }); return; }
     held.hold(undefined);
@@ -130,7 +138,7 @@ function useCreateRow(state: State, workspace: string | undefined, done: { curre
 // The pick (or the task created here) and the mode; the run picks follow the pick on their own (useRunPick)
 function useTaskPick(state: State, taskId: string | undefined, initialMode: StartMode, setError: (message: string | undefined) => void) {
   const [picked, setPicked] = useState(taskId);
-  const [mode, setMode] = useState<StartMode>(() => (nothingToRun(state, taskId) ? 'free' : initialMode)); // #774: not an effect, no frame on stages
+  const [mode, setMode] = useState<StartMode>(() => (nothingToRun(state, taskId, initialMode) ? 'free' : initialMode)); // #774: not an effect, no frame on stages
   const task = state.tasks.find((c) => c.item.itemId === picked);
   const pick = (itemId: string): void => { setPicked(itemId); setError(undefined); };
   return { picked, setPicked, mode, setMode, pick, task };
@@ -162,54 +170,66 @@ const endOf = (deps: EndDeps, task: Task) => (answer: Answer): void => {
   deps.onClose();
 };
 
-function useStart({ state, taskId, initialMode = 'stages', workspace, title, onStarted, onActivity, onClose }: StartDialogProps) {
-  const openRun = useOpenRun();
-  const [error, setError] = useState<string>();
-  const [pending, setPending] = useState(false);
-  const [isCreating, setIsCreating] = useState(false); // a source create in flight: closing then would leave its issue behind
-  const done = useRef(false); // started or closed: a late answer changes nothing
-  const heldIds = useRef(new Set<string>()); // the source tasks the held entry became: created with auto off, like the hive ones
-  const onError = useCallback((message: string) => setError(message), []);
-  const { picked, setPicked, mode, setMode, pick, task } = useTaskPick(state, taskId, initialMode, setError);
-  const run = useRunPick(state, task, useContext(DefaultAgentContext));
-  const view = useSetupView(task && activityOf(state, task.item.itemId)); // #390
-  const base = useStartBase(picked, onError);
-  const { choices, created, held, create, pickTask } = useCreateRow(state, workspace, done, onError, pick, () => setPicked(undefined));
-  useCreateOnOpen(taskId === undefined ? title : undefined, create);
-  const isBlocked = held.entry === undefined && blocker(task, state, mode, base.choice);
-  const close = (): void => {
-    if (isCreating) return;
-    // created here and never started: they go. A start on its way keeps its task, and so does one the preparing view shows failed (#390)
-    if (!done.current) created.drop(pending || view.progress !== undefined ? picked : undefined);
-    done.current = true;
-    onClose();
-  };
-  const startHeld = async (): Promise<void> => {
+// The start of a held entry (#846): its create on the source, then the pick of the task it became, which useAutoStart starts once the state
+// holds it. Closing while the create is in flight would leave its issue behind, so isCreating holds the dialog
+function useHeldStart(held: ReturnType<typeof usePendingTask>, done: { current: boolean }, pick: (itemId: string) => void, setPending: (pending: boolean) => void, setError: (message: string | undefined) => void) {
+  const [isCreating, setIsCreating] = useState(false);
+  const ids = useRef(new Set<string>()); // the source tasks the held entry became: created with auto off, like the hive ones
+  const start = async (stage: string | undefined): Promise<void> => {
     setPending(true); setIsCreating(true); setError(undefined);
     try {
-      const itemId = await held.create();
+      const itemId = await held.create(stage);
       if (itemId === undefined || done.current) return;
-      heldIds.current.add(itemId);
+      ids.current.add(itemId);
       pick(itemId);
     } finally {
       setPending(false); setIsCreating(false); // whatever happened, Cancel and the start button come back
     }
   };
+  return { start, isCreating, has: (itemId: string): boolean => ids.current.has(itemId) };
+}
+
+function useStart({ state, taskId, initialMode = 'stages', workspace, title, onStarted, onActivity, onClose }: StartDialogProps) {
+  const openRun = useOpenRun();
+  const [error, setError] = useState<string>();
+  const [pending, setPending] = useState(false);
+  const done = useRef(false); // started or closed: a late answer changes nothing
+  const onError = useCallback((message: string) => setError(message), []);
+  const { picked, setPicked, mode: pickedMode, setMode, pick, task } = useTaskPick(state, taskId, initialMode, setError);
+  const { choices, created, held, create, pickTask } = useCreateRow(workspace, done, onError, pick, () => setPicked(undefined));
+  const dest = useStartDestination(state, task, held.entry, initialMode);
+  const mode: StartMode = dest.isNone ? 'free' : pickedMode; // #580: sem fluxo is a free session (decision 9); leaving the radio gives the user's mode back
+  const run = useRunPick(state, dest.effective, useContext(DefaultAgentContext));
+  const view = useSetupView(task && activityOf(state, task.item.itemId)); // #390
+  const base = useStartBase(picked, onError);
+  const heldStart = useHeldStart(held, done, pick, setPending, setError);
+  useCreateOnOpen(taskId === undefined ? title : undefined, create);
+  // a held entry starts by its create, which needs a flow whose entry reads a column of its source (#580)
+  const isBlocked = held.entry === undefined ? blocker(dest.effective, state, mode, base.choice) : dest.entry === undefined;
+  const close = (): void => {
+    if (heldStart.isCreating) return;
+    // created here and never started: they go. A start on its way keeps its task, and so does one the preparing view shows failed (#390)
+    if (!done.current) created.drop(pending || view.progress !== undefined ? picked : undefined);
+    done.current = true;
+    onClose();
+  };
   const submit = (): void => {
-    if (held.entry !== undefined) return void startHeld();
-    if (task === undefined || pending || isBlocked) return;
+    if (held.entry !== undefined) return void heldStart.start(dest.entry);
+    const effective = dest.effective;
+    if (task === undefined || effective === undefined || pending || isBlocked) return;
     held.clearAwaiting(); setPending(true); setError(undefined);
     const itemId = task.item.itemId;
-    const isCreated = created.has(itemId) || heldIds.current.has(itemId); // created with auto off either way: the start turns it on
+    const isCreated = created.has(itemId) || heldStart.has(itemId); // created with auto off either way: the start turns it on
     const settle = view.begin(endOf({ done, created, openRun, onStarted, onActivity, onClose, setPending, setError }, task), (answer) => { setPending(false); if (!answer.ok) setError(refusalOf(answer.error)); }); // #390: a failed setup stays on the view, its task kept for tentar de novo, a refusal's words under it
-    const request = mode === 'stages' ? runStages(task, state, base.choice, isCreated, startBody(run.picks, run.initial)) : openFree(task, state, base.choice, run.picks);
+    const request = moveFirst(task, dest.entry).then((): Promise<OpenResult | undefined> => (mode === 'stages'
+      ? runStages(effective, state, base.choice, isCreated, startBody(run.picks, run.initial)) : openFree(effective, state, base.choice, run.picks)));
     request.then((opened) => { if (!done.current) settle({ ok: true, ...(opened ? { opened } : {}) }); }, (error: Error & { code?: string }) => {
       if (done.current) { if (isCreated) void act(`${taskPath(itemId)}/close`); return; } // closed while it was on its way: a task created here that never started goes
       settle({ ok: false, error });
     });
   };
   useAutoStart(held.awaiting, task, isBlocked || pending || done.current, () => { held.clearAwaiting(); submit(); });
-  return { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick: pickTask, create, close, submit, choices, held: held.entry, view };
+  return { task, picked, mode, setMode, run, error, pending, isCreating: heldStart.isCreating, base, isBlocked, pick: pickTask, create, close, submit, choices, held: held.entry, view, dest };
 }
 
 // Whether personalizar is offered (#290): only on a start; never on a continue, whose session is fixed, nor while a handover decides the run (#134)
@@ -261,6 +281,17 @@ function Preparing({ progress, view, mode, agent, stage, error, onClose, onRetry
   return <SetupProgressView progress={progress} isLive={view.isLive} isFailed={view.isFailed} error={error} session={{ text, status: sessionStatus(progress.rows, view.isAnswered) }} onClose={onClose} onRetry={onRetry} />;
 }
 
+// Nova atividade's task field (2c): pick a task or create one, in the hive at once or held for a source (#846)
+function TaskField({ id, state, picked, choices, held, onPick, onCreate }: { id: string; state: State; picked?: string; choices: ReturnType<typeof destinations>; held?: HeldTask; onPick(itemId: string): void; onCreate(text: string, destination?: string): void }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={`${id}-task`}>{t('start.task')}</Label>
+      <TaskPicker id={`${id}-task`} tasks={pickable(state)} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} value={picked} destinations={choices} heldLabel={held && t('start.held', { title: held.title, source: held.source })} onPick={onPick} onCreate={onCreate} />
+      <p className="text-muted-foreground text-xs leading-4">{t('start.taskHint')}</p>
+    </div>
+  );
+}
+
 /** The Start dialog (redesign 11): Iniciar #id from a task's iniciar, abrir sessão and executar etapas… (2a, 2b), or Nova atividade from the
  * activities' +, ⌘N and the home (2c), where the task is picked or created in the Hive; then executar etapas or sessão livre, the base with
  * the stacked-PR and local switches while the task has no worktree, and the stages box or the agent and session. the confirm key submits and switchStartMode flips the mode (#585). A task created
@@ -269,22 +300,29 @@ function Preparing({ progress, view, mode, agent, stage, error, onClose, onRetry
 export function StartDialog(props: StartDialogProps) {
   const { state, taskId } = props;
   const id = useId();
-  const { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held, view } = useStart(props);
+  const { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held, view, dest } = useStart(props);
   const progress = task && view.progress;
-  // #566: a task outside the flow has no stage to run from; the destination block (3.5) moves it into one
-  const stagesOff = task === undefined || hasStagesToRun(task.stage, state.stages) ? undefined
-    : task.stage === undefined ? t('start.outsideFlow') : t('start.noStages', { stage: task.stage });
+  // #774: the stages from the task's own (or the chosen entry, #580) onward have nothing to run
+  const stage = dest.effective?.stage;
+  const stagesOff = stage !== undefined && !hasStagesToRun(stage, state.stages) ? t('start.noStages', { stage }) : undefined;
   // #316: the lists of the workspace the run goes in: the task's, else the one the base field picked
   const runWorkspace = (task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks)) ?? base.choice.workspace;
   // #774: a pick with nothing to run lands on sessão livre; any other pick leaves the mode where the user put it
-  const pickTask = (itemId: string): void => { pick(itemId); if (nothingToRun(state, itemId)) setMode('free'); };
+  // #580: read at the default destination the hook gives the pick, which follows the mode the dialog opened in
+  const pickTask = (itemId: string): void => { pick(itemId); if (nothingToRun(state, itemId, props.initialMode ?? 'stages')) setMode('free'); };
   // confirm starts (#585: was a fixed ⌘↵), switchStartMode flips the mode; both read their binding at each key
   const onKeyDown = (e: KeyboardEvent): void => {
-    const next = progress ? undefined : modeAfterKey(e.nativeEvent, mode, stagesOff !== undefined); // #390: the preparing view has no mode
+    const next = progress || dest.isNone ? undefined : modeAfterKey(e.nativeEvent, mode, stagesOff !== undefined); // #390, #580: neither has a mode
     if (!pressed(e.nativeEvent, 'confirm') && next === undefined) return;
     e.preventDefault();
     if (next === undefined) submit();
     else setMode(next);
+  };
+  // #580: another destination is another stage: the run picks go back to that stage's own, and an entry with nothing to run lands on sessão livre (#774)
+  const choose = (next: Destination): void => {
+    dest.choose(next); run.restore();
+    const entry = effectiveStage(undefined, next, dest.offered);
+    if (entry !== undefined && !hasStagesToRun(entry, state.stages)) setMode('free');
   };
   const label = t(mode === 'stages' ? 'start.mode.stages' : 'start.mode.free');
   return (
@@ -294,16 +332,11 @@ export function StartDialog(props: StartDialogProps) {
         <StartHeader id={id} task={task} isNew={taskId === undefined} isPreparing={progress !== undefined} />
         {progress && task ? <Preparing progress={progress} view={view} mode={mode} agent={run.picks.agent} stage={task.stage} error={error} onClose={close} onRetry={submit} /> : (
           <>
-            {taskId === undefined && (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`${id}-task`}>{t('start.task')}</Label>
-                <TaskPicker id={`${id}-task`} tasks={pickable(state)} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} value={picked} destinations={choices} heldLabel={held && t('start.held', { title: held.title, source: held.source })} onPick={pickTask} onCreate={create} />
-                <p className="text-muted-foreground text-xs leading-4">{t('start.taskHint')}</p>
-              </div>
-            )}
-            <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />
+            {taskId === undefined && <TaskField id={id} state={state} picked={picked} choices={choices} held={held} onPick={pickTask} onCreate={create} />}
+            {dest.isShown && <DestinationField id={id} offered={dest.offered} allowNone={dest.allowsNone} value={dest.destination} onChange={choose} empty={held && t('start.destination.noFlow', { source: held.source })} />}
+            {!dest.isNone && <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />}
             <BaseField id={id} mode={mode} choice={base.choice} workspaces={state.workspaces} onChange={base.setChoice} onWorkspace={base.pickWorkspace} />
-            <RunSection id={id} mode={mode} task={task} state={state} run={run} workspace={runWorkspace} />
+            <RunSection id={id} mode={mode} task={dest.effective} state={state} run={run} workspace={runWorkspace} />
             {error && <p role="alert" className="whitespace-pre-line text-destructive text-sm">{error}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" disabled={isCreating} onClick={close}>{t('base.cancel')}</Button>

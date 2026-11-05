@@ -1,5 +1,5 @@
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useState } from 'react';
 import type { KeyLike } from '../../shortcuts';
 import type { BaseOptions, Task, Stage } from '../../types';
 import { WorkspaceSelect } from '@/components/WorkspaceSelect';
@@ -12,10 +12,9 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type BaseChoice, stackedOn } from '@/hooks/use-start-base';
 import { statusText, t } from '@/i18n';
 import { pressed } from '@/lib/shortcut-bindings';
-import { stagePath } from '@/lib/start-flow';
+import { type Destination, type DestinationFlow, type StartMode, stagePath } from '@/lib/start-flow';
 
-/** executar etapas follows the flow, one prompt per stage; sessão livre opens the agent with no automatic prompt (redesign 11). */
-export type StartMode = 'stages' | 'free';
+export type { StartMode };
 
 /** The mode the switchStartMode key (#585) leaves the dialog in: the other one, or undefined for any other key. While executar etapas is off
  * for the task (#774) the key does nothing on sessão livre, so it never reaches a mode the toggle refuses. */
@@ -176,6 +175,47 @@ export function StagesBox({ task, stages, run }: { task?: Task; stages: Stage[];
       {run}
       <Row label={t('start.next')} value={path && path.next.length > 0 ? path.next.join(' → ') : '—'} />
       <Row label={t('start.stopsAt')} value={stop} />
+    </div>
+  );
+}
+
+// The design's .radio (#580): a 12px ring, the chosen one filled and bordered in the foreground; nothing but foreground and muted
+const RADIO = 'flex items-center gap-2.5 rounded-md border px-2.5 py-[7px] text-left text-[13px] before:size-3 before:flex-none before:rounded-full before:border before:border-muted-foreground aria-checked:border-foreground aria-checked:before:border-4 aria-checked:before:border-foreground';
+const STEP: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
+const isSame = (a: Destination, b: Destination): boolean => (a === 'none' || b === 'none' ? a === b : a.flow === b.flow);
+
+interface DestinationFieldProps { id: string; offered: DestinationFlow[]; allowNone: boolean; value: Destination; empty?: string; onChange(value: Destination): void }
+
+/** Where a task outside the flow goes (#580): one radio per flow with the stage it enters, and sem fluxo unless a source entry is held. A
+ * radiogroup of buttons, as the design draws it: the arrows move the choice and the focus; the confirm key stays the dialog's. */
+export function DestinationField({ id, offered, allowNone, value, empty, onChange }: DestinationFieldProps) {
+  const options: { value: Destination; label: string; hint: string }[] = [
+    ...offered.map((f) => ({ value: { flow: f.flow }, label: t('start.destination.flow', { flow: f.flow }), hint: t('start.destination.enters', { stage: f.entry }) })),
+    ...(allowNone ? [{ value: 'none' as const, label: t('start.destination.none'), hint: t('start.destination.noneHint') }] : []),
+  ];
+  const chosen = Math.max(0, options.findIndex((o) => isSame(o.value, value)));
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
+    const step = STEP[e.key];
+    if (step === undefined) return;
+    e.preventDefault();
+    const next = (chosen + step + options.length) % options.length;
+    onChange(options[next].value);
+    e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <Label id={`${id}-destination`}>{t('start.destination')}</Label>
+      {/* no radio to offer (a held entry no flow enters through): `empty` says why the start is off */}
+      {options.length === 0 && empty !== undefined && <p className="text-muted-foreground text-xs leading-4">{empty}</p>}
+      <div role="radiogroup" aria-labelledby={`${id}-destination`} className="flex flex-col gap-1">
+        {options.map((o, i) => (
+          // biome-ignore lint/a11y/useSemanticElements: the design's radio is a styled button, as the PR list's segments; the group keeps its role for a screen reader
+          <button key={o.label} type="button" role="radio" aria-checked={i === chosen} tabIndex={i === chosen ? 0 : -1} className={RADIO} onClick={() => onChange(o.value)} onKeyDown={onKeyDown}>
+            <span className="flex-1">{o.label}</span>
+            <small className="text-muted-foreground text-xs">{o.hint}</small>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
