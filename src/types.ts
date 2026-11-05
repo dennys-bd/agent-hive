@@ -1961,6 +1961,7 @@ export interface RepoIssue {
   assignees: string[];
   updatedAt: string; // ISO
   pullRequests: ProjectPr[];
+  parent?: number; // #582: the issues row's parent_number, written only by a Project read; absent on an issue no Project lists
 }
 
 /** A page of a repository's issues in one state (#757). */

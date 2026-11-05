@@ -160,7 +160,8 @@ function removalsOf(db: DatabaseSync): Pick<ReadModel, 'setClosingPrs' | 'remove
 function viewsOf(db: DatabaseSync): (source: string, rows: Row[]) => IssueView[] {
   const links = db.prepare('SELECT * FROM issue_pull_requests WHERE source = ? AND issue_node_id IN (SELECT value FROM json_each(?)) ORDER BY number');
   return (source, rows) => {
-    const issues = rows.map(issueOf);
+    // #582: parent_number is the Project read's column, outside IssueRow, so the sync's upserts never bind or compare it
+    const issues = rows.map((row) => ({ ...issueOf(row), parentNumber: row.parent_number === null || row.parent_number === undefined ? null : Number(row.parent_number) }));
     const byIssue = new Map<string, ProjectPr[]>();
     for (const row of links.all(source, JSON.stringify(issues.map((i) => i.nodeId)))) {
       const id = text(row, 'issue_node_id');
