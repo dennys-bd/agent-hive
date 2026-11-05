@@ -4,6 +4,7 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { once } from 'node:events';
 import { closeSync, constants, lstatSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { holdPipe, closePipe } from './home-pipe.js';
 import type { Socket } from 'node:net';
 import { join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
@@ -132,6 +133,8 @@ function ensureLockFile(lock: string): void {
 // In place: the helper holds the lock on this inode, and a rename would swap it for another. O_NOFOLLOW refuses a symlink put at the path
 // since ensureLockFile's check instead of writing through it (#479).
 function writeLockPid(lock: string): void {
+  // Windows has no O_NOFOLLOW (0): the check ensureLockFile made is repeated right before the open, narrowing the window
+  if (constants.O_NOFOLLOW === 0 && !lstatSync(lock).isFile()) throw new Error(`${lock} não é um arquivo comum`);
   const fd = openSync(lock, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW);
   try {
     writeFileSync(fd, `${process.pid}\n`);
@@ -179,6 +182,7 @@ export async function acquireLock(home: string, onLost: (status: string) => void
   const lock = join(home, LOCK_FILE);
   await released.get(home); // this process released the home: free only once that helper exited
   ensureLockFile(lock);
+  if (process.platform === 'win32') return acquireOnPipe(home, lock);
   const child = await spawnHelper(home, lock, onLost);
   try {
     writeLockPid(lock);
@@ -192,12 +196,25 @@ export async function acquireLock(home: string, onLost: (status: string) => void
   (child.stdout as Socket).unref();
 }
 
+// Windows (#627): the pipe is the lock. onLost never fires here: there is no outside helper for anyone to kill.
+async function acquireOnPipe(home: string, lock: string): Promise<void> {
+  await holdPipe(home, () => alreadyRunning(home));
+  try {
+    writeLockPid(lock);
+  } catch (err) {
+    releaseLock(home);
+    throw err;
+  }
+}
+
 /** How long ago hive.lock was last written; infinite without one. */
 export const lockAgeMs = (home: string): number => lockAge(join(home, LOCK_FILE));
 
 /** Lets go of this process's lock on the home: ends the helper's stdin, so cat exits and the kernel drops the lock. hive.lock keeps its pid.
  *  Does nothing for a home this process does not hold (#479). */
 export function releaseLock(home: string): void {
+  const closing = closePipe(home);
+  if (closing !== undefined) released.set(home, closing);
   const child = helpers.get(home);
   if (child === undefined) return;
   helpers.delete(home);
