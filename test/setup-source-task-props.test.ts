@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage } from '../src/ui/i18n.js';
+import { emptyStage, type FlowDraft } from '../src/ui/lib/settings-form.js';
+import type { StageDraft } from '../src/ui/lib/settings-stages.js';
 import {
-  emptyTaskProps, newTaskRule, propDefault, propMode, sourceTaskPropsProblem, type SourceTaskPropsDraft, taskPropsDraft, taskPropsFrom, type TaskRuleDraft, withoutProp, withProp,
+  emptyTaskProps, entryDraft, entryFrom, entryGone, entryLabel, newTaskRule, propDefault, propMode, sourceTaskPropsProblem, type SourceTaskPropsDraft, taskPropsDraft, taskPropsFrom, type TaskRuleDraft, withoutProp, withProp,
 } from '../src/ui/lib/setup-source-task-props.js';
 import type { SourceTaskProps } from '../src/types.js';
 
@@ -50,4 +52,25 @@ test('sourceTaskPropsProblem names, in order: a blank rule, a rule that sets not
   assert.equal(problem({ ...draft, defaults: { workspace: 'gone', auto: true } }), 'source main: escolha um workspace');
   assert.equal(problem(second({ set: { workspace: 'gone' } })), 'source main: a regra 2 aponta para um workspace removido');
   assert.equal(problem({ ...draft, rules: [draft.rules[1]] }), 'source main: escolha o workspace padrão ou crie uma regra que defina workspace');
+});
+
+const stage = (id: string, name: string, flow: string): StageDraft => ({ ...emptyStage(flow, 'claude'), id, name });
+const SCOPE = { flows: [{ id: 'd', name: 'delivery' }, { id: 'x', name: 'discovery' }] as FlowDraft[], stages: [stage('s1', 'Spec', 'd'), stage('s2', 'Build', 'd'), stage('s3', 'Research', 'x')] };
+
+test('entryDraft and entryFrom map flow and stage names to their draft ids and back; a rename travels with the id (#670)', () => {
+  for (const entry of [null, { flow: 'delivery' }, { flow: 'delivery', stage: 'Build' }] as const) assert.deepEqual(entryFrom(entryDraft(entry, SCOPE), SCOPE), entry);
+  assert.deepEqual(entryDraft({ flow: 'delivery', stage: 'Build' }, SCOPE), { flowId: 'd', stageId: 's2' });
+  const renamed = { flows: [{ id: 'd', name: 'shipping' }, SCOPE.flows[1]], stages: SCOPE.stages.map((s) => (s.id === 's2' ? { ...s, name: 'Make' } : s)) };
+  assert.deepEqual(entryFrom({ flowId: 'd', stageId: 's2' }, renamed), { flow: 'shipping', stage: 'Make' });
+});
+
+test('entryGone flags a removed flow, a removed stage and a stage of another flow; a name with no draft is gone too (#670)', () => {
+  assert.deepEqual([null, { flowId: 'd' }, { flowId: 'd', stageId: 's2' }].map((e) => entryGone(e, SCOPE)), [false, false, false]);
+  assert.deepEqual([{ flowId: 'gone' }, { flowId: 'd', stageId: 'gone' }, { flowId: 'd', stageId: 's3' }].map((e) => entryGone(e, SCOPE)), [true, true, true]);
+  assert.equal(entryGone(entryDraft({ flow: 'nope' }, SCOPE), SCOPE), true);
+});
+
+test('entryLabel reads outside the flow, the flow, or flow · stage (#670)', () => {
+  setLanguage('en');
+  assert.deepEqual([entryLabel(null, SCOPE), entryLabel({ flowId: 'd' }, SCOPE), entryLabel({ flowId: 'd', stageId: 's2' }, SCOPE)], ['outside the flow', 'delivery', 'delivery · Build']);
 });

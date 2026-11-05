@@ -1,7 +1,8 @@
 // A source row's task properties in the settings form (#688): the defaults and the rules, each property's derived mode, what a new rule sets and
 // the checks. Out of settings-form.ts, which it would push toward 400 lines. Pure: no DOM, so node:test covers it.
-import { TASK_PROPS, type RuleOp, type SourceTaskProps, type TaskProp, type TaskProps } from '../../types.js';
+import { TASK_PROPS, type RuleOp, type SourceTaskProps, type TaskEntry, type TaskProp, type TaskProps } from '../../types.js';
 import { type MessageKey, t } from '../i18n.js';
+import type { SettingsDraft } from './settings-form.js';
 
 /** One rule block (#688); id is its React key, never sent. */
 export interface TaskRuleDraft { id: string; field: string; op: RuleOp; value: string; set: Partial<TaskProps> }
@@ -74,4 +75,35 @@ export function sourceTaskPropsProblem(source: string, draft: SourceTaskPropsDra
   if (gone > 0) return t('settings.error.workspaceRuleGone', { source, n: gone });
   const placed = defaults.workspace !== '' || propMode(draft, 'workspace') !== 'fixed';
   return placed ? undefined : t('settings.error.taskPropsNoWorkspace', { source });
+}
+
+/** The entry as the form edits it (#670): flow and stage by their draft ids, so a rename in Settings needs no rewrite (as #861 does for stages);
+ * null = outside the flow. An id no draft has is a removed flow or stage: entryGone. */
+export type EntryDraft = { flowId: string; stageId?: string } | null;
+/** The flow and stage drafts an entry resolves against. */
+export type FlowScope = Pick<SettingsDraft, 'flows' | 'stages'>;
+
+/** A saved entry as its draft; a name no draft has resolves to '' and entryGone flags it, so a bad value is shown, never changed. */
+export function entryDraft(entry: TaskEntry, { flows, stages }: FlowScope): EntryDraft {
+  if (entry === null) return null;
+  const flowId = flows.find((f) => f.name.trim() === entry.flow)?.id ?? '';
+  if (entry.stage === undefined) return { flowId };
+  return { flowId, stageId: stages.find((s) => s.flow === flowId && s.name.trim() === entry.stage)?.id ?? '' };
+}
+
+/** The entry toSettingsBody sends: the drafts' current names; validateSettings refused a gone one first. */
+export function entryFrom(entry: EntryDraft, { flows, stages }: FlowScope): TaskEntry {
+  if (entry === null) return null;
+  const flow = flows.find((f) => f.id === entry.flowId)?.name.trim() ?? '';
+  return entry.stageId === undefined ? { flow } : { flow, stage: stages.find((s) => s.id === entry.stageId)?.name.trim() ?? '' };
+}
+
+export const entryGone = (entry: EntryDraft, { flows, stages }: FlowScope): boolean =>
+  entry !== null && (!flows.some((f) => f.id === entry.flowId) || (entry.stageId !== undefined && !stages.some((s) => s.id === entry.stageId && s.flow === entry.flowId)));
+
+/** What the trigger, a rule's chip and the sources summary show (#670): outside the flow, `<flow>` or `<flow> · <stage>`. */
+export function entryLabel(entry: EntryDraft, scope: FlowScope): string {
+  if (entry === null) return t('start.destination.none');
+  const named = entryFrom(entry, scope);
+  return named === null || named.stage === undefined ? (named?.flow ?? '') : `${named.flow} · ${named.stage}`;
 }
