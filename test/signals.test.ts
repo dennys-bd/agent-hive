@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { behaviourOf, clamped, effectOf, isOrdered, mayContinue, mayResume, openingSignal } from '../src/signals.js';
+import { behaviourOf, clamped, effectOf, isOrdered, isRefused, mayContinue, mayResume, openingSignal, patchedSignals } from '../src/signals.js';
 import { SIGNALS_DEFAULTS, type NewTasks, type SignalBehaviour, type SignalSettings } from '../src/types.js';
 
 const STRICT: SignalBehaviour = { newTasks: 'never', started: 'stay', workerless: false };
@@ -72,4 +72,22 @@ test('effectOf names what a row holds back, in the footer\'s order: tree as newT
   assert.deepEqual(effectOf(SIGNALS_DEFAULTS.red), ['noNewTasks', 'noMoveOn']);
   assert.deepEqual(effectOf({ newTasks: 'always', started: 'continueOnly', workerless: false }), ['noResume', 'noWorkerless']);
   assert.deepEqual(effectOf(behaviourOf('green', SIGNALS_DEFAULTS)), []);
+});
+
+test('patchedSignals patches one row and clamps each stricter row below it; green keeps only its newTasks (#573, moved from SignalCard)', () => {
+  assert.deepEqual(patchedSignals(SIGNALS_DEFAULTS, 'green', { newTasks: 'never' }), {
+    ...SIGNALS_DEFAULTS, green: { newTasks: 'never' }, yellow: { ...SIGNALS_DEFAULTS.yellow, newTasks: 'never' },
+  });
+  assert.deepEqual(patchedSignals(SIGNALS_DEFAULTS, 'yellow', { workerless: false }), {
+    ...SIGNALS_DEFAULTS, yellow: { ...SIGNALS_DEFAULTS.yellow, workerless: false }, red: { ...SIGNALS_DEFAULTS.red, workerless: false },
+  });
+  assert.deepEqual(patchedSignals(SIGNALS_DEFAULTS, 'green', { started: 'stay' }).green, { newTasks: 'always' }, 'green\'s fixed rows never enter the table');
+  assert.equal(patchedSignals(SIGNALS_DEFAULTS, 'red', { started: 'continueOnly' }).onOpen, SIGNALS_DEFAULTS.onOpen);
+});
+
+test('isRefused: only a patch that breaks green ≥ yellow ≥ red against the signal above it (#573, moved from SignalCard)', () => {
+  assert.equal(isRefused(SIGNALS_DEFAULTS, 'red', { newTasks: 'always' }), true, 'red looser than yellow');
+  assert.equal(isRefused(SIGNALS_DEFAULTS, 'red', { newTasks: 'tree' }), false);
+  assert.equal(isRefused({ ...SIGNALS_DEFAULTS, green: { newTasks: 'tree' } }, 'yellow', { newTasks: 'always' }), true, 'yellow looser than green');
+  assert.equal(isRefused(SIGNALS_DEFAULTS, 'yellow', { workerless: false }), false, 'the rows below are clamped, never refused');
 });

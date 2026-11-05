@@ -31,6 +31,21 @@ export function clamped(loose: SignalBehaviour, strict: SignalBehaviour): Signal
   };
 }
 
+/** One signal's row patched (#727, #32), each stricter row clamped down to the one above it, so a looser edit keeps green ≥ yellow ≥ red.
+ * Green takes only newTasks: its other rows are fixed. Shared by both editors (Settings' card and the tasks sidebar, #573), so neither can
+ * send a table parseConfig would refuse. */
+export function patchedSignals(signals: SignalSettings, signal: Signal, patch: Partial<SignalBehaviour>): SignalSettings {
+  const green = signal === 'green' ? { newTasks: patch.newTasks ?? signals.green.newTasks } : signals.green;
+  const yellow = signal === 'yellow' ? { ...signals.yellow, ...patch } : clamped(behaviourOf('green', { ...signals, green }), signals.yellow);
+  const red = signal === 'red' ? { ...signals.red, ...patch } : clamped(yellow, signals.red);
+  return { ...signals, green, yellow, red };
+}
+
+/** A value the order would refuse: its control is disabled. Only an edit can break the order against the signal above it; the ones below
+ * are clamped. */
+export const isRefused = (signals: SignalSettings, signal: Signal, patch: Partial<SignalBehaviour>): boolean =>
+  !isOrdered(patchedSignals(signals, signal, patch));
+
 /** Resume: the fill gives a free worker to a started task that has none. */
 export const mayResume = (behaviour: SignalBehaviour): boolean => behaviour.started === 'resumeAndContinue';
 /** Continue: a session that ends its stage goes on in place into the next one. */
