@@ -1803,7 +1803,6 @@ const en = {
   'project.col.resize': 'resize {column}', // #756, addendum 2: a header's drag handle
   'project.footer.count': '{x} of {n}',
   'project.footer.hint': 'cells with ⌄ are editable · drag the dividers to resize · changing the status moves the task to the stage tied to it', // #60, #583: ⇧↵ still opens the issue, it only left the hint
-  'project.action.goto': 'flow ›',
   'project.error.quota': 'GitHub quota is low; try again after {time}',
   'project.status.head': 'status', // #756: the status select's menu
   'project.status.stage': 'stage in the flow',
@@ -1822,6 +1821,8 @@ const en = {
   'project.columns.note': "fields come from the project. their order is the project's.",
   'project.columns.origin.project': 'project', 'project.columns.origin.hive': 'hive',
   'project.noFlow': 'no flow', // #583: the hive's stageless group and its stage menu's last entry
+  'project.task.inFlow': '{flow} · {stage} ›', // #583: the task column (handoff §5)
+  'project.task.outside': 'no flow ›',
   'repos.title': 'repositories', // #757: the flow sidebar's repositories section
   'repos.prs': 'PRs',
   'repos.pinned': 'pinned',
@@ -4845,7 +4846,6 @@ const pt: Record<MessageKey, string> = {
   'project.col.resize': 'redimensionar {column}',
   'project.footer.count': '{x} de {n}',
   'project.footer.hint': 'células com ⌄ são editáveis · arraste as divisões para redimensionar · mudar o status move a tarefa para a etapa ligada a ele',
-  'project.action.goto': 'fluxo ›',
   'project.error.quota': 'quota do GitHub baixa; tente depois de {time}',
   'project.status.head': 'status',
   'project.status.stage': 'etapa no fluxo',
@@ -4864,6 +4864,8 @@ const pt: Record<MessageKey, string> = {
   'project.columns.note': 'os campos vêm do project. a ordem segue a do project.',
   'project.columns.origin.project': 'project', 'project.columns.origin.hive': 'hive',
   'project.noFlow': 'sem fluxo',
+  'project.task.inFlow': '{flow} · {stage} ›',
+  'project.task.outside': 'sem fluxo ›',
   'repos.title': 'repositórios',
   'repos.prs': 'PRs',
   'repos.pinned': 'fixados',

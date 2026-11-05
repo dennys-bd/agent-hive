@@ -3,8 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { resetViewState } from '@/lib/view-state';
-import type { BlockerRef, ItemField, ProjectItem, ProjectView } from '../../src/types';
-import { ALL, fetchMock, jsonRes, numbers, renderTable, resetProjectTest, rowOf, VIEW } from './project-harness';
+import type { BlockerRef, ItemField, ProjectItem, ProjectView, Task } from '../../src/types';
+import { ALL, fetchMock, jsonRes, numbers, renderTable, resetProjectTest, rowOf, TASK, VIEW } from './project-harness';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
@@ -132,4 +132,17 @@ test('a refusal shows its blockers copy inside the popover, no toast, and the ro
   await user.keyboard('{Escape}');
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'bloqueada por' })).not.toBeInTheDocument());
   expect(onOpenIssue).not.toHaveBeenCalled();
+});
+
+test('the task column reads {flow} · {stage} › for a task in a flow and sem fluxo › for one outside, the whole label in its title; a click goes to the task (#583)', async () => {
+  const user = userEvent.setup();
+  const onGoTo = vi.fn();
+  const outside: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 3', body: '', url: '', origin: 'roadmap:PVTI_3' }, boardColumn: '', auto: false, created: true };
+  renderTable({ onGoTo, tasks: [TASK, outside] });
+  await screen.findByText('3 de 3');
+  const inFlow = within(rowOf('#12')).getByRole('button', { name: 'main · dev ›' });
+  expect(inFlow).toHaveAttribute('title', 'main · dev ›');
+  await user.click(within(rowOf('#3')).getByRole('button', { name: 'sem fluxo ›' }));
+  await user.click(inFlow);
+  expect(onGoTo.mock.calls).toEqual([['local:1'], ['roadmap:PVTI_12']]);
 });

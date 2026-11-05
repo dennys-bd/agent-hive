@@ -2,8 +2,9 @@ import type { KeyboardEvent, MouseEvent } from 'react';
 import { prsOf } from '../../activities';
 import { isReadOnly } from '../../field-values';
 import { prNumber } from '../../pull-requests';
+import { flowOf } from '../../flows';
 import { resolveWorkspace } from '../../tasks';
-import type { ItemField, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, State, Task } from '../../types';
+import type { Flow, ItemField, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, State, Task } from '../../types';
 import type { ReactNode } from 'react';
 import { BlockedByCell } from '@/components/BlockedByCell';
 import { FieldEditor } from '@/components/FieldEditor';
@@ -100,6 +101,19 @@ function FieldDisplay({ field, value }: { field: ProjectField; value?: string | 
   return <span className="truncate" title={String(value)}>{value}</span>;
 }
 
+// The task column (#583 decision 8, handoff §5): the row's task as {flow} · {stage} ›, the flow the one whose stages hold its stage (flowOf),
+// or sem fluxo › outside the flow, cut with … and whole in its title. A click goes to the task
+function TaskCell({ task, flows, onGoTo }: { task: Task; flows: readonly Flow[]; onGoTo(taskId: string): void }) {
+  const { stage } = task;
+  const flow = flowOf(flows, stage)?.name;
+  const label = flow === undefined || stage === undefined ? t('project.task.outside') : t('project.task.inFlow', { flow, stage });
+  return (
+    <Button type="button" size="xs" variant="outline" title={label} className="max-w-full" onClick={() => onGoTo(task.item.itemId)}>
+      <span className="min-w-0 truncate">{label}</span>
+    </Button>
+  );
+}
+
 export interface ProjectRowProps {
   item: ProjectItem; task?: Task; visible: ProjectColumn[]; columns: string; state: State; onGoTo(taskId: string): void;
   source: string; statuses: ProjectView['statuses']; onRow(row: ProjectItem): void; // #756, #686: a cell's write answers its re-read row, which replaces this one
@@ -161,10 +175,10 @@ export function ProjectRow(props: ProjectRowProps) {
         const { className, cell } = cellOf(column, props);
         return <td key={column.key} className={className}>{cell}</td>;
       })}
-      {/* fluxo › to the issue's task, fluxo… for an issue kept out; one passing the filter in an uncited column has none: its way in is the Status (#756) */}
-      <td className="flex justify-end">
+      {/* #583 decision 8: the task column to the row's task; fluxo… for an issue kept out, until + tarefa replaces it */}
+      <td className="flex min-w-0 justify-end">
         {task
-          ? <Button type="button" size="xs" variant="outline" onClick={() => onGoTo(task.item.itemId)}>{t('project.action.goto')}</Button>
+          ? <TaskCell task={task} flows={state.flows} onGoTo={onGoTo} />
           : item.out && <ProjectCreatePopover item={item} source={source} state={state} onCreated={onGoTo} />}
       </td>
     </tr>

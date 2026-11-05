@@ -60,14 +60,14 @@ test('the search matches the title or #number, case-insensitive, and the footer 
   expect(numbers()).toEqual(['#3']);
 });
 
-test('a click on any row opens its issue page; fluxo › still goes to the task; ⇧↵ on a focused row opens the issue on GitHub (#756, #757)', async () => {
+test('a click on any row opens its issue page; the task column still goes to the task; ⇧↵ on a focused row opens the issue on GitHub (#756, #757)', async () => {
   const user = userEvent.setup();
   const onGoTo = vi.fn();
   const onOpenIssue = vi.fn<(item: ProjectItem) => void>();
   const open = vi.spyOn(window, 'open').mockReturnValue(null);
   renderTable({ onGoTo, onOpenIssue });
   await screen.findByText('3 de 3');
-  await user.click(within(rowOf('#12')).getByRole('button', { name: 'fluxo ›' }));
+  await user.click(within(rowOf('#12')).getByRole('button', { name: 'main · dev ›' }));
   expect(onGoTo.mock.calls).toEqual([['roadmap:PVTI_12']]);
   await user.click(within(rowOf('#12')).getByText('Issue 12'));
   await user.click(within(rowOf('#40')).getByText('Issue 40'));
@@ -117,14 +117,14 @@ test('fluxo… shows on an issue kept out that no task came from; confirming pos
   }));
 });
 
-test('an issue a Hive task was created from counts in the flow and shows fluxo › to that task, not fluxo… (#756)', async () => {
+test('an issue a Hive task was created from counts in the flow and shows its task\'s flow and stage, not fluxo… (#756, #583)', async () => {
   const user = userEvent.setup();
   const onGoTo = vi.fn();
   const copy: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 3', body: '', url: '', origin: 'roadmap:PVTI_3' }, stage: 'dev', boardColumn: '', auto: false, created: true };
   renderTable({ onGoTo, tasks: [TASK, copy] });
   expect(await screen.findByText('3 itens · 2 tarefas')).toBeInTheDocument();
   expect(within(rowOf('#3')).queryByRole('button', { name: 'fluxo…' })).not.toBeInTheDocument();
-  await user.click(within(rowOf('#3')).getByRole('button', { name: 'fluxo ›' }));
+  await user.click(within(rowOf('#3')).getByRole('button', { name: 'main · dev ›' }));
   expect(onGoTo).toHaveBeenCalledWith('local:1');
 });
 

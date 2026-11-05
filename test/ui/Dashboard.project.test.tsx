@@ -63,14 +63,14 @@ test('a source row opens its table with no tabs; hive opens its own center; the 
   expect(automation().getByRole('button', { name: /^main/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('fluxo › in the source table shows the flowchart and selects the task (#756, #571)', async () => {
+test('the task column in the source table shows the flowchart and selects the task (#756, #571, #583)', async () => {
   const user = userEvent.setup();
   const onSelect = vi.fn();
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
   showFlow();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
   await main().findByText('1 itens · 1 tarefas');
-  await user.click(main().getByRole('button', { name: 'fluxo ›' }));
+  await user.click(main().getByRole('button', { name: 'main · dev ›' }));
   expect(onSelect).toHaveBeenCalledWith({ taskId: 'roadmap:PVTI_1' });
   expect(bar().getByText('todas as sources')).toBeInTheDocument();
 });
