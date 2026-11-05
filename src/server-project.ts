@@ -1,8 +1,9 @@
 import type { Express, Request, Response } from 'express';
 import { checkValue, ItemNotOnSourceError, PartialWriteError, STATUS } from './field-values.js';
+import { hiveProject } from './hive-project.js';
 import type { Logger } from './log.js';
 import { inBackoff } from './polling.js';
-import { entryStage, itemSource } from './tasks.js';
+import { entryStage, HIVE_SOURCE, itemSource } from './tasks.js';
 import type { FieldWrite, HiveEvent, ProjectView, Source, Stage, State } from './types.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -81,12 +82,15 @@ async function failed(deps: ProjectRouteDeps, res: Response, source: string, ite
 }
 
 /** GET /sources/:name/project (#756): the source's native view: from the read model, or with `?fresh=1` read in full first, then the view's
- * repositories' options refreshed (#282). A GitHub read is refused inside the source's quota backoff; a failed read is a 502 with the source's words. */
+ * repositories' options refreshed (#282). A GitHub read is refused inside the source's quota backoff; a failed read is a 502 with the source's words.
+ * `hive` (#582) answers the Hive's own tasks from the state. */
 function registerViewRoute(app: Express, deps: ProjectRouteDeps): void {
   app.get('/sources/:name/project', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
     if (!current) return;
     const name = req.params.name as string;
+    // #582: the hive is no Source in the runtime and reads nothing remote: its view is the state's, with no backoff and no fresh read
+    if (name === HIVE_SOURCE) return void res.json(hiveProject(current.state));
     const source = current.runtime.sources.get(name);
     if (!source?.project) return void res.status(HTTP_NOT_FOUND).json({ error: NO_VIEW_MESSAGE });
     const isFresh = req.query.fresh === '1';
