@@ -200,6 +200,9 @@ export type BeforeRemove = (path: string, present: boolean) => Promise<void>;
 /** What a clear does with a branch `branch -d` would refuse (#267): refuse, as delete activity does, or set it aside, as the start dialog's discard does. */
 export type Unmerged = 'refuse' | 'setAside';
 
+/** cleanWorktree's choices: what an unmerged branch gets (#267) and the workspace's nestedRepos, whose worktrees in this one go first (#653). */
+export interface CleanOptions { unmerged?: Unmerged; nested?: readonly string[] }
+
 /**
  * The delete activity stage's action, and the first try of the ⋯ menu's delete activity (#182): removes the task's worktree and its local
  * branch, both WITHOUT force (unlike removeWorktree, the forced removal). All or nothing: what git would refuse is checked first (changes
@@ -208,13 +211,13 @@ export type Unmerged = 'refuse' | 'setAside';
  * not list and a branch it does not know count as done; a listed path whose directory is gone is pruned. The path comes from the slug
  * alone (the activity's worktree is a SessionStart cwd any local process can post); the branch is the one git lists on that path, else
  * the activity's branch only when it is the name the Hive's template renders for this task, else nothing. The remote branch is never touched.
- * `beforeRemove` (#654) runs between the checks and the removal; its rejection removes nothing. `unmerged: 'setAside'` (#267) keeps an
- * unmerged branch under setAside's name instead of refusing. `nested` (#653): the workspace's nestedRepos, whose worktrees in this one go first
+ * `beforeRemove` (#654) runs between the checks and the removal; its rejection removes nothing. `options.unmerged: 'setAside'` (#267) keeps an
+ * unmerged branch under setAside's name instead of refusing. `options.nested` (#653): the workspace's nestedRepos, whose worktrees in this one go first
  * (removeNested); [] removes none.
  */
 export async function cleanWorktree(
   repo: string, activity: Pick<Activity, 'slug' | 'branch'>, branch: string, exec: Exec = execFileAsync, beforeRemove?: BeforeRemove,
-  unmerged: Unmerged = 'refuse', nested: readonly string[] = [],
+  { unmerged = 'refuse', nested = [] }: CleanOptions = {},
 ): Promise<void> {
   const path = worktreePath(repo, slugOfWork(activity));
   const nestedOf = { path: repo, nestedRepos: nested };

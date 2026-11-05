@@ -153,7 +153,7 @@ function removeListed(deps: WorktreeRouteDeps, workspace: Workspace, slug: strin
   const target = { id: orphanTeardownRunId(workspace.name, slug), label: slug, workspace, force: force !== undefined };
   return removeInRun(deps, target, (before) => (force
     ? removeWorktree(workspace.path, { slug }, branch, force.promptsDir, deps.exec, workspace.nestedRepos)
-    : cleanWorktree(workspace.path, { slug }, branch, deps.exec, before, 'refuse', workspace.nestedRepos))); // #653
+    : cleanWorktree(workspace.path, { slug }, branch, deps.exec, before, { nested: workspace.nestedRepos }))); // #653
 }
 
 async function removeOrphan(req: Request, res: Response, deps: WorktreeRouteDeps, name: string, slug: string): Promise<void> {

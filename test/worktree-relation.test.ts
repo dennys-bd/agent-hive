@@ -142,10 +142,10 @@ test('cleanWorktree with setAside keeps an unmerged branch as <branch>-old-<sha7
   const { repo, root } = await repoWithOrigin(t);
   const old = await unrelatedBranch(repo);
   const kept = `${BRANCH}-old-${old.slice(0, 7)}`;
-  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'setAside');
+  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, { unmerged: 'setAside' });
   assert.deepEqual([await git(repo, 'branch', '--list', BRANCH), await git(repo, 'rev-parse', kept)], ['', old]);
   await git(repo, 'branch', BRANCH, root); // merged into HEAD: delete activity's own rule deletes it
-  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'setAside');
+  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, { unmerged: 'setAside' });
   assert.equal(await git(repo, 'branch', '--list', `${BRANCH}*`), kept, 'deleted, and nothing new was kept');
 });
 
