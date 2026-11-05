@@ -55,6 +55,15 @@ export function groupItems(items: ProjectItem[], option: GroupOption, view: Pick
   return empty.length === 0 ? groups : [...groups, { key: NO_VALUE, label: t('project.group.empty', { field: option.label }), items: empty }];
 }
 
+// The hive groups by status alone; the option's label would only name the empty group, which hiveGroups renames
+const HIVE_STATUS: GroupOption = { key: 'status', label: '' };
+
+/** The hive's groups (#583 decision 7): its statuses are the flows' stages in the config's order, so a group names its stage once, with no
+ * → stage; the tasks outside the flow close the list as sem fluxo, not sem status. */
+export function hiveGroups(items: ProjectItem[], view: Pick<ProjectView, 'statuses' | 'fields'>): ProjectGroup[] {
+  return groupItems(items, HIVE_STATUS, view).map((g) => ({ key: g.key, label: g.key === NO_VALUE ? t('project.noFlow') : g.label, items: g.items }));
+}
+
 /** Collapsed with nothing saved (handoff 01b): the Status option named Done, in any case. */
 export const defaultCollapsed = (view: Pick<ProjectView, 'statuses'> | undefined): string[] =>
   (view?.statuses ?? []).filter((s) => s.name.toLowerCase() === 'done').map((s) => s.name);

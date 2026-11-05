@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 test('the table reads the source\'s view on opening: issue first, status, labels and resp. at their project position among the field columns, PR then the action last, each value by its kind, the counts and the footer (#756)', async () => {
   renderTable();
-  expect(await screen.findByText('3 issues · 1 no fluxo')).toBeInTheDocument();
+  expect(await screen.findByText('3 itens · 1 tarefas')).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith('/sources/roadmap/project');
   expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'Sprint', 'PR', '']);
   const twelve = within(rowOf('#12'));
@@ -28,7 +28,7 @@ test('the table reads the source\'s view on opening: issue first, status, labels
   expect(within(rowOf('#40')).getByText('✓')).toHaveClass('text-working');
   expect(twelve.getByText('—')).toBeInTheDocument(); // a task row shows the task's own PRs: none here
   expect(screen.getByText('3 de 3')).toBeInTheDocument();
-  expect(screen.getByText('células com ⌄ são editáveis · arraste as divisões para redimensionar · ⇧↵ abre a issue')).toBeInTheDocument();
+  expect(screen.getByText('células com ⌄ são editáveis · arraste as divisões para redimensionar · mudar o status move a tarefa para a etapa ligada a ele')).toBeInTheDocument();
 });
 
 test('a header sorts by its column and again reverses; the project\'s own order is the default (#756)', async () => {
@@ -60,14 +60,14 @@ test('the search matches the title or #number, case-insensitive, and the footer 
   expect(numbers()).toEqual(['#3']);
 });
 
-test('a click on any row opens its issue page; fluxo › still goes to the task; ⇧↵ on a focused row opens the issue on GitHub (#756, #757)', async () => {
+test('a click on any row opens its issue page; the task column still goes to the task; ⇧↵ on a focused row opens the issue on GitHub (#756, #757)', async () => {
   const user = userEvent.setup();
   const onGoTo = vi.fn();
   const onOpenIssue = vi.fn<(item: ProjectItem) => void>();
   const open = vi.spyOn(window, 'open').mockReturnValue(null);
   renderTable({ onGoTo, onOpenIssue });
   await screen.findByText('3 de 3');
-  await user.click(within(rowOf('#12')).getByRole('button', { name: 'fluxo ›' }));
+  await user.click(within(rowOf('#12')).getByRole('button', { name: 'main · dev ›' }));
   expect(onGoTo.mock.calls).toEqual([['roadmap:PVTI_12']]);
   await user.click(within(rowOf('#12')).getByText('Issue 12'));
   await user.click(within(rowOf('#40')).getByText('Issue 40'));
@@ -85,7 +85,7 @@ test('lendo… while the view reads, and the subbar names the cap when the read 
   renderTable();
   expect(screen.getByText('lendo…')).toBeInTheDocument();
   settle(jsonRes({ ...VIEW, truncated: true }));
-  expect(await screen.findByText('3 issues · 1 no fluxo · primeiros 3')).toBeInTheDocument();
+  expect(await screen.findByText('3 itens · 1 tarefas · primeiros 3')).toBeInTheDocument();
 });
 
 test('a refused read shows its reason in place of the table and as a toast; inside the quota backoff it names the reset time (#756)', async () => {
@@ -100,70 +100,53 @@ test('a refused read shows its reason in place of the table and as a toast; insi
   expect(await screen.findByText('quota do GitHub baixa; tente depois de 14:05')).toBeInTheDocument();
 });
 
-test('fluxo… shows on an issue kept out that no task came from; confirming posts /tasks with its title, body, url, origin, auto off and the first stage, then goes to the new task (#756)', async () => {
-  const user = userEvent.setup();
-  const onGoTo = vi.fn();
-  fetchMock.mockImplementation(async (input) => (String(input).endsWith('/project') ? jsonRes(VIEW) : jsonRes({ id: 'HIVE-1', itemId: 'local:1' }, 201)));
-  renderTable({ onGoTo });
-  await screen.findByText('3 de 3');
-  expect(within(rowOf('#40')).queryByRole('button', { name: 'fluxo…' })).not.toBeInTheDocument(); // passes the filter: its way in is the Status
-  await user.click(within(rowOf('#3')).getByRole('button', { name: 'fluxo…' }));
-  expect(screen.getByText('criar tarefa no fluxo')).toBeInTheDocument();
-  expect(screen.getByText('sem sync')).toHaveClass('text-foreground');
-  await user.click(screen.getByRole('button', { name: 'criar tarefa' }));
-  await waitFor(() => expect(onGoTo).toHaveBeenCalledWith('local:1'));
-  expect(fetchMock).toHaveBeenCalledWith('/tasks', expect.objectContaining({
-    method: 'POST', body: JSON.stringify({ title: 'Issue 3', body: 'body 3', stage: 'dev', auto: false, url: 'https://github.com/acme/r/issues/3', source: 'hive', origin: 'roadmap:PVTI_3' }),
-  }));
-});
-
-test('an issue a Hive task was created from counts in the flow and shows fluxo › to that task, not fluxo… (#756)', async () => {
+test('an issue a Hive task was created from counts in the flow and shows its task\'s flow and stage, not + tarefa (#756, #583)', async () => {
   const user = userEvent.setup();
   const onGoTo = vi.fn();
   const copy: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 3', body: '', url: '', origin: 'roadmap:PVTI_3' }, stage: 'dev', boardColumn: '', auto: false, created: true };
   renderTable({ onGoTo, tasks: [TASK, copy] });
-  expect(await screen.findByText('3 issues · 2 no fluxo')).toBeInTheDocument();
-  expect(within(rowOf('#3')).queryByRole('button', { name: 'fluxo…' })).not.toBeInTheDocument();
-  await user.click(within(rowOf('#3')).getByRole('button', { name: 'fluxo ›' }));
+  expect(await screen.findByText('3 itens · 2 tarefas')).toBeInTheDocument();
+  expect(within(rowOf('#3')).queryByRole('button', { name: '+ tarefa' })).not.toBeInTheDocument();
+  await user.click(within(rowOf('#3')).getByRole('button', { name: 'main · dev ›' }));
   expect(onGoTo).toHaveBeenCalledWith('local:1');
 });
 
-test('with nothing saved every column shows but the iteration and number fields, at the handoff\'s widths, under a header that stays as the body scrolls, in a box that fills the pane with no visible scrollbar (#756, #59)', async () => {
+test('with nothing saved: status, labels, the progress field and PR, at the handoff\'s widths with the 150px task column, under a header that stays as the body scrolls, in a box that fills the pane with no visible scrollbar (#756, #59, #583)', async () => {
   resetViewState();
   renderTable();
-  await screen.findByText('3 issues · 1 no fluxo');
-  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
+  await screen.findByText('3 itens · 1 tarefas');
+  expect(heads()).toEqual(['issue', 'status', 'labels', 'Progress', 'PR', '']);
   const head = screen.getAllByRole('row')[0];
-  expect(head.style.gridTemplateColumns).toBe('minmax(160px,1fr) 128px 64px 136px 56px 72px 56px 112px 104px 76px'); // Priority 64, date 72, progress 56, blocked by 112
+  expect(head.style.gridTemplateColumns).toBe('minmax(160px,1fr) 128px 136px 56px 104px 150px');
   expect(head.closest('thead')).toHaveClass('sticky');
   const scroller = screen.getByRole('table').parentElement?.parentElement;
   expect(scroller).toHaveClass('[scrollbar-width:none]');
   expect(scroller?.parentElement).toHaveClass('flex-1');
 });
 
-test('the columns menu lists every hideable column in project order with its origin, never issue nor action; a toggle shows or hides it and is saved for the source (#756)', async () => {
+test('the columns menu lists every hideable column in project order with its origin, never issue nor action; a toggle shows or hides it and is saved for the source (#756, #583)', async () => {
   const user = userEvent.setup();
   resetViewState();
   const { unmount } = renderTable();
-  await screen.findByText('3 issues · 1 no fluxo');
+  await screen.findByText('3 itens · 1 tarefas');
   await openMenu(user, /^colunas/);
   const items = screen.getAllByRole('menuitemcheckbox');
   expect(items.map((i) => i.textContent)).toEqual([
     'statusproject', 'Priorityproject', 'labelsproject', 'resp.project', 'Estimateproject', 'Targetproject', 'Progressproject', 'Sprintproject',
     'criadaproject', 'atualizadaproject', 'fechadaproject', 'bloqueada porproject', 'PRhive',
   ]);
-  expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'true', 'true', 'true', 'false', 'true', 'true', 'false', 'false', 'false', 'false', 'true', 'true']);
+  expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'false', 'true', 'false', 'false', 'false', 'true', 'false', 'false', 'false', 'false', 'false', 'true']);
   expect(screen.getByText('os campos vêm do project. a ordem segue a do project.')).toBeInTheDocument();
   await user.click(screen.getByRole('menuitemcheckbox', { name: /^Priority/ }));
   await user.click(screen.getByRole('menuitemcheckbox', { name: /^Estimate/ }));
   expect(screen.getByRole('menuitemcheckbox', { name: /^Estimate/ })).toHaveAttribute('aria-checked', 'true'); // the menu stays open
   await user.keyboard('{Escape}');
-  expect(heads()).toEqual(['issue', 'status', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
-  expect(readView('projectViews')).toEqual({ roadmap: expect.objectContaining({ columns: ['status', 'labels', 'assignee', 'field:Estimate', 'field:Target', 'field:Progress', 'blockedBy', 'pr'] }) });
+  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'Estimate', 'Progress', 'PR', '']);
+  expect(readView('projectViews')).toEqual({ roadmap: expect.objectContaining({ columns: ['status', 'field:Priority', 'labels', 'field:Estimate', 'field:Progress', 'pr'] }) });
   unmount();
   renderTable();
-  await screen.findByText('3 issues · 1 no fluxo');
-  expect(heads()).toEqual(['issue', 'status', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
+  await screen.findByText('3 itens · 1 tarefas');
+  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'Estimate', 'Progress', 'PR', '']);
 });
 
 // Blocked has no issue; #7 has no Status, two assignees and P0; #5 is a second Todo
@@ -182,7 +165,7 @@ test('with nothing saved the rows group by status in Status order with counts an
   fetchMock.mockImplementation(answerGrouped);
   resetViewState();
   renderTable();
-  await screen.findByText('5 issues · 1 no fluxo');
+  await screen.findByText('5 itens · 1 tarefas');
   expect(groups()).toEqual(['Todo2sem etapa', 'Ready1→ dev', 'Done1sem etapa', 'sem status1']);
   expect(groupRows()[0]).toHaveClass('sticky', 'z-[5]', 'bg-card'); // opaque and above the overlay: a divider stops at it
   expect(group(/^Done/)).toHaveAttribute('aria-expanded', 'false');
@@ -257,8 +240,9 @@ test('a field cell writes through its editor and the answer\'s row replaces its 
   expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/sources/roadmap/project')).toHaveLength(1);
 });
 
-test('the footer explains the table in English too: ⌄ cells edit, the dividers resize, ⇧↵ opens the issue (#60)', async () => {
+test('the footer explains the table in English too: ⌄ cells edit, the dividers resize, a status change moves the task (#60, #583)', async () => {
   setLanguage('en');
   renderTable();
-  expect(await screen.findByText('cells with ⌄ are editable · drag the dividers to resize · ⇧↵ opens the issue')).toBeInTheDocument();
+  expect(await screen.findByText('cells with ⌄ are editable · drag the dividers to resize · changing the status moves the task to the stage tied to it')).toBeInTheDocument();
+  expect(screen.getByText('3 items · 1 tasks')).toBeInTheDocument();
 });

@@ -45,37 +45,39 @@ const main = () => within(screen.getByRole('main'));
 const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 const automation = () => within(screen.getByRole('region', { name: 'Tarefas' }));
 
-test('a source row opens its table with no tabs; hive opens its own center; the flow row shows the flowchart (#571, #572)', async () => {
+test('a source row opens its table with no tabs; hive opens the hive table; the flow row shows the flowchart (#571, #572, #583)', async () => {
   const user = userEvent.setup();
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
   expect(bar().queryAllByRole('tab')).toEqual([]);
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  expect(await main().findByText('1 issues · 1 no fluxo')).toBeInTheDocument();
+  expect(await main().findByText('1 itens · 1 tarefas')).toBeInTheDocument();
   expect(bar().queryAllByRole('tab')).toEqual([]);
   await user.click(automation().getByRole('button', { name: /^hive/ }));
-  expect(main().queryByText(/issues ·/)).not.toBeInTheDocument();
-  expect(main().getByText('em breve')).toBeInTheDocument();
+  expect(await main().findByText('0 itens · 0 tarefas')).toBeInTheDocument(); // the state holds no hive task
+  expect(main().getByRole('columnheader', { name: 'Workspace' })).toBeInTheDocument();
   expect(bar().getByText('hive')).toHaveClass('font-semibold');
+  expect(bar().getByText('tarefas do hive · sem sync externo')).toBeInTheDocument();
+  expect(main().queryByText('em breve')).not.toBeInTheDocument();
   expect(automation().getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
   await user.click(automation().getByRole('button', { name: /^main/ }));
   expect(bar().getByText('todas as sources')).toBeInTheDocument();
   expect(automation().getByRole('button', { name: /^main/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('fluxo › in the source table shows the flowchart and selects the task (#756, #571)', async () => {
+test('the task column in the source table shows the flowchart and selects the task (#756, #571, #583)', async () => {
   const user = userEvent.setup();
   const onSelect = vi.fn();
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
   showFlow();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await main().findByText('1 issues · 1 no fluxo');
-  await user.click(main().getByRole('button', { name: 'fluxo ›' }));
+  await main().findByText('1 itens · 1 tarefas');
+  await user.click(main().getByRole('button', { name: 'main · dev ›' }));
   expect(onSelect).toHaveBeenCalledWith({ taskId: 'roadmap:PVTI_1' });
   expect(bar().getByText('todas as sources')).toBeInTheDocument();
 });
 
-test('a task created from the native view is selected once the state holds it, on the flowchart (#756, #571)', async () => {
+test('+ tarefa creates a hive task outside the flow and stays on the table; once the state holds it the cell reads sem fluxo › (#583)', async () => {
   const user = userEvent.setup();
   const onSelect = vi.fn();
   const out = { ...VIEW.items[0], itemId: 'roadmap:PVTI_2', id: '2', title: 'Issue 2', url: 'https://github.com/acme/r/issues/2', out: 'filter' as const };
@@ -86,13 +88,12 @@ test('a task created from the native view is selected once the state holds it, o
   const { rerender } = render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
   showFlow();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(await main().findByRole('button', { name: 'fluxo…' }));
-  await user.click(screen.getByRole('button', { name: 'criar tarefa' }));
-  await waitFor(() => expect(bar().getByText('todas as sources')).toBeInTheDocument());
-  expect(onSelect).not.toHaveBeenCalledWith({ taskId: 'local:1' }); // App would drop a selection the state does not hold yet
-  const created: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 2', body: '', url: out.url, origin: out.itemId }, stage: 'dev', boardColumn: '', auto: false, created: true };
+  await user.click(await main().findByRole('button', { name: '+ tarefa' }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/tasks', expect.objectContaining({ method: 'POST' })));
+  expect(bar().getByText('github project · acme')).toBeInTheDocument(); // still the source's table
+  const created: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 2', body: '', url: out.url, origin: out.itemId }, boardColumn: '', auto: false, created: true };
   rerender(<Dashboard state={{ ...state, tasks: [...state.tasks, created] }} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
-  await waitFor(() => expect(onSelect).toHaveBeenCalledWith({ taskId: 'local:1' }));
-  // a hive task lands on its flow's row
-  expect(automation().getByRole('button', { name: /^main/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(await main().findByRole('button', { name: 'sem fluxo ›' })).toBeInTheDocument();
+  expect(main().queryByRole('button', { name: '+ tarefa' })).not.toBeInTheDocument();
+  expect(onSelect).not.toHaveBeenCalled();
 });

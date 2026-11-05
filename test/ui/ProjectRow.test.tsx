@@ -1,10 +1,12 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { ProjectTable } from '@/components/ProjectTable';
+import { CreateTargetsContext, HIVE_ONLY } from '@/lib/create-targets';
 import { resetViewState } from '@/lib/view-state';
-import type { BlockerRef, ItemField, ProjectItem, ProjectView } from '../../src/types';
-import { ALL, fetchMock, jsonRes, numbers, renderTable, resetProjectTest, rowOf, VIEW } from './project-harness';
+import type { BlockerRef, ItemField, ProjectItem, ProjectView, Task } from '../../src/types';
+import { ALL, fetchMock, jsonRes, numbers, renderTable, resetProjectTest, rowOf, SOURCE, state, TASK, VIEW } from './project-harness';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
@@ -68,7 +70,7 @@ test('the blocked-by cell shows the open refs first in foreground, the closed on
   expect(within(cell12()).getByTitle('#274, #521 · fechada')).toHaveTextContent('#274, #521 · fechada');
   expect(cell12().querySelector('svg')).not.toBeNull(); // the ⌄ of an editable cell
   for (const id of ['#3', '#40']) expect(within(rowOf(id)).getByRole('button', { name: CELL })).toHaveTextContent(/^—$/);
-  expect(screen.getAllByRole('row')[0].style.gridTemplateColumns.split(' ').slice(-3)).toEqual(['112px', '104px', '76px']);
+  expect(screen.getAllByRole('row')[0].style.gridTemplateColumns.split(' ').slice(-3)).toEqual(['112px', '104px', '150px']);
   expect(screen.getByRole('separator', { name: 'redimensionar bloqueada por' })).toBeInTheDocument();
 });
 
@@ -132,4 +134,44 @@ test('a refusal shows its blockers copy inside the popover, no toast, and the ro
   await user.keyboard('{Escape}');
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'bloqueada por' })).not.toBeInTheDocument());
   expect(onOpenIssue).not.toHaveBeenCalled();
+});
+
+test('the task column reads {flow} · {stage} › for a task in a flow and sem fluxo › for one outside, the whole label in its title; a click goes to the task (#583)', async () => {
+  const user = userEvent.setup();
+  const onGoTo = vi.fn();
+  const outside: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 3', body: '', url: '', origin: 'roadmap:PVTI_3' }, boardColumn: '', auto: false, created: true };
+  renderTable({ onGoTo, tasks: [TASK, outside] });
+  await screen.findByText('3 de 3');
+  const inFlow = within(rowOf('#12')).getByRole('button', { name: 'main · dev ›' });
+  expect(inFlow).toHaveAttribute('title', 'main · dev ›');
+  await user.click(within(rowOf('#3')).getByRole('button', { name: 'sem fluxo ›' }));
+  await user.click(inFlow);
+  expect(onGoTo.mock.calls).toEqual([['local:1'], ['roadmap:PVTI_12']]);
+});
+
+test('+ tarefa on every row with no task, in or out of the filter; a click posts /tasks with no stage and source hive, and the row neither goes to a task nor opens its issue (#583)', async () => {
+  const user = userEvent.setup();
+  const onGoTo = vi.fn();
+  const onOpenIssue = vi.fn();
+  fetchMock.mockImplementation(async (input) => (String(input).endsWith('/project') ? jsonRes(VIEW) : jsonRes({ id: 'HIVE-1', itemId: 'local:1' }, 201)));
+  renderTable({ onGoTo, onOpenIssue });
+  await screen.findByText('3 de 3');
+  expect(within(rowOf('#12')).queryByRole('button', { name: '+ tarefa' })).not.toBeInTheDocument(); // a task: the cell is its task
+  expect(within(rowOf('#40')).getByRole('button', { name: '+ tarefa' })).toBeInTheDocument(); // passes the filter, no task
+  await user.click(within(rowOf('#3')).getByRole('button', { name: '+ tarefa' })); // kept out by the filter
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/tasks', expect.objectContaining({
+    method: 'POST', body: JSON.stringify({ title: 'Issue 3', body: 'body 3', auto: false, url: 'https://github.com/acme/r/issues/3', source: 'hive', origin: 'roadmap:PVTI_3' }),
+  })));
+  expect(onGoTo).not.toHaveBeenCalled();
+  expect(onOpenIssue).not.toHaveBeenCalled();
+});
+
+test('with the hive source off no row offers + tarefa (#846, #583)', async () => {
+  render(
+    <CreateTargetsContext.Provider value={{ ...HIVE_ONLY, hiveSource: false }}>
+      <ProjectTable state={state([TASK])} source={SOURCE} onGoTo={vi.fn()} onOpenIssue={vi.fn()} />
+    </CreateTargetsContext.Provider>,
+  );
+  await screen.findByText('3 de 3');
+  expect(screen.queryByRole('button', { name: '+ tarefa' })).toBeNull();
 });

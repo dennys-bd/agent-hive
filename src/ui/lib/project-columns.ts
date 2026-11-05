@@ -1,7 +1,8 @@
-// The native view's columns (#756, handoff 01b): issue first and the action last, neither hideable; between them status, labels and resp.
+// The native view's columns (#756, handoff 01b): issue first and the task column last (#583, 150px), neither hideable; between them status, labels and resp.
 // at their built-in fields' project position among the field columns, in the project's order, then the issue's dates, blocked by (#61) and PR, the Hive's own. Each as wide as
 // its kind.
 import type { BlockerRef, ProjectField, ProjectView } from '../../types.js';
+import { WORKSPACE_FIELD } from '../../hive-project.js';
 import { type MessageKey, t } from '../i18n.js';
 
 /** A hideable column: `status`, `labels`, `assignee`, an issue date (`created`, `updated`, `closed`), `blockedBy`, `pr` or `field:<name>`, its width in
@@ -9,7 +10,11 @@ import { type MessageKey, t } from '../i18n.js';
 export interface ProjectColumn { key: string; width: number; field?: ProjectField }
 
 export const FIELD_KEY = 'field:';
-export const ACTION_WIDTH = 76;
+export const ACTION_WIDTH = 150; // #583 decision 8: the task column, {flow} · {stage} › cut with …
+
+// The hive's columns (#583 decision 3): fixed, no columns menu. Filtered out of projectColumns, which would put labels and resp. first since
+// the hive's view has neither built-in
+const HIVE_KEYS: readonly string[] = ['status', `${FIELD_KEY}${WORKSPACE_FIELD}`, 'pr'];
 
 type Builtin = 'status' | 'labels' | 'assignee';
 /** The issue's own dates (addendum 2): after the project's fields, before PR, each read off the item's property of the same name. */
@@ -24,8 +29,10 @@ const BLOCKED_BY: ProjectColumn = { key: 'blockedBy', width: 112 }; // #61, hand
 const FIELD_WIDTH: Record<ProjectField['type'], number> = {
   singleSelect: 88, iteration: 88, number: 72, date: 72, progress: 56, text: 120, milestone: 88, repository: 120, parentIssue: 120, issueType: 72, other: 88,
 };
-// What shows with nothing saved (handoff 01b, addendum 2): the kinds the view had before every field became a column, iteration and number aside
-const DEFAULT_KINDS = new Set<ProjectField['type']>(['singleSelect', 'text', 'date', 'progress']);
+// What shows with nothing saved (#583 decision 12, handoff §5): status, labels and PR, and every milestone and progress field (GitHub's
+// Sub-issues progress). By kind, not name, so it holds for a Project in any language
+const DEFAULT_KEYS: ReadonlySet<string> = new Set(['status', 'labels', 'pr']);
+const DEFAULT_KINDS: ReadonlySet<ProjectField['type']> = new Set<ProjectField['type']>(['milestone', 'progress']);
 const PRIORITY_WIDTH = 64; // a P0–P3 chip
 const HEAD: Record<Builtin | DateKey | 'blockedBy' | 'pr', MessageKey> = {
   status: 'project.col.status', labels: 'project.col.labels', assignee: 'project.col.assignee', pr: 'project.col.pr',
@@ -45,10 +52,14 @@ export function projectColumns(view: Pick<ProjectView, 'fields' | 'builtins'>): 
   return [...slots.flat(), ...dateColumns, BLOCKED_BY, PR];
 }
 
-/** Visible with nothing saved: the built-ins, PR and the single-select, text, date and progress fields; every other kind and the issue's
- * dates start hidden. */
+/** Visible with nothing saved: status, labels, PR and the milestone and progress fields; assignees, blocked by, the issue's dates and every
+ * other field kind start hidden. A source with saved columns keeps them. */
 export const defaultColumns = (columns: ProjectColumn[]): string[] =>
-  columns.filter((c) => (c.field === undefined ? !Object.hasOwn(DATES, c.key) : DEFAULT_KINDS.has(c.field.type))).map((c) => c.key);
+  columns.filter((c) => (c.field === undefined ? DEFAULT_KEYS.has(c.key) : DEFAULT_KINDS.has(c.field.type))).map((c) => c.key);
+
+/** The hive's five columns but issue and task: status, its Workspace text field and PR. */
+export const hiveColumns = (view: Pick<ProjectView, 'fields' | 'builtins'>): ProjectColumn[] =>
+  projectColumns(view).filter((c) => HIVE_KEYS.includes(c.key));
 
 export const columnLabel = (column: ProjectColumn): string =>
   column.field?.name ?? t(HEAD[column.key as keyof typeof HEAD]);

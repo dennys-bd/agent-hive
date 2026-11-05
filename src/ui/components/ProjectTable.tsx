@@ -1,4 +1,6 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
+import { hiveProject } from '../../hive-project';
+import { HIVE_SOURCE } from '../../tasks';
 import type { ProjectItem, ProjectView, SourceConfig, State, Task } from '../../types';
 import { ColumnScroll, HeaderHandles, useColumnWidths } from '@/components/ColumnDividers';
 import { FlowHeader } from '@/components/FlowHeader';
@@ -9,8 +11,8 @@ import { ProjectRow } from '@/components/ProjectRow';
 import { type ProjectState, useProject } from '@/hooks/use-project';
 import { t } from '@/i18n';
 import { gridTemplate, withWidths } from '@/lib/column-widths';
-import { ACTION_WIDTH, columnLabel, DATES, defaultColumns, FIELD_KEY, openFirst, type ProjectColumn, projectColumns } from '@/lib/project-columns';
-import { defaultCollapsed, groupItems, groupOptions, type ProjectGroup } from '@/lib/project-groups';
+import { ACTION_WIDTH, columnLabel, DATES, defaultColumns, FIELD_KEY, hiveColumns, openFirst, type ProjectColumn, projectColumns } from '@/lib/project-columns';
+import { defaultCollapsed, type GroupOption, groupItems, groupOptions, hiveGroups, type ProjectGroup } from '@/lib/project-groups';
 import { type ProjectSort, type ProjectViewPrefs, readProjectView, writeProjectView } from '@/lib/project-views';
 
 const SUBBAR = 'flex h-10 shrink-0 items-center gap-2 px-3.5 text-muted-foreground text-xs';
@@ -76,8 +78,8 @@ function HeadCell({ id, label, sort, onSort }: HeadCellProps) {
   );
 }
 
-// The subbar (handoff 01, 01b): what was read and how much of it is in the flow, and the cap when the read stopped at it; lendo… while it
-// reads. On the right, the menus that shape the view, once there is one
+// The subbar (handoff 01, 01b, §5): what was read and how many of its rows have a task, in or out of the flow (#583), and the cap when the read
+// stopped at it; lendo… while it reads. On the right, the menus that shape the view, once there is one
 function Subbar({ project, linked, children }: { project: ProjectState; linked: Map<string, Task>; children: ReactNode }) {
   if (project.kind !== 'view') return <div className={SUBBAR}>{project.kind === 'loading' ? t('project.loading') : null}</div>;
   const { items, truncated } = project.view;
@@ -152,7 +154,9 @@ function ProjectGrid(props: ProjectGridProps) {
 interface Prefs { prefs: ProjectViewPrefs; update(patch: Partial<ProjectViewPrefs>): void }
 function usePrefs(source: string, view: ProjectView | undefined, columns: ProjectColumn[]): Prefs {
   const [saved, setSaved] = useState(() => readProjectView(source));
-  const prefs = saved ?? { groupBy: 'status', collapsed: defaultCollapsed(view), columns: defaultColumns(columns), sort: null, widths: {}, blockedByShown: true as const };
+  // the hive's statuses are stages: a stage named Done holds live tasks, so nothing starts folded there
+  const collapsed = source === HIVE_SOURCE ? [] : defaultCollapsed(view);
+  const prefs = saved ?? { groupBy: 'status', collapsed,columns: defaultColumns(columns), sort: null, widths: {}, blockedByShown: true as const };
   const update = (patch: Partial<ProjectViewPrefs>): void => {
     const next = { ...prefs, ...patch };
     setSaved(next);
@@ -161,33 +165,38 @@ function usePrefs(source: string, view: ProjectView | undefined, columns: Projec
   return { prefs, update };
 }
 
-// The groups of the rows when the saved grouping is one the view still offers; a field gone from the project leaves the rows ungrouped
-function groupingOf(rows: ProjectItem[], view: ProjectView | undefined, { prefs, update }: Prefs): Grouping | undefined {
-  const option = view === undefined ? undefined : groupOptions(view).find((o) => o.key === prefs.groupBy);
+// The groups of the rows when the saved grouping is one the view still offers; a field gone from the project leaves the rows ungrouped. The
+// hive's status groups are its stages, sem fluxo last (#583 decision 7)
+function groupingOf(rows: ProjectItem[], view: ProjectView | undefined, options: GroupOption[], { prefs, update }: Prefs, isHive: boolean): Grouping | undefined {
+  const option = options.find((o) => o.key === prefs.groupBy);
   if (view === undefined || option === undefined) return undefined;
   const { collapsed } = prefs;
   const onToggle = (key: string): void => update({ collapsed: collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key] });
-  return { groups: groupItems(rows, option, view), collapsed, onToggle };
+  return { groups: isHive ? hiveGroups(rows, view) : groupItems(rows, option, view), collapsed, onToggle };
 }
 
-export interface ProjectTableProps { state: State; source: SourceConfig; onGoTo(taskId: string): void; onOpenIssue(item: ProjectItem, task?: Task): void }
+export interface ProjectTableProps { state: State; source: SourceConfig | typeof HIVE_SOURCE; onGoTo(taskId: string): void; onOpenIssue(item: ProjectItem, task?: Task): void }
 
-/** A source's native view (#756, handoff 01, 01b): every issue of its project, unfiltered, as a table of issue, the visible columns and the
- * action. Read on opening and on atualizar, never polled; the search lives and dies with the tab, the grouping, columns, sort and widths
- * are saved per source. A failed read with nothing cached leaves its reason in place of the table. */
-export function ProjectTable({ state, source, onGoTo, onOpenIssue }: ProjectTableProps) {
-  const { project, reload, replaceRow } = useProject(source.name);
+interface TableViewProps extends ProjectTableProps { project: ProjectState; onRefresh(): Promise<unknown>; replaceRow(row: ProjectItem): void }
+
+// The table under the source header (#756, #583): the view's rows in the shape saved for the source (hive included), the bar and the grid. The
+// hive's columns are fixed (decision 3): no columns menu, and its group menu offers status alone
+function TableView({ state, source, onGoTo, onOpenIssue, project, onRefresh, replaceRow }: TableViewProps) {
+  const name = typeof source === 'string' ? source : source.name;
+  const isHive = name === HIVE_SOURCE;
   const [search, setSearch] = useState('');
   const isShown = useIsFlowShown();
   const view = project.kind === 'view' ? project.view : undefined;
-  const columns = view === undefined ? [] : projectColumns(view);
-  const shape = usePrefs(source.name, view, columns);
+  const columns = view === undefined ? [] : isHive ? hiveColumns(view) : projectColumns(view);
+  const shape = usePrefs(name, view, columns);
   const { prefs, update } = shape;
+  const shownKeys = isHive ? columns.map((c) => c.key) : prefs.columns;
+  const options = view === undefined ? [] : groupOptions(view).filter((o) => !isHive || o.key === 'status');
   const linked = tasksByItem(state.tasks);
   const term = search.trim().toLowerCase();
   // a sort by a column since hidden is dropped: no header could show it
   const { sort } = prefs;
-  const shownSort = sort !== null && (sort.key === 'issue' || prefs.columns.includes(sort.key)) ? sort : undefined;
+  const shownSort = sort !== null && (sort.key === 'issue' || shownKeys.includes(sort.key)) ? sort : undefined;
   const rows = view === undefined ? [] : sortedRows(view.items.filter((item) => matches(item, term)), shownSort, view);
   // a new column sorts ascending; the sorted one again reverses
   const onSort = (key: string): void => update({ sort: { key, desc: sort?.key === key && !sort.desc } });
@@ -195,19 +204,45 @@ export function ProjectTable({ state, source, onGoTo, onOpenIssue }: ProjectTabl
   const { widths, onDrag, onResize } = useColumnWidths(prefs.widths, (next) => update({ widths: next }));
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} mode={{ kind: 'source', source }} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} onRefresh={() => reload({ fresh: true })} />
+      <FlowHeader state={state} mode={{ kind: 'source', source }} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} onRefresh={onRefresh} />
       <Subbar project={project} linked={linked}>
-        <ProjectGroupMenu options={view === undefined ? [] : groupOptions(view)} groupBy={prefs.groupBy} onChange={(groupBy) => update({ groupBy })} />
-        <ProjectColumnsMenu columns={columns} visible={prefs.columns} onChange={(next) => update({ columns: next })} />
+        <ProjectGroupMenu options={options} groupBy={prefs.groupBy} onChange={(groupBy) => update({ groupBy })} />
+        {!isHive && <ProjectColumnsMenu columns={columns} visible={prefs.columns} onChange={(next) => update({ columns: next })} />}
       </Subbar>
       {project.kind === 'error'
         ? <p className="px-3.5 text-muted-foreground text-xs">{project.message}</p>
         : (
           <ProjectGrid
-            view={view} visible={withWidths(columns.filter((c) => prefs.columns.includes(c.key)), widths)} rows={rows} grouping={groupingOf(rows, view, shape)} linked={linked} state={state} sort={shownSort}
-            onSort={onSort} onDrag={onDrag} onResize={onResize} onGoTo={onGoTo} source={source.name} onRow={replaceRow} onOpenIssue={onOpenIssue}
+            view={view} visible={withWidths(columns.filter((c) => shownKeys.includes(c.key)), widths)} rows={rows} grouping={groupingOf(rows, view, options, shape, isHive)} linked={linked} state={state} sort={shownSort}
+            onSort={onSort} onDrag={onDrag} onResize={onResize} onGoTo={onGoTo} source={name} onRow={replaceRow} onOpenIssue={onOpenIssue}
           />
         )}
     </div>
   );
+}
+
+const NOTHING_TO_READ = (): Promise<void> => Promise.resolve(); // #583 decision 2: the hive's view is the live state's: atualizar has nothing to re-read
+const NO_ROW = (): void => undefined; // the hive's cells write through the task routes; the next state event redraws the row
+
+// #583 decision 2: the hive's view from the live state, the same function GET /sources/hive/project answers with, so the two never disagree.
+// No useProject: it would read that endpoint
+function HiveTable(props: ProjectTableProps) {
+  const { state } = props;
+  // one view per state: rows stay the same objects between renders that did not change the state
+  const project = useMemo((): ProjectState => ({ kind: 'view', view: hiveProject(state) }), [state]);
+  return <TableView {...props} project={project} onRefresh={NOTHING_TO_READ} replaceRow={NO_ROW} />;
+}
+
+function SourceTable(props: ProjectTableProps & { source: SourceConfig }) {
+  const { project, reload, replaceRow } = useProject(props.source.name);
+  return <TableView {...props} project={project} onRefresh={() => reload({ fresh: true })} replaceRow={replaceRow} />;
+}
+
+/** A source's native view (#756, handoff 01, 01b, §5): every issue of its project, unfiltered, as a table of issue, the visible columns and the
+ * task column. Read on opening and on atualizar, never polled; the search lives and dies with the tab, the grouping, columns, sort and widths
+ * are saved per source. A failed read with nothing cached leaves its reason in place of the table. The hive source (#583) shows its own tasks
+ * from the state, in five fixed columns. */
+export function ProjectTable(props: ProjectTableProps) {
+  const { source } = props;
+  return typeof source === 'string' ? <HiveTable {...props} /> : <SourceTable {...props} source={source} />;
 }

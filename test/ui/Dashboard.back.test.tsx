@@ -134,7 +134,7 @@ test('an issue opened from the source table goes back to that table, by ⌘[ too
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
   expect(bar().getByRole('button', { name: 'voltar' })).toBeInTheDocument();
   expect(fireEvent.keyDown(window, BACK_KEY)).toBe(false); // ⌘[ on macOS
-  expect(await main().findByText('2 issues · 0 no fluxo')).toBeInTheDocument();
+  expect(await main().findByText('2 itens · 0 tarefas')).toBeInTheDocument();
   expect(main().queryByRole('heading', { name: 'Pager breaks' })).not.toBeInTheDocument();
   expect(bar().getByText('github project · acme')).toBeInTheDocument();
 });
@@ -191,7 +191,7 @@ test('the flowchart, a repository\'s lists and the source table show no back but
   await main().findByText('Issue 12');
   expect(backButton()).toBeNull();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await main().findByText('2 issues · 0 no fluxo');
+  await main().findByText('2 itens · 0 tarefas');
   expect(backButton()).toBeNull();
   await user.click(automation().getByRole('button', { name: /^main/ }));
   expect(backButton()).toBeNull(); // the flowchart

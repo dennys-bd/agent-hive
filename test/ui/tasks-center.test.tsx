@@ -141,7 +141,7 @@ const bar = () => within(document.querySelector<HTMLElement>('[data-header-colum
 const automation = () => within(screen.getByRole('region', { name: 'Tarefas' }));
 const stageNode = (name: string): Element | null => document.querySelector(`[aria-label="fluxograma"] [data-stage="${name}"]`);
 const goToRow = async (user: ReturnType<typeof userEvent.setup>, title: string): Promise<void> => {
-  await user.click(within((await main().findByText(title)).closest('tr')!).getByRole('button', { name: 'fluxo ›' }));
+  await user.click(within((await main().findByText(title)).closest('tr')!).getByRole('button', { name: /›$/ }));
 };
 
 test("a source row opens its table under the source header, with no tabs; the first flow's row shows its flowchart (#571)", async () => {
@@ -161,7 +161,7 @@ test("a source row opens its table under the source header, with no tabs; the fi
   expect(automation().getByRole('button', { name: /^build/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('fluxo › on a task of the second flow shows that flowchart and selects it; on a task in no flow, the outside placeholder (#571)', async () => {
+test('the task column on a task of the second flow shows that flowchart and selects it; on a task in no flow, the outside placeholder (#571)', async () => {
   const user = userEvent.setup();
   const onSelect = vi.fn();
   render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);

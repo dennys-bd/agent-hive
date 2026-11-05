@@ -87,10 +87,11 @@ function SearchField({ label, value, isShown, isNarrow, onChange }: { label: str
   );
 }
 
-// The source header (handoff §2): its name, then its type and owner, muted. The hive source (#572) has neither, as its sidebar row has no second line
+// The source header (handoff §2): its name, then its type and owner, muted. The hive source (#572, #583) has neither: its second part says
+// what it is, tasks of its own that no source syncs
 function SourceHeading({ source }: { source: SourceConfig | typeof HIVE_SOURCE }) {
   const name = <span className="font-semibold text-[13px] text-foreground">{typeof source === 'string' ? source : source.name}</span>;
-  if (typeof source === 'string') return name;
+  if (typeof source === 'string') return <>{name}<span>{t('tasks.header.hive')}</span></>;
   return <>{name}<span>{`${t(`tasks.header.source.${source.type}`)} · ${source.owner}`}</span></>;
 }
 

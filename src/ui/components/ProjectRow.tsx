@@ -2,12 +2,14 @@ import type { KeyboardEvent, MouseEvent } from 'react';
 import { prsOf } from '../../activities';
 import { isReadOnly } from '../../field-values';
 import { prNumber } from '../../pull-requests';
-import { resolveWorkspace } from '../../tasks';
-import type { ItemField, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, State, Task } from '../../types';
+import { flowOf } from '../../flows';
+import { HIVE_SOURCE, resolveWorkspace } from '../../tasks';
+import type { Flow, ItemField, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, State, Task } from '../../types';
 import type { ReactNode } from 'react';
 import { BlockedByCell } from '@/components/BlockedByCell';
+import { CreateTaskButton } from '@/components/CreateTaskButton';
 import { FieldEditor } from '@/components/FieldEditor';
-import { ProjectCreatePopover } from '@/components/ProjectCreatePopover';
+import { HiveStageMenu } from '@/components/HiveStageMenu';
 import { ProjectStatusSelect } from '@/components/ProjectStatusSelect';
 import { Button } from '@/components/ui/button';
 import type { FieldAnswer } from '@/hooks/use-item-fields';
@@ -100,6 +102,19 @@ function FieldDisplay({ field, value }: { field: ProjectField; value?: string | 
   return <span className="truncate" title={String(value)}>{value}</span>;
 }
 
+// The task column (#583 decision 8, handoff §5): the row's task as {flow} · {stage} ›, the flow the one whose stages hold its stage (flowOf),
+// or sem fluxo › outside the flow, cut with … and whole in its title. A click goes to the task
+function TaskCell({ task, flows, onGoTo }: { task: Task; flows: readonly Flow[]; onGoTo(taskId: string): void }) {
+  const { stage } = task;
+  const flow = flowOf(flows, stage)?.name;
+  const label = flow === undefined || stage === undefined ? t('project.task.outside') : t('project.task.inFlow', { flow, stage });
+  return (
+    <Button type="button" size="xs" variant="outline" title={label} className="max-w-full" onClick={() => onGoTo(task.item.itemId)}>
+      <span className="min-w-0 truncate">{label}</span>
+    </Button>
+  );
+}
+
 export interface ProjectRowProps {
   item: ProjectItem; task?: Task; visible: ProjectColumn[]; columns: string; state: State; onGoTo(taskId: string): void;
   source: string; statuses: ProjectView['statuses']; onRow(row: ProjectItem): void; // #756, #686: a cell's write answers its re-read row, which replaces this one
@@ -112,6 +127,8 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
   const written = (answer: FieldAnswer): void => onRow(answer.row);
   if (field !== undefined) {
     const shown = <FieldDisplay field={field} value={Object.hasOwn(item.fields, field.name) ? item.fields[field.name] : undefined} />;
+    // #583 decision 5: the hive's Workspace is read-only text: changing a task's workspace has its own rules (canSetWorkspace)
+    if (source === HIVE_SOURCE) return { className: 'flex min-w-0', cell: shown };
     return { className: 'flex min-w-0', cell: <FieldEditor itemId={item.itemId} field={itemField(field, item)} display={shown} onWritten={written} /> };
   }
   if (Object.hasOwn(DATES, column.key)) {
@@ -120,6 +137,8 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
   }
   switch (column.key) {
     case 'status':
+      // #583 decision 4: a hive row's status is its task's stage, moved through the task routes
+      if (source === HIVE_SOURCE && task !== undefined) return { className: 'min-w-0', cell: <HiveStageMenu task={task} flows={state.flows} /> };
       return { className: 'min-w-0', cell: <ProjectStatusSelect source={source} itemId={item.itemId} status={item.status} statuses={statuses} onRow={onRow} /> };
     case 'labels': {
       const labels: ItemField = { name: LABELS, type: 'labels', value: item.labels };
@@ -136,17 +155,20 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
   }
 }
 
-/** One issue of the native view (#756, handoff 01). Any row opens its issue's page (#757); fluxo › goes to its task; ⇧↵ on the focused
- * row opens the issue on GitHub. */
+/** One issue of the native view (#756, handoff 01), or one task of the hive's (#583). A source row opens its issue's page (#757); a hive row,
+ * which has no source issue, goes to its task (decision 16), as the task column does; ⇧↵ on the focused row opens its link on GitHub. */
 export function ProjectRow(props: ProjectRowProps) {
   const { item, task, visible, columns, state, onGoTo, source, onOpenIssue } = props;
   // a click on a cell's own control or input (#686), or inside a menu or popover it portaled out (still bubbling through React), is not the row's
   const onClick = (e: MouseEvent<HTMLTableRowElement>): void => {
     const target = e.target as Element;
-    if (e.currentTarget.contains(target) && !target.closest('button, a, input')) onOpenIssue(item, task);
+    if (!e.currentTarget.contains(target) || target.closest('button, a, input')) return;
+    if (source === HIVE_SOURCE && task) onGoTo(task.item.itemId);
+    else onOpenIssue(item, task);
   };
+  // a hive task made from nothing has no link: ⇧↵ would open a blank window
   const onKeyDown = (e: KeyboardEvent<HTMLTableRowElement>): void => {
-    if (e.key !== 'Enter' || !e.shiftKey || e.target !== e.currentTarget) return;
+    if (e.key !== 'Enter' || !e.shiftKey || e.target !== e.currentTarget || item.url === '') return;
     e.preventDefault();
     window.open(item.url, '_blank', 'noreferrer');
   };
@@ -161,11 +183,9 @@ export function ProjectRow(props: ProjectRowProps) {
         const { className, cell } = cellOf(column, props);
         return <td key={column.key} className={className}>{cell}</td>;
       })}
-      {/* fluxo › to the issue's task, fluxo… for an issue kept out; one passing the filter in an uncited column has none: its way in is the Status (#756) */}
-      <td className="flex justify-end">
-        {task
-          ? <Button type="button" size="xs" variant="outline" onClick={() => onGoTo(task.item.itemId)}>{t('project.action.goto')}</Button>
-          : item.out && <ProjectCreatePopover item={item} source={source} state={state} onCreated={onGoTo} />}
+      {/* #583 decisions 8–10: the task column: the row's task, else + tarefa on every row with no task, in or out of the filter */}
+      <td className="flex min-w-0 justify-end">
+        {task ? <TaskCell task={task} flows={state.flows} onGoTo={onGoTo} /> : <CreateTaskButton item={item} state={state} />}
       </td>
     </tr>
   );

@@ -1793,7 +1793,7 @@ const en = {
   'shortcuts.soon': '(soon)', // #585: an operation that does not exist yet
   'shortcutMap.title': 'shortcuts', // #639: the shortcut map's dialog
   'shortcutMap.edit': 'edit in settings › shortcuts',
-  'project.count': '{n} issues · {m} in the flow', // #756: the native view's subbar
+  'project.count': '{n} items · {m} tasks', // #756, #583: the bar: what was read and how many of its rows have a task, in or out of the flow
   'project.truncated': 'first {n}',
   'project.loading': 'reading…',
   'project.col.issue': 'issue', 'project.col.status': 'status', 'project.col.labels': 'labels', 'project.col.assignee': 'resp.', 'project.col.pr': 'PR',
@@ -1801,15 +1801,12 @@ const en = {
   'project.col.blockedBy': 'blocked by', // #61: the issue's blocked-by relations
   'project.col.resize': 'resize {column}', // #756, addendum 2: a header's drag handle
   'project.footer.count': '{x} of {n}',
-  'project.footer.hint': 'cells with ⌄ are editable · drag the dividers to resize · ⇧↵ opens the issue', // #60
-  'project.action.goto': 'flow ›',
+  'project.footer.hint': 'cells with ⌄ are editable · drag the dividers to resize · changing the status moves the task to the stage tied to it', // #60, #583: ⇧↵ still opens the issue, it only left the hint
   'project.error.quota': 'GitHub quota is low; try again after {time}',
   'project.status.head': 'status', // #756: the status select's menu
   'project.status.stage': 'stage in the flow',
   'project.status.note': 'options come from the project. mapping to stages lives in configure › sources.',
-  'project.action.create': 'flow…', // #756: an issue the filter keeps out becomes a task of the hive source
   'project.create.title': 'create task in the flow',
-  'project.create.body': "{issue} doesn't pass {source}'s filters. the task is created in the hive source, **without sync**: project changes don't reach the flow, and the flow doesn't write to the project.",
   'project.create.cancel': 'cancel',
   'project.create.confirm': 'create task',
   'project.group': 'group', // #756, handoff 01b: the subbar's group menu and the group rows
@@ -1820,6 +1817,11 @@ const en = {
   'project.columns': 'columns', // #756, handoff 01b: the subbar's columns menu
   'project.columns.note': "fields come from the project. their order is the project's.",
   'project.columns.origin.project': 'project', 'project.columns.origin.hive': 'hive',
+  'project.noFlow': 'no flow', // #583: the hive's stageless group and its stage menu's last entry
+  'project.task.inFlow': '{flow} · {stage} ›', // #583: the task column (handoff §5)
+  'project.task.outside': 'no flow ›',
+  'project.task.create': '+ task', // #583: one click, a hive task outside the flow (handoff §5)
+  'project.task.createHint': 'becomes a Hive task, outside the flow',
   'repos.title': 'repositories', // #757: the flow sidebar's repositories section
   'repos.prs': 'PRs',
   'repos.pinned': 'pinned',
@@ -3009,6 +3011,7 @@ const en = {
   'back.list': 'back', // #571: a page's way back to the list it was opened from
   'tasks.center.soon': 'coming soon', // #571: the list and outside-flow views, until 3.2 / 3.3
   'tasks.header.source.github': 'github project', // #571: the source header's type, before its owner
+  'tasks.header.hive': 'hive tasks · no external sync', // #583: the hive source header's second part (handoff §5)
   'tasks.display': 'display', // #574: the tasks header's exibir and its popover (handoff §3)
   'tasks.display.title': 'how to show the tasks',
   'tasks.display.sources': 'sources',
@@ -4839,7 +4842,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.soon': '(em breve)',
   'shortcutMap.title': 'atalhos',
   'shortcutMap.edit': 'editar em configurações › atalhos',
-  'project.count': '{n} issues · {m} no fluxo',
+  'project.count': '{n} itens · {m} tarefas',
   'project.truncated': 'primeiros {n}',
   'project.loading': 'lendo…',
   'project.col.issue': 'issue', 'project.col.status': 'status', 'project.col.labels': 'labels', 'project.col.assignee': 'resp.', 'project.col.pr': 'PR',
@@ -4847,15 +4850,12 @@ const pt: Record<MessageKey, string> = {
   'project.col.blockedBy': 'bloqueada por',
   'project.col.resize': 'redimensionar {column}',
   'project.footer.count': '{x} de {n}',
-  'project.footer.hint': 'células com ⌄ são editáveis · arraste as divisões para redimensionar · ⇧↵ abre a issue',
-  'project.action.goto': 'fluxo ›',
+  'project.footer.hint': 'células com ⌄ são editáveis · arraste as divisões para redimensionar · mudar o status move a tarefa para a etapa ligada a ele',
   'project.error.quota': 'quota do GitHub baixa; tente depois de {time}',
   'project.status.head': 'status',
   'project.status.stage': 'etapa no fluxo',
   'project.status.note': 'as opções vêm do project. o mapeamento para etapas fica em configurar › sources.',
-  'project.action.create': 'fluxo…',
   'project.create.title': 'criar tarefa no fluxo',
-  'project.create.body': '{issue} não passa pelos filtros de {source}. a tarefa é criada na source hive, **sem sync**: mudanças no project não chegam ao fluxo, e o fluxo não escreve no project.',
   'project.create.cancel': 'cancelar',
   'project.create.confirm': 'criar tarefa',
   'project.group': 'agrupar',
@@ -4866,6 +4866,11 @@ const pt: Record<MessageKey, string> = {
   'project.columns': 'colunas',
   'project.columns.note': 'os campos vêm do project. a ordem segue a do project.',
   'project.columns.origin.project': 'project', 'project.columns.origin.hive': 'hive',
+  'project.noFlow': 'sem fluxo',
+  'project.task.inFlow': '{flow} · {stage} ›',
+  'project.task.outside': 'sem fluxo ›',
+  'project.task.create': '+ tarefa',
+  'project.task.createHint': 'vira tarefa do Hive, fora do fluxo',
   'repos.title': 'repositórios',
   'repos.prs': 'PRs',
   'repos.pinned': 'fixados',
@@ -6054,6 +6059,7 @@ const pt: Record<MessageKey, string> = {
   'back.list': 'voltar',
   'tasks.center.soon': 'em breve',
   'tasks.header.source.github': 'github project',
+  'tasks.header.hive': 'tarefas do hive · sem sync externo',
   'tasks.display': 'exibir',
   'tasks.display.title': 'como mostrar as tarefas',
   'tasks.display.sources': 'sources',
