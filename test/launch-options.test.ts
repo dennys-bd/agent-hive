@@ -143,7 +143,7 @@ test('launchRun over a workspace folder\'s agents gives Codex the delivered body
 test('pluginSkills lists a rendered folder\'s skills by bare name, sorted, with their header\'s description; hasSkill answers one by name (#710)', async (t) => {
   const { render } = await renderedHome(t);
   const skills = pluginSkills(render.dir('a'));
-  assert.ok(skills.some((s) => s.name === 'new-plan' && s.description.startsWith('Plan stage for one task: read the workspace\'s conventions')));
+  assert.ok(skills.some((s) => s.name === 'new-plan' && s.description.startsWith('Plan stage for one task: read the task')));
   assert.deepEqual(skills.map((s) => s.name), [...skills.map((s) => s.name)].sort());
   assert.deepEqual([hasSkill(render.dir('a'), 'new-plan'), hasSkill(render.dir('a'), 'gone'), hasSkill(render.dir('a'), '../agents')], [true, false, false]);
 });
