@@ -600,7 +600,10 @@ test('a task.branch that is neither the name the Hive\'s template renders nor wh
 test('all or nothing (#182): a worktree with changes is refused before anything is removed, and the reason lists git\'s status lines', async (t) => {
   const { repo, path } = await cleanRepo(t, true);
   const dirty = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], {}, { status: ' M src/login.ts\n?? notes.md\n' });
-  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, dirty.exec), { message: `${path} has changes that are not committed:\n M src/login.ts\n?? notes.md` });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, dirty.exec), {
+    message: `${path} has changes that are not committed:\n M src/login.ts\n?? notes.md`,
+    refusal: { reason: 'dirty', path, files: ' M src/login.ts\n?? notes.md' }, // #660: the route answers the code, the UI words it
+  });
   assert.deepEqual(dirty.calls, [
     ['worktree', 'list', '--porcelain'], ['rev-parse', '--verify', '--quiet', `refs/heads/${CLEAN_BRANCH}`], ['status', '--porcelain'],
   ], 'nothing removed, nothing deleted');
@@ -610,12 +613,18 @@ test('all or nothing (#182): a branch not merged into HEAD, or into its upstream
   const { repo, path } = await cleanRepo(t, true);
   const listed = porcelain(repo, [[path, CLEAN_BRANCH]]);
   const intoHead = cleanGit(repo, listed, [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' }); // exit 1: not an ancestor
-  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, intoHead.exec), { message: `the branch '${CLEAN_BRANCH}' is not fully merged into HEAD` });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, intoHead.exec), {
+    message: `the branch '${CLEAN_BRANCH}' is not fully merged into HEAD`,
+    refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' },
+  });
   assert.deepEqual(intoHead.calls.slice(-2), MERGE_CHECK);
   assert.equal(intoHead.calls.some((c) => c[1] === 'remove' || c[0] === 'branch'), false, 'the worktree and the branch both stay');
   const upstream = 'refs/remotes/origin/hive/58-clear-worktree';
   const intoUpstream = cleanGit(repo, listed, [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' }, { upstream });
-  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, intoUpstream.exec), { message: `the branch '${CLEAN_BRANCH}' is not fully merged into ${upstream}` });
+  await assert.rejects(cleanWorktree(repo, { slug: SLUG }, CLEAN_BRANCH, intoUpstream.exec), {
+    message: `the branch '${CLEAN_BRANCH}' is not fully merged into ${upstream}`,
+    refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: upstream },
+  });
   assert.deepEqual(intoUpstream.calls.at(-1), ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`, upstream], 'the upstream, not HEAD');
 });
 

@@ -165,7 +165,7 @@ test('a normal clean refuses while a nested worktree has modified or untracked f
   await writeFile(join(dir, 'notes.md'), 'new');
   await assert.rejects(
     cleanWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'refuse', ['docs']),
-    { message: `${dir} has changes that are not committed:\n M readme.md\n?? notes.md` },
+    { message: `${dir} has changes that are not committed:\n M readme.md\n?? notes.md`, refusal: { reason: 'dirty', path: dir, files: ' M readme.md\n?? notes.md' } },
   );
   assert.deepEqual([await exists(task), await git(dir, 'branch', '--show-current')], [true, BRANCH], 'nothing removed');
 });

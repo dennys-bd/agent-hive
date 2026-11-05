@@ -7,7 +7,7 @@ import { ownBranch } from './task-runs.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, remoteHead, setAside, settleSync, withSync, wordsOf } from './worktree-base.js';
+import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, RemovalRefusal, remoteHead, setAside, settleSync, withSync, wordsOf } from './worktree-base.js';
 import { refuseDirtyNested, removeNested } from './worktree-nested.js';
 export { branchAt, gitOrWords, wordsOf } from './worktree-base.js';
 import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type Exec, isBranchName, type WorktreeRow } from './types.js';
@@ -247,7 +247,8 @@ async function mergeCheck(repo: string, branch: string, exec: Exec): Promise<{ m
   return { merged: await gitAnswers(repo, ['merge-base', '--is-ancestor', ref, target], exec), target };
 }
 
-const unmergedError = (branch: string, target: string): Error => new Error(`the branch '${branch}' is not fully merged into ${target}`);
+const unmergedError = (branch: string, target: string): RemovalRefusal =>
+  new RemovalRefusal(`the branch '${branch}' is not fully merged into ${target}`, { reason: 'unmerged', branch, target });
 
 /** What `branch -d` refuses, checked first (#182): rejects with the reason when the branch is not merged (mergeCheck). */
 export async function refuseUnmerged(repo: string, branch: string, exec: Exec): Promise<void> {
