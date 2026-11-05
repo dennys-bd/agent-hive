@@ -27,7 +27,7 @@ function sectionsOf({ state, effective, sources, nav, display, onNewFlow }: Task
   // Decision 16: every other source off, hive included while it is on, by the popover's own list; the center does not change
   const onOnly = (name: string): void => display.set({ sourcesOff: displaySources(sources, []).map((s) => s.name).filter((n) => n !== name) });
   return {
-    automation: { title: t('tasks.sidebar.automation'), body: <div className="flex flex-col gap-[18px] py-1"><SignalToggle signal={state.signal} signals={state.signals} effective={effective} /><WorkerCap state={state} effective={effective} /></div> }, // until 2.4 (decision 7)
+    automation: { title: t('tasks.sidebar.automation'), body: <div className="flex flex-col gap-[18px] py-1"><SignalToggle signal={state.signal} effective={effective} /><WorkerCap state={state} effective={effective} /></div> }, // until 2.4 (decision 7)
     tasks: { title: t('tasks.sidebar.tasks'), action: onNewFlow && <SectionAdd label={t('tasks.sidebar.newFlow')} onClick={onNewFlow} />, body: <TasksEntries state={state} center={center} show={show} /> },
     sources: {
       title: t('tasks.sidebar.sources'), action: sources.onAdd && <SectionAdd label={t('flow.sources.add')} onClick={sources.onAdd} />,
