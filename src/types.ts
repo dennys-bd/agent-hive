@@ -623,7 +623,7 @@ export interface Task {
   leaving?: true; // an archive / remove / delete is in flight on the source (#286): out of the fill, left unmarked by the poll, answered by closeTask or sourceActionFailed; never survives a boot
   pinned?: true; // moved by hand: holds the position it occupies in its stage across polls. Dropped by resetOrder and by a stage change (#123)
   created?: true; // created in the Hive (#132, #573: was local): never written to a source; leaves only through remove
-  placedByHand?: true; // #670: a move-to or leave-flow set it; the task properties never place it again
+  placedByHand?: true; // #670: a move-to, a leave-flow or a transition set it; the task properties never place it again
   auto: boolean; // a worker may pick it up on its own (#164, #573: was manual?: true, inverted); off, the fill never starts it and a delete-activity stage takes it only under nonAutoTasks (#496); every run by hand works on it as on any task
   workspace?: string; // a Comb workspace's name: chosen by hand, or frozen when the worktree was created (#179)
   columnWrite?: ColumnWrite; // set with every setColumn effect, cleared by the poll that confirms, overrides or outlives it (#889)

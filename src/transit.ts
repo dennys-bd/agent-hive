@@ -61,7 +61,8 @@ function moveOn(state: State, task: Task, transition: Transition, end: EndOf | u
   if (transition.to === END) return { ...left(state, task, effects), transition };
   const next = stageOf(state.stages, transition.to);
   if (next === undefined) return { ...held(state, task, effects), transition };
-  const moved = next.name === task.stage ? task : enter(task, next);
+  // #670: a transition conducted the task, so its source's entry never pulls it back, even with no activity (a stage action on a new task)
+  const moved = next.name === task.stage ? task : { ...enter(task, next), placedByHand: true as const };
   const entered = settleEntries(state.tasks, withTask(state, moved));
   const handover = end === undefined ? undefined : handoverOf(entered, moved, transition, next, end);
   return { state: handover === undefined ? entered : withHandover(entered, moved, handover), moved, next, effects, transition, ...(handover === undefined ? {} : { handover }) };
