@@ -10,7 +10,7 @@ permissions:
 jobs:
   probe:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: 1
     steps:
@@ -41,32 +41,5 @@ jobs:
         run: |
           irm https://claude.ai/install.ps1 | iex
           & "$env:USERPROFILE\.local\bin\claude.exe" --version
-      - name: probe
-        run: node probe/windows.mjs
-      - name: claude without Git Bash on PATH
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch '\\Git\\' }) -join ';'
-          $env:ANTHROPIC_API_KEY = 'sk-invalid'
-          claude -p "say hi" 2>&1 | Select-Object -First 20
-          "exit=$LASTEXITCODE"
-      - name: tsc
-        continue-on-error: true
-        shell: bash
-        run: pnpm exec tsc 2>&1 | tail -40
-      - name: node tests (summary)
-        continue-on-error: true
-        shell: bash
-        run: |
-          d="$(mktemp -d)"
-          CODEX_HOME="$d" CLAUDE_CONFIG_DIR="$d/claude" node --test --test-reporter=spec "dist/test/*.test.js" "dist/test/agents/*.test.js" "dist/test/sources/*.test.js" "dist/test/benchmark/*.test.js" "dist/test/repos/*.test.js" "dist/test/read-model/*.test.js" > node-tests.txt 2>&1 || true
-          tail -15 node-tests.txt
-          echo "--- failing tests ---"
-          grep -E '✖' node-tests.txt | head -120
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: node-tests
-          path: node-tests.txt
-          if-no-files-found: ignore
+      - name: probe round 2
+        run: node probe/round2.mjs
