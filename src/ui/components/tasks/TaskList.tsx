@@ -14,11 +14,11 @@ import { hasTree } from '@/lib/tree-groups';
 
 const COLUMNS: readonly MessageKey[] = ['tasks.list.col.task', 'tasks.list.col.stage', 'tasks.list.col.status', 'tasks.list.col.source', 'tasks.list.col.action'];
 
-export interface TaskListProps { state: State; display: DisplayControls; sources?: SourcesNav }
+export interface TaskListProps { state: State; display: DisplayControls; sources?: SourcesNav; onOpen?(taskId: string): void }
 
 /** todas em lista (#577, handoff §6): the tasks header with exibir minus its voltas rows and buscar tarefas, then one table with a group per
  * flow and sem fluxo. The search is session-only, as the flowchart's; the collapsed groups persist in flowView (decision 4). */
-export function TaskList({ state, display, sources }: TaskListProps) {
+export function TaskList({ state, display, sources, onOpen }: TaskListProps) {
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState(() => readFlowView().listCollapsed);
   const isShown = useIsFlowShown();
@@ -37,7 +37,7 @@ export function TaskList({ state, display, sources }: TaskListProps) {
           {groups.map((group) => (
             <TaskListGroup
               key={`group:${group.key}`} group={group} state={state} isCollapsed={collapsed.includes(group.key)}
-              onToggle={() => setCollapsed(toggleListGroup(group.key))}
+              onToggle={() => setCollapsed(toggleListGroup(group.key))} onOpen={onOpen}
             />
           ))}
         </table>

@@ -1,20 +1,23 @@
 import { resolveWorkspace, sourceOf, taskLabel } from '../../../tasks.js';
 import type { State, Task } from '../../../types.js';
-import { ListingLine } from '@/components/FlowTask';
+import { ListingLine, openOnClick, TaskButton, useOpenActivity } from '@/components/FlowTask';
+import { TaskMenu } from '@/components/TaskMenu';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
+import { useTaskNavKeys } from '@/hooks/use-task-keys';
 import { statusText, t } from '@/i18n';
 import { STATUS_DOT, STATUS_TEXT } from '@/lib/status';
 import type { ListRow } from '@/lib/task-list';
+import { needsYou } from '@/lib/tasks-sidebar';
 import { taskState } from '@/lib/task-state';
 
 /** The list's columns (handoff §6): tarefa takes what is left; etapa, status, source and ação fixed. The header row shares it. */
 export const LIST_COLUMNS = 'minmax(0,1fr) 140px 160px 120px 96px';
 const INDENT_PX = 20; // per tree level, the handoff's (§5 Hierarquia)
 
-export interface TaskListRowProps { row: ListRow; state: State }
+export interface TaskListRowProps { row: ListRow; state: State; onOpen?(taskId: string): void }
 
 // tarefa (decisions 6, 8): the workspace square, ↳ for a child indented by its depth, the title, ⑂ on an epic and the ◌ hint
-function TitleCell({ row, state }: TaskListRowProps) {
+function TitleCell({ row, state }: Pick<TaskListRowProps, 'row' | 'state'>) {
   const { task, depth, children } = row;
   const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
   return (
@@ -39,17 +42,25 @@ function StatusCell({ task, state }: { task: Task; state: State }) {
   );
 }
 
-/** One row of the list (#577 decision 8): tarefa, etapa (or sem fluxo), status, source and the action. Not draggable: moving between stages
- * stays the flowchart's and the menu's (decision 10). */
-export function TaskListRow({ row, state }: TaskListRowProps) {
+/** One row of the list (#577 decision 8): tarefa, etapa (or sem fluxo), status, source and the action, filled while the task needs you
+ * (decision 9). A click on its free area opens the task in the details panel and a right-click opens the task menu (decision 10); the card's
+ * keys work on it (#585). Not draggable: moving between stages stays the flowchart's and the menu's. */
+export function TaskListRow({ row, state, onOpen }: TaskListRowProps) {
   const { task } = row;
+  const openActivity = useOpenActivity(task, state);
+  const onKeyDown = useTaskNavKeys(task, state, onOpen, openActivity);
   return (
-    <tr data-task-id={task.item.itemId} style={{ gridTemplateColumns: LIST_COLUMNS }} className="grid h-10 items-center gap-3 border-b px-3 text-[13px] hover:bg-muted">
-      <TitleCell row={row} state={state} />
-      <td className="min-w-0 truncate text-muted-foreground">{task.stage ?? t('tasks.sidebar.outside')}</td>
-      <StatusCell task={task} state={state} />
-      <td className="min-w-0 truncate text-muted-foreground">{sourceOf(task)}</td>
-      <td />
-    </tr>
+    <TaskMenu task={task} state={state}>
+      <tr
+        tabIndex={0} data-task-id={task.item.itemId} onClick={openOnClick(task.item.itemId, onOpen)} onKeyDown={onKeyDown} style={{ gridTemplateColumns: LIST_COLUMNS }}
+        className="grid h-10 cursor-pointer items-center gap-3 border-b px-3 text-[13px] outline-none hover:bg-muted focus:bg-muted"
+      >
+        <TitleCell row={row} state={state} />
+        <td className="min-w-0 truncate text-muted-foreground">{task.stage ?? t('tasks.sidebar.outside')}</td>
+        <StatusCell task={task} state={state} />
+        <td className="min-w-0 truncate text-muted-foreground">{sourceOf(task)}</td>
+        <td className="flex justify-end"><TaskButton task={task} state={state} onOpen={onOpen} variant={needsYou(task, state) ? 'default' : 'outline'} /></td>
+      </tr>
+    </TaskMenu>
   );
 }
