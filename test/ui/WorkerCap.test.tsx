@@ -72,3 +72,10 @@ test('the counter counts only workers: the user\'s own session is not one (#459)
   render(<WorkerCap state={{ ...base, workers }} />);
   expect(screen.getByText('workers 1/2')).toBeInTheDocument();
 });
+
+test('the foot line (#573, handoff .workers): workers in medium weight, a spacer, the muted max., then a 36px bordered field', () => {
+  render(<WorkerCap state={base} />);
+  expect(screen.getByText('workers 1/2')).toHaveClass('font-medium');
+  expect(screen.getByText('max.')).toHaveClass('ml-auto', 'text-muted-foreground');
+  expect(screen.getByLabelText('max.')).toHaveClass('h-6', 'w-9', 'rounded-[6px]', 'border');
+});

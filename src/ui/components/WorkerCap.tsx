@@ -17,7 +17,7 @@ function commitMax(value: string, current: number, cap?: number): void {
   act('/config', { maxConcurrent: cap === undefined ? n : Math.min(n, cap) });
 }
 
-/** The max workers control (#146): the active/max counter and the editable cap, under the signal in the flow sidebar (redesign 09).
+/** The max workers control (#146): the foot of the tasks sidebar's automação (#573, handoff .workers): the counter, a spacer, máx. and the field.
  * One compact line, `shrink-0` so it never shrinks under them. `maxWorkers.locked` names the rule when a fired usage
  * rule caps the value (#142 behaviour unchanged); the counter reads the effective cap, the field the configured value (#178). */
 export function WorkerCap({ state, effective }: WorkerCapProps) {
@@ -36,7 +36,7 @@ export function WorkerCap({ state, effective }: WorkerCapProps) {
         {t('footer.max')}
         <Input
           id="max-workers"
-          type="number" min={0} max={cap ?? MAX_CONCURRENT_MAX} step={1} className="h-7 w-16 px-2 text-[13px] text-foreground" value={maxInput} title={capTitle}
+          type="number" min={0} max={cap ?? MAX_CONCURRENT_MAX} step={1} className="h-6 w-9 rounded-[6px] border px-2 text-[13px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" value={maxInput} title={capTitle}
           onFocus={() => setFocused(true)}
           onChange={(e) => setMaxInput(e.target.value)}
           onBlur={() => { setFocused(false); commitMax(maxInput, state.maxConcurrent, cap); }}
