@@ -3085,6 +3085,8 @@ const en = {
   'project.tree.collapse': 'collapse sub-issues',
   'repos.task.inFlow': '{flow} · {stage}', // #585: the repository issue list's flow cell (handoff §7); project.task.* carry a button's ›
   'repos.task.outside': 'no flow',
+  'settings.taskProps.entry.first': 'at its first stage, {stage}', // #670: the entry menu's note on a flow
+  'settings.taskProps.entry.footer': 'applies at entry only: a task already in a flow stays where it is',
 };
 
 export type MessageKey = keyof typeof en;
@@ -6164,6 +6166,8 @@ const pt: Record<MessageKey, string> = {
   'project.tree.collapse': 'recolher sub-issues',
   'repos.task.inFlow': '{flow} · {stage}',
   'repos.task.outside': 'sem fluxo',
+  'settings.taskProps.entry.first': 'na primeira etapa, {stage}',
+  'settings.taskProps.entry.footer': 'vale só na entrada: a tarefa que já está num fluxo fica onde está',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
