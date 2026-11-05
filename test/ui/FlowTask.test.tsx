@@ -56,6 +56,18 @@ test('taskAction picks one button by priority: aprovar while no session of the t
   expect(actionOf(task({ stage: 'review' }))).toBeUndefined();
 });
 
+// #566: a task outside the flow is a task with no stage
+const stageless = (extra: Partial<WithWork> = {}): WithWork => { const { stage: _stage, ...rest } = task(extra); return rest; };
+
+test('a task outside the flow: abrir to its session while one is live, abrir to its details with an activity and none live, iniciar with no activity, never continuar; a task in a flow is unchanged (#578)', () => {
+  const live = stageless({ workerId: 's1' });
+  expect(taskAction(live, state(live, [working()]))).toBe('open');
+  const stopped = stageless({ stopped: true, branch: 'hive/1-task-1' });
+  expect(taskAction(stopped, state(stopped, [], { activityRecords: records }))).toBe('details'); // /continue refuses a stageless task
+  expect(taskAction(stageless(), state(stageless()))).toBe('start');
+  expect(taskAction(task({ stopped: true }), state(task({ stopped: true }), [], { activityRecords: records }))).toBe('continue');
+});
+
 const ciStage: Stage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'all', rerunOnce: false };
 const inCi = (extra: Partial<WithWork> = {}): WithWork => task({ stage: 'ci', boardColumn: 'CI', ...extra });
 const atCi = (c: WithWork): State => state(c, [], { stages: [...stages, ciStage] });

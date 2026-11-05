@@ -57,14 +57,19 @@ function ciAction(task: Task, state: ActionState, workerless: boolean): TaskActi
 /** Which button the task shows (#542), by priority: out of tries → abrir, to its details (#913); an approval no live session holds back → aprovar (#829); a live session (aguardando você
  * among them, an approval pending or not) → abrir; the stage already ran and stopped → continuar; a delete-activity stage → excluir, while
  * removalBlocker lets it run (#228); a wait-for-CI stage → none while the wait will start by itself, else tentar de novo (#304); it can start →
- * iniciar. A task outside the flow (#577): iniciar while canOpenSession allows it. None for a blocked one and one with nothing to run. */
+ * iniciar. Outside the flow (#577, #578): none while canOpenSession refuses or on a show epic, abrir to the details with an activity (no stage to
+ * continue), else iniciar. None for a blocked one and one with nothing to run. */
 export function taskAction(task: Task, state: ActionState, workerless = true): TaskAction | undefined {
   if (isExhausted(task, state)) return 'details';
   if (answerableActivity(task, state) !== undefined) return 'approve';
   if (workersOf(state, task).length > 0) return 'open';
-  // #577: startMode has no stage to read outside the flow; iniciar opens the Start dialog, whose destination block (#580) asks where it goes,
-  // under the menu's executar etapas… rule
-  if (!inFlow(task)) return canOpenSession(task, activityOf(state, task.item.itemId)) ? 'start' : undefined;
+  // #577, #578: startMode has no stage to read outside the flow. /continue refuses a stageless task, so one with an activity opens its details;
+  // iniciar opens the Start dialog, whose destination block (#580) asks where it goes. A show epic never runs
+  if (!inFlow(task)) {
+    const activity = activityOf(state, task.item.itemId);
+    if (task.item.epic !== undefined || !canOpenSession(task, activity)) return undefined;
+    return activity ? 'details' : 'start';
+  }
   const mode = startMode(task, state);
   if (typeof mode === 'object' && mode.continue) return 'continue';
   if (mode !== 'start' && typeof mode !== 'object') return undefined; // #812: { continue: false } offers iniciar; reiniciar etapa… is in the menu
