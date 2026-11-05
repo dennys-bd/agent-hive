@@ -1,7 +1,7 @@
 import { CheckIcon } from 'lucide-react';
 import { createContext, type ReactNode, useContext, useState } from 'react';
 import { canDiff, canRunCommand, commandsOf, liveCommand, openFeedbackSession, startMode } from '../../task-runs';
-import { canMoveToStage, canOpenSession, canSetWorkspace, createdRemovalBlocker, resolveWorkspace, type Runs } from '../../tasks';
+import { canMoveToStage, canOpenSession, canSetWorkspace, createdRemovalBlocker, inFlow, resolveWorkspace, type Runs } from '../../tasks';
 import { nextPr } from '../../pull-requests';
 import { activityOf, prsOf } from '../../activities';
 import type { Task, State } from '../../types';
@@ -17,6 +17,7 @@ import { useCommandStop } from '@/components/RunCommands';
 import { StartDialog } from '@/components/StartDialog';
 import type { StartMode } from '@/components/StartFields';
 import { useSleepMenu } from '@/components/SleepMenu';
+import { TakeToFlowDialog } from '@/components/tasks/TakeToFlowDialog';
 import { useOpenDiff, useOpenPr, useOpenStarted } from '@/components/terminal-tabs';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { useOpenConsole } from '@/hooks/use-console';
@@ -166,8 +167,10 @@ function LeaveFlowItem({ task, state }: { task: Task; state: State }) {
   );
 }
 
-// The flow's items (#576 decision 10, handoff menuFluxo): começar sozinho, mover para etapa ›, tirar do fluxo
-function FlowItems({ task, state }: { task: Task; state: State }) {
+// The flow's items (#576 decision 10): in the flow (handoff menuFluxo) começar sozinho, mover para etapa › and tirar do fluxo; outside it
+// (menuSem) levar ao fluxo… in their place, its dialog beside the menu as the others are (decision 13)
+function FlowItems({ task, state, onTakeToFlow }: { task: Task; state: State; onTakeToFlow(): void }) {
+  if (!inFlow(task)) return <ContextMenuItem onSelect={onTakeToFlow}>{t('tasks.menu.takeToFlow')}</ContextMenuItem>;
   return (
     <>
       <AutoStartItem task={task} kit={CONTEXT_KIT} />
@@ -212,14 +215,15 @@ function WorkspaceSub({ task, state, id }: { task: Task; state: State; id: strin
   );
 }
 
-/** Right-click on a task still in the flow (redesign 10, #542), 236px, in the handoff's order: aprovar and enviar feedback… while the stage
+/** Right-click on a task (redesign 10, #542), 236px, in the handoff's order: aprovar and enviar feedback… while the stage
  * awaits approval (#268, #315); executar etapas… and abrir sessão livre…, the Start dialog on the task in either mode (#543), disabled while
  * canOpenSession says no; reiniciar etapa…, today's restart dialog, only when startMode offers it (#283); executar › (#300) and dormir › (the
- * task's agent sessions, #343); the two diffs (#270); começar sozinho, mover para etapa ›, tirar do fluxo and mover para workspace ›; excluir atividade… and,
+ * task's agent sessions, #343); the two diffs (#270); in the flow (#576) começar sozinho, mover para etapa › and tirar do fluxo, outside it (#566) levar ao fluxo… in their place, with
+ * executar etapas… reaching #580's destination block; then mover para workspace ›; excluir atividade… and,
  * on a Hive task, excluir task…. Every dialog and confirm lives beside the menu, which closes on the pick, so a click in them never reaches
  * the task. */
 export function TaskMenu({ task, state, children }: { task: Task; state: State; children: ReactNode }) {
-  const [dialog, setDialog] = useState<StartMode | 'restart'>();
+  const [dialog, setDialog] = useState<StartMode | 'restart' | 'takeToFlow'>();
   const [feedback, setFeedback] = useState(false);
   const [isCreatingIssues, setIsCreatingIssues] = useState(false); // #865: A's confirm
   const opener = useOpenStarted();
@@ -248,7 +252,7 @@ export function TaskMenu({ task, state, children }: { task: Task; state: State; 
           <ContextMenuSeparator />
           <DiffItems task={task} state={state} />
           <ContextMenuSeparator />
-          <FlowItems task={task} state={state} />
+          <FlowItems task={task} state={state} onTakeToFlow={() => setDialog('takeToFlow')} />
           <WorkspaceSub task={task} state={state} id={id} />
           {(deleteActivity.item || deleteTask.item) && <ContextMenuSeparator />}
           {deleteActivity.item}
@@ -257,6 +261,7 @@ export function TaskMenu({ task, state, children }: { task: Task; state: State; 
       </ContextMenu>
       {(dialog === 'stages' || dialog === 'free') && <StartDialog state={state} taskId={task.item.itemId} initialMode={dialog} onStarted={started} onClose={close} />}
       {dialog === 'restart' && <RestartDialog task={task} state={state} onStarted={() => started(task.item.itemId)} onClose={close} />}
+      {dialog === 'takeToFlow' && <TakeToFlowDialog task={task} flows={state.flows} open onOpenChange={(open) => { if (!open) close(); }} />}
       {feedback && <FeedbackDialog activity={answerableActivity(task, state)} openSession={openFeedbackSession(task, state) !== undefined} onClose={() => setFeedback(false)} />}
       {isCreatingIssues && live && <DecompositionDialog activityId={live.id} onClose={() => setIsCreatingIssues(false)} />}
       {sleepDialog}
