@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { activityOf } from '../../activities';
-import { resolveWorkspace, sourceOf } from '../../tasks';
+import { resolveWorkspace } from '../../tasks';
 import type { Flow as FlowConfig, FilterRule, Stage, State, Task } from '../../types';
 import { FlowChart } from '@/components/FlowChart';
 import { FlowHeader } from '@/components/FlowHeader';
@@ -19,19 +19,12 @@ import { type DisplayControls, useFlowView } from '@/hooks/use-flow-view';
 import { useTreeFocus } from '@/hooks/use-tree-focus';
 import { t } from '@/i18n';
 import { matchesSearch } from '@/lib/flow-search';
-import type { DisplayOptions } from '@/lib/flow-view';
 import { visibleUnderFilter } from '@/lib/stage-filters';
+import { viewedTasks } from '@/lib/task-list';
 import { focusTrail } from '@/lib/tree-focus';
-import { hasTree, hiddenEpics } from '@/lib/tree-groups';
+import { hasTree } from '@/lib/tree-groups';
 
 interface FlowProps { state: State; flow: FlowConfig; selectedId?: string; onOpen?(taskId: string): void; stageCaps?: Record<string, number>; display?: DisplayControls; sources?: SourcesNav } // display: Center's one value (#574); absent (a test harness): the stored options, nothing to change them; sources: the popover's rows (#574), absent: hive alone; flow: the one drawn (#571); selectedId: the detail panel's task (#542); stageCaps: the effective caps, which a node shows as n/cap (#727)
-
-/** What the view leaves of `tasks` (#576 decisions 6, 7), before the stage filter and the search: a task of a source unchecked in exibir goes,
- * and so does an epic esconder epics hides, read off the whole list `all` so a child outside the flow still makes its parent an epic. */
-export function viewedTasks(all: readonly Task[], tasks: readonly Task[], options: Pick<DisplayOptions, 'sourcesOff' | 'epics'>): Task[] {
-  const hidden = hiddenEpics(all, options.epics);
-  return tasks.filter((c) => !options.sourcesOff.includes(sourceOf(c)) && !hidden.has(c.item.itemId));
-}
 
 /** What a stage shows (#374, #542): its tasks of `tasks` (the viewed ones, #576) in the Hive's order, those the view filter lets through, and
  * those the search lets through after it. */

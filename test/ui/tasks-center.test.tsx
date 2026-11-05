@@ -216,12 +216,14 @@ test('the outside placeholder has exibir with no voltas rows, counting only the 
   expect(pop.getByRole('checkbox', { name: 'hive' })).not.toBeChecked();
 });
 
-test('⌥0 opens todas em lista and ⌥1 the hive source, while the tasks view shows (#572)', () => {
+test('⌥0 opens todas em lista, the list with its groups, and ⌥1 the hive source, while the tasks view shows (#572, #577)', () => {
   render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showTasks();
   fireEvent.keyDown(window, { key: '™', code: 'Digit0', altKey: true });
   expect(automation().getByRole('button', { name: /^todas em lista/ })).toHaveAttribute('aria-pressed', 'true');
-  expect(main().getByText('em breve')).toBeInTheDocument();
+  const list = within(main().getByRole('table', { name: 'todas em lista' }));
+  expect([...list.getAllByRole('button')].filter((b) => b.hasAttribute('aria-expanded')).map((b) => b.textContent)).toEqual(['build1', 'ship1', 'sem fluxosem etapas · nenhum worker conduz1']); // #3's stage belongs to no flow
+  expect(main().queryByText('em breve')).not.toBeInTheDocument();
   fireEvent.keyDown(window, { key: '™', code: 'Digit1', altKey: true });
   expect(automation().getByRole('button', { name: /^hive/ })).toHaveAttribute('aria-pressed', 'true');
   expect(bar().getByText('hive')).toHaveClass('font-semibold');

@@ -519,3 +519,11 @@ test('an evaluation reads avaliando · n revisores on the card, then its rejecti
   rerender(<Flow state={at({ stopped: true, error: 'evaluation rejected: Ok?' })} flow={firstFlow(at({ stopped: true, error: 'evaluation rejected: Ok?' }))} />);
   expect(within(tile()).getByText('avaliação reprovou: Ok?')).toBeInTheDocument();
 });
+
+test('a task outside the flow gets iniciar while a session may open on it, abrir with a live session, none while its activity is being deleted (#577 decision 9)', () => {
+  const { stage: _stage, ...outside } = task();
+  expect(taskAction(outside, state(outside))).toBe('start');
+  expect(taskAction(outside, state(outside, [working({ status: 'waiting' })]))).toBe('open');
+  const deleting: WithWork = { ...outside, worktree: '/wt', deleting: true };
+  expect(taskAction(deleting, state(deleting))).toBeUndefined();
+});
