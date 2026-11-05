@@ -8,6 +8,7 @@ import { localActivityId } from '../src/activities.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
+import { withBridge } from '../src/server-design-frame.js';
 import { SHORT_SHA } from '../src/tasks.js';
 import { worktreePath } from '../src/worktree.js';
 import type { Exec, SettingsBody, Task } from '../src/types.js';
@@ -33,6 +34,8 @@ interface Bases { base: string; repo: string; worktree: string; server: HiveServ
 async function commitFiles(repo: string, worktree: string, git: Bases['git']): Promise<void> {
   await mkdir(join(worktree, 'docs'), { recursive: true });
   await writeFile(join(worktree, 'docs', 'spec.md'), 'one\n');
+  await mkdir(join(worktree, 'design'), { recursive: true });
+  await writeFile(join(worktree, 'design', 'home.hv.html'), '<!doctype html><html><head></head><body>one</body></html>');
   await writeFile(join(worktree, 'logo.bin'), Buffer.from([0x89, 0x50, 0x00, 0x01]));
   await writeFile(join(worktree, 'big.txt'), 'a'.repeat(EDITOR_FILE_MAX + 1));
   await writeFile(join(repo, 'readme.md'), 'readme\n');
@@ -40,6 +43,7 @@ async function commitFiles(repo: string, worktree: string, git: Bases['git']): P
   await git('commit', '--quiet', '-m', 'base');
   await git('branch', BASE_REF);
   await writeFile(join(worktree, 'docs', 'spec.md'), 'one\ntwo\n');
+  await writeFile(join(worktree, 'design', 'home.hv.html'), '<!doctype html><html><head></head><body>two</body></html>');
   await git('commit', '--quiet', '-am', 'second');
   await writeFile(join(worktree, 'docs', 'new.md'), 'fresh\n');
 }
@@ -127,5 +131,17 @@ for (const isUnresolved of [false, true]) test(`a file of a nested repository co
   const oid = (await git('rev-parse', 'HEAD:notes.md')).stdout.trim();
   for (const against of ['head', 'task']) {
     assert.deepEqual(await ask(b, { path: 'vendor/notes.md', against }), [200, { against, label: 'HEAD', oid, text: 'kept\n' }], against);
+  }
+});
+
+// The before frame and the changes pane's text must name one base (#675): the frame serves exactly the blob file-base answers, bridge added
+test('baseCommit answers the commit file-base reads: the design-frame-base frame serves file-base\'s blob of HEAD and of the task base (#675)', async (t) => {
+  const b = await startBases(t);
+  const query = (against: string): Record<string, string> => ({ path: 'design/home.hv.html', against });
+  for (const against of ['head', 'task']) {
+    const [, base] = await ask(b, query(against));
+    const res = await hiveFetch(`${b.base}${workPath(b.server, 'local:1')}/design-frame-base?${new URLSearchParams(query(against))}`);
+    const { url } = (await res.json()) as { url: string };
+    assert.equal(await (await fetch(`${b.base}${url}`)).text(), withBridge((base as { text: string }).text), against);
   }
 });

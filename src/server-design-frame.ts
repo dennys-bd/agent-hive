@@ -2,17 +2,19 @@
 // design's folder under the URL's token, outside the secret gate. A sandboxed frame has an opaque origin and no usable credential, so the
 // token is the capability and the route never reads the port's cookie. Every answer carries its own sandboxing policy.
 import { readFile } from 'node:fs/promises';
-import { basename, dirname, extname, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, posix, relative, resolve, sep } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
 import { bridgeScript } from './design-bridge.js';
-import { assemble, readPartFrom } from './design-parts.js';
+import { assemble, gitBlob, gitEntry, isRegularBlob, OUTPUT_MAX, readPartFrom, readPartFromGit, type ReadPart } from './design-parts.js';
 import { isInside } from './ide.js';
 import type { Logger } from './log.js';
 import { DESIGN_FRAME_PREFIX, newSecret } from './secret.js';
-import { locate } from './server-editor.js';
+import { type Located, locate } from './server-editor.js';
+import { baseCommit } from './server-file-base.js';
 import { DISK, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
+import type { Exec } from './types.js';
 
 const HEAD_TAG = /<head\b[^>]*>/i; // \b: <header> is not <head>
 const FIRST_ELEMENT = /<[a-z]/i; // a doctype or a comment is not an element: the bridge never lands before it
@@ -26,7 +28,7 @@ const REFUSED_POLICY = "sandbox; default-src 'none'; frame-ancestors 'self'";
 
 type Live = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
 interface FrameDeps { tokens: DesignFrameTokens; log: Pick<Logger, 'debug'> }
-interface MintDeps { requireLive: TaskRouteDeps['requireLive']; tokens: DesignFrameTokens }
+interface MintDeps { requireLive: TaskRouteDeps['requireLive']; tokens: DesignFrameTokens; exec: Exec }
 
 /** A before frame's folder (#675): `folder` of `commit` in the repository at `top`, in git's path space (posix, relative to top). */
 export interface BaseFolder { top: string; commit: string; folder: string }
@@ -101,11 +103,40 @@ function refuseFrame(req: Request, res: Response, log: FrameDeps['log']): void {
   res.status(HTTP_NOT_FOUND).set('content-security-policy', REFUSED_POLICY).end();
 }
 
-// A screen is assembled from its parts before the bridge goes in (#421); any other page, a part asked directly included, is served as on disk
-async function pageOf(folder: string, file: string, text: string): Promise<string> {
-  if (!file.endsWith(DESIGN_SUFFIX)) return withBridge(text);
-  const { html, parts } = await assemble(relative(folder, file).split(sep).join('/'), text, readPartFrom(folder));
+// A screen is assembled from its parts before the bridge goes in (#421); any other page, a part asked directly included, is served as stored.
+// screen: its path from the token's folder; read: the disk's reader or the commit's (#675)
+async function pageOf(screen: string, text: string, read: ReadPart): Promise<string> {
+  if (!screen.endsWith(DESIGN_SUFFIX)) return withBridge(text);
+  const { html, parts } = await assemble(screen, text, read);
   return withBridge(html, parts);
+}
+
+interface Served { name: string; bytes: Buffer; page(): Promise<string> }
+
+async function diskServed(folder: string, segments: string[]): Promise<Served | undefined> {
+  const file = await servedFile(folder, segments);
+  if (file === undefined) return undefined;
+  const bytes = await readFile(file);
+  return { name: file, bytes, page: () => pageOf(relative(folder, file).split(sep).join('/'), bytes.toString('utf8'), readPartFrom(folder)) };
+}
+
+// The asked file of a before frame (#675): joined under the token's folder in git's path space and refused, as servedFile refuses, for an
+// escape or a dot segment before git is asked; then only a regular blob within OUTPUT_MAX, so a link, a tree or a huge blob is never read
+async function servedBlob({ top, commit, folder }: BaseFolder, segments: string[]): Promise<Served | undefined> {
+  const path = posix.join(folder, ...segments);
+  const screen = posix.relative(folder, path);
+  if (screen === '' || screen.split('/').some((part) => part.startsWith('.'))) return undefined; // '..' is a dot segment too
+  const entry = await gitEntry(top, commit, path);
+  if (entry === undefined || !isRegularBlob(entry) || entry.size > OUTPUT_MAX) return undefined;
+  const bytes = await gitBlob(top, entry.oid, OUTPUT_MAX);
+  return { name: path, bytes, page: () => pageOf(screen, bytes.toString('utf8'), readPartFromGit(top, commit, folder)) };
+}
+
+async function servedOf(tokens: DesignFrameTokens, token: string, segments: string[]): Promise<Served | undefined> {
+  const folder = tokens.folderOf(token);
+  if (folder !== undefined) return diskServed(folder, segments);
+  const base = tokens.baseOf(token);
+  return base === undefined ? undefined : servedBlob(base, segments);
 }
 
 // ponytail: the whole file is read into memory, which is fine for a design's pages, styles and images; stream it if designs ever carry large media
@@ -113,14 +144,12 @@ async function serveFrame(req: Request, res: Response, { tokens, log }: FrameDep
   // no-store: the pane reloads on a version change and must get the new file; no-referrer: the token never leaves in a Referer
   res.set({ 'x-content-type-options': 'nosniff', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
   const token = String(req.params.token);
-  const folder = tokens.folderOf(token);
   const segments: unknown = req.params.path; // Express 5's *path: the decoded segments
-  const file = folder === undefined ? undefined : await servedFile(folder, Array.isArray(segments) ? segments.map(String) : [String(segments)]);
-  if (folder === undefined || file === undefined) return refuseFrame(req, res, log);
-  const bytes = await readFile(file);
-  res.set('content-security-policy', framePolicy(String(req.headers.host), token)).type(extname(file)); // the Host check already ran
+  const served = await servedOf(tokens, token, Array.isArray(segments) ? segments.map(String) : [String(segments)]);
+  if (served === undefined) return refuseFrame(req, res, log);
+  res.set('content-security-policy', framePolicy(String(req.headers.host), token)).type(extname(served.name)); // the Host check already ran
   const isHtml = res.get('content-type')?.startsWith('text/html') === true;
-  res.send(isHtml ? await pageOf(folder, file, bytes.toString('utf8')) : bytes);
+  res.send(isHtml ? await served.page() : served.bytes);
 }
 
 /** GET /design-frame/:token/*path (#108): read-only, never a listing. server.ts mounts it after the Host check and before the secret. */
@@ -134,29 +163,61 @@ export function registerDesignFrameRoute(app: Express, deps: FrameDeps): void {
   });
 }
 
-// The frame URL of the activity's design: located as the editor locates its file, then refused unless it is a Hive design inside the
-// activity's folder (locate has no inside check, #697). A design at the folder's root is refused too: its token would serve the whole checkout
-// where designs belong in their own <designsDir>/<date>-<slug>/ folder
-async function frameUrl(current: Live, id: string, path: unknown, tokens: DesignFrameTokens): Promise<{ url: string } | Refusal> {
-  const located = await locate(current, id, path);
-  if ('status' in located) return located;
+type MintAnswer = { url: string } | { missing: true } | Refusal;
+const NOT_FOUND: Refusal = { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };
+
+// Both mints' refusals (#108, #675): not a Hive design, outside the activity's folder (locate has no inside check, #697), or at the folder's
+// root, where a token would serve the whole checkout. Answers the real folder the design sits in
+async function designFolder(located: Located): Promise<{ folder: string } | Refusal> {
   if (!located.file.endsWith(DESIGN_SUFFIX)) return { status: HTTP_BAD_REQUEST, message: NOT_DESIGN_MESSAGE };
   const folder = await DISK.realpath(located.folder).catch(() => undefined); // locate's file is real; its folder may not be (macOS's tmpdir)
-  if (folder === undefined || !isInside(folder, located.file) || dirname(located.file) === folder) return { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };
-  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mint(dirname(located.file))}/${encodeURIComponent(basename(located.file))}` };
+  if (folder === undefined || !isInside(folder, located.file) || dirname(located.file) === folder) return NOT_FOUND;
+  return { folder: dirname(located.file) };
 }
 
-/** GET /activities/:id/design-frame?path= (#108): behind the secret gate and requireLive, like the editor's file routes; read-only and idempotent. */
-export function registerDesignFrameMint(app: Express, { requireLive, tokens }: MintDeps): void {
-  app.get('/activities/:id/design-frame', async (req: Request, res: Response) => {
+// The frame URL of the activity's design: located as the editor locates its file, then refused by designFolder
+async function frameUrl(current: Live, id: string, path: unknown, tokens: DesignFrameTokens): Promise<MintAnswer> {
+  const located = await locate(current, id, path);
+  if ('status' in located) return located;
+  const design = await designFolder(located);
+  if ('status' in design) return design;
+  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mint(design.folder)}/${encodeURIComponent(basename(located.file))}` };
+}
+
+// The before frame's URL (#675): the base as file-base resolves it, at a sha; missing when that commit has no such screen. A screen at the
+// repository's root is refused like one at the folder's root
+async function baseFrameUrl(current: Live, req: Request, { tokens, exec }: Pick<MintDeps, 'tokens' | 'exec'>): Promise<MintAnswer> {
+  const base = await baseCommit(current, activityParam(req), req.query.path, req.query.against, exec);
+  if ('status' in base) return base;
+  const design = await designFolder(base.located);
+  if ('status' in design) return design;
+  if (base.repo === undefined) return NOT_FOUND;
+  const { top, commit } = base.repo;
+  const path = base.repo.path.split(sep).join('/'); // git's path space
+  const folder = posix.dirname(path);
+  if (folder === '.') return NOT_FOUND;
+  const entry = commit === undefined ? undefined : await gitEntry(top, commit, path);
+  if (commit === undefined || entry === undefined || !isRegularBlob(entry)) return { missing: true };
+  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mintBase({ top, commit, folder })}/${encodeURIComponent(posix.basename(path))}` };
+}
+
+function registerMint(app: Express, route: string, requireLive: MintDeps['requireLive'], answerOf: (current: Live, req: Request) => Promise<MintAnswer>): void {
+  app.get(route, async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
     try {
-      const answer = await frameUrl(current, activityParam(req), req.query.path, tokens);
+      const answer = await answerOf(current, req);
       if ('status' in answer) res.status(answer.status).json({ error: answer.message });
       else res.json(answer);
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
+}
+
+/** GET /activities/:id/design-frame?path= (#108) and GET /activities/:id/design-frame-base?path=&against=head|task (#675): behind the secret
+ *  gate and requireLive, like the editor's file routes; read-only and idempotent. */
+export function registerDesignFrameMint(app: Express, { requireLive, tokens, exec }: MintDeps): void {
+  registerMint(app, '/activities/:id/design-frame', requireLive, (current, req) => frameUrl(current, activityParam(req), req.query.path, tokens));
+  registerMint(app, '/activities/:id/design-frame-base', requireLive, (current, req) => baseFrameUrl(current, req, { tokens, exec }));
 }
