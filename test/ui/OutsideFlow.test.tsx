@@ -6,11 +6,11 @@ import type { DisplayControls } from '@/hooks/use-flow-view';
 import { setLanguage } from '@/i18n';
 import { DISPLAY_DEFAULTS, type DisplayOptions } from '@/lib/flow-view';
 import type { BaseOptions, Item, Stage, State } from '../../src/types';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../../src/types';
 import { withPointedWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
 
-// The outside-the-flow grid (#578). Radix's ContextMenu opens once per file under jsdom: one test here right-clicks, no other may
+// The outside-the-flow grid (#578). Radix's ContextMenu opens once per file under jsdom, and not after a dialog: the right-click is in OutsideFlow.menu.test.tsx
 const STAGES: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
 // #566: no stage is outside the flow; a branch gives the task an activity, so it is started (#568)
 const task = (id: string, extra: Partial<WithWork> = {}, item: Partial<Item> = {}): WithWork => ({
@@ -75,4 +75,34 @@ test('a card: out of the listing, its ◌ line and a dashed border; its second l
   expect(within(card('2')).getByText('site · nova')).toBeInTheDocument();
   expect(within(card('3')).getByText('nova')).toBeInTheDocument();
   expect([...screen.getByRole('group', { name: 'workspaces' }).children].map((row) => row.textContent)).toEqual(['hive', 'site']);
+});
+
+test('a card\'s footer: a started card\'s status in its tone, none on a new one; abrir on a started card with no session opens its details, never continuar; a click on its free area does too (#578)', async () => {
+  const user = userEvent.setup();
+  const onOpen = vi.fn();
+  show(state([started('1'), task('2'), started('3', { error: `${SPAWN_FAILED}pty: posix_spawnp failed.` })]), { onOpen });
+  expect(within(card('2')).getAllByText(/nova/)).toHaveLength(1); // the line says nova; the footer says nothing
+  expect(within(card('3')).getByText('o terminal não pôde iniciar')).toHaveClass('text-destructive');
+  expect(within(card('1')).queryByRole('button', { name: 'continuar' })).not.toBeInTheDocument();
+  await user.click(within(card('1')).getByRole('button', { name: 'abrir' }));
+  expect(onOpen).toHaveBeenLastCalledWith('I1');
+  await user.click(within(card('1')).getByText('hive · hive/1-task-1'));
+  expect(onOpen).toHaveBeenCalledTimes(2);
+});
+
+test('iniciar on a new card opens the Start dialog with its destination block: the task has no stage (#578, #580)', async () => {
+  const user = userEvent.setup();
+  show(state([task('2')]));
+  await user.click(within(card('2')).getByRole('button', { name: 'iniciar' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Iniciar #2' });
+  expect(within(dialog).getByRole('radiogroup', { name: 'destino' })).toBeInTheDocument();
+});
+
+test('levar ao fluxo… opens the take-to-flow dialog on the task and leaves the card closed (#578)', async () => {
+  const user = userEvent.setup();
+  const onOpen = vi.fn();
+  show(state([started('1')]), { onOpen });
+  await user.click(within(card('1')).getByRole('button', { name: 'levar ao fluxo…' }));
+  expect(await screen.findByRole('alertdialog', { name: 'Levar ao fluxo' })).toHaveTextContent('#1 Task 1');
+  expect(onOpen).not.toHaveBeenCalled();
 });
