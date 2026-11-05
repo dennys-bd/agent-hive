@@ -3,6 +3,7 @@ import { access, realpath, unlink } from 'node:fs/promises';
 import { basename, isAbsolute, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
+import type { Logger } from './log.js';
 import { ownBranch } from './task-runs.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
@@ -10,7 +11,7 @@ import { HIVE_DIR } from './hooks-settings.js';
 import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, RemovalRefusal, remoteHead, setAside, settleSync, withSync, wordsOf } from './worktree-base.js';
 import { refuseDirtyNested, removeNested } from './worktree-nested.js';
 export { branchAt, gitOrWords, wordsOf } from './worktree-base.js';
-import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type Exec, isBranchName, type WorktreeRow } from './types.js';
+import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type TaskPr, type Exec, isBranchName, type WorktreeRow } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 const BRANCH_NOT_FOUND = /error: branch '.*' not found/; // git branch -D on a branch already deleted; execFile's message embeds the stderr
@@ -200,8 +201,9 @@ export type BeforeRemove = (path: string, present: boolean) => Promise<void>;
 /** What a clear does with a branch `branch -d` would refuse (#267): refuse, as delete activity does, or set it aside, as the start dialog's discard does. */
 export type Unmerged = 'refuse' | 'setAside';
 
-/** cleanWorktree's choices: what an unmerged branch gets (#267) and the workspace's nestedRepos, whose worktrees in this one go first (#653). */
-export interface CleanOptions { unmerged?: Unmerged; nested?: readonly string[] }
+/** cleanWorktree's choices: what an unmerged branch gets (#267), the workspace's nestedRepos, whose worktrees in this one go first (#653), the
+ * task's PRs, which mergedByPr reads for a branch git calls unmerged, and where a PR read that failed is logged (#660). */
+export interface CleanOptions { unmerged?: Unmerged; nested?: readonly string[]; prs?: readonly TaskPr[]; log?: Pick<Logger, 'info'> }
 
 /**
  * The delete activity stage's action, and the first try of the ⋯ menu's delete activity (#182): removes the task's worktree and its local
@@ -213,11 +215,12 @@ export interface CleanOptions { unmerged?: Unmerged; nested?: readonly string[] 
  * the activity's branch only when it is the name the Hive's template renders for this task, else nothing. The remote branch is never touched.
  * `beforeRemove` (#654) runs between the checks and the removal; its rejection removes nothing. `options.unmerged: 'setAside'` (#267) keeps an
  * unmerged branch under setAside's name instead of refusing. `options.nested` (#653): the workspace's nestedRepos, whose worktrees in this one go first
- * (removeNested); [] removes none.
+ * (removeNested); [] removes none. `options.prs` (#660): a branch git calls unmerged that mergedByPr says its PRs merged is not refused and goes
+ * with `branch -D`.
  */
 export async function cleanWorktree(
   repo: string, activity: Pick<Activity, 'slug' | 'branch'>, branch: string, exec: Exec = execFileAsync, beforeRemove?: BeforeRemove,
-  { unmerged = 'refuse', nested = [] }: CleanOptions = {},
+  { unmerged = 'refuse', nested = [], prs = [], log }: CleanOptions = {},
 ): Promise<void> {
   const path = worktreePath(repo, slugOfWork(activity));
   const nestedOf = { path: repo, nestedRepos: nested };
@@ -231,13 +234,16 @@ export async function cleanWorktree(
     await refuseDirtyNested(nestedOf, path, exec); // #653: an ignored nested worktree is deleted by the outer remove without a word; refuse first
   }
   const check = found === undefined ? undefined : await mergeCheck(repo, found, exec);
-  if (found !== undefined && check?.merged === false && unmerged === 'refuse') throw unmergedError(found, check.target);
+  // #660: a squash leaves the branch off HEAD; its PRs say whether it was merged anyway
+  const byPr = found !== undefined && check?.merged === false && (await mergedByPr(repo, found, prs, exec, log));
+  if (found !== undefined && check?.merged === false && !byPr && unmerged === 'refuse') throw unmergedError(found, check.target);
   await beforeRemove?.(path, present); // #654: after every refusal check, so a teardown never runs for a removal git would refuse
   await removeNested(nestedOf, path, named, false, exec); // #653: inside out; a gone outer folder holds none, so this only prunes
   if (listed !== undefined) await gitOrWords(repo, present ? ['worktree', 'remove', '--', path] : ['worktree', 'prune'], exec);
   if (found === undefined) return;
+  if (byPr) await gitOrWords(repo, ['branch', '-D', '--', found], exec); // #660: branch -d refuses a squashed branch whatever was checked
   // #267: an unmerged branch the discard clears is kept as <branch>-old-<sha7>, after its worktree went, so the rename touches no checkout
-  if (check?.merged === false) await setAside(repo, found, exec);
+  else if (check?.merged === false) await setAside(repo, found, exec);
   else await gitOrWords(repo, ['branch', '-d', '--', found], exec);
 }
 
@@ -261,6 +267,33 @@ const unmergedError = (branch: string, target: string): RemovalRefusal =>
 export async function refuseUnmerged(repo: string, branch: string, exec: Exec): Promise<void> {
   const { merged, target } = await mergeCheck(repo, branch, exec);
   if (!merged) throw unmergedError(branch, target);
+}
+
+const PR_READ_TIMEOUT_MS = 30_000; // one gh pr view: a hung read must not hold the delete
+
+/** A branch git calls unmerged that its PRs merged (#660): no PR still open, at least one merged, and the local tip is the head GitHub merged
+ * for one of them, so a commit made after the merge still refuses. Only the PRs the record holds as merged are read, at delete time, since the
+ * record may be a poll behind; a read that fails, or an answer that is not MERGED, counts as not merged: a failing read never deletes. */
+export async function mergedByPr(repo: string, branch: string, prs: readonly TaskPr[], exec: Exec, log?: Pick<Logger, 'info'>): Promise<boolean> {
+  // the record's links passed isPrUrl when stored; https:// only keeps a `-` off gh's argv anyway
+  const merged = prs.filter((pr) => pr.state === 'merged' && pr.url.startsWith('https://'));
+  if (merged.length === 0 || prs.some((pr) => pr.state === 'open')) return false;
+  const tip = (await gitOrWords(repo, ['rev-parse', '--verify', `refs/heads/${branch}`], exec)).trim();
+  const heads = await Promise.all(merged.map((pr) => mergedHead(pr.url, exec, log)));
+  return heads.includes(tip);
+}
+
+// The head GitHub merged for the PR, undefined when gh fails or GitHub does not call it MERGED; either is logged with the url
+async function mergedHead(url: string, exec: Exec, log?: Pick<Logger, 'info'>): Promise<string | undefined> {
+  try {
+    const { stdout } = await exec('gh', ['pr', 'view', url, '--json', 'state,headRefOid'], { timeout: PR_READ_TIMEOUT_MS });
+    const answer = JSON.parse(stdout) as { state?: unknown; headRefOid?: unknown };
+    if (answer.state === 'MERGED' && typeof answer.headRefOid === 'string') return answer.headRefOid;
+    log?.info(`mergedByPr ${url}: not merged on GitHub`);
+  } catch (err) {
+    log?.info(`mergedByPr ${url}: ${wordsOf(err)}`);
+  }
+  return undefined;
 }
 
 /**
