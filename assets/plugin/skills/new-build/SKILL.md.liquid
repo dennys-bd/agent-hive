@@ -1,7 +1,7 @@
 ---
 # original: written for the Hive, no external source
 name: new-build
-description: 'Build stage for one task: slice by slice TDD from the plan, build-fix (at most 3 tries per failure) and a code review of the slice; then one security review, the check against the spec''s Done, the UI check, the walkthrough and the PRs. Autonomous, no questions; never moves the task in its source.'
+description: 'Build stage for one task: TDD from the plan task by task, build-fix (at most 3 tries per failure), then one code review and one security review of the whole diff, the check against the spec''s Done, the UI check, the walkthrough and the PR. Autonomous, no questions; never moves the task in its source.'
 variables:
   specsDir: { default: docs/hive/specs }
   plansDir: { default: docs/hive/plans }
@@ -9,19 +9,18 @@ variables:
   designsDir: { default: docs/hive/design }
   docsLanguage: { default: English }
   chatLanguage: { default: null }
-  delivery: { values: [single, stacked, integration], default: single }
   uiCheck: { default: null }
   testCommand: { default: null }
 ---
 
 # /hive:new-build
 
-Implements an approved plan on the task's branch, slice by slice, writes
-the walkthrough and opens the PRs. It is the last stage of the Hive's flow
+Implements an approved plan on the task's branch, task by task, writes
+the walkthrough and opens the PR. It is the last stage of the Hive's flow
 and also works on its own. GitHub is touched only through `/hive:new-pr`,
-which opens the PRs; moving the task in its source is not this skill's
+which opens the PR; moving the task in its source is not this skill's
 job.{% if chatLanguage %} Talk in {{ chatLanguage }}.{% endif %} The
-walkthrough and the PR bodies are written in {{ docsLanguage }}.
+walkthrough and the PR body are written in {{ docsLanguage }}.
 
 ## Input
 
@@ -99,9 +98,9 @@ below, the repository's default branch
 
 | Stage | Who |
 |---|---|
-| Slices: implementation | `hive:tdd`, one dispatch per task of the plan |
-| Slices: build-fix | `hive:build-fixer`, at most 3 dispatches per failure |
-| Slices: slice review | `hive:code-reviewer`, on each slice's diff |
+| Implementation | `hive:tdd`, one dispatch per task of the plan |
+| Build-fix | `hive:build-fixer`, at most 3 dispatches per failure |
+| Code review | `hive:code-reviewer`, once, on the whole diff |
 | Security review | `hive:security-reviewer`, once, on the whole diff |
 | Done check, UI check, walkthrough, PR | this session, no subagent; `/hive:new-pr` runs inline |
 
@@ -110,70 +109,44 @@ or in the prompt that invoked this skill, replaces that stage's default:
 a repository with a language-specific reviewer gets it back without
 forking this skill. Say which subagent ran each stage.
 
-## Stage 1 — Slices
+## Stage 1 — Implementation
 
-Build the slices in the order of the plan's `## Index`; a plan with no
-index, or a `Design:` paragraph, is one slice. For each slice:
+Everything is built on the task's branch, `<branch>`: one diff, one PR.
+Take the tasks in the order of the plan's `## Index`, every table of it;
+a plan with no index, or a `Design:` paragraph, is built top to bottom.
 
-1. **Branch**, in the `{{ delivery }}` delivery (`<branch>` is the task's
-   branch; a delivery of one slice stays on `<branch>` in every mode):
-{%- if delivery == "single" %}
-   every slice stays on `<branch>`, as a group of commits.
-{%- endif %}
-{%- if delivery == "stacked" %}
-   slice 1 on `<branch>`; slice k > 1 on its own branch,
-   `git checkout -b <branch>-s<k>` from slice k − 1's branch.
-{%- endif %}
-{%- if delivery == "integration" %}
-   slice 1 on its own branch, `git checkout -b <branch>-s1 <branch>`;
-   slice k > 1 on `<branch>-s<k>`, from slice k − 1's branch, so a
-   dependent slice compiles. `<branch>` is never merged locally: that
-   would leave the slice PRs empty. Their diff against `<branch>` shows
-   the earlier slices until those PRs are merged in order.
-{%- endif %}
-
-   Then note the slice's start: `git rev-parse HEAD`.
-2. **Tasks.** Dispatch `hive:tdd` task by task. Each dispatch gets its
+1. **Tasks.** Dispatch `hive:tdd` task by task. Each dispatch gets its
    task's section of the plan copied whole (heading, files, interfaces,
    steps with their code), the plan's `## Global Constraints` copied
    whole, the test command, and the paths of the plan and the spec, which
    it opens only when its task is not enough. Never the whole plan. Run
    the test command after every task; each green task is committed.
-3. **Build-fix.** When the build or the tests break and the fix is not
+2. **Build-fix.** When the build or the tests break and the fix is not
    obvious from the plan, dispatch `hive:build-fixer` with the failing
    output. At most 3 dispatches per failure; if it still fails after the
    third, or a dispatch answers that the fix needs the plan changed, stop
    with the error.
-4. **Slice review.** Dispatch `hive:code-reviewer` on the slice's diff,
-   `git diff <slice start>..HEAD`. Fix CRITICAL and HIGH, commit, and
-   re-dispatch if a fix was non-trivial, all before the next slice
-   starts. MEDIUM: fix when cheap, otherwise keep them for the
-   walkthrough. Never self-approve: the review is its own pass in its own
-   context. With one slice, this is the one review of the branch.
 
 Behaviour the test suite cannot cover is verified by hand and becomes a
 manual check in the walkthrough; the logic behind it still gets tests.
 
-## Stage 2 — Security review
+## Stage 2 — Code review
 
-Once, on the whole delivery's diff:
-{%- if delivery == "single" %}
-`git diff <base>...HEAD` on `<branch>`.
-{%- endif %}
-{%- if delivery == "stacked" %}
-`git diff <base>...HEAD` on the last slice's branch.
-{%- endif %}
-{%- if delivery == "integration" %}
-every slice's own diff (`git diff <branch>-s<k-1>...<branch>-s<k>`,
-slice 1 against `<branch>`), all in the same dispatch.
-{%- endif %}
-Skip it when every changed file is prose (markdown, plain text, and the
-files under `{{ specsDir }}`, `{{ plansDir }}`, `{{ walkthroughsDir }}`
-and `{{ designsDir }}`), and say it was skipped and why. Otherwise
-dispatch `hive:security-reviewer`; fix CRITICAL and HIGH and re-run to
-confirm.
+Once every task is green, dispatch `hive:code-reviewer` on the whole
+diff, `git diff <base>...HEAD`. Fix CRITICAL and HIGH, commit, and
+re-dispatch if a fix was non-trivial. MEDIUM: fix when cheap, otherwise
+keep them for the walkthrough. Never self-approve: the review is its own
+pass in its own context.
 
-## Stage 3 — Check against the spec's Done
+## Stage 3 — Security review
+
+Once, on the same diff, after the code review's fixes. Skip it when every
+changed file is prose (markdown, plain text, and the files under
+`{{ specsDir }}`, `{{ plansDir }}`, `{{ walkthroughsDir }}` and
+`{{ designsDir }}`), and say it was skipped and why. Otherwise dispatch
+`hive:security-reviewer`; fix CRITICAL and HIGH and re-run to confirm.
+
+## Stage 4 — Check against the spec's Done
 
 Take every criterion of the spec's `## Done` (bounded path: what the
 `Design:` paragraph promises) and check it against what was built: met,
@@ -181,7 +154,7 @@ with its evidence (a test, a file, a command run), or not met. A
 criterion that needs the running app becomes a manual check. Every
 criterion not met goes into the walkthrough.
 
-## Stage 4 — UI check
+## Stage 5 — UI check
 
 A visual check compares a built screen with its reference: what the
 spec's `## Design references` lists and the screens the design handoff
@@ -195,31 +168,23 @@ difference left for the walkthrough.
 {% endif -%}
 Every visual check not run here is a manual step of the walkthrough.
 
-## Stage 5 — Walkthrough
+## Stage 6 — Walkthrough
 
 Write `{{ walkthroughsDir }}/<YYYY-MM-DD>-<slug>.md`, in {{ docsLanguage }},
 `<slug>` being the plan's; one per task: when "Input" found one, update
 that file. It holds:
 
-- a header naming the issue (`#<n>`), the spec, the plan and the
-  branches;
-- per slice, `## Slice <k> — <name>`: what was built; the files in the
-  order to read them, each with one line on why it comes there;
-  deviations from the plan and why; risks;
+- a header naming the issue (`#<n>`), the spec, the plan and the branch;
+- `## What was built` — what was built; the files in the order to read
+  them, each with one line on why it comes there; deviations from the
+  plan and why; risks;
 - `## Open findings` — MEDIUM review findings left open, or `None`;
-- `## Done criteria not met` — from stage 3, or `None`;
+- `## Done criteria not met` — from stage 4, or `None`;
 - `## Tests` — the test command and its result;
 - `## Manual checks` — the steps a person runs, the visual ones included,
   and the UI check's differences when it ran.
 
-Check out the right branch of this repository first:
-{%- if delivery == "stacked" %}
-the last slice's, `git checkout <branch>-s<last>`.
-{%- endif %}
-{%- if delivery != "stacked" %}
-`<branch>`, `git checkout <branch>`.
-{%- endif %}
-Then commit the file where the repository's rules say, in its agent
+Commit the file where the repository's rules say, in its agent
 instructions file: this repository, or the nested one that holds
 `{{ walkthroughsDir }}`, on the branch that checkout is on, never
 switched. The message is the repository's too; `docs: walkthrough for
@@ -227,16 +192,16 @@ switched. The message is the repository's too; `docs: walkthrough for
 `{{ walkthroughsDir }}` that no checkout tracks (git ignores it) leaves
 the file written and uncommitted: say so.
 
-## Stage 6 — PR
+## Stage 7 — PR
 
 Run `/hive:new-pr` against the base branch, with the walkthrough's path:
-it opens the PRs the delivery asks for and records each one. Do not
-merge. When the invoking prompt says to skip the PR, open none; the
-walkthrough is still written and committed.
+it opens the PR and records it. Do not merge. When the invoking prompt
+says to skip the PR, open none; the walkthrough is still written and
+committed.
 
 ## End
 
-State the walkthrough's path and the PR URLs. The run's result is
+State the walkthrough's path and the PR's URL. The run's result is
 `walkthrough`, the file's path relative to the worktree, and `pr`, the
 URL of the code PR that targets the base (never a docs or a nested repo
 PR), left out when the PR was skipped.
@@ -250,5 +215,5 @@ PR), left out when the PR was skipped.
    dispatch answers needs the plan changed;
 5. CRITICAL findings that cannot be fixed without changing the spec.
 
-On a stop, leave the branches and commits in place and say which stage
+On a stop, leave the branch and its commits in place and say which stage
 stopped, why, and what would unblock it.

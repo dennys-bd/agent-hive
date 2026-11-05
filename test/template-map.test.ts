@@ -218,25 +218,26 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
   assert.deepEqual(map.errors, []);
   const [introduction, ...sections] = map.blocks;
   // #312 dropped the intro's `/hive:flow` (no such skill); since #431 it names `/hive:new-pr`, the one way it touches GitHub
-  assert.deepEqual(introduction, { kind: 'introduction', line: 19, endLine: 25, references: [{ kind: 'skill', name: 'hive:new-pr', line: 21 }] });
+  assert.deepEqual(introduction, { kind: 'introduction', line: 18, endLine: 24, references: [{ kind: 'skill', name: 'hive:new-pr', line: 20 }] });
   const headings = sections.filter((block): block is HeadingBlock => block.kind === 'heading');
-  assert.equal(headings.length, sections.length, 'no chain in this file');
+  assert.equal(headings.length, sections.length, 'no chain outside a section');
   assert.deepEqual(
     headings.map((block) => [block.level, block.title, block.line, block.count]),
     [
-      // #431: count is the chains a section holds, one per value interpolated by condition (testCommand, delivery, uiCheck)
-      [2, 'Input', 26, 0],
-      [2, 'Rules', 63, 1],
-      [2, 'Working tree', 92, 0],
-      [2, 'Subagents', 98, 0],
-      [2, 'Stage 1 — Slices', 113, 3],
-      [2, 'Stage 2 — Security review', 157, 3],
-      [2, "Stage 3 — Check against the spec's Done", 176, 0],
-      [2, 'Stage 4 — UI check', 184, 1],
-      [2, 'Stage 5 — Walkthrough', 198, 2],
-      [2, 'Stage 6 — PR', 230, 0],
-      [2, 'End', 237, 0],
-      [2, 'Stops', 244, 0],
+      // #431: count is the chains a section holds, one per value interpolated by condition (testCommand, uiCheck)
+      [2, 'Input', 25, 0],
+      [2, 'Rules', 62, 1],
+      [2, 'Working tree', 91, 0],
+      [2, 'Subagents', 97, 0],
+      [2, 'Stage 1 — Implementation', 112, 0],
+      [2, 'Stage 2 — Code review', 133, 0],
+      [2, 'Stage 3 — Security review', 141, 0],
+      [2, "Stage 4 — Check against the spec's Done", 149, 0],
+      [2, 'Stage 5 — UI check', 157, 1],
+      [2, 'Stage 6 — Walkthrough', 171, 0],
+      [2, 'Stage 7 — PR', 195, 0],
+      [2, 'End', 202, 0],
+      [2, 'Stops', 209, 0],
     ],
   );
   const agentsOf = (block: HeadingBlock) => block.references.filter((reference) => reference.kind === 'agent');
@@ -246,24 +247,24 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
     Rules: [],
     'Working tree': [],
     Subagents: ['hive:tdd', 'hive:build-fixer', 'hive:code-reviewer', 'hive:security-reviewer'],
-    'Stage 1 — Slices': ['hive:tdd', 'hive:build-fixer', 'hive:code-reviewer'],
-    'Stage 2 — Security review': ['hive:security-reviewer'],
-    "Stage 3 — Check against the spec's Done": [],
-    'Stage 4 — UI check': [],
-    'Stage 5 — Walkthrough': [],
-    'Stage 6 — PR': [],
+    'Stage 1 — Implementation': ['hive:tdd', 'hive:build-fixer'],
+    'Stage 2 — Code review': ['hive:code-reviewer'],
+    'Stage 3 — Security review': ['hive:security-reviewer'],
+    "Stage 4 — Check against the spec's Done": [],
+    'Stage 5 — UI check': [],
+    'Stage 6 — Walkthrough': [],
+    'Stage 7 — PR': [],
     End: [],
     Stops: ['hive:build-fixer'],
   });
   const section = (title: string): HeadingBlock => headings.filter((block) => block.title === title)[0];
-  assert.deepEqual(agentsOf(section('Stage 1 — Slices')), [
-    { kind: 'agent', name: 'hive:tdd', line: 136 },
-    { kind: 'agent', name: 'hive:build-fixer', line: 143 },
-    { kind: 'agent', name: 'hive:code-reviewer', line: 147 },
+  assert.deepEqual(agentsOf(section('Stage 1 — Implementation')), [
+    { kind: 'agent', name: 'hive:tdd', line: 118 },
+    { kind: 'agent', name: 'hive:build-fixer', line: 125 },
   ]);
-  assert.deepEqual(agentsOf(section('Stage 2 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 173 }]);
+  assert.deepEqual(agentsOf(section('Stage 2 — Code review')), [{ kind: 'agent', name: 'hive:code-reviewer', line: 135 }]);
+  assert.deepEqual(agentsOf(section('Stage 3 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 147 }]);
 });
-
 test('a marker line with thousands of spaces maps in linear time (#311)', () => {
   const started = Date.now();
   buildMap(parseTemplate(`---\nname: x\n---\n{% if ${' '.repeat(20000)}x`));
