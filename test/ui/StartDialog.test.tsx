@@ -97,7 +97,7 @@ test('Nova atividade opens on the closed task field; Enter opens the search, eac
   expect(onStarted).toHaveBeenCalledWith('I9');
 });
 
-test('a typed term offers + criar tarefa in hive: the task is created manual in the first stage with a prompt and the workspace, started, then handed to the flow (redesign 11)', async () => {
+test('a typed term offers + criar tarefa in hive: the task is created manual, outside the flow, with the workspace; the start moves it to the flow\'s entry, starts it, then hands it to the flow (redesign 11, #580)', async () => {
   const user = userEvent.setup();
   const onClose = vi.fn();
   const { rerender } = render(<StartDialog state={state()} workspace="site" onStarted={vi.fn()} onClose={onClose} />);
@@ -106,12 +106,30 @@ test('a typed term offers + criar tarefa in hive: the task is created manual in 
   const create = screen.getByRole('option', { name: /criar tarefa "landing".*em hive/ });
   expect(screen.getAllByRole('option').at(-1)).toBe(create);
   await user.click(create);
-  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', stage: 'backlog', auto: false, workspace: 'site', source: 'hive' }]));
-  rerender(<StartDialog state={state([LANDING, HERO, task('local:1', 'HIVE-1', 'landing', { created: true, auto: false })])} workspace="site" onStarted={vi.fn()} onClose={onClose} />);
+  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', auto: false, workspace: 'site', source: 'hive' }]));
+  rerender(<StartDialog state={state([LANDING, HERO, outside(task('local:1', 'HIVE-1', 'landing', { created: true, auto: false }))])} workspace="site" onStarted={vi.fn()} onClose={onClose} />);
   await screen.findByRole('combobox', { name: 'origin/main' });
+  expect(screen.getByRole('radio', { name: /^fluxo main/ })).toHaveAttribute('aria-checked', 'true');
   await user.keyboard('{Control>}{Enter}{/Control}'); // ⌘↵
   await waitFor(() => expect(onClose).toHaveBeenCalled());
-  expect(posts().slice(1)).toEqual([['/tasks/local%3A1/start', { base: null, local: false }], ['/tasks/local%3A1/auto', { auto: true }]]);
+  expect(posts().slice(1)).toEqual([['/tasks/local%3A1/move-to', { stage: 'backlog' }], ['/tasks/local%3A1/start', { base: null, local: false }], ['/tasks/local%3A1/auto', { auto: true }]]);
+});
+
+test('a task created here with sem fluxo opens as it is: no move, no stage (#580)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  const { rerender } = render(<StartDialog state={state()} onStarted={vi.fn()} onClose={onClose} />);
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
+  await user.keyboard('landing');
+  await user.click(screen.getByRole('option', { name: /criar tarefa "landing"/ }));
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  rerender(<StartDialog state={state([LANDING, HERO, outside(task('local:1', 'HIVE-1', 'landing', { created: true, auto: false }))])} onStarted={vi.fn()} onClose={onClose} />);
+  await user.click(screen.getByRole('radio', { name: /^sem fluxo/ }));
+  const open = screen.getByRole('button', { name: /sessão livre/ });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts().slice(1)).toEqual([['/tasks/local%3A1/open', { kind: 'claude', base: null, local: false }]]);
 });
 
 test('a task created here and never started is removed on cancel; a picked task is left alone (redesign 11)', async () => {
@@ -492,7 +510,7 @@ test('a task whose worktree is already set up never shows the preparing view: th
 test('a title from the search\'s + criar tarefa creates that task once on arrival and picks it (#584)', async () => {
   const onClose = vi.fn();
   const { rerender } = render(<StartDialog state={state()} title="Fix login" onStarted={vi.fn()} onClose={onClose} />);
-  await waitFor(() => expect(posts()).toEqual([['/tasks', { title: 'Fix login', stage: 'backlog', auto: false, source: 'hive' }]]));
+  await waitFor(() => expect(posts()).toEqual([['/tasks', { title: 'Fix login', auto: false, source: 'hive' }]]));
   rerender(<StartDialog state={state([LANDING, HERO, task('local:1', 'HIVE-1', 'Fix login', { created: true, auto: false })])} title="Fix login" onStarted={vi.fn()} onClose={onClose} />);
   expect(screen.getByRole('button', { name: 'tarefas' })).toHaveTextContent('HIVE-1 Fix login');
   expect(posts()).toHaveLength(1);
@@ -586,7 +604,7 @@ test('picking hive in the chip\'s criar em menu and pressing the row creates the
   await user.click(screen.getByRole('button', { name: 'criar em board' }));
   await user.click(screen.getByRole('option', { name: /^hive/ }));
   await user.click(screen.getByRole('option', { name: /criar tarefa "landing".*em hive/ }));
-  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', stage: 'backlog', auto: false, workspace: 'site', source: 'hive' }]));
+  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', auto: false, workspace: 'site', source: 'hive' }]));
 });
 
 test('starting a held task creates it on its source, then starts it once the state holds it (#846)', async () => {

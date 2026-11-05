@@ -1,6 +1,5 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { activityOf, workIdOf } from '../../activities';
-import { runsAgent } from '../../stage-agent.js';
 import { startMode, startsFresh } from '../../task-runs';
 import { canOpenSession, HIVE_SOURCE, inFlow, resolveWorkspace } from '../../tasks';
 import { DISCARD_FAILED, type Task, type OpenResult, type SetupRows, type State } from '../../types';
@@ -47,7 +46,7 @@ const pickable = (state: State): Task[] => state.tasks.filter((c) => !c.leaving 
 
 // executar etapas: the stage's start with the base chosen and the run picks (#290: {} while they are the stage's), or its continue once the
 // stage already ran (#283), which resumes the stage's session as it ran. A task this dialog created
-// was created with auto off, so the fill left it alone until now; the start taken, it becomes a task like any other and the flow goes on (redesign 11)
+// was created outside the flow and with auto off: it is moved to the flow's entry first, and the fill left it alone until the start; the start taken, it becomes a task like any other and the flow goes on (redesign 11)
 async function runStages(task: Task, state: State, base: BaseChoice, created: boolean, picks: Record<string, unknown>): Promise<undefined> {
   const path = taskPath(task.item.itemId);
   const work = workIdOf(state, task.item.itemId); // the live activity, else a deleted one's record whose session the continue resumes (#629)
@@ -65,8 +64,6 @@ function openFree(task: Task, state: State, base: BaseChoice, picks: RunPicks): 
   return postJson<OpenResult>(`${taskPath(task.item.itemId)}/open`, body);
 }
 
-// The stage a task created here enters: the first stage that runs an agent (#710: a skill stage too), so executar etapas has something to run
-const createStage = (state: State): string | undefined => (state.stages.find(runsAgent) ?? state.stages[0])?.name;
 // A task with no stage left to run (#774): executar etapas is off for it, so the dialog lands on sessão livre on its arrival and on its pick
 // A task outside the flow is read at its default destination's entry (#580); under sem fluxo there is no toggle to turn off
 const nothingToRun = (state: State, itemId: string | undefined, mode: StartMode): boolean => {
@@ -93,10 +90,10 @@ function blocker(task: Task | undefined, state: State, mode: StartMode, base: Ba
 
 // Every task this dialog created (redesign 11), created with auto off so the fill leaves it alone: the ones not started go when the dialog ends,
 // and one created after the dialog ended goes at once
-function useCreatedTasks(state: State, workspace: string | undefined, done: { current: boolean }, onError: (message: string) => void) {
+function useCreatedTasks(workspace: string | undefined, done: { current: boolean }, onError: (message: string) => void) {
   const created = useRef(new Set<string>());
   const create = (title: string, then: (itemId: string) => void): void => {
-    const body = { title, stage: createStage(state), auto: false, source: HIVE_SOURCE, ...(workspace === undefined ? {} : { workspace }) };
+    const body = { title, auto: false, source: HIVE_SOURCE, ...(workspace === undefined ? {} : { workspace }) };
     postJson<{ itemId: string }>('/tasks', body).then(({ itemId }) => {
       if (done.current) return void act(`${taskPath(itemId)}/close`);
       created.current.add(itemId);
@@ -126,8 +123,8 @@ function useCreateOnOpen(title: string | undefined, create: (title: string) => v
 // source creates nothing until the activity starts, so a cancel leaves no issue behind
 function useCreateRow(state: State, workspace: string | undefined, done: { current: boolean }, onError: (message: string) => void, pick: (itemId: string) => void, unpick: () => void) {
   const choices = destinations(useContext(CreateTargetsContext));
-  const created = useCreatedTasks(state, workspace, done, onError);
-  const held = usePendingTask(createStage(state), onError);
+  const created = useCreatedTasks(workspace, done, onError);
+  const held = usePendingTask(destinationFlows(state.flows)[0]?.entry, onError);
   const create = (text: string, destination = choices[0].name): void => {
     if (destination !== HIVE_SOURCE) { unpick(); held.hold({ title: text, source: destination }); return; }
     held.hold(undefined);
