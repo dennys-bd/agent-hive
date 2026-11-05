@@ -34,7 +34,7 @@ const pr = (number: number, state: string, rollup?: string, merged = state === '
 
 test('project maps a page to the native view: the Status options in order, the fields by kind minus the fixed columns, each value by its kind, the hint from a rule (#756)', async () => {
   const rule = { field: 'labels', op: 'icontains', value: 'bug', set: { workspace: 'hive' } };
-  const spec = specOf({ source: { ...GITHUB_SOURCE, epics: 'ignore', taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [rule] } } });
+  const spec = specOf({ source: { ...GITHUB_SOURCE, epics: 'ignore', taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [rule] } } });
   const node = {
     ...issue(1, {
       labels: { nodes: [{ name: 'bug' }] }, assignees: { nodes: [{ login: 'ana' }] }, repository: { nameWithOwner: 'acme/r' }, milestone: { title: 'v1' },

@@ -19,10 +19,10 @@ test('the same stage name in two flows is refused naming both flows (#564)', () 
     { message: 'hive.config.json: "comb.flows[1].stages[0].name" "spec" is already a stage of flow "main"' });
 });
 
-test('one column cited by stages of two flows is refused naming both stages and flows; two stages of one flow may share it (#564)', () => {
-  assert.throws(parse([flow('main', [st('spec', { board: ['Ready'] })]), flow('bug', [st('triage', { board: ['Ready'] })])]),
-    { message: 'hive.config.json: "comb.flows[1].stages[0].from.board" "Ready" already enters stage "spec" of flow "main": stage "triage" of flow "bug" cannot enter from it too' });
-  assert.doesNotThrow(parse([flow('main', [st('spec', { board: ['Ready'] }), st('dev', { board: ['Ready'] })])]));
+test('stages of two flows may cite the same source column: the task properties choose among them (#564, #670)', () => {
+  const flows = parseFlows({ flows: [flow('main', [st('spec', { board: ['Ready'] })]), flow('bug', [st('triage', { board: ['Ready'] })])] }, ['board'], PARSE);
+  assert.deepEqual(flows.map((f) => f.stages.map((s) => s.from.board)), [[['Ready']], [['Ready']]]);
+  assert.doesNotThrow(parse([flow('main', [st('spec', { board: ['Ready'] }), st('dev', { board: ['Ready'] })])]), 'two stages of one flow, as before');
 });
 
 test('a duplicate, empty or untrimmed flow name is refused (#564)', () => {

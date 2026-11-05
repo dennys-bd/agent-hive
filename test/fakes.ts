@@ -167,7 +167,7 @@ export function fakeGqlJson(answer: (query: string, variables: Record<string, un
 /** The name every single-source fixture gives its source (#180): what the server namespaces its items with (`board:I1`). */
 export const SOURCE = 'board';
 /** Every source fixture's task properties (#688): every property fixed, the workspace on WORKSPACE ('hive'), the Comb's one workspace, and auto on. */
-export const FIXED: SourceTaskProps = { defaults: { workspace: 'hive', auto: true }, rules: [] };
+export const FIXED: SourceTaskProps = { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] };
 /** A comb.sources entry named SOURCE around a source's fields, ids unqualified: today's single source, as a raw config value. */
 export const sourceEntry = (fields: Record<string, unknown>): Record<string, unknown> => ({ name: SOURCE, qualifyId: false, taskProps: FIXED, ...fields });
 /** The epics keys every GitHub source fixture carries (#30): a new source's mode and follows, switchAt on STAGES' one stage. combConfig gives

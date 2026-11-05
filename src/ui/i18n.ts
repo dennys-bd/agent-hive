@@ -3085,6 +3085,14 @@ const en = {
   'project.tree.collapse': 'collapse sub-issues',
   'repos.task.inFlow': '{flow} · {stage}', // #585: the repository issue list's flow cell (handoff §7); project.task.* carry a button's ›
   'repos.task.outside': 'no flow',
+  'settings.taskProps.entry.first': 'at its first stage, {stage}', // #670: the entry menu's note on a flow
+  'settings.taskProps.entry.footer': 'applies at entry only: a task already in a flow stays where it is',
+  'settings.taskProps.prop.entry': 'enters at',
+  'settings.taskProps.note.entry': 'flow and stage',
+  'settings.error.entryGone': 'source {source}: enters at points at a removed flow or stage',
+  'settings.error.entryRuleGone': 'source {source}: rule {n} points at a removed flow or stage',
+  'settings.taskProps.entry.hint': 'outside the flow = the task shows in tasks › outside the flow, and you take it into a flow when you want',
+  'settings.stages.from.firstHint': "a new task enters through the source's properties, among the stages that accept its column",
 };
 
 export type MessageKey = keyof typeof en;
@@ -6164,6 +6172,14 @@ const pt: Record<MessageKey, string> = {
   'project.tree.collapse': 'recolher sub-issues',
   'repos.task.inFlow': '{flow} · {stage}',
   'repos.task.outside': 'sem fluxo',
+  'settings.taskProps.entry.first': 'na primeira etapa, {stage}',
+  'settings.taskProps.entry.footer': 'vale só na entrada: a tarefa que já está num fluxo fica onde está',
+  'settings.taskProps.prop.entry': 'entra em',
+  'settings.taskProps.note.entry': 'fluxo e etapa',
+  'settings.error.entryGone': 'source {source}: entra em aponta para um fluxo ou etapa removidos',
+  'settings.error.entryRuleGone': 'source {source}: a regra {n} aponta para um fluxo ou etapa removidos',
+  'settings.taskProps.entry.hint': 'sem fluxo = a tarefa aparece em tarefas › sem fluxo, e você a leva ao fluxo quando quiser',
+  'settings.stages.from.firstHint': 'a tarefa nova entra pelas propriedades da fonte, entre as etapas que aceitam sua coluna',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

@@ -7,7 +7,7 @@ import { initialState } from '../src/orchestrator.js';
 import { localActivityId } from '../src/activities.js';
 import { activityIdOf, bareTask, movedWork, withKeptRecord, withWork, type WithWork } from './fixtures/work.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import type { Activity, ActivityRecord, Flow, SourceItem, State, Task, Session, DeleteActivityScope, Stage, Effect, Terminal, Transition, Worker, Item } from '../src/types.js';
+import type { Activity, ActivityRecord, Flow, SourceItem, State, Task, Session, DeleteActivityScope, Stage, TaskEntry, Effect, Terminal, Transition, Worker, Item } from '../src/types.js';
 import { DELETE_ACTIVITY_DEFAULTS, END } from '../src/types.js';
 import { move } from './fakes.js';
 import { mainFlows } from './fixtures/main-flow.js';
@@ -39,7 +39,7 @@ const runsFor = (tasks: WithWork[], runs: Runs = NO_RUNS): Runs => {
 };
 // One poll of the only source, `listed` in source order (#180), with the runs the state holds while it lands (#356), at `now` (#889)
 const merge = (tasks: WithWork[], stages: LegacyStage[], listed: SourceItem[], runs: Runs = NO_RUNS, now = new Date().toISOString()): Task[] =>
-  mergeTasks(tasks.map(bareTask), stages, { source: 'board', items: listed }, ['board'], listed.map((c) => c.item.itemId), runsFor(tasks, runs), now);
+  mergeTasks(tasks.map(bareTask), mainFlows(stages), { source: 'board', items: listed }, ['board'], listed.map((c) => c.item.itemId), runsFor(tasks, runs), now);
 const ONE: WorkspaceNames = { workspaces: ['hive'], sourceWorkspaces: {} };
 // #629: candidates and dueDeletions read the state, the run fields on the activities; the fixtures keep their arguments
 const cands = (tasks: WithWork[], stages: LegacyStage[], now: number, runs: Runs, scope: WorkspaceNames): Task[] =>
@@ -644,7 +644,7 @@ test('mergeTasks for one source touches only that source\'s tasks: another sourc
   const notesTask: Task = { item: on('notes', 2), stage: 'dev', boardColumn: 'todo', auto: true, enteredAt: ago(HOUR) };
   const localTask: Task = { item: { ...item(3), itemId: 'local:3', source: undefined }, stage: 'dev', boardColumn: '', auto: true, created: true, enteredAt: ago(HOUR) };
   const listed: SourceItem[] = [{ item: on('work', 4), column: 'Ready' }, { item: on('work', 5), column: 'todo' }];
-  const merged = mergeTasks([workTask, notesTask, localTask], stages, { source: 'work', items: listed }, ['work', 'notes'], ['work:4', 'work:5', 'notes:2'], NO_RUNS, AT_NOW);
+  const merged = mergeTasks([workTask, notesTask, localTask], mainFlows(stages), { source: 'work', items: listed }, ['work', 'notes'], ['work:4', 'work:5', 'notes:2'], NO_RUNS, AT_NOW);
   assert.equal(merged.find((c) => taskId(c) === 'work:1'), undefined, 'its own board no longer lists it and it never started: gone (#568)');
   assert.deepEqual(merged.find((c) => taskId(c) === 'notes:2'), notesTask, 'another board\'s task is untouched');
   assert.deepEqual(merged.find((c) => taskId(c) === 'local:3'), localTask);
@@ -660,7 +660,7 @@ test('a task whose source is gone, or saved before sources had names, turns orph
   const runs = withWork(withWork(initialState(0), 'old:1'), 'PVTI_2');
   assert.deepEqual(markRemoved([gone, legacy, orphan, local, idle], ['work'], runs).map((c) => [taskId(c), c.orphan === true, c.outOfListing]),
     [['old:1', true, undefined], ['PVTI_2', true, undefined], ['old:3', true, 'filter'], ['local:4', false, 'filter']]);
-  assert.equal(mergeTasks([gone], STAGES, { source: 'board', items: [] }, ['board'], [], runs, AT_NOW)[0].orphan, true, 'another board\'s poll turns it too');
+  assert.equal(mergeTasks([gone], mainFlows(STAGES), { source: 'board', items: [] }, ['board'], [], runs, AT_NOW)[0].orphan, true, 'another board\'s poll turns it too');
 });
 
 test('replaceSegment swaps one source\'s ids in place and appends a source seen for the first time (#180)', () => {
@@ -867,4 +867,40 @@ test('a poll keeps a source task outside the flow in sync and never moves it int
   const [after] = merge([outside], STAGES, [seen]);
   assert.deepEqual([after.stage, after.boardColumn, after.item.title, after.item.body, after.enteredAt], [undefined, 'Ready', 'Renamed', 'new body', undefined]);
   assert.equal(merge([task(1, DONE, { boardColumn: 'Done' })], STAGES, [seen])[0].stage, 'dev', 'the same move takes a task in the flow through dev\'s door');
+});
+
+const ENTRY_FLOWS: Flow[] = [
+  { name: 'delivery', stages: [{ name: 'spec', from: { board: ['Backlog'] }, prompt: '/s' }, { name: 'build', from: { board: ['Ready'] }, prompt: '/b' }], transitions: [] },
+  { name: 'discovery', stages: [{ name: 'research', from: { board: ['Backlog'] }, prompt: '/r' }], transitions: [] },
+];
+const NEW: Runs = { workers: [], terminals: [], activities: [], activityRecords: [] }; // NO_RUNS holds item1–4's activities: started
+const pollTwo = (tasks: Task[], listed: SourceItem[], runs: Runs = NEW): Task[] =>
+  mergeTasks(tasks, ENTRY_FLOWS, { source: 'board', items: listed }, ['board'], listed.map((c) => c.item.itemId), runs, AT_NOW);
+const at = (n: number, entry: TaskEntry, column = 'Backlog', extra: Partial<Item> = {}): SourceItem => ({ item: { ...item(n), entry, ...extra }, column });
+const byId = (tasks: Task[], n: number): Task | undefined => tasks.find((c) => c.item.itemId === `item${n}`);
+
+test('a new item enters at the stage its entry names, outside the flow for null with its auto, and through the door when the pick does not accept the column (#670)', () => {
+  const tasks = pollTwo([], [at(1, { flow: 'discovery' }), at(2, null, 'Backlog', { autoOnEntry: false }), at(3, { flow: 'delivery', stage: 'build' }), at(4, null, 'Done')]);
+  assert.equal(byId(tasks, 1)?.stage, 'research');
+  assert.deepEqual([byId(tasks, 2)?.stage, byId(tasks, 2)?.enteredAt, byId(tasks, 2)?.auto], [undefined, undefined, false]);
+  assert.equal(byId(tasks, 3)?.stage, 'spec', 'build does not accept Backlog: the door');
+  assert.equal(byId(tasks, 4), undefined, 'Done is no door: no task, outside the flow included');
+});
+
+test('a new task is placed again on each poll from its fields: another flow, outside the flow, back into a flow (#670)', () => {
+  const [born] = pollTwo([], [at(5, { flow: 'delivery' })]);
+  const moved = pollTwo([born], [at(5, { flow: 'discovery' })])[0];
+  assert.equal(moved.stage, 'research', 'a label changed: the other flow');
+  const outside = pollTwo([moved], [at(5, null)])[0];
+  assert.equal(outside.stage, undefined, 'outside the flow');
+  assert.equal(pollTwo([outside], [at(5, { flow: 'delivery' })])[0].stage, 'spec');
+});
+
+test('a started task or one placed by hand keeps its stage when its entry changes; a column move still takes it through the door (#670)', () => {
+  const [born] = pollTwo([], [at(1, { flow: 'delivery' })]);
+  assert.equal(pollTwo([born], [at(1, { flow: 'discovery' })], NO_RUNS)[0].stage, 'spec', 'started: item1 has an activity in NO_RUNS');
+  assert.equal(pollTwo([born], [at(1, { flow: 'discovery' }, 'Ready')], NO_RUNS)[0].stage, 'build', "started: Ready's door");
+  const byHand: Task = { ...born, placedByHand: true };
+  assert.equal(pollTwo([byHand], [at(1, { flow: 'discovery' })])[0].stage, 'spec', 'by hand');
+  assert.equal(pollTwo([byHand], [at(1, { flow: 'discovery' }, 'Ready')])[0].stage, 'build', "by hand: Ready's door");
 });

@@ -252,3 +252,12 @@ test('a missing verdict is refused, naming the stage\'s, when the stage has no d
   assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false }), undefined, 'an approval stage waits for the user instead');
   assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false, result: { verdict: 'leaf' } }), misplaced, 'a misplaced verdict is still caught there');
 });
+
+test('a transition marks the task it moves placedByHand, so the next poll never pulls an activity-less task back to its entry; a loop to its own stage does not (#670)', () => {
+  const bare = deepFreeze({ ...initialState(0), workspaces: ['hive'], ...flowed(STAGES, [RETRY]), tasks: [{ item, stage: 'checks', boardColumn: '', auto: true }] });
+  const moved = pure(bare, (s) => follow(s, s.tasks[0], RETRY));
+  assert.deepEqual([moved.state.tasks[0].stage, moved.state.tasks[0].placedByHand, activityOf(moved.state, ID)], ['fix', true, undefined]);
+  const LOOP: Transition = { from: 'checks', to: 'checks', when: 'feedback' };
+  const looped = pure(deepFreeze({ ...bare, ...flowed(STAGES, [LOOP]) }), (s) => follow(s, s.tasks[0], LOOP));
+  assert.equal(looped.state.tasks[0].placedByHand, undefined);
+});

@@ -7,6 +7,7 @@ import { ITEMS, ITEM_FIELDS, type GhItemNode } from '../src/sources/github-queri
 import { PROJECT_ITEM_LIMIT } from '../src/sources/github-pages.js';
 import { citedColumns, itemSource } from '../src/tasks.js';
 import { parseConfig } from '../src/config.js';
+import { MAIN_FLOW } from '../src/flows.js';
 import type { FieldWrite, Item, ProjectView, SourceItemRead, Source, SourceConfig, SourceSpec, TaskFilter, TaskRule } from '../src/types.js';
 import { EPICS, SOURCE, STAGES, FILTER, FIXED, chained, combConfig, fakeGql, fakeLog, goneItem, move } from './fakes.js';
 
@@ -182,8 +183,8 @@ test('listItems returns the issues in any cited column with the column name, in 
   ];
   const source = createSource(config, { gql: fakeGql({ items: page(nodes), relations: {} }).gql });
   assert.deepEqual(await source.listItems(), [
-    { item: { itemId: 'I1', id: '1', title: 'T1', body: '', url: 'https://github.com/acme/r/issues/1', facets: NO_FACETS, autoOnEntry: true }, column: 'Ready' },
-    { item: { itemId: 'I2', id: '2', title: 'T2', body: '', url: 'https://github.com/acme/r/issues/2', facets: NO_FACETS, autoOnEntry: true }, column: 'In progress' },
+    { item: { itemId: 'I1', id: '1', title: 'T1', body: '', url: 'https://github.com/acme/r/issues/1', facets: NO_FACETS, autoOnEntry: true, entry: { flow: MAIN_FLOW } }, column: 'Ready' },
+    { item: { itemId: 'I2', id: '2', title: 'T2', body: '', url: 'https://github.com/acme/r/issues/2', facets: NO_FACETS, autoOnEntry: true, entry: { flow: MAIN_FLOW } }, column: 'In progress' },
   ]);
 });
 
@@ -600,12 +601,23 @@ test('a source with no rule sets no workspaceHint and gives every task autoOnEnt
   const [task] = await createSource(config, { gql }).listItems();
   assert.equal('workspaceHint' in task.item, false);
   assert.equal(task.item.autoOnEntry, true, 'FIXED: auto on');
-  const manual = specOf({ source: { ...GITHUB_SOURCE, taskProps: { ...FIXED, defaults: { ...FIXED.defaults, auto: false } } } });
+  const manual = specOf({ source: { ...GITHUB_SOURCE, taskProps: { ...FIXED, defaults: { ...FIXED.defaults, auto: false, entry: { flow: 'main' } } } } });
   const [off] = await createSource(manual, { gql: fakeGql({ items: page([issue(1)]), relations: {} }).gql }).listItems();
   assert.equal(off.item.autoOnEntry, false);
   const items = calls.find((c) => c.name === 'items')!;
   assert.deepEqual(items.variables, { login: 'acme', number: 6 });
   assert.equal(items.query, ITEMS);
+});
+
+test('entry comes from the first matching rule that sets it, null included, else the default, on every item (#670)', async () => {
+  const rules: TaskRule[] = [
+    { field: 'labels', op: 'icontains', value: 'idea', set: { entry: null } },
+    { field: 'labels', op: 'icontains', value: 'decomposed', set: { entry: { flow: MAIN_FLOW, stage: STAGES[0].name } } },
+  ];
+  const spec = specOf({ source: { ...GITHUB_SOURCE, taskProps: { ...FIXED, rules } } });
+  const { gql } = fakeGql({ items: page([issue(1, { labels: ['idea'] }), issue(2, { labels: ['decomposed'] }), issue(3)]), relations: {} });
+  const tasks = await createSource(spec, { gql }).listItems();
+  assert.deepEqual(tasks.map((c) => c.item.entry), [null, { flow: MAIN_FLOW, stage: STAGES[0].name }, { flow: MAIN_FLOW }], 'item 1\'s null is kept, not replaced by the default');
 });
 
 test('rules ride the very same query (#245): workspaceHint comes only from a rule; autoOnEntry from the first matching rule that sets auto, else the default; '
@@ -618,7 +630,7 @@ test('rules ride the very same query (#245): workspaceHint comes only from a rul
     { field: 'Area', op: 'contains', value: 'ops', set: { workspace: 'ops' } },
     { field: 'Repo', op: 'equals', value: 'api', set: { workspace: 'api' } },
   ];
-  const dynamic = specOf({ workspaces, source: { ...GITHUB_SOURCE, taskProps: { defaults: { auto: true }, rules } } });
+  const dynamic = specOf({ workspaces, source: { ...GITHUB_SOURCE, taskProps: { defaults: { auto: true, entry: { flow: 'main' } }, rules } } });
   const nodes = [
     issue(1, { labels: ['bug', 'Backend'] }),
     issue(2, { fields: { Repo: 'site' } }),

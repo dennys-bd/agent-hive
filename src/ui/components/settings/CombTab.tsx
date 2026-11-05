@@ -36,7 +36,7 @@ export function CombTab({ draft, options, githubProjects, github, agents, launch
   return (
     <>
       <SourcesGroup
-        sources={draft.sources} githubProjects={githubProjects} auth={draft.auth} workspaces={workspaceNames} prefix={draft.prefix}
+        sources={draft.sources} scope={draft} githubProjects={githubProjects} auth={draft.auth} workspaces={workspaceNames} prefix={draft.prefix}
         onEdit={onEditSource} onAdd={onAddSource} onPrefix={(prefix) => onChange({ prefix })}
         hiveSource={draft.hiveSource} createIn={draft.createIn} onHiveSource={(hiveSource) => onChange({ hiveSource })} onCreateIn={(createIn) => onChange({ createIn })}
       />

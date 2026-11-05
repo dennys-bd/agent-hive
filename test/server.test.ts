@@ -539,7 +539,7 @@ test('kill on a worker whose process the pool does not know (Hive restarted) fre
   const config = parseConfig(combConfig({ sources: BODY.sources, path: repo }));
   const sources = createSources(config, factory);
   const [source] = sources.values();
-  const previous = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...flatten(config.comb.flows) }, { type: 'poll', source: 'board', items: await source.listItems() }).state; // occupied by a worker of a previous run
+  const previous = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, flows: config.comb.flows, ...flatten(config.comb.flows) }, { type: 'poll', source: 'board', items: await source.listItems() }).state; // occupied by a worker of a previous run
   const state: State = { ...previous, signal: 'yellow' }; // yellow: the freed task is not run again, so the freed worker stays visible
   const { spawn, workers } = fakeSpawn();
   const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: noGit, runtime: { config, sources }, state });

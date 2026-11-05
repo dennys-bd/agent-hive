@@ -12,7 +12,7 @@
         "owner": "@me",
         "number": 0,
         "filter": [],
-        "taskProps": { "defaults": { "workspace": "agent-hive", "auto": true }, "rules": [] },
+        "taskProps": { "defaults": { "workspace": "agent-hive", "auto": true, "entry": { "flow": "main" } }, "rules": [] },
         "epics": "show", "epicFollows": "aheadThenBehind", "switchAt": "Dev",
         "qualifyId": false
       }

@@ -8,7 +8,7 @@ import { flatten } from './flows.js';
 import { parseFlows } from './config-flows.js';
 import { createInProblem, type CreateInProblem } from './create-in.js';
 import { REPOSITORY } from './task-refs.js';
-import { parseSourceTaskProps } from './task-props.js';
+import { checkEntries, parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
 import { checkEnabledAgents, checkStageModels, parseAgentArgs, parseAgentEnabled, parseAgentModels } from './config-agent-args.js';
 import { checkClearedResumes, checkResumedAgents, parseVerdicts } from './config-transitions.js';
@@ -412,6 +412,7 @@ function parseComb(raw: unknown): CombConfig {
     sources: (value, field) => parseSourceMap(value, field, sources, requireActionList(false)), // #134: read as onStart is, a leaving action allowed last
   });
   requireSwitchAt(sources, flatten(flows).stages); // #30: once the stages are known
+  checkEntries(sources, flows); // #670: the entries name flows and stages, known only now
   return { prefix, workspaces, sources, flows, commands, ...parseCreateIn(raw, sources) };
 }
 

@@ -28,7 +28,7 @@ function Harness({ source: initial, auth = 'cli', filterOptions, stages = STAGES
   };
   return (
     <SourceDetail
-      source={source} stages={stages} workspaces={['hive', 'site']} githubProjects={[]} needsToken={false} auth={auth} filterOptions={filterOptions}
+      source={source} flows={[{ id: FLOW, name: 'main' }]} stages={stages} workspaces={['hive', 'site']} githubProjects={[]} needsToken={false} auth={auth} filterOptions={filterOptions}
       onChange={change} onRemove={onRemove} onLoadProjects={vi.fn()} onLoadColumns={vi.fn()} onOpenList={onOpenList}
     />
   );
@@ -49,7 +49,7 @@ test('propriedades da tarefa replaces the fixo / dinâmico toggle: the defaults,
   expect(screen.getAllByTestId('task-rule')).toHaveLength(1);
   expect(within(workspace).getByText(t('settings.taskProps.mode.one'))).toBeInTheDocument();
   expect(onDraft).toHaveBeenLastCalledWith(expect.objectContaining({
-    taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [expect.objectContaining({ set: { workspace: 'hive' } })] },
+    taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flowId: '' } }, rules: [expect.objectContaining({ set: { workspace: 'hive' } })] },
   }));
 });
 

@@ -21,7 +21,7 @@ test('the test home config, materialized, parses with no free worker, prefix TES
   assert.deepEqual(config.comb.workspaces.map((p) => [p.name, p.path]), [['agent-hive', '/repo/worktree']]);
   const [source] = config.comb.sources;
   assert.ok(source.type === 'github');
-  assert.deepEqual([source.name, source.owner, source.number, source.taskProps, source.qualifyId], ['test', 'octo-org', 7, { defaults: { workspace: 'agent-hive', auto: true }, rules: [] }, false]);
+  assert.deepEqual([source.name, source.owner, source.number, source.taskProps, source.qualifyId], ['test', 'octo-org', 7, { defaults: { workspace: 'agent-hive', auto: true, entry: { flow: 'main' } }, rules: [] }, false]);
   assert.deepEqual(flatten(config.comb.flows).stages.map((s) => s.name), STAGES);
   assert.deepEqual(
     [...new Set(citedColumns(flatten(config.comb.flows).stages, flatten(config.comb.flows).transitions, 'test').map((c) => c.column))].sort(), [...BOARD_COLUMNS].sort(),

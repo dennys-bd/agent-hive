@@ -24,7 +24,7 @@ const info: SettingsInfo = {
   configured: true, home: '/home', language: 'pt', agents: [{ agent: 'claude', available: true }],
   config: {
     auth: { github: 'cli' },
-    comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }], flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] } }], transitions: [] }], commands: [] },
+    comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }], flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] } }], transitions: [] }], commands: [] },
     logLevel: 'info', agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
   },
@@ -517,7 +517,7 @@ test('Settings › a source\'s default workspace is one of the workspaces or non
   await user.click(screen.getByRole('button', { name: t('settings.save') }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   const [, init] = fetchMock.mock.calls.find(([url]) => url === '/settings')!;
-  expect(JSON.parse(String(init?.body)).sources[0]).toEqual({ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'site', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
+  expect(JSON.parse(String(init?.body)).sources[0]).toEqual({ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'site', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
 });
 
 test('Settings › + regra adds a rule that sets workspace, sends the rules in order, and a rule without a value stops the save naming its source and its row (#293, #688)', async () => {
@@ -541,7 +541,7 @@ test('Settings › + regra adds a rule that sets workspace, sends the rules in o
   await user.click(screen.getByRole('button', { name: t('settings.save') }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   const [, init] = fetchMock.mock.calls.find(([url]) => url === '/settings')!;
-  expect(JSON.parse(String(init?.body)).sources[0].taskProps).toEqual({ defaults: { workspace: 'hive', auto: true }, rules: [{ field: 'title', op: 'icontains', value: 'site', set: { workspace: 'hive' } }] });
+  expect(JSON.parse(String(init?.body)).sources[0].taskProps).toEqual({ defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [{ field: 'title', op: 'icontains', value: 'site', set: { workspace: 'hive' } }] });
 });
 
 test('the worktrees tab shows only once the Hive is configured, and loads GET /worktrees when it opens (#181)', async () => {

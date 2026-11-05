@@ -235,11 +235,14 @@ export interface FilterOptions {
 export type TaskFilter = FilterRule[];
 /** How a rule compares an item's field with its own value (#293): both sides trimmed; the i forms compare toLowerCase() of both. */
 export type RuleOp = 'equals' | 'iequals' | 'contains' | 'icontains';
+/** Where a new task enters (#670): a flow (its first stage) or one of its stages; null = outside the flow (#566). */
+export type TaskEntry = { flow: string; stage?: string } | null;
 /** What a source sets on each task it lists, on entry (#688). The registry's order is the UI's order. */
-export const TASK_PROPS = ['workspace', 'auto'] as const;
+export const TASK_PROPS = ['workspace', 'auto', 'entry'] as const;
 export type TaskProp = (typeof TASK_PROPS)[number];
 /** A task's properties as a source sets them (#688): workspace absent = no workspace. */
-export interface TaskProps { workspace?: string; auto: boolean }
+// entry: #670, required in the defaults; absent in a rule's set = the rule does not set it
+export interface TaskProps { workspace?: string; auto: boolean; entry: TaskEntry }
 /** A rule (#688): when its field matches, it sets the 1+ properties in `set`. */
 export interface TaskRule { field: string; op: RuleOp; value: string; set: Partial<TaskProps> }
 /** A source's task properties (#688): the defaults and 0 to RULES_MAX rules; per property, the first matching rule that sets it wins. */
@@ -294,6 +297,7 @@ export interface Item {
   inheritedBlockedBy?: InheritedBlocker[]; // #424: the ancestors' open blockers, nearest ancestor first, each id once; absent or empty = none. Derived on every poll, never written
   workspaceHint?: string; // the workspace the first matching rule that sets one names (#293, #688)
   autoOnEntry?: boolean; // #688: the auto a source task is born with, resolved by its adapter; absent on a task created in the Hive
+  entry?: TaskEntry; // #670: what the source's task properties choose for this item, resolved by its adapter on each poll; absent on local items
   source?: string; // the listing source's name (#180); absent on a local task
   facets?: ItemFacets; // #374: what a stage's view filter reads; replaced on every poll like every other task field
   createdAt?: string; // #742: ISO, the source's own creation time (the GitHub issue's); absent when the source has none. What lead time counts from
@@ -619,6 +623,7 @@ export interface Task {
   leaving?: true; // an archive / remove / delete is in flight on the source (#286): out of the fill, left unmarked by the poll, answered by closeTask or sourceActionFailed; never survives a boot
   pinned?: true; // moved by hand: holds the position it occupies in its stage across polls. Dropped by resetOrder and by a stage change (#123)
   created?: true; // created in the Hive (#132, #573: was local): never written to a source; leaves only through remove
+  placedByHand?: true; // #670: a move-to, a leave-flow or a transition set it; the task properties never place it again
   auto: boolean; // a worker may pick it up on its own (#164, #573: was manual?: true, inverted); off, the fill never starts it and a delete-activity stage takes it only under nonAutoTasks (#496); every run by hand works on it as on any task
   workspace?: string; // a Comb workspace's name: chosen by hand, or frozen when the worktree was created (#179)
   columnWrite?: ColumnWrite; // set with every setColumn effect, cleared by the poll that confirms, overrides or outlives it (#889)
@@ -1358,7 +1363,7 @@ export interface CombConfig {
   prefix: string; // local task ids are <prefix>-<n>
   workspaces: Workspace[]; // one or more, names and paths unique (#179)
   sources: SourceConfig[]; // [] = no external source: nothing is polled from or written to one
-  flows: Flow[]; // #564: required, non-empty; stage names are unique across flows and a source column leads into one flow (each flow's stages in order, #286; its transitions, #134)
+  flows: Flow[]; // #564: required, non-empty; stage names are unique across flows; #670: stages of several flows may cite the same source column (each flow's stages in order, #286; its transitions, #134)
   commands: Command[]; // #511: the Comb's run commands, each enabled in some workspaces; [] = none
   hiveSource: boolean; // #846: the hive source is on; false needs a source, and POST /settings refuses it while a created task exists
   createIn: string; // #846: the default destination of a new task: HIVE_SOURCE or a source with a repository

@@ -107,7 +107,7 @@ export function StageDetail(props: StageDetailProps) {
           <Button type="button" variant="ghost" size="sm" onClick={onRemove}>{t('settings.stages.remove')}</Button>
         </div>
       </div>
-      <Block anchor={settingAnchor('settings.stages.enter', stage.id)}><BlockHeading n={1} title={t('settings.stages.enter')} hint={t('settings.stages.enter.hint')} /><StageEnter id={id} stage={stage} sources={sources} onUpdate={onUpdate} /></Block>
+      <Block anchor={settingAnchor('settings.stages.enter', stage.id)}><BlockHeading n={1} title={t('settings.stages.enter')} hint={t('settings.stages.enter.hint')} /><StageEnter id={id} stage={stage} sources={sources} first={index === 0} onUpdate={onUpdate} /></Block>
       <Block anchor={settingAnchor('settings.stages.onStart', stage.id)}>
         <BlockHeading n={2} title={t('settings.stages.onStart')} hint={t('settings.stages.onStart.hint')} />
         <OnStart stage={stage} sources={sources} onUpdate={onUpdate} />

@@ -358,7 +358,7 @@ function moveToStage(state: State, { taskId: id, stage: name, drop }: Extract<Hi
   const [entry] = onSource(target.from, task.item.source) ?? []; // the task's source's first door (#180)
   const write = shouldWrite(task, entry);
   const written = write ? withColumnWrite(task, entry, new Date().toISOString()) : task; // #889: marked until a poll shows the new column
-  const entered = withTask(state, enter(written, target));
+  const entered = withTask(state, { ...enter(written, target), placedByHand: true }); // #670: the hand wins over the entry property
   const tasks = drop ? moveTask(entered.tasks, id, drop.before) : entered.tasks; // `before` is in the target stage now: the route checked it
   return { state: unrouted(settleEntries(state.tasks, { ...entered, tasks }), id), effects: write ? [{ type: 'setColumn', itemId: id, column: entry }] : [] }; // #134: a move by hand drops the tries and the arrow
 }
@@ -381,7 +381,7 @@ function poll(state: State, { source, items: listed, reads }: Extract<HiveEvent,
   if (!sources.includes(source)) return none(state);
   const order = replaceSegment(state.sourceOrder, source, listed.map((c) => c.item.itemId)); // what resetOrder sorts by; never written back
   const polledAt = new Date().toISOString();
-  const merged = withoutLeft(state, mergeTasks(state.tasks, state.stages, { source, items: listed, ...(reads === undefined ? {} : { reads }) }, sources, order, state, polledAt));
+  const merged = withoutLeft(state, mergeTasks(state.tasks, state.flows, { source, items: listed, ...(reads === undefined ? {} : { reads }) }, sources, order, state, polledAt));
   return runActions(settleEntries(state.tasks, {
     ...withSync(merged.state, source, ({ error: _error, ...status }) => ({ ...status, polledAt })), sourceOrder: order, error: undefined,
   }), merged.effects);
@@ -402,7 +402,7 @@ function withoutLeft(state: State, tasks: Task[]): Reduced {
 function itemRead(state: State, { source, itemId, entry }: Extract<HiveEvent, { type: 'itemRead' }>): State {
   const task = state.tasks.find((c) => taskId(c) === itemId && c.item.source === source);
   if (task === undefined) return state;
-  const seen = seenOne(task, entry, state.stages, state, new Date().toISOString()); // #889: a re-read is held to the poll's stale-read rule
+  const seen = seenOne(task, entry, state.flows, state, new Date().toISOString()); // #889: a re-read is held to the poll's stale-read rule
   return seen === undefined || seen === task ? state : settleEntries(state.tasks, { ...state, tasks: state.tasks.map((c) => (c === task ? seen : c)) }); // #568: undefined only for an unlisted entry, which a re-read never is; the guard narrows the type
 }
 

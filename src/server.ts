@@ -250,7 +250,7 @@ const exists = (path: string): Promise<boolean> => access(path).then(() => true,
 function sourceFromQuery(query: Request['query']): Record<string, unknown> {
   const { type, owner, number } = query;
   return {
-    type, owner, number: typeof number === 'string' && number !== '' ? Number(number) : number, filter: [], taskProps: { defaults: { workspace: 'setup', auto: true }, rules: [] },
+    type, owner, number: typeof number === 'string' && number !== '' ? Number(number) : number, filter: [], taskProps: { defaults: { workspace: 'setup', auto: true, entry: null }, rules: [] },
     // only lists the project's options and never reaches parseConfig, so a flow without the default stage cannot refuse it
     ...NEW_SOURCE_EPICS, switchAt: SWITCH_AT_DEFAULT,
   };

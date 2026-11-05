@@ -26,7 +26,7 @@ const state = (tasks: Task[], extra: Partial<State> = {}): State => movedWork({
   syncs: { roadmap: { polledAt: at(9, 28) }, notes: { polledAt: at(9, 5) } },
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });
-const ROADMAP: SourceConfig = { name: 'roadmap', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
+const ROADMAP: SourceConfig = { name: 'roadmap', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
 const tasks = [task('1', 'roadmap', { branch: 'hive/1-pager' }), task('2', 'notes'), task('3', 'roadmap', { branch: 'hive/3-pager' })];
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
 const header = (): HTMLElement => screen.getByRole('region', { name: 'tarefas' });

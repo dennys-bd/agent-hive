@@ -6,7 +6,7 @@ import { setLanguage, t } from '@/i18n';
 import { emptySource } from '@/lib/settings-form';
 
 const row = (name: string, repository = '') => ({ ...emptySource('hive'), name, savedName: name, number: '1', repository });
-const BASE = { githubProjects: {}, auth: 'cli' as const, workspaces: ['hive'], prefix: 'HIVE', onEdit: vi.fn(), onAdd: vi.fn(), onPrefix: vi.fn() };
+const BASE = { scope: { flows: [{ id: 'f1', name: 'main' }], stages: [] }, githubProjects: {}, auth: 'cli' as const, workspaces: ['hive'], prefix: 'HIVE', onEdit: vi.fn(), onAdd: vi.fn(), onPrefix: vi.fn() };
 
 beforeEach(() => setLanguage('en'));
 

@@ -9,7 +9,7 @@ import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, ActivityRecord, Flow, ForkSyncResult } from '../src/types.js';
 import { describeEvent } from '../src/log.js';
 import { savedWork } from '../src/state-guards.js';
-import { flatten } from '../src/flows.js';
+import { flatten, MAIN_FLOW } from '../src/flows.js';
 import { HOUR_MS } from '../src/usage.js';
 import { deriveFacts } from '../src/fact-derive.js';
 import type { SourceItem, SourceItemRead, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
@@ -17,6 +17,7 @@ import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS, SPAWN_FAILED, STAGE_GONE } 
 import { behaviourOf } from '../src/signals.js';
 import { transitionKey } from '../src/transitions.js';
 import { move, chained } from './fakes.js';
+import { mainFlows } from './fixtures/main-flow.js';
 import { activityIdOf, movedWork, withLocal, withWork, type WithWork, workId } from './fixtures/work.js';
 
 const GREEN = behaviourOf('green', SIGNALS_DEFAULTS);
@@ -1325,9 +1326,9 @@ test('a poll takes a grouped listing as the source order: sourceOrder in that or
 
 test('mergeTasks is pure: an empty listing over no tasks is no tasks, and a task in an unknown stage is left alone apart from the enteredAt stamp', () => {
   const at = '2026-10-09T12:00:00.000Z';
-  assert.deepEqual(mergeTasks([], STAGES, { source: 'board', items: [] }, ['board'], [], NO_RUNS, at), []);
-  const stray: Task = { item: item(1), stage: 'gone', boardColumn: 'Backlog', auto: true };
-  const [{ enteredAt, ...merged }] = mergeTasks([stray], STAGES, { source: 'board', items: [listed(1)] }, ['board'], ['board:item1'], NO_RUNS, at);
+  assert.deepEqual(mergeTasks([], mainFlows(STAGES), { source: 'board', items: [] }, ['board'], [], NO_RUNS, at), []);
+  const stray: Task = { item: item(1), stage: 'gone', boardColumn: 'Backlog', auto: true, placedByHand: true }; // a new task would be placed again by its entry (#670); this one is the stray the poll must leave
+  const [{ enteredAt, ...merged }] = mergeTasks([stray], mainFlows(STAGES), { source: 'board', items: [listed(1)] }, ['board'], ['board:item1'], NO_RUNS, at);
   assert.equal(enteredAt, at, 'a task without enteredAt gets the poll time');
   assert.deepEqual(merged, { ...stray, item: item(1) });
 });
@@ -2342,6 +2343,22 @@ test('a source task with auto on moved by hand stays where the user put it until
   assert.deepEqual([task(parked.state, 1)?.stage, task(parked.state, 1)?.boardColumn, parked.effects], ['parked', 'Backlog', []], 'no from on its source: nothing written');
   assert.equal(task(polled(parked.state, [listed(1)]).state, 1)?.stage, 'parked', 'the source column did not change');
   assert.equal(task(polled(parked.state, [listed(1, 'Ready')]).state, 1)?.stage, 'dev', 'the source moved it: the task follows, as any source task');
+});
+
+test('moveToStage and leaveFlow set placedByHand: the task properties never place the task again (#670)', () => {
+  const moved = reduce(manualState(1), { type: 'moveToStage', taskId: 'board:item1', stage: 'review' }).state;
+  assert.equal(task(moved, 1)?.placedByHand, true);
+  const left = reduce(manualState(1), { type: 'leaveFlow', taskId: 'board:item1' }).state;
+  assert.deepEqual([task(left, 1)?.stage, task(left, 1)?.placedByHand], [undefined, true]);
+});
+
+test('a new task moved by hand stays where it was put; before the move the poll placed it by its entry (#670)', () => {
+  const stages: LegacyStage[] = [...STAGES, { name: 'triage', from: { board: ['In review'] } }]; // In review's door is review; the entry picks triage
+  const seen: SourceItem = { item: { ...item(1), entry: { flow: MAIN_FLOW, stage: 'triage' } }, column: 'In review' };
+  const born = polled(base(0, stages), [seen]).state;
+  assert.equal(task(born, 1)?.stage, 'triage', 'new: the entry places it');
+  const moved = reduce(born, { type: 'moveToStage', taskId: 'board:item1', stage: 'review' }).state; // review's first from is In review: no column write
+  assert.equal(task(polled(moved, [seen]).state, 1)?.stage, 'review');
 });
 
 test('moveToStage clears stopped on a source task with auto on, so the fill starts it in the prompt stage it entered (#708)', () => {

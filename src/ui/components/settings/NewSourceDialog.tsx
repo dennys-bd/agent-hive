@@ -14,7 +14,7 @@ import { workspaceNameFor } from '../../../tasks';
 import type { GithubAuth, ProjectSummary } from '../../../types';
 
 interface NewSourceDialogProps {
-  open: boolean; auth: GithubAuth; workspaces: string[]; takenNames: string[];
+  open: boolean; auth: GithubAuth; workspaces: string[]; takenNames: string[]; flowId: string; // #670: the first flow's id, where a new source enters
   onOpenChange(open: boolean): void; onAdd(added: NewSource): void;
 }
 
@@ -51,7 +51,7 @@ const DEFAULT_OWNER = '@me';
 
 /** The new-source dialog (#514): it never writes the config on its own. A source no stage enters from is refused by the parser
  * (parseStages), so this hands the row to Settings, which saves it with the rest once a stage feeds it. */
-export function NewSourceDialog({ open, auth, workspaces, takenNames, onOpenChange, onAdd }: NewSourceDialogProps) {
+export function NewSourceDialog({ open, auth, workspaces, takenNames, flowId, onOpenChange, onAdd }: NewSourceDialogProps) {
   const id = useId();
   const [owner, setOwner] = useState(DEFAULT_OWNER);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -91,7 +91,7 @@ export function NewSourceDialog({ open, auth, workspaces, takenNames, onOpenChan
     const fields = { owner, number, name, workspace };
     const problem = newSourceProblem(fields, takenNames);
     if (problem) { setError(problem); return; }
-    onAdd({ source: newSourceDraft(fields), projects });
+    onAdd({ source: newSourceDraft(fields, flowId), projects });
   }
 
   return (

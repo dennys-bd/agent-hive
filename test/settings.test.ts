@@ -132,7 +132,7 @@ test('POST /settings takes the workspace folder from the body and refuses, writi
 test('POST /settings refuses, writing nothing, two workspaces whose paths resolve to the same folder', async (t) => {
   const { base, home, repo } = await start(t);
   const same: Workspace[] = [{ name: 'a', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, { name: 'b', path: `${repo}/`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }];
-  const res = await postSettings(base, { ...BODY, workspaces: same, sources: [{ ...GITHUB_ENTRY, taskProps: { defaults: { workspace: 'a', auto: true }, rules: [] } }] });
+  const res = await postSettings(base, { ...BODY, workspaces: same, sources: [{ ...GITHUB_ENTRY, taskProps: { defaults: { workspace: 'a', auto: true, entry: { flow: 'main' } }, rules: [] } }] });
   assert.equal(res.status, 400);
   assert.deepEqual(await json<{ error: string }>(res), { error: 'workspaces a and b point at the same folder' });
   await assert.rejects(stat(configFile(home)), 'nothing written');
@@ -473,7 +473,7 @@ test('POST /settings with stages persists them, GET /settings returns them, an o
 test('GET /settings/source-columns builds the source from the query and answers its settingsOptions', async (t) => {
   const { base, configs } = await start(t);
   assert.deepEqual(await json(hiveFetch(`${base}/settings/source-columns?type=github&owner=acme&number=6`)), OPTIONS);
-  assert.deepEqual(configs.at(-1)?.source, { name: 'setup', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: { defaults: { workspace: 'setup', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'Build' }, 'the query carries no filter, no routing and no epics keys: listing Status options gets the empty filter, a placeholder workspace and a new source\'s epics keys');
+  assert.deepEqual(configs.at(-1)?.source, { name: 'setup', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: { defaults: { workspace: 'setup', auto: true, entry: null }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'Build' }, 'the query carries no filter, no routing and no epics keys: listing Status options gets the empty filter, a placeholder workspace and a new source\'s epics keys');
 });
 
 test('GET /settings/source-columns carries the transport: auth=api is honoured, anything else is cli', async (t) => {
@@ -1294,7 +1294,9 @@ test('POST /settings refuses to delete a flow that holds tasks, naming it and th
   const n = server.getState()?.tasks.filter((c) => c.stage === STAGES[0].name).length ?? 0;
   assert.ok(n > 0, 'the poll put a task in main');
   const names = async (): Promise<string[]> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.flows.map((f) => f.name);
-  const refused = await postSettings(base, onOwnStages({ ...BODY, flows: [spare] }));
+  // the source enters at the flow that stays: an entry naming the deleted one would be refused earlier, as a 400 (#670)
+  const sources = (BODY.sources ?? []).map((s) => ({ ...s, taskProps: { ...s.taskProps, defaults: { ...s.taskProps.defaults, entry: { flow: 'spare' } } } }));
+  const refused = await postSettings(base, onOwnStages({ ...BODY, sources, flows: [spare] }));
   assert.equal(refused.status, 409);
   assert.deepEqual(await json(refused), { error: strandedMessage('main', n) });
   assert.deepEqual(await names(), ['main', 'spare'], 'nothing written');

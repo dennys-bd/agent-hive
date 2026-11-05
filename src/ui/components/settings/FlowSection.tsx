@@ -32,7 +32,7 @@ export function FlowSection({ draft, source, flow, agents, launchWorkspace, onCh
   const workspaces = draft.workspaces.map((p) => p.name.trim()).filter((n) => n !== '');
   return (
     <SourceDetail
-      key={source.id} source={source} stages={draft.stages} workspaces={workspaces} githubProjects={flow.githubProjects[source.id] ?? []} needsToken={needsGithubToken(draft.auth, flow.github)}
+      key={source.id} source={source} flows={draft.flows} stages={draft.stages} workspaces={workspaces} githubProjects={flow.githubProjects[source.id] ?? []} needsToken={needsGithubToken(draft.auth, flow.github)}
       auth={draft.auth} filterOptions={flow.filterOptions[source.id]}
       onChange={(patch) => onChange({ sources: draft.sources.map((b) => (b.id === source.id ? { ...b, ...patch } : b)) })}
       onRemove={() => { onChange({ sources: draft.sources.filter((b) => b.id !== source.id) }); flow.onOpenSource(undefined); }}

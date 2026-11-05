@@ -1,18 +1,18 @@
-import { PART_TITLE, PropSelect } from '@/components/settings/TaskDefaults';
+import { PART_TITLE, PropControl } from '@/components/settings/TaskDefaults';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { type MessageKey, t } from '@/i18n';
-import { newTaskRule, PROP_LABEL, propDefault, type SourceTaskPropsDraft, type TaskRuleDraft, withoutProp, withProp } from '@/lib/setup-source-task-props';
+import { type FlowScope, newTaskRule, PROP_LABEL, propDefault, type SourceTaskPropsDraft, type TaskRuleDraft, withoutProp, withProp } from '@/lib/setup-source-task-props';
 import { RULE_FIELD_MAX, RULE_VALUE_MAX, RULES_MAX } from '../../../task-props';
 import { TASK_PROPS, type RuleOp, type TaskProp } from '../../../types';
 
-interface TaskRulesProps { draft: SourceTaskPropsDraft; workspaces: string[]; onChange(draft: SourceTaskPropsDraft): void }
+interface TaskRulesProps { scope: FlowScope; draft: SourceTaskPropsDraft; workspaces: string[]; onChange(draft: SourceTaskPropsDraft): void }
 interface RuleProps { rule: TaskRuleDraft; onUpdate(patch: Partial<TaskRuleDraft>): void }
 interface WhenProps extends RuleProps { n: number; first: boolean; last: boolean; onMove(by: -1 | 1): void; onRemove(): void }
-interface SetsProps extends RuleProps { draft: SourceTaskPropsDraft; workspaces: string[] }
+interface SetsProps extends RuleProps { scope: FlowScope; draft: SourceTaskPropsDraft; workspaces: string[] }
 
 // The condition and "ignorar case" are two controls (#524) over the one RuleOp the config keeps: equals/contains, each with an i- twin.
 type Condition = 'equals' | 'contains';
@@ -75,7 +75,7 @@ function AddProp({ missing, onAdd }: { missing: TaskProp[]; onAdd(prop: TaskProp
 }
 
 // `sets` and one chip per property the rule sets (#688): its name, its value and ×, in registry order; then + property.
-function SetsLine({ rule, draft, workspaces, onUpdate }: SetsProps) {
+function SetsLine({ rule, scope, draft, workspaces, onUpdate }: SetsProps) {
   const put = (set: TaskRuleDraft['set']): void => onUpdate({ set });
   return (
     <div className={SETS}>
@@ -88,7 +88,7 @@ function SetsLine({ rule, draft, workspaces, onUpdate }: SetsProps) {
           return [(
             <div key={prop} data-testid="task-rule-chip" className="flex items-center gap-1 rounded-md border bg-background py-0.5 pr-0.5 pl-2.5">
               <span className={MUTED}>{t(PROP_LABEL[prop])}</span>
-              <PropSelect prop={prop} value={value} workspaces={workspaces} small label={t(PROP_LABEL[prop])} onChange={(v) => put(withProp(rule.set, prop, v))} />
+              <PropControl prop={prop} value={value} scope={scope} workspaces={workspaces} small label={t(PROP_LABEL[prop])} onChange={(v) => put(withProp(rule.set, prop, v))} />
               <Button type="button" variant="ghost" size="icon-xs" aria-label={t('settings.taskProps.unset')} onClick={() => put(withoutProp(rule.set, prop))}>×</Button>
             </div>
           )];
@@ -100,7 +100,7 @@ function SetsLine({ rule, draft, workspaces, onUpdate }: SetsProps) {
 }
 
 /** The rules part (#688): top to bottom as they are tried, each a `when` line and a `sets` line, ending on + rule. Every update is a new draft. */
-export function TaskRules({ draft, workspaces, onChange }: TaskRulesProps) {
+export function TaskRules({ scope, draft, workspaces, onChange }: TaskRulesProps) {
   const { rules } = draft;
   const put = (next: TaskRuleDraft[]): void => onChange({ ...draft, rules: next });
   const update = (i: number, patch: Partial<TaskRuleDraft>): void => put(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -119,7 +119,7 @@ export function TaskRules({ draft, workspaces, onChange }: TaskRulesProps) {
         {rules.map((rule, i) => (
           <div key={rule.id} data-testid="task-rule" className="flex flex-col gap-2 border-b px-3 py-2.5">
             <WhenLine n={i + 1} rule={rule} first={i === 0} last={i === rules.length - 1} onUpdate={(patch) => update(i, patch)} onMove={(by) => move(i, by)} onRemove={() => put(rules.filter((_, j) => j !== i))} />
-            <SetsLine rule={rule} draft={draft} workspaces={workspaces} onUpdate={(patch) => update(i, patch)} />
+            <SetsLine rule={rule} scope={scope} draft={draft} workspaces={workspaces} onUpdate={(patch) => update(i, patch)} />
           </div>
         ))}
         <div className="px-3 py-2">
