@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { access, mkdir, readdir, readFile, realpath, stat, symlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { trashCommand } from '../src/platform-commands.js';
 import { createServer, type HiveServer } from '../src/server.js';
@@ -100,7 +100,7 @@ test('tree/rename moves an item to its new name, making the folders the name add
   assert.deepEqual([await readFile(join(f.wt, 'docs/guide.md'), 'utf8'), await readFile(join(f.wt, 'src/a.ts'), 'utf8')], ['guide', 'a']);
 });
 
-test('tree/trash checks every path first, so one refused trashes nothing; then one trash command with each outermost item\'s real path (#818)', async (t) => {
+test('tree/trash checks every path first, so one refused trashes nothing; then one trash command with each outermost item\'s real path (#818)', { skip: process.platform === 'win32' && 'win32 has no trash command until #646' }, async (t) => {
   const f = await startOps(t);
   assert.deepEqual(await post(f, 'trash', { paths: ['README.md', '../x'] }), [400, { error: OUTSIDE_MESSAGE }]);
   assert.deepEqual(await post(f, 'trash', { paths: ['README.md', 'gone.md'] }), [404, { error: MISSING_FILE_MESSAGE }]);
@@ -127,6 +127,10 @@ test('tree/file writes an untitled buffer to the dialog\'s absolute path and ans
   assert.deepEqual([await exists(join(f.outside, 'x.md')), await exists(join(f.wt, 'big.txt'))], [false, false]);
 });
 
+// The fake volume's root as a native path (#641): on win32 '/root' resolves to the runner's drive
+const ROOT = resolve('/root');
+const at = (name: string): string => join(ROOT, name);
+
 // A fake volume for renameItem: `names` are the entries on it; a case-insensitive one resolves a name to the entry of any case, as APFS does
 function fakeVolume(names: string[], isCaseInsensitive: boolean): { fs: TreeFs; renames: [string, string][]; entries: Set<string> } {
   const entries = new Set(names);
@@ -135,7 +139,7 @@ function fakeVolume(names: string[], isCaseInsensitive: boolean): { fs: TreeFs; 
   const fs: TreeFs = {
     realpath: async (path) => path,
     stat: async (path) => {
-      if (found(path) === undefined && path !== '/root') throw new Error('ENOENT');
+      if (found(path) === undefined && path !== ROOT) throw new Error('ENOENT');
       return { isDirectory: () => false };
     },
     sameFile: async (a, b) => found(a) !== undefined && found(a) === found(b),
@@ -151,22 +155,22 @@ function fakeVolume(names: string[], isCaseInsensitive: boolean): { fs: TreeFs; 
 }
 
 test('renameItem accepts a case-only rename of the same inode (case-insensitive volume) (#818)', async () => {
-  const { fs, renames } = fakeVolume(['/root/a.ts'], true);
-  assert.equal(await renameItem({ root: '/root', from: 'a.ts', to: 'A.ts' }, fs), 'A.ts');
-  assert.deepEqual(renames, [['/root/a.ts', '/root/A.ts']]);
+  const { fs, renames } = fakeVolume([at('a.ts')], true);
+  assert.equal(await renameItem({ root: ROOT, from: 'a.ts', to: 'A.ts' }, fs), 'A.ts');
+  assert.deepEqual(renames, [[at('a.ts'), at('A.ts')]]);
 });
 
 test('renameItem answers 409 and renames nothing when a differently-cased name is another file (case-sensitive volume) (#818)', async () => {
-  const { fs, renames } = fakeVolume(['/root/a.ts', '/root/A.ts'], false);
-  assert.deepEqual(await renameItem({ root: '/root', from: 'a.ts', to: 'A.ts' }, fs), { status: 409, message: TAKEN_MESSAGE });
+  const { fs, renames } = fakeVolume([at('a.ts'), at('A.ts')], false);
+  assert.deepEqual(await renameItem({ root: ROOT, from: 'a.ts', to: 'A.ts' }, fs), { status: 409, message: TAKEN_MESSAGE });
   assert.deepEqual(renames, []);
 });
 
 test('saveNewFile answers 409 with its own words when the path holds a folder, replace or not (#818)', async () => {
-  const { fs } = fakeVolume(['/root/docs'], false);
-  const isFolder: TreeFs = { ...fs, stat: async (path) => ({ isDirectory: () => path === '/root/docs' }) };
+  const { fs } = fakeVolume([at('docs')], false);
+  const isFolder: TreeFs = { ...fs, stat: async (path) => ({ isDirectory: () => path === at('docs') }) };
   for (const replace of [false, true]) {
-    assert.deepEqual(await saveNewFile({ root: '/root', path: '/root/docs', text: 'x', replace }, isFolder), { status: 409, message: IS_FOLDER_MESSAGE }, `replace ${replace}`);
+    assert.deepEqual(await saveNewFile({ root: ROOT, path: at('docs'), text: 'x', replace }, isFolder), { status: 409, message: IS_FOLDER_MESSAGE }, `replace ${replace}`);
   }
 });
 

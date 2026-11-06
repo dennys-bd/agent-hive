@@ -1,4 +1,6 @@
 import { test } from 'node:test';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { parseCheck } from '../src/checker-parse.js';
 import type { CheckFormat } from '../src/checkers.js';
@@ -54,7 +56,7 @@ const CASES: [CheckFormat, string, CheckDiagnostic[]][] = [
     { path: 'src/main.zig', line: 3, column: 5, severity: 'error', message: "expected ';' after statement" },
   ]],
   ['sarif', JSON.stringify({ version: '2.1.0', runs: [{ tool: { driver: { name: 'detekt' } }, results: [
-    { ruleId: 'detekt.style.MagicNumber', level: 'warning', message: { text: 'This expression contains a magic number.' }, locations: [{ physicalLocation: { artifactLocation: { uri: 'file:///w/src/A.kt' }, region: { startLine: 3, startColumn: 17, endLine: 3, endColumn: 19 } } }] },
+    { ruleId: 'detekt.style.MagicNumber', level: 'warning', message: { text: 'This expression contains a magic number.' }, locations: [{ physicalLocation: { artifactLocation: { uri: pathToFileURL(join(resolve(F), 'src', 'A.kt')).href }, region: { startLine: 3, startColumn: 17, endLine: 3, endColumn: 19 } } }] },
   ] }] }), [{ path: 'src/A.kt', line: 3, column: 17, endLine: 3, endColumn: 19, severity: 'warning', message: 'This expression contains a magic number.', code: 'detekt.style.MagicNumber' }]],
   ['markdownlint', JSON.stringify([{ fileName: '/w/README.md', lineNumber: 1, ruleNames: ['MD041'], ruleDescription: 'First line in a file should be a top-level heading', errorDetail: null, errorContext: null, errorRange: null }]), [
     { path: 'README.md', line: 1, column: 1, severity: 'warning', message: 'First line in a file should be a top-level heading', code: 'MD041' },

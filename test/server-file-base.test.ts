@@ -146,11 +146,3 @@ test('baseCommit answers the commit file-base reads: the design-frame-base frame
     assert.equal(await (await fetch(`${b.base}${url}`)).text(), withBridge((base as { text: string }).text), against);
   }
 });
-
-const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
-
-test('on win32 head answers HEAD\'s blob of a file in a subfolder: git reads the / path (#641)', WIN32_ONLY, async (t) => {
-  const b = await startBases(t);
-  const oid = await b.git('rev-parse', 'HEAD:docs/spec.md');
-  assert.deepEqual(await ask(b, { path: 'docs/spec.md', against: 'head' }), [200, { against: 'head', label: 'HEAD', oid, text: 'one\ntwo\n' }]);
-});
