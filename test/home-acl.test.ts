@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { checkHome, checkHomeAcl, refusedPrincipals, type AclLookups } from '../src/home-acl.js';
+import { checkHome, checkHomeAcl, powershellEnv, refusedPrincipals, type AclLookups } from '../src/home-acl.js';
 import { tempDir } from './temp-dir.js';
 
 const ON_WINDOWS = { skip: process.platform !== 'win32' };
@@ -42,6 +42,11 @@ test('the fix makes inherited entries explicit, then removes the SIDs, aliases m
   const home = 'C:\\Users\\me\\.hive';
   assert.throws(() => checkHomeAcl('win32', home, { read: () => ({ sddl: `${PROFILE}(A;OICIID;FR;;;AU)`, userSid: ME }) }),
     (err) => (err as Error).message.includes(`icacls "${home}" /inheritance:d, then icacls "${home}" /remove *S-1-5-11`));
+});
+
+test('PowerShell 5.1 runs without PSModulePath, in any case, and with the home in HIVE_ACL_HOME (#628)', () => {
+  const env = powershellEnv({ PSModulePath: 'C:\\pwsh7\\Modules', psmodulepath: 'x', Path: 'C:\\bin' }, 'C:\\h');
+  assert.deepEqual(env, { Path: 'C:\\bin', HIVE_ACL_HOME: 'C:\\h' });
 });
 
 test('SDDL with no DACL or a malformed ACE throws (#628)', () => {

@@ -89,10 +89,16 @@ const powershellExe = (): string => {
   return win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 };
 
+/** The env of the Windows PowerShell 5.1 run: `env` without PSModulePath, plus the home. Started from PowerShell 7 (pwsh), PSModulePath
+ *  names 7's modules first, and 5.1 then fails to load 7's Microsoft.PowerShell.Security, so Get-Acl is missing; without it, 5.1 uses its own. */
+export function powershellEnv(env: NodeJS.ProcessEnv, home: string): NodeJS.ProcessEnv {
+  return { ...Object.fromEntries(Object.entries(env).filter(([name]) => name.toUpperCase() !== 'PSMODULEPATH')), HIVE_ACL_HOME: home };
+}
+
 const REAL_LOOKUPS: AclLookups = {
   read: (home) => {
     const out = execFileSync(powershellExe(), ['-NoProfile', '-NonInteractive', '-Command', SCRIPT], {
-      env: { ...process.env, HIVE_ACL_HOME: home }, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: PS_TIMEOUT_MS,
+      env: powershellEnv(process.env, home), encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: PS_TIMEOUT_MS,
     });
     const [sddl, userSid] = out.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (!sddl || !userSid) throw new Error('PowerShell answered no access list');
