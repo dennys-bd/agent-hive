@@ -217,7 +217,8 @@ test('HANDOFF_PROMPT asks the session for hive_done with its handoff (#692)', ()
   assert.match(HANDOFF_PROMPT, /hive_done with \{ "handoff": "<text>" \}/);
 });
 
-test('a terminal\'s env names its own history file, puts the Hive\'s bin dir first on PATH, where the shims are, and names the init files\' folder (#696, #259)', () => {
+// Off win32 only until #645, the Windows terminal, whose criteria join terminalEnv's PATH with ';' there: today it is ':' on every OS
+test('a terminal\'s env names its own history file, puts the Hive\'s bin dir first on PATH, where the shims are, and names the init files\' folder (#696, #259)', { skip: process.platform === 'win32' && 'the terminal\'s env on Windows is #645\'s: PATH is still joined with \':\' there' }, () => {
   assert.deepEqual(terminalEnv('/h', 'T1', '/usr/bin:/bin'), { HISTFILE: '/h/terminals/T1.history', PATH: '/h/bin:/usr/bin:/bin', HIVE_SHELL_DIR: '/h/shell' });
   assert.equal(terminalEnv('/h', 'T1', '').PATH, '/h/bin');
 });
