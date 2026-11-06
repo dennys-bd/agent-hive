@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CHECKERS } from '../src/checkers.js';
 import { FORMATTERS } from '../src/formatters.js';
-import { extensionOf, inScope, LANGUAGES, languageOf, languagesOfServer, lspLanguageId, requiredTools, runtimeTools, serverDef, SERVERS, serverFor, SYNTAXES } from '../src/languages.js';
+import { type Arch, extensionOf, inScope, LANGUAGES, type Launch, languageOf, languagesOfServer, lspLanguageId, requiredTools, runtimeTools, type ServerDef, serverDef, SERVERS, serverFor, SYNTAXES } from '../src/languages.js';
 import { LANGUAGE_IDS, SERVER_IDS, SYNTAX_IDS } from '../src/types.js';
 
 const AT = { dir: '/h/editor/servers/x', arch: 'arm64' as const, version: '21.1.0' };
@@ -77,4 +77,51 @@ test('the checkers\' servers (#782): biome, eslint and oxlint through node, ruff
   assert.deepEqual(serverDef('tflint').launch(AT, 'tflint'), { command: '/h/editor/servers/x/tflint', args: ['--langserver'] });
   assert.deepEqual(serverDef('dart').launch(AT, 'dart'), { command: 'dart', args: ['language-server', '--protocol=lsp'] });
   assert.deepEqual([requiredTools(serverDef('dart')), runtimeTools(serverDef('dart'))], [['dart'], ['dart']]);
+});
+
+const D = '/h/editor/servers/x';
+const V = '21.1.0';
+const ARCHES = ['arm64', 'x64'] as const;
+const same = (launch: Launch): Record<Arch, Launch> => ({ arm64: launch, x64: launch });
+const node = (binary: string, ...args: string[]): Record<Arch, Launch> => same({ command: 'node', args: [`${D}/node_modules/.bin/${binary}`, ...args] });
+const exe = (command: string, ...args: string[]): Record<Arch, Launch> => same({ command, args });
+const both = (asset: string): Record<Arch, string> => ({ arm64: asset, x64: asset });
+interface Pin { asset?: Record<Arch, string>; launch: Record<Arch, Launch> }
+
+// What darwin answers on 2026-11-06, for both Macs (#635): the Windows recipes must leave every line of it as it is
+const DARWIN: Record<string, Pin> = {
+  'typescript-language-server/typescript-language-server': { launch: node('typescript-language-server', '--stdio') },
+  'pyright/pyright-langserver': { launch: node('pyright-langserver', '--stdio') },
+  'gopls/gopls': { launch: exe(`${D}/bin/gopls`) },
+  'rust-analyzer/rust-analyzer': { asset: { arm64: 'rust-analyzer-aarch64-apple-darwin.gz', x64: 'rust-analyzer-x86_64-apple-darwin.gz' }, launch: exe(`${D}/bin/rust-analyzer`) },
+  'clangd/clangd': { asset: both('clangd-mac-21.1.0.zip'), launch: exe(`${D}/clangd_21.1.0/bin/clangd`) },
+  'lua-language-server/lua-language-server': { asset: { arm64: 'lua-language-server-21.1.0-darwin-arm64.tar.gz', x64: 'lua-language-server-21.1.0-darwin-x64.tar.gz' }, launch: exe(`${D}/bin/lua-language-server`) },
+  'taplo/taplo': { asset: { arm64: 'taplo-darwin-aarch64.gz', x64: 'taplo-darwin-x86_64.gz' }, launch: exe(`${D}/bin/taplo`, 'lsp', 'stdio') },
+  'yaml-language-server/yaml-language-server': { launch: node('yaml-language-server', '--stdio') },
+  'bash-language-server/bash-language-server': { launch: node('bash-language-server', 'start') },
+  'vscode-langservers-extracted/vscode-html-language-server': { launch: node('vscode-html-language-server', '--stdio') },
+  'vscode-langservers-extracted/vscode-css-language-server': { launch: node('vscode-css-language-server', '--stdio') },
+  'vscode-langservers-extracted/vscode-json-language-server': { launch: node('vscode-json-language-server', '--stdio') },
+  'biome/biome': { launch: node('biome', 'lsp-proxy') },
+  'eslint/vscode-eslint-language-server': { launch: node('vscode-eslint-language-server', '--stdio') },
+  'oxlint/oxlint': { launch: node('oxlint', '--lsp') },
+  'ruff/ruff': {
+    asset: { arm64: 'ruff-aarch64-apple-darwin.tar.gz', x64: 'ruff-x86_64-apple-darwin.tar.gz' },
+    launch: { arm64: { command: `${D}/ruff-aarch64-apple-darwin/ruff`, args: ['server'] }, x64: { command: `${D}/ruff-x86_64-apple-darwin/ruff`, args: ['server'] } },
+  },
+  'tflint/tflint': { asset: { arm64: 'tflint_darwin_arm64.zip', x64: 'tflint_darwin_amd64.zip' }, launch: exe(`${D}/tflint`, '--langserver') },
+  'dart/dart': { launch: exe('dart', 'language-server', '--protocol=lsp') },
+};
+
+const ROWS = SERVERS.flatMap((server) => server.binaries.flatMap((binary) => ARCHES.map((arch) => ({ server, binary, arch }))));
+// The one place the platform argument is added later (#635)
+const darwin = (server: ServerDef, binary: string, arch: Arch): { asset?: string; launch: Launch } =>
+  ({ asset: server.asset?.(V, arch), launch: server.launch({ dir: D, arch, version: V }, binary) });
+
+test('darwin\'s asset and launch of every server binary, pinned for both Macs (#635)', () => {
+  assert.deepEqual(SERVERS.flatMap((s) => s.binaries.map((b) => `${s.id}/${b}`)), Object.keys(DARWIN));
+  for (const { server, binary, arch } of ROWS) {
+    const pin = DARWIN[`${server.id}/${binary}`];
+    assert.deepEqual(darwin(server, binary, arch), { asset: pin.asset?.[arch], launch: pin.launch[arch] }, `${server.id}/${binary} ${arch}`);
+  }
 });
