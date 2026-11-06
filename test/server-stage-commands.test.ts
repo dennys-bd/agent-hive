@@ -33,7 +33,7 @@ const effect = (at: number, stage: Stage = STAGE): Extract<Effect, { type: 'stag
 interface Harness {
   run(runtime: Runtime, e: Extract<Effect, { type: 'stageCommand' }>): Promise<void>;
   started: StartPty[]; killed: string[]; events: HiveEvent[]; prepared: string[]; appended: string[];
-  begun: { channel: ChannelInfo; header: string; group?: string }[]; data: Map<string, (data: string) => void>; ends: Map<string, (code: number) => void>;
+  begun: { channel: ChannelInfo; header: string; group?: string }[]; data: Map<string, (data: string) => void>; ends: Map<string, (code: number, killed: boolean) => void>;
 }
 // The runner over a pool, a pty host, a console and a dispatch that only record; `current` is the run the State holds
 function harness(current: () => StageCommands | undefined = () => runAt(0), prepare: () => Promise<string> = async () => CWD, registered = true): Harness {
@@ -123,7 +123,7 @@ test('the pty\'s end reaches stageCommandEnded with its code and its output\'s t
   const h = harness();
   await h.run(runtimeWith([BUILD, LINT]), effect(0));
   h.data.get('P0')?.('\x1b[31mboom\x1b[0m\r\n');
-  h.ends.get('P0')?.(2);
+  h.ends.get('P0')?.(2, false);
   assert.deepEqual(h.events.at(-1), { type: 'stageCommandEnded', activityId: 'a1', ptyId: 'P0', code: 2, output: 'boom\r\n' });
   h.started[0].onSpawnFailed('pty: posix_spawn failed');
   assert.deepEqual(h.events.at(-1), { type: 'stageCommandEnded', activityId: 'a1', ptyId: 'P0', code: 127, output: 'pty: posix_spawn failed' });
@@ -137,7 +137,7 @@ test('a timeout kills the pty through the pool, never through a stop, and ends t
   assert.deepEqual(h.killed, ['P1']);
   assert.equal(h.events.some((e) => e.type === 'stop'), false);
   assert.ok(h.appended.some((text) => text.includes('tempo esgotado (1s)')), 'the console says so, as for a command terminal');
-  h.ends.get('P1')?.(0); // a killed pty exits 0 under node-pty
+  h.ends.get('P1')?.(1, true); // the timeout's kill: under ConPTY a killed pty exits 1, and the timeout still reads as 124
   const last = h.events.at(-1);
   assert.ok(last?.type === 'stageCommandEnded');
   assert.equal(last.code, 124);

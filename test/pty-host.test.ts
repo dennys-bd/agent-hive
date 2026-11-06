@@ -137,6 +137,34 @@ test('the host keeps at most SLEPT_MAX ended runs, the oldest going first (#672)
   assert.deepEqual([host.has('A0'), host.has('A1'), host.has(`A${SLEPT_MAX}`)], [false, true, true]);
 });
 
+const CTRL_C_EXIT = 0xc000013a; // STATUS_CONTROL_C_EXIT: one code a ConPTY's program exits with when its pty is killed (#644)
+
+test('a kill the host was asked for reaches every listener as killed, whatever code the pty exits with; an exit of its own is not killed (#644)', () => {
+  for (const code of [0, 1, CTRL_C_EXIT]) {
+    const { host, pty } = hosted();
+    const heard: [number, boolean][] = [];
+    host.subscribe('W1', () => {}, (exitCode, killed) => heard.push([exitCode, killed]));
+    host.subscribe('W1', () => {}, (exitCode, killed) => heard.push([exitCode, killed]));
+    assert.equal(host.kill('W1'), true);
+    pty.exit(code);
+    assert.deepEqual(heard, [[code, true], [code, true]], String(code));
+  }
+  const { host, pty } = hosted();
+  const heard: [number, boolean][] = [];
+  host.subscribe('W1', () => {}, (exitCode, killed) => heard.push([exitCode, killed]));
+  pty.exit(1);
+  assert.deepEqual(heard, [[1, false]]);
+});
+
+test('a sleeping run\'s replay ends as not killed, even for a run the host killed: nothing that replays it reads the code as a status (#644)', () => {
+  const { host, pty } = agent();
+  host.kill('A1');
+  pty.exit(1);
+  const heard: [number, boolean][] = [];
+  host.subscribe('A1', () => {}, (exitCode, killed) => heard.push([exitCode, killed]));
+  assert.deepEqual(heard, [[1, false]]);
+});
+
 test('pid answers the pty\'s own process id, undefined for an unknown one (#696)', () => {
   const { host } = hosted();
   assert.deepEqual([host.pid('W1'), host.pid('nope')], [4000, undefined]);
@@ -150,7 +178,9 @@ test('a kept terminal\'s exit writes its ring to its log, 0600, and keeps it for
   host.spawn('T1', ['/bin/sh', '-c', 'zsh'], WORKTREE, ENV, { log });
   ptys[0].emit('ls\r\n');
   ptys[0].exit();
-  assert.deepEqual([readFileSync(log, 'utf8'), statSync(log).mode & 0o777], ['ls\r\n', 0o600]);
+  assert.equal(readFileSync(log, 'utf8'), 'ls\r\n');
+  // Windows has no POSIX mode bits: stat reports 0o666 whatever writeFileSync was asked; the ring is as private as the home's ACL there
+  if (process.platform !== 'win32') assert.equal(statSync(log).mode & 0o777, 0o600);
   for (let i = 0; i <= SLEPT_MAX; i += 1) {
     host.spawn(`A${i}`, ['/bin/sh', '-c', 'claude'], WORKTREE, ENV, {});
     ptys[i + 1].exit();
