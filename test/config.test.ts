@@ -1178,7 +1178,7 @@ test('a workspace\'s nestedRepos and notNestedRepos are required lists of relati
   for (const path of ['../docs', 'docs/../ee', '/abs/docs', 'docs/', './docs', 'a//b', '', 7, 'a\\..\\b', 'docs\\..\\ee', '.\\docs']) { // #642: \ splits too
     refused({ nestedRepos: [path] }, '"comb.workspaces[0].nestedRepos[0]" must be a relative path inside the workspace, with no "..", "." or trailing "/"');
   }
-  for (const path of ['.hive', '.hive/worktrees']) refused({ notNestedRepos: [path] }, '"comb.workspaces[0].notNestedRepos[0]" cannot be .hive or inside it');
+  for (const path of ['.hive', '.hive/worktrees', '.hive\\worktrees']) refused({ notNestedRepos: [path] }, '"comb.workspaces[0].notNestedRepos[0]" cannot be .hive or inside it');
   refused({ nestedRepos: ['docs', 'docs'] }, '"comb.workspaces[0].nestedRepos[1]" repeats docs');
   refused({ nestedRepos: ['docs'], notNestedRepos: ['ee', 'docs'] }, '"comb.workspaces[0].notNestedRepos[1]" is docs, which nestedRepos lists');
 });

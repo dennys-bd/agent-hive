@@ -24,9 +24,10 @@ function parseOff(raw: unknown): OptionalTool[] | string {
 function commandPart(raw: Record<string, unknown>, field: string, platform: NodeJS.Platform): { command: string; args: string[] } | string {
   const { command, args = [] } = raw;
   if (typeof command !== 'string' || command.trim() === '' || command.startsWith('-')) return `"${field}.command" must be a program name or path, not starting with -`;
-  // A relative path would resolve inside a task's worktree, whose files the task's own agent can write. Windows (#642) separates with \ too
+  // A relative path would resolve inside a task's worktree, whose files the task's own agent can write. Windows (#642) separates with \ too,
+  // and C:x is relative to drive C:'s current folder, so a drive prefix counts as a path there
   const isWin32 = platform === 'win32';
-  const hasSeparator = isWin32 ? /[\\/]/.test(command) : command.includes('/');
+  const hasSeparator = isWin32 ? /[\\/]|^[A-Za-z]:/.test(command) : command.includes('/');
   if (hasSeparator && !(isWin32 ? path.win32 : path.posix).isAbsolute(command)) return `"${field}.command" must be a bare program name or an absolute path, not a relative one`;
   if (!Array.isArray(args) || !args.every((a) => typeof a === 'string')) return `"${field}.args" must be an array of strings`;
   if (raw.authHeader !== undefined) return `"${field}.authHeader" is only for a url server`;

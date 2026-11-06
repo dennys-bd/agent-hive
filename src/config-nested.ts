@@ -14,7 +14,7 @@ const SHAPE = 'must be a relative path inside the workspace, with no "..", "." o
 /** Why `path` cannot name a nested repo by its shape (#653), undefined when it can: relative, normalized, never .hive or under it. */
 export function nestedPathProblem(path: unknown): string | undefined {
   if (typeof path !== 'string' || path === '' || isAbsolute(path) || path.split(SEPARATORS).some((s) => s === '' || s === '.' || s === '..')) return SHAPE;
-  return path === HIVE || path.startsWith(`${HIVE}/`) ? 'cannot be .hive or inside it' : undefined;
+  return path.split(SEPARATORS)[0] === HIVE ? 'cannot be .hive or inside it' : undefined; // #642: .hive\x is inside it too
 }
 
 function parseList(raw: unknown, field: string): string[] {

@@ -89,7 +89,7 @@ const command = (value: string, platform: NodeJS.Platform): McpSettings | string
 
 test('parseMcp on win32 takes a drive path with either separator and a bare name, and refuses a relative path with either; on darwin a backslash is no separator (#642)', () => {
   for (const value of ['C:/tools/x.exe', 'C:\\tools\\x.exe', 'x.exe']) assert.deepEqual(command(value, 'win32'), { off: [], servers: [{ name: 'x', command: value, args: [], workspace: null, on: true }] }, value);
-  for (const value of ['tools\\x.exe', 'tools/x.exe', '.\\x.exe', 'C:tools\\x.exe']) assert.equal(command(value, 'win32'), COMMAND_PATH, value);
+  for (const value of ['tools\\x.exe', 'tools/x.exe', '.\\x.exe', 'C:tools\\x.exe', 'C:evil.exe']) assert.equal(command(value, 'win32'), COMMAND_PATH, value);
   assert.deepEqual(command('tools\\x.exe', 'darwin'), { off: [], servers: [{ name: 'x', command: 'tools\\x.exe', args: [], workspace: null, on: true }] });
   for (const value of ['./bin/x', 'C:/tools/x.exe']) assert.equal(command(value, 'darwin'), COMMAND_PATH, value);
   assert.equal(typeof command('/usr/local/bin/mcp-x', 'darwin'), 'object');
