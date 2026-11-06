@@ -4,13 +4,22 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, win32 } from 'node:path';
 import { download, type DownloadLimits, type Latest, latestOf, REGISTRIES, type Registries } from './editor-fetch.js';
+import { type ExecCommand, type ExecLookup, findExec, resolveExec } from './exec-path.js';
 import { githubStep, npmStep, openVsxStep, type StepContext, toolchainStep } from './editor-unpack.js';
 import { findOnPath } from './formatter-detect.js';
 import { type Arch, requiredTools, serverDef } from './languages.js';
+import { posixShell } from './posix-shell.js';
 import { type EditorInstallEvent, type EditorInstalls, type InstallAction, type InstallState, type InstallTarget, SERVER_IDS, type ServerId, SYNTAX_IDS, type SyntaxId } from './types.js';
 
+export interface StepExecOptions { env: NodeJS.ProcessEnv; cwd?: string; signal?: AbortSignal; timeout?: number; maxBuffer: number; windowsVerbatimArguments: boolean }
+export type StepExecError = Error & { code?: string | number | null };
+/** How an install's programs run (#635): node's execFile and the resolver's own file check; a test fakes both to see what a win32 step starts. */
+export interface StepExec {
+  execFile(file: string, args: readonly string[], options: StepExecOptions, done: (err: StepExecError | null, stdout: string, stderr: string) => void): void;
+  isFile?(file: string): boolean;
+}
 export interface InstalledFile { version: string; installedAt: string }
 export type ActOutcome = { status: 200 | 202; state: InstallState } | { status: 409; message: string };
 export interface InstallerDeps {
@@ -19,7 +28,9 @@ export interface InstallerDeps {
   env?(): NodeJS.ProcessEnv; // the daemon's; a test passes its stubs' PATH
   registries?: Registries;
   arch?: Arch;
+  platform?: NodeJS.Platform; // process.platform; a test passes win32 (#635)
   downloads?: DownloadLimits; // a test's: plain http to its local registry, a small cap
+  exec?: StepExec; // node's execFile; a test fakes it with a Windows disk (#635)
   beforeSwap?(target: InstallTarget): Promise<void>; // the item's running processes stop here: an update moves the folder they read from
 }
 export interface Installer {
@@ -34,12 +45,38 @@ const VERSION_CAP_MS = 5_000;
 const SDK_VERSION = /(\d+\.\d+\.\d+[\w.+-]*)/;
 const isSystem = (target: InstallTarget): boolean => target.kind === 'server' && serverDef(target.id).install === 'system';
 
+const NODE_EXEC: StepExec = {
+  execFile: (file, args, options, done) => { execFile(file, args, { ...options, encoding: 'utf8' }, done); },
+};
+
+// Git for Windows' own unzip and tar (#631, #635): searched before PATH, so a Windows tar.exe on PATH never takes a step
+const gitUsrBin = (platform: NodeJS.Platform): string[] => {
+  const root = platform === 'win32' ? posixShell().gitRoot : undefined;
+  return root === undefined ? [] : [win32.join(root, 'usr', 'bin')];
+};
+
+// What execFile gets for a program (#635): npm.cmd through cmd.exe on win32. One found nowhere fails as an ENOENT does (stepError's line);
+// the .cmd runner's refusal keeps its own, which names no argument's value
+function resolveStep(command: string, args: string[], lookup: ExecLookup): ExecCommand | Error {
+  if (findExec(command, lookup) === undefined) return new Error(`${command} not found`);
+  try {
+    return resolveExec(command, args, lookup);
+  } catch (err) {
+    return err instanceof Error ? err : new Error(`${command} failed`);
+  }
+}
+
 // A server that ships with its SDK (#782): installed while its tool is on PATH, at the version the tool prints; nothing of the Hive's on disk
-async function systemState(tool: string, env: NodeJS.ProcessEnv): Promise<InstallState> {
-  const binary = await findOnPath(tool, env.PATH ?? '');
+async function systemState(tool: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform, exec: StepExec): Promise<InstallState> {
+  const binary = await findOnPath(tool, env.PATH ?? '', { platform, isFile: exec.isFile });
   if (binary === undefined) return { state: 'requires', tool };
   const printed = await new Promise<string>((resolve) => {
-    execFile(binary, ['--version'], { env, timeout: VERSION_CAP_MS, encoding: 'utf8' }, (_err, stdout, stderr) => resolve(`${stdout}${stderr}`));
+    const run = resolveStep(binary, ['--version'], { platform, env, isFile: exec.isFile }); // a dart.bat runs through cmd.exe
+    if (run instanceof Error) {
+      resolve('');
+      return;
+    }
+    exec.execFile(run.file, run.args, { env: { ...env, ...run.env }, timeout: VERSION_CAP_MS, maxBuffer: RUN_OUTPUT_MAX, windowsVerbatimArguments: run.windowsVerbatimArguments }, (_err, stdout, stderr) => resolve(`${stdout}${stderr}`));
   });
   return { state: 'installed', version: SDK_VERSION.exec(printed)?.[1] ?? 'unknown' };
 }
@@ -85,11 +122,19 @@ function stepError(command: string, err: Error & { code?: string | number | null
 
 interface Job { log: string[]; step: string; version: string }
 
-function runStep(command: string, args: string[], env: NodeJS.ProcessEnv, signal: AbortSignal, job: Job): Promise<string> {
+interface StepRun { env: NodeJS.ProcessEnv; cwd?: string; signal: AbortSignal; platform: NodeJS.Platform; exec: StepExec }
+
+function runStep(command: string, args: string[], run: StepRun, job: Job): Promise<string> {
   job.step = [command, args[0]].filter((part) => part !== undefined).join(' ');
   job.log.push(`> ${job.step}`);
   return new Promise((resolve, reject) => {
-    execFile(command, args, { env, signal, maxBuffer: RUN_OUTPUT_MAX, encoding: 'utf8' }, (err, stdout, stderr) => {
+    const resolved = resolveStep(command, args, { platform: run.platform, env: run.env, dirs: gitUsrBin(run.platform), isFile: run.exec.isFile });
+    if (resolved instanceof Error) {
+      reject(resolved);
+      return;
+    }
+    const options = { env: { ...run.env, ...resolved.env }, cwd: run.cwd, signal: run.signal, maxBuffer: RUN_OUTPUT_MAX, windowsVerbatimArguments: resolved.windowsVerbatimArguments };
+    run.exec.execFile(resolved.file, resolved.args, options, (err, stdout, stderr) => {
       if (stderr.trim() !== '') job.log.push(stderr.trimEnd());
       if (err) reject(stepError(command, err));
       else resolve(stdout);
@@ -103,11 +148,15 @@ class EditorInstaller implements Installer {
   private readonly deps: InstallerDeps;
   private readonly registries: Registries;
   private readonly arch: Arch;
+  private readonly platform: NodeJS.Platform;
+  private readonly exec: StepExec;
 
   constructor(deps: InstallerDeps) {
     this.deps = deps;
     this.registries = deps.registries ?? REGISTRIES;
     this.arch = deps.arch ?? (process.arch === 'arm64' ? 'arm64' : 'x64');
+    this.platform = deps.platform ?? process.platform;
+    this.exec = deps.exec ?? NODE_EXEC;
   }
 
   private env(): NodeJS.ProcessEnv { return this.deps.env?.() ?? process.env; }
@@ -122,7 +171,7 @@ class EditorInstaller implements Installer {
   private async listed(target: InstallTarget): Promise<InstallState> {
     const state = await this.stateOf(target);
     if (state.state !== 'installed' || isSystem(target)) return state; // the SDK updates itself: no latest to look up
-    const latest = await withCap(latestOf(target, this.registries, this.arch, AbortSignal.timeout(LATEST_CAP_MS)).then((l) => l.version), LATEST_CAP_MS);
+    const latest = await withCap(latestOf(target, this.registries, this.arch, this.platform, AbortSignal.timeout(LATEST_CAP_MS)).then((l) => l.version), LATEST_CAP_MS);
     return latest === undefined ? state : { ...state, latest };
   }
 
@@ -130,7 +179,7 @@ class EditorInstaller implements Installer {
   private async stateOf(target: InstallTarget): Promise<InstallState> {
     if (target.kind === 'server') {
       const def = serverDef(target.id);
-      if (def.install === 'system') return systemState(def.source, this.env());
+      if (def.install === 'system') return systemState(def.source, this.env(), this.platform, this.exec);
     }
     const run = this.running.get(keyOf(target));
     if (run) return run.percent === undefined ? { state: 'installing' } : { state: 'installing', percent: run.percent };
@@ -146,7 +195,7 @@ class EditorInstaller implements Installer {
     if (target.kind !== 'server') return undefined;
     const path = this.env().PATH ?? '';
     for (const tool of requiredTools(serverDef(target.id))) {
-      if ((await findOnPath(tool, path)) === undefined) return tool;
+      if ((await findOnPath(tool, path, { platform: this.platform, isFile: this.exec.isFile })) === undefined) return tool;
     }
     return undefined;
   }
@@ -198,7 +247,7 @@ class EditorInstaller implements Installer {
     const tmp = join(dirname(dir), `.${target.id}.tmp-${randomBytes(4).toString('hex')}`);
     const job: Job = { log: [], step: 'lookup', version: '' };
     try {
-      const latest = await latestOf(target, this.registries, this.arch, controller.signal);
+      const latest = await latestOf(target, this.registries, this.arch, this.platform, controller.signal);
       job.version = latest.version;
       await mkdir(tmp, { recursive: true });
       const version = await this.step(target, latest, this.context(target, tmp, controller.signal, job));
@@ -219,8 +268,8 @@ class EditorInstaller implements Installer {
 
   private context(target: InstallTarget, tmp: string, signal: AbortSignal, job: Job): StepContext {
     return {
-      tmp, arch: this.arch, env: this.env(),
-      run: (command, args, env = this.env()) => runStep(command, args, env, signal, job),
+      tmp, arch: this.arch, platform: this.platform, env: this.env(),
+      run: (command, args, options = {}) => runStep(command, args, { env: options.env ?? this.env(), cwd: options.cwd, signal, platform: this.platform, exec: this.exec }, job),
       download: (url, file) => { job.step = 'download'; return download(url, file, signal, (percent) => this.progress(target, percent), this.deps.downloads); },
     };
   }

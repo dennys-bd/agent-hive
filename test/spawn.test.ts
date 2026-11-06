@@ -127,7 +127,7 @@ test('ptyCommand runs claude interactively in the task worktree with hive env, t
   });
   assert.equal(
     cmd,
-    "cd '/Users/x/my repo/.hive/worktrees/hive-1-task' && HIVE_PTY_ID=W1 HIVE_PORT=4242 claude --mcp-config '/Users/x/my repo/.hive/prompts/W1.mcp.json' " +
+    "cd '/Users/x/my repo/.hive/worktrees/hive-1-task' && HIVE_PTY_ID=W1 HIVE_PORT=4242 'claude' --mcp-config '/Users/x/my repo/.hive/prompts/W1.mcp.json' " +
       "--settings '/Users/x/my repo/.hive/hooks.json' --plugin-dir '/Users/x/Library/agent hive/plugin' '--model' 'sonnet' '--session-id' 'S1' " +
       "\"$(cat '/Users/x/my repo/.hive/prompts/hive-1-task.md')\"; " +
       "curl -s -m 2 -X POST http://127.0.0.1:4242/hooks/exit -H 'x-hive-pty: W1' -H @\"$HIVE_SECRET_FILE\" --noproxy '*' >/dev/null",
@@ -204,7 +204,7 @@ test('ptyCommand without promptPath starts claude with no prompt argument and st
   const { promptPath: _none, ...manual } = LAUNCH; // a manual session has neither a prompt nor the MCP (#99)
   assert.equal(
     ptyCommand({ ...manual, agent: claudeLaunch({ mcpPath: undefined, session: { id: 'S1', resume: true } }) }),
-    "cd '/repo/.hive/worktrees/hive-1-task' && HIVE_PTY_ID=W1 HIVE_PORT=4242 claude --settings '/repo/.hive/hooks.json' " +
+    "cd '/repo/.hive/worktrees/hive-1-task' && HIVE_PTY_ID=W1 HIVE_PORT=4242 'claude' --settings '/repo/.hive/hooks.json' " +
       "--plugin-dir '/home/agent-hive/plugin' '--resume' 'S1'; " +
       "curl -s -m 2 -X POST http://127.0.0.1:4242/hooks/exit -H 'x-hive-pty: W1' -H @\"$HIVE_SECRET_FILE\" --noproxy '*' >/dev/null",
   );
@@ -396,4 +396,10 @@ test('verdictsLine names the stage\'s verdicts and asks hive_done for one with i
   assert.equal(verdictsLine({ verdicts: ['ok', 'redo'] }), '\n\nThis stage ends with a verdict: call hive_done with "verdict" set to one of "ok", "redo", and the evidence behind it as "evidence".');
   assert.equal(verdictsLine({}), '');
   assert.equal(verdictsLine({ verdicts: [] }), '');
+});
+
+test('ptyCommand quotes the agent\'s command as one word: a Windows full path with spaces and backslashes stays whole (#633)', () => {
+  const line = ptyCommand({ ...LAUNCH, agent: { command: 'C:\\Program Files\\Claude\\claude.exe', argv: ['--version'] } });
+  assert.ok(line.includes("HIVE_PORT=4242 'C:\\Program Files\\Claude\\claude.exe' '--version' "), line);
+  assert.ok(ptyCommand({ ...LAUNCH, agent: { command: 'claude', argv: [] } }).includes("HIVE_PORT=4242 'claude' "), 'on darwin \'claude\' runs exactly what claude did');
 });

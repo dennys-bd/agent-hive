@@ -3,49 +3,100 @@ import { createServer, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
+import { crc32, gzipSync } from 'node:zlib';
 import { createInstaller, type Installer, type InstallerDeps } from '../src/editor-install.js';
 import type { EditorInstallEvent } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
 
-// The tools an install runs, as scripts in a temp folder (#780): no test depends on npm, go, tar, unzip or gunzip on the machine. An
-// "archive" here is lines of <entry><TAB><content>; fake-extract writes the entries a stub tar or unzip is asked for.
-const EXTRACT = `#!/bin/sh
-archive="$1"; dest="$2"; shift 2
-/usr/bin/awk -F '\\t' -v dest="$dest" -v want="$*" '
-  BEGIN { n = split(want, list, " "); for (i = 1; i <= n; i++) keep[list[i]] = 1 }
-  (n == 0 || ($1 in keep)) { file = dest "/" $1; dir = file; sub(/\\/[^\\/]*$/, "", dir); system("/bin/mkdir -p \\"" dir "\\""); print $2 > file; close(file); if ($1 ~ /bin\\//) system("/bin/chmod 755 \\"" file "\\"") }
-' "$archive"
-`;
+// The tools an install runs that the tests stub (#780): npm and go, so no test depends on them; tar and unzip are the host's own, over archives built here (#635).
 export const STUBS: Record<string, string> = {
-  node: '#!/bin/sh\nexit 0\n',
-  npm: `#!/bin/sh
-case "$*" in *--ignore-scripts*) ;; *) echo 'no --ignore-scripts' >&2; exit 9 ;; esac
-dir="$3"; shift 6
-for spec in "$@"; do name="\${spec%@latest}"; /bin/mkdir -p "$dir/node_modules/$name"; printf '{"version":"1.2.3"}' > "$dir/node_modules/$name/package.json"; done
+  node: '',
+  npm: `import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+if (!args.includes('--ignore-scripts')) { process.stderr.write('no --ignore-scripts\\n'); process.exit(9); }
+for (const spec of args.slice(6)) {
+  const dir = join(args[2], 'node_modules', spec.replace(/@latest$/, ''));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'package.json'), '{"version":"1.2.3"}');
+}
 `,
-  go: '#!/bin/sh\n/bin/mkdir -p "$GOBIN"\nprintf \'#!/bin/sh\\n\' > "$GOBIN/gopls"\n/bin/chmod 755 "$GOBIN/gopls"\n',
-  gunzip: `#!/bin/sh\n/bin/mv "$1" "\${1%.gz}"\n`,
-  tar: '#!/bin/sh\n# tar -xzf FILE -C DEST\nexec "$(/usr/bin/dirname "$0")/fake-extract" "$2" "$4"\n',
-  unzip: `#!/bin/sh
-here="$(/usr/bin/dirname "$0")"; mode="$1"; archive="$2"; shift 2
-case "$mode" in
-  -Z1) exec /usr/bin/cut -f1 "$archive" ;;
-  -p) exec /usr/bin/awk -F '\\t' -v n="$1" '$1 == n { print $2 }' "$archive" ;;
-esac
-names=""; dest=""
-while [ $# -gt 0 ]; do if [ "$1" = "-d" ]; then dest="$2"; shift 2; else names="$names $1"; shift; fi; done
-exec "$here/fake-extract" "$archive" "$dest" $names
+  go: `import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const gopls = join(process.env.GOBIN, process.platform === 'win32' ? 'gopls.exe' : 'gopls');
+mkdirSync(process.env.GOBIN, { recursive: true });
+writeFileSync(gopls, '');
+chmodSync(gopls, 0o755);
 `,
-  'fake-extract': EXTRACT,
 };
 
+// A stub as the platform runs it (#635): its body is this node's, behind a sh script or, on win32, a .cmd that the resolver finds by PATHEXT
 export async function writeStub(bin: string, name: string, body: string): Promise<void> {
-  await writeFile(join(bin, name), body);
+  const script = join(bin, `${name}.mjs`);
+  await writeFile(script, body);
+  if (process.platform === 'win32') return writeFile(join(bin, `${name}.cmd`), `@"${process.execPath}" "${script}" %*\r\n`);
+  await writeFile(join(bin, name), `#!/bin/sh\nexec '${process.execPath}' '${script}' "$@"\n`);
   await chmod(join(bin, name), 0o755);
 }
 
-/** An archive as the stubs read it. */
-export const archive = (entries: Record<string, string>): string => `${Object.entries(entries).map(([name, content]) => `${name}\t${content}`).join('\n')}\n`;
+// What cmd.exe and node need on win32 besides PATH (#635); elsewhere the stubs' PATH is the whole env
+const WIN32_ENV = ['SystemRoot', 'ComSpec', 'PATHEXT'];
+const baseEnv = (): NodeJS.ProcessEnv => (process.platform === 'win32' ? Object.fromEntries(WIN32_ENV.map((name) => [name, process.env[name]])) : {});
+
+const DOS_DATE_1980 = 0x21; // 1980-01-01, zip's epoch
+const MADE_BY_UNIX = 0x0314; // with it, unzip restores the mode below
+const MODE_755 = (0o100755 << 16) >>> 0;
+
+/** A stored (uncompressed) zip of `entries`, every file 0755, as every unzip reads it (#635). */
+export function zipOf(entries: Record<string, string>): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(entries)) {
+    const [file, data] = [Buffer.from(name), Buffer.from(content)];
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(DOS_DATE_1980, 12);
+    local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(file.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(MADE_BY_UNIX, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(DOS_DATE_1980, 14);
+    central.writeUInt32LE(crc, 16); central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(file.length, 28);
+    central.writeUInt32LE(MODE_755, 38); central.writeUInt32LE(offset, 42);
+    locals.push(local, file, data);
+    centrals.push(central, file);
+    offset += local.length + file.length + data.length;
+  }
+  const directory = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  const count = Object.keys(entries).length;
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(count, 8); end.writeUInt16LE(count, 10); end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, directory, end]);
+}
+
+const BLOCK = 512;
+const octal = (value: number, width: number): string => `${value.toString(8).padStart(width - 1, '0')}\0`;
+
+/** A gzipped ustar archive of `entries`, every file 0755 (#635). Names stay under 100 bytes. */
+export function tarGzOf(entries: Record<string, string>): Buffer {
+  const blocks = Object.entries(entries).flatMap(([name, content]) => {
+    const data = Buffer.from(content);
+    const header = Buffer.alloc(BLOCK);
+    header.write(name, 0, 100);
+    header.write(octal(0o755, 8), 100); header.write(octal(0, 8), 108); header.write(octal(0, 8), 116);
+    header.write(octal(data.length, 12), 124); header.write(octal(0, 12), 136);
+    header.write('        ', 148); // the checksum counts its own field as spaces
+    header.write('0', 156); header.write('ustar\0', 257); header.write('00', 263);
+    header.write(`${octal(header.reduce((sum, byte) => sum + byte, 0), 7)} `, 148);
+    return [header, data, Buffer.alloc((BLOCK - (data.length % BLOCK)) % BLOCK)];
+  });
+  return gzipSync(Buffer.concat([...blocks, Buffer.alloc(2 * BLOCK)]));
+}
+
+/** Release asset `name`, holding `content` at `entry` (a path under the install folder, with /), in the format its name says (#635). */
+export const assetBody = (name: string, entry: string, content: string): Buffer => {
+  if (name.endsWith('.tar.gz')) return tarGzOf({ [entry]: content });
+  return name.endsWith('.zip') ? zipOf({ [entry]: content }) : gzipSync(content);
+};
 export const json = (body: unknown) => (res: ServerResponse): void => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 
 export interface Rig { home: string; bin: string; base: string; events: EditorInstallEvent[]; installer: Installer; routes: Map<string, (res: ServerResponse) => void> }
@@ -62,7 +113,7 @@ export async function rig(t: TestContext, tools: readonly string[] = Object.keys
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const events: EditorInstallEvent[] = [];
   const installer = createInstaller({
-    home, env: () => ({ PATH: bin }), arch: 'arm64', onState: (event) => events.push(event), downloads: { allowHttp: true }, ...extra,
+    home, env: () => ({ ...baseEnv(), PATH: bin }), arch: 'arm64', onState: (event) => events.push(event), downloads: { allowHttp: true }, ...extra,
     registries: { npm: `${base}/npm`, github: `${base}/gh`, goproxy: `${base}/go`, openvsx: `${base}/ovsx` },
   });
   return { home, bin, base, events, installer, routes };

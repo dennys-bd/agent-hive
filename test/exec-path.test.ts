@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { findExec, resolveExec } from '../src/exec-path.js';
+import { agentDirs } from '../src/agents/command.js';
+import { createExec, type ExecRunOptions, findExec, resolveExec } from '../src/exec-path.js';
+import { posixShell, posixShellEnv } from '../src/posix-shell.js';
+import { ptyCommand } from '../src/spawn.js';
 import { tempDir } from './temp-dir.js';
 
 const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: runs a real .cmd through cmd.exe (#632)' };
@@ -42,6 +45,7 @@ test('on win32 a name present only as .cmd runs through cmd.exe, each argument q
     file: COMSPEC,
     args: ['/d', '/s', '/v:off', '/c', '""C:\\npm\\prettier.cmd" "--write" "a b" "say ""q""" "dir\\\\""'],
     windowsVerbatimArguments: true,
+    env: { NoDefaultCurrentDirectoryInExePath: '1' }, // an npm shim's bare `node` never resolves in the cwd, where a repository could plant one
   });
 });
 
@@ -64,6 +68,64 @@ test('on win32 an argument cmd.exe cannot carry safely (%, a line break, NUL) is
   assert.doesNotThrow(() => resolveExec('go', ['100%'], { ...lookup, isFile: fakeFs('C:\\npm\\go.exe') }), 'an .exe takes any argument');
 });
 
+// A fake run that records what execFile would have got
+function recorder() {
+  const runs: { file: string; args: string[]; opts: ExecRunOptions }[] = [];
+  const run = async (file: string, args: string[], opts: ExecRunOptions): Promise<{ stdout: string }> => {
+    runs.push({ file, args, opts });
+    return { stdout: 'ok' };
+  };
+  return { runs, run };
+}
+
+test('createExec on win32 runs claude from <USERPROFILE>\\.local\\bin, codex.cmd through the .cmd runner verbatim, and gh by its full path (#633)', async () => {
+  const { runs, run } = recorder();
+  const daemonEnv = { ...env, USERPROFILE: 'C:\\Users\\u' };
+  const isFile = fakeFs('C:\\Users\\u\\.local\\bin\\claude.exe', 'C:\\npm\\codex.cmd', 'C:\\npm\\codex', 'C:\\npm\\gh.exe');
+  const exec = createExec({ platform: 'win32', env: daemonEnv, dirsFor: (name) => agentDirs(name, 'win32', daemonEnv), run, isFile });
+  assert.deepEqual(await exec('claude', ['--version']), { stdout: 'ok' });
+  await exec('codex', ['--version']);
+  await exec('gh', ['auth', 'token'], { timeout: 10 });
+  assert.deepEqual(runs, [
+    { file: 'C:\\Users\\u\\.local\\bin\\claude.exe', args: ['--version'], opts: {} },
+    { file: COMSPEC, args: ['/d', '/s', '/v:off', '/c', '""C:\\npm\\codex.cmd" "--version""'], opts: { env: { ...daemonEnv, NoDefaultCurrentDirectoryInExePath: '1' }, windowsVerbatimArguments: true } },
+    { file: 'C:\\npm\\gh.exe', args: ['auth', 'token'], opts: { timeout: 10 } },
+  ]);
+});
+
+test('createExec looks a name up in the call\'s env when it has one, else the daemon\'s, on every call; a name found nowhere rejects naming it (#633)', async () => {
+  const { runs, run } = recorder();
+  const files = new Set<string>();
+  const exec = createExec({ platform: 'win32', env: { Path: 'C:\\daemon' }, dirsFor: () => [], run, isFile: (file) => files.has(file.toLowerCase()) });
+  await assert.rejects(exec('tool', []), { message: 'tool was not found' });
+  assert.equal(runs.length, 0, 'nothing ran');
+  files.add('c:\\daemon\\tool.exe'); // installed while the Hive runs: never cached
+  await exec('tool', []);
+  files.add('c:\\child\\tool.exe');
+  await exec('tool', ['x'], { env: { Path: 'C:\\child' } });
+  assert.deepEqual(runs.map((r) => r.file), ['C:\\daemon\\tool.exe', 'C:\\child\\tool.exe']);
+  assert.deepEqual(runs[1]?.opts, { env: { Path: 'C:\\child' } }, 'the caller\'s options pass on unchanged');
+  const refused = createExec({ platform: 'win32', env, dirsFor: () => [], run, isFile: fakeFs('C:\\npm\\prettier.cmd') });
+  await assert.rejects(refused('prettier', ['100%']), /cmd\.exe/, 'the runner\'s refusal is a rejection too, never a synchronous throw');
+});
+
+test('on win32 a merged env\'s later key wins; a relative folder the caller adds and a relative SYSTEMROOT are skipped (#633)', () => {
+  const merged = { Path: 'C:\\daemon', PATH: 'C:\\workspace', PATHEXT: '.EXE;.CMD' };
+  const isFile = fakeFs('C:\\daemon\\claude.exe', 'C:\\workspace\\claude.exe', '.local\\bin\\claude.exe', 'C:\\npm\\x.cmd');
+  assert.equal(findExec('claude', { platform: 'win32', env: merged, isFile }), 'C:\\workspace\\claude.exe');
+  assert.equal(findExec('claude', { platform: 'win32', env: merged, dirs: ['.local\\bin'], isFile }), 'C:\\workspace\\claude.exe');
+  assert.equal(resolveExec('x', [], { platform: 'win32', env: { PATH: 'C:\\npm', SYSTEMROOT: 'repo' }, isFile }).file, 'C:\\Windows\\System32\\cmd.exe');
+});
+
+test('createExec on darwin and linux hands run the name, the args and the options unchanged, with no file lookup (#633)', async () => {
+  for (const platform of ['darwin', 'linux'] as const) {
+    const { runs, run } = recorder();
+    const exec = createExec({ platform, env: {}, dirsFor: (name) => agentDirs(name, platform, {}), run, isFile: () => assert.fail('no lookup off win32') });
+    await exec('claude', ['-p', 'a b'], { maxBuffer: 1 });
+    assert.deepEqual(runs, [{ file: 'claude', args: ['-p', 'a b'], opts: { maxBuffer: 1 } }], platform);
+  }
+});
+
 test('on the Windows lane a .cmd gets each argument unchanged, and git answers through the module (#632)', WIN32_ONLY, async (t) => {
   const dir = await tempDir(t, 'exec-path-');
   await writeFile(join(dir, 'echo.js'), 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
@@ -73,4 +135,17 @@ test('on the Windows lane a .cmd gets each argument unchanged, and git answers t
   assert.deepEqual(JSON.parse(spawnSync(run.file, run.args, { windowsVerbatimArguments: run.windowsVerbatimArguments, encoding: 'utf8' }).stdout), args);
   const git = resolveExec('git', ['--version'], { platform: 'win32', env: process.env });
   assert.match(spawnSync(git.file, git.args, { windowsVerbatimArguments: git.windowsVerbatimArguments, encoding: 'utf8' }).stdout, /git version/);
+});
+
+const CLOSED_PORT = 9; // the trailer's exit report goes nowhere
+
+test('on the Windows lane Git\'s sh.exe -c runs a ptyCommand whose agent is node.exe by its full path, and the script\'s output comes back (#633)', WIN32_ONLY, async (t) => {
+  const dir = await tempDir(t, 'pty-agent-');
+  const script = join(dir, 'agent.js');
+  await writeFile(script, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
+  const node = findExec(process.execPath, { platform: 'win32', env: process.env }) ?? assert.fail('node.exe not found');
+  const line = ptyCommand({ ptyId: 'W1', slug: 's', cwd: dir, port: CLOSED_PORT, agent: { command: node, argv: [script, 'a b'] } });
+  // spawnSync, not execFileSync: the line ends with the trailer's curl, whose failure on the closed port is the exit code
+  const ran = spawnSync(posixShell().shell, ['-c', line], { env: { ...process.env, ...posixShellEnv('win32') }, encoding: 'utf8', timeout: 30_000 });
+  assert.deepEqual(JSON.parse(ran.stdout), ['a b'], ran.stderr);
 });

@@ -27,6 +27,7 @@ export type RunOutcome = FormatOutcome | { declined: true };
 
 export interface Ran { stdout?: Buffer; stderr: string; failure?: string }
 export const CANCELLED = 'cancelled';
+// windowsVerbatimArguments: the .cmd runner's line (#632, #633), which reaches cmd.exe as written
 export interface Process { command: string; args: string[]; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean }
 
 /** A binary and argv as the platform spawns them (#634): on win32 a .cmd runs through cmd.exe, so a project's node_modules\.bin\biome.cmd works.
@@ -68,7 +69,7 @@ export function collect(stream: Readable | null, cap: number, onOver: () => void
 export function runCapped({ command, args, env, windowsVerbatimArguments }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
   return new Promise((resolve) => {
     let settled = false;
-    const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], ...(windowsVerbatimArguments === true ? { windowsVerbatimArguments } : {}), ...treeSpawnOptions(process.platform) });
+    const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsVerbatimArguments, ...treeSpawnOptions(process.platform) });
     const stop = (failure: string): void => {
       if (settled) return; // once reaped, the pid may be another process's
       void killTree(child.pid, process.platform);
