@@ -1,7 +1,10 @@
 // Each install kind's steps (#780), filling the temp folder the installer renames into place: npm into a prefix, go install into GOBIN, a
 // GitHub asset unpacked, a .vsix's data files extracted. Every step is a program with argv, run through ctx.run.
-import { chmod, mkdir, readFile, rename, rm } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { chmod, mkdir, readFile, rm } from 'node:fs/promises';
 import { join, posix } from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { createGunzip } from 'node:zlib';
 import type { Latest } from './editor-fetch.js';
 import type { Arch, ServerDef } from './languages.js';
 
@@ -10,7 +13,7 @@ export interface StepContext {
   arch: Arch;
   platform: NodeJS.Platform; // the asset's and the binary's names (#635)
   env: NodeJS.ProcessEnv; // the daemon's (#780)
-  run(command: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string>; // stdout; stderr goes to the log; a failure throws its last line
+  run(command: string, args: string[], options?: { env?: NodeJS.ProcessEnv; cwd?: string }): Promise<string>; // stdout; stderr goes to the log; a failure throws its last line
   download(url: string, file: string): Promise<void>;
 }
 
@@ -29,28 +32,30 @@ export async function npmStep(def: ServerDef, ctx: StepContext): Promise<string>
 
 /** go install of the module into the temp folder's bin (#780); the version is the proxy's latest, looked up just before. */
 export async function toolchainStep(def: ServerDef, latest: Latest, ctx: StepContext): Promise<string> {
-  await ctx.run('go', ['install', `${def.source}@latest`], { ...ctx.env, GOBIN: join(ctx.tmp, 'bin') });
+  await ctx.run('go', ['install', `${def.source}@latest`], { env: { ...ctx.env, GOBIN: join(ctx.tmp, 'bin') } });
   return latest.version;
 }
 
 const GZ = '.gz';
 
-// A lone binary: gunzip leaves it beside the .gz; it moves to bin/<binary> and becomes executable
+// A lone binary straight into bin/<binary> (.exe on win32), executable. node:zlib on every OS: Git's gunzip is a sh script that execFile
+// cannot start (#635); the mode is a no-op on Windows
 async function gunzipBinary(file: string, binary: string, ctx: StepContext): Promise<void> {
-  await ctx.run('gunzip', [file]);
   const bin = join(ctx.tmp, 'bin');
+  const target = join(bin, ctx.platform === 'win32' ? `${binary}.exe` : binary);
   await mkdir(bin, { recursive: true });
-  await rename(file.slice(0, -GZ.length), join(bin, binary));
-  await chmod(join(bin, binary), 0o755);
+  await pipeline(createReadStream(file), createGunzip(), createWriteStream(target));
+  await chmod(target, 0o755);
 }
 
-/** The platform's release asset, downloaded and unpacked with tar, unzip or gunzip (#780, #635). */
+/** The platform's release asset, downloaded and unpacked with tar or unzip (Git's on win32), a lone .gz with node:zlib (#780, #635). */
 export async function githubStep(def: ServerDef, latest: Latest, ctx: StepContext): Promise<string> {
   const asset = def.asset?.(latest.version, ctx.arch, ctx.platform) ?? '';
   if (latest.url === undefined || asset === '') throw new Error(`${def.id}: no asset to download`);
   const file = join(ctx.tmp, asset);
   await ctx.download(latest.url, file);
-  if (asset.endsWith('.tar.gz')) await ctx.run('tar', ['-xzf', file, '-C', ctx.tmp]);
+  // From inside the folder with bare names: Git's GNU tar reads C:\… as a remote host, and bsdtar takes the same argv (#635)
+  if (asset.endsWith('.tar.gz')) await ctx.run('tar', ['-xzf', asset, '-C', '.'], { cwd: ctx.tmp });
   else if (asset.endsWith('.zip')) await ctx.run('unzip', ['-q', file, '-d', ctx.tmp]);
   else if (asset.endsWith(GZ)) await gunzipBinary(file, def.binaries[0], ctx);
   else throw new Error(`${asset}: not a .tar.gz, .zip or .gz`);

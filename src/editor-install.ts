@@ -86,11 +86,13 @@ function stepError(command: string, err: Error & { code?: string | number | null
 
 interface Job { log: string[]; step: string; version: string }
 
-function runStep(command: string, args: string[], env: NodeJS.ProcessEnv, signal: AbortSignal, job: Job): Promise<string> {
+interface StepRun { env: NodeJS.ProcessEnv; cwd?: string; signal: AbortSignal }
+
+function runStep(command: string, args: string[], run: StepRun, job: Job): Promise<string> {
   job.step = [command, args[0]].filter((part) => part !== undefined).join(' ');
   job.log.push(`> ${job.step}`);
   return new Promise((resolve, reject) => {
-    execFile(command, args, { env, signal, maxBuffer: RUN_OUTPUT_MAX, encoding: 'utf8' }, (err, stdout, stderr) => {
+    execFile(command, args, { env: run.env, cwd: run.cwd, signal: run.signal, maxBuffer: RUN_OUTPUT_MAX, encoding: 'utf8' }, (err, stdout, stderr) => {
       if (stderr.trim() !== '') job.log.push(stderr.trimEnd());
       if (err) reject(stepError(command, err));
       else resolve(stdout);
@@ -223,7 +225,7 @@ class EditorInstaller implements Installer {
   private context(target: InstallTarget, tmp: string, signal: AbortSignal, job: Job): StepContext {
     return {
       tmp, arch: this.arch, platform: this.platform, env: this.env(),
-      run: (command, args, env = this.env()) => runStep(command, args, env, signal, job),
+      run: (command, args, options = {}) => runStep(command, args, { env: options.env ?? this.env(), cwd: options.cwd, signal }, job),
       download: (url, file) => { job.step = 'download'; return download(url, file, signal, (percent) => this.progress(target, percent), this.deps.downloads); },
     };
   }
