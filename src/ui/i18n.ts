@@ -3108,6 +3108,10 @@ const en = {
   'settings.taskProps.entry.hint': 'outside the flow = the task shows in tasks › outside the flow, and you take it into a flow when you want',
   'settings.stages.from.firstHint': "a new task enters through the source's properties, among the stages that accept its column",
   'notify.approvalVerdict': 'Awaiting your approval · {verdict}', // #693: the verdict as the agent wrote it
+  'approval.verdict': 'verdict', // #693: the status box's verdict row
+  'approval.goesTo': 'approve moves to', // #693: read before the destination stage, hidden, and the destination's title
+  'approval.evidenceMore': 'show all',
+  'approval.evidenceLess': 'show less',
 };
 
 export type MessageKey = keyof typeof en;
@@ -6209,6 +6213,10 @@ const pt: Record<MessageKey, string> = {
   'settings.taskProps.entry.hint': 'sem fluxo = a tarefa aparece em tarefas › sem fluxo, e você a leva ao fluxo quando quiser',
   'settings.stages.from.firstHint': 'a tarefa nova entra pelas propriedades da fonte, entre as etapas que aceitam sua coluna',
   'notify.approvalVerdict': 'Aguardando sua aprovação · {verdict}',
+  'approval.verdict': 'veredito',
+  'approval.goesTo': 'aprovar leva a',
+  'approval.evidenceMore': 'mostrar tudo',
+  'approval.evidenceLess': 'mostrar menos',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
