@@ -13,8 +13,8 @@ export interface TreeNode {
 
 export interface TreeRow { node: TreeNode; depth: number }
 
-// A dotfile or anything under a dot folder: what mostrar arquivos ocultos brings back
-const isHidden = (path: string): boolean => path.split('/').some((part) => part.startsWith('.'));
+/** A dotfile or anything under a dot folder: what mostrar arquivos ocultos brings back; the tree's reveal skips it with ocultos off (#718). */
+export const isHidden = (path: string): boolean => path.split('/').some((part) => part.startsWith('.'));
 
 // Folders first, then by name, as Finder and every editor list them
 const byKindThenName = (a: TreeNode, b: TreeNode): number =>
