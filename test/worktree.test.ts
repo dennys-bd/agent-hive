@@ -757,14 +757,14 @@ test('listWorktrees keeps only the direct children of .hive/worktrees, with the 
 
 test('listWorktrees rejects with git\'s own words (#181)', async () => {
   const { exec } = fakeExec({ failing: 'list', message: 'Command failed: git -C /r worktree list --porcelain', stderr: 'fatal: not a git repository\n' });
+  await assert.rejects(listWorktrees('/r', process.platform, exec), { message: 'fatal: not a git repository' });
+});
 
 test('listWorktrees on win32 takes the c:/… git prints for the Hive\'s worktree and answers the native path; a worktree elsewhere with the same name is skipped (#640)', async () => {
   const repo = 'C:\\repo';
   const text = porcelain('C:/repo', [[`c:/repo/.hive/worktrees/${SLUG}`, CLEAN_BRANCH], [`C:/elsewhere/${SLUG}`, 'feat/x']]);
   const { exec } = fakeExec({ listing: text });
   assert.deepEqual(await listWorktrees(repo, 'win32', exec), [{ slug: SLUG, path: worktreePath(repo, SLUG), branch: CLEAN_BRANCH }]);
-});
-  await assert.rejects(listWorktrees('/r', process.platform, exec), { message: 'fatal: not a git repository' });
 });
 
 test('a task a Restart moved to <branch>-r<n> is trusted like the template\'s own branch: not listed, the variant goes; the forced removal falls back to it too (#283)', async (t) => {
