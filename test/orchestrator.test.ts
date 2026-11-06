@@ -2115,6 +2115,15 @@ test('setAuto on clears the activity\'s stopped mark so the fill may pick the ta
   assert.deepEqual([work(kept.state, 1)?.stopped, work(kept.state, 1)?.stoppedAt, kept.effects], [true, STOPPED_AT, []], 'a failure\'s stop keeps its mark: the error still bars the fill');
 });
 
+test('setAuto marks the task as switched by hand, on as well as off, so its source\'s rule never sets its auto again (#688)', () => {
+  const queued = polled(signaled(base(1), 'red').state, [listed(1)]).state;
+  assert.equal(task(queued, 1)?.autoByHand, undefined, 'a polled task is not switched by hand');
+  const off = reduce(queued, { type: 'setAuto', taskId: 'board:item1', auto: false }).state;
+  assert.deepEqual([task(off, 1)?.auto, task(off, 1)?.autoByHand], [false, true]);
+  const on = reduce(off, { type: 'setAuto', taskId: 'board:item1', auto: true }).state;
+  assert.deepEqual([task(on, 1)?.auto, task(on, 1)?.autoByHand], [true, true], 'on by hand too: a rule saying auto: no must not switch it off again');
+});
+
 test('the fill skips a task with auto false and takes one with auto true (#573)', () => {
   const queued = polled(signaled(base(1), 'red').state, [listed(1)]).state; // red: the poll starts nothing
   const withAuto = (auto: boolean): State => ({ ...queued, tasks: queued.tasks.map((c) => ({ ...c, auto })) });
