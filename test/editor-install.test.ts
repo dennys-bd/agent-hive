@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { editorDir } from '../src/editor-install.js';
+import { editorDir, type InstallerDeps, type StepExec } from '../src/editor-install.js';
 import { serverDef } from '../src/languages.js';
 import { json, rig, settled, writeStub } from './editor-stubs.js';
 
@@ -109,4 +109,46 @@ test('a system server installs nothing: it requires its tool until the tool is o
   assert.deepEqual((await r.installer.installs()).servers.dart, { state: 'installed', version: '3.5.4' });
   assert.deepEqual(await r.installer.act(DART, 'install'), { status: 409, message: 'dart comes with its SDK: nothing to install' });
   assert.equal((await r.installer.act(DART, 'update')).status, 409);
+});
+
+const COMSPEC = 'C:\\Windows\\System32\\cmd.exe';
+// A Windows disk of these files, case-insensitive as NTFS is
+const onDisk = (...files: string[]) => (file: string): boolean => files.some((f) => f.toLowerCase() === file.toLowerCase());
+interface Call { file: string; args: readonly string[]; windowsVerbatimArguments: boolean }
+// execFile faked: it records what it was asked to start, and that program exits 1
+const recorder = (): { calls: Call[]; execFile: StepExec['execFile'] } => {
+  const calls: Call[] = [];
+  return {
+    calls,
+    execFile: (file, args, options, done) => {
+      calls.push({ file, args, windowsVerbatimArguments: options.windowsVerbatimArguments });
+      done(Object.assign(new Error('exit'), { code: 1 }), '', '');
+    },
+  };
+};
+const onWin32 = (exec: StepExec): Partial<InstallerDeps> => ({ platform: 'win32', env: () => ({ PATH: 'C:\\node', ComSpec: COMSPEC }), exec });
+
+test('on win32 a step runs what the resolver answers: npm is C:\\node\\npm.cmd, started by cmd.exe with verbatim arguments, never a bare npm (#635)', async (t) => {
+  const { calls, execFile } = recorder();
+  const r = await rig(t, [], onWin32({ execFile, isFile: onDisk('C:\\node\\node.exe', 'C:\\node\\npm.cmd') }));
+  r.routes.set('/npm/pyright/latest', json({ version: '1.2.3' }));
+  await r.installer.act(PYRIGHT, 'install');
+  const { state } = await settled(r, 'pyright');
+  assert.ok(state.state === 'failed' && state.step === 'npm install', JSON.stringify(state));
+  assert.equal(state.log.split('\n').at(-1), 'npm exited with code 1');
+  assert.equal(calls.length, 1);
+  assert.deepEqual([calls[0].file, calls[0].args.slice(0, 4), calls[0].windowsVerbatimArguments], [COMSPEC, ['/d', '/s', '/v:off', '/c'], true]);
+  assert.match(calls[0].args[4], /^""C:\\node\\npm\.cmd" "install" "--prefix" /);
+});
+
+test('on win32 a Git without unzip.exe fails the step with "unzip not found" and starts nothing (#635)', async (t) => {
+  const { calls, execFile } = recorder();
+  const r = await rig(t, [], onWin32({ execFile, isFile: () => false }));
+  r.routes.set('/gh/repos/terraform-linters/tflint/releases/latest', json({ tag_name: 'v0.59.1', assets: [{ name: 'tflint_windows_amd64.zip', browser_download_url: `${r.base}/dl/tflint` }] }));
+  r.routes.set('/dl/tflint', (res) => { res.writeHead(200); res.end('zip'); });
+  await r.installer.act({ kind: 'server', id: 'tflint' }, 'install');
+  const { state } = await settled(r, 'tflint');
+  assert.ok(state.state === 'failed' && state.step === 'unzip -q', JSON.stringify(state));
+  assert.equal(state.log.split('\n').at(-1), 'unzip not found');
+  assert.deepEqual(calls, []);
 });
