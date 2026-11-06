@@ -10,19 +10,38 @@ import { tempDir } from './temp-dir.js';
 
 // The tools an install runs that the tests stub (#780): npm and go, so no test depends on them; tar and unzip are the host's own, over archives built here (#635).
 export const STUBS: Record<string, string> = {
-  node: '#!/bin/sh\nexit 0\n',
-  npm: `#!/bin/sh
-case "$*" in *--ignore-scripts*) ;; *) echo 'no --ignore-scripts' >&2; exit 9 ;; esac
-dir="$3"; shift 6
-for spec in "$@"; do name="\${spec%@latest}"; /bin/mkdir -p "$dir/node_modules/$name"; printf '{"version":"1.2.3"}' > "$dir/node_modules/$name/package.json"; done
+  node: '',
+  npm: `import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+if (!args.includes('--ignore-scripts')) { process.stderr.write('no --ignore-scripts\\n'); process.exit(9); }
+for (const spec of args.slice(6)) {
+  const dir = join(args[2], 'node_modules', spec.replace(/@latest$/, ''));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'package.json'), '{"version":"1.2.3"}');
+}
 `,
-  go: '#!/bin/sh\n/bin/mkdir -p "$GOBIN"\nprintf \'#!/bin/sh\\n\' > "$GOBIN/gopls"\n/bin/chmod 755 "$GOBIN/gopls"\n',
+  go: `import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const gopls = join(process.env.GOBIN, process.platform === 'win32' ? 'gopls.exe' : 'gopls');
+mkdirSync(process.env.GOBIN, { recursive: true });
+writeFileSync(gopls, '');
+chmodSync(gopls, 0o755);
+`,
 };
 
+// A stub as the platform runs it (#635): its body is this node's, behind a sh script or, on win32, a .cmd that the resolver finds by PATHEXT
 export async function writeStub(bin: string, name: string, body: string): Promise<void> {
-  await writeFile(join(bin, name), body);
+  const script = join(bin, `${name}.mjs`);
+  await writeFile(script, body);
+  if (process.platform === 'win32') return writeFile(join(bin, `${name}.cmd`), `@"${process.execPath}" "${script}" %*\r\n`);
+  await writeFile(join(bin, name), `#!/bin/sh\nexec '${process.execPath}' '${script}' "$@"\n`);
   await chmod(join(bin, name), 0o755);
 }
+
+// What cmd.exe and node need on win32 besides PATH (#635); elsewhere the stubs' PATH is the whole env
+const WIN32_ENV = ['SystemRoot', 'ComSpec', 'PATHEXT'];
+const baseEnv = (): NodeJS.ProcessEnv => (process.platform === 'win32' ? Object.fromEntries(WIN32_ENV.map((name) => [name, process.env[name]])) : {});
 
 const DOS_DATE_1980 = 0x21; // 1980-01-01, zip's epoch
 const MADE_BY_UNIX = 0x0314; // with it, unzip restores the mode below
@@ -94,7 +113,7 @@ export async function rig(t: TestContext, tools: readonly string[] = Object.keys
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const events: EditorInstallEvent[] = [];
   const installer = createInstaller({
-    home, env: () => ({ PATH: bin }), arch: 'arm64', onState: (event) => events.push(event), downloads: { allowHttp: true }, ...extra,
+    home, env: () => ({ ...baseEnv(), PATH: bin }), arch: 'arm64', onState: (event) => events.push(event), downloads: { allowHttp: true }, ...extra,
     registries: { npm: `${base}/npm`, github: `${base}/gh`, goproxy: `${base}/go`, openvsx: `${base}/ovsx` },
   });
   return { home, bin, base, events, installer, routes };
