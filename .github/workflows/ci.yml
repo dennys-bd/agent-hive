@@ -72,3 +72,68 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # vite build now, so a leaf that lists a test reading dist/ui touches only the list
       - run: pnpm exec tsc && pnpm exec vite build && node scripts/test-node.mjs --list test/windows-lane.txt
+
+  # Builds, installs and exercises the Windows installer (#651); #653 adds the daemon smoke to this same job.
+  # No ELECTRON_SKIP_BINARY_DOWNLOAD here: electron-builder packages Electron's win32-x64 build.
+  installer:
+    name: ci (installer)
+    runs-on: windows-latest
+    timeout-minutes: 20 # packaging plus an asar-less install of every node_modules file; a hung step must not hold the runner
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0, version comes from packageManager in package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm package:win
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-hive-setup-x64
+          path: release/*.exe
+          if-no-files-found: error
+      - name: Install silently and spawn a ConPTY from the installed app
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem -Path release\*.exe -File)
+          if ($installers.Count -ne 1) { throw "expected one installer in release\, found $($installers.Count)" }
+          $setup = Start-Process -FilePath $installers[0].FullName -ArgumentList '/S' -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "the installer exited $($setup.ExitCode)" }
+
+          # one-click per-user installs are named after package.json's name, the exe after productName
+          $programs = Join-Path $env:LOCALAPPDATA 'Programs'
+          $app = Join-Path $programs 'agent-hive\Agent Hive.exe'
+          if (-not (Test-Path -LiteralPath $app -PathType Leaf)) {
+            Get-ChildItem -Path $programs -Depth 1 -ErrorAction SilentlyContinue | Out-Host
+            throw "no app at $app"
+          }
+
+          $check = Join-Path $env:RUNNER_TEMP 'conpty-check.cjs'
+          Set-Content -LiteralPath $check -Encoding utf8 -Value @'
+          // node-pty is required from the install, beside this exe, so the packaged copy is what is proven, not the checkout's
+          const path = require('node:path');
+          const pty = require(path.join(path.dirname(process.execPath), 'resources', 'app', 'node_modules', 'node-pty'));
+          const MARKER = 'hive-conpty-ok';
+          const TIMEOUT_MS = 30000;
+          let output = '';
+          let exitCode;
+          const finish = (code, message) => { console.log(message); process.exit(code); };
+          const timer = setTimeout(() => finish(1, `no marker and exit within ${TIMEOUT_MS} ms; exit ${exitCode}; output ${JSON.stringify(output)}`), TIMEOUT_MS);
+          // ConPTY may deliver the last output after the exit event, so both orders settle here
+          const settle = () => {
+            if (exitCode === undefined || !output.includes(MARKER)) return;
+            clearTimeout(timer);
+            finish(exitCode === 0 ? 0 : 1, `ConPTY: marker back, cmd.exe exited ${exitCode}`);
+          };
+          const child = pty.spawn('cmd.exe', ['/c', 'echo', MARKER], { name: 'xterm-256color', cols: 80, rows: 24, cwd: process.env.RUNNER_TEMP, env: process.env, useConpty: true });
+          child.onData((data) => { output += data; settle(); });
+          child.onExit((event) => { exitCode = event.exitCode; settle(); });
+          '@
+
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          # piped, so PowerShell waits for the GUI-subsystem exe and sets $LASTEXITCODE
+          & $app $check | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "the ConPTY check exited $LASTEXITCODE" }
