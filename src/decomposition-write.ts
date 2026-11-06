@@ -43,7 +43,8 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 const LABEL_COLOR = 'ededed'; // GitHub's own grey for a new label (#936): the user recolours it on GitHub
 
 // #702: what gh's stderr says when GitHub or the network failed rather than the request: it carries no structured status, so the text decides.
-// A GraphQL errors[] answer (validation, permission, rate limit) never matches and fails at once
+// A GraphQL errors[] answer (validation, permission, rate limit) fails at once. ponytail: a bare "timeout" also matches such an answer that
+// echoes user text (an issue titled "timeout"), costing two extra attempts; anchor it to gh's transport words if that ever shows up
 const TRANSIENT = /REFUSED_STREAM|stream error|ECONNRESET|connection reset|timeout|timed out|HTTP 502|HTTP 503|Bad Gateway|Service Unavailable/i;
 export const isTransient = (err: unknown): boolean => TRANSIENT.test(messageOf(err));
 
