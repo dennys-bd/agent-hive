@@ -147,14 +147,20 @@ const INTRO = [
 const HEADINGS: Record<MemoryKind, string> = { pref: 'Preferences', fact: 'Repository facts', avoid: 'Avoid' };
 
 /** The memory section a run is told (#797, #681): an index, each lesson's id and description, never a body, which the run reads with
- * hive_recall; never origin, date or use. '' with no lesson, or with hive_recall off (#336): an index nobody can read is noise. */
+ * hive_recall; never origin, date or use. After the opening lines, how to correct a lesson with the tools of hive_revise and hive_forget that are on (#683). '' with no lesson, or with hive_recall off (#336): an index nobody can read is noise. */
+// #683: how a run corrects the index, naming only the tools that are on; no line with both off
+function correctingLine(off: readonly OptionalTool[]): string[] {
+  const ways = [off.includes('hive_revise') ? '' : 'correct it with `hive_revise`', off.includes('hive_forget') ? '' : 'remove it with `hive_forget`'].filter((way) => way !== '');
+  return ways.length === 0 ? [] : [`When a lesson proves wrong or outdated, ${ways.join(' or ')}, saying why.`];
+}
+
 export function renderMemory(entries: readonly MemoryEntry[], off: readonly OptionalTool[]): string {
   if (entries.length === 0 || off.includes('hive_recall')) return '';
   const sections = MEMORY_KINDS.flatMap((kind) => {
     const lines = entries.filter((e) => e.kind === kind).map((e) => `- [${e.id}] ${e.description}`);
     return lines.length === 0 ? [] : [[`### ${HEADINGS[kind]}`, ...lines].join('\n')];
   });
-  return `${[TITLE, INTRO, ...sections].join('\n\n')}\n`;
+  return `${[TITLE, [INTRO, ...correctingLine(off)].join('\n'), ...sections].join('\n\n')}\n`;
 }
 
 export interface RenderedMemory { ids: string[]; chars: number }

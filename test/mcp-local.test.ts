@@ -6,7 +6,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { localActivityId } from '../src/activities.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
-import { RECALL_DESCRIPTION, REMEMBER_DESCRIPTION } from '../src/mcp-optional.js';
+import { FORGET_DESCRIPTION, RECALL_DESCRIPTION, REMEMBER_DESCRIPTION, REVISE_DESCRIPTION } from '../src/mcp-optional.js';
 import { MEMORY_FULL_MESSAGE, memoryPath } from '../src/memory.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { createServer } from '../src/server.js';
@@ -44,7 +44,7 @@ async function startLocal(t: TestContext, memoryCap = 4000): Promise<Local> {
 
 test('a local session is offered every tool but hive_done, hive_pr and hive_stop: its tools match its protocol, and it cannot stop a session the user drives (#256)', async (t) => {
   const { client } = await startLocal(t);
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_recall', 'hive_remember', 'hive_reply', 'hive_task']);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_forget', 'hive_recall', 'hive_remember', 'hive_reply', 'hive_revise', 'hive_task']);
 });
 
 async function call(client: Client, name: string, args: Record<string, unknown> = {}): Promise<{ text: string; isError: boolean }> {
@@ -81,4 +81,18 @@ test('hive_remember tells every run in the workspace gets the lesson, a local se
   assert.equal((await client.listTools()).tools.find((tool) => tool.name === 'hive_recall')?.description, RECALL_DESCRIPTION);
   assert.match(RECALL_DESCRIPTION, /pass its id \(m-<n>, as the memory section lists it\)/);
   assert.match(RECALL_DESCRIPTION, /the description only names the subject, the body holds the lesson\.$/);
+  const tools = (await client.listTools()).tools;
+  assert.equal(tools.find((tool) => tool.name === 'hive_revise')?.description, REVISE_DESCRIPTION);
+  assert.equal(tools.find((tool) => tool.name === 'hive_forget')?.description, FORGET_DESCRIPTION);
+  assert.match(REVISE_DESCRIPTION, /description: one line of at most 150 characters naming what the lesson is about, short and direct/);
+  for (const description of [REVISE_DESCRIPTION, FORGET_DESCRIPTION]) assert.match(description, /goes to the memory's history, where the user can restore it\./);
+});
+
+test('hive_revise and hive_forget from a local session record the change as by local (#256, #683)', async (t) => {
+  const { client, home } = await startLocal(t);
+  await call(client, 'hive_remember', { kind: 'fact', description: 'pnpm test is the gate', body: 'the lesson' });
+  assert.deepEqual(await call(client, 'hive_revise', { id: 'm-1', kind: 'pref', why: 'it is how the user wants it' }), { text: 'revised m-1', isError: false });
+  assert.deepEqual(await call(client, 'hive_forget', { id: 'm-1', why: 'the user said so' }), { text: 'removed m-1', isError: false });
+  const { entries, history } = JSON.parse(await readFile(memoryPath(home, WORKSPACE), 'utf8')) as MemoryFile;
+  assert.deepEqual([entries, history.map((c) => [c.id, c.action, c.by, c.entry.kind])], [[], [['h-1', 'revised', 'local', 'fact'], ['h-2', 'removed', 'local', 'pref']]]);
 });

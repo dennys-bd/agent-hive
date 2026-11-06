@@ -1,4 +1,4 @@
-// The tools the Hive's config may turn off (#333): hive_create_task, hive_remember, hive_recall, hive_task, and the benchmark's three (#478). Registered per request, only those mcp.off leaves on.
+// The tools the Hive's config may turn off (#333): hive_create_task, hive_remember, hive_recall, hive_revise, hive_forget (#683), hive_task, and the benchmark's three (#478). Registered per request, only those mcp.off leaves on.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { localWorkspaceOf, taskOfWorker } from './activities.js';
@@ -6,7 +6,7 @@ import { taskWorkspace, workspaceByName } from './config.js';
 import { createTask } from './create-task.js';
 import { correlationOf } from './fact-derive.js';
 import type { Correlation } from './facts.js';
-import { isMemoryRefusal, lessonRefusal, memoryCounts, recalledOf, unknownMemoryMessage, withEntry, withUse } from './memory.js';
+import { forgetRefusal, isMemoryRefusal, lessonRefusal, memoryCounts, recalledOf, revisionRefusal, unknownMemoryMessage, withEntry, withForgotten, withRevision, withUse } from './memory.js';
 import { registerBenchmarkDraftTool, registerBenchmarkGetTool, registerBenchmarkListTool } from './mcp-benchmark.js';
 import { livePtyId, type McpDeps, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
 import { readTaskAnswer } from './mcp-task.js';
@@ -30,7 +30,7 @@ function registerCreateTaskTool(server: McpServer, deps: McpDeps, header: string
   }));
 }
 
-/** Who saves or reads a lesson (#797, #681): the workspace the worker's task resolves to, or its local activity's (#256); the lesson's origin (the
+/** Who saves, reads, revises or forgets a lesson (#797, #681, #683): the workspace the worker's task resolves to, or its local activity's (#256); the lesson's origin (the
  * stage only for a stage run, 'local' for a local session) and the ids its records join by. */
 export interface MemoryCaller { workspace: string; cap: number; origin: Exclude<MemoryOrigin, 'user'>; correlation: Correlation }
 
@@ -104,8 +104,47 @@ function registerTaskTool(server: McpServer, deps: McpDeps, header: string | und
   }));
 }
 
+export const REVISE_DESCRIPTION = 'Correct a lesson of this workspace\'s memory that proved wrong or outdated: pass its id (m-<n>, as the memory section lists it), why (one line of at most 150 characters saying what made it wrong) and at least one of kind, description and body; only the fields given change. description: one line of at most 150 characters naming what the lesson is about, short and direct (e.g. "Portuguese copy for a run or a command"), never the lesson itself. body: up to 4,000 characters holding the lesson, why it holds and how to apply it; line breaks are kept. Never put a token or a secret in any field. The lesson as it was goes to the memory\'s history, where the user can restore it.';
+export const FORGET_DESCRIPTION = 'Remove a lesson of this workspace\'s memory that proved wrong or no longer holds: pass its id (m-<n>, as the memory section lists it) and why (one line of at most 150 characters). The lesson goes to the memory\'s history, where the user can restore it.';
+
+// hive_revise (#683): a run corrects a lesson; the lesson as it was goes to the history. Its records name the id and the kind, never a text or the why
+export function registerReviseTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
+  server.registerTool('hive_revise', {
+    description: REVISE_DESCRIPTION,
+    inputSchema: { id: z.string(), kind: z.enum(MEMORY_KINDS).optional(), description: z.string().optional(), body: z.string().optional(), why: z.string() },
+  }, async ({ id, kind, description, body, why }) => recorded(deps, header, 'hive_revise', async () => {
+    const caller = memoryCaller(deps, header);
+    if (!caller) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
+    const fields = { kind, description, body };
+    const refused = revisionRefusal(fields, why);
+    if (refused) return refuse(refused.code, refused.message);
+    const saved = await deps.memory.update(caller.workspace, (file) => withRevision(file, id, fields, { by: caller.origin, why }, new Date().toISOString(), caller.cap));
+    if (isMemoryRefusal(saved)) return refuse(saved.code, saved.message);
+    const lesson = saved.entries.find((e) => e.id === id); // withRevision found it; the find narrows it for the fact
+    if (!lesson) return refuse('unknown_memory', unknownMemoryMessage(id));
+    deps.facts.write({ event: 'memory.changed', level: 'info', ...caller.correlation, action: 'edited', kind: lesson.kind, by: 'worker', id, workspace: caller.workspace, ...memoryCounts(saved) });
+    return reply(`revised ${id}`);
+  }, { kind }));
+}
+
+// hive_forget (#683): a run removes a lesson; it goes whole to the history. Its records name the id and the kind, never a text or the why
+export function registerForgetTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
+  server.registerTool('hive_forget', { description: FORGET_DESCRIPTION, inputSchema: { id: z.string(), why: z.string() } }, async ({ id, why }) => recorded(deps, header, 'hive_forget', async () => {
+    const caller = memoryCaller(deps, header);
+    if (!caller) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
+    const refused = forgetRefusal(why);
+    if (refused) return refuse(refused.code, refused.message);
+    const saved = await deps.memory.update(caller.workspace, (file) => withForgotten(file, id, { by: caller.origin, why }, new Date().toISOString()));
+    if (isMemoryRefusal(saved)) return refuse(saved.code, saved.message);
+    const change = saved.history.at(-1); // withForgotten's: the change it just added, the newest one
+    if (!change) return refuse('unknown_memory', unknownMemoryMessage(id));
+    deps.facts.write({ event: 'memory.changed', level: 'info', ...caller.correlation, action: 'removed', kind: change.entry.kind, by: 'worker', id, workspace: caller.workspace, ...memoryCounts(saved) });
+    return reply(`removed ${id}`);
+  }));
+}
+
 const REGISTER: Record<OptionalTool, Register> = {
-  hive_remember: registerRememberTool, hive_recall: registerRecallTool, hive_create_task: registerCreateTaskTool, hive_task: registerTaskTool,
+  hive_remember: registerRememberTool, hive_recall: registerRecallTool, hive_revise: registerReviseTool, hive_forget: registerForgetTool, hive_create_task: registerCreateTaskTool, hive_task: registerTaskTool,
   benchmark_list: registerBenchmarkListTool, benchmark_get: registerBenchmarkGetTool, benchmark_draft: registerBenchmarkDraftTool, // #478
 };
 
