@@ -78,9 +78,9 @@ test('tomlString writes a TOML basic string: quotes, backslashes, newlines, tabs
   assert.doesNotMatch(rendered, /[\u0000-\u0008\u000a-\u001f\u007f]/, 'TOML refuses these unescaped');
 });
 
-test('the command line runs codex bare with every override quoted whole and the prompt last (#927)', () => {
+test('the command line runs codex quoted with every override quoted whole and the prompt last (#927, #633)', () => {
   const line = ptyCommand({ ptyId: PTY, slug: 'hive-1-task', cwd: CWD, port: 4242, promptPath: PROMPT, agent: { command: 'codex', argv: codexRunner.launch(STAGE_RUN) } });
-  assert.ok(line.startsWith(`cd '${CWD}' && HIVE_PTY_ID=${PTY} HIVE_PORT=4242 codex -c 'hooks.SessionStart=[{hooks=[{type="command",command="curl -sf -m 30 -X POST http://127.0.0.1:4242/hooks/event `), line);
+  assert.ok(line.startsWith(`cd '${CWD}' && HIVE_PTY_ID=${PTY} HIVE_PORT=4242 'codex' -c 'hooks.SessionStart=[{hooks=[{type="command",command="curl -sf -m 30 -X POST http://127.0.0.1:4242/hooks/event `), line);
   assert.ok(line.includes(` '--dangerously-bypass-hook-trust' '--sandbox' 'workspace-write' '-m' 'gpt-5.6-terra' "$(cat '${PROMPT}')"; curl `), line);
 });
 

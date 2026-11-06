@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { AGENTS, agentOf, agentRefusal, defaultModel, detectAgents, disabledRefusal, isAvailable, knownAgent, liveDefaultAgent, ranAgent, runModel, savedAgent, stageAgentIn, stageModelFor, withDefaultModel } from '../src/agents.js';
 import { runners } from '../src/agents/registry.js';
 import { AGENT_IDS, DEFAULT_AGENT, type AgentId, type Exec } from '../src/types.js';
+import { agentCommand, agentDirs } from '../src/agents/command.js';
 
 const REFUSAL = 'agent claude is not on PATH: install it, then restart the Hive';
 
@@ -104,4 +105,30 @@ test('codex runs as `codex`, reports plan limits (#929) and cannot choose its se
 test('isAvailable is true only for an agent boot found; one it never checked is not (#931)', () => {
   const found = [{ agent: 'claude' as const, available: true }, { agent: 'codex' as const, available: false }];
   assert.deepEqual([isAvailable('claude', found), isAvailable('codex', found), isAvailable('codex', [])], [true, false, false]);
+});
+
+// A Windows file system of the given files, case-insensitive as NTFS is
+const winFs = (...files: string[]) => {
+  const set = new Set(files.map((f) => f.toLowerCase()));
+  return (file: string): boolean => set.has(file.toLowerCase());
+};
+const WIN_ENV = { USERPROFILE: 'C:\\Users\\u', Path: 'C:\\npm', PATHEXT: '.COM;.EXE;.BAT;.CMD' };
+
+test('agentDirs: on win32 claude is looked up first in <USERPROFILE>\\.local\\bin; no USERPROFILE, any other name, darwin and linux get none (#633)', () => {
+  assert.deepEqual(agentDirs('claude', 'win32', WIN_ENV), ['C:\\Users\\u\\.local\\bin']);
+  assert.deepEqual(agentDirs('claude', 'win32', { userprofile: 'C:\\Users\\u' }), ['C:\\Users\\u\\.local\\bin'], 'Windows env names are case-insensitive');
+  assert.deepEqual(agentDirs('claude', 'win32', {}), [], 'no USERPROFILE: no folder');
+  for (const name of ['codex', 'gh', 'git']) assert.deepEqual(agentDirs(name, 'win32', WIN_ENV), [], name);
+  for (const platform of ['darwin', 'linux'] as const) assert.deepEqual(agentDirs('claude', platform, WIN_ENV), [], platform);
+});
+
+test('agentCommand: on win32 an .exe gives its full path; a .cmd or a name found nowhere keeps the bare name for sh.exe; darwin and linux always the bare name (#633)', () => {
+  const isFile = winFs('C:\\Users\\u\\.local\\bin\\claude.exe', 'C:\\npm\\codex.cmd', 'C:\\npm\\codex');
+  assert.equal(agentCommand('claude', 'win32', WIN_ENV, isFile), 'C:\\Users\\u\\.local\\bin\\claude.exe');
+  assert.equal(agentCommand('codex', 'win32', WIN_ENV, isFile), 'codex', 'a .cmd: sh.exe runs the sh shim npm put beside it');
+  assert.equal(agentCommand('claude', 'win32', WIN_ENV, winFs()), 'claude', 'found nowhere: left to sh.exe\'s own PATH lookup');
+  assert.equal(agentCommand('codex', 'win32', { ...WIN_ENV, Path: 'C:\\tools' }, winFs('C:\\tools\\codex.exe')), 'C:\\tools\\codex.exe', 'Codex through PATH only');
+  for (const platform of ['darwin', 'linux'] as const) {
+    assert.equal(agentCommand('claude', platform, WIN_ENV, () => assert.fail('no lookup off win32')), 'claude', platform);
+  }
 });

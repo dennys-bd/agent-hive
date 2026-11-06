@@ -1,8 +1,8 @@
-import { execFile } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { agentDirs } from './agents/command.js';
+import { createExec } from './exec-path.js';
 import type { Exec } from './types.js';
 
 export const GITHUB_HOST = 'github.com'; // the repository routes know no other host
@@ -14,7 +14,7 @@ const MISSING = -1; // hosts.yml absent: a stat key no real mtime takes
 const TOKEN_CHARS = /^[\x21-\x7e]+$/;
 // Inherited credentials would make gh answer for another account than the login that stamps the rows (#180)
 const INHERITED_TOKENS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN'];
-const execFileAsync: Exec = promisify(execFile);
+const execFileAsync: Exec = createExec({ platform: process.platform, env: process.env, dirsFor: (name) => agentDirs(name, process.platform, process.env) });
 
 /** gh as the credential only (#503): its github.com login and its token, held in memory once per daemon. */
 export interface GhToken { login(): Promise<string>; token(): Promise<string>; invalidate(): void }

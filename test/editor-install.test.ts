@@ -114,14 +114,14 @@ test('a system server installs nothing: it requires its tool until the tool is o
 const COMSPEC = 'C:\\Windows\\System32\\cmd.exe';
 // A Windows disk of these files, case-insensitive as NTFS is
 const onDisk = (...files: string[]) => (file: string): boolean => files.some((f) => f.toLowerCase() === file.toLowerCase());
-interface Call { file: string; args: readonly string[]; windowsVerbatimArguments: boolean }
+interface Call { file: string; args: readonly string[]; windowsVerbatimArguments: boolean; env: NodeJS.ProcessEnv }
 // execFile faked: it records what it was asked to start, and that program exits 1
 const recorder = (): { calls: Call[]; execFile: StepExec['execFile'] } => {
   const calls: Call[] = [];
   return {
     calls,
     execFile: (file, args, options, done) => {
-      calls.push({ file, args, windowsVerbatimArguments: options.windowsVerbatimArguments });
+      calls.push({ file, args, windowsVerbatimArguments: options.windowsVerbatimArguments, env: options.env });
       done(Object.assign(new Error('exit'), { code: 1 }), '', '');
     },
   };
@@ -139,6 +139,7 @@ test('on win32 a step runs what the resolver answers: npm is C:\\node\\npm.cmd, 
   assert.equal(calls.length, 1);
   assert.deepEqual([calls[0].file, calls[0].args.slice(0, 4), calls[0].windowsVerbatimArguments], [COMSPEC, ['/d', '/s', '/v:off', '/c'], true]);
   assert.match(calls[0].args[4], /^""C:\\node\\npm\.cmd" "install" "--prefix" /);
+  assert.equal(calls[0].env.NoDefaultCurrentDirectoryInExePath, '1', 'npm.cmd\'s bare node never resolves in the cwd (#633)');
 });
 
 test('on win32 a Git without unzip.exe fails the step with "unzip not found" and starts nothing (#635)', async (t) => {

@@ -147,7 +147,7 @@ const TERMINAL_SHELL = [
 
 // The one shell string of the repo (#283, #251), in three renders: an agent's run, a terminal, whose shell starts on the Hive's init files
 // (#259), and a workspace's run command (#300). The pty host runs it through `sh -c`, so there is no argv to pass. Everything user-controlled
-// goes through shellQuote: the agent's argv, which its runner rendered (#924), word by word; a run command's line and env values are quoted
+// goes through shellQuote: the agent's command (#633) and its argv, which its runner rendered (#924), word by word; a run command's line and env values are quoted
 // whole, and its env names passed ENV_NAME in the parser and the form, since `export NAME=` cannot quote a name.
 export function ptyCommand(o: PtyLaunch): string {
   // The secret from hive.secret, whose path the env ptyEnv gave the run holds (#467): curl reads the header from the file, so neither
@@ -160,7 +160,7 @@ export function ptyCommand(o: PtyLaunch): string {
   if (o.agent === undefined) throw new Error('pty: a run launch with no agent');
   const line = [
     `cd ${shellQuote(o.cwd)} &&`,
-    `HIVE_PTY_ID=${o.ptyId} HIVE_PORT=${o.port} ${o.agent.command}`, // an AGENTS constant, never the user's text: bare, as it always was
+    `HIVE_PTY_ID=${o.ptyId} HIVE_PORT=${o.port} ${shellQuote(o.agent.command)}`, // #633: on win32 an .exe's full path (spaces, backslashes); one rule on every OS
     ...o.agent.argv.map(shellWord),
     ...(o.promptPath === undefined ? [] : [`"$(cat ${shellQuote(o.promptPath)})"`]), // a session starts with no prompt (#164)
   ].join(' ');

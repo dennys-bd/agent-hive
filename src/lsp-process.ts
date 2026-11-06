@@ -102,7 +102,7 @@ class ServerProcess implements LspProcess {
       process.nextTick(() => this.end(run.failure)); // after the constructor returns, as a spawn's own error is
       return;
     }
-    const child = spawn(run.file, run.args, { cwd: spec.cwd, env: spec.env, stdio: ['pipe', 'pipe', 'pipe'], windowsVerbatimArguments: run.windowsVerbatimArguments });
+    const child = spawn(run.file, run.args, { cwd: spec.cwd, env: { ...spec.env, ...run.env }, stdio: ['pipe', 'pipe', 'pipe'], windowsVerbatimArguments: run.windowsVerbatimArguments });
     this.child = child;
     this.exited = new Promise((resolve) => child.once('close', () => resolve()));
     this.wire(child);

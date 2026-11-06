@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
 import { AGENTS, agentOf, agentRefusal, defaultModel, disabledRefusal, ranAgent, runModel } from './agents.js';
+import { agentCommand } from './agents/command.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
@@ -256,7 +257,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     pool.start({
       ptyId,
       // #927: the runner's env over the workspace's, so no workspace variable can stand in for the MCP secret
-      launch: { ptyId, slug, cwd, env: { ...env, ...runner.runEnv(server) }, port, promptPath, ...sized(size), agent: { command: AGENTS[agent].command, argv: runner.launch(run) } },
+      // #633: an .exe's full path on win32, looked up in the env the pty gets (the launch's over the daemon's); a .cmd stays bare for sh.exe
+      launch: { ptyId, slug, cwd, env: { ...env, ...runner.runEnv(server) }, port, promptPath, ...sized(size), agent: { command: agentCommand(agent, process.platform, { ...process.env, ...env }), argv: runner.launch(run) } },
       ...handlers(ptyId, slug),
     });
   }
@@ -314,7 +316,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     }
     pool.start({
       ptyId,
-      launch: { ptyId, slug: place.slug, cwd: place.cwd, env: { ...env, ...runner.runEnv(server) }, port, ...(promptPath === undefined ? {} : { promptPath }), ...sized(size), agent: { command: AGENTS[agent].command, argv } },
+      launch: { ptyId, slug: place.slug, cwd: place.cwd, env: { ...env, ...runner.runEnv(server) }, port, ...(promptPath === undefined ? {} : { promptPath }), ...sized(size), agent: { command: agentCommand(agent, process.platform, { ...process.env, ...env }), argv } },
       ...handlers(ptyId, place.slug),
     });
   }

@@ -4,9 +4,11 @@ import { chmod, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { AGENTS } from '../src/agents.js';
-import { type HeadlessInput, runHeadless } from '../src/headless-run.js';
+import { type HeadlessInput, headlessProcess, runHeadless } from '../src/headless-run.js';
 import { type AgentId, EDITOR_FILE_MAX } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
+
+const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX only: the fake CLI is an extensionless sh script on a :-joined PATH' };
 
 interface Cli { bin: string; tmpRoot: string; env: NodeJS.ProcessEnv }
 
@@ -40,7 +42,7 @@ async function gone(pid: number): Promise<boolean> {
   return false;
 }
 
-test("Claude's answer is its structured_output: the prompt on stdin, its own temp folder, no hostEnv, nothing left behind (#330)", async (t) => {
+test("Claude's answer is its structured_output: the prompt on stdin, its own temp folder, no hostEnv, nothing left behind (#330)", POSIX_ONLY, async (t) => {
   const cli = await fakeCli(t, 'claude',
     `prompt="$(cat)"; printf '{"type":"result","is_error":false,"result":"","structured_output":{"from":1,"to":1,"text":"%s|%s|%s|%s|%s"}}' "$prompt" "\${CLAUDECODE:-unset}" "\${HIVE_SECRET:-unset}" "\${HIVE_MCP_SECRET:-unset}" "$(basename "$PWD")"`);
   // every runner's hostEnv and the Hive's own, whatever the run's agent: a Hive started inside a Codex run holds the outer HIVE_MCP_SECRET
@@ -51,14 +53,14 @@ test("Claude's answer is its structured_output: the prompt on stdin, its own tem
   assert.deepEqual(await readdir(cli.tmpRoot), []);
 });
 
-test("Codex's answer is the file it wrote to -o, inside the run's folder, which is gone afterwards (#330)", async (t) => {
+test("Codex's answer is the file it wrote to -o, inside the run's folder, which is gone afterwards (#330)", POSIX_ONLY, async (t) => {
   const cli = await fakeCli(t, 'codex',
     `while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done; cat > /dev/null; printf '{"from":1,"to":1,"text":"x"}' > "$out"`);
   assert.deepEqual(await runHeadless(input('codex'), { env: cli.env, tmpRoot: cli.tmpRoot }), { answer: '{"from":1,"to":1,"text":"x"}' });
   assert.deepEqual(await readdir(cli.tmpRoot), []);
 });
 
-test('a non-zero exit, an output over the cap, the timeout and no answer each fail with the reason, and remove the folder (#330)', async (t) => {
+test('a non-zero exit, an output over the cap, the timeout and no answer each fail with the reason, and remove the folder (#330)', POSIX_ONLY, async (t) => {
   const cases: [string, string, number?][] = [
     ['cat > /dev/null; echo boom >&2; exit 3', 'exit code 3'],
     [`cat > /dev/null; head -c ${EDITOR_FILE_MAX + 1} /dev/zero | tr '\\0' a`, `output over ${EDITOR_FILE_MAX} bytes`],
@@ -76,7 +78,7 @@ test('a non-zero exit, an output over the cap, the timeout and no answer each fa
   }
 });
 
-test('an abort kills the whole group, a grandchild too, and fails the run as cancelled (#330)', async (t) => {
+test('an abort kills the whole group, a grandchild too, and fails the run as cancelled (#330)', POSIX_ONLY, async (t) => {
   const cli = await fakeCli(t, 'claude', 'cat > /dev/null; sleep 30 & echo $! > "$PID_FILE"; wait');
   const pidFile = join(cli.bin, 'pid');
   const controller = new AbortController();
@@ -90,7 +92,7 @@ test('an abort kills the whole group, a grandchild too, and fails the run as can
   assert.deepEqual(await readdir(cli.tmpRoot), []);
 });
 
-test('with cwd the agent starts in that folder, gets the read-only tools and the run\'s own timeout; the temp folder still goes (#877)', async (t) => {
+test('with cwd the agent starts in that folder, gets the read-only tools and the run\'s own timeout; the temp folder still goes (#877)', POSIX_ONLY, async (t) => {
   // only --tools' value goes back: the whole argv holds the schema's quotes, which would break the JSON
   const cli = await fakeCli(t, 'claude',
     `while [ $# -gt 0 ]; do [ "$1" = --tools ] && tools="$2"; shift; done; cat > /dev/null; printf '{"type":"result","is_error":false,"structured_output":{"text":"%s|%s"}}' "$PWD" "$tools"`);
@@ -107,11 +109,37 @@ test('with cwd the agent starts in that folder, gets the read-only tools and the
   assert.deepEqual(await readdir(slow.tmpRoot), []);
 });
 
-test("mcpConfig and allowedTools reach Claude's argv as --mcp-config <path> and --allowedTools (#474)", async (t) => {
+test("mcpConfig and allowedTools reach Claude's argv as --mcp-config <path> and --allowedTools (#474)", POSIX_ONLY, async (t) => {
   const cli = await fakeCli(t, 'claude',
     `while [ $# -gt 0 ]; do [ "$1" = --mcp-config ] && mcp="$2"; [ "$1" = --allowedTools ] && allowed="$2"; shift; done; cat > /dev/null; printf '{"type":"result","is_error":false,"structured_output":{"text":"%s|%s"}}' "$mcp" "$allowed"`);
   const result = await runHeadless({ ...input('claude'), mcpConfig: '/r/mcp.json', allowedTools: ['mcp__playwright__browser_click'] }, { env: cli.env, tmpRoot: cli.tmpRoot });
   assert.ok('answer' in result, JSON.stringify(result));
   assert.equal((JSON.parse(result.answer) as { text: string }).text, '/r/mcp.json|mcp__playwright__browser_click');
   assert.deepEqual(await readdir(cli.tmpRoot), []);
+});
+
+// A Windows file system of the given files, case-insensitive as NTFS is
+const winFs = (...files: string[]) => {
+  const set = new Set(files.map((f) => f.toLowerCase()));
+  return (file: string): boolean => set.has(file.toLowerCase());
+};
+
+test('on win32 a headless Claude is its .exe in <USERPROFILE>\\.local\\bin and a headless Codex its .cmd through cmd.exe, verbatim; darwin unchanged (#633)', () => {
+  const env = { USERPROFILE: 'C:\\Users\\u', Path: 'C:\\npm', PATHEXT: '.EXE;.CMD', ComSpec: 'C:\\Windows\\System32\\cmd.exe' };
+  const isFile = winFs('C:\\Users\\u\\.local\\bin\\claude.exe', 'C:\\npm\\codex.cmd');
+  assert.deepEqual(headlessProcess('claude', ['-p', 'a b'], env, { platform: 'win32', isFile }), { command: 'C:\\Users\\u\\.local\\bin\\claude.exe', args: ['-p', 'a b'], env });
+  assert.deepEqual(headlessProcess('codex', ['exec', '-o', 'C:\\t\\answer.txt'], env, { platform: 'win32', isFile }), {
+    command: 'C:\\Windows\\System32\\cmd.exe',
+    args: ['/d', '/s', '/v:off', '/c', '""C:\\npm\\codex.cmd" "exec" "-o" "C:\\t\\answer.txt""'],
+    env: { ...env, NoDefaultCurrentDirectoryInExePath: '1' },
+    windowsVerbatimArguments: true,
+  });
+  assert.deepEqual(headlessProcess('claude', ['-p'], { PATH: '/usr/bin' }, { platform: 'darwin', isFile: () => assert.fail('no lookup off win32') }), { command: 'claude', args: ['-p'], env: { PATH: '/usr/bin' } });
+});
+
+test('on win32 an agent found nowhere fails the run with the resolver\'s reason before anything spawns, and the folder goes (#633)', async (t) => {
+  const tmpRoot = await tempDir(t, 'headless-tmp-');
+  const result = await runHeadless(input('codex'), { platform: 'win32', isFile: () => false, env: { Path: 'C:\\npm' }, tmpRoot });
+  assert.deepEqual(result, { failure: 'codex was not found', detail: '' });
+  assert.deepEqual(await readdir(tmpRoot), []);
 });

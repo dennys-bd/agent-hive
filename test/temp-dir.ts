@@ -16,7 +16,8 @@ export async function tempDir(t: AfterHost, prefix: string): Promise<string> {
   // node:test runs after hooks in the order they were registered and re-reads the list as it goes. A server or daemon closed by a hook
   // registered after this one still writes into the dir while closing, so this hook only queues the removal behind all of them.
   t.after(async () => {
-    t.after(() => rm(dir, { recursive: true, force: true }));
+    // Windows: a child just killed (an MCP probe's stalled server) can still hold the dir as its cwd for a moment, so rm retries EBUSY
+    t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   });
   return dir;
 }

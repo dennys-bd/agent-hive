@@ -1,8 +1,8 @@
-import { execFile } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { detectAgents } from './agents.js';
+import { agentDirs } from './agents/command.js';
+import { createExec } from './exec-path.js';
 import { createGhToken, type GhToken } from './github-token.js';
 import { moveEventsFiles } from './facts.js';
 import { createSource, createSources, resolveSources } from './source.js';
@@ -27,7 +27,8 @@ import { workspacePathProblem } from './worktree.js';
 import { BENCHMARK_PR_IN_NEW, MCP_DEFAULTS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type SourceItem, type Config, type Exec, type Language } from './types.js';
 import { flatten } from './flows.js';
 
-const execFileAsync: Exec = promisify(execFile);
+// #633: the boot's detectAgents finds Claude in ~\.local\bin and Codex's .cmd on win32
+const execFileAsync: Exec = createExec({ platform: process.platform, env: process.env, dirsFor: (name) => agentDirs(name, process.platform, process.env) });
 
 export interface BootedHive {
   port: number;

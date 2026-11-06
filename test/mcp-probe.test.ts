@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import type { RunMcpServer } from '../src/agents/runner.js';
-import { cachedProbe, PROBE_CACHE_MS, type ProbeAnswer, probeServer } from '../src/mcp-probe.js';
+import { cachedProbe, PROBE_CACHE_MS, type ProbeAnswer, probeCommand, probeServer } from '../src/mcp-probe.js';
 import { fakeLog } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -64,4 +64,20 @@ test('the cache answers a second ask within 30 s without probing; a changed defi
   clock = PROBE_CACHE_MS;
   await probe(withValue);
   assert.equal(asked.length, 3, 'expired');
+});
+
+test('on win32 a command server is spawned by its full path, an .exe\'s or a .cmd\'s; a name found nowhere, and every name on darwin, as written (#633)', () => {
+  const env = { Path: 'C:\\tools;C:\\npm', PATHEXT: '.COM;.EXE;.BAT;.CMD' };
+  const files = new Set(['c:\\tools\\uvx.exe', 'c:\\npm\\npx.cmd']);
+  const isFile = (file: string): boolean => files.has(file.toLowerCase());
+  assert.equal(probeCommand('uvx', { platform: 'win32', env, isFile }), 'C:\\tools\\uvx.exe');
+  assert.equal(probeCommand('npx', { platform: 'win32', env, isFile }), 'C:\\npm\\npx.cmd', 'cross-spawn wraps a .cmd in cmd.exe itself');
+  assert.equal(probeCommand('missing-server', { platform: 'win32', env, isFile }), 'missing-server', 'fails in the probe as it does today');
+  assert.equal(probeCommand('npx', { platform: 'darwin', env, isFile: () => assert.fail('no lookup off win32') }), 'npx');
+});
+
+test('with platform win32 a command server named by its full path still connects (#633)', async (t) => {
+  const { log } = fakeLog();
+  // on win32 node.exe resolves to itself; elsewhere the win32 lookup finds no .exe and keeps the path as written
+  assert.equal(await probeServer(node('stub', STUB), { timeoutMs: 20_000, cwd: await tempDir(t, 'probe-'), log, platform: 'win32', env: process.env }), 'connected');
 });
