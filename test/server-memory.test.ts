@@ -1,16 +1,16 @@
 import { execFile } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { RecordInput } from '../src/facts.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
-import { BODY_MESSAGE, DESCRIPTION_MESSAGE, MEMORY_FULL_MESSAGE, MEMORY_KIND_MESSAGE, MEMORY_SECRET_MESSAGE } from '../src/memory.js';
+import { BODY_MESSAGE, DESCRIPTION_MESSAGE, MEMORY_FULL_MESSAGE, MEMORY_KIND_MESSAGE, MEMORY_SECRET_MESSAGE, memoryPath } from '../src/memory.js';
 import { STAGE_PROTOCOL } from '../src/protocol.js';
 import { createServer } from '../src/server.js';
 import { CAP_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-memory.js';
-import type { Config, MemoryView, SettingsBody, Workspace } from '../src/types.js';
+import type { Config, MemoryEntry, MemoryFile, MemoryKind, MemoryView, SettingsBody, Workspace } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -55,6 +55,25 @@ async function start(t: TestContext, memoryCap = 4000, more: Workspace[] = []): 
   assert.equal((await send('POST', `${base}/settings`, { ...BODY, workspaces: [...workspacesAt(repo).map((w) => ({ ...w, memoryCap })), ...more] })).status, 200);
   return { base, url: `${base}/workspaces/${WORKSPACE}/memory`, home, records };
 }
+
+// #684: a memory with a history, written as the store writes it; the routes read the file on every call, so the server needs no restart
+const AT = '2026-11-06T10:00:00.000Z';
+const lesson = (n: number, kind: MemoryKind, description: string, uses = 0): MemoryEntry =>
+  ({ id: `m-${n}`, kind, description, body: `body of m-${n}`, origin: { task: '812', stage: 'build' }, at: AT, uses });
+const ENTRIES = [lesson(1, 'pref', 'pnpm test is the only gate', 2), lesson(3, 'fact', 'specs are written in English')];
+async function withHistory(home: string, entries: MemoryEntry[] = ENTRIES): Promise<void> {
+  const file: MemoryFile = {
+    nextId: 4, nextChangeId: 3, entries,
+    history: [
+      { id: 'h-1', entry: lesson(2, 'avoid', 'never edit dist/ by hand'), action: 'removed', by: { task: '813', stage: 'build' }, why: 'dist is no longer committed', at: AT },
+      { id: 'h-2', entry: lesson(1, 'fact', 'pnpm test is the gate'), action: 'revised', by: 'local', why: 'CI runs the same gate', at: AT },
+    ],
+  };
+  const path = memoryPath(home, WORKSPACE);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(file));
+}
+const memoryChanged = (records: RecordInput[]): MemoryChanged[] => records.filter((r): r is MemoryChanged => r.event === 'memory.changed');
 
 test('GET lists the workspace memory with its size, cap and lesson limit; POST adds a lesson of the user, PUT edits it keeping its origin, DELETE removes it; each write answers the new view, rewrites the protocol files and writes memory.changed by the user (#797)', async (t) => {
   const { url, home, records } = await start(t);
@@ -152,4 +171,56 @@ test('PUT …/memory/cap before a setup answers 409 as every memory route does, 
   t.after(() => server.close());
   assert.equal((await send('PUT', `http://127.0.0.1:${port}/workspaces/${WORKSPACE}/memory/cap`, { cap: 6000 })).status, 409);
   await assert.rejects(readFile(configFile(home)), 'no file');
+});
+
+test('POST …/history/:id/restore puts a removed lesson back whole under its id, in id order, and the change leaves the history; it rewrites the protocol files and writes memory.changed restored by the user with no text (#684)', async (t) => {
+  const { url, home, records } = await start(t);
+  await withHistory(home);
+  const [status, body] = await answer(send('POST', `${url}/history/h-1/restore`));
+  const view = body as MemoryView;
+  assert.equal(status, 200);
+  assert.deepEqual(view.entries, [ENTRIES[0], lesson(2, 'avoid', 'never edit dist/ by hand'), ENTRIES[1]]);
+  assert.deepEqual([view.history.map((c) => c.id), view.used], [['h-2'], 78]); // 26 + 24 + 28
+  assert.ok((await readFile(workspaceProtocolPaths(home, WORKSPACE).stage, 'utf8')).includes('- [m-2] never edit dist/ by hand'));
+  assert.deepEqual(memoryChanged(records).map((r) => [r.action, r.kind, r.by, r.id, r.entries, r.used, r.workspace]), [['restored', 'avoid', 'user', 'm-2', 3, 78, WORKSPACE]]);
+  const all = JSON.stringify(records);
+  for (const text of ['never edit dist/', 'body of m-2', 'no longer committed']) assert.ok(!all.includes(text), text);
+});
+
+test('restoring a revised change puts the lesson as it was over the current one, keeping the current uses (#684)', async (t) => {
+  const { url, home, records } = await start(t);
+  await withHistory(home);
+  const view = (await (await send('POST', `${url}/history/h-2/restore`)).json()) as MemoryView;
+  assert.deepEqual([view.entries, view.history.map((c) => c.id)], [[{ ...lesson(1, 'fact', 'pnpm test is the gate'), uses: 2 }, ENTRIES[1]], ['h-1']]);
+  assert.deepEqual(memoryChanged(records).map((r) => [r.action, r.kind, r.by, r.id]), [['restored', 'fact', 'user', 'm-1']]);
+});
+
+test('a restore past the workspace\'s cap is 409 memory_full, the lessons and the history stay as they were and no fact is written (#684)', async (t) => {
+  const { url, home, records } = await start(t, 300);
+  const full = [lesson(1, 'pref', 'a'.repeat(150)), lesson(3, 'fact', 'c'.repeat(150))]; // exactly 300
+  await withHistory(home, full);
+  await refused(send('POST', `${url}/history/h-1/restore`), 409, { error: MEMORY_FULL_MESSAGE, code: 'memory_full' }, 'past the cap');
+  const view = (await (await hiveFetch(url)).json()) as MemoryView;
+  assert.deepEqual([view.entries, view.history.map((c) => c.id)], [full, ['h-1', 'h-2']]);
+  assert.deepEqual(memoryChanged(records), []);
+});
+
+test('DELETE …/history/:id takes the change out of the history and answers the view, the lessons as they were and no fact written (#684)', async (t) => {
+  const { url, home, records } = await start(t);
+  await withHistory(home);
+  const view = (await (await send('DELETE', `${url}/history/h-1`)).json()) as MemoryView;
+  assert.deepEqual([view.entries, view.history.map((c) => c.id)], [ENTRIES, ['h-2']]);
+  assert.deepEqual(memoryChanged(records), []);
+});
+
+test('both history routes answer 404 for an unknown workspace and for an unknown change, writing nothing (#684)', async (t) => {
+  const { base, url, home } = await start(t);
+  await withHistory(home);
+  for (const [method, path] of [['POST', '/history/h-1/restore'], ['DELETE', '/history/h-1']] as const) {
+    await refused(send(method, `${base}/workspaces/ghost/memory${path}`), 404, { error: UNKNOWN_WORKSPACE_MESSAGE }, `${method}, unknown workspace`);
+  }
+  const gone = { error: "no change h-9 in this workspace's memory", code: 'unknown_memory' };
+  await refused(send('POST', `${url}/history/h-9/restore`), 404, gone, 'restore, unknown change');
+  await refused(send('DELETE', `${url}/history/h-9`), 404, gone, 'discard, unknown change');
+  assert.deepEqual(((await (await hiveFetch(url)).json()) as MemoryView).history.map((c) => c.id), ['h-1', 'h-2'], 'nothing written');
 });
