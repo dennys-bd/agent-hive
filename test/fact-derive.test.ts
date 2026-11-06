@@ -53,6 +53,21 @@ test('task.moved names who moved it: by hand, an approval, a merge, a stage\'s a
   assert.equal(by(STOP), 'auto', 'hive_done and its Stop advanced it');
 });
 
+test('a show epic\'s task.moved is by epic unless the event names it; closeTask moves a task on_finish (#723)', () => {
+  const epic = (stage: string): Task => task(1, stage, { item: item(1, { children: ['board:I2'], epic: { follows: 'behind', switchAt: 'dev' } }) });
+  const prev = withWork(base([epic('review'), task(2)]), 'board:I1');
+  const next = withWork(base([epic('dev')]), 'board:I1');
+  const by = (event: HiveEvent): unknown => field(only(deriveFacts(prev, next, event, NOW), 'task.moved')[0], 'by');
+  assert.equal(by({ type: 'closeTask', taskId: 'board:I2' }), 'epic', 'followEpics moved it once its child left');
+  assert.equal(by(POLL), 'epic');
+  assert.equal(by({ type: 'moveToStage', taskId: 'board:I2', stage: 'dev' }), 'epic', 'a move of its child, not of the epic');
+  assert.equal(by({ type: 'moveToStage', taskId: 'board:I1', stage: 'dev' }), 'hand', 'a move by hand of the epic itself');
+  assert.equal(by({ type: 'leaveFlow', taskId: 'board:I1' }), 'hand');
+  assert.equal(by({ type: 'approve', activityId: ACTIVITY }), 'approval', 'an approval of its own activity');
+  const plain = deriveFacts(withWork(base([task(1, 'review')]), 'board:I1'), withWork(base([task(1, 'dev')]), 'board:I1'), { type: 'closeTask', taskId: 'board:I9' }, NOW);
+  assert.equal(field(only(plain, 'task.moved')[0], 'by'), 'on_finish', 'a leaving action confirmed, as activityDeleted');
+});
+
 test('a task that left is task.closed or task.deleted with finished (and the onFinish mechanism as via), closed or hand, carrying only the fields the old state still fills (#742)', () => {
   const left = (gone: Task, event: HiveEvent): RecordInput[] => deriveFacts(base([gone]), base([]), event, NOW);
   const CLOSE: HiveEvent = { type: 'closeTask', taskId: 'board:I1' };
