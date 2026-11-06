@@ -1,10 +1,11 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState, isSessionId, isUuid, SIGNALS, STATUSES } from './orchestrator.js';
 import { syncOf } from './polling.js';
 import { loadPlanReadings } from './rate-limits.js';
 import { isLocalActivityId, pruneRecords } from './activities.js';
 import { savedAgent } from './agents.js';
+import { replaceFile } from './replace-file.js';
 import { isCount, isDate, isJsonObject, isStringArray, loadActivity, loadRecord, SLUG } from './state-guards.js';
 import { MOVED_TASK_KEYS, migrateLocals, migrateWork, migrateWorker } from './state-migrate.js';
 import type { WorkspaceNames } from './tasks.js';
@@ -257,5 +258,5 @@ export async function saveState(hiveDir: string, state: State): Promise<void> {
   const tmp = `${path}.tmp`;
   const { slept: _slept, ...saved } = state; // #672: the sleeping runs die with the Hive, so they are never saved
   await writeFile(tmp, JSON.stringify({ ...saved, tasks: saved.tasks.map(leanTask) }, null, 2));
-  await rename(tmp, path);
+  await replaceFile(tmp, path);
 }

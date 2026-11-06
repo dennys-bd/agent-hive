@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { hiveHome } from './home.js';
+import { replaceFile } from './replace-file.js';
 import type { Credentials } from './types.js';
 
 const FILE_NAME = 'credentials.json';
@@ -62,7 +63,7 @@ export async function writeCredentials(next: Credentials, env?: NodeJS.ProcessEn
   const tmp = `${path}.${randomUUID()}.tmp`;
   try {
     await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: FILE_MODE, flag: 'wx' });
-    await rename(tmp, path);
+    await replaceFile(tmp, path);
   } catch (err) {
     await unlink(tmp).catch(() => undefined);
     throw err;

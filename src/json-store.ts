@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { replaceFile } from './replace-file.js';
 
 // One JSON file per key (#591, #592), outside State: a task's review, a PR's review. The store queues each key's read-for-write and writes
 // atomically (temp + rename), so two edits in flight never drop each other's change.
@@ -35,7 +36,7 @@ export function createJsonStore<T>({ pathOf, empty, parse, isLive, private: owne
     const path = pathOf(key);
     await mkdir(dirname(path), { recursive: true, ...(owned ? { mode: 0o700 } : {}) });
     await writeFile(`${path}.tmp`, JSON.stringify(file, null, 2), owned ? { mode: 0o600 } : undefined);
-    await rename(`${path}.tmp`, path);
+    await replaceFile(`${path}.tmp`, path);
   }
   return {
     read,

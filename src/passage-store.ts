@@ -1,13 +1,14 @@
 // The user's protocol passages on disk (#336): one Liquid file each under <home>/protocol/passages/, beside the protocol files they end up
 // in (the workspaces/ subfolder keeps workspace names apart). Not under <home>/custom/<origin>/, which is keyed by workspace name. One
 // promise chain, each write temp + rename, private like the protocol files. Apart from src/protocol-inserts.ts, which stays node-free.
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PROTOCOL_DIR } from './hooks-settings.js';
 import type { Logger } from './log.js';
 import { errorName } from './memory.js';
 import { type ProtocolFor, protocolTexts } from './protocol.js';
 import { type Passage, passageErrors, renderPassages } from './protocol-inserts.js';
+import { replaceFile } from './replace-file.js';
 import type { TemplateError } from './template.js';
 
 const PASSAGES_DIR = 'passages';
@@ -59,7 +60,7 @@ export function createPassageStore(home: string): PassageStore {
   const put = async (id: string, text: string): Promise<void> => {
     await mkdir(dir, { recursive: true, mode: DIR_MODE });
     await writeFile(`${pathOf(id)}.tmp`, text, { mode: FILE_MODE });
-    await rename(`${pathOf(id)}.tmp`, pathOf(id));
+    await replaceFile(`${pathOf(id)}.tmp`, pathOf(id));
   };
   const create = async (text: string): Promise<PassageSave> => {
     const refusal = refusalOf(text);
