@@ -11,7 +11,7 @@ const decodeEntities = (text: string): string =>
 
 const fileUrlPath = (url: string): string | undefined => {
   try {
-    return fileURLToPath(url.trim());
+    return fileURLToPath(url.trim(), { windows: false }); // Finder's URL is always POSIX, whatever OS runs this
   } catch {
     return undefined; // not a file:// URL (text on the clipboard)
   }
