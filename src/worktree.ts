@@ -64,7 +64,7 @@ export async function removeWorktree(
 ): Promise<void> {
   const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['-C', repo, ...args]);
   const path = worktreePath(repo, slugOfWork(activity));
-  const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path);
+  const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path, process.platform);
   const fallback = listed === undefined ? (ownBranch(activity, branch) ?? branch) : listed; // not listed: the branch a Restart moved the task to (#283), else the template's. null: detached
   await removeNested({ path: repo, nestedRepos: nested }, path, fallback ?? undefined, true, exec); // #653: inside out, forced as the outer removal is
   // --force twice: Claude Code locks the worktree while it runs and a SIGHUP kill does not release the lock
@@ -121,7 +121,7 @@ export async function ensureWorktree(
 ): Promise<PreparedWorktree> {
   const path = worktreePath(repo, slug);
   const git: Git = (...args) => gitOrWords(repo, args, exec);
-  const listed = branchAt(await git('worktree', 'list', '--porcelain'), path);
+  const listed = branchAt(await git('worktree', 'list', '--porcelain'), path, process.platform);
   if (listed !== undefined && (await exists(path))) {
     // Adopt only our own branch: on anything else (another branch, a detached HEAD) the path was staged by someone else, and a
     // forced removal would delete the branch found there with the work on it.
@@ -152,7 +152,7 @@ async function addWorktree(git: Git, add: string[], at: { path: string; branch: 
     return;
   } catch (err) {
     if (!CONFIG_LOCK.test(wordsOf(err))) throw err;
-    if (branchAt(await git('worktree', 'list', '--porcelain'), at.path) !== at.branch) {
+    if (branchAt(await git('worktree', 'list', '--porcelain'), at.path, process.platform) !== at.branch) {
       if (!(await branchMade())) throw err;
       await git('worktree', 'add', '--', at.path, at.branch);
     }
@@ -224,7 +224,7 @@ export async function cleanWorktree(
 ): Promise<void> {
   const path = worktreePath(repo, slugOfWork(activity));
   const nestedOf = { path: repo, nestedRepos: nested };
-  const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path);
+  const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path, process.platform);
   const present = listed !== undefined && (await exists(path));
   // a hook can forge the branch: trusted only when it is the template's name or a Restart's `-r<n>` of it (#283)
   const named = listed ?? ownBranch(activity, branch);
@@ -311,7 +311,7 @@ export async function listWorktrees(repo: string, exec: Exec = execFileAsync): P
     if (!line.startsWith(WORKTREE_PREFIX)) return [];
     const path = line.slice(WORKTREE_PREFIX.length);
     const slug = basename(path);
-    return worktreePath(repo, slug) === path ? [{ slug, path, branch: branchAt(porcelain, path) ?? null }] : [];
+    return worktreePath(repo, slug) === path ? [{ slug, path, branch: branchAt(porcelain, path, process.platform) ?? null }] : [];
   });
 }
 
@@ -361,12 +361,12 @@ export async function baseOptions(
   ]);
   const defaultRef = `${base.remote}/${branch}`;
   const own = worktreePath(repo, slug);
-  const adoptable = branchAt(porcelain, own) !== undefined && (await exists(own));
+  const adoptable = branchAt(porcelain, own, process.platform) !== undefined && (await exists(own));
   const orphan = orphanBranch === undefined ? undefined : await orphanOf(repo, orphanBranch, adoptable, defaultRef, exec);
   if (adoptable && orphan === undefined) return { hasWorktree: true, defaultRef, tasks: [], local: [], remote: [] };
   const refs = await refsRead;
   const tasks = others.flatMap(({ slug: other, id, title }) => {
-    const ref = branchAt(porcelain, worktreePath(repo, other));
+    const ref = branchAt(porcelain, worktreePath(repo, other), process.platform);
     return typeof ref === 'string' ? [{ ref, id, title }] : [];
   });
   const taken = new Set([branch, ...tasks.map((c) => c.ref)]);
