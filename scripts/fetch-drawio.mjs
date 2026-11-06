@@ -24,6 +24,7 @@ export const PRUNED = Object.freeze([
 ]);
 
 const STAMP = '.hive-drawio';
+const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const SKIP_ENV = 'HIVE_SKIP_DRAWIO';
 const EOCD = 0x06054b50;
 const ZIP64_LOCATOR = 0x07064b50;
@@ -46,6 +47,7 @@ const fail = (message) => {
 
 // The central directory's place: the end record sits in the last 22 bytes before a comment of at most 64 KiB
 function directory(buffer) {
+  if (buffer.length < EOCD_SIZE) fail('no end of central directory record');
   const floor = Math.max(0, buffer.length - EOCD_SIZE - MAX_COMMENT);
   let end = buffer.length - EOCD_SIZE;
   while (end >= floor && buffer.readUInt32LE(end) !== EOCD) end -= 1;
@@ -84,7 +86,8 @@ function inflate(buffer, { name, method, crc, packed, size, local }) {
   if (buffer.readUInt32LE(local) !== LOCAL) fail(`${name} has no local header`);
   const start = local + LOCAL_SIZE + buffer.readUInt16LE(local + 26) + buffer.readUInt16LE(local + 28);
   const raw = buffer.subarray(start, start + packed);
-  const data = method === DEFLATED ? inflateRawSync(raw) : raw;
+  // capped at the declared size: a lying header cannot inflate past it, even on a pin bumped carelessly
+  const data = method === DEFLATED ? inflateRawSync(raw, { maxOutputLength: Math.max(size, 1) }) : raw;
   if (data.length !== size || crc32(data) !== crc) fail(`${name} fails its CRC-32`);
   return data;
 }
@@ -122,12 +125,13 @@ function install(target, entries, stamp) {
     mkdirSync(staging, { recursive: true });
     for (const entry of entries) writeEntry(staging, entry);
     writeFileSync(join(staging, STAMP), stamp);
+    // a kill between these two leaves no stamp, so the next run installs again; a rename refused (a file held on Windows) cleans up below
+    rmSync(target, { recursive: true, force: true });
+    renameSync(staging, target);
   } catch (error) {
     rmSync(staging, { recursive: true, force: true });
     throw error;
   }
-  rmSync(target, { recursive: true, force: true });
-  renameSync(staging, target);
 }
 
 function readStamp(target) {
@@ -140,7 +144,7 @@ function readStamp(target) {
 
 // 50 MB fits in memory and needs no temp file to clean up; fetch follows GitHub's redirect to the asset host
 async function downloadWar(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) }); // a stalled connection must not hang install or build
   if (!res.ok) fail(`GET ${url} answered ${res.status}`);
   return Buffer.from(await res.arrayBuffer());
 }

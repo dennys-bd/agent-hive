@@ -145,3 +145,9 @@ test('HIVE_SKIP_DRAWIO=1 returns without a request and writes nothing (#955)', a
   assert.deepEqual(asked, []);
   assert.equal(existsSync(join(root, 'vendor')), false);
 });
+
+test('a truncated or garbage buffer throws draw.war\'s own error, never a raw RangeError (#955)', () => {
+  for (const buffer of [Buffer.alloc(0), Buffer.from('PK'), Buffer.alloc(64, 7)]) {
+    assert.throws(() => readZip(buffer), /^Error: draw\.war: no end of central directory record$/, `${buffer.length} bytes`);
+  }
+});

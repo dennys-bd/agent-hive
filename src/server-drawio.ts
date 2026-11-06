@@ -30,6 +30,6 @@ function sandbox(req: Request, res: Response, next: NextFunction): void {
 /** GET /drawio/*path (#955): read-only, never a listing or a redirect. server.ts mounts it after the Host check and before the secret. */
 export function registerDrawioRoute(app: Express, { root }: { root: string }): void {
   const files = express.static(root, { index: false, redirect: false, dotfiles: 'ignore', fallthrough: true });
-  // whatever static did not answer, the 403 send gives an encoded .. included (fallthrough turns a 4xx into next()): the same bare 404
+  // fallthrough hands every miss to the last handler, send's 403 for an encoded .. included, so all of them answer the same bare 404
   app.use(DRAWIO_PREFIX, sandbox, files, (_req: Request, res: Response) => void res.status(HTTP_NOT_FOUND).end());
 }
