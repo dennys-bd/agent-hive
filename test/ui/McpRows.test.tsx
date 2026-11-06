@@ -39,6 +39,21 @@ test('hive_recall reads a workspace lesson, and turned off it drops a passage, t
   }
 });
 
+test('hive_revise corrects and hive_forget removes a workspace lesson, and each turned off drops a passage, in both languages (#683)', () => {
+  const COPY = [
+    ['en', 'corrects a workspace lesson', 'removes a workspace lesson', 'off · drops 1 passage from the protocol'],
+    ['pt', 'corrige uma lição do workspace', 'remove uma lição do workspace', 'desligada · tira 1 trecho do protocolo'],
+  ] as const;
+  for (const [language, revise, forget, drops] of COPY) {
+    setLanguage(language);
+    const tools: McpTool[] = [{ name: 'hive_revise', locked: false, on: false }, { name: 'hive_forget', locked: false, on: false }];
+    const { unmount } = render(<ul>{tools.map((tool) => <McpToolRow key={tool.name} tool={tool} onSwitch={vi.fn()} />)}</ul>);
+    expect(rowOf('hive_revise')).toHaveTextContent(`${revise}${drops}`);
+    expect(rowOf('hive_forget')).toHaveTextContent(`${forget}${drops}`);
+    unmount();
+  }
+});
+
 test('a server row shows its target, scope and state; its name opens it, its scope and switch change it (#334)', async () => {
   const user = userEvent.setup();
   const onEdit = vi.fn();

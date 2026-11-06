@@ -270,7 +270,7 @@ test('a UI write answered 2xx is ui.action with the route\'s pattern, the method
 
 test('run.spawned names the lessons in rendered order, the characters of the section its launch got and the workspace, and none of them for an empty memory (#797)', async (t) => {
   const file: MemoryFile = {
-    nextId: 3,
+    nextId: 3, nextChangeId: 1, history: [],
     entries: [
       { id: 'm-1', kind: 'fact', description: 'pnpm test is the gate', body: 'the lesson', origin: 'user', at: '2026-10-05T10:00:00.000Z', uses: 0 },
       { id: 'm-2', kind: 'pref', description: 'specs are written in English', body: 'the lesson', origin: { task: '7' }, at: '2026-10-05T10:00:00.000Z', uses: 1 },

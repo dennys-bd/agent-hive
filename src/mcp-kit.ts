@@ -21,7 +21,7 @@ export interface McpDeps extends ReplyReviews {
   relate(itemId: string, change: BlockerChange): Promise<RelateOutcome>; // hive_stop's block (#294): the blockers route's own write, relateItem
   canRelate(itemId: string): boolean; // hive_stop's block (#294): a hive task, or a task whose source relates
   facts: Pick<FactLog, 'write'>; // #742: each tool call's mcp.call
-  memory: Pick<MemoryStore, 'read' | 'update'>; // #797: hive_remember and hive_recall (#681) write the worker's workspace's memory
+  memory: Pick<MemoryStore, 'read' | 'update'>; // #797: hive_remember, hive_recall (#681), hive_revise and hive_forget (#683) write the worker's workspace's memory
   preloadPr?(url: string): Promise<void>; // #497: hive_pr's PR read and stored ahead of its page; never awaited
   benchmark: Drafter; // #478: benchmark_draft's write, the routes' cores through their queue
   exec: Exec; // #854: the remotes behind a fork's hive_conventions

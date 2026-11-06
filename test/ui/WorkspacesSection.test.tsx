@@ -260,7 +260,7 @@ test('the card has no total limit field: a cap the memory dialog saves reaches t
       cap = (JSON.parse(String(init?.body)) as { cap: number }).cap;
       return jsonResponse({ ok: true });
     }
-    if (url === '/workspaces/hive/memory') return jsonResponse({ entries: [], used: 0, cap, descriptionMax: 150, bodyMax: 4000 } satisfies MemoryView);
+    if (url === '/workspaces/hive/memory') return jsonResponse({ entries: [], history: [], used: 0, cap, descriptionMax: 150, bodyMax: 4000 } satisfies MemoryView);
     if (url === '/workspaces/hive/memory/stats') return jsonResponse({ runs: 0, read: 0 });
     return jsonResponse({});
   });

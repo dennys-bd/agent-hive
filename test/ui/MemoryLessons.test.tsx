@@ -12,7 +12,7 @@ const BODY_1 = 'lint, tsc, node:test and vitest, in parallel';
 const BODY_2 = 'specs, plans, commits and PRs are written in English';
 const BODY_3 = 'it is generated: rebuild instead';
 const VIEW: MemoryView = {
-  used: 87, cap: 4000, descriptionMax: 150, bodyMax: 4000,
+  used: 87, cap: 4000, descriptionMax: 150, bodyMax: 4000, history: [],
   entries: [
     { id: 'm-1', kind: 'fact', description: 'pnpm test runs lint, tsc and both runners', body: BODY_1, origin: { task: '812', stage: 'build' }, at: '2026-10-01T10:00:00.000Z', uses: 5, lastUsed: { at: '2026-10-04T09:00:00.000Z', task: '812', stage: 'build' } },
     { id: 'm-2', kind: 'pref', description: 'write specs in English', body: BODY_2, origin: { task: '790' }, at: '2026-10-02T10:00:00.000Z', uses: 1, lastUsed: { at: '2026-10-04T10:00:00.000Z', task: '790' } },
