@@ -239,13 +239,20 @@ export function withForgotten(file: MemoryFile, id: string, change: ChangeBy, at
 const restoredOver = ({ id, kind, description, body, origin, at }: MemoryEntry, current: MemoryEntry): MemoryEntry =>
   ({ id, kind, description, body, origin, at, uses: current.uses, ...(current.lastUsed === undefined ? {} : { lastUsed: current.lastUsed }) });
 
-/** The user's restore (#683; #684's route): the change's lesson goes back under its id, over the current one or as a lesson again, whatever
- * the change's action, and the change leaves the history. Past the cap and growing: memory_full. */
+// #684: a lesson back whole goes before the first entry with a greater id number, so the entries stay in id order and the dialog's table and
+// the rendered section need no sort
+function inIdOrder(entries: readonly MemoryEntry[], entry: MemoryEntry): MemoryEntry[] {
+  const number = (id: string): number => Number(id.slice(2));
+  const at = entries.findIndex((e) => number(e.id) > number(entry.id));
+  return at === -1 ? [...entries, entry] : [...entries.slice(0, at), entry, ...entries.slice(at)];
+}
+
+/** The user's restore (#683, #684): the change's lesson goes back under its id, over the current one or, at its id's place, as a lesson again, whatever the change's action, and the change leaves the history. Past the cap and growing: memory_full. */
 export function withRestored(file: MemoryFile, changeId: string, cap: number): MemoryResult {
   const change = file.history.find((c) => c.id === changeId);
   if (!change) return refusal('unknown_memory', unknownChangeMessage(changeId));
   const current = file.entries.find((e) => e.id === change.entry.id);
-  const entries = current ? file.entries.map((e) => (e === current ? restoredOver(change.entry, current) : e)) : [...file.entries, change.entry];
+  const entries = current ? file.entries.map((e) => (e === current ? restoredOver(change.entry, current) : e)) : inIdOrder(file.entries, change.entry);
   return capped(file, { ...file, entries, history: file.history.filter((c) => c !== change) }, cap);
 }
 

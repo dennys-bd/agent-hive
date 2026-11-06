@@ -10,23 +10,27 @@ import { isMemoryKind, MEMORY_KINDS, type MemoryView } from '../../../types';
 interface MemoryLessonsProps { workspace: string; view: MemoryView; onView(view: MemoryView): void }
 
 const NEW = 'new'; // the editing row of a lesson not saved yet; an entry's own id otherwise
-const ADD = 'add'; // focus target: the "+ lesson" button; an entry's id otherwise
+const ADD = 'add'; // focus target: no lesson's id, so the fallback ("+ lesson") takes the focus
 
-interface FocusAfter { buttons: Map<string, HTMLButtonElement>; add: RefObject<HTMLButtonElement | null>; focusNext(target: string): void }
+export interface FocusAfter<T extends HTMLElement> { fallback: RefObject<T | null>; refOf(id: string): (button: HTMLButtonElement | null) => void; focusNext(target: string): void }
 
-// #680: the lesson's description button or "+ lesson", focused after the render that applied a save, a cancel or a removal
-function useFocusAfter(): FocusAfter {
+/** #680, #684: after the render that applied a save, a cancel, a removal, a restore or a discard, the description button of `target`, or the
+ * fallback ("+ lesson", the history's title) when it has none: a lesson the filter now hides, ADD, or no change left after the one that went. */
+export function useFocusAfter<T extends HTMLElement>(): FocusAfter<T> {
   const buttons = useRef(new Map<string, HTMLButtonElement>()).current;
-  const add = useRef<HTMLButtonElement>(null);
+  const fallback = useRef<T>(null);
   const next = useRef<string>(undefined);
   useEffect(() => {
     const target = next.current;
     if (target === undefined) return;
     next.current = undefined;
-    // a lesson whose new kind the filter hides has no button left: "+ lesson" takes the focus
-    (target === ADD ? add.current : buttons.get(target) ?? add.current)?.focus();
+    (buttons.get(target) ?? fallback.current)?.focus();
   });
-  return { buttons, add, focusNext: (target) => { next.current = target; } };
+  const refOf = (id: string) => (button: HTMLButtonElement | null): void => {
+    if (button) buttons.set(id, button);
+    else buttons.delete(id);
+  };
+  return { fallback, refOf, focusNext: (target) => { next.current = target; } };
 }
 
 /** The memory dialog's lessons (#797): a kind filter with counts, the table, and one row in edit at a time. `+ lesson` shows every kind and
@@ -36,7 +40,7 @@ export function MemoryLessons({ workspace, view, onView }: MemoryLessonsProps) {
   const [editing, setEditing] = useState<string>();
   const counts = kindCounts(view.entries);
   const shown = filter === 'all' ? view.entries : view.entries.filter((e) => e.kind === filter);
-  const focus = useFocusAfter();
+  const focus = useFocusAfter<HTMLButtonElement>();
   const close = (target: string, next?: MemoryView): void => {
     focus.focusNext(target);
     setEditing(undefined);
@@ -48,10 +52,6 @@ export function MemoryLessons({ workspace, view, onView }: MemoryLessonsProps) {
     focus.focusNext(shown[at + 1]?.id ?? ADD); // the next visible lesson, else "+ lesson"
     onView(next);
   };
-  const descRef = (id: string) => (button: HTMLButtonElement | null): void => {
-    if (button) focus.buttons.set(id, button);
-    else focus.buttons.delete(id);
-  };
   const title = t('settings.memory.lessonsTitle');
   return (
     <section aria-label={title} className="flex flex-col gap-3">
@@ -61,7 +61,7 @@ export function MemoryLessons({ workspace, view, onView }: MemoryLessonsProps) {
           <ToggleGroupItem value="all">{t('settings.memory.filter.all', { n: counts.all })}</ToggleGroupItem>
           {MEMORY_KINDS.map((kind) => <ToggleGroupItem key={kind} value={kind}>{`${kindLabel(kind)} · ${counts[kind]}`}</ToggleGroupItem>)}
         </ToggleGroup>
-        <Button ref={focus.add} type="button" variant="ghost" size="sm" className="ml-auto" onClick={() => { setFilter('all'); setEditing(NEW); }}>{t('settings.memory.add')}</Button>
+        <Button ref={focus.fallback} type="button" variant="ghost" size="sm" className="ml-auto" onClick={() => { setFilter('all'); setEditing(NEW); }}>{t('settings.memory.add')}</Button>
       </div>
       <div className="flex flex-col rounded-md border">
         <div className={`${LESSON_GRID} text-muted-foreground text-xs`}>
@@ -69,7 +69,7 @@ export function MemoryLessons({ workspace, view, onView }: MemoryLessonsProps) {
         </div>
         {shown.map((entry) => (entry.id === editing
           ? <LessonEditRow key={entry.id} workspace={workspace} entry={entry} onSaved={(next) => close(entry.id, next)} onCancel={() => close(entry.id)} />
-          : <LessonRow key={entry.id} workspace={workspace} entry={entry} descRef={descRef(entry.id)} onEdit={() => setEditing(entry.id)} onRemoved={removed(entry.id)} />))}
+          : <LessonRow key={entry.id} workspace={workspace} entry={entry} descRef={focus.refOf(entry.id)} onEdit={() => setEditing(entry.id)} onRemoved={removed(entry.id)} />))}
         {editing === NEW && <LessonEditRow workspace={workspace} onSaved={savedNew} onCancel={() => close(ADD)} />}
         {shown.length === 0 && editing !== NEW && (
           <p className="border-t px-3 py-2.5 text-muted-foreground text-xs">{t(filter === 'all' ? 'settings.memory.none' : 'settings.memory.empty')}</p>

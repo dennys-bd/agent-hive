@@ -9,7 +9,7 @@ import { FACTS_FILE, type FactLog } from './facts.js';
 import { generations, type Logger } from './log.js';
 import {
   BODY_MESSAGE, DESCRIPTION_MESSAGE, errorName, isMemoryRefusal, lessonRefusal, MEMORY_KIND_MESSAGE, memoryCounts, memoryView, type MemoryRefusal, type MemoryResult,
-  type MemoryStore, withEdit, withEntry, withoutEntry,
+  type MemoryStore, withDiscarded, withEdit, withEntry, withoutEntry, withRestored,
 } from './memory.js';
 import { memoryRecord, memoryStats, type MemoryRecord } from './memory-stats.js';
 import type { RunFields } from './server-facts.js';
@@ -17,7 +17,7 @@ import type { Runtime } from './server.js';
 import { type Config, isMemoryKind, MEMORY_CAP_MAX, MEMORY_CAP_MIN, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryRefusalCode, type SettingsBody, type Workspace } from './types.js';
 
 // A workspace's memory on the server's side (#797): the protocol files on boot and on every Settings save, run.spawned's fields (Task 5) and
-// the memory dialog's routes (Task 7). Nothing of a lesson's description or body reaches a log line or a record.
+// the memory dialog's routes (Task 7), and (#684) its history's restore and discard. Nothing of a lesson's description or body, or a change's why, reaches a log line or a record.
 
 /** Each workspace's protocol files from its stored memory (#797), before any run reads them. A file the Hive cannot read costs that workspace
  * its memory (the store still writes the bare protocol), logged, never the boot or the save. `off` comes from the config being activated, which
@@ -86,7 +86,7 @@ function workspaceParam(deps: MemoryRouteDeps, req: Request, res: Response): Wor
   return undefined;
 }
 
-type Action = 'added' | 'edited' | 'removed';
+type Action = 'added' | 'edited' | 'removed' | 'restored';
 
 // One write of the user's: the edit through the store, memory.changed with the lesson it touched (as it stood before a removal), the new view
 async function write(deps: MemoryRouteDeps, res: Response, workspace: Workspace, action: Action, idOf: (file: MemoryFile) => string, edit: (file: MemoryFile) => MemoryResult): Promise<void> {
@@ -192,9 +192,34 @@ function registerWrites(app: Express, deps: MemoryRouteDeps): void {
   });
 }
 
+// #684: the history's restore and discard, by the change's id (h-<n>). DELETE …/memory/:id matches one segment only, so it never takes
+// …/history/<id> and the order of registration does not matter
+function registerHistory(app: Express, deps: MemoryRouteDeps): void {
+  app.post('/workspaces/:name/memory/history/:id/restore', async (req: Request, res: Response) => {
+    const workspace = workspaceParam(deps, req, res);
+    if (workspace === undefined) return;
+    const changeId = String(req.params.id);
+    // the restored lesson's id, read from the file the edit receives; with no such change the edit refuses, and changeId names no entry, so no fact
+    const idOf = (file: MemoryFile): string => file.history.find((c) => c.id === changeId)?.entry.id ?? changeId;
+    await write(deps, res, workspace, 'restored', idOf, (file) => withRestored(file, changeId, workspace.memoryCap));
+  });
+  app.delete('/workspaces/:name/memory/history/:id', async (req: Request, res: Response) => {
+    const workspace = workspaceParam(deps, req, res);
+    if (workspace === undefined) return;
+    try { // a discard changes no lesson, so it writes no memory.changed
+      const saved = await deps.memory.update(workspace.name, (file) => withDiscarded(file, String(req.params.id)));
+      if (isMemoryRefusal(saved)) return refused(res, saved);
+      res.json(memoryView(saved, workspace.memoryCap));
+    } catch (err) {
+      unreadable(deps, res, workspace.name, err);
+    }
+  });
+}
+
 /** A workspace's memory for the memory dialog (#797): saved at once, outside the Settings draft, since the workers write the same file at any
- * moment. Behind the same host, secret and UI-header gate as every dashboard write. The total limit (#115) is the exception that writes hive.config.json, through the settings chain. */
+ * moment. The history's restore and discard (#684) are lesson writes like the others. Behind the same host, secret and UI-header gate as every dashboard write. The total limit (#115) is the exception that writes hive.config.json, through the settings chain. */
 export function registerMemoryRoutes(app: Express, deps: MemoryRouteDeps): void {
   registerReads(app, deps);
   registerWrites(app, deps);
+  registerHistory(app, deps);
 }

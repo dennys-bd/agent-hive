@@ -79,10 +79,16 @@ test('withRestored puts a revised change back over the lesson with its kind, des
   assert.deepEqual([back.history, back.nextChangeId], [[], 2]);
   const gone = fileOf(withForgotten(revised, 'm-1', { by: BY, why: 'w' }, LATER));
   const again = fileOf(withRestored(gone, 'h-1', CAP));
-  assert.deepEqual([again.entries.at(-1), again.history.map((c) => c.id)], [FILE.entries[0], ['h-2']], 'a revised change of a lesson since removed comes back whole');
+  assert.deepEqual([again.entries[0], again.history.map((c) => c.id)], [FILE.entries[0], ['h-2']], 'a revised change of a lesson since removed comes back whole, first by its id');
   const forgot = fileOf(withForgotten(FILE, 'm-2', { by: BY, why: 'w' }, LATER));
   const restored = fileOf(withRestored(forgot, 'h-1', CAP));
   assert.deepEqual([restored.entries.find((e) => e.id === 'm-2'), restored.nextId, restored.history], [FILE.entries[1], 4, []]);
+});
+
+test('withRestored puts a lesson that comes back whole at its id\'s place, by the id\'s number, not at the end (#684)', () => {
+  const many: MemoryFile = { ...FILE, nextId: 12, entries: [entry(1, 'a'), entry(2, 'b'), entry(10, 'j'), entry(11, 'k')] };
+  const back = (id: string): string[] => fileOf(withRestored(fileOf(withForgotten(many, id, { by: BY, why: 'w' }, LATER)), 'h-1', CAP)).entries.map((e) => e.id);
+  for (const id of ['m-1', 'm-2', 'm-11']) assert.deepEqual(back(id), ['m-1', 'm-2', 'm-10', 'm-11'], id); // m-2 before m-10: a string order would put it last
 });
 
 test('withRestored refuses an unknown change and a restore that takes the descriptions past the cap and grows them; withDiscarded only takes the change out and refuses an unknown one (#683)', () => {

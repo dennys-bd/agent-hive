@@ -1,5 +1,5 @@
 import { formatCount, t, tPlural } from '../i18n.js';
-import { MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_REFUSALS, type MemoryEntry, type MemoryKind, type MemoryOrigin, type MemoryRefusalCode, type MemoryStats } from '../../types.js';
+import { MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_HISTORY_MAX, MEMORY_REFUSALS, type MemoryChange, type MemoryEntry, type MemoryKind, type MemoryOrigin, type MemoryRefusalCode, type MemoryStats } from '../../types.js';
 
 // How the memory section and dialog word a lesson and its numbers (#797). Pure, so the components stay layout.
 
@@ -41,6 +41,13 @@ export function metaText(entry: MemoryEntry): string {
   return [originDateText(entry), sizes].join(' · ');
 }
 
+/** A history row's meta line (#684): who made the change (as a lesson's origin reads), its date and the kind the lesson had. */
+export const changeByText = (change: MemoryChange): string =>
+  t('settings.memory.changeBy', { who: originText(change.by).join(' · '), date: change.at.slice(0, 10), kind: kindLabel(change.entry.kind) });
+
+/** `{n} mudanças · guarda as {max} mais recentes` (#684): max is the bound itself, so the copy never drifts from it. */
+export const historyCountText = (n: number): string => tPlural('settings.memory.historyCount', n, { n: formatCount(n), max: MEMORY_HISTORY_MAX });
+
 const between = (length: number, max: number): boolean => length >= 1 && length <= max;
 /** Whether an editing row may save (#680): both fields, trimmed as the server stores them, hold something and neither is past its limit;
  * the server checks the rest. */
@@ -81,3 +88,7 @@ export function refusalText(err: unknown): string {
   if (isRefusalCode(code)) return t(`settings.memory.refusal.${code}`);
   return err instanceof Error ? err.message : String(err);
 }
+
+/** A refused restore or discard (#684): unknown_memory there means the change is gone, which the lesson's own words would not say. */
+export const changeRefusalText = (err: unknown): string =>
+  ((err as { code?: unknown } | null)?.code === 'unknown_memory' ? t('settings.memory.refusal.unknown_change') : refusalText(err));

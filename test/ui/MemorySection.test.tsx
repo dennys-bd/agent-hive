@@ -73,6 +73,9 @@ test('the section shows the usage and the lessons, and ver memória… opens the
   expect(telemetry.getByText('lições lidas')).toBeInTheDocument();
   expect(dialog.getByRole('heading', { name: 'quando uma lição entra' })).toBeInTheDocument();
   expect(dialog.getByRole('region', { name: 'lições' })).toBeInTheDocument();
+  expect(dialog.getByRole('region', { name: 'histórico' })).toBeInTheDocument();
+  expect(dialog.getByRole('heading', { name: 'quando uma lição muda ou sai' })).toBeInTheDocument();
+  expect(dialog.getByText('você edita ou remove aqui · um agente corrige ou remove uma lição que se mostrou errada, dizendo por quê, e vale na hora, sem aprovação; a lição como era vai para o histórico, onde você a restaura')).toBeInTheDocument();
   await user.click(dialog.getByRole('button', { name: 'fechar' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 });
@@ -121,6 +124,9 @@ test('the section and the dialog read in English (#797)', async () => {
   expect(await dialog.findByText('last run 2 h ago, in the build stage of #812 · 1 lesson read')).toBeInTheDocument();
   expect(dialog.getByText('lessons read')).toBeInTheDocument();
   expect(dialog.getByText('prompts with memory')).toBeInTheDocument();
+  expect(dialog.getByRole('region', { name: 'history' })).toBeInTheDocument();
+  expect(dialog.getByRole('heading', { name: 'when a lesson changes or leaves' })).toBeInTheDocument();
+  expect(dialog.getByText('you edit or remove it here · an agent corrects or removes a lesson that proved wrong, saying why, and it applies at once, no approval; the lesson as it was goes to the history, where you restore it')).toBeInTheDocument();
   expect(dialog.getByRole('button', { name: 'close' })).toBeInTheDocument();
 });
 

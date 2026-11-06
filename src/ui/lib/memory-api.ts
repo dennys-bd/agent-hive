@@ -1,7 +1,7 @@
 import type { MemoryKind, MemoryStats, MemoryView } from '../../types.js';
 import { getJson, sendJson } from './api.js'; // relative: the root tsc compiles this file too
 
-// A workspace's memory (#797): the six routes the memory section and dialog call. Each lesson write answers the new view; the total limit (#115) answers ok.
+// A workspace's memory (#797): the eight routes the memory section and dialog call. Each lesson write, and (#684) each restore or discard of a change of the history, answers the new view; the total limit (#115) answers ok.
 
 /** A lesson as the dialog sends it (#680); the server trims and checks it. */
 export interface LessonInput { kind: MemoryKind; description: string; body: string }
@@ -9,9 +9,11 @@ export interface LessonInput { kind: MemoryKind; description: string; body: stri
 const memoryPath = (workspace: string, rest = ''): string => `/workspaces/${encodeURIComponent(workspace)}/memory${rest}`;
 const lessonPath = (workspace: string, id: string): string => memoryPath(workspace, `/${encodeURIComponent(id)}`);
 
+const changePath = (workspace: string, id: string): string => memoryPath(workspace, `/history/${encodeURIComponent(id)}`);
+
 const isMemoryView = (value: unknown): value is MemoryView => {
   const view = value as Partial<MemoryView> | null;
-  return typeof view === 'object' && view !== null && Array.isArray(view.entries) && typeof view.used === 'number' && typeof view.cap === 'number' && typeof view.descriptionMax === 'number' && typeof view.bodyMax === 'number';
+  return typeof view === 'object' && view !== null && Array.isArray(view.entries) && Array.isArray(view.history) && typeof view.used === 'number' && typeof view.cap === 'number' && typeof view.descriptionMax === 'number' && typeof view.bodyMax === 'number';
 };
 const isMemoryStats = (value: unknown): value is MemoryStats => typeof (value as Partial<MemoryStats> | null)?.runs === 'number';
 
@@ -27,6 +29,10 @@ export const readStats = (workspace: string): Promise<MemoryStats> => shaped(get
 export const addLesson = (workspace: string, lesson: LessonInput): Promise<MemoryView> => shaped(sendJson<unknown>('POST', memoryPath(workspace), lesson), isMemoryView);
 export const editLesson = (workspace: string, id: string, lesson: LessonInput): Promise<MemoryView> => shaped(sendJson<unknown>('PUT', lessonPath(workspace, id), lesson), isMemoryView);
 export const removeLesson = (workspace: string, id: string): Promise<MemoryView> => shaped(sendJson<unknown>('DELETE', lessonPath(workspace, id)), isMemoryView);
+
+/** A change of the history (#684): restore puts its lesson back as it was; discard drops the change and leaves the lessons as they are. */
+export const restoreChange = (workspace: string, id: string): Promise<MemoryView> => shaped(sendJson<unknown>('POST', `${changePath(workspace, id)}/restore`), isMemoryView);
+export const discardChange = (workspace: string, id: string): Promise<MemoryView> => shaped(sendJson<unknown>('DELETE', changePath(workspace, id)), isMemoryView);
 
 /** The workspace's memory total limit (#115), written into hive.config.json at once; the caller reads the memory again for the new view. */
 export const saveCap = (workspace: string, cap: number): Promise<void> => sendJson<unknown>('PUT', memoryPath(workspace, '/cap'), { cap }).then(() => undefined);

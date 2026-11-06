@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { addLesson, editLesson, readMemory, readStats, removeLesson } from '@/lib/memory-api';
-import { canSaveLesson, charactersText, readText, kindCounts, lastText, lessonsText, metaText, originDateText, refusalText, statNumbers, usedText } from '@/lib/memory-view';
-import type { MemoryEntry } from '../../src/types';
+import { addLesson, discardChange, editLesson, readMemory, readStats, removeLesson, restoreChange } from '@/lib/memory-api';
+import { canSaveLesson, changeByText, changeRefusalText, charactersText, historyCountText, readText, kindCounts, lastText, lessonsText, metaText, originDateText, refusalText, statNumbers, usedText } from '@/lib/memory-view';
+import type { MemoryChange, MemoryEntry } from '../../src/types';
 import { jsonResponse } from '../fakes';
 
 const AT = '2026-10-01T10:00:00.000Z';
@@ -48,9 +48,10 @@ test('the telemetry numbers show dashes without runs, the lessons read out of th
   expect(statNumbers({ runs: 3, read: 1 }, 3).read).toBe('1 of 3');
 });
 
-test('the five calls reach the workspace\'s memory routes with the UI header on writes; a refusal keeps its code, which reads in the user\'s language (#797)', async () => {
-  const view = { entries: [], used: 0, cap: 4000, descriptionMax: 150, bodyMax: 4000 };
+test('the seven calls reach the workspace\'s memory routes with the UI header on writes; a refusal keeps its code, which reads in the user\'s language (#797)', async () => {
+  const view = { entries: [], history: [], used: 0, cap: 4000, descriptionMax: 150, bodyMax: 4000 };
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/restore')) return jsonResponse(view);
     if (init?.method === 'POST') return jsonResponse({ error: 'memory is full; go on without saving this lesson', code: 'memory_full' }, 409);
     return jsonResponse(url.endsWith('/stats') ? { runs: 0, read: 0 } : view);
   });
@@ -59,15 +60,36 @@ test('the five calls reach the workspace\'s memory routes with the UI header on 
   await readStats('hive');
   await editLesson('hive', 'm-1', { kind: 'avoid', description: 'x', body: 'y' });
   await removeLesson('hive', 'm-1');
+  await restoreChange('hive', 'h-3');
+  await discardChange('hive', 'h-3');
   const err = await addLesson('hive', { kind: 'fact', description: 'y', body: 'z' }).catch((e: unknown) => e);
   expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method ?? 'GET'])).toEqual([
     ['/workspaces/hive/memory', 'GET'], ['/workspaces/hive/memory/stats', 'GET'], ['/workspaces/hive/memory/m-1', 'PUT'],
-    ['/workspaces/hive/memory/m-1', 'DELETE'], ['/workspaces/hive/memory', 'POST'],
+    ['/workspaces/hive/memory/m-1', 'DELETE'], ['/workspaces/hive/memory/history/h-3/restore', 'POST'], ['/workspaces/hive/memory/history/h-3', 'DELETE'],
+    ['/workspaces/hive/memory', 'POST'],
   ]);
   expect(new Headers(fetchMock.mock.calls[2][1]?.headers).get('x-hive-ui')).toBe('1');
   expect(fetchMock.mock.calls[2][1]?.body).toBe(JSON.stringify({ kind: 'avoid', description: 'x', body: 'y' }));
   expect(refusalText(err)).toBe('a memória está cheia: remova uma lição ou encurte uma descrição');
   expect(refusalText(new Error('disk full'))).toBe('disk full');
+  const historyless = { entries: [], used: 0, cap: 4000, descriptionMax: 150, bodyMax: 4000 };
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(historyless)));
+  await expect(readMemory('hive')).rejects.toThrow('unexpected answer'); // #684: a view with no history is another daemon's answer
+});
+
+test('a change reads who made it, its date and the kind the lesson had; the history counts its changes against the bound; a change no longer there reads its own refusal, in both languages (#684)', () => {
+  const change: MemoryChange = { id: 'h-1', entry: lesson({ kind: 'avoid' }), action: 'removed', by: { task: '741', stage: 'build' }, why: 'w', at: '2026-11-05T10:00:00.000Z' };
+  const gone = Object.assign(new Error("no change h-9 in this workspace's memory"), { status: 404, code: 'unknown_memory' });
+  const full = Object.assign(new Error('memory is full; go on without saving this lesson'), { status: 409, code: 'memory_full' });
+  expect([changeByText(change), changeByText({ ...change, by: 'local' }), changeByText({ ...change, by: { task: '790' } })])
+    .toEqual(['por tarefa #741 · build · 2026-11-05 · era evitar', 'por sessão local · 2026-11-05 · era evitar', 'por tarefa #790 · 2026-11-05 · era evitar']);
+  expect([historyCountText(0), historyCountText(1), historyCountText(3)])
+    .toEqual(['0 mudanças · guarda as 50 mais recentes', '1 mudança · guarda as 50 mais recentes', '3 mudanças · guarda as 50 mais recentes']);
+  expect([changeRefusalText(gone), changeRefusalText(full), changeRefusalText(new Error('disk full'))])
+    .toEqual(['esta mudança não está mais no histórico', 'a memória está cheia: remova uma lição ou encurte uma descrição', 'disk full']);
+  setLanguage('en');
+  expect([changeByText(change), historyCountText(1), historyCountText(2), changeRefusalText(gone)])
+    .toEqual(['by task #741 · build · 2026-11-05 · was avoid', '1 change · keeps the newest 50', '2 changes · keeps the newest 50', 'this change is no longer in the history']);
 });
 
 test('a lesson saved from a local session reads local session / sessão local where a task\'s reads its id, and counts among those not the user\'s (#256)', () => {
