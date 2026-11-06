@@ -2,7 +2,7 @@ import { stageAgentIn } from './agents.js';
 import { stageSession } from './task-runs.js';
 import { sessionsOf } from './tasks.js';
 import { agentPrompt, commandFirst, hasFixedVerdicts, hiveAction, runsAgent } from './stage-agent.js';
-import { FIXED_VERDICTS, TRIES_OUT, type Activity, type AgentId, type Stage, type StageAction, type State, type Task, type Transition, type Trigger } from './types.js';
+import { FIXED_VERDICTS, TRIES_OUT, type Activity, type AgentId, type Stage, type StageAction, type State, type Task, type TaskApproval, type Transition, type Trigger } from './types.js';
 
 // The flow as a graph (#134): which transition a stage end fires, the session and the prompt it hands its destination, and the tries an
 // automatic one counts. Pure and free of node modules, since the page reads it too; no state is written here, transit.ts applies the answers.
@@ -40,6 +40,23 @@ export function exitOf(graph: Graph, stage: string | undefined, trigger: Trigger
  * free of node modules, so the page reads the rule the approval routes check (#379). */
 export const answerable = (graph: Graph, task: Pick<Task, 'stage'>, trigger: Trigger): boolean =>
   exitOf(graph, task.stage, trigger) !== undefined || !graph.stages.some((s) => s.name === task.stage);
+
+/** What approving fires (#693): the stored verdict's own transition, else approved. An approval stage has no done fallback (exitOf), so an
+ * unrouted verdict is approved as a verdict-less end is. Here, free of node modules, so the reducer, the route and the page read one rule. */
+export function approvalEnd(graph: Graph, task: Pick<Task, 'stage'>, approval: Pick<TaskApproval, 'verdict'>): { trigger: Trigger; verdict?: string } {
+  const { verdict } = approval;
+  return verdict !== undefined && exitOf(graph, task.stage, 'verdict', verdict) !== undefined ? { trigger: 'verdict', verdict } : { trigger: 'approved' };
+}
+
+/** The transition approving takes (#693), undefined when none. */
+export function approvalExit(graph: Graph, task: Pick<Task, 'stage'>, approval: Pick<TaskApproval, 'verdict'>): Transition | undefined {
+  const end = approvalEnd(graph, task, approval);
+  return exitOf(graph, task.stage, end.trigger, end.verdict);
+}
+
+/** Whether approving has somewhere to go (#693): the approval's exit, or a stage gone from the flow, as answerable reads it for feedback. */
+export const approvable = (graph: Graph, task: Pick<Task, 'stage'>, approval: Pick<TaskApproval, 'verdict'>): boolean =>
+  approvalExit(graph, task, approval) !== undefined || !graph.stages.some((s) => s.name === task.stage);
 
 /** A stage end as NO_TRANSITION and TRIES_OUT write it (#134): the trigger, or verdict:<name>. */
 export const exitName = (trigger: Trigger, verdict?: string): string => (trigger === 'verdict' ? `verdict:${verdict ?? ''}` : trigger);
