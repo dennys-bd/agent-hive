@@ -21,6 +21,7 @@ export interface ProcessSpec {
   configuration?: unknown; // what the host answers each workspace/configuration item with; null when absent (#782: eslint's settings)
   afterInitialized?: object[]; // notifications the host writes once, right after the first initialized (#794: the JSON server's schemas)
   notice?: string; // a line of the run after the command (#794: why the JSON schemas are missing)
+  platform?: NodeJS.Platform; // the host's by default; a test passes win32 to drive the resolver's branch on any OS
 }
 export interface LspProcess {
   readonly log: FormatLog;
@@ -64,7 +65,7 @@ function hostAnswer(method: string, params: unknown, root: string, configuration
 // What spawn gets (#635): the resolver's answer, so a .cmd server runs through cmd.exe on win32. A name found nowhere reads as Node's own
 // ENOENT does; the .cmd runner's refusal keeps its line, which names no argument's value
 function commandOf(spec: ProcessSpec): ExecCommand | { failure: string } {
-  const lookup = { platform: process.platform, env: spec.env };
+  const lookup = { platform: spec.platform ?? process.platform, env: spec.env };
   if (findExec(spec.command, lookup) === undefined) return { failure: `spawn ${spec.shown.split(' ')[0]} ENOENT` };
   try {
     return resolveExec(spec.command, spec.args, lookup);
