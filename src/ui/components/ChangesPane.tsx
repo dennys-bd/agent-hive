@@ -1,6 +1,8 @@
 import type { editor } from 'monaco-editor';
-import { type RefObject, useEffect, useRef, useSyncExternalStore } from 'react';
+import { type RefObject, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { type ChangesMode, CompareControls, type CompareView, DesignCompare, useDesignCompare } from '@/components/DesignCompare';
 import { DiskStrip, FormatFailed, type Saving, useDiskStrip, useDiskWatch, useModel, useSave } from '@/components/EditorPane';
+import { isHiveDesign } from '@/components/terminal-tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useOpenConsole } from '@/hooks/use-console';
 import { t } from '@/i18n';
@@ -61,11 +63,14 @@ function useDiffEditor(host: RefObject<HTMLDivElement | null>, view: View, model
   useEffect(() => { view.current?.updateOptions({ fontFamily }); }, [view, fontFamily]); // a font saved in Settings (#376)
 }
 
-interface ChangesBarProps { activity: Activity; path: string; base?: FileBase; saving: Saving; onViewLog?(log: FormatLog): void }
+interface ChangesBarProps {
+  activity: Activity; path: string; base?: FileBase; saving: Saving; onViewLog?(log: FormatLog): void;
+  compare?: { mode: ChangesMode; onMode(next: ChangesMode): void; view: CompareView };
+}
 
 // The bar (#668): the base selector (HEAD alone and disabled on a local activity, which has no task), the task base's label, and a save's
 // refusal or a failed format as the editor's bar shows them. ⌘S and ⌥⌘S save from the right side
-function ChangesBar({ activity, path, base, saving, onViewLog }: ChangesBarProps) {
+function ChangesBar({ activity, path, base, saving, onViewLog, compare }: ChangesBarProps) {
   const activityId = activity.activity.id;
   const against = useSyncExternalStore(fileBase.subscribe, () => fileBase.chosenBase(activityId, path));
   const isLocal = activity.kind === 'local';
@@ -82,6 +87,7 @@ function ChangesBar({ activity, path, base, saving, onViewLog }: ChangesBarProps
         </SelectContent>
       </Select>
       {base?.against === 'task' && <span title={base.label} className="min-w-0 truncate font-mono">{base.label}</span>}
+      {compare && <CompareControls {...compare} />}
       {saving.error !== undefined && <span role="alert" className="min-w-0 truncate text-destructive">{saving.error}</span>}
       {saving.formatFailure !== undefined && <FormatFailed failure={saving.formatFailure} onViewLog={onViewLog} />}
     </div>
@@ -91,7 +97,7 @@ function ChangesBar({ activity, path, base, saving, onViewLog }: ChangesBarProps
 /** The changes pane (#668): one file of an activity against its base in Monaco's diff editor, the base read only on the left, the file's own
  * buffer editable on the right (an edit shows in its editor pane too), its bar, and the disk strip as the editor pane has it. Its own disk
  * watch, so the strip and the base follow while only this tab shows. Collapsed like EditorPane while another tab shows; its root names its
- * file for the search's focus (#697). */
+ * file for the search's focus (#697). A .hv.html opens on its rendered before and after (#675), the diff editor kept mounted and hidden behind it. */
 export function ChangesPane({ activity, path, label, active, fontFamily }: ChangesPaneProps) {
   const activityId = activity.activity.id;
   const file = { activityId, path };
@@ -103,7 +109,16 @@ export function ChangesPane({ activity, path, label, active, fontFamily }: Chang
   const saving = useSave(file, disk.setStrip, view);
   const model = load.status === 'ready' ? load.model : undefined;
   useDiffEditor(host, view, model, base?.text, fontFamily, saving.save);
-  useEffect(() => { if (active) view.current?.focus(); }, [active]);
+  const isDesign = isHiveDesign(path);
+  const [mode, setMode] = useState<ChangesMode>('rendered'); // the pane's own, never persisted (spec decision 5)
+  const isRendered = isDesign && mode === 'rendered';
+  const compare = useDesignCompare({ activity, path, isDesign, isShown: active && isRendered });
+  // The shown view takes the focus: the diff's right side, or the comparison, so ⌘0 and Space reach its zoom
+  useEffect(() => {
+    if (!active) return;
+    if (isRendered) compare.root.current?.focus();
+    else view.current?.focus();
+  }, [active, isRendered, compare.root]);
   useDiskWatch(file, active && model !== undefined, view, disk.setStrip);
   const openConsole = useOpenConsole();
   const isShown = model !== undefined && base?.text !== undefined;
@@ -111,12 +126,13 @@ export function ChangesPane({ activity, path, label, active, fontFamily }: Chang
   const isNoBase = base === undefined ? hasFailed : base.text === undefined;
   return (
     <section aria-label={label} data-file-activity={activityId} data-file-path={path} style={{ flex: active ? '1 1 0%' : '0 0 0%', opacity: active ? 1 : 0, pointerEvents: active ? 'auto' : 'none' }} className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-      <ChangesBar activity={activity} path={path} base={base} saving={saving} onViewLog={openConsole && ((log) => openConsole(log.channel, log.run, true))} />
+      <ChangesBar activity={activity} path={path} base={base} saving={saving} onViewLog={openConsole && ((log) => openConsole(log.channel, log.run, true))} compare={isDesign ? { mode, onMode: setMode, view: compare } : undefined} />
       {disk.strip && <DiskStrip strip={disk.strip} onReload={disk.reload} onKeep={disk.keep} />}
       {load.status === 'error' && <p role="alert" className="p-3 text-destructive text-xs">{load.message}</p>}
-      {load.status !== 'error' && isNoBase && <p className="p-3 text-muted-foreground text-xs">{t('changes.noBase')}</p>}
-      {load.status !== 'error' && !isNoBase && !isShown && <p className="p-3 text-muted-foreground text-xs">{t('files.loading')}</p>}
-      <div ref={host} hidden={!isShown} className="min-h-0 flex-1" />
+      {!isRendered && load.status !== 'error' && isNoBase && <p className="p-3 text-muted-foreground text-xs">{t('changes.noBase')}</p>}
+      {!isRendered && load.status !== 'error' && !isNoBase && !isShown && <p className="p-3 text-muted-foreground text-xs">{t('files.loading')}</p>}
+      {isDesign && <DesignCompare view={compare} name={path.split('/').at(-1) ?? path} hidden={!isRendered} />}
+      <div ref={host} hidden={!isShown || isRendered} className="min-h-0 flex-1" />
     </section>
   );
 }

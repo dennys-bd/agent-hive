@@ -250,6 +250,14 @@ test('a focused editor offers Git: Abrir Alterações on any file and Markdown: 
   expect(focusOf(bare)).toEqual([]);
 });
 
+test('a focused design offers Git: Abrir Alterações alone, named after its screen; its run opens the screen\'s changes (#675)', () => {
+  const ctx = ctxOf(stateOf([]), { focus: { kind: 'file', activityId: 'a-I11', path: 'design/home.hv.html' } });
+  const focus = operationsFor(ctx).filter((op) => op.group === 'focus');
+  expect(focus.map((op) => text(op, ctx))).toEqual(['Git: Abrir Alterações · home.hv.html']);
+  focus[0].run?.(ctx);
+  expect(ctx.nav.openChanges).toHaveBeenCalledWith('a-I11', 'design/home.hv.html');
+});
+
 test('nova sessão › lists every agent; one boot did not find is disabled and named off PATH (#931)', () => {
   const build = task('11', 'Build', { worktree: '/w/11' });
   const state = stateOf([build], { workers: [{ id: 's1', activityId: activityIdOf('I11'), status: 'working', runId: 'W1' }] });

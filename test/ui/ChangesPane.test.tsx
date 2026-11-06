@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ChangesPane } from '@/components/ChangesPane';
 import { setLanguage } from '@/i18n';
@@ -21,6 +22,8 @@ const TASK_BASE = { against: 'task', label: 'a1b2c3d (origin/main)', oid: 'o0', 
 let bases: Record<string, unknown> = {};
 const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
   if (init?.method === 'PUT') return jsonResponse({ version: 'v2' });
+  if (url.includes('/design-frame-base')) return jsonResponse({ url: '/design-frame/before/home.hv.html' });
+  if (url.includes('/design-frame')) return jsonResponse({ url: '/design-frame/after/home.hv.html' });
   if (url.includes('/file-base')) return jsonResponse(bases[new URL(url, 'http://hive').searchParams.get('against') ?? ''] ?? {});
   if (url.includes('/file-version')) return jsonResponse({ version: 'v1' });
   return jsonResponse({ path: 'src/a.ts', text: 'two\n', version: 'v1' });
@@ -98,4 +101,32 @@ test('the modified editor takes focus when the tab becomes active (#668)', async
   const focus = vi.spyOn(right, 'focus');
   rerender(<ChangesPane activity={ON_TASK} path="src/a.ts" label="l" active fontFamily="ui-monospace" />);
   expect(focus).toHaveBeenCalled();
+});
+
+const DESIGN_PATH = 'design/home.hv.html';
+const designPane = () => <ChangesPane activity={ON_TASK} path={DESIGN_PATH} label="#1 Task 1 · Alterações home.hv.html" active fontFamily="ui-monospace" />;
+
+test('a .hv.html opens on the rendered view, the base and the working tree side by side, the diff editor made behind it; Texto shows the diff and Renderizado the frames again (#675)', async () => {
+  const user = userEvent.setup();
+  render(designPane());
+  const left = await screen.findByTitle('HEAD · home.hv.html');
+  expect(await screen.findByTitle('Árvore de trabalho · home.hv.html')).toBeInTheDocument();
+  expect(screen.getByRole('radio', { name: 'Renderizado' })).toHaveAttribute('aria-checked', 'true');
+  await waitFor(() => expect(FakeDiffEditor.all).toHaveLength(1)); // made while hidden, so the text view keeps its scroll
+  const textHost = FakeDiffEditor.all[0].getModifiedEditor().host;
+  expect(textHost.closest('[hidden]')).not.toBeNull();
+  await user.click(screen.getByRole('radio', { name: 'Texto' }));
+  expect([textHost.closest('[hidden]'), left.closest('[hidden]') !== null]).toEqual([null, true]);
+  expect(screen.queryByRole('button', { name: 'aumentar zoom' })).toBeNull(); // the switch and the zoom only while rendered
+  await user.click(screen.getByRole('radio', { name: 'Renderizado' }));
+  expect([textHost.closest('[hidden]') !== null, left.closest('[hidden]')]).toEqual([true, null]);
+  expect(FakeDiffEditor.all).toHaveLength(1); // the same diff editor all along
+});
+
+test('a file that is no design shows the text view alone: no toggle, no frame, no design mint (#675)', async () => {
+  render(pane(ON_TASK));
+  await waitFor(() => expect(FakeDiffEditor.all).toHaveLength(1));
+  expect(screen.queryByRole('radio', { name: 'Renderizado' })).toBeNull();
+  expect(document.querySelector('[data-design-canvas]')).toBeNull();
+  expect(fetchMock.mock.calls.some(([url]) => url.includes('/design-frame'))).toBe(false);
 });

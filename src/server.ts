@@ -1255,7 +1255,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts });
   registerTaskRoutes(app, taskDeps);
-  registerDesignFrameMint(app, { requireLive, tokens: designFrames }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
+  registerDesignFrameMint(app, { requireLive, tokens: designFrames, exec }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
   // The review's conversations (#591): delivered into a session's pty, or into one openSession starts for them. A pty whose fd closed since
   // throws (EBADF, as the input effect meets it): that delivery failed, the others go on.
   const write = (ptyId: string, data: string): boolean => {

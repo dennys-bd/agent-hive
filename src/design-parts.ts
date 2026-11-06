@@ -1,9 +1,11 @@
 // Shared parts of design screens (#421): a screen includes markup fragments of its folder, and the design frame route assembles it before
 // serving, so the frame still gets one document and its policy stays as it is. assets/plugin/scripts/check-hv.mjs keeps a copy of these
 // rules, since the plugin is copied out of the repository; test/plugin-scripts.test.ts keeps the two in step.
+import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
 import { posix, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { attrOf, enclosingStart, matchingEnds, scanTags, type Tag, topLevelStarts } from './design-markup.js';
 
 /** How deep includes nest, counted from the screen: a header inside a shell is a real case, and the bound caps the work. */
@@ -239,5 +241,47 @@ export function readPartFrom(folder: string): ReadPart {
     } finally {
       await handle.close();
     }
+  };
+}
+
+// ponytail: node's execFile, not the injected Exec, which answers strings only; a design's images need the bytes. Argv only, as every git call
+const gitRun = promisify(execFile);
+const LS_TREE_ROW = /^(\d{6}) (\S+) ([0-9a-f]+) +(\d+|-)\t(.*)$/s;
+const REGULAR_MODES = new Set(['100644', '100755']);
+const SYMLINK_MODE = '120000';
+
+/** One path's entry in a commit's tree (#675): its mode, type, blob id and size, from one `ls-tree -l`. */
+export interface GitEntry { mode: string; type: string; oid: string; size: number }
+
+export async function gitEntry(top: string, commit: string, path: string): Promise<GitEntry | undefined> {
+  try {
+    // literal pathspecs: a * or a :(magic) in a design's path names that path alone; -z: a path is never quoted
+    const { stdout } = await gitRun('git', ['-C', top, '--literal-pathspecs', 'ls-tree', '-l', '-z', commit, '--', path], { encoding: 'utf8' });
+    const rows = stdout.split('\0').filter((row) => row !== '');
+    const row = rows.length === 1 ? LS_TREE_ROW.exec(rows[0]) : null;
+    if (row === null || row[5] !== path) return undefined;
+    return { mode: row[1], type: row[2], oid: row[3], size: row[4] === '-' ? 0 : Number(row[4]) };
+  } catch {
+    return undefined; // no such commit, no repository: the same as no such path
+  }
+}
+
+/** A blob of mode 100644 or 100755: never a link (120000), a tree or a submodule. */
+export const isRegularBlob = (entry: GitEntry): boolean => entry.type === 'blob' && REGULAR_MODES.has(entry.mode);
+
+export async function gitBlob(top: string, oid: string, max: number): Promise<Buffer> {
+  return (await gitRun('git', ['-C', top, 'cat-file', 'blob', oid], { encoding: 'buffer', maxBuffer: max + 1 })).stdout;
+}
+
+/** The before frame's reader (#675): a part as `commit` holds it under `folder` (git's path space), refused as readPartFrom refuses one: a
+ *  link (mode 120000) as a symbolic link, anything but a regular blob as not found, one past PART_BYTES_MAX as too large, before it is read. */
+export function readPartFromGit(top: string, commit: string, folder: string): ReadPart {
+  return async (path) => {
+    const entry = await gitEntry(top, commit, posix.join(folder, path));
+    if (entry?.mode === SYMLINK_MODE) return { refused: PART_REASONS.symlink };
+    if (entry === undefined || !isRegularBlob(entry)) return { refused: PART_REASONS.missing };
+    if (entry.size > PART_BYTES_MAX) return { refused: PART_REASONS.tooLarge };
+    const bytes = await gitBlob(top, entry.oid, PART_BYTES_MAX).catch(() => undefined);
+    return bytes === undefined ? { refused: PART_REASONS.missing } : { text: bytes.toString('utf8') };
   };
 }

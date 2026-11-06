@@ -680,6 +680,7 @@ const en = {
   'changes.revert': 'revert this change', 'changes.prev': 'previous change', 'changes.next': 'next change', 'changes.close': 'close',
   'changes.position': '{n} of {total}',
   'changes.base': 'base', 'changes.base.head': 'HEAD', 'changes.base.task': 'task base', 'changes.noBase': 'no base to compare against',
+  'changes.view.rendered': 'Rendered', 'changes.view.text': 'Text', 'changes.notInBase': 'Not in the base', 'changes.workingTree': 'Working tree',
   // #109: the design pane
   'design.tab': '{label} · Design {name}',
   'design.reloaded': 'reloaded · the agent changed {file} at {time}',
@@ -3772,6 +3773,7 @@ const pt: Record<MessageKey, string> = {
   'changes.revert': 'reverter este trecho', 'changes.prev': 'alteração anterior', 'changes.next': 'próxima alteração', 'changes.close': 'fechar',
   'changes.position': '{n} de {total}',
   'changes.base': 'base', 'changes.base.head': 'HEAD', 'changes.base.task': 'base da tarefa', 'changes.noBase': 'sem base para comparar',
+  'changes.view.rendered': 'Renderizado', 'changes.view.text': 'Texto', 'changes.notInBase': 'Não existe na base', 'changes.workingTree': 'Árvore de trabalho',
   'design.tab': '{label} · Design {name}',
   'design.reloaded': 'recarregado · o agente alterou {file} às {time}',
   'design.viewport': 'viewport', 'design.viewport.natural': 'natural', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
