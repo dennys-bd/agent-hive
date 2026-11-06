@@ -571,7 +571,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         return;
       case 'readCwd': { // #696: the shell's cwd read before its kill, so the terminal wakes where it was; unreadable keeps the held one
         log.info(describeEffect(effect));
-        const cwd = await shellCwd(ptys.pid(effect.terminalId), exec);
+        const cwd = await shellCwd(ptys.pid(effect.terminalId), exec, process.platform);
         await dispatch({ type: 'sleepTerminal', terminalId: effect.terminalId, ...(cwd === undefined ? {} : { cwd }) });
         return;
       }

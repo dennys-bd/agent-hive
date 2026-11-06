@@ -206,7 +206,7 @@ function registerAgents(app: Express, deps: TerminalRouteDeps): void {
     if (!liveShell(current.state, terminalId)) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_TERMINAL_MESSAGE });
     const captured = current.state.workers.flatMap((w) => (w.terminalId === terminalId && w.sessionId !== undefined ? [w.sessionId] : []));
     const shims = AGENT_IDS.map((id) => shimPath(deps.home, AGENTS[id])); // #932: every agent's shim, first on the terminal's PATH
-    res.json({ agents: await strayAgents(deps.pid(terminalId), { captured, shims }, deps.exec) });
+    res.json({ agents: await strayAgents(deps.pid(terminalId), { captured, shims }, deps.exec, process.platform) });
   });
 }
 
