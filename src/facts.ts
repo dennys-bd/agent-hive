@@ -73,8 +73,8 @@ export interface FactFields {
   'stage.ended': Timed & RunUsage & { agent?: AgentId; outcome: StageOutcome; waited_ms: number; tool_counts: Record<string, number> };
   // error: the handler threw. result_keys: an accepted hive_done's safe-shaped keys, at most 20; result_keys_dropped: how many were left out; kind: hive_remember's lesson kind (#797), never its text
   'mcp.call': { tool: string; outcome: 'ok' | 'refused' | 'error'; reason?: RefusalCode; latency_ms: number; result_keys?: string[]; result_keys_dropped?: number; kind?: MemoryKind };
-  // #797: a lesson saved, edited or removed, and (#681) a run reading one with hive_recall. Never a lesson's description or body. used: the sum of the texts, as the cap counts
-  'memory.changed': { action: 'added' | 'edited' | 'removed'; kind: MemoryKind; by: 'worker' | 'user'; id: string; entries: number; used: number; workspace: string };
+  // #797: a lesson saved, edited or removed, by the user or (#683) a worker's hive_revise and hive_forget, and restored by the user from the history; (#681) a run reading one with hive_recall. Never a lesson's description, body or why. used: the sum of the descriptions, as the cap counts
+  'memory.changed': { action: 'added' | 'edited' | 'removed' | 'restored'; kind: MemoryKind; by: 'worker' | 'user'; id: string; entries: number; used: number; workspace: string };
   'memory.recalled': { id: string; kind: MemoryKind; uses: number; workspace: string };
   'pr.opened': { pr: number };
   'pr.state': { pr: number; state: 'merged' | 'closed'; since_opened_ms?: number; since_stage_started_ms?: number };

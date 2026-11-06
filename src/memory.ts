@@ -19,7 +19,9 @@ export const WHY_MESSAGE = `why must be one line of 1 to ${MEMORY_DESCRIPTION_MA
 export const MEMORY_KIND_MESSAGE = `kind must be one of: ${MEMORY_KINDS.join(', ')}`;
 export const MEMORY_SECRET_MESSAGE = 'this looks like a secret; never save tokens or keys';
 export const MEMORY_FULL_MESSAGE = 'memory is full; go on without saving this lesson';
+export const NO_FIELD_MESSAGE = 'give at least one of kind, description or body';
 export const unknownMemoryMessage = (id: string): string => `no lesson ${id} in this workspace's memory`;
+export const unknownChangeMessage = (id: string): string => `no change ${id} in this workspace's memory`;
 
 // The error's class only: a JSON parse error quotes the file, and the file holds the lessons
 export const errorName = (err: unknown): string => (err instanceof Error ? err.name : typeof err);
@@ -61,12 +63,29 @@ const hasLettersAndDigits = (run: string): boolean => /[A-Za-z]/.test(run) && /\
 export const looksLikeSecret = (text: string): boolean =>
   SECRET_PATTERNS.some((pattern) => pattern.test(text)) || (text.match(LONG_RUN) ?? []).some(hasLettersAndDigits);
 
+// The shape's problem first, then a secret in any of the texts (#797, #683): a malformed call never reads the file
+function refusalOf(problem: string | undefined, texts: readonly (string | undefined)[]): MemoryRefusal | undefined {
+  if (problem) return refusal('bad_memory', problem);
+  return texts.some((text) => text !== undefined && looksLikeSecret(text)) ? refusal('memory_secret', MEMORY_SECRET_MESSAGE) : undefined;
+}
+
 /** Why a lesson cannot be saved (#797, #680), in the tool's order: the description's shape, the body's, then a secret in either. The cap is the edit's to check. */
 export function lessonRefusal(description: string, body: string): MemoryRefusal | undefined {
-  const problem = descriptionProblem(description) ?? bodyProblem(body);
-  if (problem) return refusal('bad_memory', problem);
-  return looksLikeSecret(description) || looksLikeSecret(body) ? refusal('memory_secret', MEMORY_SECRET_MESSAGE) : undefined;
+  return refusalOf(descriptionProblem(description) ?? bodyProblem(body), [description, body]);
 }
+
+/** The fields hive_revise may rewrite (#683); an absent one stays. */
+export interface RevisionFields { kind?: MemoryKind; description?: string; body?: string }
+
+/** Why hive_revise cannot apply (#683): no field to change, a given field or the why out of shape, then a secret in any. The id and the cap are the edit's. */
+export function revisionRefusal({ kind, description, body }: RevisionFields, why: string): MemoryRefusal | undefined {
+  if (kind === undefined && description === undefined && body === undefined) return refusal('bad_memory', NO_FIELD_MESSAGE);
+  const problem = (description === undefined ? undefined : descriptionProblem(description)) ?? (body === undefined ? undefined : bodyProblem(body)) ?? whyProblem(why);
+  return refusalOf(problem, [description, body, why]);
+}
+
+/** Why hive_forget cannot apply (#683): the why out of shape, then a secret in it. */
+export const forgetRefusal = (why: string): MemoryRefusal | undefined => refusalOf(whyProblem(why), [why]);
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
@@ -175,12 +194,58 @@ export function withEdit(file: MemoryFile, id: string, kind: MemoryKind, descrip
   return isMemoryRefusal(edited) ? edited : capped(file, edited, cap);
 }
 
-/** A lesson removed (#797): only the user does it; nextId stays. */
+/** A lesson the user removed (#797): nextId stays. A worker's removal goes through withForgotten, into the history (#683). */
 export const withoutEntry = (file: MemoryFile, id: string): MemoryResult =>
   (file.entries.some((e) => e.id === id) ? { ...file, entries: file.entries.filter((e) => e.id !== id) } : refusal('unknown_memory', unknownMemoryMessage(id)));
 
 /** One more read of a lesson (#797, #681): uses + 1 and the latest hive_recall as lastUsed, replaced whole, so an old why goes. Never rendered. */
 export const withUse = (file: MemoryFile, id: string, lastUsed: MemoryUse): MemoryResult => withChanged(file, id, (e) => ({ ...e, uses: e.uses + 1, lastUsed }));
+
+/** Who makes a change and why (#683): the caller's origin and its one-line why, which the edit trims. */
+export interface ChangeBy { by: MemoryChange['by']; why: string }
+
+// #683: the change as h-<nextChangeId>, after the others; past MEMORY_HISTORY_MAX the oldest go. The counter only grows, so an id is never reused
+function withChange(file: MemoryFile, change: Omit<MemoryChange, 'id'>): MemoryFile {
+  const history = [...file.history, { id: `h-${file.nextChangeId}`, ...change }].slice(-MEMORY_HISTORY_MAX);
+  return { ...file, nextChangeId: file.nextChangeId + 1, history };
+}
+
+const revisedOf = (entry: MemoryEntry, { kind, description, body }: RevisionFields, at: string): MemoryEntry =>
+  ({ ...entry, kind: kind ?? entry.kind, description: description?.trim() ?? entry.description, body: body?.trim() ?? entry.body, at });
+
+/** A worker's correction (#683): only the given fields, trimmed; `at` moves as withEdit's does; id, origin, uses and lastUsed stay. The lesson
+ * as it was goes to the history. cap: the workspace's memoryCap (#73), as withEdit's. */
+export function withRevision(file: MemoryFile, id: string, fields: RevisionFields, change: ChangeBy, at: string, cap: number): MemoryResult {
+  const before = file.entries.find((e) => e.id === id);
+  if (!before) return refusal('unknown_memory', unknownMemoryMessage(id));
+  const revised = capped(file, { ...file, entries: file.entries.map((e) => (e === before ? revisedOf(e, fields, at) : e)) }, cap);
+  return isMemoryRefusal(revised) ? revised : withChange(revised, { entry: before, action: 'revised', by: change.by, why: change.why.trim(), at });
+}
+
+/** A worker's removal (#683): the lesson leaves the entries whole, into the history; nextId stays. */
+export function withForgotten(file: MemoryFile, id: string, change: ChangeBy, at: string): MemoryResult {
+  const before = file.entries.find((e) => e.id === id);
+  if (!before) return refusal('unknown_memory', unknownMemoryMessage(id));
+  return withChange({ ...file, entries: file.entries.filter((e) => e !== before) }, { entry: before, action: 'removed', by: change.by, why: change.why.trim(), at });
+}
+
+// #683: reads made after the revision are real reads, so a restore over a lesson keeps its count; a removed lesson has none to keep
+const restoredOver = ({ id, kind, description, body, origin, at }: MemoryEntry, current: MemoryEntry): MemoryEntry =>
+  ({ id, kind, description, body, origin, at, uses: current.uses, ...(current.lastUsed === undefined ? {} : { lastUsed: current.lastUsed }) });
+
+/** The user's restore (#683; #684's route): the change's lesson goes back under its id, over the current one or as a lesson again, whatever
+ * the change's action, and the change leaves the history. Past the cap and growing: memory_full. */
+export function withRestored(file: MemoryFile, changeId: string, cap: number): MemoryResult {
+  const change = file.history.find((c) => c.id === changeId);
+  if (!change) return refusal('unknown_memory', unknownChangeMessage(changeId));
+  const current = file.entries.find((e) => e.id === change.entry.id);
+  const entries = current ? file.entries.map((e) => (e === current ? restoredOver(change.entry, current) : e)) : [...file.entries, change.entry];
+  return capped(file, { ...file, entries, history: file.history.filter((c) => c !== change) }, cap);
+}
+
+/** The user's discard (#683; #684's route): the change leaves the history and the lessons stay as they are. */
+export const withDiscarded = (file: MemoryFile, changeId: string): MemoryResult =>
+  (file.history.some((c) => c.id === changeId) ? { ...file, history: file.history.filter((c) => c.id !== changeId) } : refusal('unknown_memory', unknownChangeMessage(changeId)));
 
 /** What hive_recall answers (#681): the lesson a run reads, never its bookkeeping (origin, at, uses, lastUsed). */
 export const recalledOf = ({ id, kind, description, body }: MemoryEntry): Pick<MemoryEntry, 'id' | 'kind' | 'description' | 'body'> => ({ id, kind, description, body });
@@ -231,7 +296,7 @@ export function createMemoryStore(
         refused = result;
         return file;
       }
-      rerender = renderMemory(file.entries, []) !== renderMemory(result.entries, []); // compared with no tool off on both sides: off drops the whole section or nothing, and a use (a hive_recall, #681) changes neither
+      rerender = renderMemory(file.entries, []) !== renderMemory(result.entries, []); // compared with no tool off on both sides: off drops the whole section or a line, never on one side only, and a use (a hive_recall, #681) or a history-only edit (a discard, #683) changes neither
       return result;
     });
     if (refused) return refused;
