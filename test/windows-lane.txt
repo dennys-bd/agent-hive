@@ -31,6 +31,7 @@ test/platform-commands.test.js
 test/posix-shell.test.js
 test/postinstall.test.js
 test/pty-host.test.js
+test/pty-spawn.test.js
 test/replace-file.test.js
 test/same-path.test.js
 test/server-ci.test.js
