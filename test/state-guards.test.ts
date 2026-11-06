@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadActivity, loadRecord, savedPrs, savedWork } from '../src/state-guards.js';
+import { loadActivity, loadRecord, savedApproval, savedPrs, savedWork } from '../src/state-guards.js';
 import { FEEDBACK_MAX, type Activity, type Checkpoint } from '../src/types.js';
 
 // #134: a state file is read back, never trusted: the routing keys, a pending handoff and its feedback, and a handover's prompt are capped on load
@@ -95,4 +95,11 @@ test('an evaluation in flight round-trips so the boot can stop it; a malformed o
   assert.equal(savedWork({ evaluate: { ...evaluate, phase: 'sleeping' } }).evaluate, undefined);
   assert.equal(savedWork({ evaluate: { stage: 'eval' } }).evaluate, undefined);
   assert.equal(savedWork({ evaluate: { ...evaluate, startedAt: 'yesterday' } }).evaluate, undefined);
+});
+
+test('savedApproval keeps the verdict an approval holds only as a non-empty string; an approval saved before it reads as before (#693)', () => {
+  const since = '2026-11-06T10:00:00.000Z';
+  assert.deepEqual(savedApproval({ since, verdict: 'needs design' }), { approval: { since, verdict: 'needs design' } });
+  for (const verdict of ['', 7, null, { name: 'spike' }]) assert.deepEqual(savedApproval({ since, verdict }), { approval: { since } }, JSON.stringify(verdict));
+  assert.deepEqual(savedApproval({ since }), { approval: { since } });
 });

@@ -39,6 +39,16 @@ test('approval: a new approval.since notifies, the worker holding the Stop or re
   assert.deepEqual(keys(held, released), [], 'the hold released: the same gate');
 });
 
+test('approval: an approval holding a verdict names it in the body, as written; one without keeps the plain body (#693)', (ctx) => {
+  ctx.after(() => setLanguage('en'));
+  setLanguage('en');
+  const judged = state({ activities: [{ ...ACTIVITY, approval: { since: SINCE, verdict: 'needs design' } }, LOCAL] });
+  assert.deepEqual(notificationsFor(state(), judged, ALL), [{ kind: 'approval', key: `approval:a1:${SINCE}`, title: '#12 Fix login', body: 'Awaiting your approval · needs design', taskId: 'board:12' }]);
+  setLanguage('pt');
+  assert.equal(notificationsFor(state(), judged, ALL)[0].body, 'Aguardando sua aprovação · needs design');
+  assert.equal(notificationsFor(state(), state({ activities: [{ ...ACTIVITY, approval: { since: SINCE } }, LOCAL] }), ALL)[0].body, 'Aguardando sua aprovação');
+});
+
 test('pr: one notification per URL a record gains, three new PRs three notifications; a PR that only changes state notifies nothing (#199)', () => {
   const one = state({ activityRecords: [{ ...RECORD, prs: [pr(1)] }] });
   const four = state({ activityRecords: [{ ...RECORD, prs: [pr(1), pr(2), pr(3), pr(4)] }] });

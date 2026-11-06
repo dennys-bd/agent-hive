@@ -3107,6 +3107,7 @@ const en = {
   'settings.error.entryRuleGone': 'source {source}: rule {n} points at a removed flow or stage',
   'settings.taskProps.entry.hint': 'outside the flow = the task shows in tasks › outside the flow, and you take it into a flow when you want',
   'settings.stages.from.firstHint': "a new task enters through the source's properties, among the stages that accept its column",
+  'notify.approvalVerdict': 'Awaiting your approval · {verdict}', // #693: the verdict as the agent wrote it
 };
 
 export type MessageKey = keyof typeof en;
@@ -6207,6 +6208,7 @@ const pt: Record<MessageKey, string> = {
   'settings.error.entryRuleGone': 'source {source}: a regra {n} aponta para um fluxo ou etapa removidos',
   'settings.taskProps.entry.hint': 'sem fluxo = a tarefa aparece em tarefas › sem fluxo, e você a leva ao fluxo quando quiser',
   'settings.stages.from.firstHint': 'a tarefa nova entra pelas propriedades da fonte, entre as etapas que aceitam sua coluna',
+  'notify.approvalVerdict': 'Aguardando sua aprovação · {verdict}',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
