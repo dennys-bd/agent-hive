@@ -110,7 +110,8 @@ export function LessonEditRow({ workspace, entry, onSaved, onCancel }: LessonEdi
   const edited = (set: (value: string) => void) => (value: string): void => { set(value); setError(undefined); };
   // #680: Esc cancels this row only; a key from a portalled Select list is not a descendant, so it only closes the list
   const onRowKeyDown = (e: KeyboardEvent<HTMLFieldSetElement>): void => {
-    if (e.key !== 'Escape' || !(e.target instanceof Node) || !e.currentTarget.contains(e.target)) return;
+    // an IME's Esc dismisses its candidate, never the row and what was typed in it
+    if (e.key !== 'Escape' || e.nativeEvent.isComposing || !(e.target instanceof Node) || !e.currentTarget.contains(e.target)) return;
     e.preventDefault();
     onCancel();
   };
@@ -118,15 +119,15 @@ export function LessonEditRow({ workspace, entry, onSaved, onCancel }: LessonEdi
   return (
     <fieldset aria-label={t('settings.memory.lesson')} data-lesson-edit="" onKeyDown={onRowKeyDown} className="flex min-w-0 flex-col gap-3 border-t bg-background p-3">
       <LessonEditHeader entry={entry} kind={kind} onKind={setKind} />
-      <LessonField id={`${id}-d`} label={t('settings.memory.description')} hint={t('settings.memory.descriptionHint')} length={description.length} max={MEMORY_DESCRIPTION_MAX}>
+      <LessonField id={`${id}-d`} label={t('settings.memory.description')} hint={t('settings.memory.descriptionHint')} length={description.trim().length} max={MEMORY_DESCRIPTION_MAX}>
         <Input
-          ref={descriptionRef} id={`${id}-d`} value={description} aria-invalid={description.length > MEMORY_DESCRIPTION_MAX} aria-describedby={`${id}-d-count`}
+          ref={descriptionRef} id={`${id}-d`} value={description} aria-invalid={description.trim().length > MEMORY_DESCRIPTION_MAX} aria-describedby={`${id}-d-count`}
           placeholder={isNew ? t('settings.memory.descriptionPlaceholder') : undefined} onChange={(e) => edited(setDescription)(e.target.value)} onKeyDown={onKeyDown(false)}
         />
       </LessonField>
-      <LessonField id={`${id}-b`} label={t('settings.memory.body')} hint={t('settings.memory.bodyHint')} length={body.length} max={MEMORY_BODY_MAX}>
+      <LessonField id={`${id}-b`} label={t('settings.memory.body')} hint={t('settings.memory.bodyHint')} length={body.trim().length} max={MEMORY_BODY_MAX}>
         <Textarea
-          id={`${id}-b`} rows={7} className="resize-y" value={body} aria-invalid={body.length > MEMORY_BODY_MAX} aria-describedby={`${id}-b-count`}
+          id={`${id}-b`} rows={7} className="resize-y" value={body} aria-invalid={body.trim().length > MEMORY_BODY_MAX} aria-describedby={`${id}-b-count`}
           placeholder={isNew ? t('settings.memory.bodyPlaceholder') : undefined} onChange={(e) => edited(setBody)(e.target.value)} onKeyDown={onKeyDown(true)}
         />
       </LessonField>

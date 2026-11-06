@@ -82,6 +82,6 @@ test('a lesson saved from a local session reads local session / sessão local wh
 
 test('originDateText is the meta line without the sizes; canSaveLesson needs both fields, each within its limit (#680)', () => {
   expect(originDateText(lesson({ origin: { task: '812', stage: 'build' } }))).toBe('tarefa #812 · build · 2026-10-01');
-  expect([canSaveLesson('d', 'b'), canSaveLesson(' ', 'b'), canSaveLesson('d', '\n'), canSaveLesson('d'.repeat(151), 'b'), canSaveLesson('d', 'b'.repeat(4001)), canSaveLesson('d'.repeat(150), 'b'.repeat(4000))])
-    .toEqual([true, false, false, false, false, true]);
+  expect([canSaveLesson('d', 'b'), canSaveLesson(' ', 'b'), canSaveLesson('d', '\n'), canSaveLesson('d'.repeat(151), 'b'), canSaveLesson('d', 'b'.repeat(4001)), canSaveLesson('d'.repeat(150), 'b'.repeat(4000)), canSaveLesson(` ${'d'.repeat(150)} `, 'b')])
+    .toEqual([true, false, false, false, false, true, true]);
 });

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { MemorySection } from '@/components/settings/MemorySection';
@@ -92,6 +92,10 @@ test('Esc in an editing row cancels the row and keeps the dialog open, focus bac
   await user.click(await screen.findByRole('button', { name: 'ver memória…' }));
   const dialog = within(await screen.findByRole('dialog', { name: 'Memória de hive' }));
   await user.click(dialog.getByRole('button', { name: 'editar lição m-1' }));
+  // an IME's Esc only dismisses its candidate: the row and the dialog stay
+  fireEvent.keyDown(dialog.getByRole('textbox', { name: 'descrição' }), { key: 'Escape', isComposing: true });
+  expect(dialog.getByRole('textbox', { name: 'descrição' })).toBeInTheDocument();
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
   await user.keyboard('{Escape}');
   expect(dialog.queryByRole('textbox', { name: 'descrição' })).not.toBeInTheDocument();
   expect(screen.getByRole('dialog')).toBeInTheDocument();

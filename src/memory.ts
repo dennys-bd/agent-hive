@@ -50,6 +50,8 @@ const SECRET_PATTERNS: readonly RegExp[] = [
   /\bgh[pousr]_[A-Za-z0-9]{20,}/, /\bgithub_pat_/, /\bsk-[A-Za-z0-9_-]{20,}/, /\bAKIA[0-9A-Z]{16}/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
   /\bxox[baprs]-/, /\bAIza[0-9A-Za-z_-]{30,}/, /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/, /\b(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*\S+/i,
   /:\/\/[^/\s:@]+:[^@\s]+@/, // credentials in a URL
+  // #680: keys the long run caught only through their `_` or `-`, which now end a run
+  /\b[spr]k_(live|test)_[A-Za-z0-9]{16,}/, /\bglpat-[A-Za-z0-9_-]{20,}/, /\bnpm_[A-Za-z0-9]{30,}/,
 ];
 // #680: `/`, `-` and `_` end a run, so a path or a slug is no token; a bare hex or base62 token is still one unbroken run
 const LONG_RUN = /[A-Za-z0-9+=]{32,}/g;

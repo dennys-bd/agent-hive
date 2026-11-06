@@ -41,9 +41,11 @@ export function metaText(entry: MemoryEntry): string {
   return [originDateText(entry), sizes].join(' · ');
 }
 
-/** Whether an editing row may save (#680): both fields hold something and neither is past its limit; the server checks the rest. */
+const between = (length: number, max: number): boolean => length >= 1 && length <= max;
+/** Whether an editing row may save (#680): both fields, trimmed as the server stores them, hold something and neither is past its limit;
+ * the server checks the rest. */
 export const canSaveLesson = (description: string, body: string): boolean =>
-  description.trim() !== '' && body.trim() !== '' && description.length <= MEMORY_DESCRIPTION_MAX && body.length <= MEMORY_BODY_MAX;
+  between(description.trim().length, MEMORY_DESCRIPTION_MAX) && between(body.trim().length, MEMORY_BODY_MAX);
 
 /** `citada {n} vezes` (#797): a floor, an agent may forget to cite. */
 export const citedText = (uses: number): string => tPlural('settings.memory.citedTimes', uses, { n: uses });

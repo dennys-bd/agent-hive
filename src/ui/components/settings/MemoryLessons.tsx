@@ -23,7 +23,8 @@ function useFocusAfter(): FocusAfter {
     const target = next.current;
     if (target === undefined) return;
     next.current = undefined;
-    (target === ADD ? add.current : buttons.get(target))?.focus();
+    // a lesson whose new kind the filter hides has no button left: "+ lesson" takes the focus
+    (target === ADD ? add.current : buttons.get(target) ?? add.current)?.focus();
   });
   return { buttons, add, focusNext: (target) => { next.current = target; } };
 }

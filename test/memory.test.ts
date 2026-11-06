@@ -79,6 +79,10 @@ test('looksLikeSecret catches the common token and key shapes and leaves ordinar
   // #680: `/`, `-` and `_` end a run: a dated spec path or a kebab slug in a body is ordinary text
   assert.equal(looksLikeSecret('read docs/agent/hive/specs/2026-11-05-workspace-memory-index-decomposition.md first'), false);
   assert.equal(looksLikeSecret('keep the hive_680_a_lesson_is_a_description_and_body branch'), false);
+  // #680: the long run now ends at `_` and `-`, so the keys it used to catch through them get a prefix of their own
+  for (const key of [`sk_${'live'}_${'aB3'.repeat(8)}`, `rk_${'test'}_${'aB3'.repeat(8)}`, `glpat-${'aB3'.repeat(7)}`, `npm_${'aB3'.repeat(12)}`]) {
+    assert.equal(looksLikeSecret(`use ${key} here`), true, key.slice(0, 8));
+  }
   assert.equal(looksLikeSecret(`the hash ${'0123456789abcdef'.repeat(3).slice(0, 40)} is pinned`), true, 'a bare 40-character hex run');
 });
 
