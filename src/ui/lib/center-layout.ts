@@ -135,6 +135,14 @@ export function shownFile(layout: CenterLayout | undefined): string | undefined 
   return ref?.kind === 'file' ? ref.path : undefined;
 }
 
+/** The file the files tree reveals (#718): the focused group's shown tab's path when that tab names one file of the worktree (a file, its
+ * preview, its changes, its design or its diagram); undefined for a run, a diff, the console, an untitled tab or no layout. shownFile stays the text
+ * editor's alone, since the footer's checkers follow only it. */
+export function shownPath(layout: CenterLayout | undefined): string | undefined {
+  const ref = shownTab(layout);
+  return ref?.kind === 'file' || ref?.kind === 'preview' || ref?.kind === 'changes' || ref?.kind === 'design' || ref?.kind === 'diagram' ? ref.path : undefined;
+}
+
 /** The layout without that tab: an emptied group goes and its split collapses; undefined once no tab is left. */
 export const closeRef = (layout: CenterLayout, key: string): CenterLayout | undefined =>
   settle(rebuild(layout.root, (group) => nonEmpty(withoutKey(group, key))), layout.focused);
