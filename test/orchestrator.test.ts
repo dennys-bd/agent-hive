@@ -25,7 +25,7 @@ const GREEN = behaviourOf('green', SIGNALS_DEFAULTS);
 const NO_NEW = { ...SIGNALS_DEFAULTS, yellow: { ...SIGNALS_DEFAULTS.yellow, newTasks: 'never' as const } };
 
 const STAGES: LegacyStage[] = [
-  { name: 'spec', from: { board: ['Backlog'] }, onFinish: { board: [move('Ready')] }, prompt: '/hive-spec {url}', session: 'new', model: 'opus' },
+  { name: 'spec', from: { board: ['Backlog'] }, onFinish: { board: [move('Ready')] }, prompt: '/hive-spec {url}', session: 'new' },
   { name: 'dev', from: { board: ['Ready'] }, onStart: { board: [move('In progress')] }, onFinish: { board: [move('In review')] }, prompt: '/hive-build {url}', session: 'continue' },
   { name: 'review', from: { board: ['In review'] } },
 ];
