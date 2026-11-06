@@ -3,6 +3,10 @@ import { SubbarMenuTrigger } from '@/components/ProjectColumnsMenu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { t } from '@/i18n';
 import type { GroupOption, ProjectGroup } from '@/lib/project-groups';
+import { PROJECT_KEYS, treeRows } from '@/lib/project-tree';
+
+// the pill counts a group's roots (#696): a sub-issue nests under its parent, so none is counted
+const NOTHING_EXPANDED: ReadonlySet<string> = new Set();
 
 interface ProjectGroupMenuProps { options: GroupOption[]; groupBy: string | null; onChange(groupBy: string | null): void }
 
@@ -41,7 +45,7 @@ export function ProjectGroupRow({ group, isCollapsed, onToggle }: { group: Proje
         <button type="button" aria-expanded={!isCollapsed} onClick={onToggle} className="flex w-full min-w-0 items-center gap-1.5">
           <Chevron aria-hidden="true" className="size-3.5 shrink-0 text-foreground" />
           <span className="truncate font-semibold text-[13px] text-foreground">{group.label}</span>
-          <span className="shrink-0 rounded-[9px] bg-muted px-1.5 tabular-nums">{group.items.length}</span>
+          <span className="shrink-0 rounded-[9px] bg-muted px-1.5 tabular-nums">{treeRows(group.items, NOTHING_EXPANDED, PROJECT_KEYS).length}</span>
           {group.stage !== undefined && <span className="truncate">{group.stage}</span>}
         </button>
       </td>

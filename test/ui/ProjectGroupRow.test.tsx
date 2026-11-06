@@ -12,3 +12,9 @@ test('a group header is a sticky 36px row on card under the table header: the ch
   expect(screen.getByText('2')).toHaveClass('rounded-[9px]', 'bg-muted', 'px-1.5', 'tabular-nums');
   expect(screen.getByText('→ dev')).toBeInTheDocument();
 });
+
+test('the pill counts the group\'s roots only: a sub-issue is never counted, even one that shares its parent\'s status (#696)', () => {
+  const group = { key: 'Ready', label: 'Ready', items: [row(1), row(2, { parent: 1 }), row(3, { parent: 2 }), row(4)] };
+  render(<table><tbody><ProjectGroupRow group={group} isCollapsed={false} onToggle={vi.fn()} /></tbody></table>);
+  expect(screen.getByText('2')).toHaveClass('rounded-[9px]');
+});
