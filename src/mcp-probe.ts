@@ -6,6 +6,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { RunMcpServer } from './agents/runner.js';
+import { type ExecLookup, findExec } from './exec-path.js';
 import type { Logger } from './log.js';
 import { withoutHiveEnv } from './spawn.js';
 
@@ -15,22 +16,28 @@ export const PROBE_TIMEOUT_MS = 5_000;
 export const PROBE_CACHE_MS = 30_000;
 const CLIENT_INFO = { name: 'hive-probe', version: '1.0.0' };
 
-export interface ProbeOptions { timeoutMs: number; cwd: string; log: Pick<Logger, 'debug'> }
+// platform and env: the command's lookup (#633), the daemon's unless a test gives its own
+export interface ProbeOptions { timeoutMs: number; cwd: string; log: Pick<Logger, 'debug'>; platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv }
 
 // The SDK's default env for a stdio child is a handful of names, too few for npx; the Hive's own minus what no child may inherit
 const childEnv = (): Record<string, string> =>
   Object.fromEntries(Object.entries(withoutHiveEnv(process.env)).filter((entry): entry is [string, string] => entry[1] !== undefined));
 
-function transportFor(server: RunMcpServer, cwd: string): Transport {
-  if ('command' in server) return new StdioClientTransport({ command: server.command, args: server.args, cwd, env: childEnv(), stderr: 'ignore' });
+/** The command a stdio server is spawned with (#633): on win32 the full path findExec gives, an .exe's or a .cmd's, since the SDK spawns
+ *  through cross-spawn, which wraps a .cmd in cmd.exe with its own escaping. A name found nowhere, and every name on darwin and linux, as
+ *  written: a missing command fails in the probe as it always did. */
+export const probeCommand = (command: string, lookup: ExecLookup): string => findExec(command, lookup) ?? command;
+
+function transportFor(server: RunMcpServer, cwd: string, lookup: ExecLookup): Transport {
+  if ('command' in server) return new StdioClientTransport({ command: probeCommand(server.command, lookup), args: server.args, cwd, env: childEnv(), stderr: 'ignore' });
   const headers: Record<string, string> = server.header ? { [server.header.name]: server.header.value } : {};
   return new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers } });
 }
 
-export async function probeServer(server: RunMcpServer, { timeoutMs, cwd, log }: ProbeOptions): Promise<ProbeAnswer> {
+export async function probeServer(server: RunMcpServer, { timeoutMs, cwd, log, platform = process.platform, env = process.env }: ProbeOptions): Promise<ProbeAnswer> {
   const client = new Client(CLIENT_INFO);
   try {
-    await client.connect(transportFor(server, cwd), { timeout: timeoutMs }); // connect sends initialize under this timeout
+    await client.connect(transportFor(server, cwd, { platform, env }), { timeout: timeoutMs }); // connect sends initialize under this timeout
     return 'connected';
   } catch (err) {
     log.debug(`mcp probe ${server.name}: no answer (${err instanceof Error ? err.constructor.name : typeof err})`); // never err.message: an HTTP error can echo the response body or the header
