@@ -23,8 +23,10 @@ export interface GhLookup { env?: NodeJS.ProcessEnv; isFile?: (file: string) => 
  *  A gh found nowhere fails like any failed gh, with the resolver's `gh was not found`. It pipes stdin itself, so it keeps its own execFile. */
 export const ghExecFor = (platform: NodeJS.Platform, lookup: GhLookup = {}): Exec => async (args, input) => {
   try {
-    const gh = resolveExec('gh', args, { platform, env: lookup.env ?? process.env, isFile: lookup.isFile });
-    const run = execFileAsync(gh.file, [...gh.args], { maxBuffer: GH_MAX_BUFFER, windowsVerbatimArguments: gh.windowsVerbatimArguments });
+    const env = lookup.env ?? process.env;
+    const gh = resolveExec('gh', args, { platform, env, isFile: lookup.isFile });
+    const childEnv = gh.env === undefined ? {} : { env: { ...env, ...gh.env } }; // the .cmd runner's: no bare name looked up in the cwd
+    const run = execFileAsync(gh.file, [...gh.args], { maxBuffer: GH_MAX_BUFFER, windowsVerbatimArguments: gh.windowsVerbatimArguments, ...childEnv });
     if (input !== undefined) {
       // gh exiting before it reads the body is an EPIPE here; its exit status already carries the failure, and an unhandled one would kill the server
       run.child.stdin?.on('error', () => undefined);

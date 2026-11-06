@@ -131,7 +131,7 @@ test('on win32 a headless Claude is its .exe in <USERPROFILE>\\.local\\bin and a
   assert.deepEqual(headlessProcess('codex', ['exec', '-o', 'C:\\t\\answer.txt'], env, { platform: 'win32', isFile }), {
     command: 'C:\\Windows\\System32\\cmd.exe',
     args: ['/d', '/s', '/v:off', '/c', '""C:\\npm\\codex.cmd" "exec" "-o" "C:\\t\\answer.txt""'],
-    env,
+    env: { ...env, NoDefaultCurrentDirectoryInExePath: '1' },
     windowsVerbatimArguments: true,
   });
   assert.deepEqual(headlessProcess('claude', ['-p'], { PATH: '/usr/bin' }, { platform: 'darwin', isFile: () => assert.fail('no lookup off win32') }), { command: 'claude', args: ['-p'], env: { PATH: '/usr/bin' } });

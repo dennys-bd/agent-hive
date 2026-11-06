@@ -45,6 +45,7 @@ test('on win32 a name present only as .cmd runs through cmd.exe, each argument q
     file: COMSPEC,
     args: ['/d', '/s', '/v:off', '/c', '""C:\\npm\\prettier.cmd" "--write" "a b" "say ""q""" "dir\\\\""'],
     windowsVerbatimArguments: true,
+    env: { NoDefaultCurrentDirectoryInExePath: '1' }, // an npm shim's bare `node` never resolves in the cwd, where a repository could plant one
   });
 });
 
@@ -87,7 +88,7 @@ test('createExec on win32 runs claude from <USERPROFILE>\\.local\\bin, codex.cmd
   await exec('gh', ['auth', 'token'], { timeout: 10 });
   assert.deepEqual(runs, [
     { file: 'C:\\Users\\u\\.local\\bin\\claude.exe', args: ['--version'], opts: {} },
-    { file: COMSPEC, args: ['/d', '/s', '/v:off', '/c', '""C:\\npm\\codex.cmd" "--version""'], opts: { windowsVerbatimArguments: true } },
+    { file: COMSPEC, args: ['/d', '/s', '/v:off', '/c', '""C:\\npm\\codex.cmd" "--version""'], opts: { env: { ...daemonEnv, NoDefaultCurrentDirectoryInExePath: '1' }, windowsVerbatimArguments: true } },
     { file: 'C:\\npm\\gh.exe', args: ['auth', 'token'], opts: { timeout: 10 } },
   ]);
 });
@@ -106,6 +107,14 @@ test('createExec looks a name up in the call\'s env when it has one, else the da
   assert.deepEqual(runs[1]?.opts, { env: { Path: 'C:\\child' } }, 'the caller\'s options pass on unchanged');
   const refused = createExec({ platform: 'win32', env, dirsFor: () => [], run, isFile: fakeFs('C:\\npm\\prettier.cmd') });
   await assert.rejects(refused('prettier', ['100%']), /cmd\.exe/, 'the runner\'s refusal is a rejection too, never a synchronous throw');
+});
+
+test('on win32 a merged env\'s later key wins; a relative folder the caller adds and a relative SYSTEMROOT are skipped (#633)', () => {
+  const merged = { Path: 'C:\\daemon', PATH: 'C:\\workspace', PATHEXT: '.EXE;.CMD' };
+  const isFile = fakeFs('C:\\daemon\\claude.exe', 'C:\\workspace\\claude.exe', '.local\\bin\\claude.exe', 'C:\\npm\\x.cmd');
+  assert.equal(findExec('claude', { platform: 'win32', env: merged, isFile }), 'C:\\workspace\\claude.exe');
+  assert.equal(findExec('claude', { platform: 'win32', env: merged, dirs: ['.local\\bin'], isFile }), 'C:\\workspace\\claude.exe');
+  assert.equal(resolveExec('x', [], { platform: 'win32', env: { PATH: 'C:\\npm', SYSTEMROOT: 'repo' }, isFile }).file, 'C:\\Windows\\System32\\cmd.exe');
 });
 
 test('createExec on darwin and linux hands run the name, the args and the options unchanged, with no file lookup (#633)', async () => {

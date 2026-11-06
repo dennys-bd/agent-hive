@@ -41,7 +41,7 @@ export function headlessProcess(agent: AgentId, args: string[], env: NodeJS.Proc
   const name = AGENTS[agent].command;
   try {
     const resolved = resolveExec(name, args, { ...lookup, env, dirs: agentDirs(name, lookup.platform, env) });
-    return { command: resolved.file, args: [...resolved.args], env, ...(resolved.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}) };
+    return { command: resolved.file, args: [...resolved.args], env: { ...env, ...resolved.env }, ...(resolved.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}) };
   } catch (err) {
     return { failure: err instanceof Error ? err.message : String(err), detail: '' };
   }
