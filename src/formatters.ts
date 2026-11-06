@@ -21,8 +21,8 @@ const BIOME_DISABLED = /The content was not formatted because the formatter is c
 export const FORMATTERS: readonly FormatterDef[] = [
   row('biome', '.js .jsx .mjs .cjs .ts .tsx .json .jsonc .css', ['node_modules/.bin/biome', 'biome'], (f) => ['format', `--stdin-file-path=${f}`], BIOME_DISABLED),
   row('prettier', '.js .jsx .mjs .cjs .ts .tsx .json .css .scss .less .md .yaml .yml .html .vue .graphql', ['node_modules/.bin/prettier', 'prettier'], (f) => ['--stdin-filepath', f]),
-  row('ruff', '.py .pyi', ['.venv/bin/ruff', 'ruff'], (f) => ['format', '--stdin-filename', f, '-']),
-  row('black', '.py .pyi', ['.venv/bin/black', 'black'], (f) => ['-q', '--stdin-filename', f, '-']),
+  row('ruff', '.py .pyi', ['.venv/bin/ruff', '.venv/Scripts/ruff', 'ruff'], (f) => ['format', '--stdin-filename', f, '-']),
+  row('black', '.py .pyi', ['.venv/bin/black', '.venv/Scripts/black', 'black'], (f) => ['-q', '--stdin-filename', f, '-']),
   row('gofmt', '.go', ['gofmt'], () => []),
   row('rustfmt', '.rs', ['rustfmt'], () => ['--emit', 'stdout']),
   row('clang-format', '.c .h .cc .cpp .hpp .m .mm', ['clang-format'], (f) => [`--assume-filename=${f}`]),

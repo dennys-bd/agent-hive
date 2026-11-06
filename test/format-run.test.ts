@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createConsoleStore, failLine } from '../src/console.js';
-import { type FormatContext, formatForSave, runFormatter } from '../src/format-run.js';
+import { type FormatContext, formatForSave, launchOf, runFormatter } from '../src/format-run.js';
 import type { FormatterPick } from '../src/formatters.js';
 import { EDITOR_FILE_MAX, EDITOR_DEFAULTS } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
@@ -117,4 +117,32 @@ test('biome refusing with its formatter disabled is no error: the save goes on a
   const failed = await formatForSave(format, 'const a = 1\n', ts);
   assert.ok(failed !== undefined && 'error' in failed);
   assert.equal(failed.error, 'exit code 1');
+});
+
+test('launchOf: win32 sends a .cmd through cmd.exe verbatim, an unsafe argument or a missing tool is a failure that never holds the value; POSIX is unchanged (#634)', () => {
+  const env = { PATH: 'C:\\bin', COMSPEC: 'C:\\Windows\\System32\\cmd.exe' };
+  const isFile = (f: string): boolean => f === 'C:\\bin\\ruff.cmd';
+  const ok = launchOf('ruff', ['format', '-'], env, 'win32', isFile);
+  assert.ok('command' in ok && ok.command === 'C:\\Windows\\System32\\cmd.exe' && ok.windowsVerbatimArguments === true);
+  const refused = launchOf('ruff', ['--stdin-filename', 'C:\\p\\100%.py'], env, 'win32', isFile);
+  assert.ok('failure' in refused && !refused.failure.includes('100%'), JSON.stringify(refused));
+  assert.ok('failure' in launchOf('black', [], env, 'win32', isFile));
+  assert.deepEqual(launchOf('ruff', ['-'], env, 'linux'), { command: 'ruff', args: ['-'], env });
+});
+
+test('a binary the platform cannot start ends the console run as failed and the save goes on as typed (#634)', async (t) => {
+  const dir = await tempDir(t, 'fmt-run-');
+  const { store, ctx } = setup(dir);
+  const outcome = await runFormatter(ruff(join(dir, 'missing')), 'x\n', ctx);
+  assert.ok('error' in outcome);
+  assert.equal(store.channels()[0]?.status, 'failed');
+});
+
+test('a .cmd formatter rewrites the text on Windows (#634)', { skip: process.platform !== 'win32' }, async (t) => {
+  const dir = await tempDir(t, 'fmt-run-');
+  const cmd = join(dir, 'ruff.cmd');
+  await writeFile(cmd, '@echo off\r\nmore >nul\r\necho FORMATTED\r\n');
+  const { ctx } = setup(dir);
+  const outcome = await runFormatter(ruff(cmd), 'x = 1\n', ctx);
+  assert.ok('text' in outcome && outcome.text.trim() === 'FORMATTED', JSON.stringify(outcome));
 });

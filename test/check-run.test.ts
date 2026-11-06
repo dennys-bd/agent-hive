@@ -136,3 +136,13 @@ test('at most four runs spawn at once; the rest wait, and a waiting run that is 
   await new Promise((r) => setImmediate(r));
   assert.equal(typeof fifth, 'function');
 });
+
+test('a .cmd checker reports its diagnostics on Windows (#634)', { skip: process.platform !== 'win32' }, async (t) => {
+  const folder = await realpath(await tempDir(t, 'check-run-'));
+  const cmd = join(folder, '.venv', 'Scripts', 'yamllint.cmd');
+  await mkdir(dirname(cmd), { recursive: true });
+  await writeFile(cmd, '@echo off\r\necho %~3:2:4: [error] bad\r\nexit /b 1\r\n');
+  const answer = await runCheck(cliCheckerDef('yamllint'), context(folder, createConsoleStore(() => 5000), { env: { ...process.env } }));
+  assert.ok(answer.state === 'done', JSON.stringify(answer));
+  assert.equal(answer.diagnostics[0]?.message, 'bad');
+});

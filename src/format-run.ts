@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { type ConsoleStore, crlf, failLine, formatChannel, runHeader } from './console.js';
+import { type ExecLookup, resolveExec } from './exec-path.js';
 import { detectFormatters } from './formatter-detect.js';
 import { candidatesFor, type FormatterPick, pickFormatter } from './formatters.js';
 import { killTree, treeSpawnOptions } from './kill-tree.js';
@@ -25,7 +26,18 @@ export type RunOutcome = FormatOutcome | { declined: true };
 
 export interface Ran { stdout?: Buffer; stderr: string; failure?: string }
 export const CANCELLED = 'cancelled';
-interface Process { command: string; args: string[]; env: NodeJS.ProcessEnv }
+export interface Process { command: string; args: string[]; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean }
+
+/** A binary and argv as the platform spawns them (#634): on win32 a .cmd runs through cmd.exe, so a project's node_modules\.bin\biome.cmd works.
+ *  The resolver's refusal (a name found nowhere, an argument cmd.exe cannot carry) comes back as `failure`, never thrown: a run ends as failed. */
+export function launchOf(command: string, args: readonly string[], env: NodeJS.ProcessEnv, platform: NodeJS.Platform, isFile?: ExecLookup['isFile']): Process | { failure: string } {
+  try {
+    const exec = resolveExec(command, args, { platform, env, isFile });
+    return { command: exec.file, args: [...exec.args], env, ...(exec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}) };
+  } catch (err) {
+    return { failure: (err as Error).message };
+  }
+}
 
 // Why a run failed, in the words its console run ends with. Never an error's message: Node writes the command line into it, and a custom
 // formatter's line is the user's own text, never logged
@@ -50,10 +62,10 @@ export function collect(stream: Readable | null, cap: number, onOver: () => void
  * timer, the cap and the signal's abort (#330: the headless run's cancel) settle at once and kill the tree, so a grandchild still holding the
  * pipe never holds the caller. A failure keeps the stdout it got: a CLI may say why there (claude -p --output-format json). A stdin error
  * (EPIPE: it exited without reading) is left to the close event, which carries the exit code and stderr. */
-export function runCapped({ command, args, env }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
+export function runCapped({ command, args, env, windowsVerbatimArguments }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
   return new Promise((resolve) => {
     let settled = false;
-    const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], ...treeSpawnOptions(process.platform) });
+    const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], ...(windowsVerbatimArguments === true ? { windowsVerbatimArguments } : {}), ...treeSpawnOptions(process.platform) });
     const stop = (failure: string): void => {
       if (settled) return; // once reaped, the pid may be another process's
       void killTree(child.pid, process.platform);
@@ -108,8 +120,8 @@ export const customShell = (platform: NodeJS.Platform, env: NodeJS.ProcessEnv, p
 
 // Both kinds run in the daemon's env with the workspace's on top (#738: every run of a workspace gets it). A supported pick is its binary and
 // argv; a custom one is the user's line in their shell, with FILE as a raw value
-function processOf(pick: FormatterPick, { file, workspace }: FormatContext): Process {
-  if (pick.kind === 'supported') return { command: pick.binary, args: pick.argv(file), env: { ...process.env, ...workspace.env } };
+function processOf(pick: FormatterPick, { file, workspace }: FormatContext): Process | { failure: string } {
+  if (pick.kind === 'supported') return launchOf(pick.binary, pick.argv(file), { ...process.env, ...workspace.env }, process.platform);
   // #631: on win32 MSYS leaves the line's arguments as written; the workspace's env still wins, and FILE last
   const env = { ...process.env, ...posixShellEnv(process.platform), ...workspace.env, FILE: file };
   return { command: customShell(process.platform, process.env, posixShell().shell), args: ['-c', pick.command], env };
@@ -121,7 +133,8 @@ export async function runFormatter(pick: FormatterPick, text: string, ctx: Forma
   const channel = formatChannel(ctx.workspace.name, pick.name);
   const runId = randomUUID();
   ctx.consoleStore.begin(channel, runId, runHeader(ctx.label, new Date()));
-  const ran = await runCapped(processOf(pick, ctx), text, ctx.cwd, ctx.timeoutMs ?? FORMAT_TIMEOUT_MS);
+  const proc = processOf(pick, ctx);
+  const ran: Ran = 'failure' in proc ? { stderr: '', failure: proc.failure } : await runCapped(proc, text, ctx.cwd, ctx.timeoutMs ?? FORMAT_TIMEOUT_MS);
   if (ran.stderr !== '') ctx.consoleStore.append(runId, crlf(ran.stderr));
   const outcome = outcomeOf(ran);
   if ('text' in outcome) {
