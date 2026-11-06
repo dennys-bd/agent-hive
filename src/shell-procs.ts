@@ -87,20 +87,26 @@ export interface Held { readonly captured: readonly string[]; readonly shims: re
 
 const isShim = (held: Held, line: string): boolean => held.shims.some((shim) => line.includes(shim));
 
-// The agents these lines run that neither a shim nor a captured session holds
-function unheld(lines: readonly string[], held: Held, agentOf: (line: string) => string | undefined): string[] {
+// The agents these lines run that neither a shim nor a captured session holds; `form` is how a line is compared with what is held
+function unheld(lines: readonly string[], held: Held, agentOf: (line: string) => string | undefined, form = (line: string): string => line): string[] {
   return lines.flatMap((line) => {
     const agent = agentOf(line);
-    const isHeld = isShim(held, line) || held.captured.some((id) => line.includes(id));
+    const isHeld = isShim(held, form(line)) || held.captured.some((id) => form(line).includes(id));
     return agent === undefined || isHeld ? [] : [agent];
   });
 }
+
+// Windows paths compare case-insensitively and with either slash, so a shim's path and a line are compared in one form
+const winForm = (text: string): string => text.toLowerCase().replaceAll('/', '\\');
 
 // win32 (#638): Git's bin\sh.exe starts usr\bin\sh.exe and the user's shell sits under that, so the levels are not fixed. The whole subtree
 // is read from one listing, a shim's line pruned with all it holds.
 async function winStrayAgents(ptyPid: number, held: Held, exec: Exec): Promise<string[]> {
   const rows = await listProcesses(exec).catch((): ProcessRow[] => []);
-  return unheld(subtree(rows, ptyPid, (row) => isShim(held, row.line)).map((row) => row.line), held, winAgentIn);
+  const winHeld: Held = { captured: held.captured.map(winForm), shims: held.shims.map(winForm) };
+  // only the comparison takes winForm: the agent is read from the line as is, whose cmd.exe /c a slash swap would turn into \c
+  const lines = subtree(rows, ptyPid, (row) => isShim(winHeld, winForm(row.line))).map((row) => row.line);
+  return unheld(lines, winHeld, winAgentIn, winForm);
 }
 
 /** The agents running in a terminal that no captured session accounts for (#696): the shell's children and theirs, whose command is an

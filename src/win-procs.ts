@@ -8,6 +8,7 @@ export interface ProcessRow { readonly pid: number; readonly ppid: number; reado
 // The whole table's JSON can pass execFile's default 1 MiB once browsers and Electron apps run, whose command lines are long
 const LIST_MAX_BUFFER = 64 * 1024 * 1024;
 const NO_PARENT = -1;
+const LIST_TIMEOUT_MS = 15_000; // a CIM call stuck on WMI or an antivirus scan must not hold the boot's killStrays forever
 const LISTING = [
   "$ErrorActionPreference = 'Stop'", // a CIM failure exits non-zero, so the exec rejects instead of printing nothing
   '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8', // 5.1 prints in the OEM code page otherwise, garbling a non-ASCII path
@@ -28,17 +29,21 @@ function rowOf(value: unknown): ProcessRow[] {
 export function parseProcesses(stdout: string): ProcessRow[] {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stdout);
+    parsed = JSON.parse(stdout.replace(/^\uFEFF/, '')); // 5.1 may write UTF-8's byte order mark before the JSON
   } catch {
     return [];
   }
   return (Array.isArray(parsed) ? parsed : [parsed]).flatMap(rowOf);
 }
 
+// Started from pwsh 7, PSModulePath names 7's modules first and 5.1 fails to load them (as home-acl.ts found for Get-Acl): 5.1 uses its own
+const withoutPsModulePath = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
+  Object.fromEntries(Object.entries(env).filter(([name]) => name.toUpperCase() !== 'PSMODULEPATH'));
+
 /** One listing of the whole table through the caller's exec (no cache, #638 decision 3); it rejects when the exec does. */
-export async function listProcesses(exec: Exec): Promise<ProcessRow[]> {
+export async function listProcesses(exec: Exec, env: NodeJS.ProcessEnv = process.env): Promise<ProcessRow[]> {
   const [file, args] = powerShell(LISTING);
-  const { stdout } = await exec(file, [...args], { maxBuffer: LIST_MAX_BUFFER });
+  const { stdout } = await exec(file, [...args], { maxBuffer: LIST_MAX_BUFFER, timeout: LIST_TIMEOUT_MS, env: withoutPsModulePath(env) });
   return parseProcesses(stdout);
 }
 

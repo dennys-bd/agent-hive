@@ -84,6 +84,22 @@ test('listProcesses runs Windows PowerShell 5.1 by full path with the CIM listin
   assert.ok((maxBuffer ?? 0) > 1024 * 1024, 'more than execFile\'s default 1 MiB');
 });
 
+test('parseProcesses reads a listing that starts with a UTF-8 byte order mark (#638)', () => {
+  assert.deepEqual(parseProcesses('\uFEFF{"ProcessId":7,"ParentProcessId":1,"CommandLine":"x"}\r\n'), [{ pid: 7, ppid: 1, line: 'x' }]);
+});
+
+test('listProcesses caps the PowerShell run and drops PSModulePath, so a stuck CIM never holds the boot and 5.1 loads its own modules (#638)', async () => {
+  const seen: { timeout?: number; env?: NodeJS.ProcessEnv }[] = [];
+  const exec: Exec = async (_file, _args, opts) => {
+    seen.push({ timeout: opts?.timeout, env: opts?.env });
+    return { stdout: '[]' };
+  };
+  await listProcesses(exec, { PSModulePath: 'C:\\pwsh7\\Modules', Path: 'C:\\bin' });
+  const [{ timeout, env }] = seen;
+  assert.ok((timeout ?? 0) > 0, 'a timeout is set');
+  assert.deepEqual(env, { Path: 'C:\\bin' });
+});
+
 test('listProcesses rejects when its exec fails: a failed listing is never read as an empty table (#638)', async () => {
   const failing: Exec = async () => { throw new Error('Command failed: powershell.exe'); };
   await assert.rejects(listProcesses(failing), /powershell/);

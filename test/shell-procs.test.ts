@@ -109,6 +109,15 @@ test('on win32 strayAgents skips a shim\'s line and its whole subtree, and a lin
   assert.deepEqual(await strayAgents(PTY, { captured: ['S1'], shims: [shim] }, exec, 'win32'), ['codex']);
 });
 
+test('on win32 a shim\'s line is recognised whatever its case or slashes: Windows paths compare that way (#638)', async () => {
+  const { exec } = listingExec([
+    listed(200, PTY, 'C:\\Program Files\\Git\\usr\\bin\\sh.exe'),
+    listed(301, 200, 'C:\\Program Files\\Git\\usr\\bin\\sh.exe c:/H/BIN/claude fix it'),
+    listed(401, 301, 'C:\\Users\\a\\.local\\bin\\claude.exe --mcp-config x fix it'),
+  ]);
+  assert.deepEqual(await strayAgents(PTY, { captured: [], shims: ['C:\\h\\bin\\claude'] }, exec, 'win32'), []);
+});
+
 test('on win32 strayAgents answers [] with no pty or a listing that fails (#638)', async () => {
   assert.deepEqual(await strayAgents(undefined, { captured: [], shims: [] }, failingListing, 'win32'), []);
   assert.deepEqual(await strayAgents(PTY, { captured: [], shims: [] }, failingListing, 'win32'), []);
