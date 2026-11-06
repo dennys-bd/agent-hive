@@ -2,10 +2,11 @@
 // <home>/custom/. Read-only: the catalogue and the store share these reads, and only custom-store.ts writes.
 import type { Dirent } from 'node:fs';
 import { lstat, readdir, readFile } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { join, relative } from 'node:path';
 import { FILES_DIR, mainFiles } from './custom-versions.js';
 import { isRecord } from './rate-limits.js';
 import { ITEM_KINDS, type ItemKind, type Workspace } from './types.js';
+import { toWire } from './wire-path.js';
 
 export const HIVE_ORIGIN = 'hive';
 const CUSTOM_DIR = 'custom';
@@ -64,7 +65,7 @@ export async function listFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(orMissing<Dirent[]>([]));
   return entries
     .filter((e) => e.isFile())
-    .map((e) => relative(dir, join(e.parentPath, e.name)).split(sep).join('/'))
+    .map((e) => toWire(relative(dir, join(e.parentPath, e.name)), process.platform))
     .sort();
 }
 

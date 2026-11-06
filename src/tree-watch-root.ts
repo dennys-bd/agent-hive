@@ -1,9 +1,10 @@
 import { watch as fsWatch } from 'node:fs';
 import { lstat, readFile } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 import { gitIn } from './git-status.js';
 import type { Logger } from './log.js';
 import type { Exec } from './types.js';
+import { toWire } from './wire-path.js';
 import { wordsOf } from './worktree.js';
 
 // One leased root's watch (#502): the tree, recursively, and its git's index and HEAD; pushes coalesced and capped; a grouped poll when
@@ -123,7 +124,7 @@ export async function gitDirFor(folder: string): Promise<string | undefined> {
 function treeListener(batch: { add(path: string | undefined): void }, isCheckout: boolean): (filename: string | null) => void {
   return (filename) => {
     // a null name: the platform named nothing, so anything may have changed
-    const path = filename === null ? undefined : filename.split(sep).join('/');
+    const path = filename === null ? undefined : toWire(filename, process.platform);
     const kind = path === undefined ? 'git' : pathKind(path, isCheckout);
     if (kind !== 'drop') batch.add(kind === 'git' ? undefined : path);
   };
