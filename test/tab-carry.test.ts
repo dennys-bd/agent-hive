@@ -62,6 +62,16 @@ test('parseTabRef reads a stored ref as center-layout did and refuses an untitle
   assert.deepEqual(parseTabRef({ kind: 'console', channel: '' }), { kind: 'console' });
 });
 
+test('a file tab at a drive path is taken, moved or stored; one that climbs with .. on either separator, or a drive path with an empty or . segment, is refused (#642)', () => {
+  const moved = (path: string) => parseMovedTab({ activity: ACTIVITY, ref: { kind: 'file', path } });
+  for (const path of ['C:\\repo\\a.ts', 'c:/repo/a.ts']) {
+    assert.deepEqual(moved(path), { activity: ACTIVITY, ref: { kind: 'file', path } }, path);
+    assert.deepEqual(parseTabRef({ kind: 'preview', path }), { kind: 'preview', path }, path);
+  }
+  for (const path of ['C:\\repo\\..\\a.ts', 'a\\..\\b', 'C:\\', 'C:\\repo\\\\a.ts', 'C:\\repo\\.\\a.ts', '/w/a\\..\\b']) assert.equal(moved(path), undefined, path);
+  assert.deepEqual(moved('src/a.ts'), { activity: ACTIVITY, ref: { kind: 'file', path: 'src/a.ts' } }); // POSIX as before
+});
+
 test('refKey names each kind of tab as the center does, and runsOf lists a run tab\'s run, a split one\'s panes in reading order (#458, #641, #552)', () => {
   assert.deepEqual(REFS.map((ref) => refKey(ref)), [
     'p1', 'p1', 'diff:checkpoint:2', 'console:stage:build#r1', 'file:src/a.ts', 'preview:README.md', 'design:docs/a.hv.html', 'changes:src/a.ts', 'untitled:3',

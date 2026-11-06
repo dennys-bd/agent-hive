@@ -1,6 +1,7 @@
 // A tab crossing between the main window and a detached one (#534, #551). The center's tab ref and its parser live here, not in
 // center-layout.ts: main checks every moved payload and the node build excludes that file, so both pages and main read stored layouts and
 // moved tabs through this one parser. Pure: no DOM, no React.
+import { isDrivePath } from './lsp-uri.js';
 import type { DiffScope } from './types.js';
 import { leavesOf, type Panes, parsePanes } from './ui/lib/pane-split.js';
 import { isObject } from './ui/lib/split-tree.js';
@@ -29,10 +30,17 @@ export function normalizePath(path: string): string {
   return `${isAbsolute ? '/' : ''}${parts.join('/')}`;
 }
 
+// #642: a moved tab's path may be Windows', whose '..' sits between backslashes
+const SEPARATORS = /[\\/]/;
+
 /** A file tab's path (#717, #697): relative to the activity's folder without a `..` segment, or absolute (a file outside it) as
- * normalizePath leaves it; never empty. */
-export const isFilePath = (path: string): boolean =>
-  path !== '' && path !== '/' && !path.split('/').includes('..') && (!path.startsWith('/') || normalizePath(path) === path);
+ *  normalizePath leaves it, or a drive path (#642) with no empty, `.` or `..` segment; never empty. */
+export function isFilePath(path: string): boolean {
+  const parts = path.split(SEPARATORS);
+  if (path === '' || path === '/' || parts.includes('..')) return false;
+  if (isDrivePath(path)) return parts.slice(1).every((part) => part !== '' && part !== '.');
+  return !path.startsWith('/') || normalizePath(path) === path;
+}
 
 // moved here from center-layout.ts (#552): main matches focusTab's key against a listed tab
 /** A tab's identity in its layout (#458), as the Terminal panel's tabKey (#270): the run's pty id, its diff's scope, its file's
