@@ -47,7 +47,7 @@ const TRAILER = `curl -s -m 2 -X POST http://127.0.0.1:4242/hooks/exit -H 'x-hiv
 // The command line a run renders to: the flags bare with their values quoted, the quoted words, the prompt last
 const commandOf = ({ flags, words }: Expected, prompt?: string): string => {
   const parts = [...flags.map(([flag, value]) => `${flag} ${shellQuote(value)}`), ...words.map(shellQuote), ...(prompt === undefined ? [] : [`"$(cat ${shellQuote(prompt)})"`])];
-  return `cd '/wt' && HIVE_PTY_ID=W1 HIVE_PORT=4242 claude ${parts.join(' ')}; ${TRAILER}`;
+  return `cd '/wt' && HIVE_PTY_ID=W1 HIVE_PORT=4242 'claude' ${parts.join(' ')}; ${TRAILER}`;
 };
 
 const RUN: AgentRun = { ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, external: [], hooksPath: HOOKS, pluginDir: PLUGIN, extraArgs: [] };

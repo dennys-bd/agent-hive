@@ -71,7 +71,7 @@ test("a stage's agent and modelo reach the launch as typed; claude's command lin
   const { launch } = workers[0];
   assert.deepEqual(plainArgs(launch), ['--model', 'sonnet', '--session-id', work0(server)!.sessionId!]);
   assert.deepEqual(plainArgs(launch).slice(0, 2), ['--model', 'sonnet']);
-  assert.match(ptyCommand(launch), /^cd '[^']+' && HIVE_PTY_ID=\S+ HIVE_PORT=\d+ claude /);
+  assert.match(ptyCommand(launch), /^cd '[^']+' && HIVE_PTY_ID=\S+ HIVE_PORT=\d+ 'claude' /);
 });
 
 test('GET /settings lists the agents found on boot; without detection every agent is available (#516)', async (t) => {
