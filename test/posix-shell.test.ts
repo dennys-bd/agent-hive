@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { posixShellEnv, resolvePosixShell, type ShellLookups } from '../src/posix-shell.js';
+import { win32 } from 'node:path';
+import { createConsoleStore } from '../src/console.js';
+import { customShell, type FormatContext, runFormatter } from '../src/format-run.js';
+import { posixShell, posixShellEnv, resolvePosixShell, type ShellLookups } from '../src/posix-shell.js';
+import { tempDir } from './temp-dir.js';
 
 const GIT = 'C:\\Program Files\\Git';
 const BIN_SH = `${GIT}\\bin\\sh.exe`;
@@ -35,4 +39,25 @@ test('posixShellEnv keeps MSYS from rewriting the Hive\'s arguments on win32 onl
   assert.deepEqual(posixShellEnv('win32'), { MSYS2_ARG_CONV_EXCL: '*' });
   assert.deepEqual(posixShellEnv('darwin'), {});
   assert.deepEqual(posixShellEnv('linux'), {});
+});
+
+const ON_WINDOWS = { skip: process.platform !== 'win32' };
+const system32 = (): string => win32.join(process.env.SystemRoot ?? assert.fail('no SystemRoot'), 'System32');
+
+test('customShell: on win32 a SHELL is ignored (Git Bash\'s /usr/bin/bash cannot be spawned by node), elsewhere it is kept; unset is the POSIX shell (#631)', () => {
+  assert.equal(customShell('win32', { SHELL: '/usr/bin/bash' }), posixShell().shell);
+  assert.equal(customShell('darwin', { SHELL: '/bin/zsh' }), '/bin/zsh');
+  assert.equal(customShell('linux', {}), posixShell().shell);
+});
+
+test('on the Windows lane: a custom formatter\'s line runs through Git\'s sh.exe with System32 ahead of Git on PATH; its output and its exit code come back (#631)', ON_WINDOWS, async (t) => {
+  const saved = process.env.PATH ?? '';
+  process.env.PATH = `${system32()};${saved}`;
+  t.after(async () => { process.env.PATH = saved; });
+  const dir = await tempDir(t, 'fmt-sh-');
+  const ctx: FormatContext = { cwd: dir, file: win32.join(dir, 'a.sql'), workspace: { name: 'ui', env: {} }, label: 'ui · a.sql', consoleStore: createConsoleStore(() => 5000) };
+  assert.deepEqual(await runFormatter({ kind: 'custom', name: 'up', command: 'tr a-z A-Z' }, 'select 1\n', ctx), { text: 'SELECT 1\n' });
+  const failed = await runFormatter({ kind: 'custom', name: 'bad', command: 'cat > /dev/null; exit 3' }, 'x\n', ctx);
+  assert.ok('error' in failed);
+  assert.equal(failed.error, 'exit code 3');
 });

@@ -1,12 +1,13 @@
 // A formatter's run on save (#749): the buffer's text in on stdin, the formatted text back on stdout, nothing on the disk, so the save stays one
 // atomic write after the version check. A supported formatter is its binary with an argv array. A custom one is the user's own line through
-// "$SHELL" -c, the third deliberate shell string (CLAUDE.md); the file reaches it only as FILE in its env. Every run is a console run.
+// "$SHELL" -c (Git's sh.exe on Windows, #631), the third deliberate shell string (CLAUDE.md); the file reaches it only as FILE in its env. Every run is a console run.
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { type ConsoleStore, crlf, failLine, formatChannel, runHeader } from './console.js';
 import { detectFormatters } from './formatter-detect.js';
 import { candidatesFor, type FormatterPick, pickFormatter } from './formatters.js';
+import { posixShell, posixShellEnv } from './posix-shell.js';
 import { EDITOR_FILE_MAX, type EditorConfig, FORMAT_TIMEOUT_MS, type FormatLog, type Workspace } from './types.js';
 
 export interface FormatContext {
@@ -111,10 +112,15 @@ function outcomeOf(ran: Ran): { text: string } | { failure: string } {
 
 // Both kinds run in the daemon's env with the workspace's on top (#738: every run of a workspace gets it). A supported pick is its binary and
 // argv; a custom one is the user's line in their shell, with FILE as a raw value
+/** A custom formatter's shell (#749, #631): the user's $SHELL on macOS and Linux, else the POSIX shell. On win32 always Git's sh.exe:
+ *  SHELL there is Git Bash's /usr/bin/bash, an MSYS path node cannot spawn, or unset under cmd and PowerShell. */
+export const customShell = (platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string => (platform === 'win32' ? undefined : env.SHELL) ?? posixShell().shell;
+
 function processOf(pick: FormatterPick, { file, workspace }: FormatContext): Process {
   const env = { ...process.env, ...workspace.env };
   if (pick.kind === 'supported') return { command: pick.binary, args: pick.argv(file), env };
-  return { command: process.env.SHELL ?? '/bin/sh', args: ['-c', pick.command], env: { ...env, FILE: file } };
+  // #631: on win32 MSYS leaves the line's arguments as written; the workspace's env still wins, and FILE last
+  return { command: customShell(process.platform, process.env), args: ['-c', pick.command], env: { ...process.env, ...posixShellEnv(process.platform), ...workspace.env, FILE: file } };
 }
 
 /** One formatter run on `text` (#749), logged as a run of its console channel: the header, the tool's stderr and, on a failure, the reason in
