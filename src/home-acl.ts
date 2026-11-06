@@ -1,0 +1,114 @@
+// The Hive's home holds the daemon secret and every session (#628). On win32 a home others can read is refused at boot: the profile default
+// grants only SYSTEM, Administrators and the user, and anything beyond that is an extra allow ACE with read. The check takes the platform and
+// its lookup, so node:test covers the parsing and the refusal on every OS.
+import { execFileSync } from 'node:child_process';
+import { win32 } from 'node:path';
+
+export interface AclLookups { read(home: string): { sddl: string; userSid: string } }
+
+const READ_MASK = 0x1 | 0x80000000 | 0x10000000; // FILE_READ_DATA (list), GENERIC_READ, GENERIC_ALL
+const READ_CODES = ['FA', 'FR', 'GA', 'GR', 'CC']; // SDDL codes that include read; the rest (SD, WD, WO, RC, FW...) do not grant it
+const ALWAYS_ALLOWED = ['SY', 'S-1-5-18', 'BA', 'S-1-5-32-544', 'CO', 'S-1-3-0'];
+const ALLOW_TYPES = ['A', 'XA', 'OA', 'ZA']; // allow, conditional allow, object allow, callback object allow
+const ICACLS_SID: Record<string, string> = { WD: 'S-1-1-0', BU: 'S-1-5-32-545', AU: 'S-1-5-11', IU: 'S-1-5-4', NU: 'S-1-5-2', AN: 'S-1-5-7', AC: 'S-1-15-2-1' };
+const SID = /^S-1(-\d+)+$/;
+// SDDL writes the built-in Administrator and Guest accounts as LA and LG, not as their SIDs (CI's runneradmin is RID 500); they are
+// the only domain-relative aliases that name one account, so the only ones that can be the user
+const ACCOUNT_ALIAS_RID: Record<string, string> = { LA: '500', LG: '501' };
+const isUser = (trustee: string, userSid: string): boolean =>
+  trustee === userSid || (trustee in ACCOUNT_ALIAS_RID && userSid.startsWith('S-1-5-21-') && userSid.endsWith(`-${ACCOUNT_ALIAS_RID[trustee]}`));
+const PS_TIMEOUT_MS = 15_000; // a PowerShell stuck on a share or an antivirus scan ends the boot instead of hanging it
+
+function grantsRead(rights: string): boolean {
+  if (/^0x[0-9a-f]+$/i.test(rights)) return (Number(rights) & READ_MASK) !== 0;
+  if (!/^([A-Z]{2})*$/.test(rights)) throw new Error(`unreadable rights "${rights}"`);
+  return (rights.match(/../g) ?? []).some((code) => READ_CODES.includes(code));
+}
+
+/** The trustees, as written, that an allow ACE of `sddl`'s DACL lets read and that are neither `userSid` nor SYSTEM, Administrators, Creator Owner.
+ *  Deny ACEs never refuse; inherited and inherit-only ACEs count. Throws on SDDL with no DACL or a malformed ACE. */
+export function refusedPrincipals(sddl: string, userSid: string): string[] {
+  const start = sddl.indexOf('D:');
+  if (start < 0) throw new Error('no DACL in the security descriptor');
+  const flags = /^D:([A-Z_]*)/.exec(sddl.slice(start))?.[1] ?? '';
+  if (flags.includes('NO_ACCESS_CONTROL')) return ['WD']; // a null DACL grants everyone everything
+  const refused = new Set<string>();
+  for (const ace of daclAces(sddl, start + 2 + flags.length)) {
+    const fields = ace.split(';');
+    if (fields.length < 6 || !fields[5]) throw new Error(`malformed ACE (${ace})`);
+    const [type, , rights, , , trustee] = fields as [string, string, string, string, string, string];
+    if (ALLOW_TYPES.includes(type) && grantsRead(rights) && !isUser(trustee, userSid) && !ALWAYS_ALLOWED.includes(trustee)) refused.add(trustee);
+  }
+  return [...refused];
+}
+
+// The DACL's ACEs from `at` on, read paren by paren: a conditional ACE nests parentheses (and may hold "S:"), so neither a flat regex
+// nor cutting at "S:" finds where the DACL ends; it ends at the first character that does not open an ACE
+function daclAces(sddl: string, at: number): string[] {
+  const aces: string[] = [];
+  let i = at;
+  while (sddl[i] === '(') {
+    let depth = 0;
+    let j = i;
+    do {
+      if (sddl[j] === '(') depth++;
+      else if (sddl[j] === ')') depth--;
+      j++;
+    } while (depth > 0 && j < sddl.length);
+    if (depth > 0) throw new Error('unbalanced ACE');
+    aces.push(sddl.slice(i + 1, j - 1));
+    i = j;
+  }
+  return aces;
+}
+
+const fix = (home: string, trustees: string[]): string => {
+  const sids = trustees.map((t) => ICACLS_SID[t] ?? t).filter((s) => SID.test(s));
+  // /remove skips an inherited entry, and the usual extra reader (BU, AU) is inherited from the drive: /inheritance:d makes it explicit first
+  return sids.length
+    ? ` Remove that access (icacls "${home}" /inheritance:d, then icacls "${home}" /remove ${sids.map((s) => `*${s}`).join(' ')})`
+    : ' Remove that access.';
+};
+
+/** win32 only: throws one line when `home` is readable by anyone but its user, SYSTEM and Administrators, or when its access list cannot be read (fail closed). */
+export function checkHomeAcl(platform: NodeJS.Platform, home: string, lookups: AclLookups): void {
+  if (platform !== 'win32') return;
+  let refused: string[];
+  try {
+    const { sddl, userSid } = lookups.read(home);
+    refused = refusedPrincipals(sddl, userSid);
+  } catch (err) {
+    const reason = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
+    throw new Error(`Agent Hive cannot read the access list of home ${home}: ${reason}`);
+  }
+  if (refused.length) throw new Error(`Agent Hive refuses home ${home}: readable by ${refused.join(', ')}.${fix(home, refused)}`);
+}
+
+// The path reaches PowerShell through the env only, never interpolated into the script
+const SCRIPT = "$ErrorActionPreference = 'Stop'; (Get-Acl -LiteralPath $env:HIVE_ACL_HOME).Sddl; [Security.Principal.WindowsIdentity]::GetCurrent().User.Value";
+
+// By absolute path: a bare name is looked up in the cwd before PATH on Windows
+const powershellExe = (): string => {
+  const root = process.env.SystemRoot;
+  if (!root) throw new Error('SystemRoot is not set');
+  return win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+};
+
+/** The env of the Windows PowerShell 5.1 run: `env` without PSModulePath, plus the home. Started from PowerShell 7 (pwsh), PSModulePath
+ *  names 7's modules first, and 5.1 then fails to load 7's Microsoft.PowerShell.Security, so Get-Acl is missing; without it, 5.1 uses its own. */
+export function powershellEnv(env: NodeJS.ProcessEnv, home: string): NodeJS.ProcessEnv {
+  return { ...Object.fromEntries(Object.entries(env).filter(([name]) => name.toUpperCase() !== 'PSMODULEPATH')), HIVE_ACL_HOME: home };
+}
+
+const REAL_LOOKUPS: AclLookups = {
+  read: (home) => {
+    const out = execFileSync(powershellExe(), ['-NoProfile', '-NonInteractive', '-Command', SCRIPT], {
+      env: powershellEnv(process.env, home), encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: PS_TIMEOUT_MS,
+    });
+    const [sddl, userSid] = out.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!sddl || !userSid) throw new Error('PowerShell answered no access list');
+    return { sddl, userSid };
+  },
+};
+
+export const checkHome = (home: string): void => checkHomeAcl(process.platform, home, REAL_LOOKUPS);

@@ -10,6 +10,7 @@ import { parseConfig, predatesComb, readConfig, unnamedWorkspacePath, workspaceS
 import { acquireLock, readDaemonPort, releaseLock, removeDaemonSecret, writeDaemonPort, writeDaemonSecret } from './daemon-files.js';
 import { PROMPTS_DIR } from './hooks-settings.js';
 import { languageFrom, systemLanguage } from './language.js';
+import { checkHome } from './home-acl.js';
 import { createLogger, type Logger } from './log.js';
 import { posixShell, type PosixShell } from './posix-shell.js';
 import { predatesTaskProps } from './task-props.js';
@@ -49,6 +50,8 @@ export async function bootHive(home: string, options: BootOptions = {}): Promise
   // #631: the shell every pty, RUN and formatter line runs through, resolved and kept before the lock: a Windows machine without Git for
   // Windows ends the boot with the resolver's one line (run.ts logs err.message) and leaves the home free
   resolveShell();
+  // #628: a home others can read is refused before it is locked (win32 only; a no-op elsewhere)
+  checkHome(home);
   // One daemon per home (#466), under an OS lock a helper holds for the daemon's lifetime (#479): before the prompts sweep and the bind.
   // run.ts releases it on a clean stop; any exit releases it too
   await acquireLock(home, (status) => log.error(`lock: the hive.lock helper exited (${status}); this home no longer keeps a second daemon out`));
