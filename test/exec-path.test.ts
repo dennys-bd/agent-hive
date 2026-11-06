@@ -5,6 +5,8 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { agentDirs } from '../src/agents/command.js';
 import { createExec, type ExecRunOptions, findExec, resolveExec } from '../src/exec-path.js';
+import { posixShell, posixShellEnv } from '../src/posix-shell.js';
+import { ptyCommand } from '../src/spawn.js';
 import { tempDir } from './temp-dir.js';
 
 const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: runs a real .cmd through cmd.exe (#632)' };
@@ -124,4 +126,17 @@ test('on the Windows lane a .cmd gets each argument unchanged, and git answers t
   assert.deepEqual(JSON.parse(spawnSync(run.file, run.args, { windowsVerbatimArguments: run.windowsVerbatimArguments, encoding: 'utf8' }).stdout), args);
   const git = resolveExec('git', ['--version'], { platform: 'win32', env: process.env });
   assert.match(spawnSync(git.file, git.args, { windowsVerbatimArguments: git.windowsVerbatimArguments, encoding: 'utf8' }).stdout, /git version/);
+});
+
+const CLOSED_PORT = 9; // the trailer's exit report goes nowhere
+
+test('on the Windows lane Git\'s sh.exe -c runs a ptyCommand whose agent is node.exe by its full path, and the script\'s output comes back (#633)', WIN32_ONLY, async (t) => {
+  const dir = await tempDir(t, 'pty-agent-');
+  const script = join(dir, 'agent.js');
+  await writeFile(script, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
+  const node = findExec(process.execPath, { platform: 'win32', env: process.env }) ?? assert.fail('node.exe not found');
+  const line = ptyCommand({ ptyId: 'W1', slug: 's', cwd: dir, port: CLOSED_PORT, agent: { command: node, argv: [script, 'a b'] } });
+  // spawnSync, not execFileSync: the line ends with the trailer's curl, whose failure on the closed port is the exit code
+  const ran = spawnSync(posixShell().shell, ['-c', line], { env: { ...process.env, ...posixShellEnv('win32') }, encoding: 'utf8', timeout: 30_000 });
+  assert.deepEqual(JSON.parse(ran.stdout), ['a b'], ran.stderr);
 });
