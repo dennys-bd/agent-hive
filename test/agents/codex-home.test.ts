@@ -38,7 +38,7 @@ test('renderRole writes the instructions as one TOML string, and sandbox_mode on
   assert.equal(renderRole({ ...role, readOnly: false }), `${INSTRUCTIONS_KEY}${tomlString(role.instructions)}\n`, 'a writing agent: no sandbox key');
 });
 
-const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
+const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'system-design-reviewer', 'tdd', 'template-reviewer'];
 const RENDERED = await renderedPlugin({ after }); // #416: assets/plugin holds designer.md.liquid; a run reads the delivered designer.md
 
 test('readAgent keeps name, description and the body verbatim, a --- line in the body included; it stops at the second --- (#934)', () => {
@@ -67,7 +67,7 @@ test('readAgent refuses a name that would escape the roles folder or split a -c 
   assert.equal(readAgent('x.md', '---\r\nname: x\r\ndescription: d.\r\n---\r\nbody').name, 'x');
 });
 
-test('agentRoles reads the twelve agents of the delivered plugin in name order: five read-only, every body whole (#934, #416)', () => {
+test('agentRoles reads the thirteen agents of the delivered plugin in name order: five read-only, every body whole (#934, #416)', () => {
   const roles = agentRoles(RENDERED);
   assert.deepEqual(roles.map((r) => r.name), AGENT_NAMES);
   assert.deepEqual(roles.filter((r) => r.readOnly).map((r) => r.name), ['architect', 'decomposition-reviewer', 'plan-reviewer', 'spec-reviewer', 'template-reviewer']);
