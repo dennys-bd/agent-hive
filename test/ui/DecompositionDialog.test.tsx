@@ -74,6 +74,18 @@ test('a failed write shows GitHub\'s message inline and stays open; a second pre
   expect(onClose).not.toHaveBeenCalled();
 });
 
+test('a write that gave up on a transient GitHub error shows the copy that a second press resumes, not gh\'s words (#702)', async () => {
+  const user = userEvent.setup();
+  answer = () => json({ error: 'stream error: stream ID 5; REFUSED_STREAM', code: 'transient' }, 502);
+  render(<DecompositionDialog activityId="a-I1" onClose={vi.fn()} />);
+  await screen.findByText('5 issues, 3 bloqueios');
+  await user.click(create());
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('O GitHub não respondeu. As issues já criadas ficam: clique em "criar issues" de novo para continuar de onde parou.');
+  expect(alert).not.toHaveTextContent('REFUSED_STREAM');
+  await waitFor(() => expect(create()).toBeEnabled());
+});
+
 test('lists each overlap under the counts, muted, and keeps criar issues enabled (#936)', async () => {
   const message = '"2.1" touches "src/contact.ts" and "2.2" touches "src", and no "Blocked by:" orders them';
   preview = { ...PREVIEW, warnings: [{ line: 76, message }] };
