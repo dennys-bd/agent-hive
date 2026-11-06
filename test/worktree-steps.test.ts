@@ -7,7 +7,7 @@ import { posixShell, posixShellEnv } from '../src/posix-shell.js';
 import { parseSetup, type SetupStep } from '../src/setup-script.js';
 import type { Exec, Workspace } from '../src/types.js';
 import { clipStep, type Phase, RunFailure, type RunShell, runShell, runSteps, type StepDeps, type StepReport, WORKTREE_NAME } from '../src/worktree-steps.js';
-import { gone } from './process-probe.js';
+import { gone, isAlive } from './process-probe.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 interface Harness { workspace: Workspace; main: string; worktree: string; home: string; deps: StepDeps; output: string[] }
@@ -212,6 +212,11 @@ const RUN_TREE_TIMEOUT_MS = 12_000;
 test('a RUN step that passes its timeout leaves no process of its tree: the node its line started and that node\'s own child are both gone (#637)', { timeout: 60_000 }, async (t) => {
   const cwd = await tempDir(t, 'run-');
   const pids = join(cwd, 'pids.json');
+  // a failed assertion must not leave the pair idling: these are the test's own pids, killed only while alive
+  t.after(async () => {
+    const written = await readFile(pids, 'utf8').then((text) => JSON.parse(text) as number[], () => []);
+    for (const pid of written.filter(isAlive)) process.kill(pid, 'SIGKILL');
+  });
   // node, not sleep: $! in Git's sh is an MSYS pid, while process.pid is the one taskkill and process.kill know. Written whole (tmp + rename),
   // so the test never reads half a file.
   const script = [

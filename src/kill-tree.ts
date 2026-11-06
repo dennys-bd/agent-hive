@@ -7,7 +7,8 @@ import type { Exec } from './types.js';
 
 const execFileAsync = promisify(execFile);
 // taskkill is a console program: hidden, or every kill from the detached daemon flashes a window
-const hiddenExec: Exec = (file, args) => execFileAsync(file, args, { windowsHide: true });
+const TASKKILL_CAP_MS = 10_000; // a hung taskkill must not hold its handle open forever
+const hiddenExec: Exec = (file, args) => execFileAsync(file, args, { windowsHide: true, timeout: TASKKILL_CAP_MS });
 
 export interface TreeSpawnOptions { detached: boolean; windowsHide: true }
 
@@ -19,7 +20,8 @@ export const treeSpawnOptions = (platform: NodeJS.Platform): TreeSpawnOptions =>
 /** Kills `pid` and what it started. Never rejects: the callers fire it and settle at once (`void killTree(...)`), and a tree already gone
  *  is the common case after a race with the exit. Known limit on win32: a grandchild whose parent already exited is not found. */
 export async function killTree(pid: number | undefined, platform: NodeJS.Platform, exec: Exec = hiddenExec): Promise<void> {
-  if (pid === undefined) return; // the spawn never started
+  // undefined: the spawn never started. Anything but a positive integer would make -pid our own group (0) or nonsense: the single kill point refuses it
+  if (pid === undefined || !Number.isInteger(pid) || pid <= 0) return;
   if (platform === 'win32') {
     try {
       await exec('taskkill', ['/T', '/F', '/PID', String(pid)]);

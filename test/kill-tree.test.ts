@@ -49,6 +49,8 @@ test('an undefined pid (a spawn that never started) does nothing on any platform
   await killTree(undefined, 'win32', exec);
   await killTree(undefined, 'darwin', exec);
   await killTree(undefined, 'linux', exec);
+  // win32 only: were the guard gone, darwin's -0 would SIGKILL this test's own process group
+  for (const pid of [0, -1, 1.5]) await killTree(pid, 'win32', exec);
 });
 
 test('treeSpawnOptions: not detached on win32, detached on darwin and linux, a hidden window on all three (#637)', () => {
