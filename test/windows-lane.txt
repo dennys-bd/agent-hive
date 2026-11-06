@@ -13,6 +13,7 @@ test/ide.test.js
 test/keep-awake.test.js
 test/kill-tree.test.js
 test/languages.test.js
+test/lsp-process.test.js
 test/mcp-settings.test.js
 test/platform-commands.test.js
 test/posix-shell.test.js
