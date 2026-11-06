@@ -7,6 +7,7 @@ import type { Readable } from 'node:stream';
 import { type ConsoleStore, crlf, failLine, formatChannel, runHeader } from './console.js';
 import { detectFormatters } from './formatter-detect.js';
 import { candidatesFor, type FormatterPick, pickFormatter } from './formatters.js';
+import { killTree, treeSpawnOptions } from './kill-tree.js';
 import { posixShell, posixShellEnv } from './posix-shell.js';
 import { EDITOR_FILE_MAX, type EditorConfig, FORMAT_TIMEOUT_MS, type FormatLog, type Workspace } from './types.js';
 
@@ -33,16 +34,6 @@ function failureOf(code: number | null, signal: NodeJS.Signals | null): string {
   return signal === null ? 'failed to run' : `killed by ${signal}`;
 }
 
-// The whole process group: a custom formatter's shell may have children (a pipeline) that would outlive it holding the pipe
-export function killGroup(pid: number | undefined): void {
-  if (pid === undefined) return;
-  try {
-    process.kill(-pid, 'SIGKILL');
-  } catch {
-    // already gone
-  }
-}
-
 // Every chunk of a stream, until `cap` bytes: past it, onOver on each chunk (the caller acts once)
 export function collect(stream: Readable | null, cap: number, onOver: () => void): () => Buffer {
   const chunks: Buffer[] = [];
@@ -55,17 +46,17 @@ export function collect(stream: Readable | null, cap: number, onOver: () => void
   return () => Buffer.concat(chunks);
 }
 
-/** The process with `input` on its stdin, its output capped at EDITOR_FILE_MAX, in a group of its own (spawn: execFile drops `detached`). The
- * timer, the cap and the signal's abort (#330: the headless run's cancel) settle at once and kill the group, so a grandchild still holding the
+/** The process with `input` on its stdin, its output capped at EDITOR_FILE_MAX, in a tree of its own (treeSpawnOptions; spawn, since execFile drops `detached`). The
+ * timer, the cap and the signal's abort (#330: the headless run's cancel) settle at once and kill the tree, so a grandchild still holding the
  * pipe never holds the caller. A failure keeps the stdout it got: a CLI may say why there (claude -p --output-format json). A stdin error
  * (EPIPE: it exited without reading) is left to the close event, which carries the exit code and stderr. */
 export function runCapped({ command, args, env }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
   return new Promise((resolve) => {
     let settled = false;
-    const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], ...treeSpawnOptions(process.platform) });
     const stop = (failure: string): void => {
-      if (settled) return; // once reaped, the pid may be another group's
-      killGroup(child.pid);
+      if (settled) return; // once reaped, the pid may be another process's
+      void killTree(child.pid, process.platform);
       settle({ stdout: stdout(), stderr: stderr().toString('utf8'), failure });
     };
     const over = (): void => stop(`output over ${EDITOR_FILE_MAX} bytes`);
@@ -88,7 +79,7 @@ export function runCapped({ command, args, env }: Process, input: string, cwd: s
     });
     child.stdin?.on('error', () => undefined);
     child.stdin?.end(input);
-    if (signal?.aborted) cancel(); // aborted before the spawn: there is still a group to kill
+    if (signal?.aborted) cancel(); // aborted before the spawn: there is still a tree to kill
   });
 }
 

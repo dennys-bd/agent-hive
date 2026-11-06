@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { StringDecoder } from 'node:string_decoder';
 import { commandLine, okLine } from './console.js';
 import type { StepKind } from './facts.js';
+import { killTree, treeSpawnOptions } from './kill-tree.js';
 import type { Logger } from './log.js';
 import { posixShell, posixShellEnv } from './posix-shell.js';
 import { checkRelativePath, describeStep, parseSetup, type SetupStep } from './setup-script.js';
@@ -21,7 +22,7 @@ export interface RunOptions {
   cwd: string;
   timeoutMs?: number; // absent = no limit (#511)
   onOutput?(text: string): void; // every decoded chunk, live: the setup's console run (#351)
-  signal?: AbortSignal; // a stop (#351): the group is killed as on a timeout, and the step fails with `stopped`
+  signal?: AbortSignal; // a stop (#351): the tree is killed as on a timeout, and the step fails with `stopped`
   env?: NodeJS.ProcessEnv; // the child's whole env (#738): the Hive's with the workspace's on top; absent = the Hive's
 }
 export type RunShell = (file: string, args: string[], options: RunOptions) => Promise<void>;
@@ -65,7 +66,7 @@ export interface StepDeps {
   log: Pick<Logger, 'info'>;
   onStep?(step: string): void; // the step about to run, as describeStep writes it: a task's progress line; a teardown has none
   output?(text: string): void; // the console run (#351): a header per step and a RUN's output whole; never the log
-  signal?: AbortSignal; // a stop (#351): the running RUN's group is killed and it fails with `stopped`; no later step starts
+  signal?: AbortSignal; // a stop (#351): the running RUN's tree is killed and it fails with `stopped`; no later step starts
   run?: RunShell; // runShell unless a test injects one
   home?: string; // where ~ expands in a COPY destination (#654): os.homedir() unless a test injects one
   onStepEnd?(report: StepReport): void; // #742: facts.jsonl's worktree.step
@@ -79,20 +80,12 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 const keepTail = (text: string): string => text.slice(-TAIL_CHARS).split('\n').slice(-(TAIL_LINES + 1)).join('\n');
 const tailOf = (text: string): string => text.trimEnd().split('\n').slice(-TAIL_LINES).join('\n');
 
-function killGroup(pid: number | undefined): void {
-  if (pid === undefined) return;
-  try {
-    process.kill(-pid, 'SIGKILL');
-  } catch {
-    return; // ESRCH: the group already exited
-  }
-}
-
 /**
  * A RUN step (#299). The one shell string besides ptyCommand (see CLAUDE.md): the command is the user's own line from their own
  * Settings, with the power the worker already has, and a shell keeps `&&`, pipes and $VAR working. stdin is closed, so a prompt fails at
- * once instead of hanging. `detached` gives the step a process group of its own, so a timeout or a stop (#351) kills what sh started
- * (pnpm and its children), not only sh. Every chunk goes to onOutput as it comes; the last TAIL_LINES are kept for the task's error.
+ * once instead of hanging. `treeSpawnOptions` gives the step a tree of its own, so a timeout or a stop (#351) kills what sh started
+ * (pnpm and its children), not only sh: a process group off win32, `taskkill /T` over the parent tree on win32, where the spawn is not
+ * detached and `windowsHide` gives sh a hidden console its children inherit. Every chunk goes to onOutput as it comes; the last TAIL_LINES are kept for the task's error.
  * The workspace's variables ride the child's env (#738), never the line.
  */
 export function runShell(file: string, args: string[], { cwd, timeoutMs, onOutput, signal, env }: RunOptions): Promise<void> {
@@ -101,7 +94,7 @@ export function runShell(file: string, args: string[], { cwd, timeoutMs, onOutpu
       reject(new RunFailure(STOPPED, '')); // stopped before it started: it never runs (#351)
       return;
     }
-    const child = spawn(file, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const child = spawn(file, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], ...treeSpawnOptions(process.platform) });
     const decoder = new StringDecoder('utf8'); // one decoder across chunks: a character split between two keeps its bytes
     let output = '';
     const keep = (chunk: Buffer): void => {
@@ -115,10 +108,10 @@ export function runShell(file: string, args: string[], { cwd, timeoutMs, onOutpu
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
     };
-    // On timeout or a stop it settles at once instead of on 'close': a grandchild that left the group could hold the pipes open forever.
+    // On timeout or a stop it settles at once instead of on 'close': a grandchild that left the tree could hold the pipes open forever.
     const settle = (code: string): void => {
       release();
-      killGroup(child.pid);
+      void killTree(child.pid, process.platform); // fired, never awaited: the step settles now
       child.stdout.destroy();
       child.stderr.destroy();
       reject(new RunFailure(code, tailOf(output)));

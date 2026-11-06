@@ -101,6 +101,7 @@ function openViewer(electronPath) {
   }
   const child = spawn(electronPath, [mainJs], { // no repo: the viewer opens the home's Hive
     detached: true,
+    windowsHide: true, // #637: no console window beside the viewer's own on win32
     stdio: ['ignore', fd, fd],
     env: process.env, // inherit PATH (and XDG_CONFIG_HOME / HIVE_HOME, #310) so `claude`, `gh` and the same home resolve in a daemon the viewer may start
   });

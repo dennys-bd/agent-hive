@@ -1,5 +1,5 @@
-// A command-line checker's run (#782): its binary with an argv, never a shell, in the activity's folder with nothing on stdin, in a process group
-// of its own (cargo and mix start children the timeout must reach); its report read from stdout, stderr or a file, capped, then parsed. A linter
+// A command-line checker's run (#782): its binary with an argv, never a shell, in the activity's folder with nothing on stdin, in a tree
+// of its own (cargo and mix start children the timeout must reach: a process group off win32, taskkill /T on win32); its report read from stdout, stderr or a file, capped, then parsed. A linter
 // exits non-zero when it finds something, so a failure is a spawn error, the timeout, the cap, a report that does not read, or a non-zero exit
 // with no finding read. Every run is a console run of its checker's channel.
 import { spawn } from 'node:child_process';
@@ -10,8 +10,9 @@ import { join } from 'node:path';
 import { parseCheck } from './checker-parse.js';
 import { checkArgv, type CliCheckerDef } from './checkers.js';
 import { checkChannel, type ConsoleStore, crlf, failLine, runHeader } from './console.js';
-import { collect, killGroup } from './format-run.js';
+import { collect } from './format-run.js';
 import { findCandidate } from './formatter-detect.js';
+import { killTree, treeSpawnOptions } from './kill-tree.js';
 import { CHECK_OUTPUT_MAX, CHECK_TIMEOUT_MS, type CheckAnswer, type CheckDiagnostic, type FormatLog } from './types.js';
 
 export interface CheckContext {
@@ -41,16 +42,16 @@ const REPORT = 'report.sarif';
 const exited = (code: number | null, signal: NodeJS.Signals | null): Pick<Ran, 'code' | 'failure'> =>
   (code !== null ? { code } : { code, failure: signal === null ? 'failed to run' : `killed by ${signal}` });
 
-// The process to its end: the timer, the cap and a newer run each kill its group at once and settle
+// The process to its end: the timer, the cap and a newer run each kill its tree at once and settle
 function run(id: string, command: string, args: string[], ctx: CheckContext): Promise<Ran> {
   return new Promise((resolve) => {
     let settled = false;
     const max = ctx.maxBytes ?? CHECK_OUTPUT_MAX;
     const timeoutMs = ctx.timeoutMs ?? CHECK_TIMEOUT_MS;
-    const child = spawn(command, args, { cwd: ctx.folder, env: ctx.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const child = spawn(command, args, { cwd: ctx.folder, env: ctx.env, stdio: ['ignore', 'pipe', 'pipe'], ...treeSpawnOptions(process.platform) });
     const stop = (failure: string | undefined, isSuperseded = false): void => {
-      if (settled) return; // once reaped, the pid may be another group's
-      killGroup(child.pid);
+      if (settled) return; // once reaped, the pid may be another process's
+      void killTree(child.pid, process.platform);
       settle({ stdout: '', stderr: stderr().toString('utf8'), code: null, ...(failure === undefined ? {} : { failure }), isSuperseded });
     };
     const over = (): void => stop(`output over ${max} bytes`);
