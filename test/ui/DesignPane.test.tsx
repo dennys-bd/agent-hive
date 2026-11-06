@@ -30,7 +30,7 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 
 const pane = () => <DesignPane activity={activity} path={PATH} label={LABEL} active />;
 const frame = (): HTMLIFrameElement => screen.getByTitle(NAME);
-const percent = (): string => screen.getByTitle('⌘0 ajusta à tela').textContent ?? '';
+const percent = (): string => screen.getByTitle('Ctrl+0 ajusta à tela').textContent ?? '';
 const fromFrame = (data: unknown, source: Window | null = frame().contentWindow): void => {
   act(() => { window.dispatchEvent(new MessageEvent('message', { data, source })); });
 };

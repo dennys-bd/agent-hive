@@ -36,10 +36,10 @@ const menuOf = async (user: ReturnType<typeof userEvent.setup>, el: Element): Pr
   return (await screen.findAllByRole('menuitem')).map((item) => item.textContent ?? '');
 };
 const CHECKOUT_ITEM = 'copiar caminho a partir do checkout';
-const FILE_ITEMS = ['abrir alterações', 'abrir no terminal integrado', 'revelar no FinderCtrl+Alt+R', 'recortarCtrl+X', 'copiarCtrl+C', 'colarCtrl+V', 'copiar caminho', 'copiar caminho relativo', CHECKOUT_ITEM, 'renomearF2', 'excluirDelete'];
+const FILE_ITEMS = ['abrir alterações', 'abrir no terminal integrado', 'revelar no gerenciador de arquivosCtrl+Alt+R', 'recortarCtrl+X', 'copiarCtrl+C', 'colarCtrl+V', 'copiar caminho', 'copiar caminho relativo', CHECKOUT_ITEM, 'renomearF2', 'excluirDelete'];
 const LOCAL_FILE_ITEMS = FILE_ITEMS.filter((item) => item !== CHECKOUT_ITEM);
 const FOLDER_ITEMS = ['novo arquivo', 'nova pasta', ...FILE_ITEMS.slice(1)];
-const ROOT_ITEMS = ['novo arquivo', 'nova pasta', 'abrir no terminal integrado', 'revelar no FinderCtrl+Alt+R', 'colarCtrl+V'];
+const ROOT_ITEMS = ['novo arquivo', 'nova pasta', 'abrir no terminal integrado', 'revelar no gerenciador de arquivosCtrl+Alt+R', 'colarCtrl+V'];
 
 beforeEach(() => { setLanguage('pt'); fetchMock.mockClear(); openFile.mockClear(); openRun.mockClear(); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -72,7 +72,7 @@ test('the empty area\'s menu is the root\'s: the terminal and reveal at the root
   render(side());
   await screen.findByRole('button', { name: 'src' });
   expect(await menuOf(user, screen.getByTestId('files-tree'))).toEqual(ROOT_ITEMS);
-  await user.click(screen.getByRole('menuitem', { name: /^revelar no Finder/ }));
+  await user.click(screen.getByRole('menuitem', { name: /^revelar no gerenciador de arquivos/ }));
   expect(posted()).toEqual(['/activities/a-I1/reveal ']);
 });
 

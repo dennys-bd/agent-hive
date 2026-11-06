@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { IssuePage } from '@/components/IssuePage';
 import { setLanguage } from '@/i18n';
+import { isMac } from '@/lib/shortcut-bindings';
 import type { IssuePage as Issue, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { flowed } from '../fixtures/main-flow.js';
@@ -83,7 +84,7 @@ test('the description edits in place: Esc cancels and posts nothing, ⌘↵ save
   await user.click(screen.getAllByRole('button', { name: 'editar' })[1]);
   expect(screen.getByRole('textbox', { name: 'descrição' })).toHaveValue('The pager breaks');
   await user.type(screen.getByRole('textbox', { name: 'descrição' }), ' now');
-  await user.keyboard('{Meta>}{Enter}{/Meta}');
+  await user.keyboard(isMac() ? '{Meta>}{Enter}{/Meta}' : '{Control>}{Enter}{/Control}');
   await waitFor(() => expect(screen.queryByRole('textbox', { name: 'descrição' })).not.toBeInTheDocument());
   expect(posts()).toEqual([{ body: 'The pager breaks now', updatedAt: U1 }]);
   expect(reads).toBe(2);

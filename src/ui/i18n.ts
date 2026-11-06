@@ -1,6 +1,7 @@
 // The only place UI text lives, the main process's included (#242). No DOM at import time, so node:test covers t / statusText / workerEventText;
 // the React components call t() and re-render when the language changes, the main process calls setLanguage when it reads the config.
 import type { Language, WorkerEvent, WorkerEventKind, Status } from '../types.js';
+import { isMac, isWindows } from './lib/shortcut-bindings.js';
 
 const en = {
   'footer.max': 'max.',
@@ -273,6 +274,7 @@ const en = {
   'files.openInEditor': 'open in the editor pane', // #109: a Hive design's way back to its text
   'files.openTerminal': 'open in the integrated terminal',
   'files.reveal': 'reveal in Finder',
+  'files.reveal.windows': 'reveal in File Explorer', 'files.reveal.linux': 'reveal in file manager', // #649
   'files.cut': 'cut',
   'files.copy': 'copy',
   'files.paste': 'paste',
@@ -686,6 +688,7 @@ const en = {
   'design.reloaded': 'reloaded · the agent changed {file} at {time}',
   'design.viewport': 'viewport', 'design.viewport.natural': 'natural', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'zoom in', 'design.zoomOut': 'zoom out', 'design.fit': '⌘0 fits to screen',
+  'design.fit.other': 'Ctrl+0 fits to screen', // #649
   'design.theme': 'design theme', 'design.theme.dark': 'dark', 'design.theme.light': 'light',
   'design.tweaks': 'tweaks', 'design.tweaks.more': 'more…', 'design.tweaks.close': 'close', 'design.tweaks.invalid': 'the hv-tweaks block is invalid',
   // #113: the design comments panel
@@ -828,6 +831,7 @@ const en = {
   'settings.baseBranch.hint': "where the workers' worktrees start from · empty = the base repository's default branch",
   'settings.onClose': 'when the window closes',
   'settings.onClose.menuBar': 'the Hive stays in the menu bar, workers running',
+  'settings.onClose.menuBar.windows': 'the Hive stays in the notification area, workers running', 'settings.onClose.menuBar.linux': 'the Hive stays in the system tray, workers running', // #649
   'settings.onClose.quit': 'the Hive quits, with its workers',
   'settings.notifications': 'notifications',
   'settings.notifications.hint': 'shown while the Hive window is not in focus',
@@ -1003,6 +1007,7 @@ const en = {
   'settings.group.appearance': 'appearance',
   'settings.group.terminal': 'terminal',
   'settings.group.window': 'window and menu bar',
+  'settings.group.window.windows': 'window and notification area', 'settings.group.window.linux': 'window and system tray', // #649
   'settings.group.orphans': 'worktrees',
   'settings.sources': 'sources',
   'settings.sources.hint': 'where the tasks come from: the Hive itself and the external sources',
@@ -1728,6 +1733,7 @@ const en = {
   'shortcuts.treeRename': 'rename',
   'shortcuts.treeDelete': 'delete',
   'shortcuts.treeReveal': 'reveal in Finder',
+  'shortcuts.treeReveal.windows': 'reveal in File Explorer', 'shortcuts.treeReveal.linux': 'reveal in file manager', // #649
   'shortcuts.treeOpenTerminal': 'open in the integrated terminal',
   'shortcuts.treeCopyPath': 'copy path',
   'shortcuts.treeCopyRelativePath': 'copy relative path',
@@ -3369,6 +3375,7 @@ const pt: Record<MessageKey, string> = {
   'files.openInEditor': 'abrir no painel do editor',
   'files.openTerminal': 'abrir no terminal integrado',
   'files.reveal': 'revelar no Finder',
+  'files.reveal.windows': 'revelar no Explorador de Arquivos', 'files.reveal.linux': 'revelar no gerenciador de arquivos',
   'files.cut': 'recortar',
   'files.copy': 'copiar',
   'files.paste': 'colar',
@@ -3778,6 +3785,7 @@ const pt: Record<MessageKey, string> = {
   'design.reloaded': 'recarregado · o agente alterou {file} às {time}',
   'design.viewport': 'viewport', 'design.viewport.natural': 'natural', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'aumentar zoom', 'design.zoomOut': 'diminuir zoom', 'design.fit': '⌘0 ajusta à tela',
+  'design.fit.other': 'Ctrl+0 ajusta à tela',
   'design.theme': 'tema do design', 'design.theme.dark': 'escuro', 'design.theme.light': 'claro',
   'design.tweaks': 'tweaks', 'design.tweaks.more': 'mais…', 'design.tweaks.close': 'fechar', 'design.tweaks.invalid': 'o bloco hv-tweaks é inválido',
   'design.comments': 'comentários', 'design.comments.toggle': 'mostrar ou esconder os comentários', 'design.comments.hide': 'esconder',
@@ -3919,6 +3927,7 @@ const pt: Record<MessageKey, string> = {
   'settings.baseBranch.hint': 'de onde partem as worktrees que os workers criam · vazio = a branch padrão do repositório base',
   'settings.onClose': 'ao fechar a janela',
   'settings.onClose.menuBar': 'o Hive fica na barra de menu, workers executando',
+  'settings.onClose.menuBar.windows': 'o Hive fica na área de notificação, workers executando', 'settings.onClose.menuBar.linux': 'o Hive fica na bandeja do sistema, workers executando',
   'settings.onClose.quit': 'o Hive para, junto com os workers',
   'settings.notifications': 'notificações',
   'settings.notifications.hint': 'aparecem enquanto a janela do Hive não está em foco',
@@ -4094,6 +4103,7 @@ const pt: Record<MessageKey, string> = {
   'settings.group.appearance': 'aparência',
   'settings.group.terminal': 'terminal',
   'settings.group.window': 'janela e barra de menu',
+  'settings.group.window.windows': 'janela e área de notificação', 'settings.group.window.linux': 'janela e bandeja do sistema',
   'settings.group.orphans': 'worktrees',
   'settings.sources': 'sources',
   'settings.sources.hint': 'de onde vêm as tarefas: o próprio Hive e as sources externas',
@@ -4817,6 +4827,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.treeRename': 'renomear',
   'shortcuts.treeDelete': 'excluir',
   'shortcuts.treeReveal': 'revelar no Finder',
+  'shortcuts.treeReveal.windows': 'revelar no Explorador de Arquivos', 'shortcuts.treeReveal.linux': 'revelar no gerenciador de arquivos',
   'shortcuts.treeOpenTerminal': 'abrir no terminal integrado',
   'shortcuts.treeCopyPath': 'copiar caminho',
   'shortcuts.treeCopyRelativePath': 'copiar caminho relativo',
@@ -6205,9 +6216,25 @@ export const formatCount = (n: number): string => n.toLocaleString(LOCALE[curren
 /** The language `t` renders in (#689: the Settings search must read the same one). */
 export const currentLanguage = (): Language => current;
 
+/** The keys whose text names a macOS thing (Finder, ⌘, the menu bar), with the sibling read on Windows and on Linux (#649). Resolved inside
+ * tIn so every caller, the shortcut registry's labels and the Settings search among them, follows the platform with no change. */
+export const PLATFORM_KEYS: Partial<Record<MessageKey, { windows: MessageKey; linux: MessageKey }>> = {
+  'files.reveal': { windows: 'files.reveal.windows', linux: 'files.reveal.linux' },
+  'shortcuts.treeReveal': { windows: 'shortcuts.treeReveal.windows', linux: 'shortcuts.treeReveal.linux' },
+  'design.fit': { windows: 'design.fit.other', linux: 'design.fit.other' },
+  'settings.onClose.menuBar': { windows: 'settings.onClose.menuBar.windows', linux: 'settings.onClose.menuBar.linux' },
+  'settings.group.window': { windows: 'settings.group.window.windows', linux: 'settings.group.window.linux' },
+};
+
+const platformKey = (key: MessageKey): MessageKey => {
+  const variants = PLATFORM_KEYS[key];
+  if (variants === undefined || isMac()) return key;
+  return isWindows() ? variants.windows : variants.linux;
+};
+
 /** `key`'s text in `language`, `{name}` placeholders filled from `vars` (#689: the Settings search reads the current language and English at once). */
 export function tIn(language: Language, key: MessageKey, vars?: Record<string, string | number>): string {
-  const text = MESSAGES[language][key];
+  const text = MESSAGES[language][platformKey(key)];
   if (!vars) return text; // the prompt hint carries literal {id} / {number}: untouched
   return text.replace(PLACEHOLDER, (match, name: string) => (Object.hasOwn(vars, name) ? String(vars[name]) : match));
 }
