@@ -1,7 +1,7 @@
 // The files tree follows the editor (#718), as VS Code's explorer auto reveal does: the active file's folders open, its row selected and
 // brought into view. Never for a file outside the root, a hidden one with ocultos off, or one under an ignored folder that is no nested
 // repository (node_modules must not unfold).
-import { useEffect, useEffectEvent } from 'react';
+import { type RefObject, useEffect, useEffectEvent, useState } from 'react';
 import type { FolderEntries } from '../../types';
 import { isDrivePath } from '../../lsp-uri';
 import { getJson } from '../lib/api.js';
@@ -43,4 +43,20 @@ export function useTreeReveal(activityId: string, activeFile: string | undefined
     );
     return () => { live = false; };
   }, [activityId, activeFile, isReady]);
+}
+
+/** The row of the last path asked for, brought into view once it is among the rendered rows (decision 7), then forgotten; a new path
+ *  replaces the old one. `nearest` leaves a row already in view where it is, so a click in the tree does not jump. */
+export function usePendingScroll(container: RefObject<HTMLElement | null>): (path: string) => void {
+  const [pending, setPending] = useState<string | undefined>();
+  useEffect(() => { // after every render: an ignored folder's rows arrive with its read, a few renders after the reveal
+    if (pending === undefined) return;
+    const rows = Array.from(container.current?.querySelectorAll('[data-tree-path]') ?? []);
+    // matched by value, not by a [data-tree-path="..."] selector, so a path with quotes or brackets needs no escaping
+    const row = rows.find((el) => el.getAttribute('data-tree-path') === pending);
+    if (row === undefined) return;
+    row.scrollIntoView({ block: 'nearest' });
+    setPending(undefined);
+  });
+  return setPending;
 }

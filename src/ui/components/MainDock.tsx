@@ -32,7 +32,7 @@ import { type HeaderShell, useHeaderShell } from '@/hooks/use-header-shell';
 import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
-import { shownFile, shownRun } from '@/lib/center-layout';
+import { shownFile, shownPath, shownRun } from '@/lib/center-layout';
 import type { FileAt } from '@/lib/editor-models';
 import { pendingSessions } from '@/lib/home';
 import { applyCarry } from '@/lib/tab-carry';
@@ -199,15 +199,16 @@ function CenterWithConsole(args: CenterArgs) {
 
 interface DetailArgs {
   current?: Activity; isShown: boolean; sideTab: SideTab; detail: MainDockProps['detail']; onClose(): void; nav: DetailNav;
+  activeFile?: string; // #718: the shown activity's active file, which its files tree reveals
 }
 
 // Detalhes as a dock panel (#341, #452), drawing no group header (#295): the window header's right column names it and closes it. Under Atividades
 // with an activity open it is the activity sidebar (redesign 07): arquivos or detalhes as the header's icons pick (#221), arquivos alone on a local one (#633).
-function detailPanel({ current, isShown, sideTab, detail, onClose, nav }: DetailArgs): DockPanel {
+function detailPanel({ current, isShown, sideTab, detail, onClose, nav, activeFile }: DetailArgs): DockPanel {
   const title = t('dock.detail');
   if (current === undefined) return { id: 'detail', title, ownHeader: true, body: detail({ isShown, onClose, nav }) };
   const details = isTask(current) ? detail({ isShown: isShown && sideTab === 'details', onClose, nav }) : undefined; // a local activity has no task to detail
-  const body = <ActivitySide key={activityKey(current)} target={current} tab={sideTab} isShown={isShown} details={details} />;
+  const body = <ActivitySide key={activityKey(current)} target={current} tab={sideTab} isShown={isShown} activeFile={activeFile} details={details} />;
   return { id: 'detail', title, ownHeader: true, body };
 }
 
@@ -362,7 +363,7 @@ export function MainDock(props: MainDockProps) {
     activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities', openRun: openRunHere }),
     ...automationPanel,
     ...(hasHeader ? [plugins.panel, benchmark.panel] : []), // #313, #461: reached only through the rail and ⌘3 / ⌘4, which only a window with a header has
-    viewRight ?? detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, detail, onClose: closeDetail, nav }),
+    viewRight ?? detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, detail, onClose: closeDetail, nav, activeFile: shownPath(layouts.layout) }),
   ];
   // #220: the rail's dot reads every workspace, as the window shows them all; the map opens through ⌘/'s own listener (search.openShortcuts is Settings › atalhos)
   const hasWaiting = hasHeader && pendingSessions({ tasks, workers, activityRecords: activityRecords ?? NO_RECORDS }).length > 0;

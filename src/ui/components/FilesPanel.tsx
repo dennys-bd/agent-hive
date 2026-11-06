@@ -1,4 +1,4 @@
-import { type CSSProperties, type Dispatch, Fragment, type MouseEvent, type ReactNode, type SetStateAction, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type Dispatch, Fragment, type MouseEvent, type ReactNode, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon, MoreHorizontalIcon } from 'lucide-react';
 import type { GitMark } from '../../types';
 import { act } from '@/components/actions';
@@ -18,6 +18,7 @@ import { useDiagnostics } from '@/hooks/use-diagnostics';
 import { useIgnoredFolders } from '@/hooks/use-ignored-folders';
 import { type TreeState, useTaskTree } from '@/hooks/use-task-tree';
 import { useTreeLease } from '@/hooks/use-tree-lease';
+import { usePendingScroll, useTreeReveal } from '@/hooks/use-tree-reveal';
 import { t, tPlural } from '@/i18n';
 import { activityCounts, type Counts } from '@/lib/diagnostics-store';
 import { type Activity, activityKey, isTask } from '@/lib/activities';
@@ -224,20 +225,28 @@ function anchorFolder(rows: TreeRow[], selection: TreeSelection): string {
   return node === undefined ? '' : folderOf(node);
 }
 
-// What the rest of the page reads of the selection (#818): the untitled save's dialog starts in its folder, and selects the file it saved
-function useSelectionPlace(activityId: string, rows: TreeRow[], selection: TreeSelection, setSelection: Dispatch<SetStateAction<TreeSelection>>, onView: Dispatch<SetStateAction<FilesView>>): void {
+// What the rest of the page reads of the selection (#818): the untitled save's dialog starts in its folder. revealIn is the one select from
+// outside the tree, selectInTree's (the untitled save, the search's ⌘↵) and the editor's reveal (#718): the row selected alone, its folders
+// opened, then brought into view
+function useSelectionPlace(
+  activityId: string, rows: TreeRow[], selection: TreeSelection, setSelection: Dispatch<SetStateAction<TreeSelection>>, onView: Dispatch<SetStateAction<FilesView>>,
+  scrollTo: (path: string) => void,
+): (path: string) => void {
   useEffect(() => rememberFolder(activityId, anchorFolder(rows, selection)));
-  useEffect(() => onTreeSelect(activityId, (path) => {
+  const revealIn = useCallback((path: string): void => {
     setSelection(single(path));
     onView((current) => ({ ...current, expanded: new Set([...current.expanded, ...ancestorsOf(path)]) }));
-  }), [activityId, setSelection, onView]);
+    scrollTo(path);
+  }, [setSelection, onView, scrollTo]);
+  useEffect(() => onTreeSelect(activityId, revealIn), [activityId, revealIn]);
+  return revealIn;
 }
 
-interface FilesBodyProps { target: Activity; view: FilesView; isShown: boolean; onView: Dispatch<SetStateAction<FilesView>>; onOpen(path: string): void }
+interface FilesBodyProps { target: Activity; view: FilesView; isShown: boolean; activeFile?: string; onView: Dispatch<SetStateAction<FilesView>>; onOpen(path: string): void }
 
 // The branch, then the tree. The wrapper of every body state (loading, error, empty, rows) is the root's drop target (#594), the empty area's
 // menu and the clipboard's events' target (#818).
-function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
+function FilesBody({ target, view, isShown, activeFile, onView, onOpen }: FilesBodyProps) {
   const { activity } = target;
   const tree = useTaskTree(activity.id, isShown);
   useTreeLease(activity.id, isShown); // #502: the daemon watches this tree while it shows
@@ -248,7 +257,10 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   const marks = { ...ready?.marks, ...nestedMarks }; // #1, #289: a nested repository's marks count for its folders too, collapsed ones' included
   const rows = ready ? visibleRows(buildTree(ready.files, ready.marks, view.showHidden, ready.folders, ready.ignored, loaded), view.expanded) : [];
   const [selection, setSelection] = useState<TreeSelection>(NO_SELECTION);
-  useSelectionPlace(activity.id, rows, selection, setSelection, onView);
+  const container = useRef<HTMLDivElement>(null);
+  const scrollTo = usePendingScroll(container);
+  const revealIn = useSelectionPlace(activity.id, rows, selection, setSelection, onView, scrollTo);
+  useTreeReveal(activity.id, activeFile, ready?.ignored.folders, view.showHidden, revealIn); // #718: the tree follows the editor
   const selectedOf = (path: string): string[] => actedOn(selection, path);
   const folders = folderOps(onView);
   const edit = useTreeEditing({ activityId: activity.id, expand: folders.expand, select: (path) => setSelection(single(path)), onOpen });
@@ -256,7 +268,6 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
     newItem: (type, folder) => edit.start({ kind: 'new', type, folder }),
     rename: (path) => edit.start({ kind: 'rename', path }),
   });
-  const container = useRef<HTMLDivElement>(null);
   useTreeKeys(container, (key) => runTreeKey(key, ops.actions, selectedOf));
   const drag = useTreeDrag(activity.id, (path) => folders.expand([path]), selectedOf);
   const select = (node: TreeNode, event: MouseEvent): void => {
@@ -279,13 +290,13 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   );
 }
 
-export interface ActivitySideProps { target: Activity; tab: SideTab; isShown: boolean; details?: ReactNode }
+export interface ActivitySideProps { target: Activity; tab: SideTab; isShown: boolean; activeFile?: string; details?: ReactNode }
 
 /** The right sidebar under Atividades with an activity open (redesign 07): arquivos, the activity's worktree (the workspace checkout for a
  *  local run, or for a workspace's local activity, #633) as a tree that follows git status, or detalhes, the task's detail. A local activity
  *  has no task to detail, so it shows arquivos alone, whatever tab a task left. MainDock keys it by activity, so each switch remounts it
- *  and useFilesView starts from that activity's open folders (#947). */
-export function ActivitySide({ target, tab, isShown, details }: ActivitySideProps) {
+ *  and useFilesView starts from that activity's open folders (#947). `activeFile`, the file the center shows (#718), is revealed in arquivos. */
+export function ActivitySide({ target, tab, isShown, activeFile, details }: ActivitySideProps) {
   const [view, setView] = useFilesView(target.activity.id);
   const task = isTask(target) ? target.task : undefined;
   const openFile = useOpenFile();
@@ -294,7 +305,7 @@ export function ActivitySide({ target, tab, isShown, details }: ActivitySideProp
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <SideHeader tab={shown} activityId={target.activity.id} view={view} onView={setView} />
-      {shown === 'files' && <FilesBody target={target} view={view} isShown={isShown} onView={setView} onOpen={onOpen} />}
+      {shown === 'files' && <FilesBody target={target} view={view} isShown={isShown} activeFile={activeFile} onView={setView} onOpen={onOpen} />}
       {task && <div style={shown === 'details' ? SHOWN : COLLAPSED} inert={shown !== 'details'} className="flex min-h-0 min-w-0 flex-col overflow-hidden">{details}</div>}
     </div>
   );
