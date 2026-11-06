@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { apiGql, cliGql, cliGqlJson, githubLoginName, gqlFor, loggedGql, NO_TOKEN_MESSAGE } from '../../src/sources/github-gql.js';
+import { apiGql, cliGql, cliGqlJson, ghExecFor, githubLoginName, gqlFor, loggedGql, NO_TOKEN_MESSAGE } from '../../src/sources/github-gql.js';
 import type { GhToken } from '../../src/github-token.js';
 import { PROJECT_FIELDS, VIEWER } from '../../src/sources/github-queries.js';
 import { writeCredentials } from '../../src/credentials.js';
@@ -149,4 +149,12 @@ test('gqlFor cli with the daemon\'s holder posts over HTTP with its token, and a
   assert.equal((calls[0].init.headers as Record<string, string>).Authorization, `Bearer ${token}`);
   await assert.rejects(gql(VIEWER), { message: 'github api: HTTP 401' });
   assert.equal(dropped, 1);
+});
+
+test('ghExecFor(win32) runs gh by the full path the resolver gives, and a gh found nowhere fails naming it (#633)', async () => {
+  const env = { Path: 'C:\\hive-absent\\gh' };
+  const isFile = (file: string): boolean => file.toLowerCase() === 'c:\\hive-absent\\gh\\gh.exe';
+  // gh.exe exists only in the fake file system, so the spawn fails on every OS, and its ENOENT names the file execFile got
+  await assert.rejects(ghExecFor('win32', { env, isFile })(['api', 'graphql']), { message: /^gh api graphql: .*C:\\hive-absent\\gh\\gh\.exe/ });
+  await assert.rejects(ghExecFor('win32', { env, isFile: () => false })(['api', 'graphql']), { message: 'gh api graphql: gh was not found' });
 });

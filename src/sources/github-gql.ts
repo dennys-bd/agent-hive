@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readCredentials } from '../credentials.js';
+import { resolveExec } from '../exec-path.js';
 import { bearer, type GhToken } from '../github-token.js';
 import type { Logger } from '../log.js';
 import type { GithubAuth, Gql } from '../types.js';
@@ -15,9 +16,15 @@ export const NO_TOKEN_MESSAGE = 'no GitHub token: run `hive login` or connect in
 /** The `gh` runner: argv, and what goes to its stdin (#592), → stdout. cliGql and cliGqlJson use it. */
 export type Exec = (args: string[], input?: string) => Promise<string>;
 
-export const ghExec: Exec = async (args, input) => {
+/** The tests' seams: the lookup's env (default: the daemon's, read on each call) and a fake file system. */
+export interface GhLookup { env?: NodeJS.ProcessEnv; isFile?: (file: string) => boolean }
+
+/** The `gh` runner of `platform` (#633): gh resolved on every call, by its full path on win32, so a gh installed while the Hive runs is found.
+ *  A gh found nowhere fails like any failed gh, with the resolver's `gh was not found`. It pipes stdin itself, so it keeps its own execFile. */
+export const ghExecFor = (platform: NodeJS.Platform, lookup: GhLookup = {}): Exec => async (args, input) => {
   try {
-    const run = execFileAsync('gh', args, { maxBuffer: GH_MAX_BUFFER });
+    const gh = resolveExec('gh', args, { platform, env: lookup.env ?? process.env, isFile: lookup.isFile });
+    const run = execFileAsync(gh.file, [...gh.args], { maxBuffer: GH_MAX_BUFFER, windowsVerbatimArguments: gh.windowsVerbatimArguments });
     if (input !== undefined) {
       // gh exiting before it reads the body is an EPIPE here; its exit status already carries the failure, and an unhandled one would kill the server
       run.child.stdin?.on('error', () => undefined);
@@ -30,6 +37,8 @@ export const ghExec: Exec = async (args, input) => {
     throw new Error(`gh ${args.slice(0, 2).join(' ')}: ${(e.stderr ?? '').trim() || e.message}`);
   }
 };
+
+export const ghExec: Exec = ghExecFor(process.platform);
 
 interface GqlBody { data?: unknown; errors?: { message?: string }[] }
 
