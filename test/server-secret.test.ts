@@ -61,7 +61,7 @@ test('a refusal is logged at debug with its method and path, never with a value 
   assert.ok(!lines.some((line) => line.includes(presented) || line.includes(SECRET)), 'no secret in a log line');
 });
 
-test('the pages answer with a Content-Security-Policy: images and media never reach an http: listener, connections stay same-origin, no object or base, frames only from the design frame route (#467, #108)', async (t) => {
+test('the pages answer with a Content-Security-Policy: images and media never reach an http: listener, connections stay same-origin, no object or base, frames only from the design frame and draw.io routes (#467, #108, #955)', async (t) => {
   const { base, port } = await start(t);
   for (const path of ['/', '/index.html?window=w1&activity=a-I1']) { // the main window's page, and the same page as a detached window loads it (#552)
     const res = await fetch(`${base}${path}`, { headers: { [SECRET_HEADER]: SECRET } });
@@ -74,6 +74,7 @@ test('the pages answer with a Content-Security-Policy: images and media never re
     }
     assert.deepEqual(directive(policy, 'connect-src'), ["'self'"], `${path}: ${policy}`);
     for (const name of ['object-src', 'base-uri']) assert.deepEqual(directive(policy, name), ["'none'"], `${path} ${name}`);
-    assert.deepEqual(directive(policy, 'frame-src'), [`http://127.0.0.1:${port}/design-frame/`, `http://localhost:${port}/design-frame/`], `${path}: the design frame route alone (#108)`);
+    const frames = ['design-frame', 'drawio'].flatMap((route) => [`http://127.0.0.1:${port}/${route}/`, `http://localhost:${port}/${route}/`]);
+    assert.deepEqual(directive(policy, 'frame-src'), frames, `${path}: the design frame and draw.io routes alone (#108, #955)`);
   }
 });
