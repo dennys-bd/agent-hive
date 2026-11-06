@@ -113,7 +113,8 @@ function registerStageTools(server: McpServer, deps: McpDeps, header: string | u
     if (problem) return refuse('bad_result', problem);
     const held = workerTask(deps, ptyId);
     const hasDone = held !== undefined && exitOf(held.state, held.task.stage, 'done') !== undefined;
-    const wrong = verdictProblem(verdict, evidence, workerStage(deps, ptyId), { hasDone, ...(result ? { result } : {}) });
+    const hasApproved = held !== undefined && exitOf(held.state, held.task.stage, 'approved') !== undefined; // #693
+    const wrong = verdictProblem(verdict, evidence, workerStage(deps, ptyId), { hasDone, hasApproved, ...(result ? { result } : {}) });
     if (wrong) return refuse('bad_verdict', wrong);
     const exit = held && freeEndRefused(held.state, held.worker, held.task, verdict); // #339: the reducer re-checks, so a change in between never halts the task
     await deps.dispatch({ type: 'done', ptyId, ...(result ? { result } : {}), ...(verdict === undefined ? {} : { verdict }), ...(evidence === undefined ? {} : { evidence }) });
