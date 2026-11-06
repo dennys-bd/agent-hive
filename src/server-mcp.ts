@@ -66,7 +66,7 @@ function changer({ requireLive, queueSave, saveSettings }: McpRouteDeps) {
       const { comb, mcp } = live.runtime.config;
       const changed = change(mcp);
       if (changed === undefined) return fail(res, HTTP_NOT_FOUND, UNKNOWN_SERVER); // only a server route has an unknown name
-      const parsed = parseMcp(changed, comb.workspaces.map((w) => w.name));
+      const parsed = parseMcp(changed, comb.workspaces.map((w) => w.name), process.platform);
       if (typeof parsed === 'string') return fail(res, HTTP_BAD_REQUEST, parsed);
       await saveSettings({ prefix: comb.prefix, mcp: parsed }, res, afterSave && (() => afterSave(parsed)));
     });
