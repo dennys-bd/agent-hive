@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inFlow, leave, stageOf, branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
+import { inFlow, leave, stageOf, branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel, workspaceNameFor } from '../src/tasks.js';
 import { COLUMN_WRITE_TIMEOUT_MS } from '../src/column-write.js';
 import { taskTotals, touchSession } from '../src/record-kit.js';
 import { initialState } from '../src/orchestrator.js';
@@ -903,4 +903,10 @@ test('a started task or one placed by hand keeps its stage when its entry change
   const byHand: Task = { ...born, placedByHand: true };
   assert.equal(pollTwo([byHand], [at(1, { flow: 'discovery' })])[0].stage, 'spec', 'by hand');
   assert.equal(pollTwo([byHand], [at(1, { flow: 'discovery' }, 'Ready')])[0].stage, 'build', "by hand: Ready's door");
+});
+
+test('workspaceNameFor names a workspace by its folder\'s last segment, a Windows path\'s included, a trailing separator too (#641)', () => {
+  assert.equal(workspaceNameFor('C:\\Users\\x\\code\\my-app'), 'my-app');
+  assert.equal(workspaceNameFor('C:\\code\\my-app\\'), 'my-app');
+  assert.equal(workspaceNameFor('/code/my-app/'), 'my-app');
 });

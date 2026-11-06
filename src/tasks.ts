@@ -1,3 +1,4 @@
+import { baseName } from './base-name.js';
 import { activityOf, holdsSlug, keptActivity, recordsOf, taskOfActivity, terminalsIn, worktreeOwner, workersIn, type WorkState } from './activities.js';
 import { staleRead } from './column-write.js';
 import { parentOf } from './task-tree.js';
@@ -46,7 +47,7 @@ const movesOf = (list: SourceAction[] | undefined): string[] => (list ?? []).fla
 /** A workspace name for a folder (#179): its last segment with every character WORKSPACE_NAME refuses turned into "-", no leading punctuation,
  * capped at 40; "workspace" when nothing is left. What the settings form proposes, never saved without the user seeing it. */
 export function workspaceNameFor(path: string): string {
-  const last = path.split('/').filter((s) => s !== '').pop() ?? '';
+  const last = baseName(path); // #641: either separator; the UI calls this too, so not node:path's basename
   const name = last.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^[._-]+/, '').slice(0, WORKSPACE_NAME_MAX);
   return name === '' ? FALLBACK_WORKSPACE_NAME : name;
 }
