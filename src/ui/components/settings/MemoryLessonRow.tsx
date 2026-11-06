@@ -1,13 +1,15 @@
 import { ChevronRightIcon, PencilIcon, XIcon } from 'lucide-react';
-import { useId, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useId, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import { addLesson, editLesson, removeLesson } from '@/lib/memory-api';
-import { charactersText, citedText, kindLabel, metaText, refusalText } from '@/lib/memory-view';
-import { isMemoryKind, MEMORY_DESCRIPTION_MAX, MEMORY_KINDS, type MemoryEntry, type MemoryKind, type MemoryView } from '../../../types';
+import { canSaveLesson, charactersText, citedText, kindLabel, metaText, originDateText, refusalText } from '@/lib/memory-view';
+import { isMemoryKind, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_KINDS, type MemoryEntry, type MemoryKind, type MemoryView } from '../../../types';
 
 /** The table's columns (#797), as the handoff lays them out: id, kind, lesson, actions. */
 export const LESSON_GRID = 'grid grid-cols-[10rem_7rem_minmax(0,1fr)_4.5rem] gap-3 px-3 py-2.5';
@@ -49,45 +51,82 @@ export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) 
   );
 }
 
-/** The one row in edit (#797): an entry's, or a new lesson's with no id yet. Past MEMORY_DESCRIPTION_MAX the field is invalid and save is off; Enter
- * saves instead of breaking the line; a refusal shows under the field until the text changes. */
+// Enter saves from the description; ⌘/Ctrl+Enter from either field, so Enter alone breaks the body's line (#680). A key an IME composition
+// sends confirms its candidate, it is not the user's save
+const isSaveKey = (e: KeyboardEvent<HTMLElement>, multiline: boolean): boolean =>
+  e.key === 'Enter' && !e.nativeEvent.isComposing && (!multiline || e.metaKey || e.ctrlKey);
+
+interface LessonFieldProps { id: string; label: string; hint: string; length: number; max: number; children: ReactNode }
+// A field of the editing row (#680): its label, the control, then its hint on the left and its live counter on the right
+function LessonField({ id, label, hint, length, max, children }: LessonFieldProps) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id} className="font-normal text-muted-foreground text-xs">{label}</Label>
+      {children}
+      <div className="flex items-baseline justify-between gap-3 text-xs">
+        <span className="text-muted-foreground">{hint}</span>
+        <span id={`${id}-count`} className={length > max ? 'text-destructive' : 'text-muted-foreground'}>{charactersText(length, max)}</span>
+      </div>
+    </div>
+  );
+}
+
+interface LessonEditHeaderProps { entry?: MemoryEntry; kind: MemoryKind; onKind(kind: MemoryKind): void }
+// The row's id (— before the first save), its kind, and where it came from (#680: the sizes sit under each field now)
+function LessonEditHeader({ entry, kind, onKind }: LessonEditHeaderProps) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="font-mono text-xs">{entry?.id ?? '—'}</span>
+      <Select value={kind} onValueChange={(value) => { if (isMemoryKind(value)) onKind(value); }}>
+        <SelectTrigger size="sm" aria-label={t('settings.memory.type')} className="w-40"><SelectValue /></SelectTrigger>
+        <SelectContent>{MEMORY_KINDS.map((k) => <SelectItem key={k} value={k}>{kindLabel(k)}</SelectItem>)}</SelectContent>
+      </Select>
+      <span className="ml-auto text-muted-foreground text-xs">{entry ? originDateText(entry) : `${t('settings.memory.you')} · ${t('settings.memory.now')}`}</span>
+    </div>
+  );
+}
+
+/** The one row in edit (#797, #680): an entry's, or a new lesson's with no id yet. Save is off while a field is empty or past its limit; a
+ * refusal shows in the footer until either field changes. */
 export function LessonEditRow({ workspace, entry, onSaved, onCancel }: LessonEditRowProps) {
   const id = useId();
   const [kind, setKind] = useState<MemoryKind>(entry?.kind ?? 'fact');
-  const [text, setText] = useState(entry?.description ?? '');
+  const [description, setDescription] = useState(entry?.description ?? '');
+  const [body, setBody] = useState(entry?.body ?? '');
   const [error, setError] = useState<string>();
-  const over = text.length > MEMORY_DESCRIPTION_MAX;
+  const canSave = canSaveLesson(description, body);
   const save = (): void => {
-    if (over) return;
-    // Transitional (#680): one field, the description; the body goes unchanged ('' for a new lesson, which the server refuses) until Task 4's two-field row
-    const lesson = { kind, description: text, body: entry?.body ?? '' };
+    if (!canSave) return;
+    const lesson = { kind, description, body };
     (entry ? editLesson(workspace, entry.id, lesson) : addLesson(workspace, lesson)).then(onSaved, (err: unknown) => setError(refusalText(err)));
   };
+  const onKeyDown = (multiline: boolean) => (e: KeyboardEvent<HTMLElement>): void => {
+    if (!isSaveKey(e, multiline)) return;
+    e.preventDefault();
+    save();
+  };
+  const edited = (set: (value: string) => void) => (value: string): void => { set(value); setError(undefined); };
+  const isNew = entry === undefined;
   return (
-    <div className="flex flex-col gap-2 border-t bg-background p-3">
-      <div className="grid grid-cols-[minmax(0,10rem)_minmax(0,10rem)_minmax(0,1fr)] items-center gap-3">
-        <span className="font-mono text-xs">{entry?.id ?? '—'}</span>
-        <Select value={kind} onValueChange={(value) => { if (isMemoryKind(value)) setKind(value); }}>
-          <SelectTrigger size="sm" aria-label={t('settings.memory.type')} className="w-full"><SelectValue /></SelectTrigger>
-          <SelectContent>{MEMORY_KINDS.map((k) => <SelectItem key={k} value={k}>{kindLabel(k)}</SelectItem>)}</SelectContent>
-        </Select>
-        <span className="text-right text-muted-foreground text-xs">{entry ? metaText(entry) : ''}</span>
-      </div>
-      <Textarea
-        aria-label={t('settings.memory.text')} rows={2} aria-invalid={over || error !== undefined} aria-describedby={`${id}-count`} value={text}
-        onChange={(e) => { setText(e.target.value); setError(undefined); }}
-        // a key an IME composition sends confirms its candidate, it is not the user's save
-        onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); save(); } }}
-      />
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <span id={`${id}-count`} className={over ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>{charactersText(text.length, MEMORY_DESCRIPTION_MAX)}</span>
-          {error !== undefined && <p role="alert" className="text-destructive text-xs">{error}</p>}
-        </div>
-        <div className="flex gap-1">
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>{t('settings.memory.cancel')}</Button>
-          <Button type="button" size="sm" disabled={over} onClick={save}>{t('settings.memory.save')}</Button>
-        </div>
+    <div className="flex flex-col gap-3 border-t bg-background p-3">
+      <LessonEditHeader entry={entry} kind={kind} onKind={setKind} />
+      <LessonField id={`${id}-d`} label={t('settings.memory.description')} hint={t('settings.memory.descriptionHint')} length={description.length} max={MEMORY_DESCRIPTION_MAX}>
+        <Input
+          id={`${id}-d`} value={description} aria-invalid={description.length > MEMORY_DESCRIPTION_MAX} aria-describedby={`${id}-d-count`}
+          placeholder={isNew ? t('settings.memory.descriptionPlaceholder') : undefined} onChange={(e) => edited(setDescription)(e.target.value)} onKeyDown={onKeyDown(false)}
+        />
+      </LessonField>
+      <LessonField id={`${id}-b`} label={t('settings.memory.body')} hint={t('settings.memory.bodyHint')} length={body.length} max={MEMORY_BODY_MAX}>
+        <Textarea
+          id={`${id}-b`} rows={7} className="resize-y" value={body} aria-invalid={body.length > MEMORY_BODY_MAX} aria-describedby={`${id}-b-count`}
+          placeholder={isNew ? t('settings.memory.bodyPlaceholder') : undefined} onChange={(e) => edited(setBody)(e.target.value)} onKeyDown={onKeyDown(true)}
+        />
+      </LessonField>
+      <div className="flex items-start gap-3">
+        {error !== undefined && <p role="alert" className="text-destructive text-xs">{error}</p>}
+        <span className="grow" />
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>{t('settings.memory.cancel')}</Button>
+        <Button type="button" size="sm" disabled={!canSave} aria-keyshortcuts="Meta+Enter Control+Enter" onClick={save}>{t('settings.memory.save')}</Button>
       </div>
     </div>
   );

@@ -167,7 +167,7 @@ export function MemoryDialog({ workspace, view, open, onOpenChange, onView, onCa
             <WorkspaceSquare name={workspace} />
             {t('settings.memory.title', { workspace })}
           </DialogTitle>
-          <DialogDescription className="text-xs">{t('settings.memory.description')}</DialogDescription>
+          <DialogDescription className="text-xs">{t('settings.memory.intro')}</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-4">
           <UsageBlock workspace={workspace} view={view} onCapSaved={onCapSaved} onView={onView} />

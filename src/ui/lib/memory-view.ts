@@ -1,5 +1,5 @@
 import { formatCount, t, tPlural } from '../i18n.js';
-import { MEMORY_REFUSALS, type MemoryEntry, type MemoryKind, type MemoryOrigin, type MemoryRefusalCode, type MemoryStats } from '../../types.js';
+import { MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_REFUSALS, type MemoryEntry, type MemoryKind, type MemoryOrigin, type MemoryRefusalCode, type MemoryStats } from '../../types.js';
 
 // How the memory section and dialog word a lesson and its numbers (#797). Pure, so the components stay layout.
 
@@ -30,11 +30,18 @@ function originText(origin: MemoryOrigin): string[] {
   return [t('settings.memory.task', { id: origin.task }), ...(origin.stage === undefined ? [] : [origin.stage])];
 }
 
+/** Where a lesson came from and its date (#680): the editing row's header; the meta line adds the sizes. */
+export const originDateText = (entry: MemoryEntry): string => [...originText(entry.origin), entry.at.slice(0, 10)].join(' · ');
+
 /** A lesson's meta line before its citations (#797, #680): where it came from, its date and both sizes. */
 export function metaText(entry: MemoryEntry): string {
   const sizes = t('settings.memory.sizes', { d: formatCount(entry.description.length), b: formatCount(entry.body.length) });
-  return [...originText(entry.origin), entry.at.slice(0, 10), sizes].join(' · ');
+  return [originDateText(entry), sizes].join(' · ');
 }
+
+/** Whether an editing row may save (#680): both fields hold something and neither is past its limit; the server checks the rest. */
+export const canSaveLesson = (description: string, body: string): boolean =>
+  description.trim() !== '' && body.trim() !== '' && description.length <= MEMORY_DESCRIPTION_MAX && body.length <= MEMORY_BODY_MAX;
 
 /** `citada {n} vezes` (#797): a floor, an agent may forget to cite. */
 export const citedText = (uses: number): string => tPlural('settings.memory.citedTimes', uses, { n: uses });

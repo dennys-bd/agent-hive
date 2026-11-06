@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
 import { addLesson, editLesson, readMemory, readStats, removeLesson } from '@/lib/memory-api';
-import { charactersText, citedText, kindCounts, lastText, lessonsText, metaText, refusalText, statNumbers } from '@/lib/memory-view';
+import { canSaveLesson, charactersText, citedText, kindCounts, lastText, lessonsText, metaText, originDateText, refusalText, statNumbers } from '@/lib/memory-view';
 import type { MemoryEntry } from '../../src/types';
 import { jsonResponse } from '../fakes';
 
@@ -62,7 +62,7 @@ test('the five calls reach the workspace\'s memory routes with the UI header on 
   ]);
   expect(new Headers(fetchMock.mock.calls[2][1]?.headers).get('x-hive-ui')).toBe('1');
   expect(fetchMock.mock.calls[2][1]?.body).toBe(JSON.stringify({ kind: 'avoid', description: 'x', body: 'y' }));
-  expect(refusalText(err)).toBe('a memória está cheia: remova ou encurte uma lição');
+  expect(refusalText(err)).toBe('a memória está cheia: remova uma lição ou encurte uma descrição');
   expect(refusalText(new Error('disk full'))).toBe('disk full');
 });
 
@@ -76,4 +76,10 @@ test('a lesson saved from a local session reads local session / sessão local wh
     expect(metaText(local)).toBe(meta);
     expect(lessonsText([local, lesson({ id: 'm-2' })])).toBe(count);
   }
+});
+
+test('originDateText is the meta line without the sizes; canSaveLesson needs both fields, each within its limit (#680)', () => {
+  expect(originDateText(lesson({ origin: { task: '812', stage: 'build' } }))).toBe('tarefa #812 · build · 2026-10-01');
+  expect([canSaveLesson('d', 'b'), canSaveLesson(' ', 'b'), canSaveLesson('d', '\n'), canSaveLesson('d'.repeat(151), 'b'), canSaveLesson('d', 'b'.repeat(4001)), canSaveLesson('d'.repeat(150), 'b'.repeat(4000))])
+    .toEqual([true, false, false, false, false, true]);
 });
