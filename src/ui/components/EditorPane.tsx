@@ -18,7 +18,7 @@ import type { FormatLog } from '../../types';
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; model: editor.ITextModel };
 // What the strip says (#717): the disk holds another version than the buffer's base, or no file at all
-type Strip = { kind: 'changed'; version: string } | { kind: 'missing' };
+export type Strip = { kind: 'changed'; version: string } | { kind: 'missing' };
 type SetStrip = (strip: Strip | undefined) => void;
 type View = RefObject<editor.IStandaloneCodeEditor | undefined>;
 // A save whose format failed (#749): the reason, and where its run is in the console
@@ -159,8 +159,8 @@ export function FormatFailed({ failure, onViewLog }: { failure: FormatFailure; o
 }
 
 // The bar (#717, #749, #225): the path left, a save's refusal or a failed format beside it; the checkers and the problems are the footer's.
-// One row 24px tall, the pane's only header (#850). ⌘S and ⌥⌘S save from the editor
-function EditorBar({ file, error, formatFailure, onViewLog, onViewImage }: BarProps) {
+// One row 24px tall, the pane's only header (#850). ⌘S and ⌥⌘S save from the editor; the diagram pane's too (#956)
+export function EditorBar({ file, error, formatFailure, onViewLog, onViewImage }: BarProps) {
   return (
     <div className="flex h-6 shrink-0 items-center gap-2 border-b px-2.5 text-muted-foreground text-xs leading-none">
       <span title={file.path} className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
