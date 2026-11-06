@@ -179,7 +179,8 @@ function spawnDaemon(home: string, locale?: string): ChildProcess {
   const fd = openSync(logPath(home), 'a', 0o600); // the log is only for this user
   try {
     return spawn(process.execPath, [fileURLToPath(RUN_JS)], { // no argument: run.js boots hiveHome() (#202)
-      detached: true,
+      detached: true, // it outlives the CLI: on win32 that means breaking away from libuv's job
+      windowsHide: true, // #637: no console window for the daemon on win32
       stdio: ['ignore', fd, fd],
       env: daemonEnv(process.env, locale),
     });

@@ -34,3 +34,22 @@ test('only src/kill-tree.ts kills a process group: no spawn keeps a copy that kn
   }
   assert.deepEqual(copies, []);
 });
+
+const LOCK_HELPER = 'src/daemon-files.ts'; // its spawn never runs on win32 (#637, decision 8)
+const DETACHED = 'detached: true';
+
+test('every detached spawn in bin/ and src/ outside src/benchmark/ hides its window, the lock helper\'s excepted (#637)', async () => {
+  const seen: string[] = [];
+  const bare: string[] = [];
+  for (const path of (await sourceFiles()).filter((p) => p !== LOCK_HELPER)) {
+    const text = await read(path);
+    for (let at = text.indexOf(DETACHED); at >= 0; at = text.indexOf(DETACHED, at + 1)) {
+      seen.push(path);
+      // the options object around it: from its opening brace to its closing one
+      const options = text.slice(text.lastIndexOf('{', at), text.indexOf('}', at));
+      if (!options.includes('windowsHide: true')) bare.push(path);
+    }
+  }
+  assert.deepEqual([...new Set(seen)].sort(), ['bin/hive.js', 'src/daemon.ts'], 'the scan must find the two that outlive the CLI');
+  assert.deepEqual(bare, []);
+});
