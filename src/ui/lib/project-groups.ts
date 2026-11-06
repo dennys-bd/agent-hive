@@ -46,8 +46,8 @@ function stageOf(view: Pick<ProjectView, 'statuses'>, status: string): string {
  * ancestor in the list (#696); one whose parent is absent (not in the Project, or searched out) is its own root and stays in its own group. */
 export function groupItems(items: ProjectItem[], option: GroupOption, view: Pick<ProjectView, 'statuses' | 'fields'>): ProjectGroup[] {
   const roots = rootsIn(items, PROJECT_KEYS);
-  const byId = new Map(items.map((item) => [item.itemId, item]));
-  const values = items.map((item) => groupValue(byId.get(roots.get(item.itemId) ?? item.itemId) ?? item, option.key));
+  const ownValue = new Map(items.map((item) => [item.itemId, groupValue(item, option.key)]));
+  const values = items.map((item) => ownValue.get(roots.get(item.itemId) ?? item.itemId));
   const seen = [...new Set(values.filter((v): v is string => v !== undefined))];
   const known = orderOf(view, option.key);
   const names = [...known.filter((name) => seen.includes(name)), ...seen.filter((name) => !known.includes(name))];

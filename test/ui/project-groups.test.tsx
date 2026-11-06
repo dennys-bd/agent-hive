@@ -52,9 +52,31 @@ test('a child whose parent is not in the list stays flat in its own status\'s gr
   expect(idsOf(groups)).toEqual([['Backlog', ['700']], ['In progress', ['602', '603', '604']]]);
 });
 
-test('the rule holds under a non-status grouping, and a child with no value goes where its root is (#696)', () => {
+test('the rule holds under a non-status grouping: a child with another value goes where its root is (#696)', () => {
   const groups = groupItems(SUBS.slice(0, 2), { key: 'assignee', label: 'resp.' }, SUB_VIEW);
   expect(idsOf(groups)).toEqual([['ana', ['602', '603']]]);
+});
+
+test('a child with no value joins its root\'s group, and a root with no value pulls its valued child into the empty group (#696)', () => {
+  const option = { key: 'assignee', label: 'resp.' };
+  const unvalued = groupItems([row(1, { assignees: ['ana'] }), row(2, { parent: 1 })], option, SUB_VIEW);
+  expect(idsOf(unvalued)).toEqual([['ana', ['1', '2']]]);
+  const empty = groupItems([row(1), row(2, { parent: 1, assignees: ['ana'] })], option, SUB_VIEW);
+  expect(idsOf(empty)).toEqual([['', ['1', '2']]]);
+});
+
+test('rows on a parent cycle stay in their own groups, and a tail off the cycle follows its member (#696)', () => {
+  const rows = [row(1, { status: 'Backlog', parent: 2 }), row(2, { status: 'Done', parent: 1 }), row(3, { status: 'In progress', parent: 1 })];
+  const groups = groupItems(rows, { key: 'status', label: 'status' }, SUB_VIEW);
+  expect(idsOf(groups)).toEqual([['Backlog', ['1', '3']], ['Done', ['2']]]);
+});
+
+test('a group keeps the input order when children from other groups interleave (#696)', () => {
+  const rows = [
+    row(10, { status: 'Backlog' }), row(11, { status: 'Backlog', parent: 20 }), row(20, { status: 'Done' }), row(12, { status: 'Backlog' }),
+  ];
+  const groups = groupItems(rows, { key: 'status', label: 'status' }, SUB_VIEW);
+  expect(idsOf(groups)).toEqual([['Backlog', ['10', '12']], ['Done', ['11', '20']]]);
 });
 
 test('the hive groups follow the same rule (#696)', () => {
