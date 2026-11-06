@@ -1,4 +1,5 @@
 import { useContext, useEffect, useState } from 'react';
+import { lastStageOf } from '../../flows.js';
 import { descendants, rootOf, treeProgress } from '../../task-tree';
 import { taskLabel } from '../../tasks';
 import type { State, Task } from '../../types';
@@ -93,7 +94,7 @@ export function TreeSection({ task, state, onOpenTask }: TreeSectionProps) {
   useEffect(() => () => setHoveredId(undefined), [setHoveredId]);
   if (!inTree(state.tasks, task)) return null;
   const root = rootOf(state.tasks, task.item.itemId) ?? task;
-  const lastStage = state.stages.at(-1)?.name ?? '';
+  const lastStage = lastStageOf(state.flows, root.stage)?.name ?? ''; // #723: the root's own flow, as the reducer reads it
   const onToggle = (itemId: string): void => setCollapsed(toggleOutline(itemId));
   return (
     <section aria-label={t('detail.tree')} className="flex flex-col gap-2">

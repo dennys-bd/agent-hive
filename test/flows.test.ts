@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { flatten, flowOf, isFlowName, MAIN_FLOW } from '../src/flows.js';
+import { flatten, flowOf, isFlowName, lastStageOf, MAIN_FLOW } from '../src/flows.js';
 import type { Flow } from '../src/types.js';
 
 const FLOWS: Flow[] = [
@@ -25,4 +25,12 @@ test('flowOf returns the flow that holds a stage, or undefined (#564)', () => {
 test('isFlowName takes a non-empty trimmed string only (#564)', () => {
   assert.equal(isFlowName(MAIN_FLOW), true);
   for (const bad of ['', ' main', 'main ', 7, undefined]) assert.equal(isFlowName(bad), false, JSON.stringify(bad));
+});
+
+test('lastStageOf answers the last stage of the stage\'s own flow, never the flattened comb\'s, and undefined for a stage in no flow (#723)', () => {
+  assert.equal(lastStageOf(FLOWS, 'spec')?.name, 'dev', 'main ends in dev even though bug comes after it');
+  assert.equal(lastStageOf(FLOWS, 'dev')?.name, 'dev');
+  assert.equal(lastStageOf(FLOWS, 'fix')?.name, 'fix');
+  assert.equal(lastStageOf(FLOWS, 'gone'), undefined);
+  assert.equal(lastStageOf(FLOWS, undefined), undefined, 'a task outside the flow (#566)');
 });

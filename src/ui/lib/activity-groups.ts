@@ -1,8 +1,9 @@
 // How a workspace's activities group in the Activities tab (#586): by stage, by status or not at all, done always last in a group of its own.
 // Pure: the tab renders what this answers.
+import { flatten, lastStageOf } from '../../flows.js';
 import { inFlow } from '../../tasks.js';
 import { runsAgent } from '../../stage-agent.js';
-import type { Task, Stage, Status } from '../../types';
+import type { Flow, Task, Stage, Status } from '../../types';
 import { statusText, t } from '@/i18n';
 import type { TaskActivity } from '@/lib/activities';
 import { isLive } from '@/lib/task-state';
@@ -21,10 +22,11 @@ type StatusGroup = Exclude<Status, 'empty'> | 'stopped';
 const STATUS_ORDER: StatusGroup[] = ['waiting', 'approval', 'backoff', 'working', 'review', 'stopped']; // #805: backoff before a run that moves
 const SUMMARY_STATUSES = ['waiting', 'approval'] as const; // the two that need the user
 
-/** Whether the task is done (#586): it sits in the flow's last stage and that stage runs no agent. A last stage that runs one never is: the
- * task leaves state.tasks when that stage ends (moveOn). A delete activity stage has no prompt either, since the parser keeps the two exclusive. */
-export function isDone(task: Task, stages: Stage[]): boolean {
-  const last = stages.at(-1);
+/** Whether the task is done (#586): it sits in its own flow's last stage (#723: never the comb's, which a later flow owns) and that stage
+ * runs no agent. A last stage that runs one never is: the task leaves state.tasks when that stage ends (moveOn). A delete activity stage has
+ * no prompt either, since the parser keeps the two exclusive. */
+export function isDone(task: Task, flows: readonly Flow[]): boolean {
+  const last = lastStageOf(flows, task.stage);
   return last !== undefined && task.stage === last.name && !runsAgent(last); // #710: a skill stage runs one too
 }
 
@@ -43,8 +45,8 @@ const isAwake = (activity: TaskActivity): boolean => activity.sessions.some((s) 
 
 // By status and with no grouping, an awake session keeps a done-stage activity out of done, so it is not hidden there (#666); by stage the
 // group is the stage itself
-const doneIn = (activity: TaskActivity, mode: GroupMode, stages: Stage[]): boolean =>
-  isDone(activity.task, stages) && (mode === 'stage' || !isAwake(activity));
+const doneIn = (activity: TaskActivity, mode: GroupMode, flows: readonly Flow[]): boolean =>
+  isDone(activity.task, flows) && (mode === 'stage' || !isAwake(activity));
 
 const statusName = (status: StatusGroup): string => (status === 'stopped' ? t('detail.stopped') : statusText(status));
 
@@ -65,13 +67,20 @@ function openGroups(items: TaskActivity[], mode: GroupMode, stages: Stage[]): Ac
   return groups.filter((group) => group.items.length > 0);
 }
 
-/** A workspace's activities in the groups `mode` makes (#586), done last: named after the last stage by stage, finalizado otherwise. */
-export function groupActivities(activities: TaskActivity[], mode: GroupMode, stages: Stage[]): ActivityGroup[] {
-  const done = activities.filter((a) => doneIn(a, mode, stages));
-  const groups = openGroups(activities.filter((a) => !doneIn(a, mode, stages)), mode, stages);
+// By stage the done group is named after the stage its tasks sit in, each its own flow's last (#723). Tasks in two flows' last stages share
+// no stage name, so the group reads finalizado; by status and with no grouping it always does
+function doneName(done: TaskActivity[], mode: GroupMode): string {
+  const [only, ...others] = [...new Set(done.map((a) => a.task.stage))];
+  return mode === 'stage' && only !== undefined && others.length === 0 ? only : t('activities.done');
+}
+
+/** A workspace's activities in the groups `mode` makes (#586), done last, each task judged against its own flow (#723). The open groups
+ * follow the comb's stages in config order. */
+export function groupActivities(activities: TaskActivity[], mode: GroupMode, flows: readonly Flow[]): ActivityGroup[] {
+  const done = activities.filter((a) => doneIn(a, mode, flows));
+  const groups = openGroups(activities.filter((a) => !doneIn(a, mode, flows)), mode, flatten(flows).stages);
   if (done.length === 0) return groups;
-  const name = mode === 'stage' ? (stages.at(-1)?.name ?? t('activities.done')) : t('activities.done');
-  return [...groups, { key: DONE_KEY, name, items: done, isDone: true }];
+  return [...groups, { key: DONE_KEY, name: doneName(done, mode), items: done, isDone: true }];
 }
 
 /** A collapsed workspace's summary (#586): its activity count, then how many wait on the user in the most urgent of waiting and approval,

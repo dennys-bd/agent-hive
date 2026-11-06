@@ -14,8 +14,9 @@ const HASH_CHARS = 16;
 export const LIST_MAX = 50; // items of a list a record carries: a run's models, a result's keys; a run's models by name (#271)
 
 export type RunKind = 'spawn' | 'restart' | 'continue' | 'feedback';
-// source: the poll moved it because its column changed in the source; auto: the flow itself (hive_done and its Stop)
-export type MoveBy = 'auto' | 'hand' | 'approval' | 'merge' | 'on_finish' | 'source';
+// source: the poll moved it because its column changed in the source; auto: the flow itself (hive_done and its Stop); epic: a show epic
+// followEpics moved after its children (#723), whatever the event
+export type MoveBy = 'auto' | 'hand' | 'approval' | 'merge' | 'on_finish' | 'source' | 'epic';
 export type GoneReason = 'finished' | 'closed' | 'hand';
 // The onFinish mechanism that took a finished task out: a leaving action's type, an onFinish move past the last stage, or no source action
 export type FinishVia = 'move' | 'archive' | 'remove' | 'delete' | 'none';

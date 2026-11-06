@@ -3,6 +3,7 @@ import { createContext, type MouseEvent, useContext, useRef, useState } from 're
 import { activityOf, prsOf, workIdOf } from '../../activities';
 import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
+import { lastStageOf } from '../../flows.js';
 import { progress } from '../../task-tree';
 import { taskLabel, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction, canDismissError, canOpenSession, inFlow } from '../../tasks';
 import { parentOf } from '../../task-tree';
@@ -119,9 +120,9 @@ export function ListingLine({ task }: { task: Task }) {
   return <div className="text-muted-foreground text-xs" title={t(`tasks.listing.${task.outOfListing}.tip`)}>{`◌ ${t(`tasks.listing.${task.outOfListing}`)}`}</div>;
 }
 
-// #31: a show epic's line: its direct children done over all of them, against the flow's last stage
+// #31: a show epic's line: its direct children done over all of them, against its own flow's last stage (#723)
 function waitingText(task: Task, state: State): string {
-  const { done, total } = progress(state.tasks, task.item.itemId, state.stages.at(-1)?.name ?? '');
+  const { done, total } = progress(state.tasks, task.item.itemId, lastStageOf(state.flows, task.stage)?.name ?? '');
   return t('task.waitingChildren', { done, total });
 }
 

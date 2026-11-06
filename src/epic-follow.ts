@@ -1,6 +1,7 @@
 import { activityOf } from './activities.js';
 import { withColumnWrite } from './column-write.js';
 import { none, type Reduced, settleEntries, shouldWrite, sourceWrites, withTask } from './reducer-kit.js';
+import { flowOf } from './flows.js';
 import { allDone, depthOf, epicStage } from './task-tree.js';
 import { enter, inFlow, isDue, onSource, stageOf, taskId } from './tasks.js';
 import { follow } from './transit.js';
@@ -8,8 +9,8 @@ import { exitOf, outgoing } from './transitions.js';
 import { END, type Stage, type State, type Task } from './types.js';
 
 // A show epic's stage follows its children (#31): one pass after every event, so whatever moved a child (a poll, a stage end, a move by hand,
-// an item re-read) moves its epic in the same reduction. Out of orchestrator.ts, past 400 lines. Pure: a pass that moves nothing returns the
-// state itself, which reduce's identity checks rely on.
+// an item re-read) moves its epic in the same reduction. Within the epic's own flow (#723). Out of orchestrator.ts, past 400 lines. Pure: a
+// pass that moves nothing returns the state itself, which reduce's identity checks rely on.
 
 // Into `target` as a move by hand enters it (moveToStage): the target's first door on the task's source written, marked until a poll shows it
 // (#889), and the entry settled
@@ -55,12 +56,15 @@ function finished(state: State, task: Task, last: Stage): Reduced {
   return out.state === into.state ? into : { state: out.state, effects: [...into.effects, ...out.effects] };
 }
 
+// The epic's own flow, never the flattened comb (#723): with a second flow after it in the config, the comb's last stage is that flow's,
+// and an epic finished in Done would be moved into it as soon as its last child left. An epic in no flow is not followed, as inFlow says (#566)
 function followed(state: State, task: Task): Reduced {
-  const last = state.stages.at(-1);
+  const stages = flowOf(state.flows, task.stage)?.stages ?? [];
+  const last = stages.at(-1);
   if (last === undefined) return none(state);
-  if (allDone(state.tasks, taskId(task), last.name)) return finished(state, task, last);
-  const name = epicStage(state.tasks, state.stages, task);
-  const target = name === undefined || name === task.stage ? undefined : stageOf(state.stages, name);
+  if (allDone(state.tasks, taskId(task), stages)) return finished(state, task, last);
+  const name = epicStage(state.tasks, stages, task);
+  const target = name === undefined || name === task.stage ? undefined : stageOf(stages, name);
   return target === undefined ? none(state) : moved(state, task, target);
 }
 

@@ -1,7 +1,7 @@
 // The tasks center's list (#577, todas em lista): what the display options and the search leave of every task, one group per flow in config
 // order and sem fluxo last, each in its flow's stage order or as trees (#34), and where a group's page ends. Pure: TaskList renders it.
 import { activityOf } from '../../activities.js';
-import { flowOf } from '../../flows.js';
+import { flowOf, lastStageOf } from '../../flows.js';
 import { progress, type TreeCount } from '../../task-tree.js';
 import { sourceOf } from '../../tasks.js';
 import type { Flow, State, Task } from '../../types.js';
@@ -34,14 +34,14 @@ function byStage(flow: Flow, tasks: readonly Task[]): Task[] {
 }
 
 // Decision 6: #34's grouping, each tree where its root first sat and the loose tasks after; an epic counts its direct children as the
-// flowchart card does (TreeProgress)
+// flowchart card does (TreeProgress), against its own flow's last stage (#723)
 function treeRows(state: State, tasks: readonly Task[]): ListRow[] {
-  const lastStage = state.stages.at(-1)?.name ?? '';
+  const lastOf = (task: Task): string => lastStageOf(state.flows, task.stage)?.name ?? '';
   return groupTasks(state.tasks, tasks).flatMap((group) => group.tasks.map(({ task, depth }): ListRow => ({
     task,
     depth,
     ...(group.root === undefined ? {} : { tree: group.root.item.itemId }),
-    ...((task.item.children ?? []).length === 0 ? {} : { children: progress(state.tasks, task.item.itemId, lastStage) }),
+    ...((task.item.children ?? []).length === 0 ? {} : { children: progress(state.tasks, task.item.itemId, lastOf(task)) }),
   })));
 }
 

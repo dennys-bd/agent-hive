@@ -2,16 +2,18 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { FlowTask, taskAction } from '@/components/FlowTask';
+import { TreeProgress } from '@/components/TreeProgress';
 import { TreeHoverContext } from '@/components/tree-hover';
 import { Flow } from '@/components/Flow';
 import { SyncBlock } from '@/components/ForkSyncNotice';
 import { CiNotice } from '@/components/CiProgress';
 import { StageOutputContext } from '@/hooks/use-console';
 import { setLanguage } from '@/i18n';
-import type { Activity, BaseOptions, Item, Task, TaskPr, Session, Worker, Stage, State } from '../../src/types';
+import type { Activity, BaseOptions, Flow as FlowConfig, Item, Task, TaskPr, Session, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../../src/types';
 import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
 import { flowed } from '../fixtures/main-flow.js';
+import { flatten } from '../../src/flows.js';
 import { firstFlow } from './flow-of.js';
 
 // The task face (redesign 10, #542), rendered in its board: the task menu, the drag and the Start dialog need what Flow hands them.
@@ -472,6 +474,20 @@ test('a child shows ↳ before its id and a root does not; a parent shows N filh
   expect(within(parent).queryByText('auto')).not.toBeInTheDocument();
   expect(within(tileOf('#3 Task 3')).getByText('auto')).toBeInTheDocument();
   expect(within(parent).getByRole('button', { name: 'focar ›' })).toBeInTheDocument(); // #35: Flow wires the focus
+});
+
+// #723: delivery (dev, review, done) then discovery: the comb's last stage is decompose, the parent's flow's is done
+const TWO_FLOWS: FlowConfig[] = [
+  { name: 'delivery', stages, transitions: [] },
+  { name: 'discovery', stages: [{ name: 'brainstorm', from: {}, prompt: '/hive-brainstorm {url}' }, { name: 'decompose', from: {} }], transitions: [] },
+];
+
+test('TreeProgress counts a child in its parent\'s flow\'s last stage as done, with another flow after it in the config (#723)', () => {
+  const s = state(FAMILY[0], [], { tasks: FAMILY, flows: TWO_FLOWS, ...flatten(TWO_FLOWS) });
+  render(<TreeProgress task={FAMILY[0]} state={s} />);
+  expect(screen.getByText('5 filhas · 2/5')).toBeInTheDocument();
+  const segments = [...document.querySelectorAll('[data-tree-bar] > span')];
+  expect(segments[0].className).toMatch(/bg-muted-foreground/); // I2, in delivery's done
 });
 
 test('focar › shows with onFocusTree and calls it with the parent\'s itemId; the card TreeHoverContext names draws the foreground border and its ring, another keeps its status border (#34, #36)', async () => {
