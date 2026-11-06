@@ -150,7 +150,10 @@ export function useDiagramBridge(activityId: string, path: string, active: boole
   // A frame that loaded again holds nothing: unwritten work goes back in, and its queue and strip stay for the person to decide
   const init = (): void => {
     const { queued } = writer.state.current;
-    if (queued === undefined) return open(true);
+    if (queued === undefined) {
+      open(true);
+      return;
+    }
     pending.current = undefined;
     post(frame.current, loadMessage({ kind: 'xml', xml: queued }));
   };
