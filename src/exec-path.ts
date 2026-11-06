@@ -31,7 +31,7 @@ const isRegularFile = (file: string): boolean => {
 };
 
 // Windows' env names are case-insensitive: a child of PowerShell has Path, not PATH
-const envValue = (env: NodeJS.ProcessEnv, key: string): string | undefined =>
+export const envValue = (env: NodeJS.ProcessEnv, key: string): string | undefined =>
   Object.entries(env).find(([name]) => name.toUpperCase() === key)?.[1];
 
 // A PATH folder may be in quotes (C:\"Program Files"\… is legal there); Windows strips them
