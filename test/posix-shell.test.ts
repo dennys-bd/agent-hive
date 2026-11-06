@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { win32 } from 'node:path';
 import { createConsoleStore } from '../src/console.js';
 import { customShell, type FormatContext, runFormatter } from '../src/format-run.js';
@@ -60,4 +61,24 @@ test('on the Windows lane: a custom formatter\'s line runs through Git\'s sh.exe
   const failed = await runFormatter({ kind: 'custom', name: 'bad', command: 'cat > /dev/null; exit 3' }, 'x\n', ctx);
   assert.ok('error' in failed);
   assert.equal(failed.error, 'exit code 3');
+});
+
+// The daemon's env with PATH alone set to `path`: Windows names it Path, and a second key in another case would reach the child twice
+const withPath = (path: string): NodeJS.ProcessEnv =>
+  ({ ...Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toUpperCase() !== 'PATH')), PATH: path });
+
+test('on the Windows lane: with PATH cut to Git\\cmd and System32, Git for Windows\' default, sh.exe -c finds curl, cat and printf (#631)', ON_WINDOWS, () => {
+  const { shell, gitRoot } = posixShell();
+  const path = `${win32.join(gitRoot ?? assert.fail('no gitRoot on win32'), 'cmd')};${system32()}`;
+  const out = execFileSync(shell, ['-c', 'command -v curl && command -v cat && printf %s found'], { env: withPath(path), encoding: 'utf8' });
+  assert.match(out, /curl/);
+  assert.match(out, /cat/);
+  assert.ok(out.endsWith('found'), out);
+});
+
+test('on the Windows lane: a Windows path and /hooks/exit passed from sh.exe to node.exe arrive unchanged with posixShellEnv (#631)', ON_WINDOWS, () => {
+  const windowsPath = 'C:\\Work\\my repo\\a.ts';
+  const line = '"$HIVE_NODE" -e "process.stdout.write(JSON.stringify(process.argv.slice(1)))" "$HIVE_WINDOWS_PATH" /hooks/exit';
+  const env = { ...process.env, ...posixShellEnv('win32'), HIVE_NODE: process.execPath, HIVE_WINDOWS_PATH: windowsPath };
+  assert.deepEqual(JSON.parse(execFileSync(posixShell().shell, ['-c', line], { env, encoding: 'utf8' })), [windowsPath, '/hooks/exit']);
 });
