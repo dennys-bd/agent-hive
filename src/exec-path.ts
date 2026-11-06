@@ -52,7 +52,9 @@ function namesOf(name: string, env: NodeJS.ProcessEnv): string[] {
 export function findExec(name: string, lookup: ExecLookup): string | undefined {
   if (lookup.platform !== 'win32') return name;
   const isFile = lookup.isFile ?? isRegularFile;
-  const dirs = path.win32.isAbsolute(name) ? [''] : [...(lookup.dirs ?? []), ...split(envValue(lookup.env, 'PATH') ?? '')];
+  // A relative folder would resolve against the daemon's working directory, which a repository can choose
+  const pathDirs = split(envValue(lookup.env, 'PATH') ?? '').filter((dir) => path.win32.isAbsolute(dir));
+  const dirs = path.win32.isAbsolute(name) ? [''] : [...(lookup.dirs ?? []), ...pathDirs];
   for (const dir of dirs) {
     const found = namesOf(path.win32.join(dir, name), lookup.env).find(isFile);
     if (found !== undefined) return found;
@@ -64,12 +66,21 @@ export function findExec(name: string, lookup: ExecLookup): string | undefined {
 // quotes cmd.exe leaves & | < > ^ alone, and a doubled quote never leaves them.
 const quoteArg = (arg: string): string => `"${arg.replace(/(\\*)"/g, '$1$1""').replace(/(\\*)$/, '$1$1')}"`;
 
+// ComSpec only when it is cmd.exe by its full path: the line is quoted for cmd.exe's rules and no other's
+function commandProcessor(env: NodeJS.ProcessEnv): string {
+  const comspec = envValue(env, 'COMSPEC');
+  if (comspec !== undefined && path.win32.isAbsolute(comspec) && path.win32.basename(comspec).toLowerCase() === 'cmd.exe') return comspec;
+  return path.win32.join(envValue(env, 'SYSTEMROOT') ?? 'C:\\Windows', 'System32', 'cmd.exe');
+}
+
 /** The .cmd runner, the repository's fifth deliberate shell string (CLAUDE.md): cmd.exe runs the batch file with every argument quoted
  *  here and nowhere else. /d skips AutoRun, /s keeps the line's own quotes, /v:off leaves ! alone. */
 function cmdRunner(file: string, args: readonly string[], env: NodeJS.ProcessEnv): ExecCommand {
-  const unsafe = [file, ...args].find((arg) => UNSAFE_FOR_CMD.test(arg));
-  if (unsafe !== undefined) throw new Error(`${path.win32.basename(file)}: cmd.exe cannot pass an argument with %, a line break or NUL (${JSON.stringify(unsafe)})`);
-  const comspec = envValue(env, 'COMSPEC') ?? path.win32.join(envValue(env, 'SYSTEMROOT') ?? 'C:\\Windows', 'System32', 'cmd.exe');
+  // The position only, never the value: an argument may carry a secret, and the error reaches the log
+  const unsafe = [file, ...args].findIndex((arg) => UNSAFE_FOR_CMD.test(arg));
+  if (unsafe === 0) throw new Error(`${path.win32.basename(file)}: cmd.exe cannot run a batch file whose path has %`);
+  if (unsafe > 0) throw new Error(`${path.win32.basename(file)}: cmd.exe cannot pass argument ${unsafe} (it has %, a line break or NUL)`);
+  const comspec = commandProcessor(env);
   const line = [file, ...args].map(quoteArg).join(' ');
   return { file: comspec, args: ['/d', '/s', '/v:off', '/c', `"${line}"`], windowsVerbatimArguments: true };
 }

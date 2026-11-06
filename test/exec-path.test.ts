@@ -31,6 +31,7 @@ test('on win32 a folder the caller adds is searched before PATH; an .exe on PATH
   assert.equal(findExec('go.exe', lookup), 'C:\\Go\\bin\\go.exe', 'a name with its extension is tried as it is');
   assert.equal(findExec('C:\\Go\\bin\\go', lookup), 'C:\\Go\\bin\\go.exe', 'an absolute name gets PATHEXT too');
   assert.equal(findExec('go', { ...lookup, env: { PATH: '"C:\\Go\\bin"' } }), 'C:\\Go\\bin\\go.exe', 'a quoted PATH folder');
+  assert.equal(findExec('go', { ...lookup, env: { PATH: 'bin' }, isFile: fakeFs('bin\\go.exe') }), undefined, 'a relative PATH folder is skipped');
   assert.equal(findExec('python3.12', { ...lookup, isFile: fakeFs('C:\\npm\\python3.12', 'C:\\npm\\tool.js') }), undefined, 'an extension that is not runnable');
   assert.equal(findExec('tool', { ...lookup, env: { ...env, PATHEXT: '.JS;.EXE' }, isFile: fakeFs('C:\\npm\\tool.js') }), undefined, 'a PATHEXT entry execFile cannot run');
 });
@@ -57,6 +58,9 @@ test('on win32 an argument cmd.exe cannot carry safely (%, a line break, NUL) is
     assert.throws(() => resolveExec('prettier', [arg], lookup), /cmd\.exe/);
   }
   assert.throws(() => resolveExec('x', [], { ...lookup, dirs: ['C:\\100%'], isFile: fakeFs('C:\\100%\\x.cmd') }), /cmd\.exe/, 'the .cmd\'s own path too');
+  assert.throws(() => resolveExec('prettier', ['--token=s3cret%'], lookup), (e: Error) => !e.message.includes('s3cret'), 'the value is never echoed');
+  const shell = resolveExec('prettier', [], { ...lookup, env: { ...env, ComSpec: 'C:\\evil\\sh.exe', SystemRoot: 'C:\\Windows' } });
+  assert.equal(shell.file, COMSPEC, 'a ComSpec that is not cmd.exe is ignored');
   assert.doesNotThrow(() => resolveExec('go', ['100%'], { ...lookup, isFile: fakeFs('C:\\npm\\go.exe') }), 'an .exe takes any argument');
 });
 
