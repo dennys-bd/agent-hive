@@ -158,8 +158,8 @@ export function stageCommandsRefused(state: State, { activityId, ptyId, message 
 }
 
 /** The activity's commands stage stopped (#755): a Stop, a sleep, a delete or the task leaving. Its pty is killed under the activity's slug, the
- * run goes and the activity is stopped, with no verdict: a killed pty exits 0 under node-pty, and its late end finds no run to answer. The same
- * state when no commands stage runs there. */
+ * run goes and the activity is stopped, with no verdict: whatever code the killed pty exits with (0 under macOS's pty, 1 or 0xC000013A under
+ * ConPTY, #644), its late end finds no run to answer. The same state when no commands stage runs there. */
 export function haltCommands(state: State, activityId: string): Reduced {
   const activity = state.activities.find((a) => a.id === activityId);
   if (activity?.commands === undefined) return none(state);

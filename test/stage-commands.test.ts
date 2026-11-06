@@ -159,7 +159,7 @@ test('a Stop on the stage pty kills it under the task\'s slug and stops the acti
   assert.equal(resultOf(state, ID), undefined, 'a stop is no verdict');
   assert.equal(state.workers[0].status, 'empty', 'the run\'s worker frees with it');
   const late = reduce(state, { type: 'stageCommandEnded', activityId: live(state)?.id ?? '', ptyId, code: 0, output: '' }).state;
-  assert.deepEqual([late.tasks, live(late)], [state.tasks, live(state)], 'a killed pty exits 0: it must never read as passed');
+  assert.deepEqual([late.tasks, live(late)], [state.tasks, live(state)], 'a killed pty\'s end, whatever its code, must never read as passed');
 });
 
 test('deleting the activity stops its commands stage as it closes its terminals (#755)', () => {
