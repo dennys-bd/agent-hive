@@ -73,7 +73,8 @@ test('a row: the workspace square, ↳ indented by depth, ⑂ on an epic, the �
   ], [waitingOn('I1')]);
   render(<Harness state={s} />);
   expect(rowIds()).toEqual(['I1', 'I2', 'I3']); // the tree is on: one exists
-  expect(cells('I1').slice(0, 4)).toEqual(['#1 Task 1⑂ 2 filhas · 1/2', 'spec', 'esperando você', 'hive']);
+  // #723: I2 sits in build, feature's own last stage, so it is done even with bug after feature in the config
+  expect(cells('I1').slice(0, 4)).toEqual(['#1 Task 1⑂ 2 filhas · 2/2', 'spec', 'esperando você', 'hive']);
   expect(cells('I2').slice(0, 4)).toEqual(['↳#2 Task 2', 'build', 'nova', 'roadmap']);
   expect(cells('I3').slice(0, 4)).toEqual(['#3 Task 3◌ fora da listagem', 'sem fluxo', 'nova', 'hive']);
   expect(row('I1').querySelector('[title="site"]')).toHaveClass('size-2');

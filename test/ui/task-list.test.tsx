@@ -38,14 +38,14 @@ test('an unchecked source, a hidden epic and the search take rows out; a group l
   expect(shape(listGroups(epics, display({ tree: false, epics: 'all' }), ''))).toEqual([['feature', ['2:0', '3:0']]]);
 });
 
-test('with the tree on, a tree comes first where its root sat, children by depth, loose tasks after; a child in another flow sits in that flow\'s group; an epic counts its direct children done as the card does; off, flat and uncounted (#577 decision 6)', () => {
+test('with the tree on, a tree comes first where its root sat, children by depth, loose tasks after; a child in another flow sits in that flow\'s group; an epic counts its direct children done against its own flow\'s last stage as the card does; off, flat and uncounted (#577 decision 6, #723)', () => {
   const s = state([
     task('9', 'build'), task('1', 'build', { children: ['I2', 'I3', 'I8'], closedChildren: ['I8'] }),
     task('2', 'spec', { parent: 'I1', children: ['I4'] }), task('3', 'build', { parent: 'I1' }), task('4', 'triage', { parent: 'I2' }),
   ]);
   const groups = listGroups(s, display(), ''); // tree unset: on, as a tree exists
   expect(shape(groups)).toEqual([['feature', ['1:0', '2:1', '3:1', '9:0']], ['bug', ['4:2']]]);
-  expect(groups[0].rows.map((r) => [r.tree, r.children])).toEqual([['I1', { done: 1, total: 3 }], ['I1', { done: 0, total: 1 }], ['I1', undefined], [undefined, undefined]]);
+  expect(groups[0].rows.map((r) => [r.tree, r.children])).toEqual([['I1', { done: 2, total: 3 }], ['I1', { done: 0, total: 1 }], ['I1', undefined], [undefined, undefined]]);
   expect(shape(listGroups(s, FLAT, ''))).toEqual([['feature', ['2:0', '9:0', '1:0', '3:0']], ['bug', ['4:0']]]);
   expect(listGroups(s, FLAT, '')[0].rows.every((r) => r.tree === undefined && r.children === undefined)).toBe(true);
 });

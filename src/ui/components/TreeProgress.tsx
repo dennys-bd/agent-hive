@@ -1,3 +1,4 @@
+import { lastStageOf } from '../../flows.js';
 import { progress } from '../../task-tree';
 import type { State, Task } from '../../types';
 import { t } from '@/i18n';
@@ -12,7 +13,7 @@ interface TreeProgressProps { task: Task; state: State; onFocusTree?(itemId: str
 /** A parent's block on its card (#34): ⑂ N children · done/N over its direct children, focus › only when the caller wires the focus (#35),
  * and a 4px bar with one segment per direct child, task or not. */
 export function TreeProgress({ task, state, onFocusTree }: TreeProgressProps) {
-  const lastStage = state.stages.at(-1)?.name ?? '';
+  const lastStage = lastStageOf(state.flows, task.stage)?.name ?? ''; // #723: the parent's own flow, never the comb's last
   const { done, total } = progress(state.tasks, task.item.itemId, lastStage);
   return (
     <div className="flex flex-col gap-1">
