@@ -11,6 +11,7 @@ import { acquireLock, readDaemonPort, releaseLock, removeDaemonSecret, writeDaem
 import { PROMPTS_DIR } from './hooks-settings.js';
 import { languageFrom, systemLanguage } from './language.js';
 import { createLogger, type Logger } from './log.js';
+import { posixShell, type PosixShell } from './posix-shell.js';
 import { predatesTaskProps } from './task-props.js';
 import { accessFor } from './read-model/access.js';
 import { openReadModel, READ_MODEL_FILE, type ReadModel, type SyncKind } from './read-model/db.js';
@@ -35,21 +36,26 @@ export interface BootedHive {
 /** What run.ts injects into the server (`onStop` ends the daemon, `spawnPty` is node-pty, #251); `launchPty` and `sourceFactory` only the
  * tests (a fake that opens nothing, a machine that is not this one, a source that needs no gh). */
 export interface BootOptions extends Pick<ServerDeps, 'readPlanLimits' | 'launchPty' | 'spawnPty' | 'onStop' | 'agents' | 'sourceFactory'> {
+  posixShell?: () => PosixShell; // tests only: a resolver that throws, as on Windows without Git for Windows (#631)
   locale?: string; // Electron's app.getLocale(); absent (run.js) → the Node process locale
 }
 
 /** What both modes' createServer get: the options plus this boot's secret (#467). */
-type BootDeps = Omit<BootOptions, 'locale'> & Pick<ServerDeps, 'secret' | 'usage'> & { ghToken: GhToken };
+type BootDeps = Omit<BootOptions, 'locale' | 'posixShell'> & Pick<ServerDeps, 'secret' | 'usage'> & { ghToken: GhToken };
 
 export async function bootHive(home: string, options: BootOptions = {}): Promise<BootedHive> {
+  const { posixShell: resolveShell = posixShell, ...rest } = options;
   const log = createLogger(home); // before anything else: it creates the home, and a config that fails to parse and setup mode log too
+  // #631: the shell every pty, RUN and formatter line runs through, resolved and kept before the lock: a Windows machine without Git for
+  // Windows ends the boot with the resolver's one line (run.ts logs err.message) and leaves the home free
+  resolveShell();
   // One daemon per home (#466), under an OS lock a helper holds for the daemon's lifetime (#479): before the prompts sweep and the bind.
   // run.ts releases it on a clean stop; any exit releases it too
   await acquireLock(home, (status) => log.error(`lock: the hive.lock helper exited (${status}); this home no longer keeps a second daemon out`));
   try {
     // A new secret per boot (#467): the daemon never answers without one, and every older copy stops opening it. On disk only after the
     // bind (listenAndRecord), or a client would send it to the old port hive.port still names, which another account may hold by then
-    return await bootLocked(home, options, log, newSecret());
+    return await bootLocked(home, rest, log, newSecret());
   } catch (err) {
     removeDaemonSecret(home); // before releaseLock: once the lock is free, the next daemon writes its own secret
     releaseLock(home); // a failed boot frees the home for the next start at once (#479)
@@ -57,7 +63,7 @@ export async function bootHive(home: string, options: BootOptions = {}): Promise
   }
 }
 
-async function bootLocked(home: string, options: BootOptions, log: Logger, secret: string): Promise<BootedHive> {
+async function bootLocked(home: string, options: Omit<BootOptions, 'posixShell'>, log: Logger, secret: string): Promise<BootedHive> {
   const { locale, ...given } = options;
   const language = locale === undefined ? systemLanguage() : languageFrom(locale);
   // Only a launch reads a prompt file ($(cat …) in the worker command) and every spawn rewrites it: a previous run's files are dead

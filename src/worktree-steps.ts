@@ -6,12 +6,12 @@ import { StringDecoder } from 'node:string_decoder';
 import { commandLine, okLine } from './console.js';
 import type { StepKind } from './facts.js';
 import type { Logger } from './log.js';
+import { posixShell, posixShellEnv } from './posix-shell.js';
 import { checkRelativePath, describeStep, parseSetup, type SetupStep } from './setup-script.js';
 import { timeoutMs as timeoutMsOf } from './timeout.js';
 import type { Exec, Workspace } from './types.js';
 import { gitOrWords } from './worktree.js';
 
-const SHELL = '/bin/sh';
 const TAIL_LINES = 20;
 const TAIL_CHARS = 8192; // output with no newlines (a progress bar, a binary) is bounded too: the tail lands in state.json and the UI
 const TIMEOUT = 'timeout';
@@ -265,7 +265,7 @@ async function delStep(worktree: string, step: SetupStep): Promise<string> {
 async function doStep(phase: Phase, worktree: string, step: SetupStep, deps: StepDeps & { timeoutMs?: number; env?: NodeJS.ProcessEnv }): Promise<string | undefined> {
   if (step.kind === 'copy') return copyStep(phase, step, deps.home ?? homedir());
   if (step.kind === 'del') return delStep(worktree, step);
-  await (deps.run ?? runShell)(SHELL, ['-c', step.arg], { cwd: worktree, timeoutMs: deps.timeoutMs, onOutput: deps.output, signal: deps.signal, env: deps.env });
+  await (deps.run ?? runShell)(posixShell().shell, ['-c', step.arg], { cwd: worktree, timeoutMs: deps.timeoutMs, onOutput: deps.output, signal: deps.signal, env: deps.env });
   return undefined;
 }
 
@@ -329,8 +329,9 @@ export async function expandSteps(phase: Phase, workspace: Workspace, steps: Set
 export async function runSteps(phase: Phase, workspace: Workspace, worktree: string, steps: SetupStep[], deps: StepDeps): Promise<number> {
   const expanded = await expandSteps(phase, workspace, steps); // a list runSetup already expanded holds no LOAD: the same list back
   const timeoutMs = phase.timeout === undefined ? undefined : timeoutMsOf(phase.timeout);
-  // #738: every RUN sees the workspace's env, its setup's and its teardown's alike; COPY, DEL, LOAD and the Hive's git never read it
-  const env = { ...process.env, ...workspace.env };
+  // #738: every RUN sees the workspace's env, its setup's and its teardown's alike; COPY, DEL, LOAD and the Hive's git never read it.
+  // #631: on win32 MSYS leaves the line's arguments as written, unless the workspace says otherwise
+  const env = { ...process.env, ...posixShellEnv(process.platform), ...workspace.env };
   const skip = deps.resume?.skip ?? 0;
   deps.onPlan?.(expanded.map(describeStep), skip);
   for (const [at, step] of expanded.slice(skip).entries()) {

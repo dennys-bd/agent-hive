@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { access, lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, win32 } from 'node:path';
 import { commandLine, okLine } from '../src/console.js';
+import { posixShell, posixShellEnv } from '../src/posix-shell.js';
 import { parseSetup, type SetupStep } from '../src/setup-script.js';
 import type { Exec, Workspace } from '../src/types.js';
 import { clipStep, type Phase, RunFailure, type RunShell, runShell, runSteps, type StepDeps, type StepReport, WORKTREE_NAME } from '../src/worktree-steps.js';
@@ -187,18 +188,34 @@ test('a RUN step gets the Hive\'s env with the workspace\'s on top, and only the
   const env = { GREETING: 'hi', PATH: '/ws/bin' };
   await runSteps(setupPhase(h), { ...h.workspace, env }, h.worktree, steps('RUN true'), { ...h.deps, run: recording });
   await runSteps(teardownPhase(h), h.workspace, h.worktree, steps('RUN true'), { ...h.deps, run: recording });
-  assert.deepEqual(seen, [{ ...process.env, ...env }, { ...process.env }]);
+  const own = posixShellEnv(process.platform); // #631: {} off win32
+  assert.deepEqual(seen, [{ ...process.env, ...own, ...env }, { ...process.env, ...own }]);
 });
 
 test('runShell hands options.env to the child, never in its line, and the child inherits the Hive\'s env without it (#738)', async (t) => {
   const cwd = await tempDir(t, 'run-');
   const printed = async (line: string, env?: NodeJS.ProcessEnv): Promise<string> => {
     const chunks: string[] = [];
-    await runShell('/bin/sh', ['-c', line], { cwd, onOutput: (text) => chunks.push(text), ...(env === undefined ? {} : { env }) });
+    await runShell(posixShell().shell, ['-c', line], { cwd, onOutput: (text) => chunks.push(text), ...(env === undefined ? {} : { env }) });
     return chunks.join('');
   };
   assert.equal(await printed('printf %s "$HIVE_738_NAME"', { ...process.env, HIVE_738_NAME: 'from the workspace' }), 'from the workspace');
-  assert.equal(await printed('printf %s "$PATH"'), process.env.PATH ?? '');
+  // not $PATH: MSYS rewrites it into its own /c/… form on Windows
+  process.env.HIVE_738_INHERITED = 'from the Hive';
+  t.after(async () => { delete process.env.HIVE_738_INHERITED; });
+  assert.equal(await printed('printf %s "$HIVE_738_INHERITED"'), 'from the Hive');
+});
+
+test('on the Windows lane: a RUN step goes through the real runShell and Git\'s sh.exe with System32 ahead of Git on PATH; its output and a non-zero exit code come back (#631)', { skip: process.platform !== 'win32' }, async (t) => {
+  const saved = process.env.PATH ?? '';
+  process.env.PATH = `${win32.join(process.env.SystemRoot ?? assert.fail('no SystemRoot'), 'System32')};${saved}`;
+  t.after(async () => { process.env.PATH = saved; });
+  const h = await harness(t);
+  await runSteps(setupPhase(h), h.workspace, h.worktree, steps('RUN printf %s hi'), h.deps);
+  assert.ok(h.output.join('').includes('hi'), h.output.join(''));
+  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('RUN printf partial; exit 3'), h.deps), {
+    message: 'setup failed at step 1 of 1 (line 1, RUN printf partial; exit 3): the command exited with code 3\npartial',
+  });
 });
 
 test('a RUN that exits with no output names its place, its line and its code in words, and hints at a line that hides its errors; a teardown says teardown (#267)', async (t) => {
