@@ -10,7 +10,7 @@ import { jsonResponse } from '../fakes';
 
 // Settings › workspaces › memory (#797): the card's usage section and the dialog it opens
 const VIEW: MemoryView = {
-  used: 87, cap: 4000, descriptionMax: 150, bodyMax: 4000,
+  used: 87, cap: 4000, descriptionMax: 150, bodyMax: 4000, history: [],
   entries: [
     { id: 'm-1', kind: 'fact', description: 'pnpm test runs lint, tsc and both runners', body: 'the lesson', origin: { task: '812', stage: 'build' }, at: '2026-10-01T10:00:00.000Z', uses: 5 },
     { id: 'm-2', kind: 'pref', description: 'write specs in English', body: 'the lesson', origin: { task: '790' }, at: '2026-10-02T10:00:00.000Z', uses: 1 },

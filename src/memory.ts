@@ -4,7 +4,7 @@ import { writeWorkspaceProtocol } from './hooks-settings.js';
 import { type ProtocolFor, protocolTexts } from './protocol.js';
 import { createJsonStore } from './json-store.js';
 import {
-  isMemoryKind, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_KINDS, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryOrigin,
+  isMemoryKind, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_HISTORY_MAX, MEMORY_KINDS, type MemoryChange, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryOrigin,
   type MemoryRefusalCode, type MemoryUse, type MemoryView, type OptionalTool,
 } from './types.js';
 
@@ -12,7 +12,7 @@ import {
 // written under the protocol into the workspace's own protocol files. The edits are pure and answer a new file or a refusal.
 
 const DIR = 'memory';
-export const EMPTY_MEMORY: MemoryFile = { nextId: 1, entries: [] };
+export const EMPTY_MEMORY: MemoryFile = { nextId: 1, nextChangeId: 1, entries: [], history: [] };
 export const DESCRIPTION_MESSAGE = `description must be one line of 1 to ${MEMORY_DESCRIPTION_MAX} characters`;
 export const BODY_MESSAGE = `body must be 1 to ${MEMORY_BODY_MAX} characters of plain text; line feeds and tabs are kept`;
 export const WHY_MESSAGE = `why must be one line of 1 to ${MEMORY_DESCRIPTION_MAX} characters`;
@@ -88,13 +88,31 @@ function isEntry(value: unknown): value is MemoryEntry {
     && isOrigin(value.origin) && typeof value.at === 'string' && isCount(value.uses) && (value.lastUsed === undefined || isUse(value.lastUsed));
 }
 
-/** The file as the Hive writes it (#797), or a throw: the store never overwrites a file it cannot read, and a bad entry is no silent drop. */
+const CHANGE_ID = /^h-[1-9]\d*$/;
+const CHANGE_ACTIONS: readonly unknown[] = ['revised', 'removed'];
+// #683: a change as withChange writes it. A 'user' by is no change: the user's own edits are not recorded
+const isChange = (value: unknown): value is MemoryChange => isObject(value) && typeof value.id === 'string' && CHANGE_ID.test(value.id)
+  && isEntry(value.entry) && CHANGE_ACTIONS.includes(value.action) && isOrigin(value.by) && value.by !== 'user'
+  && typeof value.why === 'string' && whyProblem(value.why) === undefined && typeof value.at === 'string';
+
+// #683: the counter and at most MEMORY_HISTORY_MAX changes, each id unique and below the counter, or nothing: no compatibility, a file without them throws
+function historyOf(raw: Record<string, unknown>): Pick<MemoryFile, 'nextChangeId' | 'history'> | undefined {
+  const { nextChangeId, history } = raw;
+  if (typeof nextChangeId !== 'number' || !Number.isInteger(nextChangeId) || nextChangeId < 1) return undefined;
+  if (!Array.isArray(history) || history.length > MEMORY_HISTORY_MAX || !history.every(isChange)) return undefined;
+  const ids = history.map((c) => Number(c.id.slice(2)));
+  return new Set(ids).size === ids.length && ids.every((n) => n < nextChangeId) ? { nextChangeId, history } : undefined;
+}
+
+/** The file as the Hive writes it (#797), or a throw: the store never overwrites a file it cannot read, and a bad entry or change is no silent drop. */
 export function parseMemory(raw: unknown): MemoryFile {
   const entries = isObject(raw) && Array.isArray(raw.entries) ? (raw.entries as unknown[]) : undefined;
   if (!isObject(raw) || !Number.isInteger(raw.nextId) || (raw.nextId as number) < 1 || !entries?.every(isEntry)) throw new Error('not a memory file');
   const ids = entries.map((e) => Number(e.id.slice(2)));
   if (new Set(ids).size !== ids.length || ids.some((n) => n >= (raw.nextId as number))) throw new Error('not a memory file');
-  return { nextId: raw.nextId as number, entries };
+  const kept = historyOf(raw);
+  if (!kept) throw new Error('not a memory file');
+  return { nextId: raw.nextId as number, nextChangeId: kept.nextChangeId, entries, history: kept.history };
 }
 
 /** What the cap counts (#797, #680): the descriptions only; bodies, ids, headings and the opening lines are outside it. */
@@ -129,8 +147,8 @@ export function renderedOf(entries: readonly MemoryEntry[], off: readonly Option
 }
 /** memory.changed's sizes (#797). */
 export const memoryCounts = (file: MemoryFile): { entries: number; used: number } => ({ entries: file.entries.length, used: memoryUsed(file.entries) });
-/** What the memory routes answer (#797); cap: the workspace's memoryCap (#73). */
-export const memoryView = (file: MemoryFile, cap: number): MemoryView => ({ entries: file.entries, used: memoryUsed(file.entries), cap, descriptionMax: MEMORY_DESCRIPTION_MAX, bodyMax: MEMORY_BODY_MAX });
+/** What the memory routes answer (#797), with the history as stored (#683); cap: the workspace's memoryCap (#73). */
+export const memoryView = (file: MemoryFile, cap: number): MemoryView => ({ entries: file.entries, history: file.history, used: memoryUsed(file.entries), cap, descriptionMax: MEMORY_DESCRIPTION_MAX, bodyMax: MEMORY_BODY_MAX });
 
 // The edit's file, or memory_full when its descriptions sum past the workspace's cap (#73) and more than before: a lesson kept from a hand edit, or
 // from before the cap was lowered, is never in the way
@@ -148,7 +166,7 @@ function withChanged(file: MemoryFile, id: string, change: (entry: MemoryEntry) 
 /** A new lesson, m-<nextId>, unused (#797). The Hive fills origin and at; the counter only grows, so an id is never reused. cap: the workspace's memoryCap (#73). */
 export function withEntry(file: MemoryFile, kind: MemoryKind, description: string, body: string, origin: MemoryOrigin, at: string, cap: number): MemoryResult {
   const entry: MemoryEntry = { id: `m-${file.nextId}`, kind, description: description.trim(), body: body.trim(), origin, at, uses: 0 };
-  return capped(file, { nextId: file.nextId + 1, entries: [...file.entries, entry] }, cap);
+  return capped(file, { ...file, nextId: file.nextId + 1, entries: [...file.entries, entry] }, cap);
 }
 
 /** A lesson's kind, description and body rewritten by the user (#797): its origin and uses stay, `at` moves. */

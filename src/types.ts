@@ -2070,11 +2070,15 @@ export interface MemoryEntry {
   uses: number; // hive_recall calls naming it (#681); 0 for a new lesson; an edit keeps it
   lastUsed?: MemoryUse;
 }
-export interface MemoryFile { nextId: number; entries: MemoryEntry[] } // empty: { nextId: 1, entries: [] }
-/** GET /workspaces/:name/memory (#797), and every write's answer. used: the sum of the descriptions' lengths (#680), cap: the workspace's memoryCap (#73) */
-export interface MemoryView { entries: MemoryEntry[]; used: number; cap: number; descriptionMax: number; bodyMax: number }
+/** A change of the memory's history (#683): the lesson as it was, whole, before a worker's hive_revise or hive_forget. id: h-<n> from
+ * nextChangeId, never reused; by: the caller's origin; at: when the change was made. */
+export interface MemoryChange { id: string; entry: MemoryEntry; action: 'revised' | 'removed'; by: Exclude<MemoryOrigin, 'user'>; why: string; at: string }
+export interface MemoryFile { nextId: number; nextChangeId: number; entries: MemoryEntry[]; history: MemoryChange[] } // empty: EMPTY_MEMORY
+/** GET /workspaces/:name/memory (#797), and every write's answer. used: the sum of the descriptions' lengths (#680), cap: the workspace's memoryCap (#73); history: as stored, oldest first (#683) */
+export interface MemoryView { entries: MemoryEntry[]; history: MemoryChange[]; used: number; cap: number; descriptionMax: number; bodyMax: number }
 export const MEMORY_CAP_MIN = 300; // #73: a workspace's memoryCap holds at least two full descriptions (MEMORY_DESCRIPTION_MAX, #680)
 export const MEMORY_CAP_MAX = 20000; // #73: a full memory stays around 5k tokens per run
+export const MEMORY_HISTORY_MAX = 50; // #683: the newest changes the history keeps; outside the cap
 export const MEMORY_CAP_DEFAULT = 4000; // #73: what a new workspace row shows; the parser has no default
 // #78: the colours Settings offers a workspace, in the picker's order. One lightness and chroma, so no preset stands out on the dark theme
 export const WORKSPACE_PRESET_COLORS: readonly string[] = [25, 70, 130, 190, 240, 295, 340].map((h) => `oklch(0.72 0.12 ${h})`);
