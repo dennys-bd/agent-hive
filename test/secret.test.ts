@@ -26,9 +26,11 @@ test('presentedSecret reads the x-hive-secret header, else the cookie of this po
   assert.equal(presentedSecret({ headers: {} }, 4242), undefined);
 });
 
-test('pagePolicy lets the pages frame the design frame route of this port, on both hosts, and nothing else; every other directive is #467\'s (#108)', () => {
+test('pagePolicy lets the pages frame the design frame route and the draw.io route of this port, on both hosts, and nothing else; every other directive is #467\'s (#108, #955)', () => {
   const policy = pagePolicy(4242);
-  assert.deepEqual(directive(policy, 'frame-src'), ['http://127.0.0.1:4242/design-frame/', 'http://localhost:4242/design-frame/']);
+  assert.deepEqual(directive(policy, 'frame-src'), [
+    'http://127.0.0.1:4242/design-frame/', 'http://localhost:4242/design-frame/', 'http://127.0.0.1:4242/drawio/', 'http://localhost:4242/drawio/',
+  ]);
   const before = "img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'";
   assert.equal(policy.replace(/frame-src [^;]+/, "frame-src 'none'"), before);
 });

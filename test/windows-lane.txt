@@ -5,6 +5,7 @@ test/clipboard-files.test.js
 test/daemon-files.test.js
 test/decomposition-deliver.test.js
 test/exec-path.test.js
+test/fetch-drawio.test.js
 test/formatter-detect.test.js
 test/home-acl.test.js
 test/ide.test.js
@@ -15,6 +16,7 @@ test/platform-commands.test.js
 test/posix-shell.test.js
 test/postinstall.test.js
 test/same-path.test.js
+test/server-drawio.test.js
 test/server-file-base.test.js
 test/server-move.test.js
 test/server-tree-ops.test.js

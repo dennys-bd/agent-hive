@@ -41,6 +41,8 @@ jobs:
     env:
       # nothing here launches Electron; skip the ~100MB binary the postinstall would fetch
       ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      # the test lanes serve no diagram; the installer job does not skip it, so the installer carries the webapp (#955)
+      HIVE_SKIP_DRAWIO: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -60,6 +62,8 @@ jobs:
     timeout-minutes: 15
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      # the test lanes serve no diagram; the installer job does not skip it, so the installer carries the webapp (#955)
+      HIVE_SKIP_DRAWIO: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,6 +115,9 @@ jobs:
             Get-ChildItem -Path $programs -Depth 1 -ErrorAction SilentlyContinue | Out-Host
             throw "no app at $app"
           }
+
+          $drawio = Join-Path $programs 'agent-hive\resources\app\vendor\drawio\index.html'
+          if (-not (Test-Path -LiteralPath $drawio -PathType Leaf)) { throw "no draw.io webapp at $drawio" }
 
           $check = Join-Path $env:RUNNER_TEMP 'conpty-check.cjs'
           Set-Content -LiteralPath $check -Encoding utf8 -Value @'

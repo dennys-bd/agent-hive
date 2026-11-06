@@ -13,6 +13,9 @@ files:
   - dist/**
   - assets/**
   - package.json
+  # the draw.io webapp (#955): fetched by the build, served by the /drawio/ route of the installed app; its Apache-2.0 notice beside it
+  - vendor/drawio/**
+  - THIRD_PARTY_NOTICES.md
   - "!dist/test/**"
   - "!dist/scripts/**"
 win:
