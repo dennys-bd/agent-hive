@@ -1,5 +1,8 @@
-import { type KeyboardEvent, type Ref, useEffect, useRef, useState } from 'react';
-import { type Activity, type Task, FEEDBACK_MAX, type OperationId } from '../../types';
+import { ArrowRightIcon } from 'lucide-react';
+import { type KeyboardEvent, type Ref, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { resultOf } from '../../activities';
+import { approvalExit } from '../../transitions';
+import { type Activity, END, type State, type Task, type TaskApproval, FEEDBACK_MAX, type OperationId } from '../../types';
 
 /** What the approval's controls read of the task's live activity (#629): its approval and its id, the routes' :id. */
 type ApprovalOf = Pick<Activity, 'id' | 'approval'>;
@@ -12,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
 import { binding, isMac, pressed } from '@/lib/shortcut-bindings';
+import { verdictLabel } from '@/lib/flow-labels';
 import { countdown } from '@/lib/usage';
 
 // The detail's buttons (redesign 06): 28px tall at 13px, the outline one a bare border with no fill and no shadow, as the handoff draws them
@@ -101,6 +105,69 @@ export function takeFeedbackRequest(itemId: string): boolean {
   if (pendingFeedback !== itemId) return false;
   pendingFeedback = undefined;
   return true;
+}
+
+// The evidence hive_done gave with the approval's verdict (#134, #693): only when the record's verdict is that one, so an older stage's stays out
+function evidenceOf(result: Record<string, unknown> | undefined, verdict: string): string | undefined {
+  const field = result?.verdict;
+  if (typeof field !== 'object' || field === null) return undefined;
+  const { name, evidence } = field as Record<string, unknown>;
+  return name === verdict && typeof evidence === 'string' && evidence.trim() !== '' ? evidence : undefined;
+}
+
+// The verdict's evidence, clamped to four lines (#693). Whether it overflows is measured, never guessed by length: only then does the text
+// button show, and it stays the same button when it flips, so the focus stays on it. Open, the text grows in the panel's own scroll.
+function Evidence({ text }: { text: string }) {
+  const id = useId();
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [isCut, setIsCut] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el === null || isOpen) return;
+    const read = (): void => setIsCut(el.scrollHeight > el.clientHeight + 1);
+    const observer = new ResizeObserver(read);
+    observer.observe(el);
+    read();
+    return () => observer.disconnect();
+  }, [isOpen]);
+  return (
+    <>
+      <p ref={ref} id={id} className={`m-0 whitespace-pre-line text-pretty text-foreground text-xs leading-[18px] [overflow-wrap:anywhere] ${isOpen ? '' : 'line-clamp-4'}`}>{text}</p>
+      {(isCut || isOpen) && (
+        <button type="button" aria-expanded={isOpen} aria-controls={id} onClick={() => setIsOpen(!isOpen)} className="self-start p-0 font-medium text-foreground text-xs">
+          {t(isOpen ? 'approval.evidenceLess' : 'approval.evidenceMore')}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** The verdict an approval holds (#693, handoff tweak veredito): veredito, the verdict in a neutral pill as a flow arrow writes it, and where
+ * approving leads, read with the same rule the reducer fires; then its evidence. No exit, or one to end, shows the pill alone: an arrow to
+ * nothing says nothing. Nothing here is coloured: the box's tint is the status. Without a verdict it renders nothing. */
+export function ApprovalVerdict({ task, state, approval }: { task: Task; state: State; approval: TaskApproval }) {
+  const { verdict } = approval;
+  if (verdict === undefined) return null;
+  const exit = approvalExit(state, task, approval);
+  const to = exit === undefined || exit.to === END ? undefined : exit.to;
+  const evidence = evidenceOf(resultOf(state, task.item.itemId), verdict);
+  return (
+    <>
+      <div className="flex min-w-0 items-center gap-1.5 text-xs leading-[18px]">
+        <span className="shrink-0 text-muted-foreground">{t('approval.verdict')}</span>
+        <span title={verdict} className="max-w-full truncate rounded-[9px] border bg-background px-2 text-foreground">{verdictLabel(verdict)}</span>
+        {to !== undefined && (
+          <>
+            <ArrowRightIcon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+            <span className="sr-only">{t('approval.goesTo')}</span>
+            <span title={`${t('approval.goesTo')} ${to}`} className="min-w-0 truncate text-foreground">{to}</span>
+          </>
+        )}
+      </div>
+      {evidence !== undefined && <Evidence text={evidence} />}
+    </>
+  );
 }
 
 /** The detail's status box while the task awaits approval (#268, #685, redesign 06): with a held session the time it has left; aprovar, and

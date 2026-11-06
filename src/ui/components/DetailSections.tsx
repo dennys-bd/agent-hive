@@ -12,7 +12,7 @@ import { inFlow } from '../../tasks';
 import type { TaskState } from '@/lib/status';
 import { baseText } from '@/components/ForkSyncNotice';
 import { act, actThen, attachRun } from '@/components/actions';
-import { ApprovalActions } from '@/components/ApprovalActions';
+import { ApprovalActions, ApprovalVerdict } from '@/components/ApprovalActions';
 import { CommandsLine } from '@/components/CommandsProgress';
 import { RestartDialog } from '@/components/RestartDialog';
 import { type OpenPr, useOpenFile, useOpenIssue, useOpenPr, useOpenRun, useOpenStarted } from '@/components/terminal-tabs';
@@ -92,6 +92,7 @@ export function StatusBox({ task, state, isActivity }: { task: Task; state: Stat
         <span className={`font-medium ${STATUS_WORD[status]}`}>{word}</span>
         <span className={`ml-auto ${MUTED}`}>{[...(inFlow(task) ? [t('detail.stage', { stage: task.stage })] : []), ...since].join(' · ')}</span>
       </div>
+      {answerable?.approval && <ApprovalVerdict key={answerable.approval.since} task={task} state={state} approval={answerable.approval} />} {/* #693: under the head, a new stage end mounts it closed */}
       {isActivity && <RunLines task={task} state={state} />}
       <CommandsLine task={task} state={state} /> {/* #755: a commands stage's progress or failure, with ver saída */}
       {answerable && <ApprovalActions key={answerable.approval?.since} task={task} activity={answerable} openSession={openFeedbackSession(task, state) !== undefined} createsIssues={createsIssues(task, state)} />}

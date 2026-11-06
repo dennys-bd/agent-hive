@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  exitName, exitOf, FEEDBACK_TEMPLATE, isAutomatic, needsHandover, outgoing, resolveSession, retryTransition, takeTry, transitionByKey, transitionKey, transitionPrompt, verdictsOf, verdictText,
+  approvable, approvalEnd, approvalExit, exitName, exitOf, FEEDBACK_TEMPLATE, isAutomatic, needsHandover, outgoing, resolveSession, retryTransition, takeTry, transitionByKey, transitionKey, transitionPrompt, verdictsOf, verdictText,
 } from '../src/transitions.js';
 import type { ActivityRecord, AgentId, Stage, Task, Transition } from '../src/types.js';
 
@@ -50,6 +50,26 @@ test('exitOf matches the trigger and the verdict; an agent verdict with no trans
   assert.equal(exitOf(graph, 'Build', 'approved'), undefined);
   assert.equal(exitOf(graph, 'Gone', 'done'), undefined);
   assert.deepEqual([exitName('approved'), exitName('verdict', 'failed')], ['approved', 'verdict:failed']);
+});
+
+test('approvalEnd and approvalExit: a stored verdict with its own transition fires it, an unrouted verdict or none fires approved, a verdict to end is that transition; approvable is an exit or a stage gone (#693)', () => {
+  const spec = { stage: 'Spec' };
+  assert.deepEqual(approvalEnd(graph, spec, { verdict: 'ready' }), { trigger: 'verdict', verdict: 'ready' });
+  assert.equal(approvalExit(graph, spec, { verdict: 'ready' }), FLOW[2]);
+  assert.deepEqual(approvalEnd(graph, spec, { verdict: 'needs design' }), { trigger: 'approved' }, 'no transition of its own: approved, never done');
+  assert.equal(approvalExit(graph, spec, { verdict: 'needs design' }), FLOW[0]);
+  assert.deepEqual(approvalEnd(graph, spec, {}), { trigger: 'approved' });
+  assert.equal(approvalExit(graph, spec, {}), FLOW[0]);
+  const out = T('Spec', 'end', 'verdict', { verdict: 'needs design' });
+  const ending = { stages: STAGES, transitions: [...FLOW, out] };
+  assert.deepEqual(approvalEnd(ending, spec, { verdict: 'needs design' }), { trigger: 'verdict', verdict: 'needs design' });
+  assert.equal(approvalExit(ending, spec, { verdict: 'needs design' }), out);
+  const routedOnly = { stages: STAGES, transitions: [FLOW[2]] };
+  assert.equal(approvalExit(routedOnly, spec, {}), undefined, 'no approved transition: nowhere to go');
+  assert.deepEqual(
+    [approvable(routedOnly, spec, { verdict: 'ready' }), approvable(routedOnly, spec, {}), approvable(routedOnly, { stage: 'Gone' }, {})],
+    [true, false, true], 'a stage gone from the flow lets the task leave, as answerable has it',
+  );
 });
 
 test('verdictsOf: a prompt stage its own, commands and wait for CI passed and failed, a gate and a delete-activity stage none (#134)', () => {

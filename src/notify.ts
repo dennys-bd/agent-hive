@@ -20,8 +20,8 @@ function subjectOf(state: State, activityId: string): Subject | undefined {
   return task && { title: taskLabel(task), taskId: taskId(task) };
 }
 
-const make = (kind: NotificationKind, key: string, { title, taskId: id }: Subject): HiveNotification =>
-  ({ kind, key, title, body: t(BODY[kind]), ...(id === undefined ? {} : { taskId: id }) });
+const make = (kind: NotificationKind, key: string, { title, taskId: id }: Subject, body: string): HiveNotification =>
+  ({ kind, key, title, body, ...(id === undefined ? {} : { taskId: id }) });
 
 // A session that entered waiting since prev (by run), or waits again with a new waitingSince
 function waitingOf(prev: State, next: State): HiveNotification[] {
@@ -30,18 +30,18 @@ function waitingOf(prev: State, next: State): HiveNotification[] {
     const before = prev.workers.find((w) => w.runId === worker.runId);
     if (before?.status === 'waiting' && before.waitingSince === worker.waitingSince) return [];
     const subject = subjectOf(next, worker.activityId);
-    return subject ? [make('waiting', `waiting:${worker.runId}:${worker.waitingSince}`, subject)] : [];
+    return subject ? [make('waiting', `waiting:${worker.runId}:${worker.waitingSince}`, subject, t(BODY.waiting))] : [];
   });
 }
 
-// A live activity whose `read` value is set and differs from prev's for the same id: a new approval gate, a new error
-function activityChanges(kind: NotificationKind, read: (a: Activity) => string | undefined): (prev: State, next: State) => HiveNotification[] {
+// A live activity whose `read` value is set and differs from prev's for the same id: a new approval gate, a new error. `body` writes its text
+function activityChanges(kind: NotificationKind, read: (a: Activity) => string | undefined, body = (_a: Activity): string => t(BODY[kind])): (prev: State, next: State) => HiveNotification[] {
   return (prev, next) => next.activities.flatMap((activity) => {
     const value = read(activity);
     const before = prev.activities.find((a) => a.id === activity.id);
     if (value === undefined || (before !== undefined && read(before) === value)) return [];
     const subject = subjectOf(next, activity.id);
-    return subject ? [make(kind, `${kind}:${activity.id}:${value}`, subject)] : [];
+    return subject ? [make(kind, `${kind}:${activity.id}:${value}`, subject, body(activity))] : [];
   });
 }
 
@@ -51,13 +51,17 @@ function prsOf(prev: State, next: State): HiveNotification[] {
     const seen = new Set((recordOf(prev, record.id)?.prs ?? []).map((p) => p.url));
     const subject = subjectOf(next, record.id);
     if (!subject) return [];
-    return (record.prs ?? []).filter((p) => !seen.has(p.url)).map((p) => make('pr', `pr:${p.url}`, subject));
+    return (record.prs ?? []).filter((p) => !seen.has(p.url)).map((p) => make('pr', `pr:${p.url}`, subject, t(BODY.pr)));
   });
 }
 
+// #693: an approval that holds a verdict names it, as the agent wrote it; the key stays since's, so the same gate never notifies twice
+const approvalBody = (a: Activity): string =>
+  (a.approval?.verdict === undefined ? t(BODY.approval) : t('notify.approvalVerdict', { verdict: a.approval.verdict }));
+
 const DERIVE: Record<NotificationKind, (prev: State, next: State) => HiveNotification[]> = {
   waiting: waitingOf,
-  approval: activityChanges('approval', (a) => a.approval?.since), // held (status approval) or released (#321)
+  approval: activityChanges('approval', (a) => a.approval?.since, approvalBody), // held (status approval) or released (#321)
   pr: prsOf,
   failed: activityChanges('failed', (a) => a.error), // a spawn, a run, a commands stage, a CI wait or a source action that failed
 };

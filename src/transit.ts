@@ -198,8 +198,9 @@ const EVIDENCE_ALONE_MESSAGE = 'evidence needs a verdict';
 const NO_VERDICT_MESSAGE = 'this stage gives no verdict';
 const EVIDENCE_SIZE_MESSAGE = `evidence must be at most ${FEEDBACK_MAX} characters`;
 
-/** What a missing verdict is checked against (#493): whether the stage has a done exit to take the task, and the call's own result. */
-export interface VerdictEnd { hasDone: boolean; result?: Record<string, unknown> }
+/** What a missing verdict is checked against (#493): whether the stage has a done exit to take the task, and the call's own result. #693:
+ * hasApproved, whether it has an approved one, the only exit an approval stage's verdict-less end can take; absent reads as none. */
+export interface VerdictEnd { hasDone: boolean; hasApproved?: boolean; result?: Record<string, unknown> }
 
 // #493: without a done exit a missing verdict would stop the task; a verdict key in result is the agent's verdict in the wrong field
 function missingVerdict(allowed: readonly string[], end: VerdictEnd): string | undefined {
@@ -216,8 +217,9 @@ export function verdictProblem(verdict: string | undefined, evidence: string | u
   const allowed = stage === undefined ? [] : verdictsOf(stage);
   // a stage whose verdicts are the Hive's own (CI, commands) keeps #339's answer: the agent was never asked for one
   const own = stage === undefined || hasFixedVerdicts(stage) ? [] : allowed;
-  // an approval stage never has a done exit (config-transitions): its end waits for the user, who needs no verdict
-  const taken = { ...end, hasDone: end.hasDone || stage?.approval === true };
+  // an approval stage never has a done exit (config-transitions): its end waits for the user, who can approve a verdict-less one only
+  // through an approved transition (#693); without one the agent must name a verdict that has its own
+  const taken = { ...end, hasDone: end.hasDone || (stage?.approval === true && end.hasApproved === true) };
   if (verdict === undefined) return missingVerdict(own, taken) ?? (evidence === undefined ? undefined : EVIDENCE_ALONE_MESSAGE);
   if (!allowed.includes(verdict)) return allowed.length === 0 ? NO_VERDICT_MESSAGE : `verdict must be one of this stage's: ${allowed.join(', ')}`;
   return evidence !== undefined && evidence.length > FEEDBACK_MAX ? EVIDENCE_SIZE_MESSAGE : undefined;

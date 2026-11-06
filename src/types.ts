@@ -457,6 +457,7 @@ export interface TaskApproval {
   since: string; // ISO, the Stop (or a free session's hive_done) that ended the stage
   until?: string; // ISO; the held Stop is released at this time
   sessionId?: string; // #812: the free session whose hive_done ended the stage; feedback and the handoff go to it
+  verdict?: string; // #693: the verdict the stage ended with; approving fires its transition when it has one, else `approved`
 }
 
 /** The longest feedback the Hive takes (#268), in characters: the route, the loader and the panel's box. */

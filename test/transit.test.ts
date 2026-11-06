@@ -249,8 +249,20 @@ test('a missing verdict is refused, naming the stage\'s, when the stage has no d
   assert.equal(verdictProblem(undefined, undefined, ci, { hasDone: false }), undefined, 'the Hive\'s own verdicts are never asked of the agent');
   for (const action of ['commands', 'evaluate'] as const) assert.equal(verdictProblem(undefined, undefined, { action }, { hasDone: false }), undefined, action);
   const gate: Stage = { ...judge, approval: true };
-  assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false }), undefined, 'an approval stage waits for the user instead');
+  assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false, hasApproved: true }), undefined, 'an approval stage with approved waits for the user instead');
   assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false, result: { verdict: 'leaf' } }), misplaced, 'a misplaced verdict is still caught there');
+});
+
+test('a verdict-less hive_done on an approval stage is refused without an approved transition, which alone could approve it, and accepted with one; fixed verdicts are unchanged (#693)', () => {
+  const gate: Stage = { name: 'route', from: {}, prompt: '/route', verdicts: ['leaf', 'split'], approval: true };
+  const named = 'verdict is missing: pass one of this stage\'s: leaf, split';
+  assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false, hasApproved: false }), named);
+  assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false }), named, 'no hasApproved reads as none');
+  assert.equal(verdictProblem(undefined, undefined, gate, { hasDone: false, hasApproved: true }), undefined);
+  assert.equal(verdictProblem('leaf', undefined, gate, { hasDone: false, hasApproved: false }), undefined, 'a verdict given waits for the user, routed or not');
+  for (const action of ['commands', 'evaluate'] as const) {
+    assert.equal(verdictProblem(undefined, undefined, { action, approval: true }, { hasDone: false, hasApproved: false }), undefined, action);
+  }
 });
 
 test('a transition marks the task it moves placedByHand, so the next poll never pulls an activity-less task back to its entry; a loop to its own stage does not (#670)', () => {
