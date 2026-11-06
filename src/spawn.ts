@@ -1,17 +1,16 @@
-import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
+import { killTree } from './kill-tree.js';
 import { shellInitDir, shellQuote } from './shell-init.js';
 import { shimDir } from './shim.js';
 import { commandFirst } from './stage-agent.js';
 import { historyPath } from './terminal-files.js';
 import { AGENT_IDS, type Stage, type Exec, type SessionPolicy, type Item, type LaunchArg, type PtyLaunch } from './types.js';
+import { listProcesses, matching } from './win-procs.js';
 
-const execFileAsync: Exec = promisify(execFile);
 const NO_MATCH_EXIT = 1;
 
 // {id} {number} {title} {body} {url}, {verdict} {feedback} (#134), or {result.<dotted path>} into the task's result (#99). One pass: text a
@@ -178,10 +177,23 @@ async function matchProcess(tool: 'pkill' | 'pgrep', pattern: string, exec: Exec
   }
 }
 
-/** Boot-only orphan defense (and the tab's kill): kills a worker still holding a worktree. The pattern is the pty id — a uuid,
- * unique per run and free of regex metacharacters, carried in the agent's own argv (the per-worker MCP config path, <ptyId>.mcp.json). Resolves true when pkill matched. */
-export const killStray = (pattern: string, exec: Exec = execFileAsync): Promise<boolean> => matchProcess('pkill', pattern, exec);
+// win32 (#638): no pkill or pgrep. One listing of the table; every row whose line matches is killed with its tree (taskkill /T takes the
+// agent's children too), all awaited. killTree never rejects, so a row whose parent this pass already killed is harmless.
+async function killListed(pattern: string, exec: Exec): Promise<boolean> {
+  const rows = matching(await listProcesses(exec), pattern);
+  await Promise.all(rows.map((row) => killTree(row.pid, 'win32', exec)));
+  return rows.length > 0;
+}
+
+const isListed = async (pattern: string, exec: Exec): Promise<boolean> => matching(await listProcesses(exec), pattern).length > 0;
+
+/** Boot-only orphan defense (and the tab's kill): kills a worker still holding a worktree. The pattern is the runner's stray pattern, built
+ * on the pty id (a uuid unique per run, carried in the agent's own argv: the per-worker MCP config path, <ptyId>.mcp.json). Resolves true
+ * when a process matched. On win32 through the process listing (#638); a failed listing rejects there as a failed pkill does here. */
+export const killStray = (pattern: string, exec: Exec, platform: NodeJS.Platform): Promise<boolean> =>
+  (platform === 'win32' ? killListed(pattern, exec) : matchProcess('pkill', pattern, exec));
 
 /** Whether a process matching the pattern is still running: the tab's kill polls the pty id, dropDeadSessions polls the slug
- * (the user's own session line carries it inside the worktree path). */
-export const isStrayAlive = (pattern: string, exec: Exec = execFileAsync): Promise<boolean> => matchProcess('pgrep', pattern, exec);
+ * (the user's own session line carries it inside the worktree path). On win32 through the process listing (#638). */
+export const isStrayAlive = (pattern: string, exec: Exec, platform: NodeJS.Platform): Promise<boolean> =>
+  (platform === 'win32' ? isListed(pattern, exec) : matchProcess('pgrep', pattern, exec));

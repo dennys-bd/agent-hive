@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createPtyHost } from '../src/pty-host.js';
-import { HANDOFF_PROMPT, isStrayAlive, killStray, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, terminalEnv, verdictsLine, withHandoff, writePrompt } from '../src/spawn.js';
+import { HANDOFF_PROMPT, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, terminalEnv, verdictsLine, withHandoff, writePrompt } from '../src/spawn.js';
 import { runners } from '../src/agents/registry.js';
 import { shellQuote } from '../src/shell-init.js';
 import { launchInternalPty } from '../src/spawn-internal.js';
@@ -15,7 +15,6 @@ import { SECRET } from './secret-client.js';
 
 const SECRET_FILE_PATH = '/home/agent-hive/hive.secret';
 import { tempDir } from './temp-dir.js';
-import { NO_PROCESS_LIST } from './process-list.js';
 
 const item = { itemId: 'I1', id: '7', title: 'Fix "login"', body: 'line1\n$(echo pwned) `x`', url: 'https://github.com/a/b/issues/7' };
 
@@ -104,11 +103,6 @@ test('withoutHiveEnv strips every runner\'s host env (CLAUDECODE, CLAUDE_CODE_CH
 test('runTmpDir is <base>/hive-runs/<ptyId>, under os.tmpdir() by default (#428)', () => {
   assert.equal(runTmpDir('W1', '/base'), join('/base', 'hive-runs', 'W1'));
   assert.equal(runTmpDir('W1'), join(tmpdir(), 'hive-runs', 'W1'));
-});
-
-test('killStray and isStrayAlive resolve false when no process matches', { skip: NO_PROCESS_LIST }, async () => {
-  assert.equal(await killStray('definitely-not-running-worker-xyz'), false);
-  assert.equal(await isStrayAlive('definitely-not-running-worker-xyz'), false);
 });
 
 test('shellQuote single-quotes and escapes embedded quotes', () => {

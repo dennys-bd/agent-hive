@@ -1,8 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { promisify } from 'node:util';
+import { runners } from '../src/agents/registry.js';
 import { mcpConfigPattern } from '../src/hooks-settings.js';
+import { isStrayAlive, killStray } from '../src/spawn.js';
 import type { Exec } from '../src/types.js';
 import { childrenOf, listProcesses, matching, parseProcesses, type ProcessRow, subtree } from '../src/win-procs.js';
+import { NO_PROCESS_LIST } from './process-list.js';
+import { childWithGrandchild, gone } from './process-probe.js';
+import { listed, listingExec } from './process-table.js';
 
 const POWERSHELL = /^[A-Za-z]:\\.*\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$/;
 const PTY = 'a3f1c2d4-0000-4000-8000-000000000001';
@@ -79,4 +87,66 @@ test('listProcesses runs Windows PowerShell 5.1 by full path with the CIM listin
 test('listProcesses rejects when its exec fails: a failed listing is never read as an empty table (#638)', async () => {
   const failing: Exec = async () => { throw new Error('Command failed: powershell.exe'); };
   await assert.rejects(listProcesses(failing), /powershell/);
+});
+
+const realExec: Exec = promisify(execFile);
+const onWindows = { skip: process.platform !== 'win32' && 'Windows only: needs the real process table, runs on the Windows lane', timeout: 60_000 };
+const OTHER = 'b7e2d3c4-0000-4000-8000-000000000002';
+const claudeLine = (pty: string): string => `"C:\\Users\\a b\\.local\\bin\\claude.exe" --mcp-config C:\\t\\hive-runs\\${pty}\\${pty}.mcp.json`;
+
+test('on win32 isStrayAlive matches the runner\'s stray pattern in one listing: true for its own .mcp.json, false when only another pty\'s is listed (#638)', async () => {
+  const pattern = runners.claude.strayPattern(PTY);
+  assert.equal(await isStrayAlive(pattern, listingExec([listed(400, 300, claudeLine(PTY))]).exec, 'win32'), true);
+  assert.equal(await isStrayAlive(pattern, listingExec([listed(401, 300, claudeLine(OTHER))]).exec, 'win32'), false);
+});
+
+test('on win32 killStray kills every matching row\'s tree with taskkill /T /F /PID and answers whether one matched (#638)', async () => {
+  const pattern = runners.claude.strayPattern(PTY);
+  const { exec, calls } = listingExec([listed(400, 300, claudeLine(PTY)), listed(401, 300, claudeLine(OTHER)), listed(402, 400, claudeLine(PTY))]);
+  assert.equal(await killStray(pattern, exec, 'win32'), true);
+  assert.deepEqual(calls, [['taskkill', '/T', '/F', '/PID', '400'], ['taskkill', '/T', '/F', '/PID', '402']]);
+  const none = listingExec([listed(401, 300, claudeLine(OTHER))]);
+  assert.equal(await killStray(pattern, none.exec, 'win32'), false);
+  assert.deepEqual(none.calls, [], 'no match, no taskkill');
+});
+
+test('on win32 killStray and isStrayAlive reject when the listing\'s exec fails, even with exit 1, as a failing pkill does (#638)', async () => {
+  const failing: Exec = async () => { throw Object.assign(new Error('Command failed: powershell.exe'), { code: 1 }); };
+  await assert.rejects(killStray(PTY, failing, 'win32'), /powershell/);
+  await assert.rejects(isStrayAlive(PTY, failing, 'win32'), /powershell/);
+});
+
+test('off win32 killStray and isStrayAlive still run pkill -f and pgrep -f with the pattern; exit 1 is no match, anything else rejects (#638)', async () => {
+  for (const platform of ['darwin', 'linux'] as const) {
+    const calls: string[][] = [];
+    const exec: Exec = async (file, args) => {
+      calls.push([file, ...args]);
+      return { stdout: '' };
+    };
+    assert.equal(await killStray(PTY, exec, platform), true);
+    assert.equal(await isStrayAlive(PTY, exec, platform), true);
+    assert.deepEqual(calls, [['pkill', '-f', '--', PTY], ['pgrep', '-f', '--', PTY]], platform);
+    const noMatch: Exec = async () => { throw Object.assign(new Error('exit 1'), { code: 1 }); };
+    assert.equal(await killStray(PTY, noMatch, platform), false);
+    assert.equal(await isStrayAlive(PTY, noMatch, platform), false);
+    const refused: Exec = async () => { throw Object.assign(new Error('exit 3'), { code: 3 }); };
+    await assert.rejects(isStrayAlive(PTY, refused, platform), /exit 3/);
+  }
+});
+
+// moved from test/spawn.test.ts (#638): pgrep and pkill against the real table, wherever pgrep can read it
+test('killStray and isStrayAlive resolve false when no process matches', { skip: NO_PROCESS_LIST }, async () => {
+  assert.equal(await killStray('definitely-not-running-worker-xyz', realExec, process.platform), false);
+  assert.equal(await isStrayAlive('definitely-not-running-worker-xyz', realExec, process.platform), false);
+});
+
+test('on the Windows lane: isStrayAlive sees a node whose argv holds a unique pattern, killStray takes it and the child it started, and then both answer false (#638)', onWindows, async (t) => {
+  const marker = `hive-638-${randomUUID()}`;
+  const { pid, grandchild } = await childWithGrandchild(t, [marker]);
+  assert.equal(await isStrayAlive(marker, realExec, process.platform), true);
+  assert.equal(await killStray(marker, realExec, process.platform), true);
+  assert.equal(await gone(pid), true, 'the matched node');
+  assert.equal(await gone(grandchild), true, 'the child it started, through taskkill /T');
+  assert.equal(await isStrayAlive(marker, realExec, process.platform), false);
+  assert.equal(await killStray(marker, realExec, process.platform), false);
 });
