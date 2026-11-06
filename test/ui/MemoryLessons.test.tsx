@@ -53,6 +53,35 @@ test('each lesson shows its id, its kind and its meta line, with the last why as
   expect(table.getByText('citada 0 vezes')).not.toHaveAttribute('title');
 });
 
+test('a lesson\'s description opens and closes its body, collapsed at first and independently per row; the meta line comes last (#680)', async () => {
+  const user = userEvent.setup();
+  render(<Harness />);
+  const table = lessons();
+  const first = table.getByRole('button', { name: 'pnpm test runs lint, tsc and both runners' });
+  const second = table.getByRole('button', { name: 'write specs in English' });
+  expect(first).toHaveAttribute('aria-expanded', 'false');
+  expect(table.getByText(BODY_1)).not.toBeVisible();
+  await user.click(first);
+  expect(first).toHaveAttribute('aria-expanded', 'true');
+  expect(document.getElementById(first.getAttribute('aria-controls') ?? '')).toHaveTextContent(BODY_1);
+  expect(table.getByText(BODY_1)).toBeVisible();
+  expect(table.getByText(BODY_2)).not.toBeVisible();
+  await user.click(second);
+  expect(table.getByText(BODY_1)).toBeVisible();
+  expect(table.getByText(BODY_2)).toBeVisible();
+  await user.click(first);
+  expect(table.getByText(BODY_1)).not.toBeVisible();
+  expect(table.getByText(BODY_2)).toBeVisible();
+  const meta = table.getByText(new RegExp(`^tarefa #812 · build · 2026-10-01 · descrição 41 · corpo ${BODY_1.length} caracteres`));
+  expect(table.getByText(BODY_1).compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('a body keeps its line feeds and tabs as written (#680)', () => {
+  const body = 'a\n\tb';
+  render(<MemoryLessons workspace="hive" view={{ ...VIEW, entries: [{ ...VIEW.entries[0], body }] }} onView={vi.fn()} />);
+  expect(document.getElementById(lessons().getByRole('button', { name: VIEW.entries[0].description }).getAttribute('aria-controls') ?? '')?.textContent).toBe(body);
+});
+
 test('the filter counts each kind and shows only its lessons; ✕ removes a lesson at once and an empty kind says so (#797)', async () => {
   const user = userEvent.setup();
   render(<Harness />);

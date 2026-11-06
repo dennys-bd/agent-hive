@@ -1,4 +1,4 @@
-import { PencilIcon, XIcon } from 'lucide-react';
+import { ChevronRightIcon, PencilIcon, XIcon } from 'lucide-react';
 import { useId, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,13 @@ export const LESSON_GRID = 'grid grid-cols-[10rem_7rem_minmax(0,1fr)_4.5rem] gap
 interface LessonRowProps { workspace: string; entry: MemoryEntry; onEdit(): void; onView(view: MemoryView): void }
 interface LessonEditRowProps { workspace: string; entry?: MemoryEntry; onSaved(view: MemoryView): void; onCancel(): void }
 
-/** One lesson as read (#797): its id, kind, description and meta line, the last why as the title of its citations; ✎ and ✕, which removes at once. */
+const DISCLOSURE = 'flex items-start gap-1.5 rounded-sm text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+
+/** One lesson as read (#797, #680): its id, kind, description as a disclosure of its body, then the meta line with the last why as the title of
+ * its citations; ✎ and ✕, which removes at once. */
 export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) {
+  const bodyId = useId();
+  const [open, setOpen] = useState(false); // bodies run to 4,000 characters, so each row opens on its own
   const [error, setError] = useState<string>();
   const edit = t('settings.memory.edit', { id: entry.id });
   const remove = t('settings.memory.remove', { id: entry.id });
@@ -25,9 +30,13 @@ export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) 
       <span className="truncate font-mono text-xs" title={entry.id}>{entry.id}</span>
       <Badge variant="outline">{kindLabel(entry.kind)}</Badge>
       <div className="flex min-w-0 flex-col gap-1">
-        <span className="text-pretty text-sm">{entry.description}</span>
-        <span className="text-muted-foreground text-xs">{`${metaText(entry)} · `}<span title={entry.lastUsed?.why}>{citedText(entry.uses)}</span></span>
-        {error !== undefined && <p role="alert" className="text-destructive text-xs">{error}</p>}
+        <button type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)} className={DISCLOSURE}>
+          <ChevronRightIcon aria-hidden className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+          <span className="text-pretty">{entry.description}</span>
+        </button>
+        <div id={bodyId} hidden={!open} className="max-w-[72ch] whitespace-pre-wrap break-words pl-[22px] text-[13px]/[19px]">{entry.body}</div>
+        <span className="pl-[22px] text-muted-foreground text-xs">{`${metaText(entry)} · `}<span title={entry.lastUsed?.why}>{citedText(entry.uses)}</span></span>
+        {error !== undefined && <p role="alert" className="pl-[22px] text-destructive text-xs">{error}</p>}
       </div>
       <div className="flex justify-end gap-1">
         <Button type="button" variant="ghost" size="icon-sm" aria-label={edit} title={edit} onClick={onEdit}><PencilIcon /></Button>
