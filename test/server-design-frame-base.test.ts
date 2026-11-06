@@ -49,7 +49,7 @@ async function commitDesign(worktree: string, git: Git): Promise<void> {
   await writeFile(join(design, 'style.css'), CSS);
   await writeFile(join(design, 'notes.md'), '# notes\n');
   await writeFile(join(design, '.env'), 'TOKEN=x\n');
-  await writeFile(join(design, 'big.css'), 'a'.repeat(OUTPUT_MAX + 1));
+  await writeFile(join(design, 'big.html'), 'a'.repeat(OUTPUT_MAX + 1));
   await writeFile(join(worktree, 'secret.txt'), 'outside the design folder\n');
   await writeFile(join(worktree, 'root.hv.html'), screenOf('Root'));
   await symlink(join(worktree, 'secret.txt'), join(design, 'link.css'));
@@ -124,7 +124,7 @@ test('under a base token, an escape, a dot segment, a folder, a symbolic link, a
   const url = await mintedBase(f, PATH, 'head');
   const folder = url.slice(0, url.lastIndexOf('/') + 1);
   // %2F keeps ../ inside one segment: fetch's URL parser resolves a bare ../ before the request leaves
-  for (const asked of ['..%2Fsecret.txt', '.env', 'parts', 'link.css', 'big.css', 'nope.css']) {
+  for (const asked of ['..%2Fsecret.txt', '.env', 'parts', 'link.css', 'big.html', 'nope.css']) {
     const res = await fetch(`${f.base}${folder}${asked}`);
     assert.deepEqual([res.status, await res.text()], [404, ''], asked);
   }

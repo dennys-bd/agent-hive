@@ -22,6 +22,8 @@ const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_SERVER_ERROR = 500;
 const DESIGN_SUFFIX = '.hv.html';
+const HTML_FILE = /\.html?$/i;
+const BLOB_MAX = 64 * 1024 * 1024; // ponytail: a before frame's asset is read whole into memory; stream it if designs carry larger media
 const NOT_DESIGN_MESSAGE = 'not a Hive design';
 // A refusal is for no folder the route serves, so it gets the tightest policy rather than one naming the asked token
 const REFUSED_POLICY = "sandbox; default-src 'none'; frame-ancestors 'self'";
@@ -121,14 +123,17 @@ async function diskServed(folder: string, segments: string[]): Promise<Served | 
 }
 
 // The asked file of a before frame (#675): joined under the token's folder in git's path space and refused, as servedFile refuses, for an
-// escape or a dot segment before git is asked; then only a regular blob within OUTPUT_MAX, so a link, a tree or a huge blob is never read
+// escape or a dot segment before git is asked; then only a regular blob within its cap, so a link, a tree or a huge blob is never read. A
+// page is held to OUTPUT_MAX, as its assembly is; an asset (an image, a video) to BLOB_MAX, since the disk route serves one of any size
 async function servedBlob({ top, commit, folder }: BaseFolder, segments: string[]): Promise<Served | undefined> {
   const path = posix.join(folder, ...segments);
   const screen = posix.relative(folder, path);
   if (screen === '' || screen.split('/').some((part) => part.startsWith('.'))) return undefined; // '..' is a dot segment too
   const entry = await gitEntry(top, commit, path);
-  if (entry === undefined || !isRegularBlob(entry) || entry.size > OUTPUT_MAX) return undefined;
-  const bytes = await gitBlob(top, entry.oid, OUTPUT_MAX);
+  const cap = HTML_FILE.test(path) ? OUTPUT_MAX : BLOB_MAX;
+  if (entry === undefined || !isRegularBlob(entry) || entry.size > cap) return undefined;
+  const bytes = await gitBlob(top, entry.oid, cap).catch(() => undefined); // a blob gone or grown past the cap since ls-tree: the bare 404
+  if (bytes === undefined) return undefined;
   return { name: path, bytes, page: () => pageOf(screen, bytes.toString('utf8'), readPartFromGit(top, commit, folder)) };
 }
 
