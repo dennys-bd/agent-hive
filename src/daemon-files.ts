@@ -3,7 +3,7 @@
 // (#467). Plain Node: the launcher (daemon.ts) shares it with the daemon (hive.ts, run.ts) and must not pull Express in.
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { once } from 'node:events';
-import { closeSync, constants, lstatSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, ftruncateSync, lstatSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { holdPipe, closePipe } from './home-pipe.js';
 import type { Socket } from 'node:net';
 import { join } from 'node:path';
@@ -130,13 +130,19 @@ function ensureLockFile(lock: string): void {
   if (!lstatSync(lock).isFile()) throw new Error(`${lock} não é um arquivo comum`);
 }
 
+// Windows has no O_NOFOLLOW, and libuv answers EINVAL to the posix numeric flags there (#627): 'r+' opens the existing file, and the
+// check ensureLockFile made is repeated right before it, narrowing the window a planted symlink has
+function openWin32(lock: string): number {
+  if (!lstatSync(lock).isFile()) throw new Error(`${lock} não é um arquivo comum`);
+  return openSync(lock, 'r+');
+}
+
 // In place: the helper holds the lock on this inode, and a rename would swap it for another. O_NOFOLLOW refuses a symlink put at the path
 // since ensureLockFile's check instead of writing through it (#479).
-function writeLockPid(lock: string): void {
-  // Windows has no O_NOFOLLOW (undefined there, or 0): the check ensureLockFile made is repeated right before the open, narrowing the window
-  if (!constants.O_NOFOLLOW && !lstatSync(lock).isFile()) throw new Error(`${lock} não é um arquivo comum`);
-  const fd = openSync(lock, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW);
+function writeLockPid(lock: string, platform: NodeJS.Platform): void {
+  const fd = platform === 'win32' ? openWin32(lock) : openSync(lock, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW);
   try {
+    if (platform === 'win32') ftruncateSync(fd);
     writeFileSync(fd, `${process.pid}\n`);
   } finally {
     closeSync(fd);
@@ -185,7 +191,7 @@ export async function acquireLock(home: string, onLost: (status: string) => void
   if (process.platform === 'win32') return acquireOnPipe(home, lock);
   const child = await spawnHelper(home, lock, onLost);
   try {
-    writeLockPid(lock);
+    writeLockPid(lock, process.platform);
   } catch (err) {
     releaseLock(home);
     throw err;
@@ -200,7 +206,7 @@ export async function acquireLock(home: string, onLost: (status: string) => void
 async function acquireOnPipe(home: string, lock: string): Promise<void> {
   await holdPipe(home, () => alreadyRunning(home));
   try {
-    writeLockPid(lock);
+    writeLockPid(lock, process.platform);
   } catch (err) {
     releaseLock(home);
     throw err;
