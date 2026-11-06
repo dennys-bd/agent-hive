@@ -53,3 +53,14 @@ test('a clipped footer shows its status and tries in full in a tooltip on hover;
   expect(await screen.findByRole('tooltip')).toHaveTextContent(`${status.textContent} · falhou · 1/2`);
   cleanup();
 });
+
+test('a status ellipsized inside a group that fits still shows in full on hover (#719, #91)', async () => {
+  render(<Flow state={STATE} flow={firstFlow(STATE)} />);
+  const group = groupOf();
+  const status = group.firstElementChild!;
+  Object.defineProperty(status, 'scrollWidth', { configurable: true, value: 200 });
+  Object.defineProperty(status, 'clientWidth', { configurable: true, value: 40 });
+  fireEvent.pointerMove(group, { pointerType: 'mouse' });
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(`${status.textContent} · falhou · 1/2`);
+  cleanup();
+});

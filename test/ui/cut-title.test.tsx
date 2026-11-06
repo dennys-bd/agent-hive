@@ -48,3 +48,13 @@ test('a click anywhere on a tree header\'s row toggles the group (#284)', () => 
   fireEvent.click(screen.getByText('⑂ #1 A long tree name'));
   expect(onToggle).toHaveBeenCalledTimes(2);
 });
+
+test('CutTitle never opens with an empty text, even over a cut target (#719)', () => {
+  function Empty() {
+    const ref = useRef<HTMLButtonElement>(null);
+    return <CutTitle text="" cutRef={[ref]}><button type="button" ref={ref}>x</button></CutTitle>;
+  }
+  render(<Empty />);
+  fireEvent.focus(size(screen.getByRole('button'), { scrollWidth: 200, clientWidth: 100 }));
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+});

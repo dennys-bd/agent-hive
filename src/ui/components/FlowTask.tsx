@@ -265,11 +265,12 @@ interface FlowTaskProps {
 // column width; clipped, the status and the tries show in full on hover
 function FooterStatus({ task, state, status, tries }: { task: Task; state: State; status: TaskStatus; tries: string | undefined }) {
   const groupRef = useRef<HTMLSpanElement>(null);
+  const statusRef = useRef<HTMLSpanElement>(null); // an ellipsized status leaves the group unclipped, so it is measured on its own
   const full = [status.text, tries].filter((part) => part !== undefined).join(' · ');
   return (
-    <CutTitle text={full} cutRef={groupRef}>
+    <CutTitle text={full} cutRef={[groupRef, statusRef]}>
       <span ref={groupRef} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-        {status.text !== undefined && <span className={`min-w-0 truncate ${status.tone ? TONE_TEXT[status.tone] : 'text-muted-foreground'}`}>{status.text}</span>}
+        {status.text !== undefined && <span ref={statusRef} className={`min-w-0 truncate ${status.tone ? TONE_TEXT[status.tone] : 'text-muted-foreground'}`}>{status.text}</span>}
         <DismissErrorButton task={task} state={state} />
         {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
         <StageOutputButton task={task} state={state} />
