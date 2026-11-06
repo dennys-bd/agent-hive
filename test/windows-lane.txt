@@ -4,3 +4,4 @@ test/platform-commands.test.js
 test/posix-shell.test.js
 test/postinstall.test.js
 test/test-node.test.js
+test/worktree-steps.test.js
