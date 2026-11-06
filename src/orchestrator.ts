@@ -595,8 +595,8 @@ function finish(state: State, ptyId: string, end: EndOf = { trigger: 'done' }): 
   return continueIntoHeld(ended, worker, moved, next); // #727, #877: into a commands or evaluate stage under the continuation's gate
 }
 
-// A Stop after hive_done (#268, #692, #134): its verdict when it gave one, else done. An approval stage waits for the user, unless the verdict
-// has a transition of its own or what just ended is the handoff a transition asked for; then the handoff the destination asks for comes first.
+// A Stop after hive_done (#268, #692, #134): its verdict when it gave one, else done. An approval stage waits for the user on every end, a
+// routed verdict included (#693), unless what just ended is the handoff a transition asked for; then the handoff the destination asks for comes first.
 // #861: a run whose stage was deleted under it asks for no approval, handoff or checkpoint: finish's advance halts the task with STAGE_GONE
 function endStage(state: State, ptyId: string, task: Task | undefined): Reduced {
   if (!task) return finish(state, ptyId);
@@ -608,8 +608,7 @@ function stageEnd(state: State, ptyId: string, task: Task): Reduced {
   const verdict = state.workers.find((s) => s.runId === ptyId)?.verdict;
   const end: EndOf = verdict === undefined ? { trigger: 'done' } : { trigger: 'verdict', verdict };
   const asked = activityOf(state, taskId(task))?.handoffPending !== undefined;
-  const routed = verdict !== undefined && exitOf(state, task.stage, 'verdict', verdict) !== undefined;
-  if (!asked && !routed && stageOf(state.stages, task.stage)?.approval) return awaitApproval(state, ptyId, task);
+  if (!asked && stageOf(state.stages, task.stage)?.approval) return awaitApproval(state, ptyId, task, verdict); // #693: approving fires the verdict's
   const fired = asked ? undefined : exitOf(state, task.stage, end.trigger, end.verdict); // not `exit`: runs.ts's exit is in scope here
   return needsHandoff(state, task, fired) ? askHandoff(state, task, fired, ptyId) : finish(state, ptyId, end);
 }

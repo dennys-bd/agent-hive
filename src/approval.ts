@@ -2,10 +2,10 @@ import { openFeedbackSession } from './task-runs.js';
 import { askHandoff, needsHandoff } from './handoff.js';
 import { taskId, stageOf } from './tasks.js';
 import { advance, type EndOf, keepsRun, take, withoutHandover } from './transit.js';
-import { answerable, exitOf } from './transitions.js';
+import { answerable, approvable, approvalEnd, approvalExit, exitOf } from './transitions.js';
 import { activityOf, slugOf, taskOfWorker, withActivity } from './activities.js';
 import { continueInPlace, dropWorker, releaseWorker, none, patchedWorker, type Reduced, releaseRun, withTask } from './reducer-kit.js';
-import { APPROVAL_HOLD_MAX_MIN, END, type Activity, type Task, type Stage, type Transition, type Worker, type State } from './types.js';
+import { APPROVAL_HOLD_MAX_MIN, END, type Activity, type Task, type TaskApproval, type Stage, type Transition, type Worker, type State } from './types.js';
 
 // A stage that ended in an approval stage (#268): the task waits for the user's approve or feedback. Pure and immutable, like the reducer
 // that calls these; the server holds the Stop's HTTP answer (hold / release) and runs the rest.
@@ -15,10 +15,13 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 
 type Held = Worker & { runId: string };
 
-/** The task's activity with its hold forgotten (#268, #629): approval stays, without `until`. What every path that frees a held worker stores. */
+/** The task's activity with its hold forgotten (#268, #629): approval stays, without `until`. What every path that frees a held worker stores.
+ * #693: the verdict and the session stay, so an approve after the window still fires the verdict's transition. */
 export function withoutHold(state: State, task: Task): State {
   const live = activityOf(state, taskId(task));
-  return live?.approval?.until === undefined ? state : withActivity(state, { ...live, approval: { since: live.approval.since } });
+  if (live?.approval?.until === undefined) return state;
+  const { until: _until, ...kept } = live.approval;
+  return withActivity(state, { ...live, approval: kept });
 }
 
 interface Awaiting { task: Task; activity: Activity & Required<Pick<Activity, 'approval'>> }
@@ -48,26 +51,26 @@ function endRun(state: State, worker: Worker, ptyId: string, slug: string): Redu
   return { state: freed, effects: [{ type: 'release', ptyId }, { type: 'kill', slug, ptyId }] };
 }
 
-/** A Stop after hive_done in an approval stage (#268): no source write, the task waits for the user. When the approved transition keeps the
- * run's session (#134), the worker holds the Stop for the window (status approval, the hold effect); otherwise the run ends as finish's kill does, and the
- * task is not stopped: its stage reached hive_done. */
-export function awaitApproval(state: State, ptyId: string, task: Task): Reduced {
+/** A Stop after hive_done in an approval stage (#268): no source write, the task waits for the user, with the verdict the stage ended with
+ * (#693). When the transition approving takes keeps the run's session (#134), the worker holds the Stop for the window (status approval, the
+ * hold effect); otherwise the run ends as finish's kill does, and the task is not stopped: its stage reached hive_done. */
+export function awaitApproval(state: State, ptyId: string, task: Task, verdict?: string): Reduced {
   const worker = state.workers.find((s) => s.runId === ptyId);
   if (!worker) return none(state);
   const now = Date.now();
-  const since = iso(now);
+  const approval: TaskApproval = { since: iso(now), ...(verdict === undefined ? {} : { verdict }) };
   const live = activityOf(state, taskId(task));
   if (!live) return none(state); // a stage run always has its activity (#629)
-  const exit = exitOf(state, task.stage, 'approved');
+  const exit = approvalExit(state, task, approval); // #693: the verdict's own transition when it has one, else approved
   const next = exit === undefined || exit.to === END ? undefined : stageOf(state.stages, exit.to);
   if (exit === undefined || next === undefined || !keepsRun(state, task, exit, next)) { // #134: hold only when approving goes on in this run's session
     const { workerId: _workerId, ...dropped } = live;
-    const waiting = withActivity(withTask(state, task), { ...dropped, approval: { since } });
+    const waiting = withActivity(withTask(state, task), { ...dropped, approval });
     return { state: releaseRun({ ...waiting, workers: releaseWorker(state.workers, worker) }, worker, now), effects: [{ type: 'kill', slug: slugOf(state, taskId(task)), ptyId }] };
   }
   const until = iso(now + state.approvalMinutes * MINUTE_MS);
   const workers = state.workers.map((s) => (s.id === worker.id ? patchedWorker(s, { status: 'approval', question: undefined }) : s));
-  return { state: withActivity(withTask({ ...state, workers }, task), { ...live, approval: { since, until } }), effects: [{ type: 'hold', ptyId, until }] };
+  return { state: withActivity(withTask({ ...state, workers }, task), { ...live, approval: { ...approval, until } }), effects: [{ type: 'hold', ptyId, until }] };
 }
 
 /** Whether a worker whose stage ended may go on in place into `next` (the orchestrator's canContinue), asked on the state as if freed. */
@@ -79,11 +82,13 @@ export type CanContinue = (freed: State, worker: Worker, moved: Task, next: Stag
  * carrying the feedback. With no transition for the answer, nothing changes: the task keeps awaiting (the route refuses it first). */
 export function answer(state: State, id: string, end: EndOf, canContinue: CanContinue): Reduced {
   const found = awaiting(state, id);
-  if (!found || !answerable(state, found.task, end.trigger)) return none(state);
+  // #693: an approve's end is approvalEnd's, so its guard is the approval's exit, the rule the approve route checks
+  const exits = found !== undefined && (end.trigger === 'feedback' ? answerable(state, found.task, 'feedback') : approvable(state, found.task, found.activity.approval));
+  if (!found || !exits) return none(state);
   const { task } = found;
   const worker = heldWorker(state, found.activity);
   const answered = withActivity(state, answeredActivity(found.activity));
-  const exit = exitOf(state, task.stage, end.trigger);
+  const exit = exitOf(state, task.stage, end.trigger, end.verdict);
   // #692; #812: askHandoff answers the approval itself, so its lookups still read the session the approval names
   if (needsHandoff(state, task, exit)) return askHandoff(state, task, exit, worker?.runId, end.feedback);
   const answerEnd = withApprovalSession(found.activity, end);
@@ -97,8 +102,11 @@ export function answer(state: State, id: string, end: EndOf, canContinue: CanCon
   return { state: ended.state, effects: [...effects, ...ended.effects] };
 }
 
-/** Aprovar (#268): the approved transition (#134). */
-export const approve = (state: State, id: string, canContinue: CanContinue): Reduced => answer(state, id, { trigger: 'approved' }, canContinue);
+/** Aprovar (#268): the transition the approval's verdict fires, else the approved one (#134, #693). Tries count as for any verdict end. */
+export function approve(state: State, id: string, canContinue: CanContinue): Reduced {
+  const found = awaiting(state, id);
+  return found ? answer(state, id, approvalEnd(state, found.task, found.activity.approval), canContinue) : none(state);
+}
 
 // The feedback transition when it loops back to the task's own stage (#134): today's paths answer it there
 function ownFeedback(state: State, found: Awaiting): Transition | undefined {

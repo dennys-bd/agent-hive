@@ -2,6 +2,7 @@
 // Plain node, not a shell `chmod`, so the same line runs under cmd, PowerShell and sh.
 import { chmodSync, globSync } from 'node:fs';
 import { join } from 'node:path';
+import { fetchDrawio } from './fetch-drawio.mjs';
 
 const HELPERS = 'node_modules/node-pty/prebuilds/darwin-*/spawn-helper';
 
@@ -13,4 +14,8 @@ export function makeSpawnHelperExecutable(platform, root) {
   for (const helper of helpers) chmodSync(join(root, helper), 0o755);
 }
 
-if (import.meta.main) makeSpawnHelperExecutable(process.platform, process.cwd());
+// the draw.io webapp (#955) after the spawn helper: a failed download fails the install, as the helper does; HIVE_SKIP_DRAWIO=1 skips it
+if (import.meta.main) {
+  makeSpawnHelperExecutable(process.platform, process.cwd());
+  await fetchDrawio({ root: process.cwd() });
+}

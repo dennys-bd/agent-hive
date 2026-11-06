@@ -171,3 +171,19 @@ test('workerLaunches leaves out a server whose runtime PATH finds only through a
   const launches = await workerLaunches(home, relative(process.cwd(), bin), 'arm64');
   assert.equal(launches.has('pyright/pyright-langserver'), false);
 });
+
+test('on win32 an npm server needs its package.json\'s bin entry for the binary: none, or one that leaves the package, reads not installed (#635)', async (t) => {
+  const home = await tempDir(t, 'wlsp-home-');
+  await installServer(home, 'pyright');
+  const pyright = serverDef('pyright');
+  const pkg = join(editorDir(home, { kind: 'server', id: 'pyright' }), 'node_modules', 'pyright');
+  const onWin32 = (): ReturnType<typeof hiveLaunch> => hiveLaunch(home, pyright, 'pyright-langserver', '', 'x64', 'win32');
+  assert.deepEqual(await onWin32(), { reason: 'not installed' }, 'no package.json');
+  await mkdir(pkg, { recursive: true });
+  for (const bin of [{ pyright: 'index.js' }, { 'pyright-langserver': '../../evil.js' }, { 'pyright-langserver': 'C:\\evil.js' }, 'index.js']) {
+    await writeFile(join(pkg, 'package.json'), JSON.stringify({ bin }));
+    assert.deepEqual(await onWin32(), { reason: 'not installed' }, JSON.stringify(bin));
+  }
+  await writeFile(join(pkg, 'package.json'), JSON.stringify({ bin: { 'pyright-langserver': 'langserver.index.js' } }));
+  assert.deepEqual(await onWin32(), { reason: 'requires node' }, 'the entry is read; the runtime check comes next');
+});

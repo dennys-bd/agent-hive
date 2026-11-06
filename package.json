@@ -10,7 +10,7 @@
     "hive": "bin/hive.js"
   },
   "scripts": {
-    "build": "tsc && tsc -p src/ui && node -e \"require('node:fs').rmSync('dist/src/ui/assets',{recursive:true,force:true})\" && vite build",
+    "build": "node scripts/fetch-drawio.mjs && tsc && tsc -p src/ui && node -e \"require('node:fs').rmSync('dist/src/ui/assets',{recursive:true,force:true})\" && vite build",
     "dev": "vite",
     "test": "concurrently --group \"pnpm:test:*\"",
     "test:lint": "biome lint --error-on-warnings",

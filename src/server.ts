@@ -93,6 +93,7 @@ import { SECRET_FILE } from './daemon-files.js';
 import { matchesSecret, pagePolicy, presentedSecret } from './secret.js';
 import { registerConsoleRoutes } from './server-console.js';
 import { createDesignFrameTokens, registerDesignFrameMint, registerDesignFrameRoute } from './server-design-frame.js';
+import { DRAWIO_ROOT, registerDrawioRoute } from './server-drawio.js';
 import { registerEditorInstallRoutes } from './server-editor-install.js';
 import { registerLaunchOptionsRoute } from './launch-options.js';
 import { registerOpenRoute, registerResolveRoute } from './server-open.js';
@@ -205,6 +206,8 @@ export interface ServerDeps {
   ghToken?: GhToken;
   /** #475: a benchmark run's home (benchmark.json): GET /benchmark-run, the viewer's writes and first terminal input recorded or, frozen, refused. */
   runMode?: RunMode;
+  /** #955: the draw.io webapp's folder; tests inject a fixture. Absent: DRAWIO_ROOT, which a skipped fetch leaves missing (every answer a 404). */
+  drawioRoot?: string;
 }
 
 export interface HiveServer {
@@ -933,6 +936,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #108: between the Host check and the secret. The sandboxed frame presents no credential: its URL's token is the capability, and the
   // route never reads the port's cookie
   registerDesignFrameRoute(app, { tokens: designFrames, log });
+  // #955: beside the design frame, before the secret: the sandboxed frame presents no credential, and the webapp holds no user data
+  registerDrawioRoute(app, { root: deps.drawioRoot ?? DRAWIO_ROOT });
   app.use((req: Request, res: Response, next: NextFunction) => {
     const port = boundPort ?? 0; // the Host check above refused every request before listen bound the port
     // The Host check stops a web page, not a process: anything that reaches 127.0.0.1 knows the header names, another account's process

@@ -5,7 +5,10 @@ test/checker-parse.test.js
 test/clipboard-files.test.js
 test/daemon-files.test.js
 test/decomposition-deliver.test.js
+test/editor-install-download.test.js
+test/editor-install.test.js
 test/exec-path.test.js
+test/fetch-drawio.test.js
 test/fork.test.js
 test/formatter-detect.test.js
 test/github-token.test.js
@@ -14,7 +17,9 @@ test/home-acl.test.js
 test/ide.test.js
 test/keep-awake.test.js
 test/kill-tree.test.js
+test/languages.test.js
 test/launch-options.test.js
+test/lsp-process.test.js
 test/mcp-probe.test.js
 test/mcp-settings.test.js
 test/platform-commands.test.js
@@ -22,6 +27,7 @@ test/posix-shell.test.js
 test/postinstall.test.js
 test/same-path.test.js
 test/server-ci.test.js
+test/server-drawio.test.js
 test/server-file-base.test.js
 test/server-move.test.js
 test/server-tree-ops.test.js

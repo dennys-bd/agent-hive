@@ -5,6 +5,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { type ChannelInfo, type ConsoleStore, commandLine, crlf, failLine, runHeader } from './console.js';
+import { type ExecCommand, findExec, resolveExec } from './exec-path.js';
 import { createDecoder, frame } from './lsp-framing.js';
 import { fileUri } from './lsp-uri.js';
 import { type FormatLog, LSP_CLOSE } from './types.js';
@@ -20,6 +21,7 @@ export interface ProcessSpec {
   configuration?: unknown; // what the host answers each workspace/configuration item with; null when absent (#782: eslint's settings)
   afterInitialized?: object[]; // notifications the host writes once, right after the first initialized (#794: the JSON server's schemas)
   notice?: string; // a line of the run after the command (#794: why the JSON schemas are missing)
+  platform?: NodeJS.Platform; // the host's by default; a test passes win32 to drive the resolver's branch on any OS
 }
 export interface LspProcess {
   readonly log: FormatLog;
@@ -60,10 +62,22 @@ function hostAnswer(method: string, params: unknown, root: string, configuration
   }
 }
 
+// What spawn gets (#635): the resolver's answer, so a .cmd server runs through cmd.exe on win32. A name found nowhere reads as Node's own
+// ENOENT does; the .cmd runner's refusal keeps its line, which names no argument's value
+function commandOf(spec: ProcessSpec): ExecCommand | { failure: string } {
+  const lookup = { platform: spec.platform ?? process.platform, env: spec.env };
+  if (findExec(spec.command, lookup) === undefined) return { failure: `spawn ${spec.shown.split(' ')[0]} ENOENT` };
+  try {
+    return resolveExec(spec.command, spec.args, lookup);
+  } catch (err) {
+    return { failure: err instanceof Error ? err.message : 'failed to run' };
+  }
+}
+
 class ServerProcess implements LspProcess {
   readonly log: FormatLog;
   private readonly spec: ProcessSpec;
-  private readonly child: ChildProcess;
+  private readonly child?: ChildProcess;
   private readonly exited: Promise<void>;
   private readonly peers = new Set<LspPeer>();
   private readonly pending = new Map<string, Asked>(); // the host's id → the client's
@@ -82,13 +96,24 @@ class ServerProcess implements LspProcess {
     spec.consoleStore.begin(spec.channel, this.log.run, runHeader(spec.label, new Date()));
     this.append(`${commandLine(`> ${spec.shown}`)}\r\n`);
     if (spec.notice !== undefined) this.append(`${spec.notice}\r\n`);
-    this.child = spawn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env, stdio: ['pipe', 'pipe', 'pipe'] });
-    this.exited = new Promise((resolve) => this.child.once('close', () => resolve()));
-    this.child.stdout?.on('data', createDecoder((m) => this.fromServer(m), (reason) => this.append(`${failLine(reason)}\r\n`), (reason) => { this.append(`${failLine(reason)}\r\n`); this.child.kill('SIGKILL'); }));
-    this.child.stderr?.on('data', (chunk: Buffer) => this.append(crlf(chunk.toString('utf8'))));
-    this.child.stdin?.on('error', () => undefined); // EPIPE once the server died: its close tells
-    this.child.on('error', (err: NodeJS.ErrnoException) => this.end(err.code === 'ENOENT' ? `spawn ${spec.shown.split(' ')[0]} ENOENT` : `failed to run (${err.code ?? 'unknown'})`));
-    this.child.on('close', (code, signal) => this.end(this.isStopping ? undefined : failureOf(code, signal)));
+    const run = commandOf(spec);
+    if ('failure' in run) {
+      this.exited = Promise.resolve();
+      process.nextTick(() => this.end(run.failure)); // after the constructor returns, as a spawn's own error is
+      return;
+    }
+    const child = spawn(run.file, run.args, { cwd: spec.cwd, env: spec.env, stdio: ['pipe', 'pipe', 'pipe'], windowsVerbatimArguments: run.windowsVerbatimArguments });
+    this.child = child;
+    this.exited = new Promise((resolve) => child.once('close', () => resolve()));
+    this.wire(child);
+  }
+
+  private wire(child: ChildProcess): void {
+    child.stdout?.on('data', createDecoder((m) => this.fromServer(m), (reason) => this.append(`${failLine(reason)}\r\n`), (reason) => { this.append(`${failLine(reason)}\r\n`); child.kill('SIGKILL'); }));
+    child.stderr?.on('data', (chunk: Buffer) => this.append(crlf(chunk.toString('utf8'))));
+    child.stdin?.on('error', () => undefined); // EPIPE once the server died: its close tells
+    child.on('error', (err: NodeJS.ErrnoException) => this.end(err.code === 'ENOENT' ? `spawn ${this.spec.shown.split(' ')[0]} ENOENT` : `failed to run (${err.code ?? 'unknown'})`));
+    child.on('close', (code, signal) => this.end(this.isStopping ? undefined : failureOf(code, signal)));
   }
 
   join(peer: LspPeer): void { this.peers.add(peer); }
@@ -124,7 +149,7 @@ class ServerProcess implements LspProcess {
     this.closing = closing;
     this.write({ id: SHUTDOWN_ID, method: 'shutdown' });
     const grace = this.spec.graceMs ?? STOP_GRACE_MS;
-    const timers = KILL_ATTEMPTS.map((signal, i) => setTimeout(() => this.child.kill(signal), grace * (i + 1)));
+    const timers = KILL_ATTEMPTS.map((signal, i) => setTimeout(() => this.child?.kill(signal), grace * (i + 1)));
     return this.exited.finally(() => timers.forEach(clearTimeout));
   }
 
@@ -217,7 +242,8 @@ class ServerProcess implements LspProcess {
   }
 
   private write(message: object): void {
-    if (!this.isGone && this.child.stdin?.writable) this.child.stdin.write(frame({ jsonrpc: '2.0', ...message }));
+    const stdin = this.child?.stdin;
+    if (!this.isGone && stdin?.writable) stdin.write(frame({ jsonrpc: '2.0', ...message }));
   }
 
   private append(text: string): void { this.spec.consoleStore.append(this.log.run, text); }

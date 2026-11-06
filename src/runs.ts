@@ -338,16 +338,16 @@ export function freeSessionDone(state: State, worker: Worker, result?: Record<st
   return capturedFirst(state, task, freeSessionEnd(state, worker, task, result, verdict)); // #619
 }
 
-// The body freeSessionDone had from `const merged` on (#283, #268, #134, #692, #812), unchanged
+// The body freeSessionDone had from `const merged` on (#283, #268, #134, #692, #812, #693)
 function freeSessionEnd(state: State, worker: Worker, task: Task, result?: Record<string, unknown>, verdict?: string): Reduced {
   const merged = result ? withResult(state, task, result) : state;
   const live = activityOf(merged, taskId(task));
   const pending = transitionByKey(state.transitions, live?.handoffPending); // #692, #134: the transition the handoff waited on
   const ended: EndOf = verdict === undefined ? { trigger: 'done' } : { trigger: 'verdict', verdict };
   const end: EndOf = worker.sessionId === undefined ? ended : { ...ended, sessionId: worker.sessionId }; // #812: this session ended the stage
-  const routed = verdict !== undefined && exitOf(state, task.stage, 'verdict', verdict) !== undefined; // #134: a routed verdict waits for nobody
-  if (pending === undefined && !routed && stageOf(state.stages, task.stage)?.approval) { // the stage waits for Aprovar (#268), on the session's activity; no Stop to hold
-    const approval = { since: new Date().toISOString(), ...(worker.sessionId === undefined ? {} : { sessionId: worker.sessionId }) }; // #812: feedback and the handoff go to it
+  if (pending === undefined && stageOf(state.stages, task.stage)?.approval) { // the stage waits for Aprovar on every end (#268, #693), on the session's activity; no Stop to hold
+    const session = worker.sessionId === undefined ? {} : { sessionId: worker.sessionId }; // #812: feedback and the handoff go to it
+    const approval = { since: new Date().toISOString(), ...session, ...(verdict === undefined ? {} : { verdict }) }; // #693: the verdict approving fires
     return none(live ? withActivity(merged, { ...live, approval }) : merged);
   }
   const { state: advanced, effects } = pending ? take(withoutPending(merged, task), task, pending, pendingEnd(live, end)) : advance(merged, task, end); // #134: with the feedback it waited on

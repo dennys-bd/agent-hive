@@ -115,11 +115,13 @@ export function savedSession(value: unknown): Session[] {
   return typeof column === 'string' ? [{ id, startedAt, stages: [column], lastUsedAt: startedAt, agent: ran }] : [];
 }
 
-// A stage awaiting approval (#268): kept when since is a date, until only when it is one too; copied field by field.
+// A stage awaiting approval (#268): kept when since is a date, until only when it is one too; copied field by field. #693: the verdict the
+// stage ended with only as a non-empty string, capped as a feedback (#134); an approval saved before it has none and reads as before.
 export function savedApproval(value: unknown): { approval?: TaskApproval } {
   if (!isJsonObject(value) || !isDate(value.since)) return {};
+  const verdict = isCapped(value.verdict, FEEDBACK_MAX) && value.verdict !== '' ? { verdict: value.verdict } : {};
   // #812: the free session that ended the stage reaches claude's argv as --resume <id>, as a handover's does: only its uuid shape is kept
-  return { approval: { since: value.since, ...(isDate(value.until) ? { until: value.until } : {}), ...(isUuid(value.sessionId) ? { sessionId: value.sessionId } : {}) } };
+  return { approval: { since: value.since, ...(isDate(value.until) ? { until: value.until } : {}), ...(isUuid(value.sessionId) ? { sessionId: value.sessionId } : {}), ...verdict } };
 }
 
 // #134: a string the state file may hold at that length at most; a longer one was not written by the Hive. A handover's prompt carries the
