@@ -100,7 +100,7 @@ test('tree/rename moves an item to its new name, making the folders the name add
   assert.deepEqual([await readFile(join(f.wt, 'docs/guide.md'), 'utf8'), await readFile(join(f.wt, 'src/a.ts'), 'utf8')], ['guide', 'a']);
 });
 
-test('tree/trash checks every path first, so one refused trashes nothing; then one trash command with each outermost item\'s real path (#818)', { skip: process.platform === 'win32' && 'win32 has no trash command until #646' }, async (t) => {
+test('tree/trash checks every path first, so one refused trashes nothing; then one trash command with each outermost item\'s real path (#818)', async (t) => {
   const f = await startOps(t);
   assert.deepEqual(await post(f, 'trash', { paths: ['README.md', '../x'] }), [400, { error: OUTSIDE_MESSAGE }]);
   assert.deepEqual(await post(f, 'trash', { paths: ['README.md', 'gone.md'] }), [404, { error: MISSING_FILE_MESSAGE }]);

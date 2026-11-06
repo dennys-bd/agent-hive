@@ -5,6 +5,7 @@ test/daemon-files.test.js
 test/decomposition-deliver.test.js
 test/home-acl.test.js
 test/ide.test.js
+test/keep-awake.test.js
 test/mcp-settings.test.js
 test/platform-commands.test.js
 test/posix-shell.test.js
