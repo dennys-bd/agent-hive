@@ -3,8 +3,10 @@
 // "$SHELL" -c (Git's sh.exe on Windows, #631), the third deliberate shell string (CLAUDE.md); the file reaches it only as FILE in its env. Every run is a console run.
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { type ConsoleStore, crlf, failLine, formatChannel, runHeader } from './console.js';
+import { type ExecLookup, resolveExec } from './exec-path.js';
 import { detectFormatters } from './formatter-detect.js';
 import { candidatesFor, type FormatterPick, pickFormatter } from './formatters.js';
 import { killTree, treeSpawnOptions } from './kill-tree.js';
@@ -27,6 +29,19 @@ export interface Ran { stdout?: Buffer; stderr: string; failure?: string }
 export const CANCELLED = 'cancelled';
 // windowsVerbatimArguments: the .cmd runner's line (#632, #633), which reaches cmd.exe as written
 export interface Process { command: string; args: string[]; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean }
+
+/** A binary and argv as the platform spawns them (#634): on win32 a .cmd runs through cmd.exe, so a project's node_modules\.bin\biome.cmd works.
+ *  The resolver's refusal (a name found nowhere, an argument cmd.exe cannot carry) comes back as `failure`, never thrown: a run ends as failed. */
+export function launchOf(command: string, args: readonly string[], env: NodeJS.ProcessEnv, platform: NodeJS.Platform, isFile?: ExecLookup['isFile']): Process | { failure: string } {
+  try {
+    const exec = resolveExec(command, args, { platform, env, isFile });
+    return { command: exec.file, args: [...exec.args], env, ...(exec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}) };
+  } catch (err) {
+    // A binary gone since its detection is named by its file only, as check-run names a checker: its absolute path holds the account name
+    const name = (platform === 'win32' ? path.win32 : path.posix).basename(command);
+    return { failure: (err as Error).message.replaceAll(command, name) };
+  }
+}
 
 // Why a run failed, in the words its console run ends with. Never an error's message: Node writes the command line into it, and a custom
 // formatter's line is the user's own text, never logged
@@ -109,8 +124,8 @@ export const customShell = (platform: NodeJS.Platform, env: NodeJS.ProcessEnv, p
 
 // Both kinds run in the daemon's env with the workspace's on top (#738: every run of a workspace gets it). A supported pick is its binary and
 // argv; a custom one is the user's line in their shell, with FILE as a raw value
-function processOf(pick: FormatterPick, { file, workspace }: FormatContext): Process {
-  if (pick.kind === 'supported') return { command: pick.binary, args: pick.argv(file), env: { ...process.env, ...workspace.env } };
+function processOf(pick: FormatterPick, { file, workspace }: FormatContext): Process | { failure: string } {
+  if (pick.kind === 'supported') return launchOf(pick.binary, pick.argv(file), { ...process.env, ...workspace.env }, process.platform);
   // #631: on win32 MSYS leaves the line's arguments as written; the workspace's env still wins, and FILE last
   const env = { ...process.env, ...posixShellEnv(process.platform), ...workspace.env, FILE: file };
   return { command: customShell(process.platform, process.env, posixShell().shell), args: ['-c', pick.command], env };
@@ -122,7 +137,8 @@ export async function runFormatter(pick: FormatterPick, text: string, ctx: Forma
   const channel = formatChannel(ctx.workspace.name, pick.name);
   const runId = randomUUID();
   ctx.consoleStore.begin(channel, runId, runHeader(ctx.label, new Date()));
-  const ran = await runCapped(processOf(pick, ctx), text, ctx.cwd, ctx.timeoutMs ?? FORMAT_TIMEOUT_MS);
+  const proc = processOf(pick, ctx);
+  const ran: Ran = 'failure' in proc ? { stderr: '', failure: proc.failure } : await runCapped(proc, text, ctx.cwd, ctx.timeoutMs ?? FORMAT_TIMEOUT_MS);
   if (ran.stderr !== '') ctx.consoleStore.append(runId, crlf(ran.stderr));
   const outcome = outcomeOf(ran);
   if ('text' in outcome) {

@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import { chmod, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createConsoleStore, failLine } from '../src/console.js';
-import { type FormatContext, formatForSave, runFormatter } from '../src/format-run.js';
+import { type FormatContext, formatForSave, launchOf, runFormatter } from '../src/format-run.js';
 import type { FormatterPick } from '../src/formatters.js';
 import { EDITOR_FILE_MAX, EDITOR_DEFAULTS } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
 
 type Store = ReturnType<typeof createConsoleStore>;
+// Their stubs are sh scripts, which win32 cannot start: the lane runs the .cmd tests below instead (#634)
+const POSIX_ONLY = process.platform === 'win32' ? 'sh stubs: POSIX only' : false;
 
 // A formatter for the test: a shell script in a temp folder, so no test depends on a tool installed on the machine
 async function fakeTool(dir: string, name: string, body: string): Promise<string> {
@@ -29,7 +31,7 @@ function setup(dir: string, timeoutMs?: number): { store: Store; ctx: FormatCont
 }
 const history = (store: Store, channel: string): string => store.history(channel)?.history ?? '';
 
-test('a supported formatter\'s stdout replaces the text; it runs in the activity\'s folder with its argv, its stderr in its console run (#749)', async (t) => {
+test('a supported formatter\'s stdout replaces the text; it runs in the activity\'s folder with its argv, its stderr in its console run (#749)', { skip: POSIX_ONLY }, async (t) => {
   const dir = await tempDir(t, 'fmt-run-');
   const tool = await fakeTool(dir, 'ruff', 'echo "$(pwd -P) $*" >&2; tr a-z A-Z');
   const { store, ctx } = setup(dir);
@@ -40,7 +42,7 @@ test('a supported formatter\'s stdout replaces the text; it runs in the activity
   assert.deepEqual(store.channels().map((c) => [c.id, c.kind, c.status]), [['format:ui:ruff', 'format', 'done']]);
 });
 
-test('a non-zero exit, an empty stdout, a stdout not UTF-8 or over the cap, and the timeout are failures: the reason ends the run in red, the channel reads failed (#749)', async (t) => {
+test('a non-zero exit, an empty stdout, a stdout not UTF-8 or over the cap, and the timeout are failures: the reason ends the run in red, the channel reads failed (#749)', { skip: POSIX_ONLY }, async (t) => {
   const dir = await tempDir(t, 'fmt-run-');
   const cases: [string, string, number?][] = [
     ['cat > /dev/null; echo "bad config" >&2; exit 3', 'exit code 3'],
@@ -61,7 +63,7 @@ test('a non-zero exit, an empty stdout, a stdout not UTF-8 or over the cap, and 
   }
 });
 
-test('a custom formatter runs its line through the shell with FILE and the workspace\'s env (#749)', async (t) => {
+test('a custom formatter runs its line through the shell with FILE and the workspace\'s env (#749)', { skip: POSIX_ONLY }, async (t) => {
   const dir = await tempDir(t, 'fmt-run-');
   const { store, ctx } = setup(dir);
   const sql: FormatterPick = { kind: 'custom', name: 'sql', command: 'cat > /dev/null; printf "%s %s" "$FILE" "$GREETING"' };
@@ -75,7 +77,7 @@ test('a binary gone since its detection is a failure, never a throw (#749)', asy
   assert.ok('error' in outcome);
 });
 
-test('formatForSave runs what the folder has installed for the file\'s extension; nothing for an extension no formatter takes (#749)', async (t) => {
+test('formatForSave runs what the folder has installed for the file\'s extension; nothing for an extension no formatter takes (#749)', { skip: POSIX_ONLY }, async (t) => {
   const dir = await tempDir(t, 'fmt-run-');
   await mkdir(join(dir, '.venv', 'bin'), { recursive: true });
   await fakeTool(join(dir, '.venv', 'bin'), 'ruff', 'tr a-z A-Z');
@@ -85,7 +87,7 @@ test('formatForSave runs what the folder has installed for the file\'s extension
   assert.equal(await formatForSave(format, 'x', { ...ctx, file: join(dir, 'notes.xyz') }), undefined);
 });
 
-test('a custom formatter killed by a signal fails with the signal, never its command line; a tool that exits without reading a large stdin reports its own exit code and stderr (#749)', async (t) => {
+test('a custom formatter killed by a signal fails with the signal, never its command line; a tool that exits without reading a large stdin reports its own exit code and stderr (#749)', { skip: POSIX_ONLY }, async (t) => {
   const dir = await tempDir(t, 'fmt-run-');
   const { store, ctx } = setup(dir);
   const secret = 'SECRET-IN-LINE';
@@ -100,7 +102,7 @@ test('a custom formatter killed by a signal fails with the signal, never its com
   assert.ok(history(store, 'format:ui:ruff').includes('syntax error'));
 });
 
-test('biome refusing with its formatter disabled is no error: the save goes on as typed and its console run ends done; any other exit 1 of biome stays a failure (#749)', async (t) => {
+test('biome refusing with its formatter disabled is no error: the save goes on as typed and its console run ends done; any other exit 1 of biome stays a failure (#749)', { skip: POSIX_ONLY }, async (t) => {
   const dir = await tempDir(t, 'fmt-run-');
   const bin = join(dir, 'node_modules', '.bin');
   await mkdir(bin, { recursive: true });
@@ -117,4 +119,34 @@ test('biome refusing with its formatter disabled is no error: the save goes on a
   const failed = await formatForSave(format, 'const a = 1\n', ts);
   assert.ok(failed !== undefined && 'error' in failed);
   assert.equal(failed.error, 'exit code 1');
+});
+
+test('launchOf: win32 sends a .cmd through cmd.exe verbatim, an unsafe argument or a missing tool is a failure that never holds the value; POSIX is unchanged (#634)', () => {
+  const env = { PATH: 'C:\\bin', COMSPEC: 'C:\\Windows\\System32\\cmd.exe' };
+  const isFile = (f: string): boolean => f === 'C:\\bin\\ruff.cmd';
+  const ok = launchOf('ruff', ['format', '-'], env, 'win32', isFile);
+  assert.ok('command' in ok && ok.command === 'C:\\Windows\\System32\\cmd.exe' && ok.windowsVerbatimArguments === true);
+  const refused = launchOf('ruff', ['--stdin-filename', 'C:\\p\\100%.py'], env, 'win32', isFile);
+  assert.ok('failure' in refused && !refused.failure.includes('100%'), JSON.stringify(refused));
+  assert.ok('failure' in launchOf('black', [], env, 'win32', isFile));
+  const gone = launchOf('C:\\Users\\someone\\p\\.venv\\Scripts\\ruff.exe', [], env, 'win32', isFile);
+  assert.ok('failure' in gone && gone.failure === 'ruff.exe was not found', JSON.stringify(gone));
+  assert.deepEqual(launchOf('ruff', ['-'], env, 'linux'), { command: 'ruff', args: ['-'], env });
+});
+
+test('a binary the platform cannot start ends the console run as failed and the save goes on as typed (#634)', async (t) => {
+  const dir = await tempDir(t, 'fmt-run-');
+  const { store, ctx } = setup(dir);
+  const outcome = await runFormatter(ruff(join(dir, 'missing')), 'x\n', ctx);
+  assert.ok('error' in outcome);
+  assert.equal(store.channels()[0]?.status, 'failed');
+});
+
+test('a .cmd formatter rewrites the text on Windows (#634)', { skip: process.platform !== 'win32' }, async (t) => {
+  const dir = await tempDir(t, 'fmt-run-');
+  const cmd = join(dir, 'ruff.cmd');
+  await writeFile(cmd, '@echo off\r\nmore >nul\r\necho FORMATTED\r\n');
+  const { ctx } = setup(dir);
+  const outcome = await runFormatter(ruff(cmd), 'x = 1\n', ctx);
+  assert.ok('text' in outcome && outcome.text.trim() === 'FORMATTED', JSON.stringify(outcome));
 });

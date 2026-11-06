@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { parseCheck } from './checker-parse.js';
 import { checkArgv, type CliCheckerDef } from './checkers.js';
 import { checkChannel, type ConsoleStore, crlf, failLine, runHeader } from './console.js';
-import { collect } from './format-run.js';
+import { collect, launchOf } from './format-run.js';
 import { findCandidate } from './formatter-detect.js';
 import { killTree, treeSpawnOptions } from './kill-tree.js';
 import { CHECK_OUTPUT_MAX, CHECK_TIMEOUT_MS, type CheckAnswer, type CheckDiagnostic, type FormatLog } from './types.js';
@@ -43,12 +43,12 @@ const exited = (code: number | null, signal: NodeJS.Signals | null): Pick<Ran, '
   (code !== null ? { code } : { code, failure: signal === null ? 'failed to run' : `killed by ${signal}` });
 
 // The process to its end: the timer, the cap and a newer run each kill its tree at once and settle
-function run(id: string, command: string, args: string[], ctx: CheckContext): Promise<Ran> {
+function run(id: string, command: string, args: string[], windowsVerbatimArguments: boolean, ctx: CheckContext): Promise<Ran> {
   return new Promise((resolve) => {
     let settled = false;
     const max = ctx.maxBytes ?? CHECK_OUTPUT_MAX;
     const timeoutMs = ctx.timeoutMs ?? CHECK_TIMEOUT_MS;
-    const child = spawn(command, args, { cwd: ctx.folder, env: ctx.env, stdio: ['ignore', 'pipe', 'pipe'], ...treeSpawnOptions(process.platform) });
+    const child = spawn(command, args, { cwd: ctx.folder, env: ctx.env, stdio: ['ignore', 'pipe', 'pipe'], ...(windowsVerbatimArguments ? { windowsVerbatimArguments } : {}), ...treeSpawnOptions(process.platform) });
     const stop = (failure: string | undefined, isSuperseded = false): void => {
       if (settled) return; // once reaped, the pid may be another process's
       void killTree(child.pid, process.platform);
@@ -128,7 +128,8 @@ export async function runCheck(def: CliCheckerDef, ctx: CheckContext): Promise<C
   let dir: string | undefined;
   try {
     dir = def.output === 'file' ? await mkdtemp(join(tmpdir(), 'hive-check-')) : undefined;
-    const ran = await run(def.id, binary, checkArgv(def, ctx.args, ctx.file, dir === undefined ? '' : join(dir, REPORT)), ctx);
+    const launch = launchOf(binary, checkArgv(def, ctx.args, ctx.file, dir === undefined ? '' : join(dir, REPORT)), ctx.env, process.platform);
+    const ran = 'failure' in launch ? { stdout: '', stderr: '', code: null, failure: launch.failure } : await run(def.id, launch.command, launch.args, launch.windowsVerbatimArguments === true, ctx);
     return await finish(def, ctx, ran, dir, log);
   } catch (err) {
     // the run is already open in the console: an I/O throw ends it as failed rather than leaving it running

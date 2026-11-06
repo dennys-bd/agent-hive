@@ -1,5 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { chmod, mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { findCandidate } from '../src/formatter-detect.js';
+import { tempDir } from './temp-dir.js';
 import { CHECKERS, checkArgv, checkerOfServer, checkerOn, checkersOf, cliCheckerDef, cliCheckersFor, shownCommand } from '../src/checkers.js';
 import { LANGUAGES, serverDef } from '../src/languages.js';
 import { CHECKER_IDS, CLI_CHECKER_IDS, EDITOR_DEFAULTS, type EditorConfig, type LanguageId } from '../src/types.js';
@@ -50,4 +54,25 @@ test('a command line is the subcommand, the extra args, then the catalog\'s flag
   assert.equal(shownCommand(checkersOf('python')[0], []), 'ruff server');
   assert.equal(shownCommand(checkersOf('dart')[0], []), 'dart language-server --protocol=lsp');
   assert.equal(shownCommand(checkersOf('typescript')[1], ['--x']), 'vscode-eslint-language-server --stdio --x');
+});
+
+test('a venv\'s tools are tried as .venv/bin/x, then .venv/Scripts/x, then the bare name; the ruff server\'s project list has both (#634)', () => {
+  for (const id of ['mypy', 'pylint', 'yamllint', 'sqlfluff'] as const) {
+    assert.deepEqual(cliCheckerDef(id).candidates, [`.venv/bin/${id}`, `.venv/Scripts/${id}`, id]);
+  }
+  const ruff = CHECKERS.find((c) => c.id === 'ruff');
+  assert.deepEqual(ruff?.kind === 'lsp' ? ruff.project : undefined, ['.venv/bin/ruff', '.venv/Scripts/ruff']);
+});
+
+test('a project with .venv\\Scripts\\mypy.exe gets mypy on win32; one with .venv/bin/mypy gets it on a POSIX platform (#634)', async (t) => {
+  const candidates = cliCheckerDef('mypy').candidates;
+  const win = await findCandidate(candidates, 'C:\\p', 'C:\\bin', { platform: 'win32', isFile: (f) => f === 'C:\\p\\.venv\\Scripts\\mypy.exe' });
+  assert.equal(win, 'C:\\p\\.venv\\Scripts\\mypy.exe');
+  if (process.platform === 'win32') return;
+  const folder = await tempDir(t, 'chk-venv-');
+  const tool = join(folder, '.venv', 'bin', 'mypy');
+  await mkdir(dirname(tool), { recursive: true });
+  await writeFile(tool, '#!/bin/sh\n');
+  await chmod(tool, 0o755);
+  assert.equal(await findCandidate(candidates, folder, '', { platform: process.platform }), tool);
 });
