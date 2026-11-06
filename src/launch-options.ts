@@ -7,6 +7,7 @@ import { AGENTS } from './agents.js';
 import type { AgentRun } from './agents/runner.js';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from './agents/claude-models.js';
 import { agentRoles, CODEX_PLUGIN } from './agents/codex-home.js';
+import { CODEX_MODELS_TIMEOUT_MS, parseCodexModels } from './codex-models.js';
 import { CLAUDE_MODEL } from './config-agent-args.js';
 import { isLaunchArgs, isLaunchModel, savedLaunch } from './launch-pick.js';
 import type { Logger } from './log.js';
@@ -19,7 +20,6 @@ import { MESSAGES } from './ui/i18n.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_SERVER_ERROR = 500;
-const CODEX_MODELS_TIMEOUT_MS = 10_000; // a hung CLI never holds the dialog's lists: Codex's stay empty
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -33,23 +33,6 @@ export interface SpecializedAgent { name: string; description: string; instructi
  * file with a bad frontmatter. */
 export const specializedAgents = (source: string): SpecializedAgent[] =>
   agentRoles(source).map((role) => ({ name: `${CODEX_PLUGIN}:${role.name}`, description: role.description, instructions: role.instructions }));
-
-// One entry of `codex debug models`, narrowed from unknown: a slug the routes would admit as a model, its display name as the hint when it adds one
-function codexModel(value: unknown): { option: LaunchOption; isHidden: boolean }[] {
-  if (!isRecord(value)) return [];
-  const { slug, display_name: name, visibility } = value;
-  if (!isLaunchModel(slug)) return [];
-  const hint = typeof name === 'string' && name !== '' && name !== slug ? { hint: name } : {};
-  return [{ option: { id: slug, ...hint }, isHidden: visibility === 'hide' }];
-}
-
-/** Codex's models as `codex debug models` prints them (#257): visible first, hidden after, each group in the CLI's order. Throws on bad JSON. */
-export function parseCodexModels(stdout: string): LaunchOption[] {
-  const parsed: unknown = JSON.parse(stdout);
-  const list: unknown[] = Array.isArray(parsed) ? parsed : isRecord(parsed) && Array.isArray(parsed.models) ? parsed.models : [];
-  const models = list.flatMap(codexModel);
-  return [...models.filter((m) => !m.isHidden), ...models.filter((m) => m.isHidden)].map((m) => m.option);
-}
 
 // Codex's list, or none: a missing CLI, a failure or output that is not JSON leaves the field to typed names
 async function codexModels(exec: Exec, log: Pick<Logger, 'info'>): Promise<LaunchOption[]> {

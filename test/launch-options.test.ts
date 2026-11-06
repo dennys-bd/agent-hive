@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import express from 'express';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from '../src/agents/claude-models.js';
 import { pluginSource } from '../src/hooks-settings.js';
-import { hasSkill, launchRun, parseCodexModels, pluginSkills, registerLaunchOptionsRoute, specializedAgents } from '../src/launch-options.js';
+import { hasSkill, launchRun, pluginSkills, registerLaunchOptionsRoute, specializedAgents } from '../src/launch-options.js';
 import { createPluginRender, pluginRenderPath, type PluginRender } from '../src/plugin-render.js';
 import type { TaskRouteDeps } from '../src/server-tasks.js';
 import { MESSAGES } from '../src/ui/i18n.js';
@@ -23,19 +23,6 @@ const CODEX_MODELS = JSON.stringify({ models: [
 ] });
 // git answers nothing; `codex debug models` answers `codex()`
 const withCodex = (codex: () => string): Exec => async (file) => ({ stdout: file === 'codex' ? codex() : '' });
-
-test('parseCodexModels lists visible slugs first, hidden after, display_name as the hint; an entry with no usable slug drops (#257)', () => {
-  const stdout = JSON.stringify({ models: [
-    { slug: 'gpt-old', display_name: 'GPT old', visibility: 'hide' },
-    { slug: 'gpt-5.6-terra', display_name: 'GPT-5.6 Terra', visibility: 'list' },
-    { slug: '-bad', visibility: 'list' },
-    { display_name: 'no slug' },
-    { slug: 'gpt-5.6-terra-mini', display_name: 'gpt-5.6-terra-mini', visibility: 'list' },
-  ] });
-  assert.deepEqual(parseCodexModels(stdout), [{ id: 'gpt-5.6-terra', hint: 'GPT-5.6 Terra' }, { id: 'gpt-5.6-terra-mini' }, { id: 'gpt-old', hint: 'GPT old' }]);
-  assert.deepEqual(parseCodexModels(JSON.stringify([{ slug: 'gpt-x' }])), [{ id: 'gpt-x' }], 'a bare list reads too');
-  assert.throws(() => parseCodexModels('not json'));
-});
 
 test('specializedAgents lists the Hive plugin\'s agents as hive:<name>, sorted by file, with the body Codex gets (#257, #416)', async (t) => {
   const agents = specializedAgents(await renderedPlugin(t));
