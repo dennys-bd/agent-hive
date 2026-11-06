@@ -68,6 +68,7 @@ test('a picked model, specialized agent and arguments reach the open, and the ru
 test('a model the lists lack is offered as typed and opens as typed (#257)', async () => {
   const user = userEvent.setup();
   shown();
+  await screen.findByText('claude --permission-mode auto'); // #694: before the answer the fallback lists claude-opus-4-1
   await user.click(screen.getByRole('combobox', { name: 'modelo' }));
   await user.type(screen.getByRole('combobox', { name: 'buscar modelo' }), 'claude-opus-4-1');
   await user.click(within(listbox()).getByText('usar "claude-opus-4-1"'));
