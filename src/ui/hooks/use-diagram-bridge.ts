@@ -50,10 +50,13 @@ function putDiagram(activityId: string, path: string, xml: string, version: stri
 
 // version: the disk's version the frame shows; queued: the newest autosave not yet sent; isPaused: the strip is up, or the file is gone
 interface WriterState { version?: string; queued?: string; isFlying: boolean; isPaused: boolean }
-interface DiagramWriter { strip?: Strip; error?: string; write(xml: string): void; opened(version: string): void; reload(): void; keep(version: string): void }
+interface DiagramWriter {
+  strip?: Strip; error?: string; state: RefObject<WriterState>;
+  write(xml: string): void; opened(version: string): void; reload(): void; keep(version: string): void;
+}
 
 // One PUT in flight: an autosave meanwhile replaces the queued XML, so a burst of edits costs one write per round trip
-function useDiagramWriter(activityId: string, path: string, active: boolean, reopen: () => void): DiagramWriter {
+function useDiagramWriter(activityId: string, path: string, active: boolean, reopen: () => void, isOpening: () => boolean): DiagramWriter {
   const state = useRef<WriterState>({ isFlying: false, isPaused: false });
   const [strip, setStrip] = useState<Strip>();
   const [error, setError] = useState<string>();
@@ -78,9 +81,9 @@ function useDiagramWriter(activityId: string, path: string, active: boolean, reo
     change({ queued: undefined, isFlying: true });
     void putDiagram(activityId, path, queued, version).then((result) => landed(queued, result));
   };
-  useDiskFollow(activityId, path, active, { state, change, strip, setStrip, reopen });
+  useDiskFollow(activityId, path, active, { state, change, strip, setStrip, reopen, isOpening, flush });
   return {
-    strip, error,
+    strip, error, state,
     write: (xml) => { change({ queued: xml }); flush(); },
     opened: (version) => { change({ version, queued: undefined, isPaused: false }); setStrip(undefined); setError(undefined); },
     reload: () => { change({ queued: undefined, isPaused: false }); setStrip(undefined); reopen(); },
@@ -88,19 +91,23 @@ function useDiagramWriter(activityId: string, path: string, active: boolean, reo
   };
 }
 
-interface Follow { state: RefObject<WriterState>; change(next: Partial<WriterState>): void; strip?: Strip; setStrip(strip: Strip | undefined): void; reopen(): void }
+interface Follow {
+  state: RefObject<WriterState>; change(next: Partial<WriterState>): void; strip?: Strip; setStrip(strip: Strip | undefined): void;
+  reopen(): void; isOpening(): boolean; flush(): void;
+}
 
 // The disk against the pane, polled while it shows: a clean pane loads the disk's version, one with a queued write raises the strip.
-// A PUT in flight ignores the poll: its own write may land before its answer, and another writer's answers it 409 anyway
-function useDiskFollow(activityId: string, path: string, active: boolean, { state, change, strip, setStrip, reopen }: Follow): void {
+// A PUT in flight ignores the poll: its own write may land before its answer, and another writer's answers it 409 anyway. So does a read in
+// flight: every tick until it answers would load the file again
+function useDiskFollow(activityId: string, path: string, active: boolean, { state, change, strip, setStrip, reopen, isOpening, flush }: Follow): void {
   useFileVersion(activityId, path, active, (disk: DiskVersion) => {
     const { version, queued, isFlying, isPaused } = state.current;
-    if (isFlying || version === undefined) return;
+    if (isFlying || isOpening() || version === undefined) return;
     if (disk === null) {
       change({ isPaused: true });
       setStrip({ kind: 'missing' });
     } else if (disk === version) {
-      if (strip?.kind === 'missing') { change({ isPaused: false }); setStrip(undefined); }
+      if (strip?.kind === 'missing') { change({ isPaused: false }); setStrip(undefined); flush(); } // what was queued while it was gone
     } else if (queued !== undefined || isPaused) {
       change({ isPaused: true });
       setStrip({ kind: 'changed', version: disk });
@@ -116,15 +123,36 @@ export function useDiagramBridge(activityId: string, path: string, active: boole
   const frame = useRef<HTMLIFrameElement>(null);
   const pending = useRef<DrawioFile['kind'] | undefined>(undefined); // what the next load event finishes
   const [readError, setReadError] = useState<string>();
-  const writer = useDiagramWriter(activityId, path, active, () => open());
-  const open = (): void => {
+  const opening = useRef(0); // the newest read's number; 0: none in flight
+  const reads = useRef(0);
+  const writer = useDiagramWriter(activityId, path, active, () => open(false), () => opening.current !== 0);
+  // isInit: draw.io has nothing loaded, so the file goes in even when its version is the pane's. A read answering after a newer one, or after
+  // an edit was queued or sent meanwhile, loads nothing: the frame holds newer work than that disk copy, and the edit's PUT meets the disk
+  const open = (isInit: boolean): void => {
+    reads.current += 1;
+    const read = reads.current;
+    opening.current = read;
     readFile(activityId, path).then((file) => {
+      if (opening.current !== read) return;
+      opening.current = 0;
+      const { version, queued, isFlying } = writer.state.current;
+      if (!isInit && (queued !== undefined || isFlying || file.version === version)) return;
       const parsed = parseDrawioFile(file.text);
       pending.current = parsed.kind;
       writer.opened(file.version);
       setReadError(undefined);
       post(frame.current, loadMessage(parsed));
-    }, (err: unknown) => setReadError(messageOf(err)));
+    }, (err: unknown) => {
+      if (opening.current === read) opening.current = 0;
+      setReadError(messageOf(err));
+    });
+  };
+  // A frame that loaded again holds nothing: unwritten work goes back in, and its queue and strip stay for the person to decide
+  const init = (): void => {
+    const { queued } = writer.state.current;
+    if (queued === undefined) return open(true);
+    pending.current = undefined;
+    post(frame.current, loadMessage({ kind: 'xml', xml: queued }));
   };
   const loaded = (xml?: string): void => {
     const kind = pending.current;
@@ -133,7 +161,7 @@ export function useDiagramBridge(activityId: string, path: string, active: boole
     else if (kind === 'mermaid' && xml !== undefined) writer.write(xml);
   };
   const onEvent = (message: DrawioEvent): void => {
-    if (message.event === 'init') open();
+    if (message.event === 'init') init();
     else if (message.event === 'load') loaded(message.xml);
     else if (message.event === 'autosave' && message.xml !== undefined) writer.write(message.xml);
   };

@@ -202,3 +202,44 @@ test('a read refused on init shows its message in the bar (#956)', async () => {
   fromFrame({ event: 'init' });
   expect(await screen.findByRole('alert')).toHaveTextContent('arquivo grande demais para o editor');
 });
+
+test('a poll answering the version the pane just wrote loads nothing (#956)', async () => {
+  const posts = await opened();
+  await autosaved('a');
+  await act(async () => { puts[0].answer(jsonResponse({ version: 'v2' })); });
+  version = 'v1'; // the poll's answer is stale, read before the PUT landed; the read it starts finds the pane's own write
+  poll();
+  version = 'v2';
+  await flush();
+  await flush();
+  expect(posts()).toHaveLength(1);
+});
+
+test('an edit made while a disk read flies keeps the frame: the read loads nothing and the edit is written (#956)', async () => {
+  const posts = await opened();
+  text = `<mxfile>${MODEL}<!-- agent --></mxfile>`;
+  version = 'v2';
+  let answerRead: (() => void) | undefined;
+  const reading = new Promise<void>((resolve) => { answerRead = resolve; });
+  fetchMock.mockImplementationOnce(() => Promise.resolve(jsonResponse({ version: 'v2' }))); // the poll
+  fetchMock.mockImplementationOnce(async () => { await reading; return jsonResponse({ path: PATH, text, version: 'v2' }); }); // the read, held
+  poll();
+  await flush();
+  poll(); // a second tick while the read flies opens nothing more
+  await autosaved('mine');
+  await act(async () => { answerRead?.(); await reading; });
+  await flush();
+  expect(posts()).toHaveLength(1);
+  expect(puts[0].body).toMatchObject({ text: 'mine', version: 'v1' });
+});
+
+test('a frame that loads again over an unwritten edit gets the edit back and keeps the strip (#956)', async () => {
+  const posts = await opened();
+  await autosaved('a');
+  await act(async () => { puts[0].answer(jsonResponse({ error: 'changed on disk', version: 'v9' }, 409)); });
+  expect(await screen.findByText('mudou no disco')).toBeInTheDocument();
+  fromFrame({ event: 'init' });
+  await flush();
+  expect(posts()[1]).toEqual({ action: 'load', autosave: 1, noSaveBtn: 1, noExitBtn: 1, xml: 'a' });
+  expect(screen.getByText('mudou no disco')).toBeInTheDocument();
+});
