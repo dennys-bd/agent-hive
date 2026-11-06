@@ -20,6 +20,7 @@
     "lint": "biome lint --error-on-warnings",
     "start": "pnpm build && node bin/hive.js",
     "run:headless": "pnpm build && node dist/src/run.js",
+    "package:win": "pnpm build && electron-builder --win nsis --x64 --publish never",
     "run:test-hive": "pnpm build && node dist/scripts/test-hive.js",
     "seed:test-board": "pnpm build && node dist/scripts/seed-test-board.js",
     "postinstall": "node scripts/postinstall.mjs"
@@ -83,6 +84,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "10.0.5",
     "electron": "^38.0.0",
+    "electron-builder": "26.18.0",
     "jsdom": "^30.1.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0",

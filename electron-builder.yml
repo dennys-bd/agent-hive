@@ -1,0 +1,26 @@
+# Windows x64 only (#651); macOS and Linux packaging belong to the packaged-app issue.
+appId: com.agenthive.app
+productName: Agent Hive
+# The daemon is run.js under ELECTRON_RUN_AS_NODE and external processes read assets/ from disk, so nothing goes into an asar.
+asar: false
+# node-pty's N-API prebuilds (win32-x64, with conpty.dll) load under Electron unchanged; no node-gyp toolchain on the runner.
+npmRebuild: false
+icon: assets/icon.png
+directories:
+  # dist/ is the build tsc and vite write, and part of what is packaged
+  output: release
+files:
+  - dist/**
+  - assets/**
+  - package.json
+  - "!dist/test/**"
+  - "!dist/scripts/**"
+win:
+  target: [{ target: nsis, arch: [x64] }]
+nsis:
+  oneClick: true
+  perMachine: false
+  # a finished install must not boot the window on the CI runner
+  runAfterFinish: false
+artifactName: agent-hive-setup-${version}-x64.${ext}
+publish: null
