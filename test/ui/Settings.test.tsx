@@ -780,8 +780,8 @@ test('a model typed in the execução agentes card redraws fluxo\'s padrão befo
   render(<Settings info={{ ...info, config }} onSaved={vi.fn()} />);
   await open(user, 'execution');
   await user.click(screen.getByRole('combobox', { name: t('settings.agents.model.of', { agent: 'claude' }) }));
-  await user.type(screen.getByRole('combobox', { name: t('newSession.model.search') }), 'opus');
-  await user.click(await screen.findByRole('option', { name: new RegExp(t('newSession.model.typed', { model: 'opus' })) }));
+  await user.type(screen.getByRole('combobox', { name: t('newSession.model.search') }), 'claude-opus-4-0');
+  await user.click(await screen.findByRole('option', { name: new RegExp(t('newSession.model.typed', { model: 'claude-opus-4-0' })) }));
   await user.click(within(screen.getByRole('region', { name: t('settings.agents') })).getByRole('button', { name: t('settings.section.flow') }));
-  expect(screen.getByRole('combobox', { name: t('newSession.model') })).toHaveTextContent('padrão · opus');
+  expect(screen.getByRole('combobox', { name: t('newSession.model') })).toHaveTextContent('padrão · claude-opus-4-0');
 });

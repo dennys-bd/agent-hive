@@ -47,6 +47,7 @@ async function waitFor(check: () => boolean): Promise<void> {
 // git answers every command with nothing, except `worktree list`, which shows the repo and ORPHAN under its .hive/worktrees.
 function twoGit(calls: string[][]): Exec {
   return async (file, args) => {
+    if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
     calls.push([file, ...args]);
     const [, dir, command, sub] = args;
     const listing = `worktree ${dir}\nHEAD 1111\nbranch refs/heads/main\n\nworktree ${worktreePath(dir, ORPHAN)}\nHEAD 3333\nbranch refs/heads/hive/9-gone\n`;
