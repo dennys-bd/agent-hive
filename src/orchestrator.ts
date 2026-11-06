@@ -291,7 +291,7 @@ function createTask(state: State, { title, body, stage: name, prefix, workspace,
 function setAuto(state: State, id: string, auto: boolean): Reduced {
   const task = state.tasks.find((c) => taskId(c) === id);
   if (!task) return none(state);
-  const switched = withTask(state, { ...task, auto });
+  const switched = withTask(state, { ...task, auto, autoByHand: true }); // #688: either way, so the poll never undoes the hand
   const activity = auto ? activityOf(state, task.item.itemId) : undefined;
   if (!activity?.stopped || activity.error !== undefined) return none(switched);
   const { stopped: _stopped, stoppedAt: _stoppedAt, ...unstopped } = activity;
