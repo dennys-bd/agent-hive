@@ -183,6 +183,7 @@ const en = {
   'decomposition.problems': 'Fix decomposition.md before creating the issues:',
   'decomposition.problem': 'line {line}: {message}',
   'decomposition.warnings': 'Nodes that touch the same files with no blocker between them (the issues are created anyway):', // #936
+  'decomposition.transient': 'GitHub did not answer. The issues created so far are kept: press "create issues" again to continue from where it stopped.', // #702: a write that gave up on a transient error; gh's words go to hive.log
   'approval.startNow': 'start now',
   'approval.queue': 'in order',
   'approval.hint': 'start now resumes the task\'s session. in order, it waits for a free worker.',
@@ -3278,6 +3279,7 @@ const pt: Record<MessageKey, string> = {
   'decomposition.problems': 'Corrija o decomposition.md antes de criar as issues:',
   'decomposition.problem': 'linha {line}: {message}',
   'decomposition.warnings': 'Nós que tocam os mesmos arquivos sem bloqueio entre eles (as issues são criadas mesmo assim):',
+  'decomposition.transient': 'O GitHub não respondeu. As issues já criadas ficam: clique em "criar issues" de novo para continuar de onde parou.',
   'approval.startNow': 'começar agora',
   'approval.queue': 'na ordem',
   'approval.hint': 'começar agora retoma a sessão da tarefa. na ordem, a tarefa espera um worker livre.',

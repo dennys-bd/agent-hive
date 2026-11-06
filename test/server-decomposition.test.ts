@@ -11,7 +11,7 @@ import type { TaskRouteDeps } from '../src/server-tasks.js';
 import { ADD_PROJECT_ITEM, CREATE_ISSUE, CREATE_PULL_REQUEST, ISSUE_ID, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
 import { worktreePath } from '../src/worktree.js';
 import type { CombConfig, DecompositionPreview, Exec, HiveEvent, SourceConfig, State, Task } from '../src/types.js';
-import { fakeGqlJson, GITHUB_ENTRY } from './fakes.js';
+import { fakeGqlJson, fakeLog, GITHUB_ENTRY } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
 import { EXAMPLE } from './fixtures/decomposition.js';
 import { tempDir } from './temp-dir.js';
@@ -86,12 +86,13 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const app = express();
   app.use(express.json());
   const dispatch = async (event: HiveEvent): Promise<never[]> => { events.push(event); return []; };
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, exec, gql });
+  const { log, lines } = fakeLog();
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, exec, gql, log, sleep: async () => undefined });
   registerApprovalRoutes(app, { requireLive: (() => ({ state, runtime: { config: { comb } } })) as unknown as TaskRouteDeps['requireLive'], dispatch });
   const server = app.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/activities/${encodeURIComponent(activityIdOf(task.item.itemId))}`;
-  return { url: `${base}/decomposition`, base, events, calls, app, worktree, git };
+  return { url: `${base}/decomposition`, base, events, calls, app, worktree, git, lines };
 }
 
 const post = (url: string, body: unknown): Promise<Response> => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -261,6 +262,19 @@ test('a GitHub error answers 502 with its message; the steps done stay recorded 
   const res = await post(url, CHOICE);
   assert.deepEqual([res.status, await res.json()], [502, { error: 'was submitted too quickly' }]);
   assert.deepEqual(stepsOf(events), ['design=7', '1=101']);
+});
+
+test('a write still failing on a transient error after the retries answers 502 with code transient and logs gh\'s words at warn; another error carries no code and logs nothing (#702)', async (t) => {
+  const message = 'HTTP 502: Bad Gateway (https://api.github.com/graphql)';
+  const transient = await routes(t, { fail: message });
+  const res = await post(transient.url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [502, { error: message, code: 'transient' }]);
+  assert.deepEqual(transient.lines, [`WARN decomposition #7: GitHub still failing after the retries: ${message}`]);
+  assert.deepEqual(stepsOf(transient.events), ['design=7', '1=101']);
+  assert.equal(transient.calls.filter((c) => c.query === CREATE_ISSUE).length, 4, 'one created, then three attempts at the second');
+  const plain = await routes(t, { fail: 'was submitted too quickly' });
+  const refused = await post(plain.url, CHOICE);
+  assert.deepEqual([refused.status, await refused.json(), plain.lines], [502, { error: 'was submitted too quickly' }, []]);
 });
 
 test('POST refuses 409 a decomposition already written (#865)', async (t) => {
