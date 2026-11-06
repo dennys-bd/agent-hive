@@ -1,9 +1,9 @@
 import { mkdirSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
+import { posixShell, posixShellEnv } from './posix-shell.js';
 import { runTmpDir, ptyCommand, ptyEnv } from './spawn.js';
 import type { SpawnOptions, PtyHandle, PtyHandlers, PtyLaunch } from './types.js';
 
-const SHELL = '/bin/sh';
 const TMP_MODE = 0o700; // the run's temp files are this user's only (#428)
 // A process of the run can outlive the pty and keep writing its TMPDIR (node's compile cache), so the removal retries ENOTEMPTY with a
 // linear backoff, about 5 s in all (#495).
@@ -32,8 +32,9 @@ function startIn(options: SpawnOptions | undefined, launch: PtyLaunch, tmp: stri
   try {
     // the secret's file path rides the env, never the value: sh -c's argv and curl's are visible to every account through ps (#467). An
     // agent's run keeps its transcript past its exit for its sleeping tab (#672); a kept terminal's goes to its log (#696), a command's with it
-    const env = { ...ptyEnv(process.env, launch.ptyId, launch.port, tmp, secretFile), ...launch.env }; // a terminal's own wins (#696)
-    ptys.spawn(launch.ptyId, [SHELL, '-c', ptyCommand(launch)], launch.cwd, env, launch.terminal === undefined ? {} : launch.keep, launch.size); // #808: the page's grid
+    // #631: on win32 MSYS must not rewrite the trailer's /hooks/exit; a terminal's own env still wins (#696)
+    const env = { ...ptyEnv(process.env, launch.ptyId, launch.port, tmp, secretFile), ...posixShellEnv(process.platform), ...launch.env };
+    ptys.spawn(launch.ptyId, [posixShell().shell, '-c', ptyCommand(launch)], launch.cwd, env, launch.terminal === undefined ? {} : launch.keep, launch.size); // #808: the page's grid
   } catch (err) {
     dropTmp();
     return spawnFailed(err);
