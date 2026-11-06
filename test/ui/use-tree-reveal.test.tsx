@@ -11,8 +11,8 @@ let answer = (_url: string): Promise<Response> => Promise.resolve(json({ files: 
 const fetchMock = vi.fn((url: string) => answer(url));
 const reveal = vi.fn<(path: string) => void>();
 const flush = (): Promise<void> => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
-interface Props { activeFile?: string; ignored?: readonly string[] }
-const mount = (props: Props) => renderHook(({ activeFile, ignored }: Props) => useTreeReveal('a-I1', activeFile, ignored, false, reveal), { initialProps: props });
+interface Props { activeFile?: string; ignored?: readonly string[]; showHidden?: boolean }
+const mount = (props: Props) => renderHook(({ activeFile, ignored, showHidden = false }: Props) => useTreeReveal('a-I1', activeFile, ignored, showHidden, reveal), { initialProps: props });
 
 beforeEach(() => {
   answer = () => Promise.resolve(json({ files: [], folders: [] }));
@@ -67,6 +67,15 @@ test('a folder read that settles after the active file changed is dropped (#718)
   const hook = mount({ activeFile: 'docs/x.md', ignored: IGNORED });
   hook.rerender({ activeFile: 'src/a.ts', ignored: IGNORED });
   settle(json(REPO));
+  await flush();
+  expect(reveal.mock.calls).toEqual([['src/a.ts']]);
+});
+
+test('toggling ocultos with the same active file reveals nothing more: the choice is read at a change of the file, never a dependency (#718)', async () => {
+  const hook = mount({ activeFile: 'src/a.ts', ignored: IGNORED });
+  await flush();
+  hook.rerender({ activeFile: 'src/a.ts', ignored: IGNORED, showHidden: true });
+  hook.rerender({ activeFile: 'src/a.ts', ignored: IGNORED, showHidden: false });
   await flush();
   expect(reveal.mock.calls).toEqual([['src/a.ts']]);
 });
