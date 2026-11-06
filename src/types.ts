@@ -1269,7 +1269,7 @@ export const REVIEWER_DEFAULTS: ReviewerConfig = { on: true, when: 'save', agent
 /** The Hive's MCP tools no config can turn off (#333): the stages and the skills depend on them. */
 export const LOCKED_TOOLS = ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_reply', 'hive_conventions'] as const;
 /** The tools mcp.off may turn off for the whole Hive (#333, screen 11f). */
-export const OPTIONAL_TOOLS = ['hive_remember', 'hive_applied', 'hive_create_task', 'hive_task', 'benchmark_list', 'benchmark_get', 'benchmark_draft'] as const;
+export const OPTIONAL_TOOLS = ['hive_remember', 'hive_recall', 'hive_create_task', 'hive_task', 'benchmark_list', 'benchmark_get', 'benchmark_draft'] as const;
 export type OptionalTool = (typeof OPTIONAL_TOOLS)[number];
 interface McpServerBase { name: string; workspace: string | null; on: boolean }
 export type ExternalMcpServer =
@@ -2063,11 +2063,11 @@ export const MEMORY_KINDS = ['pref', 'fact', 'avoid'] as const;
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
 export const isMemoryKind = (value: unknown): value is MemoryKind => typeof value === 'string' && (MEMORY_KINDS as readonly string[]).includes(value);
 export type MemoryOrigin = 'user' | 'local' | { task: string; stage?: string }; // local: a local session's (#256); task: the visible id; stage only for a stage run
-export interface MemoryUse { at: string; task?: string; stage?: string; why: string } // the latest hive_applied; task absent: a local session's (#256)
+export interface MemoryUse { at: string; task?: string; stage?: string } // the latest hive_recall (#681); task absent: a local session's (#256)
 export interface MemoryEntry {
   id: string; kind: MemoryKind; description: string; body: string; origin: MemoryOrigin;
   at: string; // ISO time of the last write of kind, description or body
-  uses: number; // hive_applied calls naming it; 0 for a new lesson; an edit keeps it
+  uses: number; // hive_recall calls naming it (#681); 0 for a new lesson; an edit keeps it
   lastUsed?: MemoryUse;
 }
 export interface MemoryFile { nextId: number; entries: MemoryEntry[] } // empty: { nextId: 1, entries: [] }

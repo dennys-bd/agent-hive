@@ -14,8 +14,8 @@ const BODY_3 = 'it is generated: rebuild instead';
 const VIEW: MemoryView = {
   used: 87, cap: 4000, descriptionMax: 150, bodyMax: 4000,
   entries: [
-    { id: 'm-1', kind: 'fact', description: 'pnpm test runs lint, tsc and both runners', body: BODY_1, origin: { task: '812', stage: 'build' }, at: '2026-10-01T10:00:00.000Z', uses: 5, lastUsed: { at: '2026-10-04T09:00:00.000Z', task: '812', stage: 'build', why: 'ran the full gate before committing' } },
-    { id: 'm-2', kind: 'pref', description: 'write specs in English', body: BODY_2, origin: { task: '790' }, at: '2026-10-02T10:00:00.000Z', uses: 1, lastUsed: { at: '2026-10-04T10:00:00.000Z', task: '790', why: 'wrote it in English' } },
+    { id: 'm-1', kind: 'fact', description: 'pnpm test runs lint, tsc and both runners', body: BODY_1, origin: { task: '812', stage: 'build' }, at: '2026-10-01T10:00:00.000Z', uses: 5, lastUsed: { at: '2026-10-04T09:00:00.000Z', task: '812', stage: 'build' } },
+    { id: 'm-2', kind: 'pref', description: 'write specs in English', body: BODY_2, origin: { task: '790' }, at: '2026-10-02T10:00:00.000Z', uses: 1, lastUsed: { at: '2026-10-04T10:00:00.000Z', task: '790' } },
     { id: 'm-3', kind: 'avoid', description: 'never edit dist/ by hand', body: BODY_3, origin: 'user', at: '2026-10-03T10:00:00.000Z', uses: 0 },
   ],
 };
@@ -46,7 +46,7 @@ function Harness() {
 const field = (table: ReturnType<typeof within>, name: string): HTMLElement => table.getByRole('textbox', { name });
 const lessons = (name = 'lições'): ReturnType<typeof within> => within(screen.getByRole('region', { name }));
 
-test('each lesson shows its id, its kind and its meta line, with the last why as the title of its citations (#797)', () => {
+test('each lesson shows its id, its kind and its meta line, its count of uses with no title (#797, #681)', () => {
   render(<Harness />);
   const table = lessons();
   expect(table.getByText('m-1')).toHaveAttribute('title', 'm-1');
@@ -54,9 +54,8 @@ test('each lesson shows its id, its kind and its meta line, with the last why as
   expect(table.getByText(new RegExp(`^tarefa #812 · build · 2026-10-01 · descrição 41 · corpo ${BODY_1.length} caracteres`))).toBeInTheDocument();
   expect(table.getByText(new RegExp(`^tarefa #790 · 2026-10-02 · descrição 22 · corpo ${BODY_2.length} caracteres`))).toBeInTheDocument();
   expect(table.getByText(new RegExp(`^você · 2026-10-03 · descrição 24 · corpo ${BODY_3.length} caracteres`))).toBeInTheDocument();
-  expect(table.getByText('citada 5 vezes')).toHaveAttribute('title', 'ran the full gate before committing');
+  expect(table.getByText('citada 5 vezes')).not.toHaveAttribute('title');
   expect(table.getByText('citada 1 vez')).toBeInTheDocument();
-  expect(table.getByText('citada 0 vezes')).not.toHaveAttribute('title');
 });
 
 test('a lesson\'s description opens and closes its body, collapsed at first and independently per row; the meta line comes last (#680)', async () => {

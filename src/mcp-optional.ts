@@ -1,4 +1,4 @@
-// The tools the Hive's config may turn off (#333): hive_create_task, hive_remember, hive_applied, hive_task, and the benchmark's three (#478). Registered per request, only those mcp.off leaves on.
+// The tools the Hive's config may turn off (#333): hive_create_task, hive_remember, hive_recall, hive_task, and the benchmark's three (#478). Registered per request, only those mcp.off leaves on.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { localWorkspaceOf, taskOfWorker } from './activities.js';
@@ -6,9 +6,9 @@ import { taskWorkspace, workspaceByName } from './config.js';
 import { createTask } from './create-task.js';
 import { correlationOf } from './fact-derive.js';
 import type { Correlation } from './facts.js';
-import { isMemoryRefusal, lessonRefusal, looksLikeSecret, MEMORY_SECRET_MESSAGE, memoryCounts, whyProblem, withEntry, withUse } from './memory.js';
+import { isMemoryRefusal, lessonRefusal, memoryCounts, recalledOf, unknownMemoryMessage, withEntry, withUse } from './memory.js';
 import { registerBenchmarkDraftTool, registerBenchmarkGetTool, registerBenchmarkListTool } from './mcp-benchmark.js';
-import { livePtyId, type McpDeps, OK, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
+import { livePtyId, type McpDeps, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
 import { readTaskAnswer } from './mcp-task.js';
 import { MEMORY_KINDS, type MemoryOrigin, type MemoryUse, OPTIONAL_TOOLS, type OptionalTool } from './types.js';
 
@@ -30,7 +30,7 @@ function registerCreateTaskTool(server: McpServer, deps: McpDeps, header: string
   }));
 }
 
-/** Who saves or cites a lesson (#797): the workspace the worker's task resolves to, or its local activity's (#256); the lesson's origin (the
+/** Who saves or reads a lesson (#797, #681): the workspace the worker's task resolves to, or its local activity's (#256); the lesson's origin (the
  * stage only for a stage run, 'local' for a local session) and the ids its records join by. */
 export interface MemoryCaller { workspace: string; cap: number; origin: Exclude<MemoryOrigin, 'user'>; correlation: Correlation }
 
@@ -55,7 +55,7 @@ export function memoryCaller(deps: McpDeps, header: string | undefined): MemoryC
 }
 
 export const REMEMBER_DESCRIPTION = 'Save a lesson to this workspace\'s memory, which the Hive gives every later run in this workspace. kind: "pref" (how the user wants things done, often learned from a correction), "fact" (a fact about this repository a later task needs) or "avoid" (something that fails or must not be done here). description: one line of at most 150 characters naming what the lesson is about, short and direct (e.g. "Portuguese copy for a run or a command"), never the lesson itself. body: up to 4,000 characters holding the lesson, why it holds and how to apply it; line breaks are kept. Never save details of this task only, what the repository already records (its agent instructions, the code, git history), or anything a token or a secret could be in.';
-export const APPLIED_DESCRIPTION = 'Tell the Hive a lesson of this workspace\'s memory changed what you did: pass its id (m-<n>, as the memory shows it) and why, in one line. Call it each time a lesson makes you act differently, not for lessons you only read.';
+export const RECALL_DESCRIPTION = 'Read a lesson of this workspace\'s memory: pass its id (m-<n>, as the memory section lists it). Answers JSON with its kind, description and body. Call it before working on what a lesson\'s description touches; the description only names the subject, the body holds the lesson.';
 
 // hive_remember (#797): a lesson for every later run in the workspace. Its records name its kind and id, never its description or body
 export function registerRememberTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
@@ -75,23 +75,18 @@ export function registerRememberTool(server: McpServer, deps: McpDeps, header: s
   }, { kind }));
 }
 
-// hive_applied (#797): the run cites a lesson that changed what it did. A citation is counted on the lesson, never rendered
-export function registerAppliedTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
-  server.registerTool('hive_applied', {
-    description: APPLIED_DESCRIPTION,
-    inputSchema: { id: z.string(), why: z.string() },
-  }, async ({ id, why }) => recorded(deps, header, 'hive_applied', async () => {
+// hive_recall (#681): a run reads a lesson, and the read is the lesson's use. Its records name the id and kind, never the description or body
+export function registerRecallTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
+  server.registerTool('hive_recall', { description: RECALL_DESCRIPTION, inputSchema: { id: z.string() } }, async ({ id }) => recorded(deps, header, 'hive_recall', async () => {
     const caller = memoryCaller(deps, header);
     if (!caller) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
-    const problem = whyProblem(why);
-    if (problem) return refuse('bad_memory', problem);
-    if (looksLikeSecret(why)) return refuse('memory_secret', MEMORY_SECRET_MESSAGE);
-    const lastUsed: MemoryUse = { at: new Date().toISOString(), ...(caller.origin === 'local' ? {} : caller.origin), why: why.trim() }; // #256: a local session's names no task
+    const lastUsed: MemoryUse = { at: new Date().toISOString(), ...(caller.origin === 'local' ? {} : caller.origin) }; // #256: a local session's names no task
     const saved = await deps.memory.update(caller.workspace, (file) => withUse(file, id, lastUsed));
     if (isMemoryRefusal(saved)) return refuse(saved.code, saved.message);
-    const lesson = saved.entries.find((e) => e.id === id);
-    if (lesson) deps.facts.write({ event: 'memory.applied', level: 'info', ...caller.correlation, id, kind: lesson.kind, uses: lesson.uses, workspace: caller.workspace });
-    return reply(OK);
+    const lesson = saved.entries.find((e) => e.id === id); // withUse found it; the find narrows it for the answer
+    if (!lesson) return refuse('unknown_memory', unknownMemoryMessage(id));
+    deps.facts.write({ event: 'memory.recalled', level: 'info', ...caller.correlation, id, kind: lesson.kind, uses: lesson.uses, workspace: caller.workspace });
+    return reply(JSON.stringify(recalledOf(lesson)));
   }));
 }
 
@@ -110,7 +105,7 @@ function registerTaskTool(server: McpServer, deps: McpDeps, header: string | und
 }
 
 const REGISTER: Record<OptionalTool, Register> = {
-  hive_remember: registerRememberTool, hive_applied: registerAppliedTool, hive_create_task: registerCreateTaskTool, hive_task: registerTaskTool,
+  hive_remember: registerRememberTool, hive_recall: registerRecallTool, hive_create_task: registerCreateTaskTool, hive_task: registerTaskTool,
   benchmark_list: registerBenchmarkListTool, benchmark_get: registerBenchmarkGetTool, benchmark_draft: registerBenchmarkDraftTool, // #478
 };
 

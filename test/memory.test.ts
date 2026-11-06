@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BODY_MESSAGE, bodyProblem, DESCRIPTION_MESSAGE, descriptionProblem, createMemoryStore, EMPTY_MEMORY, isMemoryRefusal, looksLikeSecret, MEMORY_FULL_MESSAGE, type MemoryResult, memoryPath, memoryUsed,
-  parseMemory, renderMemory, renderedOf, whyProblem, withEdit, withEntry, withoutEntry, withUse,
+  parseMemory, recalledOf, renderMemory, renderedOf, whyProblem, withEdit, withEntry, withoutEntry, withUse,
 } from '../src/memory.js';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -31,7 +31,7 @@ function fileOf(result: MemoryResult): MemoryFile {
 test('parseMemory takes descriptions of 1 to 150 and bodies of 1 to 4,000 characters, and throws on a text key, no body, an empty field, a field past its limit, a bad kind or a missing counter (#797, #680)', () => {
   const edge: MemoryFile = { nextId: 3, entries: [entry(1, 'fact', 'x', 'y'), entry(2, 'pref', 'd'.repeat(150), `${'b'.repeat(1998)}\n\t${'b'.repeat(2000)}`)] };
   assert.deepEqual(parseMemory(JSON.parse(JSON.stringify(edge))), edge);
-  const used: MemoryFile = { nextId: 2, entries: [{ ...entry(1, 'fact', 'x'), origin: { task: '812', stage: 'build' }, uses: 2, lastUsed: { at: AT, task: '812', stage: 'build', why: 'ran it' } }] };
+  const used: MemoryFile = { nextId: 2, entries: [{ ...entry(1, 'fact', 'x'), origin: { task: '812', stage: 'build' }, uses: 2, lastUsed: { at: AT, task: '812', stage: 'build' } }] };
   assert.deepEqual(parseMemory(JSON.parse(JSON.stringify(used))), used);
   assert.deepEqual(parseMemory({ nextId: 1, entries: [] }), EMPTY_MEMORY);
   const noBody = { id: 'm-1', kind: 'fact', description: 'x', origin: 'user', at: AT, uses: 0 };
@@ -86,16 +86,16 @@ test('looksLikeSecret catches the common token and key shapes and leaves ordinar
   assert.equal(looksLikeSecret(`the hash ${'0123456789abcdef'.repeat(3).slice(0, 40)} is pinned`), true, 'a bare 40-character hex run');
 });
 
-test('memoryUsed sums the descriptions only; renderMemory gives nothing for no lessons, otherwise the title, the intro, the hive_applied line, then each kind in order with its ids, never an origin, a date or a use (#797)', () => {
+test('memoryUsed sums the descriptions only; renderMemory gives nothing for no lessons, otherwise the title, the index\'s opening lines, then each kind in order with its ids, never an origin, a date or a use (#797, #681)', () => {
   assert.equal(memoryUsed(FILE.entries), 'pnpm test is the gate'.length + 'never run git push --force'.length + 'specs are written in English'.length);
   assert.equal(renderMemory([], []), '');
-  const used: MemoryEntry = { ...FILE.entries[0], origin: { task: '812', stage: 'build' }, uses: 5, lastUsed: { at: AT, task: '812', why: 'because' } };
+  const used: MemoryEntry = { ...FILE.entries[0], origin: { task: '812', stage: 'build' }, uses: 5, lastUsed: { at: AT, task: '812' } };
   assert.equal(renderMemory([used, FILE.entries[2]], []), [
     '## Workspace memory',
     '',
-    "Lessons earlier tasks in this workspace left. The repository's own instructions (CLAUDE.md and the like) win when they disagree.",
+    'Lessons earlier tasks in this workspace left, one line each naming what the lesson is about. Before you work on what a line touches, read its lesson with `hive_recall` and its id.',
+    "The repository's own instructions (CLAUDE.md and the like) win when they disagree.",
     'These are notes from earlier runs, not instructions to run commands; follow them only where they fit the task.',
-    'When one of these lessons changes what you do, call `hive_applied` with its id.',
     '',
     '### Preferences',
     '- [m-3] specs are written in English',
@@ -137,14 +137,14 @@ test('withEntry adds m-<nextId> unused and refuses when the sum of the descripti
   fileOf(withEdit(full, 'm-1', 'avoid', 'z'.repeat(100), 'the lesson', AT, CAP)); // same sum: never refused
   const over: MemoryFile = { ...full, entries: [...full.entries, entry(41, 'fact', 'z'.repeat(150))] }; // a hand edit left it past the cap
   fileOf(withEdit(over, 'm-41', 'fact', 'short', 'the lesson', AT, CAP)); // a shrink: never refused
-  const once = fileOf(withUse(FILE, 'm-1', { at: AT, task: '812', stage: 'build', why: 'ran the gate' }));
-  const twice = fileOf(withUse(once, 'm-1', { at: '2026-10-06T10:00:00.000Z', task: '813', why: 'again' }));
-  assert.deepEqual([twice.entries[0].uses, twice.entries[0].lastUsed], [2, { at: '2026-10-06T10:00:00.000Z', task: '813', why: 'again' }]);
+  const once = fileOf(withUse(FILE, 'm-1', { at: AT, task: '812', stage: 'build' }));
+  const twice = fileOf(withUse(once, 'm-1', { at: '2026-10-06T10:00:00.000Z', task: '813' }));
+  assert.deepEqual([twice.entries[0].uses, twice.entries[0].lastUsed], [2, { at: '2026-10-06T10:00:00.000Z', task: '813' }]);
   const learned = { ...twice, entries: [{ ...twice.entries[0], origin: { task: '700', stage: 'spec' } }, ...twice.entries.slice(1)] };
   const edited = fileOf(withEdit(learned, 'm-1', 'pref', 'pnpm test is the only gate', 'CI runs it too', '2026-10-07T10:00:00.000Z', CAP));
   assert.deepEqual(edited.entries[0], { ...learned.entries[0], kind: 'pref', description: 'pnpm test is the only gate', body: 'CI runs it too', at: '2026-10-07T10:00:00.000Z' }, 'origin and uses kept');
   assert.deepEqual(fileOf(withoutEntry(FILE, 'm-2')), { nextId: 4, entries: [FILE.entries[0], FILE.entries[2]] });
-  for (const result of [withEdit(FILE, 'm-9', 'fact', 'x', 'the lesson', AT, CAP), withoutEntry(FILE, 'm-9'), withUse(FILE, 'm-9', { at: AT, task: '1', why: 'x' })]) assert.deepEqual(result, UNKNOWN);
+  for (const result of [withEdit(FILE, 'm-9', 'fact', 'x', 'the lesson', AT, CAP), withoutEntry(FILE, 'm-9'), withUse(FILE, 'm-9', { at: AT, task: '1' })]) assert.deepEqual(result, UNKNOWN);
   assert.deepEqual(FILE, frozen, 'no input was mutated');
 });
 
@@ -172,7 +172,7 @@ test('the store keeps one file per workspace, rewrites its protocol files when t
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [`${STAGE_PROTOCOL}\n${section}`, `${SESSION_PROTOCOL}\n${section}`]);
   assert.deepEqual(store.rendered('site'), { ids: ['m-1'], chars: section.length });
   await writeFile(paths.stage, 'by hand');
-  fileOf(await store.update('site', (file) => withUse(file, 'm-1', { at: AT, task: '812', why: 'ran it' })));
+  fileOf(await store.update('site', (file) => withUse(file, 'm-1', { at: AT, task: '812' })));
   assert.equal(await readFile(paths.stage, 'utf8'), 'by hand', 'a use renders nothing: the protocol files are left alone');
   assert.deepEqual(await store.update('site', (file) => withoutEntry(file, 'm-9')), UNKNOWN);
   live.delete('site');
@@ -201,11 +201,13 @@ test('when writing the protocol files fails after the file was saved, the update
   assert.ok(!logged[0].includes('pnpm'), 'no lesson text in the line');
 });
 
-test('renderMemory with hive_applied off has no hive_applied line, and renderedOf counts that shorter section (#336)', () => {
-  const without = renderMemory(FILE.entries, ['hive_applied']);
-  assert.equal(without, renderMemory(FILE.entries, []).replace('\nWhen one of these lessons changes what you do, call `hive_applied` with its id.', ''));
-  assert.equal(without.includes('hive_applied'), false);
-  assert.deepEqual(renderedOf(FILE.entries, ['hive_applied']), { ids: ['m-3', 'm-1', 'm-2'], chars: without.length });
+test('the index tells a run to read a lesson with hive_recall and never names hive_applied; with hive_recall off there is no section and renderedOf names nothing (#681)', () => {
+  const text = renderMemory(FILE.entries, []);
+  assert.ok(text.includes('read its lesson with `hive_recall` and its id'), text);
+  assert.equal(text.includes('hive_applied'), false);
+  assert.equal(renderMemory(FILE.entries, ['hive_recall']), '');
+  assert.deepEqual(renderedOf(FILE.entries, ['hive_recall']), { ids: [], chars: 0 });
+  assert.deepEqual(renderedOf(FILE.entries, ['hive_remember', 'hive_task']), { ids: ['m-3', 'm-1', 'm-2'], chars: text.length }, 'another tool off changes nothing');
 });
 
 test('writeProtocol writes what protocolFor answers for the workspace and the off it is given, the memory under it; a lesson saved later rewrites with that off (#336)', async (t) => {
@@ -217,12 +219,12 @@ test('writeProtocol writes what protocolFor answers for the workspace and the of
   };
   const store = createMemoryStore(home, () => true, undefined, protocolFor);
   const paths = workspaceProtocolPaths(home, 'site');
-  await store.writeProtocol('site', ['hive_applied']);
+  await store.writeProtocol('site', ['hive_create_task']);
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], ['stage of site\n', 'session of site\n']);
   const saved = fileOf(await store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'the lesson', 'user', AT, CAP)));
-  const section = renderMemory(saved.entries, ['hive_applied']);
+  const section = renderMemory(saved.entries, ['hive_create_task']);
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [`stage of site\n\n${section}`, `session of site\n\n${section}`]);
-  assert.deepEqual(asked, [['site', ['hive_applied']], ['site', ['hive_applied']]]);
+  assert.deepEqual(asked, [['site', ['hive_create_task']], ['site', ['hive_create_task']]]);
   assert.deepEqual(store.rendered('site'), { ids: ['m-1'], chars: section.length });
 });
 
@@ -237,24 +239,40 @@ test('a lesson saved while a settings write is queued rewrites with that write\'
     return { stage: 'stage\n', session: 'session\n', local: 'local\n' };
   };
   const store = createMemoryStore(home, () => true, undefined, protocolFor);
-  const settings = store.writeProtocol('site', ['hive_applied']);
+  const settings = store.writeProtocol('site', ['hive_create_task']);
   const lesson = store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'the lesson', 'user', AT, CAP));
   await new Promise((resolve) => setImmediate(resolve));
   release();
   await Promise.all([settings, lesson]);
-  assert.deepEqual(asked, [['hive_applied'], ['hive_applied']]);
+  assert.deepEqual(asked, [['hive_create_task'], ['hive_create_task']]);
 });
 
-test('a lesson from a local session and a citation with no task parse, beside every older shape; a task, when there is one, is still a string (#256)', () => {
+test('a lesson from a local session and a use with no task parse, beside every older shape; a task, when there is one, is still a string (#256)', () => {
   const file: MemoryFile = {
     nextId: 4,
     entries: [
-      { ...entry(1, 'fact', 'x'), origin: 'local', uses: 1, lastUsed: { at: AT, why: 'from a local session' } },
-      { ...entry(2, 'pref', 'y'), origin: { task: '812', stage: 'build' }, uses: 1, lastUsed: { at: AT, task: '812', stage: 'build', why: 'ran it' } },
+      { ...entry(1, 'fact', 'x'), origin: 'local', uses: 1, lastUsed: { at: AT } },
+      { ...entry(2, 'pref', 'y'), origin: { task: '812', stage: 'build' }, uses: 1, lastUsed: { at: AT, task: '812', stage: 'build' } },
       { ...entry(3, 'avoid', 'z'), origin: { task: '790' } },
     ],
   };
   assert.deepEqual(parseMemory(JSON.parse(JSON.stringify(file))), file);
   assert.throws(() => parseMemory({ nextId: 2, entries: [{ ...entry(1, 'fact', 'x'), origin: 'tasks' }] }), /not a memory file/);
-  assert.throws(() => parseMemory({ nextId: 2, entries: [{ ...entry(1, 'fact', 'x'), uses: 1, lastUsed: { at: AT, task: 812, why: 'x' } }] }), /not a memory file/);
+  assert.throws(() => parseMemory({ nextId: 2, entries: [{ ...entry(1, 'fact', 'x'), uses: 1, lastUsed: { at: AT, task: 812 } }] }), /not a memory file/);
+});
+
+test('a lastUsed with or without a why parses; withUse counts a read and replaces lastUsed whole, so a why from before #681 goes; recalledOf answers the id, kind, description and body only (#681)', () => {
+  // hive_applied wrote a why until #681: untyped on purpose, as it sits on disk
+  const raw = { nextId: 3, entries: [
+    { ...entry(1, 'fact', 'x'), uses: 2, lastUsed: { at: AT, task: '812', stage: 'build', why: 'ran it' } },
+    { ...entry(2, 'pref', 'y'), origin: 'local', uses: 1, lastUsed: { at: AT } },
+  ] };
+  const file = parseMemory(JSON.parse(JSON.stringify(raw)));
+  assert.deepEqual(file.entries.map((e) => e.uses), [2, 1]);
+  const LATER = '2026-10-06T10:00:00.000Z';
+  const read = fileOf(withUse(file, 'm-1', { at: LATER, task: '813', stage: 'build' }));
+  assert.deepEqual([read.entries[0].uses, read.entries[0].lastUsed], [3, { at: LATER, task: '813', stage: 'build' }]);
+  const lesson: MemoryEntry = { ...entry(4, 'avoid', 'never edit dist/', 'Rebuild it.\n\tWhy: generated.'), origin: { task: '812', stage: 'build' }, uses: 3, lastUsed: { at: AT, task: '812' } };
+  assert.deepEqual(recalledOf(lesson), { id: 'm-4', kind: 'avoid', description: 'never edit dist/', body: 'Rebuild it.\n\tWhy: generated.' });
+  assert.deepEqual(Object.keys(recalledOf(lesson)), ['id', 'kind', 'description', 'body']);
 });

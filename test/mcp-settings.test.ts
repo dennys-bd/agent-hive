@@ -22,14 +22,15 @@ const URL_MESSAGE = '"mcp.servers[0].url" must be an http or https URL';
 test('parseMcp accepts the spec\'s example as written, a command\'s args default to [] and a repeat in off is dropped (#333)', () => {
   assert.deepEqual(parseMcp(EXAMPLE, WORKSPACES, 'darwin'), EXAMPLE);
   assert.deepEqual(parseMcp(MCP_DEFAULTS, WORKSPACES, 'darwin'), MCP_DEFAULTS);
-  assert.deepEqual(at([{ name: 'x', command: 'mcp-x', workspace: 'hive', on: true }], ['hive_applied', 'hive_applied']),
-    { off: ['hive_applied'], servers: [{ name: 'x', command: 'mcp-x', args: [], workspace: 'hive', on: true }] });
+  assert.deepEqual(at([{ name: 'x', command: 'mcp-x', workspace: 'hive', on: true }], ['hive_recall', 'hive_recall']),
+    { off: ['hive_recall'], servers: [{ name: 'x', command: 'mcp-x', args: [], workspace: 'hive', on: true }] });
 });
 
 test('parseMcp refuses a locked or unknown tool in off, naming the key and listing the optional tools (#333)', () => {
-  const only = 'only hive_remember, hive_applied, hive_create_task, hive_task, benchmark_list, benchmark_get, benchmark_draft can be turned off';
+  const only = 'only hive_remember, hive_recall, hive_create_task, hive_task, benchmark_list, benchmark_get, benchmark_draft can be turned off';
   assert.equal(at([], ['hive_done']), `"mcp.off" holds hive_done: ${only}`);
   assert.equal(at([], ['hive_nope']), `"mcp.off" holds hive_nope: ${only}`);
+  assert.equal(at([], ['hive_applied']), `"mcp.off" holds hive_applied: ${only}`, 'no migration: the retired tool is unknown (#681)');
   assert.equal(at([], 'hive_remember'), '"mcp.off" must be an array of tool names');
   for (const raw of [undefined, null, [], 'x']) assert.equal(parseMcp(raw, WORKSPACES, 'darwin'), '"mcp" must be an object with off and servers', JSON.stringify(raw));
   assert.equal(parseMcp({ off: [] }, WORKSPACES, 'darwin'), '"mcp.servers" must be an array');

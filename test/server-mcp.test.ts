@@ -59,7 +59,7 @@ test('GET /api/mcp answers every tool, locked first, and each server with hasVal
   const text = await (await hiveFetch(`${base}/api/mcp`)).text();
   assert.equal(text.includes('t0k'), false);
   assert.deepEqual(JSON.parse(text), {
-    tools: [...LOCKED.map((name) => ({ name, locked: true, on: true })), ...['hive_remember', 'hive_applied', 'hive_create_task', 'hive_task', 'benchmark_list', 'benchmark_get', 'benchmark_draft'].map((name) => ({ name, locked: false, on: true }))],
+    tools: [...LOCKED.map((name) => ({ name, locked: true, on: true })), ...['hive_remember', 'hive_recall', 'hive_create_task', 'hive_task', 'benchmark_list', 'benchmark_get', 'benchmark_draft'].map((name) => ({ name, locked: false, on: true }))],
     servers: [{ ...UP, hasValue: false, state: 'connected' }, { ...DOCS, hasValue: true, state: 'no_answer' }, { ...IDLE, hasValue: false, state: 'off' }],
   });
   assert.equal(probed.some((s) => s.includes('"idle"')), false, 'a server switched off is never probed');
@@ -73,7 +73,7 @@ test('PUT /api/mcp/tools/:name turns an optional tool off and on; a locked one i
   const before = await compact(home);
   assert.deepEqual(await answer(send('PUT', `${base}/api/mcp/tools/hive_done`, { on: false })), [400, { error: lockedMessage('hive_done') }]);
   assert.deepEqual(await answer(send('PUT', `${base}/api/mcp/tools/hive_nope`, { on: false })), [404, { error: 'unknown tool' }]);
-  assert.deepEqual(await answer(send('PUT', `${base}/api/mcp/tools/hive_applied`, { on: 'no' })), [400, { error: 'on must be true or false' }]);
+  assert.deepEqual(await answer(send('PUT', `${base}/api/mcp/tools/hive_recall`, { on: 'no' })), [400, { error: 'on must be true or false' }]);
   assert.equal(await readFile(configFile(home), 'utf8'), before, 'no write');
   assert.deepEqual(await answer(send('PUT', `${base}/api/mcp/tools/hive_remember`, { on: true })), [200, { ok: true }]);
   assert.deepEqual((await savedMcp(home)).off, []);

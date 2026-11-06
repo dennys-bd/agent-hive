@@ -6,7 +6,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { localActivityId } from '../src/activities.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
-import { REMEMBER_DESCRIPTION } from '../src/mcp-optional.js';
+import { RECALL_DESCRIPTION, REMEMBER_DESCRIPTION } from '../src/mcp-optional.js';
 import { MEMORY_FULL_MESSAGE, memoryPath } from '../src/memory.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { createServer } from '../src/server.js';
@@ -44,7 +44,7 @@ async function startLocal(t: TestContext, memoryCap = 4000): Promise<Local> {
 
 test('a local session is offered every tool but hive_done, hive_pr and hive_stop: its tools match its protocol, and it cannot stop a session the user drives (#256)', async (t) => {
   const { client } = await startLocal(t);
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_remember', 'hive_reply', 'hive_task']);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_recall', 'hive_remember', 'hive_reply', 'hive_task']);
 });
 
 async function call(client: Client, name: string, args: Record<string, unknown> = {}): Promise<{ text: string; isError: boolean }> {
@@ -53,18 +53,19 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
   return { text: first?.type === 'text' ? first.text : '', isError: result.isError === true };
 }
 
-test('hive_remember from a local session saves a lesson with origin local in its activity\'s workspace, capped by its memoryCap, and local.md carries it; hive_applied records a use with no task (#256)', async (t) => {
+test('hive_remember from a local session saves a lesson with origin local in its activity\'s workspace, capped by its memoryCap, and local.md carries it; hive_recall reads a lesson and records the use with no task (#256, #681)', async (t) => {
   const { client, home } = await startLocal(t, 500);
   const remember = (n: string) => call(client, 'hive_remember', { kind: 'fact', description: `${n} ${'y'.repeat(140)}`, body: 'b'.repeat(4000) });
   assert.deepEqual(await remember('one'), { text: 'saved as m-1', isError: false });
   assert.deepEqual(await remember('two'), { text: 'saved as m-2', isError: false });
   assert.deepEqual(await remember('three'), { text: 'saved as m-3', isError: false }, 'the bodies count for nothing: 434 of 500');
   assert.deepEqual(await remember('four'), { text: MEMORY_FULL_MESSAGE, isError: true }, 'the workspace\'s cap of 500');
-  assert.deepEqual(await call(client, 'hive_applied', { id: 'm-1', why: 'kept it in mind' }), { text: 'ok', isError: false });
+  const recalled = await call(client, 'hive_recall', { id: 'm-1' });
+  assert.deepEqual([recalled.isError, JSON.parse(recalled.text)], [false, { id: 'm-1', kind: 'fact', description: `one ${'y'.repeat(140)}`, body: 'b'.repeat(4000) }]);
   const { entries } = JSON.parse(await readFile(memoryPath(home, WORKSPACE), 'utf8')) as MemoryFile;
   assert.deepEqual(entries.map((e) => e.origin), ['local', 'local', 'local']);
   const { at, ...use } = entries[0].lastUsed ?? { at: '' };
-  assert.deepEqual([entries[0].uses, use], [1, { why: 'kept it in mind' }]);
+  assert.deepEqual([entries[0].uses, use], [1, {}], 'a local session\'s use names no task and no stage');
   assert.match(at, /^\d{4}-\d{2}-\d{2}T/);
   const local = await readFile(workspaceProtocolPaths(home, WORKSPACE).local, 'utf8');
   assert.ok(local.includes('## Workspace memory') && local.includes('- [m-1] one '), local);
@@ -77,4 +78,7 @@ test('hive_remember tells every run in the workspace gets the lesson, a local se
   assert.match(REMEMBER_DESCRIPTION, /which the Hive gives every later run in this workspace\./);
   assert.match(REMEMBER_DESCRIPTION, /description: one line of at most 150 characters/);
   assert.match(REMEMBER_DESCRIPTION, /body: up to 4,000 characters/);
+  assert.equal((await client.listTools()).tools.find((tool) => tool.name === 'hive_recall')?.description, RECALL_DESCRIPTION);
+  assert.match(RECALL_DESCRIPTION, /pass its id \(m-<n>, as the memory section lists it\)/);
+  assert.match(RECALL_DESCRIPTION, /the description only names the subject, the body holds the lesson\.$/);
 });

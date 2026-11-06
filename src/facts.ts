@@ -23,7 +23,7 @@ export type FinishVia = 'move' | 'archive' | 'remove' | 'delete' | 'none';
 export type StageOutcome = 'done' | 'approval' | 'stop' | 'agent_stop' | 'killed' | 'failed' | 'exit';
 export type RefusalCode = 'unknown_worker' | 'bad_result' | 'bad_verdict' | 'bad_url' | 'bad_question' | 'duplicate_of' | 'cannot_close' | 'no_session'
   | 'bad_reply' | 'unknown_thread' | 'not_participant' | 'thread_resolved' | 'event' | 'block_with_reason' | 'cannot_block' | 'not_blocked' | 'block_refused' | 'no_transition'
-  | 'unknown_experiment' | 'bad_draft' | MemoryRefusalCode; // #478: the benchmark tools'; #797: hive_remember's and hive_applied's
+  | 'unknown_experiment' | 'bad_draft' | MemoryRefusalCode; // #478: the benchmark tools'; #797, #681: hive_remember's and hive_recall's
 export type StepKind = 'COPY' | 'RUN' | 'LOAD' | 'DEL';
 
 /** What joins a record to the rest (#742): each present only when it applies. session_id is Claude Code's, so its transcript joins by it.
@@ -73,9 +73,9 @@ export interface FactFields {
   'stage.ended': Timed & RunUsage & { agent?: AgentId; outcome: StageOutcome; waited_ms: number; tool_counts: Record<string, number> };
   // error: the handler threw. result_keys: an accepted hive_done's safe-shaped keys, at most 20; result_keys_dropped: how many were left out; kind: hive_remember's lesson kind (#797), never its text
   'mcp.call': { tool: string; outcome: 'ok' | 'refused' | 'error'; reason?: RefusalCode; latency_ms: number; result_keys?: string[]; result_keys_dropped?: number; kind?: MemoryKind };
-  // #797: a lesson saved, edited or removed, and a run citing one. Never a lesson's text or a why. used: the sum of the texts, as the cap counts
+  // #797: a lesson saved, edited or removed, and (#681) a run reading one with hive_recall. Never a lesson's description or body. used: the sum of the texts, as the cap counts
   'memory.changed': { action: 'added' | 'edited' | 'removed'; kind: MemoryKind; by: 'worker' | 'user'; id: string; entries: number; used: number; workspace: string };
-  'memory.applied': { id: string; kind: MemoryKind; uses: number; workspace: string };
+  'memory.recalled': { id: string; kind: MemoryKind; uses: number; workspace: string };
   'pr.opened': { pr: number };
   'pr.state': { pr: number; state: 'merged' | 'closed'; since_opened_ms?: number; since_stage_started_ms?: number };
   'pr.commit': { pr: number; sha: string; committed_at: string }; // one per commit newly seen on the PR: sha 8 chars, GitHub's committedDate
