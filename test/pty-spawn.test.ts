@@ -11,6 +11,7 @@ import { promisify, stripVTControlCharacters } from 'node:util';
 import { runners } from '../src/agents/registry.js';
 import { commandChannel, createConsoleStore } from '../src/console.js';
 import { feedConsole } from '../src/console-feed.js';
+import { killTree } from '../src/kill-tree.js';
 import { createPtyHost, type PtyHost } from '../src/pty-host.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { killStray } from '../src/spawn.js';
@@ -129,6 +130,8 @@ test('on the Windows lane a run command whose line exits 3 ends its console with
 test('on the Windows lane the tab\'s kill, killStray on claude\'s stray pattern, ends the fake agent whose argv holds <ptyId>.mcp.json and the child it started (#638, #644)', onWindows, async (t) => {
   const run = await lane(t, {}, ['--child']);
   const [, child] = await until(run.output, /child (\d+)/);
+  // the pty's kill does not reach a child started with stdio ignored: a failed assertion below must not leave it running on the runner
+  t.after(() => killTree(Number(child), 'win32', realExec));
   const [, agent] = await until(run.output, /pid (\d+)/);
   assert.equal(await killStray(runners.claude.strayPattern(run.ptyId), realExec, 'win32'), true);
   assert.equal(await gone(Number(agent)), true, 'the fake agent');

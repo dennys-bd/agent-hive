@@ -156,6 +156,16 @@ test('a kill the host was asked for reaches every listener as killed, whatever c
   assert.deepEqual(heard, [[1, false]]);
 });
 
+test('a kill that throws leaves no mark: the pty\'s own exit after it still reads as its own (#644)', () => {
+  const { host, pty } = hosted();
+  pty.kill = () => { throw new Error('the pty is already gone'); };
+  const heard: [number, boolean][] = [];
+  host.subscribe('W1', () => {}, (exitCode, killed) => heard.push([exitCode, killed]));
+  assert.throws(() => host.kill('W1'), /already gone/);
+  pty.exit(1);
+  assert.deepEqual(heard, [[1, false]]);
+});
+
 test('a sleeping run\'s replay ends as not killed, even for a run the host killed: nothing that replays it reads the code as a status (#644)', () => {
   const { host, pty } = agent();
   host.kill('A1');

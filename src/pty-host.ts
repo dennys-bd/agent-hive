@@ -203,7 +203,12 @@ function kill(h: HostMaps, ptyId: string): boolean {
   const entry = h.entries.get(ptyId);
   if (entry === undefined) return false;
   entry.killed = true;
-  entry.pty.kill();
+  try {
+    entry.pty.kill();
+  } catch (err) {
+    delete entry.killed; // a kill that threw never happened: the pty's own exit later must read as its own (a failure stays a failure)
+    throw err;
+  }
   return true;
 }
 
