@@ -3,7 +3,7 @@
 // deps, so node:test drives it with fakes. Every handler resolves its sender first: a page the daemon redirected elsewhere keeps the preload
 // but gets nothing.
 import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron';
-import { clipboardFilesPlist, isClipboardPathList, parseClipboardFiles } from './clipboard-files.js';
+import { clipboardFilesPlist, dropFilesBuffer, isClipboardPathList, parseClipboardFiles, parseDropFiles } from './clipboard-files.js';
 import type { DetachedWindows } from './detach-ipc.js';
 import { titleBarOverlayFor } from './window-options.js';
 
@@ -28,7 +28,7 @@ export interface WindowDialogs {
 }
 
 /** Electron's clipboard as the handlers use it: the sandboxed preload has none, so main reads and writes it. */
-export interface WindowClipboard { read(format: string): string; writeBuffer(format: string, buffer: Buffer): void }
+export interface WindowClipboard { read(format: string): string; readBuffer(format: string): Buffer; writeBuffer(format: string, buffer: Buffer): void }
 
 export interface WindowIpcDeps {
   handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void; // ipcMain.handle
@@ -56,22 +56,52 @@ function senderWindow({ mainWindows, fromWebContents }: Pick<WindowIpcDeps, 'mai
   throw new Error('janela não encontrada');
 }
 
-// ⌘V in the files tree (#594) and a terminal (#843), ⌘C and ⌘X in the tree (#818)
-function registerClipboard(handle: WindowIpcDeps['handle'], sender: SenderWindow, clipboard: WindowClipboard): void {
-  // The files Finder put on the clipboard
+// Windows' first file only, as FileNameW carries it: UTF-16LE cut at its first null
+const firstFileName = (buffer: Buffer): string[] => {
+  const name = buffer.toString('utf16le').split('\0')[0];
+  return name === '' ? [] : [name];
+};
+
+// Electron registers a format name through RegisterClipboardFormat, so 'CF_HDROP' may not be the standard id 15; FileNameW is known to carry
+// the first file, which keeps a single-file paste working when the list does not come through.
+function readWin32Files(clipboard: WindowClipboard): string[] {
+  const listed = parseDropFiles(clipboard.readBuffer('CF_HDROP'));
+  return listed.length > 0 ? listed : firstFileName(clipboard.readBuffer('FileNameW'));
+}
+
+// Finder's pasteboard: the plist of every path, else the first file's URL
+const readPasteboardFiles = (clipboard: WindowClipboard): string[] =>
+  parseClipboardFiles(clipboard.read('NSFilenamesPboardType'), clipboard.read('public.file-url'));
+
+const readClipboardFiles = (clipboard: WindowClipboard, platform: NodeJS.Platform): string[] =>
+  platform === 'win32' ? readWin32Files(clipboard) : readPasteboardFiles(clipboard);
+
+// Only one format: each writeBuffer replaces the clipboard, so a second one written after it would erase the first, and both Explorer's and
+// Finder's paste, and our own read, take this one first.
+function writeClipboardFiles(clipboard: WindowClipboard, platform: NodeJS.Platform, paths: string[]): void {
+  if (platform === 'win32') clipboard.writeBuffer('CF_HDROP', dropFilesBuffer(paths));
+  else clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(clipboardFilesPlist(paths), 'utf8'));
+}
+
+// ⌘V in the files tree (#594) and a terminal (#843), ⌘C and ⌘X in the tree (#818), on Windows too (#650)
+function registerClipboard(handle: WindowIpcDeps['handle'], sender: SenderWindow, clipboard: WindowClipboard, platform: NodeJS.Platform): void {
+  // The files the system's file manager put on the clipboard
   handle('window:clipboardFiles', (event) => {
     sender(event, 'shared');
-    return parseClipboardFiles(clipboard.read('NSFilenamesPboardType'), clipboard.read('public.file-url'));
+    return readClipboardFiles(clipboard, platform);
   });
-  // The files on the pasteboard as Finder's ⌘C writes them, so they paste in Finder and back in the tree. Only NSFilenamesPboardType: each
-  // writeBuffer replaces the pasteboard, so a public.file-url written after it would erase it, and both Finder's paste and
-  // parseClipboardFiles read the plist first. Absolute paths only, checked here: IPC is untrusted.
+  // The files on the clipboard as the file manager's copy writes them, so they paste there and back in the tree. Absolute paths only, checked
+  // here: IPC is untrusted. The write is read back: one the system swallowed must reach the tree as an error, not as a copy that pastes nothing.
   handle('window:writeClipboardFiles', (event, paths: unknown) => {
     sender(event, 'shared');
-    if (!isClipboardPathList(paths)) {
+    if (!isClipboardPathList(paths, platform)) {
       throw new Error('clipboard files must be absolute paths without control characters, and not too many');
     }
-    clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(clipboardFilesPlist(paths), 'utf8'));
+    writeClipboardFiles(clipboard, platform, paths);
+    const written = readClipboardFiles(clipboard, platform);
+    if (written.length !== paths.length || written.some((path, i) => path !== paths[i])) {
+      throw new Error('the clipboard did not take the files');
+    }
   });
 }
 
@@ -103,7 +133,7 @@ export function registerWindowIpc(deps: WindowIpcDeps): SenderWindow {
     sender(event, 'shared');
     await deps.settingsChanged();
   });
-  registerClipboard(handle, sender, deps.clipboard);
+  registerClipboard(handle, sender, deps.clipboard, deps.platform);
   registerThemeOverlay(deps, sender);
   // An untitled file's ⌘S (#818): the OS's save dialog as a sheet on the window that asked; its own Replace? confirms an existing file
   handle('window:saveDialog', async (event, defaultPath: unknown) => {

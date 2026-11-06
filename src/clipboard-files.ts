@@ -39,8 +39,37 @@ export const CLIPBOARD_FILES_MAX = 5000; // a pasteboard plist of more is a runa
 // biome-ignore lint/suspicious/noControlCharactersInRegex: the point is to match control characters
 const CONTROL_CHARACTERS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
 
-/** Whether the IPC's paths may reach the pasteboard (#818): IPC is untrusted, so a non-empty, bounded list of absolute paths without control
- *  characters. */
-export const isClipboardPathList = (paths: unknown): paths is string[] =>
+// A Windows path is absolute with a drive letter and a separator (`C:\a`, `C:/a`) or as UNC (`\\server\share`); `\a` and `C:a` hang on the
+// current drive or directory, so a paste elsewhere would land them somewhere else.
+const WIN32_ABSOLUTE = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/])/;
+const isAbsoluteFor = (path: string, platform: NodeJS.Platform): boolean => (platform === 'win32' ? WIN32_ABSOLUTE.test(path) : path.startsWith('/'));
+
+/** Whether the IPC's paths may reach the clipboard (#818, #650): IPC is untrusted, so a non-empty, bounded list of absolute paths (the
+ *  platform's own kind) without control characters. */
+export const isClipboardPathList = (paths: unknown, platform: NodeJS.Platform): paths is string[] =>
   Array.isArray(paths) && paths.length > 0 && paths.length <= CLIPBOARD_FILES_MAX
-  && paths.every((path) => typeof path === 'string' && path.startsWith('/') && !CONTROL_CHARACTERS.test(path));
+  && paths.every((path) => typeof path === 'string' && isAbsoluteFor(path, platform) && !CONTROL_CHARACTERS.test(path));
+
+// A DROPFILES struct (CF_HDROP): uint32 pFiles (offset of the list), POINT pt, BOOL fNC, BOOL fWide, then the list
+const DROPFILES_HEADER_BYTES = 20;
+const DROPFILES_WIDE_OFFSET = 16;
+
+/** The paths of a CF_HDROP buffer (#650): [] for anything but a well-formed wide list. A list cut before its double null yields only the
+ *  paths that end in a null, since the last one may be half a path. */
+export function parseDropFiles(buffer: Buffer): string[] {
+  if (buffer.length < DROPFILES_HEADER_BYTES) return [];
+  const start = buffer.readUInt32LE(0);
+  if (start < DROPFILES_HEADER_BYTES || start >= buffer.length || buffer.readInt32LE(DROPFILES_WIDE_OFFSET) === 0) return [];
+  const chars = buffer.subarray(start, start + Math.floor((buffer.length - start) / 2) * 2).toString('utf16le');
+  const terminated = chars.slice(0, chars.lastIndexOf('\0') + 1);
+  const end = terminated.indexOf('\0\0');
+  return (end === -1 ? terminated : terminated.slice(0, end)).split('\0').filter((path) => path !== '');
+}
+
+/** The CF_HDROP buffer Explorer pastes (#650): the header, each path in UTF-16LE with its null, and the list's closing null. */
+export function dropFilesBuffer(paths: readonly string[]): Buffer {
+  const header = Buffer.alloc(DROPFILES_HEADER_BYTES);
+  header.writeUInt32LE(DROPFILES_HEADER_BYTES, 0);
+  header.writeInt32LE(1, DROPFILES_WIDE_OFFSET);
+  return Buffer.concat([header, Buffer.from(`${paths.map((path) => `${path}\0`).join('')}\0`, 'utf16le')]);
+}
