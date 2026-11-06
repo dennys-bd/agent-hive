@@ -1,5 +1,6 @@
 // The `mcp` key of hive.config.json (#333), out of config.ts, which is over 400 lines: the optional Hive tools turned off and the external
 // MCP servers every run of their scope gets. The problem comes back as a sentence; config.ts adds the file's name, the routes answer it as is.
+import path from 'node:path';
 import type { RunMcpServer } from './agents/runner.js';
 import { type Credentials, type ExternalMcpServer, type McpSettings, OPTIONAL_TOOLS, type OptionalTool } from './types.js';
 
@@ -20,11 +21,14 @@ function parseOff(raw: unknown): OptionalTool[] | string {
 }
 
 // A command server's argv, never a shell string; no leading '-', since the probe spawns it and an agent runs it
-function commandPart(raw: Record<string, unknown>, field: string): { command: string; args: string[] } | string {
+function commandPart(raw: Record<string, unknown>, field: string, platform: NodeJS.Platform): { command: string; args: string[] } | string {
   const { command, args = [] } = raw;
   if (typeof command !== 'string' || command.trim() === '' || command.startsWith('-')) return `"${field}.command" must be a program name or path, not starting with -`;
-  // A relative path would resolve inside a task's worktree, whose files the task's own agent can write
-  if (command.includes('/') && !command.startsWith('/')) return `"${field}.command" must be a bare program name or an absolute path, not a relative one`;
+  // A relative path would resolve inside a task's worktree, whose files the task's own agent can write. Windows (#642) separates with \ too,
+  // and C:x is relative to drive C:'s current folder, so a drive prefix counts as a path there
+  const isWin32 = platform === 'win32';
+  const hasSeparator = isWin32 ? /[\\/]|^[A-Za-z]:/.test(command) : command.includes('/');
+  if (hasSeparator && !(isWin32 ? path.win32 : path.posix).isAbsolute(command)) return `"${field}.command" must be a bare program name or an absolute path, not a relative one`;
   if (!Array.isArray(args) || !args.every((a) => typeof a === 'string')) return `"${field}.args" must be an array of strings`;
   if (raw.authHeader !== undefined) return `"${field}.authHeader" is only for a url server`;
   return { command, args: args as string[] };
@@ -40,12 +44,12 @@ function urlPart(raw: Record<string, unknown>, field: string): { url: string; au
   return { url, ...(authHeader === undefined ? {} : { authHeader }) };
 }
 
-function parseServer(raw: unknown, field: string, workspaces: readonly string[]): ExternalMcpServer | string {
+function parseServer(raw: unknown, field: string, workspaces: readonly string[], platform: NodeJS.Platform): ExternalMcpServer | string {
   if (!isRecord(raw)) return `"${field}" must be an object with name, command or url, workspace, on`;
   const { name, workspace, on } = raw;
   if (typeof name !== 'string' || !SERVER_NAME.test(name) || name === HIVE_SERVER) return `"${field}.name" must be 1 to 32 lowercase letters, digits, _ or -, start with a letter, and not be hive`;
   if (('command' in raw) === ('url' in raw)) return `"${field}" must have exactly one of command or url`;
-  const part = 'command' in raw ? commandPart(raw, field) : urlPart(raw, field);
+  const part = 'command' in raw ? commandPart(raw, field, platform) : urlPart(raw, field);
   if (typeof part === 'string') return part;
   if (workspace !== null && typeof workspace !== 'string') return `"${field}.workspace" must be null or a workspace name`;
   // The form never sends mcp, so a workspace rename cannot carry the scope along: the save is refused, naming the server
@@ -54,13 +58,13 @@ function parseServer(raw: unknown, field: string, workspaces: readonly string[])
   return { name, ...part, workspace, on };
 }
 
-/** The parsed key, or the first problem as a sentence without the file's name. `workspaces`: the Comb's workspace names. */
-export function parseMcp(raw: unknown, workspaces: readonly string[]): McpSettings | string {
+/** The parsed key, or the first problem as a sentence without the file's name. `workspaces`: the Comb's workspace names. `platform`: the daemon's (process.platform at the call site), which decides what an absolute command path is (#642). */
+export function parseMcp(raw: unknown, workspaces: readonly string[], platform: NodeJS.Platform): McpSettings | string {
   if (!isRecord(raw)) return SHAPE;
   const off = parseOff(raw.off);
   if (typeof off === 'string') return off;
   if (!Array.isArray(raw.servers)) return '"mcp.servers" must be an array';
-  const parsed = raw.servers.map((server: unknown, i) => parseServer(server, `mcp.servers[${i}]`, workspaces));
+  const parsed = raw.servers.map((server: unknown, i) => parseServer(server, `mcp.servers[${i}]`, workspaces, platform));
   const problem = parsed.find((s): s is string => typeof s === 'string');
   if (problem !== undefined) return problem;
   const servers = parsed as ExternalMcpServer[];

@@ -14,14 +14,14 @@ const EXAMPLE = {
   ],
 };
 const ONE = { name: 'docs', url: 'https://mcp.example.com/mcp', workspace: null, on: true };
-const at = (servers: unknown[], off: unknown = []): McpSettings | string => parseMcp({ off, servers }, WORKSPACES);
+const at = (servers: unknown[], off: unknown = []): McpSettings | string => parseMcp({ off, servers }, WORKSPACES, 'darwin');
 const NAME = '"mcp.servers[0].name" must be 1 to 32 lowercase letters, digits, _ or -, start with a letter, and not be hive';
 const COMMAND_PATH = '"mcp.servers[0].command" must be a bare program name or an absolute path, not a relative one';
 const URL_MESSAGE = '"mcp.servers[0].url" must be an http or https URL';
 
 test('parseMcp accepts the spec\'s example as written, a command\'s args default to [] and a repeat in off is dropped (#333)', () => {
-  assert.deepEqual(parseMcp(EXAMPLE, WORKSPACES), EXAMPLE);
-  assert.deepEqual(parseMcp(MCP_DEFAULTS, WORKSPACES), MCP_DEFAULTS);
+  assert.deepEqual(parseMcp(EXAMPLE, WORKSPACES, 'darwin'), EXAMPLE);
+  assert.deepEqual(parseMcp(MCP_DEFAULTS, WORKSPACES, 'darwin'), MCP_DEFAULTS);
   assert.deepEqual(at([{ name: 'x', command: 'mcp-x', workspace: 'hive', on: true }], ['hive_applied', 'hive_applied']),
     { off: ['hive_applied'], servers: [{ name: 'x', command: 'mcp-x', args: [], workspace: 'hive', on: true }] });
 });
@@ -31,8 +31,8 @@ test('parseMcp refuses a locked or unknown tool in off, naming the key and listi
   assert.equal(at([], ['hive_done']), `"mcp.off" holds hive_done: ${only}`);
   assert.equal(at([], ['hive_nope']), `"mcp.off" holds hive_nope: ${only}`);
   assert.equal(at([], 'hive_remember'), '"mcp.off" must be an array of tool names');
-  for (const raw of [undefined, null, [], 'x']) assert.equal(parseMcp(raw, WORKSPACES), '"mcp" must be an object with off and servers', JSON.stringify(raw));
-  assert.equal(parseMcp({ off: [] }, WORKSPACES), '"mcp.servers" must be an array');
+  for (const raw of [undefined, null, [], 'x']) assert.equal(parseMcp(raw, WORKSPACES, 'darwin'), '"mcp" must be an object with off and servers', JSON.stringify(raw));
+  assert.equal(parseMcp({ off: [] }, WORKSPACES, 'darwin'), '"mcp.servers" must be an array');
 });
 
 test('parseMcp refuses each malformed server naming its index, a duplicate name, and a workspace the Comb does not have, naming the server (#333)', () => {
@@ -82,4 +82,15 @@ test('parseMcp accepts http with authHeader on a loopback host, an absolute comm
   for (const host of ['127.0.0.1', '[::1]', 'localhost']) assert.deepEqual(typeof at([{ ...ONE, url: `http://${host}:3845/mcp`, authHeader: 'Authorization' }]), 'object', host);
   assert.deepEqual(typeof at([{ name: 'x', command: '/usr/local/bin/mcp-x', workspace: null, on: true }]), 'object');
   assert.deepEqual(typeof at([{ ...ONE, url: 'http://mcp.example.com/mcp' }]), 'object');
+});
+
+const command = (value: string, platform: NodeJS.Platform): McpSettings | string =>
+  parseMcp({ off: [], servers: [{ name: 'x', command: value, workspace: null, on: true }] }, WORKSPACES, platform);
+
+test('parseMcp on win32 takes a drive path with either separator and a bare name, and refuses a relative path with either; on darwin a backslash is no separator (#642)', () => {
+  for (const value of ['C:/tools/x.exe', 'C:\\tools\\x.exe', 'x.exe']) assert.deepEqual(command(value, 'win32'), { off: [], servers: [{ name: 'x', command: value, args: [], workspace: null, on: true }] }, value);
+  for (const value of ['tools\\x.exe', 'tools/x.exe', '.\\x.exe', 'C:tools\\x.exe', 'C:evil.exe']) assert.equal(command(value, 'win32'), COMMAND_PATH, value);
+  assert.deepEqual(command('tools\\x.exe', 'darwin'), { off: [], servers: [{ name: 'x', command: 'tools\\x.exe', args: [], workspace: null, on: true }] });
+  for (const value of ['./bin/x', 'C:/tools/x.exe']) assert.equal(command(value, 'darwin'), COMMAND_PATH, value);
+  assert.equal(typeof command('/usr/local/bin/mcp-x', 'darwin'), 'object');
 });

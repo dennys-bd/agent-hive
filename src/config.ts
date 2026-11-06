@@ -510,9 +510,9 @@ function requireSignals(raw: unknown): SignalSettings {
   return signals;
 }
 
-// Required (#333): a first save writes MCP_DEFAULTS (configFrom); scopes are checked against the Comb's workspaces; the parse is mcp-settings.ts'
-function requireMcp(raw: unknown, workspaces: readonly string[]): McpSettings {
-  const mcp = parseMcp(raw, workspaces);
+// Required (#333): a first save writes MCP_DEFAULTS (configFrom); scopes are checked against the Comb's workspaces; the parse is mcp-settings.ts', for this platform's paths (#642)
+function requireMcp(raw: unknown, workspaces: readonly string[], platform: NodeJS.Platform): McpSettings {
+  const mcp = parseMcp(raw, workspaces, platform);
   if (typeof mcp === 'string') throw new Error(`${CONFIG_FILE}: ${mcp}`);
   return mcp;
 }
@@ -630,7 +630,7 @@ function parseFields(raw: unknown): Config {
     shortcuts: parseShortcuts(raw.shortcuts, process.platform === 'darwin'), // the rules live in shortcuts.ts, shared with the settings form (#449); this platform's defaults (#585)
     editor: requireEditor(raw.editor, comb.workspaces.map((w) => w.name)), // #780
     reviewer: requireReviewer(raw.reviewer), // #328
-    mcp: requireMcp(raw.mcp, comb.workspaces.map((w) => w.name)), // #333
+    mcp: requireMcp(raw.mcp, comb.workspaces.map((w) => w.name), process.platform), // #333; this platform's command paths (#642)
     fileIcons: requireFileIcons(raw.fileIcons), // #754: a file from before the key is migrated to FILE_ICONS_DEFAULTS
     sidebarsPerView: requireSidebarsPerView(raw.sidebarsPerView), // #821: a file from before the key boots the settings form prefilled (hive.ts)
     signals: requireSignals(raw.signals), // #727: a file from before the key boots the settings form prefilled (hive.ts)

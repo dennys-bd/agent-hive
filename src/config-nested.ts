@@ -7,12 +7,14 @@ import type { Workspace } from './types.js';
 const FILE = 'hive.config.json';
 const HIVE = '.hive'; // HIVE_DIR (hooks-settings.ts), spelled here so the config parser imports no protocol module
 const LIST = 'must be a list of relative paths';
+// #642: a Windows path climbs with \.. too; the value is a relative path the user types, so a \ only ever refuses more
+const SEPARATORS = /[\\/]/;
 const SHAPE = 'must be a relative path inside the workspace, with no "..", "." or trailing "/"';
 
 /** Why `path` cannot name a nested repo by its shape (#653), undefined when it can: relative, normalized, never .hive or under it. */
 export function nestedPathProblem(path: unknown): string | undefined {
-  if (typeof path !== 'string' || path === '' || isAbsolute(path) || path.split('/').some((s) => s === '' || s === '.' || s === '..')) return SHAPE;
-  return path === HIVE || path.startsWith(`${HIVE}/`) ? 'cannot be .hive or inside it' : undefined;
+  if (typeof path !== 'string' || path === '' || isAbsolute(path) || path.split(SEPARATORS).some((s) => s === '' || s === '.' || s === '..')) return SHAPE;
+  return path.split(SEPARATORS)[0] === HIVE ? 'cannot be .hive or inside it' : undefined; // #642: .hive\x is inside it too
 }
 
 function parseList(raw: unknown, field: string): string[] {
