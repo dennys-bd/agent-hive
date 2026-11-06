@@ -89,7 +89,7 @@ test('parseDropFiles(dropFilesBuffer(paths)) gives the paths back: spaces, non-A
 
 test('isClipboardPathList on win32 takes a drive path with either slash and a UNC path, and refuses the rest (#650)', () => {
   assert.equal(isClipboardPathList(['C:\\a\\b.txt', 'c:/a', '\\\\server\\share\\f.txt'], 'win32'), true);
-  for (const bad of ['\\a', 'a\\b', 'C:a', '/a/b', 'C:', 'rel/a', 'C:\\a\0b']) assert.equal(isClipboardPathList([bad], 'win32'), false, bad);
+  for (const bad of ['\\a', 'a\\b', 'C:a', '/a/b', 'C:', 'rel/a', 'C:\\a\0b', '\\\\?\\C:\\a', '\\\\.\\pipe\\x']) assert.equal(isClipboardPathList([bad], 'win32'), false, bad);
   assert.equal(isClipboardPathList(Array.from({ length: CLIPBOARD_FILES_MAX + 1 }, (_, i) => `C:\\a${i}`), 'win32'), false);
 });
 
@@ -97,4 +97,9 @@ test('isClipboardPathList off win32 still wants a leading slash, and a drive pat
   assert.equal(isClipboardPathList(['C:\\a\\b.txt'], 'darwin'), false);
   assert.equal(isClipboardPathList(['C:/a'], 'linux'), false);
   assert.equal(isClipboardPathList(['/a'], 'linux'), true);
+});
+
+test('parseDropFiles refuses a runaway buffer past CLIPBOARD_FILES_MAX KiB without decoding it (#650)', () => {
+  const huge = Buffer.concat([dropFilesBuffer(['C:\\a']), Buffer.alloc(CLIPBOARD_FILES_MAX * 1024)]);
+  assert.deepEqual(parseDropFiles(huge), []);
 });

@@ -40,24 +40,30 @@ export const CLIPBOARD_FILES_MAX = 5000; // a pasteboard plist of more is a runa
 const CONTROL_CHARACTERS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
 
 // A Windows path is absolute with a drive letter and a separator (`C:\a`, `C:/a`) or as UNC (`\\server\share`); `\a` and `C:a` hang on the
-// current drive or directory, so a paste elsewhere would land them somewhere else.
-const WIN32_ABSOLUTE = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/])/;
+// current drive or directory, so a paste elsewhere would land them somewhere else. `\\?\` and `\\.\` are device namespaces, never a file a
+// tree or Explorer copies.
+const WIN32_ABSOLUTE = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/?.])/;
 const isAbsoluteFor = (path: string, platform: NodeJS.Platform): boolean => (platform === 'win32' ? WIN32_ABSOLUTE.test(path) : path.startsWith('/'));
+
+/** Whether one path may cross the clipboard either way: absolute for the platform, without control characters. */
+export const isClipboardPath = (path: unknown, platform: NodeJS.Platform): path is string =>
+  typeof path === 'string' && isAbsoluteFor(path, platform) && !CONTROL_CHARACTERS.test(path);
 
 /** Whether the IPC's paths may reach the clipboard (#818, #650): IPC is untrusted, so a non-empty, bounded list of absolute paths (the
  *  platform's own kind) without control characters. */
 export const isClipboardPathList = (paths: unknown, platform: NodeJS.Platform): paths is string[] =>
-  Array.isArray(paths) && paths.length > 0 && paths.length <= CLIPBOARD_FILES_MAX
-  && paths.every((path) => typeof path === 'string' && isAbsoluteFor(path, platform) && !CONTROL_CHARACTERS.test(path));
+  Array.isArray(paths) && paths.length > 0 && paths.length <= CLIPBOARD_FILES_MAX && paths.every((path) => isClipboardPath(path, platform));
 
 // A DROPFILES struct (CF_HDROP): uint32 pFiles (offset of the list), POINT pt, BOOL fNC, BOOL fWide, then the list
 const DROPFILES_HEADER_BYTES = 20;
 const DROPFILES_WIDE_OFFSET = 16;
+// Any app can put a buffer on the clipboard: past this it is a runaway list, not a copy, and decoding it would stall main
+const DROPFILES_MAX_BYTES = CLIPBOARD_FILES_MAX * 1024;
 
 /** The paths of a CF_HDROP buffer (#650): [] for anything but a well-formed wide list. A list cut before its double null yields only the
  *  paths that end in a null, since the last one may be half a path. */
 export function parseDropFiles(buffer: Buffer): string[] {
-  if (buffer.length < DROPFILES_HEADER_BYTES) return [];
+  if (buffer.length < DROPFILES_HEADER_BYTES || buffer.length > DROPFILES_MAX_BYTES) return [];
   const start = buffer.readUInt32LE(0);
   if (start < DROPFILES_HEADER_BYTES || start >= buffer.length || buffer.readInt32LE(DROPFILES_WIDE_OFFSET) === 0) return [];
   const chars = buffer.subarray(start, start + Math.floor((buffer.length - start) / 2) * 2).toString('utf16le');

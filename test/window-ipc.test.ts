@@ -165,6 +165,13 @@ test('window:clipboardFiles on win32 falls back to FileNameW for the first file,
   assert.deepEqual(await none.invoke('window:clipboardFiles', none.event(none.main.webContents)), []);
 });
 
+test('window:clipboardFiles on win32 answers only the absolute paths another app put there (#650)', async () => {
+  const mixed = rig('win32', fakeClipboard({ CF_HDROP: dropFilesBuffer(['C:\\ok.txt', '..\\up.txt', '\\\\.\\pipe\\x']) }).clipboard);
+  assert.deepEqual(await mixed.invoke('window:clipboardFiles', mixed.event(mixed.main.webContents)), ['C:\\ok.txt']);
+  const relative = rig('win32', fakeClipboard({ FileNameW: utf16('rel.txt\0') }).clipboard);
+  assert.deepEqual(await relative.invoke('window:clipboardFiles', relative.event(relative.main.webContents)), []);
+});
+
 test('window:writeClipboardFiles writes CF_HDROP only on win32, the plist on darwin, and both read back (#650)', async () => {
   const paths = ['C:\\a\\1.txt', 'C:\\b 2.txt'];
   const win = fakeClipboard();

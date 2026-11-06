@@ -3,7 +3,7 @@
 // deps, so node:test drives it with fakes. Every handler resolves its sender first: a page the daemon redirected elsewhere keeps the preload
 // but gets nothing.
 import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron';
-import { clipboardFilesPlist, dropFilesBuffer, isClipboardPathList, parseClipboardFiles, parseDropFiles } from './clipboard-files.js';
+import { CLIPBOARD_FILES_MAX, clipboardFilesPlist, dropFilesBuffer, isClipboardPath, isClipboardPathList, parseClipboardFiles, parseDropFiles } from './clipboard-files.js';
 import type { DetachedWindows } from './detach-ipc.js';
 import { titleBarOverlayFor } from './window-options.js';
 
@@ -64,9 +64,11 @@ const firstFileName = (buffer: Buffer): string[] => {
 
 // Electron registers a format name through RegisterClipboardFormat, so 'CF_HDROP' may not be the standard id 15; FileNameW is known to carry
 // the first file, which keeps a single-file paste working when the list does not come through.
+// What another app put there is untrusted too: only absolute paths without control characters reach the page, as Finder's read keeps.
 function readWin32Files(clipboard: WindowClipboard): string[] {
   const listed = parseDropFiles(clipboard.readBuffer('CF_HDROP'));
-  return listed.length > 0 ? listed : firstFileName(clipboard.readBuffer('FileNameW'));
+  const files = listed.length > 0 ? listed : firstFileName(clipboard.readBuffer('FileNameW'));
+  return files.slice(0, CLIPBOARD_FILES_MAX).filter((path) => isClipboardPath(path, 'win32'));
 }
 
 // Finder's pasteboard: the plist of every path, else the first file's URL
