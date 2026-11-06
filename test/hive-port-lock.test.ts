@@ -146,3 +146,10 @@ test('bootHive hands the server the secret it wrote: a request with hive.secret\
   assert.equal((await fetch(url, { headers: { [SECRET_HEADER]: readDaemonSecret(home) ?? '' } })).status, 200);
   assert.equal((await fetch(url)).status, 403);
 });
+
+test('a boot whose POSIX shell cannot be resolved, Windows without Git for Windows, rejects with that one line and never takes hive.lock (#631)', async (t) => {
+  const { home } = await hiveWithConfig(t);
+  const message = 'Agent Hive needs Git for Windows (git and its sh.exe) on PATH: https://gitforwindows.org';
+  await assert.rejects(bootHive(home, { posixShell: () => { throw new Error(message); } }), { message });
+  assert.equal(existsSync(join(home, 'hive.lock')), false, 'no lock taken: the home stays free for the next start');
+});
