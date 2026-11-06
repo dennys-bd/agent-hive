@@ -3,10 +3,10 @@
 The variables `/hive:new-spec` and `/hive:new-pr` declare (where the
 docs go, which languages they speak, how a delivery is shaped) and the
 rules they share. Both read this text first; any other skill may follow
-it too. `/hive:new-plan`, `/hive:new-build`, `hive:designer` and
-`/hive:decomposition` declare their own variables in their templates and
+it too. `/hive:new-plan`, `/hive:new-build`, `hive:designer`, `hive:system-designer`
+and `/hive:decomposition` declare their own variables in their templates and
 read nothing here: their folders are relative to the
-worktree, a nested docs repo reached by path. The `designsDir` and
+worktree, a nested docs repo reached by path. The `designsDir`, `systemDesignsDir` and
 `decompositionLabel` rows and the `plan`, `walkthrough`, `design` and
 `decomposition` results below say how their files are found.
 
@@ -25,6 +25,7 @@ and the `docsRepo` because such text says so.
 | `plansDir` | Folder of the plans, relative to the docs repository | `docs/hive/plans` |
 | `walkthroughsDir` | Folder of the walkthroughs, relative to the docs repository | `docs/hive/walkthroughs` |
 | `designsDir` | Folder of the designs, one subfolder per task, relative to the docs repository; `hive:designer`'s own is relative to the worktree | `docs/hive/design` |
+| `systemDesignsDir` | Folder of the system design diagrams, one living folder per repository, never dated per task: `hive:system-designer`'s own, relative to the worktree | `docs/hive/system-design` |
 | `docsLanguage` | Language of the spec, the plan, the walkthrough and the PR body | `English` |
 | `chatLanguage` | Language of everything said to the user | the Hive's `hiveLanguage`, else the language the user writes in |
 | `delivery` | `single`, `stacked` or `integration`; see "Delivery" | `single` |

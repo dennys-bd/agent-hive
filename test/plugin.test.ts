@@ -4,16 +4,17 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pluginSource } from '../src/hooks-settings.js';
 import { parseTemplate, renderTemplate } from '../src/template.js';
+import { LAYOUT_PRESETS } from '../src/ui/lib/drawio-file.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
 // #430, #431, #432: decomposition, new-build and new-plan declare their own variables and read no reference; the other new-* skills still read conventions.md
 const CONVENTIONS_SKILLS = SKILLS.filter((skill) => !['decomposition', 'new-build', 'new-plan'].includes(skill));
-const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
+const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'system-design-reviewer', 'system-designer', 'tdd', 'template-reviewer'];
 
 const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
 // #416: an agent that reads a Hive convention is a template; the rest stay plain Markdown
-const TEMPLATE_AGENTS: readonly string[] = ['designer'];
+const TEMPLATE_AGENTS: readonly string[] = ['designer', 'system-designer'];
 const agentPath = (agent: string): string => `agents/${agent}${TEMPLATE_AGENTS.includes(agent) ? '.md.liquid' : '.md'}`;
 const agentText = (agent: string): Promise<string> => readFile(join(PLUGIN, agentPath(agent)), 'utf8');
 
@@ -28,7 +29,7 @@ const VARIABLES: Record<string, string[]> = {
 // What a skill's list says for a workspace with no value: the default, or today's behaviour without one. Also reference/conventions.md's default column
 const NO_VALUE: Record<string, string> = {
   docsRepo: 'none: the docs live in this repository',
-  specsDir: '`docs/hive/specs`', plansDir: '`docs/hive/plans`', walkthroughsDir: '`docs/hive/walkthroughs`', designsDir: '`docs/hive/design`',
+  specsDir: '`docs/hive/specs`', plansDir: '`docs/hive/plans`', walkthroughsDir: '`docs/hive/walkthroughs`', designsDir: '`docs/hive/design`', systemDesignsDir: '`docs/hive/system-design`',
   docsLanguage: '`English`', chatLanguage: 'the Hive\'s `hiveLanguage`, else the language the user writes in',
   delivery: '`single`', sliceMin: '`300`', sliceMax: '`550`', featureFlags: '`none`',
   designSystem: 'none: no design system',
@@ -78,6 +79,8 @@ const CREDITED: Record<string, string[]> = {
   'agents/planner.md': ['ecc:planner', 'superpowers:writing-plans'],
   'agents/security-reviewer.md': ['ecc:security-reviewer'],
   'agents/spec-reviewer.md': ['superpowers:brainstorming'],
+  'agents/system-design-reviewer.md': [],
+  'agents/system-designer.md.liquid': [],
   'agents/tdd.md': ['ecc:tdd-guide'],
   'agents/template-reviewer.md': [],
   'skills/decomposition/SKILL.md.liquid': [],
@@ -87,12 +90,12 @@ const CREDITED: Record<string, string[]> = {
   'skills/new-spec/SKILL.md.liquid': ['superpowers:brainstorming'],
 };
 
-test('the plugin ships the manifest, the five skills, the twelve agents and the three references, the skeleton and the scripts, and nothing else', async () => {
+test('the plugin ships the manifest, the five skills, the fourteen agents and the three references, the skeleton and the scripts, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
   assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'scripts', 'skills']);
-  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'decomposition.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html'], 'reference/ holds the conventions every new-* skill reads first, the decomposition file the skill writes and its reviewer reads, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares');
+  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'decomposition.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html', 'system-design.md'], 'reference/ holds the conventions every new-* skill reads first, the decomposition file the skill writes and its reviewer reads, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares, the system design subset the system designer and its reviewer read');
   assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs', 'import-dc.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => agentPath(a).slice('agents/'.length)));
@@ -134,7 +137,7 @@ test('every shipped skill and agent credits its origins in basedOn, each a file 
 });
 
 test('the plugin depends on no other plugin: no ecc: or superpowers: reference anywhere it delivers', async () => {
-  const others = ['CREDITS.md', 'reference/conventions.md', 'reference/decomposition.md', 'reference/design.md', 'reference/skeleton.hv.html', 'scripts/check-hv.mjs', 'scripts/import-dc.mjs'];
+  const others = ['CREDITS.md', 'reference/conventions.md', 'reference/decomposition.md', 'reference/design.md', 'reference/skeleton.hv.html', 'reference/system-design.md', 'scripts/check-hv.mjs', 'scripts/import-dc.mjs'];
   const items = [...SKILLS.map((s) => `skills/${s}/SKILL.md.liquid`), ...AGENTS.map(agentPath)];
   for (const [file, isItem] of [...others.map((f): [string, boolean] => [f, false]), ...items.map((f): [string, boolean] => [f, true])]) {
     const raw = await readFile(join(PLUGIN, file), 'utf8');
@@ -380,7 +383,7 @@ test('no plugin file names a Hive conventions section, and neither hive:designer
   const files = entries.filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name));
   assert.ok(files.length > 0, 'the plugin directory was read');
   for (const file of files) assert.doesNotMatch(await readFile(file, 'utf8'), /Hive conventions/, file);
-  for (const path of [agentPath('designer'), 'reference/conventions.md']) {
+  for (const path of [agentPath('designer'), agentPath('system-designer'), 'reference/conventions.md']) {
     assert.doesNotMatch(await readFile(join(PLUGIN, path), 'utf8'), /CLAUDE\.md|AGENTS\.md/, path);
   }
 });
@@ -392,20 +395,21 @@ test('every gh call /hive:new-pr makes for the docs PR names the docs repository
   for (const call of calls) assert.match(call, /-R <docs repo>/, `${call} does not pass -R <docs repo>`);
 });
 
-test('hive:design-reviewer reports and never edits: its tools hold no Write or Edit', async () => {
-  const front = frontmatter(await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8'));
-  const tools = (front.tools ?? '').split(',').map((tool) => tool.trim());
-  assert.ok(tools.includes('Read'), 'it reads the screens');
-  for (const tool of ['Write', 'Edit']) assert.ok(!tools.includes(tool), `design-reviewer declares ${tool}`);
+test('hive:design-reviewer and hive:system-design-reviewer report and never edit: their tools hold no Write or Edit', async () => {
+  for (const agent of ['design-reviewer', 'system-design-reviewer']) {
+    const tools = (frontmatter(await agentText(agent)).tools ?? '').split(',').map((tool) => tool.trim());
+    assert.ok(tools.includes('Read'), `${agent} reads`);
+    for (const tool of ['Write', 'Edit']) assert.ok(!tools.includes(tool), `${agent} declares ${tool}`);
+  }
 });
 
 test('every section the design agents and the decomposition reviewer quote by name is a heading of a reference or of the agent itself', async () => {
   const headings = new Set<string>();
-  for (const file of ['design.md', 'conventions.md', 'decomposition.md']) {
+  for (const file of ['design.md', 'conventions.md', 'decomposition.md', 'system-design.md']) {
     const text = await readFile(join(PLUGIN, 'reference', file), 'utf8');
     for (const [, heading] of text.matchAll(/^#{2,3} (.+)$/gm)) headings.add(heading.trim());
   }
-  for (const agent of ['designer', 'design-reviewer', 'decomposition-reviewer']) {
+  for (const agent of ['designer', 'design-reviewer', 'decomposition-reviewer', 'system-design-reviewer', 'system-designer']) {
     const text = await agentText(agent);
     const own = new Set([...text.matchAll(/^#{2,3} (.+)$/gm)].map(([, heading]) => heading.trim()));
     for (const [, name] of text.matchAll(/"([A-Z][^"]*)"/g)) assert.ok(headings.has(name) || own.has(name), `agents/${agent} quotes "${name}", which no reference heading nor its own carries`);
@@ -475,4 +479,79 @@ test('/hive:new-pr opens each nested repo\'s PR on that repository: every gh cal
   const reference = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
   assert.ok(reference.includes('## Nested repo PRs'), 'the rule sits next to Docs PR');
   assert.match(reference, /whose `path` is the `docsRepo` path is skipped/);
+});
+
+// #957: the shapes of the subset both system design agents copy, one style string each; message and reply are sequence edges
+const SYSTEM_DESIGN_SHAPES = ['component', 'container', 'database', 'queue', 'actor', 'terminal', 'decision', 'lifeline', 'message', 'reply', 'class', 'member', 'use case'];
+
+test('reference/system-design.md holds the .drawio subset: the six presets, the Mermaid form, one style per shape, plain Markdown under 400 lines (#957)', async () => {
+  const text = await readFile(join(PLUGIN, 'reference', 'system-design.md'), 'utf8');
+  for (const preset of LAYOUT_PRESETS) assert.ok(text.includes(`\`${preset}\``), `the reference names the preset ${preset} the pane accepts`);
+  assert.ok(text.includes('<hive-mermaid>'), 'the Mermaid form of a pending diagram');
+  for (const shape of SYSTEM_DESIGN_SHAPES) assert.match(text, new RegExp(`^\\| ${shape} \\| \`[^\`]+;\` \\|`, 'm'), `${shape} has no style row`);
+  assert.ok(text.includes('| container | `swimlane;container=1;` |'), 'the container style the spike laid out two levels deep');
+  // an example drifting from the table would teach a style the check then refuses
+  const styles = new Set([...text.matchAll(/^\| [a-z ]+ \| `([^`]+)` \|/gm)].map(([, style]) => style));
+  for (const [, style] of text.matchAll(/style="([^"]+)"/g)) assert.ok(styles.has(style), `the example's style ${style} is no row of the tables`);
+  for (const heading of ['## Diagram kinds', '## The pending marker', '## Shapes', '## Editing a laid-out diagram', '## Editing a pending diagram', '## The check']) assert.ok(text.includes(heading), heading);
+  assert.doesNotMatch(text, /\{\{|\{%/, 'the reference is plain Markdown: a .md never renders');
+  assert.ok(text.split('\n').length < 400, 'under 400 lines');
+});
+
+const HIVE_MCP_TOOLS = ['hive_done', 'hive_ask', 'hive_reply', 'hive_conventions', 'hive_stop'];
+
+test('hive:system-design-reviewer reads the shared subset from the plugin root, checks structure and fidelity, and ranks blocking or advisory (#957)', async () => {
+  const text = await agentText('system-design-reviewer');
+  for (const part of [`${PLUGIN_ROOT}/reference/system-design.md`, '## Structure', '## Fidelity', '`blocking`', '`advisory`', '**Verdict:** clean | changes needed', 'never a command that writes']) {
+    assert.ok(text.includes(part), part);
+  }
+  for (const tool of HIVE_MCP_TOOLS) assert.ok(!text.includes(tool), `the reviewer names ${tool}`);
+  assert.doesNotMatch(text, /docsRepo|conventions\.md|CLAUDE\.md|AGENTS\.md/);
+});
+
+// #957: the system designer's variables, each interpolated where it is used, as hive:designer's are (#439)
+const SYSTEM_DESIGNER_VARIABLES = ['systemDesignsDir', 'docsLanguage', 'chatLanguage'];
+const SYSTEM_DESIGNER_VALUES: Record<string, string> = { systemDesignsDir: 'design/system', docsLanguage: 'Spanish', chatLanguage: 'Portuguese' };
+const bodyOf = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n/, '');
+
+test('hive:system-designer is a template: it declares its three variables, and a workspace with no value gets each default where it is used, no Liquid, no list and no variables in its header (#957)', async () => {
+  const text = await agentText('system-designer');
+  const parsed = parseTemplate(text);
+  assert.deepEqual(parsed.errors, []);
+  assert.deepEqual(parsed.variables.map((v) => v.name), SYSTEM_DESIGNER_VARIABLES);
+  const rendered = renderedFor(text);
+  assert.doesNotMatch(rendered, /\{\{|\{%/, 'no Liquid is left');
+  assert.doesNotMatch(rendered, /## Conventions/, 'no list of values: each is interpolated where it is used');
+  const delivered = parseTemplate(rendered);
+  assert.deepEqual([Object.hasOwn(delivered.header, 'variables'), Object.hasOwn(delivered.header, 'basedOn')], [false, false]);
+  assert.equal(delivered.header.name, 'system-designer');
+  for (const part of ['`docs/hive/system-design/architecture.drawio`', 'labels in English']) assert.ok(rendered.includes(part), part);
+  assert.doesNotMatch(bodyOf(rendered), /Talk in/, 'with chatLanguage unset, no language is imposed');
+  assert.doesNotMatch(text, /docsRepo|conventions\.md/, 'a nested docs repo is reached through systemDesignsDir');
+});
+
+test('hive:system-designer rendered with a value for each variable carries each where it is used; another workspace keeps the defaults (#957)', async () => {
+  const text = valued(await agentText('system-designer'), SYSTEM_DESIGNER_VALUES);
+  const mine = renderedFor(text);
+  for (const part of ['`design/system/architecture.drawio`', 'labels in Spanish', 'Talk in Portuguese.']) assert.ok(mine.includes(part), part);
+  const other = renderedFor(text, 'b');
+  assert.ok(other.includes('`docs/hive/system-design/architecture.drawio`') && other.includes('labels in English') && !bodyOf(other).includes('Talk in'), 'b keeps the defaults');
+});
+
+test('hive:system-designer writes new diagrams pending, never marks a laid-out one again, dispatches its reviewer and names no Hive MCP tool (#957)', async () => {
+  const text = await agentText('system-designer');
+  for (const part of [`${PLUGIN_ROOT}/reference/system-design.md`, 'hive:system-design-reviewer', '`hive-layout`', '`<hive-mermaid>`',
+    'Never add `hive-layout` or `<hive-mermaid>` to a laid-out file', 'Two rounds at most', 'Never commit unasked', 'offer the commit in one line', '## How a round ends']) {
+    assert.ok(text.includes(part), part);
+  }
+  assert.match(text, /When rules disagree, the most specific wins: what the user says in the round; the instructions at `\{\{ systemDesignsDir \}\}`;/, 'the repository and its folder win over the plugin\'s rules');
+  for (const tool of HIVE_MCP_TOOLS) assert.ok(!text.includes(tool), `the system designer names ${tool}`);
+  const { description = '' } = frontmatter(text);
+  for (const name of ['SendMessage', 'hive:system-design-reviewer']) assert.ok(description.includes(name), `its description does not name ${name}`);
+});
+
+test('reference/conventions.md names hive:system-designer among the templates that declare their own variables, and says its systemDesignsDir is relative to the worktree (#957)', async () => {
+  const text = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
+  assert.match(text, /`hive:system-designer`[\s\S]{0,40}declare their own variables/, 'the intro stays true');
+  assert.match(text, /^\| `systemDesignsDir` \| .*`hive:system-designer`'s own.*relative to the worktree \| `docs\/hive\/system-design` \|$/m);
 });
