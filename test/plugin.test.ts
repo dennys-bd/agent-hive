@@ -29,7 +29,7 @@ const VARIABLES: Record<string, string[]> = {
 // What a skill's list says for a workspace with no value: the default, or today's behaviour without one. Also reference/conventions.md's default column
 const NO_VALUE: Record<string, string> = {
   docsRepo: 'none: the docs live in this repository',
-  specsDir: '`docs/hive/specs`', plansDir: '`docs/hive/plans`', walkthroughsDir: '`docs/hive/walkthroughs`', designsDir: '`docs/hive/design`',
+  specsDir: '`docs/hive/specs`', plansDir: '`docs/hive/plans`', walkthroughsDir: '`docs/hive/walkthroughs`', designsDir: '`docs/hive/design`', systemDesignsDir: '`docs/hive/system-design`',
   docsLanguage: '`English`', chatLanguage: 'the Hive\'s `hiveLanguage`, else the language the user writes in',
   delivery: '`single`', sliceMin: '`300`', sliceMax: '`550`', featureFlags: '`none`',
   designSystem: 'none: no design system',
@@ -548,4 +548,10 @@ test('hive:system-designer writes new diagrams pending, never marks a laid-out o
   for (const tool of HIVE_MCP_TOOLS) assert.ok(!text.includes(tool), `the system designer names ${tool}`);
   const { description = '' } = frontmatter(text);
   for (const name of ['SendMessage', 'hive:system-design-reviewer']) assert.ok(description.includes(name), `its description does not name ${name}`);
+});
+
+test('reference/conventions.md names hive:system-designer among the templates that declare their own variables, and says its systemDesignsDir is relative to the worktree (#957)', async () => {
+  const text = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
+  assert.match(text, /`hive:system-designer`[\s\S]{0,40}declare their own variables/, 'the intro stays true');
+  assert.match(text, /^\| `systemDesignsDir` \| .*`hive:system-designer`'s own.*relative to the worktree \| `docs\/hive\/system-design` \|$/m);
 });
