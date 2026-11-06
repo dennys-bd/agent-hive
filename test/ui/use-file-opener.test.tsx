@@ -40,6 +40,20 @@ test('a .hv.html opens in the design pane, any case, unless the click asks for t
   ]);
 });
 
+test('a .drawio opens in the diagram pane, any case, unless the click asks for the editor; a .hv.html is still a design (#956)', () => {
+  const open = vi.fn();
+  const { result } = renderHook(() => useFileOpener([tasked], open));
+  result.current('I1', 'docs/arch.drawio');
+  result.current('I1', '/w/hive-1/docs/OLD.DRAWIO');
+  result.current('I1', 'docs/arch.drawio', undefined, { editor: true });
+  result.current('I1', 'docs/arch.drawio', undefined, { changes: true });
+  result.current('I1', 'design/Landing.hv.html');
+  expect(open.mock.calls).toEqual([
+    ['I1', 'docs/arch.drawio', 'diagram'], ['I1', 'docs/OLD.DRAWIO', 'diagram'], ['I1', 'docs/arch.drawio', 'file'],
+    ['I1', 'docs/arch.drawio', 'changes'], ['I1', 'design/Landing.hv.html', 'design'],
+  ]);
+});
+
 test('with focusOut a file whose tab is out raises its window and opens no tab, keyed as its tab would be; one no window holds opens (#554)', async () => {
   const focusTab = vi.fn(async (_activity: string, key: string) => key === 'file:src/a.ts');
   vi.stubGlobal('hive', { focusTab });

@@ -685,6 +685,8 @@ const en = {
   'changes.view.rendered': 'Rendered', 'changes.view.text': 'Text', 'changes.notInBase': 'Not in the base', 'changes.workingTree': 'Working tree',
   // #109: the design pane
   'design.tab': '{label} · Design {name}',
+  // #956: the diagram pane
+  'diagram.tab': '{label} · Diagram {name}',
   'design.reloaded': 'reloaded · the agent changed {file} at {time}',
   'design.viewport': 'viewport', 'design.viewport.natural': 'natural', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'zoom in', 'design.zoomOut': 'zoom out', 'design.fit': '⌘0 fits to screen',
@@ -3794,6 +3796,7 @@ const pt: Record<MessageKey, string> = {
   'changes.base': 'base', 'changes.base.head': 'HEAD', 'changes.base.task': 'base da tarefa', 'changes.noBase': 'sem base para comparar',
   'changes.view.rendered': 'Renderizado', 'changes.view.text': 'Texto', 'changes.notInBase': 'Não existe na base', 'changes.workingTree': 'Árvore de trabalho',
   'design.tab': '{label} · Design {name}',
+  'diagram.tab': '{label} · Diagrama {name}',
   'design.reloaded': 'recarregado · o agente alterou {file} às {time}',
   'design.viewport': 'viewport', 'design.viewport.natural': 'natural', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'aumentar zoom', 'design.zoomOut': 'diminuir zoom', 'design.fit': '⌘0 ajusta à tela',

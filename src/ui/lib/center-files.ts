@@ -3,9 +3,9 @@ import { type CenterLayout, type CenterTabRef, closeRef, groupsOf, mapTabs, refK
 import { untitledPath } from './editor-models.js';
 import { renamedPath } from './file-tree.js';
 
-// A file, preview, changes or design tab (#109) on `from` or under it, on its new path; any other tab as it is
+// A file, preview, changes, design (#109) or diagram (#956) tab on `from` or under it, on its new path; any other tab as it is
 function renamedRef(ref: CenterTabRef, from: string, to: string): CenterTabRef {
-  if (ref.kind !== 'file' && ref.kind !== 'preview' && ref.kind !== 'changes' && ref.kind !== 'design') return ref;
+  if (ref.kind !== 'file' && ref.kind !== 'preview' && ref.kind !== 'changes' && ref.kind !== 'design' && ref.kind !== 'diagram') return ref;
   const path = renamedPath(ref.path, from, to);
   return path === undefined ? ref : { ...ref, path };
 }

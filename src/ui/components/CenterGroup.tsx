@@ -49,7 +49,7 @@ export interface CenterGroupProps {
 export function refText(item: CenterTabRef, activity: Activity): string {
   if (item.kind === 'diff') return t(DIFF_SCOPE_KEY[item.scope], { n: item.checkpoint ?? '' });
   if (item.kind === 'untitled') return t('editor.untitled', { n: item.n }); // #818
-  if (item.kind === 'file' || item.kind === 'design') return baseName(item.path); // #109: a design's tab reads its file's name
+  if (item.kind === 'file' || item.kind === 'design' || item.kind === 'diagram') return baseName(item.path); // #109, #956: a design's or a diagram's tab reads its file's name
   if (item.kind === 'preview') return `${t('preview.title')} ${baseName(item.path)}`;
   if (item.kind === 'changes') return `${t('changes.title')} ${baseName(item.path)}`;
   if (item.kind === 'console') return t('console.title');
@@ -283,7 +283,7 @@ function TabBody({ item, activity, active, fileLinks, fontFamily, ops, groupId, 
     return <EditorPane activityId={activity.activity.id} path={item.path} label={`${activityTitle(activity)} · ${baseName(item.path)}`} active={active} fontFamily={fontFamily} workspace={activity.activity.workspace} openKey={activityKey(activity)} />;
   }
   // #533: the pane lives in the design layer, so a view or activity switch keeps its page; only the shown tab holds the slot it covers
-  if (item.kind === 'design') return active ? <DesignSlot slotKey={designKey(activity, item.path)} groupId={groupId} onFocus={onFocus} /> : null;
+  if (item.kind === 'design' || item.kind === 'diagram') return active ? <DesignSlot slotKey={designKey(activity, item.path)} groupId={groupId} onFocus={onFocus} /> : null;
   if (item.kind === 'preview') {
     return <PreviewPane activity={activity} path={item.path} label={t('preview.tab', { label: activityTitle(activity), name: baseName(item.path) })} active={active} />;
   }
@@ -306,7 +306,7 @@ export function CenterGroup({ group, activity, groups, focused, ops, drag, fileL
   // The header describes what the keys act on (#641): a split tab's focused pane
   // a console tab has none: its panel's own line is its header (#755); nor a file tab: the editor's bar names its path (#850); nor a design
   // tab: its preview bar does (#109)
-  const isUnheaded = shown?.kind === 'console' || shown?.kind === 'file' || shown?.kind === 'design';
+  const isUnheaded = shown?.kind === 'console' || shown?.kind === 'file' || shown?.kind === 'design' || shown?.kind === 'diagram';
   const headed: CenterTabRef | undefined = shown?.kind === 'run' && shown.panes !== undefined ? { kind: 'run', ptyId: shown.panes.focused } : isUnheaded ? undefined : shown;
   const focus = (): void => {
     if (focused !== group.id) ops.select(group.id, group.active);

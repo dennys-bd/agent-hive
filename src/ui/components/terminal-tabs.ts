@@ -62,14 +62,19 @@ export const IssueOpenerContext = createContext<OpenPr | undefined>(undefined);
 
 export const useOpenIssue = (): OpenPr | undefined => useContext(IssueOpenerContext);
 
-/** How a file opens (#697): preview, a preview pane tab that renders it; changes (#668), a changes pane tab against its base; editor (#109), the
- * editor pane even for a Hive design; else the editor pane, or the design pane for a Hive design. */
+/** How a file opens (#697): preview, a preview pane tab that renders it; changes (#668), a changes pane tab against its base; editor (#109, #956), the
+ * editor pane even for a Hive design or a diagram; else the editor pane, the design pane for a Hive design, or the diagram pane for a .drawio. */
 export interface OpenFileHow { preview?: boolean; changes?: boolean; editor?: boolean }
 
 const DESIGN_SUFFIX = '.hv.html';
 
 /** A Hive design (#109): a .hv.html file, in any case. A click opens it in the design pane. */
 export const isHiveDesign = (path: string): boolean => path.toLowerCase().endsWith(DESIGN_SUFFIX);
+
+const DIAGRAM_SUFFIX = '.drawio';
+
+/** A draw.io diagram (#956): a .drawio file, in any case. A click opens it in the diagram pane. */
+export const isDrawioDiagram = (path: string): boolean => path.toLowerCase().endsWith(DIAGRAM_SUFFIX);
 
 /** A file of an activity (#717): opened (or shown again) as an editor pane tab of the activity keyed `key` (activityKey), its cursor at `at`
  * when given, or as its preview pane tab with `how.preview` (#697), or its changes pane tab with `how.changes` (#668). true once it opened;

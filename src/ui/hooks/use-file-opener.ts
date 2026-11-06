@@ -3,7 +3,7 @@
 // unload over unsaved edits asked about.
 import { useEffect } from 'react';
 import { focusOrOpen } from '@/components/actions';
-import { isHiveDesign, type OpenFile, type OpenFileHow } from '@/components/terminal-tabs';
+import { isDrawioDiagram, isHiveDesign, type OpenFile, type OpenFileHow } from '@/components/terminal-tabs';
 import type { FileTabKind } from '@/hooks/use-activity';
 import { type Activity, activityKey } from '@/lib/activities';
 import { fileRefPath, refKey } from '@/lib/center-layout';
@@ -17,12 +17,15 @@ function askBeforeUnload(event: BeforeUnloadEvent): void {
   if (models.anyDirty()) event.preventDefault();
 }
 
-// The tab a click asks for (#697, #668, #109): a preview, the changes or the editor when asked; else a Hive design's pane for a .hv.html, the
-// editor for any other file. Every file click comes through here, so a design opens as one from the tree, a result file or a terminal link
+// The tab a click asks for (#697, #668, #109, #956): a preview, the changes or the editor when asked; else a Hive design's pane for a .hv.html,
+// the diagram pane for a .drawio, the editor for any other file. Every file click comes through here, so the tree, a result file and a
+// terminal link all open them
 function tabKindOf(path: string, how?: OpenFileHow): FileTabKind {
   if (how?.preview === true) return 'preview';
   if (how?.changes === true) return 'changes';
-  return how?.editor !== true && isHiveDesign(path) ? 'design' : 'file';
+  if (how?.editor === true) return 'file';
+  if (isHiveDesign(path)) return 'design';
+  return isDrawioDiagram(path) ? 'diagram' : 'file';
 }
 
 /** focusOut (#554): a file whose tab is out in a detached window raises that window. Only the main window asks: main answers focusTab to it alone. */

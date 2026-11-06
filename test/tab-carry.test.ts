@@ -19,6 +19,7 @@ const REFS: readonly CenterTabRef[] = [
   { kind: 'file', path: 'src/a.ts' },
   { kind: 'preview', path: 'README.md' },
   { kind: 'design', path: 'docs/a.hv.html' },
+  { kind: 'diagram', path: 'docs/a.drawio' },
   { kind: 'changes', path: 'src/a.ts' },
   { kind: 'untitled', n: 3 },
 ];
