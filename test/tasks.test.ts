@@ -905,6 +905,20 @@ test('a started task or one placed by hand keeps its stage when its entry change
   assert.equal(pollTwo([byHand], [at(1, { flow: 'discovery' }, 'Ready')])[0].stage, 'build', "by hand: Ready's door");
 });
 
+test('a new task\'s auto follows its rule with its entry on each poll until the user switches it; a started or hand-placed task keeps it (#688)', () => {
+  const rule = (n: number, entry: TaskEntry, autoOnEntry: boolean): SourceItem => at(n, entry, 'Backlog', { autoOnEntry });
+  const [born] = pollTwo([], [at(6, { flow: 'delivery' })]);
+  const ruled = pollTwo([born], [rule(6, { flow: 'discovery' }, false)])[0];
+  assert.deepEqual([ruled.stage, ruled.auto], ['research', false], '#298: a label sets auto: no and entry: discovery, both follow');
+  assert.equal(pollTwo([ruled], [rule(6, { flow: 'discovery' }, true)])[0].auto, true, 'same stage: the rule turns it back on');
+  const offByHand: Task = { ...ruled, autoByHand: true };
+  const later = pollTwo([offByHand], [rule(6, { flow: 'delivery' }, true)])[0];
+  assert.deepEqual([later.stage, later.auto], ['spec', false], 'off by hand stays off; the entry still follows');
+  const [first] = pollTwo([], [at(1, { flow: 'delivery' })]);
+  assert.equal(pollTwo([first], [rule(1, { flow: 'delivery' }, false)], NO_RUNS)[0].auto, true, 'started: item1 has an activity in NO_RUNS');
+  assert.equal(pollTwo([{ ...first, placedByHand: true }], [rule(1, { flow: 'delivery' }, false)])[0].auto, true, 'placed by hand');
+});
+
 test('workspaceNameFor names a workspace by its folder\'s last segment, a Windows path\'s included, a trailing separator too (#641)', () => {
   assert.equal(workspaceNameFor('C:\\Users\\x\\code\\my-app'), 'my-app');
   assert.equal(workspaceNameFor('C:\\code\\my-app\\'), 'my-app');

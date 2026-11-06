@@ -3,6 +3,7 @@ import { act } from '@/components/actions';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
+import { isMac } from '@/lib/shortcut-bindings';
 
 export interface IssueCommentBoxProps {
   path: string; // the comments route it posts to: an issue's (#757) or a PR's (#758)
@@ -35,11 +36,11 @@ export function IssueCommentBox({ path, repository, label = t('issue.comment.pla
     <div className="flex flex-col gap-2 rounded-lg border p-3">
       <Textarea
         aria-label={label} placeholder={label} value={body} rows={3} onChange={(e) => setBody(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); void post(); } }}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (isMac() ? e.metaKey : e.ctrlKey)) { e.preventDefault(); void post(); } }}
       />
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
         <span className="flex-1">{t('issue.comment.footer', { repository })}</span>
-        <Button type="button" size="xs" disabled={isEmpty || isPosting} onClick={() => void post()}>{t('issue.comment.send')} ⌘↵</Button>
+        <Button type="button" size="xs" disabled={isEmpty || isPosting} onClick={() => void post()}>{t('issue.comment.send')} {isMac() ? '⌘↵' : 'Ctrl+↵'}</Button>
       </div>
     </div>
   );

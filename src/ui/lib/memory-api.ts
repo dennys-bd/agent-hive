@@ -3,12 +3,15 @@ import { getJson, sendJson } from './api.js'; // relative: the root tsc compiles
 
 // A workspace's memory (#797): the six routes the memory section and dialog call. Each lesson write answers the new view; the total limit (#115) answers ok.
 
+/** A lesson as the dialog sends it (#680); the server trims and checks it. */
+export interface LessonInput { kind: MemoryKind; description: string; body: string }
+
 const memoryPath = (workspace: string, rest = ''): string => `/workspaces/${encodeURIComponent(workspace)}/memory${rest}`;
 const lessonPath = (workspace: string, id: string): string => memoryPath(workspace, `/${encodeURIComponent(id)}`);
 
 const isMemoryView = (value: unknown): value is MemoryView => {
   const view = value as Partial<MemoryView> | null;
-  return typeof view === 'object' && view !== null && Array.isArray(view.entries) && typeof view.used === 'number' && typeof view.cap === 'number' && typeof view.textMax === 'number';
+  return typeof view === 'object' && view !== null && Array.isArray(view.entries) && typeof view.used === 'number' && typeof view.cap === 'number' && typeof view.descriptionMax === 'number' && typeof view.bodyMax === 'number';
 };
 const isMemoryStats = (value: unknown): value is MemoryStats => typeof (value as Partial<MemoryStats> | null)?.runs === 'number';
 
@@ -21,10 +24,8 @@ async function shaped<T>(answer: Promise<unknown>, is: (value: unknown) => value
 
 export const readMemory = (workspace: string): Promise<MemoryView> => shaped(getJson<unknown>(memoryPath(workspace)), isMemoryView);
 export const readStats = (workspace: string): Promise<MemoryStats> => shaped(getJson<unknown>(memoryPath(workspace, '/stats')), isMemoryStats);
-export const addLesson = (workspace: string, kind: MemoryKind, text: string): Promise<MemoryView> =>
-  shaped(sendJson<unknown>('POST', memoryPath(workspace), { kind, text }), isMemoryView);
-export const editLesson = (workspace: string, id: string, kind: MemoryKind, text: string): Promise<MemoryView> =>
-  shaped(sendJson<unknown>('PUT', lessonPath(workspace, id), { kind, text }), isMemoryView);
+export const addLesson = (workspace: string, lesson: LessonInput): Promise<MemoryView> => shaped(sendJson<unknown>('POST', memoryPath(workspace), lesson), isMemoryView);
+export const editLesson = (workspace: string, id: string, lesson: LessonInput): Promise<MemoryView> => shaped(sendJson<unknown>('PUT', lessonPath(workspace, id), lesson), isMemoryView);
 export const removeLesson = (workspace: string, id: string): Promise<MemoryView> => shaped(sendJson<unknown>('DELETE', lessonPath(workspace, id)), isMemoryView);
 
 /** The workspace's memory total limit (#115), written into hive.config.json at once; the caller reads the memory again for the new view. */

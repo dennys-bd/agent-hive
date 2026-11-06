@@ -1,4 +1,5 @@
 import { activityOf, resultOf, withActivity } from './activities.js';
+import { liveDefaultAgent, stageAgentIn, stageModelFor } from './agents.js';
 import { withoutControls } from './pty-paste.js';
 import { forgetSession } from './record-kit.js';
 import { ensureActivity, type Reduced, settleEntries, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
@@ -102,7 +103,19 @@ export function withoutHandover(state: State, task: Task): State {
 export function keepsRun(state: State, task: Task, transition: Transition, next: Stage): boolean {
   const live = activityOf(state, taskId(task));
   const session = resolveSession(state, task, endedRun(state, task, transition), transition, next);
-  return runsAgent(next) && session.policy === 'continue' && session.sessionId === live?.sessionId;
+  return runsAgent(next) && session.policy === 'continue' && session.sessionId === live?.sessionId && sameModel(state, live.workerId, next);
+}
+
+// #692: --model is passed only at launch, so a run goes on in place only on the model `next` would launch with. A hand pick lasts until the run
+// leaves its stage. The agent's default model (Config.agentModels) is left out: resumableBy keeps the agent, so it is the same on both sides
+function sameModel(state: State, workerId: string | undefined, next: Stage): boolean {
+  const worker = state.workers.find((w) => w.id === workerId);
+  if (worker === undefined || next.name === worker.stage) return true;
+  const agent = worker.agent ?? stageAgentIn(state, next);
+  const defaultAgent = liveDefaultAgent(state);
+  const ran = stageOf(state.stages, worker.stage);
+  const live = worker.launch?.model ?? (ran === undefined ? undefined : stageModelFor(ran, agent, defaultAgent));
+  return live === stageModelFor(next, agent, defaultAgent);
 }
 
 const firstLine = (text: string): string => text.split('\n').find((line) => line.trim() !== '')?.trim() ?? '';

@@ -55,13 +55,14 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
 
 test('hive_remember from a local session saves a lesson with origin local in its activity\'s workspace, capped by its memoryCap, and local.md carries it; hive_applied records a use with no task (#256)', async (t) => {
   const { client, home } = await startLocal(t, 500);
-  const remember = (text: string) => call(client, 'hive_remember', { kind: 'fact', text });
-  assert.deepEqual(await remember(`one ${'y'.repeat(240)}`), { text: 'saved as m-1', isError: false });
-  assert.deepEqual(await remember(`two ${'y'.repeat(240)}`), { text: 'saved as m-2', isError: false });
-  assert.deepEqual(await remember(`three ${'y'.repeat(240)}`), { text: MEMORY_FULL_MESSAGE, isError: true }, 'the workspace\'s cap of 500');
+  const remember = (n: string) => call(client, 'hive_remember', { kind: 'fact', description: `${n} ${'y'.repeat(140)}`, body: 'b'.repeat(4000) });
+  assert.deepEqual(await remember('one'), { text: 'saved as m-1', isError: false });
+  assert.deepEqual(await remember('two'), { text: 'saved as m-2', isError: false });
+  assert.deepEqual(await remember('three'), { text: 'saved as m-3', isError: false }, 'the bodies count for nothing: 434 of 500');
+  assert.deepEqual(await remember('four'), { text: MEMORY_FULL_MESSAGE, isError: true }, 'the workspace\'s cap of 500');
   assert.deepEqual(await call(client, 'hive_applied', { id: 'm-1', why: 'kept it in mind' }), { text: 'ok', isError: false });
   const { entries } = JSON.parse(await readFile(memoryPath(home, WORKSPACE), 'utf8')) as MemoryFile;
-  assert.deepEqual(entries.map((e) => e.origin), ['local', 'local']);
+  assert.deepEqual(entries.map((e) => e.origin), ['local', 'local', 'local']);
   const { at, ...use } = entries[0].lastUsed ?? { at: '' };
   assert.deepEqual([entries[0].uses, use], [1, { why: 'kept it in mind' }]);
   assert.match(at, /^\d{4}-\d{2}-\d{2}T/);
@@ -74,4 +75,6 @@ test('hive_remember tells every run in the workspace gets the lesson, a local se
   const remember = (await client.listTools()).tools.find((tool) => tool.name === 'hive_remember');
   assert.equal(remember?.description, REMEMBER_DESCRIPTION);
   assert.match(REMEMBER_DESCRIPTION, /which the Hive gives every later run in this workspace\./);
+  assert.match(REMEMBER_DESCRIPTION, /description: one line of at most 150 characters/);
+  assert.match(REMEMBER_DESCRIPTION, /body: up to 4,000 characters/);
 });

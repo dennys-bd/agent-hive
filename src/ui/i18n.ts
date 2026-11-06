@@ -1,6 +1,7 @@
 // The only place UI text lives, the main process's included (#242). No DOM at import time, so node:test covers t / statusText / workerEventText;
 // the React components call t() and re-render when the language changes, the main process calls setLanguage when it reads the config.
 import type { Language, WorkerEvent, WorkerEventKind, Status } from '../types.js';
+import { isMac, isWindows } from './lib/shortcut-bindings.js';
 
 const en = {
   'footer.max': 'max.',
@@ -183,6 +184,7 @@ const en = {
   'decomposition.problems': 'Fix decomposition.md before creating the issues:',
   'decomposition.problem': 'line {line}: {message}',
   'decomposition.warnings': 'Nodes that touch the same files with no blocker between them (the issues are created anyway):', // #936
+  'decomposition.transient': 'GitHub did not answer. The issues created so far are kept: press "create issues" again to continue from where it stopped.', // #702: a write that gave up on a transient error; gh's words go to hive.log
   'approval.startNow': 'start now',
   'approval.queue': 'in order',
   'approval.hint': 'start now resumes the task\'s session. in order, it waits for a free worker.',
@@ -260,7 +262,6 @@ const en = {
   'detail.copy': 'copy', // #283: the description's two copy buttons
   'detail.copyRaw': 'copy raw',
   'detail.copyFailed': 'Unexpected error',
-  'terminal.copyFailed': 'The program\'s copy did not reach the clipboard', // #543: an OSC 52 write the clipboard refused
   'files.tab.files': 'files',
   'files.tab.details': 'details',
   'files.tab.variables': 'variables',
@@ -273,6 +274,7 @@ const en = {
   'files.openInEditor': 'open in the editor pane', // #109: a Hive design's way back to its text
   'files.openTerminal': 'open in the integrated terminal',
   'files.reveal': 'reveal in Finder',
+  'files.reveal.windows': 'reveal in File Explorer', 'files.reveal.linux': 'reveal in file manager', // #649
   'files.cut': 'cut',
   'files.copy': 'copy',
   'files.paste': 'paste',
@@ -686,6 +688,7 @@ const en = {
   'design.reloaded': 'reloaded · the agent changed {file} at {time}',
   'design.viewport': 'viewport', 'design.viewport.natural': 'natural', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'zoom in', 'design.zoomOut': 'zoom out', 'design.fit': '⌘0 fits to screen',
+  'design.fit.other': 'Ctrl+0 fits to screen', // #649
   'design.theme': 'design theme', 'design.theme.dark': 'dark', 'design.theme.light': 'light',
   'design.tweaks': 'tweaks', 'design.tweaks.more': 'more…', 'design.tweaks.close': 'close', 'design.tweaks.invalid': 'the hv-tweaks block is invalid',
   // #113: the design comments panel
@@ -828,6 +831,7 @@ const en = {
   'settings.baseBranch.hint': "where the workers' worktrees start from · empty = the base repository's default branch",
   'settings.onClose': 'when the window closes',
   'settings.onClose.menuBar': 'the Hive stays in the menu bar, workers running',
+  'settings.onClose.menuBar.windows': 'the Hive stays in the notification area, workers running', 'settings.onClose.menuBar.linux': 'the Hive stays in the system tray, workers running', // #649
   'settings.onClose.quit': 'the Hive quits, with its workers',
   'settings.notifications': 'notifications',
   'settings.notifications.hint': 'shown while the Hive window is not in focus',
@@ -1003,6 +1007,7 @@ const en = {
   'settings.group.appearance': 'appearance',
   'settings.group.terminal': 'terminal',
   'settings.group.window': 'window and menu bar',
+  'settings.group.window.windows': 'window and notification area', 'settings.group.window.linux': 'window and system tray', // #649
   'settings.group.orphans': 'worktrees',
   'settings.sources': 'sources',
   'settings.sources.hint': 'where the tasks come from: the Hive itself and the external sources',
@@ -1221,7 +1226,13 @@ const en = {
   'settings.memory.group': 'memory',
   'settings.memory.hint': "preferences, codebase facts and what to avoid, given to every session on this workspace's tasks",
   'settings.memory.of': '{n} of {max} characters',
-  'settings.memory.characters': '{n} characters',
+  'settings.memory.description': 'description',
+  'settings.memory.body': 'body',
+  'settings.memory.descriptionHint': 'what the lesson is about, short and direct',
+  'settings.memory.bodyHint': 'the lesson, why it holds and how to apply it',
+  'settings.memory.descriptionPlaceholder': "Language of a run's copy",
+  'settings.memory.bodyPlaceholder': 'the lesson itself · why: … · how to apply: …',
+  'settings.memory.sizes': 'description {d} · body {b} characters',
   'settings.memory.lessons.one': '{n} lesson',
   'settings.memory.lessons.other': '{n} lessons',
   'settings.memory.fromTasks': '{m} from tasks',
@@ -1230,14 +1241,15 @@ const en = {
   'settings.memory.notSaved': 'save the workspace to see its memory',
   'settings.memory.loadFailed': 'the memory could not be read: {error}',
   'settings.memory.title': '{workspace} memory',
-  'settings.memory.description': "what this workspace's agents know before they start. every session on a task of this workspace gets the whole memory, with the Hive's instructions.",
+  'settings.memory.intro': "what this workspace's agents know before they start. every session on a task of this workspace gets the whole memory, with the Hive's instructions.",
   'settings.memory.usage': 'usage',
   'settings.memory.totalLimit': 'total limit',
   'settings.memory.capEstimate': '≈ {n} tokens per run with the memory full',
   'settings.memory.capRange': 'a whole number from 300 to 20,000',
   'settings.memory.capFailed': 'Unexpected error',
-  'settings.memory.lessonLimit': 'limit per lesson (characters)',
-  'settings.memory.limitNote': "at the limit no new lesson comes in, yours or a task's, until you remove or shorten another",
+  'settings.memory.descriptionLimit': 'limit per description (characters)',
+  'settings.memory.usedDescriptions': '{n} of {max} characters in descriptions',
+  'settings.memory.limitNote': "at the limit no new lesson comes in, yours or a task's, until you remove a lesson or shorten a description · the body is outside the limit",
   'settings.memory.telemetry': 'telemetry · last 7 days',
   'settings.memory.runs': 'prompts with memory',
   'settings.memory.cited': 'lessons cited',
@@ -1251,7 +1263,7 @@ const en = {
   'settings.memory.hours': '{n} h',
   'settings.memory.days.one': '{n} day',
   'settings.memory.days.other': '{n} days',
-  'settings.memory.telemetryNote': "the Hive records which lessons each session received and cited, and every lesson created, edited or removed, and sends these events off the machine. the type, the origin, the stage and the size go; the key and the lesson's text never do.",
+  'settings.memory.telemetryNote': "the Hive records which lessons each session received and cited, and every lesson created, edited or removed, and sends these events off the machine. the type, the origin, the stage and the size go; the key, the description and the body never do.",
   'settings.memory.lessonsTitle': 'lessons',
   'settings.memory.filterLabel': 'show lessons of type',
   'settings.memory.filter.all': 'all · {n}',
@@ -1262,7 +1274,7 @@ const en = {
   'settings.memory.key': 'key',
   'settings.memory.type': 'type',
   'settings.memory.lesson': 'lesson',
-  'settings.memory.text': 'lesson text',
+  'settings.memory.now': 'now',
   'settings.memory.you': 'you',
   'settings.memory.task': 'task #{id}',
   'settings.memory.local': 'local session',
@@ -1279,9 +1291,9 @@ const en = {
   'settings.memory.ruleOut': 'when a lesson leaves',
   'settings.memory.ruleOutText': 'only when you remove it: no lesson leaves on its own · the agent never replaces or removes a lesson',
   'settings.memory.close': 'close',
-  'settings.memory.refusal.bad_memory': 'one line of 1 to 300 characters',
+  'settings.memory.refusal.bad_memory': 'the description is one line of 1 to 150 characters; the body, 1 to 4,000',
   'settings.memory.refusal.memory_secret': 'this looks like a secret; never save tokens or keys',
-  'settings.memory.refusal.memory_full': 'the memory is full: remove or shorten a lesson',
+  'settings.memory.refusal.memory_full': 'the memory is full: remove a lesson or shorten a description',
   'settings.memory.refusal.unknown_memory': 'this lesson is no longer in the memory',
   'settings.env.add': '+ variable',
   'settings.error.prefix': 'the prefix must be a letter followed by up to 9 letters or digits',
@@ -1728,6 +1740,7 @@ const en = {
   'shortcuts.treeRename': 'rename',
   'shortcuts.treeDelete': 'delete',
   'shortcuts.treeReveal': 'reveal in Finder',
+  'shortcuts.treeReveal.windows': 'reveal in File Explorer', 'shortcuts.treeReveal.linux': 'reveal in file manager', // #649
   'shortcuts.treeOpenTerminal': 'open in the integrated terminal',
   'shortcuts.treeCopyPath': 'copy path',
   'shortcuts.treeCopyRelativePath': 'copy relative path',
@@ -3279,6 +3292,7 @@ const pt: Record<MessageKey, string> = {
   'decomposition.problems': 'Corrija o decomposition.md antes de criar as issues:',
   'decomposition.problem': 'linha {line}: {message}',
   'decomposition.warnings': 'Nós que tocam os mesmos arquivos sem bloqueio entre eles (as issues são criadas mesmo assim):',
+  'decomposition.transient': 'O GitHub não respondeu. As issues já criadas ficam: clique em "criar issues" de novo para continuar de onde parou.',
   'approval.startNow': 'começar agora',
   'approval.queue': 'na ordem',
   'approval.hint': 'começar agora retoma a sessão da tarefa. na ordem, a tarefa espera um worker livre.',
@@ -3356,7 +3370,6 @@ const pt: Record<MessageKey, string> = {
   'detail.copy': 'copiar',
   'detail.copyRaw': 'copiar markdown',
   'detail.copyFailed': 'Erro inesperado',
-  'terminal.copyFailed': 'A cópia do programa não chegou à área de transferência',
   'files.tab.files': 'arquivos',
   'files.tab.details': 'detalhes',
   'files.tab.variables': 'variáveis',
@@ -3369,6 +3382,7 @@ const pt: Record<MessageKey, string> = {
   'files.openInEditor': 'abrir no painel do editor',
   'files.openTerminal': 'abrir no terminal integrado',
   'files.reveal': 'revelar no Finder',
+  'files.reveal.windows': 'revelar no Explorador de Arquivos', 'files.reveal.linux': 'revelar no gerenciador de arquivos',
   'files.cut': 'recortar',
   'files.copy': 'copiar',
   'files.paste': 'colar',
@@ -3778,6 +3792,7 @@ const pt: Record<MessageKey, string> = {
   'design.reloaded': 'recarregado · o agente alterou {file} às {time}',
   'design.viewport': 'viewport', 'design.viewport.natural': 'natural', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'aumentar zoom', 'design.zoomOut': 'diminuir zoom', 'design.fit': '⌘0 ajusta à tela',
+  'design.fit.other': 'Ctrl+0 ajusta à tela',
   'design.theme': 'tema do design', 'design.theme.dark': 'escuro', 'design.theme.light': 'claro',
   'design.tweaks': 'tweaks', 'design.tweaks.more': 'mais…', 'design.tweaks.close': 'fechar', 'design.tweaks.invalid': 'o bloco hv-tweaks é inválido',
   'design.comments': 'comentários', 'design.comments.toggle': 'mostrar ou esconder os comentários', 'design.comments.hide': 'esconder',
@@ -3919,6 +3934,7 @@ const pt: Record<MessageKey, string> = {
   'settings.baseBranch.hint': 'de onde partem as worktrees que os workers criam · vazio = a branch padrão do repositório base',
   'settings.onClose': 'ao fechar a janela',
   'settings.onClose.menuBar': 'o Hive fica na barra de menu, workers executando',
+  'settings.onClose.menuBar.windows': 'o Hive fica na área de notificação, workers executando', 'settings.onClose.menuBar.linux': 'o Hive fica na bandeja do sistema, workers executando',
   'settings.onClose.quit': 'o Hive para, junto com os workers',
   'settings.notifications': 'notificações',
   'settings.notifications.hint': 'aparecem enquanto a janela do Hive não está em foco',
@@ -4094,6 +4110,7 @@ const pt: Record<MessageKey, string> = {
   'settings.group.appearance': 'aparência',
   'settings.group.terminal': 'terminal',
   'settings.group.window': 'janela e barra de menu',
+  'settings.group.window.windows': 'janela e área de notificação', 'settings.group.window.linux': 'janela e bandeja do sistema',
   'settings.group.orphans': 'worktrees',
   'settings.sources': 'sources',
   'settings.sources.hint': 'de onde vêm as tarefas: o próprio Hive e as sources externas',
@@ -4311,7 +4328,13 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.group': 'memória',
   'settings.memory.hint': 'preferências, fatos do código e o que evitar, que toda sessão das tarefas deste workspace recebe',
   'settings.memory.of': '{n} de {max} caracteres',
-  'settings.memory.characters': '{n} caracteres',
+  'settings.memory.description': 'descrição',
+  'settings.memory.body': 'corpo',
+  'settings.memory.descriptionHint': 'sobre o que é a lição, curto e direto',
+  'settings.memory.bodyHint': 'a lição, por que vale e como aplicar',
+  'settings.memory.descriptionPlaceholder': 'Idioma da copy de uma execução',
+  'settings.memory.bodyPlaceholder': 'a lição em si · por quê: … · como aplicar: …',
+  'settings.memory.sizes': 'descrição {d} · corpo {b} caracteres',
   'settings.memory.lessons.one': '{n} lição',
   'settings.memory.lessons.other': '{n} lições',
   'settings.memory.fromTasks': '{m} vindas de tarefas',
@@ -4320,14 +4343,15 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.notSaved': 'salve o workspace para ver a memória',
   'settings.memory.loadFailed': 'não foi possível ler a memória: {error}',
   'settings.memory.title': 'Memória de {workspace}',
-  'settings.memory.description': 'o que os agentes deste workspace sabem antes de começar. toda sessão de uma tarefa deste workspace recebe a memória inteira, junto com as instruções do Hive.',
+  'settings.memory.intro': 'o que os agentes deste workspace sabem antes de começar. toda sessão de uma tarefa deste workspace recebe a memória inteira, junto com as instruções do Hive.',
   'settings.memory.usage': 'uso',
   'settings.memory.totalLimit': 'limite total',
   'settings.memory.capEstimate': '≈ {n} tokens por execução com a memória cheia',
   'settings.memory.capRange': 'um número inteiro de 300 a 20.000',
   'settings.memory.capFailed': 'Erro inesperado',
-  'settings.memory.lessonLimit': 'limite por lição (caracteres)',
-  'settings.memory.limitNote': 'no limite, nenhuma lição nova entra, nem sua nem de tarefa, até você remover ou encurtar outra',
+  'settings.memory.descriptionLimit': 'limite por descrição (caracteres)',
+  'settings.memory.usedDescriptions': '{n} de {max} caracteres em descrições',
+  'settings.memory.limitNote': 'no limite, nenhuma lição nova entra, nem sua nem de tarefa, até você remover uma lição ou encurtar uma descrição · o corpo fica fora do limite',
   'settings.memory.telemetry': 'telemetria · últimos 7 dias',
   'settings.memory.runs': 'prompts com memória',
   'settings.memory.cited': 'lições citadas',
@@ -4341,7 +4365,7 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.hours': '{n} h',
   'settings.memory.days.one': '{n} dia',
   'settings.memory.days.other': '{n} dias',
-  'settings.memory.telemetryNote': 'o Hive registra quais lições cada sessão recebeu e citou, e cada lição criada, editada ou removida, e envia esses eventos para fora da máquina. vão o tipo, a origem, a etapa e o tamanho; a chave e o texto da lição nunca vão.',
+  'settings.memory.telemetryNote': 'o Hive registra quais lições cada sessão recebeu e citou, e cada lição criada, editada ou removida, e envia esses eventos para fora da máquina. vão o tipo, a origem, a etapa e o tamanho; a chave, a descrição e o corpo nunca vão.',
   'settings.memory.lessonsTitle': 'lições',
   'settings.memory.filterLabel': 'mostrar lições do tipo',
   'settings.memory.filter.all': 'todas · {n}',
@@ -4352,7 +4376,7 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.key': 'chave',
   'settings.memory.type': 'tipo',
   'settings.memory.lesson': 'lição',
-  'settings.memory.text': 'texto da lição',
+  'settings.memory.now': 'agora',
   'settings.memory.you': 'você',
   'settings.memory.task': 'tarefa #{id}',
   'settings.memory.local': 'sessão local',
@@ -4369,9 +4393,9 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.ruleOut': 'quando uma lição sai',
   'settings.memory.ruleOutText': 'só quando você remove: nenhuma lição sai sozinha · o agente nunca substitui nem remove uma lição',
   'settings.memory.close': 'fechar',
-  'settings.memory.refusal.bad_memory': 'uma linha de 1 a 300 caracteres',
+  'settings.memory.refusal.bad_memory': 'a descrição é uma linha de 1 a 150 caracteres; o corpo, de 1 a 4.000',
   'settings.memory.refusal.memory_secret': 'parece um segredo; nunca salve tokens ou chaves',
-  'settings.memory.refusal.memory_full': 'a memória está cheia: remova ou encurte uma lição',
+  'settings.memory.refusal.memory_full': 'a memória está cheia: remova uma lição ou encurte uma descrição',
   'settings.memory.refusal.unknown_memory': 'esta lição não está mais na memória',
   'settings.env.add': '+ variável',
   'settings.error.prefix': 'o prefixo precisa ser uma letra seguida de até 9 letras ou dígitos',
@@ -4817,6 +4841,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.treeRename': 'renomear',
   'shortcuts.treeDelete': 'excluir',
   'shortcuts.treeReveal': 'revelar no Finder',
+  'shortcuts.treeReveal.windows': 'revelar no Explorador de Arquivos', 'shortcuts.treeReveal.linux': 'revelar no gerenciador de arquivos',
   'shortcuts.treeOpenTerminal': 'abrir no terminal integrado',
   'shortcuts.treeCopyPath': 'copiar caminho',
   'shortcuts.treeCopyRelativePath': 'copiar caminho relativo',
@@ -6205,9 +6230,25 @@ export const formatCount = (n: number): string => n.toLocaleString(LOCALE[curren
 /** The language `t` renders in (#689: the Settings search must read the same one). */
 export const currentLanguage = (): Language => current;
 
+/** The keys whose text names a macOS thing (Finder, ⌘, the menu bar), with the sibling read on Windows and on Linux (#649). Resolved inside
+ * tIn so every caller, the shortcut registry's labels and the Settings search among them, follows the platform with no change. */
+export const PLATFORM_KEYS: Partial<Record<MessageKey, { windows: MessageKey; linux: MessageKey }>> = {
+  'files.reveal': { windows: 'files.reveal.windows', linux: 'files.reveal.linux' },
+  'shortcuts.treeReveal': { windows: 'shortcuts.treeReveal.windows', linux: 'shortcuts.treeReveal.linux' },
+  'design.fit': { windows: 'design.fit.other', linux: 'design.fit.other' },
+  'settings.onClose.menuBar': { windows: 'settings.onClose.menuBar.windows', linux: 'settings.onClose.menuBar.linux' },
+  'settings.group.window': { windows: 'settings.group.window.windows', linux: 'settings.group.window.linux' },
+};
+
+const platformKey = (key: MessageKey): MessageKey => {
+  const variants = PLATFORM_KEYS[key];
+  if (variants === undefined || isMac()) return key;
+  return isWindows() ? variants.windows : variants.linux;
+};
+
 /** `key`'s text in `language`, `{name}` placeholders filled from `vars` (#689: the Settings search reads the current language and English at once). */
 export function tIn(language: Language, key: MessageKey, vars?: Record<string, string | number>): string {
-  const text = MESSAGES[language][key];
+  const text = MESSAGES[language][platformKey(key)];
   if (!vars) return text; // the prompt hint carries literal {id} / {number}: untouched
   return text.replace(PLACEHOLDER, (match, name: string) => (Object.hasOwn(vars, name) ? String(vars[name]) : match));
 }

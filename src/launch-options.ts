@@ -3,23 +3,21 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Express, Request, Response } from 'express';
-import { AGENTS } from './agents.js';
 import type { AgentRun } from './agents/runner.js';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from './agents/claude-models.js';
 import { agentRoles, CODEX_PLUGIN } from './agents/codex-home.js';
+import { codexModelsCache } from './codex-models.js';
 import { CLAUDE_MODEL } from './config-agent-args.js';
 import { isLaunchArgs, isLaunchModel, savedLaunch } from './launch-pick.js';
-import type { Logger } from './log.js';
 import { isRecord } from './rate-limits.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
 import { SKILL_NAME } from './stage-agent.js';
 import { parseTemplate } from './template.js';
-import type { AgentId, Config, Exec, Language, LaunchOption, LaunchOptions, LaunchPick } from './types.js';
+import type { AgentId, Config, Language, LaunchOption, LaunchOptions, LaunchPick } from './types.js';
 import { MESSAGES } from './ui/i18n.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_SERVER_ERROR = 500;
-const CODEX_MODELS_TIMEOUT_MS = 10_000; // a hung CLI never holds the dialog's lists: Codex's stay empty
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -33,33 +31,6 @@ export interface SpecializedAgent { name: string; description: string; instructi
  * file with a bad frontmatter. */
 export const specializedAgents = (source: string): SpecializedAgent[] =>
   agentRoles(source).map((role) => ({ name: `${CODEX_PLUGIN}:${role.name}`, description: role.description, instructions: role.instructions }));
-
-// One entry of `codex debug models`, narrowed from unknown: a slug the routes would admit as a model, its display name as the hint when it adds one
-function codexModel(value: unknown): { option: LaunchOption; isHidden: boolean }[] {
-  if (!isRecord(value)) return [];
-  const { slug, display_name: name, visibility } = value;
-  if (!isLaunchModel(slug)) return [];
-  const hint = typeof name === 'string' && name !== '' && name !== slug ? { hint: name } : {};
-  return [{ option: { id: slug, ...hint }, isHidden: visibility === 'hide' }];
-}
-
-/** Codex's models as `codex debug models` prints them (#257): visible first, hidden after, each group in the CLI's order. Throws on bad JSON. */
-export function parseCodexModels(stdout: string): LaunchOption[] {
-  const parsed: unknown = JSON.parse(stdout);
-  const list: unknown[] = Array.isArray(parsed) ? parsed : isRecord(parsed) && Array.isArray(parsed.models) ? parsed.models : [];
-  const models = list.flatMap(codexModel);
-  return [...models.filter((m) => !m.isHidden), ...models.filter((m) => m.isHidden)].map((m) => m.option);
-}
-
-// Codex's list, or none: a missing CLI, a failure or output that is not JSON leaves the field to typed names
-async function codexModels(exec: Exec, log: Pick<Logger, 'info'>): Promise<LaunchOption[]> {
-  try {
-    return parseCodexModels((await exec(AGENTS.codex.command, ['debug', 'models'], { timeout: CODEX_MODELS_TIMEOUT_MS })).stdout);
-  } catch (err) {
-    log.info(`launch options: codex debug models gave no list: ${errorMessage(err).split('\n')[0]}`);
-    return [];
-  }
-}
 
 const SKILLS_DIR = 'skills';
 const SKILL_FILE = 'SKILL.md'; // the rendered folder's name: the render drops .liquid (template.ts deliveredName)
@@ -91,15 +62,14 @@ export function pluginSkills(pluginDir: string): { name: string; description: st
     .map((name) => ({ name, description: skillDescription(pluginDir, name) }));
 }
 
-/** GET /launch-options' answer (#257): Claude's hand-kept models, Codex's from its CLI, `pluginDir`'s agents and skills for both (#316), each agent's config
- * args. Throws when the folder's agents cannot be read. */
-export async function launchOptions(exec: Exec, log: Pick<Logger, 'info'>, agentArgs: Record<AgentId, string[]>, pluginDir: string): Promise<LaunchOptions> {
+/** GET /launch-options' answer (#257): Claude's hand-kept models, Codex's as the server keeps them (#694), `pluginDir`'s agents and skills
+ * for both (#316), each agent's config args. Throws when the folder's agents cannot be read. */
+export function launchOptions(codex: readonly LaunchOption[], agentArgs: Record<AgentId, string[]>, pluginDir: string): LaunchOptions {
   const agents = specializedAgents(pluginDir).map(({ name, description }) => ({ name, description }));
   const skills = pluginSkills(pluginDir); // #710: one list for both agents: a skill stage runs /hive:<name> on either
-  const codex = await codexModels(exec, log);
   return {
     claude: { aliases: [...CLAUDE_ALIASES], versions: [...CLAUDE_VERSIONS], specializedAgents: agents, skills, args: [...agentArgs.claude] },
-    codex: { aliases: [], versions: codex, specializedAgents: agents, skills, args: [...agentArgs.codex] },
+    codex: { aliases: [], versions: [...codex], specializedAgents: agents, skills, args: [...agentArgs.codex] },
   };
 }
 
@@ -115,6 +85,7 @@ function askedWorkspace(req: Request, config: Pick<Config, 'comb'>): string | un
 /** GET /launch-options?workspace=<name> (#257, #316): that workspace's agents. No workspace, or one the config does not have, is a 400 (#317); a
  * plugin agent file that cannot be read, or a workspace with no rendered folder, answers 500 with its reason. */
 export function registerLaunchOptionsRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'exec' | 'log' | 'language' | 'plugin'>): void {
+  const codex = codexModelsCache(deps.exec, deps.log); // #694: one per server, read at boot, never on a request's path
   app.get('/launch-options', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
     if (!current) return;
@@ -126,7 +97,7 @@ export function registerLaunchOptionsRoute(app: Express, deps: Pick<TaskRouteDep
     }
     try {
       await deps.plugin.ready(); // a store change the dialog just made is listed
-      res.json(await launchOptions(deps.exec, deps.log, config.agentArgs, deps.plugin.dir(workspace)));
+      res.json(launchOptions(codex.list(), config.agentArgs, deps.plugin.dir(workspace)));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: pluginMessage(err, deps.language()) });
     }

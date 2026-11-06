@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import express from 'express';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from '../src/agents/claude-models.js';
 import { pluginSource } from '../src/hooks-settings.js';
-import { hasSkill, launchRun, parseCodexModels, pluginSkills, registerLaunchOptionsRoute, specializedAgents } from '../src/launch-options.js';
+import { hasSkill, launchRun, pluginSkills, registerLaunchOptionsRoute, specializedAgents } from '../src/launch-options.js';
 import { createPluginRender, pluginRenderPath, type PluginRender } from '../src/plugin-render.js';
 import type { TaskRouteDeps } from '../src/server-tasks.js';
 import { MESSAGES } from '../src/ui/i18n.js';
@@ -23,19 +23,6 @@ const CODEX_MODELS = JSON.stringify({ models: [
 ] });
 // git answers nothing; `codex debug models` answers `codex()`
 const withCodex = (codex: () => string): Exec => async (file) => ({ stdout: file === 'codex' ? codex() : '' });
-
-test('parseCodexModels lists visible slugs first, hidden after, display_name as the hint; an entry with no usable slug drops (#257)', () => {
-  const stdout = JSON.stringify({ models: [
-    { slug: 'gpt-old', display_name: 'GPT old', visibility: 'hide' },
-    { slug: 'gpt-5.6-terra', display_name: 'GPT-5.6 Terra', visibility: 'list' },
-    { slug: '-bad', visibility: 'list' },
-    { display_name: 'no slug' },
-    { slug: 'gpt-5.6-terra-mini', display_name: 'gpt-5.6-terra-mini', visibility: 'list' },
-  ] });
-  assert.deepEqual(parseCodexModels(stdout), [{ id: 'gpt-5.6-terra', hint: 'GPT-5.6 Terra' }, { id: 'gpt-5.6-terra-mini' }, { id: 'gpt-old', hint: 'GPT old' }]);
-  assert.deepEqual(parseCodexModels(JSON.stringify([{ slug: 'gpt-x' }])), [{ id: 'gpt-x' }], 'a bare list reads too');
-  assert.throws(() => parseCodexModels('not json'));
-});
 
 test('specializedAgents lists the Hive plugin\'s agents as hive:<name>, sorted by file, with the body Codex gets (#257, #416)', async (t) => {
   const agents = specializedAgents(await renderedPlugin(t));
@@ -70,6 +57,20 @@ test('a codex debug models that fails or prints no JSON gives Codex no models an
     assert.deepEqual(options.codex.versions, []);
     assert.deepEqual(options.claude.versions, [...CLAUDE_VERSIONS]);
   }
+});
+
+// #694: every call answers but `codex debug models`, which never settles
+const hangsOnModels: Exec = async (file, args) => (file === 'codex' && args[0] === 'debug' ? new Promise<never>(() => undefined) : { stdout: '' });
+
+test('GET /launch-options answers while codex debug models never settles: Claude\'s models, the agents and the skills, Codex with none yet (#694)', { timeout: 10_000 }, async (t) => {
+  const { base, home } = await startReviews(t, { exec: hangsOnModels });
+  const res = await send(base, 'GET', '/launch-options?workspace=hive');
+  assert.equal(res.status, 200);
+  const options = (await res.json()) as LaunchOptions;
+  assert.deepEqual([options.claude.aliases, options.claude.versions, options.codex.versions], [[...CLAUDE_ALIASES], [...CLAUDE_VERSIONS], []]);
+  const agents = specializedAgents(pluginRenderPath(home, 'hive')).map(({ name, description }) => ({ name, description }));
+  assert.deepEqual([options.claude.specializedAgents, options.codex.specializedAgents], [agents, agents]);
+  assert.ok(options.claude.skills.some((s) => s.name === 'new-plan'), '#710: the workspace\'s skills');
 });
 
 test('launchRun puts the config\'s args before the session\'s, the model, and the agent with its instructions; no picks adds only the config\'s (#257)', () => {

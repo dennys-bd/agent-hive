@@ -8,7 +8,7 @@ import { taskWorkspace, workspaceByName } from './config.js';
 import { FACTS_FILE, type FactLog } from './facts.js';
 import { generations, type Logger } from './log.js';
 import {
-  errorName, isMemoryRefusal, lessonRefusal, MEMORY_KIND_MESSAGE, MEMORY_TEXT_MESSAGE, memoryCounts, memoryView, type MemoryRefusal, type MemoryResult,
+  BODY_MESSAGE, DESCRIPTION_MESSAGE, errorName, isMemoryRefusal, lessonRefusal, MEMORY_KIND_MESSAGE, memoryCounts, memoryView, type MemoryRefusal, type MemoryResult,
   type MemoryStore, withEdit, withEntry, withoutEntry,
 } from './memory.js';
 import { memoryRecord, memoryStats, type MemoryRecord } from './memory-stats.js';
@@ -17,7 +17,7 @@ import type { Runtime } from './server.js';
 import { type Config, isMemoryKind, MEMORY_CAP_MAX, MEMORY_CAP_MIN, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryRefusalCode, type SettingsBody, type Workspace } from './types.js';
 
 // A workspace's memory on the server's side (#797): the protocol files on boot and on every Settings save, run.spawned's fields (Task 5) and
-// the memory dialog's routes (Task 7). Nothing of a lesson's text reaches a log line or a record.
+// the memory dialog's routes (Task 7). Nothing of a lesson's description or body reaches a log line or a record.
 
 /** Each workspace's protocol files from its stored memory (#797), before any run reads them. A file the Hive cannot read costs that workspace
  * its memory (the store still writes the bare protocol), logged, never the boot or the save. `off` comes from the config being activated, which
@@ -58,12 +58,14 @@ export interface MemoryRouteDeps {
   saveSettings(body: Partial<SettingsBody>, res: Response): Promise<void>;
 }
 
-// The body's lesson, trimmed, or why it is refused: a kind of MEMORY_KINDS, then the tool's own checks
-function lessonOf(body: unknown): { kind: MemoryKind; text: string } | MemoryRefusal {
-  const { kind, text } = (typeof body === 'object' && body !== null ? body : {}) as { kind?: unknown; text?: unknown };
+interface Lesson { kind: MemoryKind; description: string; body: string }
+// The request's lesson, trimmed, or why it is refused: a kind of MEMORY_KINDS, each field a string (its own message, #680), then the tool's own checks
+function lessonOf(request: unknown): Lesson | MemoryRefusal {
+  const { kind, description, body } = (typeof request === 'object' && request !== null ? request : {}) as { kind?: unknown; description?: unknown; body?: unknown };
   if (!isMemoryKind(kind)) return { code: 'bad_memory', message: MEMORY_KIND_MESSAGE };
-  if (typeof text !== 'string') return { code: 'bad_memory', message: MEMORY_TEXT_MESSAGE };
-  return lessonRefusal(text) ?? { kind, text: text.trim() };
+  if (typeof description !== 'string') return { code: 'bad_memory', message: DESCRIPTION_MESSAGE };
+  if (typeof body !== 'string') return { code: 'bad_memory', message: BODY_MESSAGE };
+  return lessonRefusal(description, body) ?? { kind, description: description.trim(), body: body.trim() };
 }
 
 // The code rides with the message: the dialog shows it in the user's language, the tool's message being English only
@@ -172,7 +174,7 @@ function registerWrites(app: Express, deps: MemoryRouteDeps): void {
     if (workspace === undefined) return;
     const lesson = lessonOf(req.body);
     if ('code' in lesson) return refused(res, lesson);
-    await write(deps, res, workspace, 'added', (file) => `m-${file.nextId}`, (file) => withEntry(file, lesson.kind, lesson.text, 'user', new Date().toISOString(), workspace.memoryCap));
+    await write(deps, res, workspace, 'added', (file) => `m-${file.nextId}`, (file) => withEntry(file, lesson.kind, lesson.description, lesson.body, 'user', new Date().toISOString(), workspace.memoryCap));
   });
   app.put('/workspaces/:name/memory/:id', async (req: Request, res: Response) => {
     const workspace = workspaceParam(deps, req, res);
@@ -180,7 +182,7 @@ function registerWrites(app: Express, deps: MemoryRouteDeps): void {
     const lesson = lessonOf(req.body);
     if ('code' in lesson) return refused(res, lesson);
     const id = String(req.params.id);
-    await write(deps, res, workspace, 'edited', () => id, (file) => withEdit(file, id, lesson.kind, lesson.text, new Date().toISOString(), workspace.memoryCap));
+    await write(deps, res, workspace, 'edited', () => id, (file) => withEdit(file, id, lesson.kind, lesson.description, lesson.body, new Date().toISOString(), workspace.memoryCap));
   });
   app.delete('/workspaces/:name/memory/:id', async (req: Request, res: Response) => {
     const workspace = workspaceParam(deps, req, res);

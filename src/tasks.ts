@@ -4,7 +4,7 @@ import { staleRead } from './column-write.js';
 import { parentOf } from './task-tree.js';
 import { outOfRead } from './out-of-listing.js';
 import { flatten, flowOf } from './flows.js';
-import { entryFor, placed, placesAgain } from './task-entry.js';
+import { autoFollowed, entryFor, placed, placesAgain } from './task-entry.js';
 import { hiveAction, holdsWorker, runsAgent } from './stage-agent.js';
 import type { Activity, Flow, SourceAction, SourceItem, SourceItemRead, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
 
@@ -238,7 +238,7 @@ export function seenAgain(task: Task, seen: SourceItem, flows: readonly Flow[], 
   if (staleRead(task, seen.column, now)) return { ...present, item: seen.item };
   const { columnWrite: _columnWrite, ...rest } = present;
   const refreshed: Task = { ...rest, item: seen.item, boardColumn: seen.column };
-  if (placesAgain(task, runs)) return placed(refreshed, entryFor(flows, seen)); // #670: a new task follows its entry until it starts or is placed by hand
+  if (placesAgain(task, runs)) return placed(autoFollowed(refreshed), entryFor(flows, seen)); // #670, #688: a new task follows its entry and its auto until it starts or is placed by hand
   const held = activityOf(runs, taskId(task)); // #755, #834: a stage action in flight holds its stage as a worker does
   const entry = inFlow(task) && seen.column !== task.boardColumn && held?.workerId === undefined && !inAction(held) ? entryStage(flatten(flows).stages, seen.item.source, seen.column) : undefined; // #670: a new task is placed by its source's entry instead (task-entry.ts)
   return entry && entry.name !== task.stage ? enter(refreshed, entry) : refreshed; // same stage through another door: the clock keeps running

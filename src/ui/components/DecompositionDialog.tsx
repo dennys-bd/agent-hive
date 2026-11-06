@@ -12,6 +12,9 @@ const MUTED = 'text-muted-foreground';
 interface Choice { source?: string; column?: string }
 const chosen = (source?: DecompositionSource): Choice => (source === undefined ? {} : { source: source.name, ...(source.column === undefined ? {} : { column: source.column }) });
 
+// #702: a transient failure has nothing useful in gh's words, so its own copy says a second press resumes; any other refusal keeps GitHub's words
+const writeError = (err: Error & { code?: unknown }): string => (err.code === 'transient' ? t('decomposition.transient') : err.message);
+
 // One picker (#865): a label over a select of `options`
 function Picker({ id, label, value, options, onChange }: { id: string; label: string; value?: string; options: string[]; onChange(value: string): void }) {
   return (
@@ -80,7 +83,7 @@ function Delivery({ preview }: { preview: DecompositionPreview }) {
 
 /** The decomposition's confirm (#865): what the tree writes, or its problems with their lines; the target repository; the GitHub source
  * (the first preselected) and the Status column (the first stage's, suggested). criar issues is disabled while there is a problem, no
- * repository or no choice. A failure stays here with GitHub's words, and a second press resumes the write. */
+ * repository or no choice. A failure stays here with GitHub's words (a transient one shows its own copy, #702), and a second press resumes the write. */
 export function DecompositionDialog({ activityId, onClose }: { activityId: string; onClose(): void }) {
   const path = `/activities/${encodeURIComponent(activityId)}/decomposition`;
   const [preview, setPreview] = useState<DecompositionPreview>();
@@ -95,7 +98,7 @@ export function DecompositionDialog({ activityId, onClose }: { activityId: strin
   const write = (): void => {
     setIsWriting(true);
     setError(undefined);
-    postJson(path, choice).then(() => onClose(), (err: Error) => setError(err.message)).finally(() => setIsWriting(false));
+    postJson(path, choice).then(() => onClose(), (err: Error) => setError(writeError(err))).finally(() => setIsWriting(false));
   };
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>

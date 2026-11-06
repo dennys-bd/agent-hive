@@ -31,3 +31,10 @@ export function placed(task: Task, entry: Stage | null | undefined): Task {
   if (entry === null) return inFlow(task) ? leave(task) : task;
   return entry.name === task.stage ? task : enter(task, entry);
 }
+
+/** A new task's auto follows its source's rule with its entry (#688): on when the item carries none, as a task is born. Once the user switched
+ * it (autoByHand, on or off) the rule never sets it again, so a hand's off is never turned back on. */
+export function autoFollowed(task: Task): Task {
+  const auto = task.item.autoOnEntry ?? true;
+  return task.autoByHand || task.auto === auto ? task : { ...task, auto };
+}

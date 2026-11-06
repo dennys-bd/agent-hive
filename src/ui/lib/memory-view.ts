@@ -1,5 +1,5 @@
 import { formatCount, t, tPlural } from '../i18n.js';
-import { MEMORY_REFUSALS, type MemoryEntry, type MemoryKind, type MemoryOrigin, type MemoryRefusalCode, type MemoryStats } from '../../types.js';
+import { MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_REFUSALS, type MemoryEntry, type MemoryKind, type MemoryOrigin, type MemoryRefusalCode, type MemoryStats } from '../../types.js';
 
 // How the memory section and dialog word a lesson and its numbers (#797). Pure, so the components stay layout.
 
@@ -10,7 +10,9 @@ const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
 export const kindLabel = (kind: MemoryKind): string => t(`settings.memory.kind.${kind}`);
-/** `{n} de {max} caracteres`: the memory's usage, and an editing row's live counter. */
+/** `{n} de {max} caracteres em descrições` (#680): what the cap counts, in the dialog's and the workspace card's usage. */
+export const usedText = (used: number, cap: number): string => t('settings.memory.usedDescriptions', { n: formatCount(used), max: formatCount(cap) });
+/** `{n} de {max} caracteres`: an editing row's live counter. */
 export const charactersText = (n: number, max: number): string => t('settings.memory.of', { n: formatCount(n), max: formatCount(max) });
 
 /** `{n} lições · {m} vindas de tarefas` (#797). */
@@ -30,10 +32,20 @@ function originText(origin: MemoryOrigin): string[] {
   return [t('settings.memory.task', { id: origin.task }), ...(origin.stage === undefined ? [] : [origin.stage])];
 }
 
-/** A lesson's meta line before its citations (#797): where it came from, its date and its size. */
+/** Where a lesson came from and its date (#680): the editing row's header; the meta line adds the sizes. */
+export const originDateText = (entry: MemoryEntry): string => [...originText(entry.origin), entry.at.slice(0, 10)].join(' · ');
+
+/** A lesson's meta line before its citations (#797, #680): where it came from, its date and both sizes. */
 export function metaText(entry: MemoryEntry): string {
-  return [...originText(entry.origin), entry.at.slice(0, 10), t('settings.memory.characters', { n: formatCount(entry.text.length) })].join(' · ');
+  const sizes = t('settings.memory.sizes', { d: formatCount(entry.description.length), b: formatCount(entry.body.length) });
+  return [originDateText(entry), sizes].join(' · ');
 }
+
+const between = (length: number, max: number): boolean => length >= 1 && length <= max;
+/** Whether an editing row may save (#680): both fields, trimmed as the server stores them, hold something and neither is past its limit;
+ * the server checks the rest. */
+export const canSaveLesson = (description: string, body: string): boolean =>
+  between(description.trim().length, MEMORY_DESCRIPTION_MAX) && between(body.trim().length, MEMORY_BODY_MAX);
 
 /** `citada {n} vezes` (#797): a floor, an agent may forget to cite. */
 export const citedText = (uses: number): string => tPlural('settings.memory.citedTimes', uses, { n: uses });

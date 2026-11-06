@@ -10,7 +10,7 @@ import { activityOf, fakeHive, withSessions } from './diff-harness';
 // The natural viewport and the opt-in switch (#341)
 const CANVAS_PX = 672; // the fit is (672 − 32) / the frame's width
 const frame = (): HTMLElement => screen.getByTitle(FRAME_NAME);
-const percent = (): string => screen.getByTitle('⌘0 ajusta à tela').textContent ?? '';
+const percent = (): string => screen.getByTitle('Ctrl+0 ajusta à tela').textContent ?? '';
 const size = (natural: unknown, extra: Record<string, unknown> = {}): void => fromBridge({ type: 'size', height: 600, natural, ...extra });
 const declare = (schema: Record<string, unknown>): void => fromBridge({ type: 'tweaks', schema });
 // The switch's items, none while it is not rendered

@@ -66,11 +66,11 @@ test('a next stage that starts a new session spawns with the flow\'s agent and n
   assert.deepEqual([spawn?.worker.agent, 'launch' in (spawn?.worker ?? {})], ['claude', false]);
 });
 
-test('a next stage that continues the session goes on in place, as every run does: the same process, its picks with it (#290)', () => {
+test('a next stage that continues the session leaves the pick behind: its own model differs, so the session is relaunched with no launch (#290, #692)', () => {
   const ended = stageEnd(start(queued([STAGES[0], { ...STAGES[1], session: 'continue' }]), { launch: { model: 'sonnet' } }).state);
-  assert.ok(ended.effects.some((e) => e.type === 'continue'));
-  assert.equal(spawnOf(ended.effects), undefined);
-  assert.deepEqual(ended.state.workers.find((w) => w.status !== 'empty')?.launch, { model: 'sonnet' });
+  const spawn = spawnOf(ended.effects);
+  assert.equal(ended.effects.some((e) => e.type === 'continue'), false);
+  assert.deepEqual([spawn?.stage.name, spawn?.session, 'launch' in (spawn?.worker ?? {})], ['Review', 'continue', false]);
 });
 
 test('a start never writes picks next to a handover: the handover decides the session and the prompt (#290, #134)', () => {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { entryFor, placed, placesAgain } from '../src/task-entry.js';
+import { autoFollowed, entryFor, placed, placesAgain } from '../src/task-entry.js';
 import { initialState } from '../src/orchestrator.js';
 import type { Flow, Item, SourceItem, Stage, Task, TaskEntry } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
@@ -52,3 +52,11 @@ test('placed: another stage enters it, null takes it out of the flow, undefined 
   assert.equal(placed(outside, spec).stage, 'Spec', 'a new task outside the flow enters when its entry names a flow again');
 });
 
+test('autoFollowed: a new task takes its item\'s autoOnEntry, on when the item carries none, and keeps its auto once switched by hand (#688)', () => {
+  const ruledOff: Task = { ...TASK, item: { ...TASK.item, autoOnEntry: false } };
+  assert.equal(autoFollowed(ruledOff).auto, false, 'the rule turns it off');
+  assert.equal(autoFollowed({ ...TASK, auto: false }).auto, true, 'no autoOnEntry: on, as a task is born');
+  assert.equal(autoFollowed(TASK), TASK, 'nothing to change: the same object');
+  const byHand: Task = { ...ruledOff, auto: true, autoByHand: true };
+  assert.equal(autoFollowed(byHand), byHand, 'switched by hand: the rule never sets it again');
+});

@@ -332,6 +332,7 @@ test('saving the settings starts one worker with the launch: mode, cwd, port, ho
 test('a spawn creates the task worktree before the worker exists and launches it there: the runner only ever gets a cwd', async (t) => {
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
+    if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
     calls.push([file, ...args]);
     if (args.includes('rev-parse')) throw new Error('not a ref'); // the branch does not exist yet: the add creates it
     return { stdout: '' };
@@ -1230,6 +1231,7 @@ test('the deleteActivity effect runs git inside the batch: deleteActivityFailed 
   const listings: string[][] = [];
   let refuse = true; // the listing itself is refused: the first git call, so the failure carries its stderr and nothing else runs
   const exec: Exec = async (file, args) => {
+    if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
     listings.push([file, ...args]);
     if (refuse) throw Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { stderr: `${message}\n` });
     return { stdout: '' }; // nothing listed, no branch on the task: nothing to remove, the delete activity is done
@@ -1386,6 +1388,7 @@ test('the first spawn refreshes the base and creates the worktree through deps.e
   const calls: string[][] = [];
   const spawned: number[] = []; // how many workers had started when each git command ran
   const exec: Exec = async (file, args) => {
+    if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
     calls.push([file, ...args]);
     spawned.push(workers.length);
     return { stdout: '' }; // nothing resolves origin/main here: the start falls back to the local base
@@ -1421,6 +1424,7 @@ test('a worktree git already lists on the task\'s branch is adopted: no fetch, n
   const listing = `worktree ${repo}\nHEAD 1111\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD 2222\nbranch refs/heads/hive/1-from-ready\n`;
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
+    if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
     calls.push([file, ...args]);
     return { stdout: args.includes('list') ? listing : '' };
   };

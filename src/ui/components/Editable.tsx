@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
+import { isMac } from '@/lib/shortcut-bindings';
 
 const MUTED = 'text-muted-foreground';
 const HTTP_CONFLICT = 409;
@@ -34,9 +35,9 @@ export interface EditableOptions { label: string; value: string; updatedAt: stri
  * description panel puts `edit` in its header and the form in its body. */
 export interface EditableState { isEditing: boolean; edit(): void; form: ReactNode }
 
-// ⌘↵ saves, Esc cancels
+// ⌘↵ (Ctrl+↵ off macOS) saves, Esc cancels
 const formKeys = (save: () => void, close: () => void) => (e: KeyboardEvent<HTMLTextAreaElement>): void => {
-  if (e.key === 'Enter' && e.metaKey) {
+  if (e.key === 'Enter' && (isMac() ? e.metaKey : e.ctrlKey)) {
     e.preventDefault();
     save();
   } else if (e.key === 'Escape') {

@@ -1,6 +1,7 @@
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
 import { type ReactNode, useContext, useState } from 'react';
 import { agentName, isAvailable, knownAgent } from '../../agents';
+import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from '../../agents/claude-models';
 import { isLaunchModel } from '../../launch-pick';
 import { AGENT_IDS, type AgentAvailability, type AgentId, type AgentLaunchOptions, type LaunchOption } from '../../types';
 import { AGENT_COLOR, AgentIcon } from '@/components/SessionLabel';
@@ -77,8 +78,10 @@ export function ModelMenu({ id, label, agent, options, value, disabled = false, 
   const name = agentName(agent);
   const empty = emptyModel(name, defaultLabel, useContext(AgentModelsContext)[agent] ?? undefined);
   const typed = search.trim();
-  const aliases = options?.aliases ?? [];
-  const versions = options?.versions ?? [];
+  // #694: Claude's lists are the page's own while the answer is on its way (the server sends the same ones); Codex's come only from the server
+  const isClaude = agent === 'claude';
+  const aliases = options?.aliases ?? (isClaude ? CLAUDE_ALIASES : []);
+  const versions = options?.versions ?? (isClaude ? CLAUDE_VERSIONS : []);
   const isListed = [...aliases, ...versions].some((m) => m.id === typed);
   const item = (option: LaunchOption) => (
     <CommandItem key={option.id} value={option.id} onSelect={() => pick(option.id)}><Row id={option.id} hint={hintOf(option)} isPicked={option.id === value} /></CommandItem>

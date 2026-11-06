@@ -1,5 +1,6 @@
 // The tree of one list of rows (#584, #585): a row nests under its parent when the parent is in the same list, any depth; every other row is
-// a root. One pure helper for the source table and the repository issue list, generic over the row.
+// a root. One pure helper for the source table and the repository issue list, generic over the row. The source table's groups read the same
+// links (rootsIn, #696): a sub-issue sits in the group of its topmost ancestor.
 import { flowOf } from '../../flows.js';
 import type { Flow, ProjectItem, ProjectView } from '../../types.js';
 
@@ -36,6 +37,18 @@ function parentsIn<T extends Parented>(items: readonly T[], keys: TreeKeys<T>): 
     return false;
   };
   return new Map([...links].filter(([id]) => !inCycle(id)));
+}
+
+/** Each row's topmost ancestor in the list, by id (#696): a root maps to itself; a row whose parent is not in the list is its own root. */
+export function rootsIn<T extends Parented>(items: readonly T[], keys: TreeKeys<T>): ReadonlyMap<string, string> {
+  const parents = parentsIn(items, keys);
+  // parentsIn drops cycles, so every chain ends
+  const rootOf = (id: string): string => {
+    let at = id;
+    for (let up = parents.get(at); up !== undefined; up = parents.get(at)) at = up;
+    return at;
+  };
+  return new Map(items.map((i) => [keys.idOf(i), rootOf(keys.idOf(i))]));
 }
 
 /** The visible lines of one list (#584 decisions 1, 3, 5, 6): each child right after its parent, after its earlier siblings' subtrees,
