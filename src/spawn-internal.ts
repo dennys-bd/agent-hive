@@ -18,7 +18,7 @@ function removeTmp(dir: string, onError: PtyHandlers['onError']): void {
   rm(dir, { recursive: true, force: true, maxRetries: TMP_RM_RETRIES, retryDelay: TMP_RM_RETRY_MS }).catch((err: unknown) => onError(`tmp: ${errorMessage(err)}`));
 }
 
-// The run in the host through `sh -c ptyCommand`, with `tmp` as its TMPDIR. A failure is `started` rejecting: the pool reports it as
+// The run in the host through `sh -c ptyCommand`, with `tmp` as its TMPDIR (and TEMP / TMP on win32, #644). A failure is `started` rejecting: the pool reports it as
 // spawnFailed, and there is no exit to report. A dir that cannot be made fails the run too, since on the shared temp dir it would leak
 // again (#428); a pty that cannot spawn drops the dir made for it. Two tries, so a dir never made is never removed.
 function startIn(options: SpawnOptions | undefined, launch: PtyLaunch, tmp: string, onExit: () => void, dropTmp: () => void): Promise<void> {
@@ -33,7 +33,7 @@ function startIn(options: SpawnOptions | undefined, launch: PtyLaunch, tmp: stri
     // the secret's file path rides the env, never the value: sh -c's argv and curl's are visible to every account through ps (#467). An
     // agent's run keeps its transcript past its exit for its sleeping tab (#672); a kept terminal's goes to its log (#696), a command's with it
     // #631: on win32 MSYS must not rewrite the trailer's /hooks/exit; a terminal's own env still wins (#696)
-    const env = { ...ptyEnv(process.env, launch.ptyId, launch.port, tmp, secretFile), ...posixShellEnv(process.platform), ...launch.env };
+    const env = { ...ptyEnv(process.env, launch.ptyId, launch.port, tmp, secretFile, process.platform), ...posixShellEnv(process.platform), ...launch.env };
     ptys.spawn(launch.ptyId, [posixShell().shell, '-c', ptyCommand(launch)], launch.cwd, env, launch.terminal === undefined ? {} : launch.keep, launch.size); // #808: the page's grid
   } catch (err) {
     dropTmp();
