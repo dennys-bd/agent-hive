@@ -2,7 +2,6 @@
 // answered or a file opened, so a slow checker never holds the save, nor a fast one waits for it. A path resolves inside the activity's folder
 // only: a report about a file the pane cannot place is no use.
 import { realpath } from 'node:fs/promises';
-import { sep } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
 import { type CheckRuns, createCheckRuns, runCheck } from './check-run.js';
@@ -11,6 +10,7 @@ import { findCandidate } from './formatter-detect.js';
 import { otherExtensions } from './formatters.js';
 import { languageOf } from './languages.js';
 import { locate } from './server-editor.js';
+import { samePath } from './same-path.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
 import { withoutHiveEnv } from './spawn.js';
 import type { CheckAnswer, CheckerState, Workspace } from './types.js';
@@ -35,7 +35,11 @@ async function place(current: Live, id: string, path: unknown): Promise<Placed |
   if ('status' in located) return located;
   if (located.workspace === undefined) return { status: HTTP_CONFLICT, message: NO_WORKSPACE_MESSAGE };
   const folder = await realpath(located.folder); // a tool reports real paths
-  if (!located.file.startsWith(`${folder}${sep}`)) return { status: HTTP_BAD_REQUEST, message: OUTSIDE_MESSAGE };
+  // #640: the prefix through samePath, for a drive letter in another case on win32; the separator after it keeps a sibling (`<folder>2`) out
+  const platform = process.platform;
+  const next = located.file.charAt(folder.length);
+  const isSeparator = next === '/' || (platform === 'win32' && next === '\\');
+  if (!isSeparator || !samePath(located.file.slice(0, folder.length), folder, platform)) return { status: HTTP_BAD_REQUEST, message: OUTSIDE_MESSAGE };
   return { folder, file: located.file, path: located.file.slice(folder.length + 1), workspace: located.workspace, label: located.label };
 }
 
