@@ -1,7 +1,7 @@
 // The language servers for the workers (#803): the servers the Hive installs for the editor pane (#780), handed to every agent run through a
 // plugin per workspace, <home>/lsp/<workspace>/, in which each runner writes its own files (#924: Claude's LSP tool reads its .lsp.json at
 // launch). Each worker starts its own processes; nothing is shared with the LSP host.
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
@@ -9,6 +9,7 @@ import { editorDir, readInstalled } from './editor-install.js';
 import { findOnPath } from './formatter-detect.js';
 import { type Arch, inScope, LANGUAGES, type Launch, lspLanguageId, runtimeTools, type ServerDef, serverDef, serverFor } from './languages.js';
 import type { Logger } from './log.js';
+import { replaceFile } from './replace-file.js';
 import { AGENT_IDS, type Config, type EditorInstallEvent, type State, type Worker, type Workspace } from './types.js';
 import { runners } from './agents/registry.js';
 import type { LspServerEntry } from './agents/runner.js';
@@ -128,7 +129,7 @@ export interface WorkerLsp {
 async function put(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: DIR_MODE });
   await writeFile(`${path}.tmp`, content);
-  await rename(`${path}.tmp`, path);
+  await replaceFile(`${path}.tmp`, path);
 }
 
 // The class only: an fs error's message holds the home's path

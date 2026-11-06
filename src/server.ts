@@ -1,4 +1,4 @@
-import { access, rename, writeFile } from 'node:fs/promises';
+import { access, writeFile } from 'node:fs/promises';
 import type { Server as HttpServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,7 @@ import { registerRunMode, type RunMode, viewerInput } from './benchmark/run-mode
 import { experimentFolder } from './benchmark/store.js';
 import { renderSource } from './benchmark/run-home.js';
 import { createBenchRunner } from './benchmark/runner.js';
+import { replaceFile } from './replace-file.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
 import { createExec } from './exec-path.js';
@@ -912,7 +913,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const path = join(home, CONFIG_FILE);
     const tmp = `${path}.tmp`;
     await writeFile(tmp, `${JSON.stringify(config, null, 2)}\n`);
-    await rename(tmp, path);
+    await replaceFile(tmp, path);
   }
 
   function requireLive(res: Response): Live | undefined {
