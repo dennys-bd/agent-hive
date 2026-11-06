@@ -4,6 +4,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pluginSource } from '../src/hooks-settings.js';
 import { parseTemplate, renderTemplate } from '../src/template.js';
+import { LAYOUT_PRESETS } from '../src/ui/lib/drawio-file.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
@@ -92,7 +93,7 @@ test('the plugin ships the manifest, the five skills, the twelve agents and the 
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
   assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'scripts', 'skills']);
-  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'decomposition.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html'], 'reference/ holds the conventions every new-* skill reads first, the decomposition file the skill writes and its reviewer reads, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares');
+  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'decomposition.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html', 'system-design.md'], 'reference/ holds the conventions every new-* skill reads first, the decomposition file the skill writes and its reviewer reads, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares, the system design subset the system designer and its reviewer read');
   assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs', 'import-dc.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => agentPath(a).slice('agents/'.length)));
@@ -134,7 +135,7 @@ test('every shipped skill and agent credits its origins in basedOn, each a file 
 });
 
 test('the plugin depends on no other plugin: no ecc: or superpowers: reference anywhere it delivers', async () => {
-  const others = ['CREDITS.md', 'reference/conventions.md', 'reference/decomposition.md', 'reference/design.md', 'reference/skeleton.hv.html', 'scripts/check-hv.mjs', 'scripts/import-dc.mjs'];
+  const others = ['CREDITS.md', 'reference/conventions.md', 'reference/decomposition.md', 'reference/design.md', 'reference/skeleton.hv.html', 'reference/system-design.md', 'scripts/check-hv.mjs', 'scripts/import-dc.mjs'];
   const items = [...SKILLS.map((s) => `skills/${s}/SKILL.md.liquid`), ...AGENTS.map(agentPath)];
   for (const [file, isItem] of [...others.map((f): [string, boolean] => [f, false]), ...items.map((f): [string, boolean] => [f, true])]) {
     const raw = await readFile(join(PLUGIN, file), 'utf8');
@@ -401,7 +402,7 @@ test('hive:design-reviewer reports and never edits: its tools hold no Write or E
 
 test('every section the design agents and the decomposition reviewer quote by name is a heading of a reference or of the agent itself', async () => {
   const headings = new Set<string>();
-  for (const file of ['design.md', 'conventions.md', 'decomposition.md']) {
+  for (const file of ['design.md', 'conventions.md', 'decomposition.md', 'system-design.md']) {
     const text = await readFile(join(PLUGIN, 'reference', file), 'utf8');
     for (const [, heading] of text.matchAll(/^#{2,3} (.+)$/gm)) headings.add(heading.trim());
   }
@@ -475,4 +476,21 @@ test('/hive:new-pr opens each nested repo\'s PR on that repository: every gh cal
   const reference = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
   assert.ok(reference.includes('## Nested repo PRs'), 'the rule sits next to Docs PR');
   assert.match(reference, /whose `path` is the `docsRepo` path is skipped/);
+});
+
+// #957: the shapes of the subset both system design agents copy, one style string each; message and reply are sequence edges
+const SYSTEM_DESIGN_SHAPES = ['component', 'container', 'database', 'queue', 'actor', 'terminal', 'decision', 'lifeline', 'message', 'reply', 'class', 'member', 'use case'];
+
+test('reference/system-design.md holds the .drawio subset: the six presets, the Mermaid form, one style per shape, plain Markdown under 400 lines (#957)', async () => {
+  const text = await readFile(join(PLUGIN, 'reference', 'system-design.md'), 'utf8');
+  for (const preset of LAYOUT_PRESETS) assert.ok(text.includes(`\`${preset}\``), `the reference names the preset ${preset} the pane accepts`);
+  assert.ok(text.includes('<hive-mermaid>'), 'the Mermaid form of a pending diagram');
+  for (const shape of SYSTEM_DESIGN_SHAPES) assert.match(text, new RegExp(`^\\| ${shape} \\| \`[^\`]+;\` \\|`, 'm'), `${shape} has no style row`);
+  assert.ok(text.includes('| container | `swimlane;container=1;` |'), 'the container style the spike laid out two levels deep');
+  // an example drifting from the table would teach a style the check then refuses
+  const styles = new Set([...text.matchAll(/^\| [a-z ]+ \| `([^`]+)` \|/gm)].map(([, style]) => style));
+  for (const [, style] of text.matchAll(/style="([^"]+)"/g)) assert.ok(styles.has(style), `the example's style ${style} is no row of the tables`);
+  for (const heading of ['## Diagram kinds', '## The pending marker', '## Shapes', '## Editing a laid-out diagram', '## Editing a pending diagram', '## The check']) assert.ok(text.includes(heading), heading);
+  assert.doesNotMatch(text, /\{\{|\{%/, 'the reference is plain Markdown: a .md never renders');
+  assert.ok(text.split('\n').length < 400, 'under 400 lines');
 });
