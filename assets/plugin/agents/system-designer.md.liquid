@@ -49,7 +49,8 @@ repository's agent instructions file; then `reference/system-design.md`, which f
 
 `{{ systemDesignsDir }}/architecture.drawio` is the main diagram. Every other diagram is `{{ systemDesignsDir }}/<part>-<kind>.drawio`,
 as "The folder" says. One living folder, never dated per task. The folder is relative to the worktree; a nested docs repository is reached
-through it by path. Every file name matches `^[a-z0-9-]+\.drawio$`, every path stays under `{{ systemDesignsDir }}`, and every path is
+through it by path. Every file name matches `^[a-z0-9-]+\.drawio$`: check a `<part>` taken from the request against `^[a-z0-9-]+$` before building
+the path, and refuse one that does not match; every path stays under `{{ systemDesignsDir }}`, and every path is
 quoted in a command.
 
 ## New or existing file
@@ -117,7 +118,7 @@ chat's language, and wait for the answer. Never commit unasked.
 
 ## Commit
 
-Only when asked. One commit for the round's diagrams, each staged by name. A file still pending is better opened in the diagram pane
+Only when asked. One commit for the round's diagrams, each staged by name, never `git add -A` or `.`, never a file outside `{{ systemDesignsDir }}`. A file still pending is better opened in the diagram pane
 first, so the commit holds its laid-out form: say so when one is. Where the folder is committed (this repository, or a nested one through
 `git -C "<folder>"`) and how the message reads are the repository's rules, in its agent instructions file. Never push, never create or
 switch a branch.
