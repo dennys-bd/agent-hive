@@ -16,7 +16,7 @@ vi.mock('@/hooks/use-tree-lease', () => ({ useTreeLease: () => undefined })); //
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const target: TaskActivity = { kind: 'task', ...taskPairOf('I1', { slug: 'hive-1-task-1', branch: 'hive/1-task-1' }), task, runs: [], sessions: [], status: 'empty', worker: false };
 const local: LocalActivity = { kind: 'local', ...localPairOf('hive'), workspace: 'hive', runs: [], sessions: [], kept: [] };
-const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'README.md', 'Landing.hv.html'], marks: {}, folders: [], ignored: { files: [], folders: [] } };
+const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'README.md', 'Landing.hv.html', 'arch.drawio'], marks: {}, folders: [], ignored: { files: [], folders: [] } };
 const TASK_TREE: TaskTree = { ...TREE, checkout: '.hive/worktrees/hive-1-task-1' }; // #131: a local activity's tree has none
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
@@ -139,4 +139,12 @@ test('a Hive design\'s menu starts with abrir no painel do editor, which opens i
   expect(await menuOf(user, await screen.findByRole('button', { name: 'Landing.hv.html' }))).toEqual(['abrir no painel do editor', ...FILE_ITEMS]);
   await user.click(screen.getByRole('menuitem', { name: 'abrir no painel do editor' }));
   expect(openFile).toHaveBeenCalledWith('I1', 'Landing.hv.html', undefined, { editor: true });
+});
+
+test('a diagram\'s menu starts with abrir no painel do editor too, which opens its XML in the editor pane (#956)', async () => {
+  const user = userEvent.setup();
+  render(side());
+  expect(await menuOf(user, await screen.findByRole('button', { name: 'arch.drawio' }))).toEqual(['abrir no painel do editor', ...FILE_ITEMS]);
+  await user.click(screen.getByRole('menuitem', { name: 'abrir no painel do editor' }));
+  expect(openFile).toHaveBeenCalledWith('I1', 'arch.drawio', undefined, { editor: true });
 });

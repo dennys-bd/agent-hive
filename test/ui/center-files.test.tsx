@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { bufferPath, renameTabs, storableLayouts } from '@/lib/center-files';
-import type { CenterLayout } from '@/lib/center-layout';
+import { type CenterLayout, type CenterTabRef, groupsOf, initialLayout, openRef, readCenterLayouts, refKey, writeCenterLayouts } from '@/lib/center-layout';
+import { resetViewState, writeView } from '@/lib/view-state';
 
 const layoutOf = (root: CenterLayout['root']): CenterLayout => ({ root, focused: 'g1' });
 
@@ -26,4 +27,23 @@ test('a design tab follows a rename of its file or its folder, as the other file
     kind: 'group', id: 'g1', active: 0, tabs: [{ kind: 'design', path: 'mockups/Landing.hv.html' }, { kind: 'design', path: 'other/A.hv.html' }],
   });
   expect(bufferPath({ kind: 'design', path: 'design/Landing.hv.html' })).toBeUndefined();
+});
+
+const keysOf = (layout: CenterLayout): string[][] => groupsOf(layout.root).map((group) => group.tabs.map(refKey));
+
+test('a diagram tab is keyed diagram:<path> beside its editor tab, opens once and round-trips; a stored one with a .. path drops its layout (#956)', () => {
+  resetViewState({});
+  const diagram: CenterTabRef = { kind: 'diagram', path: 'docs/arch.drawio' };
+  const opened = openRef(openRef(initialLayout({ kind: 'file', path: 'docs/arch.drawio' }), diagram), diagram);
+  expect(keysOf(opened)).toEqual([['file:docs/arch.drawio', 'diagram:docs/arch.drawio']]);
+  writeCenterLayouts({ I1: opened });
+  expect(readCenterLayouts()).toEqual({ I1: opened });
+  writeView('centerLayouts', { I1: initialLayout({ kind: 'diagram', path: '../x.drawio' }) });
+  expect(readCenterLayouts()).toEqual({});
+});
+
+test('a diagram tab follows a rename of its folder and holds no buffer (#956)', () => {
+  const layout = layoutOf({ kind: 'group', id: 'g1', active: 0, tabs: [{ kind: 'diagram', path: 'docs/arch.drawio' }] });
+  expect(renameTabs(layout, 'docs', 'design').root).toEqual({ kind: 'group', id: 'g1', active: 0, tabs: [{ kind: 'diagram', path: 'design/arch.drawio' }] });
+  expect(bufferPath({ kind: 'diagram', path: 'docs/arch.drawio' })).toBeUndefined();
 });

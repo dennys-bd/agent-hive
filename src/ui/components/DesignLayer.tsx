@@ -1,11 +1,12 @@
 import { createContext, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction, useContext, useId, useLayoutEffect, useRef, useState } from 'react';
 import { DesignPane } from '@/components/DesignPane';
+import { DiagramPane } from '@/components/DiagramPane';
 import { t } from '@/i18n';
 import { type Activity, activityKey, activityTitle } from '@/lib/activities';
 import { type CenterLayout, groupsOf } from '@/lib/center-layout';
 import { baseName } from '../../base-name';
 
-// The design layer (#533): every open design tab's pane lives here, outside ActivityCenter's tree, so a view or activity switch never
+// The design layer (#533, #956): every open design or diagram tab's pane lives here, outside ActivityCenter's tree, so a view or activity switch never
 // unmounts its frame (an iframe reloads whenever it leaves the DOM). The tab renders an empty slot and the pane is laid over it by CSS anchor
 // positioning while the slot is rendered; with no slot it stays loaded, hidden at its last size.
 
@@ -72,7 +73,7 @@ export function DesignSlot({ slotKey, groupId, onFocus }: DesignSlotProps) {
   return <div ref={element} data-design-slot={slotKey} style={{ anchorName: anchor }} className="min-h-0 min-w-0 flex-1" />;
 }
 
-interface OpenDesign { key: string; activity: Activity; path: string }
+interface OpenDesign { key: string; activity: Activity; path: string; kind: 'design' | 'diagram' }
 
 // Every design tab of every listed activity's stored layout: a pane lives as long as its tab, and goes with its activity (#533 decision 4).
 // Sorted by key, never in the tabs' order: React moves a keyed node whose place changes, and a moved iframe reloads. In key order a pane
@@ -81,7 +82,7 @@ function openDesigns(activities: readonly Activity[], layouts: Readonly<Record<s
   return activities.flatMap((activity) => {
     const layout = layouts[activityKey(activity)];
     const tabs = layout === undefined ? [] : groupsOf(layout.root).flatMap((group) => group.tabs);
-    return tabs.flatMap((tab) => (tab.kind === 'design' ? [{ key: designKey(activity, tab.path), activity, path: tab.path }] : []));
+    return tabs.flatMap((tab) => (tab.kind === 'design' || tab.kind === 'diagram' ? [{ key: designKey(activity, tab.path), activity, path: tab.path, kind: tab.kind }] : []));
   }).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)); // a total order (localeCompare may tie distinct keys); flatMap's own new array
 }
 
@@ -89,6 +90,15 @@ const anchored = (anchor: string): CSSProperties =>
   ({ positionAnchor: anchor, top: 'anchor(top)', left: 'anchor(left)', width: 'anchor-size(width)', height: 'anchor-size(height)' });
 // Hidden, not display: none (decision 6): at its last size, or the center column's until it was first shown
 const parkedStyle = (size: Size | undefined): CSSProperties => ({ visibility: 'hidden', pointerEvents: 'none', top: 0, left: 0, ...(size ?? { right: 0, bottom: 0 }) });
+
+// A design's pane or a diagram's (#956): both are frames that must never leave the DOM, so both live here under the same key
+function paneOf({ activity, path, kind }: OpenDesign, active: boolean) {
+  const name = baseName(path);
+  const label = activityTitle(activity);
+  return kind === 'diagram'
+    ? <DiagramPane activity={activity} path={path} label={t('diagram.tab', { label, name })} active={active} />
+    : <DesignPane activity={activity} path={path} label={t('design.tab', { label, name })} active={active} />;
+}
 
 export interface DesignLayerProps { activities: readonly Activity[]; layouts: Readonly<Record<string, CenterLayout>> }
 
@@ -98,7 +108,8 @@ export function DesignLayer({ activities, layouts }: DesignLayerProps) {
   const { slots, sizes } = useContext(RegistryContext);
   return (
     <>
-      {openDesigns(activities, layouts).map(({ key, activity, path }) => {
+      {openDesigns(activities, layouts).map((open) => {
+        const { key } = open;
         const slot = slots[key];
         // #533 decision 8: closeKeyGroup (⌘W) reads [data-center-group] from the focus, and a pointer down focuses the group, as CenterGroup's
         // own capture handler does; the pane no longer sits inside its group's section. The drag ignores it: it measures under [data-center-root]
@@ -106,7 +117,7 @@ export function DesignLayer({ activities, layouts }: DesignLayerProps) {
           <div
             key={key} data-design-layer={key} data-center-group={slot?.groupId} onPointerDownCapture={slot?.focus} inert={slot === undefined} style={slot === undefined ? parkedStyle(sizes[key]) : anchored(slot.anchor)} className="absolute z-10 flex"
           >
-            <DesignPane activity={activity} path={path} label={t('design.tab', { label: activityTitle(activity), name: baseName(path) })} active={slot !== undefined} />
+            {paneOf(open, slot !== undefined)}
           </div>
         );
       })}

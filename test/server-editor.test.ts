@@ -234,6 +234,19 @@ test('PUT with format and a workspace that formats on save writes the formatter\
   assert.deepEqual(await sent.json(), { version: sha('as typed\n') });
 });
 
+test('a .drawio save writes draw.io\'s XML as sent with format on, whatever formatter covers it, and answers no text; a .md beside it is still formatted (#956)', async (t) => {
+  const upperDrawio: CustomFormatter = { ...UPPER, name: 'upper-drawio', extensions: ['.drawio'] };
+  const e = await startEditor(t, { editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: { markdown: { custom: [UPPER] }, other: { custom: [upperDrawio] } } } });
+  const file = join(e.worktree, 'docs', 'Arch.DRAWIO');
+  await writeFile(file, '<mxfile/>');
+  const xml = '<mxfile><diagram id="d">laid out</diagram></mxfile>';
+  const res = await put(e, { path: 'docs/Arch.DRAWIO', text: xml, version: sha('<mxfile/>'), format: true });
+  assert.deepEqual(await res.json(), { version: sha(xml) });
+  assert.equal(await readFile(file, 'utf8'), xml);
+  const md = await put(e, { path: 'docs/spec.md', text: '# spec\nedited\n', version: sha(SPEC), format: true });
+  assert.deepEqual(await md.json(), { version: sha('# SPEC\nEDITED\n'), text: '# SPEC\nEDITED\n' });
+});
+
 test('a failed format writes the text as sent and answers formatError with its console run, which holds the header, the stderr and the reason (#749)', async (t) => {
   const e = await startEditor(t, { editor: formats([BROKEN]) });
   const answer = (await (await put(e, { path: 'docs/spec.md', text: 'mine\n', version: sha(SPEC), format: true })).json()) as FileSaved;

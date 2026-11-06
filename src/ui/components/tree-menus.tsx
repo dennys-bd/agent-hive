@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Confirm } from '@/components/Confirm';
 import { FixedKeyHint, KeyHint } from '@/components/KeyHint';
 import { focusName } from '@/components/tree-name-input';
-import { isHiveDesign } from '@/components/terminal-tabs';
+import { isDrawioDiagram, isHiveDesign } from '@/components/terminal-tabs';
 import type { TreeActions } from '@/components/tree-ops';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { t } from '@/i18n';
@@ -80,7 +80,7 @@ export function FileMenu({ actions, path, selected, children }: MenuProps) {
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-64" onCloseAutoFocus={keepInputFocus}>
-        {isHiveDesign(path) && <ContextMenuItem onSelect={() => actions.openInEditor(path)}>{t('files.openInEditor')}</ContextMenuItem>}
+        {(isHiveDesign(path) || isDrawioDiagram(path)) && <ContextMenuItem onSelect={() => actions.openInEditor(path)}>{t('files.openInEditor')}</ContextMenuItem>}
         <ContextMenuItem onSelect={() => actions.openChanges(path)}>{t('files.openChanges')}</ContextMenuItem>
         <PlaceItems actions={actions} folder={folder} path={path} />
         <ContextMenuSeparator />

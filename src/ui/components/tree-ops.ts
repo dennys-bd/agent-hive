@@ -26,7 +26,7 @@ export interface TreeActions {
   reveal(path: string): void; // '' = the root
   openTerminal(folder: string): void; // '' = the root
   openChanges(path: string): void;
-  openInEditor(path: string): void; // #109: a Hive design's text, in the editor pane
+  openInEditor(path: string): void; // #109, #956: a Hive design's or a diagram's text, in the editor pane
 }
 
 const route = (activityId: string, name: string): string => `/activities/${encodeURIComponent(activityId)}/${name}`; // #629

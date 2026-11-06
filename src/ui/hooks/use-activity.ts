@@ -10,8 +10,8 @@ import { isView, type PanelId, type ViewId } from '@/lib/dock-layout';
  * run. A new object on every request, so opening a tab already in the layout shows it again. */
 export interface TabRequest { tab?: CenterTabRef }
 
-/** The tab a file opens in (#717, #697, #668): its editor pane, its preview pane or its changes pane. */
-export type FileTabKind = 'file' | 'preview' | 'changes' | 'design';
+/** The tab a file opens in (#717, #697, #668): its editor pane, its preview pane, its changes pane or its diagram pane (#956). */
+export type FileTabKind = 'file' | 'preview' | 'changes' | 'design' | 'diagram';
 
 /** Which view the center shows (#458, #533): Automação the flow, Atividades the picked activity or Home. The dock holds it (#821). */
 export type CenterMode = ViewId;

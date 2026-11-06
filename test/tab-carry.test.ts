@@ -19,6 +19,7 @@ const REFS: readonly CenterTabRef[] = [
   { kind: 'file', path: 'src/a.ts' },
   { kind: 'preview', path: 'README.md' },
   { kind: 'design', path: 'docs/a.hv.html' },
+  { kind: 'diagram', path: 'docs/a.drawio' },
   { kind: 'changes', path: 'src/a.ts' },
   { kind: 'untitled', n: 3 },
 ];
@@ -74,8 +75,8 @@ test('a file tab at a drive path is taken, moved or stored; one that climbs with
 
 test('refKey names each kind of tab as the center does, and runsOf lists a run tab\'s run, a split one\'s panes in reading order (#458, #641, #552)', () => {
   assert.deepEqual(REFS.map((ref) => refKey(ref)), [
-    'p1', 'p1', 'diff:checkpoint:2', 'console:stage:build#r1', 'file:src/a.ts', 'preview:README.md', 'design:docs/a.hv.html', 'changes:src/a.ts', 'untitled:3',
+    'p1', 'p1', 'diff:checkpoint:2', 'console:stage:build#r1', 'file:src/a.ts', 'preview:README.md', 'design:docs/a.hv.html', 'diagram:docs/a.drawio', 'changes:src/a.ts', 'untitled:3',
   ]);
   assert.deepEqual([refKey({ kind: 'console' }), refKey({ kind: 'diff', scope: 'worktree' })], ['console', 'diff:worktree']);
-  assert.deepEqual(REFS.map((ref) => runsOf(ref)), [['p1'], ['p1', 'p2'], [], [], [], [], [], [], []]);
+  assert.deepEqual(REFS.map((ref) => runsOf(ref)), [['p1'], ['p1', 'p2'], [], [], [], [], [], [], [], []]);
 });
