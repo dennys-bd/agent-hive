@@ -8,8 +8,9 @@ import { ownerName } from './repos/github-repos.js';
 import { originRepository } from './repos/repositories.js';
 import { CREATE_PULL_REQUEST, type CreatePullRequestData, OPEN_PULL_REQUEST, type OpenPullRequestData } from './sources/github-queries.js';
 import type { Exec } from './types.js';
+import { toWire } from './wire-path.js';
 
-/** The file's checkout (#936): its toplevel, its origin's owner/name, its current branch, and the file's path relative to the toplevel. */
+/** The file's checkout (#936): its toplevel, its origin's owner/name, its current branch, and the file's path relative to the toplevel, '/'-separated (#641). */
 export interface FileCheckout { toplevel: string; repository: string; branch: string; path: string; ignored: boolean }
 
 /** The checkout of `file`, a real absolute path (#936), learned from the file itself: the Hive keeps no copy of the conventions. No checkout,
@@ -23,7 +24,7 @@ export async function fileCheckout(exec: Exec, file: string): Promise<FileChecko
   if (repository === undefined) throw new Error('the decomposition file\'s checkout has no GitHub origin');
   const branch = await git(toplevel, 'branch', '--show-current');
   if (branch === '') throw new Error('the decomposition file\'s checkout is on no branch: nothing to push');
-  const path = relative(toplevel, file);
+  const path = toWire(relative(toplevel, file), process.platform); // #641: the Design: links and git's pathspecs take /
   return { toplevel, repository, branch, path, ignored: await isIgnored(exec, toplevel, path) };
 }
 

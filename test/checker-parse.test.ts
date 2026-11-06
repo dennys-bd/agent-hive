@@ -81,3 +81,12 @@ test('a report that does not read is an error naming its format; lines a line fo
   assert.match((parseCheck('sarif', '{"runs":{}}', F) as { error: string }).error, /^sarif output does not read: runs is not an array$/);
   assert.deepEqual(parseCheck('tsc', "error TS18003: No inputs were found in config file 'tsconfig.json'.\n", F), []);
 });
+
+const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
+
+test('on win32 a finding\'s path is relative to the folder with / only; one past it is dropped (#641)', WIN32_ONLY, () => {
+  const out = "src\\a.ts(12,5): error TS2304: Cannot find name 'x'.\n..\\b.ts(1,1): error TS2322: Type 'y'.\n";
+  const found = parseCheck('tsc', out, 'C:\\repo');
+  assert.ok(Array.isArray(found));
+  assert.deepEqual(found.map((d) => d.path), ['src/a.ts']);
+});

@@ -184,3 +184,10 @@ test('deliveryRefusal: the default branch, a file that is not .md and a recorded
   assert.match(String(deliveryRefusal({ ...checkout, ignored: true }, 'main', {})), /ignored by git/);
   assert.equal(deliveryRefusal({ ...checkout, branch: 'main' }, 'main', { pr: 3 }), undefined, 'delivered already: nothing will be pushed');
 });
+
+const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
+
+test('on win32 fileCheckout answers the file\'s path in its checkout with / only (#641)', WIN32_ONLY, async () => {
+  const { exec } = checkoutGit({ ...FULL, 'rev-parse': 'C:\\docs-repo' });
+  assert.equal((await fileCheckout(exec, 'C:\\docs-repo\\agent\\specs\\x.md')).path, 'agent/specs/x.md');
+});
