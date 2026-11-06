@@ -19,10 +19,26 @@ interface LessonEditRowProps { workspace: string; entry?: MemoryEntry; onSaved(v
 
 const DISCLOSURE = 'flex items-start gap-1.5 rounded-sm text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
+interface LessonDisclosureProps { description: string; body: string; descRef(button: HTMLButtonElement | null): void }
+
+/** A lesson's description as a disclosure of its body (#680), closed at first since bodies run to 4,000 characters; the lesson row's and,
+ * for the lesson as it was, the history row's (#684). */
+export function LessonDisclosure({ description, body, descRef }: LessonDisclosureProps) {
+  const bodyId = useId();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button ref={descRef} type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)} className={DISCLOSURE}>
+        <ChevronRightIcon aria-hidden className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+        <span className="text-pretty">{description}</span>
+      </button>
+      <div id={bodyId} hidden={!open} className="max-w-[72ch] whitespace-pre-wrap break-words pl-[22px] text-[13px]/[19px]">{body}</div>
+    </>
+  );
+}
+
 /** One lesson as read (#797, #680): its id, kind, description as a disclosure of its body, then the meta line and how many times it was read (#681); ✎ and ✕, which removes at once. */
 export function LessonRow({ workspace, entry, descRef, onEdit, onRemoved }: LessonRowProps) {
-  const bodyId = useId();
-  const [open, setOpen] = useState(false); // bodies run to 4,000 characters, so each row opens on its own
   const [error, setError] = useState<string>();
   const edit = t('settings.memory.edit', { id: entry.id });
   const remove = t('settings.memory.remove', { id: entry.id });
@@ -31,11 +47,7 @@ export function LessonRow({ workspace, entry, descRef, onEdit, onRemoved }: Less
       <span className="truncate font-mono text-xs" title={entry.id}>{entry.id}</span>
       <Badge variant="outline">{kindLabel(entry.kind)}</Badge>
       <div className="flex min-w-0 flex-col gap-1">
-        <button ref={descRef} type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)} className={DISCLOSURE}>
-          <ChevronRightIcon aria-hidden className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
-          <span className="text-pretty">{entry.description}</span>
-        </button>
-        <div id={bodyId} hidden={!open} className="max-w-[72ch] whitespace-pre-wrap break-words pl-[22px] text-[13px]/[19px]">{entry.body}</div>
+        <LessonDisclosure description={entry.description} body={entry.body} descRef={descRef} />
         <span className="pl-[22px] text-muted-foreground text-xs">{`${metaText(entry)} · `}<span>{readText(entry.uses)}</span></span>
         {error !== undefined && <p role="alert" className="pl-[22px] text-destructive text-xs">{error}</p>}
       </div>

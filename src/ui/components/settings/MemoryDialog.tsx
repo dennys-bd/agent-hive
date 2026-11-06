@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { MemoryHistory } from '@/components/settings/MemoryHistory';
 import { MemoryLessons } from '@/components/settings/MemoryLessons';
 import { PART_TITLE } from '@/components/settings/TaskDefaults';
 import { Button } from '@/components/ui/button';
@@ -157,7 +158,7 @@ function RulesBlock() {
   );
 }
 
-/** A workspace's memory (#797): what its agents know before they start, its usage, its last 7 days and its lessons. Every edit is saved at
+/** A workspace's memory (#797): what its agents know before they start, its usage, its last 7 days, its lessons and (#684) its history. Every edit is saved at
  * once through the memory routes, never the Settings draft: workers write the same file at any moment. The total limit (#115) is saved the same way,
  * into hive.config.json, and handed up so the Settings draft keeps it. */
 export function MemoryDialog({ workspace, view, open, onOpenChange, onView, onCapSaved }: MemoryDialogProps) {
@@ -177,6 +178,7 @@ export function MemoryDialog({ workspace, view, open, onOpenChange, onView, onCa
           <TelemetryBlock stats={stats} total={view.entries.length} />
         </div>
         <MemoryLessons workspace={workspace} view={view} onView={onView} />
+        <MemoryHistory workspace={workspace} view={view} onView={onView} />
         <RulesBlock />
         <DialogFooter>
           <DialogClose asChild><Button type="button" variant="outline">{t('settings.memory.close')}</Button></DialogClose>
