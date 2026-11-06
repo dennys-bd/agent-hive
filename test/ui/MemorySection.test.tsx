@@ -18,7 +18,7 @@ const VIEW: MemoryView = {
   ],
 };
 const lastAt = (): string => new Date(Date.now() - 2 * 3_600_000 - 300_000).toISOString();
-let stats: MemoryStats = { runs: 0, cited: 0 };
+let stats: MemoryStats = { runs: 0, read: 0 };
 
 let view: MemoryView = VIEW;
 // the route's answer to PUT …/memory/cap: by default the save, which the next read of the memory shows
@@ -41,7 +41,7 @@ beforeEach(() => {
   view = VIEW;
   capAnswer = saves;
   readFails = false;
-  stats = { runs: 12, cited: 2, tokensPerRun: 150, last: { at: lastAt(), task: '812', stage: 'build', cited: 1 } };
+  stats = { runs: 12, read: 2, tokensPerRun: 150, last: { at: lastAt(), task: '812', stage: 'build', read: 1 } };
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockClear();
 });
@@ -68,7 +68,8 @@ test('the section shows the usage and the lessons, and ver memória… opens the
   expect(await telemetry.findByText('12')).toBeInTheDocument();
   expect(telemetry.getByText('2 de 3')).toBeInTheDocument();
   expect(telemetry.getByText('~150')).toBeInTheDocument();
-  expect(telemetry.getByText('última injeção há 2 h, na etapa build de #812 · 1 lição citada')).toBeInTheDocument();
+  expect(telemetry.getByText('última execução há 2 h, na etapa build de #812 · 1 lição lida')).toBeInTheDocument();
+  expect(telemetry.getByText('lições lidas')).toBeInTheDocument();
   expect(dialog.getByRole('heading', { name: 'quando uma lição entra' })).toBeInTheDocument();
   expect(dialog.getByRole('region', { name: 'lições' })).toBeInTheDocument();
   await user.click(dialog.getByRole('button', { name: 'fechar' }));
@@ -76,14 +77,14 @@ test('the section shows the usage and the lessons, and ver memória… opens the
 });
 
 test('with no run carrying memory in the window the telemetry shows dashes and no last injection (#797)', async () => {
-  stats = { runs: 0, cited: 0 };
+  stats = { runs: 0, read: 0 };
   const user = userEvent.setup();
   render(<MemorySection workspace="hive" saved onCapSaved={vi.fn()} />);
   await user.click(await screen.findByRole('button', { name: 'ver memória…' }));
   const telemetry = within(await screen.findByRole('region', { name: 'telemetria · últimos 7 dias' }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/workspaces/hive/memory/stats'));
   expect(telemetry.getAllByText('—')).toHaveLength(3);
-  expect(telemetry.queryByText(/última injeção/)).not.toBeInTheDocument();
+  expect(telemetry.queryByText(/última execução/)).not.toBeInTheDocument();
 });
 
 test('Esc in an editing row cancels the row and keeps the dialog open, focus back on the lesson; outside a row it closes the dialog (#680)', async () => {
@@ -116,7 +117,8 @@ test('the section and the dialog read in English (#797)', async () => {
   expect(dialog.getByText(/the body is outside the limit$/)).toBeInTheDocument();
   expect(dialog.getByRole('spinbutton', { name: 'limit per description (characters)' })).toBeInTheDocument();
   expect(dialog.getByText(/the key, the description and the body never do\.$/)).toBeInTheDocument();
-  expect(await dialog.findByText('last injected 2 h ago, in the build stage of #812 · 1 lesson cited')).toBeInTheDocument();
+  expect(await dialog.findByText('last run 2 h ago, in the build stage of #812 · 1 lesson read')).toBeInTheDocument();
+  expect(dialog.getByText('lessons read')).toBeInTheDocument();
   expect(dialog.getByText('prompts with memory')).toBeInTheDocument();
   expect(dialog.getByRole('button', { name: 'close' })).toBeInTheDocument();
 });

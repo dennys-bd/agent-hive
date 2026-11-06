@@ -1252,13 +1252,13 @@ const en = {
   'settings.memory.limitNote': "at the limit no new lesson comes in, yours or a task's, until you remove a lesson or shorten a description · the body is outside the limit",
   'settings.memory.telemetry': 'telemetry · last 7 days',
   'settings.memory.runs': 'prompts with memory',
-  'settings.memory.cited': 'lessons cited',
-  'settings.memory.citedOf': '{cited} of {total}',
+  'settings.memory.read': 'lessons read',
+  'settings.memory.readOf': '{read} of {total}',
   'settings.memory.tokens': 'tokens per prompt',
-  'settings.memory.last': 'last injected {time} ago, in the {stage} stage of {task} · {cited}',
-  'settings.memory.lastFree': 'last injected {time} ago, in {task} · {cited}',
-  'settings.memory.lessonsCited.one': '{n} lesson cited',
-  'settings.memory.lessonsCited.other': '{n} lessons cited',
+  'settings.memory.last': 'last run {time} ago, in the {stage} stage of {task} · {read}',
+  'settings.memory.lastFree': 'last run {time} ago, in {task} · {read}',
+  'settings.memory.lessonsRead.one': '{n} lesson read',
+  'settings.memory.lessonsRead.other': '{n} lessons read',
   'settings.memory.minutes': '{n} min',
   'settings.memory.hours': '{n} h',
   'settings.memory.days.one': '{n} day',
@@ -4359,13 +4359,13 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.limitNote': 'no limite, nenhuma lição nova entra, nem sua nem de tarefa, até você remover uma lição ou encurtar uma descrição · o corpo fica fora do limite',
   'settings.memory.telemetry': 'telemetria · últimos 7 dias',
   'settings.memory.runs': 'prompts com memória',
-  'settings.memory.cited': 'lições citadas',
-  'settings.memory.citedOf': '{cited} de {total}',
+  'settings.memory.read': 'lições lidas',
+  'settings.memory.readOf': '{read} de {total}',
   'settings.memory.tokens': 'tokens por prompt',
-  'settings.memory.last': 'última injeção há {time}, na etapa {stage} de {task} · {cited}',
-  'settings.memory.lastFree': 'última injeção há {time}, em {task} · {cited}',
-  'settings.memory.lessonsCited.one': '{n} lição citada',
-  'settings.memory.lessonsCited.other': '{n} lições citadas',
+  'settings.memory.last': 'última execução há {time}, na etapa {stage} de {task} · {read}',
+  'settings.memory.lastFree': 'última execução há {time}, em {task} · {read}',
+  'settings.memory.lessonsRead.one': '{n} lição lida',
+  'settings.memory.lessonsRead.other': '{n} lições lidas',
   'settings.memory.minutes': '{n} min',
   'settings.memory.hours': '{n} h',
   'settings.memory.days.one': '{n} dia',
@@ -6270,7 +6270,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580), or the report tab's counts (#467), or the wake dialog's sleeps (#468). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

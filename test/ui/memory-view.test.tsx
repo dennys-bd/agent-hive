@@ -35,22 +35,24 @@ test('the usage reads with the language\'s thousands separator, the lessons with
   expect([charactersText(87, 4000), lessonsText(entries)]).toEqual(['87 of 4,000 characters', '3 lessons · 1 from tasks']);
 });
 
-test('the telemetry numbers show dashes without runs, the cited lessons out of the total, the tokens with a tilde; the last injection with or without its stage (#797)', () => {
-  expect(statNumbers(undefined, 3)).toEqual({ runs: '—', cited: '—', tokens: '—' });
-  expect(statNumbers({ runs: 0, cited: 0 }, 3)).toEqual({ runs: '—', cited: '—', tokens: '—' });
-  expect(statNumbers({ runs: 1200, cited: 2, tokensPerRun: 150 }, 3)).toEqual({ runs: '1.200', cited: '2 de 3', tokens: '~150' });
+test('the telemetry numbers show dashes without runs, the lessons read out of the total, the tokens with a tilde; the last run with or without its stage (#797, #681)', () => {
+  expect(statNumbers(undefined, 3)).toEqual({ runs: '—', read: '—', tokens: '—' });
+  expect(statNumbers({ runs: 0, read: 0 }, 3)).toEqual({ runs: '—', read: '—', tokens: '—' });
+  expect(statNumbers({ runs: 1200, read: 2, tokensPerRun: 150 }, 3)).toEqual({ runs: '1.200', read: '2 de 3', tokens: '~150' });
   const at = new Date(NOW - 2 * 3_600_000 - 300_000).toISOString();
-  expect(lastText({ at, task: '812', stage: 'build', cited: 1 }, NOW)).toBe('última injeção há 2 h, na etapa build de #812 · 1 lição citada');
-  expect(lastText({ at: new Date(NOW - 3 * 86_400_000).toISOString(), task: '812', cited: 2 }, NOW)).toBe('última injeção há 3 dias, em #812 · 2 lições citadas');
+  expect(lastText({ at, task: '812', stage: 'build', read: 1 }, NOW)).toBe('última execução há 2 h, na etapa build de #812 · 1 lição lida');
+  expect(lastText({ at: new Date(NOW - 3 * 86_400_000).toISOString(), task: '812', read: 2 }, NOW)).toBe('última execução há 3 dias, em #812 · 2 lições lidas');
   setLanguage('en');
-  expect(lastText({ at, task: '812', stage: 'build', cited: 1 }, NOW)).toBe('last injected 2 h ago, in the build stage of #812 · 1 lesson cited');
+  expect(lastText({ at, task: '812', stage: 'build', read: 1 }, NOW)).toBe('last run 2 h ago, in the build stage of #812 · 1 lesson read');
+  expect(lastText({ at, task: '812', read: 2 }, NOW)).toBe('last run 2 h ago, in #812 · 2 lessons read');
+  expect(statNumbers({ runs: 3, read: 1 }, 3).read).toBe('1 of 3');
 });
 
 test('the five calls reach the workspace\'s memory routes with the UI header on writes; a refusal keeps its code, which reads in the user\'s language (#797)', async () => {
   const view = { entries: [], used: 0, cap: 4000, descriptionMax: 150, bodyMax: 4000 };
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') return jsonResponse({ error: 'memory is full; go on without saving this lesson', code: 'memory_full' }, 409);
-    return jsonResponse(url.endsWith('/stats') ? { runs: 0, cited: 0 } : view);
+    return jsonResponse(url.endsWith('/stats') ? { runs: 0, read: 0 } : view);
   });
   vi.stubGlobal('fetch', fetchMock);
   await readMemory('hive');

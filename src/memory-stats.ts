@@ -26,17 +26,17 @@ export function memoryStats(records: readonly MemoryRecord[], entries: readonly 
   const since = now - MEMORY_STATS_DAYS * DAY_MS;
   const recent = records.filter((r) => typeof r.ts === 'string' && Date.parse(r.ts) >= since);
   const runs = recent.filter((r) => r.event === 'run.spawned' && Array.isArray(r.memory_ids));
-  const applied = recent.filter((r) => r.event === 'memory.applied' && typeof r.id === 'string');
+  const reads = recent.filter((r) => r.event === 'memory.recalled' && typeof r.id === 'string'); // #681: a hive_recall is a lesson's use
   const kept = new Set(entries.map((e) => e.id));
-  const cited = [...distinct(applied)].filter((id) => kept.has(id as string)).length;
+  const read = [...distinct(reads)].filter((id) => kept.has(id as string)).length;
   const chars = runs.reduce((sum, r) => sum + (typeof r.memory_chars === 'number' ? r.memory_chars : 0), 0);
   const latest = runs.at(-1);
-  // only what the session cited from that run on: an earlier run of the same session is another injection
+  // only what the session read from that run on: an earlier run of the same session got another index
   const fromLatest = (r: Fields): boolean => latest !== undefined && r.session_id === latest.session_id && Date.parse(String(r.ts)) >= Date.parse(String(latest.ts));
-  const sessionCited = latest?.session_id === undefined ? 0 : distinct(applied.filter(fromLatest)).size;
+  const sessionRead = latest?.session_id === undefined ? 0 : distinct(reads.filter(fromLatest)).size;
   return {
-    runs: runs.length, cited,
+    runs: runs.length, read,
     ...(runs.length > 0 ? { tokensPerRun: Math.round(chars / runs.length / CHARS_PER_TOKEN) } : {}),
-    ...(latest ? { last: { at: String(latest.ts), task: typeof latest.task === 'string' ? latest.task : '', ...(typeof latest.stage === 'string' ? { stage: latest.stage } : {}), cited: sessionCited } } : {}),
+    ...(latest ? { last: { at: String(latest.ts), task: typeof latest.task === 'string' ? latest.task : '', ...(typeof latest.stage === 'string' ? { stage: latest.stage } : {}), read: sessionRead } } : {}),
   };
 }

@@ -2086,9 +2086,9 @@ export type MemoryRefusalCode = (typeof MEMORY_REFUSALS)[number];
 /** GET /workspaces/:name/memory/stats (#797): the last MEMORY_STATS_DAYS days of facts.jsonl for the workspace. */
 export interface MemoryStats {
   runs: number; // run.spawned with this workspace's memory
-  cited: number; // distinct ids of current entries named by memory.applied
+  read: number; // #681: distinct ids of current entries named by memory.recalled
   tokensPerRun?: number; // mean memory_chars / 4, rounded; absent when runs = 0
-  last?: { at: string; task: string; stage?: string; cited: number }; // the latest such run, and the distinct ids its session cited
+  last?: { at: string; task: string; stage?: string; read: number }; // the latest such run, and the distinct ids its session read from it on
 }
 export const MEMORY_STATS_DAYS = 7;
 
