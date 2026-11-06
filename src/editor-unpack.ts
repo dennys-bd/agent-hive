@@ -8,6 +8,7 @@ import type { Arch, ServerDef } from './languages.js';
 export interface StepContext {
   tmp: string; // the temp folder the install fills
   arch: Arch;
+  platform: NodeJS.Platform; // the asset's and the binary's names (#635)
   env: NodeJS.ProcessEnv; // the daemon's (#780)
   run(command: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string>; // stdout; stderr goes to the log; a failure throws its last line
   download(url: string, file: string): Promise<void>;
@@ -43,9 +44,9 @@ async function gunzipBinary(file: string, binary: string, ctx: StepContext): Pro
   await chmod(join(bin, binary), 0o755);
 }
 
-/** This Mac's release asset, downloaded and unpacked with the system's tar, unzip or gunzip (#780). */
+/** The platform's release asset, downloaded and unpacked with tar, unzip or gunzip (#780, #635). */
 export async function githubStep(def: ServerDef, latest: Latest, ctx: StepContext): Promise<string> {
-  const asset = def.asset?.(latest.version, ctx.arch) ?? '';
+  const asset = def.asset?.(latest.version, ctx.arch, ctx.platform) ?? '';
   if (latest.url === undefined || asset === '') throw new Error(`${def.id}: no asset to download`);
   const file = join(ctx.tmp, asset);
   await ctx.download(latest.url, file);

@@ -19,6 +19,7 @@ export interface InstallerDeps {
   env?(): NodeJS.ProcessEnv; // the daemon's; a test passes its stubs' PATH
   registries?: Registries;
   arch?: Arch;
+  platform?: NodeJS.Platform; // process.platform; a test passes win32 (#635)
   downloads?: DownloadLimits; // a test's: plain http to its local registry, a small cap
   beforeSwap?(target: InstallTarget): Promise<void>; // the item's running processes stop here: an update moves the folder they read from
 }
@@ -103,11 +104,13 @@ class EditorInstaller implements Installer {
   private readonly deps: InstallerDeps;
   private readonly registries: Registries;
   private readonly arch: Arch;
+  private readonly platform: NodeJS.Platform;
 
   constructor(deps: InstallerDeps) {
     this.deps = deps;
     this.registries = deps.registries ?? REGISTRIES;
     this.arch = deps.arch ?? (process.arch === 'arm64' ? 'arm64' : 'x64');
+    this.platform = deps.platform ?? process.platform;
   }
 
   private env(): NodeJS.ProcessEnv { return this.deps.env?.() ?? process.env; }
@@ -122,7 +125,7 @@ class EditorInstaller implements Installer {
   private async listed(target: InstallTarget): Promise<InstallState> {
     const state = await this.stateOf(target);
     if (state.state !== 'installed' || isSystem(target)) return state; // the SDK updates itself: no latest to look up
-    const latest = await withCap(latestOf(target, this.registries, this.arch, AbortSignal.timeout(LATEST_CAP_MS)).then((l) => l.version), LATEST_CAP_MS);
+    const latest = await withCap(latestOf(target, this.registries, this.arch, this.platform, AbortSignal.timeout(LATEST_CAP_MS)).then((l) => l.version), LATEST_CAP_MS);
     return latest === undefined ? state : { ...state, latest };
   }
 
@@ -198,7 +201,7 @@ class EditorInstaller implements Installer {
     const tmp = join(dirname(dir), `.${target.id}.tmp-${randomBytes(4).toString('hex')}`);
     const job: Job = { log: [], step: 'lookup', version: '' };
     try {
-      const latest = await latestOf(target, this.registries, this.arch, controller.signal);
+      const latest = await latestOf(target, this.registries, this.arch, this.platform, controller.signal);
       job.version = latest.version;
       await mkdir(tmp, { recursive: true });
       const version = await this.step(target, latest, this.context(target, tmp, controller.signal, job));
@@ -219,7 +222,7 @@ class EditorInstaller implements Installer {
 
   private context(target: InstallTarget, tmp: string, signal: AbortSignal, job: Job): StepContext {
     return {
-      tmp, arch: this.arch, env: this.env(),
+      tmp, arch: this.arch, platform: this.platform, env: this.env(),
       run: (command, args, env = this.env()) => runStep(command, args, env, signal, job),
       download: (url, file) => { job.step = 'download'; return download(url, file, signal, (percent) => this.progress(target, percent), this.deps.downloads); },
     };

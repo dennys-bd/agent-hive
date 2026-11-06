@@ -19,12 +19,12 @@ export const hostArch = (): Arch => (process.arch === 'arm64' ? 'arm64' : 'x64')
 /** How the Hive's own install of `server` launches `binary` (#780, #803), shared by the LSP host and the workers' plugins: an installed server's
  * record and folder, or a system server's tool; every runtime tool must be on `path`. Otherwise the reason, which the host's close carries:
  * `not installed` or `requires <tool>`. */
-export async function hiveLaunch(home: string, server: ServerDef, binary: string, path: string, arch: Arch): Promise<Launch | { reason: string }> {
+export async function hiveLaunch(home: string, server: ServerDef, binary: string, path: string, arch: Arch, platform: NodeJS.Platform = process.platform): Promise<Launch | { reason: string }> {
   const target = { kind: 'server', id: server.id } as const;
   const installed = server.install === 'system' ? undefined : await readInstalled(home, target);
   if (server.install !== 'system' && installed === undefined) return { reason: 'not installed' };
   for (const tool of runtimeTools(server)) if ((await findOnPath(tool, path)) === undefined) return { reason: `requires ${tool}` };
-  return server.launch({ dir: editorDir(home, target), arch, version: installed?.version ?? '' }, binary);
+  return server.launch({ dir: editorDir(home, target), arch, platform, version: installed?.version ?? '' }, binary);
 }
 
 /** A workspace's servers (#803): one entry per server binary, named after it; each runner writes them as its plugin's files (#924). */

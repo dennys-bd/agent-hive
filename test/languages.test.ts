@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { CHECKERS } from '../src/checkers.js';
 import { FORMATTERS } from '../src/formatters.js';
 import { type Arch, extensionOf, inScope, LANGUAGES, type Launch, languageOf, languagesOfServer, lspLanguageId, requiredTools, runtimeTools, type ServerDef, serverDef, SERVERS, serverFor, SYNTAXES } from '../src/languages.js';
+import type { ServerId } from '../src/types.js';
 import { LANGUAGE_IDS, SERVER_IDS, SYNTAX_IDS } from '../src/types.js';
 
-const AT = { dir: '/h/editor/servers/x', arch: 'arm64' as const, version: '21.1.0' };
+const AT = { dir: '/h/editor/servers/x', arch: 'arm64' as const, platform: 'darwin' as const, version: '21.1.0' };
 
 test('the catalog lists every language, server and syntax id once, in their ids\' order; every syntax package and every server belongs to a language (#780)', () => {
   assert.deepEqual(LANGUAGES.map((l) => l.id), [...LANGUAGE_IDS]);
@@ -48,9 +49,9 @@ test('a server launches from its folder: npm through node and its .bin, GitHub b
   assert.deepEqual(serverDef('clangd').launch(AT, 'clangd'), { command: '/h/editor/servers/x/clangd_21.1.0/bin/clangd', args: [] });
   assert.deepEqual(serverDef('taplo').launch(AT, 'taplo'), { command: '/h/editor/servers/x/bin/taplo', args: ['lsp', 'stdio'] });
   assert.deepEqual(serverDef('gopls').launch(AT, 'gopls'), { command: '/h/editor/servers/x/bin/gopls', args: [] });
-  assert.equal(serverDef('rust-analyzer').asset?.('2025-10-06', 'x64'), 'rust-analyzer-x86_64-apple-darwin.gz');
-  assert.equal(serverDef('lua-language-server').asset?.('3.15.0', 'arm64'), 'lua-language-server-3.15.0-darwin-arm64.tar.gz');
-  assert.equal(serverDef('clangd').asset?.('21.1.0', 'arm64'), 'clangd-mac-21.1.0.zip');
+  assert.equal(serverDef('rust-analyzer').asset?.('2025-10-06', 'x64', 'darwin'), 'rust-analyzer-x86_64-apple-darwin.gz');
+  assert.equal(serverDef('lua-language-server').asset?.('3.15.0', 'arm64', 'darwin'), 'lua-language-server-3.15.0-darwin-arm64.tar.gz');
+  assert.equal(serverDef('clangd').asset?.('21.1.0', 'arm64', 'darwin'), 'clangd-mac-21.1.0.zip');
 });
 
 test('typescript-language-server installs typescript 6: typescript 7 ships no tsserver and the server refuses to start on it (#780 catalog check)', () => {
@@ -72,8 +73,8 @@ test('the checkers\' servers (#782): biome, eslint and oxlint through node, ruff
   assert.deepEqual(serverDef('eslint').binaries, ['vscode-eslint-language-server']);
   assert.deepEqual(serverDef('oxlint').args, ['--lsp']);
   assert.deepEqual(serverDef('ruff').launch(AT, 'ruff'), { command: '/h/editor/servers/x/ruff-aarch64-apple-darwin/ruff', args: ['server'] });
-  assert.equal(serverDef('ruff').asset?.('0.13.2', 'x64'), 'ruff-x86_64-apple-darwin.tar.gz');
-  assert.equal(serverDef('tflint').asset?.('0.59.1', 'x64'), 'tflint_darwin_amd64.zip');
+  assert.equal(serverDef('ruff').asset?.('0.13.2', 'x64', 'darwin'), 'ruff-x86_64-apple-darwin.tar.gz');
+  assert.equal(serverDef('tflint').asset?.('0.59.1', 'x64', 'darwin'), 'tflint_darwin_amd64.zip');
   assert.deepEqual(serverDef('tflint').launch(AT, 'tflint'), { command: '/h/editor/servers/x/tflint', args: ['--langserver'] });
   assert.deepEqual(serverDef('dart').launch(AT, 'dart'), { command: 'dart', args: ['language-server', '--protocol=lsp'] });
   assert.deepEqual([requiredTools(serverDef('dart')), runtimeTools(serverDef('dart'))], [['dart'], ['dart']]);
@@ -116,7 +117,7 @@ const DARWIN: Record<string, Pin> = {
 const ROWS = SERVERS.flatMap((server) => server.binaries.flatMap((binary) => ARCHES.map((arch) => ({ server, binary, arch }))));
 // The one place the platform argument is added later (#635)
 const darwin = (server: ServerDef, binary: string, arch: Arch): { asset?: string; launch: Launch } =>
-  ({ asset: server.asset?.(V, arch), launch: server.launch({ dir: D, arch, version: V }, binary) });
+  ({ asset: server.asset?.(V, arch, 'darwin'), launch: server.launch({ dir: D, arch, platform: 'darwin', version: V }, binary) });
 
 test('darwin\'s asset and launch of every server binary, pinned for both Macs (#635)', () => {
   assert.deepEqual(SERVERS.flatMap((s) => s.binaries.map((b) => `${s.id}/${b}`)), Object.keys(DARWIN));
@@ -124,4 +125,31 @@ test('darwin\'s asset and launch of every server binary, pinned for both Macs (#
     const pin = DARWIN[`${server.id}/${binary}`];
     assert.deepEqual(darwin(server, binary, arch), { asset: pin.asset?.[arch], launch: pin.launch[arch] }, `${server.id}/${binary} ${arch}`);
   }
+});
+
+const W = 'C:\\h\\editor\\servers\\x';
+// Checked against each repository's latest release on 2026-11-06 (spec decision 2)
+const WIN32_ASSET: Partial<Record<ServerId, string>> = {
+  'rust-analyzer': 'rust-analyzer-x86_64-pc-windows-msvc.zip', clangd: 'clangd-windows-21.1.0.zip', 'lua-language-server': 'lua-language-server-21.1.0-win32-x64.zip',
+  taplo: 'taplo-windows-x86_64.gz', ruff: 'ruff-x86_64-pc-windows-msvc.zip', tflint: 'tflint_windows_amd64.zip',
+};
+
+test('on win32 each GitHub server answers its Windows x64 asset whatever the arch; every launch is an .exe, node on the package\'s entry or the system server\'s tool (#635)', () => {
+  for (const { server, binary, arch } of ROWS) {
+    assert.equal(server.asset?.(V, arch, 'win32'), WIN32_ASSET[server.id], `${server.id} ${arch}`);
+    const { command, args } = server.launch({ dir: W, arch, platform: 'win32', version: V, entry: 'lib/fake-entry.js' }, binary);
+    const isNode = command === 'node' && args[0].endsWith('\\lib\\fake-entry.js');
+    const isTool = server.install === 'system' && command === server.source;
+    assert.ok(command.endsWith('.exe') || isNode || isTool, `${server.id}/${binary}: ${command} ${args.join(' ')}`);
+  }
+});
+
+test('win32 launch paths join the folder with backslashes: the archive\'s .exe, GOBIN\'s gopls.exe, node on the npm package\'s own entry (#635)', () => {
+  const at = { dir: W, arch: 'arm64' as const, platform: 'win32' as const, version: V, entry: './dist/cli.js' };
+  const ids: ServerId[] = ['rust-analyzer', 'clangd', 'lua-language-server', 'taplo', 'ruff', 'tflint', 'gopls'];
+  assert.deepEqual(ids.map((id) => serverDef(id).launch(at, serverDef(id).binaries[0]).command), [
+    `${W}\\rust-analyzer.exe`, `${W}\\clangd_21.1.0\\bin\\clangd.exe`, `${W}\\bin\\lua-language-server.exe`, `${W}\\bin\\taplo.exe`, `${W}\\ruff.exe`, `${W}\\tflint.exe`, `${W}\\bin\\gopls.exe`,
+  ]);
+  assert.deepEqual(serverDef('biome').launch(at, 'biome'), { command: 'node', args: [`${W}\\node_modules\\@biomejs\\biome\\dist\\cli.js`, 'lsp-proxy'] });
+  assert.deepEqual(serverDef('dart').launch(at, 'dart'), { command: 'dart', args: ['language-server', '--protocol=lsp'] });
 });
