@@ -7,9 +7,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join, win32 } from 'node:path';
 import type { Readable } from 'node:stream';
 import { writeAtomically } from '../src/daemon-files.js';
-import { writeAtomic } from '../src/server-editor.js';
-import { tempDir } from './temp-dir.js';
 import { RETRY_DELAYS_MS, replaceFile, replaceFileSync } from '../src/replace-file.js';
+import { writeAtomic } from '../src/server-editor.js';
+import { type AfterHost, tempDir } from './temp-dir.js';
 
 const TMP = 'target.json.tmp';
 const TARGET = 'target.json';
@@ -104,34 +104,35 @@ function lineArrives(stream: Readable, line: string): Promise<void> {
   });
 }
 
-// Starts the holder and resolves once the target is open; the returned promise is its exit
-async function holdOpen(path: string): Promise<Promise<unknown>> {
+// Starts the holder and returns once the target is open and a plain rename over it fails. The test waits for the holder's exit even when
+// an assertion fails first, so the temp folder's cleanup never meets a file still held; a spawn failure ends stdout and rejects through
+// lineArrives, never as an unhandled rejection.
+async function holdOpen(t: AfterHost, path: string): Promise<void> {
   const root = process.env.SystemRoot;
   assert.ok(root, 'SystemRoot is not set');
   const exe = win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const holder = execFile(exe, ['-NoProfile', '-NonInteractive', '-Command', HOLD_SCRIPT], { env: { ...process.env, HIVE_HOLD_PATH: path }, windowsHide: true });
-  const exited = once(holder, 'exit');
-  await lineArrives(holder.stdout!, 'open');
-  return exited;
+  const exited = once(holder, 'exit').catch(() => undefined);
+  t.after(async () => { await exited; });
+  const stdout = holder.stdout ?? assert.fail('the holder has no stdout');
+  await lineArrives(stdout, 'open');
+  // the hold really blocks a plain rename, so the write that follows can only land through the retry
+  writeFileSync(`${path}.probe`, 'probe');
+  assert.throws(() => renameSync(`${path}.probe`, path), (err: unknown) => LOCK_CODES.includes(String((err as NodeJS.ErrnoException).code)));
 }
 
 test('win32: writeAtomically over a file another process holds open lands once that process closes it (#629)', WIN32_ONLY, async (t) => {
   const target = join(await tempDir(t, 'replace-'), 'hive.port');
   await writeFile(target, 'old\n');
-  const exited = await holdOpen(target);
-  // the hold really blocks a plain rename, so the write below can only land through the retry
-  writeFileSync(`${target}.probe`, 'probe');
-  assert.throws(() => renameSync(`${target}.probe`, target), (err: unknown) => LOCK_CODES.includes(String((err as NodeJS.ErrnoException).code)));
+  await holdOpen(t, target);
   writeAtomically(target, 'new\n');
   assert.equal(await readFile(target, 'utf8'), 'new\n');
-  await exited;
 });
 
 test('win32: writeAtomic over a file another handle holds open for reading lands once the handle closes (#629)', WIN32_ONLY, async (t) => {
   const target = join(await tempDir(t, 'replace-'), 'notes.md');
   await writeFile(target, 'old');
-  const exited = await holdOpen(target);
+  await holdOpen(t, target);
   await writeAtomic(target, 'new');
   assert.equal(await readFile(target, 'utf8'), 'new');
-  await exited;
 });
