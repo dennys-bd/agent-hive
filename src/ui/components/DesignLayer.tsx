@@ -3,6 +3,7 @@ import { DesignPane } from '@/components/DesignPane';
 import { t } from '@/i18n';
 import { type Activity, activityKey, activityTitle } from '@/lib/activities';
 import { type CenterLayout, groupsOf } from '@/lib/center-layout';
+import { baseName } from '../../base-name';
 
 // The design layer (#533): every open design tab's pane lives here, outside ActivityCenter's tree, so a view or activity switch never
 // unmounts its frame (an iframe reloads whenever it leaves the DOM). The tab renders an empty slot and the pane is laid over it by CSS anchor
@@ -21,7 +22,6 @@ const SetRegistryContext = createContext<Dispatch<SetStateAction<Registry>> | un
 /** A design pane's key (#533): its activity's and its path's; a layout holds one design tab per path. */
 export const designKey = (activity: Activity, path: string): string => `${activityKey(activity)}:${path}`;
 
-const baseName = (path: string): string => path.split('/').at(-1) ?? path;
 // useId's characters are not all valid in a CSS dashed ident; the path never enters it
 const anchorOf = (id: string): string => `--design-${id.replace(/[^\w-]/g, '')}`;
 const without = <T,>(record: Readonly<Record<string, T>>, key: string): Record<string, T> =>

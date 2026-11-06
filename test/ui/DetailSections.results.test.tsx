@@ -38,3 +38,8 @@ test('results list only the stage files: a task\'s PRs show in the PRs field, ne
   rerender(<ResultsList task={task} files={[]} />);
   expect(container).toBeEmptyDOMElement();
 });
+
+test('a result file outside the worktree on Windows shows its name, the path\'s last segment (#641)', () => {
+  render(<ResultsList task={task} files={[{ key: 'data', path: 'C:\\docs-repo\\data.json', base: 'outside' }]} />);
+  expect(screen.getByRole('button', { name: 'data.json' })).toBeInTheDocument();
+});

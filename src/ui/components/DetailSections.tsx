@@ -23,6 +23,7 @@ import { isMarkdownPath } from '@/lib/doc-links';
 import { answerableActivity, backoffUntil, createsIssues, taskState } from '@/lib/task-state';
 import { backoffLabel, clock, compact, fmt } from '@/lib/usage';
 import { shownSize } from '@/lib/xterm-setup';
+import { baseName } from '../../base-name';
 
 const MUTED = 'text-muted-foreground';
 
@@ -268,7 +269,6 @@ export function SessionsList({ task, state, locale }: { task: Task; state: Work;
   );
 }
 
-const basename = (path: string): string => path.split('/').at(-1) ?? path;
 const PREVIEW = { preview: true } as const;
 
 /** What the task produced so far (redesign 06): the files of its result (#258), a markdown one opening rendered in the preview pane (#697),
@@ -292,7 +292,7 @@ export function ResultsList({ task, files }: { task: Task; files: TaskFile[] }) 
             type="button" variant="link" size="xs" title={f.path} className="h-auto min-w-0 justify-start p-0 font-mono text-review"
             onClick={() => open(f.path)}
           >
-            <span className="truncate">{basename(f.path)}</span>
+            <span className="truncate">{baseName(f.path)}</span>
           </Button>
         </div>
       ))}

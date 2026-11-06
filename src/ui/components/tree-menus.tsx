@@ -7,6 +7,7 @@ import type { TreeActions } from '@/components/tree-ops';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { t } from '@/i18n';
 import { parentOf } from '@/lib/file-tree';
+import { baseName } from '../../base-name';
 
 // The files tree's right-click menus (#818), apart from FilesPanel.tsx: a file's, a folder's and the empty area's (the root). An item that
 // takes one path acts on the clicked row; cut, copy and delete on `selected`, the selection when the row is in it (actedOn). Each item shows
@@ -130,10 +131,10 @@ export function RootMenu({ actions, children }: { actions: TreeActions; children
 }
 
 // The dialog's question: the item by its name, or the count
-function trashMessage(paths: string[] | undefined): string {
+export function trashMessage(paths: string[] | undefined): string {
   if (paths === undefined) return '';
   if (paths.length !== 1) return t('files.trashMany', { n: paths.length });
-  return t('files.trashOne', { name: paths[0].split('/').at(-1) ?? paths[0] });
+  return t('files.trashOne', { name: baseName(paths[0]) });
 }
 
 /** Delete's question (#818): always asked; Enter confirms it through the dialogs' keyboard rule (#75). */

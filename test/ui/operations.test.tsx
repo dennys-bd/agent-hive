@@ -265,3 +265,9 @@ test('nova sessão › lists every agent; one boot did not find is disabled and 
   const picks = operationsFor(ctx).find((op) => op.id === 'activity.newSession')?.children?.(ctx) ?? [];
   expect(picks.map((op) => [op.label(ctx), op.disabled?.(ctx) ?? false])).toEqual([['claude', false], ['codex · fora do PATH', true]]);
 });
+
+test('a focused editor on a Windows absolute path names its operations after the file (#641)', () => {
+  const state = stateOf([]);
+  const ctx = ctxOf(state, { focus: { kind: 'file', activityId: 'a-I11', path: 'C:\\repo\\src\\a.ts' } });
+  expect(operationsFor(ctx).filter((op) => op.group === 'focus').map((op) => text(op, ctx))).toEqual(['Git: Abrir Alterações · a.ts']);
+});

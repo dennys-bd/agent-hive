@@ -7,6 +7,7 @@ import { gated } from './api.js';
 import { moved as moveBase } from './file-base.js';
 import { activityRoute, readFile } from './file-read.js';
 import { renamedPath } from './file-tree.js';
+import { baseName } from '../../base-name';
 
 // The disk reads live in file-read.ts (#551); their importers keep reading them from here
 export { FileError, fileUrl, readFile, readImage } from './file-read.js';
@@ -64,10 +65,9 @@ const notify = (): void => {
 
 type Languages = ReadonlyArray<{ id: string; extensions?: string[]; filenames?: string[] }>;
 
-const nameOf = (path: string): string => path.split('/').at(-1) ?? path;
 // The name's extension, lower case with its dot; none for a name that only starts with one (.gitignore)
 function extensionOf(path: string): string {
-  const name = nameOf(path);
+  const name = baseName(path);
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.slice(dot).toLowerCase() : '';
 }
@@ -77,7 +77,7 @@ export const isImagePath = (path: string): boolean => Object.hasOwn(IMAGE_TYPES,
 
 // Monaco's language for the file: by its name (Dockerfile), else by its extension; plaintext for neither (#319: the skill editor's files too)
 export function languageOf(languages: Languages, path: string): string {
-  const name = nameOf(path);
+  const name = baseName(path);
   const extension = extensionOf(path);
   return languages.find((l) => l.filenames?.includes(name) || (extension !== '' && l.extensions?.includes(extension)))?.id ?? 'plaintext';
 }

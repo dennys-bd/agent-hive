@@ -16,6 +16,7 @@ import { type DesignZoom, useDesignZoom } from '@/hooks/use-design-zoom';
 import type { Activity } from '@/lib/activities';
 import { type DesignState, type DesignTheme, isOnState, nextPin } from '@/lib/design-comments';
 import { isMac, isTextField } from '@/lib/shortcut-bindings';
+import { baseName } from '../../base-name';
 
 // The design pane (#109): one Hive design (.hv.html) of an activity, served by the design frame route (#108) into a sandboxed frame on the
 // handoff's canvas, under its preview bar. Read only: the agent writes the file.
@@ -26,7 +27,6 @@ export interface DesignPaneProps { activity: Activity; path: string; label: stri
 const WITH_PANEL = 'minmax(0,1fr) 300px'; // the handoff's §2: the canvas, then the 300 px comments panel
 const CANVAS_ONLY = 'minmax(0,1fr)';
 
-const baseName = (path: string): string => path.split('/').at(-1) ?? path;
 
 // A click on the bar or the canvas's margin puts the focus in the pane, so ⌘0 and Space reach it; a control still takes its own focus after.
 // React bubbles a portal's pointer-down here too: one inside the tweaks panel must not pull the focus out of it, or Radix closes it (#342)

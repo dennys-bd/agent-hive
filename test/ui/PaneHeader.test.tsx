@@ -70,3 +70,10 @@ test('a run opened with picks reads its own model over the stage\'s, then its sp
   expect(within(header()).getByText('sonnet · hive-1-task-1')).toBeInTheDocument();
   expect(within(header()).getByText('hive:designer')).toHaveClass('font-mono');
 });
+
+test('a Windows worktree names the pane\'s folder by its last segment, a trailing separator too (#641)', () => {
+  const stages: Stage[] = [{ name: 'dev', from: {}, prompt: 'p', model: 'opus' }];
+  const state = { stages, workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, tasks: [] };
+  expect(paneContext(task, { ...live, worktree: 'C:\\wt\\hive-1-task-1' }, state)).toEqual({ model: 'opus', folder: 'hive-1-task-1' });
+  expect(paneContext(task, { ...live, worktree: 'C:\\wt\\hive-1-task-1\\' }, state)).toEqual({ model: 'opus', folder: 'hive-1-task-1' });
+});
