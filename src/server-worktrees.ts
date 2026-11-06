@@ -46,7 +46,7 @@ export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): v
     try {
       // every workspace, in config order (#179); a failure in any of them is the 500 with git's words
       const perWorkspace = await Promise.all(current.runtime.config.comb.workspaces.map(async (workspace) => {
-        const rows = worktreeRows(await listWorktrees(workspace.path, exec), current.state, workspace.name);
+        const rows = worktreeRows(await listWorktrees(workspace.path, process.platform, exec), current.state, workspace.name);
         return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, exec) }))); // #653
       }));
       res.json(perWorkspace.flat());
@@ -170,7 +170,7 @@ async function removeOrphan(req: Request, res: Response, deps: WorktreeRouteDeps
   const { promptsDir } = before.runtime;
   let listed: Pick<WorktreeRow, 'slug' | 'branch'> | undefined;
   try {
-    listed = (await listWorktrees(repo, deps.exec)).find((w) => w.slug === slug);
+    listed = (await listWorktrees(repo, process.platform, deps.exec)).find((w) => w.slug === slug);
   } catch (err) {
     res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
     return;

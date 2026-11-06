@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { access, realpath, unlink } from 'node:fs/promises';
-import { basename, isAbsolute, join } from 'node:path';
+import { isAbsolute, join, posix, win32 } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import type { Logger } from './log.js';
@@ -8,14 +8,14 @@ import { ownBranch } from './task-runs.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, RemovalRefusal, remoteHead, setAside, settleSync, withSync, wordsOf } from './worktree-base.js';
+import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, RemovalRefusal, remoteHead, setAside, settleSync, WORKTREE_PREFIX, withSync, wordsOf } from './worktree-base.js';
+import { samePath } from './same-path.js';
 import { refuseDirtyNested, removeNested } from './worktree-nested.js';
 export { branchAt, gitOrWords, wordsOf } from './worktree-base.js';
 import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type TaskPr, type Exec, isBranchName, type WorktreeRow } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 const BRANCH_NOT_FOUND = /error: branch '.*' not found/; // git branch -D on a branch already deleted; execFile's message embeds the stderr
-const WORKTREE_PREFIX = 'worktree '; // the first line of each block of `worktree list --porcelain`
 export const WORKTREES_DIR = 'worktrees';
 // Another git writing .git/config at the same moment (two tasks starting at once, on one daemon or two): the lock is held for milliseconds
 const CONFIG_LOCK = /could not lock config file/;
@@ -303,15 +303,18 @@ async function mergedHead(url: string, exec: Exec, log?: Pick<Logger, 'info'>): 
  * Every worktree the Hive created (#181): the blocks of `git worktree list --porcelain` whose path is worktreePath(repo, <its own
  * basename>), meaning a direct child of .hive/worktrees, the only place the Hive creates one (#125). The main checkout, a worktree
  * elsewhere and anything nested are skipped; a directory there that git does not list is not a worktree. The branch is branchAt's
- * (null = detached). Read-only; a failure carries git's words.
+ * (null = detached). A row's path is the Hive's own, never git's string (#640): git prints `C:/…` on Windows. Read-only; a failure
+ * carries git's words.
  */
-export async function listWorktrees(repo: string, exec: Exec = execFileAsync): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
+export async function listWorktrees(repo: string, platform: NodeJS.Platform, exec: Exec = execFileAsync): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
   const porcelain = await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec);
+  const names = platform === 'win32' ? win32 : posix; // a `C:/…` line's last name is its slug only for win32's basename
   return porcelain.split('\n').flatMap((line) => {
     if (!line.startsWith(WORKTREE_PREFIX)) return [];
-    const path = line.slice(WORKTREE_PREFIX.length);
-    const slug = basename(path);
-    return worktreePath(repo, slug) === path ? [{ slug, path, branch: branchAt(porcelain, path, process.platform) ?? null }] : [];
+    const listed = line.slice(WORKTREE_PREFIX.length);
+    const slug = names.basename(listed);
+    const path = worktreePath(repo, slug);
+    return samePath(path, listed, platform) ? [{ slug, path, branch: branchAt(porcelain, path, platform) ?? null }] : [];
   });
 }
 
