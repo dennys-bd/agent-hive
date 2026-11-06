@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { acquireLock, LOCK_FILE, lockHelper, pidExists, PORT_FILE, readDaemonPort, readDaemonSecret, readLockPid, releaseLock, removeDaemonSecret, SECRET_FILE, writeDaemonPort, writeDaemonSecret } from '../src/daemon-files.js';
+import { homePipeName } from '../src/home-pipe.js';
 import { newSecret } from '../src/secret.js';
 import { tempDir } from './temp-dir.js';
 import { NO_PROCESS_LIST } from './process-list.js';
@@ -21,6 +22,8 @@ const noop = (): void => undefined;
 const MODULE = new URL('../src/daemon-files.js', import.meta.url).href;
 const FREE_MS = 5000; // a killed holder's cat reads its EOF within milliseconds; past this the takeover failed
 const RETRY_MS = 20;
+const POSIX_ONLY = { skip: process.platform === 'win32' }; // file modes, lockf/flock and signals
+const WIN32_ONLY = { skip: process.platform !== 'win32' };
 
 // Takes the lock for the test and releases it after the test, so no helper outlives the test that started it (#479)
 async function hold(t: TestContext, home: string, onLost: (status: string) => void = noop): Promise<void> {
@@ -58,7 +61,7 @@ async function helperPids(lock: string): Promise<number[]> {
   return stdout.trim().split('\n').map(Number);
 }
 
-test('writeDaemonPort then readDaemonPort gives the port back, 0600 and no temp file left; a missing, garbage or out-of-range file reads undefined (#466)', async (t) => {
+test('writeDaemonPort then readDaemonPort gives the port back, 0600 and no temp file left; a missing, garbage or out-of-range file reads undefined (#466)', POSIX_ONLY, async (t) => {
   const home = await tempDir(t, 'files-');
   assert.equal(readDaemonPort(home), undefined, 'no file: no daemon');
   writeDaemonPort(home, 51234);
@@ -72,21 +75,21 @@ test('writeDaemonPort then readDaemonPort gives the port back, 0600 and no temp 
   }
 });
 
-test('acquireLock on an empty home creates hive.lock with this pid, mode 0600 (#466, #479)', async (t) => {
+test('acquireLock on an empty home creates hive.lock with this pid, mode 0600 (#466, #479)', POSIX_ONLY, async (t) => {
   const home = await tempDir(t, 'files-');
   await hold(t, home);
   assert.equal(await readFile(join(home, LOCK_FILE), 'utf8'), `${process.pid}\n`);
   assert.equal(await mode(join(home, LOCK_FILE)), 0o600);
 });
 
-test('while acquireLock holds a home, a second acquireLock of it in the same process is refused naming the holder\'s pid, and the file is left as it was (#479)', async (t) => {
+test('while acquireLock holds a home, a second acquireLock of it in the same process is refused naming the holder\'s pid, and the file is left as it was (#479)', POSIX_ONLY, async (t) => {
   const home = await tempDir(t, 'files-');
   await hold(t, home);
   await assert.rejects(acquireLock(home, noop), { message: `Agent Hive já está em execução nesta home (pid ${process.pid})` });
   assert.equal(await readFile(join(home, LOCK_FILE), 'utf8'), `${process.pid}\n`, 'a second open file description conflicts under flock');
 });
 
-test('the takeover of #479: a lock left by a holder killed with SIGKILL is taken by the next acquireLock, and of two started together exactly one resolves', async (t) => {
+test('the takeover of #479: a lock left by a holder killed with SIGKILL is taken by the next acquireLock, and of two started together exactly one resolves (#479, #627)', async (t) => {
   const home = await tempDir(t, 'files-');
   await crashedHolder(home);
   assert.notEqual(readLockPid(home), process.pid, 'the dead holder\'s pid is still in the file');
@@ -98,7 +101,7 @@ test('the takeover of #479: a lock left by a holder killed with SIGKILL is taken
   assert.equal(readLockPid(home), process.pid, 'the winner wrote its pid');
 });
 
-test('acquireLock refuses a symlink at hive.lock and leaves its target untouched (#466, #479)', async (t) => {
+test('acquireLock refuses a symlink at hive.lock and leaves its target untouched (#466, #479)', POSIX_ONLY, async (t) => {
   const home = await tempDir(t, 'files-');
   const target = join(home, 'elsewhere');
   await writeFile(target, 'keep\n');
@@ -123,7 +126,7 @@ test('releaseLock frees the home at once for the next acquireLock and leaves hiv
   assert.deepEqual(lost, [], 'a release is not a lost lock');
 });
 
-test('a helper killed while it holds the lock calls onLost with its status (#479)', { skip: NO_PROCESS_LIST }, async (t) => {
+test('a helper killed while it holds the lock calls onLost with its status (#479)', { skip: process.platform === 'win32' || NO_PROCESS_LIST }, async (t) => {
   const home = await tempDir(t, 'files-');
   let reportLost: (status: string) => void = noop;
   const lost = new Promise<string>((resolve) => { reportLost = resolve; });
@@ -134,7 +137,7 @@ test('a helper killed while it holds the lock calls onLost with its status (#479
   assert.equal(await lost, 'SIGKILL');
 });
 
-test('a helper that exits before taking the lock for any reason but a holder is a boot error naming its status (#479)', async (t) => {
+test('a helper that exits before taking the lock for any reason but a holder is a boot error naming its status (#479)', POSIX_ONLY, async (t) => {
   const home = await tempDir(t, 'files-');
   const lock = join(home, LOCK_FILE);
   await writeFile(lock, '');
@@ -149,7 +152,7 @@ test('a helper that exits before taking the lock for any reason but a holder is 
   });
 });
 
-test('pidExists: true for this process and for another user\'s (EPERM), false for one that exited (#466)', () => {
+test('pidExists: true for this process and for another user\'s (EPERM), false for one that exited (#466)', POSIX_ONLY, () => {
   assert.equal(pidExists(process.pid), true);
   assert.equal(pidExists(1), true, 'launchd: EPERM for this user, alive all the same');
   assert.equal(pidExists(deadPid()), false);
@@ -161,7 +164,7 @@ test('lockHelper: lockf on darwin and flock with -E 75 on linux, both without wa
   assert.throws(() => lockHelper('win32', '/h/hive.lock'), { message: 'Agent Hive não executa em win32: o lock da home precisa de lockf (macOS) ou flock (Linux)' });
 });
 
-test('writeDaemonSecret writes the header line curl reads with -H @file; readDaemonSecret gives the bare secret back, mode 0600 and no temp file left (#467)', async (t) => {
+test('writeDaemonSecret writes the header line curl reads with -H @file; readDaemonSecret gives the bare secret back, mode 0600 and no temp file left (#467)', POSIX_ONLY, async (t) => {
   const home = await tempDir(t, 'files-');
   assert.equal(readDaemonSecret(home), undefined, 'no file: no daemon');
   const secret = newSecret();
@@ -172,7 +175,7 @@ test('writeDaemonSecret writes the header line curl reads with -H @file; readDae
   assert.deepEqual(await readdir(home), [SECRET_FILE], 'the temp file was renamed over it');
 });
 
-test('curl -H @hive.secret sends the x-hive-secret header with the value writeDaemonSecret wrote: only the path is in its argv (#467)', async (t) => {
+test('curl -H @hive.secret sends the x-hive-secret header with the value writeDaemonSecret wrote: only the path is in its argv (#467)', POSIX_ONLY, async (t) => {
   const home = await tempDir(t, 'files-');
   const secret = newSecret();
   writeDaemonSecret(home, secret);
@@ -211,4 +214,29 @@ test('removeDaemonSecret removes hive.secret while hive.lock names this process,
   removeDaemonSecret(home);
   assert.equal(existsSync(join(home, SECRET_FILE)), false);
   removeDaemonSecret(home); // already gone: no throw
+});
+
+test('homePipeName: one name for every spelling of a home, another for another home, on every OS (#627)', () => {
+  const name = homePipeName('C:\\Users\\x\\.config\\agent-hive');
+  assert.match(name, /^\\\\\.\\pipe\\agent-hive-[0-9a-f]{64}$/);
+  assert.equal(homePipeName('c:/users/X/.config/agent-hive'), name);
+  assert.notEqual(homePipeName('C:\\Users\\y\\.config\\agent-hive'), name);
+});
+
+test('win32: a second acquireLock of a held home is refused, and a release frees it for the next one (#627)', WIN32_ONLY, async (t) => {
+  const home = await tempDir(t, 'files-');
+  await hold(t, home);
+  assert.equal(await readFile(join(home, LOCK_FILE), 'utf8'), `${process.pid}\n`);
+  await assert.rejects(acquireLock(home, noop), /já está em execução/);
+  releaseLock(home);
+  await hold(t, home);
+});
+
+test('win32: acquireLock refuses a symlink at hive.lock and leaves its target untouched (#627)', WIN32_ONLY, async (t) => {
+  const home = await tempDir(t, 'files-');
+  const target = join(home, 'elsewhere');
+  await writeFile(target, 'keep\n');
+  await symlink(target, join(home, LOCK_FILE));
+  await assert.rejects(acquireLock(home, noop), { message: `${join(home, LOCK_FILE)} não é um arquivo comum` });
+  assert.equal(await readFile(target, 'utf8'), 'keep\n');
 });
