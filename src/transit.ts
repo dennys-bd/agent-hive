@@ -113,7 +113,7 @@ function sameModel(state: State, workerId: string | undefined, next: Stage): boo
   if (worker === undefined || next.name === worker.stage) return true;
   const agent = worker.agent ?? stageAgentIn(state, next);
   const defaultAgent = liveDefaultAgent(state);
-  const ran = stageOf(state.stages, worker.stage ?? '');
+  const ran = stageOf(state.stages, worker.stage);
   const live = worker.launch?.model ?? (ran === undefined ? undefined : stageModelFor(ran, agent, defaultAgent));
   return live === stageModelFor(next, agent, defaultAgent);
 }
