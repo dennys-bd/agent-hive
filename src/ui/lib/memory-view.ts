@@ -10,7 +10,9 @@ const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
 export const kindLabel = (kind: MemoryKind): string => t(`settings.memory.kind.${kind}`);
-/** `{n} de {max} caracteres`: the memory's usage, and an editing row's live counter. */
+/** `{n} de {max} caracteres em descrições` (#680): what the cap counts, in the dialog's and the workspace card's usage. */
+export const usedText = (used: number, cap: number): string => t('settings.memory.usedDescriptions', { n: formatCount(used), max: formatCount(cap) });
+/** `{n} de {max} caracteres`: an editing row's live counter. */
 export const charactersText = (n: number, max: number): string => t('settings.memory.of', { n: formatCount(n), max: formatCount(max) });
 
 /** `{n} lições · {m} vindas de tarefas` (#797). */

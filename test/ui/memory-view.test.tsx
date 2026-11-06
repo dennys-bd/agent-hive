@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
 import { addLesson, editLesson, readMemory, readStats, removeLesson } from '@/lib/memory-api';
-import { canSaveLesson, charactersText, citedText, kindCounts, lastText, lessonsText, metaText, originDateText, refusalText, statNumbers } from '@/lib/memory-view';
+import { canSaveLesson, charactersText, citedText, kindCounts, lastText, lessonsText, metaText, originDateText, refusalText, statNumbers, usedText } from '@/lib/memory-view';
 import type { MemoryEntry } from '../../src/types';
 import { jsonResponse } from '../fakes';
 
@@ -27,9 +27,11 @@ test('a lesson\'s meta line and its citations read in both languages: you or tas
 
 test('the usage reads with the language\'s thousands separator, the lessons with their singular and how many came from tasks; kinds are counted (#797)', () => {
   const entries = [lesson({ id: 'm-1' }), lesson({ id: 'm-2', kind: 'pref', origin: { task: '7' } }), lesson({ id: 'm-3', kind: 'pref' })];
+  expect(usedText(87, 4000)).toBe('87 de 4.000 caracteres em descrições');
   expect([charactersText(87, 4000), lessonsText(entries), lessonsText([entries[0]])]).toEqual(['87 de 4.000 caracteres', '3 lições · 1 vindas de tarefas', '1 lição · 0 vindas de tarefas']);
   expect(kindCounts(entries)).toEqual({ all: 3, pref: 2, fact: 1, avoid: 0 });
   setLanguage('en');
+  expect(usedText(87, 4000)).toBe('87 of 4,000 characters in descriptions');
   expect([charactersText(87, 4000), lessonsText(entries)]).toEqual(['87 of 4,000 characters', '3 lessons · 1 from tasks']);
 });
 

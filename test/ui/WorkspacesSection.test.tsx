@@ -270,7 +270,7 @@ test('the card has no total limit field: a cap the memory dialog saves reaches t
   render(<Settings info={info} onSaved={onSaved} />);
   await open(user, 'workspaces');
   const hive = within(screen.getByRole('region', { name: 'hive' }));
-  expect(await hive.findByText('0 de 4.000 caracteres')).toBeInTheDocument();
+  expect(await hive.findByText('0 de 4.000 caracteres em descrições')).toBeInTheDocument();
   expect(hive.queryByRole('spinbutton', { name: /limite total/ })).not.toBeInTheDocument();
   await user.click(hive.getByRole('button', { name: t('settings.memory.open') }));
   const dialog = within(await screen.findByRole('dialog'));
@@ -278,9 +278,9 @@ test('the card has no total limit field: a cap the memory dialog saves reaches t
   await user.clear(field);
   await user.type(field, '6000');
   await user.click(dialog.getByRole('button', { name: t('settings.memory.save') }));
-  expect(await dialog.findByText('0 de 6.000 caracteres')).toBeInTheDocument();
+  expect(await dialog.findByText('0 de 6.000 caracteres em descrições')).toBeInTheDocument();
   await user.click(dialog.getByRole('button', { name: t('settings.memory.close') }));
-  expect(await hive.findByText('0 de 6.000 caracteres')).toBeInTheDocument();
+  expect(await hive.findByText('0 de 6.000 caracteres em descrições')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: t('settings.cancel') })).toBeDisabled(); // no unsaved change: the baseline has it too
   const env = within(hive.getByRole('group', { name: t('settings.workspaceEnv', { workspace: 'hive' }) }));
   await user.click(env.getByRole('button', { name: t('settings.env.add') }));
