@@ -150,11 +150,16 @@ function saveBody(raw: unknown): SaveBody | undefined {
   return isValid ? { path, text, version, format } : undefined;
 }
 
-// #749, #780: the formatter's run when the pane asked for it and format on save covers the workspace; undefined sends the text as typed
+const DRAWIO_EXTENSION = '.drawio';
+// #956: draw.io's own XML is the file's canonical form; a formatter would reflow what the diagram pane writes back, and a ⌘S in the editor
+// pane must not reformat it either
+const isDrawio = (file: string): boolean => extname(file).toLowerCase() === DRAWIO_EXTENSION;
+
+// #749, #780, #956: the formatter's run when the pane asked for it and format on save covers the workspace; undefined sends the text as typed, always for a .drawio
 function formatted(located: Located, body: SaveBody, consoleStore: Store, editor: EditorConfig): Promise<FormatOutcome | undefined> {
   const { workspace } = located;
   const isOn = editor.formatOnSave.enabled && workspace !== undefined && inScope(editor.formatOnSave.workspaces, workspace.name);
-  if (!body.format || !isOn || workspace === undefined) return Promise.resolve(undefined);
+  if (!body.format || !isOn || workspace === undefined || isDrawio(located.file)) return Promise.resolve(undefined);
   return formatForSave(editor, body.text, { cwd: located.folder, file: located.file, workspace, label: `${located.label} · ${body.path}`, consoleStore });
 }
 
