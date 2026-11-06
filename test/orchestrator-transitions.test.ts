@@ -88,17 +88,18 @@ test('an agent verdict fires its own transition with the evidence on the record;
   assert.equal(taskOf(ok)?.stage, 'Ship');
 });
 
-test('an approval stage takes a verdict with a transition at once, and waits for the user on any other end (#134)', () => {
+test('an approval stage waits for the user on every end, a verdict with a transition included; approving then takes that verdict\'s transition (#134, #693)', () => {
   const stages: Stage[] = [STAGES[0], { ...STAGES[1], approval: true, verdicts: ['redo'] }, STAGES[2]];
   const transitions: Transition[] = [
     { from: 'Build', to: 'Review', when: 'done' }, { from: 'Review', to: 'Build', when: 'verdict', verdict: 'redo' }, { from: 'Review', to: 'Ship', when: 'approved' },
   ];
   const inReview = reduce(stageEnd(flow(transitions, stages)).state, { type: 'setSignal', signal: 'green' }).state;
   const routed = stageEnd(inReview, { verdict: 'redo' }).state;
-  assert.deepEqual([taskOf(routed)?.stage, activityOf(routed, ID)?.approval], ['Build', undefined]);
+  assert.deepEqual([taskOf(routed)?.stage, activityOf(routed, ID)?.approval?.verdict], ['Review', 'redo']);
+  assert.equal(taskOf(reduce(routed, { type: 'approve', activityId: workId(routed, ID) }).state)?.stage, 'Build');
   const waits = stageEnd(inReview).state;
   assert.equal(taskOf(waits)?.stage, 'Review');
-  assert.ok(activityOf(waits, ID)?.approval);
+  assert.deepEqual([activityOf(waits, ID)?.approval !== undefined, activityOf(waits, ID)?.approval?.verdict], [true, undefined]);
 });
 
 test('a transition with maxTries counts per task; once they ran out the task stops in the origin with the evidence kept; approve and a move by hand drop the tries (#134)', () => {
@@ -106,15 +107,16 @@ test('a transition with maxTries counts per task; once they ran out the task sto
   const redo: Transition = { from: 'Review', to: 'Build', when: 'verdict', verdict: 'redo', maxTries: 1 };
   const transitions: Transition[] = [{ from: 'Build', to: 'Review', when: 'done' }, redo, { from: 'Review', to: 'Ship', when: 'approved' }];
   const green = (s: State): State => reduce(s, { type: 'setSignal', signal: 'green' }).state;
-  const once = stageEnd(green(stageEnd(flow(transitions, stages)).state), { verdict: 'redo', evidence: 'first' }).state;
+  const approved = (s: State): State => reduce(s, { type: 'approve', activityId: workId(s, ID) }).state; // #693: the verdict waits for the user
+  const once = approved(stageEnd(green(stageEnd(flow(transitions, stages)).state), { verdict: 'redo', evidence: 'first' }).state);
   assert.deepEqual([taskOf(once)?.stage, activityOf(once, ID)?.tries, activityOf(once, ID)?.via], ['Build', { [transitionKey(redo)]: 1 }, transitionKey(redo)]);
   const again = green(stageEnd(green(once)).state);
-  const out = stageEnd(again, { verdict: 'redo', evidence: 'second' }).state;
+  const out = approved(stageEnd(again, { verdict: 'redo', evidence: 'second' }).state);
   assert.deepEqual([taskOf(out)?.stage, activityOf(out, ID)?.stopped, activityOf(out, ID)?.error], ['Review', true, 'tries out: verdict:redo · 1']);
   assert.deepEqual(resultOf(out, ID)?.verdict, { name: 'redo', evidence: 'second' });
   const waiting = stageEnd(again).state;
-  const approved = reduce(waiting, { type: 'approve', activityId: workId(waiting, ID) }).state;
-  assert.deepEqual([taskOf(approved)?.stage, activityOf(approved, ID)?.tries], ['Ship', undefined], 'a user transition earns the tries back');
+  const shipped = approved(waiting);
+  assert.deepEqual([taskOf(shipped)?.stage, activityOf(shipped, ID)?.tries], ['Ship', undefined], 'a user transition earns the tries back');
   const moved = reduce(out, { type: 'moveToStage', taskId: ID, stage: 'Build' }).state;
   assert.deepEqual([activityOf(moved, ID)?.tries, activityOf(moved, ID)?.via], [undefined, undefined]);
 });
