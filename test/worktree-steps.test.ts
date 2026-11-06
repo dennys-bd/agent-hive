@@ -7,6 +7,7 @@ import { posixShell, posixShellEnv } from '../src/posix-shell.js';
 import { parseSetup, type SetupStep } from '../src/setup-script.js';
 import type { Exec, Workspace } from '../src/types.js';
 import { clipStep, type Phase, RunFailure, type RunShell, runShell, runSteps, type StepDeps, type StepReport, WORKTREE_NAME } from '../src/worktree-steps.js';
+import { gone } from './process-probe.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 interface Harness { workspace: Workspace; main: string; worktree: string; home: string; deps: StepDeps; output: string[] }
@@ -204,6 +205,28 @@ test('runShell hands options.env to the child, never in its line, and the child 
   process.env.HIVE_738_INHERITED = 'from the Hive';
   t.after(async () => { delete process.env.HIVE_738_INHERITED; });
   assert.equal(await printed('printf %s "$HIVE_738_INHERITED"'), 'from the Hive');
+});
+
+test('a RUN step that passes its timeout leaves no process of its tree: the node its line started and that node\'s own child are both gone (#637)', { timeout: 30_000 }, async (t) => {
+  const cwd = await tempDir(t, 'run-');
+  const pids = join(cwd, 'pids.json');
+  // node, not sleep: $! in Git's sh is an MSYS pid, while process.pid is the one taskkill and process.kill know. Written whole (tmp + rename),
+  // so the test never reads half a file.
+  const script = [
+    "const { spawn } = require('node:child_process');",
+    "const { renameSync, writeFileSync } = require('node:fs');",
+    "const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
+    "writeFileSync(process.env.HIVE_637_PIDS + '.tmp', JSON.stringify([process.pid, g.pid]));",
+    "renameSync(process.env.HIVE_637_PIDS + '.tmp', process.env.HIVE_637_PIDS);",
+    'setInterval(() => {}, 1000);',
+  ].join(' ');
+  // through the env, never the line: the paths stay out of the shell's quoting on every OS
+  const env = { ...process.env, ...posixShellEnv(process.platform), HIVE_637_NODE: process.execPath, HIVE_637_SCRIPT: script, HIVE_637_PIDS: pids };
+  const err = await runShell(posixShell().shell, ['-c', '"$HIVE_637_NODE" -e "$HIVE_637_SCRIPT"'], { cwd, timeoutMs: 4_000, env }).then(() => undefined, (e: unknown) => e);
+  assert.ok(err instanceof RunFailure && err.code === 'timeout', String(err));
+  const [child, grandchild] = JSON.parse(await readFile(pids, 'utf8')) as [number, number];
+  assert.equal(await gone(child), true, 'the node the line started');
+  assert.equal(await gone(grandchild), true, 'the node it started in turn');
 });
 
 test('on the Windows lane: a RUN step goes through the real runShell and Git\'s sh.exe with System32 ahead of Git on PATH; its output and a non-zero exit code come back (#631)', { skip: process.platform !== 'win32' }, async (t) => {
