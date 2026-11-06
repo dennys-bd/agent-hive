@@ -2078,6 +2078,8 @@ export const MEMORY_CAP_DEFAULT = 4000; // #73: what a new workspace row shows; 
 export const WORKSPACE_PRESET_COLORS: readonly string[] = [25, 70, 130, 190, 240, 295, 340].map((h) => `oklch(0.72 0.12 ${h})`);
 export const WORKSPACE_HEX_COLOR = /^#[0-9a-f]{6}$/; // #78: a custom colour as the system picker gives it; the parser refuses any other shape
 export const MEMORY_TEXT_MAX = 300; // characters per lesson; a candidate setting in docs/agent/settings-candidates.md
+export const MEMORY_DESCRIPTION_MAX = 150; // #680: characters per lesson description; a candidate setting in docs/agent/settings-candidates.md
+export const MEMORY_BODY_MAX = 4000; // #680: characters per lesson body; idem
 export const MEMORY_REFUSALS = ['bad_memory', 'memory_full', 'memory_secret', 'unknown_memory'] as const;
 export type MemoryRefusalCode = (typeof MEMORY_REFUSALS)[number];
 /** GET /workspaces/:name/memory/stats (#797): the last MEMORY_STATS_DAYS days of facts.jsonl for the workspace. */

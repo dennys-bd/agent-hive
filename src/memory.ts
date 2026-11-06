@@ -4,7 +4,7 @@ import { writeWorkspaceProtocol } from './hooks-settings.js';
 import { type ProtocolFor, protocolTexts } from './protocol.js';
 import { createJsonStore } from './json-store.js';
 import {
-  isMemoryKind, MEMORY_KINDS, MEMORY_TEXT_MAX, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryOrigin,
+  isMemoryKind, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_KINDS, MEMORY_TEXT_MAX, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryOrigin,
   type MemoryRefusalCode, type MemoryUse, type MemoryView, type OptionalTool,
 } from './types.js';
 
@@ -13,8 +13,10 @@ import {
 
 const DIR = 'memory';
 export const EMPTY_MEMORY: MemoryFile = { nextId: 1, entries: [] };
-export const MEMORY_TEXT_MESSAGE = `text must be one line of 1 to ${MEMORY_TEXT_MAX} characters`;
-export const WHY_MESSAGE = `why must be one line of 1 to ${MEMORY_TEXT_MAX} characters`;
+export const MEMORY_TEXT_MESSAGE = `text must be one line of 1 to ${MEMORY_TEXT_MAX} characters`; // deleted in Task 2
+export const DESCRIPTION_MESSAGE = `description must be one line of 1 to ${MEMORY_DESCRIPTION_MAX} characters`;
+export const BODY_MESSAGE = `body must be 1 to ${MEMORY_BODY_MAX} characters of plain text; line feeds and tabs are kept`;
+export const WHY_MESSAGE = `why must be one line of 1 to ${MEMORY_DESCRIPTION_MAX} characters`;
 export const MEMORY_KIND_MESSAGE = `kind must be one of: ${MEMORY_KINDS.join(', ')}`;
 export const MEMORY_SECRET_MESSAGE = 'this looks like a secret; never save tokens or keys';
 export const MEMORY_FULL_MESSAGE = 'memory is full; go on without saving this lesson';
@@ -31,14 +33,19 @@ const refusal = (code: MemoryRefusalCode, message: string): MemoryRefusal => ({ 
 /** A workspace's file (#797): WORKSPACE_NAME is already safe in a path; encoded all the same, as a review's is, so nothing leaves the folder. */
 export const memoryPath = (home: string, workspace: string): string => join(home, DIR, `${encodeURIComponent(workspace)}.json`);
 
-// Control, line and paragraph separator and format characters: none can sit in a lesson, which is one plain line in a prompt
+// Control, line and paragraph separator and format characters: none can sit in a one-line field of a prompt
 const NOT_PLAIN = /[\p{Cc}\p{Zl}\p{Zp}\p{Cf}]/u;
-const isOneLine = (text: string): boolean => {
+// #680: a body keeps its line feeds and tabs; every other control character (\r included), separator and format character stays out of a prompt
+const NOT_BODY = /[\p{Zl}\p{Zp}\p{Cf}]|(?![\n\t])\p{Cc}/u;
+const fits = (text: string, max: number, refused: RegExp): boolean => {
   const trimmed = text.trim();
-  return trimmed.length >= 1 && trimmed.length <= MEMORY_TEXT_MAX && !NOT_PLAIN.test(trimmed);
+  return trimmed.length >= 1 && trimmed.length <= max && !refused.test(trimmed);
 };
-export const memoryTextProblem = (text: string): string | undefined => (isOneLine(text) ? undefined : MEMORY_TEXT_MESSAGE);
-export const whyProblem = (why: string): string | undefined => (isOneLine(why) ? undefined : WHY_MESSAGE);
+export const memoryTextProblem = (text: string): string | undefined => (fits(text, MEMORY_TEXT_MAX, NOT_PLAIN) ? undefined : MEMORY_TEXT_MESSAGE); // deleted in Task 2
+export const descriptionProblem = (description: string): string | undefined => (fits(description, MEMORY_DESCRIPTION_MAX, NOT_PLAIN) ? undefined : DESCRIPTION_MESSAGE);
+export const bodyProblem = (body: string): string | undefined => (fits(body, MEMORY_BODY_MAX, NOT_BODY) ? undefined : BODY_MESSAGE);
+// #680: a why is one line like a description
+export const whyProblem = (why: string): string | undefined => (fits(why, MEMORY_DESCRIPTION_MAX, NOT_PLAIN) ? undefined : WHY_MESSAGE);
 
 // ponytail: a pattern list, not a scanner; it catches the common shapes only. The prefixes start a word, so `task-…` is no `sk-` key
 const SECRET_PATTERNS: readonly RegExp[] = [
@@ -46,7 +53,8 @@ const SECRET_PATTERNS: readonly RegExp[] = [
   /\bxox[baprs]-/, /\bAIza[0-9A-Za-z_-]{30,}/, /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/, /\b(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*\S+/i,
   /:\/\/[^/\s:@]+:[^@\s]+@/, // credentials in a URL
 ];
-const LONG_RUN = /[A-Za-z0-9+/=_-]{32,}/g;
+// #680: `/`, `-` and `_` end a run, so a path or a slug is no token; a bare hex or base62 token is still one unbroken run
+const LONG_RUN = /[A-Za-z0-9+=]{32,}/g;
 const hasLettersAndDigits = (run: string): boolean => /[A-Za-z]/.test(run) && /\d/.test(run);
 
 /** Whether a lesson looks like it holds a token or a key (#797): it is injected into every run and shown in Settings. */

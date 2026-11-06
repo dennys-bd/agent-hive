@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createMemoryStore, EMPTY_MEMORY, isMemoryRefusal, looksLikeSecret, MEMORY_FULL_MESSAGE, MEMORY_TEXT_MESSAGE, type MemoryResult, memoryPath, memoryTextProblem, memoryUsed,
+  BODY_MESSAGE, bodyProblem, DESCRIPTION_MESSAGE, descriptionProblem, createMemoryStore, EMPTY_MEMORY, isMemoryRefusal, looksLikeSecret, MEMORY_FULL_MESSAGE, type MemoryResult, memoryPath, memoryUsed,
   parseMemory, renderMemory, renderedOf, whyProblem, withEdit, withEntry, withoutEntry, withUse,
 } from '../src/memory.js';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -44,14 +44,21 @@ test('parseMemory takes the file as the Hive writes it and throws on a bad kind,
   assert.throws(() => parseMemory([]), /not a memory file/);
 });
 
-test('a lesson and a why are one line of 1 to 300 characters after the trim (#797)', () => {
-  assert.equal(memoryTextProblem('  pnpm test is the gate  '), undefined);
-  assert.equal(memoryTextProblem('x'.repeat(300)), undefined);
-  for (const bad of ['', '   ', 'x'.repeat(301), 'one\ntwo', 'one\rtwo', 'a\u2028b', 'a\u2029b', 'a\u0007b', 'a\u200Bb', 'a\u202Eb']) assert.equal(memoryTextProblem(bad), MEMORY_TEXT_MESSAGE, JSON.stringify(bad.slice(0, 20)));
+test('a description and a why are one line of 1 to 150 characters after the trim; a body is 1 to 4,000 characters of plain text that keeps line feeds and tabs (#680)', () => {
+  assert.equal(descriptionProblem('  Portuguese copy for a run  '), undefined);
+  assert.equal(descriptionProblem('x'.repeat(150)), undefined);
+  for (const bad of ['', '   ', 'x'.repeat(151), 'one\ntwo', 'one\rtwo', 'a b', 'a b', 'a\u0007b', 'a​b', 'a‮b']) {
+    assert.equal(descriptionProblem(bad), DESCRIPTION_MESSAGE, JSON.stringify(bad.slice(0, 20)));
+  }
+  assert.equal(bodyProblem('Run it before every commit.\n\n\tWhy: CI runs the same.'), undefined);
+  assert.equal(bodyProblem(`  ${'b'.repeat(4000)}  `), undefined, 'the trim comes first');
+  for (const bad of ['', ' \n\t ', 'b'.repeat(4001), 'a\rb', 'a b', 'a b', 'a​b', 'a\u0007b', 'a‮b']) {
+    assert.equal(bodyProblem(bad), BODY_MESSAGE, JSON.stringify(bad.slice(0, 20)));
+  }
   assert.equal(whyProblem('the lesson said so'), undefined);
-  assert.equal(whyProblem('a\nb'), 'why must be one line of 1 to 300 characters');
-  assert.equal(whyProblem('a\u2028b'), 'why must be one line of 1 to 300 characters');
-  assert.equal(whyProblem('a\u200Bb'), 'why must be one line of 1 to 300 characters');
+  assert.equal(whyProblem('x'.repeat(151)), 'why must be one line of 1 to 150 characters');
+  assert.equal(whyProblem('a\nb'), 'why must be one line of 1 to 150 characters');
+  assert.equal(whyProblem('a​b'), 'why must be one line of 1 to 150 characters');
 });
 
 test('looksLikeSecret catches the common token and key shapes and leaves ordinary sentences with paths, numbers and hyphenated words alone (#797)', () => {
@@ -64,6 +71,10 @@ test('looksLikeSecret catches the common token and key shapes and leaves ordinar
   for (const ok of ['the token lives in the env, never in config', 'a password is never saved here', 'see https://example.com/docs for the api key rules']) assert.equal(looksLikeSecret(ok), false, ok);
   assert.equal(looksLikeSecret('run pnpm test in src/ui before a commit; it takes about 90 seconds'), false);
   assert.equal(looksLikeSecret('keep the task-specific-instructions-file-name out of CLAUDE.md'), false, 'sk- inside a word is no key');
+  // #680: `/`, `-` and `_` end a run: a dated spec path or a kebab slug in a body is ordinary text
+  assert.equal(looksLikeSecret('read docs/agent/hive/specs/2026-11-05-workspace-memory-index-decomposition.md first'), false);
+  assert.equal(looksLikeSecret('keep the hive_680_a_lesson_is_a_description_and_body branch'), false);
+  assert.equal(looksLikeSecret(`the hash ${'0123456789abcdef'.repeat(3).slice(0, 40)} is pinned`), true, 'a bare 40-character hex run');
 });
 
 test('memoryUsed sums the texts only; renderMemory gives nothing for no lessons, otherwise the title, the intro, the hive_applied line, then each kind in order with its ids, never an origin, a date or a use (#797)', () => {
