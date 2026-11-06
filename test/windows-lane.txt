@@ -3,6 +3,8 @@
 test/checker-parse.test.js
 test/daemon-files.test.js
 test/decomposition-deliver.test.js
+test/exec-path.test.js
+test/formatter-detect.test.js
 test/home-acl.test.js
 test/ide.test.js
 test/keep-awake.test.js
