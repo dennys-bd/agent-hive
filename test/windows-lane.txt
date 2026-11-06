@@ -1,6 +1,7 @@
 # The Windows lane (#625): the compiled test files ci.yml's windows job runs, one per line, relative to dist/, sorted.
 # Append-only: a leaf that ports a module adds that module's test file here and owns its every failure on Windows.
 test/checker-parse.test.js
+test/clipboard-files.test.js
 test/daemon-files.test.js
 test/decomposition-deliver.test.js
 test/exec-path.test.js
@@ -21,6 +22,7 @@ test/tab-carry.test.js
 test/tasks.test.js
 test/terminal-runs.test.js
 test/test-node.test.js
+test/window-ipc.test.js
 test/wire-path.test.js
 test/worktree-nested.test.js
 test/worktree-steps.test.js

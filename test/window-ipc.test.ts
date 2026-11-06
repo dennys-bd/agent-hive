@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import type { DetachedWindows } from '../src/detach-ipc.js';
-import { type MainWindow, registerWindowIpc, type WindowScope } from '../src/window-ipc.js';
+import { dropFilesBuffer, clipboardFilesPlist } from '../src/clipboard-files.js';
+import { type MainWindow, registerWindowIpc, type WindowClipboard, type WindowScope } from '../src/window-ipc.js';
 import { titleBarOverlayFor } from '../src/window-options.js';
 
 // The IPC every Hive page shares (#552) over fakes: one main window on PORT, Electron's dialogs recorded
@@ -19,7 +20,21 @@ function fakeWindow(isFull: boolean) {
   return { win, webContents, calls, overlays };
 }
 
-function rig(platform: NodeJS.Platform = 'darwin') {
+// A clipboard that keeps what was written, as the real one does: each writeBuffer replaces everything on it. `swallow` loses the write.
+function fakeClipboard(initial: Record<string, Buffer> = {}, { swallow = false, failWith }: { swallow?: boolean; failWith?: Error } = {}) {
+  let formats = new Map(Object.entries(initial));
+  const clipboard: WindowClipboard = {
+    read: (format) => (formats.get(format) ?? Buffer.alloc(0)).toString('utf8'),
+    readBuffer: (format) => formats.get(format) ?? Buffer.alloc(0),
+    writeBuffer: (format, buffer) => {
+      if (failWith) throw failWith;
+      if (!swallow) formats = new Map([[format, buffer]]);
+    },
+  };
+  return { clipboard, formats: () => formats };
+}
+
+function rig(platform: NodeJS.Platform = 'darwin', clipboard: WindowClipboard = fakeClipboard().clipboard) {
   const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>();
   const ons = new Map<string, (event: IpcMainEvent, ...args: unknown[]) => void>();
   const main = fakeWindow(false);
@@ -39,7 +54,7 @@ function rig(platform: NodeJS.Platform = 'darwin') {
       showOpenDialog: async (win) => { parents.push(win); return { canceled: false, filePaths: ['/repo'] }; },
       showSaveDialog: async (win) => { parents.push(win); return { canceled: false, filePath: '/repo/a.ts' }; },
     },
-    clipboard: { read: () => '', writeBuffer: () => undefined },
+    clipboard,
     settingsChanged: async () => { counts.settings += 1; },
   });
   // null: a sender with no frame (a page torn down mid-call)
@@ -130,4 +145,62 @@ test('window:theme does nothing on darwin: no caption overlay to recolour (#648)
   const h = rig('darwin');
   h.send('window:theme', h.event(h.main.webContents), 'dark');
   assert.deepEqual(h.main.overlays, []);
+});
+
+const utf16 = (text: string): Buffer => Buffer.from(text, 'utf16le');
+
+test('window:clipboardFiles on win32 reads CF_HDROP, and on darwin the pasteboard\'s plist (#650)', async () => {
+  const win = rig('win32', fakeClipboard({ CF_HDROP: dropFilesBuffer(['C:\\a\\1.txt', 'C:\\b 2.txt']) }).clipboard);
+  assert.deepEqual(await win.invoke('window:clipboardFiles', win.event(win.main.webContents)), ['C:\\a\\1.txt', 'C:\\b 2.txt']);
+  const mac = rig('darwin', fakeClipboard({ NSFilenamesPboardType: Buffer.from(clipboardFilesPlist(['/a/1.txt', '/b 2.txt'])) }).clipboard);
+  assert.deepEqual(await mac.invoke('window:clipboardFiles', mac.event(mac.main.webContents)), ['/a/1.txt', '/b 2.txt']);
+});
+
+test('window:clipboardFiles on win32 falls back to FileNameW for the first file, and answers [] with no file format (#650)', async () => {
+  const fallback = rig('win32', fakeClipboard({ FileNameW: utf16('C:\\only\\one.txt\0\0garbage') }).clipboard);
+  assert.deepEqual(await fallback.invoke('window:clipboardFiles', fallback.event(fallback.main.webContents)), ['C:\\only\\one.txt']);
+  const empty = rig('win32', fakeClipboard({ FileNameW: utf16('\0') }).clipboard);
+  assert.deepEqual(await empty.invoke('window:clipboardFiles', empty.event(empty.main.webContents)), []);
+  const none = rig('win32', fakeClipboard().clipboard);
+  assert.deepEqual(await none.invoke('window:clipboardFiles', none.event(none.main.webContents)), []);
+});
+
+test('window:clipboardFiles on win32 answers only the absolute paths another app put there (#650)', async () => {
+  const mixed = rig('win32', fakeClipboard({ CF_HDROP: dropFilesBuffer(['C:\\ok.txt', '..\\up.txt', '\\\\.\\pipe\\x']) }).clipboard);
+  assert.deepEqual(await mixed.invoke('window:clipboardFiles', mixed.event(mixed.main.webContents)), ['C:\\ok.txt']);
+  const relative = rig('win32', fakeClipboard({ FileNameW: utf16('rel.txt\0') }).clipboard);
+  assert.deepEqual(await relative.invoke('window:clipboardFiles', relative.event(relative.main.webContents)), []);
+});
+
+test('window:writeClipboardFiles writes CF_HDROP only on win32, the plist on darwin, and both read back (#650)', async () => {
+  const paths = ['C:\\a\\1.txt', 'C:\\b 2.txt'];
+  const win = fakeClipboard();
+  const w = rig('win32', win.clipboard);
+  await w.invoke('window:writeClipboardFiles', w.event(w.main.webContents), paths);
+  assert.deepEqual([...win.formats().keys()], ['CF_HDROP']);
+  assert.deepEqual(win.formats().get('CF_HDROP'), dropFilesBuffer(paths));
+  const mac = fakeClipboard();
+  const m = rig('darwin', mac.clipboard);
+  await m.invoke('window:writeClipboardFiles', m.event(m.main.webContents), ['/a/1.txt']);
+  assert.deepEqual([...mac.formats().keys()], ['NSFilenamesPboardType']);
+  assert.deepEqual(await m.invoke('window:clipboardFiles', m.event(m.main.webContents)), ['/a/1.txt']);
+});
+
+test('window:writeClipboardFiles refuses paths that are not absolute on the platform, before writing (#650)', async () => {
+  const win = fakeClipboard();
+  const w = rig('win32', win.clipboard);
+  await assert.rejects(async () => w.invoke('window:writeClipboardFiles', w.event(w.main.webContents), ['/a/posix']), /absolute/);
+  const mac = rig('darwin', win.clipboard);
+  await assert.rejects(async () => mac.invoke('window:writeClipboardFiles', mac.event(mac.main.webContents), ['C:\\a']), /absolute/);
+  assert.equal(win.formats().size, 0);
+});
+
+test('window:writeClipboardFiles rejects when writeBuffer throws or the system swallowed the write, on every platform (#650)', async () => {
+  const cases: [NodeJS.Platform, string][] = [['win32', 'C:\\a\\1.txt'], ['darwin', '/a/1.txt'], ['linux', '/a/1.txt']];
+  for (const [platform, path] of cases) {
+    const throwing = rig(platform, fakeClipboard({}, { failWith: new Error('clipboard busy') }).clipboard);
+    await assert.rejects(async () => throwing.invoke('window:writeClipboardFiles', throwing.event(throwing.main.webContents), [path]), /clipboard busy/, platform);
+    const swallowed = rig(platform, fakeClipboard({}, { swallow: true }).clipboard);
+    await assert.rejects(async () => swallowed.invoke('window:writeClipboardFiles', swallowed.event(swallowed.main.webContents), [path]), /clipboard/, platform);
+  }
 });
