@@ -8,8 +8,8 @@ import { LANGUAGE_IDS, SERVER_IDS, SYNTAX_IDS } from './types.js';
 export type Arch = 'arm64' | 'x64';
 /** A server's process: the program and its argv. */
 export interface Launch { command: string; args: string[] }
-/** Where a server is installed and which version: what its launch reads. */
-export interface Installed { dir: string; arch: Arch; version: string }
+/** Where a server is installed, which version, for which platform (#635). entry: an npm server's own script on win32, its package.json's bin. */
+export interface Installed { dir: string; arch: Arch; platform: NodeJS.Platform; version: string; entry?: string }
 /** One language: its extensions (lowercase, with the dot), its syntax (a package, Monaco's own, or none for other), its server if any. */
 export interface LanguageDef { id: LanguageId; extensions: readonly string[]; syntax?: SyntaxId | 'builtin'; server?: ServerId }
 /** One server's recipe. source: npm's package, GitHub's owner/repo, the Go module, or a system server's tool (#782). binaries: the programs a
@@ -22,7 +22,7 @@ export interface ServerDef {
   requires?: string; // toolchain: the tool its install needs on PATH; system: the tool it is (#782)
   binaries: readonly string[];
   args: readonly string[];
-  asset?(version: string, arch: Arch): string; // github: the release asset for this Mac
+  asset?(version: string, arch: Arch, platform: NodeJS.Platform): string; // github: the release asset for that platform (#635)
   launch(at: Installed, binary: string): Launch;
 }
 export interface SyntaxDef { id: SyntaxId; namespace: string; name: string }
@@ -55,14 +55,29 @@ export const LANGUAGES: readonly LanguageDef[] = [
 
 const MAC_ARCH: Record<Arch, string> = { arm64: 'aarch64', x64: 'x86_64' }; // rust-analyzer's and taplo's names for the two Macs
 
-// An npm server runs with node from PATH on its .bin script, so the install needs no shebang lookup of its own
+// A path under the install folder with the platform's separator (#635): no node:path here, since the page bundles this file
+const under = (at: Installed, ...parts: string[]): string => [at.dir, ...parts].join(at.platform === 'win32' ? '\\' : '/');
+const segments = (path: string): string[] => path.split('/').filter((part) => part !== '' && part !== '.');
+
+// An npm server runs with node from PATH: on its .bin script, or on win32 on its package's own entry, since .bin holds a .cmd and a sh
+// script there that node cannot run (#635)
+const npmScript = (at: Installed, source: string, binary: string): string => (at.platform === 'win32'
+  ? under(at, 'node_modules', ...segments(source), ...segments(at.entry ?? ''))
+  : under(at, 'node_modules', '.bin', binary));
 const npm = (id: ServerId, packages: string[], binaries: string[], args: string[]): ServerDef => ({
-  id, install: 'npm', source: packages[0], packages, binaries, args, launch: (at, binary) => ({ command: 'node', args: [`${at.dir}/node_modules/.bin/${binary}`, ...args] }),
+  id, install: 'npm', source: packages[0], packages, binaries, args, launch: (at, binary) => ({ command: 'node', args: [npmScript(at, packages[0], binary), ...args] }),
 });
-// A GitHub binary: path is where its archive puts it (a lone .gz goes to bin/<binary>); ruff's folder names the Mac's arch (#782)
-const github = (id: ServerId, repo: string, asset: (version: string, arch: Arch) => string, path: (version: string, arch: Arch) => string, args: string[] = []): ServerDef => ({
-  id, install: 'github', source: repo, binaries: [id], args, asset, launch: (at) => ({ command: `${at.dir}/${path(at.version, at.arch)}`, args }),
-});
+/** One platform's release of a GitHub binary: its asset, and where its archive puts the binary, with / (a lone .gz goes to bin/<binary>). */
+interface Release { asset(version: string, arch: Arch): string; path(version: string, arch: Arch): string }
+// darwin's release, or win32's x64 one whatever the arch (#635: Windows on arm64 runs x64 binaries); ruff's folder names the Mac's arch (#782)
+const github = (id: ServerId, repo: string, mac: Release, win: Release, args: string[] = []): ServerDef => {
+  const of = (platform: NodeJS.Platform): Release => (platform === 'win32' ? win : mac);
+  return {
+    id, install: 'github', source: repo, binaries: [id], args,
+    asset: (version, arch, platform) => of(platform).asset(version, arch),
+    launch: (at) => ({ command: under(at, ...segments(of(at.platform).path(at.version, at.arch))), args }),
+  };
+};
 // A server that ships with its SDK (#782): its tool from PATH, never installed by the Hive
 const system = (id: ServerId, tool: string, args: string[]): ServerDef => ({
   id, install: 'system', source: tool, requires: tool, binaries: [tool], args, launch: () => ({ command: tool, args }),
@@ -73,11 +88,19 @@ export const SERVERS: readonly ServerDef[] = [
   // typescript 7 ships no tsserver, and the server refuses to start without one: stay on 6
   npm('typescript-language-server', ['typescript-language-server', 'typescript@6'], ['typescript-language-server'], ['--stdio']),
   npm('pyright', ['pyright'], ['pyright-langserver'], ['--stdio']),
-  { id: 'gopls', install: 'toolchain', source: 'golang.org/x/tools/gopls', requires: 'go', binaries: ['gopls'], args: [], launch: (at) => ({ command: `${at.dir}/bin/gopls`, args: [] }) },
-  github('rust-analyzer', 'rust-lang/rust-analyzer', (_v, arch) => `rust-analyzer-${MAC_ARCH[arch]}-apple-darwin.gz`, () => 'bin/rust-analyzer'),
-  github('clangd', 'clangd/clangd', (v) => `clangd-mac-${v}.zip`, (v) => `clangd_${v}/bin/clangd`),
-  github('lua-language-server', 'LuaLS/lua-language-server', (v, arch) => `lua-language-server-${v}-darwin-${arch}.tar.gz`, () => 'bin/lua-language-server'),
-  github('taplo', 'tamasfe/taplo', (_v, arch) => `taplo-darwin-${MAC_ARCH[arch]}.gz`, () => 'bin/taplo', ['lsp', 'stdio']),
+  { id: 'gopls', install: 'toolchain', source: 'golang.org/x/tools/gopls', requires: 'go', binaries: ['gopls'], args: [], launch: (at) => ({ command: under(at, 'bin', at.platform === 'win32' ? 'gopls.exe' : 'gopls'), args: [] }) },
+  github('rust-analyzer', 'rust-lang/rust-analyzer',
+    { asset: (_v, arch) => `rust-analyzer-${MAC_ARCH[arch]}-apple-darwin.gz`, path: () => 'bin/rust-analyzer' },
+    { asset: () => 'rust-analyzer-x86_64-pc-windows-msvc.zip', path: () => 'rust-analyzer.exe' }),
+  github('clangd', 'clangd/clangd',
+    { asset: (v) => `clangd-mac-${v}.zip`, path: (v) => `clangd_${v}/bin/clangd` },
+    { asset: (v) => `clangd-windows-${v}.zip`, path: (v) => `clangd_${v}/bin/clangd.exe` }),
+  github('lua-language-server', 'LuaLS/lua-language-server',
+    { asset: (v, arch) => `lua-language-server-${v}-darwin-${arch}.tar.gz`, path: () => 'bin/lua-language-server' },
+    { asset: (v) => `lua-language-server-${v}-win32-x64.zip`, path: () => 'bin/lua-language-server.exe' }),
+  github('taplo', 'tamasfe/taplo',
+    { asset: (_v, arch) => `taplo-darwin-${MAC_ARCH[arch]}.gz`, path: () => 'bin/taplo' },
+    { asset: () => 'taplo-windows-x86_64.gz', path: () => 'bin/taplo.exe' }, ['lsp', 'stdio']),
   npm('yaml-language-server', ['yaml-language-server'], ['yaml-language-server'], ['--stdio']),
   npm('bash-language-server', ['bash-language-server'], ['bash-language-server'], ['start']),
   npm('vscode-langservers-extracted', ['vscode-langservers-extracted'], ['vscode-html-language-server', 'vscode-css-language-server', 'vscode-json-language-server'], ['--stdio']),
@@ -85,8 +108,12 @@ export const SERVERS: readonly ServerDef[] = [
   npm('biome', ['@biomejs/biome'], ['biome'], ['lsp-proxy']),
   npm('eslint', ['vscode-langservers-extracted'], ['vscode-eslint-language-server'], ['--stdio']),
   npm('oxlint', ['oxlint'], ['oxlint'], ['--lsp']),
-  github('ruff', 'astral-sh/ruff', (_v, arch) => `ruff-${MAC_ARCH[arch]}-apple-darwin.tar.gz`, (_v, arch) => `ruff-${MAC_ARCH[arch]}-apple-darwin/ruff`, ['server']),
-  github('tflint', 'terraform-linters/tflint', (_v, arch) => `tflint_darwin_${TFLINT_ARCH[arch]}.zip`, () => 'tflint', ['--langserver']),
+  github('ruff', 'astral-sh/ruff',
+    { asset: (_v, arch) => `ruff-${MAC_ARCH[arch]}-apple-darwin.tar.gz`, path: (_v, arch) => `ruff-${MAC_ARCH[arch]}-apple-darwin/ruff` },
+    { asset: () => 'ruff-x86_64-pc-windows-msvc.zip', path: () => 'ruff.exe' }, ['server']),
+  github('tflint', 'terraform-linters/tflint',
+    { asset: (_v, arch) => `tflint_darwin_${TFLINT_ARCH[arch]}.zip`, path: () => 'tflint' },
+    { asset: () => 'tflint_windows_amd64.zip', path: () => 'tflint.exe' }, ['--langserver']),
   system('dart', 'dart', ['language-server', '--protocol=lsp']),
 ];
 

@@ -40,11 +40,11 @@ async function goLatest(module: string, registries: Registries, signal?: AbortSi
   return { version: stripV(stringAt(await getJson(url, signal), 'Version', url)) };
 }
 
-async function githubLatest(def: ServerDef, registries: Registries, arch: Arch, signal?: AbortSignal): Promise<Latest> {
+async function githubLatest(def: ServerDef, registries: Registries, arch: Arch, platform: NodeJS.Platform, signal?: AbortSignal): Promise<Latest> {
   const url = `${registries.github}/repos/${def.source}/releases/latest`;
   const body = await getJson(url, signal);
   const version = stripV(stringAt(body, 'tag_name', url));
-  const name = def.asset?.(version, arch) ?? '';
+  const name = def.asset?.(version, arch, platform) ?? '';
   const asset = (Array.isArray(body.assets) ? body.assets : []).filter(isRecord).find((a) => a.name === name);
   if (asset === undefined || typeof asset.browser_download_url !== 'string') throw new Error(`${def.source} ${version} has no asset ${name}`);
   return { version, url: asset.browser_download_url };
@@ -59,20 +59,20 @@ async function openVsxLatest(target: Extract<InstallTarget, { kind: 'syntax' }>,
   return { version: stringAt(body, 'version', url), url: files.download };
 }
 
-function lookup(target: InstallTarget, registries: Registries, arch: Arch, signal?: AbortSignal): Promise<Latest> {
+function lookup(target: InstallTarget, registries: Registries, arch: Arch, platform: NodeJS.Platform, signal?: AbortSignal): Promise<Latest> {
   if (target.kind === 'syntax') return openVsxLatest(target, registries, signal);
   const def = serverDef(target.id);
   if (def.install === 'npm') return npmLatest(def.source, registries, signal);
   if (def.install === 'toolchain') return goLatest(def.source, registries, signal);
-  return githubLatest(def, registries, arch, signal);
+  return githubLatest(def, registries, arch, platform, signal);
 }
 
 // A version ends up in a file name and a path (a release asset's name, installed.json): whatever a registry answers, it is never a path
 const SAFE_VERSION = /^[\w.+-]+$/;
 
 /** The latest version of `target` (#780) and, for a download kind, the URL its install downloads. */
-export async function latestOf(target: InstallTarget, registries: Registries, arch: Arch, signal?: AbortSignal): Promise<Latest> {
-  const latest = await lookup(target, registries, arch, signal);
+export async function latestOf(target: InstallTarget, registries: Registries, arch: Arch, platform: NodeJS.Platform, signal?: AbortSignal): Promise<Latest> {
+  const latest = await lookup(target, registries, arch, platform, signal);
   if (!SAFE_VERSION.test(latest.version)) throw new Error(`${target.id}: the registry's version is not a plain version`);
   return latest;
 }

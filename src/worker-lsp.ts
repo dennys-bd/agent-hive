@@ -1,7 +1,7 @@
 // The language servers for the workers (#803): the servers the Hive installs for the editor pane (#780), handed to every agent run through a
 // plugin per workspace, <home>/lsp/<workspace>/, in which each runner writes its own files (#924: Claude's LSP tool reads its .lsp.json at
 // launch). Each worker starts its own processes; nothing is shared with the LSP host.
-import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
@@ -16,15 +16,38 @@ import type { LspServerEntry } from './agents/runner.js';
 /** This Mac's arch as the installs name it (#780). */
 export const hostArch = (): Arch => (process.arch === 'arm64' ? 'arm64' : 'x64');
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+// A bin path that stays in its package: relative, with / only, never up
+const isInPackage = (entry: unknown): entry is string =>
+  typeof entry === 'string' && entry !== '' && !entry.startsWith('/') && !/[\\:]/.test(entry) && !entry.split('/').includes('..');
+
+// An npm server's own script for `binary` (#635): its package.json's bin, read on every launch so a package that moves it is followed; npm's
+// string form is the package's own binary. Undefined for no package.json, no entry, or one that leaves the package
+async function npmEntry(dir: string, source: string, binary: string): Promise<string | undefined> {
+  try {
+    const manifest: unknown = JSON.parse(await readFile(join(dir, 'node_modules', source, 'package.json'), 'utf8'));
+    const bin = isRecord(manifest) ? manifest.bin : undefined;
+    const entry = typeof bin === 'string' ? (binary === source.split('/').at(-1) ? bin : undefined) : isRecord(bin) ? bin[binary] : undefined;
+    return isInPackage(entry) ? entry : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** How the Hive's own install of `server` launches `binary` (#780, #803), shared by the LSP host and the workers' plugins: an installed server's
  * record and folder, or a system server's tool; every runtime tool must be on `path`. Otherwise the reason, which the host's close carries:
- * `not installed` or `requires <tool>`. */
-export async function hiveLaunch(home: string, server: ServerDef, binary: string, path: string, arch: Arch): Promise<Launch | { reason: string }> {
+ * `not installed` (an npm server on win32 also without its package.json's bin entry, #635) or `requires <tool>`. */
+export async function hiveLaunch(home: string, server: ServerDef, binary: string, path: string, arch: Arch, platform: NodeJS.Platform = process.platform): Promise<Launch | { reason: string }> {
   const target = { kind: 'server', id: server.id } as const;
+  const dir = editorDir(home, target);
   const installed = server.install === 'system' ? undefined : await readInstalled(home, target);
   if (server.install !== 'system' && installed === undefined) return { reason: 'not installed' };
-  for (const tool of runtimeTools(server)) if ((await findOnPath(tool, path)) === undefined) return { reason: `requires ${tool}` };
-  return server.launch({ dir: editorDir(home, target), arch, version: installed?.version ?? '' }, binary);
+  // win32 runs node on the package's own entry, not on .bin's shims (#635): a package without one is not installed
+  const isNpmOnWin32 = server.install === 'npm' && platform === 'win32';
+  const entry = isNpmOnWin32 ? await npmEntry(dir, server.source, binary) : undefined;
+  if (isNpmOnWin32 && entry === undefined) return { reason: 'not installed' };
+  for (const tool of runtimeTools(server)) if ((await findOnPath(tool, path, { platform })) === undefined) return { reason: `requires ${tool}` };
+  return server.launch({ dir, arch, platform, version: installed?.version ?? '', entry }, binary);
 }
 
 /** A workspace's servers (#803): one entry per server binary, named after it; each runner writes them as its plugin's files (#924). */
