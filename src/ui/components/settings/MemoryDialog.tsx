@@ -15,6 +15,9 @@ import { MEMORY_CAP_MAX, MEMORY_CAP_MIN, type MemoryStats, type MemoryView } fro
 
 interface MemoryDialogProps { workspace: string; view: MemoryView; open: boolean; onOpenChange(open: boolean): void; onView(view: MemoryView): void; onCapSaved(cap: number): void }
 
+// #680: Radix hears Escape on the document before the row does; inside an editing row it is the row's to cancel, never the dialog's
+const keepRowEscape = (e: KeyboardEvent): void => { if (e.target instanceof Element && e.target.closest('[data-lesson-edit]')) e.preventDefault(); };
+
 const BLOCK = 'flex flex-col gap-3 rounded-lg border bg-card px-4 py-3.5';
 
 /** A memory's usage (#797): the sum of its texts against the cap, its lessons and how many came from tasks; the bar turns red only at the cap. */
@@ -161,7 +164,7 @@ export function MemoryDialog({ workspace, view, open, onOpenChange, onView, onCa
   const stats = useMemoryStats(workspace, open);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="wide" showCloseButton={false} className="gap-5">
+      <DialogContent size="wide" showCloseButton={false} className="gap-5" onEscapeKeyDown={keepRowEscape}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <WorkspaceSquare name={workspace} />

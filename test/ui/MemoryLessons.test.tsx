@@ -21,17 +21,21 @@ const VIEW: MemoryView = {
 };
 const ADDED: MemoryEntry = { id: 'm-4', kind: 'fact', description: 'never push to main', body: '', origin: 'user', at: '2026-10-05T10:00:00.000Z', uses: 0 };
 let refuseWrites = false;
+let current: MemoryView = VIEW; // the view the mock keeps, so that two removals chain
 
 const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
   const method = init?.method ?? 'GET';
   if (method === 'POST' && refuseWrites) return jsonResponse({ error: 'memory is full; go on without saving this lesson', code: 'memory_full' }, 409);
   if (method === 'POST') return jsonResponse({ ...VIEW, entries: [...VIEW.entries, ADDED] });
   if (method === 'PUT') return jsonResponse({ ...VIEW, entries: [{ ...VIEW.entries[0], description: 'pnpm test is the only gate' }, ...VIEW.entries.slice(1)] });
-  if (method === 'DELETE' && url === '/workspaces/hive/memory/m-3') return jsonResponse({ ...VIEW, entries: VIEW.entries.slice(0, 2) });
+  if (method === 'DELETE') {
+    current = { ...current, entries: current.entries.filter((e) => !url.endsWith(`/${e.id}`)) };
+    return jsonResponse(current);
+  }
   return jsonResponse({ error: 'unknown workspace' }, 404);
 });
 
-beforeEach(() => { setLanguage('pt'); refuseWrites = false; vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
+beforeEach(() => { setLanguage('pt'); refuseWrites = false; current = VIEW; vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
 // The table over its own view, as the dialog holds it: every answer is applied
@@ -207,6 +211,39 @@ test('Enter in the description saves (#680)', async () => {
   fireEvent.click(table.getByRole('button', { name: 'editar lição m-1' }));
   expect(fireEvent.keyDown(field(table, 'descrição'), { key: 'Enter' })).toBe(false);
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/workspaces/hive/memory/m-1', expect.objectContaining({ method: 'PUT' })));
+});
+
+test('✎ and + lesson focus the description; save focuses the lesson\'s description, cancel goes back to it or to + lesson (#680)', async () => {
+  const user = userEvent.setup();
+  render(<Harness />);
+  const table = lessons();
+  await user.click(table.getByRole('button', { name: 'editar lição m-1' }));
+  expect(field(table, 'descrição')).toHaveFocus();
+  await user.click(table.getByRole('button', { name: 'cancelar' }));
+  expect(table.getByRole('button', { name: 'pnpm test runs lint, tsc and both runners' })).toHaveFocus();
+  await user.click(table.getByRole('button', { name: 'editar lição m-1' }));
+  await user.click(table.getByRole('button', { name: 'salvar' }));
+  expect(await table.findByRole('button', { name: 'pnpm test is the only gate' })).toHaveFocus();
+  await user.click(table.getByRole('button', { name: '+ lição' }));
+  expect(field(table, 'descrição')).toHaveFocus();
+  await user.click(table.getByRole('button', { name: 'cancelar' }));
+  expect(table.getByRole('button', { name: '+ lição' })).toHaveFocus();
+  await user.click(table.getByRole('button', { name: '+ lição' }));
+  await user.type(field(table, 'descrição'), 'never push to main');
+  await user.type(field(table, 'corpo'), 'open a PR');
+  await user.click(table.getByRole('button', { name: 'salvar' }));
+  expect(await table.findByRole('button', { name: 'never push to main' })).toHaveFocus();
+});
+
+test('✕ focuses the next visible lesson\'s description, or + lesson when none follows (#680)', async () => {
+  const user = userEvent.setup();
+  render(<Harness />);
+  const table = lessons();
+  await user.click(table.getByRole('button', { name: 'remover lição m-1' }));
+  expect(await table.findByRole('button', { name: 'write specs in English' })).toHaveFocus();
+  await user.click(table.getByRole('radio', { name: 'evitar · 1' }));
+  await user.click(table.getByRole('button', { name: 'remover lição m-3' }));
+  await waitFor(() => expect(table.getByRole('button', { name: '+ lição' })).toHaveFocus());
 });
 
 test('the table reads in English (#797)', () => {

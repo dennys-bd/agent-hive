@@ -1,5 +1,5 @@
 import { ChevronRightIcon, PencilIcon, XIcon } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useId, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,14 +14,14 @@ import { isMemoryKind, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_KINDS, ty
 /** The table's columns (#797), as the handoff lays them out: id, kind, lesson, actions. */
 export const LESSON_GRID = 'grid grid-cols-[10rem_7rem_minmax(0,1fr)_4.5rem] gap-3 px-3 py-2.5';
 
-interface LessonRowProps { workspace: string; entry: MemoryEntry; onEdit(): void; onView(view: MemoryView): void }
+interface LessonRowProps { workspace: string; entry: MemoryEntry; descRef(button: HTMLButtonElement | null): void; onEdit(): void; onRemoved(view: MemoryView): void }
 interface LessonEditRowProps { workspace: string; entry?: MemoryEntry; onSaved(view: MemoryView): void; onCancel(): void }
 
 const DISCLOSURE = 'flex items-start gap-1.5 rounded-sm text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
 /** One lesson as read (#797, #680): its id, kind, description as a disclosure of its body, then the meta line with the last why as the title of
  * its citations; ✎ and ✕, which removes at once. */
-export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) {
+export function LessonRow({ workspace, entry, descRef, onEdit, onRemoved }: LessonRowProps) {
   const bodyId = useId();
   const [open, setOpen] = useState(false); // bodies run to 4,000 characters, so each row opens on its own
   const [error, setError] = useState<string>();
@@ -32,7 +32,7 @@ export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) 
       <span className="truncate font-mono text-xs" title={entry.id}>{entry.id}</span>
       <Badge variant="outline">{kindLabel(entry.kind)}</Badge>
       <div className="flex min-w-0 flex-col gap-1">
-        <button type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)} className={DISCLOSURE}>
+        <button ref={descRef} type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)} className={DISCLOSURE}>
           <ChevronRightIcon aria-hidden className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
           <span className="text-pretty">{entry.description}</span>
         </button>
@@ -44,7 +44,7 @@ export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) 
         <Button type="button" variant="ghost" size="icon-sm" aria-label={edit} title={edit} onClick={onEdit}><PencilIcon /></Button>
         <Button
           type="button" variant="ghost" size="icon-sm" aria-label={remove} title={remove}
-          onClick={() => { removeLesson(workspace, entry.id).then(onView, (err: unknown) => setError(refusalText(err))); }}
+          onClick={() => { removeLesson(workspace, entry.id).then(onRemoved, (err: unknown) => setError(refusalText(err))); }}
         ><XIcon /></Button>
       </div>
     </div>
@@ -94,6 +94,8 @@ export function LessonEditRow({ workspace, entry, onSaved, onCancel }: LessonEdi
   const [description, setDescription] = useState(entry?.description ?? '');
   const [body, setBody] = useState(entry?.body ?? '');
   const [error, setError] = useState<string>();
+  const descriptionRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { descriptionRef.current?.focus(); }, []); // #680: ✎ and "+ lesson" land in the description
   const canSave = canSaveLesson(description, body);
   const save = (): void => {
     if (!canSave) return;
@@ -106,13 +108,19 @@ export function LessonEditRow({ workspace, entry, onSaved, onCancel }: LessonEdi
     save();
   };
   const edited = (set: (value: string) => void) => (value: string): void => { set(value); setError(undefined); };
+  // #680: Esc cancels this row only; a key from a portalled Select list is not a descendant, so it only closes the list
+  const onRowKeyDown = (e: KeyboardEvent<HTMLFieldSetElement>): void => {
+    if (e.key !== 'Escape' || !(e.target instanceof Node) || !e.currentTarget.contains(e.target)) return;
+    e.preventDefault();
+    onCancel();
+  };
   const isNew = entry === undefined;
   return (
-    <div className="flex flex-col gap-3 border-t bg-background p-3">
+    <fieldset aria-label={t('settings.memory.lesson')} data-lesson-edit="" onKeyDown={onRowKeyDown} className="flex min-w-0 flex-col gap-3 border-t bg-background p-3">
       <LessonEditHeader entry={entry} kind={kind} onKind={setKind} />
       <LessonField id={`${id}-d`} label={t('settings.memory.description')} hint={t('settings.memory.descriptionHint')} length={description.length} max={MEMORY_DESCRIPTION_MAX}>
         <Input
-          id={`${id}-d`} value={description} aria-invalid={description.length > MEMORY_DESCRIPTION_MAX} aria-describedby={`${id}-d-count`}
+          ref={descriptionRef} id={`${id}-d`} value={description} aria-invalid={description.length > MEMORY_DESCRIPTION_MAX} aria-describedby={`${id}-d-count`}
           placeholder={isNew ? t('settings.memory.descriptionPlaceholder') : undefined} onChange={(e) => edited(setDescription)(e.target.value)} onKeyDown={onKeyDown(false)}
         />
       </LessonField>
@@ -128,6 +136,6 @@ export function LessonEditRow({ workspace, entry, onSaved, onCancel }: LessonEdi
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>{t('settings.memory.cancel')}</Button>
         <Button type="button" size="sm" disabled={!canSave} aria-keyshortcuts="Meta+Enter Control+Enter" onClick={save}>{t('settings.memory.save')}</Button>
       </div>
-    </div>
+    </fieldset>
   );
 }

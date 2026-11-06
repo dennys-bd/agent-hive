@@ -85,6 +85,20 @@ test('with no run carrying memory in the window the telemetry shows dashes and n
   expect(telemetry.queryByText(/última injeção/)).not.toBeInTheDocument();
 });
 
+test('Esc in an editing row cancels the row and keeps the dialog open, focus back on the lesson; outside a row it closes the dialog (#680)', async () => {
+  const user = userEvent.setup();
+  render(<MemorySection workspace="hive" saved onCapSaved={vi.fn()} />);
+  await user.click(await screen.findByRole('button', { name: 'ver memória…' }));
+  const dialog = within(await screen.findByRole('dialog', { name: 'Memória de hive' }));
+  await user.click(dialog.getByRole('button', { name: 'editar lição m-1' }));
+  await user.keyboard('{Escape}');
+  expect(dialog.queryByRole('textbox', { name: 'descrição' })).not.toBeInTheDocument();
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(dialog.getByRole('button', { name: 'pnpm test runs lint, tsc and both runners' })).toHaveFocus();
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
 test('the section and the dialog read in English (#797)', async () => {
   setLanguage('en');
   const user = userEvent.setup();
