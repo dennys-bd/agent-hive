@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { setImmediate as settle } from 'node:timers/promises';
 import { createKeepAwake, type KeepAwake } from '../src/keep-awake.js';
 import { keepAwakeCommand } from '../src/platform-commands.js';
@@ -56,10 +58,22 @@ test('the child exiting while still wanted reports once, naming the command and 
 });
 
 test('an unsupported platform reports its throw once, only after sync has returned: never inside the dispatch that called it (#226)', async () => {
-  const { keepAwake, children, failures } = holder('win32');
+  const { keepAwake, children, failures } = holder('aix');
   keepAwake.sync(true);
   assert.equal(failures.length, 0, 'deferred');
   await settle();
-  assert.deepEqual(failures.map((e) => e.message), ['Keep awake is not supported on win32']);
+  assert.deepEqual(failures.map((e) => e.message), ['Keep awake is not supported on aix']);
   assert.equal(children.length, 0);
+});
+
+// Room for powershell.exe to start and compile its P/Invoke on a cold runner; the watched pid itself lives a second.
+const KEEP_AWAKE_EXIT_MS = 30_000;
+
+test('on Windows the keep awake process ends by itself soon after the watched pid ends (#646)', { skip: process.platform !== 'win32' && 'Windows only: runs on the Windows lane', timeout: KEEP_AWAKE_EXIT_MS }, async () => {
+  const watched = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1000)'], { stdio: 'ignore' });
+  const [file, args] = keepAwakeCommand(process.platform, watched.pid!);
+  const holder = spawn(file, [...args], { stdio: 'ignore' });
+  const [code] = (await once(holder, 'exit')) as [number | null];
+  assert.equal(watched.exitCode, 0, 'the holder outlived nothing: the watched pid ended first');
+  assert.equal(code, 0);
 });

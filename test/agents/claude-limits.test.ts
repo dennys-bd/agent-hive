@@ -101,6 +101,15 @@ test('on Linux the env token resolves and the Keychain is never asked (#658)', a
   assert.equal(calls.length, 0);
 });
 
+test('on Windows the reader takes .credentials.json, never asks the Keychain, and rejects with the no-token message without the file (#646)', async (t) => {
+  const { exec, calls } = fakeExec(CREDENTIALS);
+  const base = await deps(t, { exec, platform: 'win32' });
+  await assert.rejects(readOAuthToken(base), /no Claude Code OAuth token/);
+  await writeFile(join(base.env!.CLAUDE_CONFIG_DIR!, '.credentials.json'), CREDENTIALS);
+  assert.equal(await readOAuthToken(base), TOKEN);
+  assert.equal(calls.length, 0);
+});
+
 test('readPlanLimits rejects naming the three sources when none has a token, and fetch never runs', async (t) => {
   const { fetch, calls } = fakeFetch();
   const locked = fakeExec(); // security fails: absent item or locked Keychain
