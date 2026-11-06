@@ -50,6 +50,34 @@ export interface PtySpawnOptions {
 /** node-pty's spawn as the host uses it; run.ts hands the real one, the tests a fake. */
 export type SpawnPty = (file: string, args: string[], options: PtySpawnOptions) => Pty;
 
+/** `pty`, released on its own exit on win32 (#644): node-pty 1.1.0 stops a ConPTY's conout worker thread only inside kill(), so a pty that
+ * exits by itself keeps that thread, which leaks one per run in the daemon and keeps any other process alive. There the exit is followed by
+ * the kill it never got; a kill already asked for is not repeated. Elsewhere `pty` as it is. */
+export function releasedOnExit(pty: Pty, platform: NodeJS.Platform): Pty {
+  if (platform !== 'win32') return pty;
+  let isKilled = false;
+  const kill = (): void => {
+    if (isKilled) return;
+    isKilled = true;
+    pty.kill();
+  };
+  pty.onExit(() => {
+    try {
+      kill();
+    } catch {
+      // the process is gone already: a kill that throws here has nothing left to release, and a throw would escape node-pty's exit event
+    }
+  });
+  return {
+    onData: (listener) => pty.onData(listener),
+    onExit: (listener) => pty.onExit(listener),
+    write: (data) => pty.write(data),
+    resize: (cols, rows) => pty.resize(cols, rows),
+    kill,
+    get pid() { return pty.pid; },
+  };
+}
+
 /** What a server without node-pty (every test that does not care) hands the host: an internal worker then fails to start. */
 export const NO_PTY: SpawnPty = () => {
   throw new Error('no pty in this process');

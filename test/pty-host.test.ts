@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { createPtyHost, MODES_OFF, NO_PTY, PTY_SCROLLBACK_BYTES } from '../src/pty-host.js';
+import { createPtyHost, MODES_OFF, NO_PTY, PTY_SCROLLBACK_BYTES, releasedOnExit } from '../src/pty-host.js';
 import { SLEPT_MAX } from '../src/types.js';
 import { fakePtys } from './fakes.js';
 import { tempDir } from './temp-dir.js';
@@ -336,4 +336,35 @@ test('a redraw whose way back throws leaves the host\'s grid at the size the pty
   pty.resize = resizeOf;
   host.resize('W1', 200, 50);
   assert.deepEqual(pty.sizes, [[200, 49], [200, 50]]);
+});
+
+// A fake pty, as node-pty's spawn would hand it, outside any host
+function lone() {
+  const { spawnPty, ptys } = fakePtys();
+  spawnPty('/bin/sh', ['-c', 'claude'], { cwd: WORKTREE, env: ENV, cols: 80, rows: 24 });
+  return ptys[0];
+}
+
+test('on win32 a pty that exits by itself is killed once after its exit, which frees the ConPTY\'s conout thread; a kill asked for first is not repeated (#644)', () => {
+  const natural = lone();
+  releasedOnExit(natural, 'win32');
+  natural.exit(0);
+  assert.equal(natural.killed, 1);
+  const asked = lone();
+  releasedOnExit(asked, 'win32').kill();
+  asked.exit(1);
+  assert.equal(asked.killed, 1);
+  const gone = lone();
+  gone.kill = () => { throw new Error('the pty is already gone'); };
+  releasedOnExit(gone, 'win32');
+  assert.doesNotThrow(() => gone.exit(0), 'a throw would escape node-pty\'s exit event');
+});
+
+test('off win32 the pty is handed back as it is, and its exit kills nothing (#644)', () => {
+  for (const platform of ['darwin', 'linux'] as const) {
+    const pty = lone();
+    assert.equal(releasedOnExit(pty, platform), pty, platform);
+    pty.exit(0);
+    assert.equal(pty.killed, 0, platform);
+  }
 });
