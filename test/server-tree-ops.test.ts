@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { trashCommand } from '../src/platform-commands.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import { CREATE_BODY_MESSAGE, FILE_BODY_MESSAGE, INTO_ITSELF_MESSAGE, IS_FOLDER_MESSAGE, renameItem, saveNewFile, TAKEN_MESSAGE, TOO_LARGE_MESSAGE, type TreeFs } from '../src/server-tree-ops.js';
+import { CREATE_BODY_MESSAGE, createItem, FILE_BODY_MESSAGE, INTO_ITSELF_MESSAGE, IS_FOLDER_MESSAGE, renameItem, saveNewFile, TAKEN_MESSAGE, TOO_LARGE_MESSAGE, type TreeFs } from '../src/server-tree-ops.js';
 import { saveState } from '../src/state-store.js';
 import { GIT_MESSAGE, MISSING_FILE_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { worktreePath } from '../src/worktree.js';
@@ -168,4 +168,16 @@ test('saveNewFile answers 409 with its own words when the path holds a folder, r
   for (const replace of [false, true]) {
     assert.deepEqual(await saveNewFile({ root: '/root', path: '/root/docs', text: 'x', replace }, isFolder), { status: 409, message: IS_FOLDER_MESSAGE }, `replace ${replace}`);
   }
+});
+
+const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
+
+test('on win32 create, rename and an untitled file\'s first save answer their nested paths with / only, from real paths of the runner (#641)', WIN32_ONLY, async (t) => {
+  const root = await tempDir(t, 'wire-ops-');
+  assert.equal(await createItem({ root, path: 'a/b/c.ts', kind: 'file' }), 'a/b/c.ts');
+  assert.equal(await renameItem({ root, from: 'a/b/c.ts', to: 'x/y/z.ts' }), 'x/y/z.ts');
+  await mkdir(join(root, 'n', 'm'), { recursive: true });
+  const saved = await saveNewFile({ root, path: join(root, 'n', 'm', 'new.ts'), text: 'x', replace: false });
+  assert.ok('path' in saved);
+  assert.equal(saved.path, 'n/m/new.ts');
 });

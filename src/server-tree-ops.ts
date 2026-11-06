@@ -11,6 +11,7 @@ import type { Refusal, TaskRouteDeps } from './server-tasks.js';
 import { treeRoot } from './server-tree.js';
 import { existingItem, exists, newItem, outermost, PATH_DISK, type PathFs, refusal, rootsOf } from './tree-paths.js';
 import { EDITOR_FILE_MAX } from './types.js';
+import { toWire } from './wire-path.js';
 import { wordsOf } from './worktree.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -58,7 +59,7 @@ const isText = (value: unknown): value is string => typeof value === 'string' &&
 const isRefusal = (value: unknown): value is Refusal => typeof value === 'object' && value !== null && 'status' in value && 'message' in value;
 
 /** A new empty file or folder at `path` (#818): the folders between made first; a taken name is refused, never overwritten. Its path,
- *  relative to the real root. */
+ *  relative to the real root, `/`-separated on the wire (#641). */
 export async function createItem({ root, path, kind }: { root: string; path: string; kind: 'file' | 'folder' }, fs: TreeFs = TREE_DISK): Promise<string | Refusal> {
   const roots = await rootsOf(root, fs);
   const target = await newItem(roots, path, fs);
@@ -70,11 +71,11 @@ export async function createItem({ root, path, kind }: { root: string; path: str
     if (isTaken(err)) return refusal(HTTP_CONFLICT, TAKEN_MESSAGE);
     throw err;
   }
-  return relative(roots.realRoot, target);
+  return toWire(relative(roots.realRoot, target), process.platform);
 }
 
 /** An item renamed or moved to `to` (#818), the folders `to` adds made first. A taken name is refused, unless it is the item itself under
- *  another case on a case-insensitive volume (APFS's `a.ts` → `A.ts`, decided by inode); a folder never moves into itself. Its new path, relative to the real root. */
+ *  another case on a case-insensitive volume (APFS's `a.ts` → `A.ts`, decided by inode); a folder never moves into itself. Its new path, relative to the real root, `/`-separated on the wire (#641). */
 export async function renameItem({ root, from, to }: { root: string; from: string; to: string }, fs: TreeFs = TREE_DISK): Promise<string | Refusal> {
   const roots = await rootsOf(root, fs);
   const item = await existingItem(roots, from, fs);
@@ -87,7 +88,7 @@ export async function renameItem({ root, from, to }: { root: string; from: strin
   if (!isSameItem && (await exists(fs, target))) return refusal(HTTP_CONFLICT, TAKEN_MESSAGE);
   await fs.mkdirs(dirname(target));
   await fs.rename(item, target);
-  return relative(roots.realRoot, target);
+  return toWire(relative(roots.realRoot, target), process.platform);
 }
 
 /** The items to the system trash (#818): every path checked first, so a refusal trashes nothing; then one trashCommand run with each
@@ -106,7 +107,7 @@ export async function trashItems(
 
 /** An untitled buffer's first save (#818): `path` is the OS dialog's, absolute, and must lie in the tree as written or as real; never under
  *  .git. A taken path is refused unless `replace` (the dialog's own Replace? was answered). A new file is written with wx, a replaced one
- *  atomically, as the editor saves. Its path relative to the real root, and the written bytes' version. */
+ *  atomically, as the editor saves. Its path relative to the real root, `/`-separated on the wire (#641), and the written bytes' version. */
 export async function saveNewFile({ root, path, text, replace }: { root: string; path: string; text: string; replace: boolean }, fs: TreeFs = TREE_DISK): Promise<{ path: string; version: string } | Refusal> {
   if (Buffer.byteLength(text, 'utf8') > EDITOR_FILE_MAX) return refusal(HTTP_TOO_LARGE, TOO_LARGE_MESSAGE);
   const roots = await rootsOf(root, fs);
@@ -122,7 +123,7 @@ export async function saveNewFile({ root, path, text, replace }: { root: string;
     if (isTaken(err)) return refusal(HTTP_CONFLICT, TAKEN_MESSAGE); // created between the probe and the write
     throw err;
   }
-  return { path: relative(roots.realRoot, target), version: sha256(Buffer.from(text, 'utf8')) };
+  return { path: toWire(relative(roots.realRoot, target), process.platform), version: sha256(Buffer.from(text, 'utf8')) };
 }
 
 function createBody(raw: unknown): { path: string; kind: 'file' | 'folder' } | undefined {
