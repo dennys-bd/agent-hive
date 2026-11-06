@@ -122,7 +122,7 @@ function GridBody({ view, visible, rows, grouping, linked, state, onGoTo, source
       state={state} onGoTo={onGoTo} source={source} statuses={view?.statuses ?? []} onRow={onRow} onOpenIssue={onOpenIssue}
     />
   );
-  // #584 decision 7: every list nests on its own, each group's and the ungrouped one; a group's pill still counts g.items (decision 13)
+  // #584 decision 7: every list nests on its own, each group's and the ungrouped one; a sub-issue sits in its root's group (#696), so a group's pill counts roots only
   const lines = (items: ProjectItem[]) => treeRows(items, tree.expanded, PROJECT_KEYS).map(row);
   if (grouping === undefined) return <tbody className="block">{lines(rows)}</tbody>;
   const { groups, collapsed, onToggle } = grouping;

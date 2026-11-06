@@ -1,9 +1,10 @@
 // The native view's groups (#756, handoff 01b): by status, a single-select field, the assignees or an iteration field. Groups follow the
 // field's order in the project, then values it does not list in the order they first appear; a group with no issue is not shown, and the
-// issues with no value close the list.
+// issues with no value close the list. A sub-issue sits in the group of its topmost ancestor among the rows (#696), so the table nests it there.
 import type { ProjectItem, ProjectView } from '../../types.js';
 import { t } from '../i18n.js';
 import { FIELD_KEY } from './project-columns.js';
+import { PROJECT_KEYS, rootsIn } from './project-tree.js';
 
 /** What a view can group by: `status`, `assignee` or `field:<name>`, and its label. */
 export interface GroupOption { key: string; label: string }
@@ -41,9 +42,12 @@ function stageOf(view: Pick<ProjectView, 'statuses'>, status: string): string {
   return stage === undefined ? t('project.group.noStage') : `→ ${stage}`;
 }
 
-/** The rows, already searched and sorted, in their groups; each group keeps the rows' order. */
+/** The rows, already searched and sorted, in their groups; each group keeps the rows' order. A row takes the group value of its root
+ * ancestor in the list (#696); one whose parent is absent (not in the Project, or searched out) is its own root and stays in its own group. */
 export function groupItems(items: ProjectItem[], option: GroupOption, view: Pick<ProjectView, 'statuses' | 'fields'>): ProjectGroup[] {
-  const values = items.map((item) => groupValue(item, option.key));
+  const roots = rootsIn(items, PROJECT_KEYS);
+  const byId = new Map(items.map((item) => [item.itemId, item]));
+  const values = items.map((item) => groupValue(byId.get(roots.get(item.itemId) ?? item.itemId) ?? item, option.key));
   const seen = [...new Set(values.filter((v): v is string => v !== undefined))];
   const known = orderOf(view, option.key);
   const names = [...known.filter((name) => seen.includes(name)), ...seen.filter((name) => !known.includes(name))];
