@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
 import { followEpics } from '../src/epic-follow.js';
+import { flatten } from '../src/flows.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { leave } from '../src/tasks.js';
 import { transitionKey } from '../src/transitions.js';
-import { END, type EpicFollows, type Item, type Stage, type State, type Task, type Transition } from '../src/types.js';
+import { END, type EpicFollows, type Flow, type Item, type Stage, type State, type Task, type Transition } from '../src/types.js';
 import { HOUR_MS } from '../src/usage.js';
 import { move } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
@@ -195,4 +196,45 @@ test('an epic outside the flow stays outside: a poll that stamps epic on a stage
   const { state, effects } = followEpics(before);
   assert.equal(state, before);
   assert.deepEqual(effects, []);
+});
+
+// #623, #639 (#723): delivery (spec, build, done) then discovery (brainstorm, decompose). The flattened comb's last stage is decompose, whose
+// first door is Backlog: the column a finished epic was moved to when its last child left
+const DISCOVERY: Stage[] = [
+  { name: 'brainstorm', from: { board: ['Ideas'] }, prompt: '/hive-brainstorm {url}' },
+  { name: 'decompose', from: { board: ['Backlog'] } },
+];
+const twoFlows = (tasks: Task[], delivery: Transition[] = []): State => {
+  const flows: Flow[] = [{ name: 'delivery', stages: STAGES, transitions: delivery }, { name: 'discovery', stages: DISCOVERY, transitions: [] }];
+  return deepFreeze({ ...initialState(0), workspaces: ['hive'], syncs: { board: {} }, flows, ...flatten(flows), tasks });
+};
+const inDiscovery = (id: string): Task => ({ ...child(id, 'spec'), stage: 'brainstorm', boardColumn: 'Ideas' });
+const ALL_CLOSED: Partial<Item> = { closedChildren: ['board:c1', 'board:c2'] };
+
+test('an epic in Done whose last child left stays in Done, or leaves through Done\'s own end; never into another flow\'s last stage, no setColumn (#723)', () => {
+  const gone = twoFlows([epic('done', ['c1', 'c2'], 'behind', ALL_CLOSED)]);
+  const kept = followEpics(gone);
+  assert.equal(kept.state, gone, 'no done exit: it sits in Done');
+  assert.deepEqual(kept.effects, []);
+  const ends = followEpics(twoFlows([epic('done', ['c1', 'c2'], 'behind', ALL_CLOSED)], [ENDS]));
+  assert.equal(epicIn(ends.state), undefined, 'out through done → end');
+  assert.deepEqual(ends.effects, [column('Shipped')]);
+});
+
+test('the archive\'s closeTask of an epic\'s last child moves no task out of its own flow (#623, #639, #723)', () => {
+  const archiving: Task = { ...child('c1', 'done'), leaving: true }; // its archive in flight: closeTask is the source's answer
+  const before = twoFlows([epic('done', ['c1', 'c2'], 'behind', ALL_CLOSED), archiving]);
+  const { state, effects } = reduce(before, { type: 'closeTask', taskId: 'board:c1' });
+  assert.deepEqual(state.tasks.map((t) => [t.item.itemId, t.stage]), [['board:E', 'done']]);
+  assert.deepEqual(effects.filter((e) => e.type === 'setColumn'), []);
+});
+
+test('a child in another flow neither places its epic nor keeps it from finishing (#723 decision 3)', () => {
+  const ahead = followEpics(twoFlows([epic('spec', ['c1', 'c2'], 'ahead'), child('c1', 'build'), inDiscovery('c2')]));
+  assert.equal(epicIn(ahead.state)?.stage, 'build', 'brainstorm is no stage of delivery: c2 places nothing');
+  const done = followEpics(twoFlows([epic('build', ['c1', 'c2']), child('c1', 'done'), inDiscovery('c2')], [ENDS]));
+  assert.equal(epicIn(done.state), undefined, 'c1, its one child in delivery, is done: into done and out through its end');
+  assert.deepEqual(done.effects, [column('Done'), column('Shipped')]);
+  const elsewhere = twoFlows([epic('spec', ['c2']), inDiscovery('c2')]);
+  assert.equal(followEpics(elsewhere).state, elsewhere, 'every child in the other flow: the epic stays');
 });

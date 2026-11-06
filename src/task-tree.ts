@@ -78,20 +78,24 @@ export function treeStarted(tasks: readonly Task[], itemId: string, isStarted: (
   return root !== undefined && [root, ...descendants(tasks, root.item.itemId)].some(isStarted);
 }
 
-/** Every direct child in the flow done (#31, #566): what sends a show epic out through the last stage's end. A child outside the flow says
- * nothing of where its epic is; a child with no task still counts by the parent's closed list. A leaf, or none to count: not done. */
-export function allDone(tasks: readonly Task[], itemId: string, lastStage: string): boolean {
+/** Every direct child of the epic's flow done (#31, #566, #723): what sends a show epic out through that flow's last stage's end. `stages`
+ * is the epic's own flow in order. A child outside the flow or in another flow's stage says nothing of where its epic is: it could never
+ * reach this flow's last stage, so counting it would hold the epic for good. A child with no task still counts by the parent's closed list.
+ * A leaf, none to count or no stages: not done. */
+export function allDone(tasks: readonly Task[], itemId: string, stages: readonly Pick<Stage, 'name'>[]): boolean {
   const parent = taskOf(tasks, itemId);
+  const last = stages.at(-1)?.name;
   const counted = (parent?.item.children ?? []).filter((id) => {
     const child = taskOf(tasks, id);
-    return child === undefined || inFlow(child);
+    return child === undefined || stages.some((s) => s.name === child.stage);
   });
-  return parent !== undefined && counted.length > 0 && counted.every((id) => isDone(tasks, parent, id, lastStage));
+  return parent !== undefined && last !== undefined && counted.length > 0 && counted.every((id) => isDone(tasks, parent, id, last));
 }
 
-/** The stage a show epic's rule puts it in (#31), over its direct children that are tasks in a stage of `stages` (the pipeline order):
- * behind, the lowest; ahead, the highest; aheadThenBehind, the highest up to switchAt and the lowest past it. Undefined with no such child,
- * or for a task with no epic stamp. A switchAt the flow lost reads as before every stage, so the rule falls back to behind. */
+/** The stage a show epic's rule puts it in (#31), over its direct children that are tasks in a stage of `stages`, the epic's own flow in order
+ * (#723): a child in another flow's stage has no position here, as one outside the flow (#566). behind, the lowest; ahead, the highest;
+ * aheadThenBehind, the highest up to switchAt and the lowest past it. Undefined with no such child, or for a task with no epic stamp. A
+ * switchAt the flow lost reads as before every stage, so the rule falls back to behind. */
 export function epicStage(tasks: readonly Task[], stages: readonly Pick<Stage, 'name'>[], epic: Task): string | undefined {
   const rule = epic.item.epic;
   if (rule === undefined) return undefined;

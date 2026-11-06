@@ -105,9 +105,19 @@ test('epicStage is undefined when no child is a task in a stage of the flow, and
 
 test('allDone holds when every direct child sits in the last stage or is closed with no task; never for a leaf (#31)', () => {
   const both = [epicOf('behind'), task('c1', LAST, { parent: 'E' }), task('c2', LAST, { parent: 'E' })];
-  assert.equal(allDone(both, 'E', LAST), true);
+  assert.equal(allDone(both, 'E', FLOW), true);
   const closed = [task('E', 'Build', { children: ['c1', 'c2'], closedChildren: ['c2'] }), task('c1', LAST, { parent: 'E' })];
-  assert.equal(allDone(closed, 'E', LAST), true, 'c2 left the Hive closed');
-  assert.equal(allDone([epicOf('behind'), task('c1', LAST, { parent: 'E' }), task('c2', 'Build', { parent: 'E' })], 'E', LAST), false);
-  assert.equal(allDone([task('L', LAST)], 'L', LAST), false, 'no child: nothing to be done');
+  assert.equal(allDone(closed, 'E', FLOW), true, 'c2 left the Hive closed');
+  assert.equal(allDone([epicOf('behind'), task('c1', LAST, { parent: 'E' }), task('c2', 'Build', { parent: 'E' })], 'E', FLOW), false);
+  assert.equal(allDone([task('L', LAST)], 'L', FLOW), false, 'no child: nothing to be done');
+});
+
+test('over the epic\'s flow, allDone and epicStage skip a child whose stage is another flow\'s: it neither places the epic nor counts (#723)', () => {
+  const placed = [epicOf('ahead'), task('c1', 'Review', { parent: 'E' }), task('c2', 'decompose', { parent: 'E' })];
+  assert.equal(epicStage(placed, FLOW, placed[0]), 'Review', 'decompose is no stage of the flow: c2 places nothing');
+  const finished = [epicOf('behind'), task('c1', LAST, { parent: 'E' }), task('c2', 'decompose', { parent: 'E' })];
+  assert.equal(allDone(finished, 'E', FLOW), true, 'c2 neither blocks the finish nor counts as done');
+  const elsewhere = [epicOf('behind'), task('c1', 'decompose', { parent: 'E' }), task('c2', 'decompose', { parent: 'E' })];
+  assert.equal(allDone(elsewhere, 'E', FLOW), false, 'no child of the flow to count: not done');
+  assert.equal(allDone(finished, 'E', []), false, 'no flow: not done');
 });
