@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { applyLanding } from '@/components/center-drag';
 import {
   type CenterLayout, type CenterTabRef, changePanes, closeLeaf, closeRef, consoleRef, fileRefPath, foldIntoPane, groupsOf, initialLayout, isTabOpen, moveRef, openRef, prune, pruneLayouts,
-  readCenterLayouts, refKey, replaceRun, resize, retargetRef, runsOf, selectRef, sharesBuffer, shownFile, shownRun, splitWith, type TabGroup, withSessions, withStageConsole, writeCenterLayouts,
+  readCenterLayouts, refKey, replaceRun, resize, retargetRef, runsOf, selectRef, sharesBuffer, shownFile, shownPath, shownRun, splitWith, type TabGroup, withSessions, withStageConsole, writeCenterLayouts,
 } from '@/lib/center-layout';
 import { focusPane, type Panes, resizePanes } from '@/lib/pane-split';
 import { readView, resetViewState, writeView } from '@/lib/view-state';
@@ -449,4 +449,16 @@ test('shownFile is the path of the focused group\'s shown tab when that is a fil
   expect(shownFile(openRef(ROW, preview))).toBeUndefined();
   expect(shownFile({ ...openRef(ROW, file), focused: 'g1' })).toBeUndefined(); // the file sits in the unfocused g2
   expect(shownFile(undefined)).toBeUndefined();
+});
+
+test('shownPath is the path of the focused group\'s shown file, preview, changes, design or diagram tab; undefined for a run, a diff, the console, an untitled tab, a tab in an unfocused group and no layout (#718)', () => {
+  for (const kind of ['file', 'preview', 'changes', 'design', 'diagram'] as const) {
+    expect(shownPath(openRef(ROW, { kind, path: 'src/a.ts' }))).toBe('src/a.ts'); // opened in g2, its shown tab
+  }
+  expect(shownPath(ROW)).toBeUndefined(); // g2 shows a run
+  expect(shownPath(openRef(ROW, DIFF))).toBeUndefined();
+  expect(shownPath(openRef(ROW, { kind: 'console' }))).toBeUndefined();
+  expect(shownPath(openRef(ROW, { kind: 'untitled', n: 1 }))).toBeUndefined();
+  expect(shownPath({ ...openRef(ROW, { kind: 'file', path: 'src/a.ts' }), focused: 'g1' })).toBeUndefined(); // the file sits in the unfocused g2
+  expect(shownPath(undefined)).toBeUndefined();
 });

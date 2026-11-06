@@ -15,7 +15,8 @@ export interface LoadedFolders { loaded: ReadonlyMap<string, FolderEntries>; mar
 
 // The marks belong to one activity: another one's must never colour this tree, even for the render before its first read
 interface Remembered { activityId: string; marks: Readonly<Record<string, GitMark>> }
-const folderUrl = (activityId: string, path: string): string => `/activities/${encodeURIComponent(activityId)}/tree/folder?path=${encodeURIComponent(path)}`;
+/** GET /activities/:id/tree/folder for one folder (HIVE-22); the tree's reveal reads it too, to tell a nested repository apart (#718). */
+export const folderUrl = (activityId: string, path: string): string => `/activities/${encodeURIComponent(activityId)}/tree/folder?path=${encodeURIComponent(path)}`;
 
 // A failed read keeps what the folder last showed: one transient error must not collapse an open subtree; a deleted folder leaves the tree
 // anyway, with its parent's next read. Only the folders still to read stay in the map
