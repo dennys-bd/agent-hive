@@ -272,8 +272,8 @@ test('run.spawned names the lessons in rendered order, the characters of the sec
   const file: MemoryFile = {
     nextId: 3,
     entries: [
-      { id: 'm-1', kind: 'fact', text: 'pnpm test is the gate', origin: 'user', at: '2026-10-05T10:00:00.000Z', uses: 0 },
-      { id: 'm-2', kind: 'pref', text: 'specs are written in English', origin: { task: '7' }, at: '2026-10-05T10:00:00.000Z', uses: 1 },
+      { id: 'm-1', kind: 'fact', description: 'pnpm test is the gate', body: 'the lesson', origin: 'user', at: '2026-10-05T10:00:00.000Z', uses: 0 },
+      { id: 'm-2', kind: 'pref', description: 'specs are written in English', body: 'the lesson', origin: { task: '7' }, at: '2026-10-05T10:00:00.000Z', uses: 1 },
     ],
   };
   const seeded = await start(t, async (home) => {

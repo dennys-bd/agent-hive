@@ -1,22 +1,29 @@
-import { PencilIcon, XIcon } from 'lucide-react';
-import { useId, useState } from 'react';
+import { ChevronRightIcon, PencilIcon, XIcon } from 'lucide-react';
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import { addLesson, editLesson, removeLesson } from '@/lib/memory-api';
-import { charactersText, citedText, kindLabel, metaText, refusalText } from '@/lib/memory-view';
-import { isMemoryKind, MEMORY_KINDS, MEMORY_TEXT_MAX, type MemoryEntry, type MemoryKind, type MemoryView } from '../../../types';
+import { canSaveLesson, charactersText, citedText, kindLabel, metaText, originDateText, refusalText } from '@/lib/memory-view';
+import { isMemoryKind, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_KINDS, type MemoryEntry, type MemoryKind, type MemoryView } from '../../../types';
 
 /** The table's columns (#797), as the handoff lays them out: id, kind, lesson, actions. */
 export const LESSON_GRID = 'grid grid-cols-[10rem_7rem_minmax(0,1fr)_4.5rem] gap-3 px-3 py-2.5';
 
-interface LessonRowProps { workspace: string; entry: MemoryEntry; onEdit(): void; onView(view: MemoryView): void }
+interface LessonRowProps { workspace: string; entry: MemoryEntry; descRef(button: HTMLButtonElement | null): void; onEdit(): void; onRemoved(view: MemoryView): void }
 interface LessonEditRowProps { workspace: string; entry?: MemoryEntry; onSaved(view: MemoryView): void; onCancel(): void }
 
-/** One lesson as read (#797): its id, kind, text and meta line, the last why as the title of its citations; ✎ and ✕, which removes at once. */
-export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) {
+const DISCLOSURE = 'flex items-start gap-1.5 rounded-sm text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+
+/** One lesson as read (#797, #680): its id, kind, description as a disclosure of its body, then the meta line with the last why as the title of
+ * its citations; ✎ and ✕, which removes at once. */
+export function LessonRow({ workspace, entry, descRef, onEdit, onRemoved }: LessonRowProps) {
+  const bodyId = useId();
+  const [open, setOpen] = useState(false); // bodies run to 4,000 characters, so each row opens on its own
   const [error, setError] = useState<string>();
   const edit = t('settings.memory.edit', { id: entry.id });
   const remove = t('settings.memory.remove', { id: entry.id });
@@ -25,59 +32,111 @@ export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) 
       <span className="truncate font-mono text-xs" title={entry.id}>{entry.id}</span>
       <Badge variant="outline">{kindLabel(entry.kind)}</Badge>
       <div className="flex min-w-0 flex-col gap-1">
-        <span className="text-pretty text-sm">{entry.text}</span>
-        <span className="text-muted-foreground text-xs">{`${metaText(entry)} · `}<span title={entry.lastUsed?.why}>{citedText(entry.uses)}</span></span>
-        {error !== undefined && <p role="alert" className="text-destructive text-xs">{error}</p>}
+        <button ref={descRef} type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)} className={DISCLOSURE}>
+          <ChevronRightIcon aria-hidden className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+          <span className="text-pretty">{entry.description}</span>
+        </button>
+        <div id={bodyId} hidden={!open} className="max-w-[72ch] whitespace-pre-wrap break-words pl-[22px] text-[13px]/[19px]">{entry.body}</div>
+        <span className="pl-[22px] text-muted-foreground text-xs">{`${metaText(entry)} · `}<span title={entry.lastUsed?.why}>{citedText(entry.uses)}</span></span>
+        {error !== undefined && <p role="alert" className="pl-[22px] text-destructive text-xs">{error}</p>}
       </div>
       <div className="flex justify-end gap-1">
         <Button type="button" variant="ghost" size="icon-sm" aria-label={edit} title={edit} onClick={onEdit}><PencilIcon /></Button>
         <Button
           type="button" variant="ghost" size="icon-sm" aria-label={remove} title={remove}
-          onClick={() => { removeLesson(workspace, entry.id).then(onView, (err: unknown) => setError(refusalText(err))); }}
+          onClick={() => { removeLesson(workspace, entry.id).then(onRemoved, (err: unknown) => setError(refusalText(err))); }}
         ><XIcon /></Button>
       </div>
     </div>
   );
 }
 
-/** The one row in edit (#797): an entry's, or a new lesson's with no id yet. Past MEMORY_TEXT_MAX the field is invalid and save is off; Enter
- * saves instead of breaking the line; a refusal shows under the field until the text changes. */
+// Enter saves from the description; ⌘/Ctrl+Enter from either field, so Enter alone breaks the body's line (#680). A key an IME composition
+// sends confirms its candidate, it is not the user's save
+const isSaveKey = (e: KeyboardEvent<HTMLElement>, multiline: boolean): boolean =>
+  e.key === 'Enter' && !e.nativeEvent.isComposing && (!multiline || e.metaKey || e.ctrlKey);
+
+interface LessonFieldProps { id: string; label: string; hint: string; length: number; max: number; children: ReactNode }
+// A field of the editing row (#680): its label, the control, then its hint on the left and its live counter on the right
+function LessonField({ id, label, hint, length, max, children }: LessonFieldProps) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id} className="font-normal text-muted-foreground text-xs">{label}</Label>
+      {children}
+      <div className="flex items-baseline justify-between gap-3 text-xs">
+        <span className="text-muted-foreground">{hint}</span>
+        <span id={`${id}-count`} className={length > max ? 'text-destructive' : 'text-muted-foreground'}>{charactersText(length, max)}</span>
+      </div>
+    </div>
+  );
+}
+
+interface LessonEditHeaderProps { entry?: MemoryEntry; kind: MemoryKind; onKind(kind: MemoryKind): void }
+// The row's id (— before the first save), its kind, and where it came from (#680: the sizes sit under each field now)
+function LessonEditHeader({ entry, kind, onKind }: LessonEditHeaderProps) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="font-mono text-xs">{entry?.id ?? '—'}</span>
+      <Select value={kind} onValueChange={(value) => { if (isMemoryKind(value)) onKind(value); }}>
+        <SelectTrigger size="sm" aria-label={t('settings.memory.type')} className="w-40"><SelectValue /></SelectTrigger>
+        <SelectContent>{MEMORY_KINDS.map((k) => <SelectItem key={k} value={k}>{kindLabel(k)}</SelectItem>)}</SelectContent>
+      </Select>
+      <span className="ml-auto text-muted-foreground text-xs">{entry ? originDateText(entry) : `${t('settings.memory.you')} · ${t('settings.memory.now')}`}</span>
+    </div>
+  );
+}
+
+/** The one row in edit (#797, #680): an entry's, or a new lesson's with no id yet. Save is off while a field is empty or past its limit; a
+ * refusal shows in the footer until either field changes. */
 export function LessonEditRow({ workspace, entry, onSaved, onCancel }: LessonEditRowProps) {
   const id = useId();
   const [kind, setKind] = useState<MemoryKind>(entry?.kind ?? 'fact');
-  const [text, setText] = useState(entry?.text ?? '');
+  const [description, setDescription] = useState(entry?.description ?? '');
+  const [body, setBody] = useState(entry?.body ?? '');
   const [error, setError] = useState<string>();
-  const over = text.length > MEMORY_TEXT_MAX;
+  const descriptionRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { descriptionRef.current?.focus(); }, []); // #680: ✎ and "+ lesson" land in the description
+  const canSave = canSaveLesson(description, body);
   const save = (): void => {
-    if (over) return;
-    (entry ? editLesson(workspace, entry.id, kind, text) : addLesson(workspace, kind, text)).then(onSaved, (err: unknown) => setError(refusalText(err)));
+    if (!canSave) return;
+    const lesson = { kind, description, body };
+    (entry ? editLesson(workspace, entry.id, lesson) : addLesson(workspace, lesson)).then(onSaved, (err: unknown) => setError(refusalText(err)));
   };
+  const onKeyDown = (multiline: boolean) => (e: KeyboardEvent<HTMLElement>): void => {
+    if (!isSaveKey(e, multiline)) return;
+    e.preventDefault();
+    save();
+  };
+  const edited = (set: (value: string) => void) => (value: string): void => { set(value); setError(undefined); };
+  // #680: Esc cancels this row only; a key from a portalled Select list is not a descendant, so it only closes the list
+  const onRowKeyDown = (e: KeyboardEvent<HTMLFieldSetElement>): void => {
+    // an IME's Esc dismisses its candidate, never the row and what was typed in it
+    if (e.key !== 'Escape' || e.nativeEvent.isComposing || !(e.target instanceof Node) || !e.currentTarget.contains(e.target)) return;
+    e.preventDefault();
+    onCancel();
+  };
+  const isNew = entry === undefined;
   return (
-    <div className="flex flex-col gap-2 border-t bg-background p-3">
-      <div className="grid grid-cols-[minmax(0,10rem)_minmax(0,10rem)_minmax(0,1fr)] items-center gap-3">
-        <span className="font-mono text-xs">{entry?.id ?? '—'}</span>
-        <Select value={kind} onValueChange={(value) => { if (isMemoryKind(value)) setKind(value); }}>
-          <SelectTrigger size="sm" aria-label={t('settings.memory.type')} className="w-full"><SelectValue /></SelectTrigger>
-          <SelectContent>{MEMORY_KINDS.map((k) => <SelectItem key={k} value={k}>{kindLabel(k)}</SelectItem>)}</SelectContent>
-        </Select>
-        <span className="text-right text-muted-foreground text-xs">{entry ? metaText(entry) : ''}</span>
+    <fieldset aria-label={t('settings.memory.lesson')} data-lesson-edit="" onKeyDown={onRowKeyDown} className="flex min-w-0 flex-col gap-3 border-t bg-background p-3">
+      <LessonEditHeader entry={entry} kind={kind} onKind={setKind} />
+      <LessonField id={`${id}-d`} label={t('settings.memory.description')} hint={t('settings.memory.descriptionHint')} length={description.trim().length} max={MEMORY_DESCRIPTION_MAX}>
+        <Input
+          ref={descriptionRef} id={`${id}-d`} value={description} aria-invalid={description.trim().length > MEMORY_DESCRIPTION_MAX} aria-describedby={`${id}-d-count`}
+          placeholder={isNew ? t('settings.memory.descriptionPlaceholder') : undefined} onChange={(e) => edited(setDescription)(e.target.value)} onKeyDown={onKeyDown(false)}
+        />
+      </LessonField>
+      <LessonField id={`${id}-b`} label={t('settings.memory.body')} hint={t('settings.memory.bodyHint')} length={body.trim().length} max={MEMORY_BODY_MAX}>
+        <Textarea
+          id={`${id}-b`} rows={7} className="resize-y" value={body} aria-invalid={body.trim().length > MEMORY_BODY_MAX} aria-describedby={`${id}-b-count`}
+          placeholder={isNew ? t('settings.memory.bodyPlaceholder') : undefined} onChange={(e) => edited(setBody)(e.target.value)} onKeyDown={onKeyDown(true)}
+        />
+      </LessonField>
+      <div className="flex items-start gap-3">
+        {error !== undefined && <p role="alert" className="text-destructive text-xs">{error}</p>}
+        <span className="grow" />
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>{t('settings.memory.cancel')}</Button>
+        <Button type="button" size="sm" disabled={!canSave} aria-keyshortcuts="Meta+Enter Control+Enter" onClick={save}>{t('settings.memory.save')}</Button>
       </div>
-      <Textarea
-        aria-label={t('settings.memory.text')} rows={2} aria-invalid={over || error !== undefined} aria-describedby={`${id}-count`} value={text}
-        onChange={(e) => { setText(e.target.value); setError(undefined); }}
-        // a key an IME composition sends confirms its candidate, it is not the user's save
-        onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); save(); } }}
-      />
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <span id={`${id}-count`} className={over ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>{charactersText(text.length, MEMORY_TEXT_MAX)}</span>
-          {error !== undefined && <p role="alert" className="text-destructive text-xs">{error}</p>}
-        </div>
-        <div className="flex gap-1">
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>{t('settings.memory.cancel')}</Button>
-          <Button type="button" size="sm" disabled={over} onClick={save}>{t('settings.memory.save')}</Button>
-        </div>
-      </div>
-    </div>
+    </fieldset>
   );
 }

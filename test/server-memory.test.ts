@@ -6,12 +6,12 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { RecordInput } from '../src/facts.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
-import { MEMORY_FULL_MESSAGE, MEMORY_KIND_MESSAGE, MEMORY_SECRET_MESSAGE, MEMORY_TEXT_MESSAGE } from '../src/memory.js';
+import { BODY_MESSAGE, DESCRIPTION_MESSAGE, MEMORY_FULL_MESSAGE, MEMORY_KIND_MESSAGE, MEMORY_SECRET_MESSAGE } from '../src/memory.js';
 import { STAGE_PROTOCOL } from '../src/protocol.js';
 import { createServer } from '../src/server.js';
 import { CAP_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-memory.js';
 import type { Config, MemoryView, SettingsBody, Workspace } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MEMORY_TEXT_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -21,7 +21,7 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], flows: bodyFlows(STAGES),
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
 };
-const EMPTY_VIEW = { entries: [], used: 0, cap: 4000, textMax: MEMORY_TEXT_MAX }; // workspacesAt's memoryCap
+const EMPTY_VIEW = { entries: [], used: 0, cap: 4000, descriptionMax: MEMORY_DESCRIPTION_MAX, bodyMax: MEMORY_BODY_MAX }; // workspacesAt's memoryCap
 type MemoryChanged = Extract<RecordInput, { event: 'memory.changed' }>;
 
 const send = (method: 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown): Promise<Response> =>
@@ -60,10 +60,11 @@ test('GET lists the workspace memory with its size, cap and lesson limit; POST a
   const { url, home, records } = await start(t);
   const { stage } = workspaceProtocolPaths(home, WORKSPACE);
   assert.deepEqual(await (await hiveFetch(url)).json(), EMPTY_VIEW);
-  const added = (await (await send('POST', url, { kind: 'fact', text: ' pnpm test is the gate ' })).json()) as MemoryView;
-  assert.deepEqual([added.entries.map((e) => [e.id, e.kind, e.text, e.origin, e.uses]), added.used], [[['m-1', 'fact', 'pnpm test is the gate', 'user', 0]], 21]);
-  const edited = (await (await send('PUT', `${url}/m-1`, { kind: 'avoid', text: 'never skip pnpm test' })).json()) as MemoryView;
-  assert.deepEqual(edited.entries.map((e) => [e.id, e.kind, e.text, e.origin]), [['m-1', 'avoid', 'never skip pnpm test', 'user']]);
+  const added = (await (await send('POST', url, { kind: 'fact', description: ' pnpm test is the gate ', body: ' Run it before a commit.\n\tCI runs it too. ' })).json()) as MemoryView;
+  assert.deepEqual([added.entries.map((e) => [e.id, e.kind, e.description, e.body, e.origin, e.uses]), added.used], [[['m-1', 'fact', 'pnpm test is the gate', 'Run it before a commit.\n\tCI runs it too.', 'user', 0]], 21]);
+  const edited = (await (await send('PUT', `${url}/m-1`, { kind: 'avoid', description: 'never skip pnpm test', body: 'it is the gate' })).json()) as MemoryView;
+  assert.deepEqual(edited.entries.map((e) => [e.id, e.kind, e.description, e.body, e.origin]), [['m-1', 'avoid', 'never skip pnpm test', 'it is the gate', 'user']]);
+  assert.ok(!(await readFile(stage, 'utf8')).includes('CI runs it too'), 'no body in the protocol file');
   assert.ok((await readFile(stage, 'utf8')).endsWith('### Avoid\n- [m-1] never skip pnpm test\n'));
   assert.deepEqual(await (await send('DELETE', `${url}/m-1`)).json(), EMPTY_VIEW);
   assert.equal(await readFile(stage, 'utf8'), STAGE_PROTOCOL);
@@ -74,25 +75,28 @@ test('GET lists the workspace memory with its size, cap and lesson limit; POST a
   assert.ok(!JSON.stringify(records).includes('pnpm test'), 'no lesson text in any record');
 });
 
-test('an unknown workspace or lesson is 404, a bad kind, a bad text or a secret 400 and a lesson past the cap 409, each with its code and nothing written (#797)', async (t) => {
+test('an unknown workspace or lesson is 404, a bad kind, a bad description, a bad body or a secret 400 and a lesson past the cap 409, each with its code and nothing written (#797)', async (t) => {
   const { base, url } = await start(t);
   await refused(hiveFetch(`${base}/workspaces/ghost/memory`), 404, { error: UNKNOWN_WORKSPACE_MESSAGE }, 'GET, unknown workspace');
-  await refused(send('POST', `${base}/workspaces/ghost/memory`, { kind: 'fact', text: 'x' }), 404, { error: UNKNOWN_WORKSPACE_MESSAGE }, 'POST, unknown workspace');
+  await refused(send('POST', `${base}/workspaces/ghost/memory`, { kind: 'fact', description: 'x', body: 'y' }), 404, { error: UNKNOWN_WORKSPACE_MESSAGE }, 'POST, unknown workspace');
   const gone = { error: "no lesson m-9 in this workspace's memory", code: 'unknown_memory' };
-  await refused(send('PUT', `${url}/m-9`, { kind: 'fact', text: 'x' }), 404, gone, 'PUT, unknown lesson');
+  await refused(send('PUT', `${url}/m-9`, { kind: 'fact', description: 'x', body: 'y' }), 404, gone, 'PUT, unknown lesson');
   await refused(send('DELETE', `${url}/m-9`), 404, gone, 'DELETE, unknown lesson');
-  await refused(send('POST', url, { kind: 'correction', text: 'x' }), 400, { error: MEMORY_KIND_MESSAGE, code: 'bad_memory' }, 'a kind');
-  await refused(send('POST', url, { kind: 'fact', text: 'a\nb' }), 400, { error: MEMORY_TEXT_MESSAGE, code: 'bad_memory' }, 'two lines');
-  await refused(send('POST', url, { kind: 'fact', text: `key ${'Zx9'.repeat(11)}` }), 400, { error: MEMORY_SECRET_MESSAGE, code: 'memory_secret' }, 'a secret');
+  await refused(send('POST', url, { kind: 'correction', description: 'x', body: 'y' }), 400, { error: MEMORY_KIND_MESSAGE, code: 'bad_memory' }, 'a kind');
+  await refused(send('POST', url, { kind: 'fact', description: 'a\nb', body: 'x' }), 400, { error: DESCRIPTION_MESSAGE, code: 'bad_memory' }, 'two lines');
+  await refused(send('POST', url, { kind: 'fact', body: 'x' }), 400, { error: DESCRIPTION_MESSAGE, code: 'bad_memory' }, 'no description');
+  await refused(send('POST', url, { kind: 'fact', description: 'x' }), 400, { error: BODY_MESSAGE, code: 'bad_memory' }, 'no body');
+  await refused(send('PUT', `${url}/m-9`, { kind: 'fact', description: 'x', body: 7 }), 400, { error: BODY_MESSAGE, code: 'bad_memory' }, 'a body that is no string');
+  await refused(send('POST', url, { kind: 'fact', description: 'x', body: `key ${'Zx9'.repeat(11)}` }), 400, { error: MEMORY_SECRET_MESSAGE, code: 'memory_secret' }, 'a secret in the body');
   assert.deepEqual(((await (await hiveFetch(url)).json()) as MemoryView).entries, [], 'nothing written');
   let last: Response | undefined;
-  for (let n = 1; n <= 20; n += 1) last = await send('POST', url, { kind: 'fact', text: `lesson ${n} ${'y'.repeat(280)}` });
+  for (let n = 1; n <= 30; n += 1) last = await send('POST', url, { kind: 'fact', description: `lesson ${n} ${'y'.repeat(138)}`, body: 'b' }); // about 148 each: past 4,000 before 30
   await refused(Promise.resolve(last as Response), 409, { error: MEMORY_FULL_MESSAGE, code: 'memory_full' }, 'past the cap');
 });
 
 test('GET …/memory/stats reads every generation of facts.jsonl, oldest first, for the workspace\'s last 7 days, skipping a bad line; an unknown workspace is 404 (#797, #93)', async (t) => {
   const { base, url, home } = await start(t);
-  await send('POST', url, { kind: 'fact', text: 'pnpm test is the gate' }); // m-1
+  await send('POST', url, { kind: 'fact', description: 'pnpm test is the gate', body: 'it runs lint and both runners' }); // m-1
   const at = new Date(Date.now() - 3_600_000).toISOString();
   const line = (record: Record<string, unknown>): string => `${JSON.stringify({ schema_version: 1, ts: at, level: 'info', ...record })}\n`;
   const spawned = (task: string, session: string): string =>
@@ -108,12 +112,12 @@ test('GET …/memory/stats reads every generation of facts.jsonl, oldest first, 
 test('the routes answer and enforce the workspace\'s own memoryCap: the view carries it, a POST or a PUT that grows the sum past it is 409, a shrink passes (#73)', async (t) => {
   const { url } = await start(t, 500);
   assert.deepEqual(await (await hiveFetch(url)).json(), { ...EMPTY_VIEW, cap: 500 });
-  for (const c of ['a', 'b']) assert.equal((await send('POST', url, { kind: 'fact', text: c.repeat(250) })).status, 200); // exactly 500
+  for (const [c, n] of [['a', 150], ['b', 150], ['c', 150], ['d', 50]] as const) assert.equal((await send('POST', url, { kind: 'fact', description: c.repeat(n), body: 'b'.repeat(4000) })).status, 200); // exactly 500
   const full = { error: MEMORY_FULL_MESSAGE, code: 'memory_full' };
-  await refused(send('POST', url, { kind: 'fact', text: 'c' }), 409, full, 'one more character than the cap');
-  await refused(send('PUT', `${url}/m-1`, { kind: 'fact', text: 'd'.repeat(251) }), 409, full, 'an edit that grows the sum past the cap');
-  const shrunk = (await (await send('PUT', `${url}/m-1`, { kind: 'fact', text: 'short' })).json()) as MemoryView;
-  assert.deepEqual([shrunk.used, shrunk.cap], [255, 500]);
+  await refused(send('POST', url, { kind: 'fact', description: 'e', body: 'x' }), 409, full, 'one more character than the cap');
+  await refused(send('PUT', `${url}/m-4`, { kind: 'fact', description: 'd'.repeat(51), body: 'x' }), 409, full, 'an edit that grows the sum past the cap');
+  const shrunk = (await (await send('PUT', `${url}/m-1`, { kind: 'fact', description: 'short', body: 'x' })).json()) as MemoryView;
+  assert.deepEqual([shrunk.used, shrunk.cap], [355, 500]);
 });
 
 test('PUT …/memory/cap saves the workspace\'s new memoryCap to hive.config.json through the settings save, every other workspace and key as it was, and the view answers it; the same cap answers ok and writes nothing (#115)', async (t) => {

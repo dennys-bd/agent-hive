@@ -9,20 +9,23 @@ import { Progress } from '@/components/ui/progress';
 import { formatCount, t } from '@/i18n';
 import { readMemory, readStats, saveCap } from '@/lib/memory-api';
 import { isMemoryCap, memoryCapTokens } from '@/lib/memory-cap';
-import { charactersText, lastText, lessonsText, statNumbers } from '@/lib/memory-view';
+import { lastText, lessonsText, statNumbers, usedText } from '@/lib/memory-view';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import { MEMORY_CAP_MAX, MEMORY_CAP_MIN, type MemoryStats, type MemoryView } from '../../../types';
 
 interface MemoryDialogProps { workspace: string; view: MemoryView; open: boolean; onOpenChange(open: boolean): void; onView(view: MemoryView): void; onCapSaved(cap: number): void }
 
+// #680: Radix hears Escape on the document before the row does; inside an editing row it is the row's to cancel, never the dialog's
+const keepRowEscape = (e: KeyboardEvent): void => { if (e.target instanceof Element && e.target.closest('[data-lesson-edit]')) e.preventDefault(); };
+
 const BLOCK = 'flex flex-col gap-3 rounded-lg border bg-card px-4 py-3.5';
 
-/** A memory's usage (#797): the sum of its texts against the cap, its lessons and how many came from tasks; the bar turns red only at the cap. */
+/** A memory's usage (#797): the sum of its descriptions (#680) against the cap, its lessons and how many came from tasks; the bar turns red only at the cap. */
 export function MemoryUsage({ view, medium = false }: { view: MemoryView; medium?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-3">
-        <span className={medium ? 'font-medium text-sm' : 'text-sm'}>{charactersText(view.used, view.cap)}</span>
+        <span className={medium ? 'font-medium text-sm' : 'text-sm'}>{usedText(view.used, view.cap)}</span>
         <span className="text-muted-foreground text-xs">{lessonsText(view.entries)}</span>
       </div>
       <Progress aria-label={t('settings.memory.progress')} value={Math.min(100, (view.used / view.cap) * 100)} indicatorClassName={view.used >= view.cap ? 'bg-destructive' : undefined} />
@@ -98,7 +101,7 @@ function CapField({ workspace, view, onCapSaved, onView }: CapFieldProps) {
 
 interface UsageBlockProps { workspace: string; view: MemoryView; onCapSaved(cap: number): void; onView(view: MemoryView): void }
 
-// The limits: the total as a field saved at once (#115), the per-lesson one fixed and shown off until its entry in
+// The limits: the total as a field saved at once (#115), the per-description one fixed (#680) and shown off until its entry in
 // docs/agent/settings-candidates.md makes it a setting
 function UsageBlock({ workspace, view, onCapSaved, onView }: UsageBlockProps) {
   const id = useId();
@@ -110,8 +113,8 @@ function UsageBlock({ workspace, view, onCapSaved, onView }: UsageBlockProps) {
         {/* keyed by the saved cap: a new one (this field's save, or a read on focus) resets what is typed */}
         <CapField key={view.cap} workspace={workspace} view={view} onCapSaved={onCapSaved} onView={onView} />
         <div className="flex flex-col gap-2">
-          <Label htmlFor={`${id}-max`} className="font-normal text-muted-foreground text-xs">{t('settings.memory.lessonLimit')}</Label>
-          <Input id={`${id}-max`} type="number" value={view.textMax} readOnly disabled />
+          <Label htmlFor={`${id}-max`} className="font-normal text-muted-foreground text-xs">{t('settings.memory.descriptionLimit')}</Label>
+          <Input id={`${id}-max`} type="number" value={view.descriptionMax} readOnly disabled />
         </div>
       </div>
       <p className="text-muted-foreground text-xs">{t('settings.memory.limitNote')}</p>
@@ -161,13 +164,13 @@ export function MemoryDialog({ workspace, view, open, onOpenChange, onView, onCa
   const stats = useMemoryStats(workspace, open);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="wide" showCloseButton={false} className="gap-5">
+      <DialogContent size="wide" showCloseButton={false} className="gap-5" onEscapeKeyDown={keepRowEscape}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <WorkspaceSquare name={workspace} />
             {t('settings.memory.title', { workspace })}
           </DialogTitle>
-          <DialogDescription className="text-xs">{t('settings.memory.description')}</DialogDescription>
+          <DialogDescription className="text-xs">{t('settings.memory.intro')}</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-4">
           <UsageBlock workspace={workspace} view={view} onCapSaved={onCapSaved} onView={onView} />

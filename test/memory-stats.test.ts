@@ -8,7 +8,7 @@ const memoryStats = (lines: string[], workspace: string, entries: MemoryEntry[],
   statsOf(lines.flatMap((l) => memoryRecord(l, workspace) ?? []), entries, now);
 const NOW = Date.parse('2026-10-05T12:00:00.000Z');
 const line = (record: Record<string, unknown>): string => JSON.stringify({ schema_version: 1, level: 'info', ...record });
-const ENTRIES: MemoryEntry[] = ['m-1', 'm-2'].map((id) => ({ id, kind: 'fact', text: 'x', origin: 'user', at: '2026-10-01T10:00:00.000Z', uses: 0 }));
+const ENTRIES: MemoryEntry[] = ['m-1', 'm-2'].map((id) => ({ id, kind: 'fact', description: 'x', body: 'the lesson', origin: 'user', at: '2026-10-01T10:00:00.000Z', uses: 0 }));
 
 test('counts the workspace\'s runs with memory in the last 7 days, their mean tokens, the current lessons cited, and the latest run with its session\'s citations; a bad line is skipped (#797)', () => {
   const lines = [

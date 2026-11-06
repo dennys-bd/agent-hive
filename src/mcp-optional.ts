@@ -54,20 +54,20 @@ export function memoryCaller(deps: McpDeps, header: string | undefined): MemoryC
   return { workspace: workspace.name, cap: workspace.memoryCap, origin: { task: task.item.id, ...stage }, correlation };
 }
 
-export const REMEMBER_DESCRIPTION = 'Save a lesson to this workspace\'s memory, which the Hive gives every later run in this workspace. kind: "pref" (how the user wants things done, often learned from a correction), "fact" (a fact about this repository a later task needs) or "avoid" (something that fails or must not be done here). text: one line, at most 300 characters. Never save details of this task only, what the repository already records (its agent instructions, the code, git history), or anything a token or a secret could be in.';
+export const REMEMBER_DESCRIPTION = 'Save a lesson to this workspace\'s memory, which the Hive gives every later run in this workspace. kind: "pref" (how the user wants things done, often learned from a correction), "fact" (a fact about this repository a later task needs) or "avoid" (something that fails or must not be done here). description: one line of at most 150 characters naming what the lesson is about, short and direct (e.g. "Portuguese copy for a run or a command"), never the lesson itself. body: up to 4,000 characters holding the lesson, why it holds and how to apply it; line breaks are kept. Never save details of this task only, what the repository already records (its agent instructions, the code, git history), or anything a token or a secret could be in.';
 export const APPLIED_DESCRIPTION = 'Tell the Hive a lesson of this workspace\'s memory changed what you did: pass its id (m-<n>, as the memory shows it) and why, in one line. Call it each time a lesson makes you act differently, not for lessons you only read.';
 
-// hive_remember (#797): a lesson for every later run in the workspace. Its records name its kind and id, never its text
+// hive_remember (#797): a lesson for every later run in the workspace. Its records name its kind and id, never its description or body
 export function registerRememberTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_remember', {
     description: REMEMBER_DESCRIPTION,
-    inputSchema: { kind: z.enum(MEMORY_KINDS), text: z.string() },
-  }, async ({ kind, text }) => recorded(deps, header, 'hive_remember', async () => {
+    inputSchema: { kind: z.enum(MEMORY_KINDS), description: z.string(), body: z.string() },
+  }, async ({ kind, description, body }) => recorded(deps, header, 'hive_remember', async () => {
     const caller = memoryCaller(deps, header);
     if (!caller) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
-    const refused = lessonRefusal(text);
+    const refused = lessonRefusal(description, body);
     if (refused) return refuse(refused.code, refused.message);
-    const saved = await deps.memory.update(caller.workspace, (file) => withEntry(file, kind, text, caller.origin, new Date().toISOString(), caller.cap));
+    const saved = await deps.memory.update(caller.workspace, (file) => withEntry(file, kind, description, body, caller.origin, new Date().toISOString(), caller.cap));
     if (isMemoryRefusal(saved)) return refuse(saved.code, saved.message);
     const id = `m-${saved.nextId - 1}`; // withEntry's: the counter it just moved on
     deps.facts.write({ event: 'memory.changed', level: 'info', ...caller.correlation, action: 'added', kind, by: 'worker', id, workspace: caller.workspace, ...memoryCounts(saved) });

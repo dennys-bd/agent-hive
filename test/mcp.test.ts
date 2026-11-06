@@ -12,7 +12,7 @@ import { ASK_REPLY, canCloseTask, mountMcp, NO_SESSION_MESSAGE, NOT_PARTICIPANT_
 import { conventionsAnswer, forkConventions, nestedConventions } from '../src/mcp-conventions.js';
 import { noCreateMessage } from '../src/create-task.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
-import { MEMORY_FULL_MESSAGE, MEMORY_SECRET_MESSAGE, MEMORY_TEXT_MESSAGE, memoryPath, memoryUsed, WHY_MESSAGE } from '../src/memory.js';
+import { BODY_MESSAGE, DESCRIPTION_MESSAGE, MEMORY_FULL_MESSAGE, MEMORY_SECRET_MESSAGE, memoryPath, memoryUsed, WHY_MESSAGE } from '../src/memory.js';
 import { worktreePath } from '../src/worktree.js';
 import { localReviewPath, reviewPath } from '../src/review-store.js';
 import { activityOf, localActivityId, prsOf, recordOf, resultOf } from '../src/activities.js';
@@ -106,7 +106,7 @@ test('an unknown or missing worker id gets a tool error from every tool and disp
   const calls: [string, Record<string, unknown>][] = [
     ['hive_done', {}], ['hive_pr', { url: 'https://github.com/acme/r/pull/9' }], ['hive_ask', { question: 'q?' }], ['hive_create_task', { title: 'x' }],
     ['hive_stop', { reason: 'wontDo' }], ['hive_reply', { thread: 'T1', text: 'x' }], ['hive_conventions', {}],
-    ['hive_remember', { kind: 'fact', text: 'x' }], ['hive_applied', { id: 'm-1', why: 'x' }], ['hive_task', {}],
+    ['hive_remember', { kind: 'fact', description: 'x', body: 'y' }], ['hive_applied', { id: 'm-1', why: 'x' }], ['hive_task', {}],
   ];
   for (const ptyId of ['ghost', undefined]) {
     const client = await connect(t, base, ptyId);
@@ -413,46 +413,53 @@ const memoryFile = async (home: string): Promise<MemoryFile> => JSON.parse(await
 
 test('hive_remember saves a lesson with its task and stage from a stage run and only its task from a free session; the stage protocol carries it; memory.changed and mcp.call name its kind, never its text (#797)', async (t) => {
   const { base, server, home, repo, records, ptyId } = await start(t);
-  assert.deepEqual(await call(await connect(t, base, ptyId), 'hive_remember', { kind: 'fact', text: '  pnpm test is the gate here  ' }), { text: 'saved as m-1', isError: false });
+  const BODY = 'Run it before every commit.\n\tWhy: CI runs the same.';
+  assert.deepEqual(await call(await connect(t, base, ptyId), 'hive_remember', { kind: 'fact', description: '  pnpm test is the gate here  ', body: `  ${BODY}  ` }), { text: 'saved as m-1', isError: false });
   const slug = work0(server)!.slug!;
   await server.dispatch({ type: 'worktreeReady', activityId: work0(server)!.id, path: worktreePath(repo, slug), branch: `hive/${slug}`, base: null, local: false }); // a session needs the activity's worktree
   await server.dispatch({ type: 'openSession', activityId: work0(server)!.id }); // appended beside the stage run (#459)
   const free = server.getState()!.workers.find((w) => w.freeSession)?.runId;
   assert.ok(free !== undefined, 'the free session runs');
-  assert.deepEqual(await call(await connect(t, base, free), 'hive_remember', { kind: 'pref', text: 'answer in Portuguese' }), { text: 'saved as m-2', isError: false });
-  assert.deepEqual((await memoryFile(home)).entries.map((e) => [e.id, e.kind, e.text, e.origin, e.uses]), [
-    ['m-1', 'fact', 'pnpm test is the gate here', { task: '1', stage: 'fila' }, 0], ['m-2', 'pref', 'answer in Portuguese', { task: '1' }, 0],
+  assert.deepEqual(await call(await connect(t, base, free), 'hive_remember', { kind: 'pref', description: 'answer in Portuguese', body: 'the user reads Portuguese' }), { text: 'saved as m-2', isError: false });
+  assert.deepEqual((await memoryFile(home)).entries.map((e) => [e.id, e.kind, e.description, e.body, e.origin, e.uses]), [
+    ['m-1', 'fact', 'pnpm test is the gate here', BODY, { task: '1', stage: 'fila' }, 0], ['m-2', 'pref', 'answer in Portuguese', 'the user reads Portuguese', { task: '1' }, 0],
   ]);
   const stage = await readFile(workspaceProtocolPaths(home, WORKSPACE).stage, 'utf8');
   assert.ok(stage.endsWith('### Preferences\n- [m-2] answer in Portuguese\n\n### Repository facts\n- [m-1] pnpm test is the gate here\n'), stage);
+  assert.ok(!stage.includes('CI runs the same'), 'no body in the rendered section');
   const changed = records.filter((r): r is MemoryChanged => r.event === 'memory.changed');
   assert.deepEqual(changed.map((r) => [r.action, r.kind, r.by, r.id, r.entries, r.used, r.workspace, r.stage]), [
     ['added', 'fact', 'worker', 'm-1', 1, 26, WORKSPACE, 'fila'], ['added', 'pref', 'worker', 'm-2', 2, 46, WORKSPACE, undefined],
   ]);
   assert.deepEqual(mcpCalls(records).filter((c) => c.tool === 'hive_remember').map((c) => [c.outcome, c.kind]), [['ok', 'fact'], ['ok', 'pref']]);
-  assert.ok(!JSON.stringify(records).includes('gate here') && !JSON.stringify(records).includes('Portuguese'), 'no lesson text in any record');
+  assert.ok(!JSON.stringify(records).includes('gate here') && !JSON.stringify(records).includes('CI runs the same') && !JSON.stringify(records).includes('reads Portuguese'), 'neither field in any record');
 });
 
-test('hive_remember refuses an unknown worker, a text that is not one line of 1 to 300 characters, a secret and a lesson that would pass the workspace\'s memoryCap, and writes nothing for them (#797, #73)', async (t) => {
+test('hive_remember refuses an unknown worker, a description or a body that does not fit, a secret and a lesson that would pass the workspace\'s memoryCap, and writes nothing for them (#797, #73)', async (t) => {
   const { base, home, records, ptyId } = await start(t, [GITHUB_ENTRY], { memoryCap: 500, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' });
   const client = await connect(t, base, ptyId);
-  assert.deepEqual(await call(await connect(t, base, 'ghost'), 'hive_remember', { kind: 'fact', text: 'x' }), { text: UNKNOWN_WORKER_MESSAGE, isError: true });
-  assert.deepEqual(await call(client, 'hive_remember', { kind: 'fact', text: 'two\nlines' }), { text: MEMORY_TEXT_MESSAGE, isError: true });
-  assert.deepEqual(await call(client, 'hive_remember', { kind: 'avoid', text: `never paste ${'Zx9'.repeat(11)}` }), { text: MEMORY_SECRET_MESSAGE, isError: true });
+  assert.deepEqual(await call(await connect(t, base, 'ghost'), 'hive_remember', { kind: 'fact', description: 'x', body: 'y' }), { text: UNKNOWN_WORKER_MESSAGE, isError: true });
+  assert.deepEqual(await call(client, 'hive_remember', { kind: 'fact', description: 'two\nlines', body: 'y' }), { text: DESCRIPTION_MESSAGE, isError: true });
+  const noBody = await call(client, 'hive_remember', { kind: 'fact', description: 'x' });
+  assert.equal(noBody.isError, true);
+  assert.match(noBody.text, /Input validation error/, 'the schema requires a body');
+  assert.deepEqual(await call(client, 'hive_remember', { kind: 'fact', description: 'x', body: 'a\rb' }), { text: BODY_MESSAGE, isError: true });
+  assert.deepEqual(await call(client, 'hive_remember', { kind: 'avoid', description: 'a pasted key', body: `never paste ${'Zx9'.repeat(11)}` }), { text: MEMORY_SECRET_MESSAGE, isError: true });
   const answers: { text: string; isError: boolean }[] = [];
-  for (let n = 1; n <= 3; n += 1) answers.push(await call(client, 'hive_remember', { kind: 'fact', text: `lesson ${n} ${'y'.repeat(240)}` })); // 249 characters: two fit in 500
-  assert.deepEqual(answers.map((a) => a.isError), [false, false, true]);
+  // 149-character descriptions, each with a full body: three fit in 500, the bodies count for nothing
+  for (let n = 1; n <= 4; n += 1) answers.push(await call(client, 'hive_remember', { kind: 'fact', description: `lesson ${n} ${'y'.repeat(140)}`, body: 'b'.repeat(4000) }));
+  assert.deepEqual(answers.map((a) => a.isError), [false, false, false, true]);
   assert.deepEqual(answers.at(-1), { text: MEMORY_FULL_MESSAGE, isError: true });
   const { entries } = await memoryFile(home);
-  assert.deepEqual([entries.length, memoryUsed(entries)], [2, 498]);
+  assert.deepEqual([entries.length, memoryUsed(entries)], [3, 447]);
   const reasons = mcpCalls(records).filter((c) => c.tool === 'hive_remember' && c.outcome === 'refused').map((c) => c.reason);
-  assert.deepEqual([...reasons.slice(0, 3), reasons.at(-1)], ['unknown_worker', 'bad_memory', 'memory_secret', 'memory_full']);
+  for (const reason of ['unknown_worker', 'bad_memory', 'memory_secret', 'memory_full']) assert.ok(reasons.includes(reason), reason);
 });
 
 test('hive_applied counts a citation with the stage from a stage run, refuses an unknown id and a bad why, writes memory.applied without the why and leaves the protocol files alone (#797)', async (t) => {
   const { base, home, records, ptyId } = await start(t);
   const client = await connect(t, base, ptyId);
-  await call(client, 'hive_remember', { kind: 'avoid', text: 'never edit dist/ by hand' });
+  await call(client, 'hive_remember', { kind: 'avoid', description: 'never edit dist/ by hand', body: 'rebuild it instead' });
   const { stage } = workspaceProtocolPaths(home, WORKSPACE);
   await writeFile(stage, 'as launched');
   assert.deepEqual(await call(client, 'hive_applied', { id: 'm-1', why: ' rebuilt instead of patching dist/ ' }), { text: 'ok', isError: false });
@@ -557,7 +564,7 @@ test('a tool turned off in mcp.off leaves tools/list and a call to it gets the S
   assert.equal(off.status, 200);
   const client = await connect(t, base, ptyId);
   assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_reply', 'hive_stop', 'hive_task']);
-  const answer = await call(client, 'hive_remember', { kind: 'fact', text: 'x' });
+  const answer = await call(client, 'hive_remember', { kind: 'fact', description: 'x', body: 'y' });
   assert.equal(answer.isError, true);
   assert.match(answer.text, /Tool hive_remember not found/);
 });
