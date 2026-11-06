@@ -22,7 +22,7 @@ function ReloadedMark({ name, at }: { name: string; at: Date }) {
   );
 }
 
-function ZoomControl({ zoom }: { zoom: DesignZoom }) {
+export function ZoomControl({ zoom }: { zoom: DesignZoom }) {
   return (
     <span className="flex shrink-0 items-center">
       <Button type="button" size="icon-xs" variant="ghost" aria-label={t('design.zoomOut')} onClick={() => zoom.zoomBy(-1)}>−</Button>
@@ -40,7 +40,7 @@ interface BarProps {
 interface SwitchProps { viewport: DesignViewport; viewports: readonly DesignViewport[]; onViewport(next: DesignViewport): void }
 
 // The viewport switch (#109, #341): only when the screen offers more than natural. A click on the pressed item answers '', which matches none
-function ViewportSwitch({ viewport, viewports, onViewport }: SwitchProps) {
+export function ViewportSwitch({ viewport, viewports, onViewport }: SwitchProps) {
   if (viewports.length <= 1) return null;
   const pick = (next: string): void => {
     const picked = viewports.find((item) => item === next);
