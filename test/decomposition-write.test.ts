@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ADD_BLOCKED_BY, ADD_PROJECT_ITEM, ADD_SUB_ISSUE, CREATE_ISSUE, CREATE_LABEL, ISSUE_ID, REPOSITORY_BRANCH, REPOSITORY_LABEL, SET_OPTION,
 } from '../src/sources/github-queries.js';
-import { readRepository, writeDecomposition, type WriteTarget } from '../src/decomposition-write.js';
+import { isTransient, readRepository, writeDecomposition, type WriteTarget } from '../src/decomposition-write.js';
 import { designComment, issueBody, parseDecomposition, rootBody } from '../src/decomposition.js';
 import { ADD_COMMENT } from '../src/repos/github-repo-queries.js';
 import type { Decomposition } from '../src/types.js';
@@ -65,6 +65,12 @@ const parentsOf = (calls: Call[]): string[] => varsOf(calls, 'create').map((v) =
 function recorder(): { recorded: [string, number][]; record(id: string, number: number): Promise<void> } {
   const recorded: [string, number][] = [];
   return { recorded, record: async (id, number) => { recorded.push([id, number]); } };
+}
+
+// The retry's waits, recorded instead of waited (#702)
+function sleeper(): { waits: number[]; sleep(ms: number): Promise<void> } {
+  const waits: number[] = [];
+  return { waits, sleep: async (ms) => { waits.push(ms); } };
 }
 
 test('readRepository answers the node id and the default branch; a repository with none is an error (#936)', async () => {
@@ -152,4 +158,67 @@ test('the first other error stops the write with GitHub\'s message; what was don
   assert.deepEqual(await writeDecomposition({ gql, record }, example(), GITHUB_GOAL, {}), { error: 'was submitted too quickly' });
   assert.deepEqual(recorded, [['design', 7], ['1', 101]]);
   assert.equal(steps(calls).includes('sub'), false);
+});
+
+test('isTransient matches a refused or reset stream, a timeout, a 502 and a 503 in any case; a GraphQL refusal is not transient (#702)', () => {
+  for (const message of [
+    'stream error: stream ID 5; REFUSED_STREAM; received from peer', 'read ECONNRESET', 'Connection reset by peer',
+    'Post "https://api.github.com/graphql": net/http: TLS handshake timeout', 'i/o timed out',
+    'HTTP 502: Bad Gateway (https://api.github.com/graphql)', 'HTTP 503', 'bad gateway', 'service unavailable',
+  ]) assert.equal(isTransient(new Error(message)), true, message);
+  for (const message of ['Resource not accessible by integration', 'was submitted too quickly', 'HTTP 401: Bad credentials']) {
+    assert.equal(isTransient(new Error(message)), false, message);
+  }
+  assert.equal(isTransient('HTTP 503'), true, 'a thrown string is read as its own message');
+});
+
+test('a call refused once is made again after 1 s and the write finishes (#702)', async () => {
+  let refused = false;
+  const once = (query: string): string | undefined => {
+    if (query !== ISSUE_ID || refused) return undefined;
+    refused = true;
+    return 'stream error: stream ID 3; REFUSED_STREAM; received from peer';
+  };
+  const { calls, gql } = github(101, once);
+  const { waits, sleep } = sleeper();
+  assert.deepEqual(await writeDecomposition({ gql, record: recorder().record, sleep }, example(), GITHUB_GOAL, {}), { root: 7 });
+  assert.deepEqual(steps(calls).slice(0, 3), ['issueId', 'issueId', 'comment']);
+  assert.deepEqual(waits, [1000]);
+});
+
+test('a 502 on every call gives up after three attempts, waiting 1 s then 2 s, and the outcome is transient (#702)', async () => {
+  const message = 'HTTP 502: Bad Gateway (https://api.github.com/graphql)';
+  const { calls, gql } = github(101, () => message);
+  const { waits, sleep } = sleeper();
+  assert.deepEqual(await writeDecomposition({ gql, record: recorder().record, sleep }, example(), GITHUB_GOAL, {}), { error: message, transient: true });
+  assert.equal(calls.length, 3);
+  assert.deepEqual(waits, [1000, 2000]);
+});
+
+test('a GraphQL refusal fails at once: one call, no wait, no transient mark (#702)', async () => {
+  const { calls, gql } = github(101, () => 'Resource not accessible by integration');
+  const { waits, sleep } = sleeper();
+  assert.deepEqual(await writeDecomposition({ gql, record: recorder().record, sleep }, example(), GITHUB_GOAL, {}), { error: 'Resource not accessible by integration' });
+  assert.deepEqual([calls.length, waits], [1, []]);
+});
+
+test('a create that fails transiently three times gives up; a second write with the recorded keys resumes and creates no recorded issue again (#702)', async () => {
+  let failures = 0;
+  const flaky = (query: string, variables: Record<string, unknown>): string | undefined => {
+    if (query !== CREATE_ISSUE || variables.title !== 'Submissions table' || failures >= 3) return undefined;
+    failures += 1;
+    return 'stream error: stream ID 9; REFUSED_STREAM';
+  };
+  const { calls, gql } = github(101, flaky);
+  const { recorded, record } = recorder();
+  const { sleep } = sleeper();
+  assert.deepEqual(await writeDecomposition({ gql, record, sleep }, example(), GITHUB_GOAL, {}), { error: 'stream error: stream ID 9; REFUSED_STREAM', transient: true });
+  assert.deepEqual(recorded, [['design', 7], ['1', 101]]);
+  const before = calls.length;
+  assert.deepEqual(await writeDecomposition({ gql, record, sleep }, example(), GITHUB_GOAL, Object.fromEntries(recorded)), { root: 7 });
+  const again = calls.slice(before);
+  assert.deepEqual(varsOf(again, 'issueId').map((v) => v.number), [7, 101], 'the recorded issues are resolved, not created');
+  assert.equal(varsOf(again, 'create').length, 5);
+  assert.equal(steps(again).includes('comment'), false);
+  assert.deepEqual(recorded.slice(2).map(([id]) => id), ['1.1', '1.2', '2', '2.1', '2.2']);
 });

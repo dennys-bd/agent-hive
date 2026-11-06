@@ -3,6 +3,7 @@
 // with the file's label and in the chosen project and column, then the sub-issues in file order and the blockers. Each issue is recorded
 // through `record` as soon as GitHub made it, before anything else is asked, so a retry creates none twice; everything after the creation is
 // replayed, and a link GitHub already holds is done.
+import { setTimeout as delay } from 'node:timers/promises';
 import { DESIGN_KEY, ROOT_KEY, designComment, designLink, issueBody, rootBody } from './decomposition.js';
 import { parentOf } from './decomposition-check.js';
 import { ownerName, repositoryOf } from './repos/github-repos.js';
@@ -26,10 +27,12 @@ export interface WriteTarget {
 export interface WriteDeps {
   gql: GqlJson; // gh api graphql --input -: the Hive's own login
   record(id: string, number: number): Promise<void>; // the route's decompositionIssue, done before the next step
+  sleep?(ms: number): Promise<void>; // the retry's wait (#702); a real timer by default, injected by tests
 }
 
-/** How a write ended (#936): the root epic's number, which the route records as `done` once the PR is open; else GitHub's first error. */
-export type WriteOutcome = { root: number } | { error: string };
+/** How a write ended (#936): the root epic's number, which the route records as `done` once the PR is open; else GitHub's first error,
+ * marked transient when it was still a network failure after the retries (#702). */
+export type WriteOutcome = { root: number } | { error: string; transient?: true };
 
 interface Issue { id: string; number: number }
 interface Ctx extends WriteDeps { target: WriteTarget; recorded: Readonly<Record<string, number>>; labelIds(): Promise<string[]> }
@@ -38,6 +41,30 @@ interface Ctx extends WriteDeps { target: WriteTarget; recorded: Readonly<Record
 const EXISTING_LINK = /already|duplicate/i;
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const LABEL_COLOR = 'ededed'; // GitHub's own grey for a new label (#936): the user recolours it on GitHub
+
+// #702: what gh's stderr says when GitHub or the network failed rather than the request: it carries no structured status, so the text decides.
+// A GraphQL errors[] answer (validation, permission, rate limit) never matches and fails at once
+const TRANSIENT = /REFUSED_STREAM|stream error|ECONNRESET|connection reset|timeout|timed out|HTTP 502|HTTP 503|Bad Gateway|Service Unavailable/i;
+export const isTransient = (err: unknown): boolean => TRANSIENT.test(messageOf(err));
+
+/** The waits between the attempts (#702): 3 attempts in total, about 3 s at worst before the dialog shows the error. */
+export const RETRY_DELAYS_MS: readonly number[] = [1000, 2000];
+
+// Every call of the write made again on a transient error, creates included: a retry after a timeout may leave one duplicate, as a second
+// press does today (#702, decision 2). The last attempt's error is rethrown as it is
+function retrying(gql: GqlJson, sleep: (ms: number) => Promise<void>): GqlJson {
+  return async (query, variables) => {
+    for (const wait of RETRY_DELAYS_MS) {
+      try {
+        return await gql(query, variables);
+      } catch (err) {
+        if (!isTransient(err)) throw err;
+        await sleep(wait);
+      }
+    }
+    return gql(query, variables);
+  };
+}
 
 const once = <T>(make: () => Promise<T>): (() => Promise<T>) => {
   let made: Promise<T> | undefined;
@@ -140,12 +167,13 @@ async function linkAll(ctx: Ctx, nodes: DecompositionNode[], issues: ReadonlyMap
   }
 }
 
-/** The write (#865, #936), skipping the keys `recorded` holds (matching by id only). The root's number once every step is done, else the
- * first GitHub error's message: what was done stays recorded, and a second press resumes. A secondary rate limit is such an error. */
+/** The write (#865, #936), skipping the keys `recorded` holds (matching by id only). Each call is retried on a transient error first (#702). The root's
+ * number once every step is done, else the first GitHub error's message: what was done stays recorded, and a second press resumes. A secondary rate limit is such an error. */
 export async function writeDecomposition(deps: WriteDeps, d: Decomposition, target: WriteTarget, recorded: Readonly<Record<string, number>>): Promise<WriteOutcome> {
   // asked only when an issue is created, so a retry with every issue recorded asks nothing (#936)
-  const labelIds = once(async (): Promise<string[]> => (d.label === undefined ? [] : [await labelId({ gql: deps.gql, target }, d.label)]));
-  const ctx: Ctx = { ...deps, target, recorded, labelIds };
+  const gql = retrying(deps.gql, deps.sleep ?? delay);
+  const labelIds = once(async (): Promise<string[]> => (d.label === undefined ? [] : [await labelId({ gql, target }, d.label)]));
+  const ctx: Ctx = { ...deps, gql, target, recorded, labelIds };
   try {
     const root = await rootOf(ctx, d);
     const issues = await createAll(ctx, d, root);
@@ -154,6 +182,6 @@ export async function writeDecomposition(deps: WriteDeps, d: Decomposition, targ
     await linkAll(ctx, d.nodes, issues, root);
     return { root: root.number };
   } catch (err) {
-    return { error: messageOf(err) };
+    return isTransient(err) ? { error: messageOf(err), transient: true } : { error: messageOf(err) };
   }
 }
