@@ -27,6 +27,23 @@ test('a deny never refuses, and an allow without read bits passes (#628)', () =>
   assert.deepEqual(refusedPrincipals(`${PROFILE}(A;;0x100000;;;WD)(A;;0x2;;;BU)`, ME), []);
 });
 
+test('a null DACL, conditional and object allows, and generic or bare read-data masks are refused (#628)', () => {
+  assert.deepEqual(refusedPrincipals(`O:${ME}D:NO_ACCESS_CONTROL`, ME), ['WD']);
+  assert.deepEqual(refusedPrincipals(`${PROFILE}(XA;;FR;;;WD;(@User.x == "S:y"))(A;;GR;;;BU)`, ME), ['WD', 'BU']);
+  assert.deepEqual(refusedPrincipals(`${PROFILE}(OA;;0x80000000;;;AU)(A;;0x10000000;;;IU)(A;;0x1;;;NU)(A;OICIIO;FRFX;;;AN)`, ME), ['AU', 'IU', 'NU', 'AN']);
+});
+
+test('the SACL after the DACL and an empty DACL refuse nobody (#628)', () => {
+  assert.deepEqual(refusedPrincipals(`${PROFILE}S:AI(AU;SA;FA;;;WD)`, ME), []);
+  assert.deepEqual(refusedPrincipals(`O:${ME}D:P`, ME), []);
+});
+
+test('the fix makes inherited entries explicit, then removes the SIDs, aliases mapped (#628)', () => {
+  const home = 'C:\\Users\\me\\.hive';
+  assert.throws(() => checkHomeAcl('win32', home, { read: () => ({ sddl: `${PROFILE}(A;OICIID;FR;;;AU)`, userSid: ME }) }),
+    (err) => (err as Error).message.includes(`icacls "${home}" /inheritance:d, then icacls "${home}" /remove *S-1-5-11`));
+});
+
 test('SDDL with no DACL or a malformed ACE throws (#628)', () => {
   assert.throws(() => refusedPrincipals(`O:${ME}`, ME));
   assert.throws(() => refusedPrincipals('D:(A;OICI;FA)', ME));

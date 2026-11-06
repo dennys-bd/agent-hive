@@ -2,13 +2,17 @@
 // grants only SYSTEM, Administrators and the user, and anything beyond that is an extra allow ACE with read. The check takes the platform and
 // its lookup, so node:test covers the parsing and the refusal on every OS.
 import { execFileSync } from 'node:child_process';
+import { win32 } from 'node:path';
 
 export interface AclLookups { read(home: string): { sddl: string; userSid: string } }
 
 const READ_MASK = 0x1 | 0x80000000 | 0x10000000; // FILE_READ_DATA (list), GENERIC_READ, GENERIC_ALL
 const READ_CODES = ['FA', 'FR', 'GA', 'GR', 'CC']; // SDDL codes that include read; the rest (SD, WD, WO, RC, FW...) do not grant it
 const ALWAYS_ALLOWED = ['SY', 'S-1-5-18', 'BA', 'S-1-5-32-544', 'CO', 'S-1-3-0'];
-const ICACLS_SID: Record<string, string> = { WD: 'S-1-1-0', BU: 'S-1-5-32-545', AU: 'S-1-5-11' };
+const ALLOW_TYPES = ['A', 'XA', 'OA', 'ZA']; // allow, conditional allow, object allow, callback object allow
+const ICACLS_SID: Record<string, string> = { WD: 'S-1-1-0', BU: 'S-1-5-32-545', AU: 'S-1-5-11', IU: 'S-1-5-4', NU: 'S-1-5-2', AN: 'S-1-5-7', AC: 'S-1-15-2-1' };
+const SID = /^S-1(-\d+)+$/;
+const PS_TIMEOUT_MS = 15_000; // a PowerShell stuck on a share or an antivirus scan ends the boot instead of hanging it
 
 function grantsRead(rights: string): boolean {
   if (/^0x[0-9a-f]+$/i.test(rights)) return (Number(rights) & READ_MASK) !== 0;
@@ -21,20 +25,44 @@ function grantsRead(rights: string): boolean {
 export function refusedPrincipals(sddl: string, userSid: string): string[] {
   const start = sddl.indexOf('D:');
   if (start < 0) throw new Error('no DACL in the security descriptor');
-  const aces = sddl.slice(start).replace(/S:.*$/, '').match(/\([^()]*\)/g) ?? []; // S: opens the SACL; a SID is S-, never S:
+  const flags = /^D:([A-Z_]*)/.exec(sddl.slice(start))?.[1] ?? '';
+  if (flags.includes('NO_ACCESS_CONTROL')) return ['WD']; // a null DACL grants everyone everything
   const refused = new Set<string>();
-  for (const ace of aces) {
-    const fields = ace.slice(1, -1).split(';');
-    if (fields.length < 6 || !fields[5]) throw new Error(`malformed ACE ${ace}`);
+  for (const ace of daclAces(sddl, start + 2 + flags.length)) {
+    const fields = ace.split(';');
+    if (fields.length < 6 || !fields[5]) throw new Error(`malformed ACE (${ace})`);
     const [type, , rights, , , trustee] = fields as [string, string, string, string, string, string];
-    if (type === 'A' && grantsRead(rights) && trustee !== userSid && !ALWAYS_ALLOWED.includes(trustee)) refused.add(trustee);
+    if (ALLOW_TYPES.includes(type) && grantsRead(rights) && trustee !== userSid && !ALWAYS_ALLOWED.includes(trustee)) refused.add(trustee);
   }
   return [...refused];
 }
 
+// The DACL's ACEs from `at` on, read paren by paren: a conditional ACE nests parentheses (and may hold "S:"), so neither a flat regex
+// nor cutting at "S:" finds where the DACL ends; it ends at the first character that does not open an ACE
+function daclAces(sddl: string, at: number): string[] {
+  const aces: string[] = [];
+  let i = at;
+  while (sddl[i] === '(') {
+    let depth = 0;
+    let j = i;
+    do {
+      if (sddl[j] === '(') depth++;
+      else if (sddl[j] === ')') depth--;
+      j++;
+    } while (depth > 0 && j < sddl.length);
+    if (depth > 0) throw new Error('unbalanced ACE');
+    aces.push(sddl.slice(i + 1, j - 1));
+    i = j;
+  }
+  return aces;
+}
+
 const fix = (home: string, trustees: string[]): string => {
-  const sids = trustees.map((t) => ICACLS_SID[t] ?? (t.startsWith('S-') ? t : undefined)).filter((s) => s !== undefined);
-  return sids.length ? ` Remove that access (icacls "${home}" /remove ${sids.map((s) => `*${s}`).join(' ')})` : ' Remove that access.';
+  const sids = trustees.map((t) => ICACLS_SID[t] ?? t).filter((s) => SID.test(s));
+  // /remove skips an inherited entry, and the usual extra reader (BU, AU) is inherited from the drive: /inheritance:d makes it explicit first
+  return sids.length
+    ? ` Remove that access (icacls "${home}" /inheritance:d, then icacls "${home}" /remove ${sids.map((s) => `*${s}`).join(' ')})`
+    : ' Remove that access.';
 };
 
 /** win32 only: throws one line when `home` is readable by anyone but its user, SYSTEM and Administrators, or when its access list cannot be read (fail closed). */
@@ -52,12 +80,19 @@ export function checkHomeAcl(platform: NodeJS.Platform, home: string, lookups: A
 }
 
 // The path reaches PowerShell through the env only, never interpolated into the script
-const SCRIPT = '(Get-Acl -LiteralPath $env:HIVE_ACL_HOME).Sddl; [Security.Principal.WindowsIdentity]::GetCurrent().User.Value';
+const SCRIPT = "$ErrorActionPreference = 'Stop'; (Get-Acl -LiteralPath $env:HIVE_ACL_HOME).Sddl; [Security.Principal.WindowsIdentity]::GetCurrent().User.Value";
+
+// By absolute path: a bare name is looked up in the cwd before PATH on Windows
+const powershellExe = (): string => {
+  const root = process.env.SystemRoot;
+  if (!root) throw new Error('SystemRoot is not set');
+  return win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+};
 
 const REAL_LOOKUPS: AclLookups = {
   read: (home) => {
-    const out = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', SCRIPT], {
-      env: { ...process.env, HIVE_ACL_HOME: home }, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    const out = execFileSync(powershellExe(), ['-NoProfile', '-NonInteractive', '-Command', SCRIPT], {
+      env: { ...process.env, HIVE_ACL_HOME: home }, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: PS_TIMEOUT_MS,
     });
     const [sddl, userSid] = out.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (!sddl || !userSid) throw new Error('PowerShell answered no access list');
