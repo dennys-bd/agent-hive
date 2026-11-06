@@ -4,7 +4,7 @@ import { chmod, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { AGENTS } from '../src/agents.js';
-import { type HeadlessInput, runHeadless } from '../src/headless-run.js';
+import { type HeadlessInput, headlessProcess, runHeadless } from '../src/headless-run.js';
 import { type AgentId, EDITOR_FILE_MAX } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
 
@@ -114,4 +114,30 @@ test("mcpConfig and allowedTools reach Claude's argv as --mcp-config <path> and 
   assert.ok('answer' in result, JSON.stringify(result));
   assert.equal((JSON.parse(result.answer) as { text: string }).text, '/r/mcp.json|mcp__playwright__browser_click');
   assert.deepEqual(await readdir(cli.tmpRoot), []);
+});
+
+// A Windows file system of the given files, case-insensitive as NTFS is
+const winFs = (...files: string[]) => {
+  const set = new Set(files.map((f) => f.toLowerCase()));
+  return (file: string): boolean => set.has(file.toLowerCase());
+};
+
+test('on win32 a headless Claude is its .exe in <USERPROFILE>\\.local\\bin and a headless Codex its .cmd through cmd.exe, verbatim; darwin unchanged (#633)', () => {
+  const env = { USERPROFILE: 'C:\\Users\\u', Path: 'C:\\npm', PATHEXT: '.EXE;.CMD', ComSpec: 'C:\\Windows\\System32\\cmd.exe' };
+  const isFile = winFs('C:\\Users\\u\\.local\\bin\\claude.exe', 'C:\\npm\\codex.cmd');
+  assert.deepEqual(headlessProcess('claude', ['-p', 'a b'], env, { platform: 'win32', isFile }), { command: 'C:\\Users\\u\\.local\\bin\\claude.exe', args: ['-p', 'a b'], env });
+  assert.deepEqual(headlessProcess('codex', ['exec', '-o', 'C:\\t\\answer.txt'], env, { platform: 'win32', isFile }), {
+    command: 'C:\\Windows\\System32\\cmd.exe',
+    args: ['/d', '/s', '/v:off', '/c', '""C:\\npm\\codex.cmd" "exec" "-o" "C:\\t\\answer.txt""'],
+    env,
+    windowsVerbatimArguments: true,
+  });
+  assert.deepEqual(headlessProcess('claude', ['-p'], { PATH: '/usr/bin' }, { platform: 'darwin', isFile: () => assert.fail('no lookup off win32') }), { command: 'claude', args: ['-p'], env: { PATH: '/usr/bin' } });
+});
+
+test('on win32 an agent found nowhere fails the run with the resolver\'s reason before anything spawns, and the folder goes (#633)', async (t) => {
+  const tmpRoot = await tempDir(t, 'headless-tmp-');
+  const result = await runHeadless(input('codex'), { platform: 'win32', isFile: () => false, env: { Path: 'C:\\npm' }, tmpRoot });
+  assert.deepEqual(result, { failure: 'codex was not found', detail: '' });
+  assert.deepEqual(await readdir(tmpRoot), []);
 });

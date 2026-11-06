@@ -7,8 +7,10 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AGENTS } from './agents.js';
+import { agentDirs } from './agents/command.js';
 import { runners } from './agents/registry.js';
-import { type Ran, runCapped } from './format-run.js';
+import { type ExecLookup, resolveExec } from './exec-path.js';
+import { type Process, type Ran, runCapped } from './format-run.js';
 import { withoutHiveEnv } from './spawn.js';
 import type { AgentId } from './types.js';
 
@@ -19,9 +21,11 @@ const FILE_MODE = 0o600; // the schema; the folder's 0700 already keeps the answ
 
 // timeoutMs: the run's own (#877); HeadlessDeps.timeoutMs, the tests' override, still wins over it
 export interface HeadlessInput { agent: AgentId; model?: string; prompt: string; schema: object; signal: AbortSignal; cwd?: string; readOnlyTools?: true; mcpConfig?: string; allowedTools?: readonly string[]; outsideRepo?: true; timeoutMs?: number }
-export type HeadlessResult = { answer: string } | { failure: string; detail: string };
-/** Tests' seams: the env (a fake CLI first on its PATH), the folder the run's temp folder goes in, a shorter timeout. */
-export interface HeadlessDeps { env?: NodeJS.ProcessEnv; tmpRoot?: string; timeoutMs?: number }
+type HeadlessFailure = { failure: string; detail: string };
+export type HeadlessResult = { answer: string } | HeadlessFailure;
+/** Tests' seams: the env (a fake CLI first on its PATH), the folder the run's temp folder goes in, a shorter timeout, and the platform and file
+ *  system the agent is looked up with (#633). */
+export interface HeadlessDeps { env?: NodeJS.ProcessEnv; tmpRoot?: string; timeoutMs?: number; platform?: NodeJS.Platform; isFile?: (file: string) => boolean }
 
 const DETAIL_TAIL = 2048;
 
@@ -29,6 +33,19 @@ const DETAIL_TAIL = 2048;
 // at the start of its stderr, which hive.log has no use for
 const tail = (text: string): string => text.slice(-DETAIL_TAIL);
 const detailOf = (ran: Ran): string => [tail(ran.stderr), tail(ran.stdout?.toString('utf8') ?? '')].filter((part) => part !== '').join('\n');
+
+/** What runCapped starts for `agent` (#633): the resolver's file and args, looked up in the child's own env, so its PATH decides; on win32
+ *  Claude's install folder first, and a Codex .cmd through the .cmd runner, verbatim. A name found nowhere, or an argument cmd.exe cannot
+ *  carry, is the run's failure, with the resolver's words: they name the tool and never an argument's value. */
+export function headlessProcess(agent: AgentId, args: string[], env: NodeJS.ProcessEnv, lookup: Pick<ExecLookup, 'platform' | 'isFile'>): Process | HeadlessFailure {
+  const name = AGENTS[agent].command;
+  try {
+    const resolved = resolveExec(name, args, { ...lookup, env, dirs: agentDirs(name, lookup.platform, env) });
+    return { command: resolved.file, args: [...resolved.args], env, ...(resolved.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}) };
+  } catch (err) {
+    return { failure: err instanceof Error ? err.message : String(err), detail: '' };
+  }
+}
 
 /** One headless run of `input.agent`. Never leaves its folder behind; throws only when the folder itself cannot be made or written. */
 export async function runHeadless(input: HeadlessInput, deps: HeadlessDeps = {}): Promise<HeadlessResult> {
@@ -43,7 +60,8 @@ export async function runHeadless(input: HeadlessInput, deps: HeadlessDeps = {})
       ...(input.outsideRepo ? { outsideRepo: true as const } : {}),
     };
     await writeFile(run.schemaPath, schema, { mode: FILE_MODE });
-    const proc = { command: AGENTS[input.agent].command, args: runner.headless(run), env: withoutHiveEnv(deps.env ?? process.env) };
+    const proc = headlessProcess(input.agent, runner.headless(run), withoutHiveEnv(deps.env ?? process.env), { platform: deps.platform ?? process.platform, isFile: deps.isFile });
+    if ('failure' in proc) return proc;
     const ran = await runCapped(proc, input.prompt, input.cwd ?? dir, deps.timeoutMs ?? input.timeoutMs ?? HEADLESS_TIMEOUT_MS, input.signal);
     if (ran.failure !== undefined) return { failure: ran.failure, detail: detailOf(ran) };
     const answerFile = await readFile(run.answerPath, 'utf8').catch(() => undefined); // only Codex writes one

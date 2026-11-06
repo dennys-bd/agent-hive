@@ -25,7 +25,8 @@ export type RunOutcome = FormatOutcome | { declined: true };
 
 export interface Ran { stdout?: Buffer; stderr: string; failure?: string }
 export const CANCELLED = 'cancelled';
-interface Process { command: string; args: string[]; env: NodeJS.ProcessEnv }
+// windowsVerbatimArguments: the .cmd runner's line (#632, #633), which reaches cmd.exe as written
+export interface Process { command: string; args: string[]; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean }
 
 // Why a run failed, in the words its console run ends with. Never an error's message: Node writes the command line into it, and a custom
 // formatter's line is the user's own text, never logged
@@ -50,10 +51,10 @@ export function collect(stream: Readable | null, cap: number, onOver: () => void
  * timer, the cap and the signal's abort (#330: the headless run's cancel) settle at once and kill the tree, so a grandchild still holding the
  * pipe never holds the caller. A failure keeps the stdout it got: a CLI may say why there (claude -p --output-format json). A stdin error
  * (EPIPE: it exited without reading) is left to the close event, which carries the exit code and stderr. */
-export function runCapped({ command, args, env }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
+export function runCapped({ command, args, env, windowsVerbatimArguments }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
   return new Promise((resolve) => {
     let settled = false;
-    const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], ...treeSpawnOptions(process.platform) });
+    const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsVerbatimArguments, ...treeSpawnOptions(process.platform) });
     const stop = (failure: string): void => {
       if (settled) return; // once reaped, the pid may be another process's
       void killTree(child.pid, process.platform);
