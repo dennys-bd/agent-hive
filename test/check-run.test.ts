@@ -8,6 +8,8 @@ import { createConsoleStore, failLine } from '../src/console.js';
 import { tempDir } from './temp-dir.js';
 
 type Store = ReturnType<typeof createConsoleStore>;
+// Their stubs are sh scripts, which win32 cannot start: the lane runs the .cmd tests below instead (#634)
+const POSIX_ONLY = process.platform === 'win32' ? 'sh stubs: POSIX only' : false;
 const MYPY = cliCheckerDef('mypy');
 const SYSTEM_PATH = '/usr/bin:/bin';
 
@@ -24,7 +26,7 @@ const history = (store: Store, channel: string): string => store.history(channel
 // mypy -O json's line for the file it was given ($4: after --show-column-numbers -O json)
 const MYPY_LINE = `printf '{"file": "%s", "line": 2, "column": 4, "message": "bad", "hint": null, "code": "arg-type", "severity": "error"}\\n' "$4"`;
 
-test('a non-zero exit with findings is done: the project\'s copy runs in the folder, its findings relative, its stderr in the console run (#782)', async (t) => {
+test('a non-zero exit with findings is done: the project\'s copy runs in the folder, its findings relative, its stderr in the console run (#782)', { skip: POSIX_ONLY }, async (t) => {
   const folder = await realpath(await tempDir(t, 'check-run-'));
   await tool(join(folder, '.venv', 'bin', 'mypy'), `echo "checking $(pwd -P)" >&2; ${MYPY_LINE}; exit 1`);
   const store = createConsoleStore(() => 5000);
@@ -38,7 +40,7 @@ test('a non-zero exit with findings is done: the project\'s copy runs in the fol
   assert.deepEqual(store.channels().map((c) => [c.id, c.kind, c.status]), [['check:hive:mypy', 'check', 'done']]);
 });
 
-test('no finding with a non-zero exit, the timeout, the cap and a report that does not read are failures: the reason ends the run in red (#782)', async (t) => {
+test('no finding with a non-zero exit, the timeout, the cap and a report that does not read are failures: the reason ends the run in red (#782)', { skip: POSIX_ONLY }, async (t) => {
   const folder = await realpath(await tempDir(t, 'check-run-'));
   const cases: [string, string | RegExp, Partial<CheckContext>, 'mypy' | 'pylint'][] = [
     ['echo "mypy.ini: [mypy]: unknown option" >&2; exit 2', 'exit code 2', {}, 'mypy'],
@@ -58,7 +60,7 @@ test('no finding with a non-zero exit, the timeout, the cap and a report that do
   }
 });
 
-test('a newer run of the same target supersedes the older, which answers superseded (#782)', async (t) => {
+test('a newer run of the same target supersedes the older, which answers superseded (#782)', { skip: POSIX_ONLY }, async (t) => {
   const folder = await realpath(await tempDir(t, 'check-run-'));
   await tool(join(folder, '.venv', 'bin', 'mypy'), 'case "$*" in *--slow*) exec /bin/sleep 5 ;; esac; exit 0');
   const store = createConsoleStore(() => 5000);
@@ -74,7 +76,7 @@ test('a newer run of the same target supersedes the older, which answers superse
   assert.equal(older.aborted, true);
 });
 
-test('detekt\'s report is read from the file it was told to write; a checker found nowhere is absent before any console run (#782)', async (t) => {
+test('detekt\'s report is read from the file it was told to write; a checker found nowhere is absent before any console run (#782)', { skip: POSIX_ONLY }, async (t) => {
   const folder = await realpath(await tempDir(t, 'check-run-'));
   const bin = await tempDir(t, 'check-bin-');
   const report = JSON.stringify({ runs: [{ results: [{ ruleId: 'detekt.style.MagicNumber', level: 'warning', message: { text: 'magic' }, locations: [{ physicalLocation: { artifactLocation: { uri: `file://${folder}/A.kt` }, region: { startLine: 3, startColumn: 17 } } }] }] }] });
@@ -88,7 +90,7 @@ test('detekt\'s report is read from the file it was told to write; a checker fou
   assert.deepEqual(empty.channels(), []);
 });
 
-test('a failure names the checker, not the absolute path of its binary (#782)', async (t) => {
+test('a failure names the checker, not the absolute path of its binary (#782)', { skip: POSIX_ONLY }, async (t) => {
   const folder = await realpath(await tempDir(t, 'check-run-'));
   const bin = await tempDir(t, 'check-bin-');
   await writeFile(join(bin, 'mypy'), '#!/nonexistent/interpreter\n');
@@ -98,7 +100,7 @@ test('a failure names the checker, not the absolute path of its binary (#782)', 
   assert.ok(!answer.reason.includes(bin), answer.reason);
 });
 
-test('a detekt report over the cap is a failure, read or not (#782)', async (t) => {
+test('a detekt report over the cap is a failure, read or not (#782)', { skip: POSIX_ONLY }, async (t) => {
   const folder = await realpath(await tempDir(t, 'check-run-'));
   const bin = await tempDir(t, 'check-bin-');
   await tool(join(bin, 'detekt'), `report="\${4#sarif:}"; head -c 100 /dev/zero | tr '\\0' a > "$report"; exit 2`);
@@ -107,7 +109,7 @@ test('a detekt report over the cap is a failure, read or not (#782)', async (t) 
   assert.equal(answer.reason, 'output over 10 bytes');
 });
 
-test('a temp folder that cannot be made ends the console run as failed and never throws (#782)', async (t) => {
+test('a temp folder that cannot be made ends the console run as failed and never throws (#782)', { skip: POSIX_ONLY }, async (t) => {
   const folder = await realpath(await tempDir(t, 'check-run-'));
   const bin = await tempDir(t, 'check-bin-');
   await tool(join(bin, 'detekt'), 'exit 0');

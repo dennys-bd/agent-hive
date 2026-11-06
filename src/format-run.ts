@@ -3,6 +3,7 @@
 // "$SHELL" -c (Git's sh.exe on Windows, #631), the third deliberate shell string (CLAUDE.md); the file reaches it only as FILE in its env. Every run is a console run.
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { type ConsoleStore, crlf, failLine, formatChannel, runHeader } from './console.js';
 import { type ExecLookup, resolveExec } from './exec-path.js';
@@ -35,7 +36,9 @@ export function launchOf(command: string, args: readonly string[], env: NodeJS.P
     const exec = resolveExec(command, args, { platform, env, isFile });
     return { command: exec.file, args: [...exec.args], env, ...(exec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}) };
   } catch (err) {
-    return { failure: (err as Error).message };
+    // A binary gone since its detection is named by its file only, as check-run names a checker: its absolute path holds the account name
+    const name = (platform === 'win32' ? path.win32 : path.posix).basename(command);
+    return { failure: (err as Error).message.replaceAll(command, name) };
   }
 }
 
