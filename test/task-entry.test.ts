@@ -52,7 +52,6 @@ test('placed: another stage enters it, null takes it out of the flow, undefined 
   assert.equal(placed(outside, spec).stage, 'Spec', 'a new task outside the flow enters when its entry names a flow again');
 });
 
-
 test('autoFollowed: a new task takes its item\'s autoOnEntry, on when the item carries none, and keeps its auto once switched by hand (#688)', () => {
   const ruledOff: Task = { ...TASK, item: { ...TASK.item, autoOnEntry: false } };
   assert.equal(autoFollowed(ruledOff).auto, false, 'the rule turns it off');
