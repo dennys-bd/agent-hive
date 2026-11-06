@@ -1,8 +1,12 @@
 // How to run a command by name (#632). On win32 execFile and spawn never get a bare name: a shim is a .cmd that Node refuses without a
 // shell, and an agent's native installer leaves its .exe off PATH. The platform and the lookups are parameters, so every win32 branch is
-// tested with node --test on any OS. Looked up on every call, never cached: an agent installed while the Hive runs is found.
+// tested with node --test on any OS. Looked up on every call, never cached: an agent installed while the Hive runs is found. createExec is
+// the one place the server's execs resolve names (#633).
+import { execFile } from 'node:child_process';
 import { statSync } from 'node:fs';
 import path from 'node:path';
+import { promisify } from 'node:util';
+import type { Exec } from './types.js';
 
 export interface ExecLookup {
   readonly platform: NodeJS.Platform;
@@ -93,4 +97,28 @@ export function resolveExec(name: string, args: readonly string[], lookup: ExecL
   if (file === undefined) throw new Error(`${name} was not found`);
   const ext = path.win32.extname(file).toLowerCase();
   return ext === '.cmd' || ext === '.bat' ? cmdRunner(file, args, lookup.env) : { file, args, windowsVerbatimArguments: false };
+}
+
+/** What a run gets: the caller's options, and windowsVerbatimArguments when the .cmd runner built the line. */
+export type ExecRunOptions = NonNullable<Parameters<Exec>[2]> & { windowsVerbatimArguments?: true };
+export type ExecRun = (file: string, args: string[], opts: ExecRunOptions) => Promise<{ stdout: string }>;
+
+export interface CreateExecOptions {
+  readonly platform: NodeJS.Platform;
+  readonly env: NodeJS.ProcessEnv; // the daemon's: the lookup's env when a call passes none
+  readonly dirsFor: (name: string) => readonly string[];
+  readonly run?: ExecRun; // the tests' seam; the promisified execFile otherwise
+  readonly isFile?: (file: string) => boolean; // the tests' fake file system
+}
+
+const execFileAsync: ExecRun = promisify(execFile);
+
+/** One Exec for `platform` (#633): every name it runs, git included, goes through resolveExec on each call. The lookup reads the call's env
+ *  when it has one, since that is the PATH the child gets, else the daemon's. A name found nowhere, or an argument the .cmd runner refuses,
+ *  is a rejection, never a synchronous throw: detectAgents reads it as "not installed", and every gh caller already handles a failed gh. */
+export function createExec({ platform, env, dirsFor, run = execFileAsync, isFile }: CreateExecOptions): Exec {
+  return async (file, args, opts) => {
+    const command = resolveExec(file, args, { platform, env: opts?.env ?? env, dirs: dirsFor(file), isFile });
+    return run(command.file, [...command.args], { ...opts, ...(command.windowsVerbatimArguments ? { windowsVerbatimArguments: true as const } : {}) });
+  };
 }

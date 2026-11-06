@@ -1,9 +1,8 @@
-import { execFile } from 'node:child_process';
 import { access, rename, writeFile } from 'node:fs/promises';
 import type { Server as HttpServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isDeepStrictEqual, promisify } from 'node:util';
+import { isDeepStrictEqual } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createBenchEvaluator, benchRunDeps } from './benchmark/evaluate-service.js';
 import { drafter, serial } from './benchmark/drafts.js';
@@ -14,6 +13,7 @@ import { renderSource } from './benchmark/run-home.js';
 import { createBenchRunner } from './benchmark/runner.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
+import { createExec } from './exec-path.js';
 import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFor } from './sources/github-gql.js';
 import { createGhToken, type GhToken } from './github-token.js';
 import { listFilterOptions, listProjects } from './sources/github.js';
@@ -35,6 +35,7 @@ import { registerProtocolRoutes } from './server-protocol.js';
 import { pluginVersion } from './item-sources.js';
 import { excludeFromGit, pluginSource, prepareHome, type ProtocolPaths } from './hooks-settings.js';
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
+import { agentDirs } from './agents/command.js';
 import { runners } from './agents/registry.js';
 import { createLogger, describeChanges, describeStages, describeEffect, describeEvent, type Logger } from './log.js';
 import { createFactLog, type FactLog } from './facts.js';
@@ -125,7 +126,8 @@ import {
 } from './types.js';
 import { flatten } from './flows.js';
 
-const execFileAsync: Exec = promisify(execFile);
+// #633: every name the server runs resolves per platform; on darwin and linux resolveExec hands it back unchanged
+const execFileAsync: Exec = createExec({ platform: process.platform, env: process.env, dirsFor: (name) => agentDirs(name, process.platform, process.env) });
 const SSE_HEARTBEAT_MS = 25_000;
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'ui');
 const HTTP_BAD_REQUEST = 400;
