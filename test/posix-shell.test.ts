@@ -46,9 +46,10 @@ const ON_WINDOWS = { skip: process.platform !== 'win32' };
 const system32 = (): string => win32.join(process.env.SystemRoot ?? assert.fail('no SystemRoot'), 'System32');
 
 test('customShell: on win32 a SHELL is ignored (Git Bash\'s /usr/bin/bash cannot be spawned by node), elsewhere it is kept; unset is the POSIX shell (#631)', () => {
-  assert.equal(customShell('win32', { SHELL: '/usr/bin/bash' }), posixShell().shell);
-  assert.equal(customShell('darwin', { SHELL: '/bin/zsh' }), '/bin/zsh');
-  assert.equal(customShell('linux', {}), posixShell().shell);
+  const posix = 'C:\\Git\\bin\\sh.exe'; // any value: customShell never resolves one itself
+  assert.equal(customShell('win32', { SHELL: '/usr/bin/bash' }, posix), posix);
+  assert.equal(customShell('darwin', { SHELL: '/bin/zsh' }, '/bin/sh'), '/bin/zsh');
+  assert.equal(customShell('linux', {}, '/bin/sh'), '/bin/sh');
 });
 
 test('on the Windows lane: a custom formatter\'s line runs through Git\'s sh.exe with System32 ahead of Git on PATH; its output and its exit code come back (#631)', ON_WINDOWS, async (t) => {
