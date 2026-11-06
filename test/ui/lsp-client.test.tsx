@@ -35,6 +35,16 @@ test('after the hello it initializes, then opens what was opened before with fil
   expect([lsp.pathOf('file:///w/root/src/b.ts'), lsp.pathOf('file:///other/c.ts')]).toEqual(['src/b.ts', '/other/c.ts']);
 });
 
+test('with a drive root a pane path\'s URI is file:///C:/…, and a URI under the root, its drive raw or escaped, reads back as the pane path (#642)', async () => {
+  const socket = new FakeSocket();
+  const lsp = client(socket);
+  socket.hello('C:\\repo');
+  answerInitialize(socket, {});
+  await flush();
+  expect(lsp.uriOf('src/a.ts')).toBe('file:///C:/repo/src/a.ts');
+  expect([lsp.pathOf('file:///C:/repo/src/a.ts'), lsp.pathOf('file:///c%3A/repo/src/a.ts'), lsp.pathOf('file:///D:/x.ts')]).toEqual(['src/a.ts', 'src/a.ts', 'D:\\x.ts']);
+});
+
 test('didChange is debounced to one full text; didSave sends a pending change first; close sends didClose (#780)', async () => {
   vi.useFakeTimers();
   const socket = new FakeSocket();
