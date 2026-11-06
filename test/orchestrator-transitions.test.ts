@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf, resultOf, withActivity } from '../src/activities.js';
 import { HANDOFF_PROMPT } from '../src/spawn.js';
+import { keepsRun } from '../src/transit.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { sessionsOf } from '../src/tasks.js';
 import { transitionKey } from '../src/transitions.js';
@@ -223,4 +224,39 @@ test('an approval on a stage with clearSession: the run was killed at its end, t
   const { state, effects } = reduce(ended.state, { type: 'approve', activityId: workId(ended.state, ID) });
   assert.deepEqual([taskOf(state)?.stage, sessionsOf(state, ID).some((s) => s.id === run)], ['Review', false]);
   assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' || e.type === 'removeTranscripts' ? [e.type] : [])), ['removeTranscripts']);
+});
+
+// #692: a continued session goes on in place only on the model the next stage launches with; else it is relaunched on the same session
+const toReview: Transition = { from: 'Build', to: 'Review', when: 'done' };
+const continuing = (build: Partial<Stage>, review: Partial<Stage>): Stage[] => [{ ...STAGES[0], ...build }, { ...STAGES[1], session: 'continue', ...review }, STAGES[2]];
+
+test('a continued session into a stage with another model is relaunched on that same session, not continued in place (#692)', () => {
+  const ran = flow([toReview], continuing({}, { model: 'opus' }));
+  const { state, effects } = stageEnd(ran);
+  const kill = effects.findIndex((e) => e.type === 'kill');
+  const spawn = effects.findIndex((e) => e.type === 'spawn');
+  const spawned = effects[spawn] as Extract<Effect, { type: 'spawn' }>;
+  assert.ok(kill >= 0 && spawn > kill, 'killed, then spawned');
+  assert.equal(effects.some((e) => e.type === 'continue'), false);
+  assert.deepEqual([spawned.task.item.itemId, spawned.stage.name, spawned.session], [ID, 'Review', 'continue']);
+  assert.equal(activityOf(state, ID)?.sessionId, activityOf(ran, ID)?.sessionId, 'the same session resumed');
+});
+
+test('a continued session goes on in place when both stages launch with the same model, or neither has one (#692)', () => {
+  for (const [build, review] of [[{ model: 'opus' }, { model: 'opus' }], [{}, {}]] as const) {
+    const { effects } = stageEnd(flow([toReview], continuing(build, review)));
+    assert.deepEqual([effects.some((e) => e.type === 'continue'), effects.some((e) => e.type === 'kill')], [true, false], JSON.stringify([build, review]));
+  }
+});
+
+test('a hand-picked model holds while the run stays in its stage: a loop to it keeps the run, a move to a stage of another model does not (#692)', () => {
+  const stages: Stage[] = [{ ...STAGES[0], approval: true, model: 'sonnet' }, { ...STAGES[1], session: 'continue', model: 'sonnet' }];
+  const back: Transition = { from: 'Build', to: 'Build', when: 'feedback', session: 'previous' };
+  const out: Transition = { from: 'Build', to: 'Review', when: 'approved' };
+  const held = stageEnd(flow([back, out], stages)).state;
+  assert.equal(held.workers[0].status, 'approval', 'same model on both stages: held in place');
+  const picked: State = { ...held, workers: held.workers.map((w) => ({ ...w, launch: { model: 'haiku' } })) };
+  const task = picked.tasks.find((t) => t.item.itemId === ID)!;
+  assert.equal(keepsRun(picked, task, back, stages[0]), true, 'its own stage: in place');
+  assert.equal(keepsRun(picked, task, out, stages[1]), false, 'the hand pick is not the next stage\'s model');
 });
