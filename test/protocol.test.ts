@@ -116,11 +116,12 @@ test('stage and free sessions are told to call hive_task first, right after the 
   assert.equal(renderProtocol('local', ['hive_task'], []), LOCAL_PROTOCOL);
 });
 
-test('hive_remember off drops the remember block from both kinds; hive_applied and hive_create_task have no block (#336)', () => {
+test('hive_remember off drops the remember block from both kinds; hive_recall and hive_create_task have no block (#336, #681)', () => {
   for (const kind of KINDS) {
     const all = renderProtocol(kind, [], []);
     assert.equal(renderProtocol(kind, ['hive_remember'], []), all.replace(`${REMEMBER}\n`, ''));
-    assert.equal(renderProtocol(kind, ['hive_applied', 'hive_create_task'], []), all);
+    assert.equal(renderProtocol(kind, ['hive_recall', 'hive_create_task'], []), all);
+    assert.equal(all.includes('hive_applied'), false, kind);
   }
 });
 

@@ -261,7 +261,7 @@ test('the card has no total limit field: a cap the memory dialog saves reaches t
       return jsonResponse({ ok: true });
     }
     if (url === '/workspaces/hive/memory') return jsonResponse({ entries: [], used: 0, cap, descriptionMax: 150, bodyMax: 4000 } satisfies MemoryView);
-    if (url === '/workspaces/hive/memory/stats') return jsonResponse({ runs: 0, cited: 0 });
+    if (url === '/workspaces/hive/memory/stats') return jsonResponse({ runs: 0, read: 0 });
     return jsonResponse({});
   });
   vi.stubGlobal('fetch', fetchCap); // afterEach unstubs it

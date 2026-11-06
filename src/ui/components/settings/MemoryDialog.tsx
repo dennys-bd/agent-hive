@@ -125,7 +125,7 @@ function UsageBlock({ workspace, view, onCapSaved, onView }: UsageBlockProps) {
 // The last 7 days of the local fact log; dashes without a run carrying memory
 function TelemetryBlock({ stats, total }: { stats?: MemoryStats; total: number }) {
   const numbers = statNumbers(stats, total);
-  const cells = [[numbers.runs, 'settings.memory.runs'], [numbers.cited, 'settings.memory.cited'], [numbers.tokens, 'settings.memory.tokens']] as const;
+  const cells = [[numbers.runs, 'settings.memory.runs'], [numbers.read, 'settings.memory.read'], [numbers.tokens, 'settings.memory.tokens']] as const;
   return (
     <section aria-label={t('settings.memory.telemetry')} className={BLOCK}>
       <h3 className={PART_TITLE}>{t('settings.memory.telemetry')}</h3>

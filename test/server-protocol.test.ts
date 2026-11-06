@@ -98,14 +98,15 @@ test('GET /api/protocol answers the blocks with their tool and off, and each pas
   assert.ok((await files(home, SITE))[0].includes('Ask core.'));
 });
 
-test('turning hive_remember off drops the remember block from every protocol file, the global ones included; hive_applied off drops the memory section\'s hive_applied line (#336)', async (t) => {
+test('turning hive_remember off drops the remember block from every protocol file, the global ones included; hive_recall off drops the workspace\'s memory section; no protocol file names hive_applied (#336, #681)', async (t) => {
   const { base, home } = await start(t);
   await send('POST', `${base}/workspaces/${WORKSPACE}/memory`, { kind: 'fact', description: 'pnpm test is the gate', body: 'it runs lint and both runners' });
-  for (const tool of ['hive_remember', 'hive_applied']) assert.equal((await send('PUT', `${base}/api/mcp/tools/${tool}`, { on: false })).status, 200);
+  assert.ok((await files(home, WORKSPACE))[0].includes('## Workspace memory'), 'the index is there while hive_recall is on');
+  for (const tool of ['hive_remember', 'hive_recall']) assert.equal((await send('PUT', `${base}/api/mcp/tools/${tool}`, { on: false })).status, 200);
   const global = [join(home, 'protocol', 'stage.md'), join(home, 'protocol', 'session.md')];
   const texts = [...await files(home, WORKSPACE), ...await files(home, SITE), ...await Promise.all(global.map((p) => readFile(p, 'utf8')))];
-  for (const text of texts) assert.equal(text.includes('hive_remember'), false);
-  assert.equal((await files(home, WORKSPACE))[0].includes('hive_applied'), false);
+  for (const text of texts) assert.equal(text.includes('hive_remember') || text.includes('hive_applied'), false);
+  for (const text of await files(home, WORKSPACE)) assert.equal(text.includes('## Workspace memory'), false, 'an index nobody can read is not written');
   const [, view] = await answer(hiveFetch(`${base}/api/protocol`));
   assert.equal((view as { blocks: { id: string; off: boolean }[] }).blocks.find((b) => b.id === 'remember')?.off, true);
 });

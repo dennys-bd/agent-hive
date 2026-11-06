@@ -22,7 +22,7 @@ const STOP_RULES =
 // #7: the worker reads its task from the Hive instead of guessing the issue number from the branch name
 const TASK_LINE = 'When you need to know what task you are working on (its issue, the stage, what earlier stages passed on), call `hive_task` first.';
 
-// #797: what makes the workspace's memory grow. hive_applied is told in the memory section itself, which exists only once a lesson does
+// #797: what makes the workspace's memory grow. hive_recall is told in the memory section itself (#681), which exists only once a lesson does
 const REMEMBER_LINE = 'When the user corrects you, or you learn a fact about this repository that a later task would need, call `hive_remember` with it.';
 
 // #803: how to walk back from a line to its reason; no tool, since git and gh already answer each step

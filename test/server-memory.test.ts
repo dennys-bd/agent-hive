@@ -103,9 +103,9 @@ test('GET …/memory/stats reads every generation of facts.jsonl, oldest first, 
     line({ event: 'run.spawned', workspace: WORKSPACE, worker: 1, memory_ids: ['m-1'], memory_chars: 400, task, stage: 'fila', session_id: session });
   await writeFile(join(home, 'facts.jsonl.2'), spawned('1', 's0'));
   await writeFile(join(home, 'facts.jsonl.1'), spawned('2', 's1'));
-  await writeFile(join(home, 'facts.jsonl'), `${line({ event: 'memory.applied', workspace: WORKSPACE, id: 'm-1', kind: 'fact', uses: 1, session_id: 's1' })}{"workspace": broken\n`);
-  // last is .1's run: read in any other order, the last run would be .2's, whose session cited nothing
-  assert.deepEqual(await (await hiveFetch(`${url}/stats`)).json(), { runs: 2, cited: 1, tokensPerRun: 100, last: { at, task: '2', stage: 'fila', cited: 1 } });
+  await writeFile(join(home, 'facts.jsonl'), `${line({ event: 'memory.recalled', workspace: WORKSPACE, id: 'm-1', kind: 'fact', uses: 1, session_id: 's1' })}{"workspace": broken\n`);
+  // last is .1's run: read in any other order, the last run would be .2's, whose session read nothing
+  assert.deepEqual(await (await hiveFetch(`${url}/stats`)).json(), { runs: 2, read: 1, tokensPerRun: 100, last: { at, task: '2', stage: 'fila', read: 1 } });
   await refused(hiveFetch(`${base}/workspaces/ghost/memory/stats`), 404, { error: UNKNOWN_WORKSPACE_MESSAGE }, 'unknown workspace');
 });
 

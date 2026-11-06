@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import { addLesson, editLesson, removeLesson } from '@/lib/memory-api';
-import { canSaveLesson, charactersText, citedText, kindLabel, metaText, originDateText, refusalText } from '@/lib/memory-view';
+import { canSaveLesson, charactersText, kindLabel, metaText, originDateText, readText, refusalText } from '@/lib/memory-view';
 import { isMemoryKind, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_KINDS, type MemoryEntry, type MemoryKind, type MemoryView } from '../../../types';
 
 /** The table's columns (#797), as the handoff lays them out: id, kind, lesson, actions. */
@@ -19,8 +19,7 @@ interface LessonEditRowProps { workspace: string; entry?: MemoryEntry; onSaved(v
 
 const DISCLOSURE = 'flex items-start gap-1.5 rounded-sm text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
-/** One lesson as read (#797, #680): its id, kind, description as a disclosure of its body, then the meta line with the last why as the title of
- * its citations; ✎ and ✕, which removes at once. */
+/** One lesson as read (#797, #680): its id, kind, description as a disclosure of its body, then the meta line and how many times it was read (#681); ✎ and ✕, which removes at once. */
 export function LessonRow({ workspace, entry, descRef, onEdit, onRemoved }: LessonRowProps) {
   const bodyId = useId();
   const [open, setOpen] = useState(false); // bodies run to 4,000 characters, so each row opens on its own
@@ -37,7 +36,7 @@ export function LessonRow({ workspace, entry, descRef, onEdit, onRemoved }: Less
           <span className="text-pretty">{entry.description}</span>
         </button>
         <div id={bodyId} hidden={!open} className="max-w-[72ch] whitespace-pre-wrap break-words pl-[22px] text-[13px]/[19px]">{entry.body}</div>
-        <span className="pl-[22px] text-muted-foreground text-xs">{`${metaText(entry)} · `}<span title={entry.lastUsed?.why}>{citedText(entry.uses)}</span></span>
+        <span className="pl-[22px] text-muted-foreground text-xs">{`${metaText(entry)} · `}<span>{readText(entry.uses)}</span></span>
         {error !== undefined && <p role="alert" className="pl-[22px] text-destructive text-xs">{error}</p>}
       </div>
       <div className="flex justify-end gap-1">

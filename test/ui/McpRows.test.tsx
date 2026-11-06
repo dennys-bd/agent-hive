@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { McpServerRow } from '@/components/plugins/McpServerRow';
 import { McpToolRow } from '@/components/plugins/McpToolRow';
+import type { McpTool } from '@/hooks/use-mcp';
 import { setLanguage } from '@/i18n';
 import { MCP_READ } from './mcp-fixtures';
 import { WORKSPACES } from './plugins-fixtures';
@@ -20,11 +21,22 @@ test('a locked tool has a lock naming its reason and no switch; an optional tool
   expect(rowOf('hive_pr')).toHaveTextContent('sem ela a hive não acompanha o PR da tarefa');
   expect(rowOf('hive_remember')).toHaveTextContent('desligada · tira 1 trecho do protocolo');
   expect(rowOf('hive_create_task')).toHaveTextContent(/cria uma tarefa na sourcedesligada$/);
-  expect(rowOf('hive_applied')).not.toHaveTextContent('desligada');
+  expect(rowOf('hive_recall')).not.toHaveTextContent('desligada');
+  expect(rowOf('hive_recall')).toHaveTextContent('lê uma lição do workspace');
   expect(rowOf('hive_task')).toHaveTextContent('lê a tarefa da própria sessãodesligada · tira 1 trecho do protocolo');
-  expect(screen.getByRole('switch', { name: 'hive_applied' })).toBeChecked();
+  expect(screen.getByRole('switch', { name: 'hive_recall' })).toBeChecked();
   await user.click(screen.getByRole('switch', { name: 'hive_remember' }));
   expect(onSwitch).toHaveBeenCalledWith(true);
+});
+
+test('hive_recall reads a workspace lesson, and turned off it drops a passage, the memory section, in both languages (#681)', () => {
+  const recall: McpTool = { name: 'hive_recall', locked: false, on: false };
+  for (const [language, does, drops] of [['en', 'reads a workspace lesson', 'off · drops 1 passage from the protocol'], ['pt', 'lê uma lição do workspace', 'desligada · tira 1 trecho do protocolo']] as const) {
+    setLanguage(language);
+    const { unmount } = render(<ul><McpToolRow tool={recall} onSwitch={vi.fn()} /></ul>);
+    expect(rowOf('hive_recall')).toHaveTextContent(`${does}${drops}`);
+    unmount();
+  }
 });
 
 test('a server row shows its target, scope and state; its name opens it, its scope and switch change it (#334)', async () => {

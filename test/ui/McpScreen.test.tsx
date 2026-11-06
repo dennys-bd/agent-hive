@@ -29,7 +29,7 @@ test('the route lists the thirteen tools and the servers: a locked tool with its
   render(<Screen />);
   const tools = await screen.findByRole('region', { name: 'ferramentas da hive' });
   expect(within(tools).getAllByRole('listitem')).toHaveLength(13);
-  expect(within(tools).getAllByRole('switch').map((s) => s.getAttribute('aria-label'))).toEqual(['hive_remember', 'hive_applied', 'hive_create_task', 'hive_task', 'benchmark_list', 'benchmark_get', 'benchmark_draft']);
+  expect(within(tools).getAllByRole('switch').map((s) => s.getAttribute('aria-label'))).toEqual(['hive_remember', 'hive_recall', 'hive_create_task', 'hive_task', 'benchmark_list', 'benchmark_get', 'benchmark_draft']);
   expect(within(tools).getByRole('img', { name: 'sem ela a sessão para sem avisar' })).toBeInTheDocument();
   const servers = screen.getByRole('region', { name: 'servidores externos' });
   expect(within(servers).getByRole('button', { name: 'editar playwright' })).toHaveTextContent('npx @playwright/mcp@latest');

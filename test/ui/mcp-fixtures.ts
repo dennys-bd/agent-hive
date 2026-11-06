@@ -3,12 +3,12 @@ import { LOCKED_TOOLS, OPTIONAL_TOOLS } from '../../src/types';
 import type { McpRead, McpServerRow } from '@/hooks/use-mcp';
 import { CATALOGUE, json } from './plugins-fixtures';
 
-/** GET /api/mcp as #333 answers it: the locked tools, then the optional ones (only hive_applied on); a command server for every workspace,
+/** GET /api/mcp as #333 answers it: the locked tools, then the optional ones (only hive_recall on); a command server for every workspace,
  * connected, and a URL server with a saved header value, scoped to hive-site and not answering. */
 export const MCP_READ: McpRead = {
   tools: [
     ...LOCKED_TOOLS.map((name) => ({ name, locked: true, on: true })),
-    ...OPTIONAL_TOOLS.map((name) => ({ name, locked: false, on: name === 'hive_applied' })),
+    ...OPTIONAL_TOOLS.map((name) => ({ name, locked: false, on: name === 'hive_recall' })),
   ],
   servers: [
     { name: 'playwright', command: 'npx', args: ['@playwright/mcp@latest'], workspace: null, on: true, hasValue: false, state: 'connected' },

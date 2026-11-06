@@ -42,14 +42,14 @@ test("a tool switch shows at once and sends PUT with on; a 400 puts it back with
   const { result } = renderHook(() => useMcp());
   await waitFor(() => expect(result.current.read).toBeDefined());
   let done: Promise<void> = Promise.resolve();
-  act(() => { done = result.current.setTool('hive_applied', false); });
-  expect(toolOn(result.current, 'hive_applied')).toBe(false);
-  expect(calls).toEqual([{ method: 'PUT', path: '/api/mcp/tools/hive_applied', body: { on: false } }]);
+  act(() => { done = result.current.setTool('hive_recall', false); });
+  expect(toolOn(result.current, 'hive_recall')).toBe(false);
+  expect(calls).toEqual([{ method: 'PUT', path: '/api/mcp/tools/hive_recall', body: { on: false } }]);
   await act(async () => {
     answer(json({ error: 'the route words' }, 400));
     await done;
   });
-  expect(toolOn(result.current, 'hive_applied')).toBe(true);
+  expect(toolOn(result.current, 'hive_recall')).toBe(true);
   expect(result.current.error).toBe('plugins.mcp.refused');
 });
 
