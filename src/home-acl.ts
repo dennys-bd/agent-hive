@@ -12,6 +12,11 @@ const ALWAYS_ALLOWED = ['SY', 'S-1-5-18', 'BA', 'S-1-5-32-544', 'CO', 'S-1-3-0']
 const ALLOW_TYPES = ['A', 'XA', 'OA', 'ZA']; // allow, conditional allow, object allow, callback object allow
 const ICACLS_SID: Record<string, string> = { WD: 'S-1-1-0', BU: 'S-1-5-32-545', AU: 'S-1-5-11', IU: 'S-1-5-4', NU: 'S-1-5-2', AN: 'S-1-5-7', AC: 'S-1-15-2-1' };
 const SID = /^S-1(-\d+)+$/;
+// SDDL writes the built-in Administrator and Guest accounts as LA and LG, not as their SIDs (CI's runneradmin is RID 500); they are
+// the only domain-relative aliases that name one account, so the only ones that can be the user
+const ACCOUNT_ALIAS_RID: Record<string, string> = { LA: '500', LG: '501' };
+const isUser = (trustee: string, userSid: string): boolean =>
+  trustee === userSid || (trustee in ACCOUNT_ALIAS_RID && userSid.startsWith('S-1-5-21-') && userSid.endsWith(`-${ACCOUNT_ALIAS_RID[trustee]}`));
 const PS_TIMEOUT_MS = 15_000; // a PowerShell stuck on a share or an antivirus scan ends the boot instead of hanging it
 
 function grantsRead(rights: string): boolean {
@@ -32,7 +37,7 @@ export function refusedPrincipals(sddl: string, userSid: string): string[] {
     const fields = ace.split(';');
     if (fields.length < 6 || !fields[5]) throw new Error(`malformed ACE (${ace})`);
     const [type, , rights, , , trustee] = fields as [string, string, string, string, string, string];
-    if (ALLOW_TYPES.includes(type) && grantsRead(rights) && trustee !== userSid && !ALWAYS_ALLOWED.includes(trustee)) refused.add(trustee);
+    if (ALLOW_TYPES.includes(type) && grantsRead(rights) && !isUser(trustee, userSid) && !ALWAYS_ALLOWED.includes(trustee)) refused.add(trustee);
   }
   return [...refused];
 }

@@ -22,6 +22,14 @@ test('one more allow with read from BU, WD or another account is refused and nam
   assert.deepEqual(refusedPrincipals(`${PROFILE}(A;OICI;0x1200a9;;;S-1-5-21-9-9-9-1002)`, ME), ['S-1-5-21-9-9-9-1002']);
 });
 
+test('LA and LG are the user only when the user is that built-in account (#628)', () => {
+  const admin = 'S-1-5-21-1-2-3-500';
+  const ofAdmin = `O:${admin}D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;LA)`;
+  assert.deepEqual(refusedPrincipals(ofAdmin, admin), []);
+  assert.deepEqual(refusedPrincipals(ofAdmin, ME), ['LA']);
+  assert.deepEqual(refusedPrincipals(`${PROFILE}(A;;FR;;;LG)`, ME), ['LG']);
+});
+
 test('a deny never refuses, and an allow without read bits passes (#628)', () => {
   assert.deepEqual(refusedPrincipals(`${PROFILE}(D;OICI;FA;;;WD)`, ME), []);
   assert.deepEqual(refusedPrincipals(`${PROFILE}(A;;0x100000;;;WD)(A;;0x2;;;BU)`, ME), []);
