@@ -5,8 +5,9 @@ import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
 import { DONE_KEY, PR_KEY, decompositionPending, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
 import { deliverDecomposition, deliveryRefusal, type FileCheckout, fileCheckout } from './decomposition-deliver.js';
-import { readRepository, writeDecomposition, type WriteTarget } from './decomposition-write.js';
+import { readRepository, writeDecomposition, type WriteOutcome, type WriteTarget } from './decomposition-write.js';
 import { resolveActivityPath } from './ide.js';
+import type { Logger } from './log.js';
 import { issueOfLink } from './repos/issue-task.js';
 import { originRepository } from './repos/repositories.js';
 import { NOT_AWAITING_MESSAGE } from './server-approval.js';
@@ -41,6 +42,8 @@ export interface DecompositionRouteDeps {
   dispatch(event: HiveEvent): Promise<unknown>; // each step's decompositionIssue, then markEpic (#556) and approve, or closeTask
   exec: Exec; // git remote get-url origin: a local goal's repository; the file's checkout, and the delivery's status, add, commit and push (#936)
   gql: GqlJson; // gh api graphql --input -: the Hive's own login, as the issue page's writes (#757)
+  log: Logger; // #702: gh's words for a write that gave up on a transient error; the dialog shows its own copy
+  sleep?(ms: number): Promise<void>; // the write's retry wait (#702); absent: a real timer. Tests pass a no-op
 }
 
 type Live = NonNullable<ReturnType<DecompositionRouteDeps['requireLive']>>;
@@ -49,9 +52,17 @@ type Live = NonNullable<ReturnType<DecompositionRouteDeps['requireLive']>>;
 // where its issues go, and a GitHub goal's issue number
 interface Goal { task: Task; result: Record<string, unknown>; parsed: ParsedDecomposition; file: string; repository?: string; number?: number }
 
-const refuse = (res: Response, refusal: Refusal): void => {
-  res.status(refusal.status).json({ error: refusal.message });
+const TRANSIENT_CODE = 'transient'; // #702: the dialog tells this refusal apart (parseJson attaches code, #797)
+
+const refuse = (res: Response, refusal: Refusal, code?: string): void => {
+  res.status(refusal.status).json({ error: refusal.message, ...(code === undefined ? {} : { code }) });
 };
+
+// A write that failed: a transient one logs gh's raw words, which the dialog replaces with its own copy (#702)
+function refuseWrite(log: Logger, id: string, failed: Extract<WriteOutcome, { error: string }>, res: Response): void {
+  if (failed.transient) log.warn(`decomposition #${id}: GitHub still failing after the retries: ${failed.error}`);
+  refuse(res, { status: HTTP_BAD_GATEWAY, message: failed.error }, failed.transient ? TRANSIENT_CODE : undefined);
+}
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 // fetchStatusField takes the polling transport's shape; the Hive's login answers the same query through stdin
 const asGql = (gql: GqlJson): Gql => (query, variables) => gql(query, variables ?? {});
@@ -188,8 +199,8 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
     address: delivery === undefined ? '' : fileAddress(delivery.checkout.repository, delivery.docs.defaultBranch, delivery.checkout.path),
     ...(goal.number === undefined ? {} : { goal: goal.number }),
   };
-  const written = await writeDecomposition({ gql: deps.gql, record }, ready.decomposition, target, recorded);
-  if ('error' in written) return refuse(res, { status: HTTP_BAD_GATEWAY, message: written.error });
+  const written = await writeDecomposition({ gql: deps.gql, record, sleep: deps.sleep }, ready.decomposition, target, recorded);
+  if ('error' in written) return refuseWrite(deps.log, goal.task.item.id, written, res);
   const delivered = delivery === undefined ? undefined : await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
     checkout: delivery.checkout, repositoryId: delivery.docs.id, base: delivery.docs.defaultBranch, root: written.root, goal: ready.repository,
   }, recorded);
