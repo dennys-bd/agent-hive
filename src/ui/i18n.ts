@@ -1288,6 +1288,9 @@ const en = {
   'settings.memory.cancel': 'cancel',
   'settings.memory.empty': 'no lessons of this type',
   'settings.memory.none': 'no lessons yet',
+  'settings.memory.historyCount.one': '{n} change · keeps the newest {max}',
+  'settings.memory.historyCount.other': '{n} changes · keeps the newest {max}',
+  'settings.memory.changeBy': 'by {who} · {date} · was {kind}',
   'settings.memory.ruleIn': 'when a lesson comes in',
   'settings.memory.ruleInText': "you add it here, or a task's agent adds it when it learns something · it goes in directly, no approval; the lesson shows which task and stage it came from",
   'settings.memory.ruleOut': 'when a lesson leaves',
@@ -1297,6 +1300,7 @@ const en = {
   'settings.memory.refusal.memory_secret': 'this looks like a secret; never save tokens or keys',
   'settings.memory.refusal.memory_full': 'the memory is full: remove a lesson or shorten a description',
   'settings.memory.refusal.unknown_memory': 'this lesson is no longer in the memory',
+  'settings.memory.refusal.unknown_change': 'this change is no longer in the history',
   'settings.env.add': '+ variable',
   'settings.error.prefix': 'the prefix must be a letter followed by up to 9 letters or digits',
   'settings.error.createIn.unknown': 'create tasks in names a source that is gone: pick another',
@@ -4398,6 +4402,9 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.cancel': 'cancelar',
   'settings.memory.empty': 'nenhuma lição deste tipo',
   'settings.memory.none': 'nenhuma lição ainda',
+  'settings.memory.historyCount.one': '{n} mudança · guarda as {max} mais recentes',
+  'settings.memory.historyCount.other': '{n} mudanças · guarda as {max} mais recentes',
+  'settings.memory.changeBy': 'por {who} · {date} · era {kind}',
   'settings.memory.ruleIn': 'quando uma lição entra',
   'settings.memory.ruleInText': 'você adiciona aqui, ou o agente de uma tarefa adiciona quando aprende algo · entra direto, sem aprovação; a lição mostra de qual tarefa e etapa veio',
   'settings.memory.ruleOut': 'quando uma lição sai',
@@ -4407,6 +4414,7 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.refusal.memory_secret': 'parece um segredo; nunca salve tokens ou chaves',
   'settings.memory.refusal.memory_full': 'a memória está cheia: remova uma lição ou encurte uma descrição',
   'settings.memory.refusal.unknown_memory': 'esta lição não está mais na memória',
+  'settings.memory.refusal.unknown_change': 'esta mudança não está mais no histórico',
   'settings.env.add': '+ variável',
   'settings.error.prefix': 'o prefixo precisa ser uma letra seguida de até 9 letras ou dígitos',
   'settings.error.createIn.unknown': 'criar tarefas em aponta para uma source que não existe mais: escolha outra',
@@ -6276,8 +6284,8 @@ export function t(key: MessageKey, vars?: Record<string, string | number>): stri
 export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[status]);
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
- *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580), or the report tab's counts (#467), or the wake dialog's sleeps (#468). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
+ *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580), or the report tab's counts (#467), or the wake dialog's sleeps (#468), or the memory history's changes (#684). */
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'settings.memory.historyCount' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
