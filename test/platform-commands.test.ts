@@ -14,9 +14,9 @@ const onWindows = { skip: process.platform !== 'win32' && 'Windows only: runs on
 // A win32 PowerShell command: Windows' own powershell.exe by full path, and the script it runs, decoded from -EncodedCommand.
 function script([file, args]: PlatformCommand): string {
   assert.match(file, POWERSHELL);
-  assert.deepEqual(args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-EncodedCommand']);
-  assert.equal(args.length, 4);
-  return Buffer.from(args[3], 'base64').toString('utf16le');
+  assert.deepEqual(args.slice(0, 5), ['-NoProfile', '-NonInteractive', '-InputFormat', 'None', '-EncodedCommand']);
+  assert.equal(args.length, 6);
+  return Buffer.from(args[5], 'base64').toString('utf16le');
 }
 
 test('shutdownCommand is osascript on macOS, systemctl poweroff on Linux and shutdown.exe /s /t 0 on Windows (#233, #658, #646)', () => {
@@ -75,7 +75,7 @@ test('keepAwakeCommand is caffeinate -di on macOS and systemd-inhibit idle:sleep
 test('keepAwakeCommand on Windows holds the display and the machine awake until the given pid ends; a pid that is no integer throws (#646)', () => {
   const text = script(keepAwakeCommand('win32', 4242));
   assert.match(text, /SetThreadExecutionState\(2147483651\)/); // ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
-  assert.match(text, /Wait-Process -Id 4242$/);
+  assert.match(text, /Wait-Process -Id 4242 -ErrorAction SilentlyContinue\nexit 0$/);
   assert.throws(() => keepAwakeCommand('win32', 1.5), { message: 'Not a pid: 1.5' });
 });
 

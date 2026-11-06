@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { setImmediate as settle } from 'node:timers/promises';
+import { setImmediate as settle, setTimeout as sleep } from 'node:timers/promises';
 import { createKeepAwake, type KeepAwake } from '../src/keep-awake.js';
 import { keepAwakeCommand } from '../src/platform-commands.js';
 import { type FakeKeepAwakeChild, fakeKeepAwakeSpawn } from './fakes.js';
@@ -66,14 +66,19 @@ test('an unsupported platform reports its throw once, only after sync has return
   assert.equal(children.length, 0);
 });
 
-// Room for powershell.exe to start and compile its P/Invoke on a cold runner; the watched pid itself lives a second.
+// Room for powershell.exe to start and compile its P/Invoke on a cold runner, then to see the watched pid end.
 const KEEP_AWAKE_EXIT_MS = 30_000;
+const HOLD_CHECK_MS = 3_000;
 
-test('on Windows the keep awake process ends by itself soon after the watched pid ends (#646)', { skip: process.platform !== 'win32' && 'Windows only: runs on the Windows lane', timeout: KEEP_AWAKE_EXIT_MS }, async () => {
-  const watched = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1000)'], { stdio: 'ignore' });
+test('on Windows the keep awake process lives while the watched pid does and ends by itself, exit 0, once it ends (#646)', { skip: process.platform !== 'win32' && 'Windows only: runs on the Windows lane', timeout: KEEP_AWAKE_EXIT_MS }, async () => {
+  // lives until its stdin closes, so the test, not a timer, decides when the watched pid ends
+  const watched = spawn(process.execPath, ['-e', "process.stdin.resume().on('end', () => process.exit(0))"], { stdio: ['pipe', 'ignore', 'ignore'] });
   const [file, args] = keepAwakeCommand(process.platform, watched.pid!);
   const holder = spawn(file, [...args], { stdio: 'ignore' });
-  const [code] = (await once(holder, 'exit')) as [number | null];
-  assert.equal(watched.exitCode, 0, 'the holder outlived nothing: the watched pid ended first');
+  const exited = once(holder, 'exit') as Promise<[number | null]>;
+  await sleep(HOLD_CHECK_MS);
+  assert.equal(holder.exitCode, null, 'still holding while the watched pid lives');
+  watched.stdin!.end();
+  const [code] = await exited;
   assert.equal(code, 0);
 });

@@ -15,7 +15,8 @@ const psLiteral = (value: string): string => `'${value.replace(/['\u2018\u2019\u
  *  of PowerShell 5.1 breaks on the double quotes Explorer's /select needs. Base64 of UTF-16LE has no character to quote. */
 function powerShell(lines: readonly string[]): PlatformCommand {
   const encoded = Buffer.from(lines.join('\n'), 'utf16le').toString('base64');
-  return [system32('WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded]];
+  // -InputFormat None: powershell.exe 5.1 can wait for EOF on the stdin pipe execFile leaves open
+  return [system32('WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-InputFormat', 'None', '-EncodedCommand', encoded]];
 }
 
 // ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED, in decimal: PowerShell 5.1 reads 0x80000003 as a negative Int32, no uint
@@ -27,7 +28,9 @@ function windowsKeepAwake(pid: number): PlatformCommand {
     "$ErrorActionPreference = 'Stop'",
     `Add-Type -Namespace AgentHive -Name Power -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);'`,
     `[void][AgentHive.Power]::SetThreadExecutionState(${KEEP_AWAKE_FLAGS})`,
-    `Wait-Process -Id ${pid}`,
+    // a pid already gone is the same end as one that ends now: no error, exit 0
+    `Wait-Process -Id ${pid} -ErrorAction SilentlyContinue`,
+    'exit 0',
   ]);
 }
 
