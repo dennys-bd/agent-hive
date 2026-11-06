@@ -13,7 +13,7 @@ const psLiteral = (value: string): string => `'${value.replace(/['\u2018\u2019\u
 
 /** -EncodedCommand, not -Command: under -Command every argument after the script is read as code, and the Windows command-line quoting
  *  of PowerShell 5.1 breaks on the double quotes Explorer's /select needs. Base64 of UTF-16LE has no character to quote. */
-function powerShell(lines: readonly string[]): PlatformCommand {
+export function powerShell(lines: readonly string[]): PlatformCommand {
   const encoded = Buffer.from(lines.join('\n'), 'utf16le').toString('base64');
   // -InputFormat None: powershell.exe 5.1 can wait for EOF on the stdin pipe execFile leaves open
   return [system32('WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-InputFormat', 'None', '-EncodedCommand', encoded]];

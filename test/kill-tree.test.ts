@@ -1,35 +1,8 @@
-import { type TestContext, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { type ChildProcess, spawn } from 'node:child_process';
-import { once } from 'node:events';
-import { createInterface } from 'node:readline';
 import { killTree, treeSpawnOptions } from '../src/kill-tree.js';
 import type { Exec } from '../src/types.js';
-import { gone } from './process-probe.js';
-
-// A node child that starts a node grandchild in its own tree and prints the grandchild's pid; both idle until killed. node -e, not sh and
-// sleep, so the same script runs on the Windows lane.
-const PARENT = [
-  "const { spawn } = require('node:child_process');",
-  "const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
-  'console.log(g.pid);',
-  'setInterval(() => {}, 1000);',
-].join(' ');
-
-interface Pair { child: ChildProcess; pid: number; grandchild: number }
-
-async function childWithGrandchild(t: TestContext): Promise<Pair> {
-  const child = spawn(process.execPath, ['-e', PARENT], { stdio: ['ignore', 'pipe', 'ignore'], ...treeSpawnOptions(process.platform) });
-  // a failed assertion must not leave the pair running; once the child exited, its pid may already be another process's
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) await killTree(child.pid, process.platform);
-  });
-  const pid = child.pid ?? assert.fail('the child did not start');
-  const [line] = (await once(createInterface({ input: child.stdout ?? assert.fail('no stdout') }), 'line')) as [string];
-  const grandchild = Number(line);
-  assert.ok(Number.isInteger(grandchild) && grandchild > 0, line);
-  return { child, pid, grandchild };
-}
+import { childWithGrandchild, gone } from './process-probe.js';
 
 test('on win32 killTree runs taskkill /T /F /PID through the exec, and a failing taskkill never rejects (#637)', async () => {
   const calls: [string, string[]][] = [];

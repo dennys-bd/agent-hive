@@ -239,7 +239,7 @@ const withWorkspaces = (state: State, config: Config): State =>
  * daemon's pty host and died with it (#378). Every occupied worker is given as dead right after. */
 export async function killStrays(state: State, exec: Exec = execFileAsync): Promise<void> {
   const patterns = state.workers.flatMap((s) => (s.runId ? [s.runId] : []));
-  await Promise.all(patterns.map((pattern) => killStray(pattern, exec)));
+  await Promise.all(patterns.map((pattern) => killStray(pattern, exec, process.platform)));
 }
 
 function errorMessage(err: unknown): string {
@@ -571,7 +571,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         return;
       case 'readCwd': { // #696: the shell's cwd read before its kill, so the terminal wakes where it was; unreadable keeps the held one
         log.info(describeEffect(effect));
-        const cwd = await shellCwd(ptys.pid(effect.terminalId), exec);
+        const cwd = await shellCwd(ptys.pid(effect.terminalId), exec, process.platform);
         await dispatch({ type: 'sleepTerminal', terminalId: effect.terminalId, ...(cwd === undefined ? {} : { cwd }) });
         return;
       }
@@ -583,7 +583,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       case 'killCaptured': // #696: the agent the shim started, by its runner's stray pattern (Claude's: its --mcp-config path, <runId>.mcp.json): a
         // session id also matches a `claude --resume <id>`, a tail or a grep elsewhere, and a /clear changes it. The exit frees the worker even when pkill missed
         log.info(describeEffect(effect));
-        await killStray(strayOf(effect.ptyId), exec).catch((err) => fail('kill', err));
+        await killStray(strayOf(effect.ptyId), exec, process.platform).catch((err) => fail('kill', err));
         await dispatch(await exitEvent(live, effect.ptyId));
         return;
       case 'captureCheckpoint': { // #619: awaited, so a continue later in this batch answers the Stop only after the capture; a failure is logged
