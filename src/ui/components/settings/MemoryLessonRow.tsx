@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import { addLesson, editLesson, removeLesson } from '@/lib/memory-api';
-import { canSaveLesson, charactersText, citedText, kindLabel, metaText, originDateText, refusalText } from '@/lib/memory-view';
+import { canSaveLesson, charactersText, kindLabel, metaText, originDateText, readText, refusalText } from '@/lib/memory-view';
 import { isMemoryKind, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, MEMORY_KINDS, type MemoryEntry, type MemoryKind, type MemoryView } from '../../../types';
 
 /** The table's columns (#797), as the handoff lays them out: id, kind, lesson, actions. */
@@ -36,7 +36,7 @@ export function LessonRow({ workspace, entry, descRef, onEdit, onRemoved }: Less
           <span className="text-pretty">{entry.description}</span>
         </button>
         <div id={bodyId} hidden={!open} className="max-w-[72ch] whitespace-pre-wrap break-words pl-[22px] text-[13px]/[19px]">{entry.body}</div>
-        <span className="pl-[22px] text-muted-foreground text-xs">{`${metaText(entry)} · `}<span>{citedText(entry.uses)}</span></span>
+        <span className="pl-[22px] text-muted-foreground text-xs">{`${metaText(entry)} · `}<span>{readText(entry.uses)}</span></span>
         {error !== undefined && <p role="alert" className="pl-[22px] text-destructive text-xs">{error}</p>}
       </div>
       <div className="flex justify-end gap-1">

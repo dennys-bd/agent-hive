@@ -1224,7 +1224,7 @@ const en = {
   'settings.env.remove': 'remove variable {n}',
   // #797: the workspace's memory section and dialog
   'settings.memory.group': 'memory',
-  'settings.memory.hint': "preferences, codebase facts and what to avoid, given to every session on this workspace's tasks",
+  'settings.memory.hint': "preferences, codebase facts and what to avoid; every session on this workspace's tasks gets their index",
   'settings.memory.of': '{n} of {max} characters',
   'settings.memory.description': 'description',
   'settings.memory.body': 'body',
@@ -1241,7 +1241,7 @@ const en = {
   'settings.memory.notSaved': 'save the workspace to see its memory',
   'settings.memory.loadFailed': 'the memory could not be read: {error}',
   'settings.memory.title': '{workspace} memory',
-  'settings.memory.intro': "what this workspace's agents know before they start. every session on a task of this workspace gets the whole memory, with the Hive's instructions.",
+  'settings.memory.intro': "what this workspace's agents can read before they start. every session on a task of this workspace gets the index (each lesson's id and description) with the Hive's instructions, and reads a lesson's body with hive_recall.",
   'settings.memory.usage': 'usage',
   'settings.memory.totalLimit': 'total limit',
   'settings.memory.capEstimate': '≈ {n} tokens per run with the memory full',
@@ -1263,7 +1263,7 @@ const en = {
   'settings.memory.hours': '{n} h',
   'settings.memory.days.one': '{n} day',
   'settings.memory.days.other': '{n} days',
-  'settings.memory.telemetryNote': "the Hive records which lessons each session received and cited, and every lesson created, edited or removed, and sends these events off the machine. the type, the origin, the stage and the size go; the key, the description and the body never do.",
+  'settings.memory.telemetryNote': "the Hive records which lessons each session received and read, and every lesson created, edited or removed, and sends these events off the machine. the type, the origin, the stage and the size go; the key, the description and the body never do.",
   'settings.memory.lessonsTitle': 'lessons',
   'settings.memory.filterLabel': 'show lessons of type',
   'settings.memory.filter.all': 'all · {n}',
@@ -1278,8 +1278,8 @@ const en = {
   'settings.memory.you': 'you',
   'settings.memory.task': 'task #{id}',
   'settings.memory.local': 'local session',
-  'settings.memory.citedTimes.one': 'cited {n} time',
-  'settings.memory.citedTimes.other': 'cited {n} times',
+  'settings.memory.readTimes.one': 'read {n} time',
+  'settings.memory.readTimes.other': 'read {n} times',
   'settings.memory.edit': 'edit lesson {id}',
   'settings.memory.remove': 'remove lesson {id}',
   'settings.memory.save': 'save',
@@ -4331,7 +4331,7 @@ const pt: Record<MessageKey, string> = {
   'settings.env.value': 'valor da variável {n}',
   'settings.env.remove': 'remover variável {n}',
   'settings.memory.group': 'memória',
-  'settings.memory.hint': 'preferências, fatos do código e o que evitar, que toda sessão das tarefas deste workspace recebe',
+  'settings.memory.hint': 'preferências, fatos do código e o que evitar; toda sessão das tarefas deste workspace recebe o índice',
   'settings.memory.of': '{n} de {max} caracteres',
   'settings.memory.description': 'descrição',
   'settings.memory.body': 'corpo',
@@ -4348,7 +4348,7 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.notSaved': 'salve o workspace para ver a memória',
   'settings.memory.loadFailed': 'não foi possível ler a memória: {error}',
   'settings.memory.title': 'Memória de {workspace}',
-  'settings.memory.intro': 'o que os agentes deste workspace sabem antes de começar. toda sessão de uma tarefa deste workspace recebe a memória inteira, junto com as instruções do Hive.',
+  'settings.memory.intro': 'o que os agentes deste workspace podem ler antes de começar. toda sessão de uma tarefa deste workspace recebe o índice (o id e a descrição de cada lição) junto com as instruções do Hive, e lê o corpo de uma lição com hive_recall.',
   'settings.memory.usage': 'uso',
   'settings.memory.totalLimit': 'limite total',
   'settings.memory.capEstimate': '≈ {n} tokens por execução com a memória cheia',
@@ -4370,7 +4370,7 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.hours': '{n} h',
   'settings.memory.days.one': '{n} dia',
   'settings.memory.days.other': '{n} dias',
-  'settings.memory.telemetryNote': 'o Hive registra quais lições cada sessão recebeu e citou, e cada lição criada, editada ou removida, e envia esses eventos para fora da máquina. vão o tipo, a origem, a etapa e o tamanho; a chave, a descrição e o corpo nunca vão.',
+  'settings.memory.telemetryNote': 'o Hive registra quais lições cada sessão recebeu e leu, e cada lição criada, editada ou removida, e envia esses eventos para fora da máquina. vão o tipo, a origem, a etapa e o tamanho; a chave, a descrição e o corpo nunca vão.',
   'settings.memory.lessonsTitle': 'lições',
   'settings.memory.filterLabel': 'mostrar lições do tipo',
   'settings.memory.filter.all': 'todas · {n}',
@@ -4385,8 +4385,8 @@ const pt: Record<MessageKey, string> = {
   'settings.memory.you': 'você',
   'settings.memory.task': 'tarefa #{id}',
   'settings.memory.local': 'sessão local',
-  'settings.memory.citedTimes.one': 'citada {n} vez',
-  'settings.memory.citedTimes.other': 'citada {n} vezes',
+  'settings.memory.readTimes.one': 'lida {n} vez',
+  'settings.memory.readTimes.other': 'lida {n} vezes',
   'settings.memory.edit': 'editar lição {id}',
   'settings.memory.remove': 'remover lição {id}',
   'settings.memory.save': 'salvar',
@@ -6270,7 +6270,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580), or the report tab's counts (#467), or the wake dialog's sleeps (#468). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

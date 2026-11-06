@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
 import { addLesson, editLesson, readMemory, readStats, removeLesson } from '@/lib/memory-api';
-import { canSaveLesson, charactersText, citedText, kindCounts, lastText, lessonsText, metaText, originDateText, refusalText, statNumbers, usedText } from '@/lib/memory-view';
+import { canSaveLesson, charactersText, readText, kindCounts, lastText, lessonsText, metaText, originDateText, refusalText, statNumbers, usedText } from '@/lib/memory-view';
 import type { MemoryEntry } from '../../src/types';
 import { jsonResponse } from '../fakes';
 
@@ -13,15 +13,15 @@ const lesson = (patch: Partial<MemoryEntry>): MemoryEntry => ({ id: 'm-1', kind:
 beforeEach(() => setLanguage('pt'));
 afterEach(() => vi.unstubAllGlobals());
 
-test('a lesson\'s meta line and its citations read in both languages: you or task #812, the stage only from a task, cited 1 time / 5 times (#797)', () => {
+test('a lesson\'s meta line and its reads read in both languages: you or task #812, the stage only from a task, read 1 time / 5 times (#797, #681)', () => {
   const learned = lesson({ origin: { task: '812', stage: 'build' } });
   for (const [language, you, task, free, once, five] of [
-    ['en', `you · 2026-10-01 · description 21 · body ${BODY.length} characters`, `task #812 · build · 2026-10-01 · description 21 · body ${BODY.length} characters`, `task #790 · 2026-10-01 · description 21 · body ${BODY.length} characters`, 'cited 1 time', 'cited 5 times'],
-    ['pt', `você · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, `tarefa #812 · build · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, `tarefa #790 · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, 'citada 1 vez', 'citada 5 vezes'],
+    ['en', `you · 2026-10-01 · description 21 · body ${BODY.length} characters`, `task #812 · build · 2026-10-01 · description 21 · body ${BODY.length} characters`, `task #790 · 2026-10-01 · description 21 · body ${BODY.length} characters`, 'read 1 time', 'read 5 times'],
+    ['pt', `você · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, `tarefa #812 · build · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, `tarefa #790 · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, 'lida 1 vez', 'lida 5 vezes'],
   ] as const) {
     setLanguage(language);
     expect([metaText(lesson({})), metaText(learned), metaText(lesson({ origin: { task: '790' } }))]).toEqual([you, task, free]);
-    expect([citedText(1), citedText(5)]).toEqual([once, five]);
+    expect([readText(1), readText(5)]).toEqual([once, five]);
   }
 });
 

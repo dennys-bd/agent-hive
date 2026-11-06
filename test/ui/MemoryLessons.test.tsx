@@ -54,8 +54,8 @@ test('each lesson shows its id, its kind and its meta line, its count of uses wi
   expect(table.getByText(new RegExp(`^tarefa #812 · build · 2026-10-01 · descrição 41 · corpo ${BODY_1.length} caracteres`))).toBeInTheDocument();
   expect(table.getByText(new RegExp(`^tarefa #790 · 2026-10-02 · descrição 22 · corpo ${BODY_2.length} caracteres`))).toBeInTheDocument();
   expect(table.getByText(new RegExp(`^você · 2026-10-03 · descrição 24 · corpo ${BODY_3.length} caracteres`))).toBeInTheDocument();
-  expect(table.getByText('citada 5 vezes')).not.toHaveAttribute('title');
-  expect(table.getByText('citada 1 vez')).toBeInTheDocument();
+  expect(table.getByText('lida 5 vezes')).not.toHaveAttribute('title');
+  expect(table.getByText('lida 1 vez')).toBeInTheDocument();
 });
 
 test('a lesson\'s description opens and closes its body, collapsed at first and independently per row; the meta line comes last (#680)', async () => {
@@ -252,7 +252,7 @@ test('the table reads in English (#797)', () => {
   expect(table.getAllByRole('radio').map((r: HTMLElement) => r.textContent)).toEqual(['all · 3', 'preference · 1', 'codebase fact · 1', 'avoid · 1']);
   expect(table.getByText(new RegExp(`^task #812 · build · 2026-10-01 · description 41 · body ${BODY_1.length} characters`))).toBeInTheDocument();
   expect(table.getByText(new RegExp(`^you · 2026-10-03 · description 24 · body ${BODY_3.length} characters`))).toBeInTheDocument();
-  expect([table.getByText('cited 5 times'), table.getByText('cited 1 time')]).toHaveLength(2);
+  expect([table.getByText('read 5 times'), table.getByText('read 1 time')]).toHaveLength(2);
   expect(table.getByRole('button', { name: '+ lesson' })).toBeInTheDocument();
 });
 

@@ -47,8 +47,8 @@ const between = (length: number, max: number): boolean => length >= 1 && length 
 export const canSaveLesson = (description: string, body: string): boolean =>
   between(description.trim().length, MEMORY_DESCRIPTION_MAX) && between(body.trim().length, MEMORY_BODY_MAX);
 
-/** `citada {n} vezes` (#797): a floor, an agent may forget to cite. */
-export const citedText = (uses: number): string => tPlural('settings.memory.citedTimes', uses, { n: uses });
+/** `lida {n} vezes` (#797, #681): how many times runs read the lesson with hive_recall. */
+export const readText = (uses: number): string => tPlural('settings.memory.readTimes', uses, { n: uses });
 
 /** A duration as the last-run line says it (#797): minutes, hours, then days; never under a minute. */
 export function agoText(ms: number): string {

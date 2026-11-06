@@ -17,6 +17,7 @@ const VIEW: MemoryView = {
     { id: 'm-3', kind: 'avoid', description: 'never edit dist/ by hand', body: 'the lesson', origin: 'user', at: '2026-10-03T10:00:00.000Z', uses: 0 },
   ],
 };
+const ROW: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] };
 const lastAt = (): string => new Date(Date.now() - 2 * 3_600_000 - 300_000).toISOString();
 let stats: MemoryStats = { runs: 0, read: 0 };
 
@@ -55,7 +56,7 @@ test('the section shows the usage and the lessons, and ver memória… opens the
   expect(screen.getByRole('progressbar', { name: 'memória usada' })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'ver memória…' }));
   const dialog = within(await screen.findByRole('dialog', { name: 'Memória de hive' }));
-  expect(dialog.getByText(/^o que os agentes deste workspace sabem/)).toBeInTheDocument();
+  expect(dialog.getByText(/^o que os agentes deste workspace podem ler antes de começar/)).toBeInTheDocument();
   const usage = within(dialog.getByRole('region', { name: 'uso' }));
   expect(usage.getByRole('spinbutton', { name: 'limite total' })).toHaveValue(4000);
   expect(usage.getByText('≈ 1.100 tokens por execução com a memória cheia')).toBeInTheDocument();
@@ -138,8 +139,7 @@ test('a workspace the live config does not have yet says so and keeps the dialog
 });
 
 test('typing the name of a workspace that is not saved never asks for /workspaces/<partial>/memory (#797)', async () => {
-  const row: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] };
-  const Editor = ({ name }: { name: string }) => <WorkspacesEditor workspaces={[{ ...row, name }]} savedNames={['hive']} onChange={vi.fn()} onCapSaved={vi.fn()} />;
+  const Editor = ({ name }: { name: string }) => <WorkspacesEditor workspaces={[{ ...ROW, name }]} savedNames={['hive']} onChange={vi.fn()} onCapSaved={vi.fn()} />;
   const { rerender } = render(<Editor name="hive" />);
   expect(await screen.findByText('87 de 4.000 caracteres em descrições')).toBeInTheDocument();
   fetchMock.mockClear();
@@ -149,11 +149,10 @@ test('typing the name of a workspace that is not saved never asks for /workspace
 });
 
 test('the memory section closes each workspace card, after the environment, with its hint (#797)', async () => {
-  const row: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] };
-  render(<WorkspacesEditor workspaces={[row]} savedNames={['hive']} onChange={vi.fn()} onCapSaved={vi.fn()} />);
+  render(<WorkspacesEditor workspaces={[ROW]} savedNames={['hive']} onChange={vi.fn()} onCapSaved={vi.fn()} />);
   const hive = within(screen.getByRole('region', { name: 'hive' }));
   expect(hive.getAllByRole('heading', { level: 3 }).map((h) => h.textContent).slice(-2)).toEqual(['ambiente', 'memória']);
-  expect(hive.getByText('preferências, fatos do código e o que evitar, que toda sessão das tarefas deste workspace recebe')).toBeInTheDocument();
+  expect(hive.getByText('preferências, fatos do código e o que evitar; toda sessão das tarefas deste workspace recebe o índice')).toBeInTheDocument();
   expect(await hive.findByText('87 de 4.000 caracteres em descrições')).toBeInTheDocument();
 });
 
@@ -224,4 +223,30 @@ test('a save whose follow-up read fails still stands: no error, both the field a
   expect(onCapSaved).toHaveBeenCalledWith(6000);
   expect(usage.queryByRole('alert')).not.toBeInTheDocument();
   expect(usage.getByRole('button', { name: 'salvar' })).toBeDisabled();
+});
+
+test('the hint, the intro and the telemetry note speak of the index and of reads in both languages; none says whole memory, inteira, cited or citou (#681)', async () => {
+  const user = userEvent.setup();
+  const COPY = [
+    ['en', "preferences, codebase facts and what to avoid; every session on this workspace's tasks gets their index",
+      "what this workspace's agents can read before they start. every session on a task of this workspace gets the index (each lesson's id and description) with the Hive's instructions, and reads a lesson's body with hive_recall.",
+      'the Hive records which lessons each session received and read, and every lesson created, edited or removed, and sends these events off the machine. the type, the origin, the stage and the size go; the key, the description and the body never do.',
+      'view memory…'],
+    ['pt', 'preferências, fatos do código e o que evitar; toda sessão das tarefas deste workspace recebe o índice',
+      'o que os agentes deste workspace podem ler antes de começar. toda sessão de uma tarefa deste workspace recebe o índice (o id e a descrição de cada lição) junto com as instruções do Hive, e lê o corpo de uma lição com hive_recall.',
+      'o Hive registra quais lições cada sessão recebeu e leu, e cada lição criada, editada ou removida, e envia esses eventos para fora da máquina. vão o tipo, a origem, a etapa e o tamanho; a chave, a descrição e o corpo nunca vão.',
+      'ver memória…'],
+  ] as const;
+  for (const [language, hint, intro, note, open] of COPY) {
+    setLanguage(language);
+    const { unmount } = render(<WorkspacesEditor workspaces={[ROW]} savedNames={['hive']} onChange={vi.fn()} onCapSaved={vi.fn()} />);
+    const card = within(screen.getByRole('region', { name: 'hive' }));
+    expect(card.getByText(hint)).toBeInTheDocument();
+    await user.click(await card.findByRole('button', { name: open }));
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.getByText(intro)).toBeInTheDocument();
+    expect(dialog.getByText(note)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/whole memory|inteira|cited|citou|citad|injected|injeção/);
+    unmount();
+  }
 });
