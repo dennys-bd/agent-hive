@@ -111,7 +111,7 @@ function UsageBlock({ workspace, view, onCapSaved, onView }: UsageBlockProps) {
         <CapField key={view.cap} workspace={workspace} view={view} onCapSaved={onCapSaved} onView={onView} />
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${id}-max`} className="font-normal text-muted-foreground text-xs">{t('settings.memory.lessonLimit')}</Label>
-          <Input id={`${id}-max`} type="number" value={view.textMax} readOnly disabled />
+          <Input id={`${id}-max`} type="number" value={view.descriptionMax} readOnly disabled />
         </div>
       </div>
       <p className="text-muted-foreground text-xs">{t('settings.memory.limitNote')}</p>

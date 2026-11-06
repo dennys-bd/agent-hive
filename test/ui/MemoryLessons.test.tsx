@@ -8,15 +8,18 @@ import type { MemoryEntry, MemoryView } from '../../src/types';
 import { jsonResponse } from '../fakes';
 
 // The memory dialog's lessons (#797): the filter, the table and its single editing row, over the routes, never the Settings draft
+const BODY_1 = 'lint, tsc, node:test and vitest, in parallel';
+const BODY_2 = 'specs, plans, commits and PRs are written in English';
+const BODY_3 = 'it is generated: rebuild instead';
 const VIEW: MemoryView = {
-  used: 87, cap: 4000, textMax: 300,
+  used: 87, cap: 4000, descriptionMax: 150, bodyMax: 4000,
   entries: [
-    { id: 'm-1', kind: 'fact', text: 'pnpm test runs lint, tsc and both runners', origin: { task: '812', stage: 'build' }, at: '2026-10-01T10:00:00.000Z', uses: 5, lastUsed: { at: '2026-10-04T09:00:00.000Z', task: '812', stage: 'build', why: 'ran the full gate before committing' } },
-    { id: 'm-2', kind: 'pref', text: 'write specs in English', origin: { task: '790' }, at: '2026-10-02T10:00:00.000Z', uses: 1, lastUsed: { at: '2026-10-04T10:00:00.000Z', task: '790', why: 'wrote it in English' } },
-    { id: 'm-3', kind: 'avoid', text: 'never edit dist/ by hand', origin: 'user', at: '2026-10-03T10:00:00.000Z', uses: 0 },
+    { id: 'm-1', kind: 'fact', description: 'pnpm test runs lint, tsc and both runners', body: BODY_1, origin: { task: '812', stage: 'build' }, at: '2026-10-01T10:00:00.000Z', uses: 5, lastUsed: { at: '2026-10-04T09:00:00.000Z', task: '812', stage: 'build', why: 'ran the full gate before committing' } },
+    { id: 'm-2', kind: 'pref', description: 'write specs in English', body: BODY_2, origin: { task: '790' }, at: '2026-10-02T10:00:00.000Z', uses: 1, lastUsed: { at: '2026-10-04T10:00:00.000Z', task: '790', why: 'wrote it in English' } },
+    { id: 'm-3', kind: 'avoid', description: 'never edit dist/ by hand', body: BODY_3, origin: 'user', at: '2026-10-03T10:00:00.000Z', uses: 0 },
   ],
 };
-const ADDED: MemoryEntry = { id: 'm-4', kind: 'fact', text: 'never push to main', origin: 'user', at: '2026-10-05T10:00:00.000Z', uses: 0 };
+const ADDED: MemoryEntry = { id: 'm-4', kind: 'fact', description: 'never push to main', body: '', origin: 'user', at: '2026-10-05T10:00:00.000Z', uses: 0 };
 let refuseWrites = false;
 
 const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -42,9 +45,9 @@ test('each lesson shows its id, its kind and its meta line, with the last why as
   const table = lessons();
   expect(table.getByText('m-1')).toHaveAttribute('title', 'm-1');
   expect(table.getByText('fato do código')).toBeInTheDocument();
-  expect(table.getByText(/^tarefa #812 · build · 2026-10-01 · 41 caracteres/)).toBeInTheDocument();
-  expect(table.getByText(/^tarefa #790 · 2026-10-02 · 22 caracteres/)).toBeInTheDocument();
-  expect(table.getByText(/^você · 2026-10-03 · 24 caracteres/)).toBeInTheDocument();
+  expect(table.getByText(new RegExp(`^tarefa #812 · build · 2026-10-01 · descrição 41 · corpo ${BODY_1.length} caracteres`))).toBeInTheDocument();
+  expect(table.getByText(new RegExp(`^tarefa #790 · 2026-10-02 · descrição 22 · corpo ${BODY_2.length} caracteres`))).toBeInTheDocument();
+  expect(table.getByText(new RegExp(`^você · 2026-10-03 · descrição 24 · corpo ${BODY_3.length} caracteres`))).toBeInTheDocument();
   expect(table.getByText('citada 5 vezes')).toHaveAttribute('title', 'ran the full gate before committing');
   expect(table.getByText('citada 1 vez')).toBeInTheDocument();
   expect(table.getByText('citada 0 vezes')).not.toHaveAttribute('title');
@@ -80,7 +83,7 @@ test('+ lesson brings the filter back to all and adds an editing row at the end,
   expect(await table.findByText('never push to main')).toBeInTheDocument();
   expect(table.queryByRole('textbox')).not.toBeInTheDocument();
   const [, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST') ?? [];
-  expect(init?.body).toBe(JSON.stringify({ kind: 'fact', text: 'never push to main' }));
+  expect(init?.body).toBe(JSON.stringify({ kind: 'fact', description: 'never push to main', body: '' }));
 });
 
 test('only one row edits at a time; cancel leaves it as it was (#797)', async () => {
@@ -88,7 +91,7 @@ test('only one row edits at a time; cancel leaves it as it was (#797)', async ()
   render(<Harness />);
   const table = lessons();
   await user.click(table.getByRole('button', { name: 'editar lição m-1' }));
-  expect(table.getByRole('textbox', { name: 'texto da lição' })).toHaveValue(VIEW.entries[0].text);
+  expect(table.getByRole('textbox', { name: 'texto da lição' })).toHaveValue(VIEW.entries[0].description);
   await user.click(table.getByRole('button', { name: 'editar lição m-2' }));
   expect(table.getAllByRole('textbox')).toHaveLength(1);
   expect(table.getByRole('textbox', { name: 'texto da lição' })).toHaveValue('write specs in English');
@@ -97,15 +100,15 @@ test('only one row edits at a time; cancel leaves it as it was (#797)', async ()
   expect(table.getByText('write specs in English')).toBeInTheDocument();
 });
 
-test('past 300 characters the counter says so, the field is invalid and save is off; a refusal shows under the field and the text stays (#797)', async () => {
+test('past 150 characters the counter says so, the field is invalid and save is off; a refusal shows under the field and the text stays (#797)', async () => {
   const user = userEvent.setup();
   render(<Harness />);
   const table = lessons();
   await user.click(table.getByRole('button', { name: '+ lição' }));
   const field = table.getByRole('textbox', { name: 'texto da lição' });
   await user.click(field);
-  await user.paste('x'.repeat(301));
-  expect(table.getByText('301 de 300 caracteres')).toBeInTheDocument();
+  await user.paste('x'.repeat(151));
+  expect(table.getByText('151 de 150 caracteres')).toBeInTheDocument();
   expect(field).toHaveAttribute('aria-invalid', 'true');
   expect(table.getByRole('button', { name: 'salvar' })).toBeDisabled();
   await user.clear(field);
@@ -132,8 +135,8 @@ test('the table reads in English (#797)', () => {
   render(<Harness />);
   const table = lessons('lessons');
   expect(table.getAllByRole('radio').map((r: HTMLElement) => r.textContent)).toEqual(['all · 3', 'preference · 1', 'codebase fact · 1', 'avoid · 1']);
-  expect(table.getByText(/^task #812 · build · 2026-10-01 · 41 characters/)).toBeInTheDocument();
-  expect(table.getByText(/^you · 2026-10-03 · 24 characters/)).toBeInTheDocument();
+  expect(table.getByText(new RegExp(`^task #812 · build · 2026-10-01 · description 41 · body ${BODY_1.length} characters`))).toBeInTheDocument();
+  expect(table.getByText(new RegExp(`^you · 2026-10-03 · description 24 · body ${BODY_3.length} characters`))).toBeInTheDocument();
   expect([table.getByText('cited 5 times'), table.getByText('cited 1 time')]).toHaveLength(2);
   expect(table.getByRole('button', { name: '+ lesson' })).toBeInTheDocument();
 });

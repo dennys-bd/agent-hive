@@ -7,7 +7,8 @@ import { jsonResponse } from '../fakes';
 
 const AT = '2026-10-01T10:00:00.000Z';
 const NOW = Date.parse('2026-10-05T12:00:00.000Z');
-const lesson = (patch: Partial<MemoryEntry>): MemoryEntry => ({ id: 'm-1', kind: 'fact', text: 'pnpm test is the gate', origin: 'user', at: AT, uses: 0, ...patch });
+const BODY = 'it runs lint, tsc and both runners';
+const lesson = (patch: Partial<MemoryEntry>): MemoryEntry => ({ id: 'm-1', kind: 'fact', description: 'pnpm test is the gate', body: BODY, origin: 'user', at: AT, uses: 0, ...patch });
 
 beforeEach(() => setLanguage('pt'));
 afterEach(() => vi.unstubAllGlobals());
@@ -15,8 +16,8 @@ afterEach(() => vi.unstubAllGlobals());
 test('a lesson\'s meta line and its citations read in both languages: you or task #812, the stage only from a task, cited 1 time / 5 times (#797)', () => {
   const learned = lesson({ origin: { task: '812', stage: 'build' } });
   for (const [language, you, task, free, once, five] of [
-    ['en', 'you · 2026-10-01 · 21 characters', 'task #812 · build · 2026-10-01 · 21 characters', 'task #790 · 2026-10-01 · 21 characters', 'cited 1 time', 'cited 5 times'],
-    ['pt', 'você · 2026-10-01 · 21 caracteres', 'tarefa #812 · build · 2026-10-01 · 21 caracteres', 'tarefa #790 · 2026-10-01 · 21 caracteres', 'citada 1 vez', 'citada 5 vezes'],
+    ['en', `you · 2026-10-01 · description 21 · body ${BODY.length} characters`, `task #812 · build · 2026-10-01 · description 21 · body ${BODY.length} characters`, `task #790 · 2026-10-01 · description 21 · body ${BODY.length} characters`, 'cited 1 time', 'cited 5 times'],
+    ['pt', `você · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, `tarefa #812 · build · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, `tarefa #790 · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, 'citada 1 vez', 'citada 5 vezes'],
   ] as const) {
     setLanguage(language);
     expect([metaText(lesson({})), metaText(learned), metaText(lesson({ origin: { task: '790' } }))]).toEqual([you, task, free]);
@@ -44,7 +45,7 @@ test('the telemetry numbers show dashes without runs, the cited lessons out of t
 });
 
 test('the five calls reach the workspace\'s memory routes with the UI header on writes; a refusal keeps its code, which reads in the user\'s language (#797)', async () => {
-  const view = { entries: [], used: 0, cap: 4000, textMax: 300 };
+  const view = { entries: [], used: 0, cap: 4000, descriptionMax: 150, bodyMax: 4000 };
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') return jsonResponse({ error: 'memory is full; go on without saving this lesson', code: 'memory_full' }, 409);
     return jsonResponse(url.endsWith('/stats') ? { runs: 0, cited: 0 } : view);
@@ -52,14 +53,15 @@ test('the five calls reach the workspace\'s memory routes with the UI header on 
   vi.stubGlobal('fetch', fetchMock);
   await readMemory('hive');
   await readStats('hive');
-  await editLesson('hive', 'm-1', 'avoid', 'x');
+  await editLesson('hive', 'm-1', { kind: 'avoid', description: 'x', body: 'y' });
   await removeLesson('hive', 'm-1');
-  const err = await addLesson('hive', 'fact', 'y').catch((e: unknown) => e);
+  const err = await addLesson('hive', { kind: 'fact', description: 'y', body: 'z' }).catch((e: unknown) => e);
   expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method ?? 'GET'])).toEqual([
     ['/workspaces/hive/memory', 'GET'], ['/workspaces/hive/memory/stats', 'GET'], ['/workspaces/hive/memory/m-1', 'PUT'],
     ['/workspaces/hive/memory/m-1', 'DELETE'], ['/workspaces/hive/memory', 'POST'],
   ]);
   expect(new Headers(fetchMock.mock.calls[2][1]?.headers).get('x-hive-ui')).toBe('1');
+  expect(fetchMock.mock.calls[2][1]?.body).toBe(JSON.stringify({ kind: 'avoid', description: 'x', body: 'y' }));
   expect(refusalText(err)).toBe('a memória está cheia: remova ou encurte uma lição');
   expect(refusalText(new Error('disk full'))).toBe('disk full');
 });
@@ -67,8 +69,8 @@ test('the five calls reach the workspace\'s memory routes with the UI header on 
 test('a lesson saved from a local session reads local session / sessão local where a task\'s reads its id, and counts among those not the user\'s (#256)', () => {
   const local = lesson({ origin: 'local' });
   for (const [language, meta, count] of [
-    ['en', 'local session · 2026-10-01 · 21 characters', '2 lessons · 1 from tasks'],
-    ['pt', 'sessão local · 2026-10-01 · 21 caracteres', '2 lições · 1 vindas de tarefas'],
+    ['en', `local session · 2026-10-01 · description 21 · body ${BODY.length} characters`, '2 lessons · 1 from tasks'],
+    ['pt', `sessão local · 2026-10-01 · descrição 21 · corpo ${BODY.length} caracteres`, '2 lições · 1 vindas de tarefas'],
   ] as const) {
     setLanguage(language);
     expect(metaText(local)).toBe(meta);

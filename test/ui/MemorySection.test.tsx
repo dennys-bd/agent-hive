@@ -10,11 +10,11 @@ import { jsonResponse } from '../fakes';
 
 // Settings › workspaces › memory (#797): the card's usage section and the dialog it opens
 const VIEW: MemoryView = {
-  used: 87, cap: 4000, textMax: 300,
+  used: 87, cap: 4000, descriptionMax: 150, bodyMax: 4000,
   entries: [
-    { id: 'm-1', kind: 'fact', text: 'pnpm test runs lint, tsc and both runners', origin: { task: '812', stage: 'build' }, at: '2026-10-01T10:00:00.000Z', uses: 5 },
-    { id: 'm-2', kind: 'pref', text: 'write specs in English', origin: { task: '790' }, at: '2026-10-02T10:00:00.000Z', uses: 1 },
-    { id: 'm-3', kind: 'avoid', text: 'never edit dist/ by hand', origin: 'user', at: '2026-10-03T10:00:00.000Z', uses: 0 },
+    { id: 'm-1', kind: 'fact', description: 'pnpm test runs lint, tsc and both runners', body: 'the lesson', origin: { task: '812', stage: 'build' }, at: '2026-10-01T10:00:00.000Z', uses: 5 },
+    { id: 'm-2', kind: 'pref', description: 'write specs in English', body: 'the lesson', origin: { task: '790' }, at: '2026-10-02T10:00:00.000Z', uses: 1 },
+    { id: 'm-3', kind: 'avoid', description: 'never edit dist/ by hand', body: 'the lesson', origin: 'user', at: '2026-10-03T10:00:00.000Z', uses: 0 },
   ],
 };
 const lastAt = (): string => new Date(Date.now() - 2 * 3_600_000 - 300_000).toISOString();
@@ -61,7 +61,7 @@ test('the section shows the usage and the lessons, and ver memória… opens the
   expect(usage.getByText('≈ 1.100 tokens por execução com a memória cheia')).toBeInTheDocument();
   expect(usage.getByRole('button', { name: 'salvar' })).toBeDisabled();
   expect(usage.getByText('no limite, nenhuma lição nova entra, nem sua nem de tarefa, até você remover ou encurtar outra')).toBeInTheDocument();
-  expect(usage.getByRole('spinbutton', { name: 'limite por lição (caracteres)' })).toHaveValue(300);
+  expect(usage.getByRole('spinbutton', { name: 'limite por lição (caracteres)' })).toHaveValue(150);
   expect(usage.getByRole('spinbutton', { name: 'limite por lição (caracteres)' })).toBeDisabled();
   const telemetry = within(dialog.getByRole('region', { name: 'telemetria · últimos 7 dias' }));
   expect(await telemetry.findByText('12')).toBeInTheDocument();

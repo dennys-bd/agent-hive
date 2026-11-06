@@ -86,7 +86,7 @@ test('GET /api/protocol answers the blocks with their tool and off, and each pas
   // what a Hive update leaves behind: an anchor no block has (the routes refuse one), written by hand
   await send('POST', `${base}/api/protocol/passages`, { text: '---\nafter: done\nvariables:\n  team: { required: true, workspaces: { hive-site: core } }\n---\nAsk {{ team }}.\n' });
   await writeFile(join(passagesDir(home), 'p2.md.liquid'), '---\nafter: gone\n---\nLeft over.\n');
-  await send('POST', `${base}/workspaces/${WORKSPACE}/memory`, { kind: 'fact', text: 'pnpm test is the gate' }); // a rewrite, and a memory section
+  await send('POST', `${base}/workspaces/${WORKSPACE}/memory`, { kind: 'fact', description: 'pnpm test is the gate', body: 'it runs lint and both runners' }); // a rewrite, and a memory section
   const [, view] = await answer(hiveFetch(`${base}/api/protocol`));
   const { blocks, passages } = view as { blocks: { id: string; off: boolean; tool?: string }[]; passages: { id: string; after: string; orphan: boolean; errors: Record<string, unknown[]> }[] };
   const TOOL_OF: Record<string, string> = { task: 'hive_task', remember: 'hive_remember' };
@@ -100,7 +100,7 @@ test('GET /api/protocol answers the blocks with their tool and off, and each pas
 
 test('turning hive_remember off drops the remember block from every protocol file, the global ones included; hive_applied off drops the memory section\'s hive_applied line (#336)', async (t) => {
   const { base, home } = await start(t);
-  await send('POST', `${base}/workspaces/${WORKSPACE}/memory`, { kind: 'fact', text: 'pnpm test is the gate' });
+  await send('POST', `${base}/workspaces/${WORKSPACE}/memory`, { kind: 'fact', description: 'pnpm test is the gate', body: 'it runs lint and both runners' });
   for (const tool of ['hive_remember', 'hive_applied']) assert.equal((await send('PUT', `${base}/api/mcp/tools/${tool}`, { on: false })).status, 200);
   const global = [join(home, 'protocol', 'stage.md'), join(home, 'protocol', 'session.md')];
   const texts = [...await files(home, WORKSPACE), ...await files(home, SITE), ...await Promise.all(global.map((p) => readFile(p, 'utf8')))];

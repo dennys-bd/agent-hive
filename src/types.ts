@@ -1345,7 +1345,7 @@ export interface Workspace {
   name: string; // WORKSPACE_NAME: safe in a URL segment and a select value; unique in the Comb
   path: string; // absolute, a git work tree's top level (POST /settings checks it); unique in the Comb
   env: Record<string, string>; // in the env of every run of this workspace (#348, #738): workers, sessions, terminals, run commands, setup and teardown RUN steps; a command's own env overrides a name; names match ENV_NAME and are not in RESERVED_ENV_NAMES; never logged
-  memoryCap: number; // #73: required, no default; the sum of this workspace's lesson texts, MEMORY_CAP_MIN..MEMORY_CAP_MAX
+  memoryCap: number; // #73: required, no default; the sum of this workspace's lesson descriptions (#680), MEMORY_CAP_MIN..MEMORY_CAP_MAX
   color: string; // #78: required; one of WORKSPACE_PRESET_COLORS or a lowercase #rrggbb
   fork: WorkspaceFork | false | null; // #854: required; null = never decided (Settings may suggest one), false = not a fork, never suggested again
   nestedRepos: string[]; // #653: required; relative paths of nested repos, each a git top level this workspace's git ignores (POST /settings checks it); [] = none
@@ -2063,21 +2063,20 @@ export const isMemoryKind = (value: unknown): value is MemoryKind => typeof valu
 export type MemoryOrigin = 'user' | 'local' | { task: string; stage?: string }; // local: a local session's (#256); task: the visible id; stage only for a stage run
 export interface MemoryUse { at: string; task?: string; stage?: string; why: string } // the latest hive_applied; task absent: a local session's (#256)
 export interface MemoryEntry {
-  id: string; kind: MemoryKind; text: string; origin: MemoryOrigin;
-  at: string; // ISO time of the last write of kind or text
+  id: string; kind: MemoryKind; description: string; body: string; origin: MemoryOrigin;
+  at: string; // ISO time of the last write of kind, description or body
   uses: number; // hive_applied calls naming it; 0 for a new lesson; an edit keeps it
   lastUsed?: MemoryUse;
 }
 export interface MemoryFile { nextId: number; entries: MemoryEntry[] } // empty: { nextId: 1, entries: [] }
-/** GET /workspaces/:name/memory (#797), and every write's answer. used: the sum of the entries' text lengths, cap: the workspace's memoryCap (#73) */
-export interface MemoryView { entries: MemoryEntry[]; used: number; cap: number; textMax: number }
-export const MEMORY_CAP_MIN = 300; // #73: a workspace's memoryCap holds at least one full lesson (MEMORY_TEXT_MAX)
+/** GET /workspaces/:name/memory (#797), and every write's answer. used: the sum of the descriptions' lengths (#680), cap: the workspace's memoryCap (#73) */
+export interface MemoryView { entries: MemoryEntry[]; used: number; cap: number; descriptionMax: number; bodyMax: number }
+export const MEMORY_CAP_MIN = 300; // #73: a workspace's memoryCap holds at least two full descriptions (MEMORY_DESCRIPTION_MAX, #680)
 export const MEMORY_CAP_MAX = 20000; // #73: a full memory stays around 5k tokens per run
 export const MEMORY_CAP_DEFAULT = 4000; // #73: what a new workspace row shows; the parser has no default
 // #78: the colours Settings offers a workspace, in the picker's order. One lightness and chroma, so no preset stands out on the dark theme
 export const WORKSPACE_PRESET_COLORS: readonly string[] = [25, 70, 130, 190, 240, 295, 340].map((h) => `oklch(0.72 0.12 ${h})`);
 export const WORKSPACE_HEX_COLOR = /^#[0-9a-f]{6}$/; // #78: a custom colour as the system picker gives it; the parser refuses any other shape
-export const MEMORY_TEXT_MAX = 300; // characters per lesson; a candidate setting in docs/agent/settings-candidates.md
 export const MEMORY_DESCRIPTION_MAX = 150; // #680: characters per lesson description; a candidate setting in docs/agent/settings-candidates.md
 export const MEMORY_BODY_MAX = 4000; // #680: characters per lesson body; idem
 export const MEMORY_REFUSALS = ['bad_memory', 'memory_full', 'memory_secret', 'unknown_memory'] as const;

@@ -30,9 +30,10 @@ function originText(origin: MemoryOrigin): string[] {
   return [t('settings.memory.task', { id: origin.task }), ...(origin.stage === undefined ? [] : [origin.stage])];
 }
 
-/** A lesson's meta line before its citations (#797): where it came from, its date and its size. */
+/** A lesson's meta line before its citations (#797, #680): where it came from, its date and both sizes. */
 export function metaText(entry: MemoryEntry): string {
-  return [...originText(entry.origin), entry.at.slice(0, 10), t('settings.memory.characters', { n: formatCount(entry.text.length) })].join(' · ');
+  const sizes = t('settings.memory.sizes', { d: formatCount(entry.description.length), b: formatCount(entry.body.length) });
+  return [...originText(entry.origin), entry.at.slice(0, 10), sizes].join(' · ');
 }
 
 /** `citada {n} vezes` (#797): a floor, an agent may forget to cite. */

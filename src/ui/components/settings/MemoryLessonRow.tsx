@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import { addLesson, editLesson, removeLesson } from '@/lib/memory-api';
 import { charactersText, citedText, kindLabel, metaText, refusalText } from '@/lib/memory-view';
-import { isMemoryKind, MEMORY_KINDS, MEMORY_TEXT_MAX, type MemoryEntry, type MemoryKind, type MemoryView } from '../../../types';
+import { isMemoryKind, MEMORY_DESCRIPTION_MAX, MEMORY_KINDS, type MemoryEntry, type MemoryKind, type MemoryView } from '../../../types';
 
 /** The table's columns (#797), as the handoff lays them out: id, kind, lesson, actions. */
 export const LESSON_GRID = 'grid grid-cols-[10rem_7rem_minmax(0,1fr)_4.5rem] gap-3 px-3 py-2.5';
@@ -15,7 +15,7 @@ export const LESSON_GRID = 'grid grid-cols-[10rem_7rem_minmax(0,1fr)_4.5rem] gap
 interface LessonRowProps { workspace: string; entry: MemoryEntry; onEdit(): void; onView(view: MemoryView): void }
 interface LessonEditRowProps { workspace: string; entry?: MemoryEntry; onSaved(view: MemoryView): void; onCancel(): void }
 
-/** One lesson as read (#797): its id, kind, text and meta line, the last why as the title of its citations; ✎ and ✕, which removes at once. */
+/** One lesson as read (#797): its id, kind, description and meta line, the last why as the title of its citations; ✎ and ✕, which removes at once. */
 export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) {
   const [error, setError] = useState<string>();
   const edit = t('settings.memory.edit', { id: entry.id });
@@ -25,7 +25,7 @@ export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) 
       <span className="truncate font-mono text-xs" title={entry.id}>{entry.id}</span>
       <Badge variant="outline">{kindLabel(entry.kind)}</Badge>
       <div className="flex min-w-0 flex-col gap-1">
-        <span className="text-pretty text-sm">{entry.text}</span>
+        <span className="text-pretty text-sm">{entry.description}</span>
         <span className="text-muted-foreground text-xs">{`${metaText(entry)} · `}<span title={entry.lastUsed?.why}>{citedText(entry.uses)}</span></span>
         {error !== undefined && <p role="alert" className="text-destructive text-xs">{error}</p>}
       </div>
@@ -40,17 +40,19 @@ export function LessonRow({ workspace, entry, onEdit, onView }: LessonRowProps) 
   );
 }
 
-/** The one row in edit (#797): an entry's, or a new lesson's with no id yet. Past MEMORY_TEXT_MAX the field is invalid and save is off; Enter
+/** The one row in edit (#797): an entry's, or a new lesson's with no id yet. Past MEMORY_DESCRIPTION_MAX the field is invalid and save is off; Enter
  * saves instead of breaking the line; a refusal shows under the field until the text changes. */
 export function LessonEditRow({ workspace, entry, onSaved, onCancel }: LessonEditRowProps) {
   const id = useId();
   const [kind, setKind] = useState<MemoryKind>(entry?.kind ?? 'fact');
-  const [text, setText] = useState(entry?.text ?? '');
+  const [text, setText] = useState(entry?.description ?? '');
   const [error, setError] = useState<string>();
-  const over = text.length > MEMORY_TEXT_MAX;
+  const over = text.length > MEMORY_DESCRIPTION_MAX;
   const save = (): void => {
     if (over) return;
-    (entry ? editLesson(workspace, entry.id, kind, text) : addLesson(workspace, kind, text)).then(onSaved, (err: unknown) => setError(refusalText(err)));
+    // Transitional (#680): one field, the description; the body goes unchanged ('' for a new lesson, which the server refuses) until Task 4's two-field row
+    const lesson = { kind, description: text, body: entry?.body ?? '' };
+    (entry ? editLesson(workspace, entry.id, lesson) : addLesson(workspace, lesson)).then(onSaved, (err: unknown) => setError(refusalText(err)));
   };
   return (
     <div className="flex flex-col gap-2 border-t bg-background p-3">
@@ -70,7 +72,7 @@ export function LessonEditRow({ workspace, entry, onSaved, onCancel }: LessonEdi
       />
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <span id={`${id}-count`} className={over ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>{charactersText(text.length, MEMORY_TEXT_MAX)}</span>
+          <span id={`${id}-count`} className={over ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>{charactersText(text.length, MEMORY_DESCRIPTION_MAX)}</span>
           {error !== undefined && <p role="alert" className="text-destructive text-xs">{error}</p>}
         </div>
         <div className="flex gap-1">
