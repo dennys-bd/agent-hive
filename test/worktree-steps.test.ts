@@ -207,7 +207,9 @@ test('runShell hands options.env to the child, never in its line, and the child 
   assert.equal(await printed('printf %s "$HIVE_738_INHERITED"'), 'from the Hive');
 });
 
-test('a RUN step that passes its timeout leaves no process of its tree: the node its line started and that node\'s own child are both gone (#637)', { timeout: 30_000 }, async (t) => {
+// long enough for node to start and write pids.json on a loaded machine or the Windows runner; shorter flaked with ENOENT
+const RUN_TREE_TIMEOUT_MS = 12_000;
+test('a RUN step that passes its timeout leaves no process of its tree: the node its line started and that node\'s own child are both gone (#637)', { timeout: 60_000 }, async (t) => {
   const cwd = await tempDir(t, 'run-');
   const pids = join(cwd, 'pids.json');
   // node, not sleep: $! in Git's sh is an MSYS pid, while process.pid is the one taskkill and process.kill know. Written whole (tmp + rename),
@@ -222,7 +224,7 @@ test('a RUN step that passes its timeout leaves no process of its tree: the node
   ].join(' ');
   // through the env, never the line: the paths stay out of the shell's quoting on every OS
   const env = { ...process.env, ...posixShellEnv(process.platform), HIVE_637_NODE: process.execPath, HIVE_637_SCRIPT: script, HIVE_637_PIDS: pids };
-  const err = await runShell(posixShell().shell, ['-c', '"$HIVE_637_NODE" -e "$HIVE_637_SCRIPT"'], { cwd, timeoutMs: 4_000, env }).then(() => undefined, (e: unknown) => e);
+  const err = await runShell(posixShell().shell, ['-c', '"$HIVE_637_NODE" -e "$HIVE_637_SCRIPT"'], { cwd, timeoutMs: RUN_TREE_TIMEOUT_MS, env }).then(() => undefined, (e: unknown) => e);
   assert.ok(err instanceof RunFailure && err.code === 'timeout', String(err));
   const [child, grandchild] = JSON.parse(await readFile(pids, 'utf8')) as [number, number];
   assert.equal(await gone(child), true, 'the node the line started');
