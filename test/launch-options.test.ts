@@ -59,6 +59,20 @@ test('a codex debug models that fails or prints no JSON gives Codex no models an
   }
 });
 
+// #694: every call answers but `codex debug models`, which never settles
+const hangsOnModels: Exec = async (file, args) => (file === 'codex' && args[0] === 'debug' ? new Promise<never>(() => undefined) : { stdout: '' });
+
+test('GET /launch-options answers while codex debug models never settles: Claude\'s models, the agents and the skills, Codex with none yet (#694)', { timeout: 10_000 }, async (t) => {
+  const { base, home } = await startReviews(t, { exec: hangsOnModels });
+  const res = await send(base, 'GET', '/launch-options?workspace=hive');
+  assert.equal(res.status, 200);
+  const options = (await res.json()) as LaunchOptions;
+  assert.deepEqual([options.claude.aliases, options.claude.versions, options.codex.versions], [[...CLAUDE_ALIASES], [...CLAUDE_VERSIONS], []]);
+  const agents = specializedAgents(pluginRenderPath(home, 'hive')).map(({ name, description }) => ({ name, description }));
+  assert.deepEqual([options.claude.specializedAgents, options.codex.specializedAgents], [agents, agents]);
+  assert.ok(options.claude.skills.some((s) => s.name === 'new-plan'), '#710: the workspace\'s skills');
+});
+
 test('launchRun puts the config\'s args before the session\'s, the model, and the agent with its instructions; no picks adds only the config\'s (#257)', () => {
   const roles = () => [{ name: 'hive:designer', description: 'Designs.', instructions: 'Design.' }];
   assert.deepEqual(launchRun({ model: 'opus', specializedAgent: 'hive:designer', args: ['--verbose'] }, ['--permission-mode', 'auto'], roles), {
