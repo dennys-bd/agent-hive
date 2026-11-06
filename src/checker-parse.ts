@@ -1,8 +1,9 @@
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { arrayOf, finding, isRecord, jsonLines, jsonOf, next, num, type ParseAt, type Parser, recordOf, severityOf, str, TOOL_PARSERS } from './checker-parse-tools.js';
 import type { CheckFormat } from './checkers.js';
 import type { CheckDiagnostic } from './types.js';
+import { toWire } from './wire-path.js';
 
 // The command-line checkers' reports (#782), the first half of the parsers and parseCheck (checker-parse-tools.ts holds the helpers and the
 // second half). A line format skips the lines it does not read (tsc's related info, zig's source excerpt); a run that exits non-zero with no
@@ -72,10 +73,11 @@ const sarif: Parser = (output) => arrayOf(recordOf(jsonOf(output), 'the report')
 
 const PARSERS: Record<CheckFormat, Parser> = { tsc, gnu, mypy, pylint, golangci, staticcheck, cargo, sarif, ...TOOL_PARSERS };
 
-// A reported path as the activity names it: relative to the folder; undefined outside it, which the pane could not open
+// A reported path as the activity names it: relative to the folder; undefined outside it, which the pane could not open. The guard reads the
+// native separator, as rel still is; only an inside path is turned into the wire's / (#641)
 function inside(folder: string, path: string): string | undefined {
   const rel = relative(folder, resolve(folder, path));
-  return rel === '' || rel === '..' || rel.startsWith('../') || isAbsolute(rel) ? undefined : rel;
+  return rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) ? undefined : toWire(rel, process.platform);
 }
 
 /** A command-line checker's report as diagnostics (#782), each path relative to `folder` (a finding outside it dropped), or why the report

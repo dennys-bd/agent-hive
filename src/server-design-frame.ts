@@ -15,6 +15,7 @@ import { baseCommit } from './server-file-base.js';
 import { DISK, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
 import type { Exec } from './types.js';
+import { toWire } from './wire-path.js';
 
 const HEAD_TAG = /<head\b[^>]*>/i; // \b: <header> is not <head>
 const FIRST_ELEMENT = /<[a-z]/i; // a doctype or a comment is not an element: the bridge never lands before it
@@ -119,7 +120,7 @@ async function diskServed(folder: string, segments: string[]): Promise<Served | 
   const file = await servedFile(folder, segments);
   if (file === undefined) return undefined;
   const bytes = await readFile(file);
-  return { name: file, bytes, page: () => pageOf(relative(folder, file).split(sep).join('/'), bytes.toString('utf8'), readPartFrom(folder)) };
+  return { name: file, bytes, page: () => pageOf(toWire(relative(folder, file), process.platform), bytes.toString('utf8'), readPartFrom(folder)) };
 }
 
 // The asked file of a before frame (#675): joined under the token's folder in git's path space and refused, as servedFile refuses, for an
@@ -198,7 +199,7 @@ async function baseFrameUrl(current: Live, req: Request, { tokens, exec }: Pick<
   if ('status' in design) return design;
   if (base.repo === undefined) return NOT_FOUND;
   const { top, commit } = base.repo;
-  const path = base.repo.path.split(sep).join('/'); // git's path space
+  const path = toWire(base.repo.path, process.platform); // git's path space
   const folder = posix.dirname(path);
   if (folder === '.') return NOT_FOUND;
   const entry = commit === undefined ? undefined : await gitEntry(top, commit, path);

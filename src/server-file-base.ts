@@ -13,6 +13,7 @@ import { isInside } from './ide.js';
 import { type Located, locate } from './server-editor.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
 import { type ChangesBase, type Config, EDITOR_FILE_MAX, type Exec, type FileBase } from './types.js';
+import { toWire } from './wire-path.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_SERVER_ERROR = 500;
@@ -43,10 +44,10 @@ function commitOf(located: Located, against: ChangesBase, isNested: boolean, con
 }
 
 // The repository that holds the file, asked from the file's own folder so a nested one (the task's docs/ checkout) answers for its files
-// (#377), as the files tree does (#1): its top and the file's path in it; undefined outside a repository, or for a file outside it
+// (#377), as the files tree does (#1): its top and the file's path in it, '/'-separated: git's `<commit>:<path>` reads no `\` (#641); undefined outside a repository, or for a file outside it
 async function repoOf(located: Located, exec: Exec): Promise<{ top: string; path: string } | undefined> {
   const top = (await gitOut(dirname(located.file), ['rev-parse', '--show-toplevel'], exec))?.trim();
-  return top === undefined || top === '' || !isInside(top, located.file) ? undefined : { top, path: relative(top, located.file) };
+  return top === undefined || top === '' || !isInside(top, located.file) ? undefined : { top, path: toWire(relative(top, located.file), process.platform) };
 }
 
 // The blob's text when the editor could hold it (#717's caps: EDITOR_FILE_MAX, UTF-8, no NUL), else undefined

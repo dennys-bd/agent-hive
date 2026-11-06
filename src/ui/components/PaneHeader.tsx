@@ -6,12 +6,13 @@ import { StatusWord } from '@/components/StatusWord';
 import { t } from '@/i18n';
 import { type Activity, runStatus, sleepingOf } from '@/lib/activities';
 import type { CenterTabRef } from '@/lib/center-layout';
+import { baseName } from '../../base-name';
 
 /** What a pane's header reads beyond the activity (#536): the model the task's stage names (#516), and the folder the task works in. */
 export interface PaneContext { model?: string; folder?: string }
 
-// A path's last segment: a worktree's folder
-const folderOf = (path: string | undefined): string | undefined => path?.split('/').filter((part) => part !== '').at(-1);
+// A path's last segment, by either separator (#641): a worktree's folder
+const folderOf = (path: string | undefined): string | undefined => (path === undefined ? undefined : baseName(path));
 
 /** A task's pane context (#536): its stage's model when the stage sets one, and its worktree's folder, or its workspace's name on a task
  * that runs in the checkout (#444). */

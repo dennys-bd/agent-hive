@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
@@ -280,4 +280,17 @@ test('a copy onto its own folder lands under a free name, as Finder\'s duplicate
   assert.deepEqual(await move(f, drop(['README.md'], '')), [200, { moved: [] }], 'a move onto its own folder');
   assert.deepEqual(await move(f, drop(['src'], 'src', true)), [200, { moved: [] }], 'cp would recurse into its own output');
   assert.deepEqual(await move(f, drop(['src'], 'src/deep', true)), [200, { moved: [] }]);
+});
+
+const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
+
+test('on win32 a drop answers moved and an inside from with / only; a Finder file\'s from stays absolute and native (#641)', WIN32_ONLY, async (t) => {
+  const root = await tempDir(t, 'wire-move-');
+  const outside = await realpath(await tempDir(t, 'wire-finder-')); // sourceItem answers the real path of a Finder file
+  await mkdir(join(root, 'src', 'deep'), { recursive: true });
+  await mkdir(join(root, 'docs', 'old'), { recursive: true });
+  await writeFile(join(root, 'src', 'deep', 'a.ts'), 'a');
+  await writeFile(join(outside, 'f.txt'), 'f');
+  const done = await moveItems({ root, sources: ['src/deep/a.ts', join(outside, 'f.txt')], into: 'docs/old', copy: true, suffix: 'copy' });
+  assert.deepEqual(done, { moved: ['docs/old/a.ts', 'docs/old/f.txt'], from: ['src/deep/a.ts', join(outside, 'f.txt')] });
 });

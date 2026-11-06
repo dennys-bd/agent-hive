@@ -1,5 +1,5 @@
 import { access, lstat, readdir } from 'node:fs/promises';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { canDiff } from './task-runs.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
@@ -9,6 +9,7 @@ import { revealCommand } from './platform-commands.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from './server-files.js';
 import { treeFolder, treeItem } from './tree-paths.js';
 import type { FolderEntries, IgnoredEntries, TaskTree, Exec, GitMark, State } from './types.js';
+import { toWire } from './wire-path.js';
 import { taskDir, wordsOf } from './worktree.js';
 import { gitIn, parseStatus, TREE_STATUS_ARGS } from './git-status.js';
 
@@ -128,8 +129,8 @@ export function treeCheckout(state: State, config: Parameters<typeof taskWorkspa
   const target = liveTarget(state, id);
   if ('status' in target || !target.task) return undefined;
   const workspace = taskWorkspace(config, target.task);
-  // The page joins it with '/', so a Windows separator would mix
-  const checkout = workspace === undefined ? '' : relative(workspace.path, root).split(sep).join('/');
+  // The page joins it with '/' (#641: toWire)
+  const checkout = workspace === undefined ? '' : toWire(relative(workspace.path, root), process.platform);
   return checkout === '' ? undefined : checkout;
 }
 

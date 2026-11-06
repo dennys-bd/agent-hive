@@ -114,3 +114,11 @@ test('⌘W with the keyboard focus inside a shown design pane closes its group\'
   expect(strips()).toEqual([['Claude']]);
   expect(screen.queryByTitle('Landing.hv.html')).toBeNull();
 });
+
+test('a design tab of a Windows path reads its file\'s name in the strip, the pane\'s region and the frame\'s title (#641)', async () => {
+  seed({ root: { kind: 'group', id: 'g1', tabs: [{ kind: 'run', ptyId: 'W1' }, { kind: 'design', path: 'C:\\repo\\design\\Landing.hv.html' }], active: 1 }, focused: 'g1' });
+  render(<Center runs={[STAGE]} />);
+  expect(strips()).toEqual([['Claude', 'Landing.hv.html']]);
+  expect(screen.getByRole('region', { name: '#1 Task 1 · Design Landing.hv.html' })).toBeInTheDocument();
+  expect(await screen.findByTitle('Landing.hv.html')).toHaveAttribute('src', '/design-frame/tok/Landing.hv.html');
+});

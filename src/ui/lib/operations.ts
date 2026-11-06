@@ -14,6 +14,7 @@ import { activityOperations, taskRef } from '@/lib/operations-activity';
 import { GLOBAL_OPERATIONS } from '@/lib/operations-global';
 import { answerableActivity } from '@/lib/task-state';
 import { clearTerminal } from '@/lib/xterm-setup';
+import { baseName } from '../../base-name';
 
 /** focus: acts on what held the focus before the search opened. activity: on the open activity. global: always there. */
 export type OperationGroup = 'focus' | 'activity' | 'global';
@@ -80,7 +81,7 @@ export const viewOf = (operation: Operation, ctx: OperationContext): OperationVi
 // The focus group over an editor pane (#697, #668): Markdown: Open Preview over a markdown file and Git: Open Changes over any, as VS Code's
 // palette offers them; Git: Open Changes is not listed with no opener (a harness)
 function fileOperations({ activityId, path }: Extract<FocusTarget, { kind: 'file' }>): Operation[] {
-  const name = path.split('/').at(-1) ?? path;
+  const name = baseName(path);
   const on = { group: 'focus' as const, target: () => name };
   return [
     { ...on, id: 'focus.markdownPreview', label: () => t('operation.markdownPreview'), available: () => isMarkdownPath(path), run: (c) => c.nav.openPreview?.(activityId, path) },

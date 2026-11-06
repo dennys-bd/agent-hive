@@ -10,6 +10,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
 import { withBridge } from '../src/server-design-frame.js';
 import { SHORT_SHA } from '../src/tasks.js';
+import { toWire } from '../src/wire-path.js';
 import { worktreePath } from '../src/worktree.js';
 import type { Exec, SettingsBody, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, EDITOR_FILE_MAX, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
@@ -76,7 +77,7 @@ async function ask(b: Bases, query: Record<string, string>, activity = workPath(
   return [res.status, await res.json()];
 }
 // A file's blob id at a commit, as git names it
-const blob = (b: Bases, ref: string, file: string): Promise<string> => b.git('rev-parse', `${ref}:${relative(b.repo, file)}`);
+const blob = (b: Bases, ref: string, file: string): Promise<string> => b.git('rev-parse', `${ref}:${toWire(relative(b.repo, file), process.platform)}`);
 
 test('head answers HEAD\'s blob of the file, its text and id, labelled HEAD; task answers the merge-base with the task\'s base ref, labelled as the diff pane labels it (#668)', async (t) => {
   const b = await startBases(t);

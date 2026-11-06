@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
 import { realpath, stat } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import { nestedPathProblem } from './config-nested.js';
 import { originRepository } from './repos/repositories.js';
 import type { Exec, NestedCause, NestedProblem, NestedRepoRead, NestedReposAnswer } from './types.js';
+import { toWire } from './wire-path.js';
 import { gitAnswers, gitOrWords } from './worktree-base.js';
 import { nestedBase } from './worktree-nested.js';
 
@@ -23,7 +24,7 @@ async function topLevelIn(workspacePath: string, dir: string, exec: Exec): Promi
   if (top === '') return undefined;
   const [realTop, realWs, realDir] = await Promise.all([realOrNone(top), realpath(workspacePath), realOrNone(dir)]);
   const root = realTop === undefined ? '..' : relative(realWs, realTop);
-  return root === '' || root.startsWith('..') ? undefined : { root: root.split(sep).join('/'), isDir: realTop === realDir };
+  return root === '' || root.startsWith('..') ? undefined : { root: toWire(root, process.platform), isDir: realTop === realDir };
 }
 
 /** Why `path` cannot be one of the workspace's nested repos (#653), undefined when it can, checked in order: its shape (the parser's rule),

@@ -8,6 +8,7 @@ import type { TaskRouteDeps, Refusal } from './server-tasks.js';
 import { treeRoot } from './server-tree.js';
 import { destination, exists, isRootOrInside, outermost, PATH_DISK, type PathFs, refusal, rootsOf, sourceItem } from './tree-paths.js';
 import type { Language } from './types.js';
+import { toWire } from './wire-path.js';
 import { wordsOf } from './worktree.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -73,7 +74,8 @@ async function transfer(item: string, to: string, copy: boolean, fs: MoveFs): Pr
 export interface MoveJob { root: string; sources: string[]; into: string; copy: boolean; suffix: string }
 
 /** What a drop answers (#818): each new path relative to the real root, and the item it came from, relative too unless it came from outside
- *  the tree (a Finder file); a skipped item is in neither. The tree's open tabs follow a move by them. */
+ *  the tree (a Finder file); a skipped item is in neither. The tree's open tabs follow a move by them.
+ *  Relative paths are '/'-separated on the wire (#641). */
 export interface Moved { moved: string[]; from: string[] }
 
 /** Every source into `into`, in order, each under a free name. The guards run on every source first, so a refusal moves nothing; an fs
@@ -92,8 +94,9 @@ export async function moveItems(job: MoveJob, fs: MoveFs = MOVE_DISK): Promise<M
     // Probe then transfer can race: accepted, a single-user daemon whose concurrent agent writes the spec leaves unguarded
     const name = await freeName((n) => exists(fs, join(into, n)), basename(item), job.suffix, isFolder);
     await transfer(item, join(into, name), job.copy, fs);
-    done.moved.push(relative(folders.realRoot, join(into, name)));
-    done.from.push(isInside(folders.realRoot, item) ? relative(folders.realRoot, item) : item);
+    done.moved.push(toWire(relative(folders.realRoot, join(into, name)), process.platform));
+    // a Finder file's from is absolute: it stays native, as every absolute path on the wire does (#641)
+    done.from.push(isInside(folders.realRoot, item) ? toWire(relative(folders.realRoot, item), process.platform) : item);
   }
   return done;
 }

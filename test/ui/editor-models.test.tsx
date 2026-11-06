@@ -334,3 +334,9 @@ test('restoreView with no model asks nothing of a later tab, and a view state Mo
   expect(() => models.attachView(A, PATH, refusing)).not.toThrow();
   expect(refusing.restoreViewState).toHaveBeenCalled();
 });
+
+test('languageOf reads a Windows absolute path by its last segment: a file name and an extension (#641)', () => {
+  const languages = [{ id: 'dockerfile', filenames: ['Dockerfile'] }, { id: 'typescript', extensions: ['.ts'] }];
+  expect(models.languageOf(languages, 'C:\\repo\\Dockerfile')).toBe('dockerfile');
+  expect(models.languageOf(languages, 'C:\\repo.v2\\src\\a.ts')).toBe('typescript');
+});

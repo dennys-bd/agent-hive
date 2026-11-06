@@ -33,6 +33,7 @@ import { bufferPath } from '@/lib/center-files';
 import * as models from '@/lib/editor-models';
 import * as fileBase from '@/lib/file-base';
 import { STATUS_DOT } from '@/lib/status';
+import { baseName } from '../../base-name';
 
 export interface CenterGroupProps {
   group: TabGroup; activity: Activity; groups: TabGroup[]; focused: string; ops: CenterOps; drag: CenterDrag; fileLinks: boolean;
@@ -42,8 +43,6 @@ export interface CenterGroupProps {
   onMove?(item: CenterTabRef): void; // the main window's move to its activity's detached window (#554); absent: no such item
   isShared(item: CenterTabRef): boolean; // #554: another tab of the layout shows its buffer, so neither window item may move it
 }
-
-const baseName = (path: string): string => path.split('/').at(-1) ?? path;
 
 /** A tab's text in its strip (#457, #458): a run's own label (#489: what runs in it, never its kind); a diff's scope; a file's name
  * (#717); Preview and its name (#697); Alterações and its name (#668); console. */

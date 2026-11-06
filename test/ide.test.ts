@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { resolveActivityPath } from '../src/ide.js';
+import { isInside, resolveActivityPath } from '../src/ide.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
 // What the server injects (#258): the real realpath, and a stat that says whether the path is a regular file
@@ -34,4 +34,15 @@ test('resolveActivityPath resolves any existing file: in the worktree, in the ma
   assert.deepEqual(await at('docs/nope.md'), { reason: 'missing' });
   await rm(worktree, { recursive: true });
   assert.deepEqual(await at('docs/plan.md'), { file: join(workspace, 'docs', 'plan.md'), base: 'workspace' }, 'the workspace is the base once the worktree is gone');
+});
+
+const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
+
+test('on win32 isInside reads native paths of the runner: below the base yes; the base, ..\\ past it, a sibling or another drive no (#641)', WIN32_ONLY, async (t) => {
+  const base = await tempDir(t, 'wire-ide-');
+  assert.equal(isInside(base, join(base, 'src', 'a.ts')), true);
+  assert.equal(isInside(base, base), false);
+  assert.equal(isInside(base, join(base, '..', 'x.ts')), false);
+  assert.equal(isInside(base, `${base}-other`), false);
+  assert.equal(isInside(base, `${base[0] === 'Z' ? 'Y' : 'Z'}:\\x.ts`), false);
 });
