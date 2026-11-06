@@ -701,7 +701,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   // Items a Start dialog created on a source (#846): they enter with auto off, as the hive path creates, so the fill of the poll that brings them
-  // in leaves them for their creator. An id goes once its item was listed, and the task keeps its auto from then on (seenAgain never touches it).
+  // in leaves them for their creator. An id goes once its item was listed, and from then on, while the task is new, each poll gives it its rule's auto (#688).
   const bornManual = new Set<string>();
   const unattended = (listed: SourceItem): SourceItem => {
     if (!bornManual.delete(listed.item.itemId)) return listed;

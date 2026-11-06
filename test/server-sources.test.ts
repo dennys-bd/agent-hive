@@ -226,7 +226,7 @@ test('a task the Start dialog creates on a source (auto false) enters the state 
   const manual = sources.server.getState()?.tasks.find((c) => c.item.itemId === 'work:101');
   assert.deepEqual([manual?.auto, sources.server.getState()?.workers.every((w) => w.status === 'empty')], [false, true], 'no worker took it');
   await sources.server.poll();
-  assert.equal(sources.server.getState()?.tasks.find((c) => c.item.itemId === 'work:101')?.auto, false, 'a later poll leaves it');
+  assert.equal(sources.server.getState()?.tasks.find((c) => c.item.itemId === 'work:101')?.auto, true, 'still new, a later poll gives it its rule\'s auto: on with none (#688, decision 6)');
   assert.equal((await postJson(`${sources.base}/tasks`, { title: 'Plain', stage: 'dev', source: 'work' })).status, 201);
   assert.equal(sources.server.getState()?.tasks.find((c) => c.item.itemId === 'work:102')?.auto, true);
 });
