@@ -70,8 +70,8 @@ cell's `value`, one line, with `&`, `<`, `>` and `"` written `&amp;`, `&lt;`, `&
 
 ## Edges
 
-`<mxCell id="…" edge="1" parent="…" source="…" target="…">` with a `style` from the table below, holding `<mxGeometry relative="1" as="geometry"/>` and nothing
-else: no `<Array as="points">`, no waypoint, no `exitX` or `entryX`. Draw an edge from the caller to the callee, the sender to the receiver, or
+`<mxCell id="…" edge="1" parent="…" source="…" target="…">` with a `style` from the table below, holding
+`<mxGeometry relative="1" as="geometry"/>` and nothing else: no `<Array as="points">`, no waypoint, no `exitX` or `entryX`. Draw an edge from the caller to the callee, the sender to the receiver, or
 the emitter to the listener. An edge between cells of different containers has `parent="1"`; one inside a single container may name
 that container. A label, when it helps, is short: the route, the method, the event.
 
@@ -148,7 +148,7 @@ unless it is a name from the code.
   geometry change to an existing cell. A growth that overlaps a sibling is left as it is and said at the end of the round; never move
   the sibling.
 - A new edge gets no waypoints. A removed part takes its vertex and every edge naming it; nothing moves to close the gap. A renamed part
-  changes its `value` and keeps its id.
+  changes only its `value`, never its id, style or geometry.
 - Never add `hive-layout` or `<hive-mermaid>` to a laid-out file: the pane would lay it out again, and every position a person set
   would be lost.
 
@@ -159,7 +159,7 @@ and keep the marker. No copy is needed.
 
 ## The check
 
-Read each file back, then check every item:
+Read each file back, then check every item. A Mermaid file has no cells: only items 1, 4 and 9 apply to it.
 
 1. **Parses.** One `<mxfile>` root, every tag closed, every attribute quoted, `&` and `<` escaped in a label, Mermaid inside CDATA.
    When `command -v xmllint` finds it, `xmllint --noout "<file>"` prints nothing.
@@ -171,5 +171,5 @@ Read each file back, then check every item:
 6. **Styles.** Every cell the round added carries a style of "Shapes" or "Edges", copied whole.
 7. **Pending XML.** Every vertex's `mxGeometry` has `width` and `height` and no `x` or `y`; no edge has points.
 8. **Laid-out file.** `git diff --no-index -- "<copy>" "<file>"` shows only added or removed cells and, on an existing cell, only a
-   container's `width` or `height`.
+   container's `width` or `height`, or a renamed part's `value`.
 9. **Names.** Every label names something found in the code. Whether the diagram is true to the code is the reviewer's half.
