@@ -1,5 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { once } from 'node:events';
+import { renameSync, writeFileSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join, win32 } from 'node:path';
+import type { Readable } from 'node:stream';
+import { writeAtomically } from '../src/daemon-files.js';
+import { writeAtomic } from '../src/server-editor.js';
+import { tempDir } from './temp-dir.js';
 import { RETRY_DELAYS_MS, replaceFile, replaceFileSync } from '../src/replace-file.js';
 
 const TMP = 'target.json.tmp';
@@ -74,4 +83,55 @@ test('darwin and linux: EPERM is a real permission problem, thrown on the first 
     assert.throws(() => replaceFileSync(TMP, TARGET, { platform, renameSync: sync.renameSync, sleepSync }), { code: 'EPERM' }, platform);
     assert.deepEqual([fake.calls.length, sync.calls.length, waits], [1, 1, []], platform);
   }
+});
+
+// A Node handle cannot hold the lock: libuv opens files with FILE_SHARE_DELETE, so a Node reader never blocks the rename. PowerShell opens
+// the target with Read sharing only, says so, holds it ~300 ms (inside the 1.3 s window) and closes it. The path comes through the env,
+// never through the script's text.
+const HOLD_SCRIPT = "$f = [IO.File]::Open($env:HIVE_HOLD_PATH, 'Open', 'Read', 'Read'); [Console]::Out.WriteLine('open'); [Console]::Out.Flush(); Start-Sleep -Milliseconds 300; $f.Close()";
+const LOCK_CODES = ['EPERM', 'EBUSY', 'EACCES'];
+// Room for powershell.exe to start on a cold runner
+const WIN32_ONLY = { skip: process.platform !== 'win32' && 'Windows only: runs on the Windows lane', timeout: 30_000 };
+
+function lineArrives(stream: Readable, line: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let text = '';
+    stream.on('data', (chunk) => {
+      text += String(chunk);
+      if (text.includes(line)) resolve();
+    });
+    stream.once('end', () => reject(new Error(`the holder ended before it printed "${line}"`)));
+  });
+}
+
+// Starts the holder and resolves once the target is open; the returned promise is its exit
+async function holdOpen(path: string): Promise<Promise<unknown>> {
+  const root = process.env.SystemRoot;
+  assert.ok(root, 'SystemRoot is not set');
+  const exe = win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const holder = execFile(exe, ['-NoProfile', '-NonInteractive', '-Command', HOLD_SCRIPT], { env: { ...process.env, HIVE_HOLD_PATH: path }, windowsHide: true });
+  const exited = once(holder, 'exit');
+  await lineArrives(holder.stdout!, 'open');
+  return exited;
+}
+
+test('win32: writeAtomically over a file another process holds open lands once that process closes it (#629)', WIN32_ONLY, async (t) => {
+  const target = join(await tempDir(t, 'replace-'), 'hive.port');
+  await writeFile(target, 'old\n');
+  const exited = await holdOpen(target);
+  // the hold really blocks a plain rename, so the write below can only land through the retry
+  writeFileSync(`${target}.probe`, 'probe');
+  assert.throws(() => renameSync(`${target}.probe`, target), (err: unknown) => LOCK_CODES.includes(String((err as NodeJS.ErrnoException).code)));
+  writeAtomically(target, 'new\n');
+  assert.equal(await readFile(target, 'utf8'), 'new\n');
+  await exited;
+});
+
+test('win32: writeAtomic over a file another handle holds open for reading lands once the handle closes (#629)', WIN32_ONLY, async (t) => {
+  const target = join(await tempDir(t, 'replace-'), 'notes.md');
+  await writeFile(target, 'old');
+  const exited = await holdOpen(target);
+  await writeAtomic(target, 'new');
+  assert.equal(await readFile(target, 'utf8'), 'new');
+  await exited;
 });

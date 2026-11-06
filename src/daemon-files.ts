@@ -3,8 +3,9 @@
 // (#467). Plain Node: the launcher (daemon.ts) shares it with the daemon (hive.ts, run.ts) and must not pull Express in.
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { once } from 'node:events';
-import { closeSync, constants, ftruncateSync, lstatSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, ftruncateSync, lstatSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { holdPipe, closePipe } from './home-pipe.js';
+import { replaceFileSync } from './replace-file.js';
 import type { Socket } from 'node:net';
 import { join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
@@ -54,7 +55,7 @@ export function writeAtomically(path: string, text: string): void {
   const tmp = `${path}.tmp`;
   rmSync(tmp, { force: true });
   writeFileSync(tmp, text, { flag: 'wx', mode: FILE_MODE });
-  renameSync(tmp, path);
+  replaceFileSync(tmp, path);
 }
 
 /** The port the home's daemon last bound; undefined without the file or with one that names no port. No file = no daemon. */

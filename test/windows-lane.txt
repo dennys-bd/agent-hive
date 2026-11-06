@@ -29,6 +29,7 @@ test/mcp-settings.test.js
 test/platform-commands.test.js
 test/posix-shell.test.js
 test/postinstall.test.js
+test/replace-file.test.js
 test/same-path.test.js
 test/server-ci.test.js
 test/server-drawio.test.js
