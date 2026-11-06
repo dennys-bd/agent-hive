@@ -25,7 +25,7 @@ test('a sleeping task line reads dormindo; a click continues it through the task
   const openRun = vi.fn();
   render(
     <RunOpenerContext.Provider value={openRun}>
-      <ActivitiesPanel activities={[activity]} workspaces={['hive']} stages={[]} workers={[]} onSelect={vi.fn()} onOpenRun={vi.fn()} nav={{ newActivity: vi.fn() }} />
+      <ActivitiesPanel activities={[activity]} workspaces={['hive']} flows={[]} workers={[]} onSelect={vi.fn()} onOpenRun={vi.fn()} nav={{ newActivity: vi.fn() }} />
     </RunOpenerContext.Provider>,
   );
   const line = screen.getByRole('button', { name: /^claude/ });

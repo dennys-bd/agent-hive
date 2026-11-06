@@ -9,6 +9,7 @@ import { readView } from '@/lib/view-state';
 import type { ActivityRecord, Task, Session, Stage, Worker } from '../../src/types';
 import { localActivityId } from '../../src/activities';
 import { localPairOf, type WithWork } from '../fixtures/work';
+import { mainFlows } from '../fixtures/main-flow.js';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } })); // the batch's one toast is observable without a Toaster
 
@@ -49,7 +50,7 @@ const stuck = quiet(task('6', 'Task 6', 'hive', 'done'));
 const noop = (): void => {};
 const navOf = (extra: Partial<ActivitiesNav> = {}): ActivitiesNav => ({ newActivity: noop, addWorkspace: noop, ...extra });
 const props = (extra: Partial<ActivitiesPanelProps> = {}): ActivitiesPanelProps => ({
-  activities: [worker, idle], workspaces: ['hive', 'site'], workers: [], stages: STAGES, onSelect: noop, onOpenRun: noop, nav: navOf(), ...extra,
+  activities: [worker, idle], workspaces: ['hive', 'site'], workers: [], flows: mainFlows(STAGES), onSelect: noop, onOpenRun: noop, nav: navOf(), ...extra,
 });
 const group = (name: string): HTMLElement => screen.getByRole('region', { name });
 const row = (title: string): HTMLElement => screen.getByRole('button', { name: new RegExp(`^${title}`) });

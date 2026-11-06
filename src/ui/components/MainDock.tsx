@@ -65,6 +65,7 @@ export interface MainDockProps {
   activityRecords?: State['activityRecords']; // #629: the records, each workspace's local sessions (#587) in its local activity's (#590); absent (the terminal's harness): none
   sourceWorkspaces?: Record<string, string>; // what the home's rows resolve a task's workspace colour with (redesign 08)
   stages?: Stage[]; // the flow's stages (#586): what the Activities tab groups by; absent (the terminal's harness): none, each activity under its own stage
+  flows?: State['flows']; // #723: the comb's flows, what the Activities tab judges each task's done by; absent (the terminal's harness): none
   pageKey?: string; // #64: the link of the page the center shows under Automação; a new one opens the panel holding Detalhes, as a pick does
   sidebarsPerView?: SidebarsPerView; // #821: what each view keeps of its sidebars, from the config; absent (the terminal's harness): every side shared
   onAddWorkspace?(): void; // the home's and the sidebar's adicionar workspace…: Settings on workspaces
@@ -121,11 +122,12 @@ function useDockedTabs(activities: Activity[], place: CenterLayouts['place'], op
 }
 
 const NO_STAGES: Stage[] = [];
+const NO_FLOWS: State['flows'] = [];
 const NO_RECORDS: State['activityRecords'] = [];
 const NO_ACTIVITIES: State['activities'] = [];
 const NO_EXPERIMENTS: Experiment[] = [];
 
-interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; workspaces: string[]; sourceWorkspaces?: Record<string, string>; stages: Stage[]; workers: Worker[]; nav: ActivitiesNav; isShown: boolean; openRun(key: string, ptyId: string): void }
+interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; workspaces: string[]; sourceWorkspaces?: Record<string, string>; flows: State['flows']; workers: Worker[]; nav: ActivitiesNav; isShown: boolean; openRun(key: string, ptyId: string): void }
 
 // The Activities tab (#457, redesign 03): the workspaces and their activities; a row's click makes it the window's center, a session's opens
 // that run in it (#492). While the center is Atividades', the session its focused group shows is marked; under Automação none is.
@@ -258,7 +260,7 @@ const SHARED_SIDEBARS: SidebarsPerView = { left: false, right: false, rightTab: 
  * tab (#458): the flow under Automação, the picked activity's layout or Home under Atividades. */
 export function MainDock(props: MainDockProps) {
   const { selected, onSelect, showTask, detail, consoleChannels, automation, header, footer, fontFamily, fileLinks, tasks, workers, terminals, children, pageKey } = props;
-  const { workspaces, sourceWorkspaces, liveActivities = NO_ACTIVITIES, slept, activityRecords, stages, onAddWorkspace, activityMenu, newActivity, activityBar, paneContext, copySession, search, sidebarsPerView = SHARED_SIDEBARS, openPr: openPrPage, openIssue: openIssuePage } = props;
+  const { workspaces, sourceWorkspaces, liveActivities = NO_ACTIVITIES, slept, activityRecords, stages, flows, onAddWorkspace, activityMenu, newActivity, activityBar, paneContext, copySession, search, sidebarsPerView = SHARED_SIDEBARS, openPr: openPrPage, openIssue: openIssuePage } = props;
   const [newIn, setNewIn] = useState<StartRequest>(); // the Start dialog is open: from this workspace's +, on this task or with this title when set
   const dock = useDock(sidebarsPerView);
   const { layout, activate, close, toggle } = dock;
@@ -360,7 +362,7 @@ export function MainDock(props: MainDockProps) {
   const viewRight = selection.center === 'plugins' ? plugins.right : selection.center === 'benchmark' ? benchmark.right : undefined;
   const panels: DockPanel[] = [
     // First in the list, as in PANELS: the tab a shared side opens on (#457, #746)
-    activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities', openRun: openRunHere }),
+    activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, flows: flows ?? NO_FLOWS, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities', openRun: openRunHere }),
     ...automationPanel,
     ...(hasHeader ? [plugins.panel, benchmark.panel] : []), // #313, #461: reached only through the rail and ⌘3 / ⌘4, which only a window with a header has
     viewRight ?? detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, detail, onClose: closeDetail, nav, activeFile: shownPath(layouts.layout) }),

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { taskTotals } from '../../record-kit';
 import { taskLabel, resolveWorkspace } from '../../tasks';
 import { displayBinding } from '../../shortcuts';
-import type { Task, Session, Worker, Stage, Status } from '../../types';
+import type { Task, Session, Worker, Flow, Status } from '../../types';
 import { ActivityGroupList } from '@/components/ActivityGroups';
 import { useBranches } from '@/components/QuickDialogs';
 import { LocalRunLine, LocalSessionLines, TaskSessionLine } from '@/components/SessionLines';
@@ -30,7 +30,7 @@ export interface ActivitiesNav {
 
 export interface ActivitiesPanelProps {
   activities: Activity[]; workspaces: string[]; sourceWorkspaces?: Record<string, string>; workers: Worker[];
-  stages: Stage[]; // the flow's stages in order (#586): what a workspace groups its activities by, and which one is done
+  flows: Flow[]; // the comb's flows (#586, #723): the stages a workspace groups its activities by, and each task's own flow's last stage, which one is done
   selected?: string; onSelect(key: string): void; // activityKey's: a task's item id, or local/<workspace> (#590)
   shown?: string; // the run the center's focused group shows (#492), handed only while the center is Atividades'
   onOpenRun(key: string, ptyId: string): void; // a session's click: that run in its activity (#492)
@@ -214,10 +214,10 @@ function LocalEntry({ name, branch, local, sessions, workers, selected, shown, o
   );
 }
 
-type GroupProps = RowsProps & { name: string; branch?: string | null; activities: TaskActivity[]; stages: Stage[]; localSessions: Session[]; local?: LocalActivity };
+type GroupProps = RowsProps & { name: string; branch?: string | null; activities: TaskActivity[]; flows: Flow[]; localSessions: Session[]; local?: LocalActivity };
 
 // A workspace: its local activity first (#590), outside any stage or status group, then its task activities in the groups its ⋯ picks (#586)
-function WorkspaceGroup({ name, branch, activities, stages, localSessions, local, ...rows }: GroupProps) {
+function WorkspaceGroup({ name, branch, activities, flows, localSessions, local, ...rows }: GroupProps) {
   const [view, setView] = useWorkspaceView(name);
   const toggle = (key: string): void =>
     setView({ collapsed: view.collapsed.includes(key) ? view.collapsed.filter((k) => k !== key) : [...view.collapsed, key] });
@@ -232,7 +232,7 @@ function WorkspaceGroup({ name, branch, activities, stages, localSessions, local
         <>
           <LocalEntry name={name} branch={branch} local={local} sessions={localSessions} {...rows} />
           <ActivityGroupList
-            groups={groupActivities(activities, view.mode, stages)} isFlat={view.mode === 'none'} collapsed={view.collapsed}
+            groups={groupActivities(activities, view.mode, flows)} isFlat={view.mode === 'none'} collapsed={view.collapsed}
             onToggle={toggle} entry={entryOf(rows, view.showWorktree)}
           />
         </>
@@ -246,7 +246,7 @@ function WorkspaceGroup({ name, branch, activities, stages, localSessions, local
  * running while its worktree is on disk: its title, worker on the automation's, its total time, its worktree line, and under it one line per
  * session of its task with its own status, sleeping while no run holds it (#614); its status line (#696), and after its sessions one line per
  * terminal it keeps. Plain buttons, never list items: the main window's tasks are the page's own. */
-export function ActivitiesPanel({ activities: all, workspaces, sourceWorkspaces, stages, isShown = true, ...rest }: ActivitiesPanelProps) {
+export function ActivitiesPanel({ activities: all, workspaces, sourceWorkspaces, flows, isShown = true, ...rest }: ActivitiesPanelProps) {
   const activities = all.filter(isTask); // a local activity is its workspace's first row, in no group (#590)
   // ponytail: read when the tab shows and when the workspaces change; a checkout switched while it stays on screen waits for the next one
   const branches = useBranches(isShown, workspaces.join('\n'));
@@ -259,7 +259,7 @@ export function ActivitiesPanel({ activities: all, workspaces, sourceWorkspaces,
     <div className="flex min-h-0 flex-1 flex-col">
       <nav aria-label={t('dock.activities')} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1.5 py-1">
         {workspaces.map((name) => (
-          <WorkspaceGroup key={name} name={name} branch={branches[name]} activities={of(name)} stages={stages} localSessions={localOf(name)?.record.sessions ?? []} local={localOf(name)} {...rows} />
+          <WorkspaceGroup key={name} name={name} branch={branches[name]} activities={of(name)} flows={flows} localSessions={localOf(name)?.record.sessions ?? []} local={localOf(name)} {...rows} />
         ))}
         <div className="flex flex-col gap-0.5 empty:hidden">{of(undefined).map(entryOf(rows, true))}</div>
       </nav>

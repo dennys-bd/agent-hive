@@ -25,7 +25,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 test('right-click on a sleeping task line: copiar para… ›, then limpar in the destructive colour, which posts the task\'s clear (#614)', async () => {
   render(
     <CopySessionHost state={state}>
-      <ActivitiesPanel activities={[activity]} workspaces={['hive']} stages={[]} workers={[]} onSelect={vi.fn()} onOpenRun={vi.fn()} nav={{ newActivity: vi.fn() }} />
+      <ActivitiesPanel activities={[activity]} workspaces={['hive']} flows={[]} workers={[]} onSelect={vi.fn()} onOpenRun={vi.fn()} nav={{ newActivity: vi.fn() }} />
     </CopySessionHost>,
   );
   fireEvent.contextMenu(screen.getByRole('button', { name: /^claude/ }));

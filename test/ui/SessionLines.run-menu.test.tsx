@@ -24,7 +24,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', vi.fn(async () => n
 test('right-click on a session line: copiar para… ›, then dormir, which sleeps the run at once, with no dialog (#587, #672)', async () => {
   render(
     <CopySessionHost state={state}>
-      <ActivitiesPanel activities={[activity]} workspaces={['hive']} stages={[]} workers={state.workers} onSelect={vi.fn()} onOpenRun={vi.fn()} nav={{ newActivity: vi.fn() }} />
+      <ActivitiesPanel activities={[activity]} workspaces={['hive']} flows={[]} workers={state.workers} onSelect={vi.fn()} onOpenRun={vi.fn()} nav={{ newActivity: vi.fn() }} />
     </CopySessionHost>,
   );
   fireEvent.contextMenu(screen.getByRole('button', { name: /^claude/ }));
