@@ -194,14 +194,14 @@ test('an epic hides the ⊘ line when its blockers are only its children, and na
   expect(within(tile()).getByText('⊘ bloqueada por 274')).toBeInTheDocument();
 });
 
-test('the status in muted: the worktree setup (iniciando, then its step), a spawn error in full as its title; iniciar stays on an error (#351, #542)', async () => {
+test('the status in muted: the worktree setup (iniciando, then its step), a spawn error in full; iniciar stays on an error (#351, #542)', async () => {
   const user = userEvent.setup();
   const { rerender } = render(<Flow state={state(task({ setup: { consoleId: 'setup:I1', rows: [] } }))} flow={firstFlow(state(task({ setup: { consoleId: 'setup:I1', rows: [] } })))} />);
   expect(within(tile()).getByText('iniciando')).toBeInTheDocument();
   rerender(<Flow state={state(task({ setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } }))} flow={firstFlow(state(task({ setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } })))} />);
   expect(within(tile()).getByText('preparando: RUN pnpm install')).toHaveClass('text-muted-foreground');
   rerender(<Flow state={state(task({ error: 'pty: posix_spawnp failed.' }))} flow={firstFlow(state(task({ error: 'pty: posix_spawnp failed.' })))} />);
-  expect(within(tile()).getByText('pty: posix_spawnp failed.')).toHaveAttribute('title', 'pty: posix_spawnp failed.');
+  expect(within(tile()).getByText('pty: posix_spawnp failed.')).toBeInTheDocument(); // in full on hover when cut (#719)
   await user.click(within(tile()).getByRole('button', { name: 'iniciar' }));
   expect(await screen.findByRole('dialog', { name: 'Iniciar #1' })).toBeInTheDocument();
 });
@@ -384,7 +384,6 @@ test('a task out of tries reads destructive: border, ring, the status and abrir,
   expect(tile()).toHaveClass('border-destructive', 'ring-destructive/35');
   const status = within(tile()).getByText('esgotou · falhou 3x');
   expect(status).toHaveClass('text-destructive', 'truncate');
-  expect(status).toHaveAttribute('title', 'esgotou · falhou 3x');
   expect(within(tile()).queryByRole('button', { name: 'continuar' })).not.toBeInTheDocument();
   await user.click(within(tile()).getByRole('button', { name: 'abrir' }));
   expect(onOpen).toHaveBeenCalledWith('I1');

@@ -261,6 +261,24 @@ interface FlowTaskProps {
   isFaded?: boolean; // #35: outside the flow's focus
 }
 
+// #719: the status and what follows it clip between the auto badge and the button, so the button never crosses the card's border at any
+// column width; clipped, the status and the tries show in full on hover
+function FooterStatus({ task, state, status, tries }: { task: Task; state: State; status: TaskStatus; tries: string | undefined }) {
+  const groupRef = useRef<HTMLSpanElement>(null);
+  const statusRef = useRef<HTMLSpanElement>(null); // an ellipsized status leaves the group unclipped, so it is measured on its own
+  const full = [status.text, tries].filter((part) => part !== undefined).join(' · ');
+  return (
+    <CutTitle text={full} cutRef={[groupRef, statusRef]}>
+      <span ref={groupRef} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+        {status.text !== undefined && <span ref={statusRef} className={`min-w-0 truncate ${status.tone ? TONE_TEXT[status.tone] : 'text-muted-foreground'}`}>{status.text}</span>}
+        <DismissErrorButton task={task} state={state} />
+        {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
+        <StageOutputButton task={task} state={state} />
+      </span>
+    </CutTitle>
+  );
+}
+
 /** A task of the flow (redesign 10, #542): the title with the workspace square, and a footer with the auto badge, the status and one button. The
  * border and the selected ring take the status colour, the details' hovered tree row's highlight over both (#36). A child shows ↳ and a parent
  * its children's progress, with no auto badge (#34). Out of the flow's focus it reads at .3, under a drag's .5, which marks the card in hand
@@ -299,10 +317,7 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
       <ListingLine task={task} />
       <div className="flex min-w-0 items-center gap-1.5 text-xs">
         {task.auto && !isParent && task.item.epic === undefined && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
-        {status.text !== undefined && <span className={`min-w-0 truncate ${tone ? TONE_TEXT[tone] : 'text-muted-foreground'}`} title={status.text}>{status.text}</span>}
-        <DismissErrorButton task={task} state={state} />
-        {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
-        <StageOutputButton task={task} state={state} />
+        <FooterStatus task={task} state={state} status={status} tries={tries} />
         <span className="ml-auto flex shrink-0 items-center gap-1.5"><TaskButton task={task} state={state} onOpen={onOpen} /></span>
       </div>
     </li>
