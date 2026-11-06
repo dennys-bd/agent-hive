@@ -1,6 +1,7 @@
 import type { Logger } from './log.js';
 import { type ForkRepos, failureOf, forkRepos, ownerOf, syncFork, type WorkspaceBase } from './fork.js';
 import { type BranchRelation, type Exec, type ForkSyncAnswer, type ForkSyncResult, isBranchName } from './types.js';
+import { samePath } from './same-path.js';
 
 // The start point of a new worktree or checkout branch (#119, #131), out of worktree.ts, which was at 398 lines when a fork's sync came around
 // it (#854). Every git call goes through `gitOrWords` bound to a folder (the caller's `git`), so a refusal carries git's own words.
@@ -60,13 +61,16 @@ export function gitAnswers(repo: string, args: string[], exec: Exec): Promise<bo
 }
 
 const HEAD_PREFIX = 'branch refs/heads/';
+export const WORKTREE_PREFIX = 'worktree '; // the first line of each block of `worktree list --porcelain`
 
 /**
  * The branch checked out at `path` per `git worktree list --porcelain` (one block per worktree: `worktree <path>`, then `branch
- * refs/heads/<name>` or `detached`): `null` when the worktree is listed but detached, `undefined` when it is not listed at all.
+ * refs/heads/<name>` or `detached`): `null` when the worktree is listed but detached, `undefined` when it is not listed at all. The
+ * path is compared through samePath: git prints `C:/…` on Windows where the Hive builds `C:\…` (#640).
  */
-export function branchAt(porcelain: string, path: string): string | null | undefined {
-  const block = porcelain.split(/\n\s*\n/).find((b) => b.split('\n').includes(`worktree ${path}`));
+export function branchAt(porcelain: string, path: string, platform: NodeJS.Platform): string | null | undefined {
+  const names = (line: string): boolean => line.startsWith(WORKTREE_PREFIX) && samePath(line.slice(WORKTREE_PREFIX.length), path, platform);
+  const block = porcelain.split(/\n\s*\n/).find((b) => b.split('\n').some(names));
   if (block === undefined) return undefined;
   const ref = block.split('\n').find((line) => line.startsWith(HEAD_PREFIX));
   return ref === undefined ? null : ref.slice(HEAD_PREFIX.length);

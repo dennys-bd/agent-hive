@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG_FILE } from './config.js';
 import { lockAgeMs, pidExists, readDaemonPort, readDaemonSecret, readLockPid, WAIT_MS } from './daemon-files.js';
 import { LOG_FILE } from './log.js';
+import { samePath } from './same-path.js';
 import { SECRET_HEADER } from './secret.js';
 import { type LivePty, type Signal, type Theme, THEMES } from './types.js';
 
@@ -107,10 +108,11 @@ export async function probe(port: number, secret: string): Promise<Probe> {
   return typeof home === 'string' ? { status: 'hive', home: clean(home) } : { status: 'foreign' };
 }
 
-// Both paths compared through their real path: a temp dir on macOS is reached through /var -> /private/var.
+// Both paths compared through their real path: a temp dir on macOS is reached through /var -> /private/var, and on Windows the native
+// realpath also expands an 8.3 short name (RUNNER~1); samePath then ignores the drive letter's case and the separator (#640).
 function sameHome(a: string, b: string): boolean {
   try {
-    return realpathSync(a) === realpathSync(b);
+    return samePath(realpathSync.native(a), realpathSync.native(b), process.platform);
   } catch {
     return false; // the other Hive's home may not even exist here
   }

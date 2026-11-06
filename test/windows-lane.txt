@@ -4,6 +4,9 @@ test/mcp-settings.test.js
 test/platform-commands.test.js
 test/posix-shell.test.js
 test/postinstall.test.js
+test/same-path.test.js
 test/tab-carry.test.js
 test/test-node.test.js
+test/worktree-nested.test.js
 test/worktree-steps.test.js
+test/worktree.test.js

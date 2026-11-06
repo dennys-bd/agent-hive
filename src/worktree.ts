@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { access, realpath, unlink } from 'node:fs/promises';
-import { basename, isAbsolute, join } from 'node:path';
+import { isAbsolute, join, posix, win32 } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import type { Logger } from './log.js';
@@ -8,14 +8,14 @@ import { ownBranch } from './task-runs.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, RemovalRefusal, remoteHead, setAside, settleSync, withSync, wordsOf } from './worktree-base.js';
+import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, RemovalRefusal, remoteHead, setAside, settleSync, WORKTREE_PREFIX, withSync, wordsOf } from './worktree-base.js';
+import { samePath } from './same-path.js';
 import { refuseDirtyNested, removeNested } from './worktree-nested.js';
 export { branchAt, gitOrWords, wordsOf } from './worktree-base.js';
 import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type TaskPr, type Exec, isBranchName, type WorktreeRow } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 const BRANCH_NOT_FOUND = /error: branch '.*' not found/; // git branch -D on a branch already deleted; execFile's message embeds the stderr
-const WORKTREE_PREFIX = 'worktree '; // the first line of each block of `worktree list --porcelain`
 export const WORKTREES_DIR = 'worktrees';
 // Another git writing .git/config at the same moment (two tasks starting at once, on one daemon or two): the lock is held for milliseconds
 const CONFIG_LOCK = /could not lock config file/;
@@ -64,7 +64,7 @@ export async function removeWorktree(
 ): Promise<void> {
   const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['-C', repo, ...args]);
   const path = worktreePath(repo, slugOfWork(activity));
-  const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path);
+  const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path, process.platform);
   const fallback = listed === undefined ? (ownBranch(activity, branch) ?? branch) : listed; // not listed: the branch a Restart moved the task to (#283), else the template's. null: detached
   await removeNested({ path: repo, nestedRepos: nested }, path, fallback ?? undefined, true, exec); // #653: inside out, forced as the outer removal is
   // --force twice: Claude Code locks the worktree while it runs and a SIGHUP kill does not release the lock
@@ -121,7 +121,7 @@ export async function ensureWorktree(
 ): Promise<PreparedWorktree> {
   const path = worktreePath(repo, slug);
   const git: Git = (...args) => gitOrWords(repo, args, exec);
-  const listed = branchAt(await git('worktree', 'list', '--porcelain'), path);
+  const listed = branchAt(await git('worktree', 'list', '--porcelain'), path, process.platform);
   if (listed !== undefined && (await exists(path))) {
     // Adopt only our own branch: on anything else (another branch, a detached HEAD) the path was staged by someone else, and a
     // forced removal would delete the branch found there with the work on it.
@@ -152,7 +152,7 @@ async function addWorktree(git: Git, add: string[], at: { path: string; branch: 
     return;
   } catch (err) {
     if (!CONFIG_LOCK.test(wordsOf(err))) throw err;
-    if (branchAt(await git('worktree', 'list', '--porcelain'), at.path) !== at.branch) {
+    if (branchAt(await git('worktree', 'list', '--porcelain'), at.path, process.platform) !== at.branch) {
       if (!(await branchMade())) throw err;
       await git('worktree', 'add', '--', at.path, at.branch);
     }
@@ -224,7 +224,7 @@ export async function cleanWorktree(
 ): Promise<void> {
   const path = worktreePath(repo, slugOfWork(activity));
   const nestedOf = { path: repo, nestedRepos: nested };
-  const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path);
+  const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path, process.platform);
   const present = listed !== undefined && (await exists(path));
   // a hook can forge the branch: trusted only when it is the template's name or a Restart's `-r<n>` of it (#283)
   const named = listed ?? ownBranch(activity, branch);
@@ -303,15 +303,18 @@ async function mergedHead(url: string, exec: Exec, log?: Pick<Logger, 'info'>): 
  * Every worktree the Hive created (#181): the blocks of `git worktree list --porcelain` whose path is worktreePath(repo, <its own
  * basename>), meaning a direct child of .hive/worktrees, the only place the Hive creates one (#125). The main checkout, a worktree
  * elsewhere and anything nested are skipped; a directory there that git does not list is not a worktree. The branch is branchAt's
- * (null = detached). Read-only; a failure carries git's words.
+ * (null = detached). A row's path is the Hive's own, never git's string (#640): git prints `C:/…` on Windows. Read-only; a failure
+ * carries git's words.
  */
-export async function listWorktrees(repo: string, exec: Exec = execFileAsync): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
+export async function listWorktrees(repo: string, platform: NodeJS.Platform, exec: Exec = execFileAsync): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
   const porcelain = await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec);
+  const names = platform === 'win32' ? win32 : posix; // a `C:/…` line's last name is its slug only for win32's basename
   return porcelain.split('\n').flatMap((line) => {
     if (!line.startsWith(WORKTREE_PREFIX)) return [];
-    const path = line.slice(WORKTREE_PREFIX.length);
-    const slug = basename(path);
-    return worktreePath(repo, slug) === path ? [{ slug, path, branch: branchAt(porcelain, path) ?? null }] : [];
+    const listed = line.slice(WORKTREE_PREFIX.length);
+    const slug = names.basename(listed);
+    const path = worktreePath(repo, slug);
+    return samePath(path, listed, platform) ? [{ slug, path, branch: branchAt(porcelain, path, platform) ?? null }] : [];
   });
 }
 
@@ -361,12 +364,12 @@ export async function baseOptions(
   ]);
   const defaultRef = `${base.remote}/${branch}`;
   const own = worktreePath(repo, slug);
-  const adoptable = branchAt(porcelain, own) !== undefined && (await exists(own));
+  const adoptable = branchAt(porcelain, own, process.platform) !== undefined && (await exists(own));
   const orphan = orphanBranch === undefined ? undefined : await orphanOf(repo, orphanBranch, adoptable, defaultRef, exec);
   if (adoptable && orphan === undefined) return { hasWorktree: true, defaultRef, tasks: [], local: [], remote: [] };
   const refs = await refsRead;
   const tasks = others.flatMap(({ slug: other, id, title }) => {
-    const ref = branchAt(porcelain, worktreePath(repo, other));
+    const ref = branchAt(porcelain, worktreePath(repo, other), process.platform);
     return typeof ref === 'string' ? [{ ref, id, title }] : [];
   });
   const taken = new Set([branch, ...tasks.map((c) => c.ref)]);
