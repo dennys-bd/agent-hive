@@ -76,7 +76,7 @@ async function systemState(tool: string, env: NodeJS.ProcessEnv, platform: NodeJ
       resolve('');
       return;
     }
-    exec.execFile(run.file, run.args, { env, timeout: VERSION_CAP_MS, maxBuffer: RUN_OUTPUT_MAX, windowsVerbatimArguments: run.windowsVerbatimArguments }, (_err, stdout, stderr) => resolve(`${stdout}${stderr}`));
+    exec.execFile(run.file, run.args, { env: { ...env, ...run.env }, timeout: VERSION_CAP_MS, maxBuffer: RUN_OUTPUT_MAX, windowsVerbatimArguments: run.windowsVerbatimArguments }, (_err, stdout, stderr) => resolve(`${stdout}${stderr}`));
   });
   return { state: 'installed', version: SDK_VERSION.exec(printed)?.[1] ?? 'unknown' };
 }
@@ -133,7 +133,7 @@ function runStep(command: string, args: string[], run: StepRun, job: Job): Promi
       reject(resolved);
       return;
     }
-    const options = { env: run.env, cwd: run.cwd, signal: run.signal, maxBuffer: RUN_OUTPUT_MAX, windowsVerbatimArguments: resolved.windowsVerbatimArguments };
+    const options = { env: { ...run.env, ...resolved.env }, cwd: run.cwd, signal: run.signal, maxBuffer: RUN_OUTPUT_MAX, windowsVerbatimArguments: resolved.windowsVerbatimArguments };
     run.exec.execFile(resolved.file, resolved.args, options, (err, stdout, stderr) => {
       if (stderr.trim() !== '') job.log.push(stderr.trimEnd());
       if (err) reject(stepError(command, err));
