@@ -1,8 +1,9 @@
 // The custom store's names and version.json (#315): pure checks, the refusal shape, and one atomic write. Every other I/O is the
 // catalogue's and the store's.
-import { rename, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { replaceFile } from './replace-file.js';
 import type { ItemKind } from './types.js';
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -66,5 +67,5 @@ export function parseVersionJson(text: string, folder: string): VersionJson {
 export async function writeVersionJson(dir: string, version: VersionJson): Promise<void> {
   const path = join(dir, VERSION_FILE);
   await writeFile(`${path}.tmp`, `${JSON.stringify(version, null, 2)}\n`);
-  await rename(`${path}.tmp`, path);
+  await replaceFile(`${path}.tmp`, path);
 }

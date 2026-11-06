@@ -1,8 +1,9 @@
-import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentRunner } from './agents/runner.js';
 import { PROTOCOL_KINDS, type ProtocolTexts, protocolTexts } from './protocol.js';
+import { replaceFile } from './replace-file.js';
 import { installShellInit } from './shell-init.js';
 import { APPROVAL_HOLD_MAX_MIN, type OptionalTool } from './types.js';
 
@@ -120,7 +121,7 @@ export async function writeWorkspaceProtocol(home: string, workspace: string, pr
   // temp + rename, as the memory file is: a run starting mid-write reads the old file or the new one, never half; the lessons are private
   const put = async (path: string, text: string): Promise<void> => {
     await writeFile(`${path}.tmp`, text, { mode: PROTOCOL_FILE_MODE });
-    await rename(`${path}.tmp`, path);
+    await replaceFile(`${path}.tmp`, path);
   };
   await Promise.all(PROTOCOL_KINDS.map((kind) => put(paths[kind], withMemory(protocol[kind], memory))));
   return paths;

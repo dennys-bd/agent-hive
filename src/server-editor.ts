@@ -4,7 +4,7 @@
 // The text routes: UTF-8 text only, up to EDITOR_FILE_MAX bytes: a lossy decode would corrupt the file on save.
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { chmod, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import type { Express, NextFunction, Request, Response } from 'express';
@@ -15,6 +15,7 @@ import { detectFormatters } from './formatter-detect.js';
 import { type FormatOutcome, formatForSave } from './format-run.js';
 import { resolveActivityPath } from './ide.js';
 import { inScope } from './languages.js';
+import { replaceFile } from './replace-file.js';
 import { activityFolders, DISK, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
 import { type Activity, type Config, EDITOR_FILE_MAX, type EditorConfig, type FileSaved, type FileText, FORMATTER_IDS, IMAGE_TYPES, type FormatterState, type Task, type Workspace } from './types.js';
@@ -133,7 +134,7 @@ export async function writeAtomic(file: string, text: string): Promise<Buffer> {
   try {
     await writeFile(temp, bytes, { flag: 'wx', mode: 0o600 }); // private until the chmod below gives it the original's mode
     await chmod(temp, mode); // writeFile's mode goes through the umask; chmod sets the original's exactly
-    await rename(temp, file);
+    await replaceFile(temp, file);
     return bytes;
   } catch (err) {
     await rm(temp, { force: true });
