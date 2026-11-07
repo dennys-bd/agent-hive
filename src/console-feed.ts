@@ -21,8 +21,8 @@ export interface ConsoleFeed {
 }
 
 /** The run `ptyId` on `channel` (#353, #511): false when the host does not have its pty, which then failed to spawn and begins no run. The
- * timer is cleared by the pty's own end, so a run that ended first is never touched; a signal's kill exits 0 under node-pty, so a user's Stop
- * reads as done and only a timeout as a failure (#537). */
+ * timer is cleared by the pty's own end, so a run that ended first is never touched. A kill the host was asked for (a user's Stop) reads
+ * as done whatever its code: 0 under macOS's pty, 1 or 0xC000013A under ConPTY (#644). Only a timeout reads as a failure (#537). */
 export function feedConsole({ ptys, consoleStore }: ConsoleFeedDeps, channel: ChannelInfo, ptyId: string, feed: ConsoleFeed): boolean {
   if (!ptys.has(ptyId)) return false;
   consoleStore.begin(channel, ptyId, runHeader(feed.label, new Date()), feed.group);
@@ -37,9 +37,9 @@ export function feedConsole({ ptys, consoleStore }: ConsoleFeedDeps, channel: Ch
   ptys.subscribe(ptyId, (data) => {
     consoleStore.append(ptyId, data);
     feed.onData?.(data);
-  }, (exitCode) => {
+  }, (exitCode, killed) => {
     clearTimeout(timer);
-    const code = timedOut ? TIMED_OUT_EXIT : exitCode;
+    const code = timedOut ? TIMED_OUT_EXIT : killed ? 0 : exitCode;
     consoleStore.end(ptyId, code);
     feed.onEnd?.(code);
   });

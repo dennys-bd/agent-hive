@@ -50,6 +50,34 @@ export interface PtySpawnOptions {
 /** node-pty's spawn as the host uses it; run.ts hands the real one, the tests a fake. */
 export type SpawnPty = (file: string, args: string[], options: PtySpawnOptions) => Pty;
 
+/** `pty`, released on its own exit on win32 (#644): node-pty 1.1.0 stops a ConPTY's conout worker thread only inside kill(), so a pty that
+ * exits by itself keeps that thread, which leaks one per run in the daemon and keeps any other process alive. There the exit is followed by
+ * the kill it never got; a kill already asked for is not repeated. Elsewhere `pty` as it is. */
+export function releasedOnExit(pty: Pty, platform: NodeJS.Platform): Pty {
+  if (platform !== 'win32') return pty;
+  let isKilled = false;
+  const kill = (): void => {
+    if (isKilled) return;
+    isKilled = true;
+    pty.kill();
+  };
+  pty.onExit(() => {
+    try {
+      kill();
+    } catch {
+      // the process is gone already: a kill that throws here has nothing left to release, and a throw would escape node-pty's exit event
+    }
+  });
+  return {
+    onData: (listener) => pty.onData(listener),
+    onExit: (listener) => pty.onExit(listener),
+    write: (data) => pty.write(data),
+    resize: (cols, rows) => pty.resize(cols, rows),
+    kill,
+    get pid() { return pty.pid; },
+  };
+}
+
 /** What a server without node-pty (every test that does not care) hands the host: an internal worker then fails to start. */
 export const NO_PTY: SpawnPty = () => {
   throw new Error('no pty in this process');
@@ -63,7 +91,7 @@ export interface PtyHost {
   has(ptyId: string): boolean;
   write(ptyId: string, data: string): boolean; // false: an unknown worker
   resize(ptyId: string, cols: number, rows: number, redraw?: boolean): boolean; // redraw (#389): a SIGWINCH even at the pty's own grid
-  subscribe(ptyId: string, onData: (data: string) => void, onExit: (exitCode: number) => void): (() => void) | undefined; // the scrollback first
+  subscribe(ptyId: string, onData: (data: string) => void, onExit: (exitCode: number, killed: boolean) => void): (() => void) | undefined; // the scrollback first; killed (#644): the host's own record of a kill it was asked for
   kill(ptyId: string): boolean;
   pid(ptyId: string): number | undefined; // #696: what a terminal's cwd and its agents are read under; undefined for an unknown or ended one
   forget(ptyId: string): void; // #672: an ended run's kept scrollback goes; a live one keeps none past its exit
@@ -71,7 +99,7 @@ export interface PtyHost {
 
 interface Listener {
   onData(data: string): void;
-  onExit(exitCode: number): void;
+  onExit(exitCode: number, killed: boolean): void;
 }
 
 interface Entry {
@@ -81,6 +109,7 @@ interface Entry {
   listeners: Set<Listener>;
   keep?: PtyKeep;
   grid?: TerminalSize; // #808: the pty's current grid, which a resize to the same is dropped against; a setup's pipe (adopt) has none
+  killed?: true; // #644: kill() was called; under ConPTY the code cannot say so (a killed pty exits 1 or 0xC000013A, not 0)
 }
 
 // An agent run that exited (#672): the tail its sleeping tab replays, and the code its socket closes on
@@ -138,14 +167,15 @@ function end(h: HostMaps, ptyId: string, entry: Entry, exitCode: number): void {
   keepEnded(h, ptyId, { text, exitCode, ...(log === undefined ? {} : { pinned: true as const }) });
 }
 
-// The pty's exit: its entry leaves, its tail kept as `keep` asks, and every viewer hears it once
+// The pty's exit: its entry leaves, its tail kept as `keep` asks, and every viewer hears it once, with whether the host killed it (#644)
 function exited(h: HostMaps, ptyId: string, entry: Entry, exitCode: number): void {
   // a terminal woken while this pty still died holds the id now (#696): its entry stays, and no ended tail shadows it
   if (h.entries.get(ptyId) === entry) {
     h.entries.delete(ptyId);
     if (!h.forgotten.delete(ptyId) && entry.keep !== undefined) end(h, ptyId, entry, exitCode);
   }
-  for (const listener of entry.listeners) listener.onExit(exitCode);
+  const killed = entry.killed === true;
+  for (const listener of entry.listeners) listener.onExit(exitCode, killed);
   entry.listeners.clear();
 }
 
@@ -166,11 +196,11 @@ function serve(h: HostMaps, ptyId: string, pty: Pty, keep?: PtyKeep, grid?: Term
   pty.onExit(({ exitCode }) => exited(h, ptyId, entry, exitCode));
 }
 
-function subscribe(h: HostMaps, ptyId: string, onData: (data: string) => void, onExit: (exitCode: number) => void): (() => void) | undefined {
+function subscribe(h: HostMaps, ptyId: string, onData: (data: string) => void, onExit: (exitCode: number, killed: boolean) => void): (() => void) | undefined {
   const done = h.ended.get(ptyId);
   if (done !== undefined) { // a sleeping run (#672): its kept tail, then its end at once
     if (done.text !== '') onData(done.text);
-    onExit(done.exitCode);
+    onExit(done.exitCode, false); // #644: a replay's end is no kill; nothing that replays a sleeping run reads its code as a status
     return () => undefined;
   }
   const entry = h.entries.get(ptyId);
@@ -194,6 +224,20 @@ function withPty(h: HostMaps, ptyId: string, use: (pty: Pty) => void): boolean {
   const entry = h.entries.get(ptyId);
   if (entry) use(entry.pty);
   return entry !== undefined;
+}
+
+// #644: the mark goes on before the kill, since a pty may exit inside kill(); a woken terminal's id names its new entry, so only that is marked
+function kill(h: HostMaps, ptyId: string): boolean {
+  const entry = h.entries.get(ptyId);
+  if (entry === undefined) return false;
+  entry.killed = true;
+  try {
+    entry.pty.kill();
+  } catch (err) {
+    delete entry.killed; // a kill that threw never happened: the pty's own exit later must read as its own (a failure stays a failure)
+    throw err;
+  }
+  return true;
 }
 
 // #808: a page's grid, from a spawn or a resize, widens the fallback; a new object each time, so an entry holding the old one never changes
@@ -247,7 +291,7 @@ export function createPtyHost(spawnPty: SpawnPty, onError: (message: string) => 
     has: (ptyId) => h.entries.has(ptyId) || h.ended.has(ptyId),
     write: (ptyId, data) => withPty(h, ptyId, (pty) => pty.write(data)),
     resize: (ptyId, cols, rows, redraw) => resize(h, ptyId, cols, rows, redraw),
-    kill: (ptyId) => withPty(h, ptyId, (pty) => pty.kill()),
+    kill: (ptyId) => kill(h, ptyId),
     pid: (ptyId) => h.entries.get(ptyId)?.pty.pid,
   };
 }

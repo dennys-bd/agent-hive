@@ -103,11 +103,13 @@ export function withoutHiveEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * node_modules; inherited, a worker running `pnpm test` would resolve the Hive's electron and open a window that never
  * exits), plus the pty id, the port and the path of hive.secret, whose header line curl sends with -H @file (#467: the value in a
  * variable would be expanded into curl's argv, which every account reads through ps; a stray HIVE_SECRET is dropped too), and TMPDIR
- * pointing at the run's own dir (#428), so whatever its tools leave there goes with it. HIVE_HOME is dropped too: a worker running the
+ * pointing at the run's own dir (#428), so whatever its tools leave there goes with it. On win32 TEMP and TMP point there too (#644): Windows
+ * tools and node's os.tmpdir() read them, not TMPDIR. HIVE_HOME is dropped too: a worker running the
  * Hive's own tests or the `hive` CLI would otherwise act on its daemon's home instead of a home of its own (#105).
  */
-export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmpDir: string, secretFile: string): NodeJS.ProcessEnv {
-  return { ...withoutHiveEnv(base), TMPDIR: tmpDir, HIVE_PTY_ID: ptyId, HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile };
+export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmpDir: string, secretFile: string, platform: NodeJS.Platform): NodeJS.ProcessEnv {
+  const windowsTemp = platform === 'win32' ? { TEMP: tmpDir, TMP: tmpDir } : {};
+  return { ...withoutHiveEnv(base), TMPDIR: tmpDir, ...windowsTemp, HIVE_PTY_ID: ptyId, HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile };
 }
 
 /** What a kept terminal's shell gets on top of ptyEnv (#696): a history file of its own, kept with it until it is forgotten, the Hive's bin

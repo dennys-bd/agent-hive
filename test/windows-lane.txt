@@ -5,6 +5,7 @@ test/check-run.test.js
 test/checker-parse.test.js
 test/checkers.test.js
 test/clipboard-files.test.js
+test/console-feed.test.js
 test/daemon-files.test.js
 test/decomposition-deliver.test.js
 test/editor-install-download.test.js
@@ -29,6 +30,8 @@ test/mcp-settings.test.js
 test/platform-commands.test.js
 test/posix-shell.test.js
 test/postinstall.test.js
+test/pty-host.test.js
+test/pty-spawn.test.js
 test/replace-file.test.js
 test/same-path.test.js
 test/server-ci.test.js
@@ -37,6 +40,9 @@ test/server-file-base.test.js
 test/server-move.test.js
 test/server-tree-ops.test.js
 test/shell-procs.test.js
+test/spawn-internal.test.js
+test/spawn.test.js
+test/stage-commands.test.js
 test/tab-carry.test.js
 test/tasks.test.js
 test/terminal-runs.test.js

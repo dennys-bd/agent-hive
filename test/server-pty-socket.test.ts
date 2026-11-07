@@ -26,11 +26,11 @@ interface FakeHost {
 // A PtyHost that knows WORKER only, whose scrollback is 'scrollback'. It records every subscribe, write, resize and unsubscribe; the test
 // plays the pty's output and its exit.
 function fakeHost(): FakeHost {
-  let listeners: { onData(data: string): void; onExit(exitCode: number): void }[] = [];
+  let listeners: { onData(data: string): void; onExit: Parameters<PtyHost['subscribe']>[2] }[] = [];
   const fake: FakeHost = {
     subscribed: [], written: [], sizes: [], redraws: [], unsubscribed: 0,
     emit: (data) => { for (const l of listeners) l.onData(data); },
-    exit: () => { for (const l of listeners) l.onExit(0); },
+    exit: () => { for (const l of listeners) l.onExit(0, false); },
     host: {
       spawn: () => undefined,
       adopt: () => undefined,
