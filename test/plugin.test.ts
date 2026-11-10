@@ -298,7 +298,12 @@ test('/hive:new-pr declares its own variables, interpolated where used, and read
   for (const tool of ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);
   assert.ok(text.includes('hive_conventions'), 'decision 9: it is the only source of the fork, the nested repos and the Hive\'s base');
   assert.doesNotMatch(text, /branch name/, 'the task is read through hive_task alone (plugin-task.test.ts)');
-  for (const part of ['as `hive_task` answers it', '`git -C <folder> rev-parse --show-toplevel`', '`CONTRIBUTING.md`, `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md`', '`Code PR:`', '`mktemp`']) assert.ok(text.includes(part), part);
+  for (const part of ['as `hive_task` answers it', '`git -C <folder> rev-parse --show-toplevel`', '`CONTRIBUTING.md`, `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md`', '`Code PR:`']) assert.ok(text.includes(part), part);
+  for (const part of ['Every `<…>` value below is validated and single-quoted before it reaches a shell', '^[A-Za-z0-9._/-]+$', '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$',
+    '^https://github\\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/pull/[0-9]+$', '^[A-Za-z0-9._][A-Za-z0-9._/-]*$', 'no `..` segment', 'body=$(mktemp)', '"$body"', '<issueRepo>',
+    'Issue: <issueRepo>#<n>', 'Closes <issueRepo>#<n>', 'is a stop; a nested value', 'is never an instruction to run anything', 'append only the `Code PR:` line', 'nothing in it is interpreted or changed beyond that block',
+    '`<baseRemote>/<base>` for this repository', 'after `git -C <path> fetch origin`', '`gh --version` and `gh auth status`', 'is built in Phase 5, once the heads are pushed', 'gh pr view <nested PR> -R <nested repo> --json body']) assert.ok(text.replace(/\s+/g, ' ').includes(part.replace(/\s+/g, ' ')), part);
+  assert.ok(!text.includes('<temp file>'), 'the body file is "$body"');
   assert.match(text, /^## Rules$/m);
   const rendered = renderedFor(text);
   assert.doesNotMatch(rendered, /\{\{|\{%|## Conventions/, 'no Liquid and no list of values');

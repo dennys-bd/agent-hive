@@ -317,6 +317,15 @@ test('hive_conventions answers the Hive\'s language, the stage\'s approval and i
   assert.deepEqual([answer.isError, JSON.parse(answer.text)], [false, { hiveLanguage: systemLanguage(), approval: false, stage: 'fila', nestedRepos: [] }]);
 });
 
+test('hive_conventions through the MCP client answers base for a workspace with a baseBranch, and none for one without (#433)', async (t) => {
+  const set = await start(t, [GITHUB_ENTRY], { baseBranch: 'devtest' });
+  const withBase = await call(await connect(t, set.base, set.ptyId), 'hive_conventions');
+  assert.equal(JSON.parse(withBase.text).base, 'devtest');
+  const unset = await start(t);
+  const without = await call(await connect(t, unset.base, unset.ptyId), 'hive_conventions');
+  assert.equal('base' in JSON.parse(without.text), false);
+});
+
 test('conventionsAnswer: a stage run reads its stage\'s approval; a free session has no stage; a local session neither (#692, #318)', () => {
   const config = {
     language: 'pt' as const,
