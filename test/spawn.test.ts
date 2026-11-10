@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -151,7 +152,7 @@ test('ptyCommand quotes every arg so a model or id with a quote cannot break out
   assert.ok(cmd.includes("'--model' 'o'\\''ps'"), cmd);
 });
 
-const TERMINAL_SHELL = `{ if [ -n "\${HIVE_PWSH:-}" ]; then case "$(export -p)" in *'export SHELL='*) hive_sh=\${SHELL##*[!A-Za-z0-9._-]} ;; *) hive_sh= ;; esac; else hive_sh=\${SHELL##*[!A-Za-z0-9._-]}; fi; hive_sh=\${hive_sh%.exe}; case "\${HIVE_SHELL_DIR:+$hive_sh}" in zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;; bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;; fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;; *) if [ -n "\${HIVE_PWSH:-}" ]; then "$HIVE_PWSH" -NoLogo -NoProfile -NoExit -Command '${PWSH_LOADER}'; else "\${SHELL:-sh}"; fi ;; esac; }`; // #259, #645
+const TERMINAL_SHELL = `{ if [ -n "\${HIVE_PWSH:-}" ]; then case "$(export -p)" in *'export SHELL='*|*'declare -x SHELL='*) hive_sh=\${SHELL##*[!A-Za-z0-9._-]} ;; *) hive_sh= ;; esac; else hive_sh=\${SHELL##*[!A-Za-z0-9._-]}; fi; hive_sh=\${hive_sh%.exe}; case "\${HIVE_SHELL_DIR:+$hive_sh}" in zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;; bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;; fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;; *) if [ -n "\${HIVE_PWSH:-}" ]; then "$HIVE_PWSH" -NoLogo -NoProfile -NoExit -Command '${PWSH_LOADER}'; else "\${SHELL:-sh}"; fi ;; esac; }`; // #259, #645
 test('ptyCommand for a terminal: cd into the worktree, the user\'s shell, then the exit trailer with the pty id; a path with a quote and a space stays one argument (#283)', () => {
   assert.equal(
     ptyCommand({ ...LAUNCH, terminal: true, cwd: "/Users/me/it's repo/.hive/worktrees/hive-1-x" }),
@@ -261,13 +262,23 @@ async function stub(dir: string, name: string, tag: string): Promise<string> {
 // The terminal's line under the POSIX shell, as the pty host runs it: the stub's lines only. The trailer's curl fails on the closed port, so
 // the exit code is not the shell's
 // `prefix` runs first in the same shell: an assignment there sets a variable the line sees but that is not exported
-function runLine(cwd: string, env: Record<string, string>, prefix = ''): Promise<string[]> {
+function runLine(cwd: string, env: Record<string, string>, prefix = '', shell = posixShell().shell): Promise<string[]> {
   const line = prefix + ptyCommand({ ...LAUNCH, terminal: true, cwd, port: CLOSED_PORT });
   const full = { ...BARE_ENV, HIVE_SHELL_DIR: '/hs', HIVE_SECRET_FILE: '/dev/null', ...env };
   return new Promise((resolve) => {
-    execFile(posixShell().shell, ['-c', line], { env: full, encoding: 'utf8' }, (_err, stdout) => resolve(stdout.split(/\r?\n/).filter((l) => l !== '')));
+    execFile(shell, ['-c', line], { env: full, encoding: 'utf8' }, (_err, stdout) => resolve(stdout.split(/\r?\n/).filter((l) => l !== '')));
   });
 }
+
+// A bash outside POSIX mode, as Git's sh.exe is (bash does not take sh.exe for sh): its export -p prints declare -x, not export
+const PLAIN_BASH = '/bin/bash';
+const noPlainBash = process.platform === 'win32' ? 'the lane\'s own sh.exe is already a bash outside POSIX mode' : !existsSync(PLAIN_BASH) && 'no /bin/bash here';
+
+test('an exported SHELL naming bash wins over HIVE_PWSH under a bash outside POSIX mode too, whose export -p says declare -x (#645)', { skip: noPlainBash }, async (t: TestContext) => {
+  const dir = await tempDir(t, 'terminal line-');
+  const env = { HIVE_PWSH: await stub(dir, 'pwsh', 'pwsh'), SHELL: await stub(dir, 'bash', 'bash') };
+  assert.deepEqual(await runLine(dir, env, '', PLAIN_BASH), ['bash', '--rcfile', '/hs/bash/rc']);
+});
 
 test('a terminal\'s line holds no backslash: Git\'s sh.exe reads its command line with \\\\ turned into \\ (#645)', () => {
   assert.equal(ptyCommand({ ...LAUNCH, terminal: true, cwd: '/wt' }).includes('\\'), false);
