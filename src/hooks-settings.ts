@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentRunner } from './agents/runner.js';
+import { posixShell } from './posix-shell.js';
 import { PROTOCOL_KINDS, type ProtocolTexts, protocolTexts } from './protocol.js';
 import { replaceFile } from './replace-file.js';
 import { installShellInit } from './shell-init.js';
@@ -141,7 +142,7 @@ export async function prepareHome(
   const promptsDir = join(home, PROMPTS_DIR);
   await mkdir(promptsDir, { recursive: true, mode: HOME_MODE }); // first: it creates the home with this user's mode
   for (const runner of runners) await runner.prepareHome(home, port);
-  await installShellInit(home); // #259: after the runners' shims, which its functions call; one site for every agent
+  await installShellInit(home, { platform: process.platform, sh: posixShell().shell }); // #259: after the runners' shims, which its functions call; #645: the profile's sh.exe
   const protocol = await writeProtocol(home, off);
   return { hooksPath: hooksPath(home), promptsDir, protocol };
 }
