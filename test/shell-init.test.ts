@@ -48,9 +48,11 @@ test('installShellInit writes every init file under <home>/shell/, its folders f
   const dir = await installShellInit(home, INSTALL);
   assert.equal(dir, join(home, 'shell'));
   for (const file of SHELL_INIT_FILES) assert.doesNotMatch(await readFile(join(dir, file), 'utf8'), /__HIVE_[A-Z]+__/, file);
+  // each file holds the shim's path as its own shell quotes it: fish escapes a Windows path's backslashes
+  const quoted = (file: string, path: string): string => (file.startsWith('fish/') ? fishQuote(path) : file.startsWith('pwsh/') ? pwshQuote(path) : shellQuote(path));
   for (const file of FUNCTION_FILES) {
     const text = await readFile(join(dir, file), 'utf8');
-    for (const id of AGENT_IDS) assert.ok(text.includes(`function ${AGENTS[id].command}`) && text.includes(shimPath(home, AGENTS[id])), `${file}: ${id}`);
+    for (const id of AGENT_IDS) assert.ok(text.includes(`function ${AGENTS[id].command}`) && text.includes(quoted(file, shimPath(home, AGENTS[id]))), `${file}: ${id}`);
   }
   const profile = await readFile(join(dir, 'pwsh', 'profile.ps1'), 'utf8');
   assert.ok(profile.includes(`$env:PATH = ${pwshQuote(shimDir(home))} + ';' + $env:PATH`), 'the shim folder back first on PATH');

@@ -163,11 +163,14 @@ const commandLine = ({ command, env }: NonNullable<PtyLaunch['run']>): string =>
 // command line always had them
 const shellWord = (arg: LaunchArg): string => (typeof arg === 'string' ? shellQuote(arg) : `${arg[0]} ${shellQuote(arg[1])}`);
 
-// The shell's name (#645): SHELL with everything up to its last / or \ removed and a trailing .exe dropped, so
-// C:\Program Files\Git\bin\bash.exe and /usr/bin/bash both read bash. With HIVE_PWSH set (Windows) only an exported SHELL, the one the pty
-// env carried: Git's sh.exe is bash, which sets an unset SHELL to the account's login shell without exporting it, and that would hide
-// HIVE_PWSH. Without it, any SHELL, as before #645: macOS's and Linux's terminals keep the shell bash-as-sh fills in when the Hive's env has none.
-const SHELL_NAME = `if [ -n "\${HIVE_PWSH:-}" ]; then case "$(export -p)" in *'export SHELL='*) hive_sh=\${SHELL##*[/\\\\]} ;; *) hive_sh= ;; esac; else hive_sh=\${SHELL##*[/\\\\]}; fi; hive_sh=\${hive_sh%.exe};`;
+// The shell's name (#645): SHELL with everything up to its last character that cannot be in a shell's file name (a / or a \, or a space
+// before it) removed and a trailing .exe dropped, so C:\Program Files\Git\bin\bash.exe and /usr/bin/bash both read bash. No backslash in
+// the line: Git's sh.exe reads its command line with \\ turned into \, and [/\] would no longer be a bracket. With HIVE_PWSH set (Windows)
+// only an exported SHELL, the one the pty env carried: Git's sh.exe is bash, which sets an unset SHELL to the account's login shell without
+// exporting it, and that would hide HIVE_PWSH. Without it, any SHELL, as before #645: macOS's and Linux's terminals keep the shell
+// bash-as-sh fills in when the Hive's env has none.
+const BASENAME = `\${SHELL##*[!A-Za-z0-9._-]}`;
+const SHELL_NAME = `if [ -n "\${HIVE_PWSH:-}" ]; then case "$(export -p)" in *'export SHELL='*) hive_sh=${BASENAME} ;; *) hive_sh= ;; esac; else hive_sh=${BASENAME}; fi; hive_sh=\${hive_sh%.exe};`;
 
 /** PowerShell's first command (#645): profile.ps1 read as text and dot-sourced as a scriptblock, which execution policy, applying to
  * script files only, never stops, and which runs in the global scope, so what the user's profiles define stays alive. One sh

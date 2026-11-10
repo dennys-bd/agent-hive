@@ -151,7 +151,7 @@ test('ptyCommand quotes every arg so a model or id with a quote cannot break out
   assert.ok(cmd.includes("'--model' 'o'\\''ps'"), cmd);
 });
 
-const TERMINAL_SHELL = `{ if [ -n "\${HIVE_PWSH:-}" ]; then case "$(export -p)" in *'export SHELL='*) hive_sh=\${SHELL##*[/\\\\]} ;; *) hive_sh= ;; esac; else hive_sh=\${SHELL##*[/\\\\]}; fi; hive_sh=\${hive_sh%.exe}; case "\${HIVE_SHELL_DIR:+$hive_sh}" in zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;; bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;; fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;; *) if [ -n "\${HIVE_PWSH:-}" ]; then "$HIVE_PWSH" -NoLogo -NoProfile -NoExit -Command '${PWSH_LOADER}'; else "\${SHELL:-sh}"; fi ;; esac; }`; // #259, #645
+const TERMINAL_SHELL = `{ if [ -n "\${HIVE_PWSH:-}" ]; then case "$(export -p)" in *'export SHELL='*) hive_sh=\${SHELL##*[!A-Za-z0-9._-]} ;; *) hive_sh= ;; esac; else hive_sh=\${SHELL##*[!A-Za-z0-9._-]}; fi; hive_sh=\${hive_sh%.exe}; case "\${HIVE_SHELL_DIR:+$hive_sh}" in zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;; bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;; fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;; *) if [ -n "\${HIVE_PWSH:-}" ]; then "$HIVE_PWSH" -NoLogo -NoProfile -NoExit -Command '${PWSH_LOADER}'; else "\${SHELL:-sh}"; fi ;; esac; }`; // #259, #645
 test('ptyCommand for a terminal: cd into the worktree, the user\'s shell, then the exit trailer with the pty id; a path with a quote and a space stays one argument (#283)', () => {
   assert.equal(
     ptyCommand({ ...LAUNCH, terminal: true, cwd: "/Users/me/it's repo/.hive/worktrees/hive-1-x" }),
@@ -268,6 +268,10 @@ function runLine(cwd: string, env: Record<string, string>, prefix = ''): Promise
     execFile(posixShell().shell, ['-c', line], { env: full, encoding: 'utf8' }, (_err, stdout) => resolve(stdout.split(/\r?\n/).filter((l) => l !== '')));
   });
 }
+
+test('a terminal\'s line holds no backslash: Git\'s sh.exe reads its command line with \\\\ turned into \\ (#645)', () => {
+  assert.equal(ptyCommand({ ...LAUNCH, terminal: true, cwd: '/wt' }).includes('\\'), false);
+});
 
 test('a terminal with HIVE_PWSH and no SHELL starts PowerShell on the loader, though the POSIX shell, bash on macOS and Windows, sets an unexported SHELL of its own (#645)', async (t: TestContext) => {
   const dir = await tempDir(t, 'terminal line-');
