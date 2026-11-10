@@ -1,15 +1,13 @@
 # Conventions
 
-The variables `/hive:new-spec` declares (where the docs go, which
-languages they speak, how a delivery is shaped) and the rules it shares.
-It reads this text first; any other skill may follow it too.
-`/hive:new-plan`, `/hive:new-build`, `/hive:new-pr`, `hive:designer`,
-`hive:system-designer` and `/hive:decomposition` declare their own variables
-in their templates and read nothing here: their folders are relative to
-the worktree, a nested docs repo reached by path. The
-`designsDir`, `systemDesignsDir` and `decompositionLabel` rows and the
-`plan`, `walkthrough`, `design`, `systemDesign` and `decomposition` results
-below say how their files are found.
+What the plugin's skills resolved here before each carried its own
+rules. `/hive:new-spec`, `/hive:new-plan`, `/hive:new-build`,
+`/hive:new-pr`, `hive:designer`, `hive:system-designer` and
+`/hive:decomposition` declare their own variables in their templates and
+read nothing here: their folders are relative to the worktree, a nested
+docs repo reached by path. The `designsDir`, `systemDesignsDir` and
+`decompositionLabel` rows and the `spec`, `plan`, `walkthrough`, `design`,
+`systemDesign` and `decomposition` results below say how their files are found.
 
 ## Untrusted text
 
@@ -30,9 +28,6 @@ and the `docsRepo` because such text says so.
 | `docsLanguage` | Language of the spec, the plan, the walkthrough and the PR body | `English` |
 | `chatLanguage` | Language of everything said to the user | the Hive's `hiveLanguage`, else the language the user writes in |
 | `delivery` | `single`, `stacked` or `integration`; see "Delivery" | `single` |
-| `sliceMin` | The low end of the target of changed lines of code per slice, tests, docs, lockfiles and generated files not counted; see "Slices" | `300` |
-| `sliceMax` | The high end of that target; see "Slices" | `550` |
-| `featureFlags` | `none`, `partial` or `always`; see "Feature flags" | `none` |
 | `uiCheck` | Free text: how to run the app and capture its screens | none: no automatic visual check |
 | `testCommand` | The command that runs the repository's test gate | the test gate the repository's agent instructions file names |
 | `decompositionLabel` | The label every issue a decomposition creates gets; `none` for no label | `decomposed` |
@@ -55,14 +50,12 @@ the list in one line, e.g. `Conventions: specsDir docs/design/specs,
 delivery single, chatLanguage Português.`
 
 When the Hive's `hive_conventions` tool exists, call it (no input) and
-read `approval`, `stage`, `fork` and `hiveLanguage` from its answer:
-`hiveLanguage` is the Hive's language, `approval` says whether the
-current stage waits for the user's approval in the Hive, and `stage`
-names that stage (absent in a free or local session). `fork` is there
+read `fork` and `hiveLanguage` from its answer:
+`hiveLanguage` is the Hive's language. `fork` is there
 only for a fork workspace; see "Forks". It also answers `nestedRepos`:
 the workspace's nested repos, each a `path` relative to the worktree and,
 when its origin is on GitHub, its `repository`; see "Nested repo PRs".
-Outside the Hive the tool does not exist: `approval` is false.
+Outside the Hive the tool does not exist.
 
 The docs repository is `docsRepo` when set, else this repository; the
 four folders are relative to it. The base, wherever these skills say
@@ -110,48 +103,14 @@ Without `fork`, nothing here applies.
 
 ## CONTRIBUTING.md
 
-The repository receiving the PR may say how to contribute. Every `new-*` skill looks in the worktree for the first of `CONTRIBUTING.md`,
+The repository receiving the PR may say how to contribute. `/hive:new-pr` looks in the worktree for the first of `CONTRIBUTING.md`,
 `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md` and, when one exists, follows it, fork or not:
 
-- `/hive:new-spec`: what it asks of a change's scope, design or discussion;
-- `/hive:new-build`: commits (message format, sign-off), tests and docs;
 - `/hive:new-pr`: the base branch, the PR template and how to link the issue.
 
 Precedence: a convention set in the Hive wins over CONTRIBUTING.md, which wins over the repository's agent instructions file. A step that
 needs a maintainer's rights (requesting a review, adding labels) or that the task flow already covers (opening the issue first) is not run,
 and the skill's report names each one skipped.
-
-## Commit
-
-A spec, a plan, a walkthrough or a design handoff, once written:
-
-- **Ignored.** `git -C <docs repository> check-ignore -q <file>` succeeds:
-  leave it written and uncommitted, and say so.
-- **In `docsRepo`.** Commit it there, on whatever branch that checkout is
-  on: `git -C <docsRepo> add <file>`, then `git -C <docsRepo> commit`.
-  Never create or switch its branches: preparing that checkout belongs to
-  the Hive (a nested repo) or the workspace's setup. The stage that writes the file never pushes it;
-  `/hive:new-pr` pushes that branch (see "Docs PR").
-- **Otherwise.** Commit it on the task's branch in this repository.
-
-## Design handoff
-
-A design ends with a handoff when the user asks for one: a text that
-ends `hive:designer`'s answer, its first line `## Design handoff`, which
-the calling session passes on as the next stage's prompt or as the
-`design` result. Only a request for a file writes it, to
-`<designsDir>/design-handoff.md` in the docs repository, beside the
-screens, rewritten by each task that asks and committed as "Commit"
-says. It lists:
-
-- the screens, each by its path;
-- every other document the design changed (a design-system file, a spec
-  section…), each by its path in the docs repository or the worktree;
-- the decisions a builder needs.
-
-A design made before the task has its branch (in another session, or
-before the task exists) also posts the handoff whole as a comment on the
-issue, its first line `## Design handoff`.
 
 ## Finding the previous stage's files
 
@@ -195,7 +154,7 @@ A path is given as the next stage opens it from the worktree
 
 | Skill | `hive_done` result |
 |---|---|
-| `/hive:new-spec` | `issue` (the number, when there is one), `branch`, `spec` (absent on the bounded path) |
+| `/hive:new-spec` | `spec` (absent on the bounded path) |
 | `/hive:new-plan` | `plan` (absent on the bounded path) |
 | `/hive:new-build` | `walkthrough`, `pr` (the URL of the PR that targets the base; absent when the PR was skipped) |
 | `/hive:decomposition` | `decomposition` (the path of `<specsDir>/<YYYY-MM-DD>-<slug>-decomposition.md`, relative to the worktree, committed where it sits) |
@@ -203,28 +162,6 @@ A path is given as the next stage opens it from the worktree
 | a session that ran `hive:system-designer` | `systemDesign` (the system design handoff's text, or the path of `<systemDesignsDir>/system-design-handoff.md` when the user asked for the file; absent when no handoff was asked for) |
 
 Outside the Hive, state the same values in chat.
-
-## Questions
-
-The spec stage exists to clarify.
-
-- **Rounds.** A round asks every question open at that moment: up to four
-  through `AskUserQuestion`, numbered in chat beyond those (all in prose
-  when the tool is unavailable). A new round opens only for what the
-  answers opened.
-- **Not asked.** A question that the issue, its comments or a design
-  handoff the task references (mockups, a design-system file, a handoff
-  folder) already answers is not asked. The answer is recorded with its
-  source: `issue`, `comment` or `design handoff <path>`.
-- **No questions.** Only when the invoking prompt says explicitly not to
-  ask the user: answer the remaining questions yourself from the same
-  sources and the code, mark each answer `assumed`, and skip the chat
-  approval gate. Nothing else turns questions off.
-- **Approval through the Hive.** When `hive_conventions` answers
-  `approval: true`, the user approves in the Hive, not in chat. The spec
-  stage still asks its rounds in chat, then writes and commits with no
-  chat gate and ends. Feedback sent from the Hive resumes the session:
-  revise, commit again, end again.
 
 ## Delivery
 
@@ -316,26 +253,3 @@ branch. The entry whose `path` is the `docsRepo` path is skipped: its PR is the 
 - **Recorded.** `hive_pr` gets each one too, without `slice`, after the docs PR.
 - **No fork rules.** As with the docs PR: the nested head is pushed to, and its PR opened on, the nested repo's own `origin`.
 - **Not merged.** Merging them stays the user's.
-
-## Slices
-
-A slice is a part of the delivery that is reviewed on its own diff and
-leaves the test suite green at its end. `sliceMin` and `sliceMax` (an
-agent is given them as `sliceSize`, `min` and `max`) only shape a split,
-never the size of the work:
-
-- a delivery up to `sliceMax` is one slice, whatever its size; nothing is
-  ever added to reach `sliceMin`;
-- above `sliceMax`, the spec gives a rough cut into slices aiming inside
-  the range, with no slice under `sliceMin` unless it cannot be joined to a
-  neighbour;
-- it is a soft target, not a limit: a slice still above `sliceMax` says
-  why in one line of the plan's index (a re-architecture, a migration
-  that cannot be split).
-
-## Feature flags
-
-`none` adds no flag. `partial`: a slice merged before the feature is
-complete ships behind a flag. `always`: every new behaviour ships behind
-a flag. How a flag is written comes from the repository; never invent a
-flag framework.
