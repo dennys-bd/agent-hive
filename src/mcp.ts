@@ -121,7 +121,7 @@ function registerStageTools(server: McpServer, deps: McpDeps, header: string | u
     return held && exit ? refuse('no_transition', noTransitionMessage(held.task.stage, exit, result !== undefined)) : reply(OK);
   }, { keys: result && Object.keys(result) }));
   server.registerTool('hive_pr', {
-    description: 'Tell the Hive a pull request you opened for this task (its https://github.com/<owner>/<repo>/pull/<n> URL); call it once per PR. '
+    description: 'Tell the Hive a pull request you opened or found open for this task (its https://github.com/<owner>/<repo>/pull/<n> URL); call it once per PR. '
       + 'For a slice PR pass slice: its merge position k (1-based; the integration PR is the number of slices + 1) and the delivery mode.',
     inputSchema: { url: z.string(), slice: z.object({ k: z.number().int().min(1), type: z.enum(['stacked', 'integration']) }).optional() },
   }, async ({ url, slice }) => recorded(deps, header, 'hive_pr', async () => {

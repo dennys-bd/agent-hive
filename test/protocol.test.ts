@@ -72,11 +72,12 @@ const ASK_LAST = 'Do this also while a subagent, a background shell or a schedul
 const STOP = 'with `reason` "wontDo" (or "duplicate", plus `duplicateOf`: the original issue number) the Hive closes the issue; without `reason` the task only stops. Never close the issue yourself. When the task cannot go on until another issue is done, call `hive_stop` with `block` (that issue\'s number) instead: the Hive records the blocker and starts the task again once it closes.';
 const REMEMBER = 'When the user corrects you, or you learn a fact about this repository that a later task would need, call `hive_remember` with it.';
 const WHY = 'To learn why code is the way it is, follow it back: `git blame` or `git log` on the lines, the PR the commit names (`gh pr view`), the issue it closes and the spec or plan it links.';
+const PR = 'When you open a pull request for this task, or find one already open for its branch, call `hive_pr` with its URL, once per PR.';
 const UNDO = 'Before a large or risky change, commit the work that passes, so the attempt can be thrown away with git; try an experiment you may discard in a separate worktree.';
 const TODAY_STAGE = [
   INTRO, '', TASK,
   'When this command is completely finished (nothing left to do, no subagent or background task still running, no answer pending from the user), call the `hive_done` tool and end your turn. Never call it earlier.',
-  RESULT,
+  RESULT, PR,
   'Every question for the user goes through `hive_ask`: call it with the question, ask it in chat and end your turn without `hive_done`.', ASK_LAST,
   `If the task will not be done, call \`hive_stop\` instead of \`hive_done\`: ${STOP}`,
   REMEMBER, WHY, UNDO, '',
@@ -85,7 +86,7 @@ const TODAY_SESSION = [
   INTRO, '', TASK,
   "The user drives this session. When you believe the task's work is finished, say so in chat and suggest moving the task to its next stage.",
   'Call `hive_done` only when the user confirms or asks for it: it moves the task to its next stage at once.',
-  RESULT,
+  RESULT, PR,
   'Every question for the user goes through `hive_ask`: call it with the question, ask it in chat and end your turn.', ASK_LAST,
   `Call \`hive_stop\` only when the user asks for it: ${STOP}`,
   REMEMBER, WHY, UNDO, '',
@@ -152,8 +153,16 @@ test('the local protocol holds the task-independent blocks only: its own intro, 
   assert.equal(LOCAL_PROTOCOL, LOCAL_TEXT);
   assert.equal(renderProtocol('local', [], []), LOCAL_TEXT);
   for (const word of ['hive_done', 'hive_stop', '`result`']) assert.equal(LOCAL_PROTOCOL.includes(word), false, word);
-  assert.deepEqual(BLOCKS.filter((b) => b.local === undefined).map((b) => b.id), ['task', 'done', 'result', 'stop']);
+  assert.deepEqual(BLOCKS.filter((b) => b.local === undefined).map((b) => b.id), ['task', 'done', 'result', 'pr', 'stop']);
   assert.deepEqual(protocolTexts([], []), { stage: TODAY_STAGE, session: TODAY_SESSION, local: LOCAL_TEXT });
+});
+
+test('the pr block follows result in a stage and a session, and a local session is not told it (#433)', () => {
+  for (const kind of KINDS) {
+    const lines = renderProtocol(kind, [], []).split('\n');
+    assert.equal(lines[lines.indexOf(RESULT) + 1], PR, kind);
+  }
+  assert.equal(LOCAL_PROTOCOL.includes('hive_pr'), false);
 });
 
 test('in the local protocol a passage on a block it leaves out keeps its place, and hive_remember off drops remember (#256)', () => {
