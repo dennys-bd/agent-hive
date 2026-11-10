@@ -602,3 +602,17 @@ test('hive:system-design-reviewer takes the round\'s mode and reads a proposal a
   const { description = '' } = frontmatter(text);
   for (const word of ['proposal', 'sync']) assert.ok(description.includes(word), `its description names ${word}`);
 });
+
+test('hive:system-designer has four modes, draws a proposal into the living diagrams with no mark, and hands off a text by default, a file on request (#743)', async () => {
+  const text = await agentText('system-designer');
+  const prose = flat(text);
+  for (const mode of ['create', 'update', 'sync', 'handoff']) assert.match(text, new RegExp(`^\\| ${mode} \\|`, 'm'), `${mode} is a mode`);
+  for (const part of ['## Existing work first', '## Sync', '## Handoff', '## System design handoff', '`{{ systemDesignsDir }}/system-design-handoff.md`',
+    'No mark tells a proposed part from a built one', "wait for the user's answer before writing it", '`proposal from request`', 'Only when the request asks for a file']) assert.ok(prose.includes(part), part);
+  assert.match(text, /```markdown\n## System design handoff: /, 'the handoff model is inline, its first line the one a later stage looks for');
+  assert.doesNotMatch(text, /^## Commit$/m, 'the commit is part of the handoff');
+  assert.doesNotMatch(prose, /never shows a part you did not find in the code/, 'the code rule follows the mode');
+  assert.ok(renderedFor(text).includes('`docs/hive/system-design/system-design-handoff.md`'), 'the handoff file sits in the living folder');
+  const { description = '' } = frontmatter(text);
+  for (const name of ['sync', 'handoff']) assert.ok(description.includes(name), `its description names ${name}`);
+});
