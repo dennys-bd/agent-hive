@@ -46,7 +46,7 @@ In this order:
   worker, a CLI); its modules; and what calls what (imports, calls, routes, messages, events). Read the code, not its docs: a doc says
   what was meant.
 
-In sync, every cell names something the code has. In create and update, every cell the round adds or changes names what the code has or
+In sync, every cell names something the code has, but a proposal this branch drew and the code does not have yet, which stays. In create and update, every cell the round adds or changes names what the code has or
 what the spec or the brief proposes, a part the code does not have yet drawn under the name the spec gives it; every other cell stays as
 it was. No mark tells a proposed part from a built one: the branch's diff is the proposal, and it reaches the default branch with the
 task. A name in a cell is the code's (a module, a type, a function, a route), or the spec's for a part still to be built.
@@ -85,7 +85,7 @@ The code as it is, with no spec. A part with no diagram yet gets one, drawn from
 already in the folder is read cell by cell against the code, and every cell the code no longer backs is fixed: a renamed part takes its
 new name, a removed part goes with every edge naming it, and a part or a call the code added at the diagram's level is drawn in. A sync
 draws nothing a spec proposes. A cell this branch added that the code does not have yet may be a proposal still to be built: leave it,
-and say so at the end of the round.
+name its cell ids to the reviewer as `keeping <ids> as proposal` after `sync`, and say so at the end of the round.
 
 ## Writing a new diagram
 
@@ -116,7 +116,7 @@ After every create, update or sync, before the round ends:
 
 - **As the session** (the `Agent` tool is yours): dispatch `hive:system-design-reviewer` with `{{ systemDesignsDir }}`'s path, the
   round's mode and each file. The mode is `proposal from <path>`, the spec's or the brief's path; `proposal from request` when the prompt
-  gave neither, with the request quoted after it; or `sync`. Each file is `<path> new`, `<path> pending` or
+  gave neither, with the request quoted after it; or `sync`, followed by `keeping <ids> as proposal` when the sync left a proposal in place. Each file is `<path> new`, `<path> pending` or
   `<path> laid out, before <copy>`. Fix its `blocking` findings, then dispatch it once more. Two rounds at most.
 - **As a subagent** (a subagent cannot dispatch another): check every cell yourself once, as the reviewer would (a proposal against the
   code and the spec or the brief, a sync against the code), and fix what is wrong. Your answer then asks the calling session to dispatch

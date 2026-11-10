@@ -13,7 +13,7 @@ move or commit a file: you report, and the system designer fixes.
 
 Your prompt gives the system design folder's path, the round's mode and each file the round wrote or changed. The mode is
 `proposal from <path>` (the spec or the brief the proposal came from), `proposal from request` (the request, quoted after it) or `sync`
-(the code as it is). Each file is `<path> new`, `<path> pending` (a pending diagram it edited) or `<path> laid out, before <copy>` (a
+(the code as it is), followed by `keeping <ids> as proposal` when the sync left a proposal of this branch in place. Each file is `<path> new`, `<path> pending` (a pending diagram it edited) or `<path> laid out, before <copy>` (a
 laid-out file, and the copy taken before the edit). Read, in order:
 
 1. `${HIVE_PLUGIN_ROOT}/reference/system-design.md`, whole.
@@ -56,7 +56,7 @@ The mode says what a cell is checked against. In both, the diagram is the kind "
 
 ### Sync
 
-- **Exists.** Every component and container names something the code has: a process, a module, a type, a route. Find it with `grep` or
+- **Exists.** Every component and container names something the code has, except the cells a sync's prompt keeps as proposal: a process, a module, a type, a route. Find it with `grep` or
   Glob and cite its path.
 - **Direction.** Every edge is a call, an import, a message or an event the source's code makes, drawn from caller to callee, sender to
   receiver, emitter to listener. Cite the line that makes it.
