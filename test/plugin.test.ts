@@ -228,14 +228,14 @@ test('/hive:new-build declares its own variables, interpolated where used, and r
   const rendered = renderedFor(text);
   assert.doesNotMatch(rendered, /\{\{|\{%/, 'no Liquid is left');
   assert.doesNotMatch(rendered, /## Conventions/, 'no list of values: each is interpolated where it is used');
-  for (const part of ['Plan: under `docs/hive/plans`', 'else under `docs/hive/specs`', 'a `handoff.md` under `docs/hive/design`', 'Walkthrough: under `docs/hive/walkthroughs`', 'Write `docs/hive/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in English']) assert.ok(rendered.includes(part), part);
+  for (const part of ['Plan: under `docs/hive/plans`', 'else under `docs/hive/specs`', '`docs/hive/design/design-handoff.md`', 'Walkthrough: under `docs/hive/walkthroughs`', 'Write `docs/hive/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in English']) assert.ok(rendered.includes(part), part);
   for (const part of ['Talk in', 'The test command, wherever', 'Run the app and capture']) assert.ok(!rendered.includes(part), `with no value, nothing says ${part}`);
 });
 
 test('/hive:new-build rendered with a value for each variable carries each where it is used; another workspace keeps the defaults (#431)', async () => {
   const text = valued(await skillText('new-build'), NEW_BUILD_VALUES);
   const mine = renderedFor(text);
-  for (const part of ['Plan: under `design/plans`', 'else under `design/specs`', 'a `handoff.md` under `design/screens`', 'Walkthrough: under `design/walkthroughs`', 'Write `design/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in Spanish', 'Talk in Portuguese.',
+  for (const part of ['Plan: under `design/plans`', 'else under `design/specs`', '`design/screens/design-handoff.md`', 'Walkthrough: under `design/walkthroughs`', 'Write `design/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in Spanish', 'Talk in Portuguese.',
     'The test command, wherever this skill says so, is `pnpm test`.', 'Run the app and capture its screens as this says: run pnpm start and capture each screen as docs/ui-check.md says.']) assert.ok(mine.includes(part), part);
   const other = renderedFor(text, 'b');
   assert.ok(!other.includes('Talk in') && other.includes('Write `docs/hive/walkthroughs/') && !other.includes('The test command, wherever'), 'b keeps the defaults');
@@ -375,7 +375,8 @@ test('hive:designer is a template: it declares its four conventions, and a works
   const delivered = parseTemplate(rendered);
   assert.deepEqual([Object.hasOwn(delivered.header, 'variables'), Object.hasOwn(delivered.header, 'basedOn')], [false, false]);
   assert.equal(delivered.header.name, 'designer');
-  for (const part of ['`docs/hive/design/<folder>/handoff.md`', 'in English (its headings too, except the first line']) assert.ok(rendered.includes(part), part);
+  for (const part of ['`docs/hive/design/<screen>.hv.html`', '`docs/hive/design/design-handoff.md`', 'in English (its headings too, except the first line']) assert.ok(rendered.includes(part), part);
+  assert.doesNotMatch(rendered, /<YYYY-MM-DD>-<slug>/, 'one living folder, never dated per task (#743)');
   const body = rendered.replace(/^---\n[\s\S]*?\n---\n/, '');
   assert.doesNotMatch(body, /design.system/i, 'with designSystem unset, nothing about a design system is said (#439)');
   assert.doesNotMatch(body, /Talk in/, 'with chatLanguage unset, no language is imposed (#439)');
@@ -385,12 +386,12 @@ test('hive:designer is a template: it declares its four conventions, and a works
 test('hive:designer rendered with a value for each convention carries each where it is used; another workspace keeps the defaults (#416, #439)', async () => {
   const text = valued(await agentText('designer'), DESIGNER_VALUES);
   const mine = renderedFor(text);
-  for (const part of ['`design/screens/<YYYY-MM-DD>-<slug>/<screen>.hv.html`', '`design/screens/<folder>/handoff.md`', 'in Spanish (its headings too, except the first line', 'Talk in Portuguese.',
+  for (const part of ['`design/screens/<screen>.hv.html`', '`design/screens/design-handoff.md`', 'in Spanish (its headings too, except the first line', 'Talk in Portuguese.',
     'The design system, `docs/design-system.md`, then each file it names', "the design system's, `docs/design-system.md`;", "the design system's path, `docs/design-system.md`,", 'writes `hv-tokens.css` from the token files']) {
     assert.ok(mine.includes(part), part);
   }
   const other = renderedFor(text, 'b');
-  assert.ok(other.includes('`docs/hive/design/<folder>/handoff.md`') && !other.includes('Talk in') && !/design.system/i.test(other.replace(/^---\n[\s\S]*?\n---\n/, '')), 'b keeps the defaults');
+  assert.ok(other.includes('`docs/hive/design/design-handoff.md`') && !other.includes('Talk in') && !/design.system/i.test(other.replace(/^---\n[\s\S]*?\n---\n/, '')), 'b keeps the defaults');
 });
 
 test('hive:designer works in rounds: a round ends with what changed, the commit is offered and made only when asked, the handoff only on request (#439)', async () => {
@@ -411,7 +412,7 @@ test('hive:designer carries no Hive MCP instruction: the protocol says when to c
   for (const tool of ['hive_done', 'hive_reply', 'hive_ask', 'hive_conventions', 'hive_stop']) assert.ok(!text.includes(tool), `the designer names ${tool}`);
   const { description = '' } = frontmatter(text);
   for (const name of ['SendMessage', 'hive:design-reviewer']) assert.ok(description.includes(name), `its description does not name ${name}`);
-  for (const name of ['in part <path>', 'hive:design-reviewer', 'handoff.md']) assert.ok(text.includes(name), `its text does not name ${name}`);
+  for (const name of ['in part <path>', 'hive:design-reviewer', 'design-handoff.md']) assert.ok(text.includes(name), `its text does not name ${name}`);
 });
 
 test('no shipped skill, raw or rendered, resolves a convention through hive_conventions or the agent instructions file (#317)', async () => {
@@ -617,4 +618,70 @@ test('reference/conventions.md names hive:system-designer among the templates th
   const text = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
   assert.match(text, /`hive:system-designer`[\s\S]{0,40}declare their own variables/, 'the intro stays true');
   assert.match(text, /^\| `systemDesignsDir` \| .*`hive:system-designer`'s own.*relative to the worktree \| `docs\/hive\/system-design` \|$/m);
+});
+
+// #743: prose wraps at any space; a phrase is checked on the text with its whitespace collapsed
+const flat = (text: string): string => text.replace(/\s+/g, ' ');
+
+test('reference/system-design.md draws a task\'s proposal in place, with no mark, and checks names by mode (#743)', async () => {
+  const text = flat(await readFile(join(PLUGIN, 'reference', 'system-design.md'), 'utf8'));
+  for (const part of ["A task's proposal is drawn in place", 'no mark tells a proposed part from a built one', 'the branch\'s diff is the proposal', '`system-design-handoff.md`',
+    'In a sync, every label names something found in the code', 'something found in the code or proposed by the spec or the brief']) assert.ok(text.includes(part), part);
+  assert.ok(!text.includes('9. **Names.** Every label names something found in the code.'), 'item 9 follows the mode');
+});
+
+test('hive:system-design-reviewer takes the round\'s mode and reads a proposal against its spec or brief, a sync against the code (#743)', async () => {
+  const text = await agentText('system-design-reviewer');
+  const prose = flat(text);
+  for (const part of ['`proposal from <path>`', '`proposal from request`', '`sync`', '### Proposal', '### Sync', 'left undrawn', 'never a command that writes']) assert.ok(prose.includes(part), part);
+  const { description = '' } = frontmatter(text);
+  for (const word of ['proposal', 'sync']) assert.ok(description.includes(word), `its description names ${word}`);
+});
+
+test('hive:system-designer has four modes, draws a proposal into the living diagrams with no mark, and hands off a text by default, a file on request (#743)', async () => {
+  const text = await agentText('system-designer');
+  const prose = flat(text);
+  for (const mode of ['create', 'update', 'sync', 'handoff']) assert.match(text, new RegExp(`^\\| ${mode} \\|`, 'm'), `${mode} is a mode`);
+  for (const part of ['## Existing work first', '## Sync', '## Handoff', '## System design handoff', '`{{ systemDesignsDir }}/system-design-handoff.md`',
+    'No mark tells a proposed part from a built one', "wait for the user's answer before writing it", '`proposal from request`', 'Only when the request asks for a file']) assert.ok(prose.includes(part), part);
+  assert.match(text, /```markdown\n## System design handoff: /, 'the handoff model is inline, its first line the one a later stage looks for');
+  assert.doesNotMatch(text, /^## Commit$/m, 'the commit is part of the handoff');
+  assert.doesNotMatch(prose, /never shows a part you did not find in the code/, 'the code rule follows the mode');
+  assert.ok(renderedFor(text).includes('`docs/hive/system-design/system-design-handoff.md`'), 'the handoff file sits in the living folder');
+  const { description = '' } = frontmatter(text);
+  for (const name of ['sync', 'handoff']) assert.ok(description.includes(name), `its description names ${name}`);
+});
+
+test('hive:designer keeps one living folder and hands off a text by default, design-handoff.md only when the request asks for a file (#743)', async () => {
+  const text = await agentText('designer');
+  const prose = flat(text);
+  for (const part of ['One living folder, never dated per task', 'No mark tells a proposed screen from a built one', 'Only when the request asks for a file',
+    'Your answer ends with the handoff text', 'its first line `## Design handoff`']) assert.ok(prose.includes(part), part);
+  assert.doesNotMatch(text, /<folder>\/handoff\.md|`handoff\.md`|<YYYY-MM-DD>-<slug>/, 'the dated folder and its handoff.md are gone');
+});
+
+test('hive:design-reviewer takes the living folder and the round\'s screens, and reads design-handoff.md when it exists, else the spec or the request for the states (#743)', async () => {
+  const text = await agentText('design-reviewer');
+  const prose = flat(text);
+  for (const part of ['`design-handoff.md`', 'the screens the round wrote or changed', "the spec or the round's request", 'the other screens of the folder']) assert.ok(prose.includes(part), part);
+  assert.doesNotMatch(text, /<folder>\/handoff\.md|`handoff\.md` of the other designs/, 'no dated design folder is read');
+});
+
+test('/hive:new-build finds the design handoff in {result.design}, else in design-handoff.md when the branch added or changed it, else on the issue (#743)', async () => {
+  const rendered = renderedFor(await skillText('new-build'));
+  for (const part of ['`{result.design}`', '`docs/hive/design/design-handoff.md`', '--diff-filter=AM', '`## Design handoff`']) assert.ok(rendered.includes(part), part);
+  assert.ok(!rendered.includes('`handoff.md` under'), 'no handoff.md under a dated folder');
+  assert.match(rendered, /its key in the task's `result` \(`plan`, `spec`,\s+`walkthrough`\)/, 'the design handoff has its own order');
+});
+
+test('reference/conventions.md: designsDir is one living folder, the design handoff is a text or design-handoff.md, and the Results name design and systemDesign (#743)', async () => {
+  const text = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
+  assert.match(text, /^\| a session that ran `hive:designer` \| `design` /m);
+  assert.match(text, /^\| a session that ran `hive:system-designer` \| `systemDesign` /m);
+  assert.match(text, /^\| `designsDir` \| [^|]*one living folder/m);
+  for (const part of ['`<designsDir>/design-handoff.md`', '--diff-filter=AM', '`systemDesign`']) assert.ok(text.includes(part), part);
+  assert.ok(!text.includes('<YYYY-MM-DD>-<slug>/handoff.md'), 'no dated design folder');
+  assert.doesNotMatch(text, /one subfolder per task/);
+  const newPr = await skillText('new-pr');
+  assert.doesNotMatch(newPr, /handoff\.md|<YYYY-MM-DD>-<slug>\//, '/hive:new-pr reads the lookup in the reference, never a path of its own');
 });

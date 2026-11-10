@@ -6,12 +6,14 @@ the pane lays out on its first open and writes back laid out.
 
 ## The folder
 
-One living folder per repository, `systemDesignsDir`, never dated per task.
+One living folder per repository, `systemDesignsDir`, never dated per task. A task's proposal is drawn in place, on the task's branch,
+into the files of the parts it changes: no mark tells a proposed part from a built one, and the branch's diff is the proposal.
 
 - `architecture.drawio` is the main diagram: the repository's runtime parts and their main modules.
 - Every other diagram explains one part of it and is named after that part and its kind, `<part>-<kind>.drawio`, `<kind>` one of
   `flowchart`, `sequence`, `class`, `use-case`: `task-open-sequence.drawio`, `reducer-class.drawio`.
-- Every file name matches `^[a-z0-9-]+\.drawio$`. Paths stay under the folder and are quoted in every command.
+- Every diagram's file name matches `^[a-z0-9-]+\.drawio$`. The one other file is `system-design-handoff.md`, written only when a
+  handoff asks for it. Paths stay under the folder and are quoted in every command.
 
 ## Diagram kinds
 
@@ -172,4 +174,6 @@ Read each file back, then check every item. A Mermaid file has no cells: only it
 7. **Pending XML.** Every vertex's `mxGeometry` has `width` and `height` and no `x` or `y`; no edge has points.
 8. **Laid-out file.** `git diff --no-index -- "<copy>" "<file>"` shows only added or removed cells and, on an existing cell, only a
    container's `width` or `height`, or a renamed part's `value`.
-9. **Names.** Every label names something found in the code. Whether the diagram is true to the code is the reviewer's half.
+9. **Names.** In a sync, every label names something found in the code. In a proposal, every label the round added or changed names
+   something found in the code or proposed by the spec or the brief, and every other label is as it was. Whether the diagram is true to
+   the code and to its proposal is the reviewer's half.
