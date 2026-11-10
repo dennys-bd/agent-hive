@@ -233,14 +233,14 @@ test('/hive:new-build declares its own variables, interpolated where used, and r
   const rendered = renderedFor(text);
   assert.doesNotMatch(rendered, /\{\{|\{%/, 'no Liquid is left');
   assert.doesNotMatch(rendered, /## Conventions/, 'no list of values: each is interpolated where it is used');
-  for (const part of ['Plan: under `docs/hive/plans`', 'else under `docs/hive/specs`', 'a `handoff.md` under `docs/hive/design`', 'Walkthrough: under `docs/hive/walkthroughs`', 'Write `docs/hive/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in English']) assert.ok(rendered.includes(part), part);
+  for (const part of ['Plan: under `docs/hive/plans`', 'else under `docs/hive/specs`', '`docs/hive/design/design-handoff.md`', 'Walkthrough: under `docs/hive/walkthroughs`', 'Write `docs/hive/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in English']) assert.ok(rendered.includes(part), part);
   for (const part of ['Talk in', 'The test command, wherever', 'Run the app and capture']) assert.ok(!rendered.includes(part), `with no value, nothing says ${part}`);
 });
 
 test('/hive:new-build rendered with a value for each variable carries each where it is used; another workspace keeps the defaults (#431)', async () => {
   const text = valued(await skillText('new-build'), NEW_BUILD_VALUES);
   const mine = renderedFor(text);
-  for (const part of ['Plan: under `design/plans`', 'else under `design/specs`', 'a `handoff.md` under `design/screens`', 'Walkthrough: under `design/walkthroughs`', 'Write `design/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in Spanish', 'Talk in Portuguese.',
+  for (const part of ['Plan: under `design/plans`', 'else under `design/specs`', '`design/screens/design-handoff.md`', 'Walkthrough: under `design/walkthroughs`', 'Write `design/walkthroughs/<YYYY-MM-DD>-<slug>.md`, in Spanish', 'Talk in Portuguese.',
     'The test command, wherever this skill says so, is `pnpm test`.', 'Run the app and capture its screens as this says: run pnpm start and capture each screen as docs/ui-check.md says.']) assert.ok(mine.includes(part), part);
   const other = renderedFor(text, 'b');
   assert.ok(!other.includes('Talk in') && other.includes('Write `docs/hive/walkthroughs/') && !other.includes('The test command, wherever'), 'b keeps the defaults');
@@ -631,4 +631,11 @@ test('hive:design-reviewer takes the living folder and the round\'s screens, and
   const prose = flat(text);
   for (const part of ['`design-handoff.md`', 'the screens the round wrote or changed', "the spec or the round's request", 'the other screens of the folder']) assert.ok(prose.includes(part), part);
   assert.doesNotMatch(text, /<folder>\/handoff\.md|`handoff\.md` of the other designs/, 'no dated design folder is read');
+});
+
+test('/hive:new-build finds the design handoff in {result.design}, else in design-handoff.md when the branch added or changed it, else on the issue (#743)', async () => {
+  const rendered = renderedFor(await skillText('new-build'));
+  for (const part of ['`{result.design}`', '`docs/hive/design/design-handoff.md`', '--diff-filter=AM', '`## Design handoff`']) assert.ok(rendered.includes(part), part);
+  assert.ok(!rendered.includes('`handoff.md` under'), 'no handoff.md under a dated folder');
+  assert.match(rendered, /its key in the task's `result` \(`plan`, `spec`,\s+`walkthrough`\)/, 'the design handoff has its own order');
 });
