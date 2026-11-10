@@ -39,10 +39,11 @@ export const fishQuote = (s: string): string => `'${s.replace(/[\\']/g, '\\$&')}
 
 // `function name { … }`, not `name() { … }`: an alias of the same name would be expanded inside the latter's definition and break it. The
 // command is an AGENTS constant, bare as in ptyCommand; the paths are the home's, quoted. PowerShell's runs the POSIX shim under sh.exe
-// (#645): cmd.exe would expand a % and re-quote the arguments, and the one shim script is what registers the session.
+// (#645): cmd.exe would expand a % and re-quote the arguments, and the one shim script is what registers the session. An alias of the
+// same name from the user's profile beats a function in PowerShell, so it is removed first.
 function functionLine(file: string, { command, path }: ShellShim, sh: string): string {
   if (file.startsWith('fish/')) return `function ${command}; ${fishQuote(path)} $argv; end`;
-  if (file.startsWith('pwsh/')) return `function ${command} { & ${pwshQuote(sh)} ${pwshQuote(path)} @args }`;
+  if (file.startsWith('pwsh/')) return `Remove-Item -LiteralPath Alias:${command} -Force -ErrorAction SilentlyContinue; function ${command} { & ${pwshQuote(sh)} ${pwshQuote(path)} @args }`;
   return `function ${command} { ${shellQuote(path)} "$@"; }`;
 }
 

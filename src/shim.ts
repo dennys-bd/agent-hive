@@ -47,7 +47,8 @@ export async function installShim(home: string, agent: ShimAgent, { platform, sh
   const path = shimPath(home, agent);
   await writeFile(path, renderShim(await readFile(shimSource(), 'utf8'), agent, sh));
   await chmod(path, SHIM_MODE); // writeFile's mode applies only to a new file
-  if (platform === 'win32') await writeFile(shimCmdPath(home, agent), renderShim(await readFile(shimCmdSource(), 'utf8'), agent, sh));
+  // cmd.exe expands %NAME% while reading a line, so a % in the sh.exe path is written %%
+  if (platform === 'win32') await writeFile(shimCmdPath(home, agent), renderShim(await readFile(shimCmdSource(), 'utf8'), agent, sh.replaceAll('%', '%%')));
   return path;
 }
 

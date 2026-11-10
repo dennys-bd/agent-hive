@@ -78,7 +78,7 @@ test('ptyEnv on win32 points TEMP and TMP at the run\'s own dir beside TMPDIR, w
 });
 
 test('withoutHiveEnv strips every runner\'s host env (CLAUDECODE, CLAUDE_CODE_CHILD_SESSION) and the Hive\'s own, whatever the run\'s agent; a run launch needs its agent (#924, #333)', () => {
-  const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/n', HIVE_SECRET: SECRET, HIVE_MCP_SECRET: SECRET, HIVE_MCP_TOKEN_0: 'Bearer t0k', HIVE_MCP_TOKEN_12: 'x', HIVE_HOME: '/h', HOME: '/Users/x' };
+  const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/n', HIVE_SECRET: SECRET, HIVE_MCP_SECRET: SECRET, HIVE_MCP_TOKEN_0: 'Bearer t0k', HIVE_MCP_TOKEN_12: 'x', HIVE_HOME: '/h', HIVE_PWSH: 'C:\\x\\pwsh.exe', HOME: '/Users/x' };
   assert.deepEqual(ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin'), { PATH: '/bin', HOME: '/Users/x', TMPDIR: '/runs/W1', HIVE_PTY_ID: 'W1', HIVE_PORT: '4242', HIVE_SECRET_FILE: SECRET_FILE_PATH });
   assert.throws(() => ptyCommand({ ptyId: 'W1', slug: 's', cwd: '/wt', port: 4242 }), { message: 'pty: a run launch with no agent' });
 });
@@ -151,7 +151,7 @@ test('ptyCommand quotes every arg so a model or id with a quote cannot break out
   assert.ok(cmd.includes("'--model' 'o'\\''ps'"), cmd);
 });
 
-const TERMINAL_SHELL = `{ case "$(export -p)" in *'export SHELL='*) hive_sh=\${SHELL##*[/\\\\]} ;; *) hive_sh= ;; esac; hive_sh=\${hive_sh%.exe}; case "\${HIVE_SHELL_DIR:+$hive_sh}" in zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;; bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;; fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;; *) if [ -n "\${HIVE_PWSH:-}" ]; then "$HIVE_PWSH" -NoLogo -NoProfile -NoExit -Command '${PWSH_LOADER}'; else "\${SHELL:-sh}"; fi ;; esac; }`; // #259, #645
+const TERMINAL_SHELL = `{ if [ -n "\${HIVE_PWSH:-}" ]; then case "$(export -p)" in *'export SHELL='*) hive_sh=\${SHELL##*[/\\\\]} ;; *) hive_sh= ;; esac; else hive_sh=\${SHELL##*[/\\\\]}; fi; hive_sh=\${hive_sh%.exe}; case "\${HIVE_SHELL_DIR:+$hive_sh}" in zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;; bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;; fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;; *) if [ -n "\${HIVE_PWSH:-}" ]; then "$HIVE_PWSH" -NoLogo -NoProfile -NoExit -Command '${PWSH_LOADER}'; else "\${SHELL:-sh}"; fi ;; esac; }`; // #259, #645
 test('ptyCommand for a terminal: cd into the worktree, the user\'s shell, then the exit trailer with the pty id; a path with a quote and a space stays one argument (#283)', () => {
   assert.equal(
     ptyCommand({ ...LAUNCH, terminal: true, cwd: "/Users/me/it's repo/.hive/worktrees/hive-1-x" }),
@@ -237,7 +237,10 @@ test('windowsShell answers pwsh.exe\'s full path when both are found, powershell
   const found = (...files: string[]) => (file: string): boolean => files.includes(file);
   assert.equal(windowsShell(env, 'win32', found(pwsh, powershell)), pwsh);
   assert.equal(windowsShell(env, 'win32', found(powershell)), powershell);
-  assert.equal(windowsShell(env, 'win32', found('C:\\bin\\pwsh.exe', powershell)), 'C:\\bin\\pwsh.exe', 'pwsh first, wherever it is');
+  assert.equal(windowsShell(env, 'win32', found('C:\\bin\\pwsh.exe', powershell)), powershell, 'both fixed folders before PATH');
+  assert.equal(windowsShell(env, 'win32', found('C:\\bin\\pwsh.exe', 'C:\\bin\\powershell.exe')), 'C:\\bin\\pwsh.exe', 'on PATH, pwsh first');
+  assert.equal(windowsShell(env, 'win32', found('C:\\bin\\pwsh.cmd', 'C:\\bin\\powershell.exe')), 'C:\\bin\\powershell.exe', 'a planted pwsh.cmd never runs');
+  assert.equal(windowsShell({ ...env, PATHEXT: '.CMD;.EXE' }, 'win32', found('C:\\bin\\pwsh.cmd')), undefined, 'only an .exe, whatever PATHEXT says');
   assert.equal(windowsShell(env, 'win32', found()), undefined);
   assert.equal(windowsShell(env, 'darwin', found(pwsh)), undefined);
 });
@@ -257,8 +260,9 @@ async function stub(dir: string, name: string, tag: string): Promise<string> {
 
 // The terminal's line under the POSIX shell, as the pty host runs it: the stub's lines only. The trailer's curl fails on the closed port, so
 // the exit code is not the shell's
-function runLine(cwd: string, env: Record<string, string>): Promise<string[]> {
-  const line = ptyCommand({ ...LAUNCH, terminal: true, cwd, port: CLOSED_PORT });
+// `prefix` runs first in the same shell: an assignment there sets a variable the line sees but that is not exported
+function runLine(cwd: string, env: Record<string, string>, prefix = ''): Promise<string[]> {
+  const line = prefix + ptyCommand({ ...LAUNCH, terminal: true, cwd, port: CLOSED_PORT });
   const full = { ...BARE_ENV, HIVE_SHELL_DIR: '/hs', HIVE_SECRET_FILE: '/dev/null', ...env };
   return new Promise((resolve) => {
     execFile(posixShell().shell, ['-c', line], { env: full, encoding: 'utf8' }, (_err, stdout) => resolve(stdout.split(/\r?\n/).filter((l) => l !== '')));
@@ -296,4 +300,10 @@ test('ptyCommand quotes the agent\'s command as one word: a Windows full path wi
   const line = ptyCommand({ ...LAUNCH, agent: { command: 'C:\\Program Files\\Claude\\claude.exe', argv: ['--version'] } });
   assert.ok(line.includes("HIVE_PORT=4242 'C:\\Program Files\\Claude\\claude.exe' '--version' "), line);
   assert.ok(ptyCommand({ ...LAUNCH, agent: { command: 'claude', argv: [] } }).includes("HIVE_PORT=4242 'claude' "), 'on darwin \'claude\' runs exactly what claude did');
+});
+
+test('without HIVE_PWSH a SHELL naming bash starts bash on the Hive\'s rc file even when it is not exported, as before #645 (#645)', async (t: TestContext) => {
+  const dir = await tempDir(t, 'terminal line-');
+  const bash = await stub(dir, 'bash', 'bash');
+  assert.deepEqual(await runLine(dir, {}, `SHELL=${shellQuote(bash)}; `), ['bash', '--rcfile', '/hs/bash/rc']);
 });

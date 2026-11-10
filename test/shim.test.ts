@@ -156,8 +156,12 @@ test('on win32 installShim also writes <command>.cmd beside the POSIX shim, runn
     assert.equal(path, shimPath(home, AGENTS[id]), 'the answer is still the POSIX shim');
     assert.equal(shimCmdPath(home, AGENTS[id]), `${path}.cmd`);
     const lines = (await readFile(shimCmdPath(home, AGENTS[id]), 'utf8')).split(/\r?\n/).filter((line) => line !== '' && !line.startsWith('rem '));
-    assert.deepEqual(lines, ['@echo off', 'setlocal', 'set MSYS2_ARG_CONV_EXCL=*', `"${sh}" "%~dp0${AGENTS[id].command}" %*`], id);
+    assert.deepEqual(lines, ['@echo off', 'setlocal EnableExtensions DisableDelayedExpansion', 'set MSYS2_ARG_CONV_EXCL=*', `"${sh}" "%~dp0${AGENTS[id].command}" %*`], id);
   }
+  const percent = await tempDir(t, 'home-');
+  await installShim(percent, AGENTS.claude, { platform: 'win32', sh: 'C:\\100%\\%GIT%\\sh.exe' });
+  assert.ok((await readFile(shimCmdPath(percent, AGENTS.claude), 'utf8')).includes('"C:\\100%%\\%%GIT%%\\sh.exe" "%~dp0claude" %*'), 'cmd.exe reads %% as one %');
+  assert.equal(await readFile(shimPath(percent, AGENTS.claude), 'utf8'), await readFile(shimPath(home, AGENTS.claude), 'utf8'), 'the POSIX shim is untouched');
   const posix = await tempDir(t, 'home-');
   await installShim(posix, AGENTS.claude, INSTALL);
   await assert.rejects(access(shimCmdPath(posix, AGENTS.claude)), 'no .cmd off win32');

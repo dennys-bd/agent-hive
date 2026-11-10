@@ -37,8 +37,8 @@ test('renderShellInit renders the PowerShell profile: the shim folder put back f
   const template = "$env:PATH = __HIVE_BIN__ + ';' + $env:PATH\n__HIVE_FUNCTIONS__\n";
   assert.equal(renderShellInit(template, 'pwsh/profile.ps1', shims, paths), [
     "$env:PATH = 'C:\\h\\it''s\\bin' + ';' + $env:PATH",
-    "function claude { & 'C:\\Program Files\\Git\\bin\\sh.exe' 'C:\\h\\it''s\\bin\\claude' @args }",
-    "function codex { & 'C:\\Program Files\\Git\\bin\\sh.exe' 'C:\\h\\bin\\codex' @args }",
+    "Remove-Item -LiteralPath Alias:claude -Force -ErrorAction SilentlyContinue; function claude { & 'C:\\Program Files\\Git\\bin\\sh.exe' 'C:\\h\\it''s\\bin\\claude' @args }",
+    "Remove-Item -LiteralPath Alias:codex -Force -ErrorAction SilentlyContinue; function codex { & 'C:\\Program Files\\Git\\bin\\sh.exe' 'C:\\h\\bin\\codex' @args }",
     '',
   ].join('\n'));
 });

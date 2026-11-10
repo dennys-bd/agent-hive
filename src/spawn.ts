@@ -86,7 +86,8 @@ export function runTmpDir(ptyId: string, base = tmpdir()): string {
 }
 
 // The Hive's own variables no child inherits (see ptyEnv); every runner's hostEnv joins them (#924)
-const HIVE_ONLY_ENV = ['NODE_PATH', 'HIVE_SECRET', 'HIVE_HOME'];
+// HIVE_PWSH too (#645): only terminalEnv sets it, so an inherited one never picks the terminal's shell
+const HIVE_ONLY_ENV = ['NODE_PATH', 'HIVE_SECRET', 'HIVE_HOME', 'HIVE_PWSH'];
 
 /** The Hive's own env minus what a child must not inherit (see ptyEnv): every runner's host env, whatever the run's agent, since it
  * describes the process the Hive was started from (#924). A language server (#780) is started with the same. */
@@ -126,22 +127,24 @@ export function terminalEnv(home: string, terminalId: string, path: string, { pl
   return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? shimDir(home) : `${shimDir(home)}${delimiter}${path}`, HIVE_SHELL_DIR: shellInitDir(home), ...shell };
 }
 
-// pwsh 7 first, then the powershell.exe every Windows ships (#645). Their install folders come before PATH, since an MSI install of 7 may
-// leave a running Hive's PATH alone
+// pwsh 7 first, then the powershell.exe every Windows ships (#645). Both install folders come before PATH, since an MSI install of 7 may
+// leave a running Hive's PATH alone and a workspace's PATH is the repository's to choose
 const PWSH_NAMES = ['pwsh', 'powershell'] as const;
+// Only an .exe: a pwsh.cmd planted on a workspace's PATH would otherwise run on every terminal open
+const EXE_ONLY = { PATHEXT: '.EXE' };
+const fixedPath = (root: string | undefined, ...parts: string[]): string[] => (root !== undefined && win32.isAbsolute(root) ? [win32.join(root, ...parts)] : []);
 
 /** The full path of the PowerShell a Windows terminal opens (#645), or undefined: none found, or not win32. Looked up on every launch,
  * never cached, as findExec always is: a PowerShell 7 installed while the Hive runs is picked up. */
 export function windowsShell(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, isFile?: (file: string) => boolean): string | undefined {
   if (platform !== 'win32') return undefined;
-  const programFiles = envValue(env, 'PROGRAMFILES');
-  const systemRoot = envValue(env, 'SYSTEMROOT');
-  const dirs = [
-    ...(programFiles === undefined ? [] : [win32.join(programFiles, 'PowerShell', '7')]),
-    ...(systemRoot === undefined ? [] : [win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0')]),
+  const names = [
+    ...fixedPath(envValue(env, 'PROGRAMFILES'), 'PowerShell', '7', 'pwsh'),
+    ...fixedPath(envValue(env, 'SYSTEMROOT'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell'),
+    ...PWSH_NAMES,
   ];
-  for (const name of PWSH_NAMES) {
-    const found = findExec(name, { platform, env, dirs, isFile });
+  for (const name of names) {
+    const found = findExec(name, { platform, env: { ...env, ...EXE_ONLY }, isFile });
     if (found !== undefined) return found;
   }
   return undefined;
@@ -160,10 +163,11 @@ const commandLine = ({ command, env }: NonNullable<PtyLaunch['run']>): string =>
 // command line always had them
 const shellWord = (arg: LaunchArg): string => (typeof arg === 'string' ? shellQuote(arg) : `${arg[0]} ${shellQuote(arg[1])}`);
 
-// The shell's name (#645): an exported SHELL, the one the pty env carried, with everything up to its last / or \ removed and a trailing
-// .exe dropped, so C:\Program Files\Git\bin\bash.exe and /usr/bin/bash both read bash. Only an exported one: macOS's /bin/sh and Git's
-// sh.exe are bash, which sets an unset SHELL to the account's login shell without exporting it, and that would hide HIVE_PWSH.
-const SHELL_NAME = `case "$(export -p)" in *'export SHELL='*) hive_sh=\${SHELL##*[/\\\\]} ;; *) hive_sh= ;; esac; hive_sh=\${hive_sh%.exe};`;
+// The shell's name (#645): SHELL with everything up to its last / or \ removed and a trailing .exe dropped, so
+// C:\Program Files\Git\bin\bash.exe and /usr/bin/bash both read bash. With HIVE_PWSH set (Windows) only an exported SHELL, the one the pty
+// env carried: Git's sh.exe is bash, which sets an unset SHELL to the account's login shell without exporting it, and that would hide
+// HIVE_PWSH. Without it, any SHELL, as before #645: macOS's and Linux's terminals keep the shell bash-as-sh fills in when the Hive's env has none.
+const SHELL_NAME = `if [ -n "\${HIVE_PWSH:-}" ]; then case "$(export -p)" in *'export SHELL='*) hive_sh=\${SHELL##*[/\\\\]} ;; *) hive_sh= ;; esac; else hive_sh=\${SHELL##*[/\\\\]}; fi; hive_sh=\${hive_sh%.exe};`;
 
 /** PowerShell's first command (#645): profile.ps1 read as text and dot-sourced as a scriptblock, which execution policy, applying to
  * script files only, never stops, and which runs in the global scope, so what the user's profiles define stays alive. One sh
