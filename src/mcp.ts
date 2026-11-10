@@ -228,7 +228,7 @@ function registerReplyTool(server: McpServer, deps: McpDeps, header: string | un
 // hive_conventions (#692, #318): the Hive's language, the stage's approval and a fork's PR target, which the plugin's skills read. Any skill may call it; it only reads.
 function registerConventionsTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_conventions', {
-    description: 'Read the Hive\'s language (hiveLanguage), whether your stage waits for the user\'s approval in the Hive (approval) and the stage\'s name (stage, absent in a free or local session), and, for a fork workspace, fork: where the PRs go (pr: original, fork or ask), the original and fork repositories, the base remote and the base branch, and nestedRepos: the workspace\'s nested repos, each path with its GitHub repository when it has one. Answers a JSON object.',
+    description: 'Read the Hive\'s language (hiveLanguage), whether your stage waits for the user\'s approval in the Hive (approval) and the stage\'s name (stage, absent in a free or local session), and, for a fork workspace, fork: where the PRs go (pr: original, fork or ask), the original and fork repositories, the base remote and the base branch, and nestedRepos: the workspace\'s nested repos, each path with its GitHub repository when it has one, and base: the workspace\'s base branch, when one is set (in a fork it is fork.base). Answers a JSON object.',
     inputSchema: {},
   }, async () => recorded(deps, header, 'hive_conventions', async () => {
     const ptyId = livePtyId(deps, header);
@@ -238,7 +238,7 @@ function registerConventionsTool(server: McpServer, deps: McpDeps, header: strin
     const workspace = workerWorkspace(current.state, current.config, worker);
     const fork = await forkConventions(deps.exec, workspace, current.config); // #854
     const nested = await nestedConventions(deps.exec, workspace); // #653
-    return reply(JSON.stringify(conventionsAnswer(current.state, current.config, worker, fork, nested)));
+    return reply(JSON.stringify(conventionsAnswer(current.state, current.config, worker, fork, nested, workspace)));
   }));
 }
 

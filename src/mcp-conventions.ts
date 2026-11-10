@@ -17,8 +17,8 @@ export interface ForkConventions { pr: PrTarget; original: string; fork: string;
 export interface NestedConventions { path: string; repository?: string }
 
 /** What hive_conventions answers (#692, #318): the Hive's language, the worker's stage with its approval, a fork workspace's PR target
- * (#854) and the workspace's nested repos (#653). The conventions themselves are each skill's variables since #317, so the Hive answers none. */
-export interface ConventionsAnswer { hiveLanguage: Language; approval: boolean; stage?: string; fork?: ForkConventions; nestedRepos: NestedConventions[] }
+ * (#854), the workspace's nested repos (#653) and its base branch when one is set (#433). The conventions themselves are each skill's variables since #317, so the Hive answers none. */
+export interface ConventionsAnswer { hiveLanguage: Language; approval: boolean; stage?: string; fork?: ForkConventions; nestedRepos: NestedConventions[]; base?: string }
 
 /** The workspace a worker runs in (#692): its task's, or a local activity's own */
 export function workerWorkspace(state: Pick<State, 'tasks' | 'activities' | 'activityRecords'>, config: Pick<Config, 'comb'>, worker: Worker): Workspace | undefined {
@@ -28,12 +28,13 @@ export function workerWorkspace(state: Pick<State, 'tasks' | 'activities' | 'act
 
 /** hive_conventions' answer for `worker` (#692): the stage and its approval only for a stage run, since a free or a local session runs no
  * stage. `fork` only when given (#854). */
-export function conventionsAnswer(state: Pick<State, 'tasks' | 'stages' | 'activities' | 'activityRecords'>, config: Pick<Config, 'language'>, worker: Worker, fork?: ForkConventions, nestedRepos: NestedConventions[] = []): ConventionsAnswer {
+export function conventionsAnswer(state: Pick<State, 'tasks' | 'stages' | 'activities' | 'activityRecords'>, config: Pick<Config, 'language' | 'baseBranch'>, worker: Worker, fork?: ForkConventions, nestedRepos: NestedConventions[] = [], workspace?: Workspace): ConventionsAnswer {
   const task = taskOfWorker(state, worker);
   const stage = task && !worker.freeSession ? stageOf(state.stages, task.stage) : undefined;
+  const { branch } = workspaceBase(config, workspace);
   return {
     hiveLanguage: config.language ?? systemLanguage(), approval: stage?.approval === true,
-    ...(stage ? { stage: stage.name } : {}), ...(fork ? { fork } : {}), nestedRepos,
+    ...(stage ? { stage: stage.name } : {}), ...(fork ? { fork } : {}), nestedRepos, ...(branch === undefined ? {} : { base: branch }),
   };
 }
 
