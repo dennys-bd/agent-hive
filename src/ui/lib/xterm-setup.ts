@@ -5,11 +5,12 @@ import { type ISearchOptions, SearchAddon } from '@xterm/addon-search';
 import type { IBufferRange, Terminal } from '@xterm/xterm';
 import { toast } from 'sonner';
 import { FIXED_BINDINGS, matches } from '../../shortcuts.js';
+import { pwshQuote } from '../../pwsh-quote.js';
 import type { RefTarget } from '../../task-refs.js';
 import type { TerminalSize } from '../../terminal-wire.js';
 import { postJson } from './api.js';
 import { findFileLinks } from './file-links.js';
-import { isMac, pressed, pressedFixed } from './shortcut-bindings.js';
+import { isMac, isWindows, pressed, pressedFixed } from './shortcut-bindings.js';
 import { findTaskRefs } from './task-refs.js';
 
 export const FONT_FAMILY = 'ui-monospace, monospace'; // the main window's mono font (.output)
@@ -223,8 +224,13 @@ const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/g;
  * backslash before each of the shell's special characters. */
 export const escapePath = (path: string): string => path.replace(CONTROL, '').replace(SHELL_SPECIAL, '\\$&');
 
+/** A pasted file's path as the tab types it (#645): on Windows in PowerShell's single quotes with control characters dropped, since a
+ * backslash escape is wrong for any Windows path, agent tab or terminal; elsewhere escapePath's. Chosen by platform, not by the tab's
+ * shell: in a Git bash terminal on Windows a path holding ' gets PowerShell's quoting (the spec's known ceiling). */
+export const pastedPath = (path: string, windows: boolean): string => (windows ? pwshQuote(path.replace(CONTROL, '')) : escapePath(path));
+
 /** The terminal's paste (#843). Finder's ⌘C puts no usable text on the clipboard, so xterm's own handler would send claude an empty paste,
- * and claude would read the file's icon as the clipboard's image. With files copied, the paste types their paths instead, escaped and joined
+ * and claude would read the file's icon as the clipboard's image. With files copied, the paste types their paths instead, escaped (in PowerShell's quotes on Windows, #645) and joined
  * by a space, as Terminal.app and iTerm do, and claude attaches an image from its path. With none, or a read that fails, the text read at
  * the event goes through as before, an empty one included: that is how a copied screenshot reaches claude.
  * A capture listener on the open xterm's element (call it after `open`), so it runs before xterm's handler on its textarea. The event is
@@ -236,7 +242,10 @@ export function terminalPaste(term: Terminal, clipboardFiles: () => Promise<stri
     event.preventDefault();
     event.stopImmediatePropagation();
     void clipboardFiles().then(
-      (paths) => term.paste(paths.length > 0 ? paths.map(escapePath).join(' ') : text),
+      (paths) => {
+        const windows = isWindows();
+        term.paste(paths.length > 0 ? paths.map((path) => pastedPath(path, windows)).join(' ') : text);
+      },
       () => term.paste(text),
     );
   }, { capture: true });

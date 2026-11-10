@@ -8,14 +8,20 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify, stripVTControlCharacters } from 'node:util';
+import { AGENTS } from '../src/agents.js';
 import { runners } from '../src/agents/registry.js';
 import { commandChannel, createConsoleStore } from '../src/console.js';
 import { feedConsole } from '../src/console-feed.js';
+import { envValue } from '../src/exec-path.js';
 import { killTree } from '../src/kill-tree.js';
+import { posixShell } from '../src/posix-shell.js';
 import { createPtyHost, type PtyHost } from '../src/pty-host.js';
 import { SECRET_HEADER } from '../src/secret.js';
-import { killStray } from '../src/spawn.js';
+import { installShellInit } from '../src/shell-init.js';
+import { installShim, shimCmdPath, shimPath } from '../src/shim.js';
+import { killStray, terminalEnv, windowsShell } from '../src/spawn.js';
 import { launchInternalPty } from '../src/spawn-internal.js';
+import { ensureTerminalsDir } from '../src/terminal-files.js';
 import type { Exec, PtyLaunch } from '../src/types.js';
 import { gone } from './process-probe.js';
 import { SECRET } from './secret-client.js';
@@ -141,4 +147,27 @@ test('on the Windows lane the tab\'s kill, killStray on claude\'s stray pattern,
   assert.equal(await killStray(runners.claude.strayPattern(run.ptyId), realExec, 'win32'), true);
   assert.equal(await gone(Number(agent)), true, 'the fake agent');
   assert.equal(await gone(Number(child)), true, 'the child it started, through taskkill /T');
+});
+
+const WIDE = { cols: 250, rows: 30 }; // the paths Get-Command prints stay on one line
+const literal = (text: string): RegExp => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+test('on the Windows lane a terminal opens PowerShell on the Hive\'s profile: claude is the function calling its shim under sh.exe, its .cmd twin is the Application, and exit 4 still posts the trailer with the pty id (#645)', onWindows, async (t) => {
+  const home = await tempDir(t, 'pwsh-home-');
+  const install = { platform: 'win32' as const, sh: posixShell().shell };
+  await installShim(home, AGENTS.claude, install);
+  await installShellInit(home, install);
+  await ensureTerminalsDir(home); // the history file's folder, as keptLaunch makes it
+  const pwsh = windowsShell(process.env, 'win32');
+  assert.ok(pwsh !== undefined, 'every Windows ships powershell.exe');
+  const env = terminalEnv(home, 'T1', envValue(process.env, 'PATH') ?? '', { platform: 'win32', pwsh });
+  // Windows PowerShell 5.1 started from the runner's pwsh 7 shell breaks on the inherited PSModulePath
+  const run = await lane(t, { terminal: true, env: /pwsh\.exe$/i.test(pwsh) ? env : { ...env, PSModulePath: '' }, size: WIDE });
+  await until(run.output, /PS [^\r\n]*>/);
+  run.host.write(run.ptyId, '(Get-Command claude).Definition; (Get-Command claude -CommandType Application).Source\r');
+  await until(run.output, literal(`'${shimPath(home, AGENTS.claude)}' @args`)); // decision 13: the function's body names the shim
+  await until(run.output, literal(shimCmdPath(home, AGENTS.claude)));
+  run.host.write(run.ptyId, 'exit 4\r');
+  assert.equal((await run.ended)[1], false, 'PowerShell ended on its own');
+  assert.deepEqual(run.posts, [`/hooks/exit ${run.ptyId} ${SECRET}`]);
 });

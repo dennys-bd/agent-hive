@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { AGENTS } from '../agents.js';
 import { hookCommand, hooksPath, MCP_ROUTE, statusCommand, STOP_HOOK_TIMEOUT_S } from '../hooks-settings.js';
 import { SECRET_HEADER } from '../secret.js';
+import { posixShell } from '../posix-shell.js';
 import { installShim } from '../shim.js';
 import type { LspServers, McpServer, RunMcpServer } from './runner.js';
 
@@ -64,5 +65,5 @@ export const claudeLspPlugin = (servers: LspServers): { path: string; content: s
  * upgrading the Hive changes what every worker gets. */
 export async function prepareClaudeHome(home: string, port: number): Promise<void> {
   await writeFile(hooksPath(home), asFile(renderHooksSettings(port)));
-  await installShim(home, AGENTS.claude);
+  await installShim(home, AGENTS.claude, { platform: process.platform, sh: posixShell().shell }); // #645: the .cmd twin on win32
 }

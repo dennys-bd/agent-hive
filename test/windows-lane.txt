@@ -39,7 +39,9 @@ test/server-drawio.test.js
 test/server-file-base.test.js
 test/server-move.test.js
 test/server-tree-ops.test.js
+test/shell-init.test.js
 test/shell-procs.test.js
+test/shim.test.js
 test/spawn-internal.test.js
 test/spawn.test.js
 test/stage-commands.test.js

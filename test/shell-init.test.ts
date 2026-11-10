@@ -5,36 +5,61 @@ import { accessSync, constants } from 'node:fs';
 import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { AGENTS } from '../src/agents.js';
+import { pwshQuote } from '../src/pwsh-quote.js';
 import { fishQuote, installShellInit, renderShellInit, SHELL_INIT_FILES, shellQuote } from '../src/shell-init.js';
-import { shimPath } from '../src/shim.js';
+import { shimDir, shimPath } from '../src/shim.js';
 import { ptyCommand, terminalEnv } from '../src/spawn.js';
 import { AGENT_IDS, type PtyLaunch } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
 
-const FUNCTION_FILES = ['zsh/.zshrc', 'bash/rc', 'fish/init.fish'];
+const FUNCTION_FILES = ['zsh/.zshrc', 'bash/rc', 'fish/init.fish', 'pwsh/profile.ps1'];
+const INSTALL = { platform: 'darwin', sh: '/bin/sh' } as const;
+const PATHS = { sh: '/bin/sh', bin: '/h/bin' };
 
 test('renderShellInit puts one function per shim in the placeholder, the path quoted for the file\'s shell: a quote, a space, $\' and $& stay literal (#259)', () => {
   const shims = [{ command: 'claude', path: `/h/it's $'x' $& "dir"/bin/claude` }, { command: 'codex', path: '/h/bin/codex' }];
   const template = 'before\n__HIVE_FUNCTIONS__\nafter\n';
   const sh = [String.raw`function claude { '/h/it'\''s $'\''x'\'' $& "dir"/bin/claude' "$@"; }`, `function codex { '/h/bin/codex' "$@"; }`];
   const fish = [String.raw`function claude; '/h/it\'s $\'x\' $& "dir"/bin/claude' $argv; end`, 'function codex; \'/h/bin/codex\' $argv; end'];
-  for (const file of ['zsh/.zshrc', 'bash/rc']) assert.equal(renderShellInit(template, file, shims), `before\n${sh.join('\n')}\nafter\n`, file);
-  assert.equal(renderShellInit(template, 'fish/init.fish', shims), `before\n${fish.join('\n')}\nafter\n`);
-  assert.equal(renderShellInit('no placeholder\n', 'zsh/.zshenv', shims), 'no placeholder\n');
+  for (const file of ['zsh/.zshrc', 'bash/rc']) assert.equal(renderShellInit(template, file, shims, PATHS), `before\n${sh.join('\n')}\nafter\n`, file);
+  assert.equal(renderShellInit(template, 'fish/init.fish', shims, PATHS), `before\n${fish.join('\n')}\nafter\n`);
+  assert.equal(renderShellInit('no placeholder\n', 'zsh/.zshenv', shims, PATHS), 'no placeholder\n');
+});
+
+test('pwshQuote is a word PowerShell reads literally: in single quotes, each of its five single quotes doubled, $ and backslashes left alone (#645)', () => {
+  assert.equal(pwshQuote("C:\\Users\\it's $HOME"), "'C:\\Users\\it''s $HOME'");
+  assert.equal(pwshQuote('a\u2018b\u2019c\u201ad\u201be'), "'a\u2018\u2018b\u2019\u2019c\u201a\u201ad\u201b\u201be'");
+});
+
+test('renderShellInit renders the PowerShell profile: the shim folder put back first on PATH and one function per agent calling sh.exe on its shim, every path pwshQuoted (#645)', () => {
+  const shims = [{ command: 'claude', path: "C:\\h\\it's\\bin\\claude" }, { command: 'codex', path: 'C:\\h\\bin\\codex' }];
+  const paths = { sh: 'C:\\Program Files\\Git\\bin\\sh.exe', bin: "C:\\h\\it's\\bin" };
+  const template = "$env:PATH = __HIVE_BIN__ + ';' + $env:PATH\n__HIVE_FUNCTIONS__\n";
+  assert.equal(renderShellInit(template, 'pwsh/profile.ps1', shims, paths), [
+    "$env:PATH = 'C:\\h\\it''s\\bin' + ';' + $env:PATH",
+    "Remove-Item -LiteralPath Alias:claude -Force -ErrorAction SilentlyContinue; function claude { & 'C:\\Program Files\\Git\\bin\\sh.exe' 'C:\\h\\it''s\\bin\\claude' @args }",
+    "Remove-Item -LiteralPath Alias:codex -Force -ErrorAction SilentlyContinue; function codex { & 'C:\\Program Files\\Git\\bin\\sh.exe' 'C:\\h\\bin\\codex' @args }",
+    '',
+  ].join('\n'));
 });
 
 test('installShellInit writes every init file under <home>/shell/, its folders for this user only, a function per agent of AGENTS calling its shim, no placeholder left, and rewrites them on every boot (#259)', async (t) => {
   const home = await tempDir(t, 'home-');
-  const dir = await installShellInit(home);
+  const dir = await installShellInit(home, INSTALL);
   assert.equal(dir, join(home, 'shell'));
   for (const file of SHELL_INIT_FILES) assert.doesNotMatch(await readFile(join(dir, file), 'utf8'), /__HIVE_[A-Z]+__/, file);
+  // each file holds the shim's path as its own shell quotes it: fish escapes a Windows path's backslashes
+  const quoted = (file: string, path: string): string => (file.startsWith('fish/') ? fishQuote(path) : file.startsWith('pwsh/') ? pwshQuote(path) : shellQuote(path));
   for (const file of FUNCTION_FILES) {
     const text = await readFile(join(dir, file), 'utf8');
-    for (const id of AGENT_IDS) assert.ok(text.includes(`function ${AGENTS[id].command}`) && text.includes(shimPath(home, AGENTS[id])), `${file}: ${id}`);
+    for (const id of AGENT_IDS) assert.ok(text.includes(`function ${AGENTS[id].command}`) && text.includes(quoted(file, shimPath(home, AGENTS[id]))), `${file}: ${id}`);
   }
-  for (const folder of ['', 'zsh', 'bash', 'fish']) assert.equal((await stat(join(dir, folder))).mode & 0o777, 0o700, folder);
+  const profile = await readFile(join(dir, 'pwsh', 'profile.ps1'), 'utf8');
+  assert.ok(profile.includes(`$env:PATH = ${pwshQuote(shimDir(home))} + ';' + $env:PATH`), 'the shim folder back first on PATH');
+  assert.ok(profile.includes(`& ${pwshQuote(INSTALL.sh)} ${pwshQuote(shimPath(home, AGENTS.claude))} @args`), 'claude through sh.exe');
+  if (process.platform !== 'win32') for (const folder of ['', 'zsh', 'bash', 'fish', 'pwsh']) assert.equal((await stat(join(dir, folder))).mode & 0o777, 0o700, folder); // Windows has no POSIX mode bits
   await writeFile(join(dir, 'bash', 'rc'), 'from a previous version');
-  await installShellInit(home);
+  await installShellInit(home, INSTALL);
   assert.match(await readFile(join(dir, 'bash', 'rc'), 'utf8'), /function claude \{/, 'upgrading the Hive changes every terminal');
 });
 
@@ -47,9 +72,10 @@ const MARKER = /^(shim|rc):|^(zdotdir|user)=/; // the test's own lines, apart fr
 const CLOSED_PORT = 9; // the trailer's exit report goes nowhere
 const SHELL_TIMEOUT_MS = 20_000;
 
-// The real binary, or undefined: CI's Linux runner may lack zsh and fish, and that shell's test is skipped
-const onPath = (name: string): string | undefined => (process.env.PATH ?? '').split(delimiter).filter((dir) => dir !== '').map((dir) => join(dir, name))
-  .find((path) => { try { accessSync(path, constants.X_OK); return true; } catch { return false; } });
+// The real binary, or undefined: CI's Linux runner may lack zsh and fish, and that shell's test is skipped. None on win32: these run
+// /bin/sh and #!/bin/sh stand-ins, and Windows' terminal is PowerShell's (#645), run on the lane in pty-spawn.test.ts
+const onPath = (name: string): string | undefined => (process.platform === 'win32' ? undefined : (process.env.PATH ?? '').split(delimiter)
+  .filter((dir) => dir !== '').map((dir) => join(dir, name)).find((path) => { try { accessSync(path, constants.X_OK); return true; } catch { return false; } }));
 const BASH = onPath('bash');
 const ZSH = onPath('zsh');
 const FISH = onPath('fish');
@@ -72,7 +98,7 @@ async function fakeAgents(dir: string, tag: string): Promise<void> {
 async function rig(t: TestContext): Promise<Rig> {
   const root = await tempDir(t, "shell it's-");
   const r = { root, hive: join(root, 'hive'), home: join(root, 'home'), fakes: join(root, 'home', 'fake bin') };
-  await installShellInit(r.hive);
+  await installShellInit(r.hive, INSTALL);
   await fakeAgents(join(r.hive, 'bin'), 'shim');
   await fakeAgents(r.fakes, 'rc');
   return r;
@@ -89,7 +115,7 @@ async function typeIn(r: Rig, shell: Shell, line: string, env: NodeJS.ProcessEnv
   const standIn = join(r.root, 'as', shell.name);
   await executable(standIn, `exec ${shellQuote(shell.binary)} "$@" ${shell.flags} -c ${shellQuote(line)}`);
   const launch: PtyLaunch = { ptyId: 'T1', slug: 'local', cwd: r.home, port: CLOSED_PORT, terminal: true };
-  const full = { HOME: r.home, TERM: 'dumb', SHELL: standIn, HIVE_SECRET_FILE: '/dev/null', ...terminalEnv(r.hive, 'T1', '/usr/bin:/bin'), ...env };
+  const full = { HOME: r.home, TERM: 'dumb', SHELL: standIn, HIVE_SECRET_FILE: '/dev/null', ...terminalEnv(r.hive, 'T1', '/usr/bin:/bin', { platform: process.platform }), ...env };
   return new Promise((resolve) => {
     // the trailer's curl fails on the closed port, so the exit code is not the shell's: only stdout is read
     // detached: a session of its own, with no controlling terminal; an interactive shell would otherwise take over the one running the tests

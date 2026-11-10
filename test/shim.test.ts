@@ -1,12 +1,14 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { access, chmod, mkdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, mkdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { AGENTS } from '../src/agents.js';
-import { capturedReply, installShim, renderShim, resumeOf, shimPath, type ShimAgent, type ShimResume } from '../src/shim.js';
+import { envValue, resolveExec } from '../src/exec-path.js';
+import { posixShell } from '../src/posix-shell.js';
+import { capturedReply, installShim, renderShim, resumeOf, shimCmdPath, shimDir, shimPath, type ShimAgent, type ShimResume } from '../src/shim.js';
 import { runners } from '../src/agents/registry.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { AGENT_IDS, type AgentId } from '../src/types.js';
@@ -15,6 +17,10 @@ import { tempDir } from './temp-dir.js';
 
 const run = promisify(execFile);
 const RUN_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
+const INSTALL = { platform: 'darwin', sh: '/bin/sh' } as const; // a POSIX home: no .cmd twin
+// The POSIX shim run straight with a #!/bin/sh fake CLI, a symlink and chmod: on Windows the shim runs under sh.exe through its .cmd twin (#645)
+const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX: execs the shim and a #!/bin/sh fake directly; Windows reaches it through its .cmd twin, tested below' };
+const ON_WINDOWS = { skip: process.platform !== 'win32' && 'Windows only: runs the .cmd twin through cmd.exe and Git\'s sh.exe, on the Windows lane', timeout: 60_000 };
 // A fake agent CLI: its HIVE_PTY_ID, its HIVE_MCP_SECRET when it has one (#932), then its argv, one per line, into $OUT
 const FAKE_CLI = `#!/bin/sh
 { printf '%s\\n' "pty=$HIVE_PTY_ID"; [ -z "\${HIVE_MCP_SECRET+set}" ] || printf '%s\\n' "mcp=$HIVE_MCP_SECRET"; [ $# -eq 0 ] || printf '%s\\n' "$@"; } > "$OUT"
@@ -57,7 +63,7 @@ async function shimmed(t: TestContext, port: number, extraEnv: Record<string, st
   await mkdir(real);
   await writeFile(join(real, agent.command), FAKE_CLI);
   await chmod(join(real, agent.command), 0o755);
-  await installShim(home, agent);
+  await installShim(home, agent, INSTALL);
   const secretFile = join(home, 'hive.secret');
   await writeFile(secretFile, `${SECRET_HEADER}: ${SECRET}\n`); // the daemon's own format (daemon-files.ts)
   const out = join(home, 'out');
@@ -72,7 +78,7 @@ async function shimmed(t: TestContext, port: number, extraEnv: Record<string, st
   };
 }
 
-test('a new conversation registers with the Hive, runs the real claude with the Hive\'s args before the user\'s and the run id as HIVE_PTY_ID, then reports its exit (#696)', async (t) => {
+test('a new conversation registers with the Hive, runs the real claude with the Hive\'s args before the user\'s and the run id as HIVE_PTY_ID, then reports its exit (#696)', POSIX_ONLY, async (t) => {
   const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1\n--settings\n/h/hooks.json` });
   const claude = await shimmed(t, hive.port);
   assert.deepEqual(await claude('fix the bug', "it's broken"), [`pty=${RUN_ID}`, '--session-id', 'S1', '--settings', '/h/hooks.json', 'fix the bug', "it's broken"]);
@@ -82,7 +88,7 @@ test('a new conversation registers with the Hive, runs the real claude with the 
   ]);
 });
 
-test('the reply is never evaluated: an arg with spaces, quotes or a command substitution reaches claude as one literal arg (#696)', async (t) => {
+test('the reply is never evaluated: an arg with spaces, quotes or a command substitution reaches claude as one literal arg (#696)', POSIX_ONLY, async (t) => {
   const tricky = ['/h/a dir/hooks.json', "it's", '$(touch pwned)', '`id`', '"; exit 3; "'];
   const hive = await fakeHive(t, { status: 200, body: [RUN_ID, ...tricky].join('\n') });
   const claude = await shimmed(t, hive.port);
@@ -90,7 +96,7 @@ test('the reply is never evaluated: an arg with spaces, quotes or a command subs
   await assert.rejects(access('pwned'), 'nothing in the reply ran');
 });
 
-test('a proxy in the env never sees the register nor the exit report: both go straight to 127.0.0.1 (#696)', async (t) => {
+test('a proxy in the env never sees the register nor the exit report: both go straight to 127.0.0.1 (#696)', POSIX_ONLY, async (t) => {
   const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1` });
   const dead = 'http://127.0.0.1:9';
   const claude = await shimmed(t, hive.port, { http_proxy: dead, HTTP_PROXY: dead, ALL_PROXY: dead, all_proxy: dead });
@@ -113,7 +119,7 @@ test('a captured session\'s argv puts the workspace\'s language-server plugin ri
   assert.deepEqual(runners.claude.launch(base).flat(), ['--mcp-config', '/h/prompts/R1.mcp.json', '--settings', '/h/hooks.json', '--plugin-dir', '/h/plugin', '--model', 'opus', '--session-id', 'S1']);
 });
 
-test('-p, --version and a subcommand pass straight through, unregistered (#696, #347)', async (t) => {
+test('-p, --version and a subcommand pass straight through, unregistered (#696, #347)', POSIX_ONLY, async (t) => {
   const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1` });
   const claude = await shimmed(t, hive.port);
   for (const args of [['-p', 'hi'], ['--version'], ['mcp', 'list']]) {
@@ -122,7 +128,7 @@ test('-p, --version and a subcommand pass straight through, unregistered (#696, 
   assert.deepEqual(hive.seen, []);
 });
 
-test('a refused register runs the user\'s command as typed, with no exit report (#696)', async (t) => {
+test('a refused register runs the user\'s command as typed, with no exit report (#696)', POSIX_ONLY, async (t) => {
   const hive = await fakeHive(t, { status: 409, body: '{"error":"no"}' });
   const claude = await shimmed(t, hive.port);
   assert.deepEqual(await claude('hello'), ['pty=T1', 'hello']);
@@ -131,18 +137,54 @@ test('a refused register runs the user\'s command as typed, with no exit report 
 
 test('renderShim fills the command, the subcommands and the flags; installShim writes every agent\'s <home>/bin/<command> from the one template, executable (#696, #924, #932)', async (t) => {
   const agent: ShimAgent = { command: 'x', subcommands: ['a', 'b'], shimFlags: ['-q', '--q=*'] };
-  assert.equal(renderShim('__HIVE_COMMAND__ "$__HIVE_COMMAND__" in __HIVE_SUBCOMMANDS__) __HIVE_FLAGS__)', agent), 'x "$x" in a|b) -q|--q=*)');
+  assert.equal(renderShim('__HIVE_COMMAND__ "$__HIVE_COMMAND__" in __HIVE_SUBCOMMANDS__) __HIVE_FLAGS__) __HIVE_SH__', agent, 'C:\\t\\sh.exe'), 'x "$x" in a|b) -q|--q=*) C:\\t\\sh.exe');
   const home = await tempDir(t, 'home-');
   for (const id of AGENT_IDS) {
-    const path = await installShim(home, AGENTS[id]);
+    const path = await installShim(home, AGENTS[id], INSTALL);
     assert.equal(path, shimPath(home, AGENTS[id]));
-    assert.equal((await stat(path)).mode & 0o777, 0o755);
+    if (process.platform !== 'win32') assert.equal((await stat(path)).mode & 0o777, 0o755); // Windows has no POSIX mode bits
     assert.doesNotMatch(await readFile(path, 'utf8'), /__HIVE_[A-Z]+__/, id);
   }
   assert.equal(shimPath('/h', { command: 'other' }), join('/h', 'bin', 'other'), 'one file per agent, named after its command');
 });
 
-test('every codex subcommand but resume, fork included, and every codex passthrough flag in any position reach the real codex as typed, unregistered (#932, #347)', async (t) => {
+test('on win32 installShim also writes <command>.cmd beside the POSIX shim, running it under the given sh.exe with MSYS\'s argument rewrite off; on darwin it writes none (#645)', async (t) => {
+  const sh = 'C:\\Program Files\\Git\\bin\\sh.exe';
+  const home = await tempDir(t, 'home-');
+  for (const id of AGENT_IDS) {
+    const path = await installShim(home, AGENTS[id], { platform: 'win32', sh });
+    assert.equal(path, shimPath(home, AGENTS[id]), 'the answer is still the POSIX shim');
+    assert.equal(shimCmdPath(home, AGENTS[id]), `${path}.cmd`);
+    const lines = (await readFile(shimCmdPath(home, AGENTS[id]), 'utf8')).split(/\r?\n/).filter((line) => line !== '' && !line.startsWith('rem '));
+    assert.deepEqual(lines, ['@echo off', 'setlocal EnableExtensions DisableDelayedExpansion', 'set MSYS2_ARG_CONV_EXCL=*', `"${sh}" "%~dp0${AGENTS[id].command}" %*`], id);
+  }
+  const percent = await tempDir(t, 'home-');
+  await installShim(percent, AGENTS.claude, { platform: 'win32', sh: 'C:\\100%\\%GIT%\\sh.exe' });
+  assert.ok((await readFile(shimCmdPath(percent, AGENTS.claude), 'utf8')).includes('"C:\\100%%\\%%GIT%%\\sh.exe" "%~dp0claude" %*'), 'cmd.exe reads %% as one %');
+  assert.equal(await readFile(shimPath(percent, AGENTS.claude), 'utf8'), await readFile(shimPath(home, AGENTS.claude), 'utf8'), 'the POSIX shim is untouched');
+  const posix = await tempDir(t, 'home-');
+  await installShim(posix, AGENTS.claude, INSTALL);
+  await assert.rejects(access(shimCmdPath(posix, AGENTS.claude)), 'no .cmd off win32');
+});
+
+test('on the Windows lane the .cmd twin runs the shim under sh.exe: the real claude.exe behind the shim folder prints what it prints, and its exit code comes back through cmd.exe (#645)', ON_WINDOWS, async (t) => {
+  const home = await tempDir(t, 'home-');
+  const real = join(home, 'real');
+  await mkdir(real);
+  await copyFile(process.execPath, join(real, 'claude.exe')); // node.exe as the fake agent: -p and -e are its own flags
+  await installShim(home, AGENTS.claude, { platform: 'win32', sh: posixShell().shell });
+  // No HIVE_* names, so the shim passes straight through; one PATH key, since Windows' env names are case-insensitive
+  const base = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toUpperCase() !== 'PATH' && !name.startsWith('HIVE_')));
+  const env = { ...base, PATH: [shimDir(home), real, envValue(process.env, 'PATH') ?? ''].join(';') };
+  const runCmd = (args: string[]) => {
+    const command = resolveExec(shimCmdPath(home, AGENTS.claude), args, { platform: 'win32', env });
+    return run(command.file, [...command.args], { env: { ...env, ...command.env }, windowsVerbatimArguments: command.windowsVerbatimArguments });
+  };
+  assert.equal((await runCmd(['-p', '40+2'])).stdout.trim(), '42');
+  await assert.rejects(runCmd(['-e', 'process.exit(3)']), { code: 3 });
+});
+
+test('every codex subcommand but resume, fork included, and every codex passthrough flag in any position reach the real codex as typed, unregistered (#932, #347)', POSIX_ONLY, async (t) => {
   const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n-c\nx=1` });
   const codex = await shimmed(t, hive.port, {}, AGENTS.codex);
   assert.ok(AGENTS.codex.subcommands.includes('fork') && !AGENTS.codex.subcommands.includes('resume'));
@@ -151,14 +193,14 @@ test('every codex subcommand but resume, fork included, and every codex passthro
   assert.deepEqual(hive.seen, []);
 });
 
-test('a codex whose reply has no Hive MCP server (a local terminal) gets no MCP secret in its env (#932)', async (t) => {
+test('a codex whose reply has no Hive MCP server (a local terminal) gets no MCP secret in its env (#932)', POSIX_ONLY, async (t) => {
   const hiveArgs = ['-c', 'projects={"/w"={trust_level="trusted"}}'];
   const hive = await fakeHive(t, { status: 200, body: [RUN_ID, ...hiveArgs].join('\n') });
   const codex = await shimmed(t, hive.port, {}, AGENTS.codex);
   assert.deepEqual(await codex(), [`pty=${RUN_ID}`, ...hiveArgs]);
 });
 
-test('a plain codex and codex "a prompt" register with agent=codex and the shim\'s folder, then run the real codex with the Hive\'s args first and the MCP secret in its env only (#932)', async (t) => {
+test('a plain codex and codex "a prompt" register with agent=codex and the shim\'s folder, then run the real codex with the Hive\'s args first and the MCP secret in its env only (#932)', POSIX_ONLY, async (t) => {
   const hiveArgs = ['-c', 'projects={"/w"={trust_level="trusted"}}', '-c', 'mcp_servers.hive.url="http://127.0.0.1:1/mcp"', '--dangerously-bypass-hook-trust'];
   const hive = await fakeHive(t, { status: 200, body: [RUN_ID, ...hiveArgs].join('\n') });
   const work = await tempDir(t, 'work-');
@@ -169,7 +211,7 @@ test('a plain codex and codex "a prompt" register with agent=codex and the shim\
   assert.deepEqual(hive.seen.map((s) => s.url), ['/hooks/terminals/T1/session', '/hooks/exit', '/hooks/terminals/T1/session', '/hooks/exit']);
 });
 
-test('the claude shim registers -c, -r and --resume in any position and a plain claude, each with its args posted, and gives none of them an MCP secret (#932, #347)', async (t) => {
+test('the claude shim registers -c, -r and --resume in any position and a plain claude, each with its args posted, and gives none of them an MCP secret (#932, #347)', POSIX_ONLY, async (t) => {
   const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--settings\n/h/hooks.json` });
   const work = await tempDir(t, 'work-');
   const claude = await shimmed(t, hive.port, { PWD: work });
@@ -179,7 +221,7 @@ test('the claude shim registers -c, -r and --resume in any position and a plain 
   assert.deepEqual(hive.forms, typed.map(() => ({ agent: 'claude', cwd: work })));
 });
 
-test('each of the user\'s args reaches the register whole, with an =, an @, spaces, quotes and a line break, and the real CLI as typed (#347)', async (t) => {
+test('each of the user\'s args reaches the register whole, with an =, an @, spaces, quotes and a line break, and the real CLI as typed (#347)', POSIX_ONLY, async (t) => {
   const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--settings\n/h/hooks.json` });
   const claude = await shimmed(t, hive.port);
   const typed = ['a b', 'k=v', '@notes.txt', "it's", 'two\nlines']; // curl reads no file for @: content after the first =

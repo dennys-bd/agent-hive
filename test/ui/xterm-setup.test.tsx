@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import type { Terminal } from '@xterm/xterm';
 import { toast } from 'sonner';
 import { setShortcuts } from '@/lib/shortcut-bindings';
-import { clearTerminal, escapePath, findOptions, FONT_FAMILY, linkTaskRefs, openRefUrl, paintTerminal, shownSize, terminalFontStack, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
+import { clearTerminal, escapePath, findOptions, FONT_FAMILY, linkTaskRefs, openRefUrl, paintTerminal, pastedPath, shownSize, terminalFontStack, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
 import type { Shortcuts } from '../../src/types';
 import { FakeTerminal } from './xterm-fakes';
 
@@ -298,6 +298,20 @@ test('terminalPaste: a clipboard read that rejects pastes the text, as if no fil
   const { paste, pasteText } = pasteTerm(async () => { throw new Error('clipboard unavailable'); });
   pasteText('hello');
   await vi.waitFor(() => expect(paste).toHaveBeenCalledExactlyOnceWith('hello'));
+});
+
+test('pastedPath on Windows types the path in PowerShell\'s single quotes, each of its five quotes doubled and control characters dropped; elsewhere it is escapePath (#645)', () => {
+  expect(pastedPath('C:\\a b\\it\'s.txt', true)).toBe("'C:\\a b\\it''s.txt'");
+  expect(pastedPath('C:\\a\u2019b.txt', true)).toBe("'C:\\a\u2019\u2019b.txt'");
+  expect(pastedPath('C:\\a\nb\x07.txt', true)).toBe("'C:\\ab.txt'");
+  for (const path of ['/tmp/my shot (1).png', `/tmp/it's "$HOME"\\x`, '/tmp/a\nb.png']) expect(pastedPath(path, false)).toBe(escapePath(path));
+});
+
+test('terminalPaste on Windows types each copied file\'s path in PowerShell\'s quotes, joined by a space, in every pty tab (#645)', async () => {
+  vi.stubGlobal('navigator', { platform: 'Win32' });
+  const { paste, pasteText } = pasteTerm(async () => ['C:\\shots\\shot one.png', "C:\\it's.png"]);
+  pasteText('');
+  await vi.waitFor(() => expect(paste).toHaveBeenCalledExactlyOnceWith("'C:\\shots\\shot one.png' 'C:\\it''s.png'"));
 });
 
 test('an OSC 52 copy a program prints never reaches the clipboard: only the terminal\'s copy keys write it (#689)', async () => {

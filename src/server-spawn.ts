@@ -22,7 +22,7 @@ import { recordStageStart } from './restart.js';
 import { commandIn } from './run-commands.js';
 import type { Runtime } from './server.js';
 import { agentPrompt } from './stage-agent.js';
-import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, writePrompt } from './spawn.js';
+import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, windowsShell, writePrompt } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
 import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
@@ -328,7 +328,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     await ensureTerminalsDir(home);
     const [cwd, seed] = await Promise.all([wakeDir(terminal.cwd, startDir), readScrollback(home, terminal.terminalId)]);
     const log = scrollbackPath(home, terminal.terminalId);
-    const own = terminalEnv(home, terminal.terminalId, env.PATH ?? process.env.PATH ?? '');
+    const path = env.PATH ?? process.env.PATH ?? '';
+    const own = terminalEnv(home, terminal.terminalId, path, { platform: process.platform, pwsh: windowsShell({ ...process.env, ...env }, process.platform) }); // #645: looked up on every launch
     return { cwd, env: { ...env, ...own }, keep: seed === undefined ? { log } : { log, seed } };
   }
 

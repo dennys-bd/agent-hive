@@ -1,8 +1,9 @@
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
+import { envValue, findExec } from './exec-path.js';
 import { killTree } from './kill-tree.js';
 import { shellInitDir, shellQuote } from './shell-init.js';
 import { shimDir } from './shim.js';
@@ -85,7 +86,8 @@ export function runTmpDir(ptyId: string, base = tmpdir()): string {
 }
 
 // The Hive's own variables no child inherits (see ptyEnv); every runner's hostEnv joins them (#924)
-const HIVE_ONLY_ENV = ['NODE_PATH', 'HIVE_SECRET', 'HIVE_HOME'];
+// HIVE_PWSH too (#645): only terminalEnv sets it, so an inherited one never picks the terminal's shell
+const HIVE_ONLY_ENV = ['NODE_PATH', 'HIVE_SECRET', 'HIVE_HOME', 'HIVE_PWSH'];
 
 /** The Hive's own env minus what a child must not inherit (see ptyEnv): every runner's host env, whatever the run's agent, since it
  * describes the process the Hive was started from (#924). A language server (#780) is started with the same. */
@@ -114,9 +116,38 @@ export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmp
 
 /** What a kept terminal's shell gets on top of ptyEnv (#696): a history file of its own, kept with it until it is forgotten, the Hive's bin
  * dir first on PATH, so an agent typed there is its shim's (#924) for a child process too, and HIVE_SHELL_DIR, the init files' folder
- * ptyCommand starts zsh, bash and fish on (#259). `path` is the workspace's PATH when it sets one (#738), else the Hive's. */
-export function terminalEnv(home: string, terminalId: string, path = process.env.PATH ?? ''): Record<string, string> {
-  return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? shimDir(home) : `${shimDir(home)}:${path}`, HIVE_SHELL_DIR: shellInitDir(home) };
+ * ptyCommand starts zsh, bash, fish and PowerShell on (#259, #645). `path` is the workspace's PATH when it sets one (#738), else the Hive's,
+ * joined in `platform`'s own way. On win32 HIVE_PWSH names the PowerShell windowsShell found, which the terminal opens unless SHELL
+ * names bash (#645). */
+export interface TerminalEnvOptions { platform: NodeJS.Platform; pwsh?: string }
+
+export function terminalEnv(home: string, terminalId: string, path: string, { platform, pwsh }: TerminalEnvOptions): Record<string, string> {
+  const delimiter = platform === 'win32' ? win32.delimiter : posix.delimiter;
+  const shell: Record<string, string> = platform === 'win32' && pwsh !== undefined ? { HIVE_PWSH: pwsh } : {};
+  return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? shimDir(home) : `${shimDir(home)}${delimiter}${path}`, HIVE_SHELL_DIR: shellInitDir(home), ...shell };
+}
+
+// pwsh 7 first, then the powershell.exe every Windows ships (#645). Both install folders come before PATH, since an MSI install of 7 may
+// leave a running Hive's PATH alone and a workspace's PATH is the repository's to choose
+const PWSH_NAMES = ['pwsh', 'powershell'] as const;
+// Only an .exe: a pwsh.cmd planted on a workspace's PATH would otherwise run on every terminal open
+const EXE_ONLY = { PATHEXT: '.EXE' };
+const fixedPath = (root: string | undefined, ...parts: string[]): string[] => (root !== undefined && win32.isAbsolute(root) ? [win32.join(root, ...parts)] : []);
+
+/** The full path of the PowerShell a Windows terminal opens (#645), or undefined: none found, or not win32. Looked up on every launch,
+ * never cached, as findExec always is: a PowerShell 7 installed while the Hive runs is picked up. */
+export function windowsShell(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, isFile?: (file: string) => boolean): string | undefined {
+  if (platform !== 'win32') return undefined;
+  const names = [
+    ...fixedPath(envValue(env, 'PROGRAMFILES'), 'PowerShell', '7', 'pwsh'),
+    ...fixedPath(envValue(env, 'SYSTEMROOT'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell'),
+    ...PWSH_NAMES,
+  ];
+  for (const name of names) {
+    const found = findExec(name, { platform, env: { ...env, ...EXE_ONLY }, isFile });
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }
 
 // A run command (#300, #353): its env exported, then the command itself echoed as `> <command>` in bright white, as pnpm prints a script,
@@ -132,18 +163,37 @@ const commandLine = ({ command, env }: NonNullable<PtyLaunch['run']>): string =>
 // command line always had them
 const shellWord = (arg: LaunchArg): string => (typeof arg === 'string' ? shellQuote(arg) : `${arg[0]} ${shellQuote(arg[1])}`);
 
+// The shell's name (#645): SHELL with everything up to its last character that cannot be in a shell's file name (a / or a \, or a space
+// before it) removed and a trailing .exe dropped, so C:\Program Files\Git\bin\bash.exe and /usr/bin/bash both read bash. No backslash in
+// the line: Git's sh.exe reads its command line with \\ turned into \, and [/\] would no longer be a bracket. With HIVE_PWSH set (Windows)
+// only an exported SHELL, the one the pty env carried: Git's sh.exe is bash, which sets an unset SHELL to the account's login shell without
+// exporting it, and that would hide HIVE_PWSH. export -p prints `export SHELL=` in POSIX mode (dash, bash run as sh) and `declare -x SHELL=`
+// otherwise, as Git's sh.exe, which bash does not take for sh. Without HIVE_PWSH, any SHELL, as before #645: macOS's and Linux's terminals keep the shell
+// bash-as-sh fills in when the Hive's env has none.
+const BASENAME = `\${SHELL##*[!A-Za-z0-9._-]}`;
+const SHELL_NAME = `if [ -n "\${HIVE_PWSH:-}" ]; then case "$(export -p)" in *'export SHELL='*|*'declare -x SHELL='*) hive_sh=${BASENAME} ;; *) hive_sh= ;; esac; else hive_sh=${BASENAME}; fi; hive_sh=\${hive_sh%.exe};`;
+
+/** PowerShell's first command (#645): profile.ps1 read as text and dot-sourced as a scriptblock, which execution policy, applying to
+ * script files only, never stops, and which runs in the global scope, so what the user's profiles define stays alive. One sh
+ * single-quoted word with no quote inside; it reads only $env:HIVE_SHELL_DIR. UTF8, since 5.1 reads a BOM-less file as ANSI. */
+export const PWSH_LOADER = '. ([scriptblock]::Create((Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $env:HIVE_SHELL_DIR pwsh/profile.ps1))))';
+
 // A plain terminal's shell (#259): zsh, bash and fish start on the init files in HIVE_SHELL_DIR (terminalEnv), which run the user's own rc
 // files and then define a function per agent calling its shim, so no PATH those files set hides it. zsh finds them through ZDOTDIR, the user's
 // kept in HIVE_USER_ZDOTDIR for the files to put back; bash through --rcfile, which stands for ~/.bashrc; fish through -C, run after its
-// config. Any other shell, or an env with no HIVE_SHELL_DIR, is the plain $SHELL with the shim first on PATH. Only the pty env's own values
-// are expanded here, each one quoted.
+// config. Any other shell, with HIVE_PWSH set (Windows, #645), is PowerShell on the loader, which runs the user's profiles and then the
+// same functions; else the plain $SHELL with the shim first on PATH, as with no HIVE_SHELL_DIR. Only the pty env's own values are
+// expanded here, each one quoted. One group, so a failed cd skips all of it.
 const TERMINAL_SHELL = [
-  `case "\${HIVE_SHELL_DIR:+\${SHELL##*/}}" in`,
+  '{',
+  SHELL_NAME,
+  `case "\${HIVE_SHELL_DIR:+$hive_sh}" in`,
   `zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;;`,
   `bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;;`,
   `fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;;`,
-  `*) "\${SHELL:-sh}" ;;`,
-  'esac',
+  `*) if [ -n "\${HIVE_PWSH:-}" ]; then "$HIVE_PWSH" -NoLogo -NoProfile -NoExit -Command '${PWSH_LOADER}'; else "\${SHELL:-sh}"; fi ;;`,
+  'esac;',
+  '}',
 ].join(' ');
 
 // The one shell string of the repo (#283, #251), in three renders: an agent's run, a terminal, whose shell starts on the Hive's init files

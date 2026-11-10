@@ -15,26 +15,40 @@ export const BIN_DIR = 'bin'; // <home>/bin: first on every terminal's PATH
 const COMMAND = '__HIVE_COMMAND__';
 const SUBCOMMANDS = '__HIVE_SUBCOMMANDS__';
 const FLAGS = '__HIVE_FLAGS__';
+const SH = '__HIVE_SH__'; // the .cmd twin's sh.exe (#645)
 export const BIN_MODE = 0o700; // <home>/bin and <home>/shell (#259): this user only
 const SHIM_MODE = 0o755;
 
 /** `assets/bin/shim` in the Hive's own checkout, resolved from dist/src/ as pluginSource is. */
 export const shimSource = (): string => fileURLToPath(new URL('../../assets/bin/shim', import.meta.url));
 
+/** `assets/bin/shim.cmd`, the shim's twin on Windows (#645). */
+const shimCmdSource = (): string => fileURLToPath(new URL('../../assets/bin/shim.cmd', import.meta.url));
+
+/** How a home's shims are written (#645): the platform, and the POSIX shell (posixShell().shell) the .cmd twin runs the shim under. The
+ * caller reads process, so the win32 branch is tested on every OS. */
+export interface ShimInstall { platform: NodeJS.Platform; sh: string }
+
 /** The shim as written: the template with the agent's command, and its subcommands and its flags each as one `case` pattern. The values are
  * AGENTS' own, never the user's. */
-export const renderShim = (template: string, agent: ShimAgent): string =>
-  template.replaceAll(COMMAND, agent.command).replaceAll(SUBCOMMANDS, agent.subcommands.join('|')).replaceAll(FLAGS, agent.shimFlags.join('|'));
+export const renderShim = (template: string, agent: ShimAgent, sh: string): string =>
+  template.replaceAll(COMMAND, agent.command).replaceAll(SUBCOMMANDS, agent.subcommands.join('|')).replaceAll(FLAGS, agent.shimFlags.join('|'))
+    .replaceAll(SH, () => sh);
 
 export const shimDir = (home: string): string => join(home, BIN_DIR);
 export const shimPath = (home: string, agent: Pick<ShimAgent, 'command'>): string => join(shimDir(home), agent.command);
 
-/** Writes <home>/bin/<command>, executable; answers its path. */
-export async function installShim(home: string, agent: ShimAgent): Promise<string> {
+export const shimCmdPath = (home: string, agent: Pick<ShimAgent, 'command'>): string => `${shimPath(home, agent)}.cmd`;
+
+/** Writes <home>/bin/<command>, executable, and on win32 its .cmd twin (#645), which PATHEXT finds for a program outside the Hive's
+ * PowerShell; answers the POSIX shim's path. */
+export async function installShim(home: string, agent: ShimAgent, { platform, sh }: ShimInstall): Promise<string> {
   await mkdir(shimDir(home), { recursive: true, mode: BIN_MODE });
   const path = shimPath(home, agent);
-  await writeFile(path, renderShim(await readFile(shimSource(), 'utf8'), agent));
+  await writeFile(path, renderShim(await readFile(shimSource(), 'utf8'), agent, sh));
   await chmod(path, SHIM_MODE); // writeFile's mode applies only to a new file
+  // cmd.exe expands %NAME% while reading a line, so a % in the sh.exe path is written %%
+  if (platform === 'win32') await writeFile(shimCmdPath(home, agent), renderShim(await readFile(shimCmdSource(), 'utf8'), agent, sh.replaceAll('%', '%%')));
   return path;
 }
 
