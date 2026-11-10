@@ -594,3 +594,11 @@ test('reference/system-design.md draws a task\'s proposal in place, with no mark
     'In a sync, every label names something found in the code', 'something found in the code or proposed by the spec or the brief']) assert.ok(text.includes(part), part);
   assert.ok(!text.includes('9. **Names.** Every label names something found in the code.'), 'item 9 follows the mode');
 });
+
+test('hive:system-design-reviewer takes the round\'s mode and reads a proposal against its spec or brief, a sync against the code (#743)', async () => {
+  const text = await agentText('system-design-reviewer');
+  const prose = flat(text);
+  for (const part of ['`proposal from <path>`', '`proposal from request`', '`sync`', '### Proposal', '### Sync', 'left undrawn', 'never a command that writes']) assert.ok(prose.includes(part), part);
+  const { description = '' } = frontmatter(text);
+  for (const word of ['proposal', 'sync']) assert.ok(description.includes(word), `its description names ${word}`);
+});
