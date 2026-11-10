@@ -584,3 +584,13 @@ test('reference/conventions.md names hive:system-designer among the templates th
   assert.match(text, /`hive:system-designer`[\s\S]{0,40}declare their own variables/, 'the intro stays true');
   assert.match(text, /^\| `systemDesignsDir` \| .*`hive:system-designer`'s own.*relative to the worktree \| `docs\/hive\/system-design` \|$/m);
 });
+
+// #743: prose wraps at any space; a phrase is checked on the text with its whitespace collapsed
+const flat = (text: string): string => text.replace(/\s+/g, ' ');
+
+test('reference/system-design.md draws a task\'s proposal in place, with no mark, and checks names by mode (#743)', async () => {
+  const text = flat(await readFile(join(PLUGIN, 'reference', 'system-design.md'), 'utf8'));
+  for (const part of ["A task's proposal is drawn in place", 'no mark tells a proposed part from a built one', 'the branch\'s diff is the proposal', '`system-design-handoff.md`',
+    'In a sync, every label names something found in the code', 'something found in the code or proposed by the spec or the brief']) assert.ok(text.includes(part), part);
+  assert.ok(!text.includes('9. **Names.** Every label names something found in the code.'), 'item 9 follows the mode');
+});
