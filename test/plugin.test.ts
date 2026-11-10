@@ -8,8 +8,8 @@ import { LAYOUT_PRESETS } from '../src/ui/lib/drawio-file.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
-// #430, #431, #432: decomposition, new-build and new-plan declare their own variables and read no reference; the other new-* skills still read conventions.md
-const CONVENTIONS_SKILLS = SKILLS.filter((skill) => !['decomposition', 'new-build', 'new-plan'].includes(skill));
+// #430, #431, #432, #433: decomposition, new-build, new-plan and new-pr declare their own variables and read no reference; the other new-* skills still read conventions.md
+const CONVENTIONS_SKILLS = SKILLS.filter((skill) => !['decomposition', 'new-build', 'new-plan', 'new-pr'].includes(skill));
 const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'system-design-reviewer', 'system-designer', 'tdd', 'template-reviewer'];
 
 const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
@@ -23,7 +23,7 @@ const VARIABLES: Record<string, string[]> = {
   'new-spec': ['docsRepo', 'specsDir', 'docsLanguage', 'chatLanguage', 'sliceMin', 'sliceMax', 'featureFlags'],
   'new-plan': ['specsDir', 'plansDir', 'docsLanguage', 'chatLanguage', 'featureFlags', 'testCommand'],
   'new-build': ['specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'uiCheck', 'testCommand'],
-  'new-pr': ['docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'testCommand'],
+  'new-pr': ['specsDir', 'plansDir', 'walkthroughsDir', 'docsLanguage', 'chatLanguage'],
   decomposition: ['specsDir', 'docsLanguage', 'chatLanguage', 'decompositionLabel'],
 };
 // What a skill's list says for a workspace with no value: the default, or today's behaviour without one. Also reference/conventions.md's default column
@@ -287,6 +287,40 @@ test('hive:planner and hive:plan-reviewer plan no slices and read no resolved co
   assert.ok((await agentText('plan-reviewer')).includes('| Header | `**Spec:**` names the spec'), 'the reviewer checks what new-build reads');
 });
 
+// #433: new-pr interpolates each value where it is used, reads no reference, opens one code PR and one per nested repo, and leaves recording to the protocol
+const NEW_PR_VALUES: Record<string, string> = { specsDir: 'design/specs', plansDir: 'design/plans', walkthroughsDir: 'design/walkthroughs', docsLanguage: 'Spanish', chatLanguage: 'Portuguese' };
+
+test('/hive:new-pr declares its own variables, interpolated where used, and reads no reference: no docsRepo, no slices, no gh issue, no force or rebase, no Hive tool but hive_task and hive_conventions (#433)', async () => {
+  const text = await skillText('new-pr');
+  assert.doesNotMatch(text, /docsRepo|conventions\.md|reference\/|CLAUDE\.md|AGENTS\.md|hiveLanguage/, 'no reference a user of the skill cannot see or edit, no agent instructions file by name');
+  assert.doesNotMatch(text, /slice|stacked|integration|delivery/i, 'one code PR from the task\'s branch: no slices and no delivery mode');
+  assert.doesNotMatch(text, /gh issue|--force|--force-with-lease|rebase/, 'the issue comes from the task, and a rejected push stops: no rebase and no force');
+  for (const tool of ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);
+  assert.ok(text.includes('hive_conventions'), 'decision 9: it is the only source of the fork, the nested repos and the Hive\'s base');
+  assert.doesNotMatch(text, /branch name/, 'the task is read through hive_task alone (plugin-task.test.ts)');
+  for (const part of ['as `hive_task` answers it', '`git -C <folder> rev-parse --show-toplevel`', '`CONTRIBUTING.md`, `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md`', '`Code PR:`', '`mktemp`']) assert.ok(text.includes(part), part);
+  assert.match(text, /^## Rules$/m);
+  const rendered = renderedFor(text);
+  assert.doesNotMatch(rendered, /\{\{|\{%|## Conventions/, 'no Liquid and no list of values');
+  for (const part of ['under `docs/hive/walkthroughs`', 'is written in English']) assert.ok(rendered.includes(part), part);
+  assert.ok(!rendered.includes('Talk in'), 'with no value, nothing says Talk in');
+});
+
+test('/hive:new-pr rendered with a value for each variable carries each where it is used; another workspace keeps the defaults (#433)', async () => {
+  const text = valued(await skillText('new-pr'), NEW_PR_VALUES);
+  const mine = renderedFor(text);
+  for (const part of ['under `design/walkthroughs`', 'under `design/specs`', 'under `design/plans`', 'is written in Spanish', 'Talk in Portuguese.']) assert.ok(mine.includes(part), part);
+  const other = renderedFor(text, 'b');
+  assert.ok(!other.includes('Talk in') && other.includes('under `docs/hive/walkthroughs`'), 'b keeps the defaults');
+});
+
+test('/hive:new-build runs /hive:new-pr with the walkthrough and no base, says it opens the PR, and notes its one question (#433)', async () => {
+  const text = (await skillText('new-build')).replace(/\s+/g, ' ');
+  assert.match(text, /Run `\/hive:new-pr` with the walkthrough's path and no base: it opens the PR\./);
+  assert.doesNotMatch(text, /against the base branch|opens the PR and records it/);
+  assert.ok(text.includes('`<original> or <fork>?`'), 'the one question a run of this skill can ask');
+});
+
 // #416: the designer's conventions; #439: no docsRepo, no conventions list: each value is interpolated where it is used
 const DESIGNER_VARIABLES = ['designsDir', 'docsLanguage', 'chatLanguage', 'designSystem'];
 const DESIGNER_VALUES: Record<string, string> = { designsDir: 'design/screens', docsLanguage: 'Spanish', chatLanguage: 'Portuguese', designSystem: 'docs/design-system.md' };
@@ -388,13 +422,6 @@ test('no plugin file names a Hive conventions section, and neither hive:designer
   }
 });
 
-test('every gh call /hive:new-pr makes for the docs PR names the docs repository, since GH_REPO names the code one', async () => {
-  const text = await skillText('new-pr');
-  const calls = text.match(/gh pr \w+[^`\n]*<docs (?:PR|head|base)>[^`\n]*/g) ?? [];
-  assert.ok(calls.length >= 4, 'new-pr lists, creates, edits and views the docs PR');
-  for (const call of calls) assert.match(call, /-R <docs repo>/, `${call} does not pass -R <docs repo>`);
-});
-
 test('hive:design-reviewer and hive:system-design-reviewer report and never edit: their tools hold no Write or Edit', async () => {
   for (const agent of ['design-reviewer', 'system-design-reviewer']) {
     const tools = (frontmatter(await agentText(agent)).tools ?? '').split(',').map((tool) => tool.trim());
@@ -471,14 +498,11 @@ test('the design rules describe parts, their markers and the check\'s findings; 
   assert.match(reviewer, /should be a part/, 'the reviewer flags repeated markup');
 });
 
-test('/hive:new-pr opens each nested repo\'s PR on that repository: every gh call for it passes -R <nested repo>, and the reference skips the docsRepo path (#653)', async () => {
+test('/hive:new-pr opens each nested repo\'s PR on that repository: every gh call for it passes -R <nested repo>, (#653, #433)', async () => {
   const text = await skillText('new-pr');
   const calls = text.match(/gh pr \w+[^`\n]*<nested (?:PR|head)>[^`\n]*/g) ?? [];
   assert.ok(calls.length >= 4, 'new-pr lists, creates, edits and views the nested repo PRs');
   for (const call of calls) assert.match(call, /-R <nested repo>/, `${call} does not pass -R <nested repo>`);
-  const reference = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
-  assert.ok(reference.includes('## Nested repo PRs'), 'the rule sits next to Docs PR');
-  assert.match(reference, /whose `path` is the `docsRepo` path is skipped/);
 });
 
 // #957: the shapes of the subset both system design agents copy, one style string each; message and reply are sequence edges

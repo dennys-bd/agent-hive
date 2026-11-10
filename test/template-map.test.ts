@@ -236,8 +236,8 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
       [2, 'Stage 5 — UI check', 157, 1],
       [2, 'Stage 6 — Walkthrough', 171, 0],
       [2, 'Stage 7 — PR', 195, 0],
-      [2, 'End', 202, 0],
-      [2, 'Stops', 209, 0],
+      [2, 'End', 203, 0],
+      [2, 'Stops', 210, 0],
     ],
   );
   const agentsOf = (block: HeadingBlock) => block.references.filter((reference) => reference.kind === 'agent');
