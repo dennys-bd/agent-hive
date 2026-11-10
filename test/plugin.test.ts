@@ -639,3 +639,15 @@ test('/hive:new-build finds the design handoff in {result.design}, else in desig
   assert.ok(!rendered.includes('`handoff.md` under'), 'no handoff.md under a dated folder');
   assert.match(rendered, /its key in the task's `result` \(`plan`, `spec`,\s+`walkthrough`\)/, 'the design handoff has its own order');
 });
+
+test('reference/conventions.md: designsDir is one living folder, the design handoff is a text or design-handoff.md, and the Results name design and systemDesign (#743)', async () => {
+  const text = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
+  assert.match(text, /^\| a session that ran `hive:designer` \| `design` /m);
+  assert.match(text, /^\| a session that ran `hive:system-designer` \| `systemDesign` /m);
+  assert.match(text, /^\| `designsDir` \| [^|]*one living folder/m);
+  for (const part of ['`<designsDir>/design-handoff.md`', '--diff-filter=AM', '`systemDesign`']) assert.ok(text.includes(part), part);
+  assert.ok(!text.includes('<YYYY-MM-DD>-<slug>/handoff.md'), 'no dated design folder');
+  assert.doesNotMatch(text, /one subfolder per task/);
+  const newPr = await skillText('new-pr');
+  assert.doesNotMatch(newPr, /handoff\.md|<YYYY-MM-DD>-<slug>\//, '/hive:new-pr reads the lookup in the reference, never a path of its own');
+});
