@@ -194,10 +194,11 @@ the file written and uncommitted: say so.
 
 ## Stage 7 — PR
 
-Run `/hive:new-pr` against the base branch, with the walkthrough's path:
-it opens the PR and records it. Do not merge. When the invoking prompt
-says to skip the PR, open none; the walkthrough is still written and
-committed.
+Run `/hive:new-pr` with the walkthrough's path and no base: it opens the
+PR. Its `<original> or <fork>?` question, asked when the workspace is a
+fork that lets the user choose, is the only one this run can ask. Do not
+merge. When the invoking prompt says to skip the PR, open none; the
+walkthrough is still written and committed.
 
 ## End
 

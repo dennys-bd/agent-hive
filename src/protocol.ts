@@ -9,6 +9,10 @@ const FROM_THE_HIVE = 'This text comes from the Hive, the app that runs this ses
 const RESULT_LINE =
   'If the work produced something later stages need (a spec path, a plan path…), pass it to `hive_done` as `result`, e.g. `{ "spec": "docs/hive/specs/x-design.md" }`.';
 
+// #433: records are deduplicated by URL, so reporting a PR that was already open is safe
+const PR_LINE =
+  'When you open a pull request for this task, or find one already open for its branch, call `hive_pr` with its URL, once per PR.';
+
 // #367 / #417: a question asked in chat alone while background work runs keeps the task green until that work ends, forever if it never does
 const askLines = (end: string): string[] => [
   `Every question for the user goes through \`hive_ask\`: call it with the question, ask it in chat and end your turn${end}.`,
@@ -34,7 +38,7 @@ const UNDO_LINE =
   'Before a large or risky change, commit the work that passes, so the attempt can be thrown away with git; try an experiment you may discard in a separate worktree.';
 
 // #336: one id per paragraph or rule of the text, the same in both kinds, so one anchor serves both files
-export const PROTOCOL_BLOCKS = ['intro', 'task', 'done', 'result', 'ask', 'stop', 'remember', 'why', 'undo'] as const;
+export const PROTOCOL_BLOCKS = ['intro', 'task', 'done', 'result', 'pr', 'ask', 'stop', 'remember', 'why', 'undo'] as const;
 export type ProtocolBlockId = (typeof PROTOCOL_BLOCKS)[number];
 export const PROTOCOL_KINDS = ['stage', 'session', 'local'] as const;
 export type ProtocolKind = (typeof PROTOCOL_KINDS)[number];
@@ -61,6 +65,7 @@ const TEXTS: Record<ProtocolBlockId, Omit<ProtocolBlock, 'id'>> = {
     ].join('\n'),
   },
   result: same(RESULT_LINE), // no local: hive_done's
+  pr: same(PR_LINE), // no local: hive_pr is not registered for a local session, and no tool switch, since it is locked
   ask: { stage: askLines(' without `hive_done`').join('\n'), session: askLines('').join('\n'), local: askLines('').join('\n') },
   stop: { stage: `If the task will not be done, call \`hive_stop\` instead of \`hive_done\`: ${STOP_RULES}`, session: `Call \`hive_stop\` only when the user asks for it: ${STOP_RULES}` },
   remember: { ...everywhere(REMEMBER_LINE), tool: 'hive_remember' }, // telling a session to call a tool it does not have is wrong

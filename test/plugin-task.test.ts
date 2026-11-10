@@ -18,8 +18,8 @@ test('reference/conventions.md says once to read the task with hive_task, and wh
   assert.match(text, /result` `hive_task` answers/, 'the previous stage\'s files are looked up in the task\'s result too');
 });
 
-test('new-spec and new-pr read the task as the reference says; new-build and new-plan read it through hive_task alone, whatever its source; decomposition calls hive_task itself and keeps gh issue view as its fallback (#7, #431, #432)', async () => {
-  const own = ['new-build', 'new-plan'];
+test('new-spec reads the task as the reference says; new-build, new-plan and new-pr read it through hive_task alone, whatever its source; decomposition calls hive_task itself and keeps gh issue view as its fallback (#7, #431, #432, #433)', async () => {
+  const own = ['new-build', 'new-plan', 'new-pr'];
   for (const name of NEW_SKILLS.filter((skillName) => !own.includes(skillName))) assert.match(await skill(name), /under "The task"/, name);
   for (const name of own) {
     const text = await skill(name);

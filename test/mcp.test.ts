@@ -317,6 +317,15 @@ test('hive_conventions answers the Hive\'s language, the stage\'s approval and i
   assert.deepEqual([answer.isError, JSON.parse(answer.text)], [false, { hiveLanguage: systemLanguage(), approval: false, stage: 'fila', nestedRepos: [] }]);
 });
 
+test('hive_conventions through the MCP client answers base for a workspace with a baseBranch, and none for one without (#433)', async (t) => {
+  const set = await start(t, [GITHUB_ENTRY], { baseBranch: 'devtest' });
+  const withBase = await call(await connect(t, set.base, set.ptyId), 'hive_conventions');
+  assert.equal(JSON.parse(withBase.text).base, 'devtest');
+  const unset = await start(t);
+  const without = await call(await connect(t, unset.base, unset.ptyId), 'hive_conventions');
+  assert.equal('base' in JSON.parse(without.text), false);
+});
+
 test('conventionsAnswer: a stage run reads its stage\'s approval; a free session has no stage; a local session neither (#692, #318)', () => {
   const config = {
     language: 'pt' as const,
@@ -544,6 +553,21 @@ test('forkConventions answers a fork\'s PR target, both repositories, the base r
   const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
   assert.deepEqual(conventionsAnswer(state, config, local, { ...original, pr: 'original' }), { hiveLanguage: 'pt', approval: false, fork: original, nestedRepos: [] });
   assert.equal('fork' in conventionsAnswer(state, config, local), false);
+});
+
+test('conventionsAnswer answers the workspace\'s base when the workspace or the config sets one, nothing otherwise, and fork.base in a fork (#433)', async () => {
+  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' };
+  const plain: Workspace = { ...app, fork: null };
+  const config = { language: 'pt' as const, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [app] } };
+  const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
+  const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
+  assert.equal('base' in conventionsAnswer(state, config, local, undefined, [], plain), false);
+  assert.equal(conventionsAnswer(state, { ...config, baseBranch: 'main' }, local, undefined, [], plain).base, 'main');
+  assert.equal(conventionsAnswer(state, { ...config, baseBranch: 'main' }, local, undefined, [], { ...plain, baseBranch: 'devtest' }).base, 'devtest');
+  assert.equal(conventionsAnswer(state, { ...config, baseBranch: 'main' }, local).base, 'main');
+  const exec: Exec = async (_file, args) => ({ stdout: args.includes('get-url') ? 'https://github.com/acme/app.git\n' : '' });
+  const fork = await forkConventions(exec, { ...app, baseBranch: 'devtest' }, {});
+  assert.equal(conventionsAnswer(state, config, local, fork, [], { ...app, baseBranch: 'devtest' }).base, fork?.base);
 });
 
 test('hive_done takes one of the stage\'s verdicts and its evidence into result.verdict and the worker; an unknown verdict, an evidence over the cap or an evidence alone is refused (#134)', async (t) => {
