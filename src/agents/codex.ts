@@ -6,6 +6,7 @@ import { AGENTS } from '../agents.js';
 import { hookCommand, MCP_ROUTE, STOP_HOOK_TIMEOUT_S } from '../hooks-settings.js';
 import { isRecord } from '../rate-limits.js';
 import { SECRET_HEADER } from '../secret.js';
+import { posixShell } from '../posix-shell.js';
 import { installShim } from '../shim.js';
 import type { HookPayload } from '../types.js';
 import { agentRoles, CODEX_PLUGIN, marketplaceName, roleFile, tomlString } from './codex-home.js';
@@ -135,7 +136,7 @@ export const codexRunner: AgentRunner = {
   // its shim (#932) and the roles' old folder (#316). Each workspace's plugin copy and roles are the render's (plugin-render.ts); the run
   // inherits the Hive's CODEX_HOME, so it reads them
   prepareHome: async (home) => {
-    await installShim(home, AGENTS.codex);
+    await installShim(home, AGENTS.codex, { platform: process.platform, sh: posixShell().shell });
     await rm(join(home, LEGACY_ROLES_DIR), { recursive: true, force: true });
   },
   mcpConfig: () => '', // the server goes through -c: writeMcpConfig writes no file

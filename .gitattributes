@@ -1,0 +1,5 @@
+# #645: the POSIX shim and the terminals' init files run under Git's sh.exe on Windows, where a checkout with core.autocrlf would give
+# them CRLF and break every line; a batch file wants CRLF
+assets/bin/shim text eol=lf
+assets/shell/** text eol=lf
+assets/bin/shim.cmd text eol=crlf
