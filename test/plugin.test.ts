@@ -625,3 +625,10 @@ test('hive:designer keeps one living folder and hands off a text by default, des
     'Your answer ends with the handoff text', 'its first line `## Design handoff`']) assert.ok(prose.includes(part), part);
   assert.doesNotMatch(text, /<folder>\/handoff\.md|`handoff\.md`|<YYYY-MM-DD>-<slug>/, 'the dated folder and its handoff.md are gone');
 });
+
+test('hive:design-reviewer takes the living folder and the round\'s screens, and reads design-handoff.md when it exists, else the spec or the request for the states (#743)', async () => {
+  const text = await agentText('design-reviewer');
+  const prose = flat(text);
+  for (const part of ['`design-handoff.md`', 'the screens the round wrote or changed', "the spec or the round's request", 'the other screens of the folder']) assert.ok(prose.includes(part), part);
+  assert.doesNotMatch(text, /<folder>\/handoff\.md|`handoff\.md` of the other designs/, 'no dated design folder is read');
+});
