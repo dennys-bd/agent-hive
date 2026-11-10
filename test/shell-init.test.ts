@@ -113,7 +113,7 @@ async function typeIn(r: Rig, shell: Shell, line: string, env: NodeJS.ProcessEnv
   const standIn = join(r.root, 'as', shell.name);
   await executable(standIn, `exec ${shellQuote(shell.binary)} "$@" ${shell.flags} -c ${shellQuote(line)}`);
   const launch: PtyLaunch = { ptyId: 'T1', slug: 'local', cwd: r.home, port: CLOSED_PORT, terminal: true };
-  const full = { HOME: r.home, TERM: 'dumb', SHELL: standIn, HIVE_SECRET_FILE: '/dev/null', ...terminalEnv(r.hive, 'T1', '/usr/bin:/bin'), ...env };
+  const full = { HOME: r.home, TERM: 'dumb', SHELL: standIn, HIVE_SECRET_FILE: '/dev/null', ...terminalEnv(r.hive, 'T1', '/usr/bin:/bin', { platform: process.platform }), ...env };
   return new Promise((resolve) => {
     // the trailer's curl fails on the closed port, so the exit code is not the shell's: only stdout is read
     // detached: a session of its own, with no controlling terminal; an interactive shell would otherwise take over the one running the tests

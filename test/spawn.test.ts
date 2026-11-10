@@ -1,9 +1,11 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { HANDOFF_PROMPT, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, terminalEnv, verdictsLine, withHandoff, writePrompt } from '../src/spawn.js';
+import { dirname, join } from 'node:path';
+import { posixShell } from '../src/posix-shell.js';
+import { HANDOFF_PROMPT, PWSH_LOADER, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, terminalEnv, verdictsLine, windowsShell, withHandoff, writePrompt } from '../src/spawn.js';
 import { runners } from '../src/agents/registry.js';
 import { shellQuote } from '../src/shell-init.js';
 import { claudeLaunch, LAUNCH, plainArgs } from './fakes.js';
@@ -149,7 +151,7 @@ test('ptyCommand quotes every arg so a model or id with a quote cannot break out
   assert.ok(cmd.includes("'--model' 'o'\\''ps'"), cmd);
 });
 
-const TERMINAL_SHELL = `case "\${HIVE_SHELL_DIR:+\${SHELL##*/}}" in zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;; bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;; fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;; *) "\${SHELL:-sh}" ;; esac`; // #259
+const TERMINAL_SHELL = `{ case "$(export -p)" in *'export SHELL='*) hive_sh=\${SHELL##*[/\\\\]} ;; *) hive_sh= ;; esac; hive_sh=\${hive_sh%.exe}; case "\${HIVE_SHELL_DIR:+$hive_sh}" in zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;; bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;; fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;; *) if [ -n "\${HIVE_PWSH:-}" ]; then "$HIVE_PWSH" -NoLogo -NoProfile -NoExit -Command '${PWSH_LOADER}'; else "\${SHELL:-sh}"; fi ;; esac; }`; // #259, #645
 test('ptyCommand for a terminal: cd into the worktree, the user\'s shell, then the exit trailer with the pty id; a path with a quote and a space stays one argument (#283)', () => {
   assert.equal(
     ptyCommand({ ...LAUNCH, terminal: true, cwd: "/Users/me/it's repo/.hive/worktrees/hive-1-x" }),
@@ -217,10 +219,64 @@ test('HANDOFF_PROMPT asks the session for hive_done with its handoff (#692)', ()
   assert.match(HANDOFF_PROMPT, /hive_done with \{ "handoff": "<text>" \}/);
 });
 
-// Off win32 only until #645, the Windows terminal, whose criteria join terminalEnv's PATH with ';' there: today it is ':' on every OS
-test('a terminal\'s env names its own history file, puts the Hive\'s bin dir first on PATH, where the shims are, and names the init files\' folder (#696, #259)', { skip: process.platform === 'win32' && 'the terminal\'s env on Windows is #645\'s: PATH is still joined with \':\' there' }, () => {
-  assert.deepEqual(terminalEnv('/h', 'T1', '/usr/bin:/bin'), { HISTFILE: '/h/terminals/T1.history', PATH: '/h/bin:/usr/bin:/bin', HIVE_SHELL_DIR: '/h/shell' });
-  assert.equal(terminalEnv('/h', 'T1', '').PATH, '/h/bin');
+test('a terminal\'s env names its own history file, puts the Hive\'s bin dir first on PATH, joined with ; on win32 and : elsewhere, names the init files\' folder, and sets HIVE_PWSH only on win32 with a path (#696, #259, #645)', () => {
+  const pwsh = 'C:\\t\\PowerShell\\7\\pwsh.exe';
+  assert.deepEqual(terminalEnv('/h', 'T1', '/usr/bin:/bin', { platform: 'darwin', pwsh }), {
+    HISTFILE: join('/h', 'terminals', 'T1.history'), PATH: `${join('/h', 'bin')}:/usr/bin:/bin`, HIVE_SHELL_DIR: join('/h', 'shell'),
+  });
+  assert.equal(terminalEnv('/h', 'T1', '', { platform: 'linux' }).PATH, join('/h', 'bin'));
+  const win = terminalEnv('C:\\h', 'T1', 'C:\\Windows;C:\\bin', { platform: 'win32', pwsh });
+  assert.deepEqual([win.PATH, win.HIVE_PWSH], [`${join('C:\\h', 'bin')};C:\\Windows;C:\\bin`, pwsh]);
+  assert.equal('HIVE_PWSH' in terminalEnv('C:\\h', 'T1', 'C:\\bin', { platform: 'win32' }), false, 'no PowerShell found: the plain $SHELL');
+});
+
+test('windowsShell answers pwsh.exe\'s full path when both are found, powershell.exe\'s when only that one is, one on PATH after the install folders, and nothing when neither is or off win32 (#645)', () => {
+  const env = { ProgramFiles: 'C:\\Program Files', SystemRoot: 'C:\\Windows', Path: 'C:\\bin', PATHEXT: '.COM;.EXE' };
+  const pwsh = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  const powershell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+  const found = (...files: string[]) => (file: string): boolean => files.includes(file);
+  assert.equal(windowsShell(env, 'win32', found(pwsh, powershell)), pwsh);
+  assert.equal(windowsShell(env, 'win32', found(powershell)), powershell);
+  assert.equal(windowsShell(env, 'win32', found('C:\\bin\\pwsh.exe', powershell)), 'C:\\bin\\pwsh.exe', 'pwsh first, wherever it is');
+  assert.equal(windowsShell(env, 'win32', found()), undefined);
+  assert.equal(windowsShell(env, 'darwin', found(pwsh)), undefined);
+});
+
+const CLOSED_PORT = 9; // the trailer's exit report goes nowhere
+// The runner's env minus SHELL and the Hive's own names: each run below sets exactly the ones it names
+const BARE_ENV = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'SHELL' && !name.startsWith('HIVE_')));
+
+// A stand-in for $HIVE_PWSH or $SHELL that prints its tag and then its argv, one per line. A name with backslashes is one file of that
+// name on darwin and linux, and folders under `dir` on win32: either way the case line must read the last part as the shell's name
+async function stub(dir: string, name: string, tag: string): Promise<string> {
+  const path = join(dir, name);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `#!/bin/sh\nprintf '%s\\n' ${tag} "$@"\n`, { mode: 0o755 });
+  return path;
+}
+
+// The terminal's line under the POSIX shell, as the pty host runs it: the stub's lines only. The trailer's curl fails on the closed port, so
+// the exit code is not the shell's
+function runLine(cwd: string, env: Record<string, string>): Promise<string[]> {
+  const line = ptyCommand({ ...LAUNCH, terminal: true, cwd, port: CLOSED_PORT });
+  const full = { ...BARE_ENV, HIVE_SHELL_DIR: '/hs', HIVE_SECRET_FILE: '/dev/null', ...env };
+  return new Promise((resolve) => {
+    execFile(posixShell().shell, ['-c', line], { env: full, encoding: 'utf8' }, (_err, stdout) => resolve(stdout.split(/\r?\n/).filter((l) => l !== '')));
+  });
+}
+
+test('a terminal with HIVE_PWSH and no SHELL starts PowerShell on the loader, though the POSIX shell, bash on macOS and Windows, sets an unexported SHELL of its own (#645)', async (t: TestContext) => {
+  const dir = await tempDir(t, 'terminal line-');
+  assert.equal(PWSH_LOADER.includes("'"), false, 'the loader is one sh single-quoted word');
+  assert.deepEqual(await runLine(dir, { HIVE_PWSH: await stub(dir, 'pwsh', 'pwsh') }), ['pwsh', '-NoLogo', '-NoProfile', '-NoExit', '-Command', PWSH_LOADER]);
+});
+
+test('a SHELL naming bash, by a POSIX path or by a Windows one with .exe, wins over HIVE_PWSH and starts bash on the Hive\'s rc file (#645)', async (t: TestContext) => {
+  const dir = await tempDir(t, 'terminal line-');
+  const pwsh = await stub(dir, 'pwsh', 'pwsh');
+  for (const [name, tag] of [['bash', 'posix-bash'], ['Program Files\\Git\\bin\\bash.exe', 'windows-bash']]) {
+    assert.deepEqual(await runLine(dir, { HIVE_PWSH: pwsh, SHELL: await stub(dir, name, tag) }), [tag, '--rcfile', '/hs/bash/rc'], name);
+  }
 });
 
 
