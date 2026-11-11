@@ -15,15 +15,15 @@ const TOOLS_FLAG = '--tools'; // #758: limits only the built-in tools; MCP serve
 const MCP_PREFIX = 'mcp__';
 
 // #257: before the model, as the dialog's runs line shows it. #758: an agent run as the session filters the session's tools by its tools line,
-// MCP servers included, so hive_done was gone. Such an agent runs as a copy with no tools, its built-in ones go to --tools, and --agent right
-// after ends --tools' list of values. Not copied, since no agent of the plugin sets them: disallowedTools, permissionMode, skills, hooks,
+// MCP servers included, so hive_done was gone. Such an agent runs as a copy with no tools and its built-in ones go to --tools=, one word: an
+// entry starting with - (the file is the user's to edit) never becomes a flag, and --agent right after ends --tools' list of values. Not copied, since no agent of the plugin sets them: disallowedTools, permissionMode, skills, hooks,
 // mcpServers, maxTurns. The rendered plugin file keeps its tools, so the agent dispatched as a subagent never gets hive_done
 function agentWords({ specializedAgent: agent }: AgentRun): string[] {
   if (agent === undefined) return [];
   if (agent.tools === undefined) return [AGENT_FLAG, agent.name];
   const copy = { description: agent.description, prompt: agent.instructions, ...(agent.model === undefined ? {} : { model: agent.model }) };
   const builtIn = agent.tools.filter((tool) => !tool.startsWith(MCP_PREFIX)).join(',');
-  return [AGENTS_FLAG, JSON.stringify({ [agent.name]: copy }), TOOLS_FLAG, builtIn, AGENT_FLAG, agent.name];
+  return [AGENTS_FLAG, JSON.stringify({ [agent.name]: copy }), `${TOOLS_FLAG}=${builtIn}`, AGENT_FLAG, agent.name];
 }
 
 const flag = (name: string, value: string | undefined): LaunchArg[] => (value === undefined ? [] : [[name, value]]);

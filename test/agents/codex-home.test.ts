@@ -64,6 +64,8 @@ test('readAgent returns the tools line split and trimmed and the model line, nei
   const bare = readAgent('a.md', agent());
   assert.deepEqual([Object.hasOwn(bare, 'tools'), Object.hasOwn(bare, 'model')], [false, false]);
   assert.equal(Object.hasOwn(readAgent('a.md', agent('model:')), 'model'), false, 'an empty model line is no model');
+  assert.deepEqual(readAgent('a.md', agent('tools: Read,, Grep,')).tools, ['Read', 'Grep'], 'an empty entry is no tool');
+  assert.equal(Object.hasOwn(readAgent('a.md', agent('tools:')), 'tools'), false, 'an empty tools line is no list');
   const role: AgentRole = { name: 'a', description: 'd.', readOnly: true, instructions: 'x' };
   assert.equal(renderRole({ ...role, tools: ['Read'], model: 'opus' }), renderRole(role), 'Codex gets no model and no tools list');
 });

@@ -141,10 +141,16 @@ const copyOf = (argv: LaunchArg[]): unknown => {
 test('an agent with a tools line runs as its copy with no tools: --agents, --tools with its built-in tools, --agent, before --model; one quoted JSON word (#758)', () => {
   const argv = runners.claude.launch(agentRun({ ...DESIGNER, tools: ['Read', 'Write', 'mcp__graphify'] }));
   const json = JSON.stringify({ 'hive:designer': { description: DESIGNER.description, prompt: DESIGNER.instructions } });
-  const words = [...EXTRA, '--agents', json, '--tools', 'Read,Write', '--agent', 'hive:designer', '--model', 'opus', '--session-id', ID];
+  const words = [...EXTRA, '--agents', json, '--tools=Read,Write', '--agent', 'hive:designer', '--model', 'opus', '--session-id', ID];
   assert.deepEqual(argv.slice(-words.length), words);
   assert.deepEqual(copyOf(argv), { 'hive:designer': { description: DESIGNER.description, prompt: DESIGNER.instructions } }, 'its only key is its name, and no tools');
-  assert.ok(commandFor(argv).includes(words.slice(2, 8).map(shellQuote).join(' ')), 'the JSON is one quoted word, and --tools\' value is followed by a flag');
+  assert.ok(commandFor(argv).includes(words.slice(2, 7).map(shellQuote).join(' ')), 'the JSON is one quoted word, and --tools\' value is followed by a flag');
+});
+
+test('a tools entry that looks like a flag stays inside --tools\' own word, never a flag of its own (#758)', () => {
+  const argv = runners.claude.launch(agentRun({ ...DESIGNER, tools: ['--dangerously-skip-permissions', 'Read'] }));
+  assert.ok(argv.includes('--tools=--dangerously-skip-permissions,Read'));
+  assert.equal(argv.includes('--dangerously-skip-permissions'), false);
 });
 
 test('the copy carries the agent\'s model when its frontmatter has one; the run\'s own --model stays (#758)', () => {
@@ -153,10 +159,10 @@ test('the copy carries the agent\'s model when its frontmatter has one; the run\
   assert.deepEqual(argv.slice(-4), ['--model', 'opus', '--session-id', ID]);
 });
 
-test('an agent whose tools are all MCP names gets --tools "": no built-in tool, every MCP server still there (#758)', () => {
+test('an agent whose tools are all MCP names gets --tools= with no value: no built-in tool, every MCP server still there (#758)', () => {
   const argv = runners.claude.launch(agentRun({ ...DESIGNER, tools: ['mcp__graphify', 'mcp__hive__hive_task'] }));
-  const at = argv.indexOf('--tools');
-  assert.deepEqual(argv.slice(at, at + 4), ['--tools', '', '--agent', 'hive:designer']);
+  const at = argv.indexOf('--tools=');
+  assert.deepEqual(argv.slice(at, at + 3), ['--tools=', '--agent', 'hive:designer']);
 });
 
 const HEADLESS: HeadlessRun = { dir: '/t', schema: '{"type":"object"}', schemaPath: '/t/schema.json', answerPath: '/t/answer.txt' };

@@ -75,7 +75,9 @@ export function readAgent(file: string, text: string): AgentRole {
   const description = fields.get('description');
   if (!name || !description) throw new Error(`${file}: its frontmatter has no name or no description`);
   if (!AGENT_NAME.test(name)) throw new Error(`${file}: its name "${name}" is not lowercase letters, digits and hyphens`);
-  const tools = fields.get('tools')?.split(',').map((tool) => tool.trim());
+  // #758: an empty entry is no tool, and a line with none is no list, so Claude's launch never limits a session to nothing by mistake
+  const listed = fields.get('tools')?.split(',').map((tool) => tool.trim()).filter((tool) => tool !== '');
+  const tools = listed === undefined || listed.length === 0 ? undefined : listed;
   const readOnly = tools !== undefined && !tools.some((tool) => WRITING_TOOLS.has(tool)); // no list: Claude gives every tool
   const model = fields.get('model');
   return {

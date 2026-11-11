@@ -45,9 +45,9 @@ test('a stage run with picks runs claude with them after the global args: the pi
   const { server, workers } = await inBuild(t);
   await startWith(server, { agent: 'claude', resume: null, launch: { model: 'sonnet', specializedAgent: 'hive:designer', args: ['--verbose'] } });
   await until(() => workers.length === 1);
-  const args = plainArgs(workers[0].launch).slice(-11);
-  assert.deepEqual([args[0], args[1], args[3], args[4], ...args.slice(5)], [
-    '--verbose', '--agents', '--tools', 'Read,Write,Edit,Bash,Grep,Glob,Agent', '--agent', 'hive:designer', '--model', 'sonnet', '--session-id', sessionOf(server),
+  const args = plainArgs(workers[0].launch).slice(-10);
+  assert.deepEqual([args[0], args[1], ...args.slice(3)], [
+    '--verbose', '--agents', '--tools=Read,Write,Edit,Bash,Grep,Glob,Agent', '--agent', 'hive:designer', '--model', 'sonnet', '--session-id', sessionOf(server),
   ]);
 });
 
