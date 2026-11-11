@@ -157,8 +157,9 @@ jobs:
           $runJs = Join-Path $env:LOCALAPPDATA 'Programs\agent-hive\resources\app\dist\src\run.js'
           if (-not (Test-Path -LiteralPath $runJs -PathType Leaf)) { throw "no daemon entry at $runJs" }
 
-          # an empty home has no hive.config.json: the daemon boots in setup mode, with no token and no agent
-          $home_ = Join-Path $env:RUNNER_TEMP 'smoke-home'
+          # an empty home has no hive.config.json: the daemon boots in setup mode, with no token and no agent. It lives in the profile's
+          # temp, as the lane's homes do: RUNNER_TEMP on D:\ inherits BUILTIN\Users' read from the drive, which the home check refuses (#628)
+          $home_ = Join-Path ([System.IO.Path]::GetTempPath()) 'smoke-home'
           New-Item -ItemType Directory -Force -Path $home_ | Out-Null
           $out = Join-Path $env:RUNNER_TEMP 'smoke-out.txt'
           $err = Join-Path $env:RUNNER_TEMP 'smoke-err.txt'
