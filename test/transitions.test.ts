@@ -63,6 +63,9 @@ test('exitOf answers feedback on a stage with none of its own with the implicit 
   const none = { stages: STAGES, transitions: [] };
   assert.deepEqual([exitOf(none, 'Build', 'done'), exitOf(none, 'Spec', 'approved'), exitOf(none, 'Review', 'verdict', 'ok')], [undefined, undefined, undefined]);
   assert.deepEqual([exitOf(bare, 'Gone', 'feedback'), answerable(bare, { stage: 'Gone' }, 'feedback'), answerable(bare, { stage: 'PR' }, 'feedback')], [undefined, true, true]);
+  // an action stage runs no agent and is no gate: the feedback would have no session to reach, so it keeps no implicit exit
+  const checks = { stages: [{ ...STAGES[0], name: 'Checks', action: 'commands' as const, commands: ['lint'], approval: true as const }], transitions: [] };
+  assert.equal(exitOf(checks, 'Checks', 'feedback'), undefined, 'an action stage with approval takes no implicit feedback');
 });
 
 test('approvalEnd and approvalExit: a stored verdict with its own transition fires it, an unrouted verdict or none fires approved, a verdict to end is that transition; approvable is an exit or a stage gone (#693)', () => {

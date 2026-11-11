@@ -38,7 +38,8 @@ export function exitOf(graph: Graph, stage: string | undefined, trigger: Trigger
   const own = matching(graph.transitions, stage, trigger, trigger === 'verdict' ? verdict : undefined);
   if (own !== undefined) return own;
   const origin = graph.stages.find((s) => s.name === stage);
-  if (trigger === 'feedback') return origin === undefined ? undefined : implicitFeedback(origin.name);
+  // an action stage runs no agent and is no gate: no session could take the feedback, so it keeps no implicit exit
+  if (trigger === 'feedback') return origin !== undefined && (runsAgent(origin) || isGate(origin)) ? implicitFeedback(origin.name) : undefined;
   if (trigger !== 'verdict') return undefined;
   return origin !== undefined && hiveAction(origin) === undefined && origin.approval !== true ? matching(graph.transitions, stage, 'done') : undefined;
 }
