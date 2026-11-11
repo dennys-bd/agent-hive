@@ -126,16 +126,16 @@ const triggerOf = (s: LegacyStage): Pick<Transition, 'when' | 'verdict'> =>
 
 const finishOf = (s: LegacyStage): Pick<Transition, 'sources'> => (s.onFinish === undefined || Object.keys(s.onFinish).length === 0 ? {} : { sources: s.onFinish });
 
-// A gate's feedback resumed the reviewed stage's session (#685): the nearest earlier stage that runs a prompt
+// A gate's feedback resumed the reviewed stage's session (#685): the nearest earlier stage that runs a prompt. A prompt stage's own feedback
+// needs no transition (#757): exitOf loops it back
 function feedbackOf(s: LegacyStage, i: number, stages: readonly LegacyStage[]): Transition[] {
-  if (s.approval !== true) return [];
-  if (s.prompt !== undefined) return [{ from: s.name, to: s.name, when: 'feedback', session: 'previous' }];
+  if (s.approval !== true || s.prompt !== undefined) return [];
   const reviewed = stages.slice(0, i).reverse().find((p) => p.prompt !== undefined && p.action === undefined);
   return reviewed === undefined ? [] : [{ from: s.name, to: reviewed.name, when: 'feedback', session: { continueOf: reviewed.name } }];
 }
 
 /** A pre-#134 stage list as transitions (#134): each pair of consecutive stages by the trigger its first one fired, the last one to end, each
- * with its stage's onFinish; then a feedback transition per stage with approval. */
+ * with its stage's onFinish; then a gate's feedback transition to the stage it reviews. */
 export function transitionsOf(stages: readonly LegacyStage[]): Transition[] {
   const forward = stages.map((s, i): Transition => ({ from: s.name, to: stages[i + 1]?.name ?? END, ...triggerOf(s), ...finishOf(s) }));
   return [...forward, ...stages.flatMap((s, i) => feedbackOf(s, i, stages))];

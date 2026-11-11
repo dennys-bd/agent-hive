@@ -1,6 +1,6 @@
 import { stageAgentIn } from './agents.js';
 import { stageSession } from './task-runs.js';
-import { sessionsOf } from './tasks.js';
+import { isGate, sessionsOf } from './tasks.js';
 import { agentPrompt, commandFirst, hasFixedVerdicts, hiveAction, runsAgent } from './stage-agent.js';
 import { FIXED_VERDICTS, TRIES_OUT, type Activity, type AgentId, type Stage, type StageAction, type State, type Task, type TaskApproval, type Transition, type Trigger } from './types.js';
 
@@ -26,13 +26,21 @@ export const outgoing = (transitions: readonly Transition[], stage: string | und
 const matching = (transitions: readonly Transition[], from: string | undefined, when: Trigger, verdict?: string): Transition | undefined =>
   transitions.find((t) => t.from === from && t.when === when && t.verdict === verdict);
 
-/** The transition a stage end fires (#134): the one whose (from, when, verdict) matches. An agent's verdict with no transition of its own falls
- * back to done on a stage without approval (an approval stage waits for the user instead); a commands or wait-for-CI verdict never falls back,
- * so a failed check never passes as finished. Undefined when nothing matches. */
+/** The transition feedback takes on a stage with none of its own (#757): back into the stage, resuming the run that ended it (in a gate, the
+ * session the feedback box names, transit.ts). Built on every lookup and never stored, so the flow chart draws no arrow for it. */
+export const implicitFeedback = (stage: string): Transition => ({ from: stage, to: stage, when: 'feedback', session: 'previous' });
+
+/** The transition a stage end fires (#134): the one whose (from, when, verdict) matches. Feedback with none of its own loops back into the stage
+ * (#757), while the stage is in the flow. An agent's verdict with no transition of its own falls back to done on a stage without approval (an
+ * approval stage waits for the user instead); a commands or wait-for-CI verdict never falls back, so a failed check never passes as finished.
+ * Undefined when nothing matches. */
 export function exitOf(graph: Graph, stage: string | undefined, trigger: Trigger, verdict?: string): Transition | undefined {
   const own = matching(graph.transitions, stage, trigger, trigger === 'verdict' ? verdict : undefined);
-  if (own !== undefined || trigger !== 'verdict') return own;
+  if (own !== undefined) return own;
   const origin = graph.stages.find((s) => s.name === stage);
+  // an action stage runs no agent and is no gate: no session could take the feedback, so it keeps no implicit exit
+  if (trigger === 'feedback') return origin !== undefined && (runsAgent(origin) || isGate(origin)) ? implicitFeedback(origin.name) : undefined;
+  if (trigger !== 'verdict') return undefined;
   return origin !== undefined && hiveAction(origin) === undefined && origin.approval !== true ? matching(graph.transitions, stage, 'done') : undefined;
 }
 
@@ -90,11 +98,14 @@ export const resumableBy = (state: Pick<State, 'activityRecords'>, task: Task, i
  * than the destination's is nothing to resume (#925). */
 export function resolveSession(
   state: Pick<State, 'activityRecords' | 'defaultAgent'>, task: Task, activity: Pick<Activity, 'sessionId'> | undefined, transition: Pick<Transition, 'session'>,
-  destination: Pick<Stage, 'session' | 'agent'>,
+  destination: Pick<Stage, 'session' | 'agent' | 'approval' | 'action' | 'prompt' | 'skill'>,
 ): ResolvedSession {
   const agent = stageAgentIn(state, destination);
-  // #925: a session of another agent resolves as nothing to resume: the destination starts its own
-  const resume = (id: string | undefined): ResolvedSession => (id === undefined || !resumableBy(state, task, id, agent) ? { policy: 'new' } : { policy: 'continue', sessionId: id });
+  // #925: a session of another agent resolves as nothing to resume: the destination starts its own. #757: a gate has no agent of its own, so
+  // it resumes any: its run is the session's agent's (occupy)
+  const anyAgent = isGate(destination);
+  const resume = (id: string | undefined): ResolvedSession =>
+    (id === undefined || (!anyAgent && !resumableBy(state, task, id, agent)) ? { policy: 'new' } : { policy: 'continue', sessionId: id });
   const { session } = transition;
   if (session === 'new') return { policy: 'new' };
   if (session === 'previous') return resume(activity?.sessionId);

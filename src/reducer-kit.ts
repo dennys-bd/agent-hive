@@ -6,10 +6,10 @@ import { withLaunch } from './launch-pick.js';
 import { handoverRun, pickedRun } from './task-runs.js';
 import { resumableBy } from './transitions.js';
 import { withColumnWrite } from './column-write.js';
-import { taskId, closeWait, isGate, onSource, resolveWorkspace, runningFirst, runTime, slugFor, slugOwner, slugTakenMessage, stageOf } from './tasks.js';
+import { taskId, closeWait, isGate, onSource, resolveWorkspace, runningFirst, runTime, sessionsOf, slugFor, slugOwner, slugTakenMessage, stageOf } from './tasks.js';
 import { isLeaving } from './types.js';
 import { stageWorkerCount, workerCount } from './worker-count.js';
-import type { Activity, ActivityRecord, SourceAction, Task, Stage, Effect, SessionPolicy, Worker, WorkerEventKind, SpawnRun, State, Status } from './types.js';
+import type { Activity, ActivityRecord, AgentId, SourceAction, Task, Stage, Effect, SessionPolicy, Worker, WorkerEventKind, SpawnRun, State, Status } from './types.js';
 
 // The reducer's building blocks, shared by orchestrator.ts and runs.ts (#283): orchestrator.ts was over 800 lines, and the rules this issue adds
 // live in runs.ts. Every function here is pure and returns new objects.
@@ -133,6 +133,11 @@ function resultField(state: State, task: Task): { result?: Record<string, unknow
   return result === undefined ? {} : { result };
 }
 
+// #757: a gate has no agent of its own: its feedback run resuming a session runs that session's agent (resolveSession let it resume any); a
+// new session the default, through stageAgentIn
+const gateAgent = (state: State, task: Task, stage: Stage, sessionId: string | undefined): AgentId | undefined =>
+  (isGate(stage) && sessionId !== undefined ? sessionsOf(state, taskId(task)).find((s) => s.id === sessionId)?.agent : undefined);
+
 // Runs `task` in `workers[index]`: the session policy is resolved here (continue needs an id to resume; without one the run is new,
 // with an id the Hive generates so it never waits for the hook), the task's source's onStart list is written in order (#515), then the spawn.
 // The worker keeps its draining mark: a free worker never has one, so fill is as today; the worker a start opens over the cap keeps it (#116).
@@ -149,7 +154,8 @@ export function occupy(state: State, index: number, queued: Task, stage: Stage, 
   const work = answer?.activity ?? picked.activity;
   const task = queued;
   const startedAt = new Date().toISOString();
-  const agent = picked.pick?.agent ?? stageAgentIn(born.state, stage); // #925: what the worker runs and what a new session records
+  const resumed = answer?.policy === 'continue' ? gateAgent(born.state, task, stage, answer.activity.sessionId) : undefined;
+  const agent = picked.pick?.agent ?? resumed ?? stageAgentIn(born.state, stage); // #925: what the worker runs and what a new session records
   const continues = stage.session === 'continue' && work.sessionId !== undefined && resumableBy(born.state, task, work.sessionId, agent); // #925: never another agent's session
   const session = answer?.policy ?? policy ?? picked.policy ?? (continues ? 'continue' : 'new');
   // A new run is a new session under an id the Hive chose (#164), or none until its first SessionStart for an agent that picks its own (#927,

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  approvable, approvalEnd, approvalExit, exitName, exitOf, FEEDBACK_TEMPLATE, isAutomatic, needsHandover, outgoing, resolveSession, retryTransition, takeTry, transitionByKey, transitionKey, transitionPrompt, verdictsOf, verdictText,
+  answerable, approvable, approvalEnd, approvalExit, exitName, exitOf, FEEDBACK_TEMPLATE, implicitFeedback, isAutomatic, needsHandover, outgoing, resolveSession, retryTransition, takeTry, transitionByKey, transitionKey, transitionPrompt, verdictsOf, verdictText,
 } from '../src/transitions.js';
 import type { ActivityRecord, AgentId, Stage, Task, Transition } from '../src/types.js';
 
@@ -50,6 +50,22 @@ test('exitOf matches the trigger and the verdict; an agent verdict with no trans
   assert.equal(exitOf(graph, 'Build', 'approved'), undefined);
   assert.equal(exitOf(graph, 'Gone', 'done'), undefined);
   assert.deepEqual([exitName('approved'), exitName('verdict', 'failed')], ['approved', 'verdict:failed']);
+});
+
+test('exitOf answers feedback on a stage with none of its own with the implicit loop back into it, never stored; an explicit one wins; no other trigger and no stage gone gets it (#757)', () => {
+  const bare = { stages: STAGES, transitions: FLOW.filter((t) => t.when !== 'feedback') };
+  assert.deepEqual(implicitFeedback('Spec'), { from: 'Spec', to: 'Spec', when: 'feedback', session: 'previous' });
+  assert.deepEqual([exitOf(bare, 'Spec', 'feedback'), exitOf(bare, 'PR', 'feedback')], [implicitFeedback('Spec'), implicitFeedback('PR')], 'a prompt stage and a gate alike');
+  assert.equal(bare.transitions.some((t) => t.when === 'feedback'), false, 'nothing was added to the graph');
+  assert.equal(exitOf(graph, 'Spec', 'feedback'), FLOW[1], 'an explicit one wins');
+  const toBuild = T('PR', 'Build', 'feedback', { session: { continueOf: 'Build' } });
+  assert.equal(exitOf({ stages: STAGES, transitions: [...FLOW, toBuild] }, 'PR', 'feedback'), toBuild, 'a gate\'s feedback to the stage it reviews keeps going there');
+  const none = { stages: STAGES, transitions: [] };
+  assert.deepEqual([exitOf(none, 'Build', 'done'), exitOf(none, 'Spec', 'approved'), exitOf(none, 'Review', 'verdict', 'ok')], [undefined, undefined, undefined]);
+  assert.deepEqual([exitOf(bare, 'Gone', 'feedback'), answerable(bare, { stage: 'Gone' }, 'feedback'), answerable(bare, { stage: 'PR' }, 'feedback')], [undefined, true, true]);
+  // an action stage runs no agent and is no gate: the feedback would have no session to reach, so it keeps no implicit exit
+  const checks = { stages: [{ ...STAGES[0], name: 'Checks', action: 'commands' as const, commands: ['lint'], approval: true as const }], transitions: [] };
+  assert.equal(exitOf(checks, 'Checks', 'feedback'), undefined, 'an action stage with approval takes no implicit feedback');
 });
 
 test('approvalEnd and approvalExit: a stored verdict with its own transition fires it, an unrouted verdict or none fires approved, a verdict to end is that transition; approvable is an exit or a stage gone (#693)', () => {
@@ -149,6 +165,15 @@ test('resolveSession never resumes a session of another agent: previous, continu
   assert.deepEqual(resolveSession(state, task, live, {}, { ...build, session: 'continue' }), { policy: 'new' });
   assert.deepEqual(resolveSession({ ...state, defaultAgent: OTHER }, task, live, { session: 'previous' }, STAGES[1]), { policy: 'new' }, 'a stage with no agent runs the default');
   assert.deepEqual(resolveSession(state, task, live, { session: 'previous' }, { ...build, agent: 'claude' }), { policy: 'continue', sessionId: 's-spec' });
+});
+
+test('resolveSession lets a gate resume a session of any agent: a gate has none of its own, its feedback run is the session\'s agent\'s (#757)', () => {
+  const OTHER = 'other' as AgentId;
+  const state = { ...records([{ id: 's-build', stages: ['Build'] }]), defaultAgent: OTHER }; // the session is claude's, the default another
+  const live = { sessionId: 's-build' };
+  assert.deepEqual(resolveSession(state, task, live, { session: 'previous' }, STAGES[4]), { policy: 'continue', sessionId: 's-build' }, 'PR is a gate');
+  assert.deepEqual(resolveSession(state, task, live, { session: 'previous' }, STAGES[1]), { policy: 'new' }, 'a prompt stage still refuses another agent\'s (#925)');
+  assert.deepEqual(resolveSession(state, task, undefined, { session: 'previous' }, STAGES[4]), { policy: 'new' }, 'nothing to resume is new');
 });
 
 test('a skill stage reads as a prompt stage: its own verdicts, done for an unrouted one, the evidence for {verdict}, /hive:<skill> handed on (#710)', () => {

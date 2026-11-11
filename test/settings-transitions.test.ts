@@ -81,9 +81,9 @@ test('transitionsProblem names the first transition the parser would refuse by i
     [draft(plan, { when: 'done' }), 'useApproved'],
     [draft(pr, { when: 'done' }), 'useApproved'],
     [draft(checks, { when: 'done', verdict: '' }), 'useVerdict'],
-    [draft(pr, { when: 'feedback', to: pr.id }), 'gateFeedback'],
   ];
   for (const [d, reason] of cases) assert.deepEqual(problem(d), { id: d.id, reason }, reason);
+  assert.equal(problem(draft(pr, { when: 'feedback', to: pr.id })), undefined, 'a gate takes its own feedback (#757)');
   assert.equal(problem(draft(plan, { maxTries: 'x' })), undefined, 'tries on approved never reach the file');
   const twin = { ...ok, id: 'twin' };
   assert.deepEqual(problem(ok, twin), { id: 'twin', reason: 'twin' });

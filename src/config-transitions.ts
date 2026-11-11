@@ -1,7 +1,6 @@
 import { agentOf } from './agents.js';
 import { hiveActionRaw, runsAgentRaw } from './config-stage-agent.js';
 import { hasFixedVerdicts, runsAgent } from './stage-agent.js';
-import { isGate } from './tasks.js';
 import { isAutomatic, transitionKey, verdictsOf } from './transitions.js';
 import { END, TRIGGERS, type AgentId, type Flow, type SourceAction, type Stage, type Transition, type TransitionSession, type Trigger } from './types.js';
 
@@ -62,15 +61,13 @@ function parseVerdict(raw: Record<string, unknown>, field: string, from: Stage, 
 }
 
 // approved and feedback answer a stage with approval; done leaves a stage without it, except commands, wait for CI and evaluate (#877), which only end with
-// passed or failed; a gate runs nothing, so its feedback goes to the stage
-// that does the work
-function checkTrigger(from: Stage, when: Trigger, to: string, field: string): void {
+// passed or failed. A gate may take its own feedback (#757): its run resumes the session the feedback box names
+function checkTrigger(from: Stage, when: Trigger, field: string): void {
   if ((when === 'approved' || when === 'feedback') && from.approval !== true) fail(`${field}.when`, `"${when}" needs "${from.name}" to have "approval"`);
   if (when === 'done' && from.approval === true) fail(`${field}.when`, `"done" cannot leave "${from.name}", which has "approval": use "approved"`);
   if (when === 'done' && hasFixedVerdicts(from)) {
     fail(`${field}.when`, `"done" cannot leave "${from.name}", which ends with a verdict: use "verdict" with "passed" or "failed"`);
   }
-  if (when === 'feedback' && to === from.name && isGate(from)) fail(`${field}.to`, 'cannot be the gate itself: a gate runs nothing, so its feedback goes to another stage');
 }
 
 function parseMaxTries(value: unknown, when: Trigger, field: string): Pick<Transition, 'maxTries'> {
@@ -100,7 +97,7 @@ function parseTransition(raw: unknown, field: string, scope: FlowScope, parseSou
   const to = target(raw.to, `${field}.to`, scope);
   const when = trigger(raw.when, `${field}.when`);
   const verdict = parseVerdict(raw, field, from, when);
-  checkTrigger(from, when, to, field);
+  checkTrigger(from, when, field);
   const label = text(raw.label, `${field}.label`);
   const prompt = text(raw.prompt, `${field}.prompt`);
   return {

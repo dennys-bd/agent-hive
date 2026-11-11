@@ -5,7 +5,7 @@ import { HANDOFF_PROMPT } from '../src/spawn.js';
 import { keepsRun } from '../src/transit.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { sessionsOf } from '../src/tasks.js';
-import { transitionKey } from '../src/transitions.js';
+import { FEEDBACK_LEAD, transitionKey } from '../src/transitions.js';
 import type { Effect, HiveEvent, Item, Stage, State, Transition } from '../src/types.js';
 import { move } from './fakes.js';
 import { workId } from './fixtures/work.js';
@@ -53,15 +53,13 @@ test('a stage end no transition matches stops the task in its stage with the err
   assert.equal(reduce(state, { type: 'setSignal', signal: 'green' }).effects.some((e) => e.type === 'spawn'), false);
 });
 
-test('approve fires the approved transition; with none (nor a feedback one) the task keeps awaiting; a gate approved to end leaves (#134)', () => {
+test('approve fires the approved transition; with none the task keeps awaiting; a gate approved to end leaves (#134)', () => {
   const stages: Stage[] = [{ name: 'Gate', from: { board: ['Ready'] }, approval: true }, ...STAGES.slice(1)];
   const gated = flow([{ from: 'Gate', to: 'Review', when: 'approved' }], stages);
   assert.equal(taskOf(reduce(gated, { type: 'approve', activityId: workId(gated, ID) }).state)?.stage, 'Review');
   const stuck = flow([], stages);
   const refused = reduce(stuck, { type: 'approve', activityId: workId(stuck, ID) }).state;
   assert.deepEqual([taskOf(refused)?.stage, activityOf(refused, ID)?.approval, activityOf(refused, ID)?.error], ['Gate', activityOf(stuck, ID)?.approval, undefined], 'no approved transition: the approval is kept');
-  const unheard = reduce(stuck, { type: 'feedback', activityId: workId(stuck, ID), text: 'fix it', start: true }).state;
-  assert.deepEqual([taskOf(unheard)?.stage, activityOf(unheard, ID)?.approval, activityOf(unheard, ID)?.error], ['Gate', activityOf(stuck, ID)?.approval, undefined], 'nor a feedback one');
   const out = flow([{ from: 'Gate', to: 'end', when: 'approved' }], stages);
   assert.equal(taskOf(reduce(out, { type: 'approve', activityId: workId(out, ID) }).state), undefined);
 });
@@ -125,6 +123,94 @@ const spawnOf = (effects: Effect[]) => effects.find((e): e is Extract<Effect, { 
 const sessionIn = (s: State, stage: string): string | undefined => sessionsOf(s, ID).filter((x) => x.stages.includes(stage)).at(-1)?.id;
 // Under red the Stop's fill starts nothing, so the handover stays queued for the next spawn to read
 const red = (s: State): State => reduce(s, { type: 'setSignal', signal: 'red' }).state;
+
+const PR_GATE: Stage = { name: 'PR', from: { board: ['PR'] }, approval: true };
+const led = (text: string): string => `${FEEDBACK_LEAD}\n\n${text}`;
+const OWN_GATE: Transition[] = [
+  { from: 'Build', to: 'PR', when: 'done' }, { from: 'PR', to: 'PR', when: 'feedback', session: 'previous' }, { from: 'PR', to: 'end', when: 'approved' },
+];
+
+test('a gate\'s own feedback keeps the task in the gate, resumes the reviewed stage\'s session there through the fill, and its hive_done awaits approval again (#757)', () => {
+  const inGate = stageEnd(flow(OWN_GATE, [STAGES[0], PR_GATE])).state;
+  const build = sessionIn(inGate, 'Build');
+  const queued = reduce(red(inGate), { type: 'feedback', activityId: workId(inGate, ID), text: 'fix the title', start: false }).state;
+  assert.deepEqual([taskOf(queued)?.stage, activityOf(queued, ID)?.approval, activityOf(queued, ID)?.handover], ['PR', undefined, { prompt: led('fix the title'), sessionId: build }]);
+  const { state, effects } = reduce(queued, { type: 'setSignal', signal: 'green' });
+  const spawn = spawnOf(effects);
+  assert.deepEqual([spawn?.stage.name, spawn?.session, spawn?.run, spawn?.prompt, spawn?.activity.sessionId, spawn?.worker.agent], ['PR', 'continue', 'continue', led('fix the title'), build, 'claude']);
+  const back = stageEnd(state);
+  assert.deepEqual([taskOf(back.state)?.stage, activityOf(back.state, ID)?.approval !== undefined, back.state.workers[0].status], ['PR', true, 'empty']);
+  assert.ok(back.effects.some((e) => e.type === 'kill'), 'approving goes to end: no run to hold');
+});
+
+test('a gate\'s feedback run is the agent of the session it resumes (#757)', () => {
+  const inGate = stageEnd(flow(OWN_GATE, [STAGES[0], PR_GATE])).state;
+  const codex: State = { ...inGate, activityRecords: inGate.activityRecords.map((r) => ({ ...r, sessions: r.sessions.map((x) => ({ ...x, agent: 'codex' as const })) })) };
+  const build = sessionIn(codex, 'Build');
+  const spawn = spawnOf(reduce(codex, { type: 'feedback', activityId: workId(codex, ID), text: 'x', start: true }).effects);
+  assert.deepEqual([spawn?.worker.agent, spawn?.run, spawn?.activity.sessionId], ['codex', 'continue', build]);
+});
+
+// Task 1 in PR running its own feedback on the Build session, in the worker the gate's approval freed (#757)
+function gateRun(): { state: State; ptyId: string } {
+  const inGate = stageEnd(flow(OWN_GATE, [STAGES[0], PR_GATE])).state;
+  const state = reduce(inGate, { type: 'feedback', activityId: workId(inGate, ID), text: 'fix the title', start: true }).state;
+  const live = activityOf(state, ID);
+  const ptyId = state.workers.find((w) => w.id === live?.workerId)?.runId ?? '';
+  assert.deepEqual([taskOf(state)?.stage, live?.approval, ptyId !== ''], ['PR', undefined, true], 'running in the gate, nothing awaited');
+  return { state, ptyId };
+}
+const awaitsAgain = (s: State, why: string): void => {
+  const live = activityOf(s, ID);
+  assert.deepEqual([taskOf(s)?.stage, typeof live?.approval?.since, live?.approval?.verdict, live?.stopped, live?.workerId], ['PR', 'string', undefined, undefined, undefined], why);
+};
+
+test('a gate run that ends without hive_done awaits approval again with no verdict: a Stop then its exit, an exit of its own, a boot after a crash or a Quit; approving then fires the gate\'s exit (#757)', () => {
+  const { state: running, ptyId } = gateRun();
+  const stopped = reduce(running, { type: 'stop', ptyId }).state;
+  assert.equal(activityOf(stopped, ID)?.stopped, true, 'until its exit, stopped as any stage run, so nothing picks it up');
+  const afterStop = reduce(stopped, { type: 'exit', ptyId }).state;
+  awaitsAgain(afterStop, 'a Stop');
+  awaitsAgain(reduce(running, { type: 'exit', ptyId }).state, 'an exit without hive_done');
+  awaitsAgain(reduce(running, { type: 'boot' }).state, 'a crash');
+  awaitsAgain(reduce(reduce(running, { type: 'quit' }).state, { type: 'boot' }).state, 'a Quit');
+  assert.equal(taskOf(reduce(afterStop, { type: 'approve', activityId: workId(afterStop, ID) }).state), undefined, 'PR → end');
+});
+
+test('a gate run whose spawn failed awaits approval again; the message reaches the bar only, so the next feedback still queues (#757)', () => {
+  const { state: running, ptyId } = gateRun();
+  const { state } = reduce(running, { type: 'spawnFailed', ptyId, message: 'pty refused' });
+  awaitsAgain(state, 'a failed spawn');
+  assert.deepEqual([activityOf(state, ID)?.error, state.error], [undefined, 'pty refused']);
+});
+
+test('a prompt stage\'s run exit still stops its task, and a gate entered by a stage end is left as it is (#283, #315, #757)', () => {
+  const building = flow([{ from: 'Build', to: 'PR', when: 'done' }], [STAGES[0], PR_GATE]);
+  const ptyId = building.workers[0].runId ?? '';
+  const exited = reduce(building, { type: 'exit', ptyId }).state;
+  assert.deepEqual([taskOf(exited)?.stage, activityOf(exited, ID)?.stopped, activityOf(exited, ID)?.approval], ['Build', true, undefined]);
+  const inGate = stageEnd(building).state;
+  const since = activityOf(inGate, ID)?.approval?.since;
+  assert.equal(reduce(inGate, { type: 'exit', ptyId }).state, inGate, 'its stage run already freed: nothing closes');
+  assert.equal(activityOf(reduce(inGate, { type: 'boot' }).state, ID)?.approval?.since, since, 'the approval it entered with stays');
+});
+
+test('a gate with no feedback transition takes its own: the task stays in the gate and, with no session to resume, a new session of the default agent starts there on the feedback (#757)', () => {
+  const stages: Stage[] = [{ name: 'Gate', from: { board: ['Ready'] }, approval: true }, ...STAGES.slice(1)];
+  const stuck = flow([], stages);
+  const { state, effects } = reduce(stuck, { type: 'feedback', activityId: workId(stuck, ID), text: 'fix it', start: true });
+  const spawn = spawnOf(effects);
+  assert.deepEqual([taskOf(state)?.stage, activityOf(state, ID)?.approval, activityOf(state, ID)?.error], ['Gate', undefined, undefined]);
+  assert.deepEqual([spawn?.stage.name, spawn?.session, spawn?.run, spawn?.prompt, spawn?.worker.agent], ['Gate', 'new', 'stage', led('fix it'), 'claude']);
+});
+
+test('a gate with no feedback transition resumes the reviewed stage\'s session in the gate (#757)', () => {
+  const inGate = stageEnd(flow([{ from: 'Build', to: 'PR', when: 'done' }, { from: 'PR', to: 'end', when: 'approved' }], [STAGES[0], PR_GATE])).state;
+  const build = sessionIn(inGate, 'Build');
+  const { state, effects } = reduce(inGate, { type: 'feedback', activityId: workId(inGate, ID), text: 'fix the title', start: true });
+  const spawn = spawnOf(effects);
+  assert.deepEqual([taskOf(state)?.stage, spawn?.stage.name, spawn?.run, spawn?.prompt, spawn?.activity.sessionId], ['PR', 'PR', 'continue', led('fix the title'), build]);
+});
 
 test('a transition with a prompt and a session hands them to the destination\'s next spawn: the transition alone in the continued session, {verdict} filled (#134)', () => {
   const back: Transition = { from: 'Review', to: 'Build', when: 'verdict', verdict: 'redo', prompt: 'Fix:\n\n{verdict}', session: { continueOf: 'Build' } };

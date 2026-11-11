@@ -4,8 +4,8 @@ import { withoutControls } from './pty-paste.js';
 import { forgetSession } from './record-kit.js';
 import { ensureActivity, type Reduced, settleEntries, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
 import { renderPrompt, verdictsLine } from './spawn.js';
-import { stageSession } from './task-runs.js';
-import { canDismissError, canMoveToStage, enter, inFlow, onSource, sessionsOf, stageOf, taskId } from './tasks.js';
+import { feedbackSession, stageSession } from './task-runs.js';
+import { canDismissError, canMoveToStage, enter, inFlow, isGate, onSource, sessionsOf, stageOf, taskId } from './tasks.js';
 import { hasFixedVerdicts, hiveAction, runsAgent } from './stage-agent.js';
 import { exitName, exitOf, isAutomatic, needsHandover, resolveSession, retryTransition, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
 import {
@@ -69,15 +69,23 @@ function moveOn(state: State, task: Task, transition: Transition, end: EndOf | u
   return { state: handover === undefined ? entered : withHandover(entered, moved, handover), moved, next, effects, transition, ...(handover === undefined ? {} : { handover }) };
 }
 
+// #757: a gate's own feedback, which keeps the task in the gate: its run is the only one a gate ever has
+const ownGateFeedback = (state: State, transition: Transition): boolean =>
+  transition.when === 'feedback' && transition.to === transition.from && isGate(stageOf(state.stages, transition.to));
+
 // The run that just ended, as `previous` resumes it (#134): the free session whose hive_done ended the stage when one did (#812, #483: it ran
-// no stage, so stageSession never finds it), else the latest session that ran the origin, else the activity's
-const endedRun = (state: State, task: Task, transition: Transition, end?: EndOf): Pick<Activity, 'sessionId'> =>
-  ({ sessionId: end?.sessionId ?? stageSession(task, state, transition.from)?.id ?? activityOf(state, taskId(task))?.sessionId });
+// no stage, so stageSession never finds it); in a gate taking its own feedback, the session the feedback box names (#757: the gate ran
+// nothing); else the latest session that ran the origin, else the activity's
+function endedRun(state: State, task: Task, transition: Transition, end?: EndOf): Pick<Activity, 'sessionId'> {
+  if (end?.sessionId !== undefined) return { sessionId: end.sessionId };
+  if (ownGateFeedback(state, transition)) return { sessionId: feedbackSession(task, state, transition.to)?.id };
+  return { sessionId: stageSession(task, state, transition.from)?.id ?? activityOf(state, taskId(task))?.sessionId };
+}
 
 // What the destination's next run is told (#134), only when the transition says more than its stage would: its own prompt, a feedback, a
 // session of its own. Rendered here, {verdict} and {feedback} in the item's single pass
 function handoverOf(state: State, task: Task, transition: Transition, next: Stage, end: EndOf): Handover | undefined {
-  if (!runsAgent(next) || !needsHandover(transition)) return undefined;
+  if (!(runsAgent(next) || ownGateFeedback(state, transition)) || !needsHandover(transition)) return undefined; // #757: a gate runs only its own feedback
   const session = resolveSession(state, task, endedRun(state, task, transition, end), transition, next);
   const result = resultOf(state, taskId(task));
   const vars = { verdict: transition.when === 'verdict' ? verdictText(stageOf(state.stages, transition.from), result) : '', feedback: end.feedback ?? '' };

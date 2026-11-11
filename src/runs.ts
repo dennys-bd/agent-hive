@@ -5,7 +5,7 @@ import { withLaunch } from './launch-pick.js';
 import { pendingEnd, withoutPending } from './handoff.js';
 import { activityOf, ensureLocal, localActivityId, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withLocalActivities } from './activities.js';
 import { markFreeRun, sessionBaseline, touchFreeSession, forgetSession, withResult } from './record-kit.js';
-import { canOpenSession, inAction, inFlow, sessionsOf, taskId, runningFirst, stageOf, continuable } from './tasks.js';
+import { canOpenSession, inAction, inFlow, isGate, sessionsOf, taskId, runningFirst, stageOf, continuable } from './tasks.js';
 import { forgetTerminals, slept, terminalSlug } from './terminal-runs.js';
 import { capturable, liveRuns, stageSession, startMode } from './task-runs.js';
 import { clearedError, dropWorker, ensureActivity, releaseWorker, liveWorker, none, occupy, type Reduced, releaseRun, slugTaken, stoppedWork, takeWorker, withError } from './reducer-kit.js';
@@ -20,6 +20,16 @@ import { openingSignal } from './signals.js';
 // The rules of one flow to start and stop a task (#283), kept out of orchestrator.ts, which was over 800 lines. Pure: every function returns
 // new objects.
 
+// What a stage run's close leaves on its activity: with `stop`, stopped (#283). #757 (decision 13): a run in a gate is the gate's own feedback,
+// whose handover its spawn already took, so a gate left stopped could start nothing; ended without its hive_done, whatever the cause (a Stop,
+// an exit, a crash or a Quit, a failed spawn), the gate awaits approval again, with no verdict. A held Stop's approval stays as it is
+function closedWork(state: State, task: Task, live: Activity, stop: boolean): Activity {
+  if (!isGate(stageOf(state.stages, task.stage))) return stop ? stoppedWork(live) : live;
+  if (live.approval !== undefined) return live;
+  const { stopped: _stopped, stoppedAt: _stoppedAt, ...rest } = live;
+  return { ...rest, approval: { since: new Date().toISOString() } };
+}
+
 // Frees a live worker (#248): its time joins the task up to `end`; a stage run drops its hold on the activity and, with `stop`, leaves it
 // stopped. A free session holds no activity field.
 function closeRun(state: State, worker: Worker, end: number, stop: boolean): State {
@@ -29,7 +39,7 @@ function closeRun(state: State, worker: Worker, end: number, stop: boolean): Sta
   if (!task) return { ...released, workers };
   const freed = withoutHold(dropWorker(released, task), task); // no worker holds a Stop any more (#268)
   const live = activityOf(freed, taskId(task));
-  return { ...(live ? withActivity(freed, stop ? stoppedWork(live) : live) : freed), workers };
+  return { ...(live ? withActivity(freed, closedWork(freed, task, live, stop)) : freed), workers };
 }
 
 /** The only way a user ends a run (#283), and hive_stop (#314). The process is killed and the worker frees on the exit that follows, as today. A

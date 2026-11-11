@@ -1234,7 +1234,7 @@ test('parseConfig reads comb.transitions: required, [] allowed; prompts, session
   assert.throws(() => withFlow({}), { message: 'hive.config.json: "comb.flows[0].transitions" must be an array' });
 });
 
-test('parseConfig refuses a transition naming no stage, a bad trigger or verdict, a user trigger without approval, done after approval, a gate\'s feedback to itself, bad tries, a bad session, a bad label, bad sources and a repeated (from, when, verdict) (#134)', () => {
+test('parseConfig refuses a transition naming no stage, a bad trigger or verdict, a user trigger without approval, done after approval, bad tries, a bad session, a bad label, bad sources and a repeated (from, when, verdict) (#134)', () => {
   const at = `hive.config.json: "comb.flows[0].transitions[${FULL.length}]`;
   const refused: [Record<string, unknown>, string][] = [
     [{ from: 'Nope', to: 'Build', when: 'done' }, '.from" names no stage'],
@@ -1250,7 +1250,6 @@ test('parseConfig refuses a transition naming no stage, a bad trigger or verdict
     [{ from: 'Build', to: 'Spec', when: 'feedback' }, '.when" "feedback" needs "Build" to have "approval"'],
     [{ from: 'Spec', to: 'PR', when: 'done' }, '.when" "done" cannot leave "Spec", which has "approval": use "approved"'],
     [{ from: 'Checks', to: 'PR', when: 'done' }, '.when" "done" cannot leave "Checks", which ends with a verdict: use "verdict" with "passed" or "failed"'],
-    [{ from: 'PR', to: 'PR', when: 'feedback' }, '.to" cannot be the gate itself: a gate runs nothing, so its feedback goes to another stage'],
     [{ from: 'Spec', to: 'Build', when: 'approved', maxTries: 2 }, '.maxTries" only goes with "when": "done" or "verdict": your transitions have no limit'],
     [{ from: 'Checks', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 0 }, '.maxTries" must be an integer ≥ 1'],
     [{ from: 'Checks', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 1.5 }, '.maxTries" must be an integer ≥ 1'],
@@ -1265,6 +1264,13 @@ test('parseConfig refuses a transition naming no stage, a bad trigger or verdict
   assert.throws(() => withFlow([...FULL, { from: 'Build', to: 'PR', when: 'done' }]), { message: `${at}" repeats the "from", "when" and "verdict" of an earlier transition` });
   const clean = { name: 'Clean', from: {}, action: 'deleteActivity' };
   assert.deepEqual(withFlow([...FULL, { from: 'Clean', to: 'end', when: 'done' }], [...FLOW_STAGES, clean]).comb.flows[0].transitions.at(-1), { from: 'Clean', to: 'end', when: 'done' }, 'a delete activity ends with done');
+});
+
+test('parseConfig keeps a gate\'s feedback to itself: the gate takes its own feedback (#757)', () => {
+  const own = { from: 'PR', to: 'PR', when: 'feedback', session: 'previous' };
+  const transitions = FULL.map((t) => (t.from === 'PR' && t.when === 'feedback' ? own : t));
+  const parsed = withFlow(transitions).comb.flows[0].transitions;
+  assert.deepEqual(parsed.find((t) => t.from === 'PR' && t.when === 'feedback'), own);
 });
 
 test('a transition from an evaluate stage takes verdict passed or failed with maxTries, and never done (#877)', () => {

@@ -92,7 +92,7 @@ test('resolve in the activity on a task awaiting approval whose stage takes feed
   expect(hive.calls.some((c) => c.url.endsWith('/open') || c.url.endsWith('/resolve'))).toBe(false);
 });
 
-test('resolve in the activity on any other task opens the resolve dialog, also with no session and on a task awaiting approval with no feedback transition (#379)', async () => {
+test('resolve in the activity on any other task opens the resolve dialog, also with no session; a task awaiting approval with no feedback transition takes the merge prompt as feedback, through the implicit one (#379, #757)', async () => {
   const user = userEvent.setup();
   const first = renderBox(CONFLICT);
   await user.click(box().getByRole('button', { name: 'resolver na atividade' }));
@@ -102,8 +102,8 @@ test('resolve in the activity on any other task opens the resolve dialog, also w
   first.unmount();
   renderBox(CONFLICT, AWAITING);
   await user.click(box().getByRole('button', { name: 'resolver na atividade' }));
-  expect(await screen.findByRole('alertdialog', { name: 'Resolver o conflito com main' })).toBeInTheDocument();
-  expect(prCalls(hive, 'POST', '/activities/a-I1/feedback')).toHaveLength(0);
+  await waitFor(() => expect(prCalls(hive, 'POST', '/activities/a-I1/feedback')).toHaveLength(1));
+  expect(screen.queryByRole('alertdialog')).toBeNull();
 });
 
 test('resolve in the activity sends its feedback once while the request runs: a second click waits (#758, #379)', async () => {
