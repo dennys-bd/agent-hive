@@ -572,7 +572,9 @@ function spawnFailed(state: State, ptyId: string, message: string): Reduced {
   const found = taskOfWorker(freed, worker); // the task as exit left it (worker already dropped): one source, never two
   const forgotten = found ? forgetFailedSession(freed, found, worker) : freed;
   const task = found && taskOfWorker(forgotten, worker);
-  return none({ ...(task ? withError(forgotten, task, SPAWN_FAILED + message) : forgotten), error: message });
+  // #757: a gate's failed run awaits approval again (closeRun); an error on it would keep its next feedback out of the fill, so the bar alone says it
+  const kept = task && !isGate(stageOf(forgotten.stages, task.stage)) ? withError(forgotten, task, SPAWN_FAILED + message) : forgotten;
+  return none({ ...kept, error: message });
 }
 
 // The end of the command (a Stop after hive_done): the transition `end` fires is taken (#134), or the one a handoff waited on. The worker goes

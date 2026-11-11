@@ -153,6 +153,50 @@ test('a gate\'s feedback run is the agent of the session it resumes (#757)', () 
   assert.deepEqual([spawn?.worker.agent, spawn?.run, spawn?.activity.sessionId], ['codex', 'continue', build]);
 });
 
+// Task 1 in PR running its own feedback on the Build session, in the worker the gate's approval freed (#757)
+function gateRun(): { state: State; ptyId: string } {
+  const inGate = stageEnd(flow(OWN_GATE, [STAGES[0], PR_GATE])).state;
+  const state = reduce(inGate, { type: 'feedback', activityId: workId(inGate, ID), text: 'fix the title', start: true }).state;
+  const live = activityOf(state, ID);
+  const ptyId = state.workers.find((w) => w.id === live?.workerId)?.runId ?? '';
+  assert.deepEqual([taskOf(state)?.stage, live?.approval, ptyId !== ''], ['PR', undefined, true], 'running in the gate, nothing awaited');
+  return { state, ptyId };
+}
+const awaitsAgain = (s: State, why: string): void => {
+  const live = activityOf(s, ID);
+  assert.deepEqual([taskOf(s)?.stage, typeof live?.approval?.since, live?.approval?.verdict, live?.stopped, live?.workerId], ['PR', 'string', undefined, undefined, undefined], why);
+};
+
+test('a gate run that ends without hive_done awaits approval again with no verdict: a Stop then its exit, an exit of its own, a boot after a crash or a Quit; approving then fires the gate\'s exit (#757)', () => {
+  const { state: running, ptyId } = gateRun();
+  const stopped = reduce(running, { type: 'stop', ptyId }).state;
+  assert.equal(activityOf(stopped, ID)?.stopped, true, 'until its exit, stopped as any stage run, so nothing picks it up');
+  const afterStop = reduce(stopped, { type: 'exit', ptyId }).state;
+  awaitsAgain(afterStop, 'a Stop');
+  awaitsAgain(reduce(running, { type: 'exit', ptyId }).state, 'an exit without hive_done');
+  awaitsAgain(reduce(running, { type: 'boot' }).state, 'a crash');
+  awaitsAgain(reduce(reduce(running, { type: 'quit' }).state, { type: 'boot' }).state, 'a Quit');
+  assert.equal(taskOf(reduce(afterStop, { type: 'approve', activityId: workId(afterStop, ID) }).state), undefined, 'PR → end');
+});
+
+test('a gate run whose spawn failed awaits approval again; the message reaches the bar only, so the next feedback still queues (#757)', () => {
+  const { state: running, ptyId } = gateRun();
+  const { state } = reduce(running, { type: 'spawnFailed', ptyId, message: 'pty refused' });
+  awaitsAgain(state, 'a failed spawn');
+  assert.deepEqual([activityOf(state, ID)?.error, state.error], [undefined, 'pty refused']);
+});
+
+test('a prompt stage\'s run exit still stops its task, and a gate entered by a stage end is left as it is (#283, #315, #757)', () => {
+  const building = flow([{ from: 'Build', to: 'PR', when: 'done' }], [STAGES[0], PR_GATE]);
+  const ptyId = building.workers[0].runId ?? '';
+  const exited = reduce(building, { type: 'exit', ptyId }).state;
+  assert.deepEqual([taskOf(exited)?.stage, activityOf(exited, ID)?.stopped, activityOf(exited, ID)?.approval], ['Build', true, undefined]);
+  const inGate = stageEnd(building).state;
+  const since = activityOf(inGate, ID)?.approval?.since;
+  assert.equal(reduce(inGate, { type: 'exit', ptyId }).state, inGate, 'its stage run already freed: nothing closes');
+  assert.equal(activityOf(reduce(inGate, { type: 'boot' }).state, ID)?.approval?.since, since, 'the approval it entered with stays');
+});
+
 test('a transition with a prompt and a session hands them to the destination\'s next spawn: the transition alone in the continued session, {verdict} filled (#134)', () => {
   const back: Transition = { from: 'Review', to: 'Build', when: 'verdict', verdict: 'redo', prompt: 'Fix:\n\n{verdict}', session: { continueOf: 'Build' } };
   const inReview = reduce(stageEnd(flow([{ from: 'Build', to: 'Review', when: 'done' }, back], VERDICT_STAGES)).state, { type: 'setSignal', signal: 'green' }).state;
