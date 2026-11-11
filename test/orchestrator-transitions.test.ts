@@ -5,7 +5,7 @@ import { HANDOFF_PROMPT } from '../src/spawn.js';
 import { keepsRun } from '../src/transit.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { sessionsOf } from '../src/tasks.js';
-import { transitionKey } from '../src/transitions.js';
+import { FEEDBACK_LEAD, transitionKey } from '../src/transitions.js';
 import type { Effect, HiveEvent, Item, Stage, State, Transition } from '../src/types.js';
 import { move } from './fakes.js';
 import { workId } from './fixtures/work.js';
@@ -125,6 +125,33 @@ const spawnOf = (effects: Effect[]) => effects.find((e): e is Extract<Effect, { 
 const sessionIn = (s: State, stage: string): string | undefined => sessionsOf(s, ID).filter((x) => x.stages.includes(stage)).at(-1)?.id;
 // Under red the Stop's fill starts nothing, so the handover stays queued for the next spawn to read
 const red = (s: State): State => reduce(s, { type: 'setSignal', signal: 'red' }).state;
+
+const PR_GATE: Stage = { name: 'PR', from: { board: ['PR'] }, approval: true };
+const led = (text: string): string => `${FEEDBACK_LEAD}\n\n${text}`;
+const OWN_GATE: Transition[] = [
+  { from: 'Build', to: 'PR', when: 'done' }, { from: 'PR', to: 'PR', when: 'feedback', session: 'previous' }, { from: 'PR', to: 'end', when: 'approved' },
+];
+
+test('a gate\'s own feedback keeps the task in the gate, resumes the reviewed stage\'s session there through the fill, and its hive_done awaits approval again (#757)', () => {
+  const inGate = stageEnd(flow(OWN_GATE, [STAGES[0], PR_GATE])).state;
+  const build = sessionIn(inGate, 'Build');
+  const queued = reduce(red(inGate), { type: 'feedback', activityId: workId(inGate, ID), text: 'fix the title', start: false }).state;
+  assert.deepEqual([taskOf(queued)?.stage, activityOf(queued, ID)?.approval, activityOf(queued, ID)?.handover], ['PR', undefined, { prompt: led('fix the title'), sessionId: build }]);
+  const { state, effects } = reduce(queued, { type: 'setSignal', signal: 'green' });
+  const spawn = spawnOf(effects);
+  assert.deepEqual([spawn?.stage.name, spawn?.session, spawn?.run, spawn?.prompt, spawn?.activity.sessionId, spawn?.worker.agent], ['PR', 'continue', 'continue', led('fix the title'), build, 'claude']);
+  const back = stageEnd(state);
+  assert.deepEqual([taskOf(back.state)?.stage, activityOf(back.state, ID)?.approval !== undefined, back.state.workers[0].status], ['PR', true, 'empty']);
+  assert.ok(back.effects.some((e) => e.type === 'kill'), 'approving goes to end: no run to hold');
+});
+
+test('a gate\'s feedback run is the agent of the session it resumes (#757)', () => {
+  const inGate = stageEnd(flow(OWN_GATE, [STAGES[0], PR_GATE])).state;
+  const codex: State = { ...inGate, activityRecords: inGate.activityRecords.map((r) => ({ ...r, sessions: r.sessions.map((x) => ({ ...x, agent: 'codex' as const })) })) };
+  const build = sessionIn(codex, 'Build');
+  const spawn = spawnOf(reduce(codex, { type: 'feedback', activityId: workId(codex, ID), text: 'x', start: true }).effects);
+  assert.deepEqual([spawn?.worker.agent, spawn?.run, spawn?.activity.sessionId], ['codex', 'continue', build]);
+});
 
 test('a transition with a prompt and a session hands them to the destination\'s next spawn: the transition alone in the continued session, {verdict} filled (#134)', () => {
   const back: Transition = { from: 'Review', to: 'Build', when: 'verdict', verdict: 'redo', prompt: 'Fix:\n\n{verdict}', session: { continueOf: 'Build' } };

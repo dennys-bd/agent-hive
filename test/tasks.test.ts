@@ -617,6 +617,15 @@ test('candidates never takes a task in a manual gate; canRunIn is the stage\'s p
   assert.equal(canRunIn({}), false);
 });
 
+test('a gate task is queued only while its own feedback left a handover on its activity; canRunIn reads the prompt or, in a gate, that handover (#757)', () => {
+  const GATE: LegacyStage = { name: 'gate', from: { board: ['Review'] }, approval: true };
+  const fed = task(2, GATE, { enteredAt: ago(DAY), handover: { prompt: 'x' } });
+  assert.deepEqual(cands([fed], [DEV, GATE], NOW, runsOf([]), ONE).map((c) => c.item.id), ['2']);
+  assert.deepEqual(cands([task(2, GATE, { enteredAt: ago(DAY) })], [DEV, GATE], NOW, runsOf([]), ONE), [], 'no handover: the gate only awaits');
+  const handed = { handover: { prompt: 'x' } };
+  assert.deepEqual([canRunIn(GATE, handed), canRunIn(GATE), canRunIn(DEV), canRunIn({}, handed)], [true, false, true, false], 'a stage with nothing to run takes no handover');
+});
+
 test('citedColumns reads only its source\'s entries of the maps, and entryStage enters through that source\'s from only (#180)', () => {
   const stages: LegacyStage[] = [
     { name: 'spec', from: { work: ['Todo'], notes: ['todo'] }, onFinish: { work: [move('Specced')] }, prompt: 'x' },

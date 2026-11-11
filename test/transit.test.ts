@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { advance, dismissError, type EndOf, follow, retry, take, unrouted, verdictProblem } from '../src/transit.js';
-import { transitionKey } from '../src/transitions.js';
+import { FEEDBACK_LEAD, transitionKey } from '../src/transitions.js';
 import { END, FEEDBACK_MAX } from '../src/types.js';
 import type { Activity, Item, Session, Stage, State, Task, TaskUsage, Transition, TryRecord } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
@@ -272,4 +272,27 @@ test('a transition marks the task it moves placedByHand, so the next poll never 
   const LOOP: Transition = { from: 'checks', to: 'checks', when: 'feedback' };
   const looped = pure(deepFreeze({ ...bare, ...flowed(STAGES, [LOOP]) }), (s) => follow(s, s.tasks[0], LOOP));
   assert.equal(looped.state.tasks[0].placedByHand, undefined);
+});
+
+const GATED: Stage[] = [{ name: 'build', from: {}, prompt: '/build {url}' }, { name: 'gate', from: {}, approval: true }];
+const OWN: Transition = { from: 'gate', to: 'gate', when: 'feedback', session: 'previous' };
+const FEEDBACK: EndOf = { trigger: 'feedback', feedback: 'fix it' };
+
+// The task in `stage` of GATED, its activity on a session no record lists (what `previous` would resume), its record holding `sessions`; frozen
+function gated(sessions: Session[], stage = 'gate', transitions: Transition[] = [OWN]): State {
+  const task: Task = { item, stage, boardColumn: '', auto: true, workspace: 'hive' };
+  return deepFreeze(withWork({ ...initialState(0), workspaces: ['hive'], ...flowed(GATED, transitions), tasks: [task] }, ID, { sessionId: 's-old' }, { sessions }));
+}
+
+test('a gate\'s own feedback stays in the gate with a handover on the session feedbackSession names: the reviewed stage\'s, the approval\'s free one, else a new one (#757)', () => {
+  const led = `${FEEDBACK_LEAD}\n\nfix it`;
+  const reviewed = pure(gated([ran('s-build', ['build'])]), (s) => take(s, s.tasks[0], OWN, FEEDBACK));
+  assert.deepEqual([reviewed.moved.stage, reviewed.handover, activityOf(reviewed.state, ID)?.handover], ['gate', { prompt: led, sessionId: 's-build' }, { prompt: led, sessionId: 's-build' }]);
+  const named = pure(gated([ran('s-build', ['build']), ran('s-free', [], true)]), (s) => take(s, s.tasks[0], OWN, { ...FEEDBACK, sessionId: 's-free' }));
+  assert.equal(named.handover?.sessionId, 's-free', 'the free session the approval names (#812)');
+  const fresh = pure(gated([]), (s) => take(s, s.tasks[0], OWN, FEEDBACK));
+  assert.deepEqual(fresh.handover, { prompt: led }, 'no session to resume: a new one in the gate, never the activity\'s unlisted s-old');
+  const into: Transition = { from: 'build', to: 'gate', when: 'done', prompt: 'look closer' };
+  const entered = pure(gated([], 'build', [into]), (s) => take(s, s.tasks[0], into, { trigger: 'done' }));
+  assert.deepEqual([entered.moved.stage, entered.handover], ['gate', undefined], 'only a gate\'s own feedback hands it a run');
 });

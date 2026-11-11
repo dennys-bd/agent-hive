@@ -162,11 +162,12 @@ export function isDue(task: Task, stage: Stage, now: number): boolean {
 }
 
 /** A manual gate (#315): approval with nothing to run. A task awaits Aprovar from the moment it enters; the server and the UI share this rule. */
-export const isGate = (stage: Stage | undefined): boolean => stage?.approval === true && stage.action === undefined && !runsAgent(stage); // #710: a skill stage with approval waits after its run
+export const isGate = (stage: Pick<Stage, 'approval' | 'action' | 'prompt' | 'skill'> | undefined): boolean => stage?.approval === true && stage.action === undefined && !runsAgent(stage); // #710: a skill stage with approval waits after its run
 
-/** What a stage run of the task has to tell its worker: the stage's prompt (#134: a gate runs nothing, its feedback goes to another stage). The
- * fill and a start by hand share this rule. */
-export const canRunIn = (stage: Pick<Stage, 'action' | 'prompt' | 'skill'>): boolean => runsAgent(stage); // #710: a skill stage runs too
+/** What a stage run of the task has to tell its worker: the stage's prompt (#134, #710: a skill stage's too), or in a gate the handover its
+ * own feedback left on the activity (#757); a gate without one only awaits. The fill and a start by hand share this rule. */
+export const canRunIn = (stage: Pick<Stage, 'approval' | 'action' | 'prompt' | 'skill'>, activity?: Pick<Activity, 'handover'>): boolean =>
+  runsAgent(stage) || (isGate(stage) && activity?.handover !== undefined);
 /** The only way a task changes stage: `after` counts from this moment, and the pin goes with the old stage (a new queue is a new claim). What
  * the stage left behind on the work (a stopped mark, an awaited approval, queued feedback) is settleEntries' (#629). */
 export const enter = ({ pinned: _pinned, ...task }: Task, stage: Stage): Task => ({ ...task, stage: stage.name, enteredAt: new Date().toISOString() });
@@ -344,8 +345,8 @@ export function mergeTasks(tasks: Task[], flows: readonly Flow[], { source, item
  * its stage's `after`, or with no workspace to run in, is queued too: candidates adds those two checks, an open PR's review does not. */
 export function isQueued(task: Task, stages: Stage[], state: WorkersState): boolean {
   const stage = stageOf(stages, task.stage);
-  return stage !== undefined && (canRunIn(stage) || holdsWorker(stage)) && isIdle(task, activityOf(state, taskId(task)))
-    && workersOf(state, task).length === 0 && !isBlocked(task.item);
+  const live = activityOf(state, taskId(task));
+  return stage !== undefined && (canRunIn(stage, live) || holdsWorker(stage)) && isIdle(task, live) && workersOf(state, task).length === 0 && !isBlocked(task.item);
 }
 
 /** Tasks a free worker may take, best first: stopped, present on the source, unblocked, without a failure, with auto on,

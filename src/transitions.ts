@@ -1,6 +1,6 @@
 import { stageAgentIn } from './agents.js';
 import { stageSession } from './task-runs.js';
-import { sessionsOf } from './tasks.js';
+import { isGate, sessionsOf } from './tasks.js';
 import { agentPrompt, commandFirst, hasFixedVerdicts, hiveAction, runsAgent } from './stage-agent.js';
 import { FIXED_VERDICTS, TRIES_OUT, type Activity, type AgentId, type Stage, type StageAction, type State, type Task, type TaskApproval, type Transition, type Trigger } from './types.js';
 
@@ -90,11 +90,14 @@ export const resumableBy = (state: Pick<State, 'activityRecords'>, task: Task, i
  * than the destination's is nothing to resume (#925). */
 export function resolveSession(
   state: Pick<State, 'activityRecords' | 'defaultAgent'>, task: Task, activity: Pick<Activity, 'sessionId'> | undefined, transition: Pick<Transition, 'session'>,
-  destination: Pick<Stage, 'session' | 'agent'>,
+  destination: Pick<Stage, 'session' | 'agent' | 'approval' | 'action' | 'prompt' | 'skill'>,
 ): ResolvedSession {
   const agent = stageAgentIn(state, destination);
-  // #925: a session of another agent resolves as nothing to resume: the destination starts its own
-  const resume = (id: string | undefined): ResolvedSession => (id === undefined || !resumableBy(state, task, id, agent) ? { policy: 'new' } : { policy: 'continue', sessionId: id });
+  // #925: a session of another agent resolves as nothing to resume: the destination starts its own. #757: a gate has no agent of its own, so
+  // it resumes any: its run is the session's agent's (occupy)
+  const anyAgent = isGate(destination);
+  const resume = (id: string | undefined): ResolvedSession =>
+    (id === undefined || (!anyAgent && !resumableBy(state, task, id, agent)) ? { policy: 'new' } : { policy: 'continue', sessionId: id });
   const { session } = transition;
   if (session === 'new') return { policy: 'new' };
   if (session === 'previous') return resume(activity?.sessionId);

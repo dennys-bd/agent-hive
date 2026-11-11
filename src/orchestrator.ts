@@ -252,7 +252,7 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
   if (stage.action === 'deleteActivity') return startDeleteActivity(clearedError(state, task), task);
   if (stage.action === 'waitForCi') return startCi(placed.state, task); // #834: no worker, no worktree; startCi clears the last failure itself
   const isHeld = holdsWorker(stage); // #755, #877: a commands or evaluate stage runs in the worktree, holding a worker
-  if (!isHeld && (!canRunIn(stage) || isBlocked(task.item))) return none(state); // a prompt (#134: a gate runs nothing)
+  if (!isHeld && (!canRunIn(stage, activity) || isBlocked(task.item))) return none(state); // a prompt, or a gate's own feedback (#757)
   const retried = clearedError(placed.state, task);
   const taken = slugTaken(retried, task);
   if (taken) return none(taken); // before a worker opens over the cap (#116)
