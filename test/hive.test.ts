@@ -540,7 +540,8 @@ test('with nothing saved, setup mode proposes the folder the Hive started in whe
   };
   const { repo } = await tempHive(t);
   process.chdir(repo);
-  assert.equal((await unconfigured()).proposedWorkspace, await realpath(repo), 'process.cwd() is already the real path');
+  const proposed = (await unconfigured()).proposedWorkspace;
+  assert.equal(proposed === undefined ? undefined : await realpath(proposed), await realpath(repo), 'the same folder, whatever spelling cwd gave'); // win32's cwd can be the 8.3 short name
   await mkdir(join(repo, 'src'));
   process.chdir(join(repo, 'src'));
   assert.equal((await unconfigured()).proposedWorkspace, undefined, 'inside a repo is not its top level');
