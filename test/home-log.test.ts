@@ -29,6 +29,12 @@ test('homeLog masks absolute paths, home-relative paths and links before they ar
 
 test('maskPaths masks a path under the home whole, spaces included, so no folder of it is kept (#742)', () => {
   const home = '/Users/someone';
-  assert.equal(maskPaths(`open '${home}/Library/Application Support/Hive/f.json' failed`, home), "open '<path>' failed");
-  assert.equal(maskPaths(`bounds: ${home}/Library/Application Support/Hive/b.json`, home), 'bounds: <path>');
+  assert.equal(maskPaths(`open '${home}/Library/Application Support/Hive/f.json' failed`, 'darwin', home), "open '<path>' failed");
+  assert.equal(maskPaths(`bounds: ${home}/Library/Application Support/Hive/b.json`, 'darwin', home), 'bounds: <path>');
+});
+
+test('maskPaths on win32 masks a drive-letter path with either separator and a UNC path; on darwin a C:\\ text is no path (#655)', () => {
+  assert.equal(maskPaths("open 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\hive-x/hive.config.json' failed", 'win32', 'C:\\Users\\runneradmin'), "open '<path>' failed");
+  assert.equal(maskPaths('at \\\\server\\share\\hive.log, D:/h/x.json', 'win32', 'C:\\Users\\u'), 'at <path>, <path>');
+  assert.equal(maskPaths('C:\\x is kept', 'darwin', '/Users/u'), 'C:\\x is kept');
 });
