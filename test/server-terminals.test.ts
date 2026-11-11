@@ -104,8 +104,8 @@ test('a clean Quit sleeps every live terminal before its kills, so the next boot
 test('a terminal spawns with its own history and ring files, and a woken one in the start dir once its held cwd is gone (#696)', async (t) => {
   const { base, server, workers, repo } = await start(t);
   const id = await openShell(base);
-  assert.match(workers[0].launch.env?.HISTFILE ?? '', new RegExp(`/terminals/${id}\\.history$`));
-  assert.match(workers[0].launch.keep?.log ?? '', new RegExp(`/terminals/${id}\\.log$`));
+  assert.match(workers[0].launch.env?.HISTFILE ?? '', new RegExp(`[\\\\/]terminals[\\\\/]${id}\\.history$`));
+  assert.match(workers[0].launch.keep?.log ?? '', new RegExp(`[\\\\/]terminals[\\\\/]${id}\\.log$`));
   await server.dispatch({ type: 'sleepTerminal', terminalId: id, cwd: `${repo}/gone` });
   workers[0].handlers.onExit();
   await server.dispatch({ type: 'wakeTerminal', terminalId: id });

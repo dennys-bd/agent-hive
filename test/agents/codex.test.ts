@@ -103,7 +103,7 @@ test('Codex\'s stray pattern is the pty id; a clear has no argv (it is /clear ty
   assert.equal(codexRunner.clear(RUN), undefined);
   assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: [] }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET', 'HIVE_MCP_TOKEN_*'], '', []]);
   assert.equal(codexRunner.transcriptDir('/repo'), undefined, 'no per-cwd dir: removal and copy find nothing there (#929)');
-  assert.equal(codexRunner.ownsTranscript(`/codex-home/sessions/2026/10/12/rollout-x-${ID}.jsonl`, '/repo', ID, { CODEX_HOME: '/codex-home' }), true);
+  assert.equal(codexRunner.ownsTranscript(join('/codex-home', 'sessions', '2026', '10', '12', `rollout-x-${ID}.jsonl`), '/repo', ID, { CODEX_HOME: '/codex-home' }), true);
   await assert.rejects(codexRunner.readTurn('/x.jsonl'));
   assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), codexRunner.statusLimits({}, 0)], [0, undefined]);
   await assert.rejects(codexRunner.planLimits({ env: { CODEX_HOME: await tempDir(t, 'codex-') } }), { message: 'no Codex rollout found' }); // #557

@@ -40,7 +40,7 @@ test('the store reads a missing file as empty, writes atomically under reviews/,
   ]);
   assert.deepEqual((await store.read('local:1')).reviewed.map((m) => m.path), ['a.ts', 'b.ts']);
   const path = reviewPath(home, 'local:1');
-  assert.ok(path.endsWith('reviews/local%3A1.json'));
+  assert.ok(path.endsWith(join('reviews', 'local%3A1.json')));
   assert.deepEqual(await readdir(dirname(path)), ['local%3A1.json'], 'no temp file left');
   await store.remove('local:1');
   assert.deepEqual(await store.read('local:1'), EMPTY_REVIEW);

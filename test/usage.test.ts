@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { chmod, mkdir, symlink, utimes, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { promisify } from 'node:util';
 import {
   cleanTitle, DAY_MS, HOUR_MS, hasBudget, isTranscriptIn, isTranscriptPath, isWorkerTranscript, pruneUsage, usageTotals,
@@ -149,7 +149,7 @@ test('isTranscriptPath accepts only an absolute string ending in .jsonl', () => 
 
 test('transcriptDir is <config dir>/projects/<cwd with every non-alphanumeric as ->; CLAUDE_CONFIG_DIR wins over ~/.claude', () => {
   assert.equal(transcriptDir('/Users/x/my repo/.claude/worktrees/hive-7-fix', {}), join(homedir(), '.claude', 'projects', '-Users-x-my-repo--claude-worktrees-hive-7-fix'));
-  assert.equal(transcriptDir('/w', { CLAUDE_CONFIG_DIR: '/cfg' }), '/cfg/projects/-w');
+  assert.equal(transcriptDir('/w', { CLAUDE_CONFIG_DIR: '/cfg' }), join('/cfg', 'projects', '-w'));
 });
 
 test('transcriptDir ignores an empty or relative CLAUDE_CONFIG_DIR (#236)', () => {
@@ -162,28 +162,28 @@ const TASK7 = { slug: 'hive-7-fix' };
 
 test('isWorkerTranscript accepts only a .jsonl directly under the transcript dir of the worker worktree', () => {
   const env = { CLAUDE_CONFIG_DIR: '/cfg' };
-  const own = '/cfg/projects/-repo--hive-worktrees-hive-7-fix/abc.jsonl';
+  const own = join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl');
   assert.equal(isWorkerTranscript(own, '/repo', TASK7, 'claude', env), true);
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-8-other/abc.jsonl', '/repo', TASK7, 'claude', env), false, 'another worker');
-  assert.equal(isWorkerTranscript('/cfg/projects/-Users-x-secret/abc.jsonl', '/repo', TASK7, 'claude', env), false, 'another project');
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-7-fix/sub/abc.jsonl', '/repo', TASK7, 'claude', env), false, 'a subdirectory');
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-7-fix/../x/abc.jsonl', '/repo', TASK7, 'claude', env), false, 'no traversal');
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-7-fix/abc.json', '/repo', TASK7, 'claude', env), false);
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-8-other', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'another worker');
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-Users-x-secret', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'another project');
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'sub', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'a subdirectory');
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix') + `${sep}..${sep}x${sep}abc.jsonl`, '/repo', TASK7, 'claude', env), false, 'no traversal');
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.json'), '/repo', TASK7, 'claude', env), false);
   assert.equal(isWorkerTranscript(undefined, '/repo', TASK7, 'claude', env), false);
 });
 
 test('isWorkerTranscript on a checkout task accepts a .jsonl under the project\'s own transcript dir, and no longer the worktree\'s (#444)', () => {
   const env = { CLAUDE_CONFIG_DIR: '/cfg' };
   const checkout = { ...TASK7, local: true as const };
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo/abc.jsonl', '/repo', checkout, 'claude', env), true, 'its usage keeps counting');
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-7-fix/abc.jsonl', '/repo', checkout, 'claude', env), false);
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo', 'abc.jsonl'), '/repo', checkout, 'claude', env), true, 'its usage keeps counting');
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl'), '/repo', checkout, 'claude', env), false);
 });
 
 test('isTranscriptIn takes only a .jsonl directly under the transcript folder of the given checkout (#590)', () => {
   const env = { CLAUDE_CONFIG_DIR: '/cfg' };
-  assert.equal(isTranscriptIn('/cfg/projects/-repo/abc.jsonl', '/repo', 'claude', env), true);
-  assert.equal(isTranscriptIn('/cfg/projects/-repo--hive-worktrees-hive-7-fix/abc.jsonl', '/repo', 'claude', env), false, 'a worktree of it');
-  assert.equal(isTranscriptIn('/cfg/projects/-repo/sub/abc.jsonl', '/repo', 'claude', env), false);
+  assert.equal(isTranscriptIn(join('/cfg', 'projects', '-repo', 'abc.jsonl'), '/repo', 'claude', env), true);
+  assert.equal(isTranscriptIn(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl'), '/repo', 'claude', env), false, 'a worktree of it');
+  assert.equal(isTranscriptIn(join('/cfg', 'projects', '-repo', 'sub', 'abc.jsonl'), '/repo', 'claude', env), false);
   assert.equal(isTranscriptIn('relative/abc.jsonl', '/repo', 'claude', env), false);
 });
 
