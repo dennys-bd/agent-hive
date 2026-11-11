@@ -1,14 +1,16 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { posixShell } from '../src/posix-shell.js';
 
 const ENTRY = 'bin/server.js';
 
-/** What npm installs beside .bin: the package's package.json naming `binary`'s script, and that script. win32 runs node on it (#635). */
+/** What npm installs beside .bin: the package's package.json naming `binary`'s script, and that script. win32 runs node on it (#635). A package
+ *  with several binaries (vscode-langservers-extracted) is written once per binary: each call adds its entry to the bin map, never replaces it. */
 export async function writeNpmEntry(dir: string, source: string, binary: string, body: string): Promise<void> {
   const pkg = join(dir, 'node_modules', ...source.split('/'));
   await mkdir(join(pkg, 'bin'), { recursive: true });
-  await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: source, bin: { [binary]: ENTRY } }));
+  const earlier = await readFile(join(pkg, 'package.json'), 'utf8').then((text) => (JSON.parse(text) as { bin: Record<string, string> }).bin, () => ({}));
+  await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: source, bin: { ...earlier, [binary]: ENTRY } }));
   await writeFile(join(pkg, ENTRY), body);
 }
 

@@ -85,7 +85,7 @@ test('a kept terminal puts the shim dir before the workspace\'s PATH, or before 
   assert.equal((await postJson(`${base}/tasks/${TASK}/open`, { kind: 'terminal' })).status, 200);
   const env = workers[0].launch.env;
   assert.deepEqual([env?.PATH, env?.NODE_ENV], [`${shimDir(home)}${delimiter}/ws/bin`, 'development']);
-  assert.match(env?.HISTFILE ?? '', /\/terminals\/[^/]+\.history$/);
+  assert.match(env?.HISTFILE ?? '', /[\\/]terminals[\\/][^\\/]+\.history$/);
   const plain = await start(t);
   assert.equal((await postJson(`${plain.base}/tasks/${TASK}/open`, { kind: 'terminal' })).status, 200);
   assert.equal(plain.workers[0].launch.env?.PATH, `${shimDir(plain.home)}${delimiter}${process.env.PATH ?? ''}`);

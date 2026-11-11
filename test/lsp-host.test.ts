@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { chmod, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { localActivityId } from '../src/activities.js';
 import { createConsoleStore } from '../src/console.js';
@@ -83,7 +83,9 @@ test('a socket gets { root, log } first; two sockets on one key share one proces
 });
 
 test('cpp and objective-c files share one clangd for an activity (#780)', async (t) => {
-  const { lsp } = await host(t);
+  const { lsp, home } = await host(t);
+  // win32 launches the release's clangd.exe, which no script can stand in for: node.exe renamed reads its (empty) stdin and stays up (#635)
+  if (process.platform === 'win32') await copyFile(process.execPath, join(editorDir(home, { kind: 'server', id: 'clangd' }), 'clangd_21.1.0', 'bin', 'clangd.exe'));
   const [cpp, objc] = [new FakeSocket(), new FakeSocket()];
   await lsp.attach(cpp, ACTIVITY, 'clangd', 'clangd');
   await lsp.attach(objc, ACTIVITY, 'clangd', 'clangd');

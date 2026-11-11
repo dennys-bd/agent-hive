@@ -28,7 +28,8 @@ async function script(path: string, body: string): Promise<void> {
 async function serve(t: AfterHost, editor: EditorConfig = EDITOR_DEFAULTS): Promise<{ base: string; repo: string }> {
   const repo = await realpath(await tempDir(t, 'check-repo-'));
   await writeFile(join(repo, 'a.py'), 'x: int = "a"\n');
-  await script(join(repo, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'mypy'), `printf '{"file": "%s", "line": 1, "column": 9, "message": "bad", "hint": null, "code": "assignment", "severity": "error"}\\n' "$4"; exit 1`);
+  // mypy names the file relative to its cwd: an absolute win32 path printed raw by sh would hold unescaped backslashes, not JSON
+  await script(join(repo, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'mypy'), `printf '{"file": "a.py", "line": 1, "column": 9, "message": "bad", "hint": null, "code": "assignment", "severity": "error"}\\n'; exit 1`);
   const config = parseConfig(combConfig({ stages: LOCAL_STAGES, path: repo, editor }));
   const state = withLocal(initialState(0), 'hive');
   const app = express();
