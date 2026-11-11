@@ -11,6 +11,7 @@ import { readDaemonPort, readDaemonSecret } from '../src/daemon-files.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { shellQuote } from '../src/shell-init.js';
 import type { Activity, State } from '../src/types.js';
+import { samePath } from '../src/same-path.js';
 import { killQuietly } from './daemon-boot.js';
 import { combConfig } from './fakes.js';
 import { tempDir } from './temp-dir.js';
@@ -28,10 +29,11 @@ const run = promisify(execFile);
 
 async function until<T>(what: string, ms: number, read: () => Promise<T | undefined> | T | undefined): Promise<T> {
   const end = Date.now() + ms;
+  let last: unknown;
   for (;;) {
-    const found = await Promise.resolve(read()).catch(() => undefined);
+    const found = await Promise.resolve(read()).catch((err: unknown) => { last = err; return undefined; });
     if (found !== undefined) return found;
-    if (Date.now() > end) throw new Error(`timed out after ${ms} ms waiting for ${what}`);
+    if (Date.now() > end) throw new Error(`timed out after ${ms} ms waiting for ${what}`, { cause: last });
     await sleep(STEP_MS);
   }
 }
@@ -51,15 +53,18 @@ async function repoWithOneCommit(t: TestContext): Promise<string> {
 
 // A Comb with no source and one flow whose only stage runs the `smoke` command (#755): a node script that prints the marker and where it ran,
 // and exits EXIT_CODE. The line goes through the shell the command runs through, so the paths are quoted for it.
-async function fixtureHome(t: TestContext): Promise<string> {
+// The cwd goes to a file, not the output: a pty wraps a long temp path at its width, and ConPTY inserts escapes into the wrap
+async function fixtureHome(t: TestContext): Promise<{ home: string; cwdFile: string }> {
   const home = await tempDir(t, 'smoke-home-');
   const repo = await repoWithOneCommit(t);
-  const script = join(await tempDir(t, 'smoke-script-'), 'smoke.cjs');
-  await writeFile(script, `console.log('${MARKER}');\nconsole.log('cwd=[' + process.cwd() + ']');\nprocess.exit(${EXIT_CODE});\n`);
+  const folder = await tempDir(t, 'smoke-script-');
+  const script = join(folder, 'smoke.cjs');
+  const cwdFile = join(folder, 'cwd.txt');
+  await writeFile(script, `require('node:fs').writeFileSync(${JSON.stringify(cwdFile)}, process.cwd());\nconsole.log('${MARKER}');\nprocess.exit(${EXIT_CODE});\n`);
   const stage = { name: 'fila', from: {}, action: 'commands', commands: ['smoke'], stopOnFailure: true, onMissing: 'fail' };
   const commands = [{ name: 'smoke', impls: [{ workspace: null, command: `${shellQuote(process.execPath)} ${shellQuote(script)}` }], menu: false, env: {} }];
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: [stage], path: repo, commands })));
-  return home;
+  return { home, cwdFile };
 }
 
 interface Daemon { child: ChildProcess; exit: Promise<number | null>; port: number; secret: string }
@@ -125,19 +130,20 @@ async function runStage(d: Daemon): Promise<{ output: string; activity: Activity
 }
 
 test('the daemon boots, runs a stage command in a task worktree, refuses a second instance, stops cleanly and boots again on the freed home (#653)', async (t) => {
-  const home = await fixtureHome(t);
+  const { home, cwdFile } = await fixtureHome(t);
   const first = await boot(t, home);
 
   const second = launch(t, home);
-  assert.notEqual(await Promise.race([second.exit, exitedIn(EXIT_MS)]), 0, 'a second daemon on the same home exits non-zero');
+  const refused = await Promise.race([second.exit, exitedIn(EXIT_MS)]);
+  assert.ok(typeof refused === 'number' && refused !== 0, `a second daemon on the same home exits non-zero, got ${String(refused)}`);
   assert.match(await readFile(join(home, 'hive.log'), 'utf8'), /já está em execução/);
 
   const { output, activity } = await runStage(first);
   assert.ok(output.includes(`smoke (${EXIT_CODE})`), output);
   assert.ok(output.includes(MARKER), output);
-  const cwd = /cwd=\[(.*?)\]/.exec(output)?.[1];
-  assert.ok(cwd !== undefined, output);
-  assert.equal(realpathSync(cwd), realpathSync(activity.worktree as string), 'the command ran in the task\'s worktree');
+  // realpath.native expands an 8.3 short name (RUNNER~1) the JS realpath keeps; samePath ignores case on win32 (#640)
+  const ran = realpathSync.native(await readFile(cwdFile, 'utf8'));
+  assert.ok(samePath(ran, realpathSync.native(activity.worktree as string), process.platform), `the command ran in the task's worktree, not ${ran}`);
 
   await stopAndExpectCleanExit(first);
   await stopAndExpectCleanExit(await boot(t, home));

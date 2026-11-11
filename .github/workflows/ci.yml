@@ -168,6 +168,8 @@ jobs:
           $env:ELECTRON_RUN_AS_NODE = '1'
           $daemon = Start-Process -FilePath $app -ArgumentList "`"$runJs`"" -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
           Remove-Item Env:HIVE_HOME, Env:ELECTRON_RUN_AS_NODE
+          # read once now: without an open handle, ExitCode is null for a process that exited before anyone asked
+          $null = $daemon.Handle
 
           try {
             $portFile = Join-Path $home_ 'hive.port'
@@ -186,7 +188,10 @@ jobs:
             $page = Invoke-WebRequest -Uri "http://127.0.0.1:$port/" -Headers $headers -UseBasicParsing
             if ($page.StatusCode -ne 200) { throw "GET / answered $($page.StatusCode)" }
 
-            Invoke-WebRequest -Uri "http://127.0.0.1:$port/stop" -Method Post -Headers $headers -UseBasicParsing | Out-Null
+            # the daemon closes every connection right after its answer: the exit code below is the verdict, not this call
+            try {
+              Invoke-WebRequest -Uri "http://127.0.0.1:$port/stop" -Method Post -Headers $headers -ContentType 'application/json' -Body '{}' -UseBasicParsing | Out-Null
+            } catch { Write-Host "POST /stop: $_" }
             if (-not $daemon.WaitForExit(30000)) { throw 'the daemon did not exit within 30 s of /stop' }
             if ($daemon.ExitCode -ne 0) { throw "the daemon exited $($daemon.ExitCode) after /stop" }
           } catch {
