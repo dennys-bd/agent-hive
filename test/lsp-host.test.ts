@@ -2,18 +2,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { chmod, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { localActivityId } from '../src/activities.js';
 import { createConsoleStore } from '../src/console.js';
 import type { CatalogLoad, SchemaCatalog } from '../src/json-schemas.js';
 import { parseConfig } from '../src/config.js';
 import { editorDir } from '../src/editor-install.js';
 import { createLspHost, type LspHost } from '../src/lsp-host.js';
+import { serverDef } from '../src/languages.js';
 import { initialState } from '../src/orchestrator.js';
 import { EDITOR_DEFAULTS, type EditorConfig, type ServerId } from '../src/types.js';
 import { combConfig, LOCAL_STAGES } from './fakes.js';
 import { withLocal } from './fixtures/work.js';
 import { LSP_STUB, until } from './lsp-helpers.js';
+import { writeCmdTwin, writeNpmEntry } from './npm-server.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 class FakeSocket extends EventEmitter {
@@ -33,6 +35,8 @@ async function installServer(home: string, id: ServerId, file: string, body: str
   await mkdir(dirname(join(dir, file)), { recursive: true });
   await writeFile(join(dir, file), body);
   await chmod(join(dir, file), 0o755);
+  // win32 runs node on the package's own entry, not on .bin's shim (#635)
+  if (file.startsWith('node_modules/.bin/')) await writeNpmEntry(dir, serverDef(id).source, basename(file), body);
   await writeFile(join(dir, 'installed.json'), JSON.stringify({ version, installedAt: '2026-10-06T00:00:00.000Z' }));
 }
 // An executable the test writes outside the Hive's home: a project's copy, a tool on PATH
@@ -40,6 +44,7 @@ async function script(path: string, body: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, body);
   await chmod(path, 0o755);
+  await writeCmdTwin(path);
 }
 const STUB_SCRIPT = `#!/bin/sh\nexec "${process.execPath}" "${LSP_STUB}" "$@"\n`;
 

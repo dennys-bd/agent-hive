@@ -14,6 +14,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { writeCmdTwin } from './npm-server.js';
 import { tempDir } from './temp-dir.js';
 import { assertMode } from './posix-only.js';
 
@@ -277,6 +278,7 @@ test('GET /settings/formatters answers each supported formatter with the workspa
   await mkdir(dirname(prettier), { recursive: true });
   await writeFile(prettier, '#!/bin/sh\ncat\n');
   await chmod(prettier, 0o755);
+  await writeCmdTwin(prettier);
   const states = (await (await hiveFetch(`${e.base}/settings/formatters`)).json()) as FormatterState[];
   assert.deepEqual(states.map((s) => s.id), [...FORMATTER_IDS]);
   assert.deepEqual(states.find((s) => s.id === 'prettier')?.found, ['hive']);

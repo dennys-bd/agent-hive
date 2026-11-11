@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { access, chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join, relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { parseConfig } from '../src/config.js';
 import { editorDir } from '../src/editor-install.js';
 import { type Launch, serverDef } from '../src/languages.js';
 import { EDITOR_DEFAULTS, type EditorConfig, type ServerId } from '../src/types.js';
 import { createWorkerLsp, hiveLaunch, renderWorkerLsp, settles, workerLaunches, workerLspPath } from '../src/worker-lsp.js';
 import { combConfig, fakeLog, LOCAL_STAGES, WORKSPACE } from './fakes.js';
+import { npmScriptPath, writeNpmEntry } from './npm-server.js';
 import { tempDir } from './temp-dir.js';
 
 // The language servers for the workers (#803): the launch the LSP host and the workers share, the .lsp.json, the writer and run.spawned's field.
@@ -15,9 +16,10 @@ import { tempDir } from './temp-dir.js';
 const NODE_DIR = dirname(process.execPath); // a PATH that holds node, whatever machine runs the tests
 
 // A server's install record: all hiveLaunch reads of an installed server, as the LSP host's own resolution does
-async function installServer(home: string, id: ServerId, version = '1.0.0'): Promise<void> {
+async function installServer(home: string, id: ServerId, version = '1.0.0', withEntry = true): Promise<void> {
   const dir = editorDir(home, { kind: 'server', id });
   await mkdir(dir, { recursive: true });
+  if (id === 'pyright' && withEntry) await writeNpmEntry(dir, 'pyright', 'pyright-langserver', ''); // win32 reads the package's own bin entry (#635)
   await writeFile(join(dir, 'installed.json'), JSON.stringify({ version, installedAt: '2026-10-09T00:00:00.000Z' }));
 }
 
@@ -25,7 +27,7 @@ test('hiveLaunch answers an installed server\'s launch, "not installed" without 
   const home = await tempDir(t, 'wlsp-home-');
   await installServer(home, 'pyright');
   const pyright = serverDef('pyright');
-  const script = join(editorDir(home, { kind: 'server', id: 'pyright' }), 'node_modules', '.bin', 'pyright-langserver');
+  const script = npmScriptPath(editorDir(home, { kind: 'server', id: 'pyright' }), 'pyright', 'pyright-langserver');
   assert.deepEqual(await hiveLaunch(home, pyright, 'pyright-langserver', NODE_DIR, 'arm64'), { command: 'node', args: [script, '--stdio'] }, 'the host keeps its bare node');
   assert.deepEqual(await hiveLaunch(home, pyright, 'pyright-langserver', '', 'arm64'), { reason: 'requires node' });
   assert.deepEqual(await hiveLaunch(home, serverDef('gopls'), 'gopls', NODE_DIR, 'arm64'), { reason: 'not installed' });
@@ -51,8 +53,8 @@ test('workerLaunches keys each language server binary that would launch, node as
   await installServer(home, 'biome'); // a checker's server: no language's own
   const launches = await workerLaunches(home, NODE_DIR, 'arm64');
   assert.deepEqual([...launches.keys()].sort(), ['gopls/gopls', 'pyright/pyright-langserver']);
-  assert.equal(launches.get('pyright/pyright-langserver')?.command, join(NODE_DIR, 'node'), 'the node the editor\'s host would run');
-  assert.equal(launches.get('gopls/gopls')?.command, join(editorDir(home, { kind: 'server', id: 'gopls' }), 'bin', 'gopls'));
+  assert.equal(launches.get('pyright/pyright-langserver')?.command, join(NODE_DIR, basename(process.execPath)), 'the node the editor\'s host would run');
+  assert.equal(launches.get('gopls/gopls')?.command, GOPLS(home));
   assert.deepEqual([...(await workerLaunches(home, '', 'arm64')).keys()], ['gopls/gopls'], 'no node on PATH: the npm server goes, the binary stays');
 });
 
@@ -90,7 +92,7 @@ test('settles: a server\'s installed, absent, failed or requires state rewrites 
 const TWO = [{ name: WORKSPACE, path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }];
 const configOf = (languages: EditorConfig['languages'] = {}, workspaces = TWO) =>
   parseConfig(combConfig({ stages: LOCAL_STAGES, workspaces, editor: { ...EDITOR_DEFAULTS, languages } }));
-const GOPLS = (home: string) => join(editorDir(home, { kind: 'server', id: 'gopls' }), 'bin', 'gopls');
+const GOPLS = (home: string) => join(editorDir(home, { kind: 'server', id: 'gopls' }), 'bin', process.platform === 'win32' ? 'gopls.exe' : 'gopls');
 const gone = (path: string): Promise<boolean> => access(path).then(() => false, () => true);
 
 test('write gives each workspace its plugin (manifest and .lsp.json) and records its folder and entries; a workspace left with no server, and one removed from the config, lose their folder (#803)', async (t) => {
@@ -174,7 +176,7 @@ test('workerLaunches leaves out a server whose runtime PATH finds only through a
 
 test('on win32 an npm server needs its package.json\'s bin entry for the binary: none, or one that leaves the package, reads not installed (#635)', async (t) => {
   const home = await tempDir(t, 'wlsp-home-');
-  await installServer(home, 'pyright');
+  await installServer(home, 'pyright', '1.0.0', false); // the test writes the package.json itself
   const pyright = serverDef('pyright');
   const pkg = join(editorDir(home, { kind: 'server', id: 'pyright' }), 'node_modules', 'pyright');
   const onWin32 = (): ReturnType<typeof hiveLaunch> => hiveLaunch(home, pyright, 'pyright-langserver', '', 'x64', 'win32');

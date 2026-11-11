@@ -2,7 +2,8 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { chmod, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { activityOf, resultOf } from '../src/activities.js';
@@ -12,6 +13,7 @@ import { PATCH_MAX } from '../src/evaluate-prompt.js';
 import { initialState } from '../src/orchestrator.js';
 import { createEvaluateRunner, type EvaluateRunner } from '../src/server-evaluate.js';
 import { createServer, type Runtime } from '../src/server.js';
+import { shellQuote } from '../src/shell-init.js';
 import { saveState } from '../src/state-store.js';
 import type { Activity, AgentAvailability, AgentId, Effect, EvaluateRow, Exec, HiveEvent, Stage, StageEvaluate, Task } from '../src/types.js';
 import { combConfig, tempHive } from './fakes.js';
@@ -29,30 +31,25 @@ const RUBRIC = 'Meets {id}?\nTests cover it?';
 const stageOf = (reviewers: EvaluateRow[], judge: EvaluateRow = { agent: 'claude' }): Stage => ({ name: 'eval', from: {}, action: 'evaluate', reviewers, judge, threshold: 7, rubric: RUBRIC });
 const scoresJson = (scores: number[]): string => JSON.stringify({ scores: scores.map((score, i) => ({ dimension: `d${i}`, score, evidence: 'a.ts:3' })) });
 
-// One script per agent: the prompt on stdin, branching on its focus line. Claude prints its result object; Codex writes the answer to -o
-const SCRIPT = `prompt="$(cat)"
-args="$*"
-out=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
-answer() { if [ -n "$out" ]; then printf '%s' "$1" > "$out"; else printf '{"type":"result","is_error":false,"result":"","structured_output":%s}' "$1"; fi; }
-focus="$(printf '%s\\n' "$prompt" | sed -n 's/^Your focus: //p')"
-case "$focus" in
-  slow*) pwd > "$LOG/$focus.start.pwd"; touch "$LOG/$focus.start"; i=0
-    while [ "$(ls "$LOG" | grep -c '\\.start$')" -lt 2 ]; do i=$((i+1)); [ $i -gt 600 ] && exit 1; sleep 0.1; done
-    answer "{\\"findings\\":[{\\"file\\":\\"a.ts\\",\\"line\\":3,\\"finding\\":\\"$focus\\"}]}" ;;
-  broken) i=0; while [ ! -e "$LOG/hang.start" ]; do i=$((i+1)); [ $i -gt 600 ] && exit 1; sleep 0.1; done; answer 'not json' ;;
-  hang*) echo $$ > "$LOG/$focus.pid"; touch "$LOG/$focus.start"; exec sleep 120 ;;
-  "") printf '%s' "$args" > "$LOG/judge.args"; printf '%s' "$prompt" > "$LOG/judge.prompt"; answer "$SCORES" ;;
-esac`;
+// The fake agent is test/fixtures/evaluate-agent.ts. win32 finds an agent by PATHEXT (#633): a .cmd on node; elsewhere a sh script that
+// execs node, so the pid the agent writes is the one the Hive kills
+const AGENT = fileURLToPath(new URL('./fixtures/evaluate-agent.js', import.meta.url));
+const wrapper = (platform: NodeJS.Platform): { name: (command: string) => string; text: string } => (platform === 'win32'
+  ? { name: (command) => `${command}.cmd`, text: `@"${process.execPath}" "${AGENT}" %*\r\n` }
+  : { name: (command) => command, text: `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(AGENT)} "$@"\n` });
 
 async function fakeClis(t: TestContext, extra: Record<string, string>): Promise<{ env: NodeJS.ProcessEnv; tmpRoot: string; log: string }> {
   const bin = await tempDir(t, 'evaluate-bin-');
+  const { name, text } = wrapper(process.platform);
   for (const agent of ['claude', 'codex'] as AgentId[]) {
-    const file = join(bin, AGENTS[agent].command);
-    await writeFile(file, `#!/bin/sh\n${SCRIPT}\n`);
-    await chmod(file, 0o755);
+    const file = join(bin, name(AGENTS[agent].command));
+    await writeFile(file, text);
+    await chmod(file, 0o755); // a no-op on win32
   }
   const log = await tempDir(t, 'evaluate-log-');
-  return { env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, LOG: log, ...extra }, tmpRoot: await tempDir(t, 'evaluate-tmp-'), log };
+  // one PATH for the child: win32 spells the key Path, and a copy beside PATH would leave two
+  const base = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PATH'));
+  return { env: { ...base, PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`, LOG: log, ...extra }, tmpRoot: await tempDir(t, 'evaluate-tmp-'), log };
 }
 
 // A repo whose main has a.ts and whose work branch, checked out in its own worktree, is one commit ahead
