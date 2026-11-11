@@ -167,7 +167,7 @@ test('isWorkerTranscript accepts only a .jsonl directly under the transcript dir
   assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-8-other', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'another worker');
   assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-Users-x-secret', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'another project');
   assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'sub', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'a subdirectory');
-  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix') + `${sep}..${sep}x${sep}abc.jsonl`, '/repo', TASK7, 'claude', env), false, 'no traversal');
+  assert.equal(isWorkerTranscript(`${join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix')}${sep}..${sep}x${sep}abc.jsonl`, '/repo', TASK7, 'claude', env), false, 'no traversal');
   assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.json'), '/repo', TASK7, 'claude', env), false);
   assert.equal(isWorkerTranscript(undefined, '/repo', TASK7, 'claude', env), false);
 });

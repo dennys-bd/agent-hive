@@ -67,7 +67,7 @@ test('ownsRollout takes only <sessions root>/YYYY/MM/DD/…-<session id>.jsonl, 
     [at(`2026/oct/12/rollout-x-${SESSION}.jsonl`), 'not a date folder'],
     [`sessions/2026/10/12/rollout-x-${SESSION}.jsonl`, 'relative'],
     [at(`2026/10/12/rollout-x-${SESSION}.json`), 'not .jsonl'],
-    [join('/codex-home', 'sessions', '2026', '10', '12') + `${sep}..${sep}12${sep}rollout-x-${SESSION}.jsonl`, 'not normalized: the root would be read from the wrong folders'],
+    [`${join('/codex-home', 'sessions', '2026', '10', '12')}${sep}..${sep}12${sep}rollout-x-${SESSION}.jsonl`, 'not normalized: the root would be read from the wrong folders'],
   ];
   for (const [path, why] of refused) assert.equal(ownsRollout(path, SESSION, env), false, why);
   assert.equal(ownsRollout(own, SESSION.slice(9), env), false, 'a tail of the id is no session id');
