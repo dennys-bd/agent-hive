@@ -238,5 +238,6 @@ test('a failed catalog starts the JSON server with no associations and the reaso
   assert.equal(schemas.loads, 1);
   await lsp.stopAll(); // a run joins its channel's history only once it ended
   const history = store.channels().map((c) => store.history(c.id)?.history ?? '').join('');
-  assert.match(history, /> vscode-json-language-server --stdio[^\r\n]*\r\nJSON schemas unavailable: HTTP 503\r\n/);
+  // win32 runs the npm entry through node, so its script's path sits between the name and --stdio
+  assert.match(history, /> vscode-json-language-server (?:\S+ )?--stdio[^\r\n]*\r\nJSON schemas unavailable: HTTP 503\r\n/);
 });
