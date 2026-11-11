@@ -2,8 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { copyFile, mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { assemble, partPath, readPartFrom } from '../src/design-parts.js';
@@ -201,17 +200,36 @@ test('import-dc.mjs rewrites one prop\'s default in a copy, strips scripts, data
 
 test('import-dc.mjs looks for the browser on PATH, then the system Chrome, then Playwright\'s newest Chromium, and finds none without them (#241)', async () => {
   const dc = await load<ImportDc>('import-dc.mjs');
-  const home = join(tmpdir(), 'no-home'); // never read: list and isExecutable are fakes
-  const cache = join(home, 'Library/Caches/ms-playwright');
+  const home = posix.join('/no-home'); // never read: list and isExecutable are fakes
+  const cache = posix.join(home, 'Library/Caches/ms-playwright');
   const system = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-  const newest = join(cache, 'chromium-1200', 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing');
-  const older = join(cache, 'chromium-1100', 'chrome-mac/Chromium.app/Contents/MacOS/Chromium');
+  const newest = posix.join(cache, 'chromium-1200', 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing');
+  const older = posix.join(cache, 'chromium-1100', 'chrome-mac/Chromium.app/Contents/MacOS/Chromium');
   const deps = (executables: string[]): BrowserDeps => ({
-    env: { PATH: ['/opt/a', '/opt/b'].join(delimiter) }, platform: 'darwin', home,
+    env: { PATH: ['/opt/a', '/opt/b'].join(posix.delimiter) }, platform: 'darwin', home,
     isExecutable: async (path) => executables.includes(path), list: async (dir) => (dir === cache ? ['chromium-1100', 'chromium-1200', 'ffmpeg-1011'] : []),
   });
   assert.equal(await dc.findBrowser(deps(['/opt/b/google-chrome', system, newest])), '/opt/b/google-chrome');
   assert.equal(await dc.findBrowser(deps([system, newest])), system);
+  assert.equal(await dc.findBrowser(deps([older, newest])), newest);
+  assert.equal(await dc.findBrowser(deps([])), undefined);
+});
+
+test('import-dc.mjs on win32 looks for chrome.exe on PATH, then Chrome under Program Files and LOCALAPPDATA, then Playwright\'s newest chrome-win, all with \\ (#655)', async () => {
+  const dc = await load<ImportDc>('import-dc.mjs');
+  const cache = win32.join('C:\\L', 'ms-playwright');
+  const onPath = win32.join('C:\\b', 'chrome.exe');
+  const system = win32.join('C:\\PF', 'Google', 'Chrome', 'Application', 'chrome.exe');
+  const local = win32.join('C:\\L', 'Google', 'Chrome', 'Application', 'chrome.exe');
+  const newest = win32.join(cache, 'chromium-1200', 'chrome-win64', 'chrome.exe');
+  const older = win32.join(cache, 'chromium-1100', 'chrome-win', 'chrome.exe');
+  const deps = (executables: string[]): BrowserDeps => ({
+    env: { PATH: ['C:\\a', 'C:\\b'].join(';'), ProgramFiles: 'C:\\PF', LOCALAPPDATA: 'C:\\L' }, platform: 'win32', home: 'C:\\no-home',
+    isExecutable: async (path) => executables.includes(path), list: async (dir) => (dir === cache ? ['chromium-1100', 'chromium-1200', 'ffmpeg-1011'] : []),
+  });
+  assert.equal(await dc.findBrowser(deps([onPath, system, newest])), onPath);
+  assert.equal(await dc.findBrowser(deps([local, system, newest])), system);
+  assert.equal(await dc.findBrowser(deps([local, newest])), local);
   assert.equal(await dc.findBrowser(deps([older, newest])), newest);
   assert.equal(await dc.findBrowser(deps([])), undefined);
 });
