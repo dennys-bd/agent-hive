@@ -721,3 +721,9 @@ test('a hive.config.json without mcp opens setup mode with the parse error, pref
   const wrong = await hiveWithConfig(t, { mcp: { off: ['hive_done'], servers: [] } });
   await assert.rejects(bootHive(wrong.home), { message: /^hive\.config\.json: "mcp\.off" holds hive_done/ }, 'a key that is there but wrong is no file from before the key');
 });
+
+test('a hive.config.json that fails the boot opens neither usage.sqlite nor the read model, so nothing holds the home after it (#655)', async (t) => {
+  const { home } = await hiveWithConfig(t, { theme: 'sepia' });
+  await assert.rejects(bootHive(home), { message: 'hive.config.json: "theme" must be one of: system, light, dark' });
+  assert.deepEqual([existsSync(join(home, USAGE_FILE)), existsSync(join(home, READ_MODEL_FILE))], [false, false]);
+});
