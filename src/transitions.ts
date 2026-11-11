@@ -26,13 +26,20 @@ export const outgoing = (transitions: readonly Transition[], stage: string | und
 const matching = (transitions: readonly Transition[], from: string | undefined, when: Trigger, verdict?: string): Transition | undefined =>
   transitions.find((t) => t.from === from && t.when === when && t.verdict === verdict);
 
-/** The transition a stage end fires (#134): the one whose (from, when, verdict) matches. An agent's verdict with no transition of its own falls
- * back to done on a stage without approval (an approval stage waits for the user instead); a commands or wait-for-CI verdict never falls back,
- * so a failed check never passes as finished. Undefined when nothing matches. */
+/** The transition feedback takes on a stage with none of its own (#757): back into the stage, resuming the run that ended it (in a gate, the
+ * session the feedback box names, transit.ts). Built on every lookup and never stored, so the flow chart draws no arrow for it. */
+export const implicitFeedback = (stage: string): Transition => ({ from: stage, to: stage, when: 'feedback', session: 'previous' });
+
+/** The transition a stage end fires (#134): the one whose (from, when, verdict) matches. Feedback with none of its own loops back into the stage
+ * (#757), while the stage is in the flow. An agent's verdict with no transition of its own falls back to done on a stage without approval (an
+ * approval stage waits for the user instead); a commands or wait-for-CI verdict never falls back, so a failed check never passes as finished.
+ * Undefined when nothing matches. */
 export function exitOf(graph: Graph, stage: string | undefined, trigger: Trigger, verdict?: string): Transition | undefined {
   const own = matching(graph.transitions, stage, trigger, trigger === 'verdict' ? verdict : undefined);
-  if (own !== undefined || trigger !== 'verdict') return own;
+  if (own !== undefined) return own;
   const origin = graph.stages.find((s) => s.name === stage);
+  if (trigger === 'feedback') return origin === undefined ? undefined : implicitFeedback(origin.name);
+  if (trigger !== 'verdict') return undefined;
   return origin !== undefined && hiveAction(origin) === undefined && origin.approval !== true ? matching(graph.transitions, stage, 'done') : undefined;
 }
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  approvable, approvalEnd, approvalExit, exitName, exitOf, FEEDBACK_TEMPLATE, isAutomatic, needsHandover, outgoing, resolveSession, retryTransition, takeTry, transitionByKey, transitionKey, transitionPrompt, verdictsOf, verdictText,
+  answerable, approvable, approvalEnd, approvalExit, exitName, exitOf, FEEDBACK_TEMPLATE, implicitFeedback, isAutomatic, needsHandover, outgoing, resolveSession, retryTransition, takeTry, transitionByKey, transitionKey, transitionPrompt, verdictsOf, verdictText,
 } from '../src/transitions.js';
 import type { ActivityRecord, AgentId, Stage, Task, Transition } from '../src/types.js';
 
@@ -50,6 +50,19 @@ test('exitOf matches the trigger and the verdict; an agent verdict with no trans
   assert.equal(exitOf(graph, 'Build', 'approved'), undefined);
   assert.equal(exitOf(graph, 'Gone', 'done'), undefined);
   assert.deepEqual([exitName('approved'), exitName('verdict', 'failed')], ['approved', 'verdict:failed']);
+});
+
+test('exitOf answers feedback on a stage with none of its own with the implicit loop back into it, never stored; an explicit one wins; no other trigger and no stage gone gets it (#757)', () => {
+  const bare = { stages: STAGES, transitions: FLOW.filter((t) => t.when !== 'feedback') };
+  assert.deepEqual(implicitFeedback('Spec'), { from: 'Spec', to: 'Spec', when: 'feedback', session: 'previous' });
+  assert.deepEqual([exitOf(bare, 'Spec', 'feedback'), exitOf(bare, 'PR', 'feedback')], [implicitFeedback('Spec'), implicitFeedback('PR')], 'a prompt stage and a gate alike');
+  assert.equal(bare.transitions.some((t) => t.when === 'feedback'), false, 'nothing was added to the graph');
+  assert.equal(exitOf(graph, 'Spec', 'feedback'), FLOW[1], 'an explicit one wins');
+  const toBuild = T('PR', 'Build', 'feedback', { session: { continueOf: 'Build' } });
+  assert.equal(exitOf({ stages: STAGES, transitions: [...FLOW, toBuild] }, 'PR', 'feedback'), toBuild, 'a gate\'s feedback to the stage it reviews keeps going there');
+  const none = { stages: STAGES, transitions: [] };
+  assert.deepEqual([exitOf(none, 'Build', 'done'), exitOf(none, 'Spec', 'approved'), exitOf(none, 'Review', 'verdict', 'ok')], [undefined, undefined, undefined]);
+  assert.deepEqual([exitOf(bare, 'Gone', 'feedback'), answerable(bare, { stage: 'Gone' }, 'feedback'), answerable(bare, { stage: 'PR' }, 'feedback')], [undefined, true, true]);
 });
 
 test('approvalEnd and approvalExit: a stored verdict with its own transition fires it, an unrouted verdict or none fires approved, a verdict to end is that transition; approvable is an exit or a stage gone (#693)', () => {

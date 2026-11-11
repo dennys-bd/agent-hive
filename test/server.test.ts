@@ -2791,17 +2791,17 @@ test('the approval routes answer 404 for an unknown task, 409 for a task not awa
   assert.deepEqual([work0(server)?.handover?.prompt, 'approval' in task0(server)], ['The user reviewed this stage and asks:\n\nfix[201~ it\n!a\tb\nc', false], 'queued, cleaned, trimmed');
 });
 
-test('approve and feedback with no transition of their own answer 409 and keep the task awaiting (#134)', async (t) => {
+test('approve with no transition of its own answers 409 and keeps the task awaiting; feedback with none takes the implicit loop back (#134, #757)', async (t) => {
   const { base, server } = await start(t, { ...BODY, flows: bodyFlows(LAST_APPROVAL, []) });
   const { runId: ptyId } = worker0(server);
   await markDone(server, ptyId!);
   await hookEvent(base, ptyId!, { hook_event_name: 'Stop' });
   const since = work0(server)?.approval?.since;
-  for (const [route, body, error] of [['approve', {}, 'nenhuma transição sai desta etapa ao aprovar'], ['feedback', { text: 'fix it', start: true }, 'nenhuma transição sai desta etapa com feedback']] as const) {
-    const res = await postJson(`${base}${workPath(server, 'board:I1')}/${route}`, body);
-    assert.deepEqual([res.status, await res.json()], [409, { error }], route);
-  }
+  const res = await postJson(`${base}${workPath(server, 'board:I1')}/approve`, {});
+  assert.deepEqual([res.status, await res.json()], [409, { error: 'nenhuma transição sai desta etapa ao aprovar' }]);
   assert.deepEqual([typeof since, work0(server)?.approval?.since, work0(server)?.error], ['string', since, undefined]);
+  assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/feedback`, { text: 'fix it', start: true })), { ok: true });
+  assert.equal(work0(server)?.approval, undefined);
 });
 
 test('feedback with start on a task whose run ended resumes the stage\'s session at once with the text as the prompt (#268)', async (t) => {
