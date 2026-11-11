@@ -215,7 +215,7 @@ test('migrateConfig fills fileIcons last: a pre-#516, pre-#754 file parses with 
   assert.equal(migrateConfig(migrated), migrated, 'idempotent');
 });
 
-test('a comb with no transitions gets them from its stages: approved after an approval stage, passed after commands or CI, done otherwise, the last to end, each with its onFinish as sources; feedback loops on prompt stages with approval, a gate\'s to the nearest earlier prompt stage; idempotent (#134)', () => {
+test('a comb with no transitions gets them from its stages: approved after an approval stage, passed after commands or CI, done otherwise, the last to end, each with its onFinish as sources; no feedback transition for a prompt stage with approval (its feedback is implicit, #757), a gate\'s to the nearest earlier prompt stage; idempotent (#134)', () => {
   const stages = [
     { name: 'Spec', from: {}, prompt: '/spec', approval: true, onFinish: { board: [{ type: 'move', column: 'Ready' }] } },
     { name: 'Build', from: {}, prompt: '/build', visible: 3 },
@@ -230,7 +230,6 @@ test('a comb with no transitions gets them from its stages: approved after an ap
     { from: 'Checks', to: 'CI', when: 'verdict', verdict: 'passed' },
     { from: 'CI', to: 'PR', when: 'verdict', verdict: 'passed' },
     { from: 'PR', to: 'end', when: 'approved', sources: { board: [{ type: 'close' }] } },
-    { from: 'Spec', to: 'Spec', when: 'feedback', session: 'previous' },
     { from: 'PR', to: 'Build', when: 'feedback', session: { continueOf: 'Build' } },
   ]);
   assert.deepEqual((migrated as unknown as { comb: { stages: Record<string, unknown>[] } }).comb.stages.map((s) => 'onFinish' in s), [false, false, false, false, false], 'onFinish moved to the transitions (#134)');
@@ -239,6 +238,7 @@ test('a comb with no transitions gets them from its stages: approved after an ap
   assert.deepEqual(transitionsOf([{ name: 'Gate', from: {}, approval: true }, { name: 'Build', from: {}, prompt: '/b' }]), [
     { from: 'Gate', to: 'Build', when: 'approved' }, { from: 'Build', to: 'end', when: 'done' },
   ], 'a gate with no earlier prompt stage gets no feedback transition');
+  assert.deepEqual(transitionsOf([{ name: 'Spec', from: {}, prompt: '/s', approval: true }]), [{ from: 'Spec', to: 'end', when: 'approved' }], 'a prompt stage with approval gets no self loop (#757)');
   const malformed = { comb: { stages: [1] } };
   assert.equal(migrateTransitions(malformed), malformed, 'the parser names a malformed stage');
 });

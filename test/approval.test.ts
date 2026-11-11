@@ -149,6 +149,13 @@ test('feedback on a held worker answers the Stop with the text in the same stage
   assert.deepEqual([again.state.workers[0].status, types(again.effects)], ['approval', ['hold']]);
 });
 
+test('the fixtures\' flow has no feedback transition once migrated: the feedback tests here run on the implicit loop back into spec (#757)', () => {
+  assert.deepEqual(chained(STAGES).transitions.filter((t) => t.when === 'feedback'), []);
+  const parked = held();
+  const { effects } = reduce(parked, { type: 'feedback', activityId: workId(parked, ID), text: 'split it', start: false });
+  assert.deepEqual(effects.map((e) => (e.type === 'continue' ? [e.type, e.prompt] : [e.type])), [['continue', led('split it')]]);
+});
+
 test('feedback with start and no held worker resumes the stage\'s session at once as a continue run carrying the text, over the cap as a draining worker, past red (#268)', () => {
   const parked = awaiting();
   const session = sessionsOf(parked, ID).at(-1)?.id;
