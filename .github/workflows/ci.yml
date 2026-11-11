@@ -77,7 +77,7 @@ jobs:
       # vite build now, so a leaf that lists a test reading dist/ui touches only the list
       - run: pnpm exec tsc && pnpm exec vite build && node scripts/test-node.mjs --list test/windows-lane.txt
 
-  # Builds, installs and exercises the Windows installer (#651); #653 adds the daemon smoke to this same job.
+  # Builds, installs and exercises the Windows installer (#651), then boots the installed app's daemon in setup mode (#653).
   # No ELECTRON_SKIP_BINARY_DOWNLOAD here: electron-builder packages Electron's win32-x64 build.
   installer:
     name: ci (installer)
@@ -149,3 +149,59 @@ jobs:
           # later steps of this job (#653) must not inherit Node mode
           Remove-Item Env:ELECTRON_RUN_AS_NODE
           if ($code -ne 0) { throw "the ConPTY check exited $code" }
+
+      - name: Boot the installed app's daemon and stop it
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\agent-hive\Agent Hive.exe'
+          $runJs = Join-Path $env:LOCALAPPDATA 'Programs\agent-hive\resources\app\dist\src\run.js'
+          if (-not (Test-Path -LiteralPath $runJs -PathType Leaf)) { throw "no daemon entry at $runJs" }
+
+          # an empty home has no hive.config.json: the daemon boots in setup mode, with no token and no agent. It lives in the profile's
+          # temp, as the lane's homes do: RUNNER_TEMP on D:\ inherits BUILTIN\Users' read from the drive, which the home check refuses (#628)
+          $home_ = Join-Path ([System.IO.Path]::GetTempPath()) 'smoke-home'
+          New-Item -ItemType Directory -Force -Path $home_ | Out-Null
+          $out = Join-Path $env:RUNNER_TEMP 'smoke-out.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'smoke-err.txt'
+
+          # the variables are set for this Start-Process only: the child inherits them, the rest of the job does not
+          $env:HIVE_HOME = $home_
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          $daemon = Start-Process -FilePath $app -ArgumentList "`"$runJs`"" -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+          Remove-Item Env:HIVE_HOME, Env:ELECTRON_RUN_AS_NODE
+          # read once now: without an open handle, ExitCode is null for a process that exited before anyone asked
+          $null = $daemon.Handle
+
+          try {
+            $portFile = Join-Path $home_ 'hive.port'
+            $secretFile = Join-Path $home_ 'hive.secret'
+            $deadline = (Get-Date).AddSeconds(60)
+            while (-not ((Test-Path -LiteralPath $portFile) -and (Test-Path -LiteralPath $secretFile))) {
+              if ($daemon.HasExited) { throw "the daemon exited $($daemon.ExitCode) before it answered" }
+              if ((Get-Date) -gt $deadline) { throw 'no hive.port and hive.secret within 60 s' }
+              Start-Sleep -Milliseconds 200
+            }
+            $port = [int](Get-Content -LiteralPath $portFile -Raw).Trim()
+            # hive.secret is one line, `x-hive-secret: <secret>`: the header as it goes on the wire
+            $secret = ((Get-Content -LiteralPath $secretFile -Raw).Trim() -split ':\s*', 2)[1]
+            $headers = @{ 'x-hive-secret' = $secret; 'x-hive-ui' = '1' }
+
+            $page = Invoke-WebRequest -Uri "http://127.0.0.1:$port/" -Headers $headers -UseBasicParsing
+            if ($page.StatusCode -ne 200) { throw "GET / answered $($page.StatusCode)" }
+
+            # the daemon closes every connection right after its answer: the exit code below is the verdict, not this call
+            try {
+              Invoke-WebRequest -Uri "http://127.0.0.1:$port/stop" -Method Post -Headers $headers -ContentType 'application/json' -Body '{}' -UseBasicParsing | Out-Null
+            } catch { Write-Host "POST /stop: $_" }
+            if (-not $daemon.WaitForExit(30000)) { throw 'the daemon did not exit within 30 s of /stop' }
+            if ($daemon.ExitCode -ne 0) { throw "the daemon exited $($daemon.ExitCode) after /stop" }
+          } catch {
+            Write-Host "smoke failed: $_"
+            foreach ($file in @((Join-Path $home_ 'hive.log'), $out, $err)) {
+              Write-Host "--- $file"
+              if (Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file | Out-Host }
+            }
+            throw
+          } finally {
+            if (-not $daemon.HasExited) { Stop-Process -Id $daemon.Id -Force }
+          }

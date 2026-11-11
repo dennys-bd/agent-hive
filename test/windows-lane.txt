@@ -51,6 +51,7 @@ test/terminal-runs.test.js
 test/test-node.test.js
 test/win-procs.test.js
 test/window-ipc.test.js
+test/windows-smoke.test.js
 test/wire-path.test.js
 test/worktree-nested.test.js
 test/worktree-steps.test.js
