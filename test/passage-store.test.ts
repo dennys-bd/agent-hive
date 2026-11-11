@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createPassageStore, passagesDir, protocolRenderer } from '../src/passage-store.js';
 import { AFTER_MESSAGE } from '../src/protocol-inserts.js';
 import { renderProtocol } from '../src/protocol.js';
 import { tempDir } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 const A = '---\nafter: ask\n---\nfirst\n';
 const B = '---\nafter: done\n---\nsecond\n';
@@ -22,7 +23,8 @@ test('create, change and remove on a temp home: ids p1, p2, then p3 after p1 is 
   assert.deepEqual(await store.list(), [{ id: 'p2', text: C }, { id: 'p3', text: C }]);
   const dir = passagesDir(home);
   assert.deepEqual((await readdir(dir)).sort(), ['p2.md.liquid', 'p3.md.liquid']);
-  assert.deepEqual([(await stat(dir)).mode & 0o777, (await stat(join(dir, 'p3.md.liquid'))).mode & 0o777], [0o700, 0o600]);
+  await assertMode(t, dir, 0o700); // win32: no POSIX mode bits
+  await assertMode(t, join(dir, 'p3.md.liquid'), 0o600); // win32: no POSIX mode bits
 });
 
 test('a text that does not pass is refused with its errors and nothing written; an unknown or malformed id is no passage (#336)', async (t) => {

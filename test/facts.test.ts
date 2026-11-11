@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, } from 'node:fs';
 import { readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createFactLog, FACTS_FILE, type FactRecord, moveEventsFiles, RAW_TEXT_MAX, rawText, SCHEMA_VERSION, textRef } from '../src/facts.js';
 import { createLogger, LOG_FILE } from '../src/log.js';
 import { fakeLog } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 const quiet = (): void => {};
 const ACTIVITY = '9f8e7d6c-2222-4222-8222-222222222222';
@@ -90,7 +91,7 @@ test('an error record reaches hive.log once, without a second stderr echo; facts
   createFactLog(dir, 'info', { log, stderr: quiet }).write({ event: 'run.spawn_failed', level: 'error', code: 'git_failed' });
   assert.match(readFileSync(join(dir, LOG_FILE), 'utf8'), /ERROR run\.spawn_failed code=git_failed\n$/);
   assert.deepEqual(calls, []);
-  assert.equal(statSync(join(dir, FACTS_FILE)).mode & 0o777, 0o600);
+  await assertMode(t, join(dir, FACTS_FILE), 0o600); // win32: no POSIX mode bits
 });
 
 test('a fact hive.log already writes in a line of its own is not mirrored there again: source.action, source.polled, source.poll_failed (#742)', async (t) => {

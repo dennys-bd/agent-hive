@@ -15,6 +15,7 @@ import type { HookPayload, LaunchArg } from '../../src/types.js';
 import { SECRET } from '../secret-client.js';
 import { codexHook, CODEX_TURN, QUESTION, SUBAGENT } from '../fixtures/codex-hooks.js';
 import { tempDir } from '../temp-dir.js';
+import { assertMode } from '../posix-only.js';
 
 // Codex's argv, word for word (#927, finding.codex-surface §1, §5, §6, §7, §13): every Hive setting is a `-c key=value` pair, the trust
 // bypass, the agent's own args, the model; the prompt is ptyCommand's last word, as Claude's.
@@ -118,7 +119,7 @@ test('prepareHome writes the codex shim and removes the old <home>/codex/agents;
   await writeFile(join(home, 'codex', 'agents', 'tdd.toml'), 'old');
   await codexRunner.prepareHome(home, 4242);
   const path = shimPath(home, AGENTS.codex);
-  assert.equal((await stat(path)).mode & 0o777, 0o755);
+  await assertMode(t, path, 0o755); // win32: no POSIX mode bits
   assert.match(await readFile(path, 'utf8'), /^cli=codex$/m);
   await assert.rejects(stat(join(home, 'codex', 'agents')), { code: 'ENOENT' });
   assert.equal(existsSync(join(home, '.codex')), false, 'no fallback roles');

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { stat, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
@@ -10,6 +10,7 @@ import { issueFromRest } from '../../src/read-model/normalize.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
 import { tempDir } from '../temp-dir.js';
 import { CLOSING_PRS, COMMENT_ROW, commentRow, ISSUE_ROW, issueRow, OTHER_SOURCE, REPO, REPO_ROW, REST_ISSUE, SOURCE, T1, T2, T3 } from './fixtures.js';
+import { assertMode } from '../posix-only.js';
 
 const STALE = 'stale side file';
 const memory = async (now: () => number = () => 0): Promise<ReadModel> => (await openReadModel(':memory:', { now })).db;
@@ -31,7 +32,7 @@ test('a missing file is created owner-only at the latest schema version, and res
   db.upsertIssue(ISSUE_ROW, 'sync');
   assert.equal(resync, false);
   assert.equal(peek(path, 'PRAGMA user_version'), MIGRATIONS.length);
-  for (const file of [path, `${path}-wal`]) assert.equal((await stat(file)).mode & 0o777, 0o600, file);
+  for (const file of [path, `${path}-wal`]) await assertMode(t, file, 0o600, file); // win32: no POSIX mode bits
 });
 
 test('a file at an older version runs only the missing migrations and keeps what it stored (#178)', async (t) => {

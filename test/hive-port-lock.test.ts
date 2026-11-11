@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { setImmediate as tick } from 'node:timers/promises';
@@ -10,6 +10,7 @@ import { bootHive } from '../src/hive.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { combConfig, getFreePort, LOCAL_STAGES, tempHive } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 // The daemon's port and lock in its home (#466), through the real boot: a Comb with no source on a temp git repo, zero workers, no gh, no claude.
 async function hiveWithConfig(t: AfterHost): Promise<{ home: string; repo: string }> {
@@ -31,7 +32,7 @@ test('bootHive records the bound port in <home>/hive.port (0600), in hive mode a
   const hive = await bootHive(home);
   t.after(() => hive.server.close());
   assert.equal(await readFile(join(home, 'hive.port'), 'utf8'), `${hive.port}\n`);
-  assert.equal((await stat(join(home, 'hive.port'))).mode & 0o777, 0o600);
+  await assertMode(t, join(home, 'hive.port'), 0o600); // win32: no POSIX mode bits
 
   const empty = await tempDir(t, 'boot-'); // nothing saved: setup mode, on a free port instead of a default one
   const setup = await bootHive(empty);
@@ -65,7 +66,7 @@ test('bootHive takes <home>/hive.lock with its pid (0600); a second bootHive of 
   t.after(() => first.server.close());
   const lock = join(home, 'hive.lock');
   assert.equal(await readFile(lock, 'utf8'), `${process.pid}\n`);
-  assert.equal((await stat(lock)).mode & 0o777, 0o600);
+  await assertMode(t, lock, 0o600); // win32: no POSIX mode bits
   await assert.rejects(bootHive(home), { message: `Agent Hive já está em execução nesta home (pid ${process.pid})` });
   assert.equal(await readFile(lock, 'utf8'), `${process.pid}\n`, 'the refused boot leaves the running one\'s lock');
 
@@ -92,7 +93,7 @@ test('bootHive writes a new secret to <home>/hive.secret (0600) on every boot, i
   t.after(() => first.server.close()); // a no-op after the close below; closes it when an assertion fails first
   const secret = readDaemonSecret(home);
   assert.notEqual(secret, undefined, '64 hex characters, written after the bind');
-  assert.equal((await stat(join(home, 'hive.secret'))).mode & 0o777, 0o600);
+  await assertMode(t, join(home, 'hive.secret'), 0o600); // win32: no POSIX mode bits
   await first.server.close();
   releaseLock(home); // what run.ts does on a clean stop, so the same process can boot this home again
   const second = await bootHive(home);

@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { access, chmod, copyFile, mkdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -14,6 +14,7 @@ import { SECRET_HEADER } from '../src/secret.js';
 import { AGENT_IDS, type AgentId } from '../src/types.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 const run = promisify(execFile);
 const RUN_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -142,7 +143,7 @@ test('renderShim fills the command, the subcommands and the flags; installShim w
   for (const id of AGENT_IDS) {
     const path = await installShim(home, AGENTS[id], INSTALL);
     assert.equal(path, shimPath(home, AGENTS[id]));
-    if (process.platform !== 'win32') assert.equal((await stat(path)).mode & 0o777, 0o755); // Windows has no POSIX mode bits
+    await assertMode(t, path, 0o755); // win32: no POSIX mode bits
     assert.doesNotMatch(await readFile(path, 'utf8'), /__HIVE_[A-Z]+__/, id);
   }
   assert.equal(shimPath('/h', { command: 'other' }), join('/h', 'bin', 'other'), 'one file per agent, named after its command');
