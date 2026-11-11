@@ -93,7 +93,7 @@ export function draftLabel(d: TransitionDraft, stages: readonly StageDraft[]): s
 }
 
 /** Why the parser would refuse a transition (#134, #918): `settings.transitions.error.<reason>` says it. */
-export type TransitionReason = 'ends' | 'verdict' | 'tries' | 'twin' | 'needsApproval' | 'useApproved' | 'useVerdict' | 'gateFeedback';
+export type TransitionReason = 'ends' | 'verdict' | 'tries' | 'twin' | 'needsApproval' | 'useApproved' | 'useVerdict';
 
 // One transition against the parser's rules, in parseTransition's order (config-transitions.ts). The trigger rules read triggersOf, so the
 // form and the parser keep one rule; tries count only on an automatic trigger, as transitionFrom sends them only there.
@@ -102,7 +102,6 @@ function reasonOf(d: TransitionDraft, stages: readonly StageDraft[], isTwin: boo
   if (origin === undefined || (d.to !== END && !stages.some((s) => s.id === d.to))) return 'ends';
   if (d.when === 'verdict' && !draftVerdicts(origin).includes(d.verdict)) return 'verdict';
   if (!triggersOf(origin).includes(d.when)) return d.when !== 'done' ? 'needsApproval' : origin.approval || isGateDraft(origin) ? 'useApproved' : 'useVerdict';
-  if (d.when === 'feedback' && d.to === origin.id && isGateDraft(origin)) return 'gateFeedback';
   if (isAutomatic(d.when) && d.maxTries.trim() !== '' && !/^[1-9]\d*$/.test(d.maxTries.trim())) return 'tries';
   return isTwin ? 'twin' : undefined;
 }
