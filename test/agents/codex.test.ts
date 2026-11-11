@@ -193,7 +193,7 @@ const developerText = (run: AgentRun): string | undefined =>
   codexRunner.launch(run).flatMap((arg) => (typeof arg !== 'string' && arg[1].startsWith('developer_instructions=') ? [JSON.parse(arg[1].slice('developer_instructions='.length)) as string] : []))[0];
 
 test('a specialized agent\'s instructions follow the protocol after a blank line in developer_instructions; a run with no protocol has them alone (#257)', () => {
-  const designer = { name: 'hive:designer', instructions: 'You design.\nWith "care".' };
+  const designer = { name: 'hive:designer', description: 'Designs.', instructions: 'You design.\nWith "care".' };
   assert.equal(developerText({ ...STAGE_RUN, specializedAgent: designer }), `${PROTOCOL}\n\n${designer.instructions}`);
   assert.equal(developerText({ ...RUN, withHive: false, specializedAgent: designer }), designer.instructions);
   assert.equal(developerText(STAGE_RUN), PROTOCOL, 'no agent: the protocol alone, as before');

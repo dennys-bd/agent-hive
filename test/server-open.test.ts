@@ -111,7 +111,9 @@ test('an open with a model, a specialized agent and args runs claude with them a
   const pick = { model: 'opus', specializedAgent: 'hive:designer', args: ['--verbose'] };
   assert.equal((await send(base, 'POST', OPEN, { kind: 'claude', ...pick })).status, 200);
   const worker = server.getState()!.workers.find((w) => w.freeSession);
-  assert.deepEqual(plainArgs(workers[0].launch), ['--verbose', '--agent', 'hive:designer', '--model', 'opus', '--session-id', worker?.sessionId]);
+  const args = plainArgs(workers[0].launch);
+  assert.deepEqual(args.slice(-6), ['--agent', 'hive:designer', '--model', 'opus', '--session-id', worker?.sessionId]);
+  assert.deepEqual([args[0], args[1], args[3]], ['--verbose', '--agents', '--tools=Read,Write,Edit,Bash,Grep,Glob,Agent'], '#758: the designer lists tools, so it runs as its copy');
   assert.deepEqual(worker?.launch, pick);
   assert.deepEqual(sessionsOf(server.getState()!, 'local:1').find((s) => s.id === worker?.sessionId)?.launch, pick);
 });

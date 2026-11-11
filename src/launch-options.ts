@@ -24,13 +24,14 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 // An agent file the plugin cannot read (agentRoles throws on a bad frontmatter): its reason in words, never a stack
 const pluginMessage = (err: unknown, language: Language): string => `${MESSAGES[language]['launch.pluginUnreadable']} ${errorMessage(err)}`;
 
-/** One of the Hive plugin's agents as a session runs it (#257): hive:<name>, its description, and the body Codex gets as instructions. */
-export interface SpecializedAgent { name: string; description: string; instructions: string }
+/** One of the Hive plugin's agents as a session runs it (#257): hive:<name>, its description, the body Codex gets as instructions, and the
+ * tools and model Claude's copy of it takes (#758). The runner's own shape, so launchRun hands the agent on as found. */
+export type SpecializedAgent = NonNullable<AgentRun['specializedAgent']>;
 
 /** A plugin folder's agents, sorted by file as agentRoles reads them (#316: the run's workspace's folder, or the fallback). Throws on an agent
  * file with a bad frontmatter. */
 export const specializedAgents = (source: string): SpecializedAgent[] =>
-  agentRoles(source).map((role) => ({ name: `${CODEX_PLUGIN}:${role.name}`, description: role.description, instructions: role.instructions }));
+  agentRoles(source).map(({ readOnly: _codexOnly, ...role }) => ({ ...role, name: `${CODEX_PLUGIN}:${role.name}` }));
 
 const SKILLS_DIR = 'skills';
 const SKILL_FILE = 'SKILL.md'; // the rendered folder's name: the render drops .liquid (template.ts deliveredName)
@@ -135,8 +136,7 @@ export function askedLaunch(body: unknown, agent: AgentId | undefined, language:
   }
 }
 
-/** What a free session's picks add to its run (#257): the model, the config's args then its own, and its specialized agent with the body
- * Codex gets as instructions; or why it cannot start: an agent the plugin no longer has, or a plugin it cannot read. The picks are checked
+/** What a free session's picks add to its run (#257): the model, the config's args then its own, and its specialized agent whole (#758); or why it cannot start: an agent the plugin no longer has, or a plugin it cannot read. The picks are checked
  * again (savedLaunch): a worker loaded from a hand-edited state.json never puts an option where a value goes. `roles` are the run's plugin
  * folder's agents (#316). */
 export function launchRun(launch: LaunchPick | undefined, configArgs: readonly string[], roles: () => readonly SpecializedAgent[]): Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> | { refusal: string } {
@@ -152,5 +152,5 @@ export function launchRun(launch: LaunchPick | undefined, configArgs: readonly s
   }
   return found === undefined
     ? { refusal: `specialized agent ${name} is no longer in the Hive plugin` }
-    : { ...base, specializedAgent: { name: found.name, instructions: found.instructions } };
+    : { ...base, specializedAgent: found };
 }

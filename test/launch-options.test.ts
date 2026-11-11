@@ -24,11 +24,12 @@ const CODEX_MODELS = JSON.stringify({ models: [
 // git answers nothing; `codex debug models` answers `codex()`
 const withCodex = (codex: () => string): Exec => async (file) => ({ stdout: file === 'codex' ? codex() : '' });
 
-test('specializedAgents lists the Hive plugin\'s agents as hive:<name>, sorted by file, with the body Codex gets (#257, #416)', async (t) => {
+test('specializedAgents lists the Hive plugin\'s agents as hive:<name>, sorted by file, with the body Codex gets and the tools Claude limits (#257, #416, #758)', async (t) => {
   const agents = specializedAgents(await renderedPlugin(t));
   assert.ok(agents.length > 0);
   assert.ok(agents.every((a) => a.name.startsWith('hive:') && a.description !== '' && a.instructions !== ''));
-  assert.ok(agents.some((a) => a.name === 'hive:designer'));
+  assert.deepEqual(agents.find((a) => a.name === 'hive:designer')?.tools, ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Agent']);
+  assert.equal(agents.some((a) => Object.hasOwn(a, 'readOnly')), false, 'readOnly is Codex\'s role file, not the run\'s');
 });
 
 test('GET /launch-options lists Claude\'s hand-kept models, Codex\'s in visible-then-hidden order, the plugin\'s agents for both and each agent\'s config args (#257)', async (t) => {
@@ -73,10 +74,11 @@ test('GET /launch-options answers while codex debug models never settles: Claude
   assert.ok(options.claude.skills.some((s) => s.name === 'new-plan'), '#710: the workspace\'s skills');
 });
 
-test('launchRun puts the config\'s args before the session\'s, the model, and the agent with its instructions; no picks adds only the config\'s (#257)', () => {
-  const roles = () => [{ name: 'hive:designer', description: 'Designs.', instructions: 'Design.' }];
+test('launchRun puts the config\'s args before the session\'s, the model, and the agent whole: description, body, tools, model; no picks adds only the config\'s (#257, #758)', () => {
+  const designer = { name: 'hive:designer', description: 'Designs.', instructions: 'Design.', tools: ['Read', 'mcp__graphify'], model: 'sonnet' };
+  const roles = () => [designer];
   assert.deepEqual(launchRun({ model: 'opus', specializedAgent: 'hive:designer', args: ['--verbose'] }, ['--permission-mode', 'auto'], roles), {
-    model: 'opus', extraArgs: ['--permission-mode', 'auto', '--verbose'], specializedAgent: { name: 'hive:designer', instructions: 'Design.' },
+    model: 'opus', extraArgs: ['--permission-mode', 'auto', '--verbose'], specializedAgent: designer,
   });
   assert.deepEqual(launchRun(undefined, ['--permission-mode', 'auto'], roles), { extraArgs: ['--permission-mode', 'auto'] });
   assert.deepEqual(launchRun({ model: '--settings', args: ['ok'] }, [], roles), { extraArgs: ['ok'] }, 'a value out of shape never reaches the argv');
@@ -136,7 +138,7 @@ test('GET /launch-options?workspace= lists the agents delivered to that workspac
 test('launchRun over a workspace folder\'s agents gives Codex the delivered body of an edited agent; another workspace gets the shipped one (#316)', async (t) => {
   const { render } = await renderedHome(t);
   const edited = launchRun({ specializedAgent: 'hive:designer' }, [], () => specializedAgents(render.dir('a')));
-  assert.deepEqual('refusal' in edited ? edited : edited.specializedAgent, { name: 'hive:designer', instructions: 'Edited.\n' });
+  assert.deepEqual('refusal' in edited ? edited : edited.specializedAgent, { name: 'hive:designer', description: 'Designs.', instructions: 'Edited.\n' });
   const shipped = launchRun({ specializedAgent: 'hive:designer' }, [], () => specializedAgents(render.dir('b')));
   assert.notEqual('refusal' in shipped ? undefined : shipped.specializedAgent?.instructions, 'Edited.\n');
 });

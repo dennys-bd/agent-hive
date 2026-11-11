@@ -10,9 +10,21 @@ import type { AgentRun, AgentRunner, HeadlessRun, LaunchArg } from './runner.js'
 const MODEL_FLAG = '--model'; // what a stage's modelo is passed behind, as typed (#516)
 const PROTOCOL_FLAG = '--append-system-prompt-file'; // the Hive's protocol (#167): appended to Claude Code's own system prompt, never replacing it
 const AGENT_FLAG = '--agent'; // #257: the plugin agent a free session runs as, hive:<name>
+const AGENTS_FLAG = '--agents'; // #758: a session-only agent, which wins over the plugin's of the same name
+const TOOLS_FLAG = '--tools'; // #758: limits only the built-in tools; MCP servers stay
+const MCP_PREFIX = 'mcp__';
 
-// #257: before the model, as the dialog's runs line shows it
-const agentWords = ({ specializedAgent }: AgentRun): string[] => (specializedAgent === undefined ? [] : [AGENT_FLAG, specializedAgent.name]);
+// #257: before the model, as the dialog's runs line shows it. #758: an agent run as the session filters the session's tools by its tools line,
+// MCP servers included, so hive_done was gone. Such an agent runs as a copy with no tools and its built-in ones go to --tools=, one word: an
+// entry starting with - (the file is the user's to edit) never becomes a flag, and --agent right after ends --tools' list of values. Not copied, since no agent of the plugin sets them: disallowedTools, permissionMode, skills, hooks,
+// mcpServers, maxTurns. The rendered plugin file keeps its tools, so the agent dispatched as a subagent never gets hive_done
+function agentWords({ specializedAgent: agent }: AgentRun): string[] {
+  if (agent === undefined) return [];
+  if (agent.tools === undefined) return [AGENT_FLAG, agent.name];
+  const copy = { description: agent.description, prompt: agent.instructions, ...(agent.model === undefined ? {} : { model: agent.model }) };
+  const builtIn = agent.tools.filter((tool) => !tool.startsWith(MCP_PREFIX)).join(',');
+  return [AGENTS_FLAG, JSON.stringify({ [agent.name]: copy }), `${TOOLS_FLAG}=${builtIn}`, AGENT_FLAG, agent.name];
+}
 
 const flag = (name: string, value: string | undefined): LaunchArg[] => (value === undefined ? [] : [[name, value]]);
 

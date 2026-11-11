@@ -118,12 +118,51 @@ test('Claude owns a .jsonl directly in its transcript dir and, with a session id
   assert.deepEqual(await runners.claude.sessionFiles('/repo', ID, env), [own, `/cfg/projects/-repo/${ID}`]);
 });
 
-test('a specialized agent goes behind --agent, after the agent\'s args and before --model; none adds nothing (#257)', () => {
-  const run: AgentRun = { ...RUN, model: 'opus', session: { id: ID, resume: false }, extraArgs: EXTRA, specializedAgent: { name: 'hive:designer', instructions: 'Design.' } };
-  assert.deepEqual(runners.claude.launch(run).slice(-8), [...EXTRA, '--agent', 'hive:designer', '--model', 'opus', '--session-id', ID]);
+test('a specialized agent with no tools line goes behind --agent alone, after the agent\'s args and before --model; none adds nothing (#257, #758)', () => {
+  const run: AgentRun = { ...RUN, model: 'opus', session: { id: ID, resume: false }, extraArgs: EXTRA, specializedAgent: { name: 'hive:designer', description: 'Designs.', instructions: 'Design.' } };
+  const argv = runners.claude.launch(run);
+  assert.deepEqual(argv.slice(-8), [...EXTRA, '--agent', 'hive:designer', '--model', 'opus', '--session-id', ID]);
+  assert.deepEqual([argv.includes('--agents'), argv.includes('--tools')], [false, false]);
   const { specializedAgent: _gone, ...plain } = run;
   assert.deepEqual(runners.claude.launch(plain).slice(-6), [...EXTRA, '--model', 'opus', '--session-id', ID]);
   assert.equal(runners.claude.launch(plain).includes('--agent'), false);
+});
+
+// #758: an agent with a tools line, as the plugin's designer is; its description and body carry a quote, a --- line and a JSON escape
+const DESIGNER = { name: 'hive:designer', description: "Designs: the 'look'.", instructions: '\nDesign.\n\n---\nWith "care".\n' };
+const agentRun = (specializedAgent: NonNullable<AgentRun['specializedAgent']>): AgentRun =>
+  ({ ...RUN, model: 'opus', session: { id: ID, resume: false }, extraArgs: EXTRA, specializedAgent });
+// The JSON behind --agents, parsed
+const copyOf = (argv: LaunchArg[]): unknown => {
+  const word = argv[argv.indexOf('--agents') + 1];
+  return typeof word === 'string' ? JSON.parse(word) : undefined;
+};
+
+test('an agent with a tools line runs as its copy with no tools: --agents, --tools with its built-in tools, --agent, before --model; one quoted JSON word (#758)', () => {
+  const argv = runners.claude.launch(agentRun({ ...DESIGNER, tools: ['Read', 'Write', 'mcp__graphify'] }));
+  const json = JSON.stringify({ 'hive:designer': { description: DESIGNER.description, prompt: DESIGNER.instructions } });
+  const words = [...EXTRA, '--agents', json, '--tools=Read,Write', '--agent', 'hive:designer', '--model', 'opus', '--session-id', ID];
+  assert.deepEqual(argv.slice(-words.length), words);
+  assert.deepEqual(copyOf(argv), { 'hive:designer': { description: DESIGNER.description, prompt: DESIGNER.instructions } }, 'its only key is its name, and no tools');
+  assert.ok(commandFor(argv).includes(words.slice(2, 7).map(shellQuote).join(' ')), 'the JSON is one quoted word, and --tools\' value is followed by a flag');
+});
+
+test('a tools entry that looks like a flag stays inside --tools\' own word, never a flag of its own (#758)', () => {
+  const argv = runners.claude.launch(agentRun({ ...DESIGNER, tools: ['--dangerously-skip-permissions', 'Read'] }));
+  assert.ok(argv.includes('--tools=--dangerously-skip-permissions,Read'));
+  assert.equal(argv.includes('--dangerously-skip-permissions'), false);
+});
+
+test('the copy carries the agent\'s model when its frontmatter has one; the run\'s own --model stays (#758)', () => {
+  const argv = runners.claude.launch(agentRun({ ...DESIGNER, tools: ['Read'], model: 'sonnet' }));
+  assert.deepEqual(copyOf(argv), { 'hive:designer': { description: DESIGNER.description, prompt: DESIGNER.instructions, model: 'sonnet' } });
+  assert.deepEqual(argv.slice(-4), ['--model', 'opus', '--session-id', ID]);
+});
+
+test('an agent whose tools are all MCP names gets --tools= with no value: no built-in tool, every MCP server still there (#758)', () => {
+  const argv = runners.claude.launch(agentRun({ ...DESIGNER, tools: ['mcp__graphify', 'mcp__hive__hive_task'] }));
+  const at = argv.indexOf('--tools=');
+  assert.deepEqual(argv.slice(at, at + 3), ['--tools=', '--agent', 'hive:designer']);
 });
 
 const HEADLESS: HeadlessRun = { dir: '/t', schema: '{"type":"object"}', schemaPath: '/t/schema.json', answerPath: '/t/answer.txt' };

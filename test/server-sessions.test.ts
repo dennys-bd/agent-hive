@@ -296,7 +296,8 @@ test('a new local session takes a model, a specialized agent and args, and refus
   assert.equal(workers.length, 0);
   const pick = { model: 'sonnet', specializedAgent: 'hive:planner', args: ['--verbose'] };
   assert.equal((await postJson(url, { kind: 'claude', ...pick })).status, 200);
-  assert.deepEqual(plainArgs(workers[0].launch).slice(0, 5), ['--verbose', '--agent', 'hive:planner', '--model', 'sonnet']);
+  const args = plainArgs(workers[0].launch);
+  assert.deepEqual([args[0], args[1], ...args.slice(3, 8)], ['--verbose', '--agents', '--tools=Read,Grep,Glob,Write', '--agent', 'hive:planner', '--model', 'sonnet']);
   assert.deepEqual(localSessionsOf(server.getState()!, WORKSPACE).at(-1)?.launch, pick);
 });
 
