@@ -18,10 +18,14 @@ const ABSOLUTE_PATH = /(?<![\w.-])~?\/[^\s'"`:,;()]+/g; // a path from the root 
 // win32's absolute paths as path.win32 reads them (#655): a drive letter and either separator, or a UNC share; an 8.3 home misses the split above
 const WIN32_PATH = /(?<![\w.-])(?:[A-Za-z]:[\\/]|\\\\)[^\s'"`:,;()]+/g;
 
+// win32 reads a path in any case and with either separator, so the home matches however an error spells it (#655)
+const win32Home = (home: string): RegExp =>
+  new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\\|\//g, '[\\\\/]'), 'gi');
+
 /** An error text as hive.log may keep it (#742): every link and absolute or home path masked, since an fs or an Electron error names the
  * home's files. */
 export const maskPaths = (message: string, platform: NodeJS.Platform, home: string = homedir()): string => {
-  const underHome = message.replace(URL_TEXT, '<url>').split(home).map((part, i) => (i === 0 ? part : part.replace(UNDER_HOME, '<path>'))).join('');
+  const underHome = message.replace(URL_TEXT, '<url>').split(platform === 'win32' ? win32Home(home) : home).map((part, i) => (i === 0 ? part : part.replace(UNDER_HOME, '<path>'))).join('');
   return (platform === 'win32' ? underHome.replace(WIN32_PATH, '<path>') : underHome).replace(ABSOLUTE_PATH, '<path>');
 };
 

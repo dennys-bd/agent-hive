@@ -94,8 +94,13 @@ async function bootLocked(home: string, options: Omit<BootOptions, 'posixShell'>
   try {
     return await bootMode(home, log, language, deps, parsed, readModel);
   } catch (err) {
-    readModel?.close(); // the boot fails (a failed bind): nothing else would close the handles just opened
-    usage.close(); // win32 keeps an open usage.sqlite* busy, and the home cannot be removed (#655)
+    // the boot fails (a failed bind): nothing else would close the handles just opened. win32 keeps an open usage.sqlite* busy, and the
+    // home cannot be removed (#655), so the usage store closes even when the model's close throws
+    try {
+      readModel?.close();
+    } finally {
+      usage.close();
+    }
     throw err;
   }
 }

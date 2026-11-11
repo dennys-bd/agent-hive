@@ -38,3 +38,9 @@ test('maskPaths on win32 masks a drive-letter path with either separator and a U
   assert.equal(maskPaths('at \\\\server\\share\\hive.log, D:/h/x.json', 'win32', 'C:\\Users\\u'), 'at <path>, <path>');
   assert.equal(maskPaths('C:\\x is kept', 'darwin', '/Users/u'), 'C:\\x is kept');
 });
+
+test('maskPaths on win32 masks a home with a space in any case and with either separator (#655)', () => {
+  const home = 'C:\\Users\\John Smith';
+  assert.equal(maskPaths('open c:\\users\\john smith\\AppData\\x.json: denied', 'win32', home), 'open <path>: denied');
+  assert.equal(maskPaths('open C:/Users/John Smith/AppData/x.json: denied', 'win32', home), 'open <path>: denied');
+});
