@@ -35,15 +35,20 @@ export function testFiles({ root, list, exclude = [] }) {
 // the repo root, as the old `node --test dist/...` line ran from it: tests that read process.cwd() keep seeing the root
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const DIST = join(ROOT, 'dist');
-const OPTIONS = { shard: { type: 'string' }, list: { type: 'string' }, exclude: { type: 'string', multiple: true } };
+// test-timeout is passed through because NODE_OPTIONS refuses it (#654). With it goes --test-force-exit: a timed-out test whose
+// handle stays open (a timer, a child) otherwise keeps its file's process, and the runner, alive
+// --junit puts the reporters on this argv, not in NODE_OPTIONS: a test that runs its own node --test would inherit them and write over the report
+const OPTIONS = { shard: { type: 'string' }, list: { type: 'string' }, exclude: { type: 'string', multiple: true }, 'test-timeout': { type: 'string' }, junit: { type: 'string' } };
 
 // Every boot copies the Hive's plugin into CODEX_HOME (#934), so a run gets a throwaway one and never touches the user's.
 function run(args) {
   const { values } = parseArgs({ args, options: OPTIONS, strict: true });
   const files = testFiles({ root: DIST, list: values.list, exclude: values.exclude });
   const shard = values.shard === undefined ? [] : [`--test-shard=${values.shard}`];
+  const timeout = values['test-timeout'] === undefined ? [] : [`--test-timeout=${values['test-timeout']}`, '--test-force-exit'];
+  const junit = values.junit === undefined ? [] : ['--test-reporter=spec', '--test-reporter-destination=stdout', '--test-reporter=junit', `--test-reporter-destination=${values.junit}`];
   const home = mkdtempSync(join(tmpdir(), 'hive-test-'));
-  const child = spawn(process.execPath, ['--test', ...shard, ...files.map((file) => `dist/${file}`)], {
+  const child = spawn(process.execPath, ['--test', ...shard, ...timeout, ...junit, ...files.map((file) => `dist/${file}`)], {
     cwd: ROOT,
     stdio: 'inherit',
     env: { ...process.env, CODEX_HOME: home, CLAUDE_CONFIG_DIR: join(home, 'claude') },
