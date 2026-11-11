@@ -7,6 +7,7 @@ import { isRefusal } from '../src/custom-versions.js';
 import { readCatalogue, readItem } from '../src/items-catalogue.js';
 import { fakeLog } from './fakes.js';
 import { assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER, put, REPO_SKILL, SKILL, snapshot } from './custom-fixture.js';
+import { NO_POSIX_FAULTS } from './posix-only.js';
 
 const REVIEWER = 'hive:my-reviewer';
 const BOTH = ['agent-hive', 'hive-site'];
@@ -180,10 +181,10 @@ test('deleteFile refuses the main file whatever its case, as a case-insensitive 
   assert.equal(codeOf(await store.deleteFile(BUILD, 'mine', 'skill.MD')), 'bad_path');
 });
 
-test('a version whose copy fails leaves no half-made folder behind (#315)', async (t) => {
+test('a version whose copy fails leaves no half-made folder behind (#315)', { skip: NO_POSIX_FAULTS }, async (t) => {
   const f = await fixture(t);
   const script = join(f.pluginSource, 'skills/new-build/scripts/run.sh');
-  await chmod(script, 0o000);
+  await chmod(script, 0o000); // win32: chmod 000 does not stop the owner reading run.sh
   t.after(() => chmod(script, 0o644));
   await assert.rejects(open(f).createVersion(BUILD, 'broken', 'original'));
   await assert.rejects(stat(buildDir(f, 'broken')));
@@ -213,11 +214,11 @@ test('reverting a user-created version that still has workspaces while others re
   assert.deepEqual((await item(f, id))?.versions.map((v) => [v.name, v.from]), [['other', null]]);
 });
 
-test('a rename whose version.json cannot be written puts the folder back (#315)', async (t) => {
+test('a rename whose version.json cannot be written puts the folder back (#315)', { skip: NO_POSIX_FAULTS }, async (t) => {
   const f = await fixture(t);
   const store = open(f);
   await store.saveFile(BUILD, null, 'SKILL.md', 'x');
-  await chmod(buildDir(f, 'mine'), 0o555);
+  await chmod(buildDir(f, 'mine'), 0o555); // win32: a 0555 folder still takes the owner's write
   t.after(() => chmod(buildDir(f, 'mine'), 0o755).catch(() => undefined));
   await assert.rejects(store.renameVersion(BUILD, 'mine', 'baseline'));
   await stat(buildDir(f, 'mine/version.json'));
@@ -239,7 +240,8 @@ test('a path that is a folder, or goes through a file, is a bad_path refusal and
   assert.equal(codeOf(await store.saveFile(BUILD, 'mine', 'scripts', 'x')), 'bad_path');
   assert.equal(codeOf(await store.saveFile(BUILD, 'mine', 'SKILL.md/x', 'x')), 'bad_path');
   assert.equal(codeOf(await store.deleteFile(BUILD, 'mine', 'scripts')), 'bad_path');
-  assert.equal(codeOf(await store.deleteFile(BUILD, 'mine', 'SKILL.md/x')), 'bad_path');
+  // win32: a path through a file fails with ENOENT, not ENOTDIR, and rm's force reads that as a file already gone: nothing to delete, no refusal
+  assert.equal(codeOf(await store.deleteFile(BUILD, 'mine', 'SKILL.md/x')), process.platform === 'win32' ? undefined : 'bad_path');
 });
 
 test('a plugin.json that is missing or not JSON writes no hiveVersion and the save still works (#315)', async (t) => {

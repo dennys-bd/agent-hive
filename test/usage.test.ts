@@ -12,6 +12,7 @@ import { parseUsageLine, readTranscript, transcriptDir } from '../src/agents/cla
 import { ZERO_TOKENS } from '../src/facts.js';
 import type { UsageSample } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import { NO_POSIX_FAULTS } from './posix-only.js';
 
 const NOW = Date.parse('2026-09-16T12:00:00.000Z');
 const MINUTE_MS = 60_000;
@@ -70,9 +71,11 @@ test('readTranscript rejects for a missing file and resolves 0 for an empty one'
 
 test('readTranscript rejects anything that is not a regular file instead of waiting on it forever', async (t) => {
   const dir = await tempDir(t, 'usage-');
-  const fifo = join(dir, 'fifo.jsonl');
-  await promisify(execFile)('mkfifo', [fifo]); // a FIFO with no writer never reaches EOF
-  await assert.rejects(readTranscript(fifo), /not a regular file/);
+  await t.test('a FIFO with no writer never reaches EOF', { skip: NO_POSIX_FAULTS }, async () => {
+    const fifo = join(dir, 'fifo.jsonl');
+    await promisify(execFile)('mkfifo', [fifo]); // win32: no mkfifo
+    await assert.rejects(readTranscript(fifo), /not a regular file/);
+  });
   await assert.rejects(readTranscript(dir), /not a regular file/);
 });
 
@@ -204,7 +207,7 @@ test('readTranscript with a since also sums by type the turns from that time on 
   assert.deepEqual(await readTranscript(path), { tokens: 114 });
 });
 
-test('readTranscript with a since adds the session\'s subagent transcripts to the stage run\'s usage and as its subagent share; only .jsonl regular files directly under its own subagents folder; the session total is untouched (#742)', async (t) => {
+test('readTranscript with a since adds the session\'s subagent transcripts to the stage run\'s usage and as its subagent share; only .jsonl regular files directly under its own subagents folder; the session total is untouched (#742)', { skip: NO_POSIX_FAULTS }, async (t) => {
   const line = (id: string, at: string, model: string, usage: Record<string, number>): string =>
     JSON.stringify({ type: 'assistant', timestamp: at, message: { id, model, usage } });
   const path = await writeTranscript(t, [line('m1', '2026-10-03T12:00:01.000Z', 'claude-opus-4-1', { input_tokens: 10, output_tokens: 1 })]);
@@ -223,7 +226,7 @@ test('readTranscript with a since adds the session\'s subagent transcripts to th
   await mkdir(join(sub, 'agent-dir.jsonl')); // a folder, not a file
   await symlink(path, join(sub, 'agent-link.jsonl')); // a link, not a regular file
   await write('agent-locked.jsonl', [line('l1', '2026-10-03T12:00:05.000Z', 'x', { input_tokens: 5000 })]);
-  await chmod(join(sub, 'agent-locked.jsonl'), 0o000); // unreadable: costs only its own share, never the read
+  await chmod(join(sub, 'agent-locked.jsonl'), 0o000); // unreadable: costs only its own share, never the read. win32: chmod 000 does not stop the owner reading it, and its 5000 tokens shape every total
   assert.deepEqual(await readTranscript(path, Date.parse('2026-10-03T12:00:00.000Z')), {
     tokens: 11,
     usage: {

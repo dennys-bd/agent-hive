@@ -12,6 +12,7 @@ import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPE
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
+import { NO_POSIX_FAULTS } from './posix-only.js';
 
 async function serve(t: TestContext, f: Fixture, stages: Stage[] = []): Promise<{ base: string; lines: string[] }> {
   const app = express();
@@ -87,8 +88,9 @@ test('each refusal answers its status: 400 bad body, name or path; 404 unknown i
   await assertUntouched(f);
 });
 
-test('an I/O failure answers 500 with a generic message, and the detail goes to the log only (#315)', async (t) => {
+test('an I/O failure answers 500 with a generic message, and the detail goes to the log only (#315)', { skip: NO_POSIX_FAULTS }, async (t) => {
   const f = await fixture(t);
+  // win32: readdir of custom/<origin> through a file fails with ENOENT, not ENOTDIR, which item-sources' orMissing reads as an empty folder: 200
   await writeFile(join(f.home, 'custom'), 'not a folder');
   const { base, lines } = await serve(t, f);
   assert.deepEqual(await call(base, 'GET', '/api/items'), [500, { error: ITEMS_ERROR_MESSAGE }]);

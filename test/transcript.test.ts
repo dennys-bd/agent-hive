@@ -7,6 +7,7 @@ import { adoptTranscript, copyTranscript, dropCopiedTranscript, findTranscript, 
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { tempDir } from './temp-dir.js';
 import { CHILD, CWD, DAY, OTHER, SESSION, subagent, TWO_TURNS, writeRollout } from './codex-rollouts.js';
+import { NO_POSIX_FAULTS } from './posix-only.js';
 
 test('removeTranscripts deletes each listed session\'s <id>.jsonl and <id>/ in the transcript dir of the worktree and nothing else there; a file already gone is a debug line; an id that is not a session id is skipped (#236)', async (t) => {
   const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
@@ -76,7 +77,7 @@ test('copyTranscript copies <id>.jsonl from the first cwd whose transcript dir h
   assert.equal(await copyTranscript([worktree], other, 'bad id', 'claude', env), 'missing');
 });
 
-test('copyTranscript that fails to read its source leaves a transcript already in the destination untouched, and no staged file (#587)', async (t) => {
+test('copyTranscript that fails to read its source leaves a transcript already in the destination untouched, and no staged file (#587)', { skip: NO_POSIX_FAULTS }, async (t) => {
   const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
   const [worktree, other] = ['/repo/.hive/worktrees/hive-1-t', '/repo/.hive/worktrees/hive-2-u'];
   const id = 'a1b2c3d4-0000-4000-8000-000000000001';
@@ -85,7 +86,7 @@ test('copyTranscript that fails to read its source leaves a transcript already i
   await mkdir(to, { recursive: true });
   await writeFile(join(from, `${id}.jsonl`), '{"a":2}\n');
   await writeFile(join(to, `${id}.jsonl`), '{"real":1}\n');
-  await chmod(join(from, `${id}.jsonl`), 0o000);
+  await chmod(join(from, `${id}.jsonl`), 0o000); // win32: chmod 000 does not stop the owner reading the source
   t.after(() => chmod(join(from, `${id}.jsonl`), 0o600));
   await assert.rejects(copyTranscript([worktree], other, id, 'claude', env));
   assert.equal(await readFile(join(to, `${id}.jsonl`), 'utf8'), '{"real":1}\n');
