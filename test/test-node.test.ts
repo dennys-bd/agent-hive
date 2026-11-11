@@ -67,13 +67,13 @@ const PROBE = 'test/fixtures/runner/env-probe.js';
 
 interface Seen { codexHome: string; claudeConfigDir: string }
 
-async function startRunner(t: TestContext, mode: 'pass' | 'fail' | 'wait') {
+async function startRunner(t: TestContext, mode: 'pass' | 'fail' | 'wait', extra: readonly string[] = []) {
   const list = await listFile(t, `${PROBE}\n`);
   const out = join(dirname(list), 'probe.json');
   // inherited, NODE_TEST_CONTEXT would make the runner's node --test report to this run instead of running
   const { NODE_TEST_CONTEXT: _runner, ...env } = process.env;
   // ignored: the inner run's report must not mix into this file's own output
-  const child = spawn(process.execPath, [fileURLToPath(RUNNER), `--list=${list}`], { env: { ...env, PROBE_OUT: out, PROBE_MODE: mode }, stdio: 'ignore' });
+  const child = spawn(process.execPath, [fileURLToPath(RUNNER), `--list=${list}`, ...extra], { env: { ...env, PROBE_OUT: out, PROBE_MODE: mode }, stdio: 'ignore' });
   return { child, out, exited: once(child, 'exit') };
 }
 
@@ -104,5 +104,23 @@ test('an interrupted runner forwards SIGINT, fails and removes the homes once th
   child.kill('SIGINT');
   const [code] = await exited;
   assert.notEqual(code, 0);
+  assertHomeGone(out);
+});
+
+test('--test-timeout reaches node --test, so a hung test fails by its own name instead of holding the run (#654)', async (t) => {
+  const started = Date.now();
+  const { out, exited } = await startRunner(t, 'wait', ['--test-timeout=500']);
+  const [code] = await exited;
+  assert.notEqual(code, 0);
+  assert.ok(Date.now() - started < 20_000, 'the probe waits 30 s; the timeout must end it first');
+  assertHomeGone(out);
+});
+
+test('--junit writes a junit report of the run beside the spec output, from the runner\'s own argv only (#654)', async (t) => {
+  const junit = join(await tempDir(t, 'runner-junit-'), 'report.xml');
+  const { out, exited } = await startRunner(t, 'pass', [`--junit=${junit}`]);
+  const [code] = await exited;
+  assert.equal(code, 0);
+  assert.match(readFileSync(junit, 'utf8'), /<testcase name="env probe"/);
   assertHomeGone(out);
 });
