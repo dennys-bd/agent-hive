@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as TestNode from '../scripts/test-node.mjs';
@@ -25,34 +25,14 @@ async function distRoot(t: TestContext, files: readonly string[] = TREE): Promis
   return root;
 }
 
-async function listFile(t: TestContext, text: string): Promise<string> {
-  const file = join(await tempDir(t, 'runner-list-'), 'lane.txt');
-  writeFileSync(file, text);
-  return file;
-}
-
 test('testFiles picks what the globs match under dist/, sorted, and skips a file that is not a test (#624)', async (t) => {
   const root = await distRoot(t);
   assert.deepEqual(testFiles({ root }), ['test/a.test.js', 'test/agents/c.test.js', 'test/b.test.js', 'test/benchmark/d.test.js']);
 });
 
-test('a list replaces the globs, skips blank and # lines and reads `\\` as `/` (#624)', async (t) => {
-  const root = await distRoot(t);
-  const list = await listFile(t, '# the lane\n\ntest/fixtures/runner/e.js\r\ntest\\b.test.js\n   \n');
-  assert.deepEqual(testFiles({ root, list }), ['test/b.test.js', 'test/fixtures/runner/e.js']);
-});
-
-test('a listed path missing under dist/ fails the selection (#624)', async (t) => {
-  const root = await distRoot(t);
-  const list = await listFile(t, 'test/b.test.js\ntest/gone.test.js\n');
-  assert.throws(() => testFiles({ root, list }), /test\/gone\.test\.js/);
-});
-
-test('--exclude drops matching paths from the globs and from a list (#624)', async (t) => {
+test('--exclude drops matching paths from the globs (#624)', async (t) => {
   const root = await distRoot(t);
   assert.deepEqual(testFiles({ root, exclude: ['test/benchmark/**'] }), ['test/a.test.js', 'test/agents/c.test.js', 'test/b.test.js']);
-  const list = await listFile(t, 'test/b.test.js\ntest/fixtures/runner/e.js\n');
-  assert.deepEqual(testFiles({ root, list, exclude: ['test/b.test.js'] }), ['test/fixtures/runner/e.js']);
 });
 
 test('a selection with no file fails instead of passing green (#624)', async (t) => {
@@ -62,18 +42,20 @@ test('a selection with no file fails instead of passing green (#624)', async (t)
   assert.throws(() => testFiles({ root, exclude: ['test/**'] }), /no test file selected/);
 });
 
-// Compiled to dist/test/fixtures/runner/, outside every glob: only a list reaches it.
-const PROBE = 'test/fixtures/runner/env-probe.js';
+// The probe, compiled outside every glob, copied into a dist/-shaped root of its own: the runner's real globs pick it up there
+const PROBE_JS = fileURLToPath(new URL('./fixtures/runner/env-probe.js', import.meta.url));
 
 interface Seen { codexHome: string; claudeConfigDir: string }
 
 async function startRunner(t: TestContext, mode: 'pass' | 'fail' | 'wait', extra: readonly string[] = []) {
-  const list = await listFile(t, `${PROBE}\n`);
-  const out = join(dirname(list), 'probe.json');
+  const root = await distRoot(t, []);
+  mkdirSync(join(root, 'test'), { recursive: true });
+  copyFileSync(PROBE_JS, join(root, 'test', 'probe.test.js'));
+  const out = join(root, 'probe.json');
   // inherited, NODE_TEST_CONTEXT would make the runner's node --test report to this run instead of running
   const { NODE_TEST_CONTEXT: _runner, ...env } = process.env;
   // ignored: the inner run's report must not mix into this file's own output
-  const child = spawn(process.execPath, [fileURLToPath(RUNNER), `--list=${list}`, ...extra], { env: { ...env, PROBE_OUT: out, PROBE_MODE: mode }, stdio: 'ignore' });
+  const child = spawn(process.execPath, [fileURLToPath(RUNNER), `--root=${root}`, ...extra], { env: { ...env, PROBE_OUT: out, PROBE_MODE: mode }, stdio: 'ignore' });
   return { child, out, exited: once(child, 'exit') };
 }
 
