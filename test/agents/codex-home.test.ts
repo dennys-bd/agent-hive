@@ -41,9 +41,11 @@ test('renderRole writes the instructions as one TOML string, and sandbox_mode on
 const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'system-design-reviewer', 'system-designer', 'tdd', 'template-reviewer'];
 const RENDERED = await renderedPlugin({ after }); // #416: assets/plugin holds designer.md.liquid; a run reads the delivered designer.md
 
-test('readAgent keeps name, description and the body verbatim, a --- line in the body included; it stops at the second --- (#934)', () => {
+test('readAgent keeps name, description, tools, model and the body verbatim, a --- line in the body included; it stops at the second --- (#934, #758)', () => {
   const text = ['---', 'name: fixer', 'description: Fixes: the build.', 'tools: Read, Write', 'model: sonnet', '---', '', 'Body.', '', '---', '', 'After the rule.', ''].join('\n');
-  assert.deepEqual(readAgent('fixer.md', text), { name: 'fixer', description: 'Fixes: the build.', readOnly: false, instructions: '\nBody.\n\n---\n\nAfter the rule.\n' });
+  assert.deepEqual(readAgent('fixer.md', text), {
+    name: 'fixer', description: 'Fixes: the build.', readOnly: false, tools: ['Read', 'Write'], model: 'sonnet', instructions: '\nBody.\n\n---\n\nAfter the rule.\n',
+  });
 });
 
 test('an agent is read-only when its tools have none of Write, Edit, Bash; a tool Codex lacks (Agent) is dropped; no tools list writes (#934)', () => {
@@ -53,6 +55,17 @@ test('an agent is read-only when its tools have none of Write, Edit, Bash; a too
   assert.equal(readAgent('a.md', agent('Read, Grep, Glob, Bash')).readOnly, false);
   assert.equal(readAgent('a.md', agent('Edit')).readOnly, false);
   assert.equal(readAgent('a.md', agent(undefined)).readOnly, false, 'Claude gives an agent with no tools list every tool');
+});
+
+test('readAgent returns the tools line split and trimmed and the model line, neither without its line; renderRole ignores both (#758)', () => {
+  const agent = (...lines: string[]): string => ['---', 'name: a', 'description: d.', ...lines, '---', 'x'].join('\n');
+  assert.deepEqual(readAgent('a.md', agent('tools:  Read ,Grep,  mcp__graphify ')).tools, ['Read', 'Grep', 'mcp__graphify']);
+  assert.equal(readAgent('a.md', agent('model: opus')).model, 'opus');
+  const bare = readAgent('a.md', agent());
+  assert.deepEqual([Object.hasOwn(bare, 'tools'), Object.hasOwn(bare, 'model')], [false, false]);
+  assert.equal(Object.hasOwn(readAgent('a.md', agent('model:')), 'model'), false, 'an empty model line is no model');
+  const role: AgentRole = { name: 'a', description: 'd.', readOnly: true, instructions: 'x' };
+  assert.equal(renderRole({ ...role, tools: ['Read'], model: 'opus' }), renderRole(role), 'Codex gets no model and no tools list');
 });
 
 test('readAgent names the file it cannot read: no frontmatter, an unclosed one, no name or no description (#934)', () => {

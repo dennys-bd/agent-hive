@@ -21,12 +21,15 @@ const FENCE = '---';
 const AGENT_NAME = /^[a-z0-9-]+$/; // it names a file under the home and a -c key, where '.', '/' or '=' would escape or split it
 const WRITING_TOOLS: ReadonlySet<string> = new Set(['Write', 'Edit', 'Bash']); // what Codex's workspace sandbox allows and read-only refuses
 
-/** One agent of assets/plugin/agents, as Codex gets it: no model (a Claude alias has no Codex name), its tools reduced to read-only or not. */
+/** One agent of assets/plugin/agents. Codex's role uses name, description, readOnly and the body; tools and model are Claude's (#758), which
+ * runs an agent with a tools line as a copy of it, and Codex's renderRole ignores both (a Claude alias has no Codex name). */
 export interface AgentRole {
   name: string;
   description: string;
   readOnly: boolean;
   instructions: string;
+  tools?: string[]; // #758: the tools line split and trimmed; undefined with none, which Claude reads as every tool
+  model?: string; // #758: the model line as written
 }
 
 /** A TOML basic string: JSON's escapes are TOML's, except DEL, which TOML wants escaped and JSON leaves raw. */
@@ -61,8 +64,8 @@ function frontmatter(lines: readonly string[]): Map<string, string> {
   }));
 }
 
-/** One agent file's role. Only name, description and tools count: model goes (a Claude alias), and a tool Codex has no equivalent for
- * (Agent) only ever counts as not writing. The body after the second --- is kept verbatim, a later --- line included. */
+/** One agent file's role. Codex reads name, description and whether the tools write (a tool it has no equivalent for, Agent, only ever counts
+ * as not writing); tools and model are kept for Claude's launch (#758). The body after the second --- is kept verbatim, a later --- line included. */
 export function readAgent(file: string, text: string): AgentRole {
   const lines = text.split(/\r?\n/); // a CRLF checkout too
   const end = lines[0] === FENCE ? lines.indexOf(FENCE, 1) : -1;
@@ -74,7 +77,11 @@ export function readAgent(file: string, text: string): AgentRole {
   if (!AGENT_NAME.test(name)) throw new Error(`${file}: its name "${name}" is not lowercase letters, digits and hyphens`);
   const tools = fields.get('tools')?.split(',').map((tool) => tool.trim());
   const readOnly = tools !== undefined && !tools.some((tool) => WRITING_TOOLS.has(tool)); // no list: Claude gives every tool
-  return { name, description, readOnly, instructions: lines.slice(end + 1).join('\n') };
+  const model = fields.get('model');
+  return {
+    name, description, readOnly, instructions: lines.slice(end + 1).join('\n'),
+    ...(tools === undefined ? {} : { tools }), ...(model ? { model } : {}), // absent keys, never undefined ones: a run's argv reads their presence
+  };
 }
 
 /** Every agent of the plugin at `source`, sorted by file name: readdir's order differs between macOS and Linux. Synchronous, since launch is. */
