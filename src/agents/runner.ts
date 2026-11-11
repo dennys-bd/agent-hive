@@ -28,7 +28,8 @@ export interface AgentRun {
   model?: string;
   session?: { id: string; resume: boolean }; // launch: resume continues the session, else it starts under this id. copy: the fork's new id (resume ignored)
   extraArgs: readonly string[]; // agentArgs[agent], then a free session's own args (#257)
-  specializedAgent?: { name: string; instructions: string }; // #257: a plugin agent the session runs as: Claude gets the name, Codex the instructions
+  // #257: a plugin agent the session runs as: Claude gets the name, or a copy of it when it has tools (#758); Codex the instructions
+  specializedAgent?: { name: string; description: string; instructions: string; tools?: readonly string[]; model?: string };
 }
 
 /** What a run's MCP config names (#99, #467): the Hive's server for this pty, or none for a local session (#587). */
