@@ -8,7 +8,8 @@ import { t } from '@/i18n';
 import type { NewSource } from '@/lib/flow-sources';
 import { commandFrom } from '@/lib/settings-commands';
 import type { SettingsDraft } from '@/lib/settings-form';
-import { flowOfStage, scopedFlow, withFlowEdit, withNewFlow, withoutFlow } from '@/lib/settings-flows';
+import { scopedFlow, withFlowEdit, withNewFlow, withoutFlow } from '@/lib/settings-flows';
+import { flowOfStage } from '@/lib/settings-transitions';
 import { stageNameClash } from '@/lib/settings-stages';
 import type { AgentAvailability, Command, GithubAuth, GithubAuthStatus, ProjectSummary } from '../../../types';
 

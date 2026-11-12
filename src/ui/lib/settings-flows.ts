@@ -4,7 +4,7 @@ import type { AgentId, Flow } from '../../types.js';
 import { t } from '../i18n.js';
 import type { SettingsDraft, SettingsProblem } from './settings-form.js';
 import { badEvaluation, emptyStage, isEmptyOrDuration, isEmptyOrNonNegativeInt, orphanContinue, stageFrom, stageNameClash, type StageDraft } from './settings-stages.js';
-import { draftTitle, type TransitionDraft, transitionFrom, transitionsKept, transitionsProblem } from './settings-transitions.js';
+import { draftTitle, flowOfStage, type TransitionDraft, transitionFrom, transitionsKept, transitionsProblem } from './settings-transitions.js';
 
 // Settings › fluxo's flows (#565), out of settings-form.ts, which is at its limit: the draft keeps flat stage and transition lists in flow order,
 // each stage tagged with its flow; these edges scope, merge and send them, and judge the flows.
@@ -17,8 +17,6 @@ const emptyFlow = (name: string): FlowDraft => ({ id: crypto.randomUUID(), name 
 
 /** One draft per saved flow; an empty config gets one named MAIN_FLOW, the name the parser's migration gives a flat comb (#564). */
 export const flowDrafts = (saved: readonly Flow[]): FlowDraft[] => (saved.length === 0 ? [emptyFlow(MAIN_FLOW)] : saved.map((f) => emptyFlow(f.name)));
-
-export const flowOfStage = (stages: readonly StageDraft[], id: string | undefined): string | undefined => stages.find((s) => s.id === id)?.flow;
 
 export function scopedFlow(draft: FlowsDraft, flow: string): ScopedFlow {
   const stages = draft.stages.filter((s) => s.flow === flow);
@@ -80,7 +78,7 @@ export function transitionsDraftProblem(draft: SettingsDraft): SettingsProblem |
   const transition = draft.transitions.find((d) => d.id === bad?.id);
   if (bad === undefined || transition === undefined) return undefined;
   const stage = draft.stages.find((s) => s.id === transition.from)?.name.trim() || t('settings.stages.unnamed');
-  const message = t(`settings.transitions.error.${bad.reason}`, { name: draftTitle(transition, draft.stages), stage });
+  const message = t(`settings.transitions.error.${bad.reason}`, { name: draftTitle(transition, draft.stages, draft.flows), stage });
   return { section: 'flow', message, transition: bad.id };
 }
 

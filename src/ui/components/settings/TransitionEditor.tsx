@@ -104,7 +104,7 @@ function Handover({ id, transition, stages, onUpdate }: Omit<TransitionEditorPro
  * and what each source does as the task passes. Opened from a stage's saídas (#887), it leads with a way back to that stage. Inputs are uncontrolled where they type; the editor is keyed by the transition. */
 export function TransitionEditor({ transition, stages, sources, backTo, onUpdate, onRemove, onBack }: TransitionEditorProps) {
   const id = useId();
-  const title = draftTitle(transition, stages);
+  const title = draftTitle(transition, stages, []);
   return (
     <section aria-label={title} className="flex flex-col gap-4 rounded-xl border bg-card p-5">
       {backTo !== undefined && onBack !== undefined && (
