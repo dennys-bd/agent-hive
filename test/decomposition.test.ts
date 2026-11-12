@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  anchorOf, CHECK_LINKS, decompositionPending, decompositionWritten, designComment, designLink, fileAddress, issueBody, parseDecomposition, recordedIssues, rootBody,
+  anchorOf, CHECK_LINKS, decompositionPending, decompositionTarget, decompositionWritten, designComment, designLink, fileAddress, issueBody, parseDecomposition, recordedIssues, rootBody,
 } from '../src/decomposition.js';
 import { initialState } from '../src/orchestrator.js';
 import type { DecompositionNode, DecompositionProblem, Task } from '../src/types.js';
@@ -154,14 +154,14 @@ test('issueBody: free text, Scope, Design (inner) or Acceptance criteria (leaf),
   const { decomposition } = parseDecomposition(EXAMPLE);
   assert.ok(decomposition);
   const [backend, , api] = decomposition.nodes;
-  assert.equal(issueBody(backend, { parent: 7, design: `${ADDRESS}#design` }), [
+  assert.equal(issueBody(backend, { parent: '#7', design: `${ADDRESS}#design` }), [
     "## Scope\n\nIn: the form's endpoint and its storage. Out: any admin view.",
     '## Design\n\nSubmissions are stored in a single table; no queue.',
     `## Decomposition\n\nParent: #7\nDesign: ${ADDRESS}#design`,
   ].join('\n\n'));
   const feasibility = "feasibility: the CDN's edge function accepts a POST body over 10 KB";
   const touched = { ...api, touches: ['functions/contact.ts', 'db/migrations'], openPoints: [...api.openPoints, feasibility] };
-  assert.equal(issueBody(touched, { parent: 101, design: `${ADDRESS}#1-backend` }), [
+  assert.equal(issueBody(touched, { parent: '#101', design: `${ADDRESS}#1-backend` }), [
     '## Scope\n\nIn: POST /contact with validation. Out: spam filtering.',
     '## Acceptance criteria\n\n- a valid POST /contact answers 201 and stores the row\n- an invalid one answers 400 with the RFC 7807 body',
     [
@@ -169,7 +169,7 @@ test('issueBody: free text, Scope, Design (inner) or Acceptance criteria (leaf),
       'Touches: functions/contact.ts, db/migrations', 'Open points:', '- rate limit per IP or per session', `- ${feasibility}`,
     ].join('\n'),
   ].join('\n\n'));
-  assert.equal(issueBody({ ...api, body: 'Why it exists.' }, { parent: 1, design: ADDRESS }).split('\n\n')[0], 'Why it exists.');
+  assert.equal(issueBody({ ...api, body: 'Why it exists.' }, { parent: '#1', design: ADDRESS }).split('\n\n')[0], 'Why it exists.');
   const design = '## Design\n\nStatic pages served by the CDN; one serverless function for the form. Errors as RFC 7807.';
   assert.equal(rootBody(decomposition), `A marketing site with a contact form.\n\n${design}`);
   assert.equal(designComment(decomposition), design);
@@ -180,8 +180,8 @@ test('issueBody: a node with no design link has no Design: line, and the rest of
   const { decomposition } = parseDecomposition(EXAMPLE);
   assert.ok(decomposition);
   const api = decomposition.nodes[2];
-  const linked = issueBody(api, { parent: 101, design: `${ADDRESS}#1-backend` });
-  const local = issueBody(api, { parent: 101 });
+  const linked = issueBody(api, { parent: '#101', design: `${ADDRESS}#1-backend` });
+  const local = issueBody(api, { parent: '#101' });
   assert.equal(local, linked.replace(`\nDesign: ${ADDRESS}#1-backend`, ''));
   assert.match(local, /^Parent: #101$/m);
   assert.doesNotMatch(local, /^Design:/m);
@@ -238,4 +238,19 @@ test('an issue body, the root body or the design comment over 65,536 characters 
   const room = 65_536 - (issueBody(leaf('1', 'A', { scope: 'x', criteria: ['ok'] }), CHECK_LINKS).length - 1);
   const exactly = parseDecomposition(file('# G', '## 1 A', '### Scope', 'x'.repeat(room), '### Acceptance criteria', '- ok', '## 2 B', ...LEAF));
   assert.deepEqual(exactly.problems, []);
+});
+
+test('issueBody names the parent as given: the GitHub write\'s #<n> or a hive task\'s display id; the size check keeps the room of a #<n> (#783)', () => {
+  const { decomposition } = parseDecomposition(EXAMPLE);
+  assert.ok(decomposition);
+  const api = decomposition.nodes[2];
+  assert.equal(issueBody(api, { parent: 'HIVE-12' }), issueBody(api, { parent: '#101' }).replace('Parent: #101', 'Parent: HIVE-12'));
+  assert.equal(CHECK_LINKS.parent, `#${Number.MAX_SAFE_INTEGER}`);
+});
+
+test('decompositionTarget reads the target a first hive press recorded; none for a GitHub write, which records none (#783)', () => {
+  assert.equal(decompositionTarget({ decomposition: 'decomposition.md', decompositionTarget: 'hive' }), 'hive');
+  assert.equal(decompositionTarget({ decomposition: 'decomposition.md', decompositionIssues: { design: 7 } }), undefined);
+  assert.equal(decompositionTarget({ decompositionTarget: 1 }), undefined);
+  assert.equal(decompositionTarget(undefined), undefined);
 });

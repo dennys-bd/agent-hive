@@ -1565,6 +1565,17 @@ export interface DecompositionPreview {
   delivery?: { repository: string; branch: string; path: string; local?: true }; // #936: where the file is pushed: its checkout's repository, branch and path in it; #741: local when git ignores it, so no PR
   deliveryRefusal?: string; // #936: why it cannot be (default branch, not .md, no checkout): the dialog disables create issues
   sources: DecompositionSource[];
+  hive?: DecompositionHive; // #783: only while comb.hiveSource is on
+  target?: string; // #783, decision 6: the target the first hive press recorded, whatever hiveSource is
+}
+
+/** The confirm dialog's hive target (#783, decomposition decision 3): what `entra em` offers and suggests (decisions 2, 3), the tasks the
+ * write creates, a GitHub goal's root task included (decision 4), preselected for a hive goal, its own delivery, local with no refusal when the
+ * file's checkout is missing or off GitHub (decision 5), and why a GitHub goal's root task cannot be created (decision 9). */
+export interface DecompositionHive {
+  entries: TaskEntry[]; entry?: TaskEntry; tasks: number; preselected?: true;
+  delivery?: { path: string; repository?: string; branch?: string; local?: true };
+  deliveryRefusal?: string; refusal?: string;
 }
 
 export type HiveEvent =
@@ -1613,7 +1624,7 @@ export type HiveEvent =
   | { type: 'restored'; itemId: string; branch?: string } // #619: the restore's git ended well; `branch` when it checked out a new -r<n>
   | { type: 'restoreFailed'; itemId: string } // #619: the restore's git failed: the mark goes
   | { type: 'clearSessions'; activityId: string; sessionId: string } // one session's limpar in the panel (#304); a record id (#629)
-  | { type: 'createTask'; title: string; body: string; stage?: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string }; parent?: string } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67) parent (#782): the itemId of the new task's parent; one that is no task in the state is ignored
+  | { type: 'createTask'; title: string; body: string; stage?: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string }; parent?: string; epic?: NonNullable<Item['epic']> } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67) parent (#782): the itemId of the new task's parent; one that is no task in the state is ignored. epic (#783): the task is born an epic, so the fill never picks it, even in the reduction that creates it
   | { type: 'closeTask'; taskId: string } // close on a task out of the listing or an orphan (#568), remove on a stopped local one (#132): the task and its session go; the worktree of a task off the source stays (#182), a local task's goes first, in the route (#542)
   | { type: 'done'; ptyId: string; result?: Record<string, unknown>; verdict?: string; evidence?: string } // hive_done: the command is finished; result is merged into the task (#99); verdict / evidence: how it ended and why (#134)
   | { type: 'pr'; ptyId: string; url: string; slice?: PrSlice } // hive_pr: the PR the worker opened, https only (#99), and its slice (#698)
@@ -1639,6 +1650,7 @@ export type HiveEvent =
   | { type: 'evaluateBroken'; activityId: string; runId: string; message: string } // #877: a run broke: no verdict, no try
   | { type: 'stopEvaluate'; activityId: string } // #877: the task's Stop or a sleep reached an evaluation, which holds no pty: every run aborts, no verdict
   | { type: 'decompositionIssue'; taskId: string; id: string; number: number } // #865: one step of the decomposition's write; merged into the task's result.decompositionIssues. Keyed by task: one awaiting approval may have no live worker
+  | { type: 'decompositionTarget'; taskId: string; target: string } // #783: the target of the goal's first press, merged into its result before any task exists, so local numbers are never read as issue numbers
   | { type: 'markEpic'; taskId: string; epic: NonNullable<Item['epic']> } // #556: the decomposition's write made this task an epic; stamped before its approve, as the GitHub adapter stamps one
   | { type: 'forkSynced'; activityId: string; sync: ForkSyncResult } // #854: a fork synced (or failed to) before the activity's worktree was made
   | { type: 'sourceActionFailed'; taskId: string; message: string; leaving: boolean } // the source refused the stage's action (#286): the task keeps the adapter's message; leaving: the refused action was the leaving one (#515)

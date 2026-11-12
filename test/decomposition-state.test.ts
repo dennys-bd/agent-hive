@@ -106,3 +106,35 @@ test('with its children already listed, the approved epic follows them to their 
   assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' ? [e.ptyId] : [])), [ptyId]);
   assert.equal(effects.some((e) => e.type === 'spawn' && e.task.item.itemId === ID), false);
 });
+
+test('a goal stamped while its children sit in another stage is not followed until approved: the approve ends its held run, then it follows them (#783)', () => {
+  const held = awaiting();
+  const ptyId = held.workers[0].runId!;
+  const listed = reduce(held, { type: 'poll', source: 'board', items: [{ item: { ...item, children: [CHILD.itemId] }, column: 'Goals' }, { item: CHILD, column: 'Ready' }] }).state;
+  const stamped = deepFreeze(reduce(listed, { type: 'markEpic', taskId: ID, epic: EPIC }).state);
+  assert.deepEqual([goalOf(stamped)?.stage, activityOf(stamped, ID)?.approval?.since === undefined], ['goal', false], 'still awaiting: followEpics waits for the answer');
+  const { state, effects } = reduce(stamped, { type: 'approve', activityId: activityOf(stamped, ID)!.id });
+  // its child sits in spec, the last stage, so the followed epic goes on out through END and the freed worker takes the child
+  assert.deepEqual([goalOf(state), state.workers[0].runId === ptyId], [undefined, false]);
+  assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' ? [e.ptyId] : [])), [ptyId], 'the held run is killed, not leaked');
+});
+
+test('decompositionTarget merges the target into the task\'s result beside what it holds: no effect, no worker change, still awaiting; an unknown task changes nothing (#783)', () => {
+  const before = deepFreeze(awaiting());
+  const { state, effects } = reduce(before, { type: 'decompositionTarget', taskId: ID, target: 'hive' });
+  assert.deepEqual(resultOf(state, ID), { decomposition: 'decomposition.md', decompositionTarget: 'hive' });
+  assert.deepEqual([effects, state.workers], [[], before.workers]);
+  assert.equal(activityOf(state, ID)?.approval?.since, activityOf(before, ID)?.approval?.since);
+  assert.equal(reduce(before, { type: 'decompositionTarget', taskId: 'board:gone', target: 'hive' }).state, before);
+});
+
+test('the decompositionTarget log line names the task and the target only (#783)', () => {
+  assert.equal(describeEvent({ type: 'decompositionTarget', taskId: ID, target: 'hive' }), 'decompositionTarget #board:item1 hive');
+});
+
+test('closeTask leaves a written local goal whose target is hive: it stays the root of its own tree (#783)', () => {
+  const created = reduce({ ...initialState(1), workspaces: ['hive'], ...chained(STAGES) }, { type: 'createTask', title: 'Site for XPTO', body: '', stage: 'goal', prefix: 'HIVE', workspace: 'hive', auto: true }).state;
+  const targeted = reduce(stageEnd(created), { type: 'decompositionTarget', taskId: 'local:1', target: 'hive' }).state;
+  const written = deepFreeze(reduce(targeted, { type: 'decompositionIssue', taskId: 'local:1', id: 'done', number: 1 }).state);
+  assert.equal(reduce(written, { type: 'closeTask', taskId: 'local:1' }).state, written);
+});

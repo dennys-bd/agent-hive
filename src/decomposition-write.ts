@@ -144,7 +144,7 @@ async function createAll(ctx: Ctx, d: Decomposition, root: Issue): Promise<Map<s
   for (const node of d.nodes) {
     const parent = parentOf(node.id);
     const design = address === undefined ? {} : { design: designLink(d, node, address) }; // #741: a local file gets no link
-    const links = { parent: (parent === '' ? root : issueOf(issues, parent)).number, ...design };
+    const links = { parent: `#${(parent === '' ? root : issueOf(issues, parent)).number}`, ...design }; // #783: the body's parent is text
     issues.set(node.id, await ensure(ctx, node.id, node.title, issueBody(node, links)));
   }
   return issues;
