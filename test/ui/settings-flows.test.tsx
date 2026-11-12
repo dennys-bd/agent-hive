@@ -113,6 +113,15 @@ test('remover etapa on a stage another flow enters leaves it and says which tran
   expect(chip('triage')).toBeNull();
 });
 
+test('excluir fluxo on a flow another flow enters keeps it and names the transition to change (#691)', async () => {
+  const user = userEvent.setup();
+  await openFlow(user, CROSSED);
+  await user.click(tab('bug'));
+  await user.click(screen.getByRole('button', { name: t('settings.flows.remove') }));
+  expect(screen.getByRole('alert')).toHaveTextContent(t('settings.flows.entered', { transition: 'feature · build → fix' }));
+  expect(tab('bug')).toBeInTheDocument();
+});
+
 test('+ fluxo › name › criar opens the new flow\'s tab with one empty stage selected (#565)', async () => {
   const user = userEvent.setup();
   await openFlow(user);
