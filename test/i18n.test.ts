@@ -650,3 +650,18 @@ test('a removal refusal reads as the spec writes it, in both languages, and neve
   setLanguage('en');
   assert.equal(t('deleteActivity.refused.unmerged', { branch: 'hive/1-x', target: 'HEAD' }), 'the branch hive/1-x is not merged into HEAD');
 });
+
+test('the cross-flow copy reads as the spec writes it, in both languages (#691)', () => {
+  const keys = ['settings.transitions.to.ownFlow', 'settings.transitions.otherFlow', 'settings.transitions.to.hint.flows', 'settings.transitions.legend.flows', 'settings.transitions.incoming',
+    'settings.transitions.outgoing', 'settings.stages.from.arrivals', 'settings.stages.entered', 'settings.flows.entered'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    '{flow} · este fluxo', 'outro fluxo', 'onde a tarefa entra · noutro fluxo, ela muda de fluxo com a worktree, a branch e as sessões · fim tira a tarefa do Hive',
+    'pílula com seta = outro fluxo: a tarefa muda de fluxo com a worktree, a branch e as sessões', 'chega de {from}, {when} · edite no fluxo {flow}', '{route} · a tarefa muda de fluxo',
+    'chega de {list}', '{transition} entra nesta etapa: mude o destino dela antes de remover', '{transition} entra neste fluxo: mude o destino dela antes de excluir',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    '{flow} · this flow', 'other flow', 'where the task enters · in another flow, it changes flow with the worktree, the branch and the sessions · end takes it out of the Hive',
+    'pill with an arrow = another flow: the task changes flow with the worktree, the branch and the sessions', 'arrives from {from}, {when} · edit it in flow {flow}', '{route} · the task changes flow',
+    'arrives from {list}', '{transition} enters this stage: change its target before removing it', '{transition} enters this flow: change its target before deleting it',
+  ]);
+});
