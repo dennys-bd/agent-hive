@@ -117,16 +117,16 @@ test('GET /activities/worktrees reads at most four tasks at once, so many activi
 
 // #747: GET /worktrees over the configured `hive`, whose repo lists one worktree no task owns, and task 7 stopped in `gone`, a workspace no
 // longer in Settings, whose repo is a folder of its own (or, with sameRepo, the configured repo itself). listFails fails only the listing of
-// the rows, not strandedRepo's check.
+// the rows, not strandedRepo's check; liveOwner gives the same folder to task 8 of `hive` too (sameRepo only).
 const GONE_SLUG = 'hive-7-task';
 const ORPHAN_SLUG = 'hive-5-orphan';
-async function startGone(t: TestContext, { listFails = false, sameRepo = false } = {}): Promise<{ base: string; repo: string; gone: string }> {
+async function startGone(t: TestContext, { listFails = false, sameRepo = false, liveOwner = false } = {}): Promise<{ base: string; repo: string; gone: string }> {
   const { home, repo } = await tempHive(t);
   const gone = sameRepo ? repo : await tempDir(t, 'gone-');
   await mkdir(join(gone, '.git'), { recursive: true });
   const worktree = worktreePath(gone, GONE_SLUG);
   await mkdir(worktree, { recursive: true });
-  await saveState(home, savedTasks({ ...initialState(0), localCount: 7 }, [task(7, { workspace: 'gone', worktree, stopped: true })], () => GONE_SLUG));
+  await saveState(home, savedTasks({ ...initialState(0), localCount: 7 }, [task(7, { workspace: 'gone', worktree, stopped: true }), ...(liveOwner ? [task(8, { worktree, stopped: true })] : [])], () => GONE_SLUG));
   const goneListing = `worktree ${worktree}\nHEAD 2\n`;
   const listings: Record<string, string> = sameRepo
     ? { [repo]: `worktree ${repo}\nHEAD 1\n\nworktree ${worktreePath(repo, ORPHAN_SLUG)}\nHEAD 2\n\n${goneListing}` }
@@ -170,5 +170,15 @@ test('GET /worktrees lists a stranded worktree once, under the removed workspace
   assert.deepEqual(rows.map((r) => [r.workspace, r.slug, r.orphan, r.workspaceGone]), [
     ['hive', ORPHAN_SLUG, 'noTask', undefined],
     ['gone', GONE_SLUG, undefined, true],
+  ]);
+});
+
+test('GET /worktrees keeps a configured task\'s row and drops the stranded one when both name the same folder (#747)', async (t) => {
+  const f = await startGone(t, { sameRepo: true, liveOwner: true });
+  const [status, rows] = await worktreesOf(f.base);
+  assert.equal(status, 200);
+  assert.deepEqual(rows.map((r) => [r.workspace, r.slug, r.orphan, r.task?.id, r.workspaceGone]), [
+    ['hive', ORPHAN_SLUG, 'noTask', undefined, undefined],
+    ['hive', GONE_SLUG, undefined, 'local:8', undefined],
   ]);
 });

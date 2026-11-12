@@ -51,10 +51,13 @@ export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): v
         return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, exec) }))); // #653
       }));
       // #747: then the stranded task activities' worktrees, under their removed workspace; each failure drops only its own rows. A configured
-      // workspace that shares the repo would list the same folder as noTask: the stranded row, which knows its task, wins
-      const stranded = await strandedRows(current.state, current.runtime.config, exec);
+      // workspace that shares the repo lists the same folder: a live task's row wins (a stale activity must never post its delete there),
+      // while a row no task owns gives way to the stranded one, which knows its task
+      const configured = perWorkspace.flat();
+      const owned = new Set(configured.filter((row) => row.task !== undefined).map((row) => row.path));
+      const stranded = (await strandedRows(current.state, current.runtime.config, exec)).filter((row) => !owned.has(row.path));
       const strandedPaths = new Set(stranded.map((row) => row.path));
-      res.json([...perWorkspace.flat().filter((row) => !strandedPaths.has(row.path)), ...stranded]);
+      res.json([...configured.filter((row) => !strandedPaths.has(row.path)), ...stranded]);
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) }); // git's own words: not a repo, a broken listing
     }
