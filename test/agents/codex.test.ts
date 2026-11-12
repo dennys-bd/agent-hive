@@ -172,7 +172,7 @@ test('a forged body never throws: odd event names, tool inputs, tool names and a
 
 test('every run enables the Hive\'s plugin by a dotted key and names one hive:<name> role per agent, word for word; never the whole plugins table (#934)', () => {
   assert.deepEqual(ROLES.map(([, pair]) => pair.slice('agents.hive:'.length, pair.indexOf('='))), AGENT_NAMES);
-  assert.deepEqual(ROLES[0], ['-c', `agents.hive:architect={description="Weighs the approaches to an architectural change before its spec is written. Dispatched by /hive:new-spec on its architectural path, before the first round of questions, with the task as data, the decisions already closed and the files the change starts from. Returns two or three approaches with their trade-offs and one recommendation; never writes files.",config_file=${tomlString(roleFile(PLUGIN_FOLDER, 'architect'))}}`]);
+  assert.deepEqual(ROLES[0], ['-c', `agents.hive:architect={description="Weighs the approaches to an architectural change before its spec is written. Dispatched by /hive:new-spec on its architectural path, before the first round of questions, with the task as data, the decisions already closed and the files the change starts from. Returns the approaches worth choosing between, with their trade-offs, and one recommendation; never writes files.",config_file=${tomlString(roleFile(PLUGIN_FOLDER, 'architect'))}}`]);
   for (const run of [STAGE_RUN, { ...RUN, withHive: false }]) {
     const words = codexRunner.launch(run).flat();
     assert.ok(words.includes(PLUGIN[1]), 'a local run too, as Claude\'s --plugin-dir');
