@@ -92,10 +92,10 @@ export function StatusBox({ task, state, isActivity }: { task: Task; state: Stat
         <span className={`font-medium ${STATUS_WORD[status]}`}>{word}</span>
         <span className={`ml-auto ${MUTED}`}>{[...(inFlow(task) ? [t('detail.stage', { stage: task.stage })] : []), ...since].join(' · ')}</span>
       </div>
-      {answerable?.approval && <ApprovalVerdict key={answerable.approval.since} task={task} state={state} approval={answerable.approval} />} {/* #693: under the head, a new stage end mounts it closed */}
+      {answerable?.approval && <ApprovalVerdict key={`verdict:${task.item.itemId}:${answerable.approval.since}`} task={task} state={state} approval={answerable.approval} />} {/* #693: under the head, a new stage end mounts it closed; #763: a key of its own, never the actions' */}
       {isActivity && <RunLines task={task} state={state} />}
       <CommandsLine task={task} state={state} /> {/* #755: a commands stage's progress or failure, with ver saída */}
-      {answerable && <ApprovalActions key={answerable.approval?.since} task={task} activity={answerable} openSession={openFeedbackSession(task, state) !== undefined} createsIssues={createsIssues(task, state)} />}
+      {answerable && <ApprovalActions key={`actions:${task.item.itemId}:${answerable.approval?.since ?? ''}`} task={task} activity={answerable} openSession={openFeedbackSession(task, state) !== undefined} createsIssues={createsIssues(task, state)} />}
       <StoppedActions task={task} state={state} />
     </section>
   );
