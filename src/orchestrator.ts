@@ -1,12 +1,12 @@
 
-import { inAction, inFlow, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
+import { inAction, inFlow, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, HIVE_SOURCE, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
 import { benchmarkReduce, isBenchmarkEvent } from './benchmark-reducer.js';
 import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
 import { forgetFailedFreeRun, forgetFailedSession, forgetUnwritten, keepRecord, touchSession, withDecompositionIssue, withEpic, withPr, withResult, withTurn } from './record-kit.js';
 import { AGENTS, liveDefaultAgent, ranAgent } from './agents.js';
-import { decompositionWritten } from './decomposition.js';
+import { decompositionTarget, decompositionWritten, TARGET_KEY } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
 import type { Activity, ActivityRecord, SourceSync, Task, TaskBase, TaskPr, PrSlice, Flow, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item, RunPick } from './types.js';
@@ -164,6 +164,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'evaluateBroken': return afterCommands(state, evaluateBroken(state, event)); // #877: the worker frees; the task stops, no try spent
     case 'stopEvaluate': return fill(haltEvaluate(state, event.activityId)); // #877: the freed worker may take another task
     case 'decompositionIssue': return none(decompositionIssue(state, event)); // #865: no fill, no effects: a step of the write, recorded on the task
+    case 'decompositionTarget': return none(decompositionTargetSet(state, event)); // #783: no fill, no effects: a record on the task, as decompositionIssue
     case 'markEpic': return none(withEpic(state, event.taskId, event.epic)); // #556: no fill, no effects: an epic frees nothing; the approve that follows ends its run, followEpics places it once its children are known
     case 'forkSynced': return none(withForkSync(state, event)); // #854: no fill: a record of how the worktree started, nothing freed
     case 'sourceActionFailed': return sourceActionFailed(state, event.taskId, event.message, event.leaving); // no fill: the error keeps the task out of it (#286)
@@ -696,14 +697,23 @@ function closeTask(state: State, id: string): Reduced {
   return dropTask(state, task);
 }
 
-// #865: a local goal whose tree is on GitHub closes while its approval still holds the run: the decomposition route ends the stage with it
-const isWrittenGoal = (state: State, task: Task): boolean =>
-  task.created === true && activityOf(state, taskId(task))?.approval !== undefined && decompositionWritten(resultOf(state, taskId(task)));
+// #865: a local goal whose tree is on GitHub closes while its approval still holds the run: the decomposition route ends the stage with it.
+// #783: never one whose tree went to the hive, which stays the root of its own tree (decision 13)
+const isWrittenGoal = (state: State, task: Task): boolean => {
+  const result = resultOf(state, taskId(task));
+  return task.created === true && activityOf(state, taskId(task))?.approval !== undefined && decompositionWritten(result) && decompositionTarget(result) !== HIVE_SOURCE;
+};
 
 // A step of a decomposition's write (#865), keyed by task: after a restart a task awaiting approval may hold no worker
 function decompositionIssue(state: State, { taskId: id, id: key, number }: Extract<HiveEvent, { type: 'decompositionIssue' }>): State {
   const task = state.tasks.find((c) => taskId(c) === id);
   return task ? withDecompositionIssue(state, task, key, number) : state;
+}
+
+// #783: the target of a decomposition's first press, keyed by task as decompositionIssue is
+function decompositionTargetSet(state: State, { taskId: id, target }: Extract<HiveEvent, { type: 'decompositionTarget' }>): State {
+  const task = state.tasks.find((c) => taskId(c) === id);
+  return task ? withResult(state, task, { [TARGET_KEY]: target }) : state;
 }
 
 // The task leaves the state with every run on it: its workers freed and killed, its terminals closed and forgotten, live or asleep (#696).

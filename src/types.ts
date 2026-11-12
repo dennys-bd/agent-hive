@@ -1638,6 +1638,7 @@ export type HiveEvent =
   | { type: 'evaluateBroken'; activityId: string; runId: string; message: string } // #877: a run broke: no verdict, no try
   | { type: 'stopEvaluate'; activityId: string } // #877: the task's Stop or a sleep reached an evaluation, which holds no pty: every run aborts, no verdict
   | { type: 'decompositionIssue'; taskId: string; id: string; number: number } // #865: one step of the decomposition's write; merged into the task's result.decompositionIssues. Keyed by task: one awaiting approval may have no live worker
+  | { type: 'decompositionTarget'; taskId: string; target: string } // #783: the target of the goal's first press, merged into its result before any task exists, so local numbers are never read as issue numbers
   | { type: 'markEpic'; taskId: string; epic: NonNullable<Item['epic']> } // #556: the decomposition's write made this task an epic; stamped before its approve, as the GitHub adapter stamps one
   | { type: 'forkSynced'; activityId: string; sync: ForkSyncResult } // #854: a fork synced (or failed to) before the activity's worktree was made
   | { type: 'sourceActionFailed'; taskId: string; message: string; leaving: boolean } // the source refused the stage's action (#286): the task keeps the adapter's message; leaving: the refused action was the leaving one (#515)

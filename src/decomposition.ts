@@ -11,6 +11,12 @@ export const ROOT_KEY = 'root';
 export const DESIGN_KEY = 'design';
 export const DONE_KEY = 'done';
 export const PR_KEY = 'pr'; // #936: the decomposition's PR, so a second press opens none
+/** #783: the result key of a decomposition's target, recorded by its first hive press (decision 6); a GitHub write records none. */
+export const TARGET_KEY = 'decompositionTarget';
+export function decompositionTarget(result: Record<string, unknown> | undefined): string | undefined {
+  const target = result?.[TARGET_KEY];
+  return typeof target === 'string' ? target : undefined;
+}
 
 /** What parseDecomposition reads (#865): the tree only when it has no problem; the count of `## Suggestions` items, which never become issues;
  * the overlap warnings (#936), only when there is no problem. */

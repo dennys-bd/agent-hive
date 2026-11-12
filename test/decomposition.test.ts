@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  anchorOf, CHECK_LINKS, decompositionPending, decompositionWritten, designComment, designLink, fileAddress, issueBody, parseDecomposition, recordedIssues, rootBody,
+  anchorOf, CHECK_LINKS, decompositionPending, decompositionTarget, decompositionWritten, designComment, designLink, fileAddress, issueBody, parseDecomposition, recordedIssues, rootBody,
 } from '../src/decomposition.js';
 import { initialState } from '../src/orchestrator.js';
 import type { DecompositionNode, DecompositionProblem, Task } from '../src/types.js';
@@ -246,4 +246,11 @@ test('issueBody names the parent as given: the GitHub write\'s #<n> or a hive ta
   const api = decomposition.nodes[2];
   assert.equal(issueBody(api, { parent: 'HIVE-12' }), issueBody(api, { parent: '#101' }).replace('Parent: #101', 'Parent: HIVE-12'));
   assert.equal(CHECK_LINKS.parent, `#${Number.MAX_SAFE_INTEGER}`);
+});
+
+test('decompositionTarget reads the target a first hive press recorded; none for a GitHub write, which records none (#783)', () => {
+  assert.equal(decompositionTarget({ decomposition: 'decomposition.md', decompositionTarget: 'hive' }), 'hive');
+  assert.equal(decompositionTarget({ decomposition: 'decomposition.md', decompositionIssues: { design: 7 } }), undefined);
+  assert.equal(decompositionTarget({ decompositionTarget: 1 }), undefined);
+  assert.equal(decompositionTarget(undefined), undefined);
 });
