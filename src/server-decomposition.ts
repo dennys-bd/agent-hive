@@ -4,7 +4,7 @@ import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
 import { DONE_KEY, PR_KEY, decompositionPending, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
-import { deliverDecomposition, deliveryRefusal, type FileCheckout, fileCheckout } from './decomposition-deliver.js';
+import { deliverDecomposition, deliveryRefusal, type FileCheckout, fileCheckout, githubDeliveryWords } from './decomposition-deliver.js';
 import { readRepository, writeDecomposition, type WriteOutcome, type WriteTarget } from './decomposition-write.js';
 import { resolveActivityPath } from './ide.js';
 import type { Logger } from './log.js';
@@ -205,7 +205,7 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
   const written = await writeDecomposition({ gql: deps.gql, record, sleep: deps.sleep }, ready.decomposition, target, recorded);
   if ('error' in written) return refuseWrite(deps.log, goal.task.item.id, written, res);
   const delivered = shipped === undefined ? undefined : await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
-    checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, root: written.root, goal: ready.repository,
+    checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, ...githubDeliveryWords(ready.repository, written.root),
   }, recorded);
   if (delivered !== undefined) return refuse(res, { status: HTTP_BAD_GATEWAY, message: delivered });
   await record(DONE_KEY, written.root);

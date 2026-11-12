@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deliverDecomposition, type DeliverTarget, deliveryRefusal, fileCheckout } from '../src/decomposition-deliver.js';
+import { deliverDecomposition, type DeliverTarget, deliveryRefusal, fileCheckout, githubDeliveryWords, hiveDeliveryWords } from '../src/decomposition-deliver.js';
 import { CREATE_PULL_REQUEST, OPEN_PULL_REQUEST } from '../src/sources/github-queries.js';
 import type { Exec } from '../src/types.js';
 import { fakeGqlJson } from './fakes.js';
@@ -59,7 +59,8 @@ test('fileCheckout refuses a file in no checkout, a checkout off GitHub and a de
 });
 
 const TARGET: DeliverTarget = {
-  checkout: { toplevel: '/docs-repo', repository: 'acme/docs', branch: 'hive/7-site', path: PATH, ignored: false }, repositoryId: 'RD', base: 'main', root: 7, goal: 'acme/site',
+  checkout: { toplevel: '/docs-repo', repository: 'acme/docs', branch: 'hive/7-site', path: PATH, ignored: false }, repositoryId: 'RD', base: 'main',
+  ...githubDeliveryWords('acme/site', 7),
 };
 
 // git as the delivery meets it: the file dirty or clean; `failOn` names the git command that fails with stderr
@@ -193,4 +194,26 @@ const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its nati
 test('on win32 fileCheckout answers the file\'s path in its checkout with / only (#641)', WIN32_ONLY, async () => {
   const { exec } = checkoutGit({ ...FULL, 'rev-parse': 'C:\\docs-repo' });
   assert.equal((await fileCheckout(exec, 'C:\\docs-repo\\agent\\specs\\x.md')).path, 'agent/specs/x.md');
+});
+
+test('the GitHub write\'s words are today\'s, byte for byte; the hive write\'s name the goal\'s ref and title (#783)', () => {
+  assert.deepEqual(githubDeliveryWords('acme/site', 7), {
+    title: 'docs: decomposition for acme/site#7',
+    body: 'The decomposition of acme/site#7. Its issues are on GitHub already; each one\'s `Design:` link opens this file on the default branch once this PR merges.',
+    commit: 'docs: decomposition for #7',
+  });
+  assert.deepEqual(hiveDeliveryWords('HIVE-1', 'Site for XPTO'), {
+    title: 'docs: decomposition for HIVE-1: Site for XPTO',
+    body: 'The decomposition of HIVE-1. Its tasks are in the Hive; each one\'s `Design:` link opens this file on the default branch once this PR merges.',
+    commit: 'docs: decomposition for HIVE-1: Site for XPTO',
+  });
+});
+
+test('a delivery commits and opens its PR with the words it is given: the hive\'s (#783)', async () => {
+  const { calls, exec } = deliverGit(true);
+  const { calls: asked, gql } = github();
+  const words = hiveDeliveryWords('HIVE-1', 'Site for XPTO');
+  assert.equal(await deliverDecomposition({ exec, gql, record: recorder().record }, { ...TARGET, ...words }, {}), undefined);
+  assert.deepEqual(calls[2], ['git', '--literal-pathspecs', '-C', '/docs-repo', 'commit', '-m', words.commit, '--', PATH]);
+  assert.deepEqual([asked[0].variables.title, asked[0].variables.body], [words.title, words.body]);
 });
