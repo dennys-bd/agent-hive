@@ -7,7 +7,7 @@ import { openDecomposition } from '@/hooks/use-decomposition-write';
 import { setLanguage } from '@/i18n';
 import type { DecompositionPreview } from '../../src/types';
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), dismiss: vi.fn() } }));
 
 // The decomposition's confirm (#865): what will be written or why nothing can be, the source and column, and an error that keeps it open.
 const PATH = '/activities/a-I1/decomposition';

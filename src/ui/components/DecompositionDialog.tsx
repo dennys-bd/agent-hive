@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { closeDecomposition, type DecompositionChoice, useDecompositionWrite, useOpenDecomposition, writeDecomposition } from '@/hooks/use-decomposition-write';
+import { closeDecomposition, type DecompositionChoice, lastChoice, useDecompositionWrite, useOpenDecomposition, writeDecomposition } from '@/hooks/use-decomposition-write';
 import { t, tPlural } from '@/i18n';
 import { getJson } from '@/lib/api';
 import { pressed } from '@/lib/shortcut-bindings';
@@ -125,7 +125,7 @@ function DecompositionDialog({ activityId }: { activityId: string }) {
   const [readFailure, setReadFailure] = useState<string>();
   useEffect(() => {
     getJson<DecompositionPreview>(`/activities/${encodeURIComponent(activityId)}/decomposition`)
-      .then((read) => { setPreview(read); setChoice(chosen(read.sources[0])); }, (err: Error) => setReadFailure(err.message));
+      .then((read) => { setPreview(read); setChoice(lastChoice(activityId) ?? chosen(read.sources[0])); }, (err: Error) => setReadFailure(err.message));
   }, [activityId]);
   const source = preview?.sources.find((s) => s.name === choice.source);
   const canWrite = preview !== undefined && preview.problems.length === 0 && preview.repository !== undefined && preview.deliveryRefusal === undefined && source !== undefined && choice.column !== undefined && !isRunning;

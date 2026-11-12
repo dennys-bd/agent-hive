@@ -6,7 +6,7 @@ import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
 
 export interface DecompositionChoice { source?: string; column?: string }
-export interface DecompositionWrite { isOpen: boolean; isRunning: boolean; error?: string; ref: string }
+export interface DecompositionWrite { isOpen: boolean; isRunning: boolean; error?: string; ref: string; choice?: DecompositionChoice }
 
 // refuseWrite in server-decomposition.ts: the write started and failed, so issues may already exist. Every other refusal wrote nothing
 const HTTP_BAD_GATEWAY = 502;
@@ -37,9 +37,11 @@ function failureText(err: unknown): string {
 }
 
 // The same text the dialog would show inline; reabrir brings the dialog back with it
+// One toast per activity (its id), dismissed when the dialog comes back, so two failures never stack
+const toastId = (activityId: string): string => `decomposition-${activityId}`;
 function toastFailure(activityId: string, description: string): void {
   const { ref } = writeOf(activityId);
-  toast.error(t('decomposition.failedTitle', { ref }), { description, action: { label: t('decomposition.reopen'), onClick: () => openDecomposition(activityId, ref) } });
+  toast.error(t('decomposition.failedTitle', { ref }), { id: toastId(activityId), description, action: { label: t('decomposition.reopen'), onClick: () => openDecomposition(activityId, ref) } });
 }
 
 /** Opens the activity's dialog (#781), keeping a running write and the last error. One dialog per window: any other open one closes, so its
@@ -47,6 +49,7 @@ function toastFailure(activityId: string, description: string): void {
 export function openDecomposition(activityId: string, ref: string): void {
   const others = Object.fromEntries(Object.entries(writes).map(([id, write]) => [id, write.isOpen ? { ...write, isOpen: false } : write]));
   writes = { ...others, [activityId]: { ...writeOf(activityId), isOpen: true, ref } };
+  toast.dismiss(toastId(activityId));
   notify();
 }
 
@@ -59,7 +62,8 @@ export function closeDecomposition(activityId: string): void {
  * nothing; a success closes the dialog and shows nothing; a failure is kept as text, and toasted when the dialog is closed by then. */
 export async function writeDecomposition(activityId: string, choice: DecompositionChoice): Promise<void> {
   if (writeOf(activityId).isRunning) return;
-  update(activityId, { isRunning: true, error: undefined });
+  // the choice is kept so a reopened dialog shows, and a second press resumes, the write it started (a default would send it elsewhere)
+  update(activityId, { isRunning: true, error: undefined, choice });
   try {
     await postJson(`/activities/${encodeURIComponent(activityId)}/decomposition`, choice);
     update(activityId, { isRunning: false, isOpen: false });
@@ -69,6 +73,9 @@ export async function writeDecomposition(activityId: string, choice: Decompositi
     if (!writeOf(activityId).isOpen) toastFailure(activityId, error);
   }
 }
+
+/** The source and column the activity's last write started with, if any: the dialog's choice on its open. */
+export const lastChoice = (activityId: string): DecompositionChoice | undefined => writes[activityId]?.choice;
 
 /** The activity's write, as the store holds it. */
 export const useDecompositionWrite = (activityId: string): DecompositionWrite => useSyncExternalStore(subscribe, () => writeOf(activityId));

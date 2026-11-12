@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { closeDecomposition, openDecomposition, useDecompositionWrite, useOpenDecomposition, writeDecomposition } from '@/hooks/use-decomposition-write';
 import { setLanguage } from '@/i18n';
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), dismiss: vi.fn() } }));
 
 // The decomposition write's store (#781): the write outlives the dialog, and its failure reaches a closed dialog as one toast.
 const ID = 'a-I1';
@@ -58,8 +58,11 @@ test('a write that fails with the dialog closed fires one error toast titled wit
   const [title, options] = vi.mocked(toast.error).mock.calls[0]!;
   expect([title, options?.description, actionOf(options).label]).toEqual(['A criação das issues de #678 parou', TRANSIENT, 'reabrir']);
   expect(result.current.write.error).toBe(TRANSIENT);
+  expect(options?.id).toBe('decomposition-a-I1');
   act(() => actionOf(options).onClick());
-  expect(result.current).toMatchObject({ open: ID, write: { isOpen: true, isRunning: false, error: TRANSIENT } });
+  // reopened, the write keeps the choice it started with, so a second press resumes it there; the toast goes
+  expect(result.current).toMatchObject({ open: ID, write: { isOpen: true, isRunning: false, error: TRANSIENT, choice: CHOICE } });
+  expect(toast.dismiss).toHaveBeenCalledWith('decomposition-a-I1');
 });
 
 test('a failure with the dialog open stays in the store, with no toast: a 502 adds the recovery sentence, a 409 keeps the words alone (#781)', async () => {
