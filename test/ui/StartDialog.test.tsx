@@ -579,7 +579,7 @@ test('the dialog\'s children may shrink below their content, so a long title tru
   expect(screen.getByRole('button', { name: 'tarefas' })).toHaveAttribute('title', '#SITE-9 Landing hero for teams');
 });
 
-const TO_BOARD: CreateTargets = { hiveSource: true, createIn: 'board', sources: [{ name: 'board', type: 'github' }] };
+const TO_BOARD: CreateTargets = { hiveSource: true, createIn: 'board', sources: [{ name: 'board', type: 'github', repository: 'acme/board' }] };
 const toBoard = (ui: ReactElement) => <CreateTargetsContext.Provider value={TO_BOARD}>{ui}</CreateTargetsContext.Provider>;
 
 test('on a source the typed task is held: one create row, on the default destination\'s chip, and neither the pick nor a cancel creates anything (#846, #893)', async () => {
