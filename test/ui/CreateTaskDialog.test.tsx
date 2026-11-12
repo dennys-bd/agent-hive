@@ -34,6 +34,24 @@ const open = ({ targets = HIVE_ONLY, flows: shown = flows, ...props }: OpenProps
 const cta = () => screen.getByRole('button', { name: 'criar tarefa' });
 const destination = (name: string) => screen.getByRole('radio', { name });
 
+const OPTIONS: Readonly<Record<string, { statuses: string[]; labels: string[] }>> = {
+  work: { statuses: ['Backlog', 'Ready'], labels: ['bug', 'docs', 'enhancement'] },
+  docs: { statuses: ['Todo'], labels: ['bug'] },
+};
+// GET /sources/:name/create-options answers OPTIONS at once (getJson passes no init); every POST still waits for settle
+const serve = (): void => {
+  fetchMock.mockImplementation((input, init) => {
+    const name = /^\/sources\/(\w+)\/create-options$/.exec(String(input))?.[1];
+    return name === undefined || init !== undefined ? pending(input, init) : Promise.resolve(json(OPTIONS[name], 200));
+  });
+};
+const optionReads = () => fetchMock.mock.calls.filter(([, init]) => init === undefined).map(([url]) => String(url));
+const statusBox = () => screen.getByRole('combobox', { name: /status/ });
+const pick = async (user: ReturnType<typeof userEvent.setup>, box: string | RegExp, option: string) => {
+  await user.click(screen.getByRole('combobox', { name: box }));
+  await user.click(await screen.findByRole('option', { name: option }));
+};
+
 beforeEach(() => {
   setLanguage('pt'); onClose.mockClear(); onOpenTask.mockClear(); vi.mocked(toast).mockClear(); vi.mocked(toast.info).mockClear();
   fetchMock.mockClear(); fetchMock.mockImplementation(pending);
@@ -187,4 +205,71 @@ test('switching destination keeps every field, and the CTA follows it (#772)', a
   expect(screen.getByLabelText('título')).toHaveValue('Fix login');
   expect(screen.getByLabelText('descrição')).toHaveValue('steps');
   expect(cta()).toBeEnabled(); // the workspace it opened in is still picked
+});
+
+test('hive reads no create options; issue no GitHub reads its repository\'s once, back and forth included (#772)', async () => {
+  const user = userEvent.setup();
+  serve();
+  open({ title: 'Fix', workspace: 'hive', targets: TARGETS });
+  expect(optionReads()).toEqual([]);
+  await user.click(destination('issue no GitHub'));
+  await waitFor(() => expect(statusBox()).toHaveTextContent('Backlog'));
+  await user.click(destination('hive'));
+  await user.click(destination('issue no GitHub'));
+  expect(statusBox()).toHaveTextContent('Backlog');
+  expect(optionReads()).toEqual(['/sources/work/create-options']);
+});
+
+test('opened with a source, its repository comes picked (#772)', () => {
+  open({ title: 'Fix', source: 'docs', targets: TARGETS });
+  expect(screen.getByRole('combobox', { name: 'repositório' })).toHaveTextContent('acme/docs');
+});
+
+test('each repository picked is read once, its status starts on its first option, and a source picked again starts over (#772)', async () => {
+  const user = userEvent.setup();
+  serve();
+  open({ title: 'Fix', workspace: 'site', targets: TARGETS });
+  await waitFor(() => expect(statusBox()).toHaveTextContent('Backlog'));
+  await pick(user, /status/, 'Ready');
+  await pick(user, 'repositório', 'acme/docs');
+  await waitFor(() => expect(statusBox()).toHaveTextContent('Todo'));
+  await pick(user, 'repositório', 'acme/app');
+  expect(statusBox()).toHaveTextContent('Backlog');
+  expect(optionReads()).toEqual(['/sources/work/create-options', '/sources/docs/create-options']);
+});
+
+test('while the options load, status and labels are disabled and read carregando…; a failure shows its retry line, not the server\'s words, and criar issue waits (#772)', async () => {
+  const user = userEvent.setup();
+  let answer: (res: Response) => void = () => undefined;
+  fetchMock.mockImplementation(() => new Promise<Response>((resolve) => { answer = resolve; }));
+  open({ title: 'Fix', workspace: 'site', targets: TARGETS });
+  expect(statusBox()).toBeDisabled();
+  expect(statusBox()).toHaveTextContent('carregando…');
+  expect(screen.getByRole('button', { name: 'carregando…' })).toBeDisabled();
+  answer(json({ error: 'Bad credentials' }, 502));
+  expect(await screen.findByText(/não deu para ler os status e as labels de acme\/app\./)).toBeInTheDocument();
+  expect(screen.queryByText(/Bad credentials/)).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'criar issue' })).toBeDisabled();
+  serve();
+  await user.click(screen.getByRole('button', { name: 'tentar de novo' }));
+  await waitFor(() => expect(statusBox()).toHaveTextContent('Backlog'));
+  expect(screen.getByRole('button', { name: 'criar issue' })).toBeEnabled();
+});
+
+test('a label picked becomes a chip, + label leaves out what was picked, a new repository drops the labels it lacks, and × removes one (#772)', async () => {
+  const user = userEvent.setup();
+  serve();
+  open({ title: 'Fix', workspace: 'site', targets: TARGETS });
+  for (const label of ['docs', 'bug']) {
+    await user.click(await screen.findByRole('button', { name: 'label' }));
+    await user.click(await screen.findByRole('menuitem', { name: label }));
+  }
+  await user.click(screen.getByRole('button', { name: 'label' }));
+  expect(screen.queryByRole('menuitem', { name: 'docs' })).not.toBeInTheDocument();
+  expect(screen.getByRole('menuitem', { name: 'enhancement' })).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await pick(user, 'repositório', 'acme/docs');
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'tirar docs' })).not.toBeInTheDocument());
+  await user.click(screen.getByRole('button', { name: 'tirar bug' }));
+  expect(screen.queryByRole('button', { name: /^tirar / })).not.toBeInTheDocument();
 });

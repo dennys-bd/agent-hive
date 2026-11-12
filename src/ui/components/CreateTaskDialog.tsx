@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { HIVE_SOURCE } from '../../tasks';
 import type { State } from '../../types';
 import { CreateField as Field } from '@/components/CreateField';
+import { CreateIssueFields } from '@/components/CreateIssueFields';
 import { type DialogAction, DialogBase } from '@/components/DialogBase';
 import { SEGMENT } from '@/components/StartFields';
 import { Input } from '@/components/ui/input';
@@ -120,8 +121,9 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
   const hint = picked.hinted && isGithub && opened !== undefined ? t('create.hinted', { workspace: opened }) : undefined;
   // an edit after a refusal answers it: the old message would describe a draft that is no longer there
   const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); set(value); };
-  // #772: the issue's CTA stays disabled until the issue fields and their post exist
-  const primary: DialogAction = isGithub ? { label: t('create.submitIssue'), onConfirm: () => undefined, disabled: true } : hiveAction(draft, setError, onOpenTask);
+  const isIssueReady = draft.title.trim() !== '' && draft.status !== undefined; // status is set once the source's options arrived (decision 6)
+  // #772: the issue's post comes with the next task; until then the CTA stays disabled
+  const primary: DialogAction = isGithub ? { label: t('create.submitIssue'), onConfirm: () => undefined, disabled: !isIssueReady } : hiveAction(draft, setError, onOpenTask);
 
   return (
     <DialogBase
@@ -136,7 +138,7 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
           <Textarea id="create-body" value={draft.body} onChange={(e) => edited(api.setBody)(e.target.value)} />
         </Field>
         <DestinationSwitch value={draft.destination} targets={targets} hint={hint} onPick={edited(api.setDestination)} />
-        {isGithub ? null : <HiveFields draft={draft} workspaces={state.workspaces} current={workspace} flows={state.flows} onWorkspace={edited(api.setWorkspace)} onStage={edited(api.setStage)} />}
+        {isGithub ? <CreateIssueFields draft={draft} sources={targets.sources} options={api.options} onRetry={api.retryOptions} onSource={edited(api.setSource)} onStatus={edited(api.setStatus)} onAddLabel={edited(api.addLabel)} onRemoveLabel={edited(api.removeLabel)} /> : <HiveFields draft={draft} workspaces={state.workspaces} current={workspace} flows={state.flows} onWorkspace={edited(api.setWorkspace)} onStage={edited(api.setStage)} />}
       </div>
     </DialogBase>
   );
