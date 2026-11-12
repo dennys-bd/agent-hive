@@ -190,7 +190,8 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
 }
 
 export const refuse = (res: Response, refusal: Refusal): void => {
-  res.status(refusal.status).json({ error: refusal.message });
+  // #767: a failed create that left an issue says which, so the client does not retry it into a second one
+  res.status(refusal.status).json({ error: refusal.message, ...(refusal.issue === undefined ? {} : { issue: refusal.issue }) });
 };
 
 /** The task's workspace, or the route's answer when it has none (#179): 409 when the name it holds is gone, 400 when no rule answers one. */
