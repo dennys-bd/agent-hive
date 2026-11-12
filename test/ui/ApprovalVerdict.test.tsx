@@ -107,4 +107,8 @@ test('switching the box between two tasks awaiting approval, back and forth, sho
     expect(within(status).getByText(evidence)).toBeInTheDocument();
     expect(within(status).queryAllByText(/^evidence of/)).toHaveLength(1);
   }
+  // A new stage end of the same task: its since changes, the box still holds one verdict
+  const later = awaiting({ since: '2026-11-06T12:00:00.000Z', verdict: 'spike' });
+  rerender(<StatusBox task={bareTask(later)} state={movedWork<State>({ ...both, tasks: [later, bareTask(two)] })} isActivity={false} />);
+  expect(within(screen.getByRole('region', { name: 'aguardando aprovação' })).getAllByText('veredito')).toHaveLength(1);
 });
