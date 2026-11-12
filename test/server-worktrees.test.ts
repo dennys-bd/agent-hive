@@ -1,15 +1,17 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { createServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
 import { worktreePath } from '../src/worktree.js';
-import type { Task, Exec, SettingsBody } from '../src/types.js';
+import type { Task, Exec, SettingsBody, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { savedTasks, type WithWork } from './fixtures/work.js';
+import { tempDir } from './temp-dir.js';
 
 // GET /activities/worktrees (#586) over a Comb with no source and no worker: its tasks are local ones saved in state.json before the first save.
 // git is a fake that answers the merge-base, the commit count and the status, fails in the worktree `broken` names, and records every call.
@@ -26,6 +28,19 @@ interface Rows { base: string; repo: string; calls: string[][] }
 const postJson = (url: string, body?: unknown): Promise<Response> =>
   hiveFetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body ?? {}) });
 const get = (f: Rows): Promise<Response> => hiveFetch(`${f.base}/activities/worktrees`, { headers: { 'x-hive-ui': '1' } });
+
+const settingsBody = (repo: string): SettingsBody => ({ prefix: 'HIVE', workspaces: workspacesAt(repo), sources: [], flows: bodyFlows(LOCAL_STAGES), onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [] });
+
+// The server over `home` with `exec`, its settings saved, and git's calls of the save cleared
+async function serve(t: TestContext, home: string, repo: string, exec: Exec, calls: string[][]): Promise<string> {
+  const server = createServer({ secret: SECRET, home, exec });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${port}`;
+  assert.equal((await postJson(`${base}/settings`, settingsBody(repo))).status, 200);
+  calls.length = 0; // whatever the save ran is not the route's
+  return base;
+}
 
 // Every task with a worktree still on disk gets its directory: the post-poll check marks a missing one gone (#208).
 async function startRows(t: TestContext, tasks: (repo: string) => WithWork[], brokenSlug?: string, onCall?: (args: string[]) => Promise<void>): Promise<Rows> {
@@ -44,14 +59,7 @@ async function startRows(t: TestContext, tasks: (repo: string) => WithWork[], br
     if (args.includes('status')) return { stdout: STATUS };
     return { stdout: '' };
   };
-  const server = createServer({ secret: SECRET, home, exec });
-  const port = await server.listen(0);
-  t.after(() => server.close());
-  const base = `http://127.0.0.1:${port}`;
-  const body: SettingsBody = { prefix: 'HIVE', workspaces: workspacesAt(repo), sources: [], flows: bodyFlows(LOCAL_STAGES), onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [] };
-  assert.equal((await postJson(`${base}/settings`, body)).status, 200);
-  calls.length = 0; // whatever the save ran is not the route's
-  return { base, repo, calls };
+  return { base: await serve(t, home, repo, exec, calls), repo, calls };
 }
 
 test('GET /activities/worktrees answers a task with a worktree on disk with its changed files and its commits ahead of the diff\'s base, running git in the worktree the slug names; a task with none answers no row and runs no git (#586)', async (t) => {
@@ -105,4 +113,72 @@ test('GET /activities/worktrees reads at most four tasks at once, so many activi
   const res = await get(f);
   assert.equal(((await res.json()) as unknown[]).length, 6);
   assert.equal(most, 4);
+});
+
+// #747: GET /worktrees over the configured `hive`, whose repo lists one worktree no task owns, and task 7 stopped in `gone`, a workspace no
+// longer in Settings, whose repo is a folder of its own (or, with sameRepo, the configured repo itself). listFails fails only the listing of
+// the rows, not strandedRepo's check; liveOwner gives the same folder to task 8 of `hive` too (sameRepo only).
+const GONE_SLUG = 'hive-7-task';
+const ORPHAN_SLUG = 'hive-5-orphan';
+async function startGone(t: TestContext, { listFails = false, sameRepo = false, liveOwner = false } = {}): Promise<{ base: string; repo: string; gone: string }> {
+  const { home, repo } = await tempHive(t);
+  const gone = sameRepo ? repo : await tempDir(t, 'gone-');
+  await mkdir(join(gone, '.git'), { recursive: true });
+  const worktree = worktreePath(gone, GONE_SLUG);
+  await mkdir(worktree, { recursive: true });
+  await saveState(home, savedTasks({ ...initialState(0), localCount: 7 }, [task(7, { workspace: 'gone', worktree, stopped: true }), ...(liveOwner ? [task(8, { worktree, stopped: true })] : [])], () => GONE_SLUG));
+  const goneListing = `worktree ${worktree}\nHEAD 2\n`;
+  const listings: Record<string, string> = sameRepo
+    ? { [repo]: `worktree ${repo}\nHEAD 1\n\nworktree ${worktreePath(repo, ORPHAN_SLUG)}\nHEAD 2\n\n${goneListing}` }
+    : { [repo]: `worktree ${repo}\nHEAD 1\n\nworktree ${worktreePath(repo, ORPHAN_SLUG)}\nHEAD 2\n`, [gone]: `worktree ${gone}\nHEAD 1\n\n${goneListing}` };
+  const calls: string[][] = [];
+  const exec: Exec = async (_file, args) => {
+    calls.push(args);
+    const isListing = args.includes('worktree') && args.includes('list');
+    if (isListing && listFails && args[1] === gone && !args.includes('core.fsmonitor=false')) throw Object.assign(new Error('Command failed: git'), { stderr: 'fatal: bad object\n' });
+    return { stdout: isListing ? (listings[args[1] ?? ''] ?? '') : '' };
+  };
+  return { base: await serve(t, home, repo, exec, calls), repo, gone };
+}
+const worktreesOf = async (base: string): Promise<[number, WorktreeRow[]]> => {
+  const res = await hiveFetch(`${base}/worktrees`, { headers: { 'x-hive-ui': '1' } });
+  return [res.status, (await res.json()) as WorktreeRow[]];
+};
+
+test('GET /worktrees lists a removed workspace\'s task worktree under its name with its task and workspaceGone, after the configured workspaces\' rows (#747)', async (t) => {
+  const f = await startGone(t);
+  const [status, rows] = await worktreesOf(f.base);
+  assert.equal(status, 200);
+  assert.deepEqual(rows.map((r) => [r.workspace, r.slug, r.orphan, r.task?.id, r.workspaceGone]), [
+    ['hive', ORPHAN_SLUG, 'noTask', undefined, undefined],
+    ['gone', GONE_SLUG, undefined, 'local:7', true],
+  ]);
+  assert.equal(rows[1]?.path, worktreePath(f.gone, GONE_SLUG));
+});
+
+test('GET /worktrees still answers the configured rows when a removed workspace\'s listing fails, without its row (#747)', async (t) => {
+  const f = await startGone(t, { listFails: true });
+  const [status, rows] = await worktreesOf(f.base);
+  assert.equal(status, 200);
+  assert.deepEqual(rows.map((r) => [r.workspace, r.slug]), [['hive', ORPHAN_SLUG]]);
+});
+
+test('GET /worktrees lists a stranded worktree once, under the removed workspace, when a configured workspace shares its repo (#747)', async (t) => {
+  const f = await startGone(t, { sameRepo: true });
+  const [status, rows] = await worktreesOf(f.base);
+  assert.equal(status, 200);
+  assert.deepEqual(rows.map((r) => [r.workspace, r.slug, r.orphan, r.workspaceGone]), [
+    ['hive', ORPHAN_SLUG, 'noTask', undefined],
+    ['gone', GONE_SLUG, undefined, true],
+  ]);
+});
+
+test('GET /worktrees keeps a configured task\'s row and drops the stranded one when both name the same folder (#747)', async (t) => {
+  const f = await startGone(t, { sameRepo: true, liveOwner: true });
+  const [status, rows] = await worktreesOf(f.base);
+  assert.equal(status, 200);
+  assert.deepEqual(rows.map((r) => [r.workspace, r.slug, r.orphan, r.task?.id, r.workspaceGone]), [
+    ['hive', ORPHAN_SLUG, 'noTask', undefined, undefined],
+    ['hive', GONE_SLUG, undefined, 'local:8', undefined],
+  ]);
 });

@@ -1703,6 +1703,7 @@ export interface WorktreeRow {
   task?: { id: string; activityId: string; title: string; error?: string; removable: boolean }; // the owning task and its live activity, what its removal posts to (#629); removable = canDeleteActivity(task, workers)
   orphan?: 'noTask' | 'deleteActivityFailed' | 'kept'; // kept (#861): a task activity that outlived its tasks, kept while its worktree exists
   nested: { path: string; uncommitted: number }[]; // #653: the nested worktrees present in this one; [] = none
+  workspaceGone?: true; // #747: its workspace left the Comb; the row's task removes it through its own route
 }
 
 /** Why the holdings' activity is not removable (#750): delete activity's own blockers, and local: it runs in the checkout. */

@@ -22,8 +22,12 @@ interface Outcome { removed: string[]; refused: { slug: string; reason: string }
 const removalUrl = (row: WorktreeRow): string =>
   row.task ? activityDeletionUrl(row.task.activityId) : `/worktrees/${encodeURIComponent(row.workspace)}/${encodeURIComponent(row.slug)}/remove`;
 
-/** What `apagar todos` posts: every noTask or kept row, and a deleteActivityFailed row whose task allows the removal (canDeleteActivity). */
-const isCleanable = (row: WorktreeRow): boolean => row.orphan === 'noTask' || row.orphan === 'kept' || (row.orphan === 'deleteActivityFailed' && row.task?.removable === true);
+/** What the orphans filter, the counts and the red border take (#747): an orphan, or a task's worktree whose workspace left Settings. */
+const isOrphan = (row: WorktreeRow): boolean => row.orphan !== undefined || row.workspaceGone === true;
+
+/** What `apagar todos` posts: every noTask or kept row, and a deleteActivityFailed or removed workspace's row whose task allows the removal (canDeleteActivity). */
+const isCleanable = (row: WorktreeRow): boolean => row.orphan === 'noTask' || row.orphan === 'kept'
+  || ((row.orphan === 'deleteActivityFailed' || row.workspaceGone === true) && row.task?.removable === true);
 
 const workspacesOf = (rows: WorktreeRow[]): string[] => [...new Set(rows.map((r) => r.workspace))]; // #179: in the order the server lists them
 
@@ -68,8 +72,13 @@ function OrphanStatus({ label, title }: { label: string; title?: string }) {
   );
 }
 
+// #747: a removed workspace's row, with its delete activity failure when that also holds
+const goneLabel = (row: WorktreeRow): string =>
+  [t('worktrees.workspaceGone'), ...(row.orphan === 'deleteActivityFailed' ? [t('worktrees.deleteActivityFailed')] : []), ...nestedParts(row)].join(' · ');
+
 // An active row's stage, its most urgent run and an open session, read from the State the page already holds; nothing when it has none yet.
 function RowStatus({ row, state }: { row: WorktreeRow; state?: Slice }) {
+  if (row.workspaceGone) return <OrphanStatus label={goneLabel(row)} title={row.task?.error === undefined ? undefined : taskError(row.task.error)} />;
   if (row.orphan === 'kept') return <OrphanStatus label={[t('worktrees.kept'), ...nestedParts(row)].join(' · ')} />; // #861
   if (row.orphan === 'noTask') return <OrphanStatus label={[t('worktrees.orphan'), ...nestedParts(row)].join(' · ')} />;
   if (row.orphan === 'deleteActivityFailed') return <OrphanStatus label={[t('worktrees.deleteActivityFailed'), ...nestedParts(row)].join(' · ')} title={row.task?.error === undefined ? undefined : taskError(row.task.error)} />;
@@ -95,7 +104,7 @@ function WorktreeItem({ row, state, onDone }: { row: WorktreeRow; state?: Slice;
   // an orphan shows what git lists there: its branch, or its folder when detached
   const title = task ? task.title : (row.branch ?? row.slug);
   return (
-    <li className={`${ROW} ${row.orphan ? 'border-l-destructive' : 'border-l-transparent'}`}>
+    <li className={`${ROW} ${isOrphan(row) ? 'border-l-destructive' : 'border-l-transparent'}`}>
       <span className="truncate text-muted-foreground text-xs">{task?.id ?? '—'}</span>
       {/* capped so a long title leaves the status and the × where they are; the full text stays on hover (#322) */}
       <span className={`min-w-0 truncate text-sm ${task ? 'font-medium' : 'font-mono'}`} title={title}>{title}</span>
@@ -106,11 +115,13 @@ function WorktreeItem({ row, state, onDone }: { row: WorktreeRow; state?: Slice;
 }
 
 function WorkspaceRows({ workspace, all, rows, state, onDone }: { workspace: string; all: WorktreeRow[]; rows: WorktreeRow[]; state?: Slice; onDone(): void }) {
-  const orphans = all.filter((r) => r.orphan !== undefined).length;
+  const orphans = all.filter(isOrphan).length;
+  const isGone = all.some((r) => r.workspaceGone === true);
   return (
     <section aria-label={workspace}>
       <div className="flex items-baseline gap-2 border-b bg-muted/40 px-5 py-2">
         <span className="font-medium text-xs">{workspace}</span>
+        {isGone && <OrphanStatus label={t('worktrees.group.workspaceGone')} />}
         <span className="text-muted-foreground text-xs">
           {`${tPlural('worktrees.count', all.length, { n: all.length })} · ${tPlural('worktrees.orphanCount', orphans, { n: orphans })}`}
         </span>
@@ -150,7 +161,7 @@ export function WorktreesTab({ state }: { state?: Slice }) {
   const [filter, setFilter] = useState<Filter>('all');
   const [outcome, setOutcome] = useState<Outcome>();
   const all = rows ?? [];
-  const orphans = all.filter((r) => r.orphan !== undefined);
+  const orphans = all.filter(isOrphan);
   const shown = filter === 'all' ? all : orphans;
   const cleanable = orphans.filter(isCleanable);
   const reload = (): void => { setOutcome(undefined); void load(); };
