@@ -1,4 +1,4 @@
-import { type ReactNode, useId } from 'react';
+import { type ReactNode, useId, useRef } from 'react';
 import { toast } from 'sonner';
 import { EnvEditor } from '@/components/settings/EnvEditor';
 import { MemorySection } from '@/components/settings/MemorySection';
@@ -141,6 +141,9 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
 /** Settings › workspaces (#179, #510, #511): one card per workspace, at least one, each with a colour (#78), a name, a folder, its worktree setup (#299), teardown (#654),
  * its env (#348) and its memory (#797), whose total limit the memory dialog saves (#115); `+ workspace` under them. The server checks each folder is a repo's top level and parses each setup. */
 export function WorkspacesEditor({ workspaces, savedNames, state, onChange, onCapSaved }: WorkspacesEditorProps) {
+  // the removal answers after an async holdings read (#751): it filters the rows as they are then, never the ones of the click's render
+  const latest = useRef(workspaces);
+  latest.current = workspaces;
   const update = (id: string, patch: Partial<WorkspaceDraft>): void => onChange(workspaces.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   // a picked folder also names a row whose name is still empty, after the folder
   const pick = (row: WorkspaceDraft) => (path: string): void => update(row.id, { path, ...(row.name.trim() === '' ? { name: workspaceNameFor(path) } : {}) });
@@ -149,7 +152,7 @@ export function WorkspacesEditor({ workspaces, savedNames, state, onChange, onCa
       {workspaces.map((row, i) => (
         <WorkspaceCard
           key={row.id} row={row} n={i + 1} canRemove={workspaces.length > 1} saved={savedNames.includes(row.name.trim())} state={state} onChange={(patch) => update(row.id, patch)} onPick={pick(row)} onCapSaved={(cap) => onCapSaved(row.name.trim(), cap)}
-          onRemove={() => onChange(workspaces.filter((p) => p.id !== row.id))}
+          onRemove={() => onChange(latest.current.filter((p) => p.id !== row.id))}
         />
       ))}
     </>

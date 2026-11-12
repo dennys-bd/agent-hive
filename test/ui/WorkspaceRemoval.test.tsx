@@ -237,3 +237,25 @@ test('a running worker: the status line shows, the rows stay listed, and neither
   expect(d.queryByText(t('settings.workspaces.removal.lead.actions'))).not.toBeInTheDocument();
   for (const key of ['settings.workspaces.removal.cleanUp', 'settings.workspaces.removal.removeAnyway'] as const) expect(d.queryByRole('button', { name: t(key) })).not.toBeInTheDocument();
 });
+
+test("a task's worktree whose activity is not listed is shown with the orphans and deleted through its task's route", async () => {
+  const kept: WorktreeRow = { ...orphan('core-77-kept'), orphan: 'kept', task: { id: 'core-77', activityId: 'a-core-77', title: 'Title core-77', removable: true } };
+  holdings = { ...NONE, worktrees: [kept] };
+  const user = await OPEN();
+  expect(dialog().getByText('core-77-kept')).toBeInTheDocument();
+  await user.click(button('settings.workspaces.removal.cleanUp'));
+  await waitFor(() => expect(hasCard('hive')).toBe(false));
+  expect(posts()).toEqual([[route('core-77'), undefined]]);
+});
+
+test("Enter on a refused row's force button opens that row's force confirm, never the dialog's remove anyway", async () => {
+  holdings = { ...NONE, activities: [GO1] };
+  answers[route('core-91')] = { removed: false, refused: { reason: 'unexpected' } };
+  const user = await OPEN();
+  await user.click(button('settings.workspaces.removal.cleanUp'));
+  await dialog().findByRole('alert');
+  dialog().getByRole('button', { name: t('task.force') }).focus();
+  await user.keyboard('{Enter}');
+  expect(await screen.findByText(t('confirm.title.forceDelete'))).toBeInTheDocument();
+  expect(hasCard('hive')).toBe(true);
+});

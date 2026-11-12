@@ -53,7 +53,7 @@ function Status({ state, idle, onForce }: StatusProps) {
     case 'queued': return t(`${K}.row.queued`);
     case 'deleting': return <><Spinner />{t(`${K}.row.deleting`)}</>;
     case 'deleted': return <><CheckIcon className="size-3.5" />{t(`${K}.row.deleted`)}</>;
-    case 'refused': return <Button type="button" variant="outline" size="xs" onClick={onForce}>{t('task.force')}</Button>;
+    case 'refused': return <Button type="button" variant="outline" size="xs" onClick={onForce} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onForce(); } }}>{t('task.force')}</Button>;
   }
 }
 
@@ -129,6 +129,7 @@ function useCleanup(holdings: WorkspaceHoldings, onDone: () => void) {
   };
   // true when no refused row is left
   const force = async (target: CleanTarget): Promise<boolean> => {
+    // states is current here: the force confirm is modal, so one force runs at a time
     const next = { ...states, [target.key]: await runForce(target.url) };
     setStates(next);
     return !hasRefused(next);
@@ -156,7 +157,7 @@ export function WorkspaceRemoval({ name, holdings, open, onOpenChange, onRemove 
       <DialogBase
         title={t(`${K}.title`, { name })} size="md" open={open} onOpenChange={(next) => { if (next || !isCleaning) onOpenChange(next); }}
         context={<AlertDialogDescription className="text-[13px]">{t(`${K}.lead`)}{!holdings.running && ` ${t(`${K}.lead.actions`)}`}</AlertDialogDescription>}
-        closeButton={!isCleaning} primary={primary} secondary={secondary}
+        closeButton={!isCleaning} isCancelLocked={isCleaning} primary={primary} secondary={secondary}
       >
         <div className="flex flex-col gap-4">
           {holdings.running && (

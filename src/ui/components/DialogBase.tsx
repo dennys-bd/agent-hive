@@ -16,7 +16,7 @@ export interface DialogBaseProps {
   title: ReactNode; children: ReactNode;
   primary?: DialogAction; // none: a read-only dialog, the cancel alone (named by cancelLabel)
   context?: ReactNode; secondary?: DialogAction; tertiary?: DialogAction; error?: ReactNode; footerNote?: ReactNode;
-  cancelLabel?: string; closeButton?: boolean; initialFocus?: 'close' | 'primary' | 'none'; size?: 'default' | 'sm' | 'md' | 'wide';
+  cancelLabel?: string; isCancelLocked?: boolean /* the footer's cancel disabled, for a run nothing may interrupt (#751) */; closeButton?: boolean; initialFocus?: 'close' | 'primary' | 'none'; size?: 'default' | 'sm' | 'md' | 'wide';
   primaryKey?: 'enter' | 'mod'; // mod: ⌘/Ctrl+Enter runs the primary and a bare Enter runs nothing, for a dialog full of fields
   isOverlayDismissable?: boolean; // a click on the overlay cancels, as Esc does
   trigger?: ReactElement; open?: boolean; onOpenChange?(open: boolean): void;
@@ -82,10 +82,10 @@ function DialogHeader({ title, context, closeLabel, closeRef }: HeaderProps) {
   );
 }
 
-interface FooterProps { cancelLabel: string; note?: ReactNode; actions: Record<Slot, DialogAction | undefined>; isBusy: boolean; primaryRef: Ref<HTMLButtonElement>; run(action: DialogAction): void }
+interface FooterProps { cancelLabel: string; isCancelLocked?: boolean; note?: ReactNode; actions: Record<Slot, DialogAction | undefined>; isBusy: boolean; primaryRef: Ref<HTMLButtonElement>; run(action: DialogAction): void }
 
 // cancel, then the tertiary, the secondary and the primary at the right edge; the primary is red only when it destroys (#461)
-function DialogFooter({ cancelLabel, note, actions, isBusy, primaryRef, run }: FooterProps) {
+function DialogFooter({ cancelLabel, isCancelLocked, note, actions, isBusy, primaryRef, run }: FooterProps) {
   const button = (slot: Slot): ReactNode => {
     const action = actions[slot];
     if (action === undefined) return null;
@@ -103,7 +103,7 @@ function DialogFooter({ cancelLabel, note, actions, isBusy, primaryRef, run }: F
   return (
     <AlertDialogFooter>
       {note !== undefined && <span className="mr-auto text-muted-foreground text-xs">{note}</span>}
-      <AlertDialogCancel size="sm" className={FOOTER_BUTTON} disabled={isBusy}>{cancelLabel}</AlertDialogCancel>
+      <AlertDialogCancel size="sm" className={FOOTER_BUTTON} disabled={isCancelLocked}>{cancelLabel}</AlertDialogCancel>
       {button('tertiary')}{button('secondary')}{button('primary')}
     </AlertDialogFooter>
   );
@@ -113,7 +113,7 @@ function DialogFooter({ cancelLabel, note, actions, isBusy, primaryRef, run }: F
  * optional context line, the body, and lowercase buttons. Enter runs the primary wherever the focus is, Esc cancels, ⌘/Ctrl+Enter the
  * secondary, ⌥+Enter the tertiary. */
 export function DialogBase({
-  title, children, primary, context, secondary, tertiary, error, footerNote, cancelLabel = t('settings.cancel'), closeButton = true,
+  title, children, primary, context, secondary, tertiary, error, footerNote, cancelLabel = t('settings.cancel'), isCancelLocked, closeButton = true,
   initialFocus = 'close', size = 'default', primaryKey = 'enter', isOverlayDismissable = false, trigger, open, onOpenChange,
 }: DialogBaseProps) {
   const state = useDialogState(open, onOpenChange);
@@ -144,7 +144,7 @@ export function DialogBase({
         <DialogHeader title={title} context={context} closeLabel={closeButton ? cancelLabel : undefined} closeRef={closeRef} />
         {size === 'wide' || size === 'md' ? <div className="-mx-6 min-h-0 overflow-y-auto px-6">{children}</div> : children}
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
-        <DialogFooter cancelLabel={cancelLabel} note={footerNote} actions={actions} isBusy={state.isBusy} primaryRef={primaryRef} run={state.run} />
+        <DialogFooter cancelLabel={cancelLabel} isCancelLocked={isCancelLocked} note={footerNote} actions={actions} isBusy={state.isBusy} primaryRef={primaryRef} run={state.run} />
       </AlertDialogContent>
     </AlertDialog>
   );

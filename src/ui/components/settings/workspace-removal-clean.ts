@@ -12,8 +12,12 @@ export type RowState = { kind: 'queued' } | { kind: 'deleting' } | { kind: 'dele
 export const activityKey = (activityId: string): string => `activity:${activityId}`;
 export const worktreeKey = (slug: string): string => `worktree:${slug}`;
 
-/** The worktrees no task owns: a task's worktree goes with its activity. */
-export const orphanWorktrees = (holdings: WorkspaceHoldings): WorktreeRow[] => holdings.worktrees.filter((row) => row.task === undefined);
+/** The worktrees no listed activity covers: no task owns them, or their task's activity is not among the workspace's (a kept one, the server
+ * cleans through its worktree row). A worktree whose activity is listed goes with that activity, never posted twice. */
+export const orphanWorktrees = (holdings: WorkspaceHoldings): WorktreeRow[] => {
+  const listed = new Set(holdings.activities.map((a) => a.activityId));
+  return holdings.worktrees.filter((row) => row.task === undefined || !listed.has(row.task.activityId));
+};
 
 /** What clean up posts, in order: each removable activity, then each orphan worktree. A row that is not removable is never in it. */
 export function cleanTargets(holdings: WorkspaceHoldings): CleanTarget[] {
