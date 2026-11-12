@@ -145,7 +145,8 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
   const hint = picked.hinted && isGithub && opened !== undefined ? t('create.hinted', { workspace: opened }) : undefined;
   // an edit after a refusal answers it: the old message would describe a draft that is no longer there
   const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); issue.clear(); set(value); };
-  const isIssueReady = draft.title.trim() !== '' && draft.status !== undefined; // status is set once the source's options arrived (decision 6)
+  // status is set once the source's options arrived (decision 6); a repository a config push took away would make the create a silent no-op
+  const isIssueReady = draft.title.trim() !== '' && draft.status !== undefined && repository !== undefined;
   const primary: DialogAction = isGithub ? issueAction(issue, isIssueReady) : hiveAction(draft, setError, onOpenTask);
 
   return (
