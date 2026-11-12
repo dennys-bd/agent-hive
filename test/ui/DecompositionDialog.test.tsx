@@ -105,6 +105,15 @@ test('shows where the file is pushed, repository, branch and path, under the rep
   expect(create()).toBeEnabled();
 });
 
+test('a file git ignores stays local: the row says so with its path, muted, no delivery line, and criar issues stays enabled (#741)', async () => {
+  preview = { ...PREVIEW, delivery: { repository: 'acme/docs', branch: 'main', path: 'docs/hive/specs/site-decomposition.md', local: true } };
+  render(<DecompositionDialog activityId="a-I1" onClose={vi.fn()} />);
+  expect(await screen.findByText('o arquivo fica local · docs/hive/specs/site-decomposition.md')).toHaveClass('text-muted-foreground');
+  expect(screen.queryByText('entrega')).not.toBeInTheDocument();
+  expect(screen.queryByText('acme/docs · main · docs/hive/specs/site-decomposition.md')).not.toBeInTheDocument();
+  expect(create()).toBeEnabled();
+});
+
 test('a delivery that cannot go says why and keeps criar issues disabled (#936)', async () => {
   const reason = 'the decomposition file\'s checkout is on acme/docs\'s default branch (main): the Hive never pushes it';
   preview = { ...PREVIEW, delivery: { repository: 'acme/docs', branch: 'main', path: 'a.md' }, deliveryRefusal: reason };

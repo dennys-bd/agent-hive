@@ -171,6 +171,7 @@ const en = {
   'decomposition.title': 'Create issues',
   'decomposition.repository': 'repository',
   'decomposition.delivery': 'delivery', // #936: where the file is pushed
+  'decomposition.local': 'the file stays local', // #741: git ignores the file, so no PR is opened
   'decomposition.noRepository': 'The workspace has no GitHub origin: there is nowhere to create the issues.',
   'decomposition.noSource': 'No GitHub source to create the issues in.',
   'decomposition.source': 'source',
@@ -3309,6 +3310,7 @@ const pt: Record<MessageKey, string> = {
   'decomposition.title': 'Criar issues',
   'decomposition.repository': 'repositório',
   'decomposition.delivery': 'entrega',
+  'decomposition.local': 'o arquivo fica local',
   'decomposition.noRepository': 'O workspace não tem origin no GitHub: não há onde criar as issues.',
   'decomposition.noSource': 'Nenhuma fonte GitHub para criar as issues.',
   'decomposition.source': 'source',
