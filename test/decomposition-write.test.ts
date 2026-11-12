@@ -93,7 +93,7 @@ test('a GitHub goal: its design as a comment, then every issue in file order wit
   assert.deepEqual(recorded, [['design', 7], ['1', 101], ['1.1', 102], ['1.2', 103], ['2', 104], ['2.1', 105], ['2.2', 106]], 'done is the route\'s');
   assert.deepEqual(varsOf(calls, 'issueId'), [{ owner: 'acme', name: 'site', number: 7 }]);
   assert.deepEqual(varsOf(calls, 'comment'), [{ id: 'I7', body: designComment(d) }]);
-  assert.deepEqual(varsOf(calls, 'create')[2], { repositoryId: 'R1', title: 'Contact API', body: issueBody(d.nodes[2], { parent: 101, design: `${ADDRESS}#1-backend` }), labelIds: [] });
+  assert.deepEqual(varsOf(calls, 'create')[2], { repositoryId: 'R1', title: 'Contact API', body: issueBody(d.nodes[2], { parent: '#101', design: `${ADDRESS}#1-backend` }), labelIds: [] });
   assert.deepEqual(parentsOf(calls), ['7', '101', '101', '7', '104', '104']);
   assert.deepEqual(varsOf(calls, 'project')[0], { projectId: 'PV1', contentId: 'I101' });
   assert.deepEqual(varsOf(calls, 'status')[0], { projectId: 'PV1', itemId: 'PI101', fieldId: 'F1', singleSelectOptionId: 'o2' });

@@ -195,14 +195,14 @@ const sectionOf = (title: string, text: string | undefined): string[] => (text ?
 const listText = (items: string[]): string => items.map((item) => `- ${item}`).join('\n');
 const joined = (parts: string[]): string => parts.filter((p) => p !== '').join('\n\n');
 
-/** What a node's `## Decomposition` block links (#936): its parent issue's number (the goal's, or a local goal's root, for a top-level node)
- * and the address of the design of the layer above; absent for a file git ignores, which has no address on GitHub (#741). */
-export interface IssueLinks { parent: number; design?: string }
+/** What a node's `## Decomposition` block links (#936): its parent as the body names it (#783: `#<n>` from the GitHub write, the parent's
+ * display id from the hive write) and the address of the design of the layer above; absent for a file git ignores (#741). */
+export interface IssueLinks { parent: string; design?: string }
 
-// The parse knows neither the parent's number nor the file's address: a body is checked with room for both. ponytail: an address over
-// LINK_ROOM characters passes the check and is refused by GitHub on the write
+// The parse knows neither the parent nor the file's address: a body is checked with room for both, the parent as the longest #<n>. ponytail:
+// an address over LINK_ROOM characters passes the check and is refused by GitHub on the write
 const LINK_ROOM = 1024;
-export const CHECK_LINKS: IssueLinks = { parent: Number.MAX_SAFE_INTEGER, design: 'x'.repeat(LINK_ROOM) };
+export const CHECK_LINKS: IssueLinks = { parent: `#${Number.MAX_SAFE_INTEGER}`, design: 'x'.repeat(LINK_ROOM) };
 
 /** GitHub's anchor of a heading (#936): lowercased, every character but a letter, a digit, a space, `-` or `_` dropped, each space a `-`. */
 export const anchorOf = (heading: string): string => heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
@@ -224,7 +224,7 @@ function decompositionBlock(node: DecompositionNode, links: IssueLinks): string[
   const list = (label: string, items: string[]): string[] => (items.length > 0 ? [`${label}: ${items.join(', ')}`] : []);
   const openPoints = node.openPoints.length > 0 ? ['Open points:', listText(node.openPoints)] : [];
   const design = links.design === undefined ? [] : [`Design: ${links.design}`]; // #741: a file that stays local is linked by nothing
-  const lines = [`Parent: #${links.parent}`, ...design, ...list('Delivers', node.delivers), ...list('Consumes', node.consumes), ...list('Touches', node.touches), ...openPoints];
+  const lines = [`Parent: ${links.parent}`, ...design, ...list('Delivers', node.delivers), ...list('Consumes', node.consumes), ...list('Touches', node.touches), ...openPoints];
   return sectionOf('Decomposition', lines.join('\n'));
 }
 
