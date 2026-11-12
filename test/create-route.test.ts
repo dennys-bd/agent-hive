@@ -76,11 +76,17 @@ test('routeOf agrees with the poll: the same labels and Status, listed through t
   const rules = [label('bug', { entry: { flow: 'delivery', stage: 'Spec' }, workspace: 'other' }), { field: 'Status', op: 'equals' as const, value: 'Ready', set: { workspace: 'ready-ws' } }];
   const props = { ...FIXED, rules };
   const s = source({ taskProps: props, filter: [{ field: 'label', op: 'any', values: ['bug', 'plain'] }] });
-  for (const [labels, status] of [[['bug'], 'Backlog'], [['plain'], 'Backlog'], [['plain'], 'Ready'], [['bug'], 'Ready']] as const) {
+  const cited = [{ column: 'Backlog', by: 'Router' }, { column: 'Ready', by: 'Build' }];
+  const list = (labels: readonly string[], status: string) => {
     const node = itemNode(1, status, undefined, { labels: { nodes: labels.map((name) => ({ name })) }, title: 'New' });
     const { gql } = fakeGql({ items: { rateLimit: { limit: 1, remaining: 1, resetAt: 'x' }, repositoryOwner: { projectV2: { items: { pageInfo: { hasNextPage: false }, nodes: [node] } } } }, relations: {} });
-    const cited = [{ column: 'Backlog', by: 'Router' }, { column: 'Ready', by: 'Build' }];
-    const [listed] = await createGithubSource(s as Extract<SourceConfig, { type: 'github' }>, cited, gql).listItems();
+    return createGithubSource(s as Extract<SourceConfig, { type: 'github' }>, cited, gql).listItems();
+  };
+  // a label the filter leaves out: the poll lists nothing and the route is not taken, by that rule
+  assert.deepEqual(await list(['other'], 'Backlog'), []);
+  assert.deepEqual(route(draft({ labels: ['other'] }), s), { taken: false, missed: { kind: 'filter', index: 0, rule: s.filter[0] } });
+  for (const [labels, status] of [[['bug'], 'Backlog'], [['plain'], 'Backlog'], [['plain'], 'Ready'], [['bug'], 'Ready']] as const) {
+    const [listed] = await list(labels, status);
     // the server namespaces the source on the item; the bare adapter leaves it out
     const stage = entryFor(FLOWS, { ...listed, item: { ...listed.item, source: s.name } });
     const answer = route(draft({ labels: [...labels], status }), s);

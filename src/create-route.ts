@@ -53,6 +53,7 @@ export function routeOf(draft: CreateDraft, sources: readonly SourceConfig[], fl
   if (draft.status === null) return missed({ kind: 'offProject' });
   const { status } = draft;
   const facets = draftFacets(draft, source);
+  // The filter before the column, unlike the poll: a draft failing both is told the rule, which the user can act on by changing a label
   const filterMiss = failedFilter(source, facets);
   if (filterMiss !== undefined) return missed(filterMiss);
 
