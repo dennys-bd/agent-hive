@@ -70,7 +70,7 @@ export interface Refusal { status: number; message: string; issue?: { number: nu
 export interface TaskRouteDeps {
   treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
   exec: Exec; // git for the base popup (#131) and the delete-activity route (#182, #573); tests inject a fake
-  log: Pick<Logger, 'debug' | 'error' | 'info'>; // the transcripts' deletion (#236): a file already gone at debug, a failure at error; the worktree setup's steps at info (#299)
+  log: Pick<Logger, 'debug' | 'error' | 'info' | 'warn'>; // the transcripts' deletion (#236): a file already gone at debug, a failure at error; the worktree setup's steps at info (#299); a failed create's source words at warn (#772)
   /** The live runtime comes with the state: agentArgs, the branch template, the base branch and the Comb's prefix are read at
    * call time, a POST /settings may have changed them; the source is the live one. */
   requireLive(res: Response): {
@@ -508,12 +508,12 @@ function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
 
 // A task created in the Comb (#132) or on a source (#846): from the stage header's `+`, or from any local process that speaks HTTP (a Claude
 // session fed by another tool's MCP); like every dashboard POST it needs the x-hive-ui header. createTask picks the destination.
-function registerCreateRoute(app: Express, { requireLive, dispatch, poll, latest }: TaskRouteDeps): void {
+function registerCreateRoute(app: Express, { requireLive, dispatch, poll, latest, log }: TaskRouteDeps): void {
   app.post('/tasks', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
     const { config, sources } = current.runtime;
-    const created = await createTask({ state: current.state, config, sources, dispatch, poll, latest }, req.body);
+    const created = await createTask({ state: current.state, config, sources, dispatch, poll, latest, log }, req.body);
     if ('status' in created) return refuse(res, created);
     res.status(HTTP_CREATED).json(created); // itemId: what the new activity dialog starts it by
   });
