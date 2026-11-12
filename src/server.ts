@@ -1281,7 +1281,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerRunRoutes(app, taskDeps);
   registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // wake, forget (#696); the shim's register under /hooks/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
-  registerDecompositionRoutes(app, { requireLive, dispatch, exec, gql: cliGqlJson(gh), log }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702)
+  registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783)
   registerConsoleRoutes(app, { requireLive, consoleStore }); // GET /console and /console/:id (#353)
   // Settings › editor's installs and the syntax packages' files (#780); a removed server's processes stop first
   registerEditorInstallRoutes(app, { home, installer: createInstaller({ home, onState: notifyEditorInstall, beforeSwap: (t) => (t.kind === 'server' ? lsp.stopServer(t.id) : Promise.resolve()) }), stopServer: (id) => lsp.stopServer(id) });

@@ -1564,6 +1564,17 @@ export interface DecompositionPreview {
   delivery?: { repository: string; branch: string; path: string; local?: true }; // #936: where the file is pushed: its checkout's repository, branch and path in it; #741: local when git ignores it, so no PR
   deliveryRefusal?: string; // #936: why it cannot be (default branch, not .md, no checkout): the dialog disables create issues
   sources: DecompositionSource[];
+  hive?: DecompositionHive; // #783: only while comb.hiveSource is on
+  target?: string; // #783, decision 6: the target the first hive press recorded, whatever hiveSource is
+}
+
+/** The confirm dialog's hive target (#783, decomposition decision 3): what `entra em` offers and suggests (decisions 2, 3), the tasks the
+ * write creates, a GitHub goal's root task included (decision 4), preselected for a hive goal, its own delivery, local with no refusal when the
+ * file's checkout is missing or off GitHub (decision 5), and why a GitHub goal's root task cannot be created (decision 9). */
+export interface DecompositionHive {
+  entries: TaskEntry[]; entry?: TaskEntry; tasks: number; preselected?: true;
+  delivery?: { path: string; repository?: string; branch?: string; local?: true };
+  deliveryRefusal?: string; refusal?: string;
 }
 
 export type HiveEvent =

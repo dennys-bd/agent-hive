@@ -50,7 +50,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const comb: CombConfig = {
     prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }], sources: setup.sources ?? [GITHUB_ENTRY], commands: [],
     flows: mainFlows([{ name: 'spec', from: { board: ['Backlog'] }, prompt: '/hive:new-spec {url}' }, { name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }]),
-    hiveSource: true, createIn: 'hive',
+    hiveSource: false, createIn: 'hive', // #783: the GitHub target alone; the hive target is server-decomposition-hive.test.ts
   };
   const events: HiveEvent[] = [];
   const git: string[][] = [];
@@ -88,7 +88,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   app.use(express.json());
   const dispatch = async (event: HiveEvent): Promise<never[]> => { events.push(event); return []; };
   const { log, lines } = fakeLog();
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, exec, gql, log, sleep: async () => undefined });
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, latest: () => state, exec, gql, log, sleep: async () => undefined });
   registerApprovalRoutes(app, { requireLive: (() => ({ state, runtime: { config: { comb } } })) as unknown as TaskRouteDeps['requireLive'], dispatch });
   const server = app.listen(0);
   t.after(() => server.close());

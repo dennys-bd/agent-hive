@@ -3,7 +3,7 @@ import type { Express, Request, Response } from 'express';
 import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
-import { DONE_KEY, PR_KEY, decompositionPending, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
+import { DONE_KEY, PR_KEY, decompositionPending, decompositionTarget, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
 import { checkoutPreview, deliverDecomposition, type DeliveryRead, deliveryRefusal, githubDeliveryWords, readDelivery } from './decomposition-deliver.js';
 import { readRepository, writeDecomposition, type WriteOutcome, type WriteTarget } from './decomposition-write.js';
 import { resolveActivityPath } from './ide.js';
@@ -11,10 +11,12 @@ import type { Logger } from './log.js';
 import { issueOfLink } from './repos/issue-task.js';
 import { originRepository } from './repos/repositories.js';
 import { NOT_AWAITING_MESSAGE } from './server-approval.js';
+import { hivePreview } from './server-decomposition-hive.js';
 import { activityFolders, DISK, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal } from './server-tasks.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { fetchStatusField, type GithubSourceConfig } from './sources/github.js';
+import { HIVE_SOURCE } from './tasks.js';
 import type { Config, Decomposition, DecompositionPreview, DecompositionSource, Exec, Gql, HiveEvent, Item, Stage, State, Task } from './types.js';
 import { flatten } from './flows.js';
 
@@ -35,22 +37,24 @@ const NO_REPOSITORY_MESSAGE = 'o workspace não tem origin no GitHub';
 const CHOICE_MESSAGE = 'source precisa ser uma source do GitHub e column uma opção do seu Status';
 const NOT_MD_MESSAGE = 'a decomposição precisa ser um arquivo .md';
 const WRITING_MESSAGE = 'as issues desta decomposição já estão sendo criadas';
+const HIVE_TARGET_MESSAGE = 'a decomposição já começou a ser escrita no hive: continue por lá'; // #783, decision 6
 
 /** What the decomposition's routes need (#865). */
 export interface DecompositionRouteDeps {
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'> } } | undefined;
   dispatch(event: HiveEvent): Promise<unknown>; // each step's decompositionIssue, then markEpic (#556) and approve, or closeTask
+  latest(): State | undefined; // #783: the state after each hive step's dispatch, which checks the step landed
   exec: Exec; // git remote get-url origin: a local goal's repository; the file's checkout, and the delivery's status, add, commit and push (#936)
   gql: GqlJson; // gh api graphql --input -: the Hive's own login, as the issue page's writes (#757)
   log: Logger; // #702: gh's words for a write that gave up on a transient error; the dialog shows its own copy
   sleep?(ms: number): Promise<void>; // the write's retry wait (#702); absent: a real timer. Tests pass a no-op
 }
 
-type Live = NonNullable<ReturnType<DecompositionRouteDeps['requireLive']>>;
+export type Live = NonNullable<ReturnType<DecompositionRouteDeps['requireLive']>>;
 
 // The goal as both routes read it: its task and result, its parsed file and the file's real path (#936: what its checkout is found from),
 // where its issues go, and a GitHub goal's issue number
-interface Goal { task: Task; result: Record<string, unknown>; parsed: ParsedDecomposition; file: string; repository?: string; number?: number }
+export interface Goal { task: Task; result: Record<string, unknown>; parsed: ParsedDecomposition; file: string; repository?: string; number?: number }
 
 const TRANSIENT_CODE = 'transient'; // #702: the dialog tells this refusal apart (parseJson attaches code, #797)
 
@@ -142,13 +146,17 @@ function preview(goal: Goal, sources: DecompositionSource[], delivery: Pick<Deco
   };
 }
 
-// What a write needs of the goal, or why it cannot run
-function writable(goal: Goal): { decomposition: Decomposition; repository: string } | Refusal {
+// What every write needs of the goal (#865): a decomposition not written yet, in a file with no problem
+function pendingTree(goal: Goal): Decomposition | Refusal {
   if (!decompositionPending(goal.result)) return { status: HTTP_CONFLICT, message: WRITTEN_MESSAGE };
-  const { decomposition } = goal.parsed;
-  if (decomposition === undefined) return { status: HTTP_CONFLICT, message: PROBLEMS_MESSAGE };
-  if (goal.repository === undefined) return { status: HTTP_CONFLICT, message: NO_REPOSITORY_MESSAGE };
-  return { decomposition, repository: goal.repository };
+  return goal.parsed.decomposition ?? { status: HTTP_CONFLICT, message: PROBLEMS_MESSAGE };
+}
+
+// #783: what the GitHub target needs besides: no hive write under way, whose local numbers are no issue numbers (decision 6), and the
+// goal's repository, which only this target needs (decision 17)
+function githubRepository(goal: Goal): string | Refusal {
+  if (decompositionTarget(goal.result) === HIVE_SOURCE) return { status: HTTP_CONFLICT, message: HIVE_TARGET_MESSAGE };
+  return goal.repository ?? { status: HTTP_CONFLICT, message: NO_REPOSITORY_MESSAGE };
 }
 
 // The body's source (a GitHub source of the Comb) and column (one of its Status options), as the project's ids
@@ -167,8 +175,10 @@ async function choiceOf(config: Pick<Config, 'comb'>, gql: GqlJson, body: unknow
 async function write(deps: DecompositionRouteDeps, current: Live, activityId: string, body: unknown, res: Response): Promise<void> {
   const goal = await readGoal(deps, current, activityId);
   if ('status' in goal) return refuse(res, goal);
-  const ready = writable(goal);
-  if ('status' in ready) return refuse(res, ready);
+  const tree = pendingTree(goal);
+  if ('status' in tree) return refuse(res, tree);
+  const repository = githubRepository(goal);
+  if (typeof repository !== 'string') return refuse(res, repository);
   const project = await choiceOf(current.runtime.config, deps.gql, body);
   if ('status' in project) return refuse(res, project);
   const taskId = goal.task.item.itemId;
@@ -182,17 +192,17 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
   if (refusal !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: refusal });
   // #741: a file git ignores stays local: no Design: link points at it and nothing is committed, pushed or opened as a PR
   const shipped = delivery?.checkout.ignored === true ? undefined : delivery;
-  const issues = delivery !== undefined && delivery.checkout.repository === ready.repository ? delivery.docs : await readRepository(deps.gql, ready.repository);
+  const issues = delivery !== undefined && delivery.checkout.repository === repository ? delivery.docs : await readRepository(deps.gql, repository);
   const target: WriteTarget = {
-    repository: ready.repository, repositoryId: issues.id, project,
+    repository: repository, repositoryId: issues.id, project,
     // no address, no Design: link: a file that stays local, or a recorded pr, by when every issue is written
     ...(shipped === undefined ? {} : { address: fileAddress(shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
     ...(goal.number === undefined ? {} : { goal: goal.number }),
   };
-  const written = await writeDecomposition({ gql: deps.gql, record, sleep: deps.sleep }, ready.decomposition, target, recorded);
+  const written = await writeDecomposition({ gql: deps.gql, record, sleep: deps.sleep }, tree, target, recorded);
   if ('error' in written) return refuseWrite(deps.log, goal.task.item.id, written, res);
   const delivered = shipped === undefined ? undefined : await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
-    checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, ...githubDeliveryWords(ready.repository, written.root),
+    checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, ...githubDeliveryWords(repository, written.root),
   }, recorded);
   if (delivered !== undefined) return refuse(res, { status: HTTP_BAD_GATEWAY, message: delivered });
   await record(DONE_KEY, written.root);
@@ -216,7 +226,9 @@ export function registerDecompositionRoutes(app: Express, deps: DecompositionRou
       const recorded = recordedIssues(goal.result);
       // #783: read once, for both targets; nothing once pr is recorded
       const read = recorded[PR_KEY] === undefined ? await readDelivery(deps.exec, deps.gql, goal.file) : undefined;
-      res.json(preview(goal, await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source), deliveryPreview(read, recorded)));
+      const shown = preview(goal, await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source), deliveryPreview(read, recorded));
+      const target = decompositionTarget(goal.result); // #783: answered whatever hiveSource is, so a write under way stays locked
+      res.json({ ...shown, ...(target === undefined ? {} : { target }), ...(current.runtime.config.comb.hiveSource ? { hive: hivePreview(current.state, goal, read) } : {}) });
     } catch (err) {
       refuse(res, { status: HTTP_BAD_GATEWAY, message: errorMessage(err) });
     }
