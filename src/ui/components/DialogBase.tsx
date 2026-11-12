@@ -15,7 +15,7 @@ export interface DialogAction { label: string; onConfirm(): void | Promise<void>
 export interface DialogBaseProps {
   title: ReactNode; children: ReactNode;
   primary?: DialogAction; // none: a read-only dialog, the cancel alone (named by cancelLabel)
-  context?: ReactNode; secondary?: DialogAction; tertiary?: DialogAction; error?: string; footerNote?: ReactNode;
+  context?: ReactNode; secondary?: DialogAction; tertiary?: DialogAction; error?: ReactNode; footerNote?: ReactNode;
   cancelLabel?: string; closeButton?: boolean; initialFocus?: 'close' | 'primary' | 'none'; size?: 'default' | 'sm' | 'wide';
   primaryKey?: 'enter' | 'mod'; // mod: ⌘/Ctrl+Enter runs the primary and a bare Enter runs nothing, for a dialog full of fields
   isOverlayDismissable?: boolean; // a click on the overlay cancels, as Esc does

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -340,4 +340,54 @@ test('a notice toasts that the issue is still outside the hive, with ver no GitH
     unmount();
   }
   expect(vi.mocked(toast)).not.toHaveBeenCalled();
+});
+
+// opens under issue no GitHub, types a description, posts, and answers the POST with a refusal
+async function refused(answer: unknown, status: number) {
+  const user = userEvent.setup();
+  serve();
+  open({ title: 'Fix login', workspace: 'site', targets: TARGETS });
+  await waitFor(() => expect(statusBox()).toBeEnabled());
+  await user.type(screen.getByLabelText('descrição'), 'steps');
+  await user.click(screen.getByRole('button', { name: 'criar issue' }));
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  settle(json(answer, status));
+  await screen.findByRole('alert');
+  return user;
+}
+const FAILED = 'não deu para criar a issue em acme/app: o GitHub falhou. nada foi criado. o que você escreveu continua aqui.';
+
+test('a 502 with no issue keeps every field, says nothing was created, and tentar de novo posts the same body again (#772)', async () => {
+  const user = await refused({ error: 'Bad credentials' }, 502);
+  expect(screen.getByRole('alert')).toHaveTextContent(FAILED);
+  expect(screen.queryByText(/Bad credentials/)).not.toBeInTheDocument();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('descrição')).toHaveValue('steps');
+  await user.click(screen.getByRole('button', { name: 'tentar de novo' }));
+  await waitFor(() => expect(posts()).toHaveLength(2));
+  expect(posts()[1]).toEqual(posts()[0]);
+});
+
+test('a 502 that carries the issue links it and offers fechar, which posts nothing; an edit does not take it back (#772)', async () => {
+  const opened = vi.spyOn(window, 'open').mockImplementation(() => null);
+  const user = await refused({ error: 'not on the Project', issue: ISSUE }, 502);
+  const alert = screen.getByRole('alert');
+  expect(alert).toHaveTextContent('a issue #912 foi criada em acme/app, mas não entrou no project.');
+  await user.click(within(alert).getByRole('button', { name: 'ver no GitHub' }));
+  expect(opened).toHaveBeenCalledWith(ISSUE.url, '_blank', 'noreferrer');
+  await user.type(screen.getByLabelText('título'), '!');
+  expect(screen.getByRole('alert')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(posts()).toHaveLength(1);
+});
+
+test('a 400 shows its own inline error, not the 502\'s, and keeps criar issue; an edit clears it (#772)', async () => {
+  const user = await refused({ error: 'unknown label: bug' }, 400);
+  expect(screen.getByRole('alert')).toHaveTextContent('o GitHub recusou a issue em acme/app: uma label ou o status não existe mais. nada foi criado.');
+  expect(screen.getByRole('alert')).not.toHaveTextContent(FAILED);
+  expect(screen.queryByText(/unknown label/)).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'criar issue' })).toBeEnabled();
+  await user.type(screen.getByLabelText('título'), '!');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });

@@ -383,6 +383,9 @@ const en = {
   'create.issueOffProject': 'Off the Project, no source lists it.',
   'create.viewOnGitHub': 'view on GitHub',
   'create.close': 'close',
+  'create.issueFailed': "couldn't create the issue in {repository}: GitHub failed. nothing was created. what you wrote is still here.",
+  'create.issuePlaced': 'issue #{number} was created in {repository}, but did not enter the Project.',
+  'create.issueRefused': 'GitHub refused the issue in {repository}: a label or the status no longer exists. nothing was created.',
   'start.task': 'tasks',
   'start.taskPlaceholder': 'search or create a task…',
   'start.taskHint': 'every activity starts from at least one task. if it does not exist, create it here.', // #893: under Nova atividade's task field
@@ -3572,6 +3575,9 @@ const pt: Record<MessageKey, string> = {
   'create.issueOffProject': 'Fora do project, nenhuma source a lista.',
   'create.viewOnGitHub': 'ver no GitHub',
   'create.close': 'fechar',
+  'create.issueFailed': 'não deu para criar a issue em {repository}: o GitHub falhou. nada foi criado. o que você escreveu continua aqui.',
+  'create.issuePlaced': 'a issue #{number} foi criada em {repository}, mas não entrou no project.',
+  'create.issueRefused': 'o GitHub recusou a issue em {repository}: uma label ou o status não existe mais. nada foi criado.',
   'start.taskHint': 'toda atividade parte de pelo menos uma tarefa. se ela não existir, crie aqui.', // #893: under Nova atividade's task field
   'start.search': 'buscar tarefa',
   'start.noTask': 'nenhuma tarefa encontrada',

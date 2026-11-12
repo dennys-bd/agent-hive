@@ -6,12 +6,13 @@ import { CreateField as Field } from '@/components/CreateField';
 import { CreateIssueFields } from '@/components/CreateIssueFields';
 import { type DialogAction, DialogBase } from '@/components/DialogBase';
 import { SEGMENT } from '@/components/StartFields';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type CreateDraft, useCreateDraft } from '@/hooks/use-create-draft';
-import { useCreateIssue } from '@/hooks/use-create-issue';
+import { type IssueFailure, useCreateIssue } from '@/hooks/use-create-issue';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
 import { type CreateTargets, CreateTargetsContext, preselect } from '@/lib/create-targets';
@@ -108,6 +109,19 @@ function hiveAction(draft: CreateDraft, setError: (error: string | undefined) =>
   return { label: t('create.submit'), onConfirm: create, disabled: draft.title.trim() === '' || workspace === undefined };
 }
 
+// Decisions 13 to 15: the dialog's own words, the repository named; the server's are in hive.log (Task 1)
+function IssueFailureLine({ failure }: { failure: IssueFailure }) {
+  // a 400 created nothing, so the retry is safe once a field changes (decision 15); its line says why, not that GitHub failed
+  if (failure.kind !== 'placed') return <>{t(failure.kind === 'refused' ? 'create.issueRefused' : 'create.issueFailed', { repository: failure.repository })}</>;
+  const { number, url } = failure.issue;
+  return (
+    <>
+      {t('create.issuePlaced', { number, repository: failure.repository })}{' '}
+      <Button type="button" variant="link" size="xs" className="h-auto p-0" onClick={() => window.open(url, '_blank', 'noreferrer')}>{t('create.viewOnGitHub')}</Button>
+    </>
+  );
+}
+
 // The CTA per answer (decisions 10, 13 and 14): busy, a retry of the same body, or fechar once the issue exists, which posts nothing
 function issueAction({ failure, isPosting, create }: ReturnType<typeof useCreateIssue>, isReady: boolean): DialogAction {
   if (failure?.kind === 'placed') return { label: t('create.close'), onConfirm: () => undefined };
@@ -136,7 +150,8 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
 
   return (
     <DialogBase
-      open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }} title={t('create.title')} context={t('create.context')} error={error}
+      open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }} title={t('create.title')} context={t('create.context')}
+      error={isGithub ? issue.failure && <IssueFailureLine failure={issue.failure} /> : error}
       initialFocus="none" primary={primary}
     >
       <div className="flex flex-col gap-4">
