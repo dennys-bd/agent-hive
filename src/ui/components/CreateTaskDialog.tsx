@@ -1,37 +1,28 @@
-import { type ReactNode, useState } from 'react';
+import { useContext, useState } from 'react';
 import { toast } from 'sonner';
 import { HIVE_SOURCE } from '../../tasks';
 import type { State } from '../../types';
-import { DialogBase } from '@/components/DialogBase';
+import { CreateField as Field } from '@/components/CreateField';
+import { type DialogAction, DialogBase } from '@/components/DialogBase';
+import { SEGMENT } from '@/components/StartFields';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type CreateDraft, useCreateDraft } from '@/hooks/use-create-draft';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
+import { type CreateTargets, CreateTargetsContext, preselect } from '@/lib/create-targets';
 
 export interface CreateTaskDialogProps {
-  state: Pick<State, 'workspaces' | 'flows'>;
-  title?: string; workspace?: string; // what the dialog opened with: the typed title, the workspace it opened in
+  state: Pick<State, 'workspaces' | 'flows' | 'sourceWorkspaces'>;
+  title?: string; workspace?: string; source?: string; // what the dialog opened with: the typed title, its workspace, the source 4.4's header button names
   onOpenTask(taskId: string): void; onClose(): void;
 }
 
 // Radix items cannot carry an empty value, so sem fluxo has a value no stage can have: a NUL never appears in a stage name
 const NO_FLOW = '\u0000no-flow';
 const errorOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
-function Field({ id, label, optional = false, hint, children }: { id: string; label: string; optional?: boolean; hint?: string; children: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <Label htmlFor={id} className="font-normal text-[13px] text-muted-foreground">
-        {label}{optional && <small className="text-xs"> · {t('create.optional')}</small>}
-      </Label>
-      {children}
-      {hint !== undefined && <span className="text-muted-foreground text-xs">{hint}</span>}
-    </div>
-  );
-}
 
 function WorkspaceMenu({ workspaces, current, value, onPick }: { workspaces: string[]; current?: string; value?: string; onPick(w: string): void }) {
   return (
@@ -66,53 +57,86 @@ function StageMenu({ flows, value, onPick }: { flows: State['flows']; value?: st
 const bodyOf = (d: CreateDraft, workspace: string) =>
   ({ title: d.title.trim(), body: d.body, source: HIVE_SOURCE, workspace, auto: false, ...(d.stage === undefined ? {} : { stage: d.stage }) });
 
-/** The create-task dialog (#771), hive destination: a task and nothing else, no activity starts. */
-export function CreateTaskDialog({ state, title, workspace: opened, onOpenTask, onClose }: CreateTaskDialogProps) {
-  // a workspace gone from the Comb is no pick: the menu could not show it, and the CTA would post it unseen
-  const workspace = opened !== undefined && state.workspaces.includes(opened) ? opened : undefined;
-  const api = useCreateDraft({ title, workspace });
-  const { draft } = api;
-  const [error, setError] = useState<string>();
-  const picked = draft.workspace;
-  // an edit after a refusal answers it: the old message would describe a draft that is no longer there
-  const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); set(value); };
-  const setTitle = edited(api.setTitle);
-  const setBody = edited(api.setBody);
-  const setWorkspace = edited(api.setWorkspace);
-  const setStage = edited(api.setStage);
+// Decision 3: both options stay, the unavailable one disabled with its reason; decision 2: the hint only when the workspace picked the source
+function DestinationSwitch({ value, targets, hint, onPick }: { value: CreateDraft['destination']; targets: CreateTargets; hint?: string; onPick(d: CreateDraft['destination']): void }) {
+  const isGithubOff = targets.sources.length === 0;
+  const lines = [...(hint === undefined ? [] : [hint]), ...(targets.hiveSource ? [] : [t('create.hiveOff')]), ...(isGithubOff ? [t('create.noRepository')] : [])];
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span id="create-in" className="text-[13px] text-muted-foreground">{t('create.in')}</span>
+      <ToggleGroup type="single" aria-labelledby="create-in" value={value} onValueChange={(v) => { if (v) onPick(v as CreateDraft['destination']); }} className="w-full gap-0.5 bg-muted p-0.5">
+        <ToggleGroupItem value="hive" disabled={!targets.hiveSource} className={SEGMENT}>{t('create.inHive')}</ToggleGroupItem>
+        <ToggleGroupItem value="github" disabled={isGithubOff} className={SEGMENT}>{t('create.inGithub')}</ToggleGroupItem>
+      </ToggleGroup>
+      {lines.map((line) => <span key={line} className="text-muted-foreground text-xs">{line}</span>)}
+    </div>
+  );
+}
 
+interface HiveFieldsProps { draft: CreateDraft; workspaces: string[]; current?: string; flows: State['flows']; onWorkspace(w: string): void; onStage(stage: string | undefined): void }
+
+function HiveFields({ draft, workspaces, current, flows, onWorkspace, onStage }: HiveFieldsProps) {
+  return (
+    <>
+      <Field id="create-workspace" label={t('create.workspace')}>
+        <WorkspaceMenu workspaces={workspaces} current={current} value={draft.workspace} onPick={onWorkspace} />
+      </Field>
+      <Field id="create-stage" label={t('create.stage')} note={t('create.optional')} hint={t('create.stageHint')}>
+        <StageMenu flows={flows} value={draft.stage} onPick={onStage} />
+        {draft.stage === undefined && <span className="text-muted-foreground text-xs">{t('create.noFlowHint')}</span>}
+      </Field>
+    </>
+  );
+}
+
+// #771: the hive task, posted exactly as before; a refusal stays on screen and rethrows to keep the dialog open
+function hiveAction(draft: CreateDraft, setError: (error: string | undefined) => void, onOpenTask: (id: string) => void): DialogAction {
+  const { workspace } = draft;
   const create = async (): Promise<void> => {
-    if (picked === undefined) return;
+    if (workspace === undefined) return;
     setError(undefined);
     try {
-      const made = await postJson<{ id: string }>('/tasks', bodyOf(draft, picked));
-      toast(t('create.done', { workspace: picked, stage: draft.stage ?? t('create.noFlow') }), { action: { label: t('create.open'), onClick: () => onOpenTask(made.id) } });
+      const made = await postJson<{ id: string }>('/tasks', bodyOf(draft, workspace));
+      toast(t('create.done', { workspace, stage: draft.stage ?? t('create.noFlow') }), { action: { label: t('create.open'), onClick: () => onOpenTask(made.id) } });
     } catch (err) {
       setError(errorOf(err));
       throw err; // keeps the dialog open
     }
   };
+  return { label: t('create.submit'), onConfirm: create, disabled: draft.title.trim() === '' || workspace === undefined };
+}
+
+/** The create-task dialog (#771, #772): a hive task or a GitHub issue, and nothing else, no activity starts. */
+export function CreateTaskDialog({ state, title, workspace: opened, source, onOpenTask, onClose }: CreateTaskDialogProps) {
+  // a workspace gone from the Comb is no pick: the menu could not show it, and the CTA would post it unseen
+  const workspace = opened !== undefined && state.workspaces.includes(opened) ? opened : undefined;
+  const targets = useContext(CreateTargetsContext);
+  // the destination the dialog opened on: computed once, so a later config push does not move the user's pick
+  const [picked] = useState(() => preselect({ workspace, source }, targets, state.sourceWorkspaces));
+  const api = useCreateDraft({ title, workspace, destination: picked.destination, source: picked.source ?? targets.sources[0]?.name });
+  const { draft } = api;
+  const [error, setError] = useState<string>();
+  const isGithub = draft.destination === 'github';
+  const hint = picked.hinted && isGithub && opened !== undefined ? t('create.hinted', { workspace: opened }) : undefined;
+  // an edit after a refusal answers it: the old message would describe a draft that is no longer there
+  const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); set(value); };
+  // #772: the issue's CTA stays disabled until the issue fields and their post exist
+  const primary: DialogAction = isGithub ? { label: t('create.submitIssue'), onConfirm: () => undefined, disabled: true } : hiveAction(draft, setError, onOpenTask);
 
   return (
     <DialogBase
       open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }} title={t('create.title')} context={t('create.context')} error={error}
-      initialFocus="none"
-      primary={{ label: t('create.submit'), onConfirm: create, disabled: draft.title.trim() === '' || picked === undefined }}
+      initialFocus="none" primary={primary}
     >
       <div className="flex flex-col gap-4">
         <Field id="create-title" label={t('create.name')}>
-          <Input id="create-title" autoFocus value={draft.title} onChange={(e) => setTitle(e.target.value)} />
+          <Input id="create-title" autoFocus value={draft.title} onChange={(e) => edited(api.setTitle)(e.target.value)} />
         </Field>
         <Field id="create-body" label={t('create.body')}>
-          <Textarea id="create-body" value={draft.body} onChange={(e) => setBody(e.target.value)} />
+          <Textarea id="create-body" value={draft.body} onChange={(e) => edited(api.setBody)(e.target.value)} />
         </Field>
-        <Field id="create-workspace" label={t('create.workspace')}>
-          <WorkspaceMenu workspaces={state.workspaces} current={workspace} value={picked} onPick={setWorkspace} />
-        </Field>
-        <Field id="create-stage" label={t('create.stage')} optional hint={t('create.stageHint')}>
-          <StageMenu flows={state.flows} value={draft.stage} onPick={setStage} />
-          {draft.stage === undefined && <span className="text-muted-foreground text-xs">{t('create.noFlowHint')}</span>}
-        </Field>
+        <DestinationSwitch value={draft.destination} targets={targets} hint={hint} onPick={edited(api.setDestination)} />
+        {isGithub ? null : <HiveFields draft={draft} workspaces={state.workspaces} current={workspace} flows={state.flows} onWorkspace={edited(api.setWorkspace)} onStage={edited(api.setStage)} />}
       </div>
     </DialogBase>
   );

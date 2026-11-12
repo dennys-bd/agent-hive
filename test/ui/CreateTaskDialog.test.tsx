@@ -4,28 +4,39 @@ import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { CreateTaskDialog } from '@/components/CreateTaskDialog';
 import { setLanguage } from '@/i18n';
-import type { Stage } from '../../src/types';
+import { type CreateTargets, CreateTargetsContext, HIVE_ONLY } from '@/lib/create-targets';
+import type { Flow, Stage } from '../../src/types';
 import { mainFlows } from '../fixtures/main-flow.js';
 
-vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
+vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), info: vi.fn() }) }));
 
 const stages: Stage[] = [{ name: 'backlog', from: { board: ['Todo'] }, prompt: 'x' }, { name: 'dev', from: { board: ['Doing'] }, prompt: 'x' }];
 const bug: Stage = { name: 'triage', from: {}, prompt: 'x' };
 const flows = [...mainFlows(stages), { name: 'bug', stages: [bug], transitions: [] }];
-const state = { workspaces: ['hive', 'site'], flows };
+const state = { workspaces: ['hive', 'site'], flows, sourceWorkspaces: { work: 'site' } };
+// #772: two GitHub sources with a repository for new issues; work's default workspace is site
+const TARGETS: CreateTargets = { hiveSource: true, createIn: 'hive', sources: [{ name: 'work', type: 'github', repository: 'acme/app' }, { name: 'docs', type: 'github', repository: 'acme/docs' }] };
 
 let settle: (res: Response) => void = () => undefined;
-const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>((resolve) => { settle = resolve; }));
+const pending = (_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>((resolve) => { settle = resolve; });
+const fetchMock = vi.fn(pending);
 const json = (body: unknown, status: number): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const bodyOf = (): unknown => JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
 const onClose = vi.fn();
 const onOpenTask = vi.fn();
-const open = (props: { title?: string; workspace?: string } = {}) =>
-  render(<CreateTaskDialog state={state} onClose={onClose} onOpenTask={onOpenTask} {...props} />);
+interface OpenProps { title?: string; workspace?: string; source?: string; targets?: CreateTargets; flows?: Flow[] }
+// no targets: HIVE_ONLY, the context's default, which #771's tests ran under
+const open = ({ targets = HIVE_ONLY, flows: shown = flows, ...props }: OpenProps = {}) => render(
+  <CreateTargetsContext.Provider value={targets}>
+    <CreateTaskDialog state={{ ...state, flows: shown }} onClose={onClose} onOpenTask={onOpenTask} {...props} />
+  </CreateTargetsContext.Provider>,
+);
 const cta = () => screen.getByRole('button', { name: 'criar tarefa' });
+const destination = (name: string) => screen.getByRole('radio', { name });
 
 beforeEach(() => {
-  setLanguage('pt'); fetchMock.mockClear(); onClose.mockClear(); onOpenTask.mockClear(); vi.mocked(toast).mockClear();
+  setLanguage('pt'); onClose.mockClear(); onOpenTask.mockClear(); vi.mocked(toast).mockClear(); vi.mocked(toast.info).mockClear();
+  fetchMock.mockClear(); fetchMock.mockImplementation(pending);
   vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -135,4 +146,45 @@ test('a workspace the Comb no longer has comes unpicked, and the CTA waits for a
   open({ title: 'Fix login', workspace: 'gone' });
   expect(screen.getByText('escolha um workspace')).toBeInTheDocument();
   expect(cta()).toBeDisabled();
+});
+
+test('criar em comes preselected by where the dialog opened, and the hint shows only when the workspace picked the source (#772)', () => {
+  const hint = 'o workspace site tem uma source GitHub, por isso a issue vem marcada.';
+  const cases: [OpenProps, string, boolean][] = [
+    [{ workspace: 'site' }, 'issue no GitHub', true],
+    [{ workspace: 'hive' }, 'hive', false],
+    [{ workspace: 'site', source: 'docs' }, 'issue no GitHub', false],
+    [{ workspace: 'site', source: 'hive' }, 'hive', false],
+    [{ targets: { ...TARGETS, createIn: 'docs' } }, 'issue no GitHub', false],
+  ];
+  for (const [props, picked, isHinted] of cases) {
+    const { unmount } = open({ title: 'Fix', targets: TARGETS, ...props });
+    expect(destination(picked), JSON.stringify(props)).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByText(hint) !== null, JSON.stringify(props)).toBe(isHinted);
+    unmount();
+  }
+});
+
+test('a destination that is not available stays visible, disabled, with its reason (#772)', () => {
+  const { unmount } = open({ title: 'Fix', workspace: 'site' }); // HIVE_ONLY: no source has a repository
+  expect(destination('issue no GitHub')).toBeDisabled();
+  expect(screen.getByText('nenhuma source GitHub tem repositório para novas issues')).toBeInTheDocument();
+  unmount();
+  open({ title: 'Fix', targets: { ...TARGETS, hiveSource: false, createIn: 'work' } });
+  expect(destination('hive')).toBeDisabled();
+  expect(destination('issue no GitHub')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByText('o hive está desligado')).toBeInTheDocument();
+});
+
+test('switching destination keeps every field, and the CTA follows it (#772)', async () => {
+  const user = userEvent.setup();
+  open({ title: 'Fix login', workspace: 'hive', targets: TARGETS });
+  await user.type(screen.getByLabelText('descrição'), 'steps');
+  await user.click(destination('issue no GitHub'));
+  expect(screen.getByRole('button', { name: 'criar issue' })).toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'workspace' })).not.toBeInTheDocument();
+  await user.click(destination('hive'));
+  expect(screen.getByLabelText('título')).toHaveValue('Fix login');
+  expect(screen.getByLabelText('descrição')).toHaveValue('steps');
+  expect(cta()).toBeEnabled(); // the workspace it opened in is still picked
 });
