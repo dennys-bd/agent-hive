@@ -42,7 +42,7 @@ async function startSources(t: TestContext, maxConcurrent = 0, qualifyNotes = tr
       },
       setColumn: async (itemId, column) => { fake.writes.push(`${itemId}→${column}`); },
       apply: async (itemId, action) => { fake.writes.push(`${itemId} ${action.type}`); },
-      create: async ({ title, column }) => { fake.made += 1; const id = String(100 + fake.made); fake.writes.push(`create ${title}→${column}`); if (!fake.hidden) fake.listed.push(listing(id, title)); return id; },
+      create: async ({ title, column }) => { fake.made += 1; const id = String(100 + fake.made); fake.writes.push(`create ${title}→${column}`); if (!fake.hidden) fake.listed.push(listing(id, title)); return { itemId: id, issue: { number: Number(id), url: `https://github.com/acme/app/issues/${id}` } }; },
     };
   };
   const { log, lines } = fakeLog();
@@ -207,11 +207,11 @@ test('POST /tasks with a source creates the item in the stage\'s first column, p
   await sources.server.poll();
   const res = await postJson(`${sources.base}/tasks`, { title: 'Fix', stage: 'dev', source: 'work' });
   assert.equal(res.status, 201);
-  assert.deepEqual(await res.json(), { id: '101', itemId: 'work:101' });
+  assert.deepEqual(await res.json(), { id: '101', itemId: 'work:101', issue: { number: 101, url: 'https://github.com/acme/app/issues/101' }, stage: 'dev' });
   assert.deepEqual(sources.work.writes, ['create Fix→Ready']);
   assert.ok(sources.server.getState()?.tasks.some((c) => c.item.itemId === 'work:101'), 'in the state when the answer arrives');
   sources.work.hidden = true;
-  assert.deepEqual(await (await postJson(`${sources.base}/tasks`, { title: 'Hidden', stage: 'dev', source: 'work' })).json(), { itemId: 'work:102', notice: notInFlowNotice('work', 'work:102') });
+  assert.deepEqual(await (await postJson(`${sources.base}/tasks`, { title: 'Hidden', stage: 'dev', source: 'work' })).json(), { itemId: 'work:102', issue: { number: 102, url: 'https://github.com/acme/app/issues/102' }, notice: notInFlowNotice('work', 'work:102') });
   const refused = await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'notes' });
   assert.deepEqual([refused.status, await refused.json()], [400, { error: noCreateMessage('notes') }]);
 });

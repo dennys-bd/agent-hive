@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, isUuid, reduce } from '../src/orchestrator.js';
-import { createEvent, createTask, HIVE_OFF_MESSAGE, NO_STAGE_ON_SOURCE_MESSAGE, notInFlowNotice, noColumnMessage, noCreateMessage, PR_HIVE_ONLY_MESSAGE, PR_TAKEN_MESSAGE, PR_URL_MESSAGE, UNKNOWN_SOURCE_MESSAGE, UNKNOWN_STAGE_MESSAGE, WORKSPACE_ON_SOURCE_MESSAGE, type CreateDeps } from '../src/create-task.js';
+import { createEvent, createTask, HIVE_OFF_MESSAGE, NO_STAGE_ON_SOURCE_MESSAGE, notInFlowNotice, offProjectNotice, noColumnMessage, noCreateMessage, PR_HIVE_ONLY_MESSAGE, PR_TAKEN_MESSAGE, PR_URL_MESSAGE, UNKNOWN_SOURCE_MESSAGE, UNKNOWN_STAGE_MESSAGE, WORKSPACE_ON_SOURCE_MESSAGE, type CreateDeps } from '../src/create-task.js';
 import { taskOfPr } from '../src/activities.js';
 import { GITHUB_ENTRY } from './fakes.js';
 import type { HiveEvent, Source, State, Task } from '../src/types.js';
@@ -40,14 +40,15 @@ test('createEvent answers 409 when a task already has that origin (#756)', () =>
 const ROADMAP = { ...GITHUB_ENTRY, name: 'roadmap', repository: 'acme/app' };
 const COMB = { prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [ROADMAP, { ...GITHUB_ENTRY, name: 'notes' }] };
 const ON_SOURCE: State = { ...STATE, ...flowed([{ name: 'fila', from: { roadmap: ['Todo'] }, prompt: 'x' }, { name: 'later', from: {} }]) };
+const ISSUE = { number: 9, url: 'https://github.com/acme/app/issues/9' };
 const MADE: Task = { item: { itemId: 'roadmap:PVTI_9', id: '9', title: 'Fix login', body: '', url: '', source: 'roadmap' }, stage: 'fila', boardColumn: 'Todo', auto: true };
 
-function fakeDeps(comb = COMB, { listed = true, fail, pollFails }: { listed?: boolean; fail?: string; pollFails?: string } = {}) {
+function fakeDeps(comb = COMB, { listed = true, fail, pollFails, offProject = false }: { listed?: boolean; fail?: string; pollFails?: string; offProject?: boolean } = {}) {
   const made: unknown[] = []; const polled: string[][] = []; const events: string[] = [];
   let state = ON_SOURCE;
   const deps: CreateDeps = {
     state: ON_SOURCE, config: { comb },
-    sources: new Map<string, Pick<Source, 'create'>>([['roadmap', { create: async (f) => { if (fail) throw new Error(fail); made.push(f); return 'roadmap:PVTI_9'; } }], ['notes', {}]]),
+    sources: new Map<string, Pick<Source, 'create'>>([['roadmap', { create: async (f) => { if (fail) throw new Error(fail); made.push(f); return offProject ? { issue: ISSUE } : { itemId: 'roadmap:PVTI_9', issue: ISSUE }; } }], ['notes', {}]]),
     dispatch: async (e) => { events.push(e.type); return []; },
     poll: async (names) => { polled.push(names); if (pollFails) throw new Error(pollFails); if (listed) state = { ...state, tasks: [MADE] }; },
     latest: () => state,
@@ -60,10 +61,10 @@ test('createTask: no source goes to comb.createIn; hive dispatches createTask, a
   assert.deepEqual(await createTask(hive.deps, { title: 'Fix login', stage: 'fila' }), { id: 'HIVE-1', itemId: 'local:1' });
   assert.deepEqual([hive.events, hive.made], [['createTask'], []]);
   const named = fakeDeps();
-  assert.deepEqual(await createTask(named.deps, { title: 'Fix login', body: 'steps', stage: 'fila', source: 'roadmap' }), { id: '9', itemId: 'roadmap:PVTI_9' });
-  assert.deepEqual([named.made, named.polled, named.events], [[{ title: 'Fix login', body: 'steps', column: 'Todo' }], [['roadmap']], []]);
+  assert.deepEqual(await createTask(named.deps, { title: 'Fix login', body: 'steps', stage: 'fila', source: 'roadmap' }), { id: '9', itemId: 'roadmap:PVTI_9', issue: ISSUE, stage: 'fila' });
+  assert.deepEqual([named.made, named.polled, named.events], [[{ title: 'Fix login', body: 'steps', column: 'Todo', labels: [] }], [['roadmap']], []]);
   const byDefault = fakeDeps({ ...COMB, createIn: 'roadmap' });
-  assert.deepEqual(await createTask(byDefault.deps, { title: 'Fix login', stage: 'fila' }), { id: '9', itemId: 'roadmap:PVTI_9' });
+  assert.deepEqual(await createTask(byDefault.deps, { title: 'Fix login', stage: 'fila' }), { id: '9', itemId: 'roadmap:PVTI_9', issue: ISSUE, stage: 'fila' });
   assert.deepEqual(await createTask(fakeDeps({ ...COMB, createIn: 'roadmap' }).deps, { title: 'x', stage: 'fila', source: 'hive' }), { id: 'HIVE-1', itemId: 'local:1' }, 'hive by name while on');
 });
 
@@ -78,14 +79,21 @@ test('createTask refuses hive when off, an unknown source, one without a reposit
 });
 
 test('createTask answers a notice when the poll leaves the new item out, and 502 with the source\'s words when the create fails (#846)', async () => {
-  assert.deepEqual(await createTask(fakeDeps(COMB, { listed: false }).deps, { title: 'x', stage: 'fila', source: 'roadmap' }), { itemId: 'roadmap:PVTI_9', notice: notInFlowNotice('roadmap', 'roadmap:PVTI_9') });
+  assert.deepEqual(await createTask(fakeDeps(COMB, { listed: false }).deps, { title: 'x', stage: 'fila', source: 'roadmap' }), { itemId: 'roadmap:PVTI_9', issue: ISSUE, notice: notInFlowNotice('roadmap', 'roadmap:PVTI_9') });
   assert.deepEqual(await createTask(fakeDeps(COMB, { fail: 'no access' }).deps, { title: 'x', stage: 'fila', source: 'roadmap' }), { status: 502, message: 'no access' });
 });
 
 test('createTask answers the notice, not an error, when the poll throws after the item exists: the issue is not lost to a retry (#846)', async () => {
   const failing = fakeDeps(COMB, { pollFails: 'rate limited' });
-  assert.deepEqual(await createTask(failing.deps, { title: 'x', stage: 'fila', source: 'roadmap' }), { itemId: 'roadmap:PVTI_9', notice: notInFlowNotice('roadmap', 'roadmap:PVTI_9') });
+  assert.deepEqual(await createTask(failing.deps, { title: 'x', stage: 'fila', source: 'roadmap' }), { itemId: 'roadmap:PVTI_9', issue: ISSUE, notice: notInFlowNotice('roadmap', 'roadmap:PVTI_9') });
   assert.equal(failing.made.length, 1);
+});
+
+test('createTask: an issue created off the Project answers the issue and a notice naming its url, with no poll, no id and no itemId (#767)', async () => {
+  const off = fakeDeps(COMB, { offProject: true });
+  assert.deepEqual(await createTask(off.deps, { title: 'x', stage: 'fila', source: 'roadmap' }), { issue: ISSUE, notice: offProjectNotice(ISSUE.url) });
+  assert.deepEqual(off.polled, []);
+  assert.equal(offProjectNotice(ISSUE.url), 'created https://github.com/acme/app/issues/9 off the Project: no source lists it');
 });
 
 test('the not-in-flow notice names the item and does not blame the filter alone, since a failed poll lands there too (#846)', () => {
@@ -103,7 +111,7 @@ function reducingDeps(comb = COMB, state: State = STATE) {
   let current = state;
   const deps: CreateDeps = {
     state, config: { comb },
-    sources: new Map<string, Pick<Source, 'create'>>([['roadmap', { create: async (f) => { made.push(f); return 'roadmap:PVTI_9'; } }]]),
+    sources: new Map<string, Pick<Source, 'create'>>([['roadmap', { create: async (f) => { made.push(f); return { itemId: 'roadmap:PVTI_9', issue: ISSUE }; } }]]),
     dispatch: async (e) => { events.push(e); current = reduce(current, e).state; return []; },
     poll: async () => undefined,
     latest: () => current,
