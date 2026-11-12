@@ -1,11 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { StageChart } from '@/components/settings/StageChart';
-import { setLanguage } from '@/i18n';
+import { setLanguage, t } from '@/i18n';
 import { emptyStage, type StageDraft } from '@/lib/settings-stages';
-import { emptyTransition } from '@/lib/settings-transitions';
+import { emptyTransition, type TransitionDraft } from '@/lib/settings-transitions';
 const FLOW = 'f';
+const one = (stages: StageDraft[], transitions: TransitionDraft[] = []) => ({ flows: [{ id: FLOW, name: 'main' }], stages, transitions });
 
 // Settings' chart (#134, 6b): a button per stage with its action's icon and summary, a pill per transition, both selectable.
 const stage = (name: string, extra: Partial<StageDraft> = {}): StageDraft => ({ ...emptyStage(FLOW), name, ...extra });
@@ -16,7 +17,7 @@ test('each stage is a pressed-or-not button with its summary; each transition a 
   const stages = [stage('Build', { prompt: '/hive:new-build' }), stage('PR', { gate: true, approval: true })];
   const transitions = [emptyTransition(stages[0], stages), emptyTransition(stages[1], stages)];
   const onSelect = vi.fn();
-  render(<StageChart stages={stages} transitions={transitions} selection={{ kind: 'stage', id: stages[0].id }} defaultAgent="claude" onSelect={onSelect} />);
+  render(<StageChart stages={stages} transitions={transitions} flow={FLOW} comb={one(stages, transitions)} selection={{ kind: 'stage', id: stages[0].id }} defaultAgent="claude" onSelect={onSelect} />);
   expect(screen.getByRole('button', { name: /^Build/ })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('button', { name: /^PR/ })).toHaveTextContent('aguarda aprovação');
   await user.click(screen.getByRole('button', { name: 'aprovado' }));
@@ -29,13 +30,13 @@ test('each stage is a pressed-or-not button with its summary; each transition a 
 
 test('an evaluate node shows the scale icon (#877)', () => {
   const stages = [stage('Eval', { action: 'evaluate' })];
-  render(<StageChart stages={stages} transitions={[]} selection={{ kind: 'stage', id: stages[0].id }} defaultAgent="claude" onSelect={vi.fn()} />);
+  render(<StageChart stages={stages} transitions={[]} flow={FLOW} comb={one(stages)} selection={{ kind: 'stage', id: stages[0].id }} defaultAgent="claude" onSelect={vi.fn()} />);
   expect(screen.getByRole('button', { name: /^Eval/ }).querySelector('svg.lucide-scale')).not.toBeNull();
 });
 
 test('the canvas bleeds to the card body edges on a dotted 16px grid and scrolls sideways; the chart is centred and its nodes are 64px high, radius lg (#887)', () => {
   const stages = [stage('Build', { prompt: '/hive:new-build' })];
-  render(<StageChart stages={stages} transitions={[]} selection={{ kind: 'stage', id: stages[0].id }} defaultAgent="claude" onSelect={vi.fn()} />);
+  render(<StageChart stages={stages} transitions={[]} flow={FLOW} comb={one(stages)} selection={{ kind: 'stage', id: stages[0].id }} defaultAgent="claude" onSelect={vi.fn()} />);
   const node = screen.getByRole('button', { name: /^Build/ });
   expect(node.style.height).toBe('64px');
   expect(node).toHaveClass('rounded-lg');
@@ -44,4 +45,28 @@ test('the canvas bleeds to the card body edges on a dotted 16px grid and scrolls
   const canvas = chart.parentElement as HTMLElement;
   expect(canvas).toHaveClass('-mx-5', 'overflow-x-auto', 'py-4');
   expect(canvas.style.backgroundSize).toBe('16px 16px');
+});
+
+test('an arrow into another flow ends in a <flow> · <stage> pill with its trigger pill on it, each selecting it; an arrow from another flow is an incoming pill naming where to edit it, lit with its stage (#691)', async () => {
+  const user = userEvent.setup();
+  const stages = [stage('Build', { prompt: '/b' }), stage('PR', { gate: true, approval: true })];
+  const triage: StageDraft = { ...emptyStage('g'), name: 'Triage' };
+  const out = { ...emptyTransition(stages[0], stages), to: triage.id };
+  const into = { ...emptyTransition(triage, [triage]), to: stages[1].id };
+  const comb = { flows: [{ id: FLOW, name: 'main' }, { id: 'g', name: 'bug' }], stages: [...stages, triage], transitions: [out, into] };
+  const onSelect = vi.fn();
+  render(<StageChart flow={FLOW} stages={stages} transitions={[out]} comb={comb} selection={{ kind: 'stage', id: stages[1].id }} defaultAgent="claude" onSelect={onSelect} />);
+  const pill = screen.getByRole('button', { name: t('settings.transitions.outgoing', { route: 'Build → bug · Triage' }) });
+  expect(pill).toHaveTextContent('bug · Triage');
+  await user.click(pill);
+  expect(onSelect).toHaveBeenLastCalledWith({ kind: 'transition', id: out.id });
+  onSelect.mockClear();
+  await user.click(screen.getByRole('button', { name: 'terminou' }));
+  expect(onSelect).toHaveBeenLastCalledWith({ kind: 'transition', id: out.id });
+  onSelect.mockClear();
+  fireEvent.click(document.querySelector(`[data-crossing="${out.id}"]`) as Element);
+  expect(onSelect).toHaveBeenLastCalledWith({ kind: 'transition', id: out.id });
+  const incoming = screen.getByRole('img', { name: t('settings.transitions.incoming', { from: 'bug · Triage', when: t('settings.transitions.when.done'), flow: 'bug' }) });
+  expect([incoming.tagName, incoming.textContent]).toEqual(['SPAN', 'bug · Triage']);
+  expect(document.querySelector(`[data-crossing="${into.id}"]`)?.getAttribute('stroke')).toBe('var(--foreground)');
 });

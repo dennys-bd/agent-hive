@@ -58,6 +58,10 @@ function useSelection(stages: readonly StageDraft[], transitions: readonly Trans
   return [selection, setSelection];
 }
 
+// #691: the crossing pills' line, only where another flow exists, as the design's multiplos-fluxos tweak draws it
+const legendOf = ({ flows }: FlowsDraft): string =>
+  (flows.length > 1 ? `${t('settings.transitions.legend')} · ${t('settings.transitions.legend.flows')}` : t('settings.transitions.legend'));
+
 /** Settings › fluxo's etapas card (#134, 6b; its own card since #887): + etapa and + transição in the header, the load hint, the chart, its
  * legend, then the selected stage's or transition's editor. Every update is immutable; the selection is local, and a stale id (a reverted draft)
  * reads as the first stage. A refused save's focus selects its transition (#918). */
@@ -93,8 +97,8 @@ export function StageEditor({ flow, comb, stages, transitions, sources, commands
     <SettingsGroup title="settings.stages" hint="settings.transitions.hint" action={<StageActions onAddStage={addStage} onAddTransition={addTransition} canAddTransition={stage !== undefined} />}>
       {flowRow}
       {sources.length > 0 && <p className="text-muted-foreground text-xs">{t('settings.stages.loadHint')}</p>}
-      <StageChart stages={stages} transitions={transitions} selection={transition ? selection : { kind: 'stage', id: stage?.id ?? '' }} defaultAgent={defaultAgent} onSelect={setSelection} />
-      <p className="text-muted-foreground text-xs">{t('settings.transitions.legend')}</p>
+      <StageChart flow={flow} comb={comb} stages={stages} transitions={transitions} selection={transition ? selection : { kind: 'stage', id: stage?.id ?? '' }} defaultAgent={defaultAgent} onSelect={setSelection} />
+      <p className="text-muted-foreground text-xs">{legendOf(comb)}</p>
       {transition && (
         <TransitionEditor
           key={transition.id} transition={transition} stages={stages} comb={comb} sources={sources}

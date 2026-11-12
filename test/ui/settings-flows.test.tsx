@@ -47,6 +47,11 @@ const FLOWS: Flow[] = [
   { name: 'feature', stages: [{ name: 'spec', from: { board: ['Ready'] } }, { name: 'build', from: {} }], transitions: [{ from: 'spec', to: 'build', when: 'done' }, { from: 'build', to: 'end', when: 'done' }] },
   { name: 'bug', stages: [{ name: 'triage', from: { board: ['Bug'] } }], transitions: [{ from: 'triage', to: 'end', when: 'done' }] },
 ];
+// #691: feature's build leaves for bug's fix
+const CROSSED: Flow[] = [
+  { ...FLOWS[0], transitions: [FLOWS[0].transitions[0], { from: 'build', to: 'fix', when: 'done' }] },
+  { name: 'bug', stages: [...FLOWS[1].stages, { name: 'fix', from: {} }], transitions: [{ from: 'triage', to: 'fix', when: 'done' }, { from: 'fix', to: 'end', when: 'done' }] },
+];
 const triaged: Task = { item: { itemId: 'board:I1', id: '1', title: 'T', body: '', url: '', source: 'board' }, stage: 'triage', boardColumn: 'Bug', auto: true };
 
 const tab = (name: string) => screen.getByRole('radio', { name });
@@ -72,6 +77,15 @@ test('one tab per flow; a tab scopes the chart to its own stages, and para lists
   screen.getByRole('combobox', { name: 'para' }).focus();
   await user.keyboard('{Enter}');
   expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['triage', 'feature · spec', 'feature · build', t('flow.end')]);
+});
+
+test('feature draws build\'s crossing pill and the legend\'s other-flow line; bug draws the incoming pill on fix (#691)', async () => {
+  const user = userEvent.setup();
+  await openFlow(user, CROSSED);
+  expect(screen.getByRole('button', { name: t('settings.transitions.outgoing', { route: 'build → bug · fix' }) })).toBeInTheDocument();
+  expect(screen.getByText(`${t('settings.transitions.legend')} · ${t('settings.transitions.legend.flows')}`)).toBeInTheDocument();
+  await user.click(tab('bug'));
+  expect(screen.getByRole('img', { name: t('settings.transitions.incoming', { from: 'feature · build', when: t('settings.transitions.when.done'), flow: 'feature' }) })).toBeInTheDocument();
 });
 
 test('+ fluxo › name › criar opens the new flow\'s tab with one empty stage selected (#565)', async () => {
