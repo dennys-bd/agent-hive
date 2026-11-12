@@ -1,3 +1,4 @@
+import type { Flow, Stage } from '../../src/types.js';
 // The spec's example decomposition.md (#865), line for line: what the parser, the writer and the routes read
 const F = '```';
 
@@ -87,3 +88,22 @@ export const EXAMPLE = [
   '## Suggestions',
   '- an admin view of the submissions',
 ].join('\n');
+
+// #783: two leaves under one inner node, 1.2 blocked by 1.1, and a top-level leaf: the goal may not hold a single node (singleChildProblems)
+export const HIVE_TREE = [
+  '# Site for XPTO', 'A marketing site.', '',
+  '## Design', 'Static pages.', '',
+  '## 1 Pages', '### Scope', 'In: the pages. Out: a blog.', '', '### Design', 'Two pages, one layout.', '',
+  '## 1.1 Home page', '### Scope', 'In: the landing page. Out: the form.', '', '### Acceptance criteria', '- the home page renders its hero', '',
+  '## 1.2 Contact page', '### Scope', 'In: the form. Out: other pages.', '', '### Acceptance criteria', '- the form submits', '', 'Blocked by: 1.1', '',
+  '## 2 Deploy', '### Scope', 'In: the CDN setup. Out: monitoring.', '', '### Acceptance criteria', '- the site answers on its domain',
+].join('\n');
+
+const GOAL_STAGE: Stage = { name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true };
+const SPEC: Stage = { name: 'spec', from: { board: ['Backlog'] }, prompt: '/hive:new-spec {url}' };
+const BUILD: Stage = { name: 'build', from: {}, prompt: '/hive:new-build {url}' };
+/** #783: main (goal, then spec) whose goal's approve leads to `to`, and other (build alone). */
+export const hiveFlows = (to = 'spec'): Flow[] => [
+  { name: 'main', stages: [GOAL_STAGE, SPEC], transitions: [{ from: 'goal', to, when: 'approved' }] },
+  { name: 'other', stages: [BUILD], transitions: [] },
+];

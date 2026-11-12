@@ -1,18 +1,21 @@
 import { realpath, stat } from 'node:fs/promises';
 import { join, posix, win32 } from 'node:path';
+import { taskOfActivity } from './activities.js';
 import { workspaceByName } from './config.js';
 import type { Logger } from './log.js';
 import { detectNested } from './nested-check.js';
 import { samePath } from './same-path.js';
-import { slugFor } from './tasks.js';
+import { slugFor, worktreeRows } from './tasks.js';
 import { removeTranscripts } from './transcript.js';
-import { MEMORY_CAP_MIN, WORKSPACE_PRESET_COLORS, type Activity, type Config, type DeleteActivityScope, type Exec, type Session, type Task, type Workspace } from './types.js';
+import { MEMORY_CAP_MIN, WORKSPACE_PRESET_COLORS, type Activity, type Config, type DeleteActivityScope, type Exec, type Session, type Task, type Workspace, type WorktreeRow } from './types.js';
 import { gitOrWords } from './worktree-base.js';
+import { nestedStatus } from './worktree-nested.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { taskDir, WORKTREES_DIR } from './worktree.js';
+import { listWorktrees, taskDir, WORKTREES_DIR } from './worktree.js';
 
 // #746: an activity whose workspace left the Comb. Its worktree path still says which repository made it, because the Hive creates a worktree
-// in exactly one place, <repo>/.hive/worktrees/<slug>; nothing else is ever read from the path.
+// in exactly one place, <repo>/.hive/worktrees/<slug>; nothing else is ever read from the path. #747: and the worktrees tab lists their
+// worktrees (strandedRows).
 
 /** Whether the activity's workspace is no longer in the Comb: workspaceOf cannot answer for it, so the delete routes take this way instead. */
 export const isStranded = (config: Pick<Config, 'comb'>, activity: Pick<Activity, 'workspace'>): boolean => workspaceByName(config, activity.workspace) === undefined;
@@ -75,4 +78,28 @@ export async function strandedTranscripts(activity: Activity, task: Task, sessio
   const repo = worktreeRepo(activity, task);
   if (!scope.transcripts || repo === undefined) return;
   await removeTranscripts(taskDir(repo, activity), repo, sessions, log).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
+}
+
+type RowState = Parameters<typeof worktreeRows>[1];
+
+// One stranded activity's rows (#747): only its own slug, since another worktree of that repo belongs to no stranded activity or to a live
+// workspace that shares the repo, which lists it itself
+async function activityRows(state: RowState, activity: Activity, task: Task, exec: Exec): Promise<WorktreeRow[]> {
+  const standIn = await strandedWorkspace(activity, task, exec);
+  if (!standIn) return [];
+  const slug = activity.slug ?? slugFor(task.item);
+  const listed = (await listWorktrees(standIn.path, process.platform, exec)).filter((w) => w.slug === slug);
+  return Promise.all(worktreeRows(listed, state, activity.workspace).map(async (row): Promise<WorktreeRow> =>
+    ({ ...row, nested: await nestedStatus(standIn, row.path, exec), workspaceGone: true })));
+}
+
+/** GET /worktrees' rows of the task activities whose workspace left the Comb (#747), in the State's order. Only a repo git confirms is read
+ * (strandedWorkspace), and a failure reading one drops only that activity's rows; an activity with no task has no route to remove it. */
+export async function strandedRows(state: RowState, config: Pick<Config, 'comb'>, exec: Exec): Promise<WorktreeRow[]> {
+  const stranded = state.activities.flatMap((activity) => {
+    const task = activity.kind === 'task' && !activity.local && isStranded(config, activity) ? taskOfActivity(state, activity.id) : undefined;
+    return task ? [{ activity, task }] : [];
+  });
+  const rows = await Promise.all(stranded.map(({ activity, task }) => activityRows(state, activity, task, exec).catch((): WorktreeRow[] => [])));
+  return rows.flat();
 }

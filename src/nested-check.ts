@@ -54,9 +54,10 @@ const TEXTS: Readonly<Record<NestedCause, (path: string, root: string) => string
 export const nestedProblemText = (path: string, { cause, root = '' }: NestedProblem): string => TEXTS[cause](path, root);
 
 /** The nested repos the Hive suggests (#653): every folder the workspace's git ignores, outside .hive/, whose .git is a directory (a checkout,
- * not another repository's worktree), minus `skip`. */
+ * not another repository's worktree), minus `skip`. fsmonitor off: #747 runs this in a repo no longer in Settings, whose config could name a
+ * monitor command. */
 export async function detectNested(workspacePath: string, skip: readonly string[], exec: Exec = execFileAsync): Promise<string[]> {
-  const listed = await gitOrWords(workspacePath, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], exec);
+  const listed = await gitOrWords(workspacePath, ['-c', 'core.fsmonitor=false', 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], exec);
   const folders = listed.split('\0').filter((entry) => entry.endsWith('/') && !entry.startsWith(HIVE_PREFIX)).map((entry) => entry.slice(0, -1));
   const candidates = folders.filter((path) => !skip.includes(path));
   const isRepo = await Promise.all(candidates.map((path) => stat(join(workspacePath, path, '.git')).then((s) => s.isDirectory(), () => false)));

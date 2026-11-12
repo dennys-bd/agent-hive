@@ -3,9 +3,10 @@
 // where the delivery commits, pushes and opens its PR. A file git ignores is delivered by no PR: it stays local (#741). Git through execFile with argv arrays.
 import { dirname, relative } from 'node:path';
 import { PR_KEY } from './decomposition.js';
-import type { WriteDeps } from './decomposition-write.js';
+import { readRepository, type WriteDeps } from './decomposition-write.js';
 import { ownerName } from './repos/github-repos.js';
 import { originRepository } from './repos/repositories.js';
+import type { GqlJson } from './sources/github-gql.js';
 import { CREATE_PULL_REQUEST, type CreatePullRequestData, OPEN_PULL_REQUEST, type OpenPullRequestData } from './sources/github-queries.js';
 import type { Exec } from './types.js';
 import { toWire } from './wire-path.js';
@@ -13,18 +14,28 @@ import { toWire } from './wire-path.js';
 /** The file's checkout (#936): its toplevel, its origin's owner/name, its current branch, and the file's path relative to the toplevel, '/'-separated (#641). */
 export interface FileCheckout { toplevel: string; repository: string; branch: string; path: string; ignored: boolean }
 
+/** #783: the file is in no checkout, or its checkout's origin is off GitHub. The GitHub target refuses it with these words; the hive target
+ * keeps the file local (decision 5), at `path`, the file's path in a checkout off GitHub; absent with no checkout. */
+export class OffGithubError extends Error {
+  readonly path?: string;
+  constructor(message: string, path?: string) {
+    super(message);
+    if (path !== undefined) this.path = path;
+  }
+}
+
 /** The checkout of `file`, a real absolute path (#936), learned from the file itself: the Hive keeps no copy of the conventions. No checkout,
- * an origin off GitHub or a detached HEAD is refused with fixed words before anything is written. */
+ * an origin off GitHub or a detached HEAD is refused with fixed words before anything is written; #783: the first two as OffGithubError. */
 export async function fileCheckout(exec: Exec, file: string): Promise<FileCheckout> {
   const git = async (cwd: string, ...args: string[]): Promise<string> => (await exec('git', ['-C', cwd, ...args])).stdout.trim();
   // git answers the toplevel with its symlinks resolved, as the file's real path is, so the relative path holds
   const toplevel = await git(dirname(file), 'rev-parse', '--show-toplevel').catch(() => '');
-  if (toplevel === '') throw new Error('the decomposition file is in no git checkout');
+  if (toplevel === '') throw new OffGithubError('the decomposition file is in no git checkout');
+  const path = toWire(relative(toplevel, file), process.platform); // #641: the Design: links and git's pathspecs take /
   const repository = await originRepository(exec, toplevel);
-  if (repository === undefined) throw new Error('the decomposition file\'s checkout has no GitHub origin');
+  if (repository === undefined) throw new OffGithubError('the decomposition file\'s checkout has no GitHub origin', path); // #783: the hive keeps it local, here
   const branch = await git(toplevel, 'branch', '--show-current');
   if (branch === '') throw new Error('the decomposition file\'s checkout is on no branch: nothing to push');
-  const path = toWire(relative(toplevel, file), process.platform); // #641: the Design: links and git's pathspecs take /
   return { toplevel, repository, branch, path, ignored: await isIgnored(exec, toplevel, path) };
 }
 
@@ -43,9 +54,11 @@ async function isIgnored(exec: Exec, toplevel: string, path: string): Promise<bo
 /** What the delivery needs (#936): git in the file's checkout, the Hive's login, and the route's record. */
 export interface DeliverDeps extends WriteDeps { exec: Exec }
 
-/** Where the PR goes (#936): the file's checkout, its repository's node id and default branch, the root epic's number and the goal's
- * repository (owner/name), which the PR names it in. */
-export interface DeliverTarget { checkout: FileCheckout; repositoryId: string; base: string; root: number; goal: string }
+/** What a delivery's PR and commit say (#783, decision 15): the GitHub write's name the root issue, the hive write's the goal's ref and title. */
+export interface DeliveryWords { title: string; body: string; commit: string }
+
+/** Where the PR goes (#936): the file's checkout, its repository's node id and default branch, and its words. */
+export interface DeliverTarget extends DeliveryWords { checkout: FileCheckout; repositoryId: string; base: string }
 
 /** Why the file cannot be delivered (#936), or undefined: its checkout sits on the repository's default branch (the Hive never pushes it) or the
  * file is not a .md. Nothing is pushed once `pr` is recorded, nor for a file git ignores, which stays local (#741): neither is ever refused.
@@ -58,27 +71,58 @@ export function deliveryRefusal(checkout: FileCheckout, defaultBranch: string, r
   return undefined;
 }
 
+/** Where the file is delivered (#936): its checkout and the default branch of that checkout's repository. */
+export interface Delivery { checkout: FileCheckout; docs: { id: string; defaultBranch: string } }
+
+/** The delivery, or the error that stopped reading it (#783): read once per request and handed to both targets, each reading the error its own way. */
+export type DeliveryRead = { delivery: Delivery } | { error: unknown };
+
+export async function readDelivery(exec: Exec, gql: GqlJson, file: string): Promise<DeliveryRead> {
+  try {
+    const checkout = await fileCheckout(exec, file);
+    return { delivery: { checkout, docs: await readRepository(gql, checkout.repository) } };
+  } catch (error) {
+    return { error };
+  }
+}
+
+/** What the dialog shows of a delivery (#936): the checkout's repository, branch and path, local when git ignores the file (#741), and why it cannot go. */
+export function checkoutPreview({ checkout, docs }: Delivery, recorded: Readonly<Record<string, number>>): { delivery: { repository: string; branch: string; path: string; local?: true }; deliveryRefusal?: string } {
+  const refusal = deliveryRefusal(checkout, docs.defaultBranch, recorded);
+  const local = checkout.ignored ? { local: true as const } : {};
+  return { delivery: { repository: checkout.repository, branch: checkout.branch, path: checkout.path, ...local }, ...(refusal === undefined ? {} : { deliveryRefusal: refusal }) };
+}
+
 // git's own words: Node's message carries the command, an absolute path included. A remote's URL may carry its credentials: userinfo is
 // removed before the words leave
 const redacted = (text: string): string => text.replace(/:\/\/[^/\s]*@/g, '://');
-const messageOf = (err: unknown): string => {
+/** git's or GitHub's words for an error, userinfo removed (#936); the hive route answers them too (#783). */
+export const messageOf = (err: unknown): string => {
   const e = err as { stderr?: unknown };
   const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
   return redacted(stderr !== '' ? stderr : err instanceof Error ? err.message : String(err));
 };
 
 // The PR may sit in a docs repository: it names the root issue with its own repository, and closes nothing
-const prTitle = (t: DeliverTarget): string => `docs: decomposition for ${t.goal}#${t.root}`;
-const prBody = (t: DeliverTarget): string =>
-  `The decomposition of ${t.goal}#${t.root}. Its issues are on GitHub already; each one's \`Design:\` link opens this file on the default branch once this PR merges.`;
+export const githubDeliveryWords = (goal: string, root: number): DeliveryWords => ({
+  title: `docs: decomposition for ${goal}#${root}`,
+  body: `The decomposition of ${goal}#${root}. Its issues are on GitHub already; each one's \`Design:\` link opens this file on the default branch once this PR merges.`,
+  commit: `docs: decomposition for #${root}`,
+});
+
+// #783: there is no root issue to name, so the goal is named by its ref (owner/repo#n, or a hive goal's display id) and its title
+export function hiveDeliveryWords(ref: string, title: string): DeliveryWords {
+  const line = `docs: decomposition for ${ref}: ${title}`;
+  return { title: line, commit: line, body: `The decomposition of ${ref}. Its tasks are in the Hive; each one's \`Design:\` link opens this file on the default branch once this PR merges.` };
+}
 
 // The file's own changes only: a hand edit in the editor pane is committed, nothing else of the checkout slips in
-async function commitFile(exec: Exec, { toplevel, path }: FileCheckout, root: number): Promise<void> {
+async function commitFile(exec: Exec, { toplevel, path }: FileCheckout, message: string): Promise<void> {
   // literal: a name with glob or magic characters matches only itself, never other files of the checkout
   const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['--literal-pathspecs', '-C', toplevel, ...args]);
   if ((await git('status', '--porcelain', '--', path)).stdout.trim() === '') return;
   await git('add', '--', path);
-  await git('commit', '-m', `docs: decomposition for #${root}`, '--', path);
+  await git('commit', '-m', message, '--', path);
 }
 
 // GitHub refuses a second PR for the same head: the open one is the delivery's PR. Absent when there is none
@@ -92,7 +136,7 @@ async function openPullRequest(deps: DeliverDeps, t: DeliverTarget): Promise<num
 
 // The PR's number: the one created, else, when GitHub refuses (a crash between its opening and the record leaves one), the open one
 async function pullRequestNumber(deps: DeliverDeps, t: DeliverTarget): Promise<number> {
-  const variables = { repositoryId: t.repositoryId, baseRefName: t.base, headRefName: t.checkout.branch, title: prTitle(t), body: prBody(t) };
+  const variables = { repositoryId: t.repositoryId, baseRefName: t.base, headRefName: t.checkout.branch, title: t.title, body: t.body };
   try {
     const pr = ((await deps.gql(CREATE_PULL_REQUEST, variables)) as CreatePullRequestData).createPullRequest?.pullRequest;
     if (!pr) throw new Error('createPullRequest answered no pull request');
@@ -109,7 +153,7 @@ async function pullRequestNumber(deps: DeliverDeps, t: DeliverTarget): Promise<n
 export async function deliverDecomposition(deps: DeliverDeps, t: DeliverTarget, recorded: Readonly<Record<string, number>>): Promise<string | undefined> {
   if (recorded[PR_KEY] !== undefined) return undefined;
   try {
-    await commitFile(deps.exec, t.checkout, t.root);
+    await commitFile(deps.exec, t.checkout, t.commit);
     await deps.exec('git', ['-C', t.checkout.toplevel, 'push', '-u', 'origin', t.checkout.branch]);
     await deps.record(PR_KEY, await pullRequestNumber(deps, t));
     return undefined;

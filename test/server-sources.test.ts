@@ -13,7 +13,7 @@ import type { Source, SourceItem, SourceSpec, Task, Config, SettingsBody } from 
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, AUTH, combConfig, EPICS, FILTER, FIXED, fakeLog, fakeSpawn, goneItem, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
-import { IssuePlacementError } from '../src/source-create.js';
+import { CreateRefusedError, IssuePlacementError } from '../src/source-create.js';
 import { noCreateMessage, notInFlowNotice } from '../src/create-task.js';
 
 // Several sources per Comb (#180): two GitHub-shaped sources, `work` (project 6) and `notes` (project NOTES_PROJECT), both fakes a test fills,
@@ -229,6 +229,23 @@ test('POST /tasks answers 502 with the issue when the issue exists but was not p
   sources.work.createError = new Error('no access');
   const failed = await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'work' });
   assert.deepEqual([failed.status, await failed.json()], [502, { error: 'no access' }]);
+});
+
+test('a failed create on a source leaves the source\'s words in hive.log on one line, a refused name and a placement failure included (#772)', async (t) => {
+  const sources = await startSources(t);
+  const [work, notes] = sources.body.sources ?? [];
+  assert.equal((await postJson(`${sources.base}/settings`, { ...sources.body, sources: [{ ...work, repository: 'acme/app' }, notes] })).status, 200);
+  const issue = { number: 7, url: 'https://github.com/acme/app/issues/7' };
+  const failures = [new CreateRefusedError('unknown label: nope'), new IssuePlacementError(`issue ${issue.url} was created but not placed on the Project:\ndown`, issue), new Error('no access')];
+  for (const err of failures) {
+    sources.work.createError = err;
+    await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'work' });
+  }
+  assert.deepEqual(sources.lines.filter((l) => l.startsWith('WARN create on')), [
+    'WARN create on work: GitHub refused the write: unknown label: nope',
+    `WARN create on work: GitHub refused the write: issue ${issue.url} was created but not placed on the Project: down`,
+    'WARN create on work: GitHub refused the write: no access',
+  ]);
 });
 
 test('a task the Start dialog creates on a source (auto false) enters the state with auto off, so the fill of the poll that brings it in leaves it for its creator; a plain create is born auto (#846)', async (t) => {

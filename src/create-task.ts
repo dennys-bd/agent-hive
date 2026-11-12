@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { taskOfPr } from './activities.js';
 import { isPrUrl } from './orchestrator.js';
+import type { Logger } from './log.js';
 import { HIVE_SOURCE, itemSource, onSource, stageOf } from './tasks.js';
 import { CreateRefusedError, IssuePlacementError } from './source-create.js';
 import type { Refusal } from './server-tasks.js'; // a type only: no runtime cycle
@@ -18,7 +19,7 @@ const URL_MAX_BYTES = 2 * 1024; // #756: a created task's link back to its issue
 const HTTPS_URL = /^https:\/\/\S+$/;
 const URL_MESSAGE = 'url precisa ser um link https de até 2 KB';
 const ORIGIN_MESSAGE = 'origin precisa ser o item de uma source configurada';
-const ORIGIN_TAKEN_MESSAGE = 'já existe uma tarefa criada desse item';
+export const ORIGIN_TAKEN_MESSAGE = 'já existe uma tarefa criada desse item';
 export const UNKNOWN_STAGE_MESSAGE = 'etapa desconhecida';
 export const UNKNOWN_WORKSPACE_MESSAGE = 'unknown workspace';
 export const HIVE_OFF_MESSAGE = 'hive is turned off: create the task in a source';
@@ -57,6 +58,7 @@ export interface CreateDeps {
   dispatch(event: HiveEvent): Promise<Effect[]>;
   poll(names: string[], manual?: string[]): Promise<void>; // manual: item ids that enter the state with auto off
   latest(): State | undefined;
+  log?: Pick<Logger, 'warn'>; // #772: a failed create's words to hive.log; hive_create_task hands none, since its answer gives them to the agent
 }
 
 // The native view's link back to the issue a task is created from (#756): an https url of at most 2 KB, and the source item's id, which names
@@ -143,10 +145,14 @@ function stageColumn(state: State, stage: string | undefined, name: string): str
   return onSource(stageOf(state.stages, stage)?.from, name)?.[0] ?? { status: HTTP_BAD_REQUEST, message: noColumnMessage(stage, name) };
 }
 
-// #767: a name the source refused created nothing (400, a safe retry); an issue left behind rides on the 502, so no retry makes a second one
-function createFailure(err: unknown): Refusal {
-  if (err instanceof CreateRefusedError) return { status: HTTP_BAD_REQUEST, message: err.message };
-  return { status: HTTP_BAD_GATEWAY, message: errorMessage(err), ...(err instanceof IssuePlacementError ? { issue: err.issue } : {}) };
+// #767: a name the source refused created nothing (400, a safe retry); an issue left behind rides on the 502, so no retry makes a second one.
+// #772: either way the dialog shows its own words, so the source's go to hive.log, on one line as githubRefusal writes them (src/server-pr.ts).
+// The GitHub transports never put the token in an error (src/sources/github-gql.ts), so the line carries none
+function createFailure(err: unknown, name: string, log: CreateDeps['log']): Refusal {
+  const message = errorMessage(err);
+  log?.warn(`create on ${name}: GitHub refused the write: ${message.replace(/\s+/g, ' ')}`);
+  if (err instanceof CreateRefusedError) return { status: HTTP_BAD_REQUEST, message };
+  return { status: HTTP_BAD_GATEWAY, message, ...(err instanceof IssuePlacementError ? { issue: err.issue } : {}) };
 }
 
 // The same title and body rules as a task created in hive (createEvent); the column is status's (#767), else the stage's first from column on that source
@@ -165,7 +171,7 @@ async function createInSource(deps: CreateDeps, body: unknown, name: string): Pr
   try {
     made = await source.create({ title: event.title, body: event.body, column, labels: fields.labels });
   } catch (err) {
-    return createFailure(err);
+    return createFailure(err, name, deps.log);
   }
   // #767: an issue off the Project is listed by no source, so a poll for it would only spend quota
   if (made.itemId === undefined) return { issue: made.issue, notice: offProjectNotice(made.issue.url) };

@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { WorktreesTab } from '@/components/settings/WorktreesTab';
-import { setLanguage, t } from '@/i18n';
+import { setLanguage, t, tPlural } from '@/i18n';
 import type { Task, Worker, State, WorktreeRow } from '../../src/types';
 import { SPAWN_FAILED } from '../../src/types';
 import { activityIdOf, taskPairOf, withPointedWork } from '../fixtures/work';
@@ -15,6 +15,7 @@ const FAILED: WorktreeRow = {
 };
 const RUNNING: WorktreeRow = { workspace: 'hive', slug: 'hive-1-local', path: '/repo/.hive/worktrees/hive-1-local', branch: null, nested: [], task: { id: 'L1', activityId: 'a-L1', title: 'HIVE-1 Local', removable: false } };
 const DETACHED: WorktreeRow = { workspace: 'hive', slug: 'hive-2-detached', path: '/repo/.hive/worktrees/hive-2-detached', branch: null, nested: [], task: { id: 'L2', activityId: 'a-L2', title: 'HIVE-2 Detached', removable: false } };
+const GONE: WorktreeRow = { workspace: 'old', slug: 'hive-7-left', path: '/old/.hive/worktrees/hive-7-left', branch: 'hive/7-left', nested: [], workspaceGone: true, task: { id: 'I7', activityId: 'a-I7', title: '#7 Left', removable: true } };
 
 const taskOf = (itemId: string, title: string, stage: string): Task => ({ item: { itemId, id: itemId, title, body: '', url: '' }, stage, boardColumn: stage, auto: true });
 const WORKING: Worker = { id: 's1', activityId: activityIdOf('L1'), status: 'working' };
@@ -182,4 +183,42 @@ test('a row names what its nested worktrees hold uncommitted, a clean one says n
   expect(findRow(REMOVABLE)).not.toHaveTextContent('ee:');
   expect(findRow(ORPHAN)).toHaveTextContent(`${t('worktrees.orphan')} · docs: 1 sem commit`);
   expect(screen.getByText(t('worktrees.footer'))).toHaveTextContent('remove antes as worktrees dos repos aninhados');
+});
+
+test('a removed workspace\'s row is listed under its group with the mark, counted and shown as an orphan, and its × posts the task route (#747)', async () => {
+  const user = userEvent.setup();
+  rows = [ORPHAN, FAILED, RUNNING, DETACHED, GONE];
+  render(<WorktreesTab state={STATE} />);
+  const old = await screen.findByRole('region', { name: 'old' });
+  expect(within(old).getByText(t('worktrees.group.workspaceGone'))).toBeInTheDocument();
+  expect(within(old).getByText(`${tPlural('worktrees.count', 1, { n: 1 })} · ${tPlural('worktrees.orphanCount', 1, { n: 1 })}`)).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'hive' })).queryByText(t('worktrees.group.workspaceGone'))).not.toBeInTheDocument();
+  expect(within(findRow(GONE)).getByText(t('worktrees.workspaceGone'))).toBeInTheDocument();
+  expect(findRow(GONE)).toHaveClass('border-l-destructive');
+  await user.click(screen.getByRole('radio', { name: 'órfãs · 3' }));
+  expect(screen.getByText('#7 Left')).toBeInTheDocument();
+  await user.click(trashOf(GONE));
+  await user.click(within(dialog()).getByRole('button', { name: t('detail.deleteActivity') }));
+  await waitFor(() => expect(posts()).toEqual([['/activities/a-I7/delete', undefined]]));
+});
+
+test('a removed workspace\'s row whose delete activity failed shows both marks, the error on hover (#747)', async () => {
+  const row: WorktreeRow = { ...GONE, orphan: 'deleteActivityFailed', task: { ...GONE.task!, error: REFUSAL } };
+  rows = [row];
+  render(<WorktreesTab />);
+  await screen.findByText('#7 Left');
+  const status = within(findRow(row)).getByText(`${t('worktrees.workspaceGone')} · ${t('worktrees.deleteActivityFailed')}`);
+  expect(status.closest('[title]')).toHaveAttribute('title', REFUSAL);
+});
+
+test('apagar órfãs includes a removed workspace\'s row whose task allows the removal and leaves one that does not (#747)', async () => {
+  const user = userEvent.setup();
+  const open: WorktreeRow = { ...GONE, slug: 'hive-8-open', path: '/old/.hive/worktrees/hive-8-open', task: { id: 'I8', activityId: 'a-I8', title: '#8 Open', removable: false } };
+  rows = [GONE, open];
+  render(<WorktreesTab />);
+  await screen.findByText('#7 Left');
+  await user.click(screen.getByRole('button', { name: t('worktrees.cleanOrphans') }));
+  await user.click(within(dialog()).getByRole('button', { name: t('worktrees.cleanOrphans') }));
+  expect(await screen.findByText('removidas: hive-7-left')).toBeInTheDocument();
+  expect(posts()).toEqual([['/activities/a-I7/delete', undefined]]);
 });

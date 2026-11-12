@@ -199,7 +199,11 @@ function registerCreateOptionsRoute(app: Express, deps: ProjectRouteDeps): void 
     try {
       res.json(await source.createOptions());
     } catch (err) {
-      res.status(err instanceof CreateRefusedError ? HTTP_BAD_REQUEST : HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
+      const isRefused = err instanceof CreateRefusedError;
+      // #772: the dialog shows its own words, so a GitHub failure's go to hive.log, on one line as githubRefusal writes them; the refusal is the
+      // fixed no-repository sentence. The GitHub transports never put the token in an error (src/sources/github-gql.ts)
+      if (!isRefused) deps.log?.warn(`create-options of ${name}: GitHub refused the read: ${errorMessage(err).replace(/\s+/g, ' ')}`);
+      res.status(isRefused ? HTTP_BAD_REQUEST : HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
     }
   });
 }
