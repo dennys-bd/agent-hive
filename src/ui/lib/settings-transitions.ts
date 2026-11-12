@@ -41,6 +41,14 @@ export const isCrossFlow = (d: TransitionDraft, stages: readonly StageDraft[]): 
   return to !== undefined && to !== flowOfStage(stages, d.from);
 };
 
+/** The patch for retargeting a transition to `to` (#691): a session that continues a stage of neither the origin's flow nor the new target's
+ * falls back to the destination's, since the parser refuses any other flow and the save would fail. */
+export function retargetPatch(d: TransitionDraft, to: string, stages: readonly StageDraft[]): Partial<TransitionDraft> {
+  if (typeof d.session !== 'object') return { to };
+  const kept = [flowOfStage(stages, d.from), flowOfStage(stages, to)];
+  return kept.includes(flowOfStage(stages, d.session.continueOf)) ? { to } : { to, session: '' };
+}
+
 /** `<from> → <to>`, both as `flow` names them (#691): the crossing pills and the refusals. */
 export const routeName = (d: TransitionDraft, stages: readonly StageDraft[], flows: readonly FlowDraft[], flow: string | undefined): string =>
   `${stageNameIn(stages, flows, d.from, flow)} → ${stageNameIn(stages, flows, d.to, flow)}`;

@@ -128,3 +128,15 @@ test('a transition into another flow names its target <flow> · <stage> in the t
   expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Build', 'Checks', 'PR', 'fim']);
   expect(screen.queryByText('main · este fluxo')).not.toBeInTheDocument();
 });
+
+test('the session offers the runner stages of the target flow as <flow> · <stage> and names a saved one (#691)', async () => {
+  const user = userEvent.setup();
+  const cross: TransitionDraft = { ...emptyTransition(STAGES[0], STAGES), to: TRIAGE.id };
+  const { rerender } = render(<TransitionEditor transition={cross} stages={STAGES} comb={TWO} sources={[]} onUpdate={vi.fn()} onRemove={vi.fn()} />);
+  screen.getByRole('combobox', { name: 'sessão' }).focus();
+  await user.keyboard('{Enter}');
+  expect(await screen.findByRole('option', { name: 'continua a de bug · Triage' })).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  rerender(<TransitionEditor transition={{ ...cross, session: { continueOf: TRIAGE.id } }} stages={STAGES} comb={TWO} sources={[]} onUpdate={vi.fn()} onRemove={vi.fn()} />);
+  expect(screen.getByRole('combobox', { name: 'sessão' })).toHaveTextContent('continua a de bug · Triage');
+});

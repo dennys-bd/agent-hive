@@ -14,7 +14,7 @@ import { t } from '@/i18n';
 import { verdictLabel } from '@/lib/flow-labels';
 import type { FlowsDraft } from '@/lib/settings-flows';
 import { isAgentDraft, type StageDraft, withEntry } from '@/lib/settings-stages';
-import { draftTitle, draftVerdicts, flowName, flowOfStage, isCrossFlow, stageNameIn, type TransitionDraft, triggersOf } from '@/lib/settings-transitions';
+import { draftTitle, draftVerdicts, flowName, flowOfStage, isCrossFlow, retargetPatch, stageNameIn, type TransitionDraft, triggersOf } from '@/lib/settings-transitions';
 
 interface TransitionEditorProps { transition: TransitionDraft; stages: StageDraft[]; comb: FlowsDraft /* #691: every flow's stages, for para's groups and another flow's names */; sources: StageSource[]; backTo?: string; onUpdate(patch: Partial<TransitionDraft>): void; onRemove(): void; onBack?(): void }
 
@@ -33,7 +33,7 @@ function TargetSelect({ id, transition, comb, onUpdate }: Pick<TransitionEditorP
   const bare = (stageId: string): string => stageNameIn(comb.stages, comb.flows, stageId, flowOfStage(comb.stages, stageId));
   return (
     <Field id={`${id}-to`} label={t('settings.transitions.to')} hint={t(isSeveral ? 'settings.transitions.to.hint.flows' : 'settings.transitions.to.hint')}>
-      <Select value={transition.to} onValueChange={(to) => onUpdate({ to })}>
+      <Select value={transition.to} onValueChange={(to) => onUpdate(retargetPatch(transition, to, comb.stages))}>
         <SelectTrigger id={`${id}-to`} aria-label={t('settings.transitions.to')} className="w-full"><SelectValue>{stageNameIn(comb.stages, comb.flows, transition.to, flow)}</SelectValue></SelectTrigger>
         <SelectContent>
           {flows.map((f) => (
@@ -96,11 +96,14 @@ function Tries({ id, transition, onUpdate }: { id: string; transition: Transitio
   );
 }
 
-// prompt da transição and sessão: the session it resumes, continuing any stage that runs a prompt
-function Handover({ id, transition, stages, onUpdate }: Omit<TransitionEditorProps, 'sources' | 'onRemove' | 'comb'> & { id: string }) {
-  const runners = stages.filter(isAgentDraft); // #710: a skill stage's session can be continued too
+// prompt da transição and sessão: the session it resumes, continuing any stage that runs a prompt, of the origin's flow or the target's (#691)
+function Handover({ id, transition, comb, onUpdate }: Omit<TransitionEditorProps, 'sources' | 'onRemove' | 'stages'> & { id: string }) {
+  const own = flowOfStage(comb.stages, transition.from);
+  const target = flowOfStage(comb.stages, transition.to);
+  const flows = target === undefined || target === own ? [own] : [own, target];
+  const runners = flows.flatMap((f) => comb.stages.filter((s) => s.flow === f && isAgentDraft(s))); // #710: a skill stage's session can be continued too
   const label = (value: string): string => (value === SESSION_DEFAULT ? t('settings.transitions.session.default') : value === 'previous' || value === 'new'
-    ? t(`settings.transitions.session.${value}`) : t('settings.transitions.session.continueOf', { stage: nameOf(stages, value.slice('of:'.length)) }));
+    ? t(`settings.transitions.session.${value}`) : t('settings.transitions.session.continueOf', { stage: stageNameIn(comb.stages, comb.flows, value.slice('of:'.length), own) }));
   return (
     <>
       <Field id={`${id}-prompt`} label={t('settings.transitions.prompt')} hint={t(`settings.transitions.prompt.hint.${transition.when}`)}>
@@ -142,7 +145,7 @@ export function TransitionEditor({ transition, stages, comb, sources, backTo, on
         <Route id={id} transition={transition} stages={stages} comb={comb} onUpdate={onUpdate} />
       </div>
       <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-2"><Tries id={id} transition={transition} onUpdate={onUpdate} /></div>
-      <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"><Handover id={id} transition={transition} stages={stages} onUpdate={onUpdate} /></div>
+      <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"><Handover id={id} transition={transition} comb={comb} onUpdate={onUpdate} /></div>
       {sources.length > 0 && (
         <table aria-label={t('settings.transitions.sources')} className="w-full rounded-md border text-sm">
           <thead>
