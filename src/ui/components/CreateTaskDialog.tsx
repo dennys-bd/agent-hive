@@ -17,7 +17,7 @@ export interface CreateTaskDialogProps {
   onOpenTask(taskId: string): void; onClose(): void;
 }
 
-// Radix items cannot carry an empty value, so sem fluxo has a value no stage can have
+// Radix items cannot carry an empty value, so sem fluxo has a value no stage can have: a NUL never appears in a stage name
 const NO_FLOW = '\u0000no-flow';
 const errorOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -67,10 +67,19 @@ const bodyOf = (d: CreateDraft, workspace: string) =>
   ({ title: d.title.trim(), body: d.body, source: HIVE_SOURCE, workspace, auto: false, ...(d.stage === undefined ? {} : { stage: d.stage }) });
 
 /** The create-task dialog (#771), hive destination: a task and nothing else, no activity starts. */
-export function CreateTaskDialog({ state, title, workspace, onOpenTask, onClose }: CreateTaskDialogProps) {
-  const { draft, setTitle, setBody, setWorkspace, setStage } = useCreateDraft({ title, workspace });
+export function CreateTaskDialog({ state, title, workspace: opened, onOpenTask, onClose }: CreateTaskDialogProps) {
+  // a workspace gone from the Comb is no pick: the menu could not show it, and the CTA would post it unseen
+  const workspace = opened !== undefined && state.workspaces.includes(opened) ? opened : undefined;
+  const api = useCreateDraft({ title, workspace });
+  const { draft } = api;
   const [error, setError] = useState<string>();
   const picked = draft.workspace;
+  // an edit after a refusal answers it: the old message would describe a draft that is no longer there
+  const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); set(value); };
+  const setTitle = edited(api.setTitle);
+  const setBody = edited(api.setBody);
+  const setWorkspace = edited(api.setWorkspace);
+  const setStage = edited(api.setStage);
 
   const create = async (): Promise<void> => {
     if (picked === undefined) return;

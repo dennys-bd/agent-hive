@@ -118,4 +118,21 @@ test('a refusal keeps the dialog open with the message and every field as typed'
   expect(screen.getByLabelText('título')).toHaveValue('Fix login');
   expect(screen.getByLabelText('descrição')).toHaveValue('steps');
   expect(cta()).toBeEnabled();
+  await user.type(screen.getByLabelText('título'), '!');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('a second Enter while the request runs posts nothing more', async () => {
+  const user = userEvent.setup();
+  open({ title: 'Fix login', workspace: 'site' });
+  await user.type(screen.getByLabelText('título'), '{Enter}');
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  await user.type(screen.getByLabelText('título'), '{Enter}');
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+test('a workspace the Comb no longer has comes unpicked, and the CTA waits for a pick', () => {
+  open({ title: 'Fix login', workspace: 'gone' });
+  expect(screen.getByText('escolha um workspace')).toBeInTheDocument();
+  expect(cta()).toBeDisabled();
 });
