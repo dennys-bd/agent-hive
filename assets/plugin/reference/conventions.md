@@ -157,7 +157,7 @@ A path is given as the next stage opens it from the worktree
 | `/hive:new-spec` | `spec` (absent on the bounded path) |
 | `/hive:new-plan` | `plan` (absent on the bounded path) |
 | `/hive:new-build` | `walkthrough`, `pr` (the URL of the PR that targets the base; absent when the PR was skipped) |
-| `/hive:decomposition` | `decomposition` (the path of `<specsDir>/<YYYY-MM-DD>-<slug>-decomposition.md`, relative to the worktree, committed where it sits) |
+| `/hive:decomposition` | `decomposition` (the path of `<specsDir>/<YYYY-MM-DD>-<slug>-decomposition.md`, relative to the worktree, committed where it sits, or left uncommitted when git ignores it) |
 | a session that ran `hive:designer` | `design` (the design handoff's text, or the path of `<designsDir>/design-handoff.md` when the user asked for the file; absent when no handoff was asked for) |
 | a session that ran `hive:system-designer` | `systemDesign` (the system design handoff's text, or the path of `<systemDesignsDir>/system-design-handoff.md` when the user asked for the file; absent when no handoff was asked for) |
 
