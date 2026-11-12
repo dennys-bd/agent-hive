@@ -1,27 +1,26 @@
-import { useEffect, useState } from 'react';
+import { type KeyboardEvent, useEffect, useState } from 'react';
 import type { DecompositionPreview, DecompositionProblem, DecompositionSource } from '../../types';
+import { ButtonKeyHint } from '@/components/KeyHint';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
+import { closeDecomposition, type DecompositionChoice, useDecompositionWrite, useOpenDecomposition, writeDecomposition } from '@/hooks/use-decomposition-write';
 import { t, tPlural } from '@/i18n';
-import { closeDecomposition, useOpenDecomposition } from '@/hooks/use-decomposition-write';
-import { getJson, postJson } from '@/lib/api';
+import { getJson } from '@/lib/api';
+import { pressed } from '@/lib/shortcut-bindings';
 
 const MUTED = 'text-muted-foreground';
 
-interface Choice { source?: string; column?: string }
-const chosen = (source?: DecompositionSource): Choice => (source === undefined ? {} : { source: source.name, ...(source.column === undefined ? {} : { column: source.column }) });
-
-// #702: a transient failure has nothing useful in gh's words, so its own copy says a second press resumes; any other refusal keeps GitHub's words
-const writeError = (err: Error & { code?: unknown }): string => (err.code === 'transient' ? t('decomposition.transient') : err.message);
+const chosen = (source?: DecompositionSource): DecompositionChoice => (source === undefined ? {} : { source: source.name, ...(source.column === undefined ? {} : { column: source.column }) });
 
 // One picker (#865): a label over a select of `options`
-function Picker({ id, label, value, options, onChange }: { id: string; label: string; value?: string; options: string[]; onChange(value: string): void }) {
+function Picker({ id, label, value, options, disabled = false, onChange }: { id: string; label: string; value?: string; options: string[]; disabled?: boolean; onChange(value: string): void }) {
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id}>{label}</Label>
-      <Select value={value ?? ''} onValueChange={onChange}>
+      <Select value={value ?? ''} disabled={disabled} onValueChange={onChange}>
         <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>
         <SelectContent>{options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
       </Select>
@@ -84,28 +83,62 @@ function Delivery({ preview }: { preview: DecompositionPreview }) {
   );
 }
 
+// The source and its Status column (#865), or why there is none; both stay disabled while the write runs (#781), so the write cannot change under it
+function Sources({ preview, choice, isRunning, onChoice }: { preview: DecompositionPreview; choice: DecompositionChoice; isRunning: boolean; onChoice(choice: DecompositionChoice): void }) {
+  if (preview.sources.length === 0) return <p className="text-destructive text-sm">{t('decomposition.noSource')}</p>;
+  const source = preview.sources.find((s) => s.name === choice.source);
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <Picker id="decomposition-source" label={t('decomposition.source')} value={choice.source} options={preview.sources.map((s) => s.name)} disabled={isRunning} onChange={(name) => onChoice(chosen(preview.sources.find((s) => s.name === name)))} />
+      <Picker id="decomposition-column" label={t('decomposition.column')} value={choice.column} options={source?.statuses ?? []} disabled={isRunning} onChange={(column) => onChoice({ ...choice, column })} />
+    </div>
+  );
+}
+
+// #781: while the write runs, fechar replaces cancelar, since closing leaves the write going rather than cancelling it, and the primary is busy
+// with no second press. esc is the key's own name, as SearchChrome's
+function Footer({ isRunning, canWrite, onWrite, onClose }: { isRunning: boolean; canWrite: boolean; onWrite(): void; onClose(): void }) {
+  if (isRunning) {
+    return (
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose}>{t('base.close')}<span aria-hidden="true" className="text-xs tracking-widest opacity-60">esc</span></Button>
+        <Button type="button" disabled><Spinner />{t('decomposition.creating')}</Button>
+      </DialogFooter>
+    );
+  }
+  return (
+    <DialogFooter>
+      <Button type="button" variant="outline" onClick={onClose}>{t('base.cancel')}</Button>
+      <Button type="button" onClick={onWrite} disabled={!canWrite}>{t('decomposition.create')}<ButtonKeyHint id="confirm" /></Button>
+    </DialogFooter>
+  );
+}
+
 /** The decomposition's confirm (#865): what the tree writes, or its problems with their lines; the target repository; the GitHub source
  * (the first preselected) and the Status column (the first stage's, suggested). criar issues is disabled while there is a problem, no
- * repository or no choice. A failure stays here with GitHub's words (a transient one shows its own copy, #702), and a second press resumes the write. */
-export function DecompositionDialog({ activityId, onClose }: { activityId: string; onClose(): void }) {
-  const path = `/activities/${encodeURIComponent(activityId)}/decomposition`;
+ * repository or no choice. The write lives in the store (#781), so it outlives this dialog: reopened while it runs, the dialog shows it running.
+ * A failure stays here with GitHub's words (a transient one shows its own copy, #702), and a second press resumes the write. */
+function DecompositionDialog({ activityId }: { activityId: string }) {
+  const { isRunning, error: writeFailure } = useDecompositionWrite(activityId);
   const [preview, setPreview] = useState<DecompositionPreview>();
-  const [choice, setChoice] = useState<Choice>({});
-  const [error, setError] = useState<string>();
-  const [isWriting, setIsWriting] = useState(false);
+  const [choice, setChoice] = useState<DecompositionChoice>({});
+  const [readFailure, setReadFailure] = useState<string>();
   useEffect(() => {
-    getJson<DecompositionPreview>(path).then((read) => { setPreview(read); setChoice(chosen(read.sources[0])); }, (err: Error) => setError(err.message));
-  }, [path]);
+    getJson<DecompositionPreview>(`/activities/${encodeURIComponent(activityId)}/decomposition`)
+      .then((read) => { setPreview(read); setChoice(chosen(read.sources[0])); }, (err: Error) => setReadFailure(err.message));
+  }, [activityId]);
   const source = preview?.sources.find((s) => s.name === choice.source);
-  const canWrite = preview !== undefined && preview.problems.length === 0 && preview.repository !== undefined && preview.deliveryRefusal === undefined && source !== undefined && choice.column !== undefined && !isWriting;
-  const write = (): void => {
-    setIsWriting(true);
-    setError(undefined);
-    postJson(path, choice).then(() => onClose(), (err: Error) => setError(writeError(err))).finally(() => setIsWriting(false));
+  const canWrite = preview !== undefined && preview.problems.length === 0 && preview.repository !== undefined && preview.deliveryRefusal === undefined && source !== undefined && choice.column !== undefined && !isRunning;
+  const write = (): void => { void writeDecomposition(activityId, choice); };
+  const close = (): void => closeDecomposition(activityId);
+  // the confirm shortcut, as every other dialog's (#585); only while criar issues is enabled
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (canWrite && pressed(e.nativeEvent, 'confirm')) { e.preventDefault(); write(); }
   };
+  const error = writeFailure ?? readFailure;
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent>
+    <Dialog open onOpenChange={(o) => { if (!o) close(); }}>
+      <DialogContent aria-busy={isRunning} onKeyDown={onKeyDown}>
         <DialogHeader>
           <DialogTitle>{t('decomposition.title')}</DialogTitle>
           <DialogDescription>{preview?.title ?? ''}</DialogDescription>
@@ -113,18 +146,11 @@ export function DecompositionDialog({ activityId, onClose }: { activityId: strin
         {preview && <Summary preview={preview} />}
         {preview && <Repository repository={preview.repository} />}
         {preview && <Delivery preview={preview} />}
-        {preview && preview.sources.length === 0 && <p className="text-destructive text-sm">{t('decomposition.noSource')}</p>}
-        {preview && preview.sources.length > 0 && (
-          <div className="grid grid-cols-2 gap-2">
-            <Picker id="decomposition-source" label={t('decomposition.source')} value={choice.source} options={preview.sources.map((s) => s.name)} onChange={(name) => setChoice(chosen(preview.sources.find((s) => s.name === name)))} />
-            <Picker id="decomposition-column" label={t('decomposition.column')} value={choice.column} options={source?.statuses ?? []} onChange={(column) => setChoice({ ...choice, column })} />
-          </div>
-        )}
+        {preview && <Sources preview={preview} choice={choice} isRunning={isRunning} onChoice={setChoice} />}
+        {/* #781: mounted from the open and filled when the write starts, so a screen reader announces it; sr-only while empty, so it takes no row */}
+        <p role="status" className={isRunning ? `${MUTED} text-sm` : 'sr-only'}>{isRunning ? t('decomposition.running') : ''}</p>
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>{t('base.cancel')}</Button>
-          <Button type="button" onClick={write} disabled={!canWrite}>{t('decomposition.create')}</Button>
-        </DialogFooter>
+        <Footer isRunning={isRunning} canWrite={canWrite} onWrite={write} onClose={close} />
       </DialogContent>
     </Dialog>
   );
@@ -135,5 +161,5 @@ export function DecompositionDialog({ activityId, onClose }: { activityId: strin
 export function DecompositionHost() {
   const activityId = useOpenDecomposition();
   if (activityId === undefined) return null;
-  return <DecompositionDialog key={activityId} activityId={activityId} onClose={() => closeDecomposition(activityId)} />;
+  return <DecompositionDialog key={activityId} activityId={activityId} />;
 }
