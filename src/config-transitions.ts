@@ -30,7 +30,7 @@ export function parseVerdicts(raw: Record<string, unknown>, field: string): Pick
   return { verdicts: names };
 }
 
-/** Where a transition list sits (#564): its path, its flow and that flow's stages; the other flows only name a stage that is not this flow's. */
+/** Where a transition list sits (#564): its path, its flow and that flow's stages; the other flows hold the stages a `to` may enter (#691) and a `from` may not. */
 export interface FlowScope { field: string; flow: string; stages: readonly Stage[]; others: readonly Flow[] }
 
 // #564: a stage of another flow is a different mistake from a stage no flow has, so it says which flow holds it
@@ -42,8 +42,12 @@ const missing = (value: unknown, field: string, scope: FlowScope, what: string):
 const stageNamed = (value: unknown, field: string, scope: FlowScope): Stage =>
   (typeof value === 'string' ? scope.stages.find((s) => s.name === value) : undefined) ?? missing(value, field, scope, 'names no stage');
 
-const target = (value: unknown, field: string, scope: FlowScope): string =>
-  (value === END ? END : (typeof value === 'string' ? scope.stages.find((s) => s.name === value)?.name : undefined) ?? missing(value, field, scope, `names no stage nor "${END}"`));
+// #691: to may name a stage of any flow. Stage names are unique across the comb (#564 decision 4), so a bare name places the task in its flow
+const target = (value: unknown, field: string, scope: FlowScope): string => {
+  if (value === END) return END;
+  const stages = [...scope.stages, ...scope.others.flatMap((f) => f.stages)];
+  return (typeof value === 'string' ? stages.find((s) => s.name === value)?.name : undefined) ?? fail(field, `names no stage nor "${END}"`);
+};
 
 const trigger = (value: unknown, field: string): Trigger => TRIGGERS.find((t) => t === value) ?? fail(field, 'must be "done", "approved", "feedback" or "verdict"');
 
@@ -77,11 +81,14 @@ function parseMaxTries(value: unknown, when: Trigger, field: string): Pick<Trans
   return { maxTries: value };
 }
 
-function parseSession(value: unknown, field: string, scope: FlowScope): Pick<Transition, 'session'> {
+// #691: continueOf names a stage of the own flow or of the flow `to` enters, the session a crossing means to resume; a third flow's keeps #564's message
+function parseSession(value: unknown, field: string, scope: FlowScope, to: string): Pick<Transition, 'session'> {
   if (value === undefined) return {};
   if (value === 'previous' || value === 'new') return { session: value };
   if (!isRecord(value) || Object.keys(value).length !== 1 || value.continueOf === undefined) return fail(field, 'must be "previous", "new" or { "continueOf": "<stage>" }');
-  const session: TransitionSession = { continueOf: stageNamed(value.continueOf, `${field}.continueOf`, scope).name };
+  const entered = scope.others.find((f) => f.stages.some((s) => s.name === to));
+  const reach = entered === undefined ? scope : { ...scope, stages: [...scope.stages, ...entered.stages] };
+  const session: TransitionSession = { continueOf: stageNamed(value.continueOf, `${field}.continueOf`, reach).name };
   return { session };
 }
 
@@ -102,7 +109,7 @@ function parseTransition(raw: unknown, field: string, scope: FlowScope, parseSou
   const prompt = text(raw.prompt, `${field}.prompt`);
   return {
     from: from.name, to, when, ...verdict, ...(label === undefined ? {} : { label: label.trim() }), ...(prompt === undefined ? {} : { prompt }),
-    ...parseSession(raw.session, `${field}.session`, scope), ...parseMaxTries(raw.maxTries, when, `${field}.maxTries`),
+    ...parseSession(raw.session, `${field}.session`, scope, to), ...parseMaxTries(raw.maxTries, when, `${field}.maxTries`),
     ...(raw.sources === undefined ? {} : { sources: parseSources(raw.sources, `${field}.sources`) }),
   };
 }

@@ -39,8 +39,10 @@ test('flows is required and non-empty, each flow needs a stage, and flows with t
   assert.throws(parse([flow('main', [st('a', { board: ['X'] })])], { stages: [] }), { message: 'hive.config.json: "comb.stages" cannot be combined with "comb.flows": the flat pair moved into the flows (#564)' });
 });
 
-test('a source no flow enters from is refused over every flow; a cross-flow transition fails in parseTransitions (#564)', () => {
+test('a source no flow enters from is refused over every flow; a transition into another flow\'s stage parses, and into a stage no flow has fails (#564, #691)', () => {
   assert.throws(parse([flow('main', [st('a')])]), { message: 'hive.config.json: "comb.flows" must have at least one stage with "from.board"' });
-  assert.throws(parse([flow('main', [st('a', { board: ['X'] })], [{ from: 'a', to: 'b', when: 'done' }]), flow('bug', [st('b')])]),
-    { message: 'hive.config.json: "comb.flows[0].transitions[0].to" "b" is a stage of flow "bug", not of "main"' });
+  const crossed = parseFlows({ flows: [flow('main', [st('a', { board: ['X'] })], [{ from: 'a', to: 'b', when: 'done' }]), flow('bug', [st('b')])] }, ['board'], PARSE);
+  assert.deepEqual(crossed[0].transitions.map((t) => t.to), ['b']);
+  assert.throws(parse([flow('main', [st('a', { board: ['X'] })], [{ from: 'a', to: 'b', when: 'done' }]), flow('bug', [st('c')])]),
+    { message: 'hive.config.json: "comb.flows[0].transitions[0].to" names no stage nor "end"' }, 'bug\'s b removed while main still enters it');
 });
