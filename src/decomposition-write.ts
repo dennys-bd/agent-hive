@@ -19,7 +19,7 @@ import type { Decomposition, DecompositionNode } from './types.js';
 export interface WriteTarget {
   repository: string; // owner/name where the issues go: the goal issue's, or a local goal's workspace origin
   repositoryId: string; // its node id, read once per press by readRepository
-  address: string; // the file on its own repository's default branch (fileAddress): what every Design: link anchors into
+  address?: string; // the file on its own repository's default branch (fileAddress): what every Design: link anchors into; absent, none (#741)
   goal?: number; // a GitHub goal's issue; absent: a local goal, which gets a root issue
   project: { projectId: string; fieldId: string; optionId: string }; // the chosen source's project, its Status field and the chosen option
 }
@@ -140,9 +140,11 @@ const issueOf = (issues: ReadonlyMap<string, Issue>, id: string): Issue => {
 // Every node's issue in file order, its body naming its parent's number: the parser refuses a node before its parent, so it is made (#936)
 async function createAll(ctx: Ctx, d: Decomposition, root: Issue): Promise<Map<string, Issue>> {
   const issues = new Map<string, Issue>();
+  const { address } = ctx.target;
   for (const node of d.nodes) {
     const parent = parentOf(node.id);
-    const links = { parent: (parent === '' ? root : issueOf(issues, parent)).number, design: designLink(d, node, ctx.target.address) };
+    const design = address === undefined ? {} : { design: designLink(d, node, address) }; // #741: a local file gets no link
+    const links = { parent: (parent === '' ? root : issueOf(issues, parent)).number, ...design };
     issues.set(node.id, await ensure(ctx, node.id, node.title, issueBody(node, links)));
   }
   return issues;
