@@ -13,7 +13,7 @@ export interface SettingsView { section: SettingsSection; source?: string; langu
 
 // A Record over every draft key: a new SettingsDraft field fails tsc until it is given a section.
 export const SECTION_OF: Record<keyof SettingsDraft, FormSection> = {
-  workspaces: 'workspaces', commands: 'workspaces',
+  workspaces: 'workspaces', commands: 'workspaces', commandSemaphores: 'workspaces', // #796: beside the lines that name them
   prefix: 'flow', hiveSource: 'flow', createIn: 'flow', sources: 'flow', auth: 'flow', flows: 'flow', stages: 'flow', transitions: 'flow',
   defaultAgent: 'execution', agentArgs: 'execution', agentModels: 'execution', agentEnabled: 'execution',branch: 'execution', baseBranch: 'execution', approvalMinutes: 'execution', rateLimitWaitMinutes: 'execution', shutdownIdleMinutes: 'execution', deleteActivity: 'execution',
   closeSessionTab: 'execution', closeStageTab: 'execution', closeSessionTabNotice: 'execution', closeStageTabNotice: 'execution', // #614
