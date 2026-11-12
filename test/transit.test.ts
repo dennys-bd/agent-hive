@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
+import { flatten, flowOf } from '../src/flows.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { advance, dismissError, type EndOf, follow, retry, take, unrouted, verdictProblem } from '../src/transit.js';
 import { FEEDBACK_LEAD, transitionKey } from '../src/transitions.js';
 import { END, FEEDBACK_MAX } from '../src/types.js';
-import type { Activity, Item, Session, Stage, State, Task, TaskUsage, Transition, TryRecord } from '../src/types.js';
+import type { Activity, Flow, Item, Session, Stage, State, Task, TaskUsage, Transition, TryRecord } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
 import { flowed } from './fixtures/main-flow.js';
 
@@ -295,4 +296,17 @@ test('a gate\'s own feedback stays in the gate with a handover on the session fe
   const into: Transition = { from: 'build', to: 'gate', when: 'done', prompt: 'look closer' };
   const entered = pure(gated([], 'build', [into]), (s) => take(s, s.tasks[0], into, { trigger: 'done' }));
   assert.deepEqual([entered.moved.stage, entered.handover], ['gate', undefined], 'only a gate\'s own feedback hands it a run');
+});
+
+test('a transition into another flow\'s stage lands the task there: the same activity, with its worktree, branch and session, and placedByHand set (#691)', () => {
+  const research: Stage = { name: 'research', from: {}, prompt: '/research {url}' };
+  const cross: Transition = { from: 'fix', to: 'research', when: 'done' };
+  const flows: Flow[] = [{ name: 'main', stages: STAGES, transitions: [cross] }, { name: 'spec', stages: [research], transitions: [] }];
+  const task: Task = { item, stage: 'fix', boardColumn: '', auto: true, workspace: 'hive' };
+  const work: Partial<Activity> = { worktree: '/w/hive-board-1', branch: 'hive/1-task-1', sessionId: RUN };
+  const state = deepFreeze(withWork({ ...initialState(0), workspaces: ['hive'], flows, ...flatten(flows), tasks: [task] }, ID, work));
+  const out = pure(state, (s) => advance(s, s.tasks[0], { trigger: 'done' })).state;
+  const live = activityOf(out, ID);
+  assert.deepEqual([out.tasks[0].stage, out.tasks[0].placedByHand, flowOf(out.flows, out.tasks[0].stage)?.name], ['research', true, 'spec']);
+  assert.deepEqual([live?.id, live?.worktree, live?.branch, live?.sessionId], [activityOf(state, ID)?.id, work.worktree, work.branch, RUN]);
 });
