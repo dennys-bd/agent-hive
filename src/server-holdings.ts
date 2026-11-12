@@ -61,7 +61,7 @@ async function unmergedOf(repo: string, row: WorktreeRow, prs: readonly TaskPr[]
   }
 }
 
-// The PRs delete activity passes (#660): the owning task's record's; an orphan passes none, a kept activity's record too (decision 1)
+// The PRs delete activity passes (#660): the owning task's record's; a row with no task (an orphan, a kept activity's) passes none (decision 1)
 const prsOfRow = (state: Pick<State, 'activityRecords'>, row: WorktreeRow): readonly TaskPr[] =>
   (row.task === undefined ? [] : recordOf(state, row.task.activityId)?.prs ?? []);
 
