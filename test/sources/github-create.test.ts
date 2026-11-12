@@ -6,6 +6,9 @@ import { listFilterOptions } from '../../src/sources/github.js';
 import { CreateRefusedError, IssuePlacementError } from '../../src/source-create.js';
 import type { Source } from '../../src/types.js';
 import { repositoryLabels } from '../../src/sources/github-create.js';
+import { openReadModel } from '../../src/read-model/db.js';
+import type { ItemStore } from '../../src/read-model/items.js';
+import { SOURCE as ROWS, T1 } from '../read-model/fixtures.js';
 import { GITHUB_ENTRY, combConfig, fakeGql, fakeSourceFactory, FILTER } from '../fakes.js';
 
 const options = [{ id: 'O_ready', name: 'Ready' }, { id: 'O_prog', name: 'In progress' }, { id: 'O_rev', name: 'In review' }];
@@ -17,6 +20,15 @@ const specWith = (extra: Record<string, unknown> = {}) => {
   const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER, ...extra } }));
   return sourceSpec(config, config.comb.sources[0]);
 };
+
+// #768: a read model holding acme/app's label names; with syncedAt, its labels scope has completed a round
+async function labelStore(names: string[], syncedAt?: string): Promise<ItemStore> {
+  const { db } = await openReadModel(':memory:');
+  db.setLabels(ROWS, 'acme/app', names);
+  if (syncedAt !== undefined) db.setScope(ROWS, 'acme/app', 'labels', { cursor: null, etag: null, syncedAt });
+  return { db, source: async () => ROWS, notify: () => undefined, refetch: async () => 'skipped' as const };
+}
+const STATUSES = ['Ready', 'In progress', 'In review'];
 
 test('create makes the issue in the source\'s repository, adds it to the Project and sets the Status option, in that order; the repository id is asked once (#846)', async () => {
   const { gql, calls } = fakeGql({
@@ -93,4 +105,34 @@ test('listFilterOptions answers the Project\'s linked repositories (#846)', asyn
     selectFields: { repositoryOwner: { projectV2: { fields: { nodes: [] }, repositories: { nodes: [{ nameWithOwner: 'acme/app' }, { nameWithOwner: 'acme/site' }] } } } },
   });
   assert.deepEqual((await listFilterOptions('acme', 6, gql)).linkedRepositories, ['acme/app', 'acme/site']);
+});
+
+test('createOptions answers every Status option in the Project\'s order and the stored labels, with no GitHub call, once the labels scope has synced, an empty set included (#768)', async () => {
+  for (const names of [['bug', 'docs'], []]) {
+    const { gql, calls } = fakeGql({ fields });
+    const source = createSource(specWith({ repository: 'acme/app' }), { gql, items: await labelStore(names, T1) });
+    await source.resolveFields();
+    assert.deepEqual(await source.createOptions?.(), { statuses: STATUSES, labels: names }, JSON.stringify(names));
+    assert.deepEqual(calls.map((c) => c.name), ['fields'], 'the menus read nothing remote');
+  }
+});
+
+test('createOptions reads the repository\'s labels from GitHub when the labels scope never synced, a stored empty set included, and with no read model (#768)', async () => {
+  for (const items of [await labelStore([]), await labelStore(['stale']), undefined]) {
+    const { gql, calls } = fakeGql({ fields, repositoryLabels: LABELS });
+    const source = createSource(specWith({ repository: 'acme/app' }), { gql, ...(items === undefined ? {} : { items }) });
+    await source.resolveFields();
+    assert.deepEqual(await source.createOptions?.(), { statuses: STATUSES, labels: ['bug', 'docs'] });
+    assert.deepEqual(calls.slice(1).map((c) => [c.name, c.variables]), [['repositoryLabels', { owner: 'acme', name: 'app' }]]);
+  }
+});
+
+test('createOptions rejects before resolveFields, and with CreateRefusedError for a source with no repository, reading nothing (#768)', async () => {
+  const { gql, calls } = fakeGql({ fields });
+  const placed = createSource(specWith({ repository: 'acme/app' }), { gql });
+  await assert.rejects(placed.createOptions!(), { message: 'source not resolved: call resolveFields() first' });
+  const bare = createSource(specWith(), { gql });
+  await bare.resolveFields();
+  await assert.rejects(bare.createOptions!(), (err) => err instanceof CreateRefusedError && err.message === 'source has no repository for new issues');
+  assert.deepEqual(calls.map((c) => c.name), ['fields']);
 });

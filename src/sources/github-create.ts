@@ -1,5 +1,6 @@
 import type { Gql } from '../types.js';
-import { IssuePlacementError } from '../source-create.js';
+import type { ItemStore } from '../read-model/items.js';
+import { CreateRefusedError, IssuePlacementError } from '../source-create.js';
 import { ADD_PROJECT_ITEM, CREATE_ISSUE, labelsMutation, REPOSITORY_ID, REPOSITORY_LABELS, SET_OPTION, type AddProjectItemData, type CreateIssueData, type RepositoryLabelsData } from './github-queries.js';
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -44,4 +45,16 @@ export async function createProjectIssue(gql: Gql, target: IssueTarget, fields: 
   } catch (err) {
     throw new IssuePlacementError(`issue ${issue.url} was created but not labeled or placed on the Project: ${errorMessage(err)}`, made.issue);
   }
+}
+
+/** The create dialog's menus (#768): every Status option in the Project's order, from memory, and the repository's label names, from the
+ * read model once its labels scope has completed a round, else read live (not cached: the dialog asks once per repository picked). */
+export async function readCreateOptions(gql: Gql, resolved: { options: { name: string }[] } | undefined, repository: string | undefined, items?: ItemStore): Promise<{ statuses: string[]; labels: string[] }> {
+  if (!resolved) throw new Error('source not resolved: call resolveFields() first');
+  if (repository === undefined) throw new CreateRefusedError('source has no repository for new issues');
+  const statuses = resolved.options.map((o) => o.name);
+  const rows = await items?.source();
+  // syncedAt tells a synced empty set from one never read: labels() answers [] for both
+  if (items !== undefined && rows !== undefined && typeof items.db.scope(rows, repository, 'labels')?.syncedAt === 'string') return { statuses, labels: items.db.labels(rows, repository) };
+  return { statuses, labels: (await repositoryLabels(gql, repository)).map((l) => l.name) };
 }

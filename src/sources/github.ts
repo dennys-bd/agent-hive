@@ -12,7 +12,7 @@ import {
   SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhIssueRelations, type GhItemNode, type GhOption,
   type ProjectsData, type SelectFieldsData, type ViewerData,
 } from './github-queries.js';
-import { createProjectIssue, repositoryLabels, repositoryNodeId } from './github-create.js';
+import { createProjectIssue, readCreateOptions, repositoryLabels, repositoryNodeId } from './github-create.js';
 import { CreateRefusedError } from '../source-create.js';
 import { answerColumn, readItemFields, storedItemFields, writeItemField, type FieldsContext } from './github-fields.js';
 import { findBlockers, relateItem } from './github-blockers.js';
@@ -268,6 +268,9 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return createProjectIssue(gql, { repositoryId, ...project }, { title, body, labelIds: known.filter((l) => labels.includes(l.name)).map((l) => l.id) });
   }
 
+  // #768: the create dialog's menus; the labels from the item store when its labels scope has synced
+  const createOptions = (): ReturnType<NonNullable<Source['createOptions']>> => readCreateOptions(gql, resolved, source.repository, items);
+
   // #286: archive and remove act on the project item; close and delete on its issue, known from the last listing. A draft has no issue:
   // it cannot be closed, and deleting it deletes the item. A close from hive_stop carries a reason and maybe the original of a duplicate (#314).
   // #568: an item the listing does not hold is off the Project, and only its url still reaches the issue
@@ -385,6 +388,6 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   }
   return {
     resolveFields, listItems, item, stored, setColumn: written(setColumn), create: written(create), apply: written(apply), settingsOptions, comments, project, fieldsOf,
-    setField: written(setField), relate: written(relate), findBlockers: searchBlockers, quota: async () => lastQuota,
+    setField: written(setField), relate: written(relate), findBlockers: searchBlockers, createOptions, quota: async () => lastQuota,
   };
 }
