@@ -172,7 +172,7 @@ export const REPOSITORY_BRANCH = `query($owner: String!, $name: String!) {
 export const REPOSITORY_LABEL = `query($owner: String!, $name: String!, $label: String!) {
   repository(owner: $owner, name: $name) { label(name: $label) { id } }
 }`;
-// A new issue's label names (#767): the repository's labels, what they resolve to ids against, and node 2's label menu
+// A new issue's label names (#767): the repository's labels, what they resolve to ids against before any write
 export const REPOSITORY_LABELS = `query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) { labels(first: ${REPO_LABEL_LIMIT}) { nodes { id name } } }
 }`;
