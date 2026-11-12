@@ -87,6 +87,22 @@ export function linkParent(tasks: Task[], item: Item, parent: string | undefined
   return { tasks: tasks.map((t) => (t === found ? listed : t)), item: linked };
 }
 
+/** #782: a hive task that left the state, by any path (dropTask, a transition's END, the epic pass's own), closed on its hive parent still in
+ * the state, once, as GitHub closes a sub-issue: what isDone and allDone count a child with no task by. A source's parent is its source's to
+ * write. Nothing to mark: `after` itself, which reduce's identity check relies on. */
+export function closeLeftChildren(before: readonly Task[], after: Task[]): Task[] {
+  if (before === after) return after;
+  const kept = new Set(after.map((t) => t.item.itemId));
+  const left = before.filter((t) => isHive(t) && t.item.parent !== undefined && !kept.has(t.item.itemId));
+  if (left.length === 0) return after;
+  const marked = after.map((t) => {
+    const closed = t.item.closedChildren ?? [];
+    const added = isHive(t) ? left.filter((c) => c.item.parent === t.item.itemId && !closed.includes(c.item.itemId)) : [];
+    return added.length === 0 ? t : { ...t, item: { ...t.item, closedChildren: [...closed, ...added.map((c) => c.item.itemId)] } };
+  });
+  return marked.some((t, i) => t !== after[i]) ? marked : after;
+}
+
 const CANDIDATES_MAX = 8; // the add row's list (#57), as the GitHub search's first: 8
 
 /** The blockers add row's suggestions on a hive task (#57): the other hive tasks whose id or title holds the text, case-blind, at most 8,
