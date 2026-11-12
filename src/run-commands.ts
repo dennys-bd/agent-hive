@@ -1,7 +1,7 @@
 import { TIMEOUT, timeoutMs } from './timeout.js';
 import { isLaunchModel, isSpecializedAgent } from './launch-pick.js';
 import { rubricLines, SCORE_MAX } from './stage-agent.js';
-import { AGENT_IDS, CI_CHECKS, type AgentId, type CiChecks, type EvaluateRow, ENV_NAME, ON_MISSING, RESERVED_ENV_NAMES, type Command, type CommandImpl, type OnMissing, type Stage } from './types.js';
+import { AGENT_IDS, CI_CHECKS, type AgentId, type CiChecks, type EvaluateRow, ENV_NAME, ON_MISSING, RESERVED_ENV_NAMES, type Command, type CommandImpl, type CommandSemaphore, type OnMissing, type Stage } from './types.js';
 
 // The Comb's run commands in hive.config.json (#300, #511), out of config.ts, which is over 400 lines. The prefix is config.ts's CONFIG_FILE,
 // written out: importing it would make config.ts, which calls this parser, and this file import each other.
@@ -50,17 +50,20 @@ export function parseTimeout(raw: unknown, field: string): string {
 const isWorkspace = (value: unknown, workspaces: readonly string[]): value is string | null =>
   value === null || (typeof value === 'string' && workspaces.includes(value));
 
-function parseImpl(raw: unknown, field: string, workspaces: readonly string[]): CommandImpl {
+// #796: a line's semaphore names one of commandSemaphores exactly; absent = the line runs at once, and the line gets no key
+function parseImpl(raw: unknown, field: string, workspaces: readonly string[], semaphores: readonly string[]): CommandImpl {
   if (!isRecord(raw)) return fail(field, 'must be an object');
-  const { workspace, command } = raw;
+  const { workspace, command, semaphore } = raw;
   if (!isWorkspace(workspace, workspaces)) return fail(`${field}.workspace`, 'must be a workspace of comb.workspaces, or null for the other workspaces');
-  return { workspace, command: noControlChars(trimmed(command, `${field}.command`), `${field}.command`) };
+  const isNamed = typeof semaphore === 'string' && semaphores.includes(semaphore);
+  if (semaphore !== undefined && !isNamed) fail(`${field}.semaphore`, 'must name a semaphore of commandSemaphores');
+  return { workspace, command: noControlChars(trimmed(command, `${field}.command`), `${field}.command`), ...(typeof semaphore === 'string' ? { semaphore } : {}) };
 }
 
 // A command's lines (#755): at least one, each workspace once, null at most once
-function parseImpls(raw: unknown, field: string, workspaces: readonly string[]): CommandImpl[] {
+function parseImpls(raw: unknown, field: string, workspaces: readonly string[], semaphores: readonly string[]): CommandImpl[] {
   if (!Array.isArray(raw) || raw.length === 0) return fail(field, 'must be a non-empty array of { "workspace", "command" }');
-  const impls = raw.map((entry, i) => parseImpl(entry, `${field}[${i}]`, workspaces));
+  const impls = raw.map((entry, i) => parseImpl(entry, `${field}[${i}]`, workspaces, semaphores));
   const twice = impls.findIndex((impl, i) => impls.findIndex((other) => other.workspace === impl.workspace) !== i);
   if (twice !== -1) fail(`${field}[${twice}].workspace`, 'must be unique');
   return impls;
@@ -69,7 +72,7 @@ function parseImpls(raw: unknown, field: string, workspaces: readonly string[]):
 // #755: no migration (one user, no backward-compat paths): a file from before names what replaced its keys
 const GONE_KEYS = ['command', 'workspaces'] as const;
 
-function parseCommand(raw: unknown, field: string, workspaces: readonly string[]): Command {
+function parseCommand(raw: unknown, field: string, workspaces: readonly string[], semaphores: readonly string[]): Command {
   if (!isRecord(raw)) return fail(field, 'must be an object');
   const gone = GONE_KEYS.find((key) => raw[key] !== undefined);
   if (gone !== undefined) fail(`${field}.${gone}`, 'is gone: a command holds "impls" (one { "workspace", "command" } per workspace, null for the other workspaces) and "menu"');
@@ -77,7 +80,7 @@ function parseCommand(raw: unknown, field: string, workspaces: readonly string[]
   if (typeof menu !== 'boolean') return fail(`${field}.menu`, 'must be true or false');
   return {
     name: noControlChars(trimmed(raw.name, `${field}.name`), `${field}.name`), // #755: a name reaches log lines and console headers
-    impls: parseImpls(raw.impls, `${field}.impls`, workspaces),
+    impls: parseImpls(raw.impls, `${field}.impls`, workspaces, semaphores),
     menu,
     env: parseEnv(raw.env, `${field}.env`),
     ...(raw.timeout === undefined ? {} : { timeout: parseTimeout(raw.timeout, `${field}.timeout`) }),
@@ -85,13 +88,36 @@ function parseCommand(raw: unknown, field: string, workspaces: readonly string[]
 }
 
 /** The Comb's commands (#300, #511, #755): required, [] = nothing to run; names unique in the Comb, compared trimmed; each with its lines over
- * `workspaces`. */
-export function parseCommands(raw: unknown, field: string, workspaces: readonly string[]): Command[] {
+ * `workspaces`, a line's semaphore one of `semaphores` (#796). */
+export function parseCommands(raw: unknown, field: string, workspaces: readonly string[], semaphores: readonly string[]): Command[] {
   if (!Array.isArray(raw)) return fail(field, 'must be an array');
-  const commands = raw.map((entry, i) => parseCommand(entry, `${field}[${i}]`, workspaces));
+  const commands = raw.map((entry, i) => parseCommand(entry, `${field}[${i}]`, workspaces, semaphores));
   const twice = commands.findIndex((c, i) => commands.findIndex((d) => d.name === c.name) !== i);
   if (twice !== -1) fail(`${field}[${twice}].name`, 'must be unique');
   return commands;
+}
+
+// #796: one word, since the name travels in the shim's plain lines (`refused <name> <place>`, node 2.1) that a POSIX shell splits with read
+const SEMAPHORE_NAME = /^[A-Za-z0-9_-]+$/;
+
+function parseSemaphore(raw: unknown, field: string): CommandSemaphore {
+  if (!isRecord(raw)) return fail(field, 'must be an object');
+  const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+  if (!SEMAPHORE_NAME.test(name)) fail(`${field}.name`, 'must be one word of letters, digits, - and _');
+  const { limit } = raw;
+  // no upper bound: a huge limit only means the semaphore never refuses
+  if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1) return fail(`${field}.limit`, 'must be an integer of 1 or more');
+  return { name, limit, reservation: parseTimeout(raw.reservation, `${field}.reservation`) };
+}
+
+/** The Hive's Command Semaphores (#796): required, [] = none; names unique, compared trimmed. undefined gets the array message, so a file
+ * without the key names it. */
+export function parseCommandSemaphores(raw: unknown, field = 'commandSemaphores'): CommandSemaphore[] {
+  if (!Array.isArray(raw)) return fail(field, 'must be an array');
+  const semaphores = raw.map((entry, i) => parseSemaphore(entry, `${field}[${i}]`));
+  const twice = semaphores.findIndex((s, i) => semaphores.findIndex((other) => other.name === s.name) !== i);
+  if (twice !== -1) fail(`${field}[${twice}].name`, 'must be unique');
+  return semaphores;
 }
 
 /** The line `command` runs in `workspace` (#755): the workspace's own, else the other workspaces' one; undefined = the command does not exist

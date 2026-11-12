@@ -406,7 +406,7 @@ function parseComb(raw: unknown): CombConfig {
   const prefix = requirePrefix(raw.prefix);
   const workspaces = parseWorkspaces(raw.workspaces);
   const sources = parseSources(raw.sources, workspaces);
-  const commands = parseCommands(raw.commands, 'comb.commands', workspaces.map((p) => p.name)); // #511, #755: each command's lines name its workspaces
+  const commands = parseCommands(raw.commands, 'comb.commands', workspaces.map((p) => p.name), []); // #511, #755: each command's lines name its workspaces
   const flows = parseFlows(raw, sources.map((s) => s.name), {
     stage: (value, field) => parseStage(value, field, sources),
     sources: (value, field) => parseSourceMap(value, field, sources, requireActionList(false)), // #134: read as onStart is, a leaving action allowed last

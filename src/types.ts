@@ -1178,6 +1178,14 @@ export const PR_BODY_MAX = 65_536;
 export interface CommandImpl {
   workspace: string | null;
   command: string; // a shell line, run with "$SHELL" -c; never logged, never in the state
+  semaphore?: string; // #796: a commandSemaphores name; absent = runs at once
+}
+
+/** A Command Semaphore (#704, #796): caps how many runs of the lines that name it happen at once across the Hive. */
+export interface CommandSemaphore {
+  name: string; // one word, [A-Za-z0-9_-], unique: what a line's semaphore names and the shim's lines carry
+  limit: number; // the permits: an integer >= 1
+  reservation: string; // a TIMEOUT text: how long a freed permit is kept for the next in line (its turn)
 }
 
 /** A workspace's command (#300, #573: was RunCommand): a named command a task can run in its worktree, one line per workspace (#755); env is
