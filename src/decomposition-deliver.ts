@@ -96,7 +96,8 @@ export function checkoutPreview({ checkout, docs }: Delivery, recorded: Readonly
 // git's own words: Node's message carries the command, an absolute path included. A remote's URL may carry its credentials: userinfo is
 // removed before the words leave
 const redacted = (text: string): string => text.replace(/:\/\/[^/\s]*@/g, '://');
-const messageOf = (err: unknown): string => {
+/** git's or GitHub's words for an error, userinfo removed (#936); the hive route answers them too (#783). */
+export const messageOf = (err: unknown): string => {
   const e = err as { stderr?: unknown };
   const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
   return redacted(stderr !== '' ? stderr : err instanceof Error ? err.message : String(err));

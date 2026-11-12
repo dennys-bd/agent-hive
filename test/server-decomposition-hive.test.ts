@@ -175,12 +175,11 @@ test('the entry null creates the tasks outside the flow, and the goal still move
   assert.deepEqual([taskIn(s, 'local:1')?.stage, taskIn(s, 'local:1')?.item.epic, activityOf(s, 'local:1')?.approval], ['spec', HIVE_EPIC, undefined]);
 });
 
-test('an approve that leads to END: the goal has left its goal stage and its children keep item.parent (#783)', async (t) => {
+test('an approve that leads to END: the goal leaves the state and its children keep item.parent (#783)', async (t) => {
   const { url, state } = await routes(t, { to: END });
   assert.equal((await post(url, hive(ENTRY))).status, 200);
-  // markEpic runs before the approve (#556), so the epic follows its children at once and is no longer in goal when the approve lands: it
-  // stays in the children's stage instead of leaving the state
-  assert.deepEqual([taskIn(state(), 'local:1')?.stage, activityOf(state(), 'local:1')?.approval], ['spec', undefined]);
+  // the stamped goal is not followed while it awaits approval, so the approve takes its END exit (decision 12)
+  assert.equal(taskIn(state(), 'local:1'), undefined);
   assert.deepEqual(['local:2', 'local:5'].map((id) => taskIn(state(), id)?.item.parent), ['local:1', 'local:1']);
 });
 

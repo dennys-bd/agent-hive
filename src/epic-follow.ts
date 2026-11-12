@@ -71,10 +71,11 @@ function followed(state: State, task: Task): Reduced {
 // A leaving epic waits for its source's answer, and one whose source action failed keeps its error: taking the
 // exit again would write the same refused action after every event. One whose activity is being deleted waits for that delete, as isIdle
 // does (#353): an archive taken now answers before it and its closeTask is refused by the mark; activityDeleted's advance takes the exit then.
-// One outside the flow stays there (#566): a poll that stamps epic on it must not move it in; only move-to brings it back
+// One outside the flow stays there (#566): a poll that stamps epic on it must not move it in; only move-to brings it back.
+// One still awaiting approval waits for the answer (#783): a move now would drop the approval and leave its held run with no approve to end it
 const follows = (state: State, task: Task): boolean => {
   const activity = activityOf(state, taskId(task));
-  return task.item.epic !== undefined && inFlow(task) && !task.leaving && activity?.error === undefined && !activity?.deleting;
+  return task.item.epic !== undefined && inFlow(task) && !task.leaving && activity?.error === undefined && !activity?.deleting && activity?.approval === undefined;
 };
 
 /** Every show epic moved where its children put it (#31), deepest first, so a parent epic reads its sub-epics already moved. reduce runs it

@@ -4,14 +4,15 @@ import { isDeepStrictEqual } from 'node:util';
 import { taskWorkspace } from './config.js';
 import { HIVE_OFF_MESSAGE, ORIGIN_TAKEN_MESSAGE } from './create-task.js';
 import { DONE_KEY, PR_KEY, decompositionTarget, fileAddress, recordedIssues, rootBody } from './decomposition.js';
-import { checkoutPreview, deliverDecomposition, type Delivery, type DeliveryRead, deliveryRefusal, hiveDeliveryWords, OffGithubError, readDelivery } from './decomposition-deliver.js';
+import { checkoutPreview, deliverDecomposition, type Delivery, type DeliveryRead, deliveryRefusal, hiveDeliveryWords, messageOf, OffGithubError, readDelivery } from './decomposition-deliver.js';
 import { entryStage, hiveEntries, type HiveWriteTarget, originTaken, suggestedEntry, writeHiveDecomposition } from './decomposition-write-hive.js';
 import type { DecompositionRouteDeps, Goal, Live } from './server-decomposition.js';
 import type { Refusal } from './server-tasks.js';
 import { HIVE_SOURCE } from './tasks.js';
 import { HIVE_EPIC, type Decomposition, type DecompositionHive, type State } from './types.js';
 
-const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+// git's stderr over Node's message, which carries the command and an absolute path; userinfo removed (security review of #783)
+const errorMessage = messageOf;
 // decision 4: a hive goal is the root of its own tree; any other goal gets a root task made from it
 const isHiveGoal = (goal: Goal): boolean => goal.task.item.source === undefined;
 

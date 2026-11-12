@@ -107,6 +107,18 @@ test('with its children already listed, the approved epic follows them to their 
   assert.equal(effects.some((e) => e.type === 'spawn' && e.task.item.itemId === ID), false);
 });
 
+test('a goal stamped while its children sit in another stage is not followed until approved: the approve ends its held run, then it follows them (#783)', () => {
+  const held = awaiting();
+  const ptyId = held.workers[0].runId!;
+  const listed = reduce(held, { type: 'poll', source: 'board', items: [{ item: { ...item, children: [CHILD.itemId] }, column: 'Goals' }, { item: CHILD, column: 'Ready' }] }).state;
+  const stamped = deepFreeze(reduce(listed, { type: 'markEpic', taskId: ID, epic: EPIC }).state);
+  assert.deepEqual([goalOf(stamped)?.stage, activityOf(stamped, ID)?.approval?.since === undefined], ['goal', false], 'still awaiting: followEpics waits for the answer');
+  const { state, effects } = reduce(stamped, { type: 'approve', activityId: activityOf(stamped, ID)!.id });
+  // its child sits in spec, the last stage, so the followed epic goes on out through END and the freed worker takes the child
+  assert.deepEqual([goalOf(state), state.workers[0].runId === ptyId], [undefined, false]);
+  assert.deepEqual(effects.flatMap((e) => (e.type === 'kill' ? [e.ptyId] : [])), [ptyId], 'the held run is killed, not leaked');
+});
+
 test('decompositionTarget merges the target into the task\'s result beside what it holds: no effect, no worker change, still awaiting; an unknown task changes nothing (#783)', () => {
   const before = deepFreeze(awaiting());
   const { state, effects } = reduce(before, { type: 'decompositionTarget', taskId: ID, target: 'hive' });
