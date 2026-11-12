@@ -6,11 +6,11 @@ interface FlowEdgesProps { layout: Layout; labels: Record<string, string>; pills
 
 /** A fixed 6px head in user space (#269): with the default strokeWidth units it grew with the line and changed size on selection. refX at the
  * tip, since every path ends on its target's edge. */
-function ArrowHead({ id, fill }: { id: string; fill: string }) {
+export function ArrowHead({ id, fill }: { id: string; fill: string }) {
   return <marker id={id} viewBox="0 0 8 8" refX="8" refY="4" markerUnits="userSpaceOnUse" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill={fill} /></marker>;
 }
 
-const PILL = 'absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-[9px] border bg-background px-2 text-muted-foreground text-xs leading-[18px]';
+export const PILL = 'absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-[9px] border bg-background px-2 text-muted-foreground text-xs leading-[18px]';
 
 /** The flowchart's arrows (#134): one SVG under the nodes, each arrow 1.5px in border with a triangular head, dashed (4 4) when automatic and
  * going back; each pill on its arrow in background, so it covers the line behind it; the end circle when the layout has one. `pills` (the flow

@@ -34,10 +34,10 @@ export function Field({ id, anchor, label, hint, children }: { id: string; ancho
 }
 
 /** Entra: the entry columns of every source in one select, then when the stage may run, how many tasks show, how many run at once. */
-export function StageEnter({ id, stage, sources, first, onUpdate }: BlockProps & { sources: StageSource[]; first: boolean }) {
+export function StageEnter({ id, stage, sources, first, arrivals, onUpdate }: BlockProps & { sources: StageSource[]; first: boolean; arrivals?: string }) {
   const options = sources.flatMap((b) => b.options.map((o) => entryKey(b.id, o)));
-  // #670: a new task enters through the source's properties; a flow still needs a column on a stage to be reachable
-  const fromHint = t(first ? 'settings.stages.from.firstHint' : 'settings.stages.from.hint');
+  // #670: a new task enters through the source's properties; a later stage says where its tasks come from (#691), else that a flow still needs a column on a stage to be reachable
+  const fromHint = first ? t('settings.stages.from.firstHint') : arrivals ?? t('settings.stages.from.hint');
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_9rem_10rem]">
       <Field id={`${id}-from`} anchor={settingAnchor('settings.stages.from', stage.id)} label={t('settings.stages.from')} hint={fromHint}>

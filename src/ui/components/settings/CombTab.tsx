@@ -8,7 +8,8 @@ import { t } from '@/i18n';
 import type { NewSource } from '@/lib/flow-sources';
 import { commandFrom } from '@/lib/settings-commands';
 import type { SettingsDraft } from '@/lib/settings-form';
-import { flowOfStage, scopedFlow, withFlowEdit, withNewFlow, withoutFlow } from '@/lib/settings-flows';
+import { enteringFlow, scopedFlow, withFlowEdit, withNewFlow, withoutFlow } from '@/lib/settings-flows';
+import { flowOfStage, routeName } from '@/lib/settings-transitions';
 import { stageNameClash } from '@/lib/settings-stages';
 import type { AgentAvailability, Command, GithubAuth, GithubAuthStatus, ProjectSummary } from '../../../types';
 
@@ -82,10 +83,12 @@ function FlowStages({ draft, newFlow, flowTasks, stage, focus, onChange, ...edit
   const remove = (): void => { const next = withoutFlow(draft, open); onChange(next); setOpen(next.flows[0]?.id ?? ''); };
   const rename = (name: string): void => onChange({ flows: draft.flows.map((f) => (f.id === open ? { ...f, name } : f)) });
   const scope = scopedFlow(draft, open);
-  const row = <FlowRow flows={draft.flows} open={open} isAdding={isAdding} taskCount={flowTasks(open)} onOpen={setOpen} onAdding={setAdding} onCreate={create} onRename={rename} onRemove={remove} />;
+  const blocker = enteringFlow(draft, open)[0]; // #691: excluir fluxo is refused at the click while another flow's arrow enters this one
+  const entered = blocker && t('settings.flows.entered', { transition: routeName(blocker, draft.stages, draft.flows, open) });
+  const row = <FlowRow flows={draft.flows} open={open} entered={entered} isAdding={isAdding} taskCount={flowTasks(open)} onOpen={setOpen} onAdding={setAdding} onCreate={create} onRename={rename} onRemove={remove} />;
   return (
     <StageEditor
-      key={open} flow={open} flowRow={row} stages={scope.stages} transitions={scope.transitions} focus={focus} stage={stage}
+      key={open} flow={open} comb={draft} flowRow={row} stages={scope.stages} transitions={scope.transitions} focus={focus} stage={stage}
       clashOf={(id) => stageNameClash(draft.stages, draft.flows, id)} defaultAgent={draft.defaultAgent} {...editor}
       onChange={(next) => onChange(withFlowEdit(draft, open, next))}
     />

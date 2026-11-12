@@ -7,11 +7,15 @@ import { t, tPlural } from '@/i18n';
 import type { FlowDraft } from '@/lib/settings-flows';
 import { flowNameProblem } from '@/lib/settings-flows';
 
+/** A refusal at the click (#691): the destructive tone, mixed 75% with the foreground in dark, as settings.hv.html's .refuse. */
+export const REFUSAL = 'text-destructive text-xs dark:text-[color-mix(in_oklab,var(--destructive)_75%,var(--foreground))]';
+
 // Settings › fluxo's flow row (#565): the etapas card's first row in the design. Rendered inside StageEditor, keyed on the open flow, so its local
 // state resets on every tab.
 
 export interface FlowRowProps {
   flows: readonly FlowDraft[]; open: string; isAdding: boolean;
+  entered?: string; // #691: another flow's first transition into this one, named: excluir fluxo refuses while it is set
   taskCount: number; // the open flow's saved tasks (flowTaskCount): excluir fluxo refuses while it is > 0
   onOpen(id: string): void; onAdding(isAdding: boolean): void; onCreate(name: string): void; onRename(name: string): void; onRemove(): void;
 }
@@ -34,8 +38,15 @@ function NewFlowForm({ flows, onCreate, onCancel }: { flows: readonly FlowDraft[
   );
 }
 
-export function FlowRow({ flows, open, isAdding, taskCount, onOpen, onAdding, onCreate, onRename, onRemove }: FlowRowProps) {
+export function FlowRow({ flows, open, isAdding, taskCount, entered, onOpen, onAdding, onCreate, onRename, onRemove }: FlowRowProps) {
   const [holding, setHolding] = useState(false);
+  const [isEntered, setEntered] = useState(false);
+  // #565: tasks first; #691: then an arrow from another flow, which deleting would leave pointing nowhere
+  const remove = (): void => {
+    if (taskCount > 0) setHolding(true);
+    else if (entered !== undefined) setEntered(true);
+    else onRemove();
+  };
   const current = flows.find((f) => f.id === open);
   const isLast = flows.length === 1;
   return (
@@ -53,9 +64,10 @@ export function FlowRow({ flows, open, isAdding, taskCount, onOpen, onAdding, on
           <Problem name={current.name} flows={flows} id={open} />
         </>
       )}
-      <Button type="button" variant="ghost" size="sm" disabled={isLast} onClick={() => (taskCount > 0 ? setHolding(true) : onRemove())}>{t('settings.flows.remove')}</Button>
+      <Button type="button" variant="ghost" size="sm" disabled={isLast} onClick={remove}>{t('settings.flows.remove')}</Button>
       {isLast && <span className="text-muted-foreground text-xs">{t('settings.flows.lastFlow')}</span>}
       {holding && <p className="text-destructive text-xs">{tPlural('settings.flows.holdsTasks', taskCount, { n: taskCount })}</p>}
+      {isEntered && entered && <p role="alert" className={`w-full ${REFUSAL}`}>{entered}</p>}
     </div>
   );
 }

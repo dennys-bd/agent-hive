@@ -1,6 +1,7 @@
 import { ArrowLeftIcon, ArrowRightIcon, ChevronRightIcon } from 'lucide-react';
-import { type ReactNode, useId } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import { type AgentProps, StageEnter, StageRun } from '@/components/settings/StageBlocks';
+import { REFUSAL } from '@/components/settings/FlowRow';
 import type { StageSource } from '@/components/settings/StageEditor';
 import { SourceActions } from '@/components/settings/SourceActions';
 import { Badge } from '@/components/ui/badge';
@@ -9,10 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { t } from '@/i18n';
 import { triggerLabel } from '@/lib/flow-labels';
+import { enteringStage, type FlowsDraft } from '@/lib/settings-flows';
 import { contextEntries, named, type SettingEntry, settingAnchor } from '@/lib/settings-search';
 import { canContinueSession, isAgentDraft, isGateDraft, type StageDraft, withEntry } from '@/lib/settings-stages';
-import type { TransitionDraft } from '@/lib/settings-transitions';
-import { END, type Command } from '../../../types';
+import { exitLabel, flowOfStage, isCrossFlow, routeName, stageNameIn, type TransitionDraft } from '@/lib/settings-transitions';
+import type { Command } from '../../../types';
 
 function BlockHeading({ n, title, hint }: { n: number; title: string; hint: string }) {
   return (
@@ -25,22 +27,23 @@ function BlockHeading({ n, title, hint }: { n: number; title: string; hint: stri
 
 const Block = ({ anchor, children }: { anchor: string; children: ReactNode }) => <div id={anchor} className="flex flex-col gap-3 border-t pt-4">{children}</div>;
 
-const tagsOf = (d: TransitionDraft): string[] =>
-  [...(d.maxTries.trim() === '' ? [] : [`${d.maxTries.trim()}x`]), ...(d.prompt.trim() === '' ? [] : [t('settings.transitions.tag.prompt')]), ...(d.session === 'new' ? [t('settings.transitions.tag.newSession')] : [])];
+const tagsOf = (d: TransitionDraft, isCross: boolean): string[] => [
+  ...(isCross ? [t('settings.transitions.otherFlow')] : []), // #691: the crossing is never said by the arrow alone
+  ...(d.maxTries.trim() === '' ? [] : [`${d.maxTries.trim()}x`]), ...(d.prompt.trim() === '' ? [] : [t('settings.transitions.tag.prompt')]), ...(d.session === 'new' ? [t('settings.transitions.tag.newSession')] : []),
+];
 
-interface ExitsProps { stage: StageDraft; stages: StageDraft[]; transitions: TransitionDraft[]; onSelect(id: string): void; onAdd(): void }
+interface ExitsProps { stage: StageDraft; comb: FlowsDraft; transitions: TransitionDraft[]; onSelect(id: string): void; onAdd(): void }
 
 // 4 · saídas (#134): a row per transition leaving the stage, and + transição
-function Exits({ stage, stages, transitions, onSelect, onAdd }: ExitsProps) {
-  const nameOf = (id: string): string => (id === END ? t('flow.end') : stages.find((s) => s.id === id)?.name.trim() || t('settings.stages.unnamed'));
+function Exits({ stage, comb, transitions, onSelect, onAdd }: ExitsProps) {
   return (
     <>
       <ul aria-label={t('settings.stages.exits')} className="flex flex-col gap-1">
         {transitions.filter((d) => d.from === stage.id).map((d) => (
           <li key={d.id}>
-            <button type="button" onClick={() => onSelect(d.id)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent">
-              <span>{`${triggerLabel(d.when, d.verdict, stage.action)} → ${nameOf(d.to)}`}</span>
-              {tagsOf(d).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+            <button type="button" onClick={() => onSelect(d.id)} className="flex w-full flex-wrap items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent">
+              <span>{`${triggerLabel(d.when, d.verdict, stage.action)} → ${stageNameIn(comb.stages, comb.flows, d.to, stage.flow)}`}</span>
+              {tagsOf(d, isCrossFlow(d, comb.stages)).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
               <ChevronRightIcon aria-hidden="true" className="ml-auto size-4 text-muted-foreground" />
             </button>
           </li>
@@ -49,6 +52,15 @@ function Exits({ stage, stages, transitions, onSelect, onAdd }: ExitsProps) {
       <Button type="button" variant="ghost" size="sm" className="self-start" onClick={onAdd}>{t('settings.transitions.add')}</Button>
     </>
   );
+}
+
+// chega de (#691): each arrow into the stage, its own flow's first, then another flow's as <flow> · <stage>, by its pill's words without the
+// tries; a loop to itself is no arrival
+function arrivalsOf(stage: StageDraft, comb: FlowsDraft): string | undefined {
+  const into = comb.transitions.filter((d) => d.to === stage.id && d.from !== stage.id);
+  const isOwn = (d: TransitionDraft): boolean => flowOfStage(comb.stages, d.from) === stage.flow;
+  const list = [...into.filter(isOwn), ...into.filter((d) => !isOwn(d))].map((d) => `${stageNameIn(comb.stages, comb.flows, d.from, stage.flow)} (${exitLabel(d, comb.stages)})`);
+  return list.length === 0 ? undefined : t('settings.stages.from.arrivals', { list: list.join(', ') });
 }
 
 // 2 · ao começar (#266): what each source does as a run of the stage starts, laid out as the transition editor's sources
@@ -84,6 +96,7 @@ function OnStart({ stage, sources, onUpdate }: { stage: StageDraft; sources: Sta
 }
 
 export interface StageDetailProps extends AgentProps {
+  comb: FlowsDraft; // #691: another flow's names, the arrivals and the arrows that refuse remover etapa
   stage: StageDraft; index: number; total: number; stages: StageDraft[]; transitions: TransitionDraft[]; sources: StageSource[]; commands: Command[]; workspaces: string[];
   clash?: string; // #565: the flow that already has a stage of this name
   onUpdate(patch: Partial<StageDraft>): void; onMove(to: number): void; onRemove(): void; onSelectTransition(id: string): void; onAddTransition(): void;
@@ -91,8 +104,14 @@ export interface StageDetailProps extends AgentProps {
 
 /** One stage's name and place in the fill order, then its 1 · entra / 2 · ao começar / 3 · executa / 4 · saídas blocks, in the order a run goes through them (#515, #134, #266). */
 export function StageDetail(props: StageDetailProps) {
-  const { stage, clash, index, total, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, onUpdate, onMove, onRemove, onSelectTransition, onAddTransition } = props;
+  const { comb, stage, clash, index, total, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, onUpdate, onMove, onRemove, onSelectTransition, onAddTransition } = props;
   const id = useId();
+  const [isRefused, setRefused] = useState(false);
+  const blocker = enteringStage(comb, stage.id)[0]; // #691: refused at the click, the draft unchanged, as excluir fluxo's holdsTasks
+  const remove = (): void => {
+    if (blocker === undefined) onRemove();
+    else setRefused(true);
+  };
   return (
     <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
       <div className="flex items-end gap-2">
@@ -104,10 +123,11 @@ export function StageDetail(props: StageDetailProps) {
         <div className="ml-auto flex items-center gap-1">
           <Button type="button" variant="ghost" size="icon-xs" aria-label={t('settings.stages.moveEarlier')} disabled={index === 0} onClick={() => onMove(index - 1)}><ArrowLeftIcon /></Button>
           <Button type="button" variant="ghost" size="icon-xs" aria-label={t('settings.stages.moveLater')} disabled={index === total - 1} onClick={() => onMove(index + 1)}><ArrowRightIcon /></Button>
-          <Button type="button" variant="ghost" size="sm" onClick={onRemove}>{t('settings.stages.remove')}</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={remove}>{t('settings.stages.remove')}</Button>
         </div>
       </div>
-      <Block anchor={settingAnchor('settings.stages.enter', stage.id)}><BlockHeading n={1} title={t('settings.stages.enter')} hint={t('settings.stages.enter.hint')} /><StageEnter id={id} stage={stage} sources={sources} first={index === 0} onUpdate={onUpdate} /></Block>
+      {isRefused && blocker && <p role="alert" className={`-mt-2 ${REFUSAL}`}>{t('settings.stages.entered', { transition: routeName(blocker, comb.stages, comb.flows, stage.flow) })}</p>}
+      <Block anchor={settingAnchor('settings.stages.enter', stage.id)}><BlockHeading n={1} title={t('settings.stages.enter')} hint={t('settings.stages.enter.hint')} /><StageEnter id={id} stage={stage} sources={sources} first={index === 0} arrivals={arrivalsOf(stage, comb)} onUpdate={onUpdate} /></Block>
       <Block anchor={settingAnchor('settings.stages.onStart', stage.id)}>
         <BlockHeading n={2} title={t('settings.stages.onStart')} hint={t('settings.stages.onStart.hint')} />
         <OnStart stage={stage} sources={sources} onUpdate={onUpdate} />
@@ -118,7 +138,7 @@ export function StageDetail(props: StageDetailProps) {
       </Block>
       <Block anchor={settingAnchor('settings.stages.exits', stage.id)}>
         <BlockHeading n={4} title={t('settings.stages.exits')} hint={t('settings.stages.exits.hint')} />
-        <Exits stage={stage} stages={stages} transitions={transitions} onSelect={onSelectTransition} onAdd={onAddTransition} />
+        <Exits stage={stage} comb={comb} transitions={transitions} onSelect={onSelectTransition} onAdd={onAddTransition} />
       </Block>
     </div>
   );

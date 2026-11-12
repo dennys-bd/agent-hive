@@ -28,7 +28,7 @@ function setup(initial: StageDraft, launchOptions: LaunchOptions | undefined = O
     const [flow, setFlow] = useState<Flow>({ stages: [initial], transitions: [] });
     return (
       <StageEditor flow="f"
-        stages={flow.stages} transitions={flow.transitions} sources={[]} agents={AGENTS} defaultAgent="claude" launchOptions={launchOptions}
+        comb={{ flows: [{ id: 'f', name: 'main' }], stages: flow.stages, transitions: flow.transitions }} stages={flow.stages} transitions={flow.transitions} sources={[]} agents={AGENTS} defaultAgent="claude" launchOptions={launchOptions}
         commands={[]} workspaces={['hive']} onChange={(next) => { onChange(next); setFlow(next); }}
       />
     );

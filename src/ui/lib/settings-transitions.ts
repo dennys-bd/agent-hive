@@ -3,6 +3,7 @@ import { isAutomatic, transitionKey } from '../../transitions.js';
 import { END, FIXED_VERDICTS, type SourceAction, type Transition, type TransitionSession, type Trigger } from '../../types.js';
 import { t } from '../i18n.js';
 import { triggerLabel } from './flow-labels.js';
+import type { FlowDraft } from './settings-flows.js';
 import { byRow, isAgentDraft, isGateDraft, named, optional, type StageDraft, type StageRow } from './settings-stages.js';
 
 // Settings › fluxo's transitions (#134): the draft ↔ Transition edges, keyed by the stage drafts' ids so a stage renamed while it is edited keeps
@@ -19,12 +20,46 @@ const actionOf = (stages: readonly StageDraft[], id: string): StageDraft['action
 const idOf = (stages: readonly StageDraft[], name: string): string => stages.find((s) => s.name.trim() === name)?.id ?? '';
 const nameOf = (stages: readonly StageDraft[], id: string): string => stages.find((s) => s.id === id)?.name.trim() ?? '';
 
-// A stage as the chart and the editor's title name it: fim for the end, sem nome for a blank one or one gone
-const shownName = (stages: readonly StageDraft[], id: string): string => (id === END ? t('flow.end') : nameOf(stages, id) || t('settings.stages.unnamed'));
+/** The flow a stage draft belongs to (#565), by draft id. */
+export const flowOfStage = (stages: readonly StageDraft[], id: string | undefined): string | undefined => stages.find((s) => s.id === id)?.flow;
 
-/** A transition as the chart names it (#134): `Plan → Review · terminou`, the editor's title and the form's messages (#918). */
-export const draftTitle = (d: TransitionDraft, stages: readonly StageDraft[]): string =>
-  `${shownName(stages, d.from)} → ${shownName(stages, d.to)} · ${triggerLabel(d.when, d.verdict, actionOf(stages, d.from))}`;
+/** A flow's name as the form shows it (#691): sem nome for a blank one or one gone. */
+export const flowName = (flows: readonly FlowDraft[], id: string | undefined): string => flows.find((f) => f.id === id)?.name.trim() || t('settings.flows.unnamed');
+
+/** A stage as `flow` names it (#691): bare in its own flow, `<flow> · <stage>` in another, so a crossing is never said by the arrow alone;
+ * fim for the end, sem nome for a blank stage or one gone. */
+export function stageNameIn(stages: readonly StageDraft[], flows: readonly FlowDraft[], id: string, flow: string | undefined): string {
+  if (id === END) return t('flow.end');
+  const stage = stages.find((s) => s.id === id);
+  const name = stage?.name.trim() || t('settings.stages.unnamed');
+  return stage === undefined || stage.flow === flow ? name : `${flowName(flows, stage.flow)} · ${name}`;
+}
+
+/** Whether a transition enters a stage of another flow than the one it leaves (#691); fim is no flow. */
+export const isCrossFlow = (d: TransitionDraft, stages: readonly StageDraft[]): boolean => {
+  const to = flowOfStage(stages, d.to);
+  return to !== undefined && to !== flowOfStage(stages, d.from);
+};
+
+/** The patch for retargeting a transition to `to` (#691): a session that continues a stage of neither the origin's flow nor the new target's
+ * falls back to the destination's, since the parser refuses any other flow and the save would fail. */
+export function retargetPatch(d: TransitionDraft, to: string, stages: readonly StageDraft[]): Partial<TransitionDraft> {
+  if (typeof d.session !== 'object') return { to };
+  const kept = [flowOfStage(stages, d.from), flowOfStage(stages, to)];
+  return kept.includes(flowOfStage(stages, d.session.continueOf)) ? { to } : { to, session: '' };
+}
+
+/** `<from> → <to>`, both as `flow` names them (#691): the crossing pills and the refusals. */
+export const routeName = (d: TransitionDraft, stages: readonly StageDraft[], flows: readonly FlowDraft[], flow: string | undefined): string =>
+  `${stageNameIn(stages, flows, d.from, flow)} → ${stageNameIn(stages, flows, d.to, flow)}`;
+
+/** A transition as the chart names it (#134): `Plan → Review · terminou`, the editor's title and the form's messages (#918); another flow's
+ * target as `<flow> · <stage>` (#691). */
+export const draftTitle = (d: TransitionDraft, stages: readonly StageDraft[], flows: readonly FlowDraft[]): string =>
+  `${routeName(d, stages, flows, flowOfStage(stages, d.from))} · ${triggerLabel(d.when, d.verdict, actionOf(stages, d.from))}`;
+
+/** A transition's words without its tries (#691): its own label, else its trigger's; the chega de hint reads it. */
+export const exitLabel = (d: TransitionDraft, stages: readonly StageDraft[]): string => d.label.trim() || triggerLabel(d.when, d.verdict, actionOf(stages, d.from));
 
 export function transitionDraft(t: Transition, stages: readonly StageDraft[], rows: readonly StageRow[]): TransitionDraft {
   const session = t.session === undefined ? '' : typeof t.session === 'string' ? t.session : { continueOf: idOf(stages, t.session.continueOf) };
@@ -88,7 +123,7 @@ export function withApproval(transitions: readonly TransitionDraft[], stageId: s
 
 /** A transition's pill (#134): its own label, else its trigger's, with its tries on an automatic one. */
 export function draftLabel(d: TransitionDraft, stages: readonly StageDraft[]): string {
-  const label = d.label.trim() || triggerLabel(d.when, d.verdict, actionOf(stages, d.from));
+  const label = exitLabel(d, stages);
   return isAutomatic(d.when) && /^[1-9]\d*$/.test(d.maxTries.trim()) ? t('flow.tries', { label, n: d.maxTries.trim() }) : label;
 }
 

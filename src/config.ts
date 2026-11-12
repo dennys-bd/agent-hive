@@ -639,10 +639,11 @@ function parseFields(raw: unknown): Config {
 
 export function parseConfig(raw: unknown): Config {
   const config = parseFields(raw);
+  const everyStage = flatten(config.comb.flows).stages; // #691: a transition's to may be another flow's stage, and the resume checks must find it
   config.comb.flows.forEach(({ stages, transitions }, f) => { // #564: transitions stay inside their flow, so each check runs per flow
     const at = `comb.flows[${f}]`;
-    checkResumedAgents(stages, transitions, config.defaultAgent, at); // #925: needs defaultAgent, which the fields parse last
-    checkClearedResumes(stages, transitions, at); // #494: a POST /settings save goes through here too
+    checkResumedAgents(everyStage, transitions, config.defaultAgent, at); // #925: needs defaultAgent, which the fields parse last
+    checkClearedResumes(everyStage, transitions, at); // #494: a POST /settings save goes through here too
     checkStageModels(stages, config.defaultAgent, at); // #927: the same
     checkEnabledAgents(stages, config.defaultAgent, config.agentEnabled, at); // #482: a POST /settings save goes through here too
   });

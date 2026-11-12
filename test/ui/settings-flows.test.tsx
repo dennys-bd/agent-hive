@@ -47,10 +47,16 @@ const FLOWS: Flow[] = [
   { name: 'feature', stages: [{ name: 'spec', from: { board: ['Ready'] } }, { name: 'build', from: {} }], transitions: [{ from: 'spec', to: 'build', when: 'done' }, { from: 'build', to: 'end', when: 'done' }] },
   { name: 'bug', stages: [{ name: 'triage', from: { board: ['Bug'] } }], transitions: [{ from: 'triage', to: 'end', when: 'done' }] },
 ];
+// #691: feature's build leaves for bug's fix
+const CROSSED: Flow[] = [
+  { ...FLOWS[0], transitions: [FLOWS[0].transitions[0], { from: 'build', to: 'fix', when: 'done' }] },
+  { name: 'bug', stages: [...FLOWS[1].stages, { name: 'fix', from: {} }], transitions: [{ from: 'triage', to: 'fix', when: 'done' }, { from: 'fix', to: 'end', when: 'done' }] },
+];
 const triaged: Task = { item: { itemId: 'board:I1', id: '1', title: 'T', body: '', url: '', source: 'board' }, stage: 'triage', boardColumn: 'Bug', auto: true };
 
 const tab = (name: string) => screen.getByRole('radio', { name });
-const chip = (name: string) => screen.queryByRole('button', { name: new RegExp(`^${name}`) });
+// (?! →) leaves out a crossing pill, whose name starts with its origin stage (#691)
+const chip = (name: string) => screen.queryByRole('button', { name: new RegExp(`^${name}(?! →)`) });
 const posted = (): SettingsBody | undefined => {
   const call = fetchMock.mock.calls.find(([url]) => url === '/settings');
   return call && (JSON.parse(String(call[1]?.body)) as SettingsBody);
@@ -61,7 +67,7 @@ async function openFlow(user: UserEvent, flows = FLOWS, state?: State): Promise<
 }
 const save = (user: UserEvent) => user.click(screen.getByRole('button', { name: t('settings.save') }));
 
-test('one tab per flow; a tab scopes the chart and the transition editor\'s para to its own stages (#565)', async () => {
+test('one tab per flow; a tab scopes the chart to its own stages, and para lists its own flow first, then the other flow\'s stages by name (#565, #691)', async () => {
   const user = userEvent.setup();
   await openFlow(user);
   expect(tab('feature')).toHaveAttribute('aria-checked', 'true');
@@ -71,10 +77,49 @@ test('one tab per flow; a tab scopes the chart and the transition editor\'s para
   await user.click(within(screen.getByRole('list', { name: 'saídas' })).getByRole('button', { name: new RegExp(`→ ${t('flow.end')}`) }));
   screen.getByRole('combobox', { name: 'para' }).focus();
   await user.keyboard('{Enter}');
-  const options = (await screen.findAllByRole('option')).map((o) => o.textContent);
-  expect(options).toContain('triage');
-  expect(options).not.toContain('spec');
-  expect(options).not.toContain('build');
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['triage', 'feature · spec', 'feature · build', t('flow.end')]);
+});
+
+test('feature draws build\'s crossing pill and the legend\'s other-flow line; bug draws the incoming pill on fix (#691)', async () => {
+  const user = userEvent.setup();
+  await openFlow(user, CROSSED);
+  expect(screen.getByRole('button', { name: t('settings.transitions.outgoing', { route: 'build → bug · fix' }) })).toBeInTheDocument();
+  expect(screen.getByText(`${t('settings.transitions.legend')} · ${t('settings.transitions.legend.flows')}`)).toBeInTheDocument();
+  await user.click(tab('bug'));
+  expect(screen.getByRole('img', { name: t('settings.transitions.incoming', { from: 'feature · build', when: t('settings.transitions.when.done'), flow: 'feature' }) })).toBeInTheDocument();
+});
+
+test('build\'s exit row names bug · fix with outro fluxo; fix\'s entry hint lists its own flow\'s arrival first, then feature · build (#691)', async () => {
+  const user = userEvent.setup();
+  await openFlow(user, CROSSED);
+  await user.click(chip('build')!);
+  const row = within(screen.getByRole('list', { name: 'saídas' })).getByRole('button', { name: /→ bug · fix/ });
+  expect(within(row).getByText(t('settings.transitions.otherFlow'))).toBeInTheDocument();
+  await user.click(tab('bug'));
+  await user.click(chip('fix')!);
+  expect(screen.getByText(t('settings.stages.from.arrivals', { list: 'triage (terminou), feature · build (terminou)' }))).toBeInTheDocument();
+});
+
+test('remover etapa on a stage another flow enters leaves it and says which transition to change; one nothing else enters is removed (#691)', async () => {
+  const user = userEvent.setup();
+  await openFlow(user, CROSSED);
+  await user.click(tab('bug'));
+  await user.click(chip('fix')!);
+  await user.click(screen.getByRole('button', { name: t('settings.stages.remove') }));
+  expect(screen.getByRole('alert')).toHaveTextContent(t('settings.stages.entered', { transition: 'feature · build → fix' }));
+  expect(chip('fix')).not.toBeNull();
+  await user.click(chip('triage')!);
+  await user.click(screen.getByRole('button', { name: t('settings.stages.remove') }));
+  expect(chip('triage')).toBeNull();
+});
+
+test('excluir fluxo on a flow another flow enters keeps it and names the transition to change (#691)', async () => {
+  const user = userEvent.setup();
+  await openFlow(user, CROSSED);
+  await user.click(tab('bug'));
+  await user.click(screen.getByRole('button', { name: t('settings.flows.remove') }));
+  expect(screen.getByRole('alert')).toHaveTextContent(t('settings.flows.entered', { transition: 'feature · build → fix' }));
+  expect(tab('bug')).toBeInTheDocument();
 });
 
 test('+ fluxo › name › criar opens the new flow\'s tab with one empty stage selected (#565)', async () => {

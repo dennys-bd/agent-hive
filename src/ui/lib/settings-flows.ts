@@ -4,36 +4,42 @@ import type { AgentId, Flow } from '../../types.js';
 import { t } from '../i18n.js';
 import type { SettingsDraft, SettingsProblem } from './settings-form.js';
 import { badEvaluation, emptyStage, isEmptyOrDuration, isEmptyOrNonNegativeInt, orphanContinue, stageFrom, stageNameClash, type StageDraft } from './settings-stages.js';
-import { draftTitle, type TransitionDraft, transitionFrom, transitionsKept, transitionsProblem } from './settings-transitions.js';
+import { draftTitle, flowOfStage, type TransitionDraft, transitionFrom, transitionsKept, transitionsProblem, withoutStage } from './settings-transitions.js';
 
 // Settings › fluxo's flows (#565), out of settings-form.ts, which is at its limit: the draft keeps flat stage and transition lists in flow order,
 // each stage tagged with its flow; these edges scope, merge and send them, and judge the flows.
 
 export interface FlowDraft { id: string; name: string } // id: a React key and what a StageDraft's flow holds, never sent; name as typed
 export interface ScopedFlow { stages: StageDraft[]; transitions: TransitionDraft[] }
-type FlowsDraft = Pick<SettingsDraft, 'flows' | 'stages' | 'transitions'>;
+export type FlowsDraft = Pick<SettingsDraft, 'flows' | 'stages' | 'transitions'>;
 
 const emptyFlow = (name: string): FlowDraft => ({ id: crypto.randomUUID(), name });
 
 /** One draft per saved flow; an empty config gets one named MAIN_FLOW, the name the parser's migration gives a flat comb (#564). */
 export const flowDrafts = (saved: readonly Flow[]): FlowDraft[] => (saved.length === 0 ? [emptyFlow(MAIN_FLOW)] : saved.map((f) => emptyFlow(f.name)));
 
-export const flowOfStage = (stages: readonly StageDraft[], id: string | undefined): string | undefined => stages.find((s) => s.id === id)?.flow;
-
 export function scopedFlow(draft: FlowsDraft, flow: string): ScopedFlow {
   const stages = draft.stages.filter((s) => s.flow === flow);
   return { stages, transitions: draft.transitions.filter((d) => stages.some((s) => s.id === d.from)) };
 }
 
-/** The flat lists with `flow`'s part replaced by `next` (the stage editor's change), every flow in its draft order; the arrows of a stage that
- * left the list go with it (transitionsKept). */
+/** The flat lists with `flow`'s part replaced by `next` (the stage editor's change), every flow in its draft order. An arrow is kept while its
+ * stages are in any flow (#691: a transition may enter another flow's stage), and a stage that left the list takes its arrows with it and
+ * turns every flow's continueOf of it back to the destination's session (#134). */
 export function withFlowEdit(draft: FlowsDraft, flow: string, next: ScopedFlow): ScopedFlow {
-  const kept = transitionsKept(next.transitions, next.stages);
-  return {
-    stages: draft.flows.flatMap((f) => (f.id === flow ? next.stages : scopedFlow(draft, f.id).stages)),
-    transitions: draft.flows.flatMap((f) => (f.id === flow ? kept : scopedFlow(draft, f.id).transitions)),
-  };
+  const stages = draft.flows.flatMap((f) => (f.id === flow ? next.stages : scopedFlow(draft, f.id).stages));
+  const edited = draft.flows.flatMap((f) => (f.id === flow ? next.transitions : scopedFlow(draft, f.id).transitions));
+  const gone = draft.stages.filter((s) => !stages.some((n) => n.id === s.id)).map((s) => s.id);
+  return { stages, transitions: transitionsKept(gone.reduce((list, id) => withoutStage(list, id), edited), stages) };
 }
+
+/** The other flows' transitions into `stage` (#691): what refuses its removal and lists it in chega de. */
+export const enteringStage = (draft: FlowsDraft, stage: string): TransitionDraft[] =>
+  draft.transitions.filter((d) => d.to === stage && flowOfStage(draft.stages, d.from) !== flowOfStage(draft.stages, stage));
+
+/** The other flows' transitions into a stage of `flow` (#691): what refuses its deletion and draws its incoming pills. */
+export const enteringFlow = (draft: FlowsDraft, flow: string): TransitionDraft[] =>
+  draft.transitions.filter((d) => flowOfStage(draft.stages, d.to) === flow && flowOfStage(draft.stages, d.from) !== flow);
 
 /** + fluxo > criar (spec decision 1): the flow with one empty stage and no transition, since the parser needs a stage per flow. */
 export function withNewFlow(draft: FlowsDraft, name: string, defaultAgent: AgentId): { id: string; patch: Pick<SettingsDraft, 'flows' | 'stages'> } {
@@ -80,7 +86,7 @@ export function transitionsDraftProblem(draft: SettingsDraft): SettingsProblem |
   const transition = draft.transitions.find((d) => d.id === bad?.id);
   if (bad === undefined || transition === undefined) return undefined;
   const stage = draft.stages.find((s) => s.id === transition.from)?.name.trim() || t('settings.stages.unnamed');
-  const message = t(`settings.transitions.error.${bad.reason}`, { name: draftTitle(transition, draft.stages), stage });
+  const message = t(`settings.transitions.error.${bad.reason}`, { name: draftTitle(transition, draft.stages, draft.flows), stage });
   return { section: 'flow', message, transition: bad.id };
 }
 

@@ -1393,3 +1393,18 @@ test('two flows parse with each check under its flow-indexed path (#564)', () =>
     { message: 'hive.config.json: "comb.flows[1].stages[0].model" "opus" is a Claude model; a codex stage needs a Codex model name' });
   assert.deepEqual(flatten(parseConfig(raw).comb.flows).stages.map((s) => s.name), [STAGES[0].name]);
 });
+
+test('a cross-flow resume is checked against the destination flow\'s stage: another agent\'s session, or one its origin clears, is refused (#691)', () => {
+  const raw = github({});
+  const comb = raw.comb as { flows: { name: string; stages: Record<string, unknown>[]; transitions: unknown[] }[] };
+  const [main] = comb.flows;
+  const crossed = (session: string, { agent, clearSession }: { agent?: string; clearSession?: true } = {}) => parseConfig({ ...raw, comb: { ...comb, flows: [
+    { ...main, stages: [{ ...main.stages[0], ...(clearSession ? { clearSession } : {}) }], transitions: [{ from: main.stages[0].name, to: 'fix', when: 'done', session }] },
+    { name: 'bug', stages: [{ name: 'fix', from: {}, prompt: '/fix', ...(agent ? { agent } : {}) }], transitions: [] },
+  ] } });
+  assert.equal(crossed('new', { agent: 'codex' }).comb.flows[0].transitions[0].to, 'fix');
+  assert.throws(() => crossed('previous', { agent: 'codex' }),
+    { message: 'hive.config.json: "comb.flows[0].transitions[0].session" resumes a session of claude in a stage of codex: use "handoff" to switch agents (#692)' });
+  assert.throws(() => crossed('previous', { clearSession: true }),
+    { message: `hive.config.json: "comb.flows[0].transitions[0].session" resumes the session of "${String(main.stages[0].name)}", which clears it when it ends (#494)` });
+});

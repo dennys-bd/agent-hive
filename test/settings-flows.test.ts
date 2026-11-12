@@ -4,7 +4,8 @@ import { parseConfig } from '../src/config.js';
 import type { Flow, SettingsInfo } from '../src/types.js';
 import { t } from '../src/ui/i18n.js';
 import { draftFrom, emptyStage, toSettingsBody, validateSettings } from '../src/ui/lib/settings-form.js';
-import { scopedFlow, withFlowEdit, withNewFlow, withoutFlow } from '../src/ui/lib/settings-flows.js';
+import { enteringFlow, enteringStage, scopedFlow, withFlowEdit, withNewFlow, withoutFlow } from '../src/ui/lib/settings-flows.js';
+import { withoutStage } from '../src/ui/lib/settings-transitions.js';
 import { combConfig } from './fakes.js';
 
 // Two flows, as #564 saves them: the draft's flat lists in flow order, each stage tagged with its flow (#565)
@@ -59,4 +60,38 @@ test('an untouched form sends every flow back as saved, each transition under it
   const body = toSettingsBody(draftFrom(info(FLOWS)));
   assert.deepEqual(body.flows, FLOWS);
   assert.equal('stages' in body || 'transitions' in body, false);
+});
+
+// #691: feature's build leaves for bug's fix
+const CROSSED: Flow[] = [
+  { name: 'feature', stages: FLOWS[0].stages, transitions: [FLOWS[0].transitions[0], { from: 'build', to: 'fix', when: 'done' }] },
+  { name: 'bug', stages: [{ name: 'triage', from: {} }, { name: 'fix', from: {} }], transitions: [{ from: 'triage', to: 'fix', when: 'done' }, { from: 'fix', to: 'end', when: 'done' }] },
+];
+
+test('a transition into another flow round-trips the form; an edit of its own flow keeps it, and a rename of its target is followed (#691)', () => {
+  const draft = draftFrom(info(CROSSED));
+  const [feature, bug] = draft.flows;
+  assert.deepEqual(toSettingsBody(draft).flows, CROSSED);
+  assert.deepEqual(toSettingsBody({ ...draft, ...withFlowEdit(draft, feature.id, scopedFlow(draft, feature.id)) }).flows, CROSSED, 'feature\'s edit keeps its arrow into bug');
+  const scope = scopedFlow(draft, bug.id);
+  const renamed = withFlowEdit(draft, bug.id, { ...scope, stages: scope.stages.map((s) => (s.name === 'fix' ? { ...s, name: 'repair' } : s)) });
+  assert.deepEqual(toSettingsBody({ ...draft, ...renamed }).flows?.[0]?.transitions[1], { from: 'build', to: 'repair', when: 'done' });
+});
+
+test('a stage removed from one flow turns another flow\'s continueOf of it back into the destination\'s session (#691)', () => {
+  const resumed: Flow[] = [{ ...CROSSED[0], transitions: [CROSSED[0].transitions[0], { from: 'build', to: 'fix', when: 'done', session: { continueOf: 'triage' } }] }, CROSSED[1]];
+  const draft = draftFrom(info(resumed));
+  const bug = draft.flows[1].id;
+  const triage = draft.stages.find((s) => s.name === 'triage')?.id ?? '';
+  const scope = scopedFlow(draft, bug);
+  const next = withFlowEdit(draft, bug, { stages: scope.stages.filter((s) => s.id !== triage), transitions: withoutStage(scope.transitions, triage) });
+  assert.deepEqual(toSettingsBody({ ...draft, ...next }).flows?.[0]?.transitions[1], { from: 'build', to: 'fix', when: 'done' });
+});
+
+test('enteringStage and enteringFlow are the other flows\' transitions into a stage or a flow; a flow\'s own arrows and its exits to end are not (#691)', () => {
+  const draft = draftFrom(info(CROSSED));
+  const [feature, bug] = draft.flows;
+  const fix = draft.stages.find((s) => s.name === 'fix')?.id ?? '';
+  const cross = draft.transitions[1];
+  assert.deepEqual([enteringStage(draft, fix), enteringFlow(draft, bug.id), enteringFlow(draft, feature.id)], [[cross], [cross], []]);
 });

@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage } from '../src/ui/i18n.js';
 import { emptyStage, type StageDraft } from '../src/ui/lib/settings-stages.js';
-import { draftLabel, draftVerdicts, emptyTransition, transitionDraft, transitionFrom, transitionsProblem, triggersOf, withApproval, withoutStage, type TransitionDraft } from '../src/ui/lib/settings-transitions.js';
-import type { Transition, Trigger } from '../src/types.js';
+import { draftLabel, draftTitle, draftVerdicts, emptyTransition, exitLabel, isCrossFlow, retargetPatch, routeName, stageNameIn, transitionDraft, transitionFrom, transitionsProblem, triggersOf, withApproval, withoutStage, type TransitionDraft } from '../src/ui/lib/settings-transitions.js';
+import { END, type Transition, type Trigger } from '../src/types.js';
 const FLOW = 'f';
 
 // Settings › fluxo's transitions (#134): keyed by the stage drafts' ids, round-tripped to the config.
@@ -89,4 +89,31 @@ test('transitionsProblem names the first transition the parser would refuse by i
   assert.deepEqual(problem(ok, twin), { id: 'twin', reason: 'twin' });
   const [first, second] = [draft(plan, { when: 'done' }), draft(build, { to: 'gone' })];
   assert.deepEqual(problem(ok, first, second), { id: first.id, reason: 'useApproved' }, 'the first in list order wins');
+});
+
+test('another flow\'s stage reads <flow> · <stage> from the origin\'s side, in the title and the route; its own flow\'s and fim stay bare (#691)', () => {
+  setLanguage('pt');
+  const triage: StageDraft = { ...emptyStage('g'), name: 'triage' };
+  const stages = [...STAGES, triage];
+  const flows = [{ id: FLOW, name: 'main' }, { id: 'g', name: 'bug' }];
+  const own = emptyTransition(STAGES[0], stages);
+  const cross: TransitionDraft = { ...own, to: triage.id };
+  assert.deepEqual([stageNameIn(stages, flows, triage.id, FLOW), stageNameIn(stages, flows, triage.id, 'g'), stageNameIn(stages, flows, END, FLOW)], ['bug · triage', 'triage', 'fim']);
+  assert.equal(draftTitle(cross, stages, flows), 'Build → bug · triage · terminou');
+  assert.equal(draftTitle(own, stages, flows), 'Build → Checks · terminou');
+  assert.equal(routeName(cross, stages, flows, 'g'), 'main · Build → triage', 'from the destination\'s side the origin carries its flow');
+  assert.deepEqual([isCrossFlow(cross, stages), isCrossFlow(own, stages), isCrossFlow({ ...cross, to: END }, stages)], [true, false, false]);
+  assert.deepEqual([exitLabel({ ...own, label: ' design ' }, stages), exitLabel({ ...own, maxTries: '3' }, stages)], ['design', 'terminou'], 'the label, else the trigger, never the tries');
+});
+
+test('retargeting a transition keeps a continueOf of the origin\'s or the new target\'s flow and resets any other (#691)', () => {
+  const [bug, ops] = [stage('Triage', { flow: 'g' }), stage('Deploy', { flow: 'h' })];
+  const stages = [...STAGES, bug, ops];
+  const from: TransitionDraft = { ...emptyTransition(STAGES[0], stages), to: STAGES[1].id };
+  const of = (id: string): TransitionDraft => ({ ...from, session: { continueOf: id } });
+  assert.deepEqual(retargetPatch(of(STAGES[0].id), bug.id, stages), { to: bug.id }, 'the origin\'s flow stays');
+  assert.deepEqual(retargetPatch(of(bug.id), bug.id, stages), { to: bug.id }, 'the new target\'s flow stays');
+  assert.deepEqual(retargetPatch(of(bug.id), ops.id, stages), { to: ops.id, session: '' }, 'a third flow resets');
+  assert.deepEqual(retargetPatch(of(bug.id), END, stages), { to: END, session: '' }, 'fim has no flow, so only the origin\'s stays');
+  assert.deepEqual(retargetPatch({ ...from, session: 'previous' }, ops.id, stages), { to: ops.id }, 'a keyword session is untouched');
 });
