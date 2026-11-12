@@ -19,6 +19,10 @@ afterEach(() => { resetViewState(); });
 // Each activity's open folders (#947) are module state too
 afterEach(() => { resetExpanded(); });
 
+// The decomposition writes (#781) are module state too: a dialog opened by one test is never open in the next. Imported lazily: a static
+// import here would load the store, and the real sonner with it, before a test file's vi.mock('sonner') applies
+afterEach(async () => { (await import('@/hooks/use-decomposition-write')).resetDecompositionWrites(); });
+
 // The lib measures and positions in a layout jsdom does not have; a plain host div proves the wiring and keeps the DOM shape
 // (className on the host, children inside) the Flow tests walk through.
 vi.mock('overlayscrollbars-react', async () => {
