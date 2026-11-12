@@ -11,7 +11,6 @@ import { Confirm } from '@/components/Confirm';
 import { AutoStartItem, deleteActivityMessage } from '@/components/DetailMenu';
 import { CONTEXT_KIT, type MenuKit } from '@/components/menu-kit';
 import { DeleteActivity, deletionBlocker, taskDeletionUrl } from '@/components/DeleteActivity';
-import { DecompositionDialog } from '@/components/DecompositionDialog';
 import { RestartDialog } from '@/components/RestartDialog';
 import { useCommandStop } from '@/components/RunCommands';
 import { StartDialog } from '@/components/StartDialog';
@@ -21,9 +20,11 @@ import { TakeToFlowDialog } from '@/components/tasks/TakeToFlowDialog';
 import { useOpenDiff, useOpenPr, useOpenStarted } from '@/components/terminal-tabs';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { useOpenConsole } from '@/hooks/use-console';
+import { openDecomposition } from '@/hooks/use-decomposition-write';
 import { useTaskMenuKeys } from '@/hooks/use-task-keys';
 import { type MessageKey, t } from '@/i18n';
 import { activitiesOf } from '@/lib/activities';
+import { taskRef } from '@/lib/operations-activity';
 import { answerableActivity } from '@/lib/task-state';
 
 const DESTRUCTIVE = 'text-destructive focus:text-destructive';
@@ -229,7 +230,6 @@ function WorkspaceSub({ task, state, id }: { task: Task; state: State; id: strin
 export function TaskMenu({ task, state, children }: { task: Task; state: State; children: ReactNode }) {
   const [dialog, setDialog] = useState<StartMode | 'restart' | 'takeToFlow'>();
   const [feedback, setFeedback] = useState(false);
-  const [isCreatingIssues, setIsCreatingIssues] = useState(false); // #865: A's confirm
   const opener = useOpenStarted();
   const boundary = useContext(MenuBoundaryContext);
   const { items: sleepItems, dialog: sleepDialog } = useSleepMenu(task, state);
@@ -241,7 +241,8 @@ export function TaskMenu({ task, state, children }: { task: Task; state: State; 
   const started = (taskId: string): void => opener?.(taskId); // the run's task goes to the center once it shows (#457)
   const close = (): void => setDialog(undefined);
   const live = activityOf(state, task.item.itemId);
-  const onKeyDown = useTaskMenuKeys(task, state, { start: setDialog, decomposition: () => setIsCreatingIssues(true) }); // the letters (#585); F is the face's: it opens the details
+  // the letters (#585); F is the face's: it opens the details. A's confirm is the window's one dialog (#781)
+  const onKeyDown = useTaskMenuKeys(task, state, { start: setDialog, decomposition: () => { if (live) openDecomposition(live.id, taskRef(task)); } });
   return (
     <>
       <ContextMenu>
@@ -267,7 +268,6 @@ export function TaskMenu({ task, state, children }: { task: Task; state: State; 
       {dialog === 'restart' && <RestartDialog task={task} state={state} onStarted={() => started(task.item.itemId)} onClose={close} />}
       {dialog === 'takeToFlow' && <TakeToFlowDialog task={task} flows={state.flows} open onOpenChange={(open) => { if (!open) close(); }} />}
       {feedback && <FeedbackDialog activity={answerableActivity(task, state)} openSession={openFeedbackSession(task, state) !== undefined} onClose={() => setFeedback(false)} />}
-      {isCreatingIssues && live && <DecompositionDialog activityId={live.id} onClose={() => setIsCreatingIssues(false)} />}
       {sleepDialog}
       {runDialog}
       {deleteActivity.dialog}

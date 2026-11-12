@@ -346,6 +346,21 @@ test('the decomposition\'s confirm reads in both languages: criar issues, the co
   assert.equal(t('decomposition.title'), 'Create issues');
 });
 
+test('the decomposition write\'s running state and failure toast read in both languages (#781)', () => {
+  setLanguage('pt');
+  assert.equal(t('decomposition.creating'), 'criando issues…');
+  assert.equal(t('decomposition.running'), 'pode fechar: a criação continua em segundo plano e as issues aparecem em tarefas ao terminar. se algo falhar, um aviso aparece.');
+  assert.equal(t('decomposition.recover'), 'As issues já criadas ficam: clique em "criar issues" de novo para continuar de onde parou.');
+  assert.equal(t('decomposition.failedTitle', { ref: '#678' }), 'A criação das issues de #678 parou');
+  assert.equal(t('decomposition.failedTitle', { ref: 'HIVE-11' }), 'A criação das issues de HIVE-11 parou');
+  assert.deepEqual([t('decomposition.reopen'), t('base.close')], ['reabrir', 'fechar']);
+  setLanguage('en');
+  assert.equal(t('decomposition.creating'), 'creating issues…');
+  assert.equal(t('decomposition.failedTitle', { ref: '#678' }), 'Creating the issues of #678 stopped');
+  assert.equal(t('decomposition.recover'), 'The issues created so far are kept: press "create issues" again to continue from where it stopped.');
+  assert.deepEqual([t('decomposition.reopen'), t('base.close')], ['reopen', 'close']);
+});
+
 test('the running block\'s copy reads as the spec writes it, in both languages (#914)', () => {
   const keys = ['running.ci', 'running.commands', 'running.stage', 'running.loop', 'running.silent', 'running.skipped', 'running.output', 'running.stop'] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['aguardando CI', 'executando checks', 'etapa {name}', 'volta {n}/{max}', 'sem saída há {n} min · {name}', 'pulado', 'ver saída', 'parar']);

@@ -186,6 +186,11 @@ const en = {
   'decomposition.problem': 'line {line}: {message}',
   'decomposition.warnings': 'Nodes that touch the same files with no blocker between them (the issues are created anyway):', // #936
   'decomposition.transient': 'GitHub did not answer. The issues created so far are kept: press "create issues" again to continue from where it stopped.', // #702: a write that gave up on a transient error; gh's words go to hive.log
+  'decomposition.creating': 'creating issues…', // #781: the busy primary while the write runs
+  'decomposition.running': 'You can close this: the creation goes on in the background and the issues appear in tasks when it ends. If something fails, a notice shows.', // #781: the status note
+  'decomposition.recover': 'The issues created so far are kept: press "create issues" again to continue from where it stopped.', // #781: after GitHub's words on a 502 only
+  'decomposition.failedTitle': 'Creating the issues of {ref} stopped', // #781: the toast's title; ref is taskRef's, so no fixed #
+  'decomposition.reopen': 'reopen', // #781: the toast's action
   'approval.startNow': 'start now',
   'approval.queue': 'in order',
   'approval.hint': 'start now resumes the task\'s session. in order, it waits for a free worker.',
@@ -1481,6 +1486,7 @@ const en = {
   'base.group.local': 'local branches',
   'base.group.remote': 'remote branches',
   'base.cancel': 'cancel',
+  'base.close': 'close',
   'confirm.removeLocal': 'delete this task? It leaves the Hive for good, and its worktree and branch go with it.',
   'settings.stages': 'stages',
   'settings.stages.name': 'stage name',
@@ -3325,6 +3331,11 @@ const pt: Record<MessageKey, string> = {
   'decomposition.problem': 'linha {line}: {message}',
   'decomposition.warnings': 'Nós que tocam os mesmos arquivos sem bloqueio entre eles (as issues são criadas mesmo assim):',
   'decomposition.transient': 'O GitHub não respondeu. As issues já criadas ficam: clique em "criar issues" de novo para continuar de onde parou.',
+  'decomposition.creating': 'criando issues…',
+  'decomposition.running': 'pode fechar: a criação continua em segundo plano e as issues aparecem em tarefas ao terminar. se algo falhar, um aviso aparece.',
+  'decomposition.recover': 'As issues já criadas ficam: clique em "criar issues" de novo para continuar de onde parou.',
+  'decomposition.failedTitle': 'A criação das issues de {ref} parou',
+  'decomposition.reopen': 'reabrir',
   'approval.startNow': 'começar agora',
   'approval.queue': 'na ordem',
   'approval.hint': 'começar agora retoma a sessão da tarefa. na ordem, a tarefa espera um worker livre.',
@@ -4612,6 +4623,7 @@ const pt: Record<MessageKey, string> = {
   'base.group.local': 'branches locais',
   'base.group.remote': 'branches remotas',
   'base.cancel': 'cancelar',
+  'base.close': 'fechar',
   'confirm.removeLocal': 'excluir esta tarefa? Ela sai do Hive de vez, e a worktree e a branch dela vão junto.',
   'settings.stages': 'etapas',
   'settings.stages.name': 'nome da etapa',
