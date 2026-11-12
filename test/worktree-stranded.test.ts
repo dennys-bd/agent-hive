@@ -1,11 +1,13 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { initialState } from '../src/orchestrator.js';
 import { slugFor } from '../src/tasks.js';
-import type { Activity, Exec, Task } from '../src/types.js';
+import type { Activity, Config, Exec, State, Task } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
-import { isStranded, strandedRepo, worktreeRepo } from '../src/worktree-stranded.js';
+import { isStranded, strandedRepo, strandedRows, worktreeRepo } from '../src/worktree-stranded.js';
+import { withWork } from './fixtures/work.js';
 import { tempDir } from './temp-dir.js';
 
 // #746: the repo a removed workspace's worktree belongs to, read from the path and confirmed by one git listing.
@@ -106,4 +108,70 @@ test('strandedRepo does not confirm a gone worktree in a repo the Hive never mad
   const repo = await tempDir(t, 'stranded-');
   await mkdir(join(repo, '.git'));
   assert.equal(await strandedRepo(activityAt(worktreePath(repo, SLUG)), task, fakeExec(listing(repo, [])).exec), undefined);
+});
+
+// #747: GET /worktrees' rows of stranded task activities. `live` is the only workspace in the Comb. Git answers each repo's listing from
+// `listings`; `failing` fails only listWorktrees' listing there, not strandedRepo's fsmonitor-off check; ls-files answers `ignored`, and
+// every status one uncommitted file.
+const CONFIG = { comb: { workspaces: [{ name: 'live' }] } } as Pick<Config, 'comb'>;
+const taskN = (n: number, title: string): Task => ({ item: { itemId: `board:I${n}`, id: String(n), title, body: '', url: '' }, boardColumn: 'Ready' }) as Task;
+const second = taskN(2, 'Second');
+const third = taskN(3, 'Third');
+const strandedState = (works: [Task, Partial<Activity>][]): State =>
+  works.reduce((s, [t, work]) => withWork(s, t.item.itemId, work), { ...initialState(0), tasks: works.map(([t]) => t) });
+const rowsExec = (listings: Record<string, string>, { failing, ignored = '' }: { failing?: string; ignored?: string } = {}): { exec: Exec; calls: string[][] } => {
+  const calls: string[][] = [];
+  const exec: Exec = async (_file, args) => {
+    calls.push(args);
+    if (args.includes('ls-files')) return { stdout: ignored };
+    if (args.includes('status')) return { stdout: ' M a.ts\n' };
+    if (args[1] === failing && !args.includes('core.fsmonitor=false')) throw new Error('fatal: bad object');
+    return { stdout: listings[args[1] ?? ''] ?? '' };
+  };
+  return { exec, calls };
+};
+// A repo folder with its own .git and a worktree folder per slug
+async function repoWith(t: TestContext, slugs: string[]): Promise<string> {
+  const repo = await tempDir(t, 'stranded-');
+  await mkdir(join(repo, '.git'));
+  for (const slug of slugs) await mkdir(worktreePath(repo, slug), { recursive: true });
+  return repo;
+}
+
+test('strandedRows answers a stranded task activity\'s own worktree under its removed workspace, with its task, its nested status and workspaceGone; another worktree of the repo and a live workspace\'s activity answer none (#747)', async (t) => {
+  const repo = await repoWith(t, [SLUG, 'hive-9-other']);
+  await mkdir(join(repo, 'docs', '.git'), { recursive: true }); // a nested repo the stand-in detects
+  await mkdir(join(worktreePath(repo, SLUG), 'docs', '.git'), { recursive: true });
+  const state = strandedState([
+    [task, { workspace: 'gone', slug: SLUG, worktree: worktreePath(repo, SLUG) }],
+    [second, { workspace: 'live', slug: slugFor(second.item), worktree: worktreePath(repo, slugFor(second.item)) }],
+  ]);
+  const { exec } = rowsExec({ [repo]: listing(repo, [SLUG, 'hive-9-other']) }, { ignored: 'docs/\0' });
+  const rows = await strandedRows(state, CONFIG, exec);
+  assert.deepEqual(rows.map((r) => [r.workspace, r.slug, r.path, r.task?.id, r.task?.activityId, r.orphan, r.nested, r.workspaceGone]), [
+    ['gone', SLUG, worktreePath(repo, SLUG), 'board:I1', 'a-board:I1', undefined, [{ path: 'docs', uncommitted: 1 }], true],
+  ]);
+});
+
+test('strandedRows answers nothing and runs no git for a local stranded activity or one with no task (#747)', async (t) => {
+  const repo = await repoWith(t, [SLUG, 'hive-9-kept']);
+  const local = strandedState([[task, { workspace: 'gone', slug: SLUG, worktree: worktreePath(repo, SLUG), local: true }]]);
+  const state = withWork(local, 'board:I9', { workspace: 'gone', slug: 'hive-9-kept', worktree: worktreePath(repo, 'hive-9-kept') }); // its task left (#861)
+  const { exec, calls } = rowsExec({ [repo]: listing(repo, [SLUG, 'hive-9-kept']) });
+  assert.deepEqual(await strandedRows(state, CONFIG, exec), []);
+  assert.deepEqual(calls, []);
+});
+
+test('strandedRows drops only the rows of a stranded activity whose repo git does not confirm or whose listing fails (#747)', async (t) => {
+  const kept = await repoWith(t, [SLUG]);
+  const broken = await repoWith(t, [slugFor(second.item)]);
+  const bare = await tempDir(t, 'stranded-'); // no .git of its own: never confirmed
+  await mkdir(worktreePath(bare, slugFor(third.item)), { recursive: true });
+  const state = strandedState([
+    [task, { workspace: 'gone', slug: SLUG, worktree: worktreePath(kept, SLUG) }],
+    [second, { workspace: 'old', slug: slugFor(second.item), worktree: worktreePath(broken, slugFor(second.item)) }],
+    [third, { workspace: 'older', slug: slugFor(third.item), worktree: worktreePath(bare, slugFor(third.item)) }],
+  ]);
+  const { exec } = rowsExec({ [kept]: listing(kept, [SLUG]), [broken]: listing(broken, [slugFor(second.item)]) }, { failing: broken });
+  assert.deepEqual((await strandedRows(state, CONFIG, exec)).map((r) => [r.workspace, r.slug]), [['gone', SLUG]]);
 });
