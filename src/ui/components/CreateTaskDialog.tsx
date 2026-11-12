@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type CreateDraft, useCreateDraft } from '@/hooks/use-create-draft';
+import { useCreateIssue } from '@/hooks/use-create-issue';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
 import { type CreateTargets, CreateTargetsContext, preselect } from '@/lib/create-targets';
@@ -107,6 +108,13 @@ function hiveAction(draft: CreateDraft, setError: (error: string | undefined) =>
   return { label: t('create.submit'), onConfirm: create, disabled: draft.title.trim() === '' || workspace === undefined };
 }
 
+// The CTA per answer (decisions 10, 13 and 14): busy, a retry of the same body, or fechar once the issue exists, which posts nothing
+function issueAction({ failure, isPosting, create }: ReturnType<typeof useCreateIssue>, isReady: boolean): DialogAction {
+  if (failure?.kind === 'placed') return { label: t('create.close'), onConfirm: () => undefined };
+  const label = isPosting ? 'create.creatingIssue' : failure?.kind === 'retry' ? 'create.retry' : 'create.submitIssue';
+  return { label: t(label), onConfirm: create, disabled: !isReady };
+}
+
 /** The create-task dialog (#771, #772): a hive task or a GitHub issue, and nothing else, no activity starts. */
 export function CreateTaskDialog({ state, title, workspace: opened, source, onOpenTask, onClose }: CreateTaskDialogProps) {
   // a workspace gone from the Comb is no pick: the menu could not show it, and the CTA would post it unseen
@@ -117,13 +125,14 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
   const api = useCreateDraft({ title, workspace, destination: picked.destination, source: picked.source ?? targets.sources[0]?.name });
   const { draft } = api;
   const [error, setError] = useState<string>();
+  const repository = targets.sources.find((s) => s.name === draft.source)?.repository;
+  const issue = useCreateIssue({ draft, repository, flows: state.flows, onOpenTask });
   const isGithub = draft.destination === 'github';
   const hint = picked.hinted && isGithub && opened !== undefined ? t('create.hinted', { workspace: opened }) : undefined;
   // an edit after a refusal answers it: the old message would describe a draft that is no longer there
-  const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); set(value); };
+  const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); issue.clear(); set(value); };
   const isIssueReady = draft.title.trim() !== '' && draft.status !== undefined; // status is set once the source's options arrived (decision 6)
-  // #772: the issue's post comes with the next task; until then the CTA stays disabled
-  const primary: DialogAction = isGithub ? { label: t('create.submitIssue'), onConfirm: () => undefined, disabled: !isIssueReady } : hiveAction(draft, setError, onOpenTask);
+  const primary: DialogAction = isGithub ? issueAction(issue, isIssueReady) : hiveAction(draft, setError, onOpenTask);
 
   return (
     <DialogBase

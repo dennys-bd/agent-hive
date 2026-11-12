@@ -273,3 +273,71 @@ test('a label picked becomes a chip, + label leaves out what was picked, a new r
   await user.click(screen.getByRole('button', { name: 'tirar bug' }));
   expect(screen.queryByRole('button', { name: /^tirar / })).not.toBeInTheDocument();
 });
+
+const ISSUE = { number: 912, url: 'https://github.com/acme/app/issues/912' };
+const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)) as unknown);
+type Before = (user: ReturnType<typeof userEvent.setup>) => Promise<void>;
+// opens under issue no GitHub (work, by the workspace), runs before, posts, and answers the POST with answer
+async function answered(answer: unknown, { flows: shown, before }: { flows?: Flow[]; before?: Before } = {}) {
+  const user = userEvent.setup();
+  serve();
+  const view = open({ title: 'Fix', workspace: 'site', targets: TARGETS, flows: shown });
+  await waitFor(() => expect(statusBox()).toBeEnabled());
+  await before?.(user);
+  await user.click(screen.getByRole('button', { name: 'criar issue' }));
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  settle(json(answer, 201));
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  return view;
+}
+
+test('criar issue posts title, body, source, labels and status, never workspace, stage or auto, status null under fora do project, and reads criando issue… while it runs (#772)', async () => {
+  const user = userEvent.setup();
+  serve();
+  open({ title: 'Fix login', workspace: 'site', targets: TARGETS });
+  await waitFor(() => expect(statusBox()).toBeEnabled());
+  await user.type(screen.getByLabelText('descrição'), 'steps');
+  await pick(user, /status/, 'fora do project');
+  await user.click(screen.getByRole('button', { name: 'label' }));
+  await user.click(await screen.findByRole('menuitem', { name: 'bug' }));
+  await user.click(screen.getByRole('button', { name: 'criar issue' }));
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  expect(posts()[0]).toEqual({ title: 'Fix login', body: 'steps', source: 'work', labels: ['bug'], status: null });
+  expect(screen.getByRole('button', { name: 'criando issue…' })).toBeDisabled();
+});
+
+test('an issue in the flow toasts its stage with one flow, flow · stage with two, sem fluxo with no stage, and abrir opens it (#772)', async () => {
+  const cases: [Record<string, unknown>, Flow[], string][] = [
+    [{ stage: 'dev' }, mainFlows(stages), 'Issue #912 criada · entra em dev'],
+    [{ stage: 'triage' }, flows, 'Issue #912 criada · entra em bug · triage'],
+    [{}, flows, 'Issue #912 criada · em tarefas › sem fluxo'],
+  ];
+  for (const [extra, shown, message] of cases) {
+    vi.mocked(toast).mockClear(); onClose.mockClear(); fetchMock.mockClear();
+    const { unmount } = await answered({ id: 'APP-7', itemId: 'gh:1', issue: ISSUE, ...extra }, { flows: shown });
+    expect(posts()[0]).toEqual({ title: 'Fix', body: '', source: 'work', labels: [], status: 'Backlog' });
+    const [text, options] = vi.mocked(toast).mock.calls[0] as [string, { action: { label: string; onClick(): void } }];
+    expect([text, options.action.label]).toEqual([message, 'abrir']);
+    options.action.onClick();
+    expect(onOpenTask).toHaveBeenLastCalledWith('APP-7');
+    unmount();
+  }
+});
+
+test('a notice toasts that the issue is still outside the hive, with ver no GitHub, and the off-Project line under fora do project (#772)', async () => {
+  const opened = vi.spyOn(window, 'open').mockImplementation(() => null);
+  const cases: [Before | undefined, string][] = [
+    [undefined, 'Nenhuma source pega a issue. Ela aparece quando passar no filtro de uma source.'],
+    [(user) => pick(user, /status/, 'fora do project'), 'Fora do project, nenhuma source a lista.'],
+  ];
+  for (const [before, line] of cases) {
+    vi.mocked(toast.info).mockClear(); onClose.mockClear(); fetchMock.mockClear();
+    const { unmount } = await answered({ issue: { ...ISSUE, number: 88 }, notice: 'created off the Project' }, { before });
+    const [text, options] = vi.mocked(toast.info).mock.calls[0] as [string, { description: string; action: { label: string; onClick(): void } }];
+    expect([text, options.description, options.action.label]).toEqual(['Issue #88 criada, ainda fora do hive', line, 'ver no GitHub']);
+    options.action.onClick();
+    expect(opened).toHaveBeenLastCalledWith(ISSUE.url, '_blank', 'noreferrer');
+    unmount();
+  }
+  expect(vi.mocked(toast)).not.toHaveBeenCalled();
+});
