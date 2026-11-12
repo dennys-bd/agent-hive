@@ -37,6 +37,13 @@ export interface WorktreeRouteDeps {
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/** One workspace's GET /worktrees rows (#181, #653): git's listing, the task that owns each slug, and the nested worktrees in it. The
+ * holdings read (#750) answers the same rows, so the removal dialog removes them through the same routes. */
+export async function workspaceRows(workspace: Workspace, state: State, exec: Exec): Promise<WorktreeRow[]> {
+  const rows = worktreeRows(await listWorktrees(workspace.path, process.platform, exec), state, workspace.name);
+  return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, exec) })));
+}
+
 // The Settings tab's worktrees (#181). Read from git on demand and never kept in the state: the tab asks when it opens and after each
 // action. A removal here touches no task, so nothing is dispatched; the log says what happened.
 export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): void {
@@ -46,10 +53,7 @@ export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): v
     if (!current) return;
     try {
       // every workspace, in config order (#179); a failure in any of them is the 500 with git's words
-      const perWorkspace = await Promise.all(current.runtime.config.comb.workspaces.map(async (workspace) => {
-        const rows = worktreeRows(await listWorktrees(workspace.path, process.platform, exec), current.state, workspace.name);
-        return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, exec) }))); // #653
-      }));
+      const perWorkspace = await Promise.all(current.runtime.config.comb.workspaces.map((workspace) => workspaceRows(workspace, current.state, exec)));
       // #747: then the stranded task activities' worktrees, under their removed workspace; each failure drops only its own rows. A configured
       // workspace that shares the repo lists the same folder: a live task's row wins (a stale activity must never post its delete there),
       // while a row no task owns gives way to the stranded one, which knows its task
