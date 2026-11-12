@@ -230,14 +230,14 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
       [2, 'Working tree', 98, 0],
       [2, 'Subagents', 104, 0],
       [2, 'Stage 1 — Implementation', 119, 0],
-      [2, 'Stage 2 — Code review', 140, 0],
-      [2, 'Stage 3 — Security review', 148, 0],
-      [2, "Stage 4 — Check against the spec's Done", 156, 0],
-      [2, 'Stage 5 — UI check', 164, 1],
-      [2, 'Stage 6 — Walkthrough', 178, 0],
-      [2, 'Stage 7 — PR', 202, 0],
-      [2, 'End', 210, 0],
-      [2, 'Stops', 217, 0],
+      [2, 'Stage 2 — Code review', 145, 0],
+      [2, 'Stage 3 — Security review', 153, 0],
+      [2, "Stage 4 — Check against the spec's Done", 161, 0],
+      [2, 'Stage 5 — UI check', 169, 1],
+      [2, 'Stage 6 — Walkthrough', 183, 0],
+      [2, 'Stage 7 — PR', 207, 0],
+      [2, 'End', 215, 0],
+      [2, 'Stops', 222, 0],
     ],
   );
   const agentsOf = (block: HeadingBlock) => block.references.filter((reference) => reference.kind === 'agent');
@@ -262,8 +262,8 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
     { kind: 'agent', name: 'hive:tdd', line: 125 },
     { kind: 'agent', name: 'hive:build-fixer', line: 132 },
   ]);
-  assert.deepEqual(agentsOf(section('Stage 2 — Code review')), [{ kind: 'agent', name: 'hive:code-reviewer', line: 142 }]);
-  assert.deepEqual(agentsOf(section('Stage 3 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 154 }]);
+  assert.deepEqual(agentsOf(section('Stage 2 — Code review')), [{ kind: 'agent', name: 'hive:code-reviewer', line: 147 }]);
+  assert.deepEqual(agentsOf(section('Stage 3 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 159 }]);
 });
 test('a marker line with thousands of spaces maps in linear time (#311)', () => {
   const started = Date.now();

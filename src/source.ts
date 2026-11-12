@@ -96,7 +96,8 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
     ...(stored ? { stored: async () => shown(await stored()) } : {}),
     setColumn: (itemId, column) => adapter.setColumn(own(itemId), column),
     apply: (itemId, action, url) => adapter.apply(own(itemId), action, url),
-    ...(create ? { create: async (fields: Parameters<NonNullable<Source['create']>>[0]) => `${prefix}${await create(fields)}` } : {}),
+    // #767: an issue off the Project has no item to name
+    ...(create ? { create: async (fields: Parameters<NonNullable<Source['create']>>[0]) => { const made = await create(fields); return made.itemId === undefined ? made : { ...made, itemId: `${prefix}${made.itemId}` }; } } : {}),
     ...(comments ? { comments: (itemId: string) => comments(own(itemId)) } : {}),
     ...(project ? { project: async (options?: ReadOptions) => rows(await project(options)) } : {}),
     ...(fieldsOf ? { fieldsOf: (itemId: string, options?: ReadOptions) => fieldsOf(own(itemId), options) } : {}),

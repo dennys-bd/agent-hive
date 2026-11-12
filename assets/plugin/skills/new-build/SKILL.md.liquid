@@ -130,9 +130,14 @@ a plan with no index, or a `Design:` paragraph, is built top to bottom.
    the test command after every task; each green task is committed.
 2. **Build-fix.** When the build or the tests break and the fix is not
    obvious from the plan, dispatch `hive:build-fixer` with the failing
-   output. At most 3 dispatches per failure; if it still fails after the
-   third, or a dispatch answers that the fix needs the plan changed, stop
-   with the error.
+   output, the command that produced it, and the failing task's section
+   and the plan's `## Global Constraints`, copied whole as in step 1.
+   After each dispatch, run that command again: green, commit the fix;
+   still failing, dispatch again with the new output and the files the
+   last dispatch changed. At most 3 dispatches per failure; if it still
+   fails after the third, or a dispatch answers that the fix needs the
+   plan changed, stop with the error and name the uncommitted changes it
+   leaves in place.
 
 Behaviour the test suite cannot cover is verified by hand and becomes a
 manual check in the walkthrough; the logic behind it still gets tests.

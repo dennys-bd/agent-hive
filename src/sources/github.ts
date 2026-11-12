@@ -12,7 +12,8 @@ import {
   SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhIssueRelations, type GhItemNode, type GhOption,
   type ProjectsData, type SelectFieldsData, type ViewerData,
 } from './github-queries.js';
-import { createProjectIssue, repositoryNodeId } from './github-create.js';
+import { createProjectIssue, repositoryLabels, repositoryNodeId } from './github-create.js';
+import { CreateRefusedError } from '../source-create.js';
 import { answerColumn, readItemFields, storedItemFields, writeItemField, type FieldsContext } from './github-fields.js';
 import { findBlockers, relateItem } from './github-blockers.js';
 import { pageItems, PROJECT_ITEM_LIMIT, quotaFrom, type ItemPages } from './github-pages.js';
@@ -252,14 +253,19 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
 
   let repositoryId: string | undefined; // #846: source.repository's node id, asked once
 
-  // #846: a new issue in source.repository, on the Project, in the Status option `column` (the stage's first from column, cited)
-  async function create({ title, body, column }: { title: string; body?: string; column: string }): Promise<string> {
+  // #846: a new issue in source.repository, on the Project in the Status option `column`; #767: with `labels`, and off the Project when
+  // column is null. Every name resolves before the first write, so a refusal created nothing
+  async function create({ title, body, column, labels }: Parameters<NonNullable<Source['create']>>[0]): ReturnType<NonNullable<Source['create']>> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
     if (source.repository === undefined) throw new Error('source has no repository for new issues');
     const option = resolved.options.find((o) => o.name === column);
-    if (!option) throw new Error(`"${column}" is not a Status option: ${resolved.options.map((o) => o.name).join(', ')}`);
+    if (column !== null && !option) throw new CreateRefusedError(`"${column}" is not a Status option: ${resolved.options.map((o) => o.name).join(', ')}`);
+    const known = labels.length === 0 ? [] : await repositoryLabels(gql, source.repository);
+    const unknown = labels.filter((name) => !known.some((l) => l.name === name));
+    if (unknown.length > 0) throw new CreateRefusedError(`${unknown.map((n) => `"${n}"`).join(', ')} not a label of ${source.repository}: ${known.map((l) => l.name).join(', ')}`);
     repositoryId ??= await repositoryNodeId(gql, source.repository);
-    return createProjectIssue(gql, { projectId: resolved.projectId, statusFieldId: resolved.statusFieldId, optionId: option.id, repositoryId }, { title, body });
+    const project = option === undefined ? {} : { project: { projectId: resolved.projectId, statusFieldId: resolved.statusFieldId, optionId: option.id } };
+    return createProjectIssue(gql, { repositoryId, ...project }, { title, body, labelIds: known.filter((l) => labels.includes(l.name)).map((l) => l.id) });
   }
 
   // #286: archive and remove act on the project item; close and delete on its issue, known from the last listing. A draft has no issue:

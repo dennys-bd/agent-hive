@@ -6,7 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
-  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_BY_NUMBER, ISSUE_ID, ITEMS, PROBE, PROJECTS, PROJECT_FIELDS, ITEM_FIELDS, SELECT_FIELDS, SET_OPTION, REPOSITORY_ID, CREATE_ISSUE, ADD_PROJECT_ITEM, VIEWER,
+  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_BY_NUMBER, ISSUE_ID, ITEMS, PROBE, PROJECTS, PROJECT_FIELDS, ITEM_FIELDS, SELECT_FIELDS, SET_OPTION, REPOSITORY_ID, CREATE_ISSUE, ADD_PROJECT_ITEM, REPOSITORY_LABELS, VIEWER,
 } from '../src/sources/github-queries.js';
 import { type LegacyStage, stripLegacy, transitionsOf } from '../src/config-migrate.js';
 import { citedColumns, onSource } from '../src/tasks.js';
@@ -127,6 +127,8 @@ function queryName(query: string): string {
   if (query === REPOSITORY_ID) return 'repositoryId';
   if (query === CREATE_ISSUE) return 'createIssue';
   if (query === ADD_PROJECT_ITEM) return 'addProjectItem';
+  if (query === REPOSITORY_LABELS) return 'repositoryLabels';
+  if (query.includes('addLabelsToLabelable(')) return 'addLabels'; // #767: labelsMutation is built per count, so it is matched by shape
   return query.includes('blocking(') ? 'relations' : 'unknown';
 }
 
