@@ -7,6 +7,9 @@ import { t, tPlural } from '@/i18n';
 import type { FlowDraft } from '@/lib/settings-flows';
 import { flowNameProblem } from '@/lib/settings-flows';
 
+/** A refusal at the click (#691): the destructive tone, mixed 75% with the foreground in dark, as settings.hv.html's .refuse. */
+export const REFUSAL = 'text-destructive text-xs dark:text-[color-mix(in_oklab,var(--destructive)_75%,var(--foreground))]';
+
 // Settings › fluxo's flow row (#565): the etapas card's first row in the design. Rendered inside StageEditor, keyed on the open flow, so its local
 // state resets on every tab.
 

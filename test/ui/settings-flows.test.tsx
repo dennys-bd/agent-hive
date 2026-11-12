@@ -55,7 +55,8 @@ const CROSSED: Flow[] = [
 const triaged: Task = { item: { itemId: 'board:I1', id: '1', title: 'T', body: '', url: '', source: 'board' }, stage: 'triage', boardColumn: 'Bug', auto: true };
 
 const tab = (name: string) => screen.getByRole('radio', { name });
-const chip = (name: string) => screen.queryByRole('button', { name: new RegExp(`^${name}`) });
+// (?! →) leaves out a crossing pill, whose name starts with its origin stage (#691)
+const chip = (name: string) => screen.queryByRole('button', { name: new RegExp(`^${name}(?! →)`) });
 const posted = (): SettingsBody | undefined => {
   const call = fetchMock.mock.calls.find(([url]) => url === '/settings');
   return call && (JSON.parse(String(call[1]?.body)) as SettingsBody);
@@ -86,6 +87,30 @@ test('feature draws build\'s crossing pill and the legend\'s other-flow line; bu
   expect(screen.getByText(`${t('settings.transitions.legend')} · ${t('settings.transitions.legend.flows')}`)).toBeInTheDocument();
   await user.click(tab('bug'));
   expect(screen.getByRole('img', { name: t('settings.transitions.incoming', { from: 'feature · build', when: t('settings.transitions.when.done'), flow: 'feature' }) })).toBeInTheDocument();
+});
+
+test('build\'s exit row names bug · fix with outro fluxo; fix\'s entry hint lists its own flow\'s arrival first, then feature · build (#691)', async () => {
+  const user = userEvent.setup();
+  await openFlow(user, CROSSED);
+  await user.click(chip('build')!);
+  const row = within(screen.getByRole('list', { name: 'saídas' })).getByRole('button', { name: /→ bug · fix/ });
+  expect(within(row).getByText(t('settings.transitions.otherFlow'))).toBeInTheDocument();
+  await user.click(tab('bug'));
+  await user.click(chip('fix')!);
+  expect(screen.getByText(t('settings.stages.from.arrivals', { list: 'triage (terminou), feature · build (terminou)' }))).toBeInTheDocument();
+});
+
+test('remover etapa on a stage another flow enters leaves it and says which transition to change; one nothing else enters is removed (#691)', async () => {
+  const user = userEvent.setup();
+  await openFlow(user, CROSSED);
+  await user.click(tab('bug'));
+  await user.click(chip('fix')!);
+  await user.click(screen.getByRole('button', { name: t('settings.stages.remove') }));
+  expect(screen.getByRole('alert')).toHaveTextContent(t('settings.stages.entered', { transition: 'feature · build → fix' }));
+  expect(chip('fix')).not.toBeNull();
+  await user.click(chip('triage')!);
+  await user.click(screen.getByRole('button', { name: t('settings.stages.remove') }));
+  expect(chip('triage')).toBeNull();
 });
 
 test('+ fluxo › name › criar opens the new flow\'s tab with one empty stage selected (#565)', async () => {

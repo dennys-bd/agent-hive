@@ -109,7 +109,7 @@ export function StageEditor({ flow, comb, stages, transitions, sources, commands
       )}
       {!transition && stage && (
         <StageDetail
-          key={stage.id} stage={stage} index={index} total={stages.length} stages={stages} transitions={transitions} sources={sources} commands={commands} workspaces={workspaces}
+          key={stage.id} comb={comb} stage={stage} index={index} total={stages.length} stages={stages} transitions={transitions} sources={sources} commands={commands} workspaces={workspaces}
           agents={agents} defaultAgent={defaultAgent} launchOptions={launchOptions} clash={clashOf?.(stage.id)} onUpdate={(patch) => onChange(patched({ stages, transitions }, index, patch))} onMove={move} onRemove={removeStage}
           onSelectTransition={(id) => setSelection({ kind: 'transition', id, back: stage.id })} onAddTransition={addTransition}
         />
