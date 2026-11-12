@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { t, tPlural } from '@/i18n';
+import { closeDecomposition, useOpenDecomposition } from '@/hooks/use-decomposition-write';
 import { getJson, postJson } from '@/lib/api';
 
 const MUTED = 'text-muted-foreground';
@@ -127,4 +128,12 @@ export function DecompositionDialog({ activityId, onClose }: { activityId: strin
       </DialogContent>
     </Dialog>
   );
+}
+
+/** The window's one decomposition dialog (#781), for the store's open activity: the approval's criar issues, the task menu's A and a toast's
+ * reabrir all open it, so it shows with neither mount point on screen. Keyed by the activity, so another one's open mounts a fresh preview. */
+export function DecompositionHost() {
+  const activityId = useOpenDecomposition();
+  if (activityId === undefined) return null;
+  return <DecompositionDialog key={activityId} activityId={activityId} onClose={() => closeDecomposition(activityId)} />;
 }

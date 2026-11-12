@@ -1,8 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ApprovalActions } from '@/components/ApprovalActions';
+import { DecompositionHost } from '@/components/DecompositionDialog';
 import { Flow } from '@/components/Flow';
+import { useDecompositionWrite } from '@/hooks/use-decomposition-write';
 import { setLanguage } from '@/i18n';
 import type { DecompositionPreview, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -27,21 +29,31 @@ const posts = (): string[] => fetchMock.mock.calls.filter(([, init]) => init?.me
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
-test('A on a task whose decomposition is not on GitHub opens the create issues dialog and approves nothing (#865)', async () => {
-  render(<Flow state={pending()} flow={firstFlow(pending())} />);
+test('A on a task whose decomposition is not on GitHub opens the host\'s create issues dialog and approves nothing (#865, #781)', async () => {
+  render(<><Flow state={pending()} flow={firstFlow(pending())} /><DecompositionHost /></>);
   fireEvent.keyDown(screen.getByText('#1 Task 1').closest('li')!, { key: 'a' });
   expect(await screen.findByRole('dialog', { name: 'Criar issues' })).toBeInTheDocument();
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
   expect(posts()).toEqual([]);
 });
 
-test('the status box shows criar issues in place of aprovar and opens the same dialog; without it, aprovar (#865)', async () => {
+test('the status box shows criar issues in place of aprovar and opens the host\'s dialog; without it, aprovar (#865, #781)', async () => {
   const user = userEvent.setup();
   const activity = { id: 'a-I1', approval: { since } };
-  const { unmount } = render(<ApprovalActions task={task} activity={activity} createsIssues />);
+  const { unmount } = render(<><ApprovalActions task={task} activity={activity} createsIssues /><DecompositionHost /></>);
   expect(screen.queryByRole('button', { name: 'aprovar' })).toBeNull();
   await user.click(screen.getByRole('button', { name: 'criar issues' }));
   expect(await screen.findByRole('dialog', { name: 'Criar issues' })).toBeInTheDocument();
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
   unmount();
   render(<ApprovalActions task={task} activity={activity} />);
   expect(screen.getByRole('button', { name: 'aprovar' })).toBeInTheDocument();
+});
+
+test('neither mount point renders a dialog of its own: it opens the store\'s entry with the task\'s ref, and only the host shows it (#781)', async () => {
+  const user = userEvent.setup();
+  render(<ApprovalActions task={task} activity={{ id: 'a-I1', approval: { since } }} createsIssues />);
+  await user.click(screen.getByRole('button', { name: 'criar issues' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(renderHook(() => useDecompositionWrite('a-I1')).result.current).toMatchObject({ isOpen: true, ref: '#1' });
 });

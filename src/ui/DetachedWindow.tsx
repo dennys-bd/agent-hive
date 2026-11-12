@@ -2,6 +2,7 @@
 // (main.tsx turns view-state writes off). The setup is App's (app-setup.tsx) minus what acts on the main window's frame: no Settings, no
 // reviewer, no view or panel keys, no search, no dock.
 import { useCallback, useEffect, useRef } from 'react';
+import { DecompositionHost } from '@/components/DecompositionDialog';
 import { Toaster } from '@/components/ui/sonner';
 import { activityPane } from '@/components/PaneHeader';
 import { ActivityCenter } from '@/components/ActivityCenter';
@@ -113,6 +114,7 @@ export function DetachedWindow({ activity }: { activity: string }) {
         {state && <WindowPage state={state} activityKey={activity} fontFamily={terminalFontStack(info.config?.terminalFont ?? '')} />}
       </SetupProviders>
       <Toaster theme={setup.theme} />
+      <DecompositionHost />
     </FullScreenContext.Provider>
   );
 }

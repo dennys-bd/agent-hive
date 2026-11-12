@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { DecompositionHost } from '@/components/DecompositionDialog';
 import { Toaster } from '@/components/ui/sonner';
 import { FullScreenContext, useFullScreen } from '@/hooks/use-full-screen';
 import { closeTabSettings, SetupProviders, taskRefsOf, useAppSetup } from '@/app-setup';
@@ -115,6 +116,7 @@ export function App() {
       </FullScreenContext.Provider>
       {settingsOpen && <Settings info={info} state={state} view={settingsView} onSaved={onSaved} onCancel={() => { setSettingsOpen(false); setSettingsView(undefined); }} />}
       <Toaster theme={setup.theme} />
+      <DecompositionHost />
     </>
   );
 }
