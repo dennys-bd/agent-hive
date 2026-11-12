@@ -9,7 +9,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { worktreePath } from '../src/worktree.js';
 import { activityOf } from '../src/activities.js';
 import { slugFor } from '../src/tasks.js';
-import { readyOn, workPath } from './fixtures/work.js';
+import { readyOn } from './fixtures/work.js';
 import { AUTH, STAGES, bodyFlows, fakeSpawn, goneItem, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -184,7 +184,7 @@ test('POST /tasks takes a Comb workspace for the new task and refuses an unknown
   assert.deepEqual(await res.json(), { error: 'unknown workspace' });
 });
 
-test('a task whose workspace was removed reads as gone: bases, delete-activity and the terminal answer 409 workspace <name> is gone (#179)', async (t) => {
+test('a task whose workspace was removed reads as gone: bases and the terminal answer 409 workspace <name> is gone (#179); delete activity no longer does (#746)', async (t) => {
   const two = await startTwo(t, {}, 0);
   two.listed.push(item('1', 'site'));
   await two.server.poll();
@@ -196,7 +196,6 @@ test('a task whose workspace was removed reads as gone: bases, delete-activity a
   assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive] })).status, 200);
   const answers = [
     await hiveFetch(`${two.base}/tasks/board:I1/bases`),
-    await postJson(`${two.base}${workPath(two.server, 'board:I1')}/delete`),
     await postJson(`${two.base}/tasks/board:I1/open`, { kind: 'terminal' }),
   ];
   for (const res of answers) {
