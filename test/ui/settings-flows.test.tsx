@@ -61,7 +61,7 @@ async function openFlow(user: UserEvent, flows = FLOWS, state?: State): Promise<
 }
 const save = (user: UserEvent) => user.click(screen.getByRole('button', { name: t('settings.save') }));
 
-test('one tab per flow; a tab scopes the chart and the transition editor\'s para to its own stages (#565)', async () => {
+test('one tab per flow; a tab scopes the chart to its own stages, and para lists its own flow first, then the other flow\'s stages by name (#565, #691)', async () => {
   const user = userEvent.setup();
   await openFlow(user);
   expect(tab('feature')).toHaveAttribute('aria-checked', 'true');
@@ -71,10 +71,7 @@ test('one tab per flow; a tab scopes the chart and the transition editor\'s para
   await user.click(within(screen.getByRole('list', { name: 'saídas' })).getByRole('button', { name: new RegExp(`→ ${t('flow.end')}`) }));
   screen.getByRole('combobox', { name: 'para' }).focus();
   await user.keyboard('{Enter}');
-  const options = (await screen.findAllByRole('option')).map((o) => o.textContent);
-  expect(options).toContain('triage');
-  expect(options).not.toContain('spec');
-  expect(options).not.toContain('build');
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['triage', 'feature · spec', 'feature · build', t('flow.end')]);
 });
 
 test('+ fluxo › name › criar opens the new flow\'s tab with one empty stage selected (#565)', async () => {

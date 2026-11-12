@@ -86,7 +86,7 @@ function FlowStages({ draft, newFlow, flowTasks, stage, focus, onChange, ...edit
   const row = <FlowRow flows={draft.flows} open={open} isAdding={isAdding} taskCount={flowTasks(open)} onOpen={setOpen} onAdding={setAdding} onCreate={create} onRename={rename} onRemove={remove} />;
   return (
     <StageEditor
-      key={open} flow={open} flowRow={row} stages={scope.stages} transitions={scope.transitions} focus={focus} stage={stage}
+      key={open} flow={open} comb={draft} flowRow={row} stages={scope.stages} transitions={scope.transitions} focus={focus} stage={stage}
       clashOf={(id) => stageNameClash(draft.stages, draft.flows, id)} defaultAgent={draft.defaultAgent} {...editor}
       onChange={(next) => onChange(withFlowEdit(draft, open, next))}
     />

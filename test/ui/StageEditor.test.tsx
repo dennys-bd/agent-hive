@@ -29,7 +29,7 @@ const AGENTS: AgentAvailability[] = [{ agent: 'claude', available: true }];
 type Flow = { stages: StageDraft[]; transitions: TransitionDraft[] };
 function Harness({ initial, transitions = [], sources = SOURCES, agents = AGENTS, focus, onChange }: { initial: StageDraft[]; transitions?: TransitionDraft[]; sources?: StageSource[]; agents?: AgentAvailability[]; focus?: TransitionFocus; onChange(next: Flow): void }) {
   const [flow, setFlow] = useState<Flow>({ stages: initial, transitions });
-  return <StageEditor flow="f" stages={flow.stages} transitions={flow.transitions} sources={sources} agents={agents} defaultAgent="claude" commands={[]} workspaces={['hive']} focus={focus} onChange={(next) => { onChange(next); setFlow(next); }} />;
+  return <StageEditor flow="f" comb={{ flows: [{ id: 'f', name: 'main' }], stages: flow.stages, transitions: flow.transitions }} stages={flow.stages} transitions={flow.transitions} sources={sources} agents={agents} defaultAgent="claude" commands={[]} workspaces={['hive']} focus={focus} onChange={(next) => { onChange(next); setFlow(next); }} />;
 }
 const setup = (initial: StageDraft[] = STAGES, sources: StageSource[] = SOURCES, agents: AgentAvailability[] = AGENTS) => {
   const user = userEvent.setup();
@@ -232,7 +232,7 @@ test('executar comandos hides the agent, model, session, prompt and switches, di
     const [flow, setFlow] = useState<Flow>({ stages: [stage('checks', { from: { h: ['Ready'] }, prompt: '/x' })], transitions: [] });
     return (
       <StageEditor flow="f"
-        stages={flow.stages} transitions={flow.transitions} sources={SOURCES} agents={AGENTS} defaultAgent="claude" commands={[{ name: 'build', impls: [{ workspace: null, command: 'pnpm build' }], menu: true, env: {} }]} workspaces={['hive']}
+        comb={{ flows: [{ id: 'f', name: 'main' }], stages: flow.stages, transitions: flow.transitions }} stages={flow.stages} transitions={flow.transitions} sources={SOURCES} agents={AGENTS} defaultAgent="claude" commands={[{ name: 'build', impls: [{ workspace: null, command: 'pnpm build' }], menu: true, env: {} }]} workspaces={['hive']}
         onChange={(next) => { onChange(next); setFlow(next); }}
       />
     );

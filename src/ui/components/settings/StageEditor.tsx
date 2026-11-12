@@ -6,6 +6,7 @@ import { StageDetail } from '@/components/settings/StageDetail';
 import { TransitionEditor } from '@/components/settings/TransitionEditor';
 import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
+import type { FlowsDraft } from '@/lib/settings-flows';
 import { emptyStage, type StageDraft } from '@/lib/settings-stages';
 import { emptyTransition, type TransitionDraft, withApproval, withoutStage } from '@/lib/settings-transitions';
 import type { Command, SourceFields } from '../../../types';
@@ -20,7 +21,7 @@ export interface TransitionFocus { transition: string; n: number }
 export interface StageFocus { id: string; n: number }
 
 interface Flow { stages: StageDraft[]; transitions: TransitionDraft[] }
-interface StageEditorProps extends AgentProps, Flow { flow: string; /* #565: the open flow's draft id, which + etapa gives the new stage */ sources: StageSource[]; commands: Command[]; workspaces: string[]; focus?: TransitionFocus; stage?: StageFocus; flowRow?: ReactNode /* #565: the flow row, the card's first row as the design draws it */; clashOf?(id: string): string | undefined; onChange(next: Flow): void }
+interface StageEditorProps extends AgentProps, Flow { comb: FlowsDraft; /* #691: every flow's stages and transitions, for another flow's names and arrows */ flow: string; /* #565: the open flow's draft id, which + etapa gives the new stage */ sources: StageSource[]; commands: Command[]; workspaces: string[]; focus?: TransitionFocus; stage?: StageFocus; flowRow?: ReactNode /* #565: the flow row, the card's first row as the design draws it */; clashOf?(id: string): string | undefined; onChange(next: Flow): void }
 
 // + etapa and + transição in the card's header (#887, 6b); + transição needs a stage to leave from
 function StageActions({ onAddStage, onAddTransition, canAddTransition }: { onAddStage(): void; onAddTransition(): void; canAddTransition: boolean }) {
@@ -60,7 +61,7 @@ function useSelection(stages: readonly StageDraft[], transitions: readonly Trans
 /** Settings › fluxo's etapas card (#134, 6b; its own card since #887): + etapa and + transição in the header, the load hint, the chart, its
  * legend, then the selected stage's or transition's editor. Every update is immutable; the selection is local, and a stale id (a reverted draft)
  * reads as the first stage. A refused save's focus selects its transition (#918). */
-export function StageEditor({ flow, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, focus, stage: picked, flowRow, clashOf, onChange }: StageEditorProps) {
+export function StageEditor({ flow, comb, stages, transitions, sources, commands, workspaces, agents, defaultAgent, launchOptions, focus, stage: picked, flowRow, clashOf, onChange }: StageEditorProps) {
   const [selection, setSelection] = useSelection(stages, transitions, focus, picked);
   const transition = selection.kind === 'transition' ? transitions.find((d) => d.id === selection.id) : undefined;
   const index = Math.max(0, stages.findIndex((s) => s.id === (selection.kind === 'stage' ? selection.id : transition?.from)));
@@ -96,7 +97,7 @@ export function StageEditor({ flow, stages, transitions, sources, commands, work
       <p className="text-muted-foreground text-xs">{t('settings.transitions.legend')}</p>
       {transition && (
         <TransitionEditor
-          key={transition.id} transition={transition} stages={stages} sources={sources}
+          key={transition.id} transition={transition} stages={stages} comb={comb} sources={sources}
           backTo={back && (back.name.trim() || t('settings.stages.unnamed'))} onBack={() => setSelection({ kind: 'stage', id: back?.id ?? transition.from })}
           onUpdate={(patch) => setTransitions(transitions.map((d) => (d.id === transition.id ? { ...d, ...patch } : d)))}
           onRemove={() => { setTransitions(transitions.filter((d) => d.id !== transition.id)); setSelection({ kind: 'stage', id: transition.from }); }}
