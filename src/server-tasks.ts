@@ -64,7 +64,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
   running: RUNNING_MESSAGE, deleting: DELETING_MESSAGE, nothingToDelete: NOTHING_TO_DELETE_MESSAGE,
 };
 
-export interface Refusal { status: number; message: string }
+export interface Refusal { status: number; message: string; issue?: { number: number; url: string } } // #767: an issue the failed create left behind
 
 export interface TaskRouteDeps {
   treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
