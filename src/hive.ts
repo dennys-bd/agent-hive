@@ -222,11 +222,11 @@ function parseOrFallback(raw: unknown, log: Logger): ParsedConfig {
   }
 }
 
-// The file as the form would save it once the settings from #513, #236, #258, #233, #268, #296, #300, #348, #376, #404, #353, #449, #496, #614, #573, #805, #821, #727 and #199 are filled in: only the form
+// The file as the form would save it once the settings from #513, #236, #258, #233, #268, #296, #300, #348, #376, #404, #353, #449, #496, #614, #573, #805, #821, #727, #796 and #199 are filled in: only the form
 // sees it; nothing is written until a save. A key that is there but wrong still fails here, and so does any other problem.
 function prefillWithoutSettings(raw: unknown): Config | undefined {
   try {
-    return parseConfig({ ...VIEWER_DEFAULTS, ...CLOSE_TAB_DEFAULTS, ...SLEEP_NOTICE_DEFAULTS, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, theme: 'system', terminalFont: '', trustedDomains: [], consoleLines: CONSOLE_LINES_DEFAULT, shortcuts: {}, sidebarsPerView: SIDEBARS_PER_VIEW_DEFAULTS, signals: SIGNALS_DEFAULTS, mcp: MCP_DEFAULTS, ...(withCommands(raw) as Record<string, unknown>) });
+    return parseConfig({ ...VIEWER_DEFAULTS, ...CLOSE_TAB_DEFAULTS, ...SLEEP_NOTICE_DEFAULTS, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, theme: 'system', terminalFont: '', trustedDomains: [], consoleLines: CONSOLE_LINES_DEFAULT, shortcuts: {}, sidebarsPerView: SIDEBARS_PER_VIEW_DEFAULTS, signals: SIGNALS_DEFAULTS, mcp: MCP_DEFAULTS, commandSemaphores: [], ...(withCommands(raw) as Record<string, unknown>) });
   } catch {
     return undefined;
   }

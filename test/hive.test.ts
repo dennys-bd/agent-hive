@@ -404,6 +404,18 @@ test('a hive.config.json without consoleLines opens setup mode with the parse er
   await assert.rejects(bootHive(wrong.home), { message: error }, 'a key that is there but wrong is no file from before the key');
 });
 
+test('a hive.config.json without commandSemaphores opens setup mode with the parse error, prefilled with none; a semaphore that is there but wrong still fails the boot (#796)', async (t) => {
+  const { home } = await hiveWithConfig(t, { prefix: 'OLD', commandSemaphores: undefined });
+  const { server, port } = await bootHive(home);
+  t.after(() => server.close());
+  const info = await settingsInfo(home, port);
+  assert.equal(info.configured, false);
+  assert.equal(info.error, 'hive.config.json: "commandSemaphores" must be an array');
+  assert.deepEqual([info.config?.comb.prefix, info.config?.commandSemaphores], ['OLD', []], 'the rest of the file, no semaphore');
+  const wrong = await hiveWithConfig(t, { commandSemaphores: [{ name: 'two words', limit: 1, reservation: '1m' }] });
+  await assert.rejects(bootHive(wrong.home), { message: 'hive.config.json: "commandSemaphores[0].name" must be one word of letters, digits, - and _' }, 'a key that is there but wrong is no file from before the key');
+});
+
 test('a hive.config.json without trustedDomains opens setup mode with the parse error, prefilled with []; an entry that is not a host still fails the boot (#404)', async (t) => {
   const { home } = await hiveWithConfig(t, { prefix: 'OLD', trustedDomains: undefined });
   const { server, port } = await bootHive(home);

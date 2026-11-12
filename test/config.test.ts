@@ -420,7 +420,7 @@ test('parseConfig accepts a github source as a comb.sources entry', () => {
 });
 
 test('parseConfig rejects missing or wrong-typed fields with the field name', () => {
-  assert.throws(() => parseConfig({}), { message: 'hive.config.json: "comb" is required' });
+  assert.throws(() => parseConfig({ commandSemaphores: [] }), { message: 'hive.config.json: "comb" is required' }); // #796: the list is read first
   assert.throws(() => parseConfig(github({ source: { type: 'github', owner: '@me' } })), /comb\.sources\[0\]\.number/);
   assert.throws(() => parseConfig(github({ source: { type: 'github', number: 1 } })), /comb\.sources\[0\]\.owner/);
   assert.throws(() => parseConfig(github({ source: { type: 'asana', id: 1 } })), { message: 'hive.config.json: "comb.sources[0].type" must be one of: github' });
@@ -802,6 +802,16 @@ test('a command\'s impls name existing workspaces once each, null at most once f
   refused([{ ...dev, workspaces: ['hive'] }], `[0].workspaces${gone}`);
   refused([{ ...dev, timeout: '2d' }], '[0].timeout" must be a timeout like "30s", "10m" or "1h", up to 24h');
   refused([dev, dev], '[1].name" must be unique');
+});
+
+test('commandSemaphores is required at the top level, read before the Comb so a command line can name one; a file without it names the key (#796)', () => {
+  const memory = { name: 'memory', limit: 2, reservation: '2m' };
+  const held = { ...FRONT, impls: [{ ...FRONT.impls[0], semaphore: 'memory' }] };
+  const config = parseConfig(github({ commandSemaphores: [memory], commands: [held] }));
+  assert.deepEqual([config.commandSemaphores, config.comb.commands], [[memory], [held]]);
+  assert.deepEqual(parseConfig(GITHUB).commandSemaphores, [], '[] is none');
+  assert.throws(() => parseConfig(github({ commandSemaphores: undefined })), { message: 'hive.config.json: "commandSemaphores" must be an array' });
+  assert.throws(() => parseConfig(github({ commands: [held] })), { message: 'hive.config.json: "comb.commands[0].impls[0].semaphore" must name a semaphore of commandSemaphores' }, 'a line naming a semaphore the list lacks');
 });
 test('comb.commands[].command and env values refuse a control character other than tab (#300): the line runs in a terminal, where one could act on it before the shell sees shellQuote\'s own quotes', () => {
   const front = { name: 'Run Frontend', impls: [{ workspace: 'hive', command: 'pnpm run dev -- --port $PORT' }], menu: true, env: { PORT: '5173' } };

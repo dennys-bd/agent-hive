@@ -42,6 +42,7 @@ const CONFIG: Config = {
     sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
     flows: mainFlows(STAGES, TRANSITIONS),
   },
+  commandSemaphores: [{ name: 'memory', limit: 2, reservation: '2m' }], // not empty, so draftFrom visibly reads it (#796)
   logLevel: 'info', language: 'pt', baseBranch: 'develop',
   agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: { maxTokensPerHour: 50_000 }, usageRules: [{ source: 'hour', percent: 80, signal: 'yellow' }, { source: 'session', percent: 90, maxWorkers: 1, signal: 'red' }],
   onClose: 'quit', // not the form default, so draftFrom visibly reads it (#513)
@@ -83,6 +84,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   assert.deepEqual(github.fileIcons, { set: 'vscode', scope: 'folders', muted: true }, 'the saved icons (#754)');
   assert.deepEqual(github.sidebarsPerView, { left: false, right: true, rightTab: false }, 'the saved sides (#821)');
   assert.deepEqual(github.signals, CONFIG.signals, 'the saved signal table (#727)');
+  assert.deepEqual(github.commandSemaphores, CONFIG.commandSemaphores, 'the saved list as it is (#796)');
   assert.deepEqual([github.closeSessionTab, github.closeStageTab, github.closeSessionTabNotice, github.closeStageTabNotice], ['sleep', 'sleep', false, false], 'the saved choices (#614)');
   assert.deepEqual(github.sources.map(withoutId), [{ ...GH_ROW, taskProps: { ...GH_ROW.taskProps, defaults: { ...GH_ROW.taskProps.defaults, entry: { flowId: github.flows[0].id } } }, switchAt: github.stages[1].id }], 'switchAt as the dev stage draft\'s id (#30)');
   const [work] = github.sources;
@@ -108,7 +110,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   const empty = draftFrom(info(undefined, false));
   assert.deepEqual({ ...empty, flows: empty.flows.map(withoutId), workspaces: empty.workspaces.map(withoutId), sources: empty.sources.map(withoutId) }, {
     hiveSource: true, createIn: 'hive',
-    prefix: 'HIVE', workspaces: [{ name: '', path: '', env: [], ...NO_SETUP }], commands: [], editor: EDITOR_DEFAULTS, sources: [{ ...GH_ROW, name: '', savedName: '', owner: '@me', number: '', epics: 'show', epicFollows: 'aheadThenBehind', taskProps: { defaults: { workspace: '', auto: true, entry: { flowId: empty.flows[0].id } }, rules: [] } }],
+    prefix: 'HIVE', workspaces: [{ name: '', path: '', env: [], ...NO_SETUP }], commands: [], commandSemaphores: [], editor: EDITOR_DEFAULTS, sources: [{ ...GH_ROW, name: '', savedName: '', owner: '@me', number: '', epics: 'show', epicFollows: 'aheadThenBehind', taskProps: { defaults: { workspace: '', auto: true, entry: { flowId: empty.flows[0].id } }, rules: [] } }],
     flows: [{ name: 'main' }], stages: [], transitions: [], language: 'en', branch: '', baseBranch: '', budgetHour: '', budgetDay: '', rules: [], auth: 'cli', onClose: 'menuBar',
     deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: String(SHUTDOWN_IDLE_DEFAULT), approvalMinutes: String(APPROVAL_MINUTES_DEFAULT), rateLimitWaitMinutes: String(RATE_LIMIT_WAIT_DEFAULT), showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, theme: 'system', terminalFont: '', trustedDomains: [], consoleLines: String(CONSOLE_LINES_DEFAULT), shortcuts: {},
     defaultAgent: 'claude', // DEFAULT_AGENT on a first run (#516)
@@ -174,6 +176,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
     prefix: 'HIVE',
     workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }],
     commands: [FRONT],
+    commandSemaphores: CONFIG.commandSemaphores,
     auth: { github: 'api' },
     sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
     renames: {},
@@ -211,6 +214,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
   const blank = draftFrom(undefined);
   const row: SourceDraft = { ...emptySource('hive', blank.flows[0].id), name: 'notes', number: '7' };
   const bare = toSettingsBody({ ...blank, sources: [row], stages: [{ ...emptyStage(blank.flows[0].id), name: 'fila', from: { [row.id]: ['Ready'] } }], rules: [{ ...emptyRule('day'), percent: '80', kind: 'signal', value: 'red' }] });
+  assert.deepEqual(bare.commandSemaphores, [], 'no config: none, always sent (#796)');
   assert.deepEqual(bare.sources, [{ name: 'notes', qualifyId: false, type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }]);
   assert.deepEqual(sentOf(bare).stages, [{ name: 'fila', from: { notes: ['Ready'] } }], 'session=new, empty model / onStart / prompt stay absent');
   assert.deepEqual(bare.usageRules, [{ source: 'day', percent: 80, signal: 'red' }], 'the consequence list folds back into keys; the absent one stays absent');

@@ -30,6 +30,14 @@ test('commandDraft / commandFrom round-trip a saved command over the workspace r
   );
 });
 
+test('commandDraft / commandFrom carry a line\'s semaphore unchanged, and add no key to a line without one, nor to a new line (#796)', () => {
+  const saved: Command = { name: 'dev', impls: [{ workspace: 'a', command: 'pytest', semaphore: 'memory' }, { workspace: null, command: 'make test' }], menu: true, env: {} };
+  const draft = commandDraft(saved, [A, B]);
+  assert.deepEqual(draft.impls.map(({ id: _id, ...line }) => line), [{ workspace: A.id, command: 'pytest', semaphore: 'memory' }, { workspace: null, command: 'make test' }]);
+  assert.deepEqual(commandFrom(draft, [A, B]), saved, 'strict deepEqual: a semaphore: undefined key would fail it');
+  assert.equal('semaphore' in emptyImpl(null), false);
+});
+
 test('emptyCommand runs in all workspaces and is in the menu (#755)', () => {
   const fresh = emptyCommand();
   assert.deepEqual([fresh.name, fresh.impls.map((i) => [i.workspace, i.command]), fresh.menu, fresh.env, fresh.timeout], ['', [[null, '']], true, [], '']);

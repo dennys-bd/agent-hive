@@ -5,7 +5,7 @@ import { createInProblem } from '../../create-in.js';
 import { branchProblem, COMB_PREFIX, HIVE_SOURCE, DEFAULT_PREFIX, WORKSPACE_NAME, workspaceNameFor, isReservedSource } from '../../tasks.js';
 import { shortcutDef } from '../../shortcut-registry.js';
 import { collisions } from '../../shortcuts.js';
-import { type AgentId, type BenchmarkPrIn, BENCHMARK_PR_IN_NEW, MEMORY_CAP_DEFAULT, APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, DEFAULT_AGENT, FILE_ICONS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_DEFAULT, SHUTDOWN_IDLE_MAX, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type SourceConfig, type DeleteActivityScope, type CloseTabAction, type EpicFollows, type EpicsMode, NEW_SOURCE_EPICS, type FileIcons, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type WorkspaceFork, type SettingsBody, type SettingsInfo, type OperationId, type Shortcuts, type SidebarsPerView, type SignalSettings, type Theme } from '../../types.js';
+import { type AgentId, type CommandSemaphore, type BenchmarkPrIn, BENCHMARK_PR_IN_NEW, MEMORY_CAP_DEFAULT, APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, DEFAULT_AGENT, FILE_ICONS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_DEFAULT, SHUTDOWN_IDLE_MAX, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type SourceConfig, type DeleteActivityScope, type CloseTabAction, type EpicFollows, type EpicsMode, NEW_SOURCE_EPICS, type FileIcons, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type WorkspaceFork, type SettingsBody, type SettingsInfo, type OperationId, type Shortcuts, type SidebarsPerView, type SignalSettings, type Theme } from '../../types.js';
 import { timeoutMs } from '../../timeout.js';
 import { isTrustedHost } from '../../trusted-hosts.js';
 import { t } from '../i18n.js';
@@ -50,6 +50,7 @@ export interface SettingsDraft {
   prefix: string; workspaces: WorkspaceDraft[]; sources: SourceDraft[]; auth: GithubAuth;
   editor: EditorDraft; // #780: the one editor config, by language
   commands: CommandDraft[]; // the Comb's run commands (#511), edited on workspaces
+  commandSemaphores: CommandSemaphore[]; // #796: the saved list as it is, sent back unchanged; node 3.1 adds its rows
   flows: FlowDraft[]; // #565: in order; each stage draft names its flow's id
   stages: StageDraft[]; transitions: TransitionDraft[]; // #134: by stage draft id; #565: flat in flow order, each stage tagged with its flow
   language: Language; branch: string; baseBranch: string;
@@ -127,6 +128,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     workspaces,
     editor: editorDraft(config?.editor),
     commands: (config?.comb.commands ?? []).map((c) => commandDraft(c, workspaces)), // #511: workspaces as row ids
+    commandSemaphores: config?.commandSemaphores ?? [], // #796: the parser still requires the key
     sources,
     auth: config?.auth?.github ?? 'cli', // a form opened with no config starts on cli, the transport that needs nothing
     flows,
@@ -314,6 +316,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     prefix: draft.prefix.trim(),
     workspaces: draft.workspaces.map(workspaceFrom),
     commands: draft.commands.map((c) => commandFrom(c, draft.workspaces)), // always sent (#511), [] included
+    commandSemaphores: draft.commandSemaphores, // always sent (#796), [] included
     sources: draft.sources.map((row) => sourceFrom(row, draft)),
     renames: renamesFrom(draft.sources), // always sent (#278), {} included
     // only the GitHub adapter logs in: with no GitHub source no auth is sent, and a saved one stays as the server has it

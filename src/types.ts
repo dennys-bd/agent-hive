@@ -1178,6 +1178,14 @@ export const PR_BODY_MAX = 65_536;
 export interface CommandImpl {
   workspace: string | null;
   command: string; // a shell line, run with "$SHELL" -c; never logged, never in the state
+  semaphore?: string; // #796: a commandSemaphores name; absent = runs at once
+}
+
+/** A Command Semaphore (#704, #796): caps how many runs of the lines that name it happen at once across the Hive. */
+export interface CommandSemaphore {
+  name: string; // one word, [A-Za-z0-9_-], unique: what a line's semaphore names and the shim's lines carry
+  limit: number; // the permits: an integer >= 1
+  reservation: string; // a TIMEOUT text: how long a freed permit is kept for the next in line (its turn)
 }
 
 /** A workspace's command (#300, #573: was RunCommand): a named command a task can run in its worktree, one line per workspace (#755); env is
@@ -1391,6 +1399,7 @@ export type Shortcuts = Partial<Record<OperationId, string | null>>;
 export interface Config {
   auth?: AuthConfig; // required only by a github source (parseConfig); no default: a silent one would hide which transport is live
   comb: CombConfig;
+  commandSemaphores: CommandSemaphore[]; // #796: required, no default; [] = none. Read before comb, whose lines name them; a file from before the key boots the settings form prefilled
   logLevel: LogLevel; // warn: only refusals and failures (#742); info: what the Hive did; debug: also what it received. Read on boot and on every POST /settings
   branch?: string; // branch name template for a task's worktree ({id}, {title}, {slug}); absent = DEFAULT_BRANCH_TEMPLATE
   language?: Language; // UI language; absent = the system's (never written as undefined: the file stays clean)
@@ -1798,6 +1807,9 @@ export interface SettingsBody {
   /** comb.commands (#511). The form always sends it, [] included; an API caller that omits it keeps the saved ones. A first setup without it
    * is a parse error naming comb.commands. */
   commands?: Command[];
+  /** commandSemaphores (#796). The form always sends it, [] included; an API caller that omits it keeps the saved ones. A first setup without it
+   * is a parse error naming commandSemaphores. */
+  commandSemaphores?: CommandSemaphore[];
   /** comb.sources (#180); [] = no external source. The form always sends it; an API caller that omits it keeps the saved ones. */
   sources?: SourceConfig[];
   /** The form always sends it; an API caller that omits it keeps the current one. A first setup without it is a parse error naming auth.github. */
