@@ -13,6 +13,7 @@ import { removeInRun } from './task-setup.js';
 import type { Activity, Task, Config, Effect, Exec, HiveEvent, State, Workspace, WorktreeRow } from './types.js';
 import { taskDir, cleanWorktree, listWorktrees, removeWorktree, wordsOf } from './worktree.js';
 import { refusalOf, UNEXPECTED } from './worktree-base.js';
+import { strandedRows } from './worktree-stranded.js';
 import type { FactLog } from './facts.js';
 
 const HTTP_NOT_FOUND = 404;
@@ -49,7 +50,11 @@ export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): v
         const rows = worktreeRows(await listWorktrees(workspace.path, process.platform, exec), current.state, workspace.name);
         return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, exec) }))); // #653
       }));
-      res.json(perWorkspace.flat());
+      // #747: then the stranded task activities' worktrees, under their removed workspace; each failure drops only its own rows. A configured
+      // workspace that shares the repo would list the same folder as noTask: the stranded row, which knows its task, wins
+      const stranded = await strandedRows(current.state, current.runtime.config, exec);
+      const strandedPaths = new Set(stranded.map((row) => row.path));
+      res.json([...perWorkspace.flat().filter((row) => !strandedPaths.has(row.path)), ...stranded]);
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) }); // git's own words: not a repo, a broken listing
     }
