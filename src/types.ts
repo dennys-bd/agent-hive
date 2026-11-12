@@ -1399,6 +1399,7 @@ export type Shortcuts = Partial<Record<OperationId, string | null>>;
 export interface Config {
   auth?: AuthConfig; // required only by a github source (parseConfig); no default: a silent one would hide which transport is live
   comb: CombConfig;
+  commandSemaphores: CommandSemaphore[]; // #796: required, no default; [] = none. Read before comb, whose lines name them; a file from before the key boots the settings form prefilled
   logLevel: LogLevel; // warn: only refusals and failures (#742); info: what the Hive did; debug: also what it received. Read on boot and on every POST /settings
   branch?: string; // branch name template for a task's worktree ({id}, {title}, {slug}); absent = DEFAULT_BRANCH_TEMPLATE
   language?: Language; // UI language; absent = the system's (never written as undefined: the file stays clean)
@@ -1793,6 +1794,9 @@ export interface SettingsBody {
   /** comb.commands (#511). The form always sends it, [] included; an API caller that omits it keeps the saved ones. A first setup without it
    * is a parse error naming comb.commands. */
   commands?: Command[];
+  /** commandSemaphores (#796). The form always sends it, [] included; an API caller that omits it keeps the saved ones. A first setup without it
+   * is a parse error naming commandSemaphores. */
+  commandSemaphores?: CommandSemaphore[];
   /** comb.sources (#180); [] = no external source. The form always sends it; an API caller that omits it keeps the saved ones. */
   sources?: SourceConfig[];
   /** The form always sends it; an API caller that omits it keeps the current one. A first setup without it is a parse error naming auth.github. */

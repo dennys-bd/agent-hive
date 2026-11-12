@@ -80,6 +80,7 @@
   "theme": "system",
   "terminalFont": "",
   "consoleLines": 5000,
+  "commandSemaphores": [],
   "trustedDomains": [],
   "shortcuts": {},
   "fileIcons": { "set": "material", "scope": "all", "muted": false },

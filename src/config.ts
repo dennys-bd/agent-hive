@@ -14,7 +14,7 @@ import { checkEnabledAgents, checkStageModels, parseAgentArgs, parseAgentEnabled
 import { checkClearedResumes, checkResumedAgents, parseVerdicts } from './config-transitions.js';
 import { hiveActionRaw, parseStageAgent, runsAgentRaw } from './config-stage-agent.js';
 import { parseFork } from './fork.js';
-import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseStageEvaluate, parseTimeout } from './run-commands.js';
+import { commandsIn, parseEnv, parseCommandSemaphores, parseCommands, parseStageCi, parseStageCommands, parseStageEvaluate, parseTimeout } from './run-commands.js';
 import { parseSourceEpics, refuseTopLevelEpics, requireSwitchAt } from './config-epics.js';
 import { parseShortcuts } from './shortcuts.js';
 import { isTrustedHost } from './trusted-hosts.js';
@@ -30,7 +30,7 @@ export const CONFIG_FILE = 'hive.config.json';
 
 export const SOURCE_TYPES: readonly SourceConfig['type'][] = ['github'];
 export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
-export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor'> = {
+export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'commandSemaphores' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor'> = {
   logLevel: 'info',
   agentArgs: { claude: [], codex: [] },
   agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, // #482: a first save without them
@@ -397,7 +397,7 @@ function parseSources(raw: unknown, workspaces: Workspace[]): SourceConfig[] {
 }
 
 // The Comb (#132): prefix, workspaces, the sources (whose defaults must be workspaces, #179, #180), then the stages, judged against the sources.
-function parseComb(raw: unknown): CombConfig {
+function parseComb(raw: unknown, semaphores: readonly string[]): CombConfig {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: "comb" is required`);
   if (raw.board !== undefined) throw new Error(`${CONFIG_FILE}: "comb.board" moved to "comb.sources"`); // #180: no compat path
   if (raw.columns !== undefined) throw new Error(`${CONFIG_FILE}: "comb.columns" was renamed to "comb.stages" (#286)`); // no compat path either
@@ -406,7 +406,7 @@ function parseComb(raw: unknown): CombConfig {
   const prefix = requirePrefix(raw.prefix);
   const workspaces = parseWorkspaces(raw.workspaces);
   const sources = parseSources(raw.sources, workspaces);
-  const commands = parseCommands(raw.commands, 'comb.commands', workspaces.map((p) => p.name), []); // #511, #755: each command's lines name its workspaces
+  const commands = parseCommands(raw.commands, 'comb.commands', workspaces.map((p) => p.name), semaphores); // #511, #755: each command's lines name its workspaces; #796: and maybe a semaphore
   const flows = parseFlows(raw, sources.map((s) => s.name), {
     stage: (value, field) => parseStage(value, field, sources),
     sources: (value, field) => parseSourceMap(value, field, sources, requireActionList(false)), // #134: read as onStart is, a leaving action allowed last
@@ -583,12 +583,14 @@ function parseFields(raw: unknown): Config {
   // #573: a renamed key, not a missing one; single user, no legacy path: the one file is fixed by hand
   if (raw.cleanup !== undefined) throw new Error(`${CONFIG_FILE}: "cleanup" is now "deleteActivity"`);
   refuseTopLevelEpics(raw); // #30: moved into each source, no legacy path
-  const comb = parseComb(raw.comb);
+  const commandSemaphores = parseCommandSemaphores(raw.commandSemaphores); // #796: before the Comb, whose command lines name them
+  const comb = parseComb(raw.comb, commandSemaphores.map((s) => s.name));
   // Only the GitHub adapter logs in: auth is required next to it, checked when written anywhere else, and absent stays absent.
   const withAuth = comb.sources.some((b) => b.type === 'github') || raw.auth !== undefined;
 
   return {
     comb,
+    commandSemaphores,
     ...(withAuth ? { auth: parseAuth(raw.auth) } : {}),
     logLevel: optional(raw.logLevel, DEFAULT_CONFIG.logLevel, (v) => {
       if (!LOG_LEVELS.includes(v as LogLevel)) throw new Error(`${CONFIG_FILE}: "logLevel" must be one of: ${LOG_LEVELS.join(', ')}`);

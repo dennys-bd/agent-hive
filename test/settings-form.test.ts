@@ -42,6 +42,7 @@ const CONFIG: Config = {
     sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
     flows: mainFlows(STAGES, TRANSITIONS),
   },
+  commandSemaphores: [],
   logLevel: 'info', language: 'pt', baseBranch: 'develop',
   agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: { maxTokensPerHour: 50_000 }, usageRules: [{ source: 'hour', percent: 80, signal: 'yellow' }, { source: 'session', percent: 90, maxWorkers: 1, signal: 'red' }],
   onClose: 'quit', // not the form default, so draftFrom visibly reads it (#513)

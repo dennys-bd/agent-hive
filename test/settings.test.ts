@@ -27,7 +27,7 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
   terminalFont: '',
   consoleLines: 5000,
   trustedDomains: [],
-  shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
+  shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [], commandSemaphores: [],
 };
 
 interface Started { home: string; repo: string; base: string; port: number; server: HiveServer; configs: SourceSpec[] }
@@ -1002,6 +1002,25 @@ test('POST /settings writes consoleLines; an omitted key keeps the saved value, 
   assert.equal(bad.status, 400);
   assert.deepEqual(await json(bad), { error });
   assert.equal(await onDisk(), 20_000, 'rejected before the write');
+});
+
+test('POST /settings writes commandSemaphores and a line\'s semaphore; an omitted list keeps the saved one, a first setup with [] saves [], and one without it is a 400 (#796)', async (t) => {
+  const { base, home } = await start(t);
+  const onDisk = async (): Promise<Config> => JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
+  const { commandSemaphores: _semaphores, ...withoutSemaphores } = BODY;
+  const first = await postSettings(base, withoutSemaphores);
+  assert.equal(first.status, 400);
+  assert.deepEqual(await json(first), { error: 'hive.config.json: "commandSemaphores" must be an array' });
+  await assert.rejects(stat(configFile(home)), 'nothing written');
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual((await onDisk()).commandSemaphores, [], 'a first setup with [] saves []');
+  const memory = [{ name: 'memory', limit: 2, reservation: '2m' }];
+  const commands = [{ name: 'dev', impls: [{ workspace: null, command: 'pnpm dev', semaphore: 'memory' }], menu: true, env: {} }];
+  assert.equal((await postSettings(base, { ...BODY, commandSemaphores: memory, commands })).status, 200);
+  const saved = await onDisk();
+  assert.deepEqual([saved.commandSemaphores, saved.comb.commands], [memory, commands], 'both round-trip into hive.config.json');
+  assert.equal((await postSettings(base, { ...withoutSemaphores, commands })).status, 200);
+  assert.deepEqual((await onDisk()).commandSemaphores, memory, 'an API caller that omits it keeps the saved list');
 });
 
 test('POST /settings writes trustedDomains trimmed, lowercased and without duplicates; an omitted key keeps the saved list, and a first setup without it or an entry with a scheme is a 400 (#404)', async (t) => {

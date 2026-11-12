@@ -44,6 +44,7 @@ export async function configFrom(home: string, body: Partial<SettingsBody>): Pro
       hiveSource: body.hiveSource ?? current?.comb.hiveSource, // #846
       createIn: body.createIn ?? renamedCreateIn(current?.comb.createIn, body.renames),
     },
+    commandSemaphores: body.commandSemaphores ?? current?.commandSemaphores, // #796: the form always sends it, [] included; an API caller that omits it keeps the saved list
     auth: body.auth ?? current?.auth, // the form sends it with a GitHub source; an API caller that omits it keeps the saved transport
     agentModels: body.agentModels ?? current?.agentModels ?? DEFAULT_CONFIG.agentModels, // #482: the form always sends it; an API caller that omits it keeps the saved one
     agentEnabled: body.agentEnabled ?? current?.agentEnabled ?? DEFAULT_CONFIG.agentEnabled, // #482: the same
