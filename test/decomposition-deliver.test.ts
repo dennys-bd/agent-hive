@@ -176,13 +176,16 @@ test('when GitHub refuses the PR and none is open, the original error is answere
   assert.deepEqual(recorded, []);
 });
 
-test('deliveryRefusal: the default branch, a file that is not .md and a recorded pr (#936)', () => {
+test('deliveryRefusal: the default branch, a file that is not .md and a recorded pr; an ignored file is never refused, nothing of it is pushed (#936, #741)', () => {
   const checkout = TARGET.checkout;
   assert.equal(deliveryRefusal(checkout, 'main', {}), undefined);
   assert.match(String(deliveryRefusal({ ...checkout, branch: 'main' }, 'main', {})), /default branch/);
   assert.match(String(deliveryRefusal({ ...checkout, path: 'agent/notes.txt' }, 'main', {})), /\.md/);
-  assert.match(String(deliveryRefusal({ ...checkout, ignored: true }, 'main', {})), /ignored by git/);
   assert.equal(deliveryRefusal({ ...checkout, branch: 'main' }, 'main', { pr: 3 }), undefined, 'delivered already: nothing will be pushed');
+  const ignored = { ...checkout, ignored: true };
+  assert.equal(deliveryRefusal(ignored, 'main', {}), undefined);
+  assert.equal(deliveryRefusal({ ...ignored, branch: 'main' }, 'main', {}), undefined, 'the file stays local: the branch does not matter');
+  assert.equal(deliveryRefusal({ ...ignored, path: 'agent/notes.txt' }, 'main', {}), undefined, 'and neither does the extension');
 });
 
 const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };

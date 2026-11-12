@@ -218,6 +218,13 @@ test('GET says where the delivery will push, or why it cannot: the default branc
   assert.deepEqual([none.delivery, none.deliveryRefusal], [undefined, 'the decomposition file is in no git checkout']);
 });
 
+test('GET for a file git ignores says it stays local: delivery.local and no refusal, on the docs repository\'s default branch too (#741)', async (t) => {
+  for (const branch of ['hive/7-site', 'trunk']) {
+    const read = (await (await fetch((await routes(t, { ignored: true, branch })).url)).json()) as DecompositionPreview;
+    assert.deepEqual([read.delivery, read.deliveryRefusal], [{ repository: 'acme/docs', branch, path: 'decomposition.md', local: true }, undefined], branch);
+  }
+});
+
 test('POST commits a hand edit in the file\'s checkout, pushes its branch and opens the PR in the file\'s repository before done; a retry with pr recorded opens none (#936)', async (t) => {
   const dirty = await routes(t, { dirty: true });
   assert.equal((await post(dirty.url, CHOICE)).status, 200);
@@ -241,11 +248,23 @@ test('POST commits a hand edit in the file\'s checkout, pushes its branch and op
   );
 });
 
-test('an ignored file is refused 409 before any issue, and a recorded pr never reads the checkout, so a moved one cannot block done (#936)', async (t) => {
-  const ignored = await routes(t, { ignored: true });
-  const res = await post(ignored.url, CHOICE);
-  assert.deepEqual([res.status, await res.json()], [409, { error: 'the decomposition file is ignored by git: it cannot be committed' }]);
-  assert.equal(ignored.calls.some((c) => c.query === CREATE_ISSUE), false);
+test('an ignored file stays local: its issues are written with no Design: line, nothing is committed, pushed or opened, and the stage ends (#741)', async (t) => {
+  const github = await routes(t, { ignored: true, dirty: true });
+  const res = await post(github.url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [200, { ok: true }]);
+  assert.deepEqual(stepsOf(github.events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106', 'done=7', 'markEpic', 'approve']);
+  const bodies = github.calls.filter((c) => c.query === CREATE_ISSUE).map((c) => String(c.variables.body));
+  assert.deepEqual([bodies.length, bodies.some((body) => /^Design:/m.test(body)), bodies.every((body) => /^Parent: #\d+$/m.test(body))], [6, false, true]);
+  assert.equal(github.calls.some((c) => c.query === CREATE_PULL_REQUEST), false);
+  assert.deepEqual(github.git.map((args) => args[2]), ['rev-parse', 'remote', 'branch', 'check-ignore'], 'the checkout is read, nothing is staged, committed or pushed');
+  const onDefault = await routes(t, { ignored: true, branch: 'trunk' });
+  assert.equal((await post(onDefault.url, CHOICE)).status, 200, 'nothing is pushed, so the default branch does not refuse it');
+  const local = await routes(t, { task: LOCAL, origin: 'git@github.com:acme/hive.git', ignored: true });
+  assert.equal((await post(local.url, CHOICE)).status, 200);
+  assert.deepEqual(stepsOf(local.events), ['root=101', '1=102', '1.1=103', '1.2=104', '2=105', '2.1=106', '2.2=107', 'done=101', 'closeTask']);
+});
+
+test('a recorded pr never reads the checkout, so a moved one cannot block done (#936)', async (t) => {
   const moved = await routes(t, { noCheckout: true, result: { ...PENDING, decompositionIssues: { design: 7, '1': 101, '1.1': 102, '1.2': 103, '2': 104, '2.1': 105, '2.2': 106, pr: 300 } } });
   assert.equal((await post(moved.url, CHOICE)).status, 200);
   assert.deepEqual([stepsOf(moved.events), moved.git], [['done=7', 'markEpic', 'approve'], []]);
