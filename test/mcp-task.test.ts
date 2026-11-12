@@ -87,6 +87,17 @@ test('a task created in the Hive names no source and reads no comments, even fro
   assert.deepEqual(await taskComments({ comments: async () => [COMMENT] }, CREATED), {});
 });
 
+// #782: a hive goal and its hive children as createTask and the leaving pass write them: one child held, one gone
+const HIVE_GOAL: Task = { ...CREATED, item: { ...CREATED.item, itemId: 'local:1', id: 'HIVE-1', title: 'Goal', children: ['local:2', 'local:3'], closedChildren: ['local:3'] } };
+const HIVE_KID: Task = { ...CREATED, item: { ...CREATED.item, itemId: 'local:2', id: 'HIVE-2', title: 'Kid', parent: 'local:1' } };
+
+test('a hive parent and its hive children answer parent and children as a source\'s tree does, the child that left as closed (#782)', () => {
+  const on = (itemId: string): Worker => ({ ...STAGE_WORKER, activityId: activityIdOf(itemId) });
+  const state = withWork(withWork({ ...initialState(1), tasks: [HIVE_GOAL, HIVE_KID] }, 'local:1'), 'local:2');
+  assert.deepEqual(taskAnswer(state, on('local:1'), 'hive').task?.children, [{ id: 'HIVE-2', title: 'Kid', stage: 'spec' }, { id: 'local:3', closed: true }]);
+  assert.deepEqual(taskAnswer(state, on('local:2'), 'hive').task?.parent, { id: 'HIVE-1', title: 'Goal', stage: 'spec' });
+});
+
 test('taskComments reads the comments by the task\'s itemId, leaves them out for a source without comments, and turns a throw into commentsError (#7)', async () => {
   const asked: string[] = [];
   const reading = { comments: async (itemId: string): Promise<TaskComment[]> => { asked.push(itemId); return [COMMENT]; } };
