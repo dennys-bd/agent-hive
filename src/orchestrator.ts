@@ -274,12 +274,13 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
 // write and out of the poll's merge. Unknown stage: nothing (the route checked; a race is a no-op). With pr (#67) the task holds that PR
 // from birth, in a record with no live activity: the shape a deleted activity leaves, which taskOfPr, prsOf and the PR poll already read.
 // No stage (#566): the task is outside the flow, never entered, appended to the list. With a parent that is a task in the state the new task
-// is its child (#782, linkParent); an unknown one is ignored, as an unknown workspace.
-function createTask(state: State, { title, body, stage: name, prefix, workspace, auto, url, origin, pr, parent }: Extract<HiveEvent, { type: 'createTask' }>): Reduced {
+// is its child (#782, linkParent); an unknown one is ignored, as an unknown workspace. With epic it is born an epic (#783): a decomposition's
+// inner node or root task never runs.
+function createTask(state: State, { title, body, stage: name, prefix, workspace, auto, url, origin, pr, parent, epic }: Extract<HiveEvent, { type: 'createTask' }>): Reduced {
   const stage = name === undefined ? undefined : stageOf(state.stages, name);
   if (name !== undefined && !stage) return none(state);
   const n = state.localCount + 1;
-  const own: Item = { itemId: `local:${n}`, id: `${prefix}-${n}`, title, body, url: url ?? '', ...(origin === undefined ? {} : { origin }) }; // #756: a copy of a source's issue keeps its link
+  const own: Item = { itemId: `local:${n}`, id: `${prefix}-${n}`, title, body, url: url ?? '', ...(origin === undefined ? {} : { origin }), ...(epic === undefined ? {} : { epic }) }; // #756: a copy of a source's issue keeps its link; #783: born an epic, so this reduction's fill skips it
   const { tasks, item } = linkParent(state.tasks, own, parent); // #782: the parent lists it first, so the insert below reads the tasks it changed
   const placed = workspace !== undefined && state.workspaces.includes(workspace) ? { workspace } : {}; // a known workspace only (#179)
   const born: Task = { item, boardColumn: '', created: true, auto, ...placed };

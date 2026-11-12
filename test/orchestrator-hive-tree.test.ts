@@ -114,3 +114,11 @@ test('a reduction where no hive task left returns the state the step left, as be
   const before = tree();
   assert.equal(reduce(before, { type: 'tick' }).state, before);
 });
+
+test('createTask with epic is born an epic: with a free worker and a prompt stage the fill does not start it, as it starts the same task without (#783)', () => {
+  const event: HiveEvent = { type: 'createTask', title: 'Inner', body: '', stage: 'Spec', prefix: 'HIVE', workspace: 'hive', auto: true };
+  assert.equal(reduce(base(1), event).effects.filter((e) => e.type === 'spawn').length, 1, 'without epic, the free worker takes it');
+  const born = reduce(deepFreeze(base(1)), { ...event, epic: HIVE_EPIC });
+  assert.deepEqual(born.effects.filter((e) => e.type === 'spawn'), []);
+  assert.deepEqual(born.state.tasks.find((t) => t.item.itemId === 'local:1')?.item.epic, HIVE_EPIC);
+});
