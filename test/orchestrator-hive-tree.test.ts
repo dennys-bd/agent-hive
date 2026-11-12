@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, reduce } from '../src/orchestrator.js';
-import { parentOf } from '../src/task-tree.js';
+import { parentOf, progress } from '../src/task-tree.js';
 import { END, HIVE_EPIC, type HiveEvent, type Stage, type State, type Task, type Transition } from '../src/types.js';
 import { flowed } from './fixtures/main-flow.js';
 import { withWork } from './fixtures/work.js';
@@ -88,4 +88,29 @@ test('a hive epic follows its hive children by aheadThenBehind: the faster child
   assert.equal(epicStageOf(both), 'Review');
   const one = run(both, moveTo('local:2', 'Done'));
   assert.equal(epicStageOf(one), 'Review', 'past Build it stays with the slower child');
+});
+
+const POLL: HiveEvent = { type: 'poll', items: [] }; // no source: what runs the due stage actions and the epic's next pass
+const deleted = (state: State, itemId: string): State =>
+  run(withWork(state, itemId, { worktree: `/w/${itemId}`, deleting: true }), { type: 'taskDeleted', taskId: itemId });
+
+test('a hive child that leaves, through the last stage\'s END exit or deleted, is closed on its hive parent, and progress counts it done (#782)', () => {
+  const ended = run(tree(), moveTo('local:2', 'Done'), moveTo('local:3', 'Review'), POLL);
+  assert.equal(taskIn(ended, 'local:2'), undefined, 'Done acted: nothing to delete, out through its END exit');
+  assert.deepEqual(taskIn(ended, 'local:1')?.item.closedChildren, ['local:2']);
+  assert.deepEqual(progress(ended.tasks, 'local:1', 'Done'), { done: 1, total: 2 });
+  const gone = deleted(ended, 'local:3');
+  assert.deepEqual(taskIn(gone, 'local:1')?.item.closedChildren, ['local:2', 'local:3']);
+  assert.deepEqual(progress(gone.tasks, 'local:1', 'Done'), { done: 2, total: 2 });
+});
+
+test('both hive children gone: at the next reduction the epic goes into Done and out through its END exit, as a GitHub epic does (#782)', () => {
+  const gone = deleted(run(tree(), moveTo('local:2', 'Done'), POLL), 'local:3');
+  assert.notEqual(taskIn(gone, 'local:1'), undefined, 'the mark is written after the epic pass: the epic reads it at the next reduction');
+  assert.deepEqual(run(gone, POLL).tasks, [], 'every child done: into Done, and Done has no after, so out at once');
+});
+
+test('a reduction where no hive task left returns the state the step left, as before (#782)', () => {
+  const before = tree();
+  assert.equal(reduce(before, { type: 'tick' }).state, before);
 });

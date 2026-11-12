@@ -34,7 +34,7 @@ import { renameStages } from './stage-rename.js';
 import { placeVanished } from './vanished-stages.js';
 import { flatten } from './flows.js';
 import { followEpics } from './epic-follow.js';
-import { blockerSet, closeRefsTo, linkParent } from './hive-blockers.js';
+import { blockerSet, closeLeftChildren, closeRefsTo, linkParent } from './hive-blockers.js';
 import { isUuid } from './uuid.js';
 
 export { isFree } from './reducer-kit.js';
@@ -82,7 +82,8 @@ export function isChildSession(worker: Worker | undefined, payload: HookPayload)
   return isSessionId(worker?.sessionId) && isSessionId(payload.session_id) && payload.session_id !== worker.sessionId;
 }
 
-/** Every event, then the shutdown-when-done step (#233), on the state as the event and its fill left it, then the show epics' pass (#31).
+/** Every event, then the shutdown-when-done step (#233), on the state as the event and its fill left it, then the show epics' pass (#31),
+ * then every hive task that left closed on its hive parent (#782).
  * Expired disables go first (#297), on the state as it stood before the event, so a rise the event brings is counted against a rule already
  * back on. */
 export function reduce(state: State, event: HiveEvent): Reduced {
@@ -90,7 +91,11 @@ export function reduce(state: State, event: HiveEvent): Reduced {
   const stepped = withSlept(state, event, drainForShutdown(step(dropExpiredDisables(state, Date.now()), event), Date.now()), Date.now());
   // #31: every show epic where its children now put it, whatever moved them: one pass, so no event has to wire it
   const epics = followEpics(stepped.state);
-  const reduced = epics.state === stepped.state ? stepped : { state: epics.state, effects: [...stepped.effects, ...epics.effects] };
+  // #782: a hive task gone in the step or in the epic pass, closed on its hive parent. After followEpics, so an epic that left in that pass
+  // is marked on its own parent too; the parent epic reads the mark at the next reduction, as ended's isDue already waits for one
+  const tasks = closeLeftChildren(state.tasks, epics.state.tasks);
+  const closed = tasks === epics.state.tasks ? epics.state : { ...epics.state, tasks };
+  const reduced = closed === stepped.state ? stepped : { state: closed, effects: [...stepped.effects, ...epics.effects] };
   // #629: wherever a task left, its work went with it; #696: and the terminals of any activity gone, a removed workspace's local one included;
   // #727: and the worker of any commands run gone with it or dropped by the boot
   const { state: pruned, effects: dropped } = dropOrphanTerminals(freedLostRuns(pruneWork(reduced.state)), reduced.state);
