@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { parseConfig } from '../../src/config.js';
 import { createSource, namespaced, sourceSpec } from '../../src/source.js';
 import { listFilterOptions } from '../../src/sources/github.js';
+import { repositoryLabels } from '../../src/sources/github-create.js';
 import { GITHUB_ENTRY, combConfig, fakeGql, fakeSourceFactory, FILTER } from '../fakes.js';
 
 const options = [{ id: 'O_ready', name: 'Ready' }, { id: 'O_prog', name: 'In progress' }, { id: 'O_rev', name: 'In review' }];
 const fields = { repositoryOwner: { projectV2: { id: 'PVT_1', field: { id: 'F_status', options } } } };
 const ISSUE = { createIssue: { issue: { id: 'I_9', url: 'https://github.com/acme/app/issues/9' } } };
+const LABELS = { repository: { labels: { nodes: [{ id: 'L_bug', name: 'bug' }, { id: 'L_docs', name: 'docs' }] } } };
 const specWith = (extra: Record<string, unknown> = {}) => {
   const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER, ...extra } }));
   return sourceSpec(config, config.comb.sources[0]);
@@ -54,6 +56,13 @@ test('a failure after the issue exists names the issue\'s url (#846)', async () 
 test('namespaced create answers the item under its source\'s name (#846)', async () => {
   const adapter = { ...fakeSourceFactory().factory(specWith()), create: async () => 'PVTI_9' };
   assert.equal(await namespaced(GITHUB_ENTRY, adapter).create?.({ title: 'x', column: 'Ready' }), 'board:PVTI_9');
+});
+
+test('repositoryLabels reads the repository\'s labels by owner and name, and throws for a repository that is gone (#767)', async () => {
+  const { gql, calls } = fakeGql({ repositoryLabels: [LABELS, { repository: null }] });
+  assert.deepEqual(await repositoryLabels(gql, 'acme/app'), [{ id: 'L_bug', name: 'bug' }, { id: 'L_docs', name: 'docs' }]);
+  await assert.rejects(repositoryLabels(gql, 'acme/gone'), { message: 'repository acme/gone not found' });
+  assert.deepEqual(calls.map((c) => [c.name, c.variables]), [['repositoryLabels', { owner: 'acme', name: 'app' }], ['repositoryLabels', { owner: 'acme', name: 'gone' }]]);
 });
 
 test('listFilterOptions answers the Project\'s linked repositories (#846)', async () => {

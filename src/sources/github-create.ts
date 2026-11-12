@@ -1,5 +1,5 @@
 import type { Gql } from '../types.js';
-import { ADD_PROJECT_ITEM, CREATE_ISSUE, REPOSITORY_ID, SET_OPTION, type AddProjectItemData, type CreateIssueData } from './github-queries.js';
+import { ADD_PROJECT_ITEM, CREATE_ISSUE, REPOSITORY_ID, REPOSITORY_LABELS, SET_OPTION, type AddProjectItemData, type CreateIssueData, type RepositoryLabelsData } from './github-queries.js';
 
 /** Where a new issue goes (#846): the Project, its Status field and the option to set, and the repository's node id. */
 export interface IssueTarget { projectId: string; statusFieldId: string; optionId: string; repositoryId: string }
@@ -12,6 +12,14 @@ export async function repositoryNodeId(gql: Gql, repository: string): Promise<st
   const id = ((await gql(REPOSITORY_ID, { owner, name })) as { repository?: { id: string } | null }).repository?.id;
   if (!id) throw new Error(`repository ${repository} not found`);
   return id;
+}
+
+/** The labels of `repository` (#767): one page of REPO_LABEL_LIMIT, what a new issue's label names resolve to. */
+export async function repositoryLabels(gql: Gql, repository: string): Promise<{ id: string; name: string }[]> {
+  const [owner, name] = repository.split('/');
+  const found = ((await gql(REPOSITORY_LABELS, { owner, name })) as RepositoryLabelsData).repository;
+  if (!found) throw new Error(`repository ${repository} not found`);
+  return found.labels?.nodes ?? [];
 }
 
 /** The issue, then its Project item, then its Status, in that order; resolves to the item's id. A failure once the issue exists names its url so
