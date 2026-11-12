@@ -781,6 +781,8 @@ const en = {
   'worktrees.orphanCount.other': '{n} orphans',
   'worktrees.orphan': 'orphan · no task in the flow',
   'worktrees.kept': 'kept · no task in the flow', // #861: its activity waits for its task to return
+  'worktrees.workspaceGone': 'workspace removed', // #747 provisional: the design handoff's copy replaces it
+  'worktrees.group.workspaceGone': 'no longer in Settings', // #747 provisional
   'worktrees.stopped': 'stopped',
   'worktrees.sessionOpen': 'session open',
   'worktrees.sessionBlocks': "close the task's session first",
@@ -3935,6 +3937,8 @@ const pt: Record<MessageKey, string> = {
   'worktrees.orphanCount.other': '{n} órfãs',
   'worktrees.orphan': 'órfã · sem tarefa no fluxo',
   'worktrees.kept': 'mantida · sem tarefa no fluxo',
+  'worktrees.workspaceGone': 'workspace removido',
+  'worktrees.group.workspaceGone': 'não está mais nas configurações',
   'worktrees.stopped': 'parado',
   'worktrees.sessionOpen': 'sessão aberta',
   'worktrees.sessionBlocks': 'feche a sessão da tarefa antes',
