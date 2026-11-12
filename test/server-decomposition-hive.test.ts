@@ -4,12 +4,15 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import express from 'express';
+import { activityOf, resultOf } from '../src/activities.js';
+import { decompositionTarget } from '../src/decomposition.js';
+import { NOT_CREATED_MESSAGE } from '../src/decomposition-write-hive.js';
 import { flatten } from '../src/flows.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { registerDecompositionRoutes } from '../src/server-decomposition.js';
-import { CREATE_PULL_REQUEST, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
+import { CREATE_ISSUE, CREATE_PULL_REQUEST, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
 import { worktreePath } from '../src/worktree.js';
-import { END, type CombConfig, type DecompositionPreview, type Effect, type Exec, type HiveEvent, type State, type Task, type TaskEntry } from '../src/types.js';
+import { END, HIVE_EPIC, type CombConfig, type DecompositionPreview, type Effect, type Exec, type HiveEvent, type State, type Task, type TaskEntry } from '../src/types.js';
 import { fakeGqlJson, fakeLog, GITHUB_ENTRY } from './fakes.js';
 import { HIVE_TREE, hiveFlows } from './fixtures/decomposition.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
@@ -129,4 +132,122 @@ test('after a partial hive write the preview answers target hive, and a POST nam
   const res = await post(url, { source: 'board', column: 'Backlog' });
   assert.deepEqual([res.status, await res.json()], [409, { error: 'a decomposição já começou a ser escrita no hive: continue por lá' }]);
   assert.deepEqual([events, calls.length], [[], asked]);
+});
+
+const hive = (entry: unknown) => ({ source: 'hive', entry });
+const ENTRY: TaskEntry = { flow: 'main', stage: 'spec' };
+const NODES = ['local:2', 'local:3', 'local:4', 'local:5'];
+const taskIn = (state: State, itemId: string): Task | undefined => state.tasks.find((c) => c.item.itemId === itemId);
+const stepsOf = (events: HiveEvent[]): string[] => events.map((e) => (e.type === 'decompositionIssue' ? `${e.id}=${e.number}` : e.type));
+
+test('POST on a hive goal writes the tree under it at the entry, auto on, in its workspace, the inner node born an epic; then stamps the goal and approves it by its approved exit; no issue is created (#783)', async (t) => {
+  const { url, events, calls, state } = await routes(t);
+  const res = await post(url, hive(ENTRY));
+  assert.deepEqual([res.status, await res.json()], [200, { ok: true }]);
+  assert.deepEqual(stepsOf(events), ['decompositionTarget', 'createTask', '1=2', 'createTask', '1.1=3', 'createTask', '1.2=4', 'createTask', '2=5', 'blockerSet', 'pr=300', 'done=1', 'markEpic', 'approve']);
+  const s = state();
+  assert.deepEqual(NODES.map((id) => [taskIn(s, id)?.stage, taskIn(s, id)?.auto, taskIn(s, id)?.workspace]), Array<unknown>(4).fill(['spec', true, 'hive']));
+  assert.deepEqual(NODES.map((id) => [taskIn(s, id)?.item.parent, taskIn(s, id)?.item.epic]), [['local:1', HIVE_EPIC], ['local:2', undefined], ['local:2', undefined], ['local:1', undefined]]);
+  assert.deepEqual([taskIn(s, 'local:4')?.item.blockers?.blockedBy.map((r) => r.id), taskIn(s, 'local:3')?.item.blockers?.blocking.map((r) => r.id)], [['HIVE-3'], ['HIVE-4']]);
+  assert.match(taskIn(s, 'local:3')?.item.body ?? '', /^Parent: HIVE-2\nDesign: https:\/\/github\.com\/acme\/docs\/blob\/trunk\/decomposition\.md#1-pages$/m);
+  assert.deepEqual([taskIn(s, 'local:1')?.item.epic, taskIn(s, 'local:1')?.stage, activityOf(s, 'local:1')?.approval], [HIVE_EPIC, 'spec', undefined]);
+  assert.equal(calls.some((c) => c.query === CREATE_ISSUE), false);
+});
+
+test('POST on a GitHub goal creates a root hive task from it, born an epic and never started, the tree under it, and approves the goal with no stamp; no issue is created (#783)', async (t) => {
+  const { url, events, calls, state } = await routes(t, { task: GITHUB_GOAL });
+  assert.equal((await post(url, hive(ENTRY))).status, 200);
+  assert.deepEqual(stepsOf(events), ['decompositionTarget', 'createTask', 'root=1', 'createTask', '1=2', 'createTask', '1.1=3', 'createTask', '1.2=4', 'createTask', '2=5', 'blockerSet', 'pr=300', 'done=1', 'approve']);
+  const s = state();
+  const root = taskIn(s, 'local:1');
+  assert.deepEqual([root?.item.title, root?.item.origin, root?.item.url, root?.item.epic, root?.stage], ['Site for XPTO', 'board:I7', GITHUB_GOAL.item.url, HIVE_EPIC, 'spec']);
+  assert.equal(activityOf(s, 'local:1')?.workerId, undefined, 'never started');
+  assert.deepEqual(['local:2', 'local:5'].map((id) => taskIn(s, id)?.item.parent), ['local:1', 'local:1']);
+  assert.deepEqual([taskIn(s, 'board:I7')?.item.epic, taskIn(s, 'board:I7')?.stage, activityOf(s, 'board:I7')?.approval], [undefined, 'spec', undefined]);
+  assert.equal(calls.some((c) => c.query === CREATE_ISSUE), false);
+});
+
+test('the entry null creates the tasks outside the flow, and the goal still moves by its approve (#783)', async (t) => {
+  const { url, state } = await routes(t);
+  assert.equal((await post(url, hive(null))).status, 200);
+  const s = state();
+  assert.deepEqual(NODES.map((id) => taskIn(s, id)?.stage), [undefined, undefined, undefined, undefined]);
+  assert.deepEqual([taskIn(s, 'local:1')?.stage, taskIn(s, 'local:1')?.item.epic, activityOf(s, 'local:1')?.approval], ['spec', HIVE_EPIC, undefined]);
+});
+
+test('an approve that leads to END: the goal has left its goal stage and its children keep item.parent (#783)', async (t) => {
+  const { url, state } = await routes(t, { to: END });
+  assert.equal((await post(url, hive(ENTRY))).status, 200);
+  // markEpic runs before the approve (#556), so the epic follows its children at once and is no longer in goal when the approve lands: it
+  // stays in the children's stage instead of leaving the state
+  assert.deepEqual([taskIn(state(), 'local:1')?.stage, activityOf(state(), 'local:1')?.approval], ['spec', undefined]);
+  assert.deepEqual(['local:2', 'local:5'].map((id) => taskIn(state(), id)?.item.parent), ['local:1', 'local:1']);
+});
+
+test('a write stopped halfway answers 502 with code hive and logs its words; what was recorded stays, and the next POST creates only the missing tasks, no blocker twice (#783)', async (t) => {
+  let removed = false;
+  const onEvent = (event: HiveEvent, s: State): State => {
+    if (removed || event.type !== 'decompositionIssue' || event.id !== '1') return s;
+    removed = true;
+    return { ...s, stages: s.stages.filter((stage) => stage.name !== 'spec') };
+  };
+  const { url, events, lines, state, setState } = await routes(t, { onEvent });
+  const res = await post(url, hive(ENTRY));
+  assert.deepEqual([res.status, await res.json()], [502, { error: NOT_CREATED_MESSAGE, code: 'hive' }]);
+  assert.deepEqual(lines, [`WARN decomposition #HIVE-1: the hive write stopped: ${NOT_CREATED_MESSAGE}`]);
+  assert.deepEqual(resultOf(state(), 'local:1'), { ...PENDING, decompositionTarget: 'hive', decompositionIssues: { '1': 2 } });
+  setState({ ...state(), stages: flatten(state().flows).stages });
+  const first = events.length;
+  assert.equal((await post(url, hive(ENTRY))).status, 200);
+  assert.deepEqual(stepsOf(events.slice(first)), ['createTask', '1.1=3', 'createTask', '1.2=4', 'createTask', '2=5', 'blockerSet', 'pr=300', 'done=1', 'markEpic', 'approve']);
+  assert.deepEqual(taskIn(state(), 'local:4')?.item.blockers?.blockedBy.map((r) => r.id), ['HIVE-3']);
+});
+
+test('a press the delivery refuses (the docs repository\'s default branch) writes nothing and records no target (#783)', async (t) => {
+  const { url, events, state } = await routes(t, { branch: 'trunk' });
+  const res = await post(url, hive(ENTRY));
+  assert.deepEqual([res.status, ((await res.json()) as { error: string }).error], [409, 'the decomposition file\'s checkout is on acme/docs\'s default branch (trunk): the Hive never pushes it']);
+  assert.deepEqual([events, decompositionTarget(resultOf(state(), 'local:1'))], [[], undefined]);
+});
+
+test('a partial GitHub write refuses a hive POST, an entry that is none of the offered is a 400, and the hive off is a 409; none writes anything (#783)', async (t) => {
+  const github = await routes(t, { task: GITHUB_GOAL, result: { ...PENDING, decompositionIssues: { design: 7 } } });
+  const refused = await post(github.url, hive(ENTRY));
+  assert.deepEqual([refused.status, await refused.json()], [409, { error: 'a decomposição já começou a ser escrita no GitHub: continue por lá' }]);
+  const local = await routes(t);
+  for (const body of [{ source: 'hive' }, hive({ flow: 'nope' }), hive({ flow: 'main', stage: 'build' }), hive({ flow: 'main', stage: 'spec', more: 1 })]) {
+    const res = await post(local.url, body);
+    assert.deepEqual([res.status, await res.json()], [400, { error: 'entry precisa ser uma das entradas oferecidas' }], JSON.stringify(body));
+  }
+  const off = await routes(t, { hiveSource: false });
+  const closed = await post(off.url, hive(ENTRY));
+  assert.deepEqual([closed.status, await closed.json()], [409, { error: 'hive is turned off: create the task in a source' }]);
+  assert.deepEqual([github.events, local.events, off.events], [[], [], []]);
+});
+
+test('a GitHub goal whose item a hive task holds as origin is refused 409 with nothing written; with root recorded the write goes on (#783)', async (t) => {
+  const taken = await routes(t, { task: GITHUB_GOAL, others: [COPY] });
+  const res = await post(taken.url, hive(ENTRY));
+  assert.deepEqual([res.status, await res.json(), taken.events], [409, { error: 'já existe uma tarefa criada desse item' }, []]);
+  const resumed = await routes(t, { task: GITHUB_GOAL, others: [COPY], result: { ...PENDING, decompositionTarget: 'hive', decompositionIssues: { root: 1 } } });
+  assert.equal((await post(resumed.url, hive(ENTRY))).status, 200);
+  assert.equal(stepsOf(resumed.events).includes('root=1'), false, 'the recorded root is not created again');
+  assert.equal(taskIn(resumed.state(), 'local:2')?.item.parent, 'local:1');
+});
+
+test('under the hive a checkout with no GitHub origin does not refuse the write: the tasks are created, nothing is pushed or opened, and no body links the file (#783)', async (t) => {
+  const { url, events, git, calls, state } = await routes(t, { docsOrigin: '' });
+  assert.equal((await post(url, hive(ENTRY))).status, 200);
+  assert.deepEqual([git.some((args) => args.includes('push')), calls.some((c) => c.query === CREATE_PULL_REQUEST), stepsOf(events).includes('pr=300')], [false, false, false]);
+  assert.deepEqual(NODES.map((id) => taskIn(state(), id) !== undefined), [true, true, true, true]);
+  assert.doesNotMatch(taskIn(state(), 'local:3')?.item.body ?? '', /^Design:/m);
+});
+
+test('a delivered hive write opens its PR named by the goal\'s ref and title: the display id for a hive goal, owner/repo#n for a GitHub goal (#783)', async (t) => {
+  const cases: [Task, string][] = [[HIVE_GOAL, 'docs: decomposition for HIVE-1: Site for XPTO'], [GITHUB_GOAL, 'docs: decomposition for acme/site#7: Site for XPTO']];
+  for (const [task, title] of cases) {
+    const { url, calls } = await routes(t, { task });
+    assert.equal((await post(url, hive(ENTRY))).status, 200);
+    assert.deepEqual(calls.filter((c) => c.query === CREATE_PULL_REQUEST).map((c) => c.variables.title), [title]);
+  }
 });

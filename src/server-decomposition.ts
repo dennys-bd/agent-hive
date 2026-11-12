@@ -11,7 +11,7 @@ import type { Logger } from './log.js';
 import { issueOfLink } from './repos/issue-task.js';
 import { originRepository } from './repos/repositories.js';
 import { NOT_AWAITING_MESSAGE } from './server-approval.js';
-import { hivePreview } from './server-decomposition-hive.js';
+import { type HiveAnswer, hivePreview, writeHive } from './server-decomposition-hive.js';
 import { activityFolders, DISK, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal } from './server-tasks.js';
 import type { GqlJson } from './sources/github-gql.js';
@@ -67,6 +67,12 @@ function refuseWrite(log: Logger, id: string, failed: Extract<WriteOutcome, { er
   if (failed.transient) log.warn(`decomposition #${id}: GitHub still failing after the retries: ${failed.error}`);
   refuse(res, { status: HTTP_BAD_GATEWAY, message: failed.error }, failed.transient ? TRANSIENT_CODE : undefined);
 }
+// #783: the body names the hive target
+const isHiveChoice = (body: unknown): boolean => ((body ?? {}) as { source?: unknown }).source === HIVE_SOURCE;
+const answer = (res: Response, hive: HiveAnswer): void => {
+  if ('status' in hive) refuse(res, hive, hive.code);
+  else res.json(hive);
+};
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 // fetchStatusField takes the polling transport's shape; the Hive's login answers the same query through stdin
 const asGql = (gql: GqlJson): Gql => (query, variables) => gql(query, variables ?? {});
@@ -169,6 +175,7 @@ async function choiceOf(config: Pick<Config, 'comb'>, gql: GqlJson, body: unknow
   return option ? { projectId: field.projectId, fieldId: field.id, optionId: option.id } : { status: HTTP_BAD_REQUEST, message: CHOICE_MESSAGE };
 }
 
+// #783: a hive body takes writeHive's path; the rest is the GitHub target, unchanged.
 // The write and the stage's end: the file's checkout resolved first (#936), so a file the Hive cannot deliver writes nothing; each step
 // dispatched as decompositionIssue before the next; the file delivered and its PR recorded as pr, unless git ignores it (#741); `done` once everything is done; then, for a GitHub goal whose source
 // shows or hides epics, markEpic (#556); then approve for a GitHub goal or closeTask for a local one, straight to the reducer, past the approve route's guard. An error is a 502 with GitHub's words, and the steps done stay
@@ -177,6 +184,7 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
   if ('status' in goal) return refuse(res, goal);
   const tree = pendingTree(goal);
   if ('status' in tree) return refuse(res, tree);
+  if (isHiveChoice(body)) return answer(res, await writeHive(deps, current, goal, tree, activityId, body)); // #783: the hive target's own path
   const repository = githubRepository(goal);
   if (typeof repository !== 'string') return refuse(res, repository);
   const project = await choiceOf(current.runtime.config, deps.gql, body);
