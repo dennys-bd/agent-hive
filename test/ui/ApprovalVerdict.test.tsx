@@ -87,3 +87,24 @@ test('an evidence the record holds for another verdict is not shown: an older st
   expect(within(status).getByTitle('spike')).toBeInTheDocument();
   expect(within(status).queryByText('an older stage said so')).not.toBeInTheDocument();
 });
+
+test('switching the box between two tasks awaiting approval, back and forth, shows exactly one verdict: the shown task\'s, with its evidence (#763)', () => {
+  // The verdict and the actions once shared their key: a since that changed left the old verdict's nodes behind
+  const one = awaiting({ since: SINCE, verdict: 'spike' });
+  const two: WithWork = { ...awaiting({ since: '2026-11-06T11:00:00.000Z', verdict: 'task' }), item: { itemId: 'I2', id: '703', title: 'Split the CLI', body: '', url: '' } };
+  const both = movedWork<State>({
+    ...state(one), tasks: [one, two], activities: [],
+    activityRecords: [
+      { id: ACTIVITY, taskIds: ['I1'], sessions: [], result: { verdict: { name: 'spike', evidence: 'evidence of 702' } } },
+      { id: activityIdOf('I2'), taskIds: ['I2'], sessions: [], result: { verdict: { name: 'task', evidence: 'evidence of 703' } } },
+    ],
+  });
+  const { rerender } = render(<StatusBox task={bareTask(one)} state={both} isActivity={false} />);
+  for (const [task, evidence] of [[two, 'evidence of 703'], [one, 'evidence of 702'], [two, 'evidence of 703']] as const) {
+    rerender(<StatusBox task={bareTask(task)} state={both} isActivity={false} />);
+    const status = screen.getByRole('region', { name: 'aguardando aprovação' });
+    expect(within(status).getAllByText('veredito')).toHaveLength(1);
+    expect(within(status).getByText(evidence)).toBeInTheDocument();
+    expect(within(status).queryAllByText(/^evidence of/)).toHaveLength(1);
+  }
+});
