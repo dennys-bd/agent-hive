@@ -1,4 +1,4 @@
-import type { BlockerChange, BlockerRef, HiveEvent, ItemBlockers, State, Task } from './types.js';
+import type { BlockerChange, BlockerRef, HiveEvent, Item, ItemBlockers, State, Task } from './types.js';
 
 /** Why a hive relation cannot be written (#56): the route answers each with its code, the reducer leaves the state as it is. */
 export type BlockerProblem = 'unknownItem' | 'unknownRef' | 'crossSource' | 'self' | 'cycle';
@@ -72,6 +72,35 @@ export function closeRefsTo(tasks: Task[], dropped: Task): Task[] {
     if (!isHive(t) || b === undefined || ![...b.blockedBy, ...b.blocking].some((r) => r.id === id)) return t;
     return withRelations(t, { blockedBy: closed(b.blockedBy), blocking: closed(b.blocking) });
   });
+}
+
+/** #782: a new hive task's item with its parent, when that parent is a task in the state, and the tasks with a hive parent listing it last
+ * among its children, once: the order progress, descendants and the tree card read. A source's parent is linked from the child only: its
+ * poll replaces the item whole (namespaced), so a hive child written there would be erased. No such task: the item and tasks as they came. */
+export function linkParent(tasks: Task[], item: Item, parent: string | undefined): { tasks: Task[]; item: Item } {
+  const found = parent === undefined ? undefined : tasks.find((t) => t.item.itemId === parent);
+  if (found === undefined) return { tasks, item };
+  const linked: Item = { ...item, parent: found.item.itemId };
+  const children = found.item.children ?? [];
+  if (!isHive(found) || children.includes(item.itemId)) return { tasks, item: linked };
+  const listed: Task = { ...found, item: { ...found.item, children: [...children, item.itemId] } };
+  return { tasks: tasks.map((t) => (t === found ? listed : t)), item: linked };
+}
+
+/** #782: a hive task that left the state, by any path (dropTask, a transition's END, the epic pass's own), closed on its hive parent still in
+ * the state, once, as GitHub closes a sub-issue: what isDone and allDone count a child with no task by. A source's parent is its source's to
+ * write. Nothing to mark: `after` itself, which reduce's identity check relies on. */
+export function closeLeftChildren(before: readonly Task[], after: Task[]): Task[] {
+  if (before === after) return after;
+  const kept = new Set(after.map((t) => t.item.itemId));
+  const left = before.filter((t) => isHive(t) && t.item.parent !== undefined && !kept.has(t.item.itemId));
+  if (left.length === 0) return after;
+  const marked = after.map((t) => {
+    const closed = t.item.closedChildren ?? [];
+    const added = isHive(t) ? left.filter((c) => c.item.parent === t.item.itemId && !closed.includes(c.item.itemId)) : [];
+    return added.length === 0 ? t : { ...t, item: { ...t.item, closedChildren: [...closed, ...added.map((c) => c.item.itemId)] } };
+  });
+  return marked.some((t, i) => t !== after[i]) ? marked : after;
 }
 
 const CANDIDATES_MAX = 8; // the add row's list (#57), as the GitHub search's first: 8

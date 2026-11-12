@@ -821,6 +821,9 @@ export type EpicFollows = (typeof EPIC_FOLLOWS)[number];
 export const NEW_SOURCE_EPICS: { epics: EpicsMode; epicFollows: EpicFollows } = { epics: 'show', epicFollows: 'aheadThenBehind' };
 /** The stage a new source switches at, else the flow's first (#30). */
 export const SWITCH_AT_DEFAULT = 'Build';
+/** The epic rule a decomposition's hive write stamps on a hive goal (#782, #687 decision 5): the defaults a new GitHub source gets. A flow
+ * with no Build stage falls back to behind, by epicStage's own rule, so it holds for every flow. */
+export const HIVE_EPIC: NonNullable<Item['epic']> = { follows: NEW_SOURCE_EPICS.epicFollows, switchAt: SWITCH_AT_DEFAULT };
 
 /** The coding agents a stage can run (#516): ids only, their per-agent facts live in agents.ts. #101 adds codex here and there. */
 export const AGENT_IDS = ['claude', 'codex'] as const; // #927: codex runs flow stages; its free sessions are #931
@@ -1609,7 +1612,7 @@ export type HiveEvent =
   | { type: 'restored'; itemId: string; branch?: string } // #619: the restore's git ended well; `branch` when it checked out a new -r<n>
   | { type: 'restoreFailed'; itemId: string } // #619: the restore's git failed: the mark goes
   | { type: 'clearSessions'; activityId: string; sessionId: string } // one session's limpar in the panel (#304); a record id (#629)
-  | { type: 'createTask'; title: string; body: string; stage?: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string } } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67)
+  | { type: 'createTask'; title: string; body: string; stage?: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string }; parent?: string } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67) parent (#782): the itemId of the new task's parent; one that is no task in the state is ignored
   | { type: 'closeTask'; taskId: string } // close on a task out of the listing or an orphan (#568), remove on a stopped local one (#132): the task and its session go; the worktree of a task off the source stays (#182), a local task's goes first, in the route (#542)
   | { type: 'done'; ptyId: string; result?: Record<string, unknown>; verdict?: string; evidence?: string } // hive_done: the command is finished; result is merged into the task (#99); verdict / evidence: how it ended and why (#134)
   | { type: 'pr'; ptyId: string; url: string; slice?: PrSlice } // hive_pr: the PR the worker opened, https only (#99), and its slice (#698)

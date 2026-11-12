@@ -34,7 +34,7 @@ import { renameStages } from './stage-rename.js';
 import { placeVanished } from './vanished-stages.js';
 import { flatten } from './flows.js';
 import { followEpics } from './epic-follow.js';
-import { blockerSet, closeRefsTo } from './hive-blockers.js';
+import { blockerSet, closeLeftChildren, closeRefsTo, linkParent } from './hive-blockers.js';
 import { isUuid } from './uuid.js';
 
 export { isFree } from './reducer-kit.js';
@@ -82,7 +82,8 @@ export function isChildSession(worker: Worker | undefined, payload: HookPayload)
   return isSessionId(worker?.sessionId) && isSessionId(payload.session_id) && payload.session_id !== worker.sessionId;
 }
 
-/** Every event, then the shutdown-when-done step (#233), on the state as the event and its fill left it, then the show epics' pass (#31).
+/** Every event, then the shutdown-when-done step (#233), on the state as the event and its fill left it, then the show epics' pass (#31),
+ * then every hive task that left closed on its hive parent (#782).
  * Expired disables go first (#297), on the state as it stood before the event, so a rise the event brings is counted against a rule already
  * back on. */
 export function reduce(state: State, event: HiveEvent): Reduced {
@@ -90,7 +91,11 @@ export function reduce(state: State, event: HiveEvent): Reduced {
   const stepped = withSlept(state, event, drainForShutdown(step(dropExpiredDisables(state, Date.now()), event), Date.now()), Date.now());
   // #31: every show epic where its children now put it, whatever moved them: one pass, so no event has to wire it
   const epics = followEpics(stepped.state);
-  const reduced = epics.state === stepped.state ? stepped : { state: epics.state, effects: [...stepped.effects, ...epics.effects] };
+  // #782: a hive task gone in the step or in the epic pass, closed on its hive parent. After followEpics, so an epic that left in that pass
+  // is marked on its own parent too; the parent epic reads the mark at the next reduction, as ended's isDue already waits for one
+  const tasks = closeLeftChildren(state.tasks, epics.state.tasks);
+  const closed = tasks === epics.state.tasks ? epics.state : { ...epics.state, tasks };
+  const reduced = closed === stepped.state ? stepped : { state: closed, effects: [...stepped.effects, ...epics.effects] };
   // #629: wherever a task left, its work went with it; #696: and the terminals of any activity gone, a removed workspace's local one included;
   // #727: and the worker of any commands run gone with it or dropped by the boot
   const { state: pruned, effects: dropped } = dropOrphanTerminals(freedLostRuns(pruneWork(reduced.state)), reduced.state);
@@ -267,20 +272,22 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
 // (enteredAt now, so `after` counts from creation) and appended right after the stage's last task, unpinned. `local` keeps it off every source
 // write and out of the poll's merge. Unknown stage: nothing (the route checked; a race is a no-op). With pr (#67) the task holds that PR
 // from birth, in a record with no live activity: the shape a deleted activity leaves, which taskOfPr, prsOf and the PR poll already read.
-// No stage (#566): the task is outside the flow, never entered, appended to the list.
-function createTask(state: State, { title, body, stage: name, prefix, workspace, auto, url, origin, pr }: Extract<HiveEvent, { type: 'createTask' }>): Reduced {
+// No stage (#566): the task is outside the flow, never entered, appended to the list. With a parent that is a task in the state the new task
+// is its child (#782, linkParent); an unknown one is ignored, as an unknown workspace.
+function createTask(state: State, { title, body, stage: name, prefix, workspace, auto, url, origin, pr, parent }: Extract<HiveEvent, { type: 'createTask' }>): Reduced {
   const stage = name === undefined ? undefined : stageOf(state.stages, name);
   if (name !== undefined && !stage) return none(state);
   const n = state.localCount + 1;
-  const item: Item = { itemId: `local:${n}`, id: `${prefix}-${n}`, title, body, url: url ?? '', ...(origin === undefined ? {} : { origin }) }; // #756: a copy of a source's issue keeps its link
+  const own: Item = { itemId: `local:${n}`, id: `${prefix}-${n}`, title, body, url: url ?? '', ...(origin === undefined ? {} : { origin }) }; // #756: a copy of a source's issue keeps its link
+  const { tasks, item } = linkParent(state.tasks, own, parent); // #782: the parent lists it first, so the insert below reads the tasks it changed
   const placed = workspace !== undefined && state.workspaces.includes(workspace) ? { workspace } : {}; // a known workspace only (#179)
   const born: Task = { item, boardColumn: '', created: true, auto, ...placed };
   const task = stage ? enter(born, stage) : born;
   // "End of its stage" is right after the last task of that stage, as moveTask reads it; an empty stage appends to the list
-  const at = stage ? state.tasks.reduce((end, c, i) => (c.stage === stage.name ? i + 1 : end), state.tasks.length) : state.tasks.length;
+  const at = stage ? tasks.reduce((end, c, i) => (c.stage === stage.name ? i + 1 : end), tasks.length) : tasks.length;
   const held: ActivityRecord | undefined = pr && { id: pr.recordId, taskIds: [item.itemId], sessions: [], prs: [{ url: pr.url, state: 'open' }] };
   const activityRecords = held === undefined ? state.activityRecords : [...state.activityRecords, held];
-  return none(settleEntries(state.tasks, { ...state, localCount: n, tasks: [...state.tasks.slice(0, at), task, ...state.tasks.slice(at)], activityRecords }));
+  return none(settleEntries(state.tasks, { ...state, localCount: n, tasks: [...tasks.slice(0, at), task, ...tasks.slice(at)], activityRecords }));
 }
 
 // The auto switch (#164, #573): off takes the task out of the fill, the delete-activity stages (unless nonAutoTasks, #496) and every automatic

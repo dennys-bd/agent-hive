@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { blockerProblem, blockerSet, closeRefsTo } from '../src/hive-blockers.js';
+import { blockerProblem, blockerSet, closeLeftChildren, closeRefsTo } from '../src/hive-blockers.js';
 import { initialState } from '../src/orchestrator.js';
 import type { BlockerChange, State, Task } from '../src/types.js';
 
@@ -68,4 +68,38 @@ test('a closed ref to a task that left the Hive can be removed from the end that
   assert.equal(blockerProblem(left.tasks, 'local:1', remove('HIVE-2')), undefined);
   assert.equal(blockerProblem(left.tasks, 'local:1', add('HIVE-2')), 'unknownRef', 'it cannot be added back');
   assert.deepEqual(set(left, 'local:1', remove('HIVE-2')).tasks[0].item.blockers, NONE);
+});
+
+// #782: a hive tree as createTask writes it, local:1 the parent
+const kid = (n: number, parent: string): Task => ({ ...hive(n), item: { ...hive(n).item, parent } });
+const parentOf = (n: number, children: string[]): Task => ({ ...hive(n), item: { ...hive(n).item, children } });
+
+test('closeLeftChildren returns after itself when no hive task left, or none that left has a hive parent still in the state (#782)', () => {
+  const tasks = [parentOf(1, ['local:2']), kid(2, 'local:1')];
+  assert.equal(closeLeftChildren(tasks, tasks), tasks);
+  const copy = [...tasks];
+  assert.equal(closeLeftChildren(tasks, copy), copy, 'a new list with the same tasks');
+  const rest = [hive(3)];
+  assert.equal(closeLeftChildren([...tasks, ...rest], rest), rest, 'its parent left with it');
+  const ghKid: Task = { ...GH, item: { ...GH.item, parent: 'local:1' } };
+  const kept = [tasks[0]];
+  assert.equal(closeLeftChildren([tasks[0], ghKid], kept), kept, 'a source\'s task is no hive child');
+});
+
+test('closeLeftChildren marks each left hive child once on its hive parent, in order, never twice; every other task is the same object (#782)', () => {
+  const before = [parentOf(1, ['local:2', 'local:3']), kid(2, 'local:1'), kid(3, 'local:1'), hive(4)];
+  const [parent, , three, four] = before;
+  const after = closeLeftChildren(before, [parent, three, four]);
+  assert.deepEqual(after[0].item.closedChildren, ['local:2']);
+  assert.equal(after[1], three);
+  assert.equal(after[2], four);
+  assert.equal(parent.item.closedChildren, undefined, 'the input is untouched');
+  assert.equal(closeLeftChildren(before, after), after, 'already closed: never twice');
+  assert.deepEqual(closeLeftChildren(before, [parent, four])[0].item.closedChildren, ['local:2', 'local:3'], 'both in one reduction');
+});
+
+test('closeLeftChildren leaves a source parent untouched: its source sends its closed children (#782)', () => {
+  const source: Task = { ...GH, item: { ...GH.item, children: ['work:PVTI_9'] } };
+  const after = [source];
+  assert.equal(closeLeftChildren([source, kid(2, 'work:PVTI_1')], after), after);
 });
