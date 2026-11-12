@@ -4,7 +4,7 @@ import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
 import { DONE_KEY, PR_KEY, decompositionPending, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
-import { deliverDecomposition, deliveryRefusal, type FileCheckout, fileCheckout, githubDeliveryWords } from './decomposition-deliver.js';
+import { checkoutPreview, deliverDecomposition, type DeliveryRead, deliveryRefusal, githubDeliveryWords, readDelivery } from './decomposition-deliver.js';
 import { readRepository, writeDecomposition, type WriteOutcome, type WriteTarget } from './decomposition-write.js';
 import { resolveActivityPath } from './ide.js';
 import type { Logger } from './log.js';
@@ -125,25 +125,10 @@ async function sourcesOf(config: Pick<Config, 'comb'>, gql: GqlJson, own?: strin
   }));
 }
 
-// Where the file is delivered (#936): its checkout and the default branch of that checkout's repository. Throws when there is no checkout
-interface Delivery { checkout: FileCheckout; docs: { id: string; defaultBranch: string } }
-async function deliveryOf(deps: DecompositionRouteDeps, goal: Goal): Promise<Delivery> {
-  const checkout = await fileCheckout(deps.exec, goal.file);
-  return { checkout, docs: await readRepository(deps.gql, checkout.repository) };
-}
-
-// What the dialog shows of the delivery: the checkout's repository, branch and path, marked local when git ignores the file (#741), or the reason it cannot go. Nothing once pr is recorded
-async function deliveryPreview(deps: DecompositionRouteDeps, goal: Goal): Promise<Pick<DecompositionPreview, 'delivery' | 'deliveryRefusal'>> {
-  const recorded = recordedIssues(goal.result);
-  if (recorded[PR_KEY] !== undefined) return {};
-  try {
-    const { checkout, docs } = await deliveryOf(deps, goal);
-    const refusal = deliveryRefusal(checkout, docs.defaultBranch, recorded);
-    const local = checkout.ignored ? { local: true as const } : {};
-    return { delivery: { repository: checkout.repository, branch: checkout.branch, path: checkout.path, ...local }, ...(refusal === undefined ? {} : { deliveryRefusal: refusal }) };
-  } catch (err) {
-    return { deliveryRefusal: errorMessage(err) };
-  }
+// What the dialog shows of the GitHub target's delivery, or why it cannot go; nothing once pr is recorded (read is then undefined)
+function deliveryPreview(read: DeliveryRead | undefined, recorded: Readonly<Record<string, number>>): Pick<DecompositionPreview, 'delivery' | 'deliveryRefusal'> {
+  if (read === undefined) return {};
+  return 'delivery' in read ? checkoutPreview(read.delivery, recorded) : { deliveryRefusal: errorMessage(read.error) };
 }
 
 function preview(goal: Goal, sources: DecompositionSource[], delivery: Pick<DecompositionPreview, 'delivery' | 'deliveryRefusal'>): DecompositionPreview {
@@ -190,7 +175,9 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
   const record = async (id: string, number: number): Promise<void> => { await deps.dispatch({ type: 'decompositionIssue', taskId, id, number }); };
   const recorded = recordedIssues(goal.result);
   // Once pr is recorded nothing is delivered, so the checkout is not read: a moved or removed one cannot block finishing `done`
-  const delivery = recorded[PR_KEY] === undefined ? await deliveryOf(deps, goal) : undefined;
+  const read = recorded[PR_KEY] === undefined ? await readDelivery(deps.exec, deps.gql, goal.file) : undefined;
+  if (read !== undefined && 'error' in read) throw read.error; // the GitHub target refuses with its words, a 502 as before
+  const delivery = read?.delivery;
   const refusal = delivery === undefined ? undefined : deliveryRefusal(delivery.checkout, delivery.docs.defaultBranch, recorded); // before any issue: a refused delivery writes nothing
   if (refusal !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: refusal });
   // #741: a file git ignores stays local: no Design: link points at it and nothing is committed, pushed or opened as a PR
@@ -226,7 +213,10 @@ export function registerDecompositionRoutes(app: Express, deps: DecompositionRou
     try {
       const goal = await readGoal(deps, current, activityParam(req));
       if ('status' in goal) return refuse(res, goal);
-      res.json(preview(goal, await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source), await deliveryPreview(deps, goal)));
+      const recorded = recordedIssues(goal.result);
+      // #783: read once, for both targets; nothing once pr is recorded
+      const read = recorded[PR_KEY] === undefined ? await readDelivery(deps.exec, deps.gql, goal.file) : undefined;
+      res.json(preview(goal, await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source), deliveryPreview(read, recorded)));
     } catch (err) {
       refuse(res, { status: HTTP_BAD_GATEWAY, message: errorMessage(err) });
     }

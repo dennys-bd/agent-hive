@@ -3,9 +3,10 @@
 // where the delivery commits, pushes and opens its PR. A file git ignores is delivered by no PR: it stays local (#741). Git through execFile with argv arrays.
 import { dirname, relative } from 'node:path';
 import { PR_KEY } from './decomposition.js';
-import type { WriteDeps } from './decomposition-write.js';
+import { readRepository, type WriteDeps } from './decomposition-write.js';
 import { ownerName } from './repos/github-repos.js';
 import { originRepository } from './repos/repositories.js';
+import type { GqlJson } from './sources/github-gql.js';
 import { CREATE_PULL_REQUEST, type CreatePullRequestData, OPEN_PULL_REQUEST, type OpenPullRequestData } from './sources/github-queries.js';
 import type { Exec } from './types.js';
 import { toWire } from './wire-path.js';
@@ -13,18 +14,28 @@ import { toWire } from './wire-path.js';
 /** The file's checkout (#936): its toplevel, its origin's owner/name, its current branch, and the file's path relative to the toplevel, '/'-separated (#641). */
 export interface FileCheckout { toplevel: string; repository: string; branch: string; path: string; ignored: boolean }
 
+/** #783: the file is in no checkout, or its checkout's origin is off GitHub. The GitHub target refuses it with these words; the hive target
+ * keeps the file local (decision 5), at `path`, the file's path in a checkout off GitHub; absent with no checkout. */
+export class OffGithubError extends Error {
+  readonly path?: string;
+  constructor(message: string, path?: string) {
+    super(message);
+    if (path !== undefined) this.path = path;
+  }
+}
+
 /** The checkout of `file`, a real absolute path (#936), learned from the file itself: the Hive keeps no copy of the conventions. No checkout,
- * an origin off GitHub or a detached HEAD is refused with fixed words before anything is written. */
+ * an origin off GitHub or a detached HEAD is refused with fixed words before anything is written; #783: the first two as OffGithubError. */
 export async function fileCheckout(exec: Exec, file: string): Promise<FileCheckout> {
   const git = async (cwd: string, ...args: string[]): Promise<string> => (await exec('git', ['-C', cwd, ...args])).stdout.trim();
   // git answers the toplevel with its symlinks resolved, as the file's real path is, so the relative path holds
   const toplevel = await git(dirname(file), 'rev-parse', '--show-toplevel').catch(() => '');
-  if (toplevel === '') throw new Error('the decomposition file is in no git checkout');
+  if (toplevel === '') throw new OffGithubError('the decomposition file is in no git checkout');
+  const path = toWire(relative(toplevel, file), process.platform); // #641: the Design: links and git's pathspecs take /
   const repository = await originRepository(exec, toplevel);
-  if (repository === undefined) throw new Error('the decomposition file\'s checkout has no GitHub origin');
+  if (repository === undefined) throw new OffGithubError('the decomposition file\'s checkout has no GitHub origin', path); // #783: the hive keeps it local, here
   const branch = await git(toplevel, 'branch', '--show-current');
   if (branch === '') throw new Error('the decomposition file\'s checkout is on no branch: nothing to push');
-  const path = toWire(relative(toplevel, file), process.platform); // #641: the Design: links and git's pathspecs take /
   return { toplevel, repository, branch, path, ignored: await isIgnored(exec, toplevel, path) };
 }
 
@@ -58,6 +69,28 @@ export function deliveryRefusal(checkout: FileCheckout, defaultBranch: string, r
   if (checkout.branch === defaultBranch) return `the decomposition file's checkout is on ${checkout.repository}'s default branch (${defaultBranch}): the Hive never pushes it`;
   if (!checkout.path.endsWith('.md')) return 'the decomposition file is not a .md file';
   return undefined;
+}
+
+/** Where the file is delivered (#936): its checkout and the default branch of that checkout's repository. */
+export interface Delivery { checkout: FileCheckout; docs: { id: string; defaultBranch: string } }
+
+/** The delivery, or the error that stopped reading it (#783): read once per request and handed to both targets, each reading the error its own way. */
+export type DeliveryRead = { delivery: Delivery } | { error: unknown };
+
+export async function readDelivery(exec: Exec, gql: GqlJson, file: string): Promise<DeliveryRead> {
+  try {
+    const checkout = await fileCheckout(exec, file);
+    return { delivery: { checkout, docs: await readRepository(gql, checkout.repository) } };
+  } catch (error) {
+    return { error };
+  }
+}
+
+/** What the dialog shows of a delivery (#936): the checkout's repository, branch and path, local when git ignores the file (#741), and why it cannot go. */
+export function checkoutPreview({ checkout, docs }: Delivery, recorded: Readonly<Record<string, number>>): { delivery: { repository: string; branch: string; path: string; local?: true }; deliveryRefusal?: string } {
+  const refusal = deliveryRefusal(checkout, docs.defaultBranch, recorded);
+  const local = checkout.ignored ? { local: true as const } : {};
+  return { delivery: { repository: checkout.repository, branch: checkout.branch, path: checkout.path, ...local }, ...(refusal === undefined ? {} : { deliveryRefusal: refusal }) };
 }
 
 // git's own words: Node's message carries the command, an absolute path included. A remote's URL may carry its credentials: userinfo is

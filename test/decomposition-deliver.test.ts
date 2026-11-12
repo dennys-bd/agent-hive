@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deliverDecomposition, type DeliverTarget, deliveryRefusal, fileCheckout, githubDeliveryWords, hiveDeliveryWords } from '../src/decomposition-deliver.js';
+import { checkoutPreview, deliverDecomposition, type DeliverTarget, deliveryRefusal, fileCheckout, githubDeliveryWords, hiveDeliveryWords, OffGithubError, readDelivery } from '../src/decomposition-deliver.js';
 import { CREATE_PULL_REQUEST, OPEN_PULL_REQUEST } from '../src/sources/github-queries.js';
 import type { Exec } from '../src/types.js';
 import { fakeGqlJson } from './fakes.js';
@@ -216,4 +216,25 @@ test('a delivery commits and opens its PR with the words it is given: the hive\'
   assert.equal(await deliverDecomposition({ exec, gql, record: recorder().record }, { ...TARGET, ...words }, {}), undefined);
   assert.deepEqual(calls[2], ['git', '--literal-pathspecs', '-C', '/docs-repo', 'commit', '-m', words.commit, '--', PATH]);
   assert.deepEqual([asked[0].variables.title, asked[0].variables.body], [words.title, words.body]);
+});
+
+test('fileCheckout tells a file the hive can keep local apart: no checkout and an origin off GitHub throw OffGithubError with their words, the second with the path in its checkout; a detached HEAD does not (#783)', async () => {
+  const offGithub = (message: string, path?: string) => (err: unknown): boolean => err instanceof OffGithubError && err.message === message && err.path === path;
+  await assert.rejects(fileCheckout(checkoutGit({}).exec, FILE), offGithub('the decomposition file is in no git checkout'));
+  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, 'get-url': 'https://gitlab.com/acme/docs.git' }).exec, FILE), offGithub('the decomposition file\'s checkout has no GitHub origin', PATH));
+  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, branch: '' }).exec, FILE), (err: unknown) => !(err instanceof OffGithubError));
+});
+
+test('readDelivery answers the checkout and its repository\'s default branch, or the error it met, and never throws (#783)', async () => {
+  const { gql } = fakeGqlJson(() => ({ repository: { id: 'RD', defaultBranchRef: { name: 'main' } } }));
+  assert.deepEqual(await readDelivery(checkoutGit(FULL).exec, gql, FILE), { delivery: { checkout: TARGET.checkout, docs: { id: 'RD', defaultBranch: 'main' } } });
+  const none = await readDelivery(checkoutGit({}).exec, gql, FILE);
+  assert.ok('error' in none && none.error instanceof OffGithubError);
+});
+
+test('checkoutPreview: the checkout as the dialog shows it, local when git ignores the file, with the default branch\'s refusal (#783)', () => {
+  const delivery = { checkout: TARGET.checkout, docs: { id: 'RD', defaultBranch: 'main' } };
+  assert.deepEqual(checkoutPreview(delivery, {}), { delivery: { repository: 'acme/docs', branch: 'hive/7-site', path: PATH } });
+  assert.equal(checkoutPreview({ ...delivery, checkout: { ...TARGET.checkout, branch: 'main' } }, {}).deliveryRefusal, 'the decomposition file\'s checkout is on acme/docs\'s default branch (main): the Hive never pushes it');
+  assert.deepEqual(checkoutPreview({ ...delivery, checkout: { ...TARGET.checkout, ignored: true } }, {}), { delivery: { repository: 'acme/docs', branch: 'hive/7-site', path: PATH, local: true } });
 });
