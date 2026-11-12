@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AGENTS } from '../../src/agents.js';
+import { join } from 'node:path';
 import { runners } from '../../src/agents/registry.js';
+import { transcriptDir } from '../../src/agents/claude-transcript.js';
 import type { AgentRun, HeadlessRun } from '../../src/agents/runner.js';
 import { ptyCommand } from '../../src/spawn.js';
 import { shellQuote } from '../../src/shell-init.js';
@@ -110,12 +112,12 @@ test('Claude\'s hooks reach the reducer as Claude Code sends them: the same payl
 
 test('Claude owns a .jsonl directly in its transcript dir and, with a session id, only that session\'s; deleting a session lists <id>.jsonl and <id>/ (#929)', async () => {
   const env = { CLAUDE_CONFIG_DIR: '/cfg' };
-  const own = `/cfg/projects/-repo/${ID}.jsonl`;
+  const own = join(transcriptDir('/repo', env), `${ID}.jsonl`);
   assert.equal(runners.claude.ownsTranscript(own, '/repo', undefined, env), true, 'no session id: the folder check alone, as before');
   assert.equal(runners.claude.ownsTranscript(own, '/repo', ID, env), true);
-  assert.equal(runners.claude.ownsTranscript(`/cfg/projects/-repo/${FROM}.jsonl`, '/repo', ID, env), false, 'another session in the same folder');
-  assert.equal(runners.claude.ownsTranscript(`/cfg/projects/-repo-x/${ID}.jsonl`, '/repo', ID, env), false);
-  assert.deepEqual(await runners.claude.sessionFiles('/repo', ID, env), [own, `/cfg/projects/-repo/${ID}`]);
+  assert.equal(runners.claude.ownsTranscript(join(transcriptDir('/repo', env), `${FROM}.jsonl`), '/repo', ID, env), false, 'another session in the same folder');
+  assert.equal(runners.claude.ownsTranscript(join(transcriptDir('/repo-x', env), `${ID}.jsonl`), '/repo', ID, env), false);
+  assert.deepEqual(await runners.claude.sessionFiles('/repo', ID, env), [own, join(transcriptDir('/repo', env), ID)]);
 });
 
 test('a specialized agent with no tools line goes behind --agent alone, after the agent\'s args and before --model; none adds nothing (#257, #758)', () => {

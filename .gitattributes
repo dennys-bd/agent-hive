@@ -3,3 +3,5 @@
 assets/bin/shim text eol=lf
 assets/shell/** text eol=lf
 assets/bin/shim.cmd text eol=crlf
+# #655: the plugin reader matches LF frontmatter, and a Windows checkout with core.autocrlf would give every template CRLF
+assets/plugin/** text eol=lf

@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import { access, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { posixShell } from '../src/posix-shell.js';
 import { commandLine, okLine } from '../src/console.js';
 import type { Exec, Workspace } from '../src/types.js';
 import { hasSetup, isSetUp, needsSetup, runSetup, SETUP_MARKER, SETUP_PROGRESS, type SetupDeps, withReused } from '../src/worktree-setup.js';
 import { RunFailure, type RunOptions, runShell } from '../src/worktree-steps.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+
+const SH = posixShell().shell; // Git's sh.exe on win32 (#631), /bin/sh elsewhere
 
 interface Harness {
   workspace: Workspace; worktree: string; gitDir: string; deps: SetupDeps;
@@ -122,11 +125,11 @@ test('LOAD expands the file\'s steps in place, read from the main checkout at ev
 
 test('runShell runs /bin/sh in the cwd with stdin closed: exit 0 resolves; a non-zero exit rejects with its code and the last 20 lines of output, stderr included; a prompt fails at once (#299)', async (t) => {
   const cwd = await tempDir(t, 'run-');
-  await runShell('/bin/sh', ['-c', 'echo ok > here.txt'], { cwd, timeoutMs: 30_000 });
+  await runShell(SH, ['-c', 'echo ok > here.txt'], { cwd, timeoutMs: 30_000 });
   assert.equal(await readFile(join(cwd, 'here.txt'), 'utf8'), 'ok\n', 'it ran in the worktree');
   const failure = async (command: string): Promise<RunFailure> => {
     try {
-      await runShell('/bin/sh', ['-c', command], { cwd, timeoutMs: 30_000 });
+      await runShell(SH, ['-c', command], { cwd, timeoutMs: 30_000 });
     } catch (err) {
       assert.ok(err instanceof RunFailure, String(err));
       return err;
@@ -143,7 +146,7 @@ test('runShell runs /bin/sh in the cwd with stdin closed: exit 0 resolves; a non
 test('runShell kills the whole process group when a step outlives its timeout and rejects with timeout and the output so far (#299)', async (t) => {
   const cwd = await tempDir(t, 'run-');
   const began = Date.now(); // 2 s, not less: under the full suite's load sh may not have echoed yet
-  const err = await runShell('/bin/sh', ['-c', 'echo started; sleep 30 & wait'], { cwd, timeoutMs: 2_000 }).then(() => undefined, (e: unknown) => e);
+  const err = await runShell(SH, ['-c', 'echo started; sleep 30 & wait'], { cwd, timeoutMs: 2_000 }).then(() => undefined, (e: unknown) => e);
   assert.ok(err instanceof RunFailure, String(err));
   assert.deepEqual([err.code, err.message, err.tail], ['timeout', 'timed out', 'started']);
   assert.ok(Date.now() - began < 10_000, 'the sleep sh started died with it: its open stdout would otherwise hold the close for 30 s');
@@ -167,7 +170,7 @@ test('a bad line in a LOADed file is refused without echoing the file\'s text, w
 });
 
 test('runShell keeps a bounded tail of output that has no newlines (#299)', async () => {
-  const failure = await runShell('/bin/sh', ['-c', 'head -c 200000 /dev/zero | tr "\\0" x; exit 3'], { cwd: tmpdir(), timeoutMs: 30_000 }).then(() => undefined, (err: unknown) => err);
+  const failure = await runShell(SH, ['-c', 'head -c 200000 /dev/zero | tr "\\0" x; exit 3'], { cwd: tmpdir(), timeoutMs: 30_000 }).then(() => undefined, (err: unknown) => err);
   assert.ok(failure instanceof RunFailure);
   assert.equal(failure.code, 3);
   assert.ok(failure.tail.length <= 8192, `tail of ${failure.tail.length} chars`);
@@ -231,23 +234,23 @@ test('isSetUp is true only for a worktree folder already there whose marker is i
 test('runShell hands every chunk to onOutput as it comes; an abort kills the whole group and rejects with stopped; an aborted signal never starts it (#351)', async (t) => {
   const cwd = await tempDir(t, 'run-');
   const chunks: string[] = [];
-  await runShell('/bin/sh', ['-c', 'echo one; echo two >&2'], { cwd, timeoutMs: 30_000, onOutput: (text) => chunks.push(text) });
+  await runShell(SH, ['-c', 'echo one; echo two >&2'], { cwd, timeoutMs: 30_000, onOutput: (text) => chunks.push(text) });
   assert.deepEqual(chunks.join('').split('\n').filter(Boolean).sort(), ['one', 'two'], 'stdout and stderr, whole');
   const controller = new AbortController();
   const began = Date.now();
   const options = { cwd, timeoutMs: 30_000, signal: controller.signal, onOutput: () => controller.abort() }; // stopped once it printed
-  const err = await runShell('/bin/sh', ['-c', 'echo started; sleep 30 & wait'], options).then(() => undefined, (e: unknown) => e);
+  const err = await runShell(SH, ['-c', 'echo started; sleep 30 & wait'], options).then(() => undefined, (e: unknown) => e);
   assert.ok(err instanceof RunFailure, String(err));
   assert.deepEqual([err.code, err.message], ['stopped', 'stopped']);
   assert.ok(Date.now() - began < 10_000, 'the sleep sh started died with it');
-  const never = await runShell('/bin/sh', ['-c', 'echo ran > ran.txt'], { cwd, timeoutMs: 30_000, signal: AbortSignal.abort() }).then(() => undefined, (e: unknown) => e);
+  const never = await runShell(SH, ['-c', 'echo ran > ran.txt'], { cwd, timeoutMs: 30_000, signal: AbortSignal.abort() }).then(() => undefined, (e: unknown) => e);
   assert.ok(never instanceof RunFailure && never.code === 'stopped', String(never));
   await assert.rejects(access(join(cwd, 'ran.txt')), { code: 'ENOENT' });
 });
 
 test('runShell without timeoutMs arms no timer: a step that outlasts nothing still resolves (#511)', async (t) => {
   const cwd = await tempDir(t, 'run-');
-  await runShell('/bin/sh', ['-c', 'sleep 0.2'], { cwd });
+  await runShell(SH, ['-c', 'sleep 0.2'], { cwd });
 });
 
 test('a setup that fails at its third step records two done; the next run skips them and starts at the third, its reports counting the skipped ones; success writes the marker and removes the record (#390)', async (t) => {

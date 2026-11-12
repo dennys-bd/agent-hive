@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
-import { FOLDER_QUERY_MESSAGE, nestedRepoOf, repoViewOf, REVEAL_BODY_MESSAGE, taskTree, treeRoot, untrackedMarks } from '../src/server-tree.js';
+import { FOLDER_QUERY_MESSAGE, inTreeOf, nestedRepoOf, repoViewOf, REVEAL_BODY_MESSAGE, taskTree, treeRoot, untrackedMarks } from '../src/server-tree.js';
 import { revealCommand } from '../src/platform-commands.js';
 import { FOLDER_MISSING_MESSAGE, GIT_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { localActivityId } from '../src/activities.js';
@@ -29,13 +29,21 @@ test('repoViewOf marks the folder\'s direct child files as the outer tree does, 
 });
 
 test('nestedRepoOf answers the nearest folder holding .git from the read folder up, a repository inside a nested one for its own files, the tree\'s root left out (#1)', async () => {
-  const repos = new Set(['/wt', '/wt/docs', '/wt/docs/vendor/lib']);
+  const repos = new Set([join('/wt'), join('/wt', 'docs'), join('/wt', 'docs', 'vendor', 'lib')]);
   const hasGit = async (folder: string): Promise<boolean> => repos.has(folder);
   assert.equal(await nestedRepoOf('/wt', 'docs', hasGit), 'docs');
   assert.equal(await nestedRepoOf('/wt', 'docs/agent/specs', hasGit), 'docs');
   assert.equal(await nestedRepoOf('/wt', 'docs/vendor/lib/src', hasGit), 'docs/vendor/lib');
   assert.equal(await nestedRepoOf('/wt', 'node_modules/x', hasGit), undefined);
   assert.equal(await nestedRepoOf('/wt', '', hasGit), undefined);
+});
+
+test('inTreeOf names the folder in the wire\'s spelling, from win32 paths too, so nestedRepoOf splits docs\\agent on / (#655)', () => {
+  assert.equal(inTreeOf('/wt', 'docs/agent', 'linux'), 'docs/agent');
+  assert.equal(inTreeOf('/wt', '', 'linux'), '');
+  assert.equal(inTreeOf('C:\\wt', 'docs\\agent', 'win32'), 'docs/agent');
+  assert.equal(inTreeOf('C:\\wt', 'docs/agent/specs', 'win32'), 'docs/agent/specs');
+  assert.equal(inTreeOf('C:\\wt', 'C:\\wt', 'win32'), '');
 });
 
 test('GET /activities/:id/tree lists the worktree the slug names without the deleted paths or a nested repo, with the marks, and never takes the index lock', async (t) => {
@@ -120,7 +128,7 @@ test('taskTree answers the ignored entries outermost and sorted, whatever order 
     if (args.includes('status')) return { stdout: statusText(ignoredEntry('node_modules/'), ignoredEntry('docs/'), ignoredEntry('z.log'), ignoredEntry('a.log'), ignoredEntry('.git/'), ignoredEntry('sub/.GIT/config')) };
     return { stdout: ['a.txt', ''].join('\0') };
   };
-  const tree = await taskTree('/wt', exec, async (folder) => folder.endsWith('vendor/lib/'));
+  const tree = await taskTree('/wt', exec, async (folder) => folder === join('/wt', 'vendor/lib/'));
   assert.deepEqual([tree.folders, tree.ignored], [['empty'], { files: ['a.log', 'z.log'], folders: ['docs', 'node_modules', 'vendor/lib'] }]);
 });
 
@@ -137,7 +145,7 @@ test('taskTree marks A every listed entry under an untracked folder, a nested re
     if (args.includes('status')) return { stdout: statusText(untracked('newdir/'), untracked('vendor/lib/'), untracked('loose.txt')) };
     return { stdout: ['a.txt', 'loose.txt', 'newdir/x.ts', 'newdir/sub/y.ts', 'vendor/lib/', ''].join('\0') };
   };
-  const tree = await taskTree('/wt', exec, async (folder) => folder.endsWith('vendor/lib/'));
+  const tree = await taskTree('/wt', exec, async (folder) => folder === join('/wt', 'vendor/lib/'));
   assert.deepEqual(tree.marks, { 'loose.txt': 'A', 'newdir/x.ts': 'A', 'newdir/sub/y.ts': 'A', 'vendor/lib/': 'A' });
   assert.deepEqual(tree.files, ['a.txt', 'loose.txt', 'newdir/x.ts', 'newdir/sub/y.ts']);
 });

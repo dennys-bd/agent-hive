@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { COALESCE_MS, createTreeWatch, FALLBACK_MS, gitDirOf, LEASE_TTL_MS, MAX_LEASES, MIN_PUSH_MS, pathKind, PATHS_CAP, TooManyLeasesError, type WatchFn } from '../src/tree-watch.js';
 import type { Exec, TreeChange } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
@@ -18,8 +18,8 @@ test('pathKind drops a .git segment at any depth and in any case, keeps the root
 });
 
 test('gitDirOf reads the gitdir: line of a worktree\'s .git file, a relative one against the folder holding it; other text names none (#502)', () => {
-  assert.equal(gitDirOf('gitdir: /repo/.git/worktrees/hive-1\n', '/wt'), '/repo/.git/worktrees/hive-1');
-  assert.equal(gitDirOf('gitdir: ../repo/.git/worktrees/docs\n', '/wt/docs'), '/wt/repo/.git/worktrees/docs');
+  assert.equal(gitDirOf('gitdir: /repo/.git/worktrees/hive-1\n', '/wt'), resolve('/repo/.git/worktrees/hive-1'));
+  assert.equal(gitDirOf('gitdir: ../repo/.git/worktrees/docs\n', '/wt/docs'), resolve('/wt/docs', '../repo/.git/worktrees/docs'));
   assert.equal(gitDirOf('not a git file', '/wt'), undefined);
 });
 

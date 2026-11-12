@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, mkdir, readdir, readFile, realpath, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { localActivityId } from '../src/activities.js';
 import type { ChannelView } from '../src/console.js';
@@ -14,7 +14,9 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { writeCmdTwin } from './npm-server.js';
 import { tempDir } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 // A Comb with no source: one local task whose activity's worktree holds docs/spec.md, with a CRLF line (#717)
 const SLUG = 'hive-1-spec';
@@ -138,7 +140,7 @@ test('PUT with the version read writes the text, the file\'s mode kept and no te
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { version: sha('# spec\r\nedited\n') });
   assert.equal(await readFile(spec, 'utf8'), '# spec\r\nedited\n');
-  assert.equal((await stat(spec)).mode & 0o777, 0o755);
+  await assertMode(t, spec, 0o755); // win32: no POSIX mode bits
   assert.deepEqual(await readdir(join(e.worktree, 'docs')), ['spec.md']);
   await symlink('spec.md', join(e.worktree, 'docs', 'alias.md'));
   assert.equal((await put(e, { path: 'docs/alias.md', text: 'through the link', version: sha('# spec\r\nedited\n'), format: false })).status, 200);
@@ -276,6 +278,7 @@ test('GET /settings/formatters answers each supported formatter with the workspa
   await mkdir(dirname(prettier), { recursive: true });
   await writeFile(prettier, '#!/bin/sh\ncat\n');
   await chmod(prettier, 0o755);
+  await writeCmdTwin(prettier);
   const states = (await (await hiveFetch(`${e.base}/settings/formatters`)).json()) as FormatterState[];
   assert.deepEqual(states.map((s) => s.id), [...FORMATTER_IDS]);
   assert.deepEqual(states.find((s) => s.id === 'prettier')?.found, ['hive']);

@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -14,6 +14,7 @@ import { newSecret, SECRET_HEADER } from '../src/secret.js';
 import { combConfig, getFreePort, LOCAL_STAGES } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { bootTracked, killQuietly } from './daemon-boot.js';
+import { assertMode } from './posix-only.js';
 
 // run.js boots hiveHome() of the environment it inherits: each home here is made by pointing this process's XDG_CONFIG_HOME at a fresh
 // temp dir first, so the home a test passes is the one the daemon it starts boots, and never the real ~/.config. One file per process.
@@ -184,7 +185,7 @@ test('ensureDaemon boots dist/src/run.js detached on a free port it records in h
   assert.deepEqual(await daemonStatus(home), { state: 'stopped', reason: undefined }, 'the real log: a requested stop is not a failure');
   assert.equal(await stopDaemon(home), false, 'stopping what is stopped is not an error');
   const log = join(home, 'hive.log');
-  assert.equal((await stat(log)).mode & 0o777, 0o600, 'the log is only for this user');
+  await assertMode(t, log, 0o600, 'the log is only for this user'); // win32: no POSIX mode bits
   const text = await readFile(log, 'utf8');
   assert.ok(text.includes(`Agent Hive em http://127.0.0.1:${port} (home: ${home}, workspaces: hive, pid ${started.pid})`), text);
   assert.ok(text.includes('stop requested'), text);

@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
-import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { AGENTS } from '../src/agents.js';
 import { pwshQuote } from '../src/pwsh-quote.js';
@@ -11,6 +11,7 @@ import { shimDir, shimPath } from '../src/shim.js';
 import { ptyCommand, terminalEnv } from '../src/spawn.js';
 import { AGENT_IDS, type PtyLaunch } from '../src/types.js';
 import { tempDir } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 const FUNCTION_FILES = ['zsh/.zshrc', 'bash/rc', 'fish/init.fish', 'pwsh/profile.ps1'];
 const INSTALL = { platform: 'darwin', sh: '/bin/sh' } as const;
@@ -57,7 +58,7 @@ test('installShellInit writes every init file under <home>/shell/, its folders f
   const profile = await readFile(join(dir, 'pwsh', 'profile.ps1'), 'utf8');
   assert.ok(profile.includes(`$env:PATH = ${pwshQuote(shimDir(home))} + ';' + $env:PATH`), 'the shim folder back first on PATH');
   assert.ok(profile.includes(`& ${pwshQuote(INSTALL.sh)} ${pwshQuote(shimPath(home, AGENTS.claude))} @args`), 'claude through sh.exe');
-  if (process.platform !== 'win32') for (const folder of ['', 'zsh', 'bash', 'fish', 'pwsh']) assert.equal((await stat(join(dir, folder))).mode & 0o777, 0o700, folder); // Windows has no POSIX mode bits
+  for (const folder of ['', 'zsh', 'bash', 'fish', 'pwsh']) await assertMode(t, join(dir, folder), 0o700, folder); // win32: no POSIX mode bits
   await writeFile(join(dir, 'bash', 'rc'), 'from a previous version');
   await installShellInit(home, INSTALL);
   assert.match(await readFile(join(dir, 'bash', 'rc'), 'utf8'), /function claude \{/, 'upgrading the Hive changes every terminal');

@@ -540,7 +540,10 @@ test('with nothing saved, setup mode proposes the folder the Hive started in whe
   };
   const { repo } = await tempHive(t);
   process.chdir(repo);
-  assert.equal((await unconfigured()).proposedWorkspace, await realpath(repo), 'process.cwd() is already the real path');
+  const proposed = (await unconfigured()).proposedWorkspace;
+  // win32's cwd can be the 8.3 short name, so only there both sides go through realpath; elsewhere the proposal is already the real path
+  const spelled = process.platform === 'win32' && proposed !== undefined ? await realpath(proposed) : proposed;
+  assert.equal(spelled, await realpath(repo), 'process.cwd() is already the real path');
   await mkdir(join(repo, 'src'));
   process.chdir(join(repo, 'src'));
   assert.equal((await unconfigured()).proposedWorkspace, undefined, 'inside a repo is not its top level');
@@ -719,4 +722,10 @@ test('a hive.config.json without mcp opens setup mode with the parse error, pref
   assert.deepEqual([info.config?.comb.prefix, info.config?.mcp], ['OLD', MCP_DEFAULTS], 'the rest of the file, the defaults');
   const wrong = await hiveWithConfig(t, { mcp: { off: ['hive_done'], servers: [] } });
   await assert.rejects(bootHive(wrong.home), { message: /^hive\.config\.json: "mcp\.off" holds hive_done/ }, 'a key that is there but wrong is no file from before the key');
+});
+
+test('a hive.config.json that fails the boot opens neither usage.sqlite nor the read model, so nothing holds the home after it (#655)', async (t) => {
+  const { home } = await hiveWithConfig(t, { theme: 'sepia' });
+  await assert.rejects(bootHive(home), { message: 'hive.config.json: "theme" must be one of: system, light, dark' });
+  assert.deepEqual([existsSync(join(home, USAGE_FILE)), existsSync(join(home, READ_MODEL_FILE))], [false, false]);
 });

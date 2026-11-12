@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import {
   addPrDraft, clearSubmitted, createPrReviewStore, droppedPrReviews, dropStalePrMarks, EMPTY_PR_REVIEW, markPrReviewed, prReviewPath, removePrDraft, updatePrDraft,
@@ -23,7 +23,7 @@ test('the PR store reads a missing file as empty, writes atomically under pr-rev
   await Promise.all([store.update(PR, (f) => addPrDraft(f, draft('D1'))), store.update(PR, (f) => addPrDraft(f, draft('D2')))]);
   assert.deepEqual((await store.read(PR)).drafts.map((d) => d.id), ['D1', 'D2']);
   const path = prReviewPath(home, PR);
-  assert.ok(path.endsWith(`pr-reviews/${encodeURIComponent(PR)}.json`));
+  assert.ok(path.endsWith(join('pr-reviews', `${encodeURIComponent(PR)}.json`)));
   assert.deepEqual(await readdir(dirname(path)), [`${encodeURIComponent(PR)}.json`], 'no temp file left');
   await store.remove(PR);
   assert.deepEqual(await store.read(PR), EMPTY_PR_REVIEW);

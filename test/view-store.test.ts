@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isViewKey, VIEW_KEYS, VIEW_VALUE_MAX_BYTES } from '../src/view-state.js';
 import { createViewStore, readViewState, VIEW_STATE_FILE } from '../src/view-store.js';
 import { tempDir } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 // The view state's file in the home (#484): loaded once, rewritten whole on every change, one write at a time.
 const LAYOUT = { docks: { automation: 'left', activities: 'left', detail: 'right' } };
@@ -43,7 +44,7 @@ test('set replaces one key in a new map and writes the whole map through a temp 
   assert.deepEqual(store.get(), { splitEdge: 'bottom', dockLayout: LAYOUT });
   assert.deepEqual(initial, { splitEdge: 'bottom' }, 'the initial map is never written to');
   assert.deepEqual(await onDisk(home), { splitEdge: 'bottom', dockLayout: LAYOUT });
-  assert.equal((await stat(join(home, VIEW_STATE_FILE))).mode & 0o777, 0o600);
+  await assertMode(t, join(home, VIEW_STATE_FILE), 0o600); // win32: no POSIX mode bits
   assert.deepEqual(await readdir(home), [VIEW_STATE_FILE]);
 });
 

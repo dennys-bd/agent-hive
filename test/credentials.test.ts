@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { credentialsPath, readCredentials, writeCredentials } from '../src/credentials.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 const OWNER_ONLY_DIR = 0o700;
 const OWNER_ONLY_FILE = 0o600;
-const MODE_MASK = 0o777;
 
 /** An isolated config home: XDG_CONFIG_HOME is the documented override, so the tests need no variable of their own. */
 async function configHome(t: AfterHost): Promise<NodeJS.ProcessEnv> {
@@ -71,8 +71,8 @@ test('the directory is 0700 and the file 0600', async (t) => {
   const env = await configHome(t);
   await writeCredentials({ github: { token: 'gho_x', login: 'ana' } }, env);
   const path = credentialsPath(env);
-  assert.equal((await stat(path)).mode & MODE_MASK, OWNER_ONLY_FILE);
-  assert.equal((await stat(dirname(path))).mode & MODE_MASK, OWNER_ONLY_DIR);
+  await assertMode(t, path, OWNER_ONLY_FILE); // win32: no POSIX mode bits
+  await assertMode(t, dirname(path), OWNER_ONLY_DIR); // win32: no POSIX mode bits
 });
 
 test('a pre-planted file at the old fixed temp-file name is never written through: the real temp name is unique', async (t) => {
@@ -81,7 +81,7 @@ test('a pre-planted file at the old fixed temp-file name is never written throug
   await mkdir(dirname(path), { recursive: true });
   await writeFile(`${path}.tmp`, 'planted', { mode: 0o666 }); // the fixed name a previous implementation reused
   await writeCredentials({ github: { token: 'gho_x', login: 'ana' } }, env);
-  assert.equal((await stat(path)).mode & MODE_MASK, OWNER_ONLY_FILE, 'credentials.json got its own 0600, not the planted file\'s mode');
+  await assertMode(t, path, OWNER_ONLY_FILE, 'credentials.json got its own 0600, not the planted file\'s mode'); // win32: no POSIX mode bits
   assert.deepEqual(await readCredentials(env), { github: { token: 'gho_x', login: 'ana' } });
 });
 

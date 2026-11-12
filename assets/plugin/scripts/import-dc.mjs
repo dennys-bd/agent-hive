@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { constants, realpathSync } from 'node:fs';
 import { access, copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { dirname, join, posix, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -136,17 +136,35 @@ async function firstExecutable(paths, isExecutable) {
   return undefined;
 }
 
-async function playwrightBrowsers({ env, platform, home, list }) {
-  const root = env.PLAYWRIGHT_BROWSERS_PATH || join(home, PLAYWRIGHT_CACHE[platform] ?? PLAYWRIGHT_CACHE.linux);
+// win32 names (#655): the Chrome installer's folders come from the env, never a user's path
+const SYSTEM_CHROME_WIN32 = ['ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA'];
+const CHROME_WIN32 = ['Google', 'Chrome', 'Application', 'chrome.exe'];
+const PLAYWRIGHT_BINARIES_WIN32 = ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe'];
+
+// The path module of the platform the paths are for, so a win32 lookup builds \ paths on any host
+const pathsOf = (platform) => (platform === 'win32' ? win32 : posix);
+
+function systemChrome({ env, platform }, p) {
+  if (platform !== 'win32') return SYSTEM_CHROME[platform] ?? [];
+  return SYSTEM_CHROME_WIN32.flatMap((name) => (env[name] ? [p.join(env[name], ...CHROME_WIN32)] : []));
+}
+
+async function playwrightBrowsers({ env, platform, home, list }, p) {
+  const isWin = platform === 'win32';
+  const fallback = isWin ? (env.LOCALAPPDATA ? p.join(env.LOCALAPPDATA, 'ms-playwright') : undefined) : p.join(home, PLAYWRIGHT_CACHE[platform] ?? PLAYWRIGHT_CACHE.linux);
+  const root = env.PLAYWRIGHT_BROWSERS_PATH || fallback;
+  if (!root) return [];
   const builds = (await list(root)).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.slice(9)) - Number(a.slice(9)));
-  return builds.flatMap((build) => PLAYWRIGHT_BINARIES.map((binary) => join(root, build, binary)));
+  return builds.flatMap((build) => (isWin ? PLAYWRIGHT_BINARIES_WIN32 : PLAYWRIGHT_BINARIES).map((binary) => p.join(root, build, binary)));
 }
 
 /** The browser to render with (#241): PATH first, then the system Chrome, then Playwright's newest Chromium; undefined without one. */
 export async function findBrowser(deps) {
-  const dirs = (deps.env.PATH ?? '').split(delimiter).filter(Boolean);
-  const onPath = ON_PATH.flatMap((name) => dirs.map((dir) => join(dir, name)));
-  return firstExecutable([...onPath, ...(SYSTEM_CHROME[deps.platform] ?? []), ...(await playwrightBrowsers(deps))], deps.isExecutable);
+  const p = pathsOf(deps.platform);
+  const names = deps.platform === 'win32' ? ['chrome.exe'] : ON_PATH;
+  const dirs = (deps.env.PATH ?? '').split(p.delimiter).filter(Boolean);
+  const onPath = names.flatMap((name) => dirs.map((dir) => p.join(dir, name)));
+  return firstExecutable([...onPath, ...systemChrome(deps, p), ...(await playwrightBrowsers(deps, p))], deps.isExecutable);
 }
 
 const hostDeps = () => ({

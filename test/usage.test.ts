@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { chmod, mkdir, symlink, utimes, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { promisify } from 'node:util';
 import {
   cleanTitle, DAY_MS, HOUR_MS, hasBudget, isTranscriptIn, isTranscriptPath, isWorkerTranscript, pruneUsage, usageTotals,
@@ -12,6 +12,7 @@ import { parseUsageLine, readTranscript, transcriptDir } from '../src/agents/cla
 import { ZERO_TOKENS } from '../src/facts.js';
 import type { UsageSample } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import { NO_POSIX_FAULTS } from './posix-only.js';
 
 const NOW = Date.parse('2026-09-16T12:00:00.000Z');
 const MINUTE_MS = 60_000;
@@ -70,9 +71,11 @@ test('readTranscript rejects for a missing file and resolves 0 for an empty one'
 
 test('readTranscript rejects anything that is not a regular file instead of waiting on it forever', async (t) => {
   const dir = await tempDir(t, 'usage-');
-  const fifo = join(dir, 'fifo.jsonl');
-  await promisify(execFile)('mkfifo', [fifo]); // a FIFO with no writer never reaches EOF
-  await assert.rejects(readTranscript(fifo), /not a regular file/);
+  await t.test('a FIFO with no writer never reaches EOF', { skip: NO_POSIX_FAULTS }, async () => {
+    const fifo = join(dir, 'fifo.jsonl');
+    await promisify(execFile)('mkfifo', [fifo]); // win32: no mkfifo
+    await assert.rejects(readTranscript(fifo), /not a regular file/);
+  });
   await assert.rejects(readTranscript(dir), /not a regular file/);
 });
 
@@ -146,7 +149,7 @@ test('isTranscriptPath accepts only an absolute string ending in .jsonl', () => 
 
 test('transcriptDir is <config dir>/projects/<cwd with every non-alphanumeric as ->; CLAUDE_CONFIG_DIR wins over ~/.claude', () => {
   assert.equal(transcriptDir('/Users/x/my repo/.claude/worktrees/hive-7-fix', {}), join(homedir(), '.claude', 'projects', '-Users-x-my-repo--claude-worktrees-hive-7-fix'));
-  assert.equal(transcriptDir('/w', { CLAUDE_CONFIG_DIR: '/cfg' }), '/cfg/projects/-w');
+  assert.equal(transcriptDir('/w', { CLAUDE_CONFIG_DIR: '/cfg' }), join('/cfg', 'projects', '-w'));
 });
 
 test('transcriptDir ignores an empty or relative CLAUDE_CONFIG_DIR (#236)', () => {
@@ -159,28 +162,28 @@ const TASK7 = { slug: 'hive-7-fix' };
 
 test('isWorkerTranscript accepts only a .jsonl directly under the transcript dir of the worker worktree', () => {
   const env = { CLAUDE_CONFIG_DIR: '/cfg' };
-  const own = '/cfg/projects/-repo--hive-worktrees-hive-7-fix/abc.jsonl';
+  const own = join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl');
   assert.equal(isWorkerTranscript(own, '/repo', TASK7, 'claude', env), true);
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-8-other/abc.jsonl', '/repo', TASK7, 'claude', env), false, 'another worker');
-  assert.equal(isWorkerTranscript('/cfg/projects/-Users-x-secret/abc.jsonl', '/repo', TASK7, 'claude', env), false, 'another project');
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-7-fix/sub/abc.jsonl', '/repo', TASK7, 'claude', env), false, 'a subdirectory');
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-7-fix/../x/abc.jsonl', '/repo', TASK7, 'claude', env), false, 'no traversal');
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-7-fix/abc.json', '/repo', TASK7, 'claude', env), false);
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-8-other', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'another worker');
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-Users-x-secret', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'another project');
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'sub', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'a subdirectory');
+  assert.equal(isWorkerTranscript(`${join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix')}${sep}..${sep}x${sep}abc.jsonl`, '/repo', TASK7, 'claude', env), false, 'no traversal');
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.json'), '/repo', TASK7, 'claude', env), false);
   assert.equal(isWorkerTranscript(undefined, '/repo', TASK7, 'claude', env), false);
 });
 
 test('isWorkerTranscript on a checkout task accepts a .jsonl under the project\'s own transcript dir, and no longer the worktree\'s (#444)', () => {
   const env = { CLAUDE_CONFIG_DIR: '/cfg' };
   const checkout = { ...TASK7, local: true as const };
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo/abc.jsonl', '/repo', checkout, 'claude', env), true, 'its usage keeps counting');
-  assert.equal(isWorkerTranscript('/cfg/projects/-repo--hive-worktrees-hive-7-fix/abc.jsonl', '/repo', checkout, 'claude', env), false);
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo', 'abc.jsonl'), '/repo', checkout, 'claude', env), true, 'its usage keeps counting');
+  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl'), '/repo', checkout, 'claude', env), false);
 });
 
 test('isTranscriptIn takes only a .jsonl directly under the transcript folder of the given checkout (#590)', () => {
   const env = { CLAUDE_CONFIG_DIR: '/cfg' };
-  assert.equal(isTranscriptIn('/cfg/projects/-repo/abc.jsonl', '/repo', 'claude', env), true);
-  assert.equal(isTranscriptIn('/cfg/projects/-repo--hive-worktrees-hive-7-fix/abc.jsonl', '/repo', 'claude', env), false, 'a worktree of it');
-  assert.equal(isTranscriptIn('/cfg/projects/-repo/sub/abc.jsonl', '/repo', 'claude', env), false);
+  assert.equal(isTranscriptIn(join('/cfg', 'projects', '-repo', 'abc.jsonl'), '/repo', 'claude', env), true);
+  assert.equal(isTranscriptIn(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl'), '/repo', 'claude', env), false, 'a worktree of it');
+  assert.equal(isTranscriptIn(join('/cfg', 'projects', '-repo', 'sub', 'abc.jsonl'), '/repo', 'claude', env), false);
   assert.equal(isTranscriptIn('relative/abc.jsonl', '/repo', 'claude', env), false);
 });
 
@@ -204,7 +207,7 @@ test('readTranscript with a since also sums by type the turns from that time on 
   assert.deepEqual(await readTranscript(path), { tokens: 114 });
 });
 
-test('readTranscript with a since adds the session\'s subagent transcripts to the stage run\'s usage and as its subagent share; only .jsonl regular files directly under its own subagents folder; the session total is untouched (#742)', async (t) => {
+test('readTranscript with a since adds the session\'s subagent transcripts to the stage run\'s usage and as its subagent share; only .jsonl regular files directly under its own subagents folder; the session total is untouched (#742)', { skip: NO_POSIX_FAULTS }, async (t) => {
   const line = (id: string, at: string, model: string, usage: Record<string, number>): string =>
     JSON.stringify({ type: 'assistant', timestamp: at, message: { id, model, usage } });
   const path = await writeTranscript(t, [line('m1', '2026-10-03T12:00:01.000Z', 'claude-opus-4-1', { input_tokens: 10, output_tokens: 1 })]);
@@ -223,7 +226,7 @@ test('readTranscript with a since adds the session\'s subagent transcripts to th
   await mkdir(join(sub, 'agent-dir.jsonl')); // a folder, not a file
   await symlink(path, join(sub, 'agent-link.jsonl')); // a link, not a regular file
   await write('agent-locked.jsonl', [line('l1', '2026-10-03T12:00:05.000Z', 'x', { input_tokens: 5000 })]);
-  await chmod(join(sub, 'agent-locked.jsonl'), 0o000); // unreadable: costs only its own share, never the read
+  await chmod(join(sub, 'agent-locked.jsonl'), 0o000); // unreadable: costs only its own share, never the read. win32: chmod 000 does not stop the owner reading it, and its 5000 tokens shape every total
   assert.deepEqual(await readTranscript(path, Date.parse('2026-10-03T12:00:00.000Z')), {
     tokens: 11,
     usage: {

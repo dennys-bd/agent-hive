@@ -9,6 +9,7 @@ import { localActivityId } from '../src/activities.js';
 import { activityIdOf, withLocal, withWork, type WithWork } from './fixtures/work.js';
 import { SIGNALS_DEFAULTS, type Activity, type Checkpoint, type HookPayload, type Task, type Stage, type Worker, type State, type Item } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 const LINE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z (ERROR|WARN |INFO |DEBUG) /;
 const ISO_WIDTH = 25; // "2026-09-17T12:00:00.000Z " — what precedes the level tag
@@ -37,7 +38,7 @@ test('createLogger creates .hive/ and hive.log and writes one `<ISO> <LEVEL> <me
   const dir = await logDir(t);
   assert.equal(existsSync(dir), false);
   const log = createLogger(dir, 'info', { stderr: quiet });
-  assert.equal(statSync(dir).mode & 0o777, 0o700, 'created on construction (setup mode has no prepareHome yet), for this user only: it is the home');
+  await assertMode(t, dir, 0o700, 'created on construction (setup mode has no prepareHome yet), for this user only: it is the home'); // win32: no POSIX mode bits
   log.info('poll queue=3');
   const raw = readFileSync(join(dir, LOG_FILE), 'utf8');
   assert.match(raw, LINE);
@@ -458,7 +459,7 @@ test('record writes a line at its level without the stderr echo error has; the f
   log.record('debug', 'source.polled source=board');
   assert.deepEqual(tail(dir), ['ERROR run.spawn_failed code=git_failed']);
   assert.deepEqual(calls, []);
-  assert.equal(statSync(join(dir, LOG_FILE)).mode & 0o777, 0o600);
+  await assertMode(t, join(dir, LOG_FILE), 0o600); // win32: no POSIX mode bits
 });
 
 test('two appenders on one file (the daemon and a process beside it) rotate on the file\'s real size, so one never rotates away the other\'s fresh .1 (#742)', async (t) => {

@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, } from 'node:fs';
 import { join } from 'node:path';
 import { createPtyHost, MODES_OFF, NO_PTY, PTY_SCROLLBACK_BYTES, releasedOnExit } from '../src/pty-host.js';
 import { SLEPT_MAX } from '../src/types.js';
 import { fakePtys } from './fakes.js';
 import { tempDir } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 const ENV = { PATH: '/bin', HIVE_PTY_ID: 'W1' };
 const WORKTREE = '/repo/.hive/worktrees/hive-1-task';
@@ -190,7 +191,7 @@ test('a kept terminal\'s exit writes its ring to its log, 0600, and keeps it for
   ptys[0].exit();
   assert.equal(readFileSync(log, 'utf8'), 'ls\r\n');
   // Windows has no POSIX mode bits: stat reports 0o666 whatever writeFileSync was asked; the ring is as private as the home's ACL there
-  if (process.platform !== 'win32') assert.equal(statSync(log).mode & 0o777, 0o600);
+  await assertMode(t, log, 0o600); // win32: no POSIX mode bits
   for (let i = 0; i <= SLEPT_MAX; i += 1) {
     host.spawn(`A${i}`, ['/bin/sh', '-c', 'claude'], WORKTREE, ENV, {});
     ptys[i + 1].exit();

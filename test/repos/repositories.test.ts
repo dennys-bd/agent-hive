@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { initialState } from '../../src/orchestrator.js';
 import { listRepositories, originRepository } from '../../src/repos/repositories.js';
 import type { CombConfig, Exec, State, Task, Workspace } from '../../src/types.js';
@@ -71,8 +72,8 @@ test('a fork workspace lists its original then its fork where its origin stood, 
 
 test('a nested repo on GitHub follows its workspace\'s repositories, role nested, paired with the workspace\'s repository (a fork\'s original); one off GitHub or with no checkout adds none (#653)', async () => {
   const urls: Record<string, string> = {
-    '/code/hive origin': 'git@github.com:acme/hive.git\n', '/code/hive/docs origin': 'https://github.com/acme/docs.git\n', '/code/hive/ee origin': 'https://gitlab.com/acme/ee.git\n',
-    '/code/ex upstream': 'https://github.com/ex/excalidraw.git\n', '/code/ex origin': 'git@github.com:me/excalidraw.git\n', '/code/ex/docs origin': 'https://github.com/me/ex-docs.git\n',
+    '/code/hive origin': 'git@github.com:acme/hive.git\n', [`${join('/code/hive', 'docs')} origin`]: 'https://github.com/acme/docs.git\n', [`${join('/code/hive', 'ee')} origin`]: 'https://gitlab.com/acme/ee.git\n',
+    '/code/ex upstream': 'https://github.com/ex/excalidraw.git\n', '/code/ex origin': 'git@github.com:me/excalidraw.git\n', [`${join('/code/ex', 'docs')} origin`]: 'https://github.com/me/ex-docs.git\n',
   };
   const remotes: Exec = async (_file, args) => {
     const url = urls[`${args[1]} ${args.at(-1)}`];

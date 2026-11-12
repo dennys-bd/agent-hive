@@ -34,7 +34,7 @@ A task's design folder (`docs/agent/hive/design/<date>-<slug>/`) is committed th
 
 ## The Windows lane
 
-The only Windows machine is CI's `windows-latest` job, which runs the test files listed in `test/windows-lane.txt` (#625). A win32 branch lives in a function that takes `platform: NodeJS.Platform` and uses `path.win32` or `path.posix` explicitly for that platform's paths; `process.platform` is read at the call site only, so `node --test` covers the branch on every OS. A module ported to Windows adds its test file to `test/windows-lane.txt` (compiled path, sorted) and owns every failure of that file there.
+The only Windows machine is CI: the `windows-node-*` and `windows-vitest-*` entries of the `ci` matrix run the whole suite on `windows-latest`, the node globs of `scripts/test-node.mjs` minus `test/benchmark/` in two halves and vitest in three, and they gate like the Linux lanes (#655). A Windows failure is read in their logs, never reproduced locally. A win32 branch lives in a function that takes `platform: NodeJS.Platform` and uses `path.win32` or `path.posix` explicitly for that platform's paths; `process.platform` is read at the call site only, so `node --test` covers the branch on every OS. A new test file passes on the lane. What cannot hold on Windows (a POSIX mode, a `chmod` or `mkfifo` fault) is skipped there with node:test's `skip` option and a reason from `test/posix-only.ts`, a comment naming why, and around the assertion that cannot hold, or the whole test only when the fault shapes every assertion of it.
 
 ## What counts as bounded here
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,6 +9,7 @@ import { FACTS_FILE, SCHEMA_VERSION, ZERO_TOKENS, type FactRecord } from '../src
 import { openUsageStore, USAGE_FILE } from '../src/usage-store.js';
 import { fakeLog } from './fakes.js';
 import { tempDir } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 const TS = '2026-10-20T12:00:00.000Z';
 const TOKENS = { input: 1, output: 2, cache_write: 3, cache_read: 4 };
@@ -54,7 +55,7 @@ test('a kept record lands as one row: its correlation and agent as columns, the 
     agent: 'codex', data: JSON.stringify(ENDED),
   }]);
   assert.deepEqual(lines, []);
-  assert.equal(statSync(join(home, USAGE_FILE)).mode & 0o777, 0o600);
+  await assertMode(t, join(home, USAGE_FILE), 0o600); // win32: no POSIX mode bits
 });
 
 test('the rows survive a reopen, which imports nothing: a later write lands beside them, and a second close closes nothing twice (#271)', async (t) => {

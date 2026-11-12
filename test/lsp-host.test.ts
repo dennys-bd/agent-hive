@@ -1,19 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { chmod, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { chmod, copyFile, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { localActivityId } from '../src/activities.js';
 import { createConsoleStore } from '../src/console.js';
 import type { CatalogLoad, SchemaCatalog } from '../src/json-schemas.js';
 import { parseConfig } from '../src/config.js';
 import { editorDir } from '../src/editor-install.js';
 import { createLspHost, type LspHost } from '../src/lsp-host.js';
+import { serverDef } from '../src/languages.js';
 import { initialState } from '../src/orchestrator.js';
 import { EDITOR_DEFAULTS, type EditorConfig, type ServerId } from '../src/types.js';
 import { combConfig, LOCAL_STAGES } from './fakes.js';
 import { withLocal } from './fixtures/work.js';
 import { LSP_STUB, until } from './lsp-helpers.js';
+import { writeCmdTwin, writeNpmEntry } from './npm-server.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 class FakeSocket extends EventEmitter {
@@ -33,6 +35,8 @@ async function installServer(home: string, id: ServerId, file: string, body: str
   await mkdir(dirname(join(dir, file)), { recursive: true });
   await writeFile(join(dir, file), body);
   await chmod(join(dir, file), 0o755);
+  // win32 runs node on the package's own entry, not on .bin's shim (#635)
+  if (file.startsWith('node_modules/.bin/')) await writeNpmEntry(dir, serverDef(id).source, basename(file), body);
   await writeFile(join(dir, 'installed.json'), JSON.stringify({ version, installedAt: '2026-10-06T00:00:00.000Z' }));
 }
 // An executable the test writes outside the Hive's home: a project's copy, a tool on PATH
@@ -40,6 +44,7 @@ async function script(path: string, body: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, body);
   await chmod(path, 0o755);
+  await writeCmdTwin(path);
 }
 const STUB_SCRIPT = `#!/bin/sh\nexec "${process.execPath}" "${LSP_STUB}" "$@"\n`;
 
@@ -78,7 +83,9 @@ test('a socket gets { root, log } first; two sockets on one key share one proces
 });
 
 test('cpp and objective-c files share one clangd for an activity (#780)', async (t) => {
-  const { lsp } = await host(t);
+  const { lsp, home } = await host(t);
+  // win32 launches the release's clangd.exe, which no script can stand in for: node.exe renamed reads its (empty) stdin and stays up (#635)
+  if (process.platform === 'win32') await copyFile(process.execPath, join(editorDir(home, { kind: 'server', id: 'clangd' }), 'clangd_21.1.0', 'bin', 'clangd.exe'));
   const [cpp, objc] = [new FakeSocket(), new FakeSocket()];
   await lsp.attach(cpp, ACTIVITY, 'clangd', 'clangd');
   await lsp.attach(objc, ACTIVITY, 'clangd', 'clangd');
@@ -231,5 +238,6 @@ test('a failed catalog starts the JSON server with no associations and the reaso
   assert.equal(schemas.loads, 1);
   await lsp.stopAll(); // a run joins its channel's history only once it ended
   const history = store.channels().map((c) => store.history(c.id)?.history ?? '').join('');
-  assert.match(history, /> vscode-json-language-server --stdio[^\r\n]*\r\nJSON schemas unavailable: HTTP 503\r\n/);
+  // win32 runs the npm entry through node, so its script's path sits between the name and --stdio
+  assert.match(history, /> vscode-json-language-server (?:\S+ )?--stdio[^\r\n]*\r\nJSON schemas unavailable: HTTP 503\r\n/);
 });

@@ -2,6 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { delimiter } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { activityOf, localActivityId, taskOfActivity } from '../src/activities.js';
 import { shimDir } from '../src/shim.js';
@@ -83,11 +84,11 @@ test('a kept terminal puts the shim dir before the workspace\'s PATH, or before 
   const { base, workers, home } = await start(t, { PATH: '/ws/bin', HISTFILE: '/elsewhere/shared.history', NODE_ENV: 'development' });
   assert.equal((await postJson(`${base}/tasks/${TASK}/open`, { kind: 'terminal' })).status, 200);
   const env = workers[0].launch.env;
-  assert.deepEqual([env?.PATH, env?.NODE_ENV], [`${shimDir(home)}:/ws/bin`, 'development']);
-  assert.match(env?.HISTFILE ?? '', /\/terminals\/[^/]+\.history$/);
+  assert.deepEqual([env?.PATH, env?.NODE_ENV], [`${shimDir(home)}${delimiter}/ws/bin`, 'development']);
+  assert.match(env?.HISTFILE ?? '', /[\\/]terminals[\\/][^\\/]+\.history$/);
   const plain = await start(t);
   assert.equal((await postJson(`${plain.base}/tasks/${TASK}/open`, { kind: 'terminal' })).status, 200);
-  assert.equal(plain.workers[0].launch.env?.PATH, `${shimDir(plain.home)}:${process.env.PATH ?? ''}`);
+  assert.equal(plain.workers[0].launch.env?.PATH, `${shimDir(plain.home)}${delimiter}${process.env.PATH ?? ''}`);
 });
 
 test('POST /tasks/:id/open with kind terminal opens a Terminal through openTerminal and answers its pty id; the retired kind shell is 400 and opens nothing (#570)', async (t) => {

@@ -11,6 +11,7 @@ import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { isListing, listing, strayKill } from './stray-kill.js';
 
 // A workspace's kept terminals end to end (#696): the routes, the reducer and the pool's launches. No worker (maxConcurrent 0).
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -35,11 +36,12 @@ const refused = async (res: Promise<Response>, status: number, error: string, wh
 interface Started { base: string; server: HiveServer; workers: FakeWorker[]; repo: string; calls: string[][]; home: string }
 
 // A Hive whose one workspace is WORKSPACE at `repo`; every command is recorded, none runs
-async function start(t: TestContext): Promise<Started> {
+async function start(t: TestContext, strayLines: () => string[] = () => []): Promise<Started> {
   const { home, repo } = await tempHive(t);
   const { spawn, workers } = fakeSpawn();
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
+    if (isListing(args)) return { stdout: listing(strayLines()) };
     calls.push([file, ...args]);
     return { stdout: '' };
   };
@@ -104,8 +106,8 @@ test('a clean Quit sleeps every live terminal before its kills, so the next boot
 test('a terminal spawns with its own history and ring files, and a woken one in the start dir once its held cwd is gone (#696)', async (t) => {
   const { base, server, workers, repo } = await start(t);
   const id = await openShell(base);
-  assert.match(workers[0].launch.env?.HISTFILE ?? '', new RegExp(`/terminals/${id}\\.history$`));
-  assert.match(workers[0].launch.keep?.log ?? '', new RegExp(`/terminals/${id}\\.log$`));
+  assert.match(workers[0].launch.env?.HISTFILE ?? '', new RegExp(`[\\\\/]terminals[\\\\/]${id}\\.history$`));
+  assert.match(workers[0].launch.keep?.log ?? '', new RegExp(`[\\\\/]terminals[\\\\/]${id}\\.log$`));
   await server.dispatch({ type: 'sleepTerminal', terminalId: id, cwd: `${repo}/gone` });
   workers[0].handlers.onExit();
   await server.dispatch({ type: 'wakeTerminal', terminalId: id });
@@ -113,11 +115,13 @@ test('a terminal spawns with its own history and ring files, and a woken one in 
 });
 
 test('the shim\'s register refuses without the secret, captures a free session of the terminal\'s activity with the args claude gets, and Stop kills that claude by its run\'s MCP config path, never by its session id (#696)', async (t) => {
-  const { base, server, calls, home } = await start(t);
+  let runningId = ''; // known only after the register: the listing reads it when Stop asks
+  const { base, server, calls, home } = await start(t, () => [`claude --mcp-config C:\\h\\${runningId}.mcp.json`]);
   const id = await openShell(base);
   const url = `${base}/hooks/terminals/${id}/session`;
   assert.equal((await fetch(url, { method: 'POST' })).status, 403, 'no secret');
   const [runId, ...argv] = (await (await register(base, id)).text()).split('\n');
+  runningId = runId;
   const worker = server.getState()?.workers.find((w) => w.runId === runId);
   assert.ok(worker?.sessionId);
   assert.deepEqual([worker.terminalId, worker.freeSession, worker.activityId], [id, true, localActivityId(WORKSPACE)]);
@@ -128,7 +132,7 @@ test('the shim\'s register refuses without the secret, captures a free session o
   assert.ok('hive' in (JSON.parse(await readFile(argv[1], 'utf8')) as { mcpServers: object }).mcpServers, 'and the Hive\'s tools (#256)');
   await refused(register(base, crypto.randomUUID()), 409, 'nenhum terminal vivo com esse id', 'unknown terminal');
   assert.equal((await postJson(`${base}/ptys/${runId}/stop`)).status, 200);
-  assert.deepEqual(calls.at(-1), ['pkill', '-f', '--', `${runId}\\.mcp\\.json`], 'the --mcp-config path in its argv, which a /clear keeps and no other process carries');
+  assert.deepEqual(calls.at(-1), strayKill(`${runId}\\.mcp\\.json`), 'the --mcp-config path in its argv, which a /clear keeps and no other process carries');
   assert.equal(server.getState()?.workers.some((w) => w.runId === runId), false, 'its run ended');
 });
 

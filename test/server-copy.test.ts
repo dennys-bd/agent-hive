@@ -19,6 +19,7 @@ import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { DAY, SESSION, sessionMeta, writeRollout } from './codex-rollouts.js';
 import { NO_PROCESS_LIST } from './process-list.js';
+import { NO_POSIX_FAULTS } from './posix-only.js';
 
 // Copy (#587) end to end: the routes, the reducer and the pool's launch. maxConcurrent 0: every run below is a session the test opened.
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -200,10 +201,10 @@ test('a repo session whose copy\'s temporary transcript sits in the main repo\'s
   assert.equal((await postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/open`)).status, 200, 'its own transcript, adopted from the worktree\'s dir');
 });
 
-test('a copy whose spawn fails before its run starts frees its worker, forgets its entry and removes the temporary transcript (#587)', async (t) => {
+test('a copy whose spawn fails before its run starts frees its worker, forgets its entry and removes the temporary transcript (#587)', { skip: NO_POSIX_FAULTS }, async (t) => {
   const { base, server, home, source, two } = await twoActivities(t);
   const prompts = join(home, PROMPTS_DIR);
-  await chmod(prompts, 0o500); // the MCP config cannot be written
+  await chmod(prompts, 0o500); // the MCP config cannot be written. win32: a 0500 prompts folder still takes the MCP config
   t.after(() => chmod(prompts, 0o700));
   await postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy`, { to: { activityId: workId(server.getState()!, 'local:2') }, notice: false });
   await waitFor(() => server.getState()!.workers.length === 0);
@@ -236,10 +237,10 @@ test('a save refuses to re-path a workspace a local session runs in (409) (#587)
   assert.deepEqual([res.status, await res.json()], [409, { error: `workspace ${WORKSPACE} has a running worker` }]);
 });
 
-test('a transcript the Hive cannot read answers 500 with the reason the dialog shows, to the summary and to the copy, and leaves no partial copy (#587)', async (t) => {
+test('a transcript the Hive cannot read answers 500 with the reason the dialog shows, to the summary and to the copy, and leaves no partial copy (#587)', { skip: NO_POSIX_FAULTS }, async (t) => {
   const { base, server, source, one, two } = await twoActivities(t);
   const transcript = join(transcriptDir(one), `${source}.jsonl`);
-  await chmod(transcript, 0o000);
+  await chmod(transcript, 0o000); // win32: chmod 000 does not stop the owner reading the transcript
   t.after(() => chmod(transcript, 0o600));
   await refused(getJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy?toActivity=${workId(server.getState()!, 'local:2')}`), 500, 'o histórico desta sessão não pôde ser lido');
   await refused(postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy`, { to: { activityId: workId(server.getState()!, 'local:2') }, notice: false }), 500, 'o histórico desta sessão não pôde ser copiado');

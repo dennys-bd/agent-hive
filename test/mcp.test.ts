@@ -4,7 +4,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -650,7 +650,7 @@ test('a tool turned off in mcp.off leaves tools/list and a call to it gets the S
 });
 
 test('nestedConventions answers each nested repo with its GitHub repository, none for one off GitHub; conventionsAnswer carries the list, [] without one (#653)', async () => {
-  const urls: Record<string, string> = { '/app/docs': 'https://github.com/acme/docs.git\n', '/app/ee': 'https://gitlab.com/acme/ee.git\n' };
+  const urls: Record<string, string> = { [join('/app', 'docs')]: 'https://github.com/acme/docs.git\n', [join('/app', 'ee')]: 'https://gitlab.com/acme/ee.git\n' };
   const exec: Exec = async (_file, args) => ({ stdout: urls[args[1]] ?? '' });
   const app: Workspace = { name: 'app', path: '/app', env: {}, fork: null, nestedRepos: ['docs', 'ee'], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' };
   const nested = await nestedConventions(exec, app);

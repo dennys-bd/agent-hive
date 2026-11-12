@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { runners } from '../src/agents/registry.js';
 import { HOOK_EVENTS, renderHooksSettings, renderMcpConfig } from '../src/agents/claude-home.js';
@@ -8,6 +8,7 @@ import { excludeFromGit, hookCommand, PROTOCOL_DIR, prepareHome, statusCommand, 
 import { LOCAL_PROTOCOL, protocolTexts, renderProtocol, SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
+import { assertMode } from './posix-only.js';
 
 test('hookCommand posts stdin to the hive with the worker header and never fails the hook', () => {
   const cmd = hookCommand(4242);
@@ -69,7 +70,7 @@ test('prepareHome writes hooks.json and prompts/ into the home, creating it for 
   });
   assert.deepEqual(JSON.parse(await readFile(paths.hooksPath, 'utf8')), renderHooksSettings(4242));
   assert.deepEqual(await readdir(paths.promptsDir), []);
-  assert.equal((await stat(home)).mode & 0o777, 0o700, 'the home holds the log and the prompts');
+  await assertMode(t, home, 0o700, 'the home holds the log and the prompts'); // win32: no POSIX mode bits
   assert.deepEqual(await readdir(parent), ['agent-hive']);
   await prepareHome(home, 4343, [runners.claude], []);
   assert.deepEqual(JSON.parse(await readFile(paths.hooksPath, 'utf8')), renderHooksSettings(4343), 'rewritten for the port in use');
@@ -88,7 +89,7 @@ test('prepareHome writes the stage and the session protocol into <home>/protocol
   assert.equal(await readFile(protocol.stage, 'utf8'), STAGE_PROTOCOL);
   assert.equal(await readFile(protocol.session, 'utf8'), SESSION_PROTOCOL);
   assert.equal(await readFile(protocol.local, 'utf8'), LOCAL_PROTOCOL);
-  assert.equal((await stat(join(home, PROTOCOL_DIR))).mode & 0o777, 0o700, 'created with the home\'s mode');
+  await assertMode(t, join(home, PROTOCOL_DIR), 0o700, 'created with the home\'s mode'); // win32: no POSIX mode bits
   await writeFile(protocol.stage, 'from a previous version');
   await prepareHome(home, 4242, [runners.claude], []);
   assert.equal(await readFile(protocol.stage, 'utf8'), STAGE_PROTOCOL, 'upgrading the Hive refreshes what every worker is told');
@@ -114,7 +115,7 @@ test('renderMcpConfig points the hive server at /hooks/mcp with the worker id an
   assert.ok(path);
   assert.equal(path, join(dir, 'W1.mcp.json'), 'the path carries the worker id: pkill / pgrep find claude by it');
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), renderMcpConfig(4242, 'W1', SECRET));
-  assert.equal((await stat(path)).mode & 0o777, 0o600, 'it holds the secret: this user only');
+  await assertMode(t, path, 0o600, 'it holds the secret: this user only'); // win32: no POSIX mode bits
 });
 
 test('every hook and the status line send the secret as curl\'s header file, never by value nor by an expanded variable: hooks.json is shared by every worker, and curl\'s argv is readable by every account (#467)', () => {
@@ -136,7 +137,7 @@ test('writeMcpConfig with withHive false writes a config that lists no server, s
   assert.ok(path);
   assert.equal(path, join(dir, `${worker}.mcp.json`));
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { mcpServers: {} });
-  assert.equal((await stat(path)).mode & 0o777, 0o600);
+  await assertMode(t, path, 0o600); // win32: no POSIX mode bits
 });
 
 test('writeWorkspaceProtocol writes, in <home>/protocol/workspaces/<workspace>/, each protocol alone for an empty memory, then a blank line and the section otherwise (#797)', async (t) => {
@@ -146,10 +147,10 @@ test('writeWorkspaceProtocol writes, in <home>/protocol/workspaces/<workspace>/,
   await prepareHome(home, 4242, [runners.claude], []);
   assert.deepEqual(await writeWorkspaceProtocol(home, 'stage.md', protocolTexts([], []), ''), paths);
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [STAGE_PROTOCOL, SESSION_PROTOCOL]);
-  assert.equal((await stat(join(home, PROTOCOL_DIR, 'workspaces', 'stage.md'))).mode & 0o777, 0o700, 'the home\'s mode');
+  await assertMode(t, join(home, PROTOCOL_DIR, 'workspaces', 'stage.md'), 0o700, 'the home\'s mode'); // win32: no POSIX mode bits
   const section = '## Workspace memory\n\n### Avoid\n- [m-1] never edit dist/\n';
   await writeWorkspaceProtocol(home, 'stage.md', protocolTexts([], []), section);
-  assert.equal((await stat(paths.stage)).mode & 0o777, 0o600, 'a file only its owner reads');
+  await assertMode(t, paths.stage, 0o600, 'a file only its owner reads'); // win32: no POSIX mode bits
   assert.deepEqual((await readdir(dirname(paths.stage))).sort(), ['local.md', 'session.md', 'stage.md'], 'no temp file left');
   assert.equal(workspaceProtocolPaths(home, 'a b').stage, join(home, PROTOCOL_DIR, 'workspaces', 'a%20b', 'stage.md'));
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [`${STAGE_PROTOCOL}\n${section}`, `${SESSION_PROTOCOL}\n${section}`]);
@@ -184,5 +185,5 @@ test('the global and every workspace\'s writer write local.md beside the other t
   assert.deepEqual(paths, workspaceProtocolPaths(home, 'site'));
   assert.equal(paths.local, join(home, PROTOCOL_DIR, 'workspaces', 'site', 'local.md'));
   assert.equal(await readFile(paths.local, 'utf8'), `${LOCAL_PROTOCOL}\n## Workspace memory\n`);
-  assert.equal((await stat(paths.local)).mode & 0o777, 0o600, 'it holds the lessons, as the other two do');
+  await assertMode(t, paths.local, 0o600, 'it holds the lessons, as the other two do'); // win32: no POSIX mode bits
 });

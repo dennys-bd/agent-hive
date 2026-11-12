@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { ownsRollout, readRollout, rolloutFiles, sessionsRoot } from '../../src/agents/codex-transcript.js';
 import { ZERO_TOKENS } from '../../src/facts.js';
 import { CHILD, CWD, DAY, NOW, OTHER, OTHER_CHILD, SESSION, STALE, sessionMeta, subagent, TWO_TURNS, usageRecord, writeRollout } from '../codex-rollouts.js';
@@ -56,18 +56,18 @@ test('readRollout counts a response whose turn named no model under unknown in t
 
 test('ownsRollout takes only <sessions root>/YYYY/MM/DD/…-<session id>.jsonl, and nothing without a session id (#929)', () => {
   const env = { CODEX_HOME: '/codex-home' };
-  const at = (rest: string): string => `/codex-home/sessions/${rest}`;
+  const at = (rest: string): string => join('/codex-home', 'sessions', ...rest.split('/'));
   const own = at(`2026/10/12/rollout-2026-10-12T10-00-00-${SESSION}.jsonl`);
   assert.equal(ownsRollout(own, SESSION, env), true);
   const refused: [string, string][] = [
     [at(`2026/10/12/rollout-2026-10-12T10-00-00-${OTHER}.jsonl`), 'another session'],
-    [`/elsewhere/sessions/2026/10/12/rollout-x-${SESSION}.jsonl`, 'outside the root'],
+    [join('/elsewhere', 'sessions', '2026', '10', '12', `rollout-x-${SESSION}.jsonl`), 'outside the root'],
     [at(`2026/10/rollout-x-${SESSION}.jsonl`), 'one folder too shallow'],
     [at(`2026/10/12/sub/rollout-x-${SESSION}.jsonl`), 'one folder too deep'],
     [at(`2026/oct/12/rollout-x-${SESSION}.jsonl`), 'not a date folder'],
     [`sessions/2026/10/12/rollout-x-${SESSION}.jsonl`, 'relative'],
     [at(`2026/10/12/rollout-x-${SESSION}.json`), 'not .jsonl'],
-    [at(`2026/10/12/../12/rollout-x-${SESSION}.jsonl`), 'not normalized: the root would be read from the wrong folders'],
+    [`${join('/codex-home', 'sessions', '2026', '10', '12')}${sep}..${sep}12${sep}rollout-x-${SESSION}.jsonl`, 'not normalized: the root would be read from the wrong folders'],
   ];
   for (const [path, why] of refused) assert.equal(ownsRollout(path, SESSION, env), false, why);
   assert.equal(ownsRollout(own, SESSION.slice(9), env), false, 'a tail of the id is no session id');
@@ -76,7 +76,7 @@ test('ownsRollout takes only <sessions root>/YYYY/MM/DD/…-<session id>.jsonl, 
 });
 
 test('sessionsRoot is $CODEX_HOME/sessions for an absolute CODEX_HOME, else ~/.codex/sessions (#929)', () => {
-  assert.equal(sessionsRoot({ CODEX_HOME: '/codex-home' }), '/codex-home/sessions');
+  assert.equal(sessionsRoot({ CODEX_HOME: '/codex-home' }), join('/codex-home', 'sessions'));
   for (const CODEX_HOME of [undefined, '', '  ', 'codex', './codex']) assert.equal(sessionsRoot({ CODEX_HOME }), join(homedir(), '.codex', 'sessions'), String(CODEX_HOME));
 });
 

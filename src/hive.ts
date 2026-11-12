@@ -77,10 +77,12 @@ async function bootLocked(home: string, options: Omit<BootOptions, 'posixShell'>
     log.error(`config: ${err.message}`);
     throw err;
   });
+  // a config that cannot parse is refused before a store opens: win32 cannot remove an open usage.sqlite from the home (#655)
+  const parsed = raw === undefined ? undefined : parseOrFallback(raw, log);
   // Process state, read once: which agent CLIs this machine has (#516). Installing one later means restarting the Hive, which the hint says.
   const agents = given.agents ?? (await detectAgents(execFileAsync));
   // #271: one store for both modes, since a setup saved in place runs workers too. It never rejects: one that cannot open keeps nothing and says
-  // so in hive.log. ponytail: a config that fails to parse leaves it open until the process exits, which it then does
+  // so in hive.log.
   // #93: the fact log was events.jsonl. Its generations move first, so the usage store's first import below reads them and the server's
   // writer appends to the moved file; under hive.lock, so no other daemon writes them meanwhile
   moveEventsFiles(home, log);
@@ -90,9 +92,15 @@ async function bootLocked(home: string, options: Omit<BootOptions, 'posixShell'>
   // since the server wires it once: the first Settings save leaves setup mode in place, and its adapters and the read routes need it
   const readModel = await openModel(home, log);
   try {
-    return await bootMode(home, log, language, deps, raw, readModel);
+    return await bootMode(home, log, language, deps, parsed, readModel);
   } catch (err) {
-    readModel?.close(); // the boot fails (a config that cannot parse, a failed bind): nothing else would close the handle just opened
+    // the boot fails (a failed bind): nothing else would close the handles just opened. win32 keeps an open usage.sqlite* busy, and the
+    // home cannot be removed (#655), so the usage store closes even when the model's close throws
+    try {
+      readModel?.close();
+    } finally {
+      usage.close();
+    }
     throw err;
   }
 }
@@ -100,9 +108,8 @@ async function bootLocked(home: string, options: Omit<BootOptions, 'posixShell'>
 // #282, #567: a boot adapter's write answer and its refetch reach the server, which exists only after the boot adapters
 type Relay = Pick<ItemStore, 'notify' | 'refetch'>;
 
-async function bootMode(home: string, log: Logger, language: Language, deps: BootDeps, raw: unknown, readModel: ReadModel | undefined): Promise<BootedHive> {
-  if (raw === undefined) return bootSetupMode(home, log, language, deps, readModel);
-  const parsed = parseOrFallback(raw, log);
+async function bootMode(home: string, log: Logger, language: Language, deps: BootDeps, parsed: ParsedConfig | undefined, readModel: ReadModel | undefined): Promise<BootedHive> {
+  if (parsed === undefined) return bootSetupMode(home, log, language, deps, readModel);
   if ('fallback' in parsed) return bootSetupMode(home, log, language, deps, readModel, parsed.fallback, parsed.proposed);
   const { config } = parsed;
   log.setLevel(config.logLevel);
@@ -200,7 +207,8 @@ async function listenAndRecord(server: HiveServer, home: string, secret: string)
 
 // A file from before the Comb, or with a source setting from before #293, must not kill the app: the settings form opens empty with the reason
 // (no proposal, #132). One from before #198 lacks only the viewer settings: the form opens prefilled with the rest. Any other parse failure is fatal.
-function parseOrFallback(raw: unknown, log: Logger): { config: Config } | { fallback: NonNullable<ServerDeps['setupFallback']>; proposed?: string } {
+type ParsedConfig = { config: Config } | { fallback: NonNullable<ServerDeps['setupFallback']>; proposed?: string };
+function parseOrFallback(raw: unknown, log: Logger): ParsedConfig {
   try {
     return { config: parseConfig(raw) };
   } catch (err) {

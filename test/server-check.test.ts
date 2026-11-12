@@ -12,6 +12,7 @@ import { registerCheckRoutes } from '../src/server-check.js';
 import { type CheckAnswer, type CheckerState, EDITOR_DEFAULTS, type EditorConfig } from '../src/types.js';
 import { combConfig, LOCAL_STAGES } from './fakes.js';
 import { savedActivityId, withLocal } from './fixtures/work.js';
+import { writeCmdTwin } from './npm-server.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 const ACTIVITY = encodeURIComponent(localActivityId('hive'));
@@ -20,13 +21,15 @@ async function script(path: string, body: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `#!/bin/sh\n${body}\n`);
   await chmod(path, 0o755);
+  await writeCmdTwin(path);
 }
 
 // A local activity of workspace hive at a temp repo holding a.py and a project mypy that reports one finding on it
 async function serve(t: AfterHost, editor: EditorConfig = EDITOR_DEFAULTS): Promise<{ base: string; repo: string }> {
   const repo = await realpath(await tempDir(t, 'check-repo-'));
   await writeFile(join(repo, 'a.py'), 'x: int = "a"\n');
-  await script(join(repo, '.venv', 'bin', 'mypy'), `printf '{"file": "%s", "line": 1, "column": 9, "message": "bad", "hint": null, "code": "assignment", "severity": "error"}\\n' "$4"; exit 1`);
+  // mypy names the file relative to its cwd: an absolute win32 path printed raw by sh would hold unescaped backslashes, not JSON
+  await script(join(repo, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'mypy'), `printf '{"file": "a.py", "line": 1, "column": 9, "message": "bad", "hint": null, "code": "assignment", "severity": "error"}\\n'; exit 1`);
   const config = parseConfig(combConfig({ stages: LOCAL_STAGES, path: repo, editor }));
   const state = withLocal(initialState(0), 'hive');
   const app = express();

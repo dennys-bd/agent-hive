@@ -1,5 +1,5 @@
 import { access, lstat, readdir } from 'node:fs/promises';
-import { join, relative, resolve } from 'node:path';
+import { join, posix, relative, win32 } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { canDiff } from './task-runs.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
@@ -165,13 +165,20 @@ async function diskEntries(folder: string): Promise<FolderEntries> {
   return { files: namesOf(false), folders: namesOf(true) };
 }
 
+// The folder the query names, relative to the tree's root, in the wire's spelling: nestedRepoOf splits on `/`, and win32's relative gives `docs\agent`.
+// '' is the root. Real paths on macOS need not start with the root as written, so the query's path is resolved against it.
+export function inTreeOf(root: string, path: string, platform: NodeJS.Platform): string {
+  const flavour = platform === 'win32' ? win32 : posix;
+  return toWire(flavour.relative(root, flavour.resolve(root, path)), platform);
+}
+
 // HIVE-22's listing, and inside a nested repository (#1) that repository's view of it. The walk up runs on the query's path as written,
 // normalized: `folder` is real, and on macOS a real path need not start with the root as written. ponytail: one pathspec-limited git status
 // per read of an expanded folder inside a nested repository (on its own index or HEAD change, focus or a tree operation, #502); one status per nested repository, shared by its expanded folders, if a
 // big one ever slows the tree
-async function folderEntries(root: string, path: string, folder: string, exec: Exec, onNested: (repo: string) => void): Promise<FolderEntries> {
+async function folderEntries(root: string, path: string, folder: string, exec: Exec, platform: NodeJS.Platform, onNested: (repo: string) => void): Promise<FolderEntries> {
   const children = await diskEntries(folder);
-  const inTree = relative(root, resolve(root, path)); // '' is the root
+  const inTree = inTreeOf(root, path, platform);
   const repo = await nestedRepoOf(root, inTree, holdsGit);
   if (repo === undefined) return children;
   onNested(repo);
@@ -195,7 +202,7 @@ function registerFolderRoute(app: Express, { exec, requireLive, treeWatch }: Pic
       const folder = await treeFolder(root, path);
       if (typeof folder !== 'string') return refuse(res, folder);
       // #502: an expanded nested repository's stage, commit and switch push; the watch ignores an unleased root
-      res.json(await folderEntries(root, path, folder, exec, (repo) => void treeWatch.watchNested(root, repo)));
+      res.json(await folderEntries(root, path, folder, exec, process.platform, (repo) => void treeWatch.watchNested(root, repo)));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: wordsOf(err) });
     }

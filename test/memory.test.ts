@@ -4,12 +4,13 @@ import {
   BODY_MESSAGE, bodyProblem, DESCRIPTION_MESSAGE, descriptionProblem, createMemoryStore, EMPTY_MEMORY, isMemoryRefusal, looksLikeSecret, MEMORY_FULL_MESSAGE, type MemoryResult, memoryPath, memoryUsed,
   parseMemory, recalledOf, renderMemory, renderedOf, whyProblem, withEdit, withEntry, withoutEntry, withUse,
 } from '../src/memory.js';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
 import { type ProtocolFor, SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
 import { tempDir } from './temp-dir.js';
 import { MEMORY_HISTORY_MAX, type MemoryChange, type MemoryEntry, type MemoryFile, type OptionalTool } from '../src/types.js';
+import { assertMode } from './posix-only.js';
 
 const AT = '2026-10-05T10:00:00.000Z';
 const entry = (n: number, kind: MemoryEntry['kind'], description: string, body = `body of m-${n}`): MemoryEntry =>
@@ -200,7 +201,8 @@ test('the store keeps one file per workspace, rewrites its protocol files when t
   assert.deepEqual(store.rendered('site'), { ids: [], chars: 0 });
   const saved = fileOf(await store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'the lesson', 'user', AT, CAP)));
   assert.deepEqual(JSON.parse(await readFile(memoryPath(home, 'site'), 'utf8')), saved);
-  assert.deepEqual([(await stat(memoryPath(home, 'site'))).mode & 0o777, (await stat(join(home, 'memory'))).mode & 0o777], [0o600, 0o700], 'private to the user');
+  await assertMode(t, memoryPath(home, 'site'), 0o600, 'private to the user'); // win32: no POSIX mode bits
+  await assertMode(t, join(home, 'memory'), 0o700, 'private to the user'); // win32: no POSIX mode bits
   const section = renderMemory(saved.entries, []);
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [`${STAGE_PROTOCOL}\n${section}`, `${SESSION_PROTOCOL}\n${section}`]);
   assert.deepEqual(store.rendered('site'), { ids: ['m-1'], chars: section.length });

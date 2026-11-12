@@ -36,6 +36,8 @@ import type { Activity, Source, SourceItemRead, SourceQuota, SourceSpec, Task, T
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
 import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem } from './fakes.js';
 import { tempDir } from './temp-dir.js';
+import { NO_POSIX_FAULTS } from './posix-only.js';
+import { isListing, listing, strayKill } from './stray-kill.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { flatten } from '../src/flows.js';
@@ -967,10 +969,11 @@ test('POST /settings with renamed stages dispatches setStages: the state follows
   assert.equal(server.getState()?.tasks[0].stage, 'triagem', 'reconfigure polls: the task came back through the new from');
 });
 
-test('POST /settings answers once the config is written and the new stages are reduced, not after the sourceAction that reduction fires (#476)', async (t) => {
+test('POST /settings answers once the config is written and the new stages are reduced, not after the sourceAction that reduction fires (#476)', { timeout: 30_000 }, async (t) => {
   const applied: string[] = [];
   let releaseApply: (() => void) | undefined;
   const held = new Promise<void>((resolve) => { releaseApply = resolve; });
+  t.after(() => releaseApply?.()); // a run that timed out on a blocked answer must not leave the server's close waiting on apply()
   // A source whose apply() hangs until the test releases it, standing in for a slow adapter request: reconfigure must not make
   // POST /settings wait on it.
   const factory = (): Source => ({
@@ -995,17 +998,16 @@ test('POST /settings answers once the config is written and the new stages are r
   // runDeletions) advances it straight into a leaving sourceAction (#286), the effect this bug used to block the answer on.
   const stages: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, action: 'deleteActivity', onFinish: { board: [{ type: 'archive' }] } }];
   const setup = postJson(`${base}/settings`, onOwnStages({ ...BODY, flows: bodyFlows(stages) }));
-  const TIMEOUT = Symbol('timeout');
-  const race = await Promise.race([setup, sleep(300).then(() => TIMEOUT)]);
+  // an answer that waits on the hanging apply() never comes: the test's own timeout fails it, by name, with no wall-clock race to lose on a loaded runner
+  const answer = await setup;
   try {
-    if (typeof race === 'symbol') throw new Error('POST /settings must answer before the sourceAction it fired settles (#476)');
-    assert.equal(race.status, 200);
-    assert.equal((await json<SettingsResult>(race)).ok, true);
+    assert.equal(answer.status, 200);
+    assert.equal((await json<SettingsResult>(answer)).ok, true);
     assert.deepEqual(server.getState()?.stages, chained(stages).stages, 'the new stages are already reduced into the state');
     assert.equal(task0(server).leaving, true, 'the reduction already ran: the task is marked leaving before the board answered');
     assert.equal(applied.length, 1, 'the sourceAction effect already started in the background');
   } finally {
-    releaseApply!(); // a timed-out run must not leave the fake source's apply() hanging forever
+    releaseApply!(); // a failed run must not leave the fake source's apply() hanging forever
   }
   await waitFor(() => server.getState()?.tasks.length === 0); // closeTask, once the source finally answers
   assert.deepEqual(applied, ['I1 archive']);
@@ -1763,7 +1765,10 @@ test('the deleteActivity effect removes the worktree and the branch whatever the
   const moved = task0(server);
   // #629: its activity went, its session id with it; a fresh one carries the in-flight mark, as main's forget kept it on the task
   assert.deepEqual([moved.stage, work0(server)?.sessionId, work0(server) !== undefined, sessions0(server)], ['archive', undefined, true, []], 'moved on with no poll');
-  assert.ok(lines.some((l) => l.startsWith('ERROR transcripts #1: ')), lines.join('\n'));
+  // win32: a file as CLAUDE_CONFIG_DIR gives ENOENT, not ENOTDIR, and the delete reads that as "already gone": no way to make it fail there
+  await t.test('a transcript that cannot be deleted is logged', { skip: NO_POSIX_FAULTS }, () => {
+    assert.ok(lines.some((l) => l.startsWith('ERROR transcripts #1: ')), lines.join('\n'));
+  });
 });
 
 test('GET /worktrees lists what git lists under .hive/worktrees with the owning task; the main checkout and a worktree elsewhere are not listed; a worktree no task owns is noTask; a git failure is a 500 with git\'s words (#181)', async (t) => {
@@ -1941,9 +1946,10 @@ test('a local task has no source behind it: comments answer null without asking 
 });
 
 test('killStrays pkills every run by its worker id: a free session carries it too, in its --mcp-config path (#283)', async () => {
-  const patterns: string[] = [];
-  const exec: Exec = async (_file, args) => {
-    patterns.push(args.at(-1)!);
+  const calls: string[][] = [];
+  const exec: Exec = async (file, args) => {
+    if (isListing(args)) return { stdout: listing(['claude W1', 'claude --mcp-config W2.mcp.json']) };
+    calls.push([file, ...args]);
     return { stdout: '' };
   };
   const state: State = {
@@ -1955,7 +1961,7 @@ test('killStrays pkills every run by its worker id: a free session carries it to
     ],
   };
   await killStrays(state, exec);
-  assert.deepEqual(patterns, ['W1', 'W2']);
+  assert.deepEqual(calls.sort(), [strayKill('W1', 0), strayKill('W2', 1)].sort());
 });
 
 test('POST /tasks/:id/auto turns a task\'s auto off and on: 404 unknown, 400 without a boolean; a free worker under green leaves a task without auto alone, and a start runs it like any task; /auto is gone (#164, #283, #573)', async (t) => {
@@ -2437,6 +2443,7 @@ test('a terminal goes through the pool with no worker: its launch is the user\'s
 test('killStrays pkills each worker\'s worker id and runs nothing for a terminal: a terminal lived in the old daemon\'s pty host and died with it (#283, #378)', async () => {
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
+    if (isListing(args)) return { stdout: listing(['claude W1']) };
     calls.push([file, ...args]);
     return { stdout: '' };
   };
@@ -2444,7 +2451,7 @@ test('killStrays pkills each worker\'s worker id and runs nothing for a terminal
   const workers: Worker[] = [{ id: 'A', status: 'working', runId: 'W1', activityId: activityIdOf('board:I1') }];
   const terminals = [{ terminalId: 'a1b2c3d4-0000-4000-8000-000000000002', activityId: activityIdOf('board:I1'), startedAt: '2026-09-25T10:00:00.000Z', cwd: '/repo' }];
   await killStrays({ ...initialState(1), tasks: [task], workers, terminals }, exec);
-  assert.deepEqual(calls, [['pkill', '-f', '--', 'W1']]);
+  assert.deepEqual(calls, [strayKill('W1')]);
 });
 
 test('POST /activities/:id/continue resumes the stopped stage\'s latest session with the continue prompt alone (#167): 404 unknown or before the stage ran (no activity, #629), 409 while a stage run holds the task (#283)', async (t) => {

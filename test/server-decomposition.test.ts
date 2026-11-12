@@ -16,6 +16,7 @@ import { activityIdOf, withWork } from './fixtures/work.js';
 import { EXAMPLE } from './fixtures/decomposition.js';
 import { tempDir } from './temp-dir.js';
 import { mainFlows } from './fixtures/main-flow.js';
+import { NO_POSIX_FAULTS } from './posix-only.js';
 
 // The decomposition's routes (#865) alone over a saved state: the goal's worktree holds decomposition.md, GitHub is a fake, and every
 // dispatched event is recorded rather than reduced.
@@ -301,9 +302,11 @@ test('with no GitHub source there is nowhere to write the tree: approve is plain
 
 test('GET answers a fixed 500 for a local read failure, without the path, and 413 for a file over 256 KB (#865)', async (t) => {
   const { url, worktree } = await routes(t);
-  await chmod(join(worktree, 'decomposition.md'), 0o000);
-  const failed = await fetch(url);
-  assert.deepEqual([failed.status, await failed.json()], [500, { error: 'não foi possível ler o decomposition.md' }]);
+  await t.test('a file it cannot read answers 500', { skip: NO_POSIX_FAULTS }, async () => {
+    await chmod(join(worktree, 'decomposition.md'), 0o000); // win32: chmod 000 does not stop the owner reading it
+    const failed = await fetch(url);
+    assert.deepEqual([failed.status, await failed.json()], [500, { error: 'não foi possível ler o decomposition.md' }]);
+  });
   const big = await routes(t, { text: 'x'.repeat(256 * 1024 + 1) });
   const refused = await fetch(big.url);
   assert.deepEqual([refused.status, await refused.json()], [413, { error: 'o decomposition.md passa de 256 KB' }]);
