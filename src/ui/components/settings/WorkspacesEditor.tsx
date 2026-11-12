@@ -1,4 +1,3 @@
-import { XIcon } from 'lucide-react';
 import { type ReactNode, useId } from 'react';
 import { toast } from 'sonner';
 import { EnvEditor } from '@/components/settings/EnvEditor';
@@ -7,6 +6,7 @@ import { WorkspaceBenchmarkPr } from '@/components/settings/WorkspaceBenchmarkPr
 import { WorkspaceColorPicker } from '@/components/settings/WorkspaceColorPicker';
 import { WorkspaceFork } from '@/components/settings/WorkspaceFork';
 import { WorkspaceNestedRepos } from '@/components/settings/WorkspaceNestedRepos';
+import { WorkspaceRemoveButton } from '@/components/settings/WorkspaceRemoveButton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -105,7 +105,7 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
           <Input id={`${id}-path`} aria-label={`${t('settings.workspaces.path')} ${n}`} className="font-mono" value={row.path} placeholder="/path/to/repo" onChange={(e) => onChange({ path: e.target.value })} />
         </div>
         {window.hive ? <Button type="button" variant="outline" onClick={() => chooseFolder(onPick)}>{t('settings.workspaces.choose')}</Button> : <span />}
-        <Button type="button" variant="ghost" size="icon" aria-label={remove} title={remove} disabled={!canRemove} onClick={onRemove}><XIcon /></Button>
+        <WorkspaceRemoveButton name={row.name.trim()} label={remove} isSaved={saved} isDisabled={!canRemove} onRemove={onRemove} />
       </div>
       {/* #854: where the workers' worktrees start from and where their PRs go */}
       <CardGroup title={t('settings.fork.group')} hint={t('settings.fork.hint')} anchor={settingAnchor('settings.fork.group', row.id)}>

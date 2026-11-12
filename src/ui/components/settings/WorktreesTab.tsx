@@ -19,7 +19,7 @@ type Filter = 'all' | 'orphans';
 interface Outcome { removed: string[]; refused: { slug: string; reason: string }[] }
 
 /** Where a row's removal goes: the task's own route (#182) for a task's worktree, the workspace + slug route (#181, #179) for one no task owns. */
-const removalUrl = (row: WorktreeRow): string =>
+export const removalUrl = (row: WorktreeRow): string =>
   row.task ? activityDeletionUrl(row.task.activityId) : `/worktrees/${encodeURIComponent(row.workspace)}/${encodeURIComponent(row.slug)}/remove`;
 
 /** What the orphans filter, the counts and the red border take (#747): an orphan, or a task's worktree whose workspace left Settings. */

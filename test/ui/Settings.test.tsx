@@ -47,6 +47,7 @@ const defaultFetch = async (input: RequestInfo | URL, _init?: RequestInit): Prom
   if (url.startsWith('/settings/projects')) return jsonResponse([{ number: 1, title: 'One', url: '' }, { number: 2, title: 'Two', url: '' }]);
   if (url.startsWith('/settings/source-columns')) return jsonResponse(['Ready', 'In progress']);
   if (url.startsWith('/settings/filter-options')) return jsonResponse(FILTER_OPTIONS);
+  if (url.endsWith('/holdings')) return jsonResponse({ activities: [], worktrees: [], branches: [], tasks: [], running: false }); // #751: a saved workspace holding nothing leaves at once
   return jsonResponse({});
 };
 const fetchMock = vi.fn(defaultFetch);

@@ -28,7 +28,8 @@ const info: SettingsInfo = {
   },
 };
 
-const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
+const NOTHING_HELD = { activities: [], worktrees: [], branches: [], tasks: [], running: false }; // #751: a saved workspace holding nothing leaves at once
+const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(String(input).endsWith('/holdings') ? NOTHING_HELD : {}), { status: 200, headers: { 'content-type': 'application/json' } }));
 
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());

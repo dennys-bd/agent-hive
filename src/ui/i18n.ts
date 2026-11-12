@@ -1185,6 +1185,33 @@ const en = {
   'settings.workspaces.presetColor': 'color {n}', // #78: a preset circle's name for a screen reader
   'settings.workspaces.path': 'folder',
   'settings.workspaces.remove': 'remove workspace {n}',
+  'settings.workspaces.removal.title': 'Remove {name}', // #751
+  'settings.workspaces.removal.lead': 'the workspace still holds work on disk.', // #751
+  'settings.workspaces.removal.lead.actions': 'clean up deletes what git allows, never forced; remove anyway only takes the workspace out of the configuration and leaves everything on disk. it leaves the configuration when you save.', // #751
+  'settings.workspaces.removal.running': 'a worker is working in {name}', // #751
+  'settings.workspaces.removal.running.hint': 'stop the worker in activities to remove the workspace', // #751
+  'settings.workspaces.removal.activities': 'activities', // #751
+  'settings.workspaces.removal.worktrees': 'orphan worktrees', // #751
+  'settings.workspaces.removal.branches': 'unmerged branches', // #751
+  'settings.workspaces.removal.tasks': 'tasks', // #751
+  'settings.workspaces.removal.branches.hint': 'clean up does not delete what was not merged', // #751
+  'settings.workspaces.removal.tasks.hint': 'no activity, they point to {name}; nothing to do with them', // #751
+  'settings.workspaces.removal.branch.target': 'not merged into {target}', // #751
+  'settings.workspaces.removal.row.willGo': 'leaves on clean up', // #751
+  'settings.workspaces.removal.row.queued': 'queued', // #751
+  'settings.workspaces.removal.row.deleting': 'deleting', // #751
+  'settings.workspaces.removal.row.deleted': 'deleted', // #751
+  'settings.workspaces.removal.reason.running': 'stays · a worker or session is running in this task', // #751
+  'settings.workspaces.removal.reason.deleting': 'stays · the activity is already being deleted', // #751
+  'settings.workspaces.removal.reason.nothingToDelete': 'stays · nothing to delete', // #751
+  'settings.workspaces.removal.reason.local': "stays · runs in the workspace's folder, no worktree", // #751
+  'settings.workspaces.removal.progress': 'deleting {n} of {total} · no force', // #751
+  'settings.workspaces.removal.outcome': '{removed} deleted · git refused {refused}: force them one by one, or remove anyway', // #751
+  'settings.workspaces.removal.cleanUp': 'clean up and remove', // #751
+  'settings.workspaces.removal.cleaning': 'cleaning…', // #751
+  'settings.workspaces.removal.removeAnyway': 'remove anyway', // #751
+  'settings.workspaces.removal.readFailed': 'Couldn\'t read what {name} still holds', // #751
+  'settings.workspaces.removal.readFailed.hint': 'the workspace stays in the configuration · try again; the details are in hive.log', // #751
   'settings.workspaces.setup': 'worktree setup', // #299
   'settings.workspaces.stepTimeout': 'timeout per step', // the setup's and the teardown's (#511, #654)
   'settings.workspaces.setupTimeoutHint': 'empty = no limit', // #511
@@ -4371,6 +4398,33 @@ const pt: Record<MessageKey, string> = {
   'settings.workspaces.presetColor': 'cor {n}',
   'settings.workspaces.path': 'pasta',
   'settings.workspaces.remove': 'remover workspace {n}',
+  'settings.workspaces.removal.title': 'Remover {name}', // #751
+  'settings.workspaces.removal.lead': 'o workspace ainda guarda trabalho no disco.', // #751
+  'settings.workspaces.removal.lead.actions': 'limpar exclui o que o git deixar, nunca com force; remover mesmo assim só tira o workspace da configuração e deixa tudo no disco. ele sai da configuração quando você salvar.', // #751
+  'settings.workspaces.removal.running': 'um worker está trabalhando em {name}', // #751
+  'settings.workspaces.removal.running.hint': 'pare o worker em atividades para remover o workspace', // #751
+  'settings.workspaces.removal.activities': 'atividades', // #751
+  'settings.workspaces.removal.worktrees': 'worktrees órfãos', // #751
+  'settings.workspaces.removal.branches': 'branches não mergeados', // #751
+  'settings.workspaces.removal.tasks': 'tarefas', // #751
+  'settings.workspaces.removal.branches.hint': 'limpar não apaga o que não foi mergeado', // #751
+  'settings.workspaces.removal.tasks.hint': 'sem atividade, apontam para {name}; nada a fazer nelas', // #751
+  'settings.workspaces.removal.branch.target': 'não mergeado em {target}', // #751
+  'settings.workspaces.removal.row.willGo': 'sai ao limpar', // #751
+  'settings.workspaces.removal.row.queued': 'na fila', // #751
+  'settings.workspaces.removal.row.deleting': 'excluindo', // #751
+  'settings.workspaces.removal.row.deleted': 'excluída', // #751
+  'settings.workspaces.removal.reason.running': 'fica · um worker ou sessão está executando nessa tarefa', // #751
+  'settings.workspaces.removal.reason.deleting': 'fica · a atividade já está sendo excluída', // #751
+  'settings.workspaces.removal.reason.nothingToDelete': 'fica · nada para excluir', // #751
+  'settings.workspaces.removal.reason.local': 'fica · roda na pasta do workspace, sem worktree', // #751
+  'settings.workspaces.removal.progress': 'excluindo {n} de {total} · sem force', // #751
+  'settings.workspaces.removal.outcome': '{removed} excluídas · o git recusou {refused}: force uma a uma, ou remova mesmo assim', // #751
+  'settings.workspaces.removal.cleanUp': 'limpar e remover', // #751
+  'settings.workspaces.removal.cleaning': 'limpando…', // #751
+  'settings.workspaces.removal.removeAnyway': 'remover mesmo assim', // #751
+  'settings.workspaces.removal.readFailed': 'Não deu para ler o que {name} ainda guarda', // #751
+  'settings.workspaces.removal.readFailed.hint': 'o workspace continua na configuração · tente de novo; o detalhe fica no hive.log', // #751
   'settings.workspaces.setup': 'preparo da worktree',
   'settings.workspaces.stepTimeout': 'timeout por passo',
   'settings.workspaces.setupTimeoutHint': 'vazio = sem limite',

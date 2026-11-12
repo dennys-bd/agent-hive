@@ -10,13 +10,13 @@ import { isMac } from '@/lib/shortcut-bindings';
 /** One confirming action of a dialog (#75): its button's text and what it runs. A returned promise holds the dialog open until it settles.
  * danger (#461): the primary of an action that destroys, red, the one place colour marks a status in a dialog.
  * shortcut (#536): a <kbd> after the label. */
-export interface DialogAction { label: string; onConfirm(): void | Promise<void>; disabled?: boolean; pending?: boolean; danger?: boolean; shortcut?: string }
+export interface DialogAction { label: ReactNode; onConfirm(): void | Promise<void>; disabled?: boolean; pending?: boolean; danger?: boolean; shortcut?: string }
 
 export interface DialogBaseProps {
   title: ReactNode; children: ReactNode;
   primary?: DialogAction; // none: a read-only dialog, the cancel alone (named by cancelLabel)
   context?: ReactNode; secondary?: DialogAction; tertiary?: DialogAction; error?: ReactNode; footerNote?: ReactNode;
-  cancelLabel?: string; closeButton?: boolean; initialFocus?: 'close' | 'primary' | 'none'; size?: 'default' | 'sm' | 'wide';
+  cancelLabel?: string; closeButton?: boolean; initialFocus?: 'close' | 'primary' | 'none'; size?: 'default' | 'sm' | 'md' | 'wide';
   primaryKey?: 'enter' | 'mod'; // mod: ⌘/Ctrl+Enter runs the primary and a bare Enter runs nothing, for a dialog full of fields
   isOverlayDismissable?: boolean; // a click on the overlay cancels, as Esc does
   trigger?: ReactElement; open?: boolean; onOpenChange?(open: boolean): void;
@@ -103,7 +103,7 @@ function DialogFooter({ cancelLabel, note, actions, isBusy, primaryRef, run }: F
   return (
     <AlertDialogFooter>
       {note !== undefined && <span className="mr-auto text-muted-foreground text-xs">{note}</span>}
-      <AlertDialogCancel size="sm" className={FOOTER_BUTTON}>{cancelLabel}</AlertDialogCancel>
+      <AlertDialogCancel size="sm" className={FOOTER_BUTTON} disabled={isBusy}>{cancelLabel}</AlertDialogCancel>
       {button('tertiary')}{button('secondary')}{button('primary')}
     </AlertDialogFooter>
   );
@@ -142,7 +142,7 @@ export function DialogBase({
         onOverlayClick={isOverlayDismissable ? () => state.setOpen(false) : undefined}
       >
         <DialogHeader title={title} context={context} closeLabel={closeButton ? cancelLabel : undefined} closeRef={closeRef} />
-        {size === 'wide' ? <div className="-mx-6 min-h-0 overflow-y-auto px-6">{children}</div> : children}
+        {size === 'wide' || size === 'md' ? <div className="-mx-6 min-h-0 overflow-y-auto px-6">{children}</div> : children}
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
         <DialogFooter cancelLabel={cancelLabel} note={footerNote} actions={actions} isBusy={state.isBusy} primaryRef={primaryRef} run={state.run} />
       </AlertDialogContent>

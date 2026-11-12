@@ -186,6 +186,8 @@ test('the glossary sweep (#573): no settings-screen setup. key and no limits, la
   const QUEUED_RUN: readonly string[] = ['benchmark.execution.sub.queued', 'benchmark.execution.sub.queuedAfter', 'benchmark.execution.state.queued'];
   // a check waiting for a runner, GitHub's own queue and the stage key queueTimeout (#598): not a stage's order either
   const RUNNER_QUEUE: readonly string[] = ['settings.stages.ci.queueTimeout', 'settings.error.queueTimeout'];
+  // the workspace removal dialog's copy (#751, settings.hv.html): its clean up and remove is a workspace's, not the retired settings cleanup, and its rows wait na fila
+  const REMOVAL_DIALOG: readonly string[] = ['lead.actions', 'branches.hint', 'row.willGo', 'row.queued', 'cleanUp', 'worktrees'].map((key) => `settings.workspaces.removal.${key}`);
   const retired: Record<'en' | 'pt', RegExp[]> = {
     en: [/\blimits\b/, /\bqueue[ds]?\b/i, /\bclean(?:ing)? ?up\b/i, /\bremove (?:the )?worktree\b/i],
     pt: [
@@ -194,7 +196,7 @@ test('the glossary sweep (#573): no settings-screen setup. key and no limits, la
     ],
   };
   for (const language of ['en', 'pt'] as const) {
-    const found = Object.entries(MESSAGES[language]).filter(([key, text]) => !CLEAR.includes(key) && !QUEUED_RUN.includes(key) && !RUNNER_QUEUE.includes(key) && retired[language].some((word) => word.test(text))).map(([key]) => key);
+    const found = Object.entries(MESSAGES[language]).filter(([key, text]) => !CLEAR.includes(key) && !QUEUED_RUN.includes(key) && !RUNNER_QUEUE.includes(key) && !REMOVAL_DIALOG.includes(key) && retired[language].some((word) => word.test(text))).map(([key]) => key);
     assert.deepEqual(found, [], language);
   }
 });
