@@ -101,6 +101,17 @@ test('a GitHub goal: its design as a comment, then every issue in file order wit
   assert.deepEqual(varsOf(calls, 'blocked'), [['I103', 'I102'], ['I104', 'I101'], ['I105', 'I103']].map(([issueId, blockingIssueId]) => ({ issueId, blockingIssueId })));
 });
 
+test('a target with no address writes every issue with no Design: line; parents, sub-issues and blockers stay (#741)', async () => {
+  const { calls, gql } = github();
+  const { recorded, record } = recorder();
+  const { address: _local, ...target } = GITHUB_GOAL;
+  assert.deepEqual(await writeDecomposition({ gql, record }, example(), target, {}), { root: 7 });
+  const bodies = varsOf(calls, 'create').map((v) => String(v.body));
+  assert.deepEqual([bodies.length, bodies.some((body) => /^Design:/m.test(body))], [6, false]);
+  assert.deepEqual(parentsOf(calls), ['7', '101', '101', '7', '104', '104']);
+  assert.deepEqual([varsOf(calls, 'sub').length, varsOf(calls, 'blocked').length, recorded.length], [6, 3, 7]);
+});
+
 test('a local goal: a root issue with the goal\'s text and design holds the top-level issues, whose Parent: is its number, and goes into the project too; no comment (#865, #936)', async () => {
   const { calls, gql } = github(100);
   const { recorded, record } = recorder();

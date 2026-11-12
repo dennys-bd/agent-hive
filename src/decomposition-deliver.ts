@@ -1,6 +1,6 @@
 // Where a decomposition's file lives, and its delivery (#936): the git checkout that holds the file (the goal's worktree, or a docsRepo's,
 // wherever it sits), the GitHub repository of its origin, its current branch and the file's path in it. What the Design: links point at and
-// where the delivery commits, pushes and opens its PR. Git through execFile with argv arrays.
+// where the delivery commits, pushes and opens its PR. A file git ignores is delivered by no PR: it stays local (#741). Git through execFile with argv arrays.
 import { dirname, relative } from 'node:path';
 import { PR_KEY } from './decomposition.js';
 import type { WriteDeps } from './decomposition-write.js';
@@ -48,11 +48,12 @@ export interface DeliverDeps extends WriteDeps { exec: Exec }
 export interface DeliverTarget { checkout: FileCheckout; repositoryId: string; base: string; root: number; goal: string }
 
 /** Why the file cannot be delivered (#936), or undefined: its checkout sits on the repository's default branch (the Hive never pushes it) or the
- * file is not a .md. Nothing is pushed once `pr` is recorded, so a recorded one is never refused. Checked before any issue is written. */
+ * file is not a .md. Nothing is pushed once `pr` is recorded, nor for a file git ignores, which stays local (#741): neither is ever refused.
+ * Checked before any issue is written. */
 export function deliveryRefusal(checkout: FileCheckout, defaultBranch: string, recorded: Readonly<Record<string, number>>): string | undefined {
   if (recorded[PR_KEY] !== undefined) return undefined;
+  if (checkout.ignored) return undefined;
   if (checkout.branch === defaultBranch) return `the decomposition file's checkout is on ${checkout.repository}'s default branch (${defaultBranch}): the Hive never pushes it`;
-  if (checkout.ignored) return 'the decomposition file is ignored by git: it cannot be committed';
   if (!checkout.path.endsWith('.md')) return 'the decomposition file is not a .md file';
   return undefined;
 }

@@ -70,12 +70,14 @@ function Repository({ repository }: { repository?: string }) {
   return <p className="text-sm"><span className={MUTED}>{`${t('decomposition.repository')} `}</span><span className="font-mono">{repository}</span></p>;
 }
 
-// Where the file is pushed (#936): the checkout's repository, branch and path, or why it cannot go; the user sees what is pushed before creating anything
+// Where the file is pushed (#936): the checkout's repository, branch and path, or why it cannot go; the user sees what is pushed before creating anything.
+// A file git ignores is pushed nowhere (#741): the row says it stays local, muted, since that is the workspace's choice and no error
 function Delivery({ preview }: { preview: DecompositionPreview }) {
   const { delivery, deliveryRefusal } = preview;
+  const pushed = delivery && <p className="text-sm"><span className={MUTED}>{`${t('decomposition.delivery')} `}</span><span className="font-mono">{`${delivery.repository} · ${delivery.branch} · ${delivery.path}`}</span></p>;
   return (
     <>
-      {delivery && <p className="text-sm"><span className={MUTED}>{`${t('decomposition.delivery')} `}</span><span className="font-mono">{`${delivery.repository} · ${delivery.branch} · ${delivery.path}`}</span></p>}
+      {delivery?.local === true ? <p className={`${MUTED} text-sm`}>{`${t('decomposition.local')} · ${delivery.path}`}</p> : pushed}
       {deliveryRefusal !== undefined && <p className="text-destructive text-sm">{deliveryRefusal}</p>}
     </>
   );

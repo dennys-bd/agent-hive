@@ -132,14 +132,15 @@ async function deliveryOf(deps: DecompositionRouteDeps, goal: Goal): Promise<Del
   return { checkout, docs: await readRepository(deps.gql, checkout.repository) };
 }
 
-// What the dialog shows of the delivery: the checkout's repository, branch and path, or the reason it cannot go. Nothing once pr is recorded
+// What the dialog shows of the delivery: the checkout's repository, branch and path, marked local when git ignores the file (#741), or the reason it cannot go. Nothing once pr is recorded
 async function deliveryPreview(deps: DecompositionRouteDeps, goal: Goal): Promise<Pick<DecompositionPreview, 'delivery' | 'deliveryRefusal'>> {
   const recorded = recordedIssues(goal.result);
   if (recorded[PR_KEY] !== undefined) return {};
   try {
     const { checkout, docs } = await deliveryOf(deps, goal);
     const refusal = deliveryRefusal(checkout, docs.defaultBranch, recorded);
-    return { delivery: { repository: checkout.repository, branch: checkout.branch, path: checkout.path }, ...(refusal === undefined ? {} : { deliveryRefusal: refusal }) };
+    const local = checkout.ignored ? { local: true as const } : {};
+    return { delivery: { repository: checkout.repository, branch: checkout.branch, path: checkout.path, ...local }, ...(refusal === undefined ? {} : { deliveryRefusal: refusal }) };
   } catch (err) {
     return { deliveryRefusal: errorMessage(err) };
   }
@@ -176,7 +177,7 @@ async function choiceOf(config: Pick<Config, 'comb'>, gql: GqlJson, body: unknow
 }
 
 // The write and the stage's end: the file's checkout resolved first (#936), so a file the Hive cannot deliver writes nothing; each step
-// dispatched as decompositionIssue before the next; the file delivered and its PR recorded as pr; `done` once everything is done; then, for a GitHub goal whose source
+// dispatched as decompositionIssue before the next; the file delivered and its PR recorded as pr, unless git ignores it (#741); `done` once everything is done; then, for a GitHub goal whose source
 // shows or hides epics, markEpic (#556); then approve for a GitHub goal or closeTask for a local one, straight to the reducer, past the approve route's guard. An error is a 502 with GitHub's words, and the steps done stay
 async function write(deps: DecompositionRouteDeps, current: Live, activityId: string, body: unknown, res: Response): Promise<void> {
   const goal = await readGoal(deps, current, activityId);
@@ -192,17 +193,19 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
   const delivery = recorded[PR_KEY] === undefined ? await deliveryOf(deps, goal) : undefined;
   const refusal = delivery === undefined ? undefined : deliveryRefusal(delivery.checkout, delivery.docs.defaultBranch, recorded); // before any issue: a refused delivery writes nothing
   if (refusal !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: refusal });
+  // #741: a file git ignores stays local: no Design: link points at it and nothing is committed, pushed or opened as a PR
+  const shipped = delivery?.checkout.ignored === true ? undefined : delivery;
   const issues = delivery !== undefined && delivery.checkout.repository === ready.repository ? delivery.docs : await readRepository(deps.gql, ready.repository);
   const target: WriteTarget = {
     repository: ready.repository, repositoryId: issues.id, project,
-    // every issue is written by the time pr is recorded, so no Design: link is built from an empty address
-    address: delivery === undefined ? '' : fileAddress(delivery.checkout.repository, delivery.docs.defaultBranch, delivery.checkout.path),
+    // no address, no Design: link: a file that stays local, or a recorded pr, by when every issue is written
+    ...(shipped === undefined ? {} : { address: fileAddress(shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
     ...(goal.number === undefined ? {} : { goal: goal.number }),
   };
   const written = await writeDecomposition({ gql: deps.gql, record, sleep: deps.sleep }, ready.decomposition, target, recorded);
   if ('error' in written) return refuseWrite(deps.log, goal.task.item.id, written, res);
-  const delivered = delivery === undefined ? undefined : await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
-    checkout: delivery.checkout, repositoryId: delivery.docs.id, base: delivery.docs.defaultBranch, root: written.root, goal: ready.repository,
+  const delivered = shipped === undefined ? undefined : await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
+    checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, root: written.root, goal: ready.repository,
   }, recorded);
   if (delivered !== undefined) return refuse(res, { status: HTTP_BAD_GATEWAY, message: delivered });
   await record(DONE_KEY, written.root);

@@ -182,7 +182,7 @@ test('/hive:decomposition declares its own four variables, interpolated where us
   assert.ok(!frontmatter(reviewer).tools?.split(', ').some((tool) => ['Write', 'Edit', 'Bash'].includes(tool)), 'the reviewer only reads');
   const rendered = renderedFor(text);
   assert.doesNotMatch(rendered, /## Conventions/, 'no list of values: each is interpolated where it is used');
-  for (const part of ['`docs/hive/specs/<YYYY-MM-DD>-<slug>-decomposition.md`', 'in English, and committed there', '`Label: decomposed`', "A `docs/hive/specs` that git\nignores is a stop"]) assert.ok(rendered.includes(part), part);
+  for (const part of ['`docs/hive/specs/<YYYY-MM-DD>-<slug>-decomposition.md`', 'in English, and committed there', '`Label: decomposed`', "A `docs/hive/specs` that no\ncheckout tracks (git ignores it) leaves the file written and uncommitted"]) assert.ok(rendered.includes(part), part);
   assert.doesNotMatch(rendered, /Talk to the user in/, 'with chatLanguage unset, no language is imposed');
   const mine = renderedFor(valued(text, DECOMPOSITION_VALUES));
   for (const part of ['`design/specs/<YYYY-MM-DD>-<slug>-decomposition.md`', 'in Spanish, and committed there', 'Talk to the user in Portuguese.', 'Label: tree', 'the nested\none that holds `design/specs`']) assert.ok(mine.includes(part), part);

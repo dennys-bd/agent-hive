@@ -176,6 +176,17 @@ test('issueBody: free text, Scope, Design (inner) or Acceptance criteria (leaf),
   assert.equal(rootBody({ ...decomposition, design: undefined }), 'A marketing site with a contact form.');
 });
 
+test('issueBody: a node with no design link has no Design: line, and the rest of its block stays (#741)', () => {
+  const { decomposition } = parseDecomposition(EXAMPLE);
+  assert.ok(decomposition);
+  const api = decomposition.nodes[2];
+  const linked = issueBody(api, { parent: 101, design: `${ADDRESS}#1-backend` });
+  const local = issueBody(api, { parent: 101 });
+  assert.equal(local, linked.replace(`\nDesign: ${ADDRESS}#1-backend`, ''));
+  assert.match(local, /^Parent: #101$/m);
+  assert.doesNotMatch(local, /^Design:/m);
+});
+
 test('anchorOf is GitHub\'s heading slug; designLink points at the parent\'s heading, or #design for a top-level node (#936)', () => {
   assert.equal(anchorOf('1.2 Contact API'), '12-contact-api');
   assert.equal(anchorOf('Design'), 'design');
