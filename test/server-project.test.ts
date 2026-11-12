@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { initialState } from '../src/orchestrator.js';
 import { ItemNotOnSourceError, PartialWriteError } from '../src/field-values.js';
+import { CreateRefusedError } from '../src/source-create.js';
 import { registerProjectRoutes, type ProjectRouteDeps } from '../src/server-project.js';
 import type { FieldValue, FieldWrite, HiveEvent, ItemField, ProjectItem, ProjectView, Source, SourceItem, Stage, State, Task } from '../src/types.js';
 import { flowed } from './fixtures/main-flow.js';
@@ -13,7 +14,7 @@ const STAGES: Stage[] = [{ name: 'dev', from: { work: ['Ready'] }, prompt: 'x' }
 const VIEW: ProjectView = { statuses: [{ name: 'Todo' }, { name: 'Ready' }, { name: 'In review' }], fields: [], builtins: {}, items: [], truncated: false };
 const LOW = { limit: 5000, remaining: 499, resetsAt: '2999-01-01T00:00:00.000Z', at: '2026-10-06T12:00:00.000Z' };
 
-type ViewSource = Partial<Pick<Source, 'project' | 'fieldsOf' | 'setField' | 'settingsOptions'>>;
+type ViewSource = Partial<Pick<Source, 'project' | 'fieldsOf' | 'setField' | 'settingsOptions' | 'createOptions'>>;
 
 // The project routes alone over these sources and this state, answering the base URL; every dispatched event lands in `dispatched`
 function routes(t: TestContext, sources: Record<string, ViewSource>, extra: Partial<State> = {}, dispatched: HiveEvent[] = [], rejecting = false, extraDeps: Pick<ProjectRouteDeps, 'refreshOptions'> = {}): string {
@@ -45,6 +46,8 @@ const editable = (writes: string[], answer: FieldWrite = WRITTEN): ViewSource =>
   setField: async (itemId: string, field: string, value: FieldValue) => { writes.push(`${itemId} ${field}=${JSON.stringify(value)}`); return answer; },
 });
 const fieldsUrl = (base: string, name = 'work', itemId = 'work:PVTI_1'): string => `${base}/sources/${name}/items/${encodeURIComponent(itemId)}/fields`;
+const MENUS = { statuses: OPTION_NAMES, labels: ['bug', 'docs'] };
+const optionsUrl = (base: string, name = 'work'): string => `${base}/sources/${name}/create-options`;
 
 test('GET /sources/:name/project answers the native view with the stage each Status option enters; an option no stage cites has none (#756)', async (t) => {
   const base = routes(t, { work: { project: async () => VIEW } });
@@ -231,4 +234,36 @@ test('inside the quota backoff a stored view and stored fields still answer; a f
   const live = routes(t, { work }, low);
   assert.equal((await fetch(`${live}/sources/work/project`)).status, 429);
   assert.equal((await fetch(fieldsUrl(live))).status, 429);
+});
+
+test('GET /sources/:name/create-options answers the Status options in the Project\'s order and the label names (#768)', async (t) => {
+  const base = routes(t, { work: { createOptions: async () => MENUS } });
+  const res = await fetch(optionsUrl(base));
+  assert.deepEqual([res.status, await res.json()], [200, MENUS]);
+});
+
+test('GET /sources/:name/create-options: 404 for an unknown source or one without createOptions, 400 with no repository and for hive, 502 with the source\'s words and no lists (#768)', async (t) => {
+  const noRepository = 'source has no repository for new issues';
+  const base = routes(t, {
+    bare: { project: async () => VIEW },
+    unplaced: { createOptions: async () => { throw new CreateRefusedError(noRepository); } },
+    broken: { createOptions: async () => { throw new Error('Bad credentials'); } },
+  });
+  const answer = async (name: string): Promise<unknown[]> => {
+    const res = await fetch(optionsUrl(base, name));
+    return [res.status, await res.json()];
+  };
+  for (const name of ['nope', 'bare']) assert.deepEqual(await answer(name), [404, { error: 'source has no create options' }], name);
+  for (const name of ['unplaced', 'hive']) assert.deepEqual(await answer(name), [400, { error: noRepository }], name);
+  assert.deepEqual(await answer('broken'), [502, { error: 'Bad credentials' }]);
+});
+
+test('GET /sources/:name/create-options is a 429 with the reset inside the quota backoff with no read model, and answers with one (#768)', async (t) => {
+  let reads = 0;
+  const work: ViewSource = { createOptions: async () => { reads += 1; return MENUS; } };
+  const low = { syncs: { work: { quota: LOW } } };
+  const refused = await fetch(optionsUrl(routes(t, { work }, low)));
+  assert.deepEqual([refused.status, await refused.json(), reads], [429, { error: 'GitHub quota is low', resetsAt: LOW.resetsAt }, 0]);
+  const stored = await fetch(optionsUrl(routes(t, { work }, low, [], false, { refreshOptions: async () => undefined })));
+  assert.deepEqual([stored.status, reads], [200, 1]);
 });

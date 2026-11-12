@@ -3,6 +3,7 @@ import { checkValue, ItemNotOnSourceError, PartialWriteError, STATUS } from './f
 import { hiveProject } from './hive-project.js';
 import type { Logger } from './log.js';
 import { inBackoff } from './polling.js';
+import { CreateRefusedError } from './source-create.js';
 import { entryStage, HIVE_SOURCE, itemSource } from './tasks.js';
 import type { FieldWrite, HiveEvent, ProjectView, Source, Stage, State } from './types.js';
 
@@ -12,12 +13,14 @@ const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_BAD_GATEWAY = 502; // the source failed a read or a write the UI asked for
 const NO_VIEW_MESSAGE = 'source has no native view';
 const NO_FIELDS_MESSAGE = 'source has no editable fields';
+const NO_CREATE_OPTIONS_MESSAGE = 'source has no create options';
+const NO_REPOSITORY_MESSAGE = 'source has no repository for new issues'; // #768: the hive's answer, the words the adapter refuses with
 const QUOTA_MESSAGE = 'GitHub quota is low';
 const ITEM_MESSAGE = 'itemId must be an item of this source';
 const STATUS_MESSAGE = "status must be one of the source's Status options";
 const FIELD_MESSAGE = "field must be one of the item's fields";
 
-type ProjectSource = Partial<Pick<Source, 'project' | 'fieldsOf' | 'setField' | 'settingsOptions'>>;
+type ProjectSource = Partial<Pick<Source, 'project' | 'fieldsOf' | 'setField' | 'settingsOptions' | 'createOptions'>>;
 type FieldSource = Required<Pick<Source, 'fieldsOf' | 'setField'>>;
 
 /** What the native view's routes need (#756, #686): the live state and sources, and the dispatch a write's re-read item goes through. */
@@ -180,9 +183,31 @@ function registerFieldRoutes(app: Express, deps: ProjectRouteDeps): void {
   });
 }
 
-/** The native view's routes (#756): its read and its Status write; an item's fields and their writes (#686). */
+/** GET /sources/:name/create-options (#768): the create dialog's status and labels menus. `hive` is a known source with no repository (400);
+ * a source whose adapter cannot answer them is a 404. With no read model the read is refused inside the quota backoff, as the native view's
+ * (#282: with one, a live fallback for labels not yet synced is not). The adapter's CreateRefusedError is a 400, any other failure a 502
+ * with the source's words and no lists. */
+function registerCreateOptionsRoute(app: Express, deps: ProjectRouteDeps): void {
+  app.get('/sources/:name/create-options', async (req: Request, res: Response) => {
+    const current = deps.requireLive(res);
+    if (!current) return;
+    const name = req.params.name as string;
+    if (name === HIVE_SOURCE) return void res.status(HTTP_BAD_REQUEST).json({ error: NO_REPOSITORY_MESSAGE });
+    const source = current.runtime.sources.get(name);
+    if (!source?.createOptions) return void res.status(HTTP_NOT_FOUND).json({ error: NO_CREATE_OPTIONS_MESSAGE });
+    if (!isStored(deps) && refusedInBackoff(current.state, name, res)) return;
+    try {
+      res.json(await source.createOptions());
+    } catch (err) {
+      res.status(err instanceof CreateRefusedError ? HTTP_BAD_REQUEST : HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
+    }
+  });
+}
+
+/** The native view's routes (#756): its read and its Status write; an item's fields and their writes (#686); the create dialog's options (#768). */
 export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps): void {
   registerViewRoute(app, deps);
   registerStatusRoute(app, deps);
   registerFieldRoutes(app, deps);
+  registerCreateOptionsRoute(app, deps);
 }

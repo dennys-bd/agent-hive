@@ -1304,7 +1304,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const itemStore: ItemStore | undefined = deps.readModel && readLoop && {
     db: deps.readModel, source: async () => (await readAccess())?.source, notify: notifyReadModel, refetch: readLoop.refetch,
   };
-  registerProjectRoutes(app, { requireLive, dispatch, log, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
+  registerProjectRoutes(app, { requireLive, dispatch, log, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686), GET /sources/:name/create-options (#768): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
   // #181: the reads answer from the model, as the login the sync reads with (ponytail: a stat of gh's hosts.yml per read in cli mode); the writes
   // go to GitHub with the Hive's own login (#757), and their answer is upserted and named by the sync's own readModel event (#183)
   const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : {
