@@ -1,4 +1,4 @@
-import type { BlockerChange, BlockerRef, HiveEvent, ItemBlockers, State, Task } from './types.js';
+import type { BlockerChange, BlockerRef, HiveEvent, Item, ItemBlockers, State, Task } from './types.js';
 
 /** Why a hive relation cannot be written (#56): the route answers each with its code, the reducer leaves the state as it is. */
 export type BlockerProblem = 'unknownItem' | 'unknownRef' | 'crossSource' | 'self' | 'cycle';
@@ -72,6 +72,19 @@ export function closeRefsTo(tasks: Task[], dropped: Task): Task[] {
     if (!isHive(t) || b === undefined || ![...b.blockedBy, ...b.blocking].some((r) => r.id === id)) return t;
     return withRelations(t, { blockedBy: closed(b.blockedBy), blocking: closed(b.blocking) });
   });
+}
+
+/** #782: a new hive task's item with its parent, when that parent is a task in the state, and the tasks with a hive parent listing it last
+ * among its children, once: the order progress, descendants and the tree card read. A source's parent is linked from the child only: its
+ * poll replaces the item whole (namespaced), so a hive child written there would be erased. No such task: the item and tasks as they came. */
+export function linkParent(tasks: Task[], item: Item, parent: string | undefined): { tasks: Task[]; item: Item } {
+  const found = parent === undefined ? undefined : tasks.find((t) => t.item.itemId === parent);
+  if (found === undefined) return { tasks, item };
+  const linked: Item = { ...item, parent: found.item.itemId };
+  const children = found.item.children ?? [];
+  if (!isHive(found) || children.includes(item.itemId)) return { tasks, item: linked };
+  const listed: Task = { ...found, item: { ...found.item, children: [...children, item.itemId] } };
+  return { tasks: tasks.map((t) => (t === found ? listed : t)), item: linked };
 }
 
 const CANDIDATES_MAX = 8; // the add row's list (#57), as the GitHub search's first: 8
