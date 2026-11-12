@@ -154,7 +154,7 @@ function routesOver(t: TestContext, deps: Partial<ThreadRouteDeps> & Pick<Thread
   registerReviewThreadRoutes(app, {
     requireLive: () => ({ state: withWork({ ...initialState(0), tasks: [TASK] }, 'local:1', {}, { sessions: [{ id: SESSION_A, startedAt: 'T', stages: ['fila'], agent: 'claude' as const, lastUsedAt: 'T' }] }), runtime: {} as LiveView['runtime'] }),
     notifyReview: () => undefined,
-    log: { error: () => undefined, info: () => undefined, debug: () => undefined },
+    log: { error: () => undefined, info: () => undefined, debug: () => undefined, warn: () => undefined },
     deliver: async (_c, to) => ({ ok: true, session: to }),
     ...deps,
   });
@@ -170,7 +170,7 @@ test('a batch delivered whose conversations cannot be written is retried once, t
   const errors: string[] = [];
   const base = routesOver(t, {
     reviews: { ...store, update: async (id, edit) => { failures += 1; if (failures <= 2) throw new Error('disk full'); return store.update(id, edit); } },
-    log: { error: (line) => errors.push(line), info: () => undefined, debug: () => undefined },
+    log: { error: (line) => errors.push(line), info: () => undefined, debug: () => undefined, warn: () => undefined },
   });
   const res = await hiveFetch(`${base}/tasks/local%3A1/review/submit`, { method: 'POST' });
   assert.deepEqual([res.status, await res.json()], [200, { failed: [], unsaved: [SESSION_A] }]);

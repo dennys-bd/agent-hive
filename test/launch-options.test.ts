@@ -115,7 +115,7 @@ test('GET /launch-options?workspace= lists the agents delivered to that workspac
   registerLaunchOptionsRoute(app, {
     requireLive: (() => ({ runtime: { config: { agentArgs: { claude: [], codex: [] }, comb: { workspaces } } } })) as unknown as TaskRouteDeps['requireLive'],
     exec: async () => ({ stdout: '[]' }),
-    log: { info: () => undefined, error: () => undefined, debug: () => undefined },
+    log: { info: () => undefined, error: () => undefined, debug: () => undefined, warn: () => undefined },
     language: () => 'en',
     plugin: render,
   });

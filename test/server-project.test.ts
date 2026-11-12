@@ -7,6 +7,7 @@ import { ItemNotOnSourceError, PartialWriteError } from '../src/field-values.js'
 import { CreateRefusedError } from '../src/source-create.js';
 import { registerProjectRoutes, type ProjectRouteDeps } from '../src/server-project.js';
 import type { FieldValue, FieldWrite, HiveEvent, ItemField, ProjectItem, ProjectView, Source, SourceItem, Stage, State, Task } from '../src/types.js';
+import { fakeLog } from './fakes.js';
 import { flowed } from './fixtures/main-flow.js';
 
 // Two stages let work's Ready and In review in; Todo is cited by none
@@ -17,7 +18,7 @@ const LOW = { limit: 5000, remaining: 499, resetsAt: '2999-01-01T00:00:00.000Z',
 type ViewSource = Partial<Pick<Source, 'project' | 'fieldsOf' | 'setField' | 'settingsOptions' | 'createOptions'>>;
 
 // The project routes alone over these sources and this state, answering the base URL; every dispatched event lands in `dispatched`
-function routes(t: TestContext, sources: Record<string, ViewSource>, extra: Partial<State> = {}, dispatched: HiveEvent[] = [], rejecting = false, extraDeps: Pick<ProjectRouteDeps, 'refreshOptions'> = {}): string {
+function routes(t: TestContext, sources: Record<string, ViewSource>, extra: Partial<State> = {}, dispatched: HiveEvent[] = [], rejecting = false, extraDeps: Pick<ProjectRouteDeps, 'refreshOptions' | 'log'> = {}): string {
   const app = express();
   app.use(express.json());
   const state: State = { ...initialState(0), ...flowed(STAGES), ...extra };
@@ -266,4 +267,14 @@ test('GET /sources/:name/create-options is a 429 with the reset inside the quota
   assert.deepEqual([refused.status, await refused.json(), reads], [429, { error: 'GitHub quota is low', resetsAt: LOW.resetsAt }, 0]);
   const stored = await fetch(optionsUrl(routes(t, { work }, low, [], false, { refreshOptions: async () => undefined })));
   assert.deepEqual([stored.status, reads], [200, 1]);
+});
+
+test('GET /sources/:name/create-options leaves a GitHub failure\'s words in hive.log on one line, and not the no-repository refusal (#772)', async (t) => {
+  const { log, lines } = fakeLog();
+  const base = routes(t, {
+    broken: { createOptions: async () => { throw new Error('Bad\ncredentials'); } },
+    unplaced: { createOptions: async () => { throw new CreateRefusedError('source has no repository for new issues'); } },
+  }, {}, [], false, { log });
+  for (const name of ['broken', 'unplaced']) await fetch(optionsUrl(base, name));
+  assert.deepEqual(lines, ['WARN create-options of broken: GitHub refused the read: Bad credentials']);
 });
