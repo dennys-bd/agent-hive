@@ -37,6 +37,7 @@ import { type ConsoleStore, teardownRunId } from './console.js';
 import type { PtyHost } from './pty-host.js';
 import { removeInRun, type WorktreeRunDeps } from './task-setup.js';
 import { removeTranscripts } from './transcript.js';
+import { isStranded, strandedTranscripts, strandedWorkspace } from './worktree-stranded.js';
 import type { FactLog } from './facts.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 
@@ -175,12 +176,16 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
   const task = current.state.tasks.find((c) => c.item.itemId === taskId);
   const activity = activityOf(current.state, taskId);
   if (!task?.created || activity?.worktree === undefined || activity.local) return undefined;
-  const workspace = workspaceOf(current.runtime.config, task, current.state.tasks);
-  if ('status' in workspace) return workspace;
+  const stranded = isStranded(current.runtime.config, activity); // #746: its workspace left the Comb
+  const own = stranded ? undefined : workspaceOf(current.runtime.config, task, current.state.tasks);
+  if (own && 'status' in own) return own;
   const scope = current.state.deleteActivity; // the worktree and its branch always go (#573)
   await deps.dispatch({ type: 'deletingTask', taskId });
   try {
-    await deleteActivityOnDisk({ workspace, activity, task, sessions: sessionsOf(current.state, task.item.itemId), prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
+    const sessions = sessionsOf(current.state, task.item.itemId);
+    const workspace = stranded ? await strandedWorkspace(activity, task, deps.exec) : own;
+    if (workspace) await deleteActivityOnDisk({ workspace, activity, task, sessions, prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
+    else await strandedTranscripts(activity, task, sessions, scope, deps.log); // nothing on disk to remove: only the transcripts under the path's own repo
   } catch (err) {
     await deps.dispatch({ type: 'activityKept', activityId: activity.id });
     return { status: HTTP_CONFLICT, message: closeFailure(err, deps.log, task.item.id) };
@@ -472,16 +477,21 @@ function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
     const { activity: live } = target;
     const task = removalRefusal(current.state, target.task.item.itemId);
     if ('status' in task) return refuse(res, task);
-    if (live.local) return refuse(res, { status: HTTP_CONFLICT, message: LOCAL_MESSAGE }); // #444: no worktree to remove
+    const stranded = isStranded(current.runtime.config, live); // #746: its workspace left the Comb; a local one is just forgotten
+    if (live.local && !stranded) return refuse(res, { status: HTTP_CONFLICT, message: LOCAL_MESSAGE }); // #444: no worktree to remove
     const scope = current.state.deleteActivity;
     // nothing to delete gets past removalRefusal only in a delete activity stage (#236): no git, no transcript, no workspace; the task just moves on
-    const workspace = nothingToDelete(current.state, task, scope) ? undefined : workspaceOf(current.runtime.config, task, current.state.tasks); // the worktree's repo (#179)
-    if (workspace && 'status' in workspace) return refuse(res, workspace);
+    const nothing = nothingToDelete(current.state, task, scope);
+    const own = nothing || stranded ? undefined : workspaceOf(current.runtime.config, task, current.state.tasks); // the worktree's repo (#179)
+    if (own && 'status' in own) return refuse(res, own);
     const force = (req.body as { force?: unknown } | undefined)?.force === true; // only a literal true forces
     const { config, promptsDir } = current.runtime;
     await dispatch({ type: 'deletingActivity', activityId: live.id });
     try {
-      if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions: sessionsOf(current.state, task.item.itemId), prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
+      const sessions = sessionsOf(current.state, task.item.itemId);
+      const workspace = stranded && !nothing ? await strandedWorkspace(live, task, deps.exec) : own;
+      if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions, prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
+      else if (stranded && !nothing) await strandedTranscripts(live, task, sessions, scope, log);
     } catch (err) {
       await dispatch({ type: 'activityKept', activityId: live.id });
       const label = `deleteActivity #${task.item.id}`;
