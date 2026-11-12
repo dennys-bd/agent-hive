@@ -3,6 +3,7 @@ import type { PtyHost, PtyKeep } from './pty-host.js';
 import type { TerminalSize } from './terminal-wire.js';
 import type { BasedOn } from './template.js';
 import type { LintItem } from './template-lint.js';
+import type { RemovalBlocker } from './tasks.js';
 
 export type Language = 'pt' | 'en';
 
@@ -1702,6 +1703,24 @@ export interface WorktreeRow {
   task?: { id: string; activityId: string; title: string; error?: string; removable: boolean }; // the owning task and its live activity, what its removal posts to (#629); removable = canDeleteActivity(task, workers)
   orphan?: 'noTask' | 'deleteActivityFailed' | 'kept'; // kept (#861): a task activity that outlived its tasks, kept while its worktree exists
   nested: { path: string; uncommitted: number }[]; // #653: the nested worktrees present in this one; [] = none
+}
+
+/** Why the holdings' activity is not removable (#750): delete activity's own blockers, and local: it runs in the checkout. */
+export type HoldingBlocker = RemovalBlocker | 'local';
+
+/** A task activity of the workspace (#750): its task, and whether delete activity may run on it. */
+export type HeldActivity = { activityId: string; task: { id: string; title: string } } & ({ removable: true } | { removable: false; reason: HoldingBlocker });
+
+/** A listed worktree's branch that delete activity would refuse as unmerged (#750); target as the refusal names it. */
+export interface UnmergedBranch { slug: string; branch: string; target: string }
+
+/** GET /workspaces/:name/holdings (#750): what the workspace still holds; every list empty when it holds nothing. */
+export interface WorkspaceHoldings {
+  activities: HeldActivity[];
+  worktrees: WorktreeRow[];
+  branches: UnmergedBranch[];
+  tasks: { id: string; title: string }[]; // no activity, task.workspace names the workspace
+  running: boolean;
 }
 
 /** Why a path cannot be a workspace's nested repo (#653): its shape, then git's answers, in order. root: the top level, for notTopLevel. */
