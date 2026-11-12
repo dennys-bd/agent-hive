@@ -361,6 +361,7 @@ test('a drag in a local activity\'s tree posts to its own tree/move (#633)', asy
 
 // #754: the files tree's icons, through the context App.tsx provides; the real Material chunk loads (vitest runs through Vite)
 const LOAD_MS = 15_000; // the real chunk globs ~1250 SVGs: slow to transform when the suite runs in parallel
+const LOAD_TEST_MS = LOAD_MS + 5_000; // the test's own limit outlasts its wait, or vitest's 5 s default kills the wait first (#763's Windows run)
 const MATERIAL: FileIconsSettings = { set: 'material', scope: 'all', muted: false, theme: 'dark' };
 const withIcons = (icons: FileIconsSettings) => <FileIconsContext.Provider value={icons}>{side('files')}</FileIconsContext.Provider>;
 const iconOf = (row: HTMLElement): HTMLImageElement | null => row.querySelector('img');
@@ -384,7 +385,7 @@ test('with Material, a folder row and a file row each show a decorative icon bet
   const slot = src.querySelector('[data-file-icon]');
   expect(slot?.previousElementSibling?.querySelector('svg')).not.toBeNull(); // the caret's column comes first
   expect(slot?.nextElementSibling).toHaveTextContent('src');
-});
+}, LOAD_TEST_MS);
 
 test('with folders only, the folder row has an icon and a file row keeps an empty slot, so the names stay aligned (#754)', async () => {
   render(withIcons({ ...MATERIAL, scope: 'folders' }));
@@ -393,7 +394,7 @@ test('with folders only, the folder row has an icon and a file row keeps an empt
   const readme = screen.getByRole('button', { name: 'README.md' });
   expect(iconOf(readme)).toBeNull();
   expect(readme.querySelector('[data-file-icon]')).not.toBeNull();
-});
+}, LOAD_TEST_MS);
 
 test('muted icons carry the muted class (#754)', async () => {
   render(withIcons({ ...MATERIAL, muted: true }));
