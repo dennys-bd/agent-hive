@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { parentOf } from '../src/task-tree.js';
-import { END, type HiveEvent, type Stage, type State, type Task, type Transition } from '../src/types.js';
+import { END, HIVE_EPIC, type HiveEvent, type Stage, type State, type Task, type Transition } from '../src/types.js';
 import { flowed } from './fixtures/main-flow.js';
 import { withWork } from './fixtures/work.js';
 
@@ -62,4 +62,30 @@ test('a deleted hive parent leaves its children as they are: item.parent kept, p
   assert.equal(taskIn(gone, 'local:1'), undefined);
   assert.equal(taskIn(gone, 'local:2')?.item.parent, 'local:1');
   assert.equal(parentOf(gone.tasks, 'local:2'), undefined);
+});
+
+const moveTo = (taskId: string, stage: string): HiveEvent => ({ type: 'moveToStage', taskId, stage });
+// The goal stamped as leaf 3's write stamps it, and its two hive children, every one in Spec
+const tree = (): State => {
+  const goal = run(create(base(), 'Goal'), { type: 'markEpic', taskId: 'local:1', epic: HIVE_EPIC });
+  return deepFreeze(create(create(goal, 'One', 'local:1'), 'Two', 'local:1'));
+};
+const epicStageOf = (state: State): string | undefined => taskIn(state, 'local:1')?.stage;
+
+test('HIVE_EPIC is the rule a new GitHub source\'s epics get; the fill never takes a hive epic, as it takes the same task unstamped (#782)', () => {
+  assert.deepEqual(HIVE_EPIC, { follows: 'aheadThenBehind', switchAt: 'Build' });
+  const goal = create(base(), 'Goal');
+  const spawned = (state: State) => reduce(state, { type: 'setMax', max: 1 }).effects.filter((e) => e.type === 'spawn');
+  assert.equal(spawned(goal).length, 1, 'unstamped, a free worker takes it');
+  assert.deepEqual(spawned(run(goal, { type: 'markEpic', taskId: 'local:1', epic: HIVE_EPIC })), []);
+});
+
+test('a hive epic follows its hive children by aheadThenBehind: the faster child up to Build, then never ahead of the slower one (#782)', () => {
+  assert.equal(epicStageOf(tree()), 'Spec');
+  const ahead = run(tree(), moveTo('local:2', 'Review'));
+  assert.equal(epicStageOf(ahead), 'Build', 'ahead, but no further than Build');
+  const both = run(ahead, moveTo('local:3', 'Review'));
+  assert.equal(epicStageOf(both), 'Review');
+  const one = run(both, moveTo('local:2', 'Done'));
+  assert.equal(epicStageOf(one), 'Review', 'past Build it stays with the slower child');
 });

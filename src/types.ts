@@ -821,6 +821,9 @@ export type EpicFollows = (typeof EPIC_FOLLOWS)[number];
 export const NEW_SOURCE_EPICS: { epics: EpicsMode; epicFollows: EpicFollows } = { epics: 'show', epicFollows: 'aheadThenBehind' };
 /** The stage a new source switches at, else the flow's first (#30). */
 export const SWITCH_AT_DEFAULT = 'Build';
+/** The epic rule a decomposition's hive write stamps on a hive goal (#782, #687 decision 5): the defaults a new GitHub source gets. A flow
+ * with no Build stage falls back to behind, by epicStage's own rule, so it holds for every flow. */
+export const HIVE_EPIC: NonNullable<Item['epic']> = { follows: NEW_SOURCE_EPICS.epicFollows, switchAt: SWITCH_AT_DEFAULT };
 
 /** The coding agents a stage can run (#516): ids only, their per-agent facts live in agents.ts. #101 adds codex here and there. */
 export const AGENT_IDS = ['claude', 'codex'] as const; // #927: codex runs flow stages; its free sessions are #931
