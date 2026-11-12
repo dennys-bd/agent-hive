@@ -172,6 +172,10 @@ export const REPOSITORY_BRANCH = `query($owner: String!, $name: String!) {
 export const REPOSITORY_LABEL = `query($owner: String!, $name: String!, $label: String!) {
   repository(owner: $owner, name: $name) { label(name: $label) { id } }
 }`;
+// A new issue's label names (#767): the repository's labels, what they resolve to ids against before any write
+export const REPOSITORY_LABELS = `query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) { labels(first: ${REPO_LABEL_LIMIT}) { nodes { id name } } }
+}`;
 export const CREATE_LABEL = `mutation($repositoryId: ID!, $name: String!, $color: String!) {
   createLabel(input: { repositoryId: $repositoryId, name: $name, color: $color }) { label { id } }
 }`;
@@ -280,6 +284,7 @@ export interface IssueIdData { repository?: { issue?: { id: string } | null } | 
 export interface SearchIssuesData { search?: { nodes: Partial<GhBlockerRef>[] } | null } // #57: a node that is no issue answers {}
 export interface CreateIssueData { createIssue?: { issue?: { id: string; number: number; url: string } | null } | null } // #865
 export interface AddProjectItemData { addProjectV2ItemById?: { item?: { id: string } | null } | null } // #865
+export interface RepositoryLabelsData { repository?: { labels?: { nodes: { id: string; name: string }[] } | null } | null } // #767
 export interface RepositoryLabelData { repository?: { label?: { id: string } | null } | null } // #936
 export interface CreateLabelData { createLabel?: { label?: { id: string } | null } | null } // #936
 export interface RepositoryBranchData { repository?: { id: string; defaultBranchRef?: { name: string } | null } | null } // #936

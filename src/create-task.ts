@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { taskOfPr } from './activities.js';
 import { isPrUrl } from './orchestrator.js';
 import { HIVE_SOURCE, itemSource, onSource, stageOf } from './tasks.js';
+import { CreateRefusedError, IssuePlacementError } from './source-create.js';
 import type { Refusal } from './server-tasks.js'; // a type only: no runtime cycle
 import type { CombConfig, Effect, HiveEvent, Source, State } from './types.js';
 
@@ -24,6 +25,12 @@ export const HIVE_OFF_MESSAGE = 'hive is turned off: create the task in a source
 export const UNKNOWN_SOURCE_MESSAGE = 'source must be "hive" or a configured source';
 export const NO_STAGE_ON_SOURCE_MESSAGE = 'a task outside the flow is created only in hive'; // #566: the column a source task is born in is its stage's
 export const WORKSPACE_ON_SOURCE_MESSAGE = "a source's task properties set its workspace: leave workspace out";
+const LABELS_MAX = 20; // #767: the open point's answer
+const LABEL_MAX = 50; // characters: GitHub's own limit on a label's name
+export const LABELS_MESSAGE = `labels must be up to ${LABELS_MAX} distinct label names of at most ${LABEL_MAX} characters`;
+export const HIVE_ISSUE_FIELDS_MESSAGE = 'labels and status are fields of an issue: create it in a source';
+export const STATUS_OR_STAGE_MESSAGE = 'send status or stage, not both';
+export const STATUS_MESSAGE = "status must be a Status option's name or null";
 export const PR_HIVE_ONLY_MESSAGE = 'pr creates in hive only: leave source out or set it to "hive"';
 export const PR_URL_MESSAGE = 'pr must be a GitHub pull request link';
 export const PR_TAKEN_MESSAGE = 'a task already holds this PR';
@@ -32,10 +39,14 @@ export const noColumnMessage = (stage: string, name: string): string => `stage $
 // Neutral on why: a filtered item and a poll that failed or was rate limited both land here, and the next poll brings the second in
 export const notInFlowNotice = (name: string, itemId: string): string => `created ${itemId} on ${name}; it is not in the flow yet: the source's filter may leave it out, or the next poll will bring it in`;
 
+export const offProjectNotice = (url: string): string => `created ${url} off the Project: no source lists it`; // #767
+
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** What a create answers (#846): the task once the state holds it, or the source item and why it is not in the flow. */
-export type Created = { id: string; itemId: string } | { itemId: string; notice: string };
+type IssueRef = { number: number; url: string };
+/** What a create answers (#846): the task once the state holds it, or why it is not in the flow; on a source, its issue and the stage it entered
+ * (#767), and no item off the Project. */
+export type Created = { id: string; itemId: string; issue?: IssueRef; stage?: string } | { itemId?: string; issue?: IssueRef; notice: string };
 
 /** What createTask reads and does: the state the check reads, the Comb, the live sources, the dispatch, the poll loop's one-source poll and the
  * state after it. POST /tasks and hive_create_task hand the same. */
@@ -102,6 +113,8 @@ async function createFromPr(deps: CreateDeps, body: Record<string, unknown>, sou
 }
 
 async function createInHive(deps: CreateDeps, body: unknown, pr?: CreatePr): Promise<Created | Refusal> {
+  const { labels, status } = (body ?? {}) as { labels?: unknown; status?: unknown };
+  if (labels !== undefined || status !== undefined) return { status: HTTP_BAD_REQUEST, message: HIVE_ISSUE_FIELDS_MESSAGE }; // #767: hive has no repository labels or Project
   const { prefix, hiveSource, sources } = deps.config.comb;
   if (!hiveSource) return { status: HTTP_CONFLICT, message: HIVE_OFF_MESSAGE };
   const event = createEvent(deps.state, prefix, body, sources.map((s) => s.name)); // #756: an origin names one of them
@@ -111,30 +124,63 @@ async function createInHive(deps: CreateDeps, body: unknown, pr?: CreatePr): Pro
   return { id: `${prefix}-${n}`, itemId: `local:${n}` };
 }
 
-// The same title, body and stage rules as a task created in hive (createEvent); the column is the stage's first from column on that source
+const isLabels = (labels: unknown): labels is string[] => Array.isArray(labels) && labels.length <= LABELS_MAX && new Set(labels).size === labels.length
+  && labels.every((l) => typeof l === 'string' && l !== '' && l.length <= LABEL_MAX);
+
+// #767: the new issue's labels and, from status, its column (a Status option's name, or null: off the Project), or why not. Whether the
+// names exist is the adapter's check, where the ids are
+function issueFields(body: unknown): { labels: string[]; column?: string | null } | Refusal {
+  const { labels = [], status, stage } = (body ?? {}) as { labels?: unknown; status?: unknown; stage?: unknown };
+  if (!isLabels(labels)) return { status: HTTP_BAD_REQUEST, message: LABELS_MESSAGE };
+  if (status !== undefined && status !== null && typeof status !== 'string') return { status: HTTP_BAD_REQUEST, message: STATUS_MESSAGE };
+  if (status !== undefined && stage !== undefined) return { status: HTTP_BAD_REQUEST, message: STATUS_OR_STAGE_MESSAGE };
+  return { labels, ...(status === undefined ? {} : { column: status }) };
+}
+
+// #566: with no status, the column a source task is born in is its stage's first from column there
+function stageColumn(state: State, stage: string | undefined, name: string): string | Refusal {
+  if (stage === undefined) return { status: HTTP_BAD_REQUEST, message: NO_STAGE_ON_SOURCE_MESSAGE };
+  return onSource(stageOf(state.stages, stage)?.from, name)?.[0] ?? { status: HTTP_BAD_REQUEST, message: noColumnMessage(stage, name) };
+}
+
+// #767: a name the source refused created nothing (400, a safe retry); an issue left behind rides on the 502, so no retry makes a second one
+function createFailure(err: unknown): Refusal {
+  if (err instanceof CreateRefusedError) return { status: HTTP_BAD_REQUEST, message: err.message };
+  return { status: HTTP_BAD_GATEWAY, message: errorMessage(err), ...(err instanceof IssuePlacementError ? { issue: err.issue } : {}) };
+}
+
+// The same title and body rules as a task created in hive (createEvent); the column is status's (#767), else the stage's first from column on that source
 async function createInSource(deps: CreateDeps, body: unknown, name: string): Promise<Created | Refusal> {
   const entry = deps.config.comb.sources.find((s) => s.name === name);
   const source = deps.sources.get(name);
   if (entry?.repository === undefined || !source?.create) return { status: HTTP_BAD_REQUEST, message: noCreateMessage(name) };
   if (((body ?? {}) as { workspace?: unknown }).workspace !== undefined) return { status: HTTP_BAD_REQUEST, message: WORKSPACE_ON_SOURCE_MESSAGE };
+  const fields = issueFields(body);
+  if ('status' in fields) return fields;
   const event = createEvent(deps.state, deps.config.comb.prefix, body);
   if ('status' in event) return event;
-  if (event.stage === undefined) return { status: HTTP_BAD_REQUEST, message: NO_STAGE_ON_SOURCE_MESSAGE };
-  const column = onSource(stageOf(deps.state.stages, event.stage)?.from, name)?.[0];
-  if (column === undefined) return { status: HTTP_BAD_REQUEST, message: noColumnMessage(event.stage, name) };
-  let itemId: string;
+  const column = fields.column === undefined ? stageColumn(deps.state, event.stage, name) : fields.column;
+  if (column !== null && typeof column === 'object') return column;
+  let made: Awaited<ReturnType<NonNullable<Source['create']>>>;
   try {
-    itemId = await source.create({ title: event.title, body: event.body, column });
+    made = await source.create({ title: event.title, body: event.body, column, labels: fields.labels });
   } catch (err) {
-    return { status: HTTP_BAD_GATEWAY, message: errorMessage(err) };
+    return createFailure(err);
   }
-  // auto false mirrors the hive path: the poll's fill must not start a task whose creator starts it right away (the item is born with auto off)
-  // The issue exists from here on: a poll that throws must not turn the answer into an error, or the retry creates a second issue
+  // #767: an issue off the Project is listed by no source, so a poll for it would only spend quota
+  if (made.itemId === undefined) return { issue: made.issue, notice: offProjectNotice(made.issue.url) };
+  return polled(deps, name, { itemId: made.itemId, issue: made.issue }, event.auto);
+}
+
+// auto false mirrors the hive path: the poll's fill must not start a task whose creator starts it right away (the item is born with auto off)
+// The issue exists from here on: a poll that throws must not turn the answer into an error, or the retry creates a second issue
+async function polled(deps: CreateDeps, name: string, made: { itemId: string; issue: IssueRef }, auto: boolean): Promise<Created> {
+  const notice = { ...made, notice: notInFlowNotice(name, made.itemId) };
   try {
-    await deps.poll([name], event.auto ? [] : [itemId]); // the poll loop's own path for this one source
+    await deps.poll([name], auto ? [] : [made.itemId]); // the poll loop's own path for this one source
   } catch {
-    return { itemId, notice: notInFlowNotice(name, itemId) };
+    return notice;
   }
-  const task = deps.latest()?.tasks.find((c) => c.item.itemId === itemId);
-  return task ? { id: task.item.id, itemId } : { itemId, notice: notInFlowNotice(name, itemId) };
+  const task = deps.latest()?.tasks.find((c) => c.item.itemId === made.itemId);
+  return task ? { id: task.item.id, ...made, ...(task.stage === undefined ? {} : { stage: task.stage }) } : notice;
 }

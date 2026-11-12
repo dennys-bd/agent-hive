@@ -65,7 +65,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
   running: RUNNING_MESSAGE, deleting: DELETING_MESSAGE, nothingToDelete: NOTHING_TO_DELETE_MESSAGE,
 };
 
-export interface Refusal { status: number; message: string }
+export interface Refusal { status: number; message: string; issue?: { number: number; url: string } } // #767: an issue the failed create left behind
 
 export interface TaskRouteDeps {
   treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
@@ -195,7 +195,8 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
 }
 
 export const refuse = (res: Response, refusal: Refusal): void => {
-  res.status(refusal.status).json({ error: refusal.message });
+  // #767: a failed create that left an issue says which, so the client does not retry it into a second one
+  res.status(refusal.status).json({ error: refusal.message, ...(refusal.issue === undefined ? {} : { issue: refusal.issue }) });
 };
 
 /** The task's workspace, or the route's answer when it has none (#179): 409 when the name it holds is gone, 400 when no rule answers one. */

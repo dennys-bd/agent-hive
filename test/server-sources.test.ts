@@ -13,11 +13,12 @@ import type { Source, SourceItem, SourceSpec, Task, Config, SettingsBody } from 
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, AUTH, combConfig, EPICS, FILTER, FIXED, fakeLog, fakeSpawn, goneItem, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { IssuePlacementError } from '../src/source-create.js';
 import { noCreateMessage, notInFlowNotice } from '../src/create-task.js';
 
 // Several sources per Comb (#180): two GitHub-shaped sources, `work` (project 6) and `notes` (project NOTES_PROJECT), both fakes a test fills,
 // breaks and reads the writes of. The fakes list raw ids; the server namespaces them (`work:12`), as it does a real adapter.
-interface FakeSource { listed: SourceItem[]; failure?: string; writes: string[]; built: number; made: number; hidden?: boolean } // writes: `id→column` moves, `id type` actions
+interface FakeSource { listed: SourceItem[]; failure?: string; writes: string[]; built: number; made: number; hidden?: boolean; createError?: Error } // writes: `id→column` moves, `id type` actions
 interface Sources { base: string; home: string; server: HiveServer; work: FakeSource; notes: FakeSource; body: SettingsBody; lines: string[] }
 
 const STAGES: LegacyStage[] = [
@@ -42,7 +43,7 @@ async function startSources(t: TestContext, maxConcurrent = 0, qualifyNotes = tr
       },
       setColumn: async (itemId, column) => { fake.writes.push(`${itemId}→${column}`); },
       apply: async (itemId, action) => { fake.writes.push(`${itemId} ${action.type}`); },
-      create: async ({ title, column }) => { fake.made += 1; const id = String(100 + fake.made); fake.writes.push(`create ${title}→${column}`); if (!fake.hidden) fake.listed.push(listing(id, title)); return id; },
+      create: async ({ title, column }) => { if (fake.createError) throw fake.createError; fake.made += 1; const id = String(100 + fake.made); fake.writes.push(`create ${title}→${column}`); if (!fake.hidden) fake.listed.push(listing(id, title)); return { itemId: id, issue: { number: Number(id), url: `https://github.com/acme/app/issues/${id}` } }; },
     };
   };
   const { log, lines } = fakeLog();
@@ -207,13 +208,27 @@ test('POST /tasks with a source creates the item in the stage\'s first column, p
   await sources.server.poll();
   const res = await postJson(`${sources.base}/tasks`, { title: 'Fix', stage: 'dev', source: 'work' });
   assert.equal(res.status, 201);
-  assert.deepEqual(await res.json(), { id: '101', itemId: 'work:101' });
+  assert.deepEqual(await res.json(), { id: '101', itemId: 'work:101', issue: { number: 101, url: 'https://github.com/acme/app/issues/101' }, stage: 'dev' });
   assert.deepEqual(sources.work.writes, ['create Fix→Ready']);
   assert.ok(sources.server.getState()?.tasks.some((c) => c.item.itemId === 'work:101'), 'in the state when the answer arrives');
   sources.work.hidden = true;
-  assert.deepEqual(await (await postJson(`${sources.base}/tasks`, { title: 'Hidden', stage: 'dev', source: 'work' })).json(), { itemId: 'work:102', notice: notInFlowNotice('work', 'work:102') });
+  assert.deepEqual(await (await postJson(`${sources.base}/tasks`, { title: 'Hidden', stage: 'dev', source: 'work' })).json(), { itemId: 'work:102', issue: { number: 102, url: 'https://github.com/acme/app/issues/102' }, notice: notInFlowNotice('work', 'work:102') });
   const refused = await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'notes' });
   assert.deepEqual([refused.status, await refused.json()], [400, { error: noCreateMessage('notes') }]);
+});
+
+test('POST /tasks answers 502 with the issue when the issue exists but was not placed, and with no issue when nothing was created (#767)', async (t) => {
+  const sources = await startSources(t);
+  const [work, notes] = sources.body.sources ?? [];
+  assert.equal((await postJson(`${sources.base}/settings`, { ...sources.body, sources: [{ ...work, repository: 'acme/app' }, notes] })).status, 200);
+  const issue = { number: 7, url: 'https://github.com/acme/app/issues/7' };
+  const placement = new IssuePlacementError(`issue ${issue.url} was created but not labeled or placed on the Project: down`, issue);
+  sources.work.createError = placement;
+  const placed = await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'work' });
+  assert.deepEqual([placed.status, await placed.json()], [502, { error: placement.message, issue }]);
+  sources.work.createError = new Error('no access');
+  const failed = await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'work' });
+  assert.deepEqual([failed.status, await failed.json()], [502, { error: 'no access' }]);
 });
 
 test('a task the Start dialog creates on a source (auto false) enters the state with auto off, so the fill of the poll that brings it in leaves it for its creator; a plain create is born auto (#846)', async (t) => {
