@@ -66,6 +66,36 @@ export const freeWorkspaces = (c: Pick<CommandDraft, 'impls'>, workspaces: reado
 export const missingWorkspaces = (c: Pick<CommandDraft, 'impls'>, workspaces: readonly WorkspaceDraft[]): WorkspaceDraft[] =>
   (c.impls.some((i) => i.workspace === null) ? [] : freeWorkspaces(c, workspaces));
 
+/** A workspace row's shown name; still unnamed, the name field's label numbered, as the workspace cards' fields read (#755). */
+export const shownWorkspace = (workspaces: readonly WorkspaceDraft[], p: WorkspaceDraft): string =>
+  p.name.trim() || `${t('settings.workspaces.name')} ${workspaces.indexOf(p) + 1}`;
+
+/** A line's label (#755, #804): the editor's select, the command field's aria-label, the hint and the semaphores card's commands column read it. */
+export function lineLabel(impl: ImplDraft, stacked: readonly ImplDraft[], workspaces: readonly WorkspaceDraft[]): string {
+  const own = rowOf(workspaces, impl.workspace);
+  if (own) return shownWorkspace(workspaces, own);
+  return t(stacked.length > 1 ? 'settings.commands.others' : 'settings.commands.all');
+}
+
+/** #804 decision 3: a row added in the card shows before its name is typed; the save refuses it until then (#803 decision 5). */
+export const semaphoreLabel = (s: SemaphoreDraft): string => s.name.trim() || t('settings.semaphores.unnamed');
+
+// #804 decision 6: one group per semaphore, in the order its first line stacks
+function hintGroup(s: SemaphoreDraft, stacked: readonly ImplDraft[], workspaces: readonly WorkspaceDraft[]): string {
+  const name = semaphoreLabel(s);
+  const lines = stacked.filter((i) => i.semaphore === s.id);
+  if (stacked.length === 1) return name;
+  if (lines.length === stacked.length) return t('settings.commands.semaphore.allLines', { name, n: stacked.length });
+  return t('settings.commands.semaphore.someLines', { name, workspaces: lines.map((i) => lineLabel(i, stacked, workspaces)).join(', ') });
+}
+
+/** The hint beside + workspace (#804 decision 6); a line whose id no draft has reads as none (decision 7). */
+export function semaphoreHint(c: Pick<CommandDraft, 'impls'>, workspaces: readonly WorkspaceDraft[], semaphores: readonly SemaphoreDraft[]): string | undefined {
+  const stacked = stackedImpls(c, workspaces);
+  const used = [...new Set(stacked.flatMap((i) => semaphores.filter((s) => s.id === i.semaphore)))];
+  return used.length === 0 ? undefined : used.map((s) => hintGroup(s, stacked, workspaces)).join(' · ');
+}
+
 /** A saved command over the workspace rows (#755): each line's workspace name becomes the first row with that trimmed name; an unknown one is
  * dropped; each line's semaphore name becomes that row's id (#803). */
 export const commandDraft = (c: Command, workspaces: WorkspaceDraft[], semaphores: readonly SemaphoreDraft[]): CommandDraft => ({

@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import {
-  type CommandDraft, commandDraft, commandFrom, commandsProblem, emptyCommand, emptyEnvRow, emptyImpl, type EnvRowDraft, freeWorkspaces, type ImplDraft, missingWorkspaces, overrides, stackedImpls,
+  type CommandDraft, commandDraft, commandFrom, commandsProblem, emptyCommand, emptyEnvRow, emptyImpl, type EnvRowDraft, freeWorkspaces, type ImplDraft, lineLabel, missingWorkspaces, overrides, semaphoreHint, stackedImpls,
 } from '../src/ui/lib/settings-commands.js';
 import { emptyWorkspace, type WorkspaceDraft } from '../src/ui/lib/settings-form.js';
+import { emptySemaphore, type SemaphoreDraft } from '../src/ui/lib/settings-semaphores.js';
 import { type Command, RESERVED_ENV_NAMES } from '../src/types.js';
 
 const row = (name: string, value: string): EnvRowDraft => ({ ...emptyEnvRow(), name, value });
@@ -93,5 +94,40 @@ test('both env errors name every reserved name, in English and in Portuguese (#7
       for (const name of RESERVED_ENV_NAMES) assert.ok(text.includes(name), `${language} ${key}: ${name}`);
     }
   }
+  setLanguage('en');
+});
+
+test('lineLabel names a line by its workspace, numbered while unnamed, or all / the other workspaces for the line with none (#755, #804)', () => {
+  setLanguage('en');
+  const own = impl(A.id);
+  const rest = impl(null);
+  assert.equal(lineLabel(own, [own, rest], [A, B]), 'a');
+  assert.equal(lineLabel(rest, [own, rest], [A, B]), 'the other workspaces');
+  assert.equal(lineLabel(rest, [rest], [A, B]), 'all workspaces');
+  const unnamed = { ...B, name: ' ' };
+  const line = impl(unnamed.id);
+  assert.equal(lineLabel(line, [line], [A, unnamed]), `${t('settings.workspaces.name')} 2`);
+});
+
+test('semaphoreHint names each semaphore in use in line order: alone on a single line, on the n lines when all have it, else in the lines\' workspaces; an id no draft has reads as none (#804 decisions 3, 6, 7)', () => {
+  setLanguage('en');
+  const memory: SemaphoreDraft = { ...emptySemaphore(), name: ' memory ' };
+  const ports: SemaphoreDraft = { ...emptySemaphore(), name: 'ports' };
+  const sems = [memory, ports];
+  const on = (line: ImplDraft, s: SemaphoreDraft): ImplDraft => ({ ...line, semaphore: s.id });
+  const hint = (impls: ImplDraft[], semaphores: SemaphoreDraft[] = sems) => semaphoreHint(command({ impls }), [A, B], semaphores);
+  assert.equal(hint([on(impl(A.id), ports)]), 'ports');
+  assert.equal(hint([on(impl(A.id), memory), on(impl(null), memory)]), 'memory on the 2 lines');
+  assert.equal(hint([on(impl(A.id), memory), impl(B.id)]), 'memory in a');
+  assert.equal(hint([on(impl(null), memory), on(impl(B.id), ports), on(impl(A.id), memory)]), 'memory in a, the other workspaces · ports in b', 'by the first line in stackedImpls order');
+  assert.equal(hint([impl(A.id), impl(null)]), undefined);
+  assert.equal(hint([{ ...impl(A.id), semaphore: 'gone' }]), undefined, 'decision 7');
+  assert.equal(hint([on(impl(A.id), memory), { ...impl(null), semaphore: 'gone' }]), 'memory in a');
+  const fresh = emptySemaphore();
+  assert.equal(hint([on(impl(A.id), fresh)], [fresh]), 'new semaphore');
+  setLanguage('pt');
+  assert.equal(hint([on(impl(A.id), memory), on(impl(null), memory)]), 'memory nas 2 linhas');
+  assert.equal(hint([on(impl(A.id), memory), impl(null)]), 'memory em a');
+  assert.equal(hint([on(impl(A.id), fresh)], [fresh]), 'novo revezamento');
   setLanguage('en');
 });
