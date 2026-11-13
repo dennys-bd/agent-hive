@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { CreateTaskDialog } from '@/components/CreateTaskDialog';
@@ -113,5 +113,12 @@ test('absent while the options load, and under the hive destination', async () =
   unmount();
   vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(json(OPTIONS['agent-hive']))));
   open(targets, 'hive');
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
+test('absent when the targets carry no config for the source, rather than a wrong no-source line', async () => {
+  const { configs: _, ...bare } = targets;
+  open(bare);
+  await waitFor(() => expect(screen.getByRole('combobox', { name: /status/ })).toBeEnabled());
   expect(screen.queryByRole('status')).toBeNull();
 });

@@ -7,12 +7,11 @@ import { filterSentence, opWord } from '@/lib/route-text';
 
 export interface CreateRouteBoxProps { source: string; title: string; labels: string[]; status: string | null; sources: readonly SourceConfig[]; flows: readonly Flow[] }
 
-// t() fills a name between these two control characters, which cannot occur in a name; the box then bolds what sits between them
-const OPEN = '\u0001';
-const CLOSE = '\u0002';
-const mark = (name: string): string => `${OPEN}${name}${CLOSE}`;
-// biome-ignore lint/suspicious/noArrayIndexKey: the parts are a fixed split of one string, never reordered, and two names can be equal
-const rich = (text: string): ReactNode[] => text.split(new RegExp(`${OPEN}(.*?)${CLOSE}`)).map((part, i) => (i % 2 === 1 ? <b key={i}>{part}</b> : part));
+// The PrPage pattern: split the template on its one placeholder and bold the value, so no name can reshape the line
+const bolded = (key: Parameters<typeof t>[0], name: string, value: string): ReactNode => {
+  const [before, after] = t(key).split(`{${name}}`);
+  return <>{before}<b>{value}</b>{after}</>;
+};
 
 type Taken = Extract<ReturnType<typeof routeOf>, { taken: true }>;
 
@@ -24,10 +23,10 @@ function reasonOf(route: Taken, source: SourceConfig | undefined): string {
   return rule === undefined ? '' : t('create.route.reason.rule', { n: reason.index + 1, field: rule.field, op: opWord(rule.op), value: rule.value });
 }
 
-function takenLine(route: Taken, source: string): string {
-  const workspace = route.workspace === undefined ? t('create.route.noWorkspace') : t('create.route.workspace', { workspace: mark(route.workspace) });
-  const entry = route.entry === null ? mark(t('create.route.noFlow')) : t('create.route.enters', { entry: mark(`${route.entry.flow} · ${route.entry.stage}`) });
-  return `${t('create.route.via', { source: mark(source) })} ${workspace} · ${entry}`;
+function takenLine(route: Taken, source: string): ReactNode {
+  const workspace = route.workspace === undefined ? t('create.route.noWorkspace') : bolded('create.route.workspace', 'workspace', route.workspace);
+  const entry = route.entry === null ? <b>{t('create.route.noFlow')}</b> : bolded('create.route.enters', 'entry', `${route.entry.flow} · ${route.entry.stage}`);
+  return <>{bolded('create.route.via', 'source', source)} {workspace} · {entry}</>;
 }
 
 function missReason(miss: Extract<ReturnType<typeof routeOf>, { taken: false }>['missed'], source: string): string {
@@ -45,7 +44,7 @@ export function CreateRouteBox({ source, title, labels, status, sources, flows }
   return (
     <div role="status" aria-live="polite" className="grid grid-cols-[16px_minmax(0,1fr)] gap-x-2 gap-y-0.5 rounded-md border px-3 py-2.5 text-xs leading-[17px] [&_b]:font-medium">
       <Icon className="mt-px size-4 text-muted-foreground" />
-      <span>{rich(line)}</span>
+      <span>{line}</span>
       {reason !== '' && <><span /><span className="text-muted-foreground">{reason}</span></>}
     </div>
   );
