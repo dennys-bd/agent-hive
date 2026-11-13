@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import { type MouseEvent, type ReactNode, useState } from 'react';
+import { type MouseEvent, type ReactNode, useContext, useState } from 'react';
 import { agentName } from '../../agents';
 import { liveRuns, openFeedbackSession, startMode } from '../../task-runs';
 import { activityOf, prsOf, recordWithSession, workIdOf } from '../../activities';
@@ -19,6 +19,7 @@ import { type OpenPr, useOpenFile, useOpenIssue, useOpenPr, useOpenRun, useOpenS
 import { Button } from '@/components/ui/button';
 import { statusText, t } from '@/i18n';
 import { sessionPath } from '@/lib/copy-targets';
+import { CreateTargetsContext } from '@/lib/create-targets';
 import { isMarkdownPath } from '@/lib/doc-links';
 import { answerableActivity, backoffUntil, createsIssues, taskState } from '@/lib/task-state';
 import { backoffLabel, clock, compact, fmt } from '@/lib/usage';
@@ -82,6 +83,7 @@ export function StatusBox({ task, state, isActivity }: { task: Task; state: Stat
   const status = taskState(task, state); // the task's state (#663): parada with its since-time when empty
   const live = activityOf(state, task.item.itemId);
   const answerable = answerableActivity(task, state);
+  const { hiveSource } = useContext(CreateTargetsContext); // #784: State does not carry it
   const word = status === 'empty' ? t('detail.stopped') : status === 'backoff' ? backoffLabel(backoffUntil(task, state), Date.now()) : statusText(status); // #805
   // Since the stop (#580): refreshed by each state broadcast, no timer of its own; a task stopped before stoppedAt existed reads as before
   const stoppedAt = live?.stoppedAt;
@@ -95,7 +97,7 @@ export function StatusBox({ task, state, isActivity }: { task: Task; state: Stat
       {answerable?.approval && <ApprovalVerdict key={`verdict:${task.item.itemId}:${answerable.approval.since}`} task={task} state={state} approval={answerable.approval} />} {/* #693: under the head, a new stage end mounts it closed; #763: a key of its own, never the actions' */}
       {isActivity && <RunLines task={task} state={state} />}
       <CommandsLine task={task} state={state} /> {/* #755: a commands stage's progress or failure, with ver saída */}
-      {answerable && <ApprovalActions key={`actions:${task.item.itemId}:${answerable.approval?.since ?? ''}`} task={task} activity={answerable} openSession={openFeedbackSession(task, state) !== undefined} createsIssues={createsIssues(task, state)} />}
+      {answerable && <ApprovalActions key={`actions:${task.item.itemId}:${answerable.approval?.since ?? ''}`} task={task} activity={answerable} openSession={openFeedbackSession(task, state) !== undefined} createsIssues={createsIssues(task, state, hiveSource)} />}
       <StoppedActions task={task} state={state} />
     </section>
   );
