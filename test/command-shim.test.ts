@@ -2,14 +2,15 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { commandShimSource, renderCommandShim } from '../src/command-shim.js';
+import { claudeEnvLine, commandShimDir, commandShimSource, installCommandShims, renderCommandShim, shimWords } from '../src/command-shim.js';
 import { SECRET_HEADER } from '../src/secret.js';
-import { NO_POSIX_SHELL } from './posix-only.js';
+import type { Command } from '../src/types.js';
+import { assertMode, NO_POSIX_SHELL } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
 
 const WORD = 'pnpm';
@@ -198,4 +199,38 @@ test('with a semaphore on curl itself the shim\'s own curl is the real one, neve
   assert.equal(ran.code, 0);
   assert.match(ran.stdout, /^curl /);
   assert.equal(seen.length, 1, 'one acquire, no loop');
+});
+
+const line = (command: string, semaphore?: string, workspace: string | null = null): Command['impls'][number] =>
+  ({ workspace, command, ...(semaphore === undefined ? {} : { semaphore }) });
+const commandOf = (name: string, ...impls: Command['impls']): Command => ({ name, impls, menu: true, env: {} });
+const commandsConfig = (...commands: Command[]): { comb: { commands: Command[] } } => ({ comb: { commands } });
+
+test('shimWords: the distinct first words of every line with a semaphore, in any workspace; none for a line without one, an unmatchable line, a path or . (#800)', () => {
+  const config = commandsConfig(
+    commandOf('test', line('pnpm test', 'memory', 'api'), line('NODE_ENV=test pnpm vitest', 'memory', 'web'), line('npm test')),
+    commandOf('up', line('docker compose up', 'disk')),
+    commandOf('lint', line('pnpm lint', 'memory')),
+    commandOf('quoted', line('"pnpm" test', 'memory')),
+    commandOf('local', line('./scripts/e2e.sh', 'memory'), line('. ./env.sh', 'disk', 'web'), line('bin/e2e', 'disk', 'api')),
+  );
+  assert.deepEqual(shimWords(config), ['pnpm', 'docker']);
+});
+
+test('installCommandShims writes one executable shim per word into <home>/command-shims, and a save without a word deletes its file and keeps the rest (#800)', async (t) => {
+  const home = await tempDir(t, 'home-');
+  const dir = commandShimDir(home);
+  assert.equal(dir, join(home, 'command-shims'));
+  const both = commandsConfig(commandOf('test', line('pnpm test', 'memory')), commandOf('up', line('docker compose up', 'disk')));
+  assert.deepEqual(await installCommandShims(home, both), ['pnpm', 'docker']);
+  assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm'));
+  await assertMode(t, dir, 0o700);
+  await assertMode(t, join(dir, 'pnpm'), 0o755);
+  await writeFile(join(dir, 'stray'), 'left by an older version');
+  await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))));
+  assert.deepEqual(await readdir(dir), ['docker']);
+});
+
+test('claudeEnvLine prepends the folder, quoted, to PATH and exports it (#800)', () => {
+  assert.equal(claudeEnvLine("/h/it's"), "PATH='/h/it'\\''s':$PATH; export PATH\n");
 });
