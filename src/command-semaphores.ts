@@ -84,6 +84,9 @@ const inTurn = (w: Waiter): boolean => w.turnUntil !== undefined;
 const reservationEnd = (def: CommandSemaphore, now: number): number => now + (timeoutMs(def.reservation) ?? 0); // the parser refused a bad one (#796)
 const placeOf = (line: readonly Waiter[], ptyId: string): number => line.filter((w) => !inTurn(w)).findIndex((w) => w.ptyId === ptyId) + 1;
 const without = (h: Held, ptyId: string): Held => ({ ...h, runs: h.runs.filter((r) => r.ptyId !== ptyId), line: h.line.filter((w) => w.ptyId !== ptyId) });
+// #799: the turn's event carries its reservation's end, which the notice names; a removed semaphore's place has no turn, so none
+const turnEvent = (semaphore: string, w: Waiter): SemaphoreEvent =>
+  ({ type: 'semaphoreTurn', ptyId: w.ptyId, semaphore, argv: w.argv, ...(w.turnUntil === undefined ? {} : { until: new Date(w.turnUntil).toISOString() }) });
 
 // The config's semaphores, each keeping the runs and the line it had (decision 15: a lowered limit cuts no run)
 const semaphoresOf = (config: SemaphoresConfig, old: ReadonlyMap<string, Held>): Map<string, Held> =>
@@ -121,7 +124,7 @@ function snapshotOf(h: Held): SemaphoreState {
 function settle(box: Box, name: string, h: Held): void {
   const { next, given } = handTurns(h, box.deps.now());
   box.held.set(name, next);
-  for (const w of given) box.deps.dispatch({ type: 'semaphoreTurn', ptyId: w.ptyId, semaphore: name, argv: w.argv });
+  for (const w of given) box.deps.dispatch(turnEvent(name, w));
 }
 
 // Decision 22: the whole snapshot, only when it changed, so a call that changed nothing dispatches nothing
@@ -203,7 +206,7 @@ function runNow(box: Box, semaphore: string, ptyId: string): boolean {
   const waiter = h?.line.find((w) => w.ptyId === ptyId);
   if (h === undefined || waiter === undefined || inTurn(waiter)) return false; // a turn already given holds its permit: a second would lose it
   const turned: Waiter = { ...waiter, turnUntil: reservationEnd(h.def, box.deps.now()), above: true };
-  box.deps.dispatch({ type: 'semaphoreTurn', ptyId, semaphore, argv: waiter.argv });
+  box.deps.dispatch(turnEvent(semaphore, turned));
   settle(box, semaphore, { ...h, line: [turned, ...h.line.filter((w) => w !== waiter)] });
   publish(box);
   return true;
@@ -215,7 +218,7 @@ function apply(box: Box, config: SemaphoresConfig): void {
   const names = new Set(config.commandSemaphores.map((s) => s.name));
   for (const [name, h] of box.held) {
     if (names.has(name)) continue;
-    for (const w of h.line.filter((x) => !inTurn(x))) box.deps.dispatch({ type: 'semaphoreTurn', ptyId: w.ptyId, semaphore: name, argv: w.argv });
+    for (const w of h.line.filter((x) => !inTurn(x))) box.deps.dispatch(turnEvent(name, w));
   }
   box.config = config;
   box.held = semaphoresOf(config, box.held);
