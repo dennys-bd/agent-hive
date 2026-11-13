@@ -1,11 +1,14 @@
 // Thin fetch + JSON wrappers shared by every UI action. No DOM beyond fetch/Response, so node:test imports it from dist/src/ui/lib.
+import { t } from '../i18n.js';
 
 export async function parseJson<T>(res: Response): Promise<T> {
-  const data = (await res.json().catch(() => ({ error: res.statusText }))) as T & { error?: string; code?: unknown };
+  const data = (await res.json().catch(() => ({ error: res.statusText }))) as T & { error?: string; code?: unknown; workspace?: unknown };
+  if (res.ok) return data;
+  // #748: a gone workspace is worded here, in the page's language, never with the server's English sentence
+  const message = data.code === 'workspace_gone' && typeof data.workspace === 'string' ? t('refusal.workspace_gone', { name: data.workspace }) : (data.error ?? res.statusText);
   // the status, for a caller that tells refusals apart; the refusal's code too when the route names one (#797),
   // and the whole body for a refusal that carries more than its words (#686: a failed field write's re-read item)
-  if (!res.ok) throw Object.assign(new Error(data.error ?? res.statusText), { status: res.status, body: data, ...(typeof data.code === 'string' ? { code: data.code } : {}) });
-  return data;
+  throw Object.assign(new Error(message), { status: res.status, body: data, ...(typeof data.code === 'string' ? { code: data.code } : {}) });
 }
 
 export function getJson<T>(path: string): Promise<T> {

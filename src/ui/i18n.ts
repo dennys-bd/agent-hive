@@ -1517,6 +1517,7 @@ const en = {
   'start.failed.checkout_dirty': 'the workspace has uncommitted changes: commit or stash them, then start again',
   'start.failed.error': 'the task could not start',
   'start.failed.details': 'details', // #945: the toggle that reveals the raw message
+  'refusal.workspace_gone': 'workspace {name} no longer exists', // #748: a gone workspace's 409, worded by parseJson
   'flow.trigger.done': 'done', // #134: the triggers and fixed verdicts as a pill and the card read them
   'flow.trigger.approved': 'approved',
   'flow.trigger.feedback': 'feedback',
@@ -4728,6 +4729,7 @@ const pt: Record<MessageKey, string> = {
   'start.failed.checkout_dirty': 'o workspace tem mudanças não commitadas: faça commit ou stash e inicie de novo',
   'start.failed.error': 'a tarefa não pôde iniciar',
   'start.failed.details': 'detalhes',
+  'refusal.workspace_gone': 'o workspace {name} não existe mais',
   'flow.trigger.done': 'terminou',
   'flow.trigger.approved': 'aprovado',
   'flow.trigger.feedback': 'feedback',
