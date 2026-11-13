@@ -191,6 +191,15 @@ const en = {
   'decomposition.recover': 'The issues created so far are kept: press "create issues" again to continue from where it stopped.', // #781: after GitHub's words on a 502 only
   'decomposition.failedTitle': 'Creating the issues of {ref} stopped', // #781: the toast's title; ref is taskRef's, so no fixed #
   'decomposition.reopen': 'reopen', // #781: the toast's action
+  'decomposition.titleHive': 'Create tasks', // #784: the dialog's title with the hive chosen
+  'decomposition.createHive': 'create tasks', // #784: the primary, and the approval's button when the hive is the default target
+  'decomposition.creatingHive': 'creating tasks…', // #784: the busy primary under the hive
+  'decomposition.tasks.one': '{n} task', // #784: hive.tasks
+  'decomposition.tasks.other': '{n} tasks',
+  'decomposition.entry': 'enters at', // #784: the hive's second picker, in place of column
+  'decomposition.runningHive': 'You can close this: the creation goes on in the background and the tasks appear in the flow when it ends. If something fails, a notice shows.', // #784: the status note under the hive
+  'decomposition.hiveFailed': 'Not every task was created. The ones created so far are kept: press "create tasks" again to continue from where it stopped.', // #784: a hive write's failure (code hive); the server's words go to hive.log
+  'decomposition.failedTitleHive': 'Creating the tasks of {ref} stopped', // #784: the toast's title under the hive
   'approval.startNow': 'start now',
   'approval.queue': 'in order',
   'approval.hint': 'start now resumes the task\'s session. in order, it waits for a free worker.',
@@ -3434,6 +3443,15 @@ const pt: Record<MessageKey, string> = {
   'decomposition.recover': 'As issues já criadas ficam: clique em "criar issues" de novo para continuar de onde parou.',
   'decomposition.failedTitle': 'A criação das issues de {ref} parou',
   'decomposition.reopen': 'reabrir',
+  'decomposition.titleHive': 'Criar tarefas',
+  'decomposition.createHive': 'criar tarefas',
+  'decomposition.creatingHive': 'criando tarefas…',
+  'decomposition.tasks.one': '{n} tarefa',
+  'decomposition.tasks.other': '{n} tarefas',
+  'decomposition.entry': 'entra em',
+  'decomposition.runningHive': 'pode fechar: a criação continua em segundo plano e as tarefas aparecem no fluxo ao terminar. se algo falhar, um aviso aparece.',
+  'decomposition.hiveFailed': 'As tarefas não foram todas criadas. As já criadas ficam: clique em "criar tarefas" de novo para continuar de onde parou.',
+  'decomposition.failedTitleHive': 'A criação das tarefas de {ref} parou',
   'approval.startNow': 'começar agora',
   'approval.queue': 'na ordem',
   'approval.hint': 'começar agora retoma a sessão da tarefa. na ordem, a tarefa espera um worker livre.',
@@ -6529,7 +6547,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580), or the report tab's counts (#467), or the wake dialog's sleeps (#468), or the memory history's changes (#684). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'settings.memory.historyCount' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
+export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'settings.memory.historyCount' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.tasks' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

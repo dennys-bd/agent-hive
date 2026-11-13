@@ -361,6 +361,22 @@ test('the decomposition write\'s running state and failure toast read in both la
   assert.deepEqual([t('decomposition.reopen'), t('base.close')], ['reopen', 'close']);
 });
 
+test('the decomposition dialog\'s hive variant reads in both languages (#784)', () => {
+  setLanguage('pt');
+  assert.deepEqual([t('decomposition.titleHive'), t('decomposition.createHive'), t('decomposition.creatingHive'), t('decomposition.entry')], ['Criar tarefas', 'criar tarefas', 'criando tarefas…', 'entra em']);
+  assert.equal(`${tPlural('decomposition.tasks', 4, { n: 4 })}, ${tPlural('decomposition.blockers', 3, { n: 3 })}`, '4 tarefas, 3 bloqueios');
+  assert.equal(tPlural('decomposition.tasks', 1, { n: 1 }), '1 tarefa');
+  assert.equal(t('decomposition.runningHive'), 'pode fechar: a criação continua em segundo plano e as tarefas aparecem no fluxo ao terminar. se algo falhar, um aviso aparece.');
+  assert.equal(t('decomposition.hiveFailed'), 'As tarefas não foram todas criadas. As já criadas ficam: clique em "criar tarefas" de novo para continuar de onde parou.');
+  assert.equal(t('decomposition.failedTitleHive', { ref: 'HIVE-11' }), 'A criação das tarefas de HIVE-11 parou');
+  setLanguage('en');
+  assert.deepEqual([t('decomposition.titleHive'), t('decomposition.createHive'), t('decomposition.creatingHive'), t('decomposition.entry')], ['Create tasks', 'create tasks', 'creating tasks…', 'enters at']);
+  assert.equal(tPlural('decomposition.tasks', 1, { n: 1 }), '1 task');
+  assert.equal(t('decomposition.runningHive'), 'You can close this: the creation goes on in the background and the tasks appear in the flow when it ends. If something fails, a notice shows.');
+  assert.equal(t('decomposition.hiveFailed'), 'Not every task was created. The ones created so far are kept: press "create tasks" again to continue from where it stopped.');
+  assert.equal(t('decomposition.failedTitleHive', { ref: '#678' }), 'Creating the tasks of #678 stopped');
+});
+
 test('the running block\'s copy reads as the spec writes it, in both languages (#914)', () => {
   const keys = ['running.ci', 'running.commands', 'running.stage', 'running.loop', 'running.silent', 'running.skipped', 'running.output', 'running.stop'] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['aguardando CI', 'executando checks', 'etapa {name}', 'volta {n}/{max}', 'sem saída há {n} min · {name}', 'pulado', 'ver saída', 'parar']);
