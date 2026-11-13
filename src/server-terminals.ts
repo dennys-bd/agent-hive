@@ -130,8 +130,9 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
 
 type CaptureResume = NonNullable<Extract<HiveEvent, { type: 'captureSession' }>['resume']>;
 
-// #347: the user's args, one `arg` field each: a single one arrives as a string, several as an array; anything else is none
-const formArgs = (value: unknown): string[] =>
+// #347, #800: the args of a form, one `arg` field each (a terminal session's, the command shim's acquire): a single one arrives as a string,
+// several as an array; anything else is none
+export const formArgs = (value: unknown): string[] =>
   (typeof value === 'string' ? [value] : Array.isArray(value) && value.every((arg): arg is string => typeof arg === 'string') ? value : []);
 
 // Whether a held session's folder is the terminal's activity's (#347): Codex would run a rollout of another checkout from here
