@@ -85,9 +85,12 @@ async function setup(t: TestContext, answer: string | undefined, word = WORD): P
 }
 
 // The shim under sh, as a pty's shell runs a PATH hit; HOME is the rig's, so no ~/.curlrc of the machine's reaches curl
-function startShim(r: Rig, args: readonly string[], o: { stdin?: string; env?: NodeJS.ProcessEnv } = {}): { pid: number; kill(signal: NodeJS.Signals): void; done: Promise<Ran> } {
+// closedStdin: the shim started by `sh` with fd 0 closed (`<&-`), under that sh
+interface ShimOptions { stdin?: string; env?: NodeJS.ProcessEnv; closedStdin?: string }
+function startShim(r: Rig, args: readonly string[], o: ShimOptions = {}): { pid: number; kill(signal: NodeJS.Signals): void; done: Promise<Ran> } {
   const started = Date.now();
-  const child = spawn('/bin/sh', [r.shim, ...args], { env: { ...r.env, ...o.env }, timeout: SHIM_TIMEOUT_MS });
+  const argv = o.closedStdin === undefined ? [r.shim, ...args] : ['-c', `exec ${o.closedStdin} "$0" "$@" <&-`, r.shim, ...args];
+  const child = spawn(o.closedStdin ?? '/bin/sh', argv, { env: { ...r.env, ...o.env }, timeout: SHIM_TIMEOUT_MS });
   let stdout = '';
   let stderr = '';
   child.stdout.on('data', (c: Buffer) => { stdout += c.toString(); });
@@ -96,7 +99,7 @@ function startShim(r: Rig, args: readonly string[], o: { stdin?: string; env?: N
   const done = new Promise<Ran>((resolve) => child.on('close', (code) => resolve({ code, stdout, stderr, ms: Date.now() - started })));
   return { pid: child.pid ?? 0, kill: (signal) => { child.kill(signal); }, done };
 }
-const runShim = (r: Rig, args: readonly string[], o?: { stdin?: string; env?: NodeJS.ProcessEnv }): Promise<Ran> => startShim(r, args, o).done;
+const runShim = (r: Rig, args: readonly string[], o?: ShimOptions): Promise<Ran> => startShim(r, args, o).done;
 
 async function until(check: () => boolean): Promise<void> {
   for (let i = 0; i < 500 && !check(); i += 1) await sleep(10);
@@ -200,6 +203,42 @@ test('with a semaphore on curl itself the shim\'s own curl is the real one, neve
   assert.match(ran.stdout, /^curl /);
   assert.equal(seen.length, 1, 'one acquire, no loop');
 });
+
+test('two command-shim folders on PATH (a Hive started from a Hive pty) run the real binary once, never each other in a loop (#800)', { ...POSIX, timeout: SHIM_TIMEOUT_MS * 2 }, async (t) => {
+  const { r, seen } = await setup(t, 'run');
+  const outer = join(r.root, 'outer-command-shims');
+  await mkdir(outer);
+  await writeFile(join(outer, WORD), renderCommandShim(await readFile(commandShimSource(), 'utf8'), WORD));
+  await chmod(join(outer, WORD), 0o755);
+  const ran = await runShim(r, ['test'], { env: { PATH: [dirname(r.shim), outer, join(r.root, 'real'), process.env.PATH ?? ''].join(':') } });
+  assert.deepEqual([ran.code, ran.stdout], [FAKE_EXIT, fakeOut(['test'])]);
+  assert.deepEqual(seen.map((s) => s.path), [ACQUIRE, ACQUIRE], 'one acquire per shim, then the real binary');
+});
+
+test('a folder named as the word on PATH is skipped, as the shell\'s own lookup skips it (#800)', POSIX, async (t) => {
+  const { r } = await setup(t, 'run');
+  await mkdir(join(r.root, 'decoy', WORD), { recursive: true });
+  const ran = await runShim(r, ['test'], { env: { PATH: [dirname(r.shim), join(r.root, 'decoy'), join(r.root, 'real'), process.env.PATH ?? ''].join(':') } });
+  assert.deepEqual([ran.code, ran.stdout], [FAKE_EXIT, fakeOut(['test'])]);
+});
+
+test('a ~/.curlrc never applies to the shim\'s curl: a --trace there writes no file with the secret header (#800)', POSIX, async (t) => {
+  const { r, seen } = await setup(t, 'run memory');
+  const trace = join(r.root, 'trace');
+  await writeFile(join(r.root, '.curlrc'), `trace = "${trace}"\n`);
+  const ran = await runShim(r, ['test']);
+  assert.deepEqual([ran.code, seen.map((s) => s.path)], [FAKE_EXIT, [ACQUIRE, RELEASE]]);
+  assert.equal(existsSync(trace), false);
+});
+
+for (const sh of ['/bin/sh', '/bin/dash'].filter((path) => existsSync(path))) {
+  test(`run memory with stdin closed under ${sh} still runs the binary and sends one release (#800)`, POSIX, async (t) => {
+    const { r, seen } = await setup(t, 'run memory');
+    const ran = await runShim(r, ['test'], { closedStdin: sh });
+    assert.deepEqual([ran.code, ran.stdout], [FAKE_EXIT, fakeOut(['test'])], ran.stderr);
+    assert.deepEqual(seen.map((s) => s.path), [ACQUIRE, RELEASE]);
+  });
+}
 
 const line = (command: string, semaphore?: string, workspace: string | null = null): Command['impls'][number] =>
   ({ workspace, command, ...(semaphore === undefined ? {} : { semaphore }) });

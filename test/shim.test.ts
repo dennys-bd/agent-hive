@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { access, chmod, copyFile, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
@@ -72,7 +73,9 @@ async function shimmed(t: TestContext, port: number, extraEnv: Record<string, st
   const linked = join(home, 'linked');
   await mkdir(linked);
   await symlink(shimPath(home, agent), join(linked, agent.command));
-  const env = { PATH: `${join(home, 'bin')}:${linked}:${real}:/usr/bin:/bin`, HIVE_PTY_ID: 'T1', HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile, OUT: out, ...extraEnv };
+  // and a folder named as the command, which the shell's own lookup skips; HOME is this one, for a test's .curlrc
+  await mkdir(join(home, 'decoy', agent.command), { recursive: true });
+  const env = { HOME: home, PATH: `${join(home, 'bin')}:${linked}:${join(home, 'decoy')}:${real}:/usr/bin:/bin`, HIVE_PTY_ID: 'T1', HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile, OUT: out, ...extraEnv };
   return async (...args) => {
     await run(shimPath(home, agent), args, { env, cwd: extraEnv.PWD });
     return (await readFile(out, 'utf8')).trimEnd().split('\n');
@@ -103,6 +106,16 @@ test('a proxy in the env never sees the register nor the exit report: both go st
   const claude = await shimmed(t, hive.port, { http_proxy: dead, HTTP_PROXY: dead, ALL_PROXY: dead, all_proxy: dead });
   assert.deepEqual(await claude('hi'), [`pty=${RUN_ID}`, '--session-id', 'S1', 'hi']);
   assert.deepEqual(hive.seen.map((s) => s.url), ['/hooks/terminals/T1/session', '/hooks/exit']);
+});
+
+test('a ~/.curlrc never applies to the shim\'s curl: a --trace there writes no file with the secret header (#800)', POSIX_ONLY, async (t) => {
+  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1` });
+  const home = await tempDir(t, 'curlrc-');
+  const trace = join(home, 'trace');
+  await writeFile(join(home, '.curlrc'), `trace = "${trace}"\n`);
+  const claude = await shimmed(t, hive.port, { HOME: home });
+  assert.deepEqual(await claude('hi'), [`pty=${RUN_ID}`, '--session-id', 'S1', 'hi']);
+  assert.deepEqual([hive.seen.length, existsSync(trace)], [2, false]);
 });
 
 test('capturedReply answers the run id then one arg per line, and refuses an arg holding a newline (#696)', () => {
