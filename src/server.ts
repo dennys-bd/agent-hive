@@ -114,7 +114,9 @@ import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { killStray, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
-import { createPtyPool } from './ptys.js';
+import { createPtyPool, type PtyPool } from './ptys.js';
+import { type CommandSemaphores, createSemaphores, isPidAlive } from './command-semaphores.js';
+import { registerSemaphoreRoutes } from './server-semaphores.js';
 import type { TerminalSize } from './terminal-wire.js';
 import { loadState, saveState } from './state-store.js';
 import { dropCopiedTranscript } from './transcript.js';
@@ -300,7 +302,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   const consoleStore = createConsoleStore(() => live?.runtime.config.consoleLines ?? CONSOLE_LINES_DEFAULT, notifyConsole);
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
   const lsp = createLspHost({ home, consoleStore, log, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
-  const pool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE) }));
+  const ptyPool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE) }));
+  // #798: every pty's end frees what it holds on the Command Semaphores, whatever started it: a run, a terminal, a commands stage's command
+  const pool: PtyPool = { ...ptyPool, start: (o) => ptyPool.start({ ...o, onExit: () => { semaphores?.ended(o.ptyId); o.onExit(); } }) };
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
   const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree, exec });
@@ -332,6 +336,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #834: the CI of every task waiting in a wait-for-CI stage, read on the timer apart from the poll, with the PR poll's transport
   const ci = createCiReader({ gql: prGql, exec, dispatch, log, state: () => live?.state });
   let live: Live | undefined; // hive mode: set by listen() once the port is bound (#466); setup mode: by the first POST /settings
+  let semaphores: CommandSemaphores | undefined; // #798: the Command Semaphores at run time, created with the first config; never persisted
+  // #798: every semaphore free, its empty entry published; dispatchInBackground reduces before its first await, so a turn reaches the State before the snapshot after it
+  const startSemaphores = (config: Config): void => { semaphores = createSemaphores({ config, dispatch: dispatchInBackground, now: Date.now, pidAlive: isPidAlive }); };
   // One device flow at a time: starting a second aborts the first's poll (its controller) and replaces the worker;
   // the one left behind stops hitting GitHub and can no longer write here even if a token was already in flight.
   let githubFlow: { pending?: DeviceCode; login?: string; error?: string; controller: AbortController } | undefined;
@@ -459,6 +466,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     // sources against the runtime this event actually reduced against, never whatever live.runtime holds by the time it runs.
     const runtime = live.runtime;
     live = { runtime, state: result.state };
+    if (event.type === 'exit') semaphores?.ended(event.ptyId); // #798: a captured session ending inside its terminal frees what its run holds
     backoffs.sync(result.state.workers); // #805: a new wait arms its timer, a resumed or gone run's goes
     keepAwake.sync(result.state.keepAwake === true); // #226: every path that sets or clears it; before the effects, so the shutdown's drain releases it first
     dropReviews(prev, result.state, event);
@@ -875,6 +883,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     // task; a home with none saved takes the config's. #727: signals on the state before boot, which opens on onOpen
     const flow = saved.stages.length > 0 ? { flows: saved.flows, stages: saved.stages, transitions: saved.transitions } : { flows: config.comb.flows, ...flatten(config.comb.flows) };
     live = { runtime, state: withWorkspaces({ ...saved, ...flow, signals: config.signals }, config) };
+    startSemaphores(config);
     await boot(saved);
     if (!isDeepStrictEqual(flow.flows, config.comb.flows)) await dispatch({ type: 'setStages', flows: config.comb.flows });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
@@ -886,6 +895,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!live) throw new Error('Hive não configurado: use configure()');
     const runtime = await activate(config, sources);
     live = { runtime, state: live.state };
+    semaphores?.apply(config); // #798: a removed semaphore lets its line go, a new limit holds from now
     // First (#278): every fill below, setSources and the poll see the tasks under the names the new runtime has
     if (Object.keys(renames).length > 0) await dispatch({ type: 'renameSources', renames });
     if (Object.keys(stageRenames).length > 0) await dispatch({ type: 'renameStages', renames: stageRenames }); // #861: before setStages, so no renamed stage reads as deleted
@@ -1282,6 +1292,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
   registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // wake, forget (#696); the shim's register under /hooks/
+  registerSemaphoreRoutes(app, { state: () => live?.state, semaphores: () => semaphores }); // #798: the shim's acquire and release under /hooks/, run now under /api/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
   registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783)
   registerConsoleRoutes(app, { requireLive, consoleStore }); // GET /console and /console/:id (#353)
@@ -1437,7 +1448,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     boundPort = bound;
     log.info(`listening port=${bound}`);
     // Hive mode (#466): the Runtime is built on the bound port, hooks.json included, before the first dispatch
-    if (deps.runtime && deps.state) live = { runtime: await activate(deps.runtime.config, deps.runtime.sources), state: withWorkspaces(deps.state, deps.runtime.config) };
+    if (deps.runtime && deps.state) {
+      live = { runtime: await activate(deps.runtime.config, deps.runtime.sources), state: withWorkspaces(deps.state, deps.runtime.config) };
+      startSemaphores(deps.runtime.config); // #798: hive.ts skips configure()
+    }
     pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS); // no-op until configured
     planLimitsTimer = setInterval(() => void refreshPlanLimits(), PLAN_LIMITS_INTERVAL_MS); // no-op until configured or without the dep
     readLoop?.start(); // #180: a round now, then every POLL_INTERVAL_MS
@@ -1466,6 +1480,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
     held.releaseAll(); // #268: no timer outlives the server, no held Stop hangs
     backoffs.close(); // #805: no retry outlives the server
+    semaphores?.stop(); // #798: no sweep outlives the server
     treeWatch.close(); // #502: no watcher, poll or lease timer outlives the server
     keepAwake.stop(); // #226: no power assertion outlives the server
     await pool.killAll(); // children of the Hive: none should outlive it; awaited so the sessions are gone before the process is
