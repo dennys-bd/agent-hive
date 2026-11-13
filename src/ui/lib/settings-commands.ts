@@ -2,13 +2,14 @@ import { timeoutMs } from '../../timeout.js';
 import { ENV_NAME, RESERVED_ENV_NAMES, type Command } from '../../types.js';
 import { t } from '../i18n.js';
 import type { WorkspaceDraft, SettingsDraft, SettingsProblem } from './settings-form.js';
+import type { SemaphoreDraft } from './settings-semaphores.js';
 
 // Settings › workspaces' env editors and command table (#300, #348, #511, #755), out of settings-form.ts, which is over 400 lines.
 
 /** A row of an env editor (#348): a workspace's own or a command's; id is its React key, never sent. */
 export interface EnvRowDraft { id: string; name: string; value: string }
 /** One line of a command row (#755): workspace = a workspace row's id, so a rename in the form carries it, or null for every workspace with no
- * line of its own; semaphore (#796) is the line's as saved, nothing edits it yet; id is its React key, never sent. */
+ * line of its own; semaphore (#803) is a semaphore row's id, so a rename, a removal or an unsaved row carries it; absent = none; id is its React key, never sent. */
 export interface ImplDraft { id: string; workspace: string | null; command: string; semaphore?: string }
 /** A row of the Comb's command table (#300, #511, #755): its lines per workspace, whether the task menu offers it, its env as rows (#348); id is
  * its React key, never sent. */
@@ -33,8 +34,16 @@ const isEnvValid = (rows: EnvRowDraft[]): boolean => {
 
 export const emptyImpl = (workspace: string | null): ImplDraft => ({ id: crypto.randomUUID(), workspace, command: '' });
 
-// #796: a line's semaphore both ways, as it is; no key when it has none, so a save with nothing changed writes the line back unchanged
-const semaphoreOf = ({ semaphore }: { semaphore?: string }): { semaphore?: string } => (semaphore === undefined ? {} : { semaphore });
+// #803: a line's semaphore as a row id on load and back as that row's trimmed name on save; no key when it has none or its row is gone, so a
+// save with nothing changed writes the line back unchanged and the server never meets a name no semaphore has
+const semaphoreId = (name: string | undefined, semaphores: readonly SemaphoreDraft[]): { semaphore?: string } => {
+  const id = name === undefined ? undefined : semaphores.find((s) => s.savedName === name)?.id;
+  return id === undefined ? {} : { semaphore: id };
+};
+const semaphoreName = (id: string | undefined, semaphores: readonly SemaphoreDraft[]): { semaphore?: string } => {
+  const name = id === undefined ? undefined : semaphores.find((s) => s.id === id)?.name.trim();
+  return name === undefined ? {} : { semaphore: name };
+};
 
 /** A new command (#755): one line for all workspaces, offered in the task menu. */
 export const emptyCommand = (): CommandDraft => ({ id: crypto.randomUUID(), name: '', impls: [emptyImpl(null)], menu: true, env: [], timeout: '' });
@@ -58,20 +67,20 @@ export const missingWorkspaces = (c: Pick<CommandDraft, 'impls'>, workspaces: re
   (c.impls.some((i) => i.workspace === null) ? [] : freeWorkspaces(c, workspaces));
 
 /** A saved command over the workspace rows (#755): each line's workspace name becomes the first row with that trimmed name; an unknown one is
- * dropped. */
-export const commandDraft = (c: Command, workspaces: WorkspaceDraft[]): CommandDraft => ({
+ * dropped; each line's semaphore name becomes that row's id (#803). */
+export const commandDraft = (c: Command, workspaces: WorkspaceDraft[], semaphores: readonly SemaphoreDraft[]): CommandDraft => ({
   ...emptyCommand(), name: c.name, menu: c.menu, env: envRows(c.env), timeout: c.timeout ?? '',
   impls: c.impls.flatMap((impl) => {
     const workspace = impl.workspace === null ? null : workspaces.find((p) => p.name.trim() === impl.workspace)?.id;
-    return workspace === undefined ? [] : [{ ...emptyImpl(workspace), command: impl.command, ...semaphoreOf(impl) }];
+    return workspace === undefined ? [] : [{ ...emptyImpl(workspace), command: impl.command, ...semaphoreId(impl.semaphore, semaphores) }];
   }),
 });
 
 /** A command row as a comb.commands entry (#755): its lines in stackedImpls' order, each workspace by its name, the lines trimmed; an empty
- * timeout sends no key. */
-export function commandFrom(c: CommandDraft, workspaces: WorkspaceDraft[]): Command {
+ * timeout sends no key, the semaphore by its row's name (#803). */
+export function commandFrom(c: CommandDraft, workspaces: WorkspaceDraft[], semaphores: readonly SemaphoreDraft[]): Command {
   const timeout = c.timeout.trim();
-  const impls = stackedImpls(c, workspaces).map((i) => ({ workspace: rowOf(workspaces, i.workspace)?.name.trim() ?? null, command: i.command.trim(), ...semaphoreOf(i) }));
+  const impls = stackedImpls(c, workspaces).map((i) => ({ workspace: rowOf(workspaces, i.workspace)?.name.trim() ?? null, command: i.command.trim(), ...semaphoreName(i.semaphore, semaphores) }));
   return { name: c.name.trim(), impls, menu: c.menu, env: envFrom(c.env), ...(timeout === '' ? {} : { timeout }) };
 }
 

@@ -4,6 +4,7 @@ import { SEMAPHORE_NAME } from '../../run-commands.js';
 import { timeoutMs } from '../../timeout.js';
 import type { CommandSemaphore } from '../../types.js';
 import { t } from '../i18n.js';
+import type { CommandDraft, ImplDraft } from './settings-commands.js';
 import type { SettingsProblem } from './settings-form.js';
 
 /** A row of the card (#803): texts as typed. id is what a line's semaphore holds and the React key, never sent; savedName is the name it was
@@ -53,3 +54,9 @@ export function semaphoresProblem(drafts: readonly SemaphoreDraft[]): SettingsPr
   const message = semaphoreMessage(drafts);
   return message === undefined ? undefined : { section: 'rules', message };
 }
+
+const lineWithout = ({ semaphore: _semaphore, ...line }: ImplDraft): ImplDraft => line;
+
+/** The commands with the row's id cleared from every line (decision 4): removing a row needs no confirmation, the save is it. */
+export const withoutSemaphore = (commands: readonly CommandDraft[], id: string): CommandDraft[] =>
+  commands.map((c) => ({ ...c, impls: c.impls.map((i) => (i.semaphore === id ? lineWithout(i) : i)) }));

@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
-import { emptySemaphore, type SemaphoreDraft, semaphoreDrafts, semaphoreFaults, semaphoresFrom, semaphoresProblem } from '../src/ui/lib/settings-semaphores.js';
-import type { CommandSemaphore } from '../src/types.js';
+import { emptySemaphore, type SemaphoreDraft, semaphoreDrafts, semaphoreFaults, semaphoresFrom, semaphoresProblem, withoutSemaphore } from '../src/ui/lib/settings-semaphores.js';
+import { commandDraft, commandFrom } from '../src/ui/lib/settings-commands.js';
+import { emptyWorkspace, type WorkspaceDraft } from '../src/ui/lib/settings-form.js';
+import type { Command, CommandSemaphore } from '../src/types.js';
 
 const SAVED: CommandSemaphore[] = [{ name: 'memory', limit: 2, reservation: '2m' }, { name: 'disk', limit: 1, reservation: '5m' }];
 const row = (patch: Partial<SemaphoreDraft>): SemaphoreDraft => ({ ...emptySemaphore(), name: 'memory', ...patch });
@@ -54,4 +56,35 @@ test('semaphoreFaults marks each field the problem would name, a duplicate name 
   assert.deepEqual(semaphoreFaults([a, b], b), { name: true, limit: true, reservation: true });
   assert.deepEqual(semaphoreFaults([a], a), { name: false, limit: false, reservation: false });
   assert.deepEqual(semaphoreFaults([row({ name: 'a b' })], row({ name: 'a b' })).name, true);
+});
+
+const API: WorkspaceDraft = { ...emptyWorkspace(), name: 'api', path: '/api' };
+const WEB: WorkspaceDraft = { ...emptyWorkspace(), name: 'web', path: '/web' };
+const TESTS: Command = { name: 'tests', impls: [{ workspace: 'api', command: 'pnpm test', semaphore: 'memory' }, { workspace: null, command: 'make test', semaphore: 'memory' }], menu: true, env: {} };
+
+test('a line points at its semaphore by the row id: loaded from the saved name, saved under the row\'s trimmed name, so a rename carries it (#803 decisions 2, 3)', () => {
+  const semaphores = semaphoreDrafts(SAVED);
+  const draft = commandDraft(TESTS, [API, WEB], semaphores);
+  assert.deepEqual(draft.impls.map((i) => i.semaphore), [semaphores[0].id, semaphores[0].id]);
+  assert.deepEqual(commandFrom(draft, [API, WEB], semaphores), TESTS, 'nothing edited: unchanged');
+  const renamed = semaphores.map((s) => (s.id === semaphores[0].id ? { ...s, name: ' heavy ' } : s));
+  assert.deepEqual(commandFrom(draft, [API, WEB], renamed).impls.map((i) => i.semaphore), ['heavy', 'heavy']);
+});
+
+test('a line pointing at a semaphore added but not saved saves its name; an id no row has, or a saved name no row has, gives no semaphore key (#803)', () => {
+  const added = row({ name: 'ports' });
+  const draft = commandDraft({ ...TESTS, impls: [{ workspace: 'api', command: 'pnpm e2e' }] }, [API], []);
+  const picked = { ...draft, impls: draft.impls.map((i) => ({ ...i, semaphore: added.id })) };
+  assert.deepEqual(commandFrom(picked, [API], [added]).impls, [{ workspace: 'api', command: 'pnpm e2e', semaphore: 'ports' }]);
+  assert.equal('semaphore' in commandFrom(picked, [API], []).impls[0], false, 'strict: no semaphore: undefined key');
+  assert.equal('semaphore' in commandDraft({ ...TESTS, impls: [{ workspace: 'api', command: 'x', semaphore: 'gone' }] }, [API], []).impls[0], false);
+});
+
+test('withoutSemaphore clears the row from every line pointing at it, leaves every other line as it was and mutates nothing (#803 decision 4)', () => {
+  const semaphores = semaphoreDrafts(SAVED);
+  const lint: Command = { name: 'lint', impls: [{ workspace: 'web', command: 'pnpm lint', semaphore: 'disk' }], menu: false, env: {} };
+  const commands = [TESTS, lint].map((c) => commandDraft(c, [API, WEB], semaphores));
+  const cleared = withoutSemaphore(commands, semaphores[0].id);
+  assert.deepEqual(cleared.map((c) => commandFrom(c, [API, WEB], semaphores.slice(1))), [{ ...TESTS, impls: TESTS.impls.map(({ semaphore: _s, ...line }) => line) }, lint]);
+  assert.equal(commands[0].impls[0].semaphore, semaphores[0].id, 'the old drafts are untouched');
 });
