@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { canDiff } from './task-runs.js';
-import { taskWorkspace, noWorkspaceReason } from './config.js';
+import { taskWorkspace, noWorkspaceReason, noWorkspaceFields } from './config.js';
 import { workspaceBase } from './fork.js';
 import { taskDiff, commitDiff, diffBase, DiffTooLarge, isScope, NoParentCommit } from './diff.js';
 import { dropStaleMarks } from './review-store.js';
@@ -22,8 +22,9 @@ const NO_STAGE_START_MESSAGE = 'a etapa atual não tem início registrado';
 const TOO_LARGE_MESSAGE = 'diff grande demais para o visualizador';
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+// #748: a gone workspace's code and name ride along, for the page to word; undefined drops out of the JSON
 const refuse = (res: Response, refusal: Refusal): void => {
-  res.status(refusal.status).json({ error: refusal.message });
+  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace });
 };
 
 // Why the task has no diff of `scope` (#270): canDiff's two reasons, worded apart; undefined when it has one.
@@ -71,7 +72,7 @@ export function registerDiffRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec
     if (!isScope(scope)) return refuse(res, { status: HTTP_BAD_REQUEST, message: SCOPE_MESSAGE });
     const { config } = current.runtime;
     const workspace = taskWorkspace(config, task);
-    if (!workspace) return refuse(res, { status: HTTP_CONFLICT, message: noWorkspaceReason(task) });
+    if (!workspace) return refuse(res, { status: HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) });
     const reason = noDiffReason(task, activity, scope);
     if (reason) return refuse(res, { status: HTTP_CONFLICT, message: reason });
     const checkpoint = scope === 'checkpoint' ? activity.checkpoints?.find((a) => String(a.n) === req.query.checkpoint) : undefined; // #619: only an n the activity lists reaches git, as a sha it stored

@@ -90,7 +90,7 @@ test('GET /activities/:id/diff refuses an unknown task (404), a scope that is no
     task(4, { worktree: worktreePath(repo, 'hive-4-task'), stageStart: { stage: 'other', commit: START } }),
     task(5, { workspace: 'gone', worktree: worktreePath(repo, 'hive-5-task') }),
   ]);
-  const refusals: [string, string | undefined, number, string][] = [
+  const refusals: [string, string | undefined, number, string | Record<string, string>][] = [
     ['local:9', 'stage', 404, 'atividade desconhecida'], // #629: no activity under that id, checked first
     ['local:1', undefined, 400, 'scope deve ser stage, worktree, commit ou checkpoint'],
     ['local:1', 'all', 400, 'scope deve ser stage, worktree, commit ou checkpoint'],
@@ -98,11 +98,11 @@ test('GET /activities/:id/diff refuses an unknown task (404), a scope that is no
     ['local:4', 'stage', 409, 'a etapa atual não tem início registrado'],
     ['local:2', 'worktree', 404, 'atividade desconhecida'], // #629: never opened, so no activity to diff
     ['local:3', 'stage', 409, 'tarefa sem worktree no disco'],
-    ['local:5', 'worktree', 409, 'workspace gone is gone'],
+    ['local:5', 'worktree', 409, { error: 'workspace gone is gone', code: 'workspace_gone', workspace: 'gone' }], // #748: its code and name beside the sentence
   ];
   for (const [id, scope, status, error] of refusals) {
     const res = await get(f, id, scope);
-    assert.deepEqual([res.status, await res.json()], [status, { error }], `${id} ${scope}`);
+    assert.deepEqual([res.status, await res.json()], [status, typeof error === 'string' ? { error } : error], `${id} ${scope}`);
   }
   assert.deepEqual(f.calls, [], 'no refusal runs git');
 });
