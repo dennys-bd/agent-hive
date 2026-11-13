@@ -22,6 +22,7 @@ import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js
 import { activityOfWorker, recordOf, taskOfActivity, taskOfWorker } from './activities.js';
 import { createLeftItems } from './left-items.js';
 import { CONFIG_FILE, taskWorkspace, parseSource, workspaceByName, workspaceScope, requireWorkspace } from './config.js';
+import { commandShimDir, installCommandShims } from './command-shim.js';
 import { createConsoleStore } from './console.js';
 import { createInstaller } from './editor-install.js';
 import { createSchemaCatalog } from './json-schemas.js';
@@ -302,7 +303,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const consoleStore = createConsoleStore(() => live?.runtime.config.consoleLines ?? CONSOLE_LINES_DEFAULT, notifyConsole);
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
   const lsp = createLspHost({ home, consoleStore, log, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
-  const ptyPool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE) }));
+  const ptyPool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE), commandShims: commandShimDir(resolve(home)) }));
   // #798: every pty's end frees what it holds on the Command Semaphores, whatever started it: a run, a terminal, a commands stage's command
   // A terminal woken in the same id (#696) has a new entry by the time the old pty's late exit runs: that exit frees nothing of the new one's
   const pool: PtyPool = { ...ptyPool, start: (o) => ptyPool.start({ ...o, onExit: () => { if (!ptyPool.has(o.ptyId)) semaphores?.ended(o.ptyId); o.onExit(); } }) };
@@ -339,7 +340,19 @@ export function createServer(deps: ServerDeps): HiveServer {
   let live: Live | undefined; // hive mode: set by listen() once the port is bound (#466); setup mode: by the first POST /settings
   let semaphores: CommandSemaphores | undefined; // #798: the Command Semaphores at run time, created with the first config; never persisted
   // #798: every semaphore free, its empty entry published; dispatchInBackground reduces before its first await, so a turn reaches the State before the snapshot after it
-  const startSemaphores = (config: Config): void => { semaphores?.stop(); semaphores = createSemaphores({ config, dispatch: dispatchInBackground, now: Date.now, pidAlive: isPidAlive }); };
+  // #800, decisions 3 and 4: one install at a time, so an older one finishing late never deletes a newer one's shim; a failure is logged and
+  // never fails the boot or the save, since a missing shim only means the command runs without its semaphore
+  let shimsInstall: Promise<void> = Promise.resolve();
+  const installShims = (config: Config): Promise<void> => {
+    shimsInstall = shimsInstall.then(() => installCommandShims(home, config, process.platform)).then(() => undefined, (err: unknown) => { log.error(`command shims: ${errorMessage(err)}`); });
+    return shimsInstall;
+  };
+  // Answers the install, awaited by the boot so no pty spawns before the shims exist; it never rejects
+  const startSemaphores = (config: Config): Promise<void> => {
+    semaphores?.stop();
+    semaphores = createSemaphores({ config, dispatch: dispatchInBackground, now: Date.now, pidAlive: isPidAlive });
+    return installShims(config);
+  };
   // One device flow at a time: starting a second aborts the first's poll (its controller) and replaces the worker;
   // the one left behind stops hitting GitHub and can no longer write here even if a token was already in flight.
   let githubFlow: { pending?: DeviceCode; login?: string; error?: string; controller: AbortController } | undefined;
@@ -884,7 +897,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     // task; a home with none saved takes the config's. #727: signals on the state before boot, which opens on onOpen
     const flow = saved.stages.length > 0 ? { flows: saved.flows, stages: saved.stages, transitions: saved.transitions } : { flows: config.comb.flows, ...flatten(config.comb.flows) };
     live = { runtime, state: withWorkspaces({ ...saved, ...flow, signals: config.signals }, config) };
-    startSemaphores(config);
+    await startSemaphores(config);
     await boot(saved);
     if (!isDeepStrictEqual(flow.flows, config.comb.flows)) await dispatch({ type: 'setStages', flows: config.comb.flows });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
@@ -897,6 +910,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const runtime = await activate(config, sources);
     live = { runtime, state: live.state };
     semaphores?.apply(config); // #798: a removed semaphore lets its line go, a new limit holds from now
+    await installShims(config); // #800: a line removed takes its shim with it before the save answers
     // First (#278): every fill below, setSources and the poll see the tasks under the names the new runtime has
     if (Object.keys(renames).length > 0) await dispatch({ type: 'renameSources', renames });
     if (Object.keys(stageRenames).length > 0) await dispatch({ type: 'renameStages', renames: stageRenames }); // #861: before setStages, so no renamed stage reads as deleted
@@ -1451,7 +1465,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     // Hive mode (#466): the Runtime is built on the bound port, hooks.json included, before the first dispatch
     if (deps.runtime && deps.state) {
       live = { runtime: await activate(deps.runtime.config, deps.runtime.sources), state: withWorkspaces(deps.state, deps.runtime.config) };
-      startSemaphores(deps.runtime.config); // #798: hive.ts skips configure()
+      await startSemaphores(deps.runtime.config); // #798: hive.ts skips configure()
     }
     pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS); // no-op until configured
     planLimitsTimer = setInterval(() => void refreshPlanLimits(), PLAN_LIMITS_INTERVAL_MS); // no-op until configured or without the dep
@@ -1485,6 +1499,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     keepAwake.stop(); // #226: no power assertion outlives the server
     await pool.killAll(); // children of the Hive: none should outlive it; awaited so the sessions are gone before the process is
     semaphores?.stop(); // #798: no sweep outlives the server; after the kills, whose exits free permits and could re-arm it
+    await shimsInstall; // #800: no install writes into a home that is going away
     await lsp.stopAll(); // #780: no language server outlives the Hive
     usage?.close(); // #271: after the quit's records, the last it keeps
     usage = undefined; // a second close() closes nothing twice

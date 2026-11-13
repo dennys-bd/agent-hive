@@ -15,3 +15,5 @@ export async function assertMode(t: TestContext, path: string, mode: number, mes
     assert.equal((await stat(path)).mode & MODE_BITS, mode, message);
   });
 }
+// #800: the command shim is a POSIX sh script; Windows brings its own in node 5 of #704
+export const NO_POSIX_SHELL: string | false = process.platform === 'win32' && 'win32 runs no POSIX command shim: node 5 of #704 brings its own';

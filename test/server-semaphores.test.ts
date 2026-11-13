@@ -1,5 +1,8 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import express from 'express';
 import { createSemaphores } from '../src/command-semaphores.js';
 import { initialState } from '../src/orchestrator.js';
@@ -45,8 +48,13 @@ async function start(t: TestContext, state: State | null = STATE): Promise<strin
 
 const post = (url: string, body: unknown, ptyId?: string): Promise<Response> =>
   fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...(ptyId === undefined ? {} : { 'x-hive-pty': ptyId }) }, body: JSON.stringify(body) });
-const acquire = async (base: string, ptyId: string | undefined, body: unknown = { argv: ['pnpm', 'test'], pid: 4242 }): Promise<string> => {
-  const res = await post(`${base}/hooks/semaphores/acquire`, body, ptyId);
+// The shim's form (#800): one arg field per argv word, then pid, then anything extra
+const acquireForm = (argv: readonly string[], pid: number | string, extra: [string, string][] = []): URLSearchParams =>
+  new URLSearchParams([...argv.map((a): [string, string] => ['arg', a]), ['pid', String(pid)], ...extra]);
+const postForm = (url: string, form: URLSearchParams, ptyId?: string): Promise<Response> =>
+  fetch(url, { method: 'POST', headers: ptyId === undefined ? {} : { 'x-hive-pty': ptyId }, body: form });
+const acquire = async (base: string, ptyId: string | undefined, form = acquireForm(['pnpm', 'test'], 4242)): Promise<string> => {
+  const res = await postForm(`${base}/hooks/semaphores/acquire`, form, ptyId);
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type') ?? '', /^text\/plain/);
   return res.text();
@@ -64,6 +72,12 @@ test('acquire answers plain lines: a grant names its semaphore, an agent is refu
   assert.equal(await acquire(base, 'R2'), 'run memory\n', 'the release gave R2 its turn');
 });
 
+test('acquire reads the shim\'s form: each arg field whole, in order, a space, a line break and an & included (#800)', async (t) => {
+  const base = await start(t);
+  assert.equal(await acquire(base, 'R1', acquireForm(['pnpm', 'test', 'a b', 'x\ny', 'p&q=r'], 4242)), 'run memory\n', 'pnpm test is the prefix');
+  assert.equal(await acquire(base, 'R2', acquireForm(['pnpm', 'lint'], 4243)), 'run\n', 'no line matches pnpm lint');
+});
+
 test('with no live Hive every acquire answers run (#798)', async (t) => {
   const base = await start(t, null);
   assert.equal(await acquire(base, 'R1'), 'run\n');
@@ -71,9 +85,14 @@ test('with no live Hive every acquire answers run (#798)', async (t) => {
 
 test('a bad body answers 400 and touches nothing (#798)', async (t) => {
   const base = await start(t);
-  for (const body of [{}, { argv: [], pid: 1 }, { argv: ['pnpm', 1], pid: 1 }, { argv: 'pnpm test', pid: 1 }, { argv: ['pnpm'], pid: 0 }, { argv: ['pnpm'], pid: -1 }, { argv: ['pnpm'], pid: 1.5 }, { argv: ['pnpm'], pid: 1, now: false }]) {
-    assert.equal((await post(`${base}/hooks/semaphores/acquire`, body, 'R1')).status, 400, JSON.stringify(body));
-  }
+  const url = `${base}/hooks/semaphores/acquire`;
+  const bad = [
+    new URLSearchParams(), new URLSearchParams([['pid', '1']]), // nothing; no arg
+    acquireForm(['pnpm'], 0), acquireForm(['pnpm'], -1), acquireForm(['pnpm'], '1.5'), acquireForm(['pnpm'], 'abc'), acquireForm(['pnpm'], ''),
+    acquireForm(['pnpm'], 1, [['pid', '2']]), acquireForm(['pnpm'], 1, [['now', 'false']]),
+  ];
+  for (const form of bad) assert.equal((await postForm(url, form, 'R1')).status, 400, form.toString());
+  assert.equal((await post(url, { argv: ['pnpm', 'test'], pid: 1 }, 'R1')).status, 400, '#798\'s JSON body is no form');
   for (const body of [{}, { semaphore: 1 }]) assert.equal((await post(`${base}/hooks/semaphores/release`, body, 'R1')).status, 400, JSON.stringify(body));
   for (const body of [{}, { ptyId: '' }, { ptyId: 7 }]) assert.equal((await post(`${base}/api/semaphores/memory/run-now`, body)).status, 400, JSON.stringify(body));
   assert.equal(await acquire(base, 'R1'), 'run memory\n', 'nothing was held');
@@ -95,9 +114,9 @@ test('run now grants a place its turn above the limit; a pty with no place answe
 
 test('acquire refuses a pid above 2**31 - 1 and an argv beyond 256 items or 4096 chars with 400 (#798)', async (t) => {
   const base = await start(t);
-  const bodies = [{ argv: ['pnpm'], pid: 2 ** 31 }, { argv: Array.from({ length: 257 }, () => 'a'), pid: 1 }, { argv: ['a'.repeat(4097)], pid: 1 }];
-  for (const body of bodies) assert.equal((await post(`${base}/hooks/semaphores/acquire`, body, 'R1')).status, 400);
-  assert.equal(await acquire(base, 'R1', { argv: ['pnpm', 'test', ...Array.from({ length: 253 }, () => 'a'), 'a'.repeat(4096)], pid: 2 ** 31 - 1 }), 'run memory\n', 'the bounds themselves pass');
+  const forms = [acquireForm(['pnpm'], 2 ** 31), acquireForm(Array.from({ length: 257 }, () => 'a'), 1), acquireForm(['a'.repeat(4097)], 1)];
+  for (const form of forms) assert.equal((await postForm(`${base}/hooks/semaphores/acquire`, form, 'R1')).status, 400);
+  assert.equal(await acquire(base, 'R1', acquireForm(['pnpm', 'test', ...Array.from({ length: 253 }, () => 'a'), 'a'.repeat(4096)], 2 ** 31 - 1)), 'run memory\n', 'the bounds themselves pass');
 });
 
 test('run now from a pty (x-hive-pty) answers 403 (#798)', async (t) => {
@@ -120,14 +139,14 @@ const postUi = (url: string, body?: unknown): Promise<Response> =>
 const hook = (url: string, ptyId: string, body: unknown): Promise<Response> =>
   hiveFetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-pty': ptyId }, body: JSON.stringify(body) });
 const acquireLive = async (base: string, ptyId: string): Promise<string> =>
-  (await hook(`${base}/hooks/semaphores/acquire`, ptyId, { argv: ['pnpm', 'test'], pid: process.pid })).text();
+  (await hiveFetch(`${base}/hooks/semaphores/acquire`, { method: 'POST', headers: { 'x-hive-pty': ptyId }, body: acquireForm(['pnpm', 'test'], process.pid) })).text();
 
 async function waitFor(check: () => boolean): Promise<void> {
   for (let i = 0; i < 200 && !check(); i += 1) await sleep(5);
   assert.ok(check(), 'condition not met in time');
 }
 
-async function startHive(t: TestContext): Promise<{ base: string; server: HiveServer; workers: FakeWorker[]; repo: string }> {
+async function startHive(t: TestContext): Promise<{ base: string; server: HiveServer; workers: FakeWorker[]; repo: string; home: string }> {
   const { home, repo } = await tempHive(t);
   const { spawn, workers } = fakeSpawn();
   const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: async () => ({ stdout: '' }) });
@@ -135,7 +154,7 @@ async function startHive(t: TestContext): Promise<{ base: string; server: HiveSe
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   assert.equal((await postUi(`${base}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
-  return { base, server, workers, repo };
+  return { base, server, workers, repo, home };
 }
 const openShell = async (base: string): Promise<string> => ((await (await postUi(`${base}/activities/${LOCAL}/shell`)).json()) as OpenResult).ptyId ?? '';
 
@@ -175,4 +194,28 @@ test('a Hive started with its config and State has its semaphores from the first
   await server.listen(0);
   t.after(() => server.close());
   await waitFor(() => isDeepStrictEqual(server.getState()?.semaphores, { memory: { runs: [], line: [] } }));
+});
+
+test('the server writes a shim per first word with the first config, a save that drops the line drops its shim, and a failed install never fails the save (#800)', { skip: process.platform === 'win32' && 'win32 installs no command shim until node 5 of #704' }, async (t) => {
+  const { base, repo, home } = await startHive(t);
+  const pnpm = join(home, 'command-shims', 'pnpm');
+  await waitFor(() => existsSync(pnpm));
+  const dropped = await postUi(`${base}/settings`, { ...BODY, commands: [], commandSemaphores: [], workspaces: workspacesAt(repo) });
+  assert.equal(dropped.status, 200);
+  assert.equal(existsSync(pnpm), false, 'the save awaited the install');
+  await rm(join(home, 'command-shims'), { recursive: true, force: true });
+  await writeFile(join(home, 'command-shims'), 'not a folder');
+  assert.equal((await postUi(`${base}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200, 'the install failed and was logged');
+});
+
+// #800: listen() answers once the boot's install is done, so no run of the boot or the poll spawns before the shims exist
+test('a Hive started with its config and State has its command shims written before listen resolves (#800)', { skip: process.platform === 'win32' && 'win32 installs no command shim until node 5 of #704' }, async (t) => {
+  const { home, repo } = await tempHive(t);
+  const { factory } = fakeSourceFactory();
+  const config = parseConfig(combConfig({ sources: [GITHUB_ENTRY], path: repo, commands: [TEST_COMMAND], commandSemaphores: [MEMORY] }));
+  const { spawn } = fakeSpawn();
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: async () => ({ stdout: '' }), runtime: { config, sources: createSources(config, factory) }, state: { ...initialState(0), workspaces: [WORKSPACE] } });
+  await server.listen(0);
+  t.after(() => server.close());
+  assert.equal(existsSync(join(home, 'command-shims', 'pnpm')), true);
 });

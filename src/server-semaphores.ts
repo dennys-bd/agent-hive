@@ -1,6 +1,7 @@
-import type { Express, Request, Response } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import type { CommandSemaphores } from './command-semaphores.js';
 import { refuse } from './server-tasks.js';
+import { formArgs } from './server-terminals.js';
 import type { State } from './types.js';
 
 // The Command Semaphores' routes (#798): the shim's acquire and release under /hooks/, behind the secret and x-hive-pty as every hook (server.ts'
@@ -12,7 +13,9 @@ const HTTP_FORBIDDEN = 403;
 const HTTP_CONFLICT = 409;
 export const NOT_IN_LINE_CODE = 'not_in_line'; // node 4 words it
 const NOT_IN_LINE_MESSAGE = 'no place in line on that semaphore';
-const BAD_ACQUIRE_MESSAGE = 'acquire takes { argv: string[], pid: a positive integer, now?: true }';
+const BAD_ACQUIRE_MESSAGE = 'acquire takes a form: arg once per argv word (1 to 256, each up to 4096 chars), pid (a positive integer), now=true optionally';
+const PID_TEXT = /^[1-9][0-9]*$/; // decimal digits only, so Number never reads 0x1f, 1e3 or ' 1'
+const ACQUIRE_FORM_LIMIT = '2mb'; // what express.json took for #798's body: an argv at its bounds fits
 const BAD_RELEASE_MESSAGE = 'release takes { semaphore: string }';
 const FROM_PTY_MESSAGE = 'run now is the UI\'s';
 const BAD_RUN_NOW_MESSAGE = 'run now takes { ptyId: string }';
@@ -44,16 +47,18 @@ export function ptyOf(state: State, ptyId: string): { isAgent: boolean; workspac
   return workspace === undefined ? undefined : { isAgent: worker !== undefined, workspace };
 }
 
+// #800: the shim's form (sh cannot JSON-escape an arg; curl url-encodes each value whole, #932); the bounds are #798's
 function acquireBody(raw: unknown): { argv: string[]; pid: number; now?: true } | undefined {
   if (!isRecord(raw)) return undefined;
-  const { argv, pid, now } = raw;
-  if (!isArgv(argv) || !isPid(pid) || (now !== undefined && now !== true)) return undefined;
-  return { argv, pid, ...(now === true ? { now } : {}) };
+  const argv = formArgs(raw.arg);
+  const pid = typeof raw.pid === 'string' && PID_TEXT.test(raw.pid) ? Number(raw.pid) : undefined;
+  if (!isArgv(argv) || !isPid(pid) || (raw.now !== undefined && raw.now !== 'true')) return undefined;
+  return { argv, pid, ...(raw.now === 'true' ? { now: true as const } : {}) };
 }
 
 // Decision 21: a bad body is a 400 and the shim runs the binary; no Hive, no pty or an unknown one answers run
 function registerAcquire(app: Express, deps: SemaphoreRouteDeps): void {
-  app.post('/hooks/semaphores/acquire', (req: Request, res: Response) => {
+  app.post('/hooks/semaphores/acquire', express.urlencoded({ extended: false, limit: ACQUIRE_FORM_LIMIT }), (req: Request, res: Response) => {
     const body = acquireBody(req.body);
     if (body === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: BAD_ACQUIRE_MESSAGE });
     const ptyId = req.header('x-hive-pty');

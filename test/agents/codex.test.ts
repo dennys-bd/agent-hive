@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { AGENTS } from '../../src/agents.js';
 import { codexRunner } from '../../src/agents/codex.js';
 import { agentRoles, marketplaceName, roleFile, tomlString } from '../../src/agents/codex-home.js';
@@ -37,7 +38,7 @@ const MCP: LaunchArg[] = [
   ['-c', 'mcp_servers.hive.default_tools_approval_mode="approve"'],
 ];
 const PROTOCOL_ARG: LaunchArg = ['-c', `developer_instructions=${JSON.stringify(PROTOCOL)}`];
-const STARTUP: LaunchArg[] = [['-c', 'check_for_update_on_startup=false'], ['-c', `projects={"${CWD}"={trust_level="trusted"}}`]];
+const STARTUP: LaunchArg[] = [['-c', 'check_for_update_on_startup=false'], ['-c', 'allow_login_shell=false'], ['-c', `projects={"${CWD}"={trust_level="trusted"}}`]];
 // #934, #316: the skills as the render copied the run's folder into Codex's cache, then one role per agent of that folder
 const MARKETPLACE = marketplaceName(PLUGIN_FOLDER);
 const PLUGIN: LaunchArg = ['-c', `plugins.hive@${MARKETPLACE}.enabled=true`];
@@ -52,6 +53,12 @@ test('a new stage run: the hooks, the MCP server, the protocol, the startup swit
   const argv = codexRunner.launch({ ...STAGE_RUN, session: { id: ID, resume: false } });
   assert.deepEqual(argv, [...HOOKS, ...MCP, ...HIVE_PLUGIN, PROTOCOL_ARG, ...STARTUP, ...TAIL]);
   assert.equal(JSON.stringify(argv).includes(ID), false, 'Codex picks its own session id (finding §3)');
+});
+
+test('every Codex launch, resume and copy passes allow_login_shell=false, so its command shell keeps the command shims first on PATH (#800)', () => {
+  const flag: LaunchArg = ['-c', 'allow_login_shell=false'];
+  const argvs = [codexRunner.launch(STAGE_RUN), codexRunner.launch({ ...STAGE_RUN, session: { id: ID, resume: true } }), codexRunner.copy(RUN, FROM, 'copy') ?? []];
+  for (const argv of argvs) assert.ok(argv.some((arg) => isDeepStrictEqual(arg, flag)));
 });
 
 test('a resume is `resume <id>` followed by the same overrides (#927)', () => {

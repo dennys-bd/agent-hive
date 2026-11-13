@@ -91,7 +91,7 @@ async function lane(t: TestContext, extra: Partial<PtyLaunch> = {}, agentArgs: r
   };
   let [chunks, exits] = ['', 0];
   // a run's tmp removal is spawn-internal.test.ts's to check
-  const handle = launchInternalPty(launch, { onError: () => undefined, onExit: () => { exits += 1; } }, { ptys: host, secretFile });
+  const handle = launchInternalPty(launch, { onError: () => undefined, onExit: () => { exits += 1; } }, { ptys: host, secretFile, commandShims: join(dir, 'command-shims') });
   t.after(() => handle.kill());
   await handle.started;
   const ended = new Promise<[number, boolean]>((resolve) => {

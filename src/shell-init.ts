@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AGENTS } from './agents.js';
+import { commandShimDir } from './command-shim.js';
 import { pwshQuote } from './pwsh-quote.js';
 import { BIN_MODE, shimDir, shimPath, type ShimInstall } from './shim.js';
 import { AGENT_IDS } from './types.js';
@@ -13,6 +14,7 @@ import { AGENT_IDS } from './types.js';
 const SHELL_DIR = 'shell'; // <home>/shell: HIVE_SHELL_DIR in every plain terminal's env
 const FUNCTIONS = '__HIVE_FUNCTIONS__';
 const BIN = '__HIVE_BIN__'; // the profile's PATH fix (#645): the shim folder, pwshQuoted
+const COMMAND_SHIMS = '__HIVE_COMMAND_SHIMS__'; // #800: the command shims' folder, quoted for the file's shell
 
 /** Every template, by its path under assets/shell/ and under <home>/shell/: a fixed list, so nothing hangs on readdir's order. */
 export const SHELL_INIT_FILES = ['zsh/.zshenv', 'zsh/.zprofile', 'zsh/.zshrc', 'zsh/.zlogin', 'bash/rc', 'fish/init.fish', 'pwsh/profile.ps1'] as const;
@@ -20,8 +22,9 @@ export const SHELL_INIT_FILES = ['zsh/.zshenv', 'zsh/.zprofile', 'zsh/.zshrc', '
 /** An agent's function: its command names it, its shim's path is what it runs. */
 export interface ShellShim { command: string; path: string }
 
-/** What the profile renders besides the shims (#645): Git's sh.exe, which its functions run each shim under, and the shim folder. */
-export interface ShellInitPaths { sh: string; bin: string }
+/** What the init files render besides the shims (#645, #800): Git's sh.exe, which the profile's functions run each shim under, the agents'
+ * shim folder and the command shims' folder. */
+export interface ShellInitPaths { sh: string; bin: string; commandShims: string }
 
 export const shellInitDir = (home: string): string => join(home, SHELL_DIR);
 
@@ -47,17 +50,22 @@ function functionLine(file: string, { command, path }: ShellShim, sh: string): s
   return `function ${command} { ${shellQuote(path)} "$@"; }`;
 }
 
+// A path as one word of `file`'s shell
+const pathWord = (file: string, path: string): string =>
+  (file.startsWith('fish/') ? fishQuote(path) : file.startsWith('pwsh/') ? pwshQuote(path) : shellQuote(path));
+
 /** `template` as written to `file`: its placeholders replaced by the shim folder and by one function per shim, in that file's shell.
  * Replacer functions, so a `$&` or `$'` in a home path is never read as a replacement pattern. */
 export const renderShellInit = (template: string, file: string, shims: readonly ShellShim[], paths: ShellInitPaths): string =>
-  template.replaceAll(BIN, () => pwshQuote(paths.bin)).replaceAll(FUNCTIONS, () => shims.map((shim) => functionLine(file, shim, paths.sh)).join('\n'));
+  template.replaceAll(BIN, () => pwshQuote(paths.bin)).replaceAll(COMMAND_SHIMS, () => pathWord(file, paths.commandShims))
+    .replaceAll(FUNCTIONS, () => shims.map((shim) => functionLine(file, shim, paths.sh)).join('\n'));
 
 /** Writes <home>/shell/ from assets/shell/, with a function for every agent of AGENTS, found or not: a missing CLI's shim answers as the shell
  * would (127). The profile is written on every OS (#645), as one fixed list with no platform branch. Folders get the shim folder's mode.
  * Answers <home>/shell. */
 export async function installShellInit(home: string, { sh }: ShimInstall): Promise<string> {
   const shims = AGENT_IDS.map((id) => ({ command: AGENTS[id].command, path: shimPath(home, AGENTS[id]) }));
-  const paths = { sh, bin: shimDir(home) };
+  const paths = { sh, bin: shimDir(home), commandShims: commandShimDir(home) };
   const dir = shellInitDir(home);
   for (const file of SHELL_INIT_FILES) {
     const target = join(dir, file);

@@ -6,14 +6,14 @@ cli=__HIVE_COMMAND__
 self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 # The real CLI: the first one on PATH outside this directory that is not this file under another name (a link to the shim elsewhere on
-# PATH would exec itself forever). A subshell, so IFS and set -f stay its own.
+# PATH would exec itself forever); -f, since the shell's own lookup skips a folder of that name. A subshell, so IFS and set -f stay its own.
 real_cli() (
   IFS=:
   set -f
   for dir in $PATH; do
     [ "$dir" = "$self_dir" ] && continue
     [ "$dir/$cli" -ef "$0" ] && continue
-    [ -x "$dir/$cli" ] && { printf '%s\n' "$dir/$cli"; exit 0; }
+    [ -f "$dir/$cli" ] && [ -x "$dir/$cli" ] && { printf '%s\n' "$dir/$cli"; exit 0; }
   done
   exit 1
 )
@@ -33,13 +33,14 @@ passthrough() {
 
 if passthrough "$@"; then exec "$real" "$@"; fi
 
-# The secret goes as curl's header file, never in an argv (#467), and never through a proxy the env names: the Hive is on loopback. 5 s, since a
-# register the server took but the shim gave up on leaves a run that never reports its exit. The agent, this folder and each of the user's args
-# (#347) go as a form (#932): sh can neither JSON-escape a path nor parse an argv, and curl url-encodes each value whole. The function's own
-# positional args become curl's, so the user's stay as typed for the exec below.
+# The secret goes as curl's header file, never in an argv (#467), and never through a proxy the env names: the Hive is on loopback. -q
+# first on every curl, so no ~/.curlrc (a --trace) ever applies. 5 s, since a register the server took but the shim gave up on leaves a run
+# that never reports its exit. The agent, this folder and each of the user's args (#347) go as a form (#932): sh can neither JSON-escape a
+# path nor parse an argv, and curl url-encodes each value whole. The function's own positional args become curl's, so the user's stay as
+# typed for the exec below.
 register() {
   for arg in "$@"; do set -- "$@" --data-urlencode "arg=$arg"; shift; done
-  curl -sf --noproxy '*' -m 5 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/terminals/$HIVE_PTY_ID/session" -H @"$HIVE_SECRET_FILE" \
+  curl -q -sf --noproxy '*' -m 5 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/terminals/$HIVE_PTY_ID/session" -H @"$HIVE_SECRET_FILE" \
     --data-urlencode "agent=$cli" --data-urlencode "cwd=$PWD" "$@"
 }
 reply=$(register "$@") || exec "$real" "$@"
@@ -64,5 +65,5 @@ case "$cli:$hive_args" in
   *) HIVE_PTY_ID=$run_id "$real" "$@" ;;
 esac
 code=$?
-curl -s --noproxy '*' -m 2 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/exit" -H "x-hive-pty: $run_id" -H @"$HIVE_SECRET_FILE" >/dev/null
+curl -q -s --noproxy '*' -m 2 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/exit" -H "x-hive-pty: $run_id" -H @"$HIVE_SECRET_FILE" >/dev/null
 exit $code

@@ -1,0 +1,121 @@
+#!/bin/sh
+# The Hive's command shim (#800), rendered for each first word of a line with a Command Semaphore into <home>/command-shims/<word>, first
+# on every pty's PATH. It asks the daemon before the real command runs (#798's answers): run, or no answer at all, runs it as typed; run
+# <semaphore> runs it and gives the permit back when it ends; refused tells the agent it is in line and stops; wait (until node 2.4's wait
+# in place) gives the place back and runs it. A Hive down or stuck costs at most 2 s, never the command.
+word=__HIVE_COMMAND__
+case $0 in */*) self_dir=${0%/*} ;; *) self_dir=. ;; esac
+self_dir=$(CDPATH= cd -- "$self_dir" && pwd)
+
+# Every command-shim folder this command has passed through, its own first, in the env of whatever it starts: with two on PATH (a Hive
+# started from a Hive pty) each shim would otherwise find the other's and exec it forever.
+HIVE_COMMAND_SHIM_DIRS=$self_dir${HIVE_COMMAND_SHIM_DIRS:+:$HIVE_COMMAND_SHIM_DIRS}
+export HIVE_COMMAND_SHIM_DIRS
+
+# The first regular executable <dir>/<name> on PATH outside those folders that is not this file under another name (a link to the shim
+# elsewhere on PATH would exec itself forever), as the agent shim's real_cli; -f, since the shell's own lookup skips a folder of that name.
+# Copied, not sourced, since a helper would be one more file every shim must find. A subshell, so IFS and set -f stay its own. Builtins only:
+# the word could name any external command.
+on_path() (
+  IFS=:
+  set -f
+  for dir in $PATH; do
+    for shims in $HIVE_COMMAND_SHIM_DIRS; do [ "$dir" = "$shims" ] && continue 2; done
+    [ "$dir/$1" -ef "$0" ] && continue
+    [ -f "$dir/$1" ] && [ -x "$dir/$1" ] && { printf '%s\n' "$dir/$1"; exit 0; }
+  done
+  exit 1
+)
+
+real=$(on_path "$word") || { echo "$word: not found on PATH" >&2; exit 127; }
+
+# Not in a Hive pty: as typed
+[ -n "${HIVE_PTY_ID:-}" ] && [ -n "${HIVE_PORT:-}" ] && [ -n "${HIVE_SECRET_FILE:-}" ] || exec "$real" "$@"
+
+# The shim's own curl, found as the real binary is: with a semaphore on curl, a bare curl here would be this shim again, forever. None:
+# as with no answer
+curl=$(on_path curl) || exec "$real" "$@"
+
+# The argv as a form, one arg field per word, this word first: sh cannot JSON-escape an arg, and curl url-encodes each value whole (#932).
+# pid is this shell's, which the daemon probes to free a permit whose holder died (#798). The secret goes as curl's header file, never in an
+# argv (#467), and never through a proxy the env names: the Hive is on loopback. -q first, so no ~/.curlrc (a --trace) ever applies. The
+# function's own positional args become curl's, so the user's stay as typed for the exec below.
+acquire() {
+  for arg in "$@"; do set -- "$@" --data-urlencode "arg=$arg"; shift; done
+  "$curl" -q -sf --noproxy '*' -m 2 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/semaphores/acquire" -H "x-hive-pty: $HIVE_PTY_ID" \
+    -H @"$HIVE_SECRET_FILE" --data-urlencode "arg=$word" -d "pid=$$" "$@"
+}
+
+# No answer within 2 s, or a non-2xx: as typed. Only the reply's first line counts, read as data and never evaluated
+reply=$(acquire "$@") || exec "$real" "$@"
+read -r answer name place rest <<EOF
+$reply
+EOF
+
+# A semaphore's name is one word of [A-Za-z0-9_-] (#796), so the release's JSON needs no escaping; a place is a number. Anything else
+# makes an answer this shim does not know, which runs as typed
+case "$name" in ''|*[!A-Za-z0-9_-]*) name= ;; esac
+case "$place" in ''|*[!0-9]*) place= ;; esac
+
+# Its failure is ignored: the daemon frees a permit whose pid is gone, and a pty's end frees all it holds (#798)
+release() {
+  "$curl" -q -s --noproxy '*' -m 2 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/semaphores/release" -H "x-hive-pty: $HIVE_PTY_ID" \
+    -H @"$HIVE_SECRET_FILE" -H 'content-type: application/json' -d "{\"semaphore\":\"$name\"}" >/dev/null 2>&1
+}
+
+# 1st, 2nd, 3rd, 4th; 11th, 12th, 13th; 21st
+ordinal() {
+  case "$1" in
+    *1[123]) printf '%sth' "$1" ;;
+    *1) printf '%sst' "$1" ;;
+    *2) printf '%snd' "$1" ;;
+    *3) printf '%srd' "$1" ;;
+    *) printf '%sth' "$1" ;;
+  esac
+}
+
+# A signal to the shim alone (a shell tool's timeout sends TERM to it) still ends the child and frees the permit at once; SIGKILL is left
+# to the daemon's pid check (#798). An INT goes on as TERM: a background child of a non-interactive sh ignores INT, and the ignore survives
+# its exec. $!, not child: a trap runs between commands, so $! is set as soon as the child is, and empty before (nothing else here runs in
+# the background), with no window where the child runs unknown to the trap. The exit is 128 + the signal the shim got, as a shell reports a
+# command a signal ended.
+on_signal() {
+  trap '' INT TERM HUP
+  if [ -n "$!" ]; then
+    kill -s "$1" "$!" 2>/dev/null
+    wait "$!"
+  fi
+  release
+  exit $((128 + $2))
+}
+
+# The real binary as a child, so the shim outlives it to give the permit back. A non-interactive sh gives a background child /dev/null as
+# stdin, so fd 3 carries the shim's own; a closed stdin is tried in a subshell first, since a failed exec redirection exits a POSIX shell,
+# and the child gets /dev/null instead. Without job control the child stays in the terminal's process group, yet ignores INT and QUIT as
+# a background child of a non-interactive sh: a Ctrl-C reaches it only as the TERM the shim's INT trap sends (planning decision 1). The
+# traps come first, so no signal finds the child started and the shim unguarded.
+run_held() {
+  trap 'on_signal TERM 2' INT
+  trap 'on_signal TERM 15' TERM
+  trap 'on_signal HUP 1' HUP
+  if (exec 3<&0) 2>/dev/null; then exec 3<&0; else exec 3</dev/null; fi
+  "$real" "$@" <&3 3<&- &
+  child=$!
+  exec 3<&-
+  wait "$child"
+  code=$?
+  release
+  exit "$code"
+}
+
+case "$answer:${name:+name}:${place:+place}" in
+  run::) exec "$real" "$@" ;; # no semaphore on this argv, or a permit this pty already holds: nothing to give back
+  run:name:) run_held "$@" ;;
+  refused:name:place)
+    # #799 tells the agent its turn, so the line says to wait for that rather than retry in a loop. 75 is EX_TEMPFAIL
+    printf 'hive: %s refused: the semaphore %s is full and you are %s in line. Do not retry: you will be told when your turn comes.\n' \
+      "$word" "$name" "$(ordinal "$place")" >&2
+    exit 75 ;;
+  wait:name:place) release; exec "$real" "$@" ;; # until node 2.4 waits in place: no place stays in line with nobody waiting
+esac
+exec "$real" "$@"

@@ -1,10 +1,14 @@
-import { mkdirSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
+import path from 'node:path';
+import { claudeEnvLine, commandShimsEnvFile } from './command-shim.js';
 import { posixShell, posixShellEnv } from './posix-shell.js';
-import { runTmpDir, ptyCommand, ptyEnv } from './spawn.js';
+import { runTmpDir, ptyCommand, ptyEnv, shimsFirst } from './spawn.js';
 import type { SpawnOptions, PtyHandle, PtyHandlers, PtyLaunch } from './types.js';
 
 const TMP_MODE = 0o700; // the run's temp files are this user's only (#428)
+const ENV_FILE_MODE = 0o600;
+const ENV_DIR_MODE = 0o700; // the folder of every run's command-shims.sh, this user's only (#800)
 // A process of the run can outlive the pty and keep writing its TMPDIR (node's compile cache), so the removal retries ENOTEMPTY with a
 // linear backoff, about 5 s in all (#495).
 const TMP_RM_RETRIES = 10;
@@ -18,22 +22,40 @@ function removeTmp(dir: string, onError: PtyHandlers['onError']): void {
   rm(dir, { recursive: true, force: true, maxRetries: TMP_RM_RETRIES, retryDelay: TMP_RM_RETRY_MS }).catch((err: unknown) => onError(`tmp: ${errorMessage(err)}`));
 }
 
+// #800: the run's command-shims.sh goes with it as its TMPDIR does, a failure on the error bar
+function removeEnvFile(file: string, onError: PtyHandlers['onError']): void {
+  rm(file, { force: true }).catch((err: unknown) => onError(`command shims env: ${errorMessage(err)}`));
+}
+
+// #800: the line Claude Code's Bash tool sources (CLAUDE_ENV_FILE, ptyEnv), one file per run, so what a SessionStart hook appends to it
+// stays this run's. Written on every OS: ptyEnv names it only off win32. A leftover of a run with this id is dropped first, so the
+// exclusive write makes the file anew with its own mode
+function writeEnvFile(file: string, commandShims: string): void {
+  const dir = path.dirname(file);
+  mkdirSync(dir, { recursive: true, mode: ENV_DIR_MODE });
+  chmodSync(dir, ENV_DIR_MODE); // mkdir's mode applies only to a folder it makes
+  rmSync(file, { force: true });
+  writeFileSync(file, claudeEnvLine(commandShims), { mode: ENV_FILE_MODE, flag: 'wx' });
+}
+
 // The run in the host through `sh -c ptyCommand`, with `tmp` as its TMPDIR (and TEMP / TMP on win32, #644). A failure is `started` rejecting: the pool reports it as
 // spawnFailed, and there is no exit to report. A dir that cannot be made fails the run too, since on the shared temp dir it would leak
 // again (#428); a pty that cannot spawn drops the dir made for it. Two tries, so a dir never made is never removed.
 function startIn(options: SpawnOptions | undefined, launch: PtyLaunch, tmp: string, onExit: () => void, dropTmp: () => void): Promise<void> {
   if (!options) return Promise.reject(new Error('pty: no pty host'));
-  const { ptys, secretFile } = options;
+  const { ptys, secretFile, commandShims } = options;
   try {
     mkdirSync(tmp, { recursive: true, mode: TMP_MODE });
   } catch (err) {
     return spawnFailed(err);
   }
   try {
+    writeEnvFile(commandShimsEnvFile(commandShims, launch.ptyId, path), commandShims);
     // the secret's file path rides the env, never the value: sh -c's argv and curl's are visible to every account through ps (#467). An
     // agent's run keeps its transcript past its exit for its sleeping tab (#672); a kept terminal's goes to its log (#696), a command's with it
     // #631: on win32 MSYS must not rewrite the trailer's /hooks/exit; a terminal's own env still wins (#696)
-    const env = { ...ptyEnv(process.env, launch.ptyId, launch.port, tmp, secretFile, process.platform), ...posixShellEnv(process.platform), ...launch.env };
+    const merged = { ...ptyEnv(process.env, launch.ptyId, launch.port, tmp, secretFile, process.platform, commandShims), ...posixShellEnv(process.platform), ...launch.env };
+    const env = shimsFirst(merged, commandShims, process.platform); // a workspace's own PATH (#738) came in with launch.env
     ptys.spawn(launch.ptyId, [posixShell().shell, '-c', ptyCommand(launch)], launch.cwd, env, launch.terminal === undefined ? {} : launch.keep, launch.size); // #808: the page's grid
   } catch (err) {
     dropTmp();
@@ -50,7 +72,11 @@ function startIn(options: SpawnOptions | undefined, launch: PtyLaunch, tmp: stri
  */
 export function launchInternalPty(launch: PtyLaunch, handlers: PtyHandlers, options?: SpawnOptions): PtyHandle {
   const tmp = runTmpDir(launch.ptyId);
-  const dropTmp = (): void => removeTmp(tmp, handlers.onError);
+  const envFile = options === undefined ? undefined : commandShimsEnvFile(options.commandShims, launch.ptyId, path);
+  const dropTmp = (): void => {
+    removeTmp(tmp, handlers.onError);
+    if (envFile !== undefined) removeEnvFile(envFile, handlers.onError);
+  };
   let exited = false;
   let killing: Promise<void> | undefined;
   let markGone: () => void = () => {};
