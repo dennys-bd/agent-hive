@@ -164,6 +164,8 @@ export function describeEvent(event: HiveEvent): string {
     case 'setShutdownIdle': return `setShutdownIdle ${event.minutes}`;
     case 'setRateLimitWait': return `setRateLimitWait ${event.minutes}`; // #805
     case 'setDefaultAgent': return `setDefaultAgent ${event.agent}`; // #925
+    case 'setSemaphores': return `setSemaphores ${Object.entries(event.semaphores).map(([name, s]) => `${name}=${s.runs.length}+${s.line.length}`).join(' ') || 'none'}`; // #798: runs+line
+    case 'semaphoreTurn': return `semaphoreTurn pty=${shortId(event.ptyId)} semaphore=${event.semaphore}`; // #798: never the argv, which can hold a path or a token
     case 'setApprovalMinutes': return `setApprovalMinutes ${event.minutes}`;
     case 'setKeepAwake': return `setKeepAwake ${event.on ? 'on' : 'off'}`; // #226
     case 'setShutdown': return `setShutdown ${event.armed ? 'on' : 'off'}`;

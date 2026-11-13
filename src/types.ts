@@ -1713,7 +1713,8 @@ export type HiveEvent =
   | { type: 'retryDue'; ptyId: string; until: string } // the server's backoff timer fired for that wait (#805)
   | { type: 'moveTask'; taskId: string; before?: string } // the task goes before `before` (same stage); absent = end of its stage
   | { type: 'resetOrder'; stage: string } // that stage's tasks back to the source's order
-  | BenchmarkEvent; // #458: an experiment's life, applied by benchmark-reducer.ts
+  | BenchmarkEvent // #458: an experiment's life, applied by benchmark-reducer.ts
+  | SemaphoreEvent; // #798: command-semaphores.ts' snapshot and turns
 
 export interface ProjectSummary {
   number: number;

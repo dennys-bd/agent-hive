@@ -531,3 +531,10 @@ test('describeEffect names a cleared run\'s transcript removal by task, slug and
 test('createTask without a stage logs stage=none (#566)', () => {
   assert.equal(describeEvent({ type: 'createTask', title: 'x', body: '', prefix: 'HIVE', auto: true }), 'createTask stage=none prefix=HIVE');
 });
+
+test('describeEvent counts each semaphore\'s runs and line, and names a turn\'s pty and semaphore, never its argv (#798)', () => {
+  assert.equal(describeEvent({ type: 'setSemaphores', semaphores: { memory: { runs: ['A'], line: [{ ptyId: 'B', place: 1 }] }, disk: { runs: [], line: [] } } }), 'setSemaphores memory=1+1 disk=0+0');
+  assert.equal(describeEvent({ type: 'setSemaphores', semaphores: {} }), 'setSemaphores none');
+  const turn = describeEvent({ type: 'semaphoreTurn', ptyId: 'b1c2d3e4-0000-4000-8000-000000000001', semaphore: 'memory', argv: ['pnpm', 'test', '--token=x'] });
+  assert.equal(turn, 'semaphoreTurn pty=b1c2d3e4 semaphore=memory');
+});

@@ -133,6 +133,8 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setShutdownIdle': return none({ ...state, shutdownIdleMinutes: event.minutes }); // no fill: the window starts no job (#233)
     case 'setRateLimitWait': return none({ ...state, rateLimitWaitMinutes: event.minutes }); // no fill: the ceiling starts no job (#805)
     case 'setDefaultAgent': return none({ ...state, defaultAgent: event.agent }); // no fill: the default picks no task, only what a run records (#925)
+    case 'setSemaphores': return none({ ...state, semaphores: event.semaphores }); // #798: the module's snapshot, mirrored whole; no fill, a semaphore starts no job
+    case 'semaphoreTurn': return none(state); // #798: the turn's notice is node 2.2's
     case 'setApprovalMinutes': return none({ ...state, approvalMinutes: event.minutes }); // no fill: the window starts no job (#268)
     case 'setKeepAwake': return none(setKeepAwake(state, event.on)); // no fill: keeping the machine awake starts no job (#226)
     case 'setShutdown': return fill(none(setShutdown(state, event.armed))); // arming no longer caps the signal (#727); the fill runs as after any setting
