@@ -806,6 +806,7 @@ export interface State {
   cleanStop?: true; // set by quit (#283): the kills of a Quit are not exits, and the next boot resumes the tasks in flight
   crash?: { at: string; tasks: string[] }; // the item ids a boot after a crash stopped (#283): the source lists them until dismissCrash
   slept?: SleptRun[]; // #672: the runs that ended with their session kept, newest last, at most SLEPT_MAX; never saved (state-store.ts)
+  semaphores: Record<string, SemaphoreState>; // #798: mirrored from command-semaphores.ts by setSemaphores, an entry per configured semaphore once the module publishes; {} before; never saved (state-store.ts)
   rateLimits?: PlanReadings; // #929: one reading per agent, read by the plan rules and the header; an agent with none has no key
   error?: string;
 }
@@ -1187,6 +1188,25 @@ export interface CommandSemaphore {
   limit: number; // the permits: an integer >= 1
   reservation: string; // a TIMEOUT text: how long a freed permit is kept for the next in line (its turn)
 }
+
+/** One pty's hold on a semaphore (#798), mirrored from command-semaphores.ts: a place in line, or a turn with its end. */
+export interface SemaphoreWaiter {
+  ptyId: string;
+  place: number; // 1-based among the ptys still waiting; a pty in its turn reads 0
+  turnUntil?: string; // ISO: present during its turn, when the reservation ends
+}
+
+/** A Command Semaphore at run time (#798): never saved, rebuilt free on boot. */
+export interface SemaphoreState {
+  runs: string[]; // the ptyIds holding a permit, in grant order (a pty once per semaphore)
+  line: SemaphoreWaiter[]; // the turns first, then the line in order
+}
+
+/** What command-semaphores.ts dispatches (#798): every change as the whole snapshot, which the reducer mirrors; and each turn given, first,
+ * which node 2.2 turns into the notice. argv: that pty's last refused or waiting acquire's, never logged. */
+export type SemaphoreEvent =
+  | { type: 'setSemaphores'; semaphores: Record<string, SemaphoreState> }
+  | { type: 'semaphoreTurn'; ptyId: string; semaphore: string; argv: string[] };
 
 /** A workspace's command (#300, #573: was RunCommand): a named command a task can run in its worktree, one line per workspace (#755); env is
  * exported before it, the user's shell expands it. resolveCommand (run-commands.ts) picks the line a workspace runs. */

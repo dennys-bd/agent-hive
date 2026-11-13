@@ -13,7 +13,7 @@ import { flowed } from '../fixtures/main-flow.js';
 const CHECKS: Stage = { name: 'checks', from: {}, action: 'commands', commands: ['build'], stopOnFailure: true };
 const TASK: Task = { item: { itemId: 'A', id: '1', title: 'Task A', body: '', url: '' }, stage: 'checks', boardColumn: '', auto: true };
 const BASE: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([CHECKS], []), tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([CHECKS], []), tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [],
   usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };

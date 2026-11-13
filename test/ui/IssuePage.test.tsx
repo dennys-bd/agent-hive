@@ -23,7 +23,7 @@ const ISSUE: Issue = {
   commentCount: 3,
 };
 const state = (tasks: Task[] = [], extra: Partial<State> = {}): State => ({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {},
   activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });

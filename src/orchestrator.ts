@@ -58,6 +58,7 @@ export function initialState(maxConcurrent: number): State {
     usageRules: [], disabledRules: [], localCount: 0, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT,
     rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, // #805
     benchmark: { experiments: [] }, // #458
+    semaphores: {}, // #798: the module publishes an entry per semaphore once the config is live
   };
 }
 

@@ -20,7 +20,7 @@ const stopped: WithWork = {
 };
 const ACTIVITY = activityIdOf('I1');
 const state = (task: WithWork, extra: Partial<State> = {}): State => movedWork<State>({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
   activities: [], activityRecords: [{ id: ACTIVITY, taskIds: ['I1'], sessions }],
   sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });

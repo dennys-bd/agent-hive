@@ -17,7 +17,7 @@ const task = (id: string, outOfListing?: OutOfListing): WithWork => ({
   item: { itemId: `I${id}`, id, title: `Task ${id}`, body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true, ...(outOfListing === undefined ? {} : { outOfListing }),
 });
 const state = (tasks: WithWork[]): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([STAGE], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([STAGE], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 const ALL = state([task('1', 'filter'), task('2', 'project'), task('3', 'listing'), task('4')]);

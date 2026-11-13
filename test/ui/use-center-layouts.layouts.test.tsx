@@ -11,7 +11,7 @@ import { activityIdOf, withWork } from '../fixtures/work';
 // #533: the design layer reads every activity's stored layout, not only the picked one's
 const task = (itemId: string, id: string): Task => ({ item: { itemId, id, title: `Task ${id}`, body: '', url: '' }, stage: 'dev', boardColumn: '', auto: true });
 const BASE: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], flows: [], stages: [], tasks: [task('A', '1'), task('B', '2')], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], flows: [], stages: [], tasks: [task('A', '1'), task('B', '2')], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [],
   usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
