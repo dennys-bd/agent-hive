@@ -73,3 +73,11 @@ test('a local epic and one already in the last stage write no close (#843)', () 
   const there = followEpics(at([epic('done', ['c1']), child('c1', 'done')]));
   assert.deepEqual(closes(there.effects), []);
 });
+
+test('a parent epic in Done whose child epic left the Hive, listed in its closedChildren, stays in Done (#843)', () => {
+  const parent: Task = { item: node('R', { children: ['board:E'], closedChildren: ['board:E'], epic: { follows: 'behind', switchAt: 'dev' } }), stage: 'done', boardColumn: 'Done', auto: true };
+  const before = at([parent]);
+  const { state, effects } = followEpics(before);
+  assert.equal(state.tasks.find((t) => t.item.itemId === 'board:R')?.stage, 'done');
+  assert.deepEqual(effects, []);
+});
