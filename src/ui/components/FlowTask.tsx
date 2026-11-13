@@ -25,7 +25,8 @@ import { useTaskNavKeys } from '@/hooks/use-task-keys';
 import { type MessageKey, statusText, t } from '@/i18n';
 import { viaTries } from '@/lib/tries';
 import { STATUS_BORDER, STATUS_TEXT } from '@/lib/status';
-import { answerableActivity, backoffUntil, isExhausted, taskState } from '@/lib/task-state';
+import { answerableActivity, backoffUntil, isExhausted, semaphoreWait, taskState } from '@/lib/task-state';
+import { SemaphoreLine } from '@/components/SemaphoreLine';
 import { backoffLabel } from '@/lib/usage';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import { CutTitle } from '@/lib/cut-title';
@@ -267,11 +268,12 @@ interface FlowTaskProps {
 function FooterStatus({ task, state, status, tries }: { task: Task; state: State; status: TaskStatus; tries: string | undefined }) {
   const groupRef = useRef<HTMLSpanElement>(null);
   const statusRef = useRef<HTMLSpanElement>(null); // an ellipsized status leaves the group unclipped, so it is measured on its own
+  const waitFor = status.tone === 'backoff' && backoffUntil(task, state) === undefined ? semaphoreWait(task, state)?.semaphore : undefined; // only on the wait's own aguardando, never on a question's or an API backoff's word
   const full = [status.text, tries].filter((part) => part !== undefined).join(' · ');
   return (
     <CutTitle text={full} cutRef={[groupRef, statusRef]}>
       <span ref={groupRef} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-        {status.text !== undefined && <span ref={statusRef} className={`min-w-0 truncate ${status.tone ? TONE_TEXT[status.tone] : 'text-muted-foreground'}`}>{status.text}</span>}
+        {status.text !== undefined && <span ref={statusRef} title={waitFor === undefined ? undefined : t('semaphore.waitTitle', { sem: waitFor })} className={`min-w-0 truncate ${status.tone ? TONE_TEXT[status.tone] : 'text-muted-foreground'}`}>{status.text}</span>}
         <DismissErrorButton task={task} state={state} />
         {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
         <StageOutputButton task={task} state={state} />
@@ -316,6 +318,7 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
       <SyncLine task={task} state={state} /> {/* #854 */}
       <BlockedLine task={task} state={state} />
       <ListingLine task={task} />
+      <SemaphoreLine task={task} state={state} />
       <div className="flex min-w-0 items-center gap-1.5 text-xs">
         {task.auto && !isParent && task.item.epic === undefined && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
         <FooterStatus task={task} state={state} status={status} tries={tries} />

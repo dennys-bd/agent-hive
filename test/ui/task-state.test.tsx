@@ -1,7 +1,7 @@
 // .tsx without JSX: vitest.config.ts only picks test/ui/**/*.test.tsx
 import { expect, test } from 'vitest';
-import { answerableActivity, taskState } from '@/lib/task-state';
-import type { Activity, PrState, Stage, Task, Worker } from '../../src/types';
+import { answerableActivity, semaphoreWait, taskState } from '@/lib/task-state';
+import type { Activity, PrState, SemaphoreState, Stage, Task, Worker } from '../../src/types';
 import { activityIdOf, taskPairOf } from '../fixtures/work';
 
 const T0 = '2026-10-01T10:00:00.000Z';
@@ -79,4 +79,28 @@ test('a task outside the flow reads its status from its activity as any task doe
   expect(taskState(outside, stateOf([]))).toBe('empty');
   expect(taskState(outside, stateOf([run('working')]))).toBe('working');
   expect(taskState(outside, stateOf([], { prs: ['open'] }))).toBe('review');
+});
+
+// #805: a worker whose pty stands in a Command Semaphore's line
+const sem = (line: SemaphoreState['line'], runs: string[] = []): SemaphoreState => ({ runs, line });
+const withSems = (workers: Worker[], semaphores: Record<string, SemaphoreState>) => ({ ...stateOf(workers), semaphores });
+
+test('semaphoreWait: undefined with no place; the place on a semaphore; a turn beats a lower place; a captured session reads its terminal pty (#805)', () => {
+  expect(semaphoreWait(TASK, withSems([run('working')], {}))).toBeUndefined();
+  expect(semaphoreWait(TASK, stateOf([run('working')]))).toBeUndefined(); // no semaphores in the input
+  expect(semaphoreWait(TASK, withSems([run('working')], { memory: sem([{ ptyId: 'other', place: 1 }]) }))).toBeUndefined();
+  expect(semaphoreWait(TASK, withSems([run('working')], { memory: sem([{ ptyId: 's1', place: 2 }]) }))).toEqual({ semaphore: 'memory', ptyId: 's1', place: 2 });
+  const turn = { ptyId: 's2', place: 0, turnUntil: '2026-10-01T10:02:00.000Z' };
+  expect(semaphoreWait(TASK, withSems([run('working'), run('working', 2)], { memory: sem([{ ptyId: 's1', place: 1 }]), cpu: sem([turn]) })))
+    .toEqual({ semaphore: 'cpu', ptyId: 's2', place: 0, turnUntil: turn.turnUntil });
+  expect(semaphoreWait(TASK, withSems([run('working'), run('working', 2)], { a: sem([{ ptyId: 's1', place: 3 }]), b: sem([{ ptyId: 's2', place: 1 }]) }))?.semaphore).toBe('b');
+  const captured: Worker = { ...run('working'), terminalId: 'T9' };
+  expect(semaphoreWait(TASK, withSems([captured], { memory: sem([{ ptyId: 'T9', place: 1 }]) }))?.ptyId).toBe('T9');
+});
+
+test('a worker in a semaphore line reads backoff, but a question to the user still wins (#805)', () => {
+  const line = { memory: sem([{ ptyId: 's1', place: 1 }]) };
+  expect(taskState(TASK, withSems([run('working')], line))).toBe('backoff');
+  expect(taskState(TASK, withSems([run('working')], {}))).toBe('working');
+  expect(taskState(TASK, withSems([run('working'), run('waiting', 2)], line))).toBe('waiting');
 });
