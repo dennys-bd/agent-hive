@@ -3,4 +3,6 @@
 # whatever PATH they set. Rewritten on every boot: an edit here is lost.
 [ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
 [ -f ~/.bashrc ] && . ~/.bashrc
+# #800: the command shims back first on PATH, after the user's ~/.bashrc, which may have put nvm's or pnpm's folder before them
+PATH=__HIVE_COMMAND_SHIMS__:$PATH
 __HIVE_FUNCTIONS__

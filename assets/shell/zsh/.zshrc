@@ -4,6 +4,8 @@ ZDOTDIR=${HIVE_USER_ZDOTDIR:-$HOME}
 [[ $HISTFILE == "$HIVE_SHELL_DIR/zsh/.zsh_history" ]] && HISTFILE=$ZDOTDIR/.zsh_history
 [[ -f $ZDOTDIR/.zshrc ]] && source "$ZDOTDIR/.zshrc"
 ZDOTDIR=$HIVE_SHELL_DIR/zsh
+# #800: the command shims back first on PATH, after the user's .zshrc, which may have put nvm's or pnpm's folder before them
+PATH=__HIVE_COMMAND_SHIMS__:$PATH
 __HIVE_FUNCTIONS__
 # The last file a non-login shell reads: the user's ZDOTDIR back, unset when it was; a login shell's .zlogin does it
 if [[ ! -o login ]]; then

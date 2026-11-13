@@ -5,6 +5,7 @@ import { accessSync, constants } from 'node:fs';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { AGENTS } from '../src/agents.js';
+import { commandShimDir } from '../src/command-shim.js';
 import { pwshQuote } from '../src/pwsh-quote.js';
 import { fishQuote, installShellInit, renderShellInit, SHELL_INIT_FILES, shellQuote } from '../src/shell-init.js';
 import { shimDir, shimPath } from '../src/shim.js';
@@ -15,7 +16,7 @@ import { assertMode } from './posix-only.js';
 
 const FUNCTION_FILES = ['zsh/.zshrc', 'bash/rc', 'fish/init.fish', 'pwsh/profile.ps1'];
 const INSTALL = { platform: 'darwin', sh: '/bin/sh' } as const;
-const PATHS = { sh: '/bin/sh', bin: '/h/bin' };
+const PATHS = { sh: '/bin/sh', bin: '/h/bin', commandShims: '/h/command-shims' };
 
 test('renderShellInit puts one function per shim in the placeholder, the path quoted for the file\'s shell: a quote, a space, $\' and $& stay literal (#259)', () => {
   const shims = [{ command: 'claude', path: `/h/it's $'x' $& "dir"/bin/claude` }, { command: 'codex', path: '/h/bin/codex' }];
@@ -34,7 +35,7 @@ test('pwshQuote is a word PowerShell reads literally: in single quotes, each of 
 
 test('renderShellInit renders the PowerShell profile: the shim folder put back first on PATH and one function per agent calling sh.exe on its shim, every path pwshQuoted (#645)', () => {
   const shims = [{ command: 'claude', path: "C:\\h\\it's\\bin\\claude" }, { command: 'codex', path: 'C:\\h\\bin\\codex' }];
-  const paths = { sh: 'C:\\Program Files\\Git\\bin\\sh.exe', bin: "C:\\h\\it's\\bin" };
+  const paths = { sh: 'C:\\Program Files\\Git\\bin\\sh.exe', bin: "C:\\h\\it's\\bin", commandShims: 'C:\\h\\command-shims' };
   const template = "$env:PATH = __HIVE_BIN__ + ';' + $env:PATH\n__HIVE_FUNCTIONS__\n";
   assert.equal(renderShellInit(template, 'pwsh/profile.ps1', shims, paths), [
     "$env:PATH = 'C:\\h\\it''s\\bin' + ';' + $env:PATH",
@@ -62,6 +63,23 @@ test('installShellInit writes every init file under <home>/shell/, its folders f
   await writeFile(join(dir, 'bash', 'rc'), 'from a previous version');
   await installShellInit(home, INSTALL);
   assert.match(await readFile(join(dir, 'bash', 'rc'), 'utf8'), /function claude \{/, 'upgrading the Hive changes every terminal');
+});
+
+test('renderShellInit puts the command shims\' folder in its placeholder, quoted for the file\'s shell (#800)', () => {
+  const paths = { ...PATHS, commandShims: "/h/it's/command-shims" };
+  assert.equal(renderShellInit('PATH=__HIVE_COMMAND_SHIMS__:$PATH\n', 'bash/rc', [], paths), String.raw`PATH='/h/it'\''s/command-shims':$PATH` + '\n');
+  assert.equal(renderShellInit('set -gx PATH __HIVE_COMMAND_SHIMS__ $PATH\n', 'fish/init.fish', [], paths), String.raw`set -gx PATH '/h/it\'s/command-shims' $PATH` + '\n');
+});
+
+test('each POSIX init file puts the command shims back first on PATH after the user\'s rc ran (#800)', async (t) => {
+  const home = await tempDir(t, 'home-');
+  const dir = await installShellInit(home, INSTALL);
+  const line = `PATH=${shellQuote(commandShimDir(home))}:$PATH`;
+  for (const [file, rc] of [['zsh/.zshrc', 'source "$ZDOTDIR/.zshrc"'], ['bash/rc', '. ~/.bashrc']]) {
+    const text = await readFile(join(dir, file), 'utf8');
+    assert.ok(text.indexOf(rc) !== -1 && text.indexOf(line) > text.indexOf(rc), file);
+  }
+  assert.ok((await readFile(join(dir, 'fish', 'init.fish'), 'utf8')).includes(`set -gx PATH ${fishQuote(commandShimDir(home))} $PATH`), 'fish: -C runs after its config');
 });
 
 const COMMANDS = AGENT_IDS.map((id) => AGENTS[id].command);
@@ -164,4 +182,13 @@ test('fish: claude and codex typed in a terminal whose config.fish puts others f
   await mkdir(config, { recursive: true });
   await writeFile(join(config, 'config.fish'), `echo ${RC_LOADED}\nset -gx PATH ${fishQuote(r.fakes)} $PATH\n`);
   assert.deepEqual(await typeIn(r, { name: 'fish', binary: FISH ?? '', flags: '' }, TYPED), [RC_LOADED, ...SHIM_RAN]);
+});
+
+test('bash: a command typed in a terminal whose ~/.bashrc puts another first on PATH runs its command shim (#800)', { skip: BASH === undefined && 'no bash on PATH' }, async (t) => {
+  const r = await rig(t);
+  await mkdir(join(r.hive, 'command-shims'), { recursive: true });
+  await executable(join(r.hive, 'command-shims', 'pnpm'), 'echo shim:pnpm');
+  await executable(join(r.fakes, 'pnpm'), 'echo rc:pnpm');
+  await writeFile(join(r.home, '.bashrc'), shRc(r.fakes));
+  assert.deepEqual(await typeIn(r, { name: 'bash', binary: BASH ?? '', flags: '-i' }, 'pnpm'), [RC_LOADED, 'shim:pnpm']);
 });
