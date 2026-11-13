@@ -207,3 +207,15 @@ test('the server writes a shim per first word with the first config, a save that
   await writeFile(join(home, 'command-shims'), 'not a folder');
   assert.equal((await postUi(`${base}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200, 'the install failed and was logged');
 });
+
+// #800: listen() answers once the boot's install is done, so no run of the boot or the poll spawns before the shims exist
+test('a Hive started with its config and State has its command shims written before listen resolves (#800)', { skip: process.platform === 'win32' && 'win32 installs no command shim until node 5 of #704' }, async (t) => {
+  const { home, repo } = await tempHive(t);
+  const { factory } = fakeSourceFactory();
+  const config = parseConfig(combConfig({ sources: [GITHUB_ENTRY], path: repo, commands: [TEST_COMMAND], commandSemaphores: [MEMORY] }));
+  const { spawn } = fakeSpawn();
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: async () => ({ stdout: '' }), runtime: { config, sources: createSources(config, factory) }, state: { ...initialState(0), workspaces: [WORKSPACE] } });
+  await server.listen(0);
+  t.after(() => server.close());
+  assert.equal(existsSync(join(home, 'command-shims', 'pnpm')), true);
+});

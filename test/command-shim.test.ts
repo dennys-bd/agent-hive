@@ -261,13 +261,19 @@ test('installCommandShims writes one executable shim per word into <home>/comman
   const dir = commandShimDir(home);
   assert.equal(dir, join(home, 'command-shims'));
   const both = commandsConfig(commandOf('test', line('pnpm test', 'memory')), commandOf('up', line('docker compose up', 'disk')));
-  assert.deepEqual(await installCommandShims(home, both), ['pnpm', 'docker']);
+  assert.deepEqual(await installCommandShims(home, both, 'darwin'), ['pnpm', 'docker']);
   assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm'));
   await assertMode(t, dir, 0o700);
   await assertMode(t, join(dir, 'pnpm'), 0o755);
   await writeFile(join(dir, 'stray'), 'left by an older version');
-  await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))));
+  await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))), 'linux');
   assert.deepEqual(await readdir(dir), ['docker']);
+});
+
+test('installCommandShims on win32 writes nothing and answers no word: Windows has no command shim until node 5 of #704 (#800)', async (t) => {
+  const home = await tempDir(t, 'home-');
+  assert.deepEqual(await installCommandShims(home, commandsConfig(commandOf('test', line('pnpm test', 'memory'))), 'win32'), []);
+  assert.equal(existsSync(commandShimDir(home)), false);
 });
 
 test('claudeEnvLine prepends the folder, quoted, to PATH and exports it (#800)', () => {

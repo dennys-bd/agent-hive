@@ -43,8 +43,9 @@ export function shimWords(config: Pick<SemaphoresConfig, 'comb'>): string[] {
 
 /** Decisions 1, 3: every word's shim written, then every other file of the folder deleted, so a line removed and saved takes its shim
  * with it when no other line needs that word. A tmp file renamed over the shim: a shim running a command keeps the file it is reading.
- * Answers the words. */
-export async function installCommandShims(home: string, config: Pick<SemaphoresConfig, 'comb'>): Promise<string[]> {
+ * Answers the words. None on win32: Windows has no command shim until node 5 of #704, and its join reads \ and : in a word. */
+export async function installCommandShims(home: string, config: Pick<SemaphoresConfig, 'comb'>, platform: NodeJS.Platform): Promise<string[]> {
+  if (platform === 'win32') return [];
   const dir = commandShimDir(home);
   await mkdir(dir, { recursive: true, mode: BIN_MODE });
   const template = await readFile(commandShimSource(), 'utf8');

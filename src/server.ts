@@ -344,13 +344,14 @@ export function createServer(deps: ServerDeps): HiveServer {
   // never fails the boot or the save, since a missing shim only means the command runs without its semaphore
   let shimsInstall: Promise<void> = Promise.resolve();
   const installShims = (config: Config): Promise<void> => {
-    shimsInstall = shimsInstall.then(() => installCommandShims(home, config)).then(() => undefined, (err: unknown) => { log.error(`command shims: ${errorMessage(err)}`); });
+    shimsInstall = shimsInstall.then(() => installCommandShims(home, config, process.platform)).then(() => undefined, (err: unknown) => { log.error(`command shims: ${errorMessage(err)}`); });
     return shimsInstall;
   };
-  const startSemaphores = (config: Config): void => {
+  // Answers the install, awaited by the boot so no pty spawns before the shims exist; it never rejects
+  const startSemaphores = (config: Config): Promise<void> => {
     semaphores?.stop();
     semaphores = createSemaphores({ config, dispatch: dispatchInBackground, now: Date.now, pidAlive: isPidAlive });
-    void installShims(config); // never rejects
+    return installShims(config);
   };
   // One device flow at a time: starting a second aborts the first's poll (its controller) and replaces the worker;
   // the one left behind stops hitting GitHub and can no longer write here even if a token was already in flight.
@@ -896,7 +897,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     // task; a home with none saved takes the config's. #727: signals on the state before boot, which opens on onOpen
     const flow = saved.stages.length > 0 ? { flows: saved.flows, stages: saved.stages, transitions: saved.transitions } : { flows: config.comb.flows, ...flatten(config.comb.flows) };
     live = { runtime, state: withWorkspaces({ ...saved, ...flow, signals: config.signals }, config) };
-    startSemaphores(config);
+    await startSemaphores(config);
     await boot(saved);
     if (!isDeepStrictEqual(flow.flows, config.comb.flows)) await dispatch({ type: 'setStages', flows: config.comb.flows });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
@@ -1464,7 +1465,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     // Hive mode (#466): the Runtime is built on the bound port, hooks.json included, before the first dispatch
     if (deps.runtime && deps.state) {
       live = { runtime: await activate(deps.runtime.config, deps.runtime.sources), state: withWorkspaces(deps.state, deps.runtime.config) };
-      startSemaphores(deps.runtime.config); // #798: hive.ts skips configure()
+      await startSemaphores(deps.runtime.config); // #798: hive.ts skips configure()
     }
     pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS); // no-op until configured
     planLimitsTimer = setInterval(() => void refreshPlanLimits(), PLAN_LIMITS_INTERVAL_MS); // no-op until configured or without the dep
