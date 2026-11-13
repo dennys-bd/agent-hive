@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { delimiter } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { activityOf, localActivityId, taskOfActivity } from '../src/activities.js';
+import { commandShimDir } from '../src/command-shim.js';
 import { shimDir } from '../src/shim.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { ptyCommand } from '../src/spawn.js';
@@ -80,15 +81,15 @@ test('a task\'s terminal and session, the workspace\'s local session and its she
   assert.deepEqual([workers[1].launch.env, workers[2].launch.env], [ENV, ENV], 'a session gets the workspace\'s env and nothing else');
 });
 
-test('a kept terminal puts the shim dir before the workspace\'s PATH, or before the Hive\'s when the workspace sets none, and its own HISTFILE wins (#696, #738)', async (t) => {
+test('a kept terminal puts the command shims then the shim dir before the workspace\'s PATH, or before the Hive\'s when the workspace sets none, and its own HISTFILE wins (#696, #738, #800)', async (t) => {
   const { base, workers, home } = await start(t, { PATH: '/ws/bin', HISTFILE: '/elsewhere/shared.history', NODE_ENV: 'development' });
   assert.equal((await postJson(`${base}/tasks/${TASK}/open`, { kind: 'terminal' })).status, 200);
   const env = workers[0].launch.env;
-  assert.deepEqual([env?.PATH, env?.NODE_ENV], [`${shimDir(home)}${delimiter}/ws/bin`, 'development']);
+  assert.deepEqual([env?.PATH, env?.NODE_ENV], [`${commandShimDir(home)}${delimiter}${shimDir(home)}${delimiter}/ws/bin`, 'development']);
   assert.match(env?.HISTFILE ?? '', /[\\/]terminals[\\/][^\\/]+\.history$/);
   const plain = await start(t);
   assert.equal((await postJson(`${plain.base}/tasks/${TASK}/open`, { kind: 'terminal' })).status, 200);
-  assert.equal(plain.workers[0].launch.env?.PATH, `${shimDir(plain.home)}${delimiter}${process.env.PATH ?? ''}`);
+  assert.equal(plain.workers[0].launch.env?.PATH, `${commandShimDir(plain.home)}${delimiter}${shimDir(plain.home)}${delimiter}${process.env.PATH ?? ''}`);
 });
 
 test('POST /tasks/:id/open with kind terminal opens a Terminal through openTerminal and answers its pty id; the retired kind shell is 400 and opens nothing (#570)', async (t) => {

@@ -1,10 +1,13 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { claudeEnvLine, COMMAND_SHIMS_ENV_FILE } from './command-shim.js';
 import { posixShell, posixShellEnv } from './posix-shell.js';
-import { runTmpDir, ptyCommand, ptyEnv } from './spawn.js';
+import { runTmpDir, ptyCommand, ptyEnv, shimsFirst } from './spawn.js';
 import type { SpawnOptions, PtyHandle, PtyHandlers, PtyLaunch } from './types.js';
 
 const TMP_MODE = 0o700; // the run's temp files are this user's only (#428)
+const ENV_FILE_MODE = 0o600;
 // A process of the run can outlive the pty and keep writing its TMPDIR (node's compile cache), so the removal retries ENOTEMPTY with a
 // linear backoff, about 5 s in all (#495).
 const TMP_RM_RETRIES = 10;
@@ -23,17 +26,21 @@ function removeTmp(dir: string, onError: PtyHandlers['onError']): void {
 // again (#428); a pty that cannot spawn drops the dir made for it. Two tries, so a dir never made is never removed.
 function startIn(options: SpawnOptions | undefined, launch: PtyLaunch, tmp: string, onExit: () => void, dropTmp: () => void): Promise<void> {
   if (!options) return Promise.reject(new Error('pty: no pty host'));
-  const { ptys, secretFile } = options;
+  const { ptys, secretFile, commandShims } = options;
   try {
     mkdirSync(tmp, { recursive: true, mode: TMP_MODE });
   } catch (err) {
     return spawnFailed(err);
   }
   try {
+    // #800: the line Claude Code's Bash tool sources (CLAUDE_ENV_FILE, ptyEnv), one file per run in its own TMPDIR, so what a SessionStart
+    // hook appends to it stays this run's and goes with it. Written on every OS: ptyEnv names it only off win32
+    writeFileSync(join(tmp, COMMAND_SHIMS_ENV_FILE), claudeEnvLine(commandShims), { mode: ENV_FILE_MODE });
     // the secret's file path rides the env, never the value: sh -c's argv and curl's are visible to every account through ps (#467). An
     // agent's run keeps its transcript past its exit for its sleeping tab (#672); a kept terminal's goes to its log (#696), a command's with it
     // #631: on win32 MSYS must not rewrite the trailer's /hooks/exit; a terminal's own env still wins (#696)
-    const env = { ...ptyEnv(process.env, launch.ptyId, launch.port, tmp, secretFile, process.platform), ...posixShellEnv(process.platform), ...launch.env };
+    const merged = { ...ptyEnv(process.env, launch.ptyId, launch.port, tmp, secretFile, process.platform, commandShims), ...posixShellEnv(process.platform), ...launch.env };
+    const env = shimsFirst(merged, commandShims, process.platform); // a workspace's own PATH (#738) came in with launch.env
     ptys.spawn(launch.ptyId, [posixShell().shell, '-c', ptyCommand(launch)], launch.cwd, env, launch.terminal === undefined ? {} : launch.keep, launch.size); // #808: the page's grid
   } catch (err) {
     dropTmp();

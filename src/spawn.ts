@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, posix, win32 } from 'node:path';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
+import { COMMAND_SHIMS_ENV_FILE, commandShimDir } from './command-shim.js';
 import { envValue, findExec } from './exec-path.js';
 import { killTree } from './kill-tree.js';
 import { shellInitDir, shellQuote } from './shell-init.js';
@@ -109,13 +110,31 @@ export function withoutHiveEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * tools and node's os.tmpdir() read them, not TMPDIR. HIVE_HOME is dropped too: a worker running the
  * Hive's own tests or the `hive` CLI would otherwise act on its daemon's home instead of a home of its own (#105).
  */
-export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmpDir: string, secretFile: string, platform: NodeJS.Platform): NodeJS.ProcessEnv {
+export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmpDir: string, secretFile: string, platform: NodeJS.Platform, commandShims: string): NodeJS.ProcessEnv {
   const windowsTemp = platform === 'win32' ? { TEMP: tmpDir, TMP: tmpDir } : {};
-  return { ...withoutHiveEnv(base), TMPDIR: tmpDir, ...windowsTemp, HIVE_PTY_ID: ptyId, HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile };
+  return { ...withoutHiveEnv(base), TMPDIR: tmpDir, ...windowsTemp, ...shimsEnv(base.PATH, tmpDir, platform, commandShims), HIVE_PTY_ID: ptyId, HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile };
 }
 
-/** What a kept terminal's shell gets on top of ptyEnv (#696): a history file of its own, kept with it until it is forgotten, the Hive's bin
- * dir first on PATH, so an agent typed there is its shim's (#924) for a child process too, and HIVE_SHELL_DIR, the init files' folder
+// #800, decisions 14 and 16: the command shims first on PATH, and Claude Code's Bash tool told the same through the run's command-shims.sh
+// (spawn-internal.ts writes it), since that tool's shell may rebuild PATH. <home>/bin stays off: a worker's bare claude would register a
+// terminal session. Not on win32: Windows brings its own shim in node 5, and its env names the variable Path
+function shimsEnv(path: string | undefined, tmpDir: string, platform: NodeJS.Platform, commandShims: string): Record<string, string> {
+  if (platform === 'win32') return {};
+  const full = path === undefined || path === '' ? commandShims : `${commandShims}${posix.delimiter}${path}`;
+  return { PATH: full, CLAUDE_ENV_FILE: posix.join(tmpDir, COMMAND_SHIMS_ENV_FILE) };
+}
+
+// #800: launch.env may carry a workspace's own PATH (#738), spread after ptyEnv's; the command shims go back first on the merged env.
+// Not on win32 (node 5), as shimsEnv
+export function shimsFirst(env: NodeJS.ProcessEnv, commandShims: string, platform: NodeJS.Platform): NodeJS.ProcessEnv {
+  if (platform === 'win32') return env;
+  const path = env.PATH ?? '';
+  if (path === commandShims || path.startsWith(`${commandShims}${posix.delimiter}`)) return env;
+  return { ...env, PATH: path === '' ? commandShims : `${commandShims}${posix.delimiter}${path}` };
+}
+
+/** What a kept terminal's shell gets on top of ptyEnv (#696): a history file of its own, kept with it until it is forgotten, the command
+ * shims (#800) then the Hive's bin dir first on PATH, so an agent typed there is its shim's (#924) for a child process too, and HIVE_SHELL_DIR, the init files' folder
  * ptyCommand starts zsh, bash, fish and PowerShell on (#259, #645). `path` is the workspace's PATH when it sets one (#738), else the Hive's,
  * joined in `platform`'s own way. On win32 HIVE_PWSH names the PowerShell windowsShell found, which the terminal opens unless SHELL
  * names bash (#645). */
@@ -124,7 +143,8 @@ export interface TerminalEnvOptions { platform: NodeJS.Platform; pwsh?: string }
 export function terminalEnv(home: string, terminalId: string, path: string, { platform, pwsh }: TerminalEnvOptions): Record<string, string> {
   const delimiter = platform === 'win32' ? win32.delimiter : posix.delimiter;
   const shell: Record<string, string> = platform === 'win32' && pwsh !== undefined ? { HIVE_PWSH: pwsh } : {};
-  return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? shimDir(home) : `${shimDir(home)}${delimiter}${path}`, HIVE_SHELL_DIR: shellInitDir(home), ...shell };
+  const front = `${commandShimDir(home)}${delimiter}${shimDir(home)}`; // #800: the command shims, then the agents' shims
+  return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? front : `${front}${delimiter}${path}`, HIVE_SHELL_DIR: shellInitDir(home), ...shell };
 }
 
 // pwsh 7 first, then the powershell.exe every Windows ships (#645). Both install folders come before PATH, since an MSI install of 7 may

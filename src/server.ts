@@ -22,6 +22,7 @@ import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js
 import { activityOfWorker, recordOf, taskOfActivity, taskOfWorker } from './activities.js';
 import { createLeftItems } from './left-items.js';
 import { CONFIG_FILE, taskWorkspace, parseSource, workspaceByName, workspaceScope, requireWorkspace } from './config.js';
+import { commandShimDir } from './command-shim.js';
 import { createConsoleStore } from './console.js';
 import { createInstaller } from './editor-install.js';
 import { createSchemaCatalog } from './json-schemas.js';
@@ -302,7 +303,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const consoleStore = createConsoleStore(() => live?.runtime.config.consoleLines ?? CONSOLE_LINES_DEFAULT, notifyConsole);
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
   const lsp = createLspHost({ home, consoleStore, log, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
-  const ptyPool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE) }));
+  const ptyPool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE), commandShims: commandShimDir(resolve(home)) }));
   // #798: every pty's end frees what it holds on the Command Semaphores, whatever started it: a run, a terminal, a commands stage's command
   // A terminal woken in the same id (#696) has a new entry by the time the old pty's late exit runs: that exit frees nothing of the new one's
   const pool: PtyPool = { ...ptyPool, start: (o) => ptyPool.start({ ...o, onExit: () => { if (!ptyPool.has(o.ptyId)) semaphores?.ended(o.ptyId); o.onExit(); } }) };

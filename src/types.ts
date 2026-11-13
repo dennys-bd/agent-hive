@@ -2097,6 +2097,7 @@ export type Exec = (file: string, args: string[], opts?: { env?: NodeJS.ProcessE
 export interface SpawnOptions {
   ptys: PtyHost;
   secretFile: string;
+  commandShims: string; // #800: <home>/command-shims, first on every run's PATH (ptyEnv) and in its command-shims.sh
 }
 
 /** What the server injects so tests never open a session. `onError` is for kill failures and a run TMPDIR that cannot be removed: a spawn failure is `started` rejecting. */

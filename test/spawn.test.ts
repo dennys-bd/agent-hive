@@ -4,15 +4,16 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, posix } from 'node:path';
 import { posixShell } from '../src/posix-shell.js';
-import { HANDOFF_PROMPT, PWSH_LOADER, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, terminalEnv, verdictsLine, windowsShell, withHandoff, writePrompt } from '../src/spawn.js';
+import { HANDOFF_PROMPT, PWSH_LOADER, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, shimsFirst, terminalEnv, verdictsLine, windowsShell, withHandoff, writePrompt } from '../src/spawn.js';
 import { runners } from '../src/agents/registry.js';
 import { shellQuote } from '../src/shell-init.js';
 import { claudeLaunch, LAUNCH, plainArgs } from './fakes.js';
 import { SECRET } from './secret-client.js';
 
 const SECRET_FILE_PATH = '/home/agent-hive/hive.secret';
+const COMMAND_SHIMS = '/hive/command-shims';
 import { tempDir } from './temp-dir.js';
 
 const item = { itemId: 'I1', id: '7', title: 'Fix "login"', body: 'line1\n$(echo pwned) `x`', url: 'https://github.com/a/b/issues/7' };
@@ -59,7 +60,7 @@ test('writePrompt puts a neutral line before a prompt that would start with a da
 
 test('ptyEnv copies the base env without CLAUDECODE, CLAUDE_CODE_CHILD_SESSION, NODE_PATH, HIVE_SECRET and HIVE_HOME and adds HIVE_PTY_ID, HIVE_PORT, HIVE_SECRET_FILE and the run\'s own TMPDIR over the shared one (#428, #467)', () => {
   const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/hive/node_modules', HOME: '/Users/x', TMPDIR: '/shared/tmp/', HIVE_SECRET: SECRET, HIVE_HOME: '/state/homes/h1' };
-  assert.deepEqual(ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin'), { PATH: '/bin', HOME: '/Users/x', TMPDIR: '/runs/W1', HIVE_PTY_ID: 'W1', HIVE_PORT: '4242', HIVE_SECRET_FILE: SECRET_FILE_PATH });
+  assert.deepEqual(ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin', COMMAND_SHIMS), { PATH: `${COMMAND_SHIMS}:/bin`, CLAUDE_ENV_FILE: '/runs/W1/command-shims.sh', HOME: '/Users/x', TMPDIR: '/runs/W1', HIVE_PTY_ID: 'W1', HIVE_PORT: '4242', HIVE_SECRET_FILE: SECRET_FILE_PATH });
   assert.equal(base.CLAUDECODE, '1', 'the base env is not touched');
   assert.equal(base.NODE_PATH, '/hive/node_modules');
   assert.equal(base.TMPDIR, '/shared/tmp/');
@@ -68,19 +69,19 @@ test('ptyEnv copies the base env without CLAUDECODE, CLAUDE_CODE_CHILD_SESSION, 
 test('ptyEnv on win32 points TEMP and TMP at the run\'s own dir beside TMPDIR, where Windows tools and os.tmpdir() look; on darwin and linux TEMP and TMP stay the base env\'s (#428, #644)', () => {
   const base = { PATH: '/bin', TEMP: '/shared/temp', TMP: '/shared/tmp' };
   const dir = 'C:\\t\\hive-runs\\W1';
-  const win = ptyEnv(base, 'W1', 4242, dir, SECRET_FILE_PATH, 'win32');
+  const win = ptyEnv(base, 'W1', 4242, dir, SECRET_FILE_PATH, 'win32', COMMAND_SHIMS);
   assert.deepEqual([win.TMPDIR, win.TEMP, win.TMP], [dir, dir, dir]);
   for (const platform of ['darwin', 'linux'] as const) {
-    const env = ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, platform);
+    const env = ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, platform, COMMAND_SHIMS);
     assert.deepEqual([env.TMPDIR, env.TEMP, env.TMP], ['/runs/W1', '/shared/temp', '/shared/tmp'], platform);
-    const bare = ptyEnv({ PATH: '/bin' }, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, platform);
+    const bare = ptyEnv({ PATH: '/bin' }, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, platform, COMMAND_SHIMS);
     assert.deepEqual(['TEMP' in bare, 'TMP' in bare], [false, false], platform);
   }
 });
 
 test('withoutHiveEnv strips every runner\'s host env (CLAUDECODE, CLAUDE_CODE_CHILD_SESSION) and the Hive\'s own, whatever the run\'s agent; a run launch needs its agent (#924, #333)', () => {
   const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/n', HIVE_SECRET: SECRET, HIVE_MCP_SECRET: SECRET, HIVE_MCP_TOKEN_0: 'Bearer t0k', HIVE_MCP_TOKEN_12: 'x', HIVE_HOME: '/h', HIVE_PWSH: 'C:\\x\\pwsh.exe', HOME: '/Users/x' };
-  assert.deepEqual(ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin'), { PATH: '/bin', HOME: '/Users/x', TMPDIR: '/runs/W1', HIVE_PTY_ID: 'W1', HIVE_PORT: '4242', HIVE_SECRET_FILE: SECRET_FILE_PATH });
+  assert.deepEqual(ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin', COMMAND_SHIMS), { PATH: `${COMMAND_SHIMS}:/bin`, CLAUDE_ENV_FILE: '/runs/W1/command-shims.sh', HOME: '/Users/x', TMPDIR: '/runs/W1', HIVE_PTY_ID: 'W1', HIVE_PORT: '4242', HIVE_SECRET_FILE: SECRET_FILE_PATH });
   assert.throws(() => ptyCommand({ ptyId: 'W1', slug: 's', cwd: '/wt', port: 4242 }), { message: 'pty: a run launch with no agent' });
 });
 
@@ -220,15 +221,32 @@ test('HANDOFF_PROMPT asks the session for hive_done with its handoff (#692)', ()
   assert.match(HANDOFF_PROMPT, /hive_done with \{ "handoff": "<text>" \}/);
 });
 
-test('a terminal\'s env names its own history file, puts the Hive\'s bin dir first on PATH, joined with ; on win32 and : elsewhere, names the init files\' folder, and sets HIVE_PWSH only on win32 with a path (#696, #259, #645)', () => {
+test('a terminal\'s env names its own history file, puts the command shims then the Hive\'s bin dir first on PATH, joined with ; on win32 and : elsewhere, names the init files\' folder, and sets HIVE_PWSH only on win32 with a path (#696, #259, #645, #800)', () => {
   const pwsh = 'C:\\t\\PowerShell\\7\\pwsh.exe';
   assert.deepEqual(terminalEnv('/h', 'T1', '/usr/bin:/bin', { platform: 'darwin', pwsh }), {
-    HISTFILE: join('/h', 'terminals', 'T1.history'), PATH: `${join('/h', 'bin')}:/usr/bin:/bin`, HIVE_SHELL_DIR: join('/h', 'shell'),
+    HISTFILE: join('/h', 'terminals', 'T1.history'), PATH: `${join('/h', 'command-shims')}:${join('/h', 'bin')}:/usr/bin:/bin`, HIVE_SHELL_DIR: join('/h', 'shell'),
   });
-  assert.equal(terminalEnv('/h', 'T1', '', { platform: 'linux' }).PATH, join('/h', 'bin'));
+  assert.equal(terminalEnv('/h', 'T1', '', { platform: 'linux' }).PATH, `${join('/h', 'command-shims')}:${join('/h', 'bin')}`);
   const win = terminalEnv('C:\\h', 'T1', 'C:\\Windows;C:\\bin', { platform: 'win32', pwsh });
-  assert.deepEqual([win.PATH, win.HIVE_PWSH], [`${join('C:\\h', 'bin')};C:\\Windows;C:\\bin`, pwsh]);
+  assert.deepEqual([win.PATH, win.HIVE_PWSH], [`${join('C:\\h', 'command-shims')};${join('C:\\h', 'bin')};C:\\Windows;C:\\bin`, pwsh]);
   assert.equal('HIVE_PWSH' in terminalEnv('C:\\h', 'T1', 'C:\\bin', { platform: 'win32' }), false, 'no PowerShell found: the plain $SHELL');
+});
+
+test('ptyEnv puts the command shims first on PATH, never <home>/bin, and points CLAUDE_ENV_FILE at the run\'s command-shims.sh over an inherited one; on win32 it leaves both alone (#800)', () => {
+  const env = ptyEnv({ PATH: '/usr/bin:/bin', CLAUDE_ENV_FILE: '/outer/env.sh' }, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin', COMMAND_SHIMS);
+  assert.deepEqual([env.PATH, env.CLAUDE_ENV_FILE], [`${COMMAND_SHIMS}:/usr/bin:/bin`, posix.join('/runs/W1', 'command-shims.sh')]);
+  assert.equal(ptyEnv({}, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'linux', COMMAND_SHIMS).PATH, COMMAND_SHIMS, 'no PATH: the folder alone');
+  const win = ptyEnv({ Path: 'C:\\bin' }, 'W1', 4242, 'C:\\t\\W1', SECRET_FILE_PATH, 'win32', 'C:\\h\\command-shims');
+  assert.deepEqual([win.Path, 'PATH' in win, 'CLAUDE_ENV_FILE' in win], ['C:\\bin', false, false]);
+});
+
+test('shimsFirst puts the command shims back first on a PATH a workspace replaced, leaves one already first alone and leaves win32 alone (#800, #738)', () => {
+  assert.equal(shimsFirst({ PATH: '/ws/bin:/bin' }, COMMAND_SHIMS, 'darwin').PATH, `${COMMAND_SHIMS}:/ws/bin:/bin`);
+  const first = { PATH: `${COMMAND_SHIMS}:/bin` };
+  assert.equal(shimsFirst(first, COMMAND_SHIMS, 'linux'), first, 'already first: the same env');
+  assert.equal(shimsFirst({}, COMMAND_SHIMS, 'linux').PATH, COMMAND_SHIMS);
+  const win = { Path: 'C:\\bin' };
+  assert.equal(shimsFirst(win, COMMAND_SHIMS, 'win32'), win);
 });
 
 test('windowsShell answers pwsh.exe\'s full path when both are found, powershell.exe\'s when only that one is, one on PATH after the install folders, and nothing when neither is or off win32 (#645)', () => {
