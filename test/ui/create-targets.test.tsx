@@ -1,9 +1,13 @@
 import { expect, test } from 'vitest';
+import type { SourceConfig } from '../../src/types';
 import { type CreateTargets, createTargetsOf, destinations, preselect, repositoryLabel } from '@/lib/create-targets';
 
+const CONFIG: SourceConfig = { name: 'x', qualifyId: false, type: 'github', owner: 'me', number: 1, filter: [], taskProps: { defaults: { auto: true, entry: null }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
+
 test('createTargetsOf keeps every source with a repository, with its type; destinations puts the default first and lists hive only while it is on (#846, #893)', () => {
-  const targets = createTargetsOf({ sources: [{ name: 'roadmap', type: 'github', repository: 'me/site' }, { name: 'bare', type: 'github' }], createIn: 'roadmap' });
-  expect(targets).toEqual({ hiveSource: true, createIn: 'roadmap', sources: [{ name: 'roadmap', type: 'github', repository: 'me/site' }] });
+  const configs: SourceConfig[] = [{ ...CONFIG, name: 'roadmap', repository: 'me/site' }, { ...CONFIG, name: 'bare' }];
+  const targets = createTargetsOf({ sources: configs, createIn: 'roadmap' });
+  expect(targets).toEqual({ hiveSource: true, createIn: 'roadmap', sources: [{ name: 'roadmap', type: 'github', repository: 'me/site' }], configs });
   expect(destinations(targets)).toEqual([{ name: 'roadmap', type: 'github', repository: 'me/site' }, { name: 'hive' }]);
   expect(destinations({ ...targets, hiveSource: false })).toEqual([{ name: 'roadmap', type: 'github', repository: 'me/site' }]);
   expect(destinations({ hiveSource: true, createIn: 'hive', sources: [] })).toEqual([{ name: 'hive' }]);

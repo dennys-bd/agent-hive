@@ -9,7 +9,10 @@ export interface Destination { name: string; type?: SourceFields['type'] }
 export type CreateSource = Required<Destination> & { repository: string };
 
 /** Where a task may be created from the UI (#846): hive while it is on, the default destination, and every source with a repository, which the create dialog names (#772). */
-export interface CreateTargets { hiveSource: boolean; createIn: string; sources: CreateSource[] }
+export interface CreateTargets {
+  hiveSource: boolean; createIn: string; sources: CreateSource[];
+  configs?: readonly SourceConfig[]; // the full configs, which the route box (#773) runs routeOf over; absent = none
+}
 
 /** The create dialog's opening destination (#772, decision 1); hinted = rule 2 picked it, the one case the switch says why (decision 2). */
 export interface Preselected { destination: 'hive' | 'github'; source?: string; hinted: boolean }
@@ -17,8 +20,8 @@ export interface Preselected { destination: 'hive' | 'github'; source?: string; 
 /** No config handed (a test harness, a dialog outside the Dashboard): today's behaviour. */
 export const HIVE_ONLY: CreateTargets = { hiveSource: true, createIn: HIVE_SOURCE, sources: [] };
 
-export const createTargetsOf = (nav: { sources: readonly Pick<SourceConfig, 'name' | 'type' | 'repository'>[]; hiveSource?: boolean; createIn?: string }): CreateTargets => ({
-  hiveSource: nav.hiveSource !== false, createIn: nav.createIn ?? HIVE_SOURCE,
+export const createTargetsOf = (nav: { sources: readonly SourceConfig[]; hiveSource?: boolean; createIn?: string }): CreateTargets => ({
+  hiveSource: nav.hiveSource !== false, createIn: nav.createIn ?? HIVE_SOURCE, configs: nav.sources,
   sources: nav.sources.flatMap((s) => (s.repository === undefined ? [] : [{ name: s.name, type: s.type, repository: s.repository }])),
 });
 

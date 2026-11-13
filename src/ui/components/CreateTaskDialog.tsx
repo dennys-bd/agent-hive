@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { HIVE_SOURCE } from '../../tasks';
 import type { State } from '../../types';
 import { CreateField as Field } from '@/components/CreateField';
+import { CreateRouteBox } from '@/components/CreateRouteBox';
 import { CreateIssueFields } from '@/components/CreateIssueFields';
 import { type DialogAction, DialogBase } from '@/components/DialogBase';
 import { SEGMENT } from '@/components/StartFields';
@@ -147,6 +148,11 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
   const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); issue.clear(); set(value); };
   // status is set once the source's options arrived (decision 6); a repository a config push took away would make the create a silent no-op
   const isIssueReady = draft.title.trim() !== '' && draft.status !== undefined && repository !== undefined;
+  const { status } = draft;
+  // no box without the source's config: routeOf would answer a confident "no source takes it" for an issue the poll takes
+  const hasConfig = targets.configs?.some((s) => s.name === draft.source) === true;
+  const routeBox = isGithub && status !== undefined && draft.source !== undefined && hasConfig
+    ? <CreateRouteBox source={draft.source} title={draft.title} labels={draft.labels} status={status} sources={targets.configs ?? []} flows={state.flows} /> : null;
   const primary: DialogAction = isGithub ? issueAction(issue, isIssueReady) : hiveAction(draft, setError, onOpenTask);
 
   return (
@@ -164,6 +170,7 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
         </Field>
         <DestinationSwitch value={draft.destination} targets={targets} hint={hint} onPick={edited(api.setDestination)} />
         {isGithub ? <CreateIssueFields draft={draft} sources={targets.sources} options={api.options} onRetry={api.retryOptions} onSource={edited(api.setSource)} onStatus={edited(api.setStatus)} onAddLabel={edited(api.addLabel)} onRemoveLabel={edited(api.removeLabel)} /> : <HiveFields draft={draft} workspaces={state.workspaces} current={workspace} flows={state.flows} onWorkspace={edited(api.setWorkspace)} onStage={edited(api.setStage)} />}
+        {routeBox}
       </div>
     </DialogBase>
   );
