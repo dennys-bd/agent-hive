@@ -82,6 +82,8 @@ export const overrides = (run: AgentRun): LaunchArg[] => [
   // appended before Codex's own developer blocks; model_instructions_file would replace its system prompt (§6)
   ...developerOverride(run),
   override('check_for_update_on_startup', 'false'), // the update screen takes the first keys: an Enter runs npm install -g (§13)
+  // #800: its command shell skips the user's login profile, which put pyenv and nvm ahead of the command shims; the Hive's PATH keeps them first
+  override('allow_login_shell', 'false'),
   // nor the folder-trust screen, for a worktree Codex never saw. The path goes in the value: Codex splits a -c key on every '.', quoted or
   // not, and every worktree path holds .hive
   override('projects', `{${tomlString(run.cwd)}={trust_level=${tomlString('trusted')}}}`),
