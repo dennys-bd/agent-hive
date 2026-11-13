@@ -27,6 +27,8 @@ const at = (tasks: Task[], transitions: Transition[] = [TO_DONE]): State =>
   ({ ...initialState(0), workspaces: ['hive'], syncs: { board: {} }, ...flowed(FLOW, transitions), tasks });
 const epicIn = (s: State): Task | undefined => s.tasks.find((t) => t.item.itemId === 'board:E');
 const withTasks = (s: State, tasks: Task[]): State => ({ ...s, tasks });
+const CLOSE = { type: 'sourceAction', itemId: 'board:E', taskId: 'board:E', action: { type: 'close' } };
+const closes = (effects: readonly unknown[]) => effects.filter((e) => (e as { action?: { type: string } }).action?.type === 'close');
 
 test('an epic placed in a gate has no approval on its activity (#843)', () => {
   const { state } = followEpics(withWork(at([epic('dev', ['c1']), child('c1', 'review')]), 'board:E'));
@@ -51,4 +53,23 @@ test('a save that turns the stage an epic sits in into a gate gives it no approv
   const { state } = reduce(before, { type: 'setStages', flows: mainFlows(FLOW, [TO_DONE]) });
   assert.equal(activityOf(state, 'board:E')?.approval, undefined);
   assert.notEqual(activityOf(state, 'board:p')?.approval, undefined);
+});
+
+test('an epic whose children are all done closes its issue as it moves In Review → Done, after the move\'s own write (#843)', () => {
+  const { effects } = followEpics(at([epic('review', ['c1']), child('c1', 'done')]));
+  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:E', column: 'Done' }, CLOSE]);
+});
+
+test('a transition into the last stage that already closes the issue writes one close only (#843)', () => {
+  const closing: Transition = { ...TO_DONE, sources: { board: [move('Done'), { type: 'close' }] } };
+  const { effects } = followEpics(at([epic('review', ['c1']), child('c1', 'done')], [closing]));
+  assert.equal(closes(effects).length, 1);
+});
+
+test('a local epic and one already in the last stage write no close (#843)', () => {
+  const local = followEpics(at([{ ...epic('review', ['c1']), created: true }, child('c1', 'done')]));
+  assert.equal(epicIn(local.state)?.stage, 'done');
+  assert.deepEqual(closes(local.effects), []);
+  const there = followEpics(at([epic('done', ['c1']), child('c1', 'done')]));
+  assert.deepEqual(closes(there.effects), []);
 });

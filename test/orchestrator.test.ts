@@ -3735,7 +3735,8 @@ test('the last child reaching Done takes its epic review → done through that t
   assert.equal(task(reviewing, 1)?.stage, 'review');
   const done = polled(reviewing, [epic('In review'), listed(2, 'Done')]);
   assert.deepEqual([task(done.state, 1)?.stage, task(done.state, 1)?.boardColumn], ['done', 'Done'], 'the board shows Done');
-  assert.deepEqual(own(done.effects), [{ type: 'setColumn', itemId: 'board:item1', column: 'Done' }], 'move Done, and no archive yet');
+  const closeIt = { type: 'sourceAction', itemId: 'board:item1', taskId: 'board:item1', action: { type: 'close' } }; // #843
+  assert.deepEqual(own(done.effects), [{ type: 'setColumn', itemId: 'board:item1', column: 'Done' }, closeIt], 'move Done, close, and no archive yet');
   const waiting = polled(done.state, [epic('Done'), listed(2, 'Done')]);
   assert.deepEqual([task(waiting.state, 1)?.stage, own(waiting.effects)], ['done', []], 'done\'s 12h have not passed: the epic stays in the Hive');
   const due = polled(aged(waiting.state, 'board:item1', 13 * HOUR_MS), [epic('Done'), listed(2, 'Done')]);
