@@ -16,25 +16,23 @@ const command = (patch: Partial<CommandDraft>): CommandDraft => ({ ...emptyComma
 
 test('commandDraft / commandFrom round-trip a saved command over the workspace rows: a line\'s workspace as a row id, back as its name; own lines by name, the other workspaces last (#755)', () => {
   const saved: Command = { name: 'dev', impls: [{ workspace: 'a', command: 'pytest' }, { workspace: 'b', command: 'pnpm test' }, { workspace: null, command: 'make test' }], menu: false, env: { PORT: '1' }, timeout: '10m' };
-  const draft = commandDraft(saved, [A, B]);
+  const draft = commandDraft(saved, [A, B], []);
   assert.deepEqual(draft.impls.map((i) => [i.workspace, i.command]), [[A.id, 'pytest'], [B.id, 'pnpm test'], [null, 'make test']]);
   assert.deepEqual([draft.menu, draft.timeout], [false, '10m']);
-  assert.deepEqual(commandFrom(draft, [A, B]), saved);
-  assert.equal('timeout' in commandFrom({ ...draft, timeout: ' ' }, [A, B]), false, 'an empty timeout sends no key');
+  assert.deepEqual(commandFrom(draft, [A, B], []), saved);
+  assert.equal('timeout' in commandFrom({ ...draft, timeout: ' ' }, [A, B], []), false, 'an empty timeout sends no key');
   const shuffled = { ...draft, impls: [draft.impls[2], draft.impls[1], impl('gone'), draft.impls[0]] };
-  assert.deepEqual(commandFrom(shuffled, [A, B]).impls, saved.impls, 'a removed row\'s line is dropped; own lines by name, the other workspaces last');
-  assert.deepEqual(commandDraft({ ...saved, impls: [{ workspace: 'nope', command: 'x' }, { workspace: 'a', command: 'y' }] }, [A, B]).impls.map((i) => i.workspace), [A.id], 'an unknown name is dropped');
+  assert.deepEqual(commandFrom(shuffled, [A, B], []).impls, saved.impls, 'a removed row\'s line is dropped; own lines by name, the other workspaces last');
+  assert.deepEqual(commandDraft({ ...saved, impls: [{ workspace: 'nope', command: 'x' }, { workspace: 'a', command: 'y' }] }, [A, B], []).impls.map((i) => i.workspace), [A.id], 'an unknown name is dropped');
   assert.deepEqual(
-    commandFrom(command({ name: ' dev ', impls: [impl(A.id, ' pnpm dev ')], timeout: ' 30s ' }), [{ ...A, name: ' core ' }]),
+    commandFrom(command({ name: ' dev ', impls: [impl(A.id, ' pnpm dev ')], timeout: ' 30s ' }), [{ ...A, name: ' core ' }], []),
     { name: 'dev', impls: [{ workspace: 'core', command: 'pnpm dev' }], menu: true, env: {}, timeout: '30s' },
   );
 });
 
-test('commandDraft / commandFrom carry a line\'s semaphore unchanged, and add no key to a line without one, nor to a new line (#796)', () => {
-  const saved: Command = { name: 'dev', impls: [{ workspace: 'a', command: 'pytest', semaphore: 'memory' }, { workspace: null, command: 'make test' }], menu: true, env: {} };
-  const draft = commandDraft(saved, [A, B]);
-  assert.deepEqual(draft.impls.map(({ id: _id, ...line }) => line), [{ workspace: A.id, command: 'pytest', semaphore: 'memory' }, { workspace: null, command: 'make test' }]);
-  assert.deepEqual(commandFrom(draft, [A, B]), saved, 'strict deepEqual: a semaphore: undefined key would fail it');
+test('commandDraft / commandFrom add no semaphore key to a line without one, nor to a new line (#796, #803)', () => {
+  const saved: Command = { name: 'dev', impls: [{ workspace: 'a', command: 'pytest' }, { workspace: null, command: 'make test' }], menu: true, env: {} };
+  assert.deepEqual(commandFrom(commandDraft(saved, [A, B], []), [A, B], []), saved, 'strict deepEqual: a semaphore: undefined key would fail it');
   assert.equal('semaphore' in emptyImpl(null), false);
 });
 

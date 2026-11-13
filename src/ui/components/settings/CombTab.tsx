@@ -32,7 +32,7 @@ export function CombTab({ draft, options, githubProjects, github, agents, launch
   const hasGithub = githubSources.length > 0;
   const workspaceNames = draft.workspaces.map((p) => p.name.trim()).filter((n) => n !== '');
   // #755: the Comb's commands as a commands stage reads them, each with its lines per workspace; a row with no name yet is no command
-  const commands: Command[] = draft.commands.filter((c) => c.name.trim() !== '').map((c) => commandFrom(c, draft.workspaces));
+  const commands: Command[] = draft.commands.filter((c) => c.name.trim() !== '').map((c) => commandFrom(c, draft.workspaces, draft.commandSemaphores));
 
   return (
     <>

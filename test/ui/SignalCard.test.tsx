@@ -59,7 +59,7 @@ test('a looser edit clamps the stricter rows: green to never pulls yellow down; 
 
 test('Settings › rules shows the card above the usage rules and an edit lands in the draft the save sends (#727, #32)', async () => {
   const onChange = vi.fn();
-  render(<RulesTab draft={draftFrom(undefined)} locale="en-US" onChange={onChange} />);
+  render(<RulesTab draft={draftFrom(undefined)} locale="en-US" onChange={onChange} onOpenWorkspaces={vi.fn()} />);
   const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
   expect(headings.indexOf(t('settings.signal.title'))).toBeGreaterThanOrEqual(0);
   expect(headings.indexOf(t('settings.signal.title'))).toBeLessThan(headings.indexOf(t('settings.group.rules')));

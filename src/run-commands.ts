@@ -97,8 +97,8 @@ export function parseCommands(raw: unknown, field: string, workspaces: readonly 
   return commands;
 }
 
-// #796: one word, since the name travels in the shim's plain lines (`refused <name> <place>`, node 2.1) that a POSIX shell splits with read
-const SEMAPHORE_NAME = /^[A-Za-z0-9_-]+$/;
+// #796: one word, since the name travels in the shim's plain lines (`refused <name> <place>`, node 2.1) that a POSIX shell splits with read; #803: exported, so the form never sends what the parser refuses
+export const SEMAPHORE_NAME = /^[A-Za-z0-9_-]+$/;
 
 function parseSemaphore(raw: unknown, field: string): CommandSemaphore {
   if (!isRecord(raw)) return fail(field, 'must be an object');

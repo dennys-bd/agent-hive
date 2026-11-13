@@ -43,7 +43,7 @@ function Page({ draft, view }: { draft: SettingsDraft; view: SettingsView }) {
   return (
     <SectionContent
       section={view.section} draft={draft} info={info} language={view.language} source={draft.sources.find((s) => s.id === view.source)}
-      flow={flow} onLanguage={vi.fn()} onChange={vi.fn()} onCapSaved={vi.fn()}
+      flow={flow} onLanguage={vi.fn()} onChange={vi.fn()} onCapSaved={vi.fn()} onOpenWorkspaces={vi.fn()}
     />
   );
 }

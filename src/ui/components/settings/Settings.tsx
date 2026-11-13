@@ -230,7 +230,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
         <main className="flex min-w-0 flex-1 flex-col">
           <div ref={scroller} className="flex-1 overflow-y-auto px-12 py-8">
             <SectionContent
-              key={revision} section={view.section} language={view.language} onLanguage={(language) => setView({ section: 'editor', language })} draft={draft} info={info} state={state} error={error} source={source} onChange={applyEdit} onCapSaved={capSaved}
+              key={revision} onOpenWorkspaces={() => setView({ section: 'workspaces' })} section={view.section} language={view.language} onLanguage={(language) => setView({ section: 'editor', language })} draft={draft} info={info} state={state} error={error} source={source} onChange={applyEdit} onCapSaved={capSaved}
               flow={{
                 newFlow: view.newFlow === true,
                 // #565: by the saved draft's id, so a flow renamed in the draft still counts its saved tasks; a new one counts none

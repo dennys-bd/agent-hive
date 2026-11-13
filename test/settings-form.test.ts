@@ -84,7 +84,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   assert.deepEqual(github.fileIcons, { set: 'vscode', scope: 'folders', muted: true }, 'the saved icons (#754)');
   assert.deepEqual(github.sidebarsPerView, { left: false, right: true, rightTab: false }, 'the saved sides (#821)');
   assert.deepEqual(github.signals, CONFIG.signals, 'the saved signal table (#727)');
-  assert.deepEqual(github.commandSemaphores, CONFIG.commandSemaphores, 'the saved list as it is (#796)');
+  assert.deepEqual(github.commandSemaphores.map(withoutId), [{ savedName: 'memory', name: 'memory', limit: '2', reservation: '2m' }], 'the saved list as rows, texts as typed (#796, #803)');
   assert.deepEqual([github.closeSessionTab, github.closeStageTab, github.closeSessionTabNotice, github.closeStageTabNotice], ['sleep', 'sleep', false, false], 'the saved choices (#614)');
   assert.deepEqual(github.sources.map(withoutId), [{ ...GH_ROW, taskProps: { ...GH_ROW.taskProps, defaults: { ...GH_ROW.taskProps.defaults, entry: { flowId: github.flows[0].id } } }, switchAt: github.stages[1].id }], 'switchAt as the dev stage draft\'s id (#30)');
   const [work] = github.sources;
@@ -762,4 +762,16 @@ test('an entry whose flow or stage is gone is a problem on the property and bloc
   const gone = { ...draft, sources: [{ ...draft.sources[0], taskProps: { ...props, defaults: { ...props.defaults, entry: { flowId: 'gone' } } } }] };
   assert.deepEqual(validateSettings(gone), { section: 'flow', message: t('settings.error.entryGone', { source: 'work' }) });
   assert.equal(validateSettings({ ...gone, sources: [{ ...gone.sources[0], taskProps: { ...props, defaults: { ...props.defaults, entry: null } } }] }), undefined);
+});
+
+test('a form with semaphores saves commandSemaphores and every line\'s semaphore unchanged when nothing was edited; the problem runs right after the usage rules (#803)', () => {
+  setLanguage('en');
+  const tests: Command = { name: 'tests', impls: [{ workspace: 'hive', command: 'pnpm test', semaphore: 'memory' }, { workspace: null, command: 'make test' }], menu: true, env: {} };
+  const draft = { ...draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, commands: [FRONT, tests] } })), transitions: [] };
+  assert.equal(draft.commands[1].impls[0].semaphore, draft.commandSemaphores[0].id, 'a line points at the row by its id');
+  const body = toSettingsBody(draft);
+  assert.deepEqual([body.commandSemaphores, body.commands], [CONFIG.commandSemaphores, [FRONT, tests]]);
+  assert.equal(validateSettings(draft), undefined);
+  const bad = [{ ...draft.commandSemaphores[0], limit: '0' }];
+  assert.deepEqual(validateSettings({ ...draft, commandSemaphores: bad, budgetHour: 'abc' }), { section: 'rules', message: t('settings.error.semaphoreLimit', { name: 'memory' }) }, 'before the budget');
 });
