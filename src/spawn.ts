@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, posix, win32 } from 'node:path';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
-import { COMMAND_SHIMS_ENV_FILE, commandShimDir } from './command-shim.js';
+import { commandShimDir, commandShimsEnvFile } from './command-shim.js';
 import { envValue, findExec } from './exec-path.js';
 import { killTree } from './kill-tree.js';
 import { shellInitDir, shellQuote } from './shell-init.js';
@@ -112,16 +112,16 @@ export function withoutHiveEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  */
 export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmpDir: string, secretFile: string, platform: NodeJS.Platform, commandShims: string): NodeJS.ProcessEnv {
   const windowsTemp = platform === 'win32' ? { TEMP: tmpDir, TMP: tmpDir } : {};
-  return { ...withoutHiveEnv(base), TMPDIR: tmpDir, ...windowsTemp, ...shimsEnv(base.PATH, tmpDir, platform, commandShims), HIVE_PTY_ID: ptyId, HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile };
+  return { ...withoutHiveEnv(base), TMPDIR: tmpDir, ...windowsTemp, ...shimsEnv(base.PATH, ptyId, platform, commandShims), HIVE_PTY_ID: ptyId, HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile };
 }
 
-// #800, decisions 14 and 16: the command shims first on PATH, and Claude Code's Bash tool told the same through the run's command-shims.sh
+// #800, decisions 14 and 16: the command shims first on PATH, and Claude Code's Bash tool told the same through the run's <ptyId>.sh
 // (spawn-internal.ts writes it), since that tool's shell may rebuild PATH. <home>/bin stays off: a worker's bare claude would register a
 // terminal session. Not on win32: Windows brings its own shim in node 5, and its env names the variable Path
-function shimsEnv(path: string | undefined, tmpDir: string, platform: NodeJS.Platform, commandShims: string): Record<string, string> {
+function shimsEnv(path: string | undefined, ptyId: string, platform: NodeJS.Platform, commandShims: string): Record<string, string> {
   if (platform === 'win32') return {};
   const full = path === undefined || path === '' ? commandShims : `${commandShims}${posix.delimiter}${path}`;
-  return { PATH: full, CLAUDE_ENV_FILE: posix.join(tmpDir, COMMAND_SHIMS_ENV_FILE) };
+  return { PATH: full, CLAUDE_ENV_FILE: commandShimsEnvFile(commandShims, ptyId) };
 }
 
 // #800: launch.env may carry a workspace's own PATH (#738), spread after ptyEnv's; the command shims go back first on the merged env.

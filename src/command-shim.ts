@@ -1,5 +1,5 @@
 import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, posix, type PlatformPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lineWords, type SemaphoresConfig } from './command-semaphores.js';
 import { shellQuote } from './shell-init.js';
@@ -9,7 +9,10 @@ import { BIN_MODE } from './shim.js';
 // <home>/command-shims/<word>, first on every pty's PATH, as the agents' shims are rendered into <home>/bin (#696).
 
 export const COMMAND_SHIMS_DIR = 'command-shims'; // <home>/command-shims: first on every pty's PATH
-export const COMMAND_SHIMS_ENV_FILE = 'command-shims.sh'; // in a run's TMPDIR: the line Claude Code's Bash tool sources (CLAUDE_ENV_FILE)
+// <home>/command-shims-env/<ptyId>.sh: the line a run's Claude Code Bash tool sources (CLAUDE_ENV_FILE). Under the home, never a shared
+// /tmp whose parent another account could own; beside the shims, never among them, since that folder is on PATH and the install deletes
+// every file of it that is no shim
+export const COMMAND_SHIMS_ENV_DIR = 'command-shims-env';
 const COMMAND = '__HIVE_COMMAND__';
 const SHIM_MODE = 0o755;
 
@@ -20,6 +23,10 @@ export const commandShimSource = (): string => fileURLToPath(new URL('../../asse
 export const renderCommandShim = (template: string, word: string): string => template.replaceAll(COMMAND, () => shellQuote(word));
 
 export const commandShimDir = (home: string): string => join(home, COMMAND_SHIMS_DIR);
+
+/** A run's command-shims.sh, derived from the shims' folder <home>/command-shims; `path` is the run's platform's. */
+export const commandShimsEnvFile = (commandShims: string, ptyId: string, path: PlatformPath = posix): string =>
+  path.join(path.dirname(commandShims), COMMAND_SHIMS_ENV_DIR, `${ptyId}.sh`);
 
 // A path is never looked up on PATH, so no shim could catch it; . and .. would name the folder itself or the home
 const isShimmable = (word: string): boolean => !word.includes('/') && word !== '.' && word !== '..';

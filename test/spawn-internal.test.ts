@@ -10,10 +10,12 @@ import { createPtyHost } from '../src/pty-host.js';
 import { ptyCommand, runTmpDir } from '../src/spawn.js';
 import { launchInternalPty } from '../src/spawn-internal.js';
 import { fakePtys, LAUNCH } from './fakes.js';
+import { assertMode } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
 
 const SECRET_FILE_PATH = '/home/agent-hive/hive.secret';
-const COMMAND_SHIMS = '/hive/command-shims';
+// The Hive home's command-shims folder, inside the test's runs base: the run's command-shims.sh goes beside it, under the home (#800)
+const commandShimsIn = (base: string): string => join(base, 'home', 'command-shims');
 
 function handlers() {
   const errors: string[] = [];
@@ -51,10 +53,10 @@ async function eventually(check: () => boolean, maxTries = POLL_TRIES): Promise<
 }
 
 test('launchInternalPty runs ptyCommand through the POSIX shell in the pty host, in the worktree with the worker env; started resolves once the pty exists (#251)', async (t) => {
-  await runsBase(t);
+  const base = await runsBase(t);
   const { spawnPty, ptys } = fakePtys();
   const host = createPtyHost(spawnPty);
-  const handle = launchInternalPty(LAUNCH, handlers().handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS });
+  const handle = launchInternalPty(LAUNCH, handlers().handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) });
   await handle.started;
   const [pty] = ptys;
   assert.deepEqual([pty.file, pty.args, pty.options.cwd], [posixShell().shell, ['-c', ptyCommand(LAUNCH)], LAUNCH.cwd]);
@@ -65,11 +67,11 @@ test('launchInternalPty runs ptyCommand through the POSIX shell in the pty host,
 });
 
 test('launchInternalPty reports the exit once: kill resolves on the pty\'s exit, a second kill is the same kill, and a pty that exits on its own needs no kill (#251)', async (t) => {
-  await runsBase(t);
+  const base = await runsBase(t);
   const { spawnPty, ptys } = fakePtys();
   const host = createPtyHost(spawnPty);
   const h = handlers();
-  const handle = launchInternalPty(LAUNCH, h.handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS });
+  const handle = launchInternalPty(LAUNCH, h.handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) });
   await handle.started;
   let killed = false;
   const kill = handle.kill().then(() => { killed = true; });
@@ -81,7 +83,7 @@ test('launchInternalPty reports the exit once: kill resolves on the pty\'s exit,
   await handle.kill();
   assert.deepEqual([ptys[0].killed, h.exits()], [1, 1], 'the first kill is the kill');
   const natural = handlers();
-  const other = launchInternalPty({ ...LAUNCH, ptyId: 'W2' }, natural.handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS });
+  const other = launchInternalPty({ ...LAUNCH, ptyId: 'W2' }, natural.handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) });
   await other.started;
   ptys[1].exit();
   await other.kill();
@@ -89,10 +91,10 @@ test('launchInternalPty reports the exit once: kill resolves on the pty\'s exit,
 });
 
 test('launchInternalPty rejects started with the pty message when the pty cannot spawn, or without a host, and never reports an exit (#251)', async (t) => {
-  await runsBase(t);
+  const base = await runsBase(t);
   const h = handlers();
   const failing = createPtyHost(() => { throw new Error('posix_spawnp failed'); });
-  await assert.rejects(launchInternalPty(LAUNCH, h.handlers, { ptys: failing, secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS }).started, { message: 'pty: posix_spawnp failed' });
+  await assert.rejects(launchInternalPty(LAUNCH, h.handlers, { ptys: failing, secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) }).started, { message: 'pty: posix_spawnp failed' });
   await eventually(() => !existsSync(runTmpDir('W1'))); // made for a run that never started, and removed (#428)
   const bare = launchInternalPty(LAUNCH, h.handlers);
   await assert.rejects(bare.started, { message: 'pty: no pty host' });
@@ -110,7 +112,7 @@ test('launchInternalPty gives the run a TMPDIR of its own: <tmpdir>/hive-runs/<p
     return spawnPty(file, args, options);
   });
   const h = handlers();
-  await launchInternalPty(LAUNCH, h.handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS }).started;
+  await launchInternalPty(LAUNCH, h.handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) }).started;
   // Windows has no POSIX mode bits: stat reports 0o666 whatever mkdir was asked
   if (process.platform !== 'win32') assert.equal(modeAtSpawn, 0o700);
   assert.equal(ptys[0].options.env.TEMP, process.platform === 'win32' ? dir : process.env.TEMP, 'TEMP is the run\'s own on win32 only (#644)');
@@ -136,7 +138,7 @@ test('launchInternalPty still removes a TMPDIR a straggler of the run keeps writ
   const cache = join(base, 'hive-runs', 'W1', 'node-compile-cache');
   const { spawnPty, ptys } = fakePtys();
   const h = handlers();
-  await launchInternalPty(LAUNCH, h.handlers, { ptys: createPtyHost(spawnPty), secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS }).started;
+  await launchInternalPty(LAUNCH, h.handlers, { ptys: createPtyHost(spawnPty), secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) }).started;
   await mkdir(cache);
   const writing = keepWriting(cache, STRAGGLER_MS);
   await sleep(POLL_MS); // the straggler is mid-write when the pty exits
@@ -151,7 +153,7 @@ test('launchInternalPty reports a TMPDIR it cannot remove as tmp: <message> on o
   const runs = join(base, 'hive-runs');
   const { spawnPty, ptys } = fakePtys();
   const h = handlers();
-  await launchInternalPty(LAUNCH, h.handlers, { ptys: createPtyHost(spawnPty), secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS }).started;
+  await launchInternalPty(LAUNCH, h.handlers, { ptys: createPtyHost(spawnPty), secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) }).started;
   await chmod(runs, 0o500); // no entry of hive-runs/ can be removed now
   t.after(() => chmod(runs, 0o700)); // runs before tempDir's removal of the base
   ptys[0].exit();
@@ -166,18 +168,18 @@ test('launchInternalPty rejects started with pty: when the run\'s TMPDIR cannot 
   await writeFile(join(base, 'hive-runs'), 'a file where the dir should go');
   const { spawnPty, ptys } = fakePtys();
   const h = handlers();
-  await assert.rejects(launchInternalPty(LAUNCH, h.handlers, { ptys: createPtyHost(spawnPty), secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS }).started, { message: /^pty: / });
+  await assert.rejects(launchInternalPty(LAUNCH, h.handlers, { ptys: createPtyHost(spawnPty), secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) }).started, { message: /^pty: / });
   await tick();
   assert.deepEqual([ptys.length, h.exits(), h.errors], [0, 0, []], 'no run on the shared temp dir, and no removal of a path never made');
 });
 
 test('a terminal\'s launch reaches the pty with its own env over the worker env, and its ring goes to its log as it ends (#696)', async (t) => {
-  await runsBase(t);
+  const base = await runsBase(t);
   const log = join(await tempDir(t, 'ring-'), 'W1.log');
   const { spawnPty, ptys } = fakePtys();
   const host = createPtyHost(spawnPty);
   const launch = { ...LAUNCH, terminal: true as const, env: { HISTFILE: '/h/terminals/W1.history' }, keep: { log } };
-  await launchInternalPty(launch, handlers().handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS }).started;
+  await launchInternalPty(launch, handlers().handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) }).started;
   const [pty] = ptys;
   assert.deepEqual([pty.options.env.HISTFILE, pty.options.env.HIVE_PTY_ID], ['/h/terminals/W1.history', 'W1']);
   pty.emit('$ ls\r\n');
@@ -186,18 +188,34 @@ test('a terminal\'s launch reaches the pty with its own env over the worker env,
 });
 
 test('launchInternalPty spawns the pty at the launch\'s size, the grid the page asked for (#808)', async (t) => {
-  await runsBase(t);
+  const base = await runsBase(t);
   const { spawnPty, ptys } = fakePtys();
-  await launchInternalPty({ ...LAUNCH, size: { cols: 132, rows: 41 } }, handlers().handlers, { ptys: createPtyHost(spawnPty), secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS }).started;
+  await launchInternalPty({ ...LAUNCH, size: { cols: 132, rows: 41 } }, handlers().handlers, { ptys: createPtyHost(spawnPty), secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) }).started;
   assert.deepEqual([ptys[0].options.cols, ptys[0].options.rows], [132, 41]);
 });
 
-test('launchInternalPty writes the run\'s command-shims.sh into its TMPDIR before the pty spawns: the line that puts the command shims first in Claude Code\'s Bash tool (#800)', async (t) => {
+test('launchInternalPty writes the run\'s command-shims.sh into <home>/command-shims-env/<ptyId>.sh (folder 0700, file 0600), never the shared temp dir, before the pty spawns, and removes it with the run (#800)', async (t) => {
   const base = await runsBase(t);
-  const file = join(base, 'hive-runs', 'W1', 'command-shims.sh');
-  const { spawnPty } = fakePtys();
+  const commandShims = commandShimsIn(base);
+  const dir = join(base, 'home', 'command-shims-env');
+  const file = join(dir, 'W1.sh');
+  const { spawnPty, ptys } = fakePtys();
   let atSpawn: string | undefined;
   const host = createPtyHost((f, a, o) => { atSpawn = readFileSync(file, 'utf8'); return spawnPty(f, a, o); });
-  await launchInternalPty(LAUNCH, handlers().handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims: COMMAND_SHIMS }).started;
-  assert.equal(atSpawn, claudeEnvLine(COMMAND_SHIMS));
+  const h = handlers();
+  await launchInternalPty(LAUNCH, h.handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims }).started;
+  assert.equal(atSpawn, claudeEnvLine(commandShims));
+  assert.equal(existsSync(join(base, 'hive-runs', 'W1', 'command-shims.sh')), false);
+  await assertMode(t, dir, 0o700);
+  await assertMode(t, file, 0o600);
+  ptys[0].exit();
+  await eventually(() => !existsSync(file));
+  assert.deepEqual([h.exits(), h.errors, existsSync(dir)], [1, [], true]);
+});
+
+test('launchInternalPty removes the run\'s command-shims.sh when its pty cannot spawn (#800)', async (t) => {
+  const base = await runsBase(t);
+  const failing = createPtyHost(() => { throw new Error('posix_spawnp failed'); });
+  await assert.rejects(launchInternalPty(LAUNCH, handlers().handlers, { ptys: failing, secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) }).started);
+  await eventually(() => !existsSync(join(base, 'home', 'command-shims-env', 'W1.sh')));
 });
