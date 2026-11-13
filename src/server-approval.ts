@@ -21,8 +21,9 @@ type UserTrigger = Extract<Trigger, 'approved' | 'feedback'>;
 const NO_EXIT_MESSAGE: Record<UserTrigger, string> = { approved: 'nenhuma transição sai desta etapa ao aprovar', feedback: 'nenhuma transição sai desta etapa com feedback' };
 /** Start, Continue and Restart on a task awaiting approval (#268): the user approves or sends feedback instead. */
 export const AWAITING_MESSAGE = 'tarefa aguarda aprovação: aprove ou envie feedback';
-/** Aprovar on a task whose decomposition is not on GitHub yet (#865): criar issues writes it and ends the stage itself. */
-export const DECOMPOSITION_MESSAGE = 'a decomposição ainda não foi escrita no GitHub: use criar issues';
+/** Aprovar on a task whose decomposition is not written yet (#865): its create button writes it and ends the stage itself. #784: no "GitHub",
+ * since a hive-only Comb is refused too. */
+export const DECOMPOSITION_MESSAGE = 'a decomposição ainda não foi escrita: use o botão de criar';
 
 const refuse = (res: Response, refusal: Refusal): void => {
   res.status(refusal.status).json({ error: refusal.message });
@@ -58,11 +59,12 @@ function feedbackEvent(activityId: string, body: unknown, task: Task, _state: St
   return { type: 'feedback', activityId, text: trimmed, start };
 }
 
-// Aprovar (#268), unless the stage's decomposition still has to be written (#865): approving would end it with nothing on GitHub, from
-// whichever door the approve came (the detail, a menu, the flow's button, the search). With no GitHub source there is nowhere to write it
+// Aprovar (#268), unless the stage's decomposition still has to be written (#865): approving would end it with nothing written, from
+// whichever door the approve came (the detail, a menu, the flow's button, the search). #784: the hive is somewhere to write it too; with
+// neither a GitHub source nor the hive there is nowhere, and the approve is plain
 function approveEvent(activityId: string, task: Task, state: State, config: Pick<Config, 'comb'>): HiveEvent | Refusal {
-  const hasGithub = config.comb.sources.some((s) => s.type === 'github');
-  if (hasGithub && decompositionPending(resultOf(state, task.item.itemId))) return { status: HTTP_CONFLICT, message: DECOMPOSITION_MESSAGE };
+  const hasTarget = config.comb.hiveSource || config.comb.sources.some((s) => s.type === 'github');
+  if (hasTarget && decompositionPending(resultOf(state, task.item.itemId))) return { status: HTTP_CONFLICT, message: DECOMPOSITION_MESSAGE };
   return { type: 'approve', activityId };
 }
 
