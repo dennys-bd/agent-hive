@@ -5,15 +5,15 @@ import type { SettingsDraft } from '@/lib/settings-form';
 import { cardEntries, contextEntries, named, type SettingEntry, settingAnchor } from '@/lib/settings-search';
 import type { State } from '../../../types';
 
-interface WorkspacesSectionProps { draft: SettingsDraft; state?: State; savedNames: readonly string[]; onChange(patch: Partial<SettingsDraft>): void; onCapSaved(workspace: string, cap: number): void }
+interface WorkspacesSectionProps { draft: SettingsDraft; state?: State; savedNames: readonly string[]; onChange(patch: Partial<SettingsDraft>): void; onCapSaved(workspace: string, cap: number): void; onOpenRules(): void }
 
 // Settings › workspaces (#510, #511): one card per workspace (folder, setup, env), then the Comb's commands, each enabled in some of them.
-// A removed workspace only leaves the workspaces: the commands keep its id, and toSettingsBody drops it. onCapSaved (#115): a memory dialog's save.
-export function WorkspacesSection({ draft, state, savedNames, onChange, onCapSaved }: WorkspacesSectionProps) {
+// A removed workspace only leaves the workspaces: the commands keep its id, and toSettingsBody drops it. onCapSaved (#115): a memory dialog's save; onOpenRules (#804): the commands foot's link.
+export function WorkspacesSection({ draft, state, savedNames, onChange, onCapSaved, onOpenRules }: WorkspacesSectionProps) {
   return (
     <>
       <WorkspacesEditor workspaces={draft.workspaces} savedNames={savedNames} state={state} onChange={(workspaces) => onChange({ workspaces })} onCapSaved={onCapSaved} />
-      <SettingsGroup title="settings.group.commands" hint="settings.commands.hint"><CommandsEditor draft={draft} onChange={onChange} /></SettingsGroup>
+      <SettingsGroup title="settings.group.commands" hint="settings.commands.hint"><CommandsEditor draft={draft} onChange={onChange} onOpenRules={onOpenRules} /></SettingsGroup>
     </>
   );
 }

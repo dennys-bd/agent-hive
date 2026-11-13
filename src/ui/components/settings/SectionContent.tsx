@@ -20,6 +20,7 @@ interface SectionContentProps {
   section: SettingsSection; draft: SettingsDraft; info: SettingsInfo; state?: State; error?: string; source?: SourceDraft;
   flow: FlowProps; language?: LanguageId; onLanguage(language: LanguageId): void; onChange(patch: Partial<SettingsDraft>): void; onCapSaved(workspace: string, cap: number): void;
   onOpenWorkspaces(): void; // #803: the semaphores card's link to workspaces › commands
+  onOpenRules(): void; // #804: the commands card's link to rules › Command Semaphores
 }
 
 // The breadcrumb over a source's detail page (#514), or today's heading + description on any list page, with the section's action on its right.
@@ -68,9 +69,9 @@ function headingAction(section: SettingsSection, { draft, onChange }: Pick<Secti
 }
 
 // One component per section (#510); #511–#516 swap these one by one. flow carries what only the flow section needs (#514).
-function body(section: SettingsSection, source: SourceDraft | undefined, { draft, info, state, flow, language, onLanguage, onChange, onCapSaved, onOpenWorkspaces }: Omit<SectionContentProps, 'section' | 'error' | 'source'>): ReactNode {
+function body(section: SettingsSection, source: SourceDraft | undefined, { draft, info, state, flow, language, onLanguage, onChange, onCapSaved, onOpenWorkspaces, onOpenRules }: Omit<SectionContentProps, 'section' | 'error' | 'source'>): ReactNode {
   switch (section) {
-    case 'workspaces': return <WorkspacesSection draft={draft} state={state} savedNames={(info.config?.comb.workspaces ?? []).map((w) => w.name)} onChange={onChange} onCapSaved={onCapSaved} />;
+    case 'workspaces': return <WorkspacesSection draft={draft} state={state} savedNames={(info.config?.comb.workspaces ?? []).map((w) => w.name)} onChange={onChange} onCapSaved={onCapSaved} onOpenRules={onOpenRules} />;
     case 'flow': return <FlowSection draft={draft} source={source} flow={flow} agents={offeredAgents(info.agents, draft.agentEnabled)} launchWorkspace={info.config?.comb.workspaces[0]?.name} onChange={onChange} />;
     case 'execution': return <ExecutionSection draft={draft} agents={info.agents} launchWorkspace={info.config?.comb.workspaces[0]?.name} onChange={onChange} onOpenFlow={() => flow.onOpenSource(undefined)} />;
     case 'rules': return <RulesTab draft={draft} state={state} locale={LOCALE[info.language]} onChange={onChange} onOpenWorkspaces={onOpenWorkspaces} />;

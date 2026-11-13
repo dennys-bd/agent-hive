@@ -133,3 +133,14 @@ test('with no semaphore the muted button still opens, on none and the empty note
   expect(screen.queryByText('a linha espera a vez com as outras do mesmo revezamento')).not.toBeInTheDocument();
   expect(inRow.queryByText(/nas \d linhas/)).not.toBeInTheDocument();
 });
+
+test('the card foot explains the hourglass and its link opens Settings › rules (#804 decision 9)', async () => {
+  const user = userEvent.setup();
+  render(<Settings info={infoWith(SEMAPHORES)} onSaved={vi.fn()} />);
+  await open(user, 'workspaces');
+  const card = within(screen.getByRole('region', { name: t('settings.group.commands') }));
+  expect(card.getByText(t('settings.commands.note'))).toBeInTheDocument();
+  expect(card.getByText(t('settings.commands.semaphore.foot'), { exact: false })).toBeInTheDocument();
+  await user.click(card.getByRole('button', { name: 'regras › revezamentos' }));
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(t('settings.section.rules'));
+});

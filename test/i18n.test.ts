@@ -723,3 +723,24 @@ test('the Command Semaphores card reads as the screen writes it, in both languag
     'tokens, usage, semaphores', 'how much the Hive may spend, in tokens, how it slows down as usage rises and how many heavy commands run together.',
   ]);
 });
+
+test('the semaphore picker, its hint and the commands card foot read as the screen writes them, in both languages (#804)', () => {
+  const read = (): string[] => [
+    t('settings.commands.semaphore.label', { command: 'testes', workspace: 'core-api', semaphore: 'memory' }), t('settings.commands.semaphore.none'),
+    t('settings.commands.semaphore.title', { name: 'memory' }), t('settings.commands.semaphore.titleNone'), t('settings.commands.semaphore.note'),
+    t('settings.commands.semaphore.empty'), t('settings.commands.semaphore.allLines', { name: 'memory', n: 2 }),
+    t('settings.commands.semaphore.someLines', { name: 'memory', workspaces: 'agent-hive' }), t('settings.commands.semaphore.foot'), t('settings.commands.semaphore.footLink'),
+  ];
+  setLanguage('pt');
+  assert.deepEqual(read(), [
+    'revezamento de testes em core-api: memory', 'nenhum', 'revezamento: memory', 'sem revezamento', 'a linha espera a vez com as outras do mesmo revezamento',
+    'nenhum revezamento ainda · crie um em regras › revezamentos', 'memory nas 2 linhas', 'memory em agent-hive',
+    'põe a linha num revezamento, que limita quantas executam juntas no Hive todo:', 'regras › revezamentos',
+  ]);
+  setLanguage('en');
+  assert.deepEqual(read(), [
+    "testes's semaphore in core-api: memory", 'none', 'semaphore: memory', 'no semaphore', 'the line waits its turn with the others of the same semaphore',
+    'no semaphore yet · create one in rules › Command Semaphores', 'memory on the 2 lines', 'memory in agent-hive',
+    'puts the line in a semaphore, which caps how many run together across the whole Hive:', 'rules › Command Semaphores',
+  ]);
+});
