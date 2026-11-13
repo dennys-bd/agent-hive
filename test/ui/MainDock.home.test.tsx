@@ -148,7 +148,7 @@ test('the new terminal key opens a terminal in the workspace\'s local activity: 
   expect(within(screen.getByRole('tablist', { name: 'abas' })).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Terminal']);
 });
 
-test('a task\'s ↵ opens the Start dialog on it, and + criar tarefa opens it with the typed title (#584)', async () => {
+test('a task\'s ↵ opens the Start dialog on it, and + nova atividade opens it with the typed title (#584, #774)', async () => {
   const user = userEvent.setup();
   const other: WithWork = { ...taskA, item: { ...taskA.item, itemId: 'B', id: '2', title: 'Task B' }, worktree: undefined };
   render(<Home tasks={[taskA, other]} newActivity={(start) => <p>{`start:${start.taskId ?? ''}:${start.title ?? ''}`}</p>} />);
@@ -157,7 +157,7 @@ test('a task\'s ↵ opens the Start dialog on it, and + criar tarefa opens it wi
   expect(screen.getByText('start:B:')).toBeInTheDocument();
   key('p');
   await user.keyboard('#nothing like it');
-  await user.click(screen.getByRole('option', { name: '+ criar tarefa "nothing like it"' }));
+  await user.click(screen.getByRole('option', { name: '+ nova atividade "nothing like it"' }));
   expect(screen.getByText('start::nothing like it')).toBeInTheDocument();
 });
 
