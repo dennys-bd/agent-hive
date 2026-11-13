@@ -14,7 +14,7 @@ import { flowed } from '../fixtures/main-flow.js';
 const STAGE: Stage = { name: 'Build', from: {}, prompt: '/build' };
 const task = (id: string, title: string): WithWork => ({ item: { itemId: `I${id}`, id, title, body: '', url: '' }, stage: 'Build', boardColumn: '', auto: true });
 const s = (tasks: WithWork[], workers: Worker[]): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], ...flowed([STAGE], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], ...flowed([STAGE], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 function Panel({ state, onClose }: { state: State; onClose(): void }) {

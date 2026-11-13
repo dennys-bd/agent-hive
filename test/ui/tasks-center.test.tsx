@@ -21,7 +21,7 @@ const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/ac
 const task = (n: string, at: string): Task => ({ item: { itemId: `roadmap:PVTI_${n}`, id: n, title: `Issue ${n}`, body: '', url: `https://github.com/acme/r/issues/${n}`, source: 'roadmap' }, stage: at, boardColumn: 'Ready', auto: true });
 const STATE: State = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], flows: FLOWS, ...flatten(FLOWS),
-  tasks: [task('1', 'dev'), task('2', 'review'), task('3', 'gone')], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
+  tasks: [task('1', 'dev'), task('2', 'review'), task('3', 'gone')], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {},
   activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };

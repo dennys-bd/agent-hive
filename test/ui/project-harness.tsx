@@ -32,7 +32,7 @@ export const VIEW: ProjectView = {
 // #12 is a task of roadmap: the issue listed by the poll
 export const TASK: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Issue 12', body: '', url: '', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 export const state = (tasks: Task[]): State => ({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {},
   activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: { roadmap: 'hive' }, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });

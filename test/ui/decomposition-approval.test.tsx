@@ -18,7 +18,7 @@ import { firstFlow } from './flow-of.js';
 const since = '2026-10-09T10:00:00.000Z';
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'goal', boardColumn: 'Goals', auto: true };
 const base: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }], [{ from: 'goal', to: 'end', when: 'approved' }]), tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }], [{ from: 'goal', to: 'end', when: 'approved' }]), tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
   sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: { board: {} }, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
   approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };

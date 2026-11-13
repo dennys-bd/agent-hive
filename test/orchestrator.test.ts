@@ -3826,3 +3826,14 @@ test('moveToStage takes a task outside the flow into a stage of a second flow: a
   const quiet = reduce(local, { type: 'moveToStage', taskId: 'local:1', stage: 'triage' });
   assert.deepEqual([quiet.state.tasks[0].stage, quiet.effects], ['triage', []]);
 });
+
+test('setSemaphores replaces the mirror whole with no effect; semaphoreTurn changes nothing until 2.2; the reducer stays pure (#798)', () => {
+  const memory = { runs: ['A'], line: [{ ptyId: 'B', place: 1 }] };
+  const state: State = { ...initialState(1), semaphores: { memory: { runs: [], line: [] }, disk: { runs: [], line: [] } } };
+  const before = structuredClone(state);
+  const set = reduce(state, { type: 'setSemaphores', semaphores: { memory } });
+  assert.deepEqual([set.state.semaphores, set.effects], [{ memory }, []], 'the module is the source of truth: a semaphore it left out is gone');
+  assert.deepEqual(state, before, 'never mutated');
+  const turn = reduce(set.state, { type: 'semaphoreTurn', ptyId: 'B', semaphore: 'memory', argv: ['pnpm', 'test'] });
+  assert.deepEqual([turn.state, turn.effects], [set.state, []]);
+});

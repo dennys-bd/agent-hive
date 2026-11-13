@@ -23,7 +23,7 @@ const VIEW: ProjectView = {
   items: [{ itemId: 'roadmap:PVTI_1', id: '1', title: 'Issue 1', body: '', url: 'https://github.com/acme/r/issues/1', status: 'Ready', labels: [], assignees: [], fields: {}, pullRequests: [] }],
 };
 const state: State = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], []), tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] },
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], []), tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {},
   activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };

@@ -187,7 +187,7 @@ function savedFlows(parsed: State): Pick<State, 'flows' | 'stages' | 'transition
 // from before #378 goes: the rest is spread. A file from before #570 has slots and shells, never read (no migration): its runs are lost, its
 // tasks stay, and it gets its cap (MAX_CONCURRENT_DEFAULT when it has none) in free workers, since boot never re-runs setMax.
 function normalize(parsed: State, hiveDir: string, scope?: WorkspaceNames): State {
-  const { maxConcurrent: savedMax, rateLimits, terminals, cleanStop, crash, slots: _slots, shells: _shells, cleanup: _cleanup, boardQuota: _quota, lastPolledAt: _polled, boardProject: _default, queue: _queue, shutdown: _shutdown, keepAwake: _keepAwake, columns: _columns, terminal: _terminal, localSessions: _localSessions, slept: _slept, auto: _auto, ...rest } = parsed as State & { auto?: unknown; localSessions?: unknown; slept?: unknown; slots?: unknown; shells?: unknown; cleanup?: unknown; queue?: unknown; boardProject?: unknown; boardQuota?: unknown; lastPolledAt?: unknown; columns?: unknown; terminal?: unknown };
+  const { maxConcurrent: savedMax, rateLimits, terminals, cleanStop, crash, slots: _slots, shells: _shells, cleanup: _cleanup, boardQuota: _quota, lastPolledAt: _polled, boardProject: _default, queue: _queue, shutdown: _shutdown, keepAwake: _keepAwake, columns: _columns, terminal: _terminal, localSessions: _localSessions, slept: _slept, semaphores: _semaphores, auto: _auto, ...rest } = parsed as State & { auto?: unknown; semaphores?: unknown; localSessions?: unknown; slept?: unknown; slots?: unknown; shells?: unknown; cleanup?: unknown; queue?: unknown; boardProject?: unknown; boardQuota?: unknown; lastPolledAt?: unknown; columns?: unknown; terminal?: unknown };
   const maxConcurrent = isCount(savedMax) ? Math.min(Math.floor(savedMax), MAX_CONCURRENT_MAX) : MAX_CONCURRENT_DEFAULT; // #727: the state is the cap's one source, so a bad value must not crash every boot
   const saved = Array.isArray(parsed.tasks) ? parsed.tasks.map(renamedStage).filter(isTask) : [];
   const tasks = saved.map(normalizeTask);
@@ -208,6 +208,7 @@ function normalize(parsed: State, hiveDir: string, scope?: WorkspaceNames): Stat
     workspaces: isStringArray(parsed.workspaces) ? parsed.workspaces : [], // overwritten by the config on boot (#179)
     sourceWorkspaces: {}, // overwritten by the config on boot (#179, #180)
     commands: {}, // overwritten by the config on boot (#300)
+    semaphores: {}, // #798: never saved; the module rebuilds it free
     workspaceColors: {}, // idem (#78)
     syncs: isJsonObject(parsed.syncs) ? Object.fromEntries(Object.entries(parsed.syncs).map(([name, sync]) => [name, syncOf(sync)])) : {}, // the keys are overwritten by the config on boot (#180)
     tasks,
@@ -256,7 +257,7 @@ function leanTask(task: Task): Task | SavedTask {
 export async function saveState(hiveDir: string, state: State): Promise<void> {
   const path = join(hiveDir, STATE_FILE);
   const tmp = `${path}.tmp`;
-  const { slept: _slept, ...saved } = state; // #672: the sleeping runs die with the Hive, so they are never saved
+  const { slept: _slept, semaphores: _semaphores, ...saved } = state; // #672: the sleeping runs die with the Hive; #798: so does every semaphore's line
   await writeFile(tmp, JSON.stringify({ ...saved, tasks: saved.tasks.map(leanTask) }, null, 2));
   await replaceFile(tmp, path);
 }

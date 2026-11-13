@@ -24,7 +24,7 @@ const transitions: Transition[] = [
 const LONG = 'The change crosses three owners, so one task would not fit a single PR.\n\n1. The daemon binds a fixed port.\n2. The shell reads it at boot.\n3. The CLI hard-codes it.\n\nEach part ships alone.';
 const awaiting = (approval: TaskApproval): WithWork => ({ item: { itemId: 'I1', id: '702', title: 'Pick the port', body: '', url: '' }, stage: 'Brainstorm', boardColumn: 'Ready', auto: true, approval });
 const state = (task: WithWork, result?: Record<string, unknown>): State => movedWork<State>({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, transitions), tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, transitions), tasks: [task], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
   activities: [], activityRecords: [{ id: ACTIVITY, taskIds: ['I1'], sessions: [], ...(result === undefined ? {} : { result }) }],
   sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });

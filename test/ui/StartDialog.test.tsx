@@ -29,7 +29,7 @@ const DEPLOY: Stage = { name: 'deploy', from: { board: ['Deploy'] }, prompt: 'x'
 const outside = (w: WithWork): WithWork => { const { stage: _stage, ...rest } = w; return rest; };
 const OUTSIDE = outside(HERO);
 const state = (tasks: Task[] = [LANDING, HERO]): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['hive', 'site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 // #580: three flows; bug's entry reads no column of board, so a board entry is offered main and ops alone

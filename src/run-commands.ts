@@ -121,9 +121,11 @@ export function parseCommandSemaphores(raw: unknown, field = 'commandSemaphores'
 }
 
 /** The line `command` runs in `workspace` (#755): the workspace's own, else the other workspaces' one; undefined = the command does not exist
- * there. The one rule the server and the page both import. */
-export const resolveCommand = (command: Pick<Command, 'impls'>, workspace: string): string | undefined =>
-  (command.impls.find((i) => i.workspace === workspace) ?? command.impls.find((i) => i.workspace === null))?.command;
+ * there. The one rule the server and the page both import. #798: `resolveImpl` keeps the line whole, so the semaphores read its semaphore. */
+export const resolveImpl = (command: Pick<Command, 'impls'>, workspace: string): CommandImpl | undefined =>
+  command.impls.find((i) => i.workspace === workspace) ?? command.impls.find((i) => i.workspace === null);
+
+export const resolveCommand = (command: Pick<Command, 'impls'>, workspace: string): string | undefined => resolveImpl(command, workspace)?.command;
 
 /** A command as it runs in one workspace (#755): its line there in place of its lines per workspace, so a launch reads `.command` as before. */
 export type ResolvedCommand = Omit<Command, 'impls' | 'menu'> & { command: string };

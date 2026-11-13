@@ -857,6 +857,17 @@ test('the sleeping runs are never saved: saveState writes none and loadState rea
   assert.equal((await loadState(dir)).slept, undefined);
 });
 
+test('State.semaphores starts empty, is never written to state.json, and a file holding one loads without it (#798)', async (t) => {
+  const dir = await tempDir(t, 'state-');
+  assert.deepEqual(initialState(1).semaphores, {});
+  const live = { memory: { runs: ['A'], line: [{ ptyId: 'B', place: 1 }] } };
+  await saveState(dir, { ...initialState(1), semaphores: live });
+  const raw = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8')) as Record<string, unknown>;
+  assert.equal('semaphores' in raw, false, 'the line lives in the daemon\'s memory only');
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), semaphores: live }));
+  assert.deepEqual((await loadState(dir)).semaphores, {}, 'a restart starts every semaphore free');
+});
+
 test('loadState keeps a terminal\'s cwd, its asleep mark and its command, and drops a terminal saved without a cwd (#696)', async (t) => {
   const dir = await tempDir(t, '');
   const at = '2026-10-03T10:00:00.000Z';

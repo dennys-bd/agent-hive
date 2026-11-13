@@ -17,7 +17,7 @@ const task = (id: string, extra: Partial<WithWork> = {}, item: Partial<Item> = {
 });
 const started = (id: string, extra: Partial<WithWork> = {}, item: Partial<Item> = {}): WithWork => task(id, { branch: `hive/${id}-task-${id}`, ...extra }, item);
 const state = (tasks: WithWork[], workspaces = ['hive']): State => withPointedWork({
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(STAGES, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(STAGES, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces, sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 const display = (options: Partial<DisplayOptions> = {}): DisplayControls => ({ options: { ...DISPLAY_DEFAULTS, ...options }, set: vi.fn() });
