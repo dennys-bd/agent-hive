@@ -5,12 +5,12 @@ import { activityOf, prsOf, resultOf } from '../../activities.js';
 import { decompositionPending } from '../../decomposition.js';
 import { hasOpenPr } from '../../pull-requests.js';
 import { inAction, isQueued, type WorkersState, workersOf } from '../../tasks.js';
-import { TRIES_OUT, type Activity, type Task, type State } from '../../types.js';
+import { TRIES_OUT, type Activity, type Task, type State, type Worker } from '../../types.js';
 import { mostUrgent, type TaskState } from './status.js';
 
 /** What taskState reads: the workers and activities, and the stages, whose queue keeps an open PR from reading review (#15). Without them no
  * task is queued, so a caller that holds none (a test, the terminal's harness) reads an open PR as review, as before. */
-export type TaskStateInput = WorkersState & Partial<Pick<State, 'stages'>>;
+export type TaskStateInput = WorkersState & Partial<Pick<State, 'stages' | 'semaphores'>>;
 
 /** Whether a run is at work (#663): working or waiting, or waiting out an API error, which still holds its run (#805). A held approval run is
  * idle until approve or feedback (#268). */
@@ -20,12 +20,28 @@ export const isLive = (status: TaskState): boolean => status === 'working' || st
 export const backoffUntil = (task: Task, state: WorkersState): string | undefined =>
   workersOf(state, task).find((worker) => worker.status === 'backoff')?.backoff?.until;
 
+/** The pty a worker runs in: a captured session runs in its terminal's pty (#696). */
+const ptyOf = (worker: Worker): string => worker.terminalId ?? worker.id;
+
+/** Where one of the task's runs stands in a Command Semaphore's line (#805); a turn beats a place, else the lowest place; undefined with none. */
+export interface SemaphoreWait { semaphore: string; ptyId: string; place: number; turnUntil?: string }
+export function semaphoreWait(task: Task, state: TaskStateInput): SemaphoreWait | undefined {
+  const ptys = new Set(workersOf(state, task).map(ptyOf));
+  const waits = Object.entries(state.semaphores ?? {}).flatMap(([semaphore, { line }]) =>
+    line.filter((waiter) => ptys.has(waiter.ptyId)).map((waiter): SemaphoreWait => ({ semaphore, ...waiter })));
+  const rank = (wait: SemaphoreWait): number => (wait.turnUntil === undefined ? wait.place : -1);
+  return waits.reduce<SemaphoreWait | undefined>((best, wait) => (best === undefined || rank(wait) < rank(best) ? wait : best), undefined);
+}
+
 /** The task's status (#663): the most urgent of its sessions at work; else working while a stage action is in flight, a CI wait or a commands
  * stage (#15: the card's n/m says which); else review while any of its records has an open PR and the task is not queued to run (#15: review
  * wins over approval, as approving the PR can release it); else approval while its live activity awaits one; else empty; else new while the
  * task has no live activity (#727). */
 export function taskState(task: Task, state: TaskStateInput): TaskState {
-  const live = mostUrgent(workersOf(state, task).filter((worker) => isLive(worker.status)));
+  const lined = new Set(Object.values(state.semaphores ?? {}).flatMap(({ line }) => line.map((waiter) => waiter.ptyId)));
+  // #805: a run in a semaphore's line is not moving, so it reads backoff; a question to the user still outranks it (RANK)
+  const live = mostUrgent(workersOf(state, task).filter((worker) => isLive(worker.status))
+    .map((worker) => (lined.has(ptyOf(worker)) && worker.status === 'working' ? { ...worker, status: 'backoff' as const } : worker)));
   if (live !== 'empty') return live;
   const activity = activityOf(state, task.item.itemId);
   if (inAction(activity)) return 'working';

@@ -558,3 +558,33 @@ test('a task outside the flow gets iniciar while a session may open on it, abrir
   const deleting: WithWork = { ...outside, worktree: '/wt', deleting: true };
   expect(taskAction(deleting, state(deleting))).toBeUndefined();
 });
+
+// #805: the card's line for a pty in a Command Semaphore's line, and executar agora
+const inLine = (line: { ptyId: string; place: number; turnUntil?: string }[]): Partial<State> => ({ semaphores: { memory: { runs: [], line } } });
+
+test('a worker in a semaphore line shows na vez de memory · 2º and the footer reads aguardando; executar agora posts the pty to the route (#805)', async () => {
+  const c = task({ workerId: 's1' });
+  render(<FlowTask task={c} state={state(c, [working()], inLine([{ ptyId: 's1', place: 2 }]))} dragHandlers={{} as never} isDimmed={false} isDropBefore={false} isSelected={false} />);
+  expect(within(tile()).getByText(/na vez de/).textContent).toBe('na vez de memory · 2º');
+  expect(within(tile()).getByText('aguardando')).toBeTruthy();
+  await userEvent.click(within(tile()).getByRole('button', { name: /executar .* agora/ }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/semaphores/memory/run-now', expect.objectContaining({ method: 'POST', body: JSON.stringify({ ptyId: 's1' }) })), { timeout: 4000 });
+});
+
+test('during a turn the line counts down the reservation and offers no executar agora (#805)', () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-01T10:00:00.000Z'));
+  try {
+    const c = task({ workerId: 's1' });
+    render(<FlowTask task={c} state={state(c, [working()], inLine([{ ptyId: 's1', place: 0, turnUntil: '2026-10-01T10:01:40.000Z' }]))} dragHandlers={{} as never} isDimmed={false} isDropBefore={false} isSelected={false} />);
+    expect(within(tile()).getByText(/sua vez em/).textContent).toBe('sua vez em memory · 1:40');
+    expect(within(tile()).queryByRole('button', { name: /executar .* agora/ })).toBeNull();
+  } finally { vi.useRealTimers(); }
+});
+
+test('with no place in any line the card shows no semaphore line (#805)', () => {
+  const c = task({ workerId: 's1' });
+  render(<FlowTask task={c} state={state(c, [working()], inLine([{ ptyId: 'other', place: 1 }]))} dragHandlers={{} as never} isDimmed={false} isDropBefore={false} isSelected={false} />);
+  expect(within(tile()).queryByText(/na vez de|sua vez em/)).toBeNull();
+  expect(within(tile()).queryByRole('button', { name: /executar .* agora/ })).toBeNull();
+});
