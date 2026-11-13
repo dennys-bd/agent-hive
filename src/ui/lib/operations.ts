@@ -31,7 +31,8 @@ export type FocusTarget = { kind: 'terminal'; run: LiveRun } | { kind: 'file'; a
 export interface SearchNav {
   openActivity(itemId: string): void; // ↵ on an activity: it opens in the center
   showFlow(itemId: string): void; // ⌘↵: the task's details in the flow
-  startTask(start: { itemId?: string; title?: string }): void; // ↵ on a task, + criar tarefa: the Start dialog (redesign 11)
+  startTask(start: { itemId?: string; title?: string }): void; // ↵ on a task, + nova atividade "…": the Start dialog (redesign 11)
+  createTask(title: string): void; // + criar tarefa "…" (#774): the create-task dialog with that title, which starts no activity
   openSettings?(): void; // configurações; absent (a harness): not listed
   openRun?: OpenRun; // nova sessão's run, as the activity menu's + opens it
   openDiff?: OpenDiff; // diff ›, a tab of the activity's center
