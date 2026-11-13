@@ -15,7 +15,7 @@ import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
 import { boot, clearSessions, closeTerminals, createActivity, dismissCrash, exit, checkpointCaptured, capturedFirst, freeSessionDone, openProjectShell, openSession, openTerminal, quit, restart, restarting, restored, restoreFailed, restoring, continueStage, stageStarted, stop } from './runs.js';
 import { answer, answerFeedback, approvalExpired, approve, awaitApproval, extendApproval, typeFeedback } from './approval.js';
-import { holdExpired, movedOn, releasedOnExit, releaseLeft, stopWithPlace, turnCame } from './semaphore-notice.js';
+import { holdClosed, holdExpired, movedOn, releasedOnExit, releaseLeft, stopWithPlace, turnCame } from './semaphore-notice.js';
 import { askHandoff, needsHandoff, pendingEnd, withoutPending } from './handoff.js';
 import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
 import { exitOf, transitionByKey } from './transitions.js';
@@ -222,6 +222,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'approve': return fill(approve(state, liveTaskId(state, event.activityId), canContinue)); // a held worker goes on in place when canContinue allows (#321); else the fill decides
     case 'feedback': return feedback(state, event);
     case 'extendApproval': return extendApproval(state, liveTaskId(state, event.activityId)); // no fill: nothing freed (#268)
+    case 'stopClosed': return holdClosed(state, event.ptyId); // #799: no fill, nothing freed
     case 'approvalExpired': return fill(holdExpired(state, event.ptyId) ?? approvalExpired(state, event.ptyId)); // #799: a semaphore hold first; the held worker frees (#268)
     case 'retryDue': return retryDue(state, event.ptyId, event.until); // no fill: the worker kept its slot through the wait (#805)
     case 'retry': return afterCommands(state, retry(state, event.taskId) ?? none(state)); // #915: as a routed failure: the due actions and the fill follow

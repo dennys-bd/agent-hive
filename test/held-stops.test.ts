@@ -79,3 +79,15 @@ test('a held Stop whose connection closes is forgotten: no timer answers it, and
   await sleep(60);
   assert.deepEqual([a.sent, expired], [[], []]);
 });
+
+test('a held Stop whose connection closes unanswered reports the worker once; one closed after its answer does not (#799)', () => {
+  const closed: string[] = [];
+  const held = createHeldStops(() => assert.fail('no timer fires here'), 0, (ptyId) => closed.push(ptyId));
+  const [a, b] = [fakeRes(), fakeRes()];
+  held.settle('w1', a.res, soon(60_000));
+  held.settle('w2', b.res, soon(60_000));
+  a.close(); // an Esc: Claude Code kills the hook's curl
+  held.answer('w2', { decision: 'block', reason: 'next' });
+  b.close();
+  assert.deepEqual([closed, a.sent], [['w1'], []]);
+});

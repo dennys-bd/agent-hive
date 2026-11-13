@@ -1713,6 +1713,7 @@ export type HiveEvent =
   | { type: 'feedback'; activityId: string; text: string; start: boolean } // start: begin now or queue; ignored on a held worker, which always answers now (#268)
   | { type: 'extendApproval'; activityId: string } // Estender on a held worker (#268)
   | { type: 'approvalExpired'; ptyId: string } // the server's hold timer ran out (#268)
+  | { type: 'stopClosed'; ptyId: string } // #799: a held Stop's connection closed unanswered (an Esc, a killed hook)
   | { type: 'retryDue'; ptyId: string; until: string } // the server's backoff timer fired for that wait (#805)
   | { type: 'moveTask'; taskId: string; before?: string } // the task goes before `before` (same stage); absent = end of its stage
   | { type: 'resetOrder'; stage: string } // that stage's tasks back to the source's order

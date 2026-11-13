@@ -264,6 +264,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'feedback': return `feedback ${act(event.activityId)} ${event.start ? 'start' : 'queue'} chars=${event.text.length}`; // the text is the user's: never logged
     case 'extendApproval': return `extendApproval ${act(event.activityId)}`;
     case 'approvalExpired': return `approvalExpired pty=${shortId(event.ptyId)}`;
+    case 'stopClosed': return `stopClosed pty=${shortId(event.ptyId)}`;
     case 'retryDue': return `retryDue pty=${shortId(event.ptyId)} until=${event.until}`; // #805
     case 'retry': return `retry #${event.taskId}`; // #915
     case 'dismissError': return `dismissError #${event.taskId}`; // #354

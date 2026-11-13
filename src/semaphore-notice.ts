@@ -116,6 +116,12 @@ export function holdExpired(state: State, ptyId: string): Reduced | undefined {
   return Date.parse(hold) > Date.now() ? none(state) : letGo(state, ptyId);
 }
 
+/** A held Stop's connection closed unanswered (#799): the agent is at its prompt again (an Esc), so a later turn is typed, never a continue
+ * that would wait in held-stops for the next Stop. No effect: nothing is left to answer. An approval's own Stop is not this rule's. */
+export function holdClosed(state: State, ptyId: string): Reduced {
+  return liveWorker(state, ptyId)?.semaphoreHold === undefined ? none(state) : patch(state, ptyId, { ...IDLE, semaphoreHold: undefined });
+}
+
 /** A pty's end (#799, decision 6): a Stop it held for a place gets no decision, beside whatever its exit reduced to. */
 export function releasedOnExit(state: State, ptyId: string, reduced: Reduced): Reduced {
   return liveWorker(state, ptyId)?.semaphoreHold === undefined ? reduced : { ...reduced, effects: [{ type: 'release', ptyId }, ...reduced.effects] };

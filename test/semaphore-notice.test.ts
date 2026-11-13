@@ -196,3 +196,14 @@ test('holdExpired leaves a worker in approval to approvalExpired, whatever semap
   t.mock.timers.tick(APPROVAL_HOLD_MAX_MIN * MINUTE);
   assert.equal(holdExpired(approving, ptyId), undefined);
 });
+
+test('stopClosed: a held Stop closed unanswered leaves the worker idle with no hold, so its turn is typed; a worker with no hold is untouched (#799)', (t) => {
+  fixed(t);
+  const { state, ptyId } = heldRun();
+  const closed = reduce(state, { type: 'stopClosed', ptyId });
+  const idle = workerOf(closed.state, ptyId);
+  assert.deepEqual([closed.effects, idle?.status, idle?.lastEvent, idle?.semaphoreHold], [[], 'waiting', { kind: 'turn' }, undefined]);
+  assert.deepEqual(turn(closed.state, ptyId).effects, [{ type: 'input', ptyId, text: NOTICE }], 'never a continue waiting in held-stops for the next Stop');
+  const first = running();
+  assert.equal(reduce(first, { type: 'stopClosed', ptyId: ptyOf(first) }).state, first);
+});
