@@ -36,7 +36,7 @@ test('semaphoresProblem names the first refused row, on rules: a name not one wo
   }
   assert.deepEqual(semaphoresProblem([row({}), row({ name: ' memory ' })]), { section: 'rules', message: t('settings.error.semaphoreDuplicate', { name: 'memory' }) }, 'compared trimmed');
   assert.equal(semaphoresProblem([row({}), row({ name: 'Memory' })]), undefined, 'case-sensitive');
-  for (const limit of ['', '0', '-1', '1.5', 'two']) {
+  for (const limit of ['', '0', '-1', '1.5', 'two', '9'.repeat(400)]) {
     assert.deepEqual(semaphoresProblem([row({ limit })]), { section: 'rules', message: t('settings.error.semaphoreLimit', { name: 'memory' }) }, JSON.stringify(limit));
   }
   for (const reservation of ['', '2', '2 m', '0m', '25h']) {
@@ -111,6 +111,7 @@ test('semaphoreNow reads State by the saved name: free with nothing held or no e
   assert.deepEqual(semaphoreNow({ memory: { runs: ['A'], line: [] } }, memory), ['1 executando']);
   assert.deepEqual(semaphoreNow({ memory: { runs: [], line: [] } }, memory), ['livre']);
   assert.deepEqual(semaphoreNow({}, memory), ['livre']);
+  assert.deepEqual(semaphoreNow({}, { ...memory, savedName: 'constructor' }), ['livre'], 'an Object.prototype name is no entry');
   assert.deepEqual(semaphoreNow(undefined, memory), ['livre']);
   assert.deepEqual(semaphoreNow(live, emptySemaphore()), ['livre'], 'a new row has no saved name');
   assert.deepEqual(semaphoreNow(live, { ...memory, name: 'heavy' }), ['1 executando', '2 na vez'], 'a renamed row keeps its saved state until the save');

@@ -28,7 +28,7 @@ export const semaphoresFrom = (drafts: readonly SemaphoreDraft[]): CommandSemaph
 
 // The parser's rules (parseSemaphore in run-commands.ts): one word, an integer of 1 or more, a TIMEOUT text
 const isName = (text: string): boolean => SEMAPHORE_NAME.test(text.trim());
-const isLimit = (text: string): boolean => /^\d+$/.test(text.trim()) && Number(text.trim()) >= 1;
+const isLimit = (text: string): boolean => /^\d+$/.test(text.trim()) && Number.isSafeInteger(Number(text.trim())) && Number(text.trim()) >= 1;
 const isReservation = (text: string): boolean => timeoutMs(text) !== undefined;
 
 export function semaphoreFaults(drafts: readonly SemaphoreDraft[], row: SemaphoreDraft): SemaphoreFaults {
@@ -81,7 +81,8 @@ export function semaphoreLines(commands: readonly CommandDraft[], workspaces: re
 
 /** Decision 8: by the saved name, so a row renamed in the draft keeps its semaphore's state until the save and a new row reads free. */
 export function semaphoreNow(live: Readonly<Record<string, SemaphoreState>> | undefined, row: SemaphoreDraft): string[] {
-  const held = row.savedName === undefined ? undefined : live?.[row.savedName];
+  // own keys only: a name such as `constructor` would otherwise read Object.prototype's member
+  const held = row.savedName === undefined || live === undefined || !Object.hasOwn(live, row.savedName) ? undefined : live[row.savedName];
   if (held === undefined || (held.runs.length === 0 && held.line.length === 0)) return [t('settings.semaphores.free')];
   const running = t('settings.semaphores.running', { n: held.runs.length });
   return held.line.length === 0 ? [running] : [running, t('settings.semaphores.waiting', { n: held.line.length })];
