@@ -15,6 +15,7 @@ import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
 import { boot, clearSessions, closeTerminals, createActivity, dismissCrash, exit, checkpointCaptured, capturedFirst, freeSessionDone, openProjectShell, openSession, openTerminal, quit, restart, restarting, restored, restoreFailed, restoring, continueStage, stageStarted, stop } from './runs.js';
 import { answer, answerFeedback, approvalExpired, approve, awaitApproval, extendApproval, typeFeedback } from './approval.js';
+import { stopWithPlace, turnCame } from './semaphore-notice.js';
 import { askHandoff, needsHandoff, pendingEnd, withoutPending } from './handoff.js';
 import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
 import { exitOf, transitionByKey } from './transitions.js';
@@ -134,7 +135,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setRateLimitWait': return none({ ...state, rateLimitWaitMinutes: event.minutes }); // no fill: the ceiling starts no job (#805)
     case 'setDefaultAgent': return none({ ...state, defaultAgent: event.agent }); // no fill: the default picks no task, only what a run records (#925)
     case 'setSemaphores': return none({ ...state, semaphores: event.semaphores }); // #798: the module's snapshot, mirrored whole; no fill, a semaphore starts no job
-    case 'semaphoreTurn': return none(state); // #798: the turn's notice is node 2.2's
+    case 'semaphoreTurn': return turnCame(state, event); // #799: the turn's notice; no fill, a turn frees no worker
     case 'setApprovalMinutes': return none({ ...state, approvalMinutes: event.minutes }); // no fill: the window starts no job (#268)
     case 'setKeepAwake': return none(setKeepAwake(state, event.on)); // no fill: keeping the machine awake starts no job (#226)
     case 'setShutdown': return fill(none(setShutdown(state, event.armed))); // arming no longer caps the signal (#727); the fill runs as after any setting
@@ -910,6 +911,8 @@ function applyHook(initial: State, ptyId: string, p: HookPayload, branch?: strin
       const pending = inFlight(p);
       // a subagent, a shell or a cron will wake the worker: not the user's turn, so green with the count; its next Stop decides again (#367)
       if (pending > 0) return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'background', detail: String(pending) } });
+      const placed = stopWithPlace(state, ptyId, worker); // #799: a kept notice goes out, or a stage run with a place in line holds its Stop
+      if (placed !== undefined) return placed;
       return patch(state, ptyId, { status: 'waiting', question: undefined, lastEvent: { kind: 'turn' } });
     }
     case 'StopFailure': // #805: after hive_done the stage already reported done, so the failure is that run's Stop: its wait and count go, the

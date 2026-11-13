@@ -3827,7 +3827,7 @@ test('moveToStage takes a task outside the flow into a stage of a second flow: a
   assert.deepEqual([quiet.state.tasks[0].stage, quiet.effects], ['triage', []]);
 });
 
-test('setSemaphores replaces the mirror whole with no effect; semaphoreTurn changes nothing until 2.2; the reducer stays pure (#798)', () => {
+test('setSemaphores replaces the mirror whole with no effect; a semaphoreTurn for a pty no worker runs changes nothing; the reducer stays pure (#798, #799)', () => {
   const memory = { runs: ['A'], line: [{ ptyId: 'B', place: 1 }] };
   const state: State = { ...initialState(1), semaphores: { memory: { runs: [], line: [] }, disk: { runs: [], line: [] } } };
   const before = structuredClone(state);
