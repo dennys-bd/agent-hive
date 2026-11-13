@@ -99,7 +99,7 @@ export function CommandImpls({ row, n, workspaces, semaphores, onChange }: Comma
           />
         );
       })}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {free.length > 0 && <Button type="button" variant="ghost" size="sm" aria-label={t('settings.commands.addImplFor', { name: row.name.trim() || `#${n}` })} onClick={() => onChange([...row.impls, emptyImpl(free[0].id)])}>{t('settings.commands.addImpl')}</Button>}
         {hint !== undefined && <span className="inline-flex items-center gap-1 text-muted-foreground text-xs"><HourglassIcon aria-hidden className="size-3 text-foreground" />{hint}</span>}
         {missing.length > 0 && <span className="text-muted-foreground text-xs">{t('settings.commands.missing', { list: missing.map((p) => shownWorkspace(workspaces, p)).join(', ') })}</span>}
