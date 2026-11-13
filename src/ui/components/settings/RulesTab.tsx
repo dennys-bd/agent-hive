@@ -1,3 +1,4 @@
+import { CommandSemaphoresCard } from '@/components/settings/CommandSemaphoresCard';
 import { GithubApiGroup } from '@/components/settings/GithubApiGroup';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { SignalCard } from '@/components/settings/SignalCard';
@@ -10,7 +11,7 @@ import { cardEntries, type SettingEntry, settingAnchor, settingEntry } from '@/l
 import { fmt, usageTotals } from '@/lib/usage';
 import type { State } from '../../../types';
 
-interface RulesTabProps { draft: SettingsDraft; state?: State; locale: string; onChange(patch: Partial<SettingsDraft>): void }
+interface RulesTabProps { draft: SettingsDraft; state?: State; locale: string; onChange(patch: Partial<SettingsDraft>): void; onOpenWorkspaces(): void }
 
 // Settings › regras' budget card (#512): per hour, per day, and the current usage read from the state.
 function BudgetGroup({ draft, state, onChange }: Pick<RulesTabProps, 'draft' | 'state' | 'onChange'>) {
@@ -33,7 +34,7 @@ function BudgetGroup({ draft, state, onChange }: Pick<RulesTabProps, 'draft' | '
   );
 }
 
-export function RulesTab({ draft, state, locale, onChange }: RulesTabProps) {
+export function RulesTab({ draft, state, locale, onChange, onOpenWorkspaces }: RulesTabProps) {
   return (
     <>
       <div className="grid grid-cols-2 gap-4">
@@ -42,6 +43,7 @@ export function RulesTab({ draft, state, locale, onChange }: RulesTabProps) {
       </div>
       <SignalCard signals={draft.signals} onChange={(signals) => onChange({ signals })} />
       <SignalRulesGroup draft={draft} state={state} onChange={onChange} />
+      <CommandSemaphoresCard semaphores={draft.commandSemaphores} commands={draft.commands} workspaces={draft.workspaces} live={state?.semaphores} onChange={onChange} onOpenWorkspaces={onOpenWorkspaces} />
     </>
   );
 }
@@ -53,5 +55,6 @@ export function searchEntries(): SettingEntry[] {
     ...cardEntries('rules', 'settings.group.github', ['settings.showGithubQuota']),
     ...cardEntries('rules', 'settings.signal.title', ['settings.signal.onOpen']),
     settingEntry('settings.group.rules', 'rules', undefined, 'settings.rules.measure'),
+    ...cardEntries('rules', 'settings.semaphores.title', []),
   ];
 }

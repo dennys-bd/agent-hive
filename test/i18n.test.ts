@@ -57,7 +57,7 @@ test('t fills {placeholders} from vars and leaves the text alone otherwise', () 
   assert.doesNotMatch(t('settings.stages.maxWorkers.hint'), /weight/i);
   assert.equal(t('limits.at', { other: 'x' }), 'read at {time}', 'an unknown placeholder stays');
   setLanguage('pt');
-  assert.equal(t('settings.section.rules.hint'), 'tokens, GitHub, regras de uso'); // #526
+  assert.equal(t('settings.section.rules.hint'), 'tokens, uso, revezamentos'); // #526, #803: the screen's nav
   assert.equal(t('settings.stages.error', { n: 2 }), 'etapa 2: informe nome e, se preenchidos, máx. workers inteiro ≥ 0 e depois de como "30m", "12h" ou "5d"');
   assert.match(t('settings.stages.maxWorkers.hint'), /etapa mais adiante pega o worker livre primeiro/);
   assert.doesNotMatch(t('settings.stages.maxWorkers.hint'), /peso/i);
@@ -705,4 +705,21 @@ test('the create-task entry points\' copy reads as the spec writes it, in both l
   assert.deepEqual(read(), ['+ criar tarefa "x"', '+ nova atividade "x"', '+ criar tarefa', 'criar tarefa nesta source · abre o diálogo criar tarefa', ' · da tabela de work']);
   setLanguage('en');
   assert.deepEqual(read(), ['+ create task "x"', '+ new activity "x"', '+ create task', 'create a task in this source · opens the create-task dialog', ' · from the work table']);
+});
+
+test('the Command Semaphores card reads as the screen writes it, in both languages, and the rules section names it in its nav and its header (#803)', () => {
+  const read = (): string[] => [
+    t('settings.semaphores.title'), t('settings.semaphores.add'), t('settings.semaphores.empty'), t('settings.semaphores.limitOf', { name: 'memory' }),
+    t('settings.semaphores.reservationOf', { name: 'memory' }), t('settings.semaphores.remove', { name: 'memory' }), t('settings.section.rules.hint'), t('settings.section.rules.description'),
+  ];
+  setLanguage('pt');
+  assert.deepEqual(read(), [
+    'revezamentos', '+ revezamento', 'uma linha sem revezamento executa na hora', 'memory: ao mesmo tempo', 'memory: reserva da vez', 'remover memory',
+    'tokens, uso, revezamentos', 'quanto o Hive pode gastar, em tokens, como ele desacelera conforme o uso sobe e quantos comandos pesados executam juntos.',
+  ]);
+  setLanguage('en');
+  assert.deepEqual(read(), [
+    'Command Semaphores', '+ semaphore', 'a line with no semaphore runs at once', 'memory: at the same time', 'memory: turn reservation', 'remove memory',
+    'tokens, usage, semaphores', 'how much the Hive may spend, in tokens, how it slows down as usage rises and how many heavy commands run together.',
+  ]);
 });
