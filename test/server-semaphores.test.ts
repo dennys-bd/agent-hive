@@ -1,5 +1,8 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import express from 'express';
 import { createSemaphores } from '../src/command-semaphores.js';
 import { initialState } from '../src/orchestrator.js';
@@ -143,7 +146,7 @@ async function waitFor(check: () => boolean): Promise<void> {
   assert.ok(check(), 'condition not met in time');
 }
 
-async function startHive(t: TestContext): Promise<{ base: string; server: HiveServer; workers: FakeWorker[]; repo: string }> {
+async function startHive(t: TestContext): Promise<{ base: string; server: HiveServer; workers: FakeWorker[]; repo: string; home: string }> {
   const { home, repo } = await tempHive(t);
   const { spawn, workers } = fakeSpawn();
   const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: async () => ({ stdout: '' }) });
@@ -151,7 +154,7 @@ async function startHive(t: TestContext): Promise<{ base: string; server: HiveSe
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   assert.equal((await postUi(`${base}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
-  return { base, server, workers, repo };
+  return { base, server, workers, repo, home };
 }
 const openShell = async (base: string): Promise<string> => ((await (await postUi(`${base}/activities/${LOCAL}/shell`)).json()) as OpenResult).ptyId ?? '';
 
@@ -191,4 +194,16 @@ test('a Hive started with its config and State has its semaphores from the first
   await server.listen(0);
   t.after(() => server.close());
   await waitFor(() => isDeepStrictEqual(server.getState()?.semaphores, { memory: { runs: [], line: [] } }));
+});
+
+test('the server writes a shim per first word with the first config, a save that drops the line drops its shim, and a failed install never fails the save (#800)', async (t) => {
+  const { base, repo, home } = await startHive(t);
+  const pnpm = join(home, 'command-shims', 'pnpm');
+  await waitFor(() => existsSync(pnpm));
+  const dropped = await postUi(`${base}/settings`, { ...BODY, commands: [], commandSemaphores: [], workspaces: workspacesAt(repo) });
+  assert.equal(dropped.status, 200);
+  assert.equal(existsSync(pnpm), false, 'the save awaited the install');
+  await rm(join(home, 'command-shims'), { recursive: true, force: true });
+  await writeFile(join(home, 'command-shims'), 'not a folder');
+  assert.equal((await postUi(`${base}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200, 'the install failed and was logged');
 });

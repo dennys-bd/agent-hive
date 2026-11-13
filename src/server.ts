@@ -22,7 +22,7 @@ import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js
 import { activityOfWorker, recordOf, taskOfActivity, taskOfWorker } from './activities.js';
 import { createLeftItems } from './left-items.js';
 import { CONFIG_FILE, taskWorkspace, parseSource, workspaceByName, workspaceScope, requireWorkspace } from './config.js';
-import { commandShimDir } from './command-shim.js';
+import { commandShimDir, installCommandShims } from './command-shim.js';
 import { createConsoleStore } from './console.js';
 import { createInstaller } from './editor-install.js';
 import { createSchemaCatalog } from './json-schemas.js';
@@ -340,7 +340,18 @@ export function createServer(deps: ServerDeps): HiveServer {
   let live: Live | undefined; // hive mode: set by listen() once the port is bound (#466); setup mode: by the first POST /settings
   let semaphores: CommandSemaphores | undefined; // #798: the Command Semaphores at run time, created with the first config; never persisted
   // #798: every semaphore free, its empty entry published; dispatchInBackground reduces before its first await, so a turn reaches the State before the snapshot after it
-  const startSemaphores = (config: Config): void => { semaphores?.stop(); semaphores = createSemaphores({ config, dispatch: dispatchInBackground, now: Date.now, pidAlive: isPidAlive }); };
+  // #800, decisions 3 and 4: one install at a time, so an older one finishing late never deletes a newer one's shim; a failure is logged and
+  // never fails the boot or the save, since a missing shim only means the command runs without its semaphore
+  let shimsInstall: Promise<void> = Promise.resolve();
+  const installShims = (config: Config): Promise<void> => {
+    shimsInstall = shimsInstall.then(() => installCommandShims(home, config)).then(() => undefined, (err: unknown) => { log.error(`command shims: ${errorMessage(err)}`); });
+    return shimsInstall;
+  };
+  const startSemaphores = (config: Config): void => {
+    semaphores?.stop();
+    semaphores = createSemaphores({ config, dispatch: dispatchInBackground, now: Date.now, pidAlive: isPidAlive });
+    void installShims(config); // never rejects
+  };
   // One device flow at a time: starting a second aborts the first's poll (its controller) and replaces the worker;
   // the one left behind stops hitting GitHub and can no longer write here even if a token was already in flight.
   let githubFlow: { pending?: DeviceCode; login?: string; error?: string; controller: AbortController } | undefined;
@@ -898,6 +909,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const runtime = await activate(config, sources);
     live = { runtime, state: live.state };
     semaphores?.apply(config); // #798: a removed semaphore lets its line go, a new limit holds from now
+    await installShims(config); // #800: a line removed takes its shim with it before the save answers
     // First (#278): every fill below, setSources and the poll see the tasks under the names the new runtime has
     if (Object.keys(renames).length > 0) await dispatch({ type: 'renameSources', renames });
     if (Object.keys(stageRenames).length > 0) await dispatch({ type: 'renameStages', renames: stageRenames }); // #861: before setStages, so no renamed stage reads as deleted
@@ -1486,6 +1498,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     keepAwake.stop(); // #226: no power assertion outlives the server
     await pool.killAll(); // children of the Hive: none should outlive it; awaited so the sessions are gone before the process is
     semaphores?.stop(); // #798: no sweep outlives the server; after the kills, whose exits free permits and could re-arm it
+    await shimsInstall; // #800: no install writes into a home that is going away
     await lsp.stopAll(); // #780: no language server outlives the Hive
     usage?.close(); // #271: after the quit's records, the last it keeps
     usage = undefined; // a second close() closes nothing twice
