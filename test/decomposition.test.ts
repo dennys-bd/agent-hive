@@ -5,7 +5,7 @@ import {
 } from '../src/decomposition.js';
 import { initialState } from '../src/orchestrator.js';
 import type { DecompositionNode, DecompositionProblem, Task } from '../src/types.js';
-import { createsIssues } from '../src/ui/lib/task-state.js';
+import { createsIssues, createsTasks } from '../src/ui/lib/task-state.js';
 import { EXAMPLE } from './fixtures/decomposition.js';
 import { withWork } from './fixtures/work.js';
 
@@ -209,14 +209,29 @@ test('the result says whether the write is pending: a decomposition path with no
   assert.deepEqual(recordedIssues({ decompositionIssues: [1] }), {});
 });
 
-test('createsIssues: a decomposition not on GitHub with a source to write it to; not once written, nor with no source (#865)', () => {
+test('createsIssues: a decomposition not written yet with somewhere to write it, a source or the hive; not once written, nor with neither (#865, #784)', () => {
   const task: Task = { item: { itemId: 'board:I1', id: '1', title: 'Site', body: '', url: 'https://github.com/acme/site/issues/1', source: 'board' }, stage: 'goal', boardColumn: 'Goals', auto: true };
   const approval = { since: '2026-10-09T10:00:00.000Z' };
   const pending = withWork({ ...initialState(0), tasks: [task], syncs: { board: {} } }, 'board:I1', { approval }, { result: { decomposition: 'decomposition.md' } });
-  assert.equal(createsIssues(task, pending), true);
-  assert.equal(createsIssues(task, { ...pending, syncs: {} }), false);
+  assert.equal(createsIssues(task, pending, false), true);
+  assert.equal(createsIssues(task, { ...pending, syncs: {} }, false), false);
+  assert.equal(createsIssues(task, { ...pending, syncs: {} }, true), true, 'the hive alone is somewhere to write it');
   const written = withWork(pending, 'board:I1', { approval }, { result: { decomposition: 'decomposition.md', decompositionIssues: { done: 1 } } });
-  assert.equal(createsIssues(task, written), false);
+  assert.equal(createsIssues(task, written, false), false);
+  assert.equal(createsIssues(task, written, true), false);
+});
+
+test('createsTasks: the button reads criar tarefas for a hive goal and for a Comb with no sync, not for a GitHub goal with a sync, never with the hive off (#784)', () => {
+  const github: Task = { item: { itemId: 'board:I1', id: '1', title: 'Site', body: '', url: 'https://github.com/acme/site/issues/1', source: 'board' }, stage: 'goal', boardColumn: 'Goals', auto: true };
+  const hive: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Site', body: '', url: '' }, stage: 'goal', boardColumn: '', auto: true, created: true };
+  const approval = { since: '2026-10-09T10:00:00.000Z' };
+  const result = { decomposition: 'decomposition.md' };
+  const synced = withWork(withWork({ ...initialState(0), tasks: [github, hive], syncs: { board: {} } }, 'board:I1', { approval }, { result }), 'local:1', { approval }, { result });
+  assert.equal(createsTasks(hive, synced, true), true, 'a hive goal');
+  assert.equal(createsTasks(github, { ...synced, syncs: {} }, true), true, 'no sync: the hive is the only target');
+  assert.equal(createsTasks(github, synced, true), false, 'a GitHub goal with a sync: its own source first');
+  assert.equal(createsTasks(hive, synced, false), false);
+  assert.equal(createsTasks(github, { ...synced, syncs: {} }, false), false);
 });
 
 test('more than 300 nodes is a problem at the first one over (#865)', () => {

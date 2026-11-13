@@ -85,3 +85,22 @@ test('opening another activity\'s dialog closes the first, so a failure of its w
   expect(result.current).toMatchObject({ open: 'a-I2', write: { isOpen: false } });
   expect(toast.error).toHaveBeenCalledTimes(1);
 });
+
+test('a hive write posts the hive and its entry; failing with the hive code it keeps the fixed hiveFailed text, and closed it toasts with the hive title; another failure keeps its handling (#784)', async () => {
+  const HIVE_CHOICE = { source: 'hive', entry: { flow: 'main' } };
+  const HIVE_FAILED = 'As tarefas não foram todas criadas. As já criadas ficam: clique em "criar tarefas" de novo para continuar de onde parou.';
+  answer = () => json({ error: 'a task of the decomposition was not created: its stage or its parent is gone', code: 'hive' }, 502);
+  const { result } = read();
+  act(() => openDecomposition(ID, 'HIVE-1'));
+  await act(() => writeDecomposition(ID, HIVE_CHOICE));
+  expect(fetchMock).toHaveBeenCalledWith('/activities/a-I1/decomposition', expect.objectContaining({ body: JSON.stringify(HIVE_CHOICE) }));
+  expect(result.current.write.error).toBe(HIVE_FAILED);
+  expect(toast.error).not.toHaveBeenCalled();
+  await act(async () => { const written = writeDecomposition(ID, HIVE_CHOICE); closeDecomposition(ID); await written; });
+  const [title, options] = vi.mocked(toast.error).mock.calls[0]!;
+  expect([title, options?.description]).toEqual(['A criação das tarefas de HIVE-1 parou', HIVE_FAILED]);
+  answer = () => json({ error: 'as tarefas desta decomposição já estão sendo criadas' }, 409);
+  act(() => openDecomposition(ID, 'HIVE-1'));
+  await act(() => writeDecomposition(ID, HIVE_CHOICE));
+  expect(result.current.write.error).toBe('as tarefas desta decomposição já estão sendo criadas');
+});

@@ -2,13 +2,14 @@
 // the feedback box with the cursor in it, O opens the activity, and the other letters run the task menu's own item. A key whose item is disabled or absent
 // does nothing and lets the key go on. Only on the task's own element: a key inside a field, a button or a dialog it opened (portaled, yet
 // bubbling through React) is not the task's.
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, useContext } from 'react';
 import { activityOf } from '../../activities';
 import { canOpenSession } from '../../tasks';
 import type { State, Task } from '../../types';
 import { act } from '@/components/actions';
 import { requestFeedback } from '@/components/ApprovalActions';
 import type { StartMode } from '@/components/StartFields';
+import { CreateTargetsContext } from '@/lib/create-targets';
 import { isMac } from '@/lib/shortcut-bindings';
 import { answerableActivity, createsIssues } from '@/lib/task-state';
 
@@ -104,14 +105,15 @@ function openMenuAt(target: HTMLElement): void {
 /** The task menu's letters on its trigger (#585), each the item the menu itself offers now: executar etapas… and abrir sessão livre… while
  * canOpenSession allows them, aprovar while the approval is the user's to answer (#268, #829), começar sozinho, and the menu. */
 export function useTaskMenuKeys(task: Task, state: State, open: TaskMenuOpeners) {
+  const { hiveSource } = useContext(CreateTargetsContext); // #784: State does not carry it
   const path = `/tasks/${encodeURIComponent(task.item.itemId)}`;
   const activity = activityOf(state, task.item.itemId);
   const answerable = answerableActivity(task, state);
   const items: Partial<Record<TaskLetter, () => void>> = {
     runStages: canOpenSession(task, activity) ? () => open.start('stages') : undefined,
     freeSession: canOpenSession(task, activity) ? () => open.start('free') : undefined,
-    // #865: while the stage's decomposition is not on GitHub, A opens criar issues' confirm, as the detail's button does
-    approve: answerable === undefined ? undefined : createsIssues(task, state) ? () => open.decomposition() : () => void act(`/activities/${encodeURIComponent(answerable.id)}/approve`),
+    // #865: while the stage's decomposition is not written, A opens the create confirm, as the detail's button does; #784: the hive counts
+    approve: answerable === undefined ? undefined : createsIssues(task, state, hiveSource) ? () => open.decomposition() : () => void act(`/activities/${encodeURIComponent(answerable.id)}/approve`),
     autoTask: () => void act(`${path}/auto`, { auto: !task.auto }),
   };
   return (e: ReactKeyboardEvent<HTMLElement>): void => {

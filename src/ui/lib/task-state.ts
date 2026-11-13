@@ -43,11 +43,16 @@ export function answerableActivity(task: Task, state: TaskStateInput): Activity 
   return live?.approval !== undefined && !isLive(taskState(task, state)) ? live : undefined;
 }
 
-/** Whether the task's approval goes through criar issues (#865): its result holds a decomposition not on GitHub yet, and a source exists to
- * write it to, as the approve route's guard reads it. The detail's button and the A key read this one rule. ponytail: every source is GitHub
- * today and State names the sources, not their kind; read the kind here once another adapter lands. */
-export const createsIssues = (task: Task, state: Pick<State, 'activityRecords' | 'syncs'>): boolean =>
-  Object.keys(state.syncs).length > 0 && decompositionPending(resultOf(state, task.item.itemId));
+/** Whether the task's approval goes through the create button (#865): its result holds a decomposition not written yet, and there is somewhere
+ * to write it, a source or the hive (#784, decision 1), as the approve route's guard reads it. The detail's button and the A key read this one
+ * rule. ponytail: every source is GitHub today and State names the sources, not their kind; read the kind here once another adapter lands. */
+export const createsIssues = (task: Task, state: Pick<State, 'activityRecords' | 'syncs'>, hiveSource: boolean): boolean =>
+  (hiveSource || Object.keys(state.syncs).length > 0) && decompositionPending(resultOf(state, task.item.itemId));
+
+/** Whether that button reads criar tarefas (#784, decision 3): the dialog will offer the hive first, by the rule of its preselection, a hive
+ * goal or no source to write to. */
+export const createsTasks = (task: Task, state: Pick<State, 'activityRecords' | 'syncs'>, hiveSource: boolean): boolean =>
+  hiveSource && createsIssues(task, state, hiveSource) && (task.item.source === undefined || Object.keys(state.syncs).length === 0);
 
 /** Whether the task stopped out of tries (#913): its live activity halted with TRIES_OUT. The card and the node read it as destructive. */
 export const isExhausted = (task: Task, state: Pick<State, 'activities' | 'activityRecords'>): boolean =>

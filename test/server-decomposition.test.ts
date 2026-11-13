@@ -306,7 +306,7 @@ test('POST refuses 409 a decomposition already written (#865)', async (t) => {
 test('POST …/approve refuses 409 while a decomposition is not on GitHub, from whichever door it comes, and approves once it is (#865)', async (t) => {
   const pending = await routes(t);
   const refused = await post(`${pending.base}/approve`, {});
-  assert.deepEqual([refused.status, await refused.json()], [409, { error: 'a decomposição ainda não foi escrita no GitHub: use criar issues' }]);
+  assert.deepEqual([refused.status, await refused.json()], [409, { error: 'a decomposição ainda não foi escrita: use o botão de criar' }]);
   assert.deepEqual(pending.events, []);
   const written = await routes(t, { result: { ...PENDING, decompositionIssues: { done: 7 } } });
   assert.equal((await post(`${written.base}/approve`, {})).status, 200);
