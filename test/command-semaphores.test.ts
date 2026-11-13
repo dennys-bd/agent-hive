@@ -241,3 +241,41 @@ test('apply: a removed semaphore gives each place its turn and leaves State; a r
 test('isPidAlive reads a running process as alive (#798)', () => {
   assert.equal(isPidAlive(process.pid), true);
 });
+
+test('isPidAlive reads EPERM as dead: a pid of another user is not the Hive\'s own shim (#798)', (t) => {
+  t.mock.method(process, 'kill', () => { throw Object.assign(new Error('not permitted'), { code: 'EPERM' }); });
+  assert.equal(isPidAlive(1), false);
+});
+
+test('after stop, a pty end neither dispatches nor restarts the sweep (#798)', (t) => {
+  const h = harness(t);
+  h.s.acquire(agent('A'));
+  h.s.acquire(agent('B', TEST, 101));
+  h.s.stop();
+  const spy = t.mock.method(globalThis, 'setInterval');
+  const before = h.events.length;
+  h.s.ended('A'); // would hand B a turn, which would be busy and arm the timer
+  assert.equal(spy.mock.callCount(), 0);
+  assert.equal(h.events.length, before);
+});
+
+test('run now on a pty already in its turn is refused: no second turn, no extra permit (#798)', (t) => {
+  const h = harness(t);
+  h.s.acquire(agent('A'));
+  h.s.acquire(agent('B', TEST, 101));
+  h.s.acquire(agent('C', TEST, 102));
+  h.s.release('A', 'memory');
+  assert.equal(h.s.runNow('memory', 'B'), false, 'B has its turn already');
+  assert.equal(h.turns().length, 1);
+  assert.equal(h.s.acquire(agent('B', TEST, 101)), 'run memory');
+  assert.equal(h.s.acquire(agent('C', TEST, 102)), 'refused memory 1', 'the limit held');
+});
+
+test('run now reads the clock first: a dead holder is released, so the waiter already has its turn (#798)', (t) => {
+  const h = harness(t);
+  h.s.acquire(agent('A'));
+  h.s.acquire(agent('B', TEST, 101));
+  h.kill(100);
+  assert.equal(h.s.runNow('memory', 'B'), false);
+  assert.equal(h.turns().length, 1);
+});

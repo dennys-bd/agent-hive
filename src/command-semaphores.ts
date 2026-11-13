@@ -64,20 +64,21 @@ export interface CommandSemaphores {
 }
 export interface SemaphoreDeps { config: SemaphoresConfig; dispatch(event: SemaphoreEvent): void; now(): number; pidAlive(pid: number): boolean }
 
-/** Whether `pid` still runs (#798), probed as kill-tree.ts signals: signal 0 delivers nothing. EPERM is a live process of another user. */
+/** Whether `pid` still runs (#798), probed as kill-tree.ts signals: signal 0 delivers nothing. The shim runs as the Hive's own user, so EPERM
+ * (a process of another user) is not our shim: dead. */
 export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  } catch {
+    return false;
   }
 }
 
 interface Waiter { ptyId: string; argv: string[]; missed: number; turnUntil?: number; above?: true } // turnUntil: epoch ms; above: run now's, outside the count
 interface Held { def: CommandSemaphore; runs: { ptyId: string; pid: number }[]; line: Waiter[] }
 // Process state, as pty-host.ts keeps its HostMaps: each Held is replaced, never changed in place
-interface Box { deps: SemaphoreDeps; config: SemaphoresConfig; held: Map<string, Held>; published?: Record<string, SemaphoreState>; timer?: ReturnType<typeof setInterval> }
+interface Box { deps: SemaphoreDeps; config: SemaphoresConfig; held: Map<string, Held>; published?: Record<string, SemaphoreState>; stopped?: true; timer?: ReturnType<typeof setInterval> }
 
 const inTurn = (w: Waiter): boolean => w.turnUntil !== undefined;
 const reservationEnd = (def: CommandSemaphore, now: number): number => now + (timeoutMs(def.reservation) ?? 0); // the parser refused a bad one (#796)
@@ -125,6 +126,7 @@ function settle(box: Box, name: string, h: Held): void {
 
 // Decision 22: the whole snapshot, only when it changed, so a call that changed nothing dispatches nothing
 function publish(box: Box): void {
+  if (box.stopped === true) return; // a pty ending during the server's close must not dispatch or re-arm the sweep
   const snapshot = Object.fromEntries([...box.held].map(([name, h]) => [name, snapshotOf(h)]));
   if (!isDeepStrictEqual(snapshot, box.published)) {
     box.published = snapshot;
@@ -141,7 +143,10 @@ function stopTimer(box: Box): void {
 // Decisions 13, 14: one sweep, running only while a permit is held or reserved as a turn
 function syncTimer(box: Box): void {
   const isBusy = [...box.held.values()].some((h) => h.runs.length > 0 || h.line.some(inTurn));
-  if (isBusy && box.timer === undefined) box.timer = setInterval(() => { refresh(box); publish(box); }, SWEEP_MS);
+  if (isBusy && box.timer === undefined) {
+    box.timer = setInterval(() => { refresh(box); publish(box); }, SWEEP_MS);
+    box.timer.unref(); // the sweep alone never keeps the process alive
+  }
   if (!isBusy) stopTimer(box);
 }
 
@@ -193,9 +198,10 @@ function ended(box: Box, ptyId: string): void {
 
 // Decision 17: a place's turn above the limit, outside the count, at once
 function runNow(box: Box, semaphore: string, ptyId: string): boolean {
+  refresh(box);
   const h = box.held.get(semaphore);
   const waiter = h?.line.find((w) => w.ptyId === ptyId);
-  if (h === undefined || waiter === undefined) return false;
+  if (h === undefined || waiter === undefined || inTurn(waiter)) return false; // a turn already given holds its permit: a second would lose it
   const turned: Waiter = { ...waiter, turnUntil: reservationEnd(h.def, box.deps.now()), above: true };
   box.deps.dispatch({ type: 'semaphoreTurn', ptyId, semaphore, argv: waiter.argv });
   settle(box, semaphore, { ...h, line: [turned, ...h.line.filter((w) => w !== waiter)] });
@@ -221,12 +227,13 @@ function apply(box: Box, config: SemaphoresConfig): void {
 export function createSemaphores(deps: SemaphoreDeps): CommandSemaphores {
   const box: Box = { deps, config: deps.config, held: semaphoresOf(deps.config, new Map()) };
   publish(box);
+  const isStopped = (): boolean => box.stopped === true; // after stop() nothing dispatches: acquire answers run, the rest do nothing
   return {
-    acquire: (call) => acquire(box, call),
-    release: (ptyId, semaphore) => release(box, ptyId, semaphore),
-    runNow: (semaphore, ptyId) => runNow(box, semaphore, ptyId),
-    ended: (ptyId) => ended(box, ptyId),
-    apply: (config) => apply(box, config),
-    stop: () => stopTimer(box),
+    acquire: (call) => (isStopped() ? 'run' : acquire(box, call)),
+    release: (ptyId, semaphore) => { if (!isStopped()) release(box, ptyId, semaphore); },
+    runNow: (semaphore, ptyId) => !isStopped() && runNow(box, semaphore, ptyId),
+    ended: (ptyId) => { if (!isStopped()) ended(box, ptyId); },
+    apply: (config) => { if (!isStopped()) apply(box, config); },
+    stop: () => { box.stopped = true; stopTimer(box); },
   };
 }

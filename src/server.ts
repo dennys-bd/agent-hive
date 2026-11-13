@@ -304,7 +304,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   const lsp = createLspHost({ home, consoleStore, log, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
   const ptyPool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE) }));
   // #798: every pty's end frees what it holds on the Command Semaphores, whatever started it: a run, a terminal, a commands stage's command
-  const pool: PtyPool = { ...ptyPool, start: (o) => ptyPool.start({ ...o, onExit: () => { semaphores?.ended(o.ptyId); o.onExit(); } }) };
+  // A terminal woken in the same id (#696) has a new entry by the time the old pty's late exit runs: that exit frees nothing of the new one's
+  const pool: PtyPool = { ...ptyPool, start: (o) => ptyPool.start({ ...o, onExit: () => { if (!ptyPool.has(o.ptyId)) semaphores?.ended(o.ptyId); o.onExit(); } }) };
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
   const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree, exec });
@@ -338,7 +339,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   let live: Live | undefined; // hive mode: set by listen() once the port is bound (#466); setup mode: by the first POST /settings
   let semaphores: CommandSemaphores | undefined; // #798: the Command Semaphores at run time, created with the first config; never persisted
   // #798: every semaphore free, its empty entry published; dispatchInBackground reduces before its first await, so a turn reaches the State before the snapshot after it
-  const startSemaphores = (config: Config): void => { semaphores = createSemaphores({ config, dispatch: dispatchInBackground, now: Date.now, pidAlive: isPidAlive }); };
+  const startSemaphores = (config: Config): void => { semaphores?.stop(); semaphores = createSemaphores({ config, dispatch: dispatchInBackground, now: Date.now, pidAlive: isPidAlive }); };
   // One device flow at a time: starting a second aborts the first's poll (its controller) and replaces the worker;
   // the one left behind stops hitting GitHub and can no longer write here even if a token was already in flight.
   let githubFlow: { pending?: DeviceCode; login?: string; error?: string; controller: AbortController } | undefined;
@@ -1480,10 +1481,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
     held.releaseAll(); // #268: no timer outlives the server, no held Stop hangs
     backoffs.close(); // #805: no retry outlives the server
-    semaphores?.stop(); // #798: no sweep outlives the server
     treeWatch.close(); // #502: no watcher, poll or lease timer outlives the server
     keepAwake.stop(); // #226: no power assertion outlives the server
     await pool.killAll(); // children of the Hive: none should outlive it; awaited so the sessions are gone before the process is
+    semaphores?.stop(); // #798: no sweep outlives the server; after the kills, whose exits free permits and could re-arm it
     await lsp.stopAll(); // #780: no language server outlives the Hive
     usage?.close(); // #271: after the quit's records, the last it keeps
     usage = undefined; // a second close() closes nothing twice

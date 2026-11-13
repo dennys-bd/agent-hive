@@ -8,12 +8,18 @@ import type { State } from './types.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NO_CONTENT = 204;
+const HTTP_FORBIDDEN = 403;
 const HTTP_CONFLICT = 409;
 export const NOT_IN_LINE_CODE = 'not_in_line'; // node 4 words it
 const NOT_IN_LINE_MESSAGE = 'no place in line on that semaphore';
 const BAD_ACQUIRE_MESSAGE = 'acquire takes { argv: string[], pid: a positive integer, now?: true }';
 const BAD_RELEASE_MESSAGE = 'release takes { semaphore: string }';
+const FROM_PTY_MESSAGE = 'run now is the UI\'s';
 const BAD_RUN_NOW_MESSAGE = 'run now takes { ptyId: string }';
+
+export const ARGV_ITEMS_MAX = 256;
+export const ARGV_ITEM_CHARS_MAX = 4096;
+export const PID_MAX = 2 ** 31 - 1; // a pid_t is 32 bits signed
 
 export interface SemaphoreRouteDeps {
   state(): State | undefined; // live.state; undefined in setup mode
@@ -21,9 +27,10 @@ export interface SemaphoreRouteDeps {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-const isArgv = (value: unknown): value is string[] => Array.isArray(value) && value.length > 0 && value.every((a: unknown) => typeof a === 'string');
+const isArgv = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.length > 0 && value.length <= ARGV_ITEMS_MAX && value.every((a: unknown) => typeof a === 'string' && a.length <= ARGV_ITEM_CHARS_MAX);
 // Positive only: process.kill(0 or -n, 0) would probe a whole process group
-const isPid = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0;
+const isPid = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= PID_MAX;
 const plain = (res: Response, answer: string): void => { res.type('text/plain').send(`${answer}\n`); };
 
 /** The pty behind x-hive-pty (#798, decision 4): an agent's when it is a Worker's runId (a stage run, a session, a session captured in a
@@ -71,6 +78,8 @@ function registerRelease(app: Express, deps: SemaphoreRouteDeps): void {
 // Decision 17: the card's action (node 4); a pty with no place there is a 409
 function registerRunNow(app: Express, deps: SemaphoreRouteDeps): void {
   app.post('/api/semaphores/:name/run-now', (req: Request, res: Response) => {
+    // Only stops a careless agent's own curl: the semaphore is cooperative, a pty can forge or drop the header (the decomposition's root design)
+    if (req.header('x-hive-pty') !== undefined) return refuse(res, { status: HTTP_FORBIDDEN, message: FROM_PTY_MESSAGE });
     const ptyId = isRecord(req.body) && typeof req.body.ptyId === 'string' && req.body.ptyId !== '' ? req.body.ptyId : undefined;
     if (ptyId === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: BAD_RUN_NOW_MESSAGE });
     if (deps.semaphores()?.runNow(String(req.params.name), ptyId) !== true) return refuse(res, { status: HTTP_CONFLICT, message: NOT_IN_LINE_MESSAGE, code: NOT_IN_LINE_CODE });

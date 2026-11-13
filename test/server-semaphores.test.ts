@@ -93,6 +93,21 @@ test('run now grants a place its turn above the limit; a pty with no place answe
   }
 });
 
+test('acquire refuses a pid above 2**31 - 1 and an argv beyond 256 items or 4096 chars with 400 (#798)', async (t) => {
+  const base = await start(t);
+  const bodies = [{ argv: ['pnpm'], pid: 2 ** 31 }, { argv: Array.from({ length: 257 }, () => 'a'), pid: 1 }, { argv: ['a'.repeat(4097)], pid: 1 }];
+  for (const body of bodies) assert.equal((await post(`${base}/hooks/semaphores/acquire`, body, 'R1')).status, 400);
+  assert.equal(await acquire(base, 'R1', { argv: ['pnpm', 'test', ...Array.from({ length: 253 }, () => 'a'), 'a'.repeat(4096)], pid: 2 ** 31 - 1 }), 'run memory\n', 'the bounds themselves pass');
+});
+
+test('run now from a pty (x-hive-pty) answers 403 (#798)', async (t) => {
+  const base = await start(t);
+  await acquire(base, 'R1');
+  await acquire(base, 'T1');
+  assert.equal((await post(`${base}/api/semaphores/memory/run-now`, { ptyId: 'T1' }, 'R1')).status, 403);
+  assert.equal((await post(`${base}/api/semaphores/memory/run-now`, { ptyId: 'T1' })).status, 200);
+});
+
 // The whole server (#798): BODY is test/server-terminals.test.ts' (line 17) with memory and a line in it
 const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], flows: bodyFlows(STAGES),
