@@ -5,7 +5,7 @@ import { knownAgent, liveDefaultAgent } from './agents.js';
 import { askedLaunch } from './launch-options.js';
 import { canRunCommand } from './task-runs.js';
 import { continuable } from './tasks.js';
-import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
+import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
 import { copyPending, continuableLocal } from './local-sessions.js';
 import { commandsIn } from './run-commands.js';
 import { answerOpen, type LiveView, type TaskRouteDeps, openTask, workspaceOf, type Refusal } from './server-tasks.js';
@@ -35,8 +35,9 @@ export const COPY_PENDING_MESSAGE = 'uma cópia desta sessão ainda está abrind
 
 type OpenDeps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'log' | 'language' | 'plugin'>;
 
+// #748: a gone workspace's code and name ride along, for the page to word; undefined drops out of the JSON
 const refuse = (res: Response, refusal: Refusal): void => {
-  res.status(refusal.status).json({ error: refusal.message });
+  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace });
 };
 
 /** The session the sidebar asks to open (#208), or why openSession would ignore it, in the order the user would ask. A blocked task opens
@@ -151,7 +152,7 @@ async function openTaskSession(deps: OpenDeps, current: LiveView, record: Activi
   if ('status' in checked) return refuse(res, checked);
   const { task, session } = checked;
   const workspace = taskWorkspace(current.runtime.config, task); // workspaceOf's rule (#179)
-  if (!workspace) return refuse(res, { status: task.workspace === undefined ? HTTP_BAD_REQUEST : HTTP_CONFLICT, message: noWorkspaceReason(task) });
+  if (!workspace) return refuse(res, { status: task.workspace === undefined ? HTTP_BAD_REQUEST : HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) });
   const dir = workDir(workspace.path, task, activityOf(current.state, task.item.itemId), record); // a kept session's transcript waits there until adopted (#208, #629)
   if (copyPending(current.state.workers, resume, runners[session.agent].transcriptDir(session.repo ? workspace.path : dir))) {
     return refuse(res, { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE });
