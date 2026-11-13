@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
-import { emptySemaphore, type SemaphoreDraft, semaphoreDrafts, semaphoreFaults, semaphoresFrom, semaphoresProblem, withoutSemaphore } from '../src/ui/lib/settings-semaphores.js';
+import { emptySemaphore, type SemaphoreDraft, semaphoreDrafts, semaphoreFaults, semaphoreLines, semaphoreNow, semaphoresFrom, semaphoresProblem, withoutSemaphore } from '../src/ui/lib/settings-semaphores.js';
 import { commandDraft, commandFrom } from '../src/ui/lib/settings-commands.js';
 import { emptyWorkspace, type WorkspaceDraft } from '../src/ui/lib/settings-form.js';
 import type { Command, CommandSemaphore } from '../src/types.js';
@@ -87,4 +87,34 @@ test('withoutSemaphore clears the row from every line pointing at it, leaves eve
   const cleared = withoutSemaphore(commands, semaphores[0].id);
   assert.deepEqual(cleared.map((c) => commandFrom(c, [API, WEB], semaphores.slice(1))), [{ ...TESTS, impls: TESTS.impls.map(({ semaphore: _s, ...line }) => line) }, lint]);
   assert.equal(commands[0].impls[0].semaphore, semaphores[0].id, 'the old drafts are untouched');
+});
+
+test('semaphoreLines lists each command\'s lines in the row, in Comb order, with the commands editor\'s labels; none reads — (#803 decision 7)', () => {
+  const semaphores = semaphoreDrafts(SAVED);
+  const lint: Command = { name: 'lint', impls: [{ workspace: null, command: 'pnpm lint', semaphore: 'memory' }], menu: true, env: {} };
+  const e2e: Command = { name: 'e2e', impls: [{ workspace: 'web', command: 'y', semaphore: 'memory' }, { workspace: 'api', command: 'x', semaphore: 'memory' }], menu: true, env: {} };
+  const commands = [TESTS, lint, e2e].map((c) => commandDraft(c, [API, WEB], semaphores));
+  setLanguage('pt');
+  assert.equal(semaphoreLines(commands, [API, WEB], semaphores[0].id), 'tests em api e os demais workspaces · lint em todos os workspaces · e2e em api e web');
+  assert.equal(semaphoreLines(commands, [API, WEB], semaphores[1].id), '—');
+  setLanguage('en');
+  assert.equal(semaphoreLines(commands, [API, WEB], semaphores[0].id), 'tests in api and the other workspaces · lint in all workspaces · e2e in api and web');
+  const picked = withoutSemaphore(commands, semaphores[0].id);
+  assert.equal(semaphoreLines(picked, [API, WEB], semaphores[0].id), '—', 'it reads the draft');
+});
+
+test('semaphoreNow reads State by the saved name: free with nothing held or no entry, else the runs and the line (#803 decision 8)', () => {
+  const [memory] = semaphoreDrafts(SAVED);
+  const live = { memory: { runs: ['A'], line: [{ ptyId: 'B', place: 1 }, { ptyId: 'C', place: 2 }] } };
+  setLanguage('pt');
+  assert.deepEqual(semaphoreNow(live, memory), ['1 executando', '2 na vez']);
+  assert.deepEqual(semaphoreNow({ memory: { runs: ['A'], line: [] } }, memory), ['1 executando']);
+  assert.deepEqual(semaphoreNow({ memory: { runs: [], line: [] } }, memory), ['livre']);
+  assert.deepEqual(semaphoreNow({}, memory), ['livre']);
+  assert.deepEqual(semaphoreNow(undefined, memory), ['livre']);
+  assert.deepEqual(semaphoreNow(live, emptySemaphore()), ['livre'], 'a new row has no saved name');
+  assert.deepEqual(semaphoreNow(live, { ...memory, name: 'heavy' }), ['1 executando', '2 na vez'], 'a renamed row keeps its saved state until the save');
+  setLanguage('en');
+  assert.deepEqual(semaphoreNow(live, memory), ['1 running', '2 waiting']);
+  assert.deepEqual(semaphoreNow({}, memory), ['free']);
 });
