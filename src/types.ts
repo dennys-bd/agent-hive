@@ -749,6 +749,8 @@ export interface Worker {
   stage?: string; // #617: the stage this run counts its usage for, set with the run and moved by an in-place continuation; absent on a free session
   foldedMs?: number; // #617: the run's time already folded into the stages an in-place continuation left; runShare counts past it
   foldedWaitingMs?: number; // #617: the waiting inside foldedMs
+  semaphoreHold?: string; // #799: ISO; its Stop is held for a place in a semaphore's line until then
+  semaphoreNotice?: { semaphore: string; text: string; typed?: true }; // #799: a turn's notice kept for its next Stop in that turn
 }
 
 /** A line of the menu bar's list (#192): what GET /ptys returns per live pty (#570), a worker's run or a terminal (#283). */
@@ -1203,10 +1205,11 @@ export interface SemaphoreState {
 }
 
 /** What command-semaphores.ts dispatches (#798): every change as the whole snapshot, which the reducer mirrors; and each turn given, first,
- * which node 2.2 turns into the notice. argv: that pty's last refused or waiting acquire's, never logged. */
+ * which node 2.2 turns into the notice. argv: that pty's last refused or waiting acquire's, never logged. until (#799): ISO, the turn's
+ * reservation end, absent only on a removed semaphore's turn (it has no reservation). */
 export type SemaphoreEvent =
   | { type: 'setSemaphores'; semaphores: Record<string, SemaphoreState> }
-  | { type: 'semaphoreTurn'; ptyId: string; semaphore: string; argv: string[] };
+  | { type: 'semaphoreTurn'; ptyId: string; semaphore: string; argv: string[]; until?: string };
 
 /** A workspace's command (#300, #573: was RunCommand): a named command a task can run in its worktree, one line per workspace (#755); env is
  * exported before it, the user's shell expands it. resolveCommand (run-commands.ts) picks the line a workspace runs. */
@@ -1710,6 +1713,7 @@ export type HiveEvent =
   | { type: 'feedback'; activityId: string; text: string; start: boolean } // start: begin now or queue; ignored on a held worker, which always answers now (#268)
   | { type: 'extendApproval'; activityId: string } // Estender on a held worker (#268)
   | { type: 'approvalExpired'; ptyId: string } // the server's hold timer ran out (#268)
+  | { type: 'stopClosed'; ptyId: string } // #799: a held Stop's connection closed unanswered (an Esc, a killed hook)
   | { type: 'retryDue'; ptyId: string; until: string } // the server's backoff timer fired for that wait (#805)
   | { type: 'moveTask'; taskId: string; before?: string } // the task goes before `before` (same stage); absent = end of its stage
   | { type: 'resetOrder'; stage: string } // that stage's tasks back to the source's order

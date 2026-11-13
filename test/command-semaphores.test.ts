@@ -98,7 +98,7 @@ test('release by the holder gives the first in line its turn: one semaphoreTurn 
   const refused = [...TEST, '--watch=false'];
   h.s.acquire(agent('B', refused, 101));
   h.s.release('A', 'memory');
-  assert.deepEqual(h.turns(), [{ type: 'semaphoreTurn', ptyId: 'B', semaphore: 'memory', argv: refused }]);
+  assert.deepEqual(h.turns(), [{ type: 'semaphoreTurn', ptyId: 'B', semaphore: 'memory', argv: refused, until: iso(START + RESERVATION_MS) }]);
   const at = h.events.findIndex((e) => e.type === 'semaphoreTurn');
   assert.equal(h.events[at + 1]?.type, 'setSemaphores', 'the turn first, then the snapshot');
   assert.deepEqual(h.state().memory, { runs: [], line: [{ ptyId: 'B', place: 0, turnUntil: iso(START + RESERVATION_MS) }] });
@@ -189,7 +189,7 @@ test('runNow gives a place in line its turn above the limit and dispatches it; a
   h.s.acquire(agent('B', TEST, 101));
   h.s.acquire(agent('C', TEST, 102));
   assert.equal(h.s.runNow('memory', 'C'), true);
-  assert.deepEqual(h.turns(), [{ type: 'semaphoreTurn', ptyId: 'C', semaphore: 'memory', argv: TEST }]);
+  assert.deepEqual(h.turns(), [{ type: 'semaphoreTurn', ptyId: 'C', semaphore: 'memory', argv: TEST, until: iso(START + RESERVATION_MS) }]);
   assert.deepEqual(h.state().memory, { runs: ['A'], line: [{ ptyId: 'C', place: 0, turnUntil: iso(START + RESERVATION_MS) }, { ptyId: 'B', place: 1 }] }, 'B keeps its place: the run-now permit is outside the count');
   assert.equal(h.s.acquire(agent('C', TEST, 102)), 'run memory');
   assert.deepEqual(h.state().memory?.runs, ['A', 'C']);
@@ -278,4 +278,17 @@ test('run now reads the clock first: a dead holder is released, so the waiter al
   h.kill(100);
   assert.equal(h.s.runNow('memory', 'B'), false);
   assert.equal(h.turns().length, 1);
+});
+
+test('every semaphoreTurn carries its reservation\'s end as until, but a removed semaphore\'s (#799)', (t) => {
+  const h = harness(t);
+  h.s.acquire(agent('A'));
+  h.s.acquire(agent('B', TEST, 101));
+  h.s.acquire(agent('D', DB, 103));
+  h.s.acquire(agent('E', DB, 104));
+  h.s.release('A', 'memory');
+  h.s.apply({ commandSemaphores: [MEMORY], comb: { commands: [TEST_COMMAND] } });
+  const turns = h.turns().flatMap((e) => (e.type === 'semaphoreTurn' ? [e] : []));
+  assert.deepEqual(turns.map((e) => [e.ptyId, e.semaphore, e.until]), [['B', 'memory', iso(START + RESERVATION_MS)], ['E', 'disk', undefined]]);
+  assert.equal('until' in (turns[1] ?? {}), false, 'disk is gone: its turn has no reservation');
 });

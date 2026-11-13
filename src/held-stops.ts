@@ -21,7 +21,8 @@ export interface HeldStops {
 const HTTP_NO_CONTENT = 204; // an empty body is "no decision" for Claude Code
 const EXPIRY_SLACK_MS = 1_000; // the reducer checks until <= now: the timer fires just past it, never a hair early
 
-export function createHeldStops(onExpire: (ptyId: string) => void, slackMs = EXPIRY_SLACK_MS): HeldStops {
+// onClosed (#799): a held Stop whose connection closed unanswered (an Esc, a killed hook): the reducer learns it is no longer held
+export function createHeldStops(onExpire: (ptyId: string) => void, slackMs = EXPIRY_SLACK_MS, onClosed: (ptyId: string) => void = () => {}): HeldStops {
   const waiting = new Map<string, { res: Response; timer: NodeJS.Timeout }>();
   // An answer that beat its Stop's handler: the Stop's own continue, or the user's answer while the Stop's dispatch still runs
   const early = new Map<string, HookReply | undefined>();
@@ -40,6 +41,7 @@ export function createHeldStops(onExpire: (ptyId: string) => void, slackMs = EXP
       if (entry?.res !== res) return;
       clearTimeout(entry.timer);
       waiting.delete(ptyId);
+      onClosed(ptyId);
     });
   };
   // the waiting Stop, answered with `reply`: false when none waits

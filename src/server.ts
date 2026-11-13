@@ -356,7 +356,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   let saveChain: Promise<void> = Promise.resolve();
   let settingsChain: Promise<void> = Promise.resolve();
   // The Stop answers the server owes (#268): the Stop's own continue, and a held Stop that waits for approve, feedback, Parar or its window
-  const held = createHeldStops((ptyId) => void dispatch({ type: 'approvalExpired', ptyId }));
+  const held = createHeldStops((ptyId) => void dispatch({ type: 'approvalExpired', ptyId }), undefined, (ptyId) => void dispatch({ type: 'stopClosed', ptyId })); // #799
   // #805: one timer per run waiting out an API error; its retryDue carries the until it was armed for
   const backoffs = createBackoffTimers((ptyId, until) => void dispatch({ type: 'retryDue', ptyId, until }));
 

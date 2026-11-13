@@ -15,6 +15,7 @@ import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
 import { boot, clearSessions, closeTerminals, createActivity, dismissCrash, exit, checkpointCaptured, capturedFirst, freeSessionDone, openProjectShell, openSession, openTerminal, quit, restart, restarting, restored, restoreFailed, restoring, continueStage, stageStarted, stop } from './runs.js';
 import { answer, answerFeedback, approvalExpired, approve, awaitApproval, extendApproval, typeFeedback } from './approval.js';
+import { holdClosed, holdExpired, movedOn, releasedOnExit, releaseLeft, stopWithPlace, turnCame } from './semaphore-notice.js';
 import { askHandoff, needsHandoff, pendingEnd, withoutPending } from './handoff.js';
 import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
 import { exitOf, transitionByKey } from './transitions.js';
@@ -133,8 +134,8 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setShutdownIdle': return none({ ...state, shutdownIdleMinutes: event.minutes }); // no fill: the window starts no job (#233)
     case 'setRateLimitWait': return none({ ...state, rateLimitWaitMinutes: event.minutes }); // no fill: the ceiling starts no job (#805)
     case 'setDefaultAgent': return none({ ...state, defaultAgent: event.agent }); // no fill: the default picks no task, only what a run records (#925)
-    case 'setSemaphores': return none({ ...state, semaphores: event.semaphores }); // #798: the module's snapshot, mirrored whole; no fill, a semaphore starts no job
-    case 'semaphoreTurn': return none(state); // #798: the turn's notice is node 2.2's
+    case 'setSemaphores': return releaseLeft({ ...state, semaphores: event.semaphores }); // #798: the module's snapshot, mirrored whole; #799: a held Stop whose pty left every line is let go; no fill, a semaphore starts no job
+    case 'semaphoreTurn': return turnCame(state, event); // #799: the turn's notice; no fill, a turn frees no worker
     case 'setApprovalMinutes': return none({ ...state, approvalMinutes: event.minutes }); // no fill: the window starts no job (#268)
     case 'setKeepAwake': return none(setKeepAwake(state, event.on)); // no fill: keeping the machine awake starts no job (#226)
     case 'setShutdown': return fill(none(setShutdown(state, event.armed))); // arming no longer caps the signal (#727); the fill runs as after any setting
@@ -143,7 +144,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setWorkspaces': return fill(setWorkspaces(state, event)); // a task that resolved to none may be a candidate now
     case 'setWorkspace': return fill(none(setWorkspace(state, event.taskId, event.workspace))); // idem
     case 'hook': return settleCopy(state, event.ptyId, event.payload.hook_event_name, applyHook(state, event.ptyId, event.payload, event.branch, event.tokens, event.title)); // a copy's SessionStart or early end drops its temporary transcript (#587)
-    case 'exit': return settleCopy(state, event.ptyId, undefined, forgetUnopenedLocal(state, event.ptyId, ended(forgetUnwritten(state, event, exit(state, event.ptyId))))); // #586: forgotten before the fill, which must never continue it
+    case 'exit': return releasedOnExit(state, event.ptyId, settleCopy(state, event.ptyId, undefined, forgetUnopenedLocal(state, event.ptyId, ended(forgetUnwritten(state, event, exit(state, event.ptyId)))))); // #586: forgotten before the fill, which must never continue it; #799: a held Stop is let go
     case 'done': return done(state, event.ptyId, event.result, event.verdict, event.evidence); // no fill: nothing freed, nothing loosened
     case 'pr': return markPr(state, event.ptyId, event.url, event.slice); // no fill: a PR frees nothing
     case 'prStates': return prStates(state, event.states); // no fill: a merged PR frees no worker (#207)
@@ -221,7 +222,8 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'approve': return fill(approve(state, liveTaskId(state, event.activityId), canContinue)); // a held worker goes on in place when canContinue allows (#321); else the fill decides
     case 'feedback': return feedback(state, event);
     case 'extendApproval': return extendApproval(state, liveTaskId(state, event.activityId)); // no fill: nothing freed (#268)
-    case 'approvalExpired': return fill(approvalExpired(state, event.ptyId)); // the held worker frees (#268)
+    case 'stopClosed': return holdClosed(state, event.ptyId); // #799: no fill, nothing freed
+    case 'approvalExpired': return fill(holdExpired(state, event.ptyId) ?? approvalExpired(state, event.ptyId)); // #799: a semaphore hold first; the held worker frees (#268)
     case 'retryDue': return retryDue(state, event.ptyId, event.until); // no fill: the worker kept its slot through the wait (#805)
     case 'retry': return afterCommands(state, retry(state, event.taskId) ?? none(state)); // #915: as a routed failure: the due actions and the fill follow
     case 'dismissError': return afterCommands(state, dismissError(state, event.taskId) ?? none(state)); // #354: as retry: a due stage action and the fill follow
@@ -890,9 +892,9 @@ function applyHook(initial: State, ptyId: string, p: HookPayload, branch?: strin
   switch (p.hook_event_name) {
     case 'SessionStart': return sessionStart(state, ptyId, worker, p, branch);
     case 'UserPromptSubmit':
-      return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'prompt' } });
+      return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'prompt' }, ...movedOn(worker, 'prompt') }); // #799
     case 'PreToolUse':
-      return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'tool', detail: describeTool(p) } });
+      return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'tool', detail: describeTool(p) }, ...movedOn(worker, 'tool') }); // #799
     case 'Notification': {
       const kind = String(p.notification_type ?? '');
       if (!WAITING_NOTIFICATIONS.includes(kind)) return none(state);
@@ -910,6 +912,8 @@ function applyHook(initial: State, ptyId: string, p: HookPayload, branch?: strin
       const pending = inFlight(p);
       // a subagent, a shell or a cron will wake the worker: not the user's turn, so green with the count; its next Stop decides again (#367)
       if (pending > 0) return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'background', detail: String(pending) } });
+      const placed = stopWithPlace(state, ptyId, worker); // #799: a kept notice goes out, or a stage run with a place in line holds its Stop
+      if (placed !== undefined) return placed;
       return patch(state, ptyId, { status: 'waiting', question: undefined, lastEvent: { kind: 'turn' } });
     }
     case 'StopFailure': // #805: after hive_done the stage already reported done, so the failure is that run's Stop: its wait and count go, the
