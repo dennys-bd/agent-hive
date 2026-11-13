@@ -5,7 +5,9 @@ import { type BackLink, FlowHeader, lastPolled } from '@/components/FlowHeader';
 import { Flow } from '@/components/Flow';
 import { HeaderSlotProvider, useHeaderSlotRef } from '@/components/HeaderSlot';
 import { FlowShownContext } from '@/components/MainDock';
+import { CreateTaskOpenContext, type CreateTaskRequest } from '@/hooks/use-create-task-dialog';
 import { setLanguage } from '@/i18n';
+import { type CreateTargets, CreateTargetsContext, HIVE_ONLY } from '@/lib/create-targets';
 import { resetViewState } from '@/lib/view-state';
 import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { SourceConfig, Task, Stage, State } from '../../src/types';
@@ -292,4 +294,45 @@ test('the flowchart\'s exibir counts the flow\'s tasks by source and the legend 
   expect(legendOf()).toHaveTextContent('roadmap');
   await user.click(pop.getByRole('checkbox', { name: 'roadmap' }));
   expect(legendOf()).toHaveTextContent('nenhuma source');
+});
+
+// #774: roadmap with a repository for new issues, as createTargetsOf lists it
+const PLACED: CreateTargets = { ...HIVE_ONLY, sources: [{ name: 'roadmap', type: 'github', repository: 'acme/app' }] };
+const withCreate = (source: SourceConfig | 'hive', targets: CreateTargets, open?: (request: CreateTaskRequest) => void) => (
+  <CreateTargetsContext.Provider value={targets}>
+    <CreateTaskOpenContext.Provider value={open}><FlowHeader state={state(tasks)} mode={{ kind: 'source', source }} search="" onSearch={vi.fn()} /></CreateTaskOpenContext.Provider>
+  </CreateTargetsContext.Provider>
+);
+const createButton = (name = '+ criar tarefa'): HTMLElement | null => within(header()).queryByRole('button', { name });
+
+test('+ criar tarefa sits before the search on the hive source and on a GitHub source with a repository, an xs outline titled for what it opens; a click opens the dialog on that source (#774)', async () => {
+  const user = userEvent.setup();
+  const open = vi.fn();
+  const { rerender } = render(withCreate('hive', HIVE_ONLY, open));
+  const button = createButton()!;
+  expect(button).toHaveAttribute('data-variant', 'outline');
+  expect(button).toHaveAttribute('data-size', 'xs');
+  expect(button).toHaveAttribute('title', 'criar tarefa nesta source · abre o diálogo criar tarefa');
+  expect(button.nextElementSibling).toBe(within(header()).getByRole('textbox', { name: 'buscar tarefas' }).closest('label'));
+  await user.click(button);
+  expect(open).toHaveBeenLastCalledWith({ source: 'hive' });
+  rerender(withCreate(ROADMAP, PLACED, open));
+  await user.click(createButton()!);
+  expect(open).toHaveBeenLastCalledWith({ source: 'roadmap' });
+  setLanguage('en');
+  rerender(withCreate(ROADMAP, PLACED, open));
+  expect(within(screen.getByRole('region', { name: 'tasks' })).getByRole('button', { name: '+ create task' })).toHaveAttribute('title', 'create a task in this source · opens the create-task dialog');
+});
+
+test('no + criar tarefa on a GitHub source with no repository for new issues, on the hive source with hive off, outside the source mode, or with no provider (#774)', () => {
+  const open = vi.fn();
+  const { rerender } = render(withCreate(ROADMAP, HIVE_ONLY, open)); // a Jira source takes this branch too: no repository, so not in sources
+  expect(createButton()).toBeNull();
+  rerender(withCreate('hive', { ...HIVE_ONLY, hiveSource: false }, open));
+  expect(createButton()).toBeNull();
+  rerender(<CreateTaskOpenContext.Provider value={open}><FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} /></CreateTaskOpenContext.Provider>);
+  expect(createButton()).toBeNull();
+  rerender(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: 'hive' }} search="" onSearch={vi.fn()} />);
+  expect(createButton()).toBeNull();
+  expect(open).not.toHaveBeenCalled();
 });

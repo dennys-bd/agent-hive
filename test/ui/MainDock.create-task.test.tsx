@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { FlowHeader } from '@/components/FlowHeader';
 import { MainDock } from '@/components/MainDock';
 import { setLanguage } from '@/i18n';
 import { stateOf } from './search-fixtures';
@@ -88,4 +89,15 @@ test('the toast\'s abrir shows the new task in the flow (#774, decision 10)', as
   const [, options] = vi.mocked(toast).mock.calls.at(-1) as unknown as [string, { action: { onClick(): void } }];
   options.action.onClick();
   expect(onSelect).toHaveBeenLastCalledWith({ taskId: 'T9' });
+});
+
+test('the hive source header\'s + criar tarefa opens the dock\'s create-task dialog, empty, naming the hive table (#774)', async () => {
+  const user = userEvent.setup();
+  render(<Home flow={<FlowHeader state={stateOf([taskA], { workspaces: WORKSPACES })} mode={{ kind: 'source', source: 'hive' }} />} />);
+  fireEvent.click(screen.getByRole('button', { name: 'tarefas' })); // the flow is the center
+  await user.click(within(screen.getByRole('region', { name: 'tarefas' })).getByRole('button', { name: '+ criar tarefa' }));
+  const dialog = await screen.findByRole('alertdialog', { name: 'Criar tarefa' });
+  expect(within(dialog).getByLabelText('título')).toHaveValue('');
+  expect(within(dialog).getByText('só cria a tarefa, sem iniciar atividade · da tabela de hive')).toBeInTheDocument();
+  expect(posts()).not.toContain('/tasks');
 });
