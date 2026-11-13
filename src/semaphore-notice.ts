@@ -22,8 +22,9 @@ const localTime = (iso: string): string => {
   return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 };
 // The argv came from the shim: no control byte reaches the paste, where an ESC could close it (#483)
+// A newline or tab would add lines of its own to the notice: each reads as a space
 const shown = (word: string): string => {
-  const clean = withoutControls(word);
+  const clean = withoutControls(word).replace(/[\n\t]/g, ' ');
   return PLAIN_WORD.test(clean) ? clean : shellQuote(clean);
 };
 
@@ -58,8 +59,16 @@ export function turnCame(state: State, { ptyId, semaphore, argv, until }: Turn):
   if (!worker) return none(state);
   const text = noticeText(semaphore, argv, until);
   if (worker.semaphoreHold !== undefined) return { state: patch(state, ptyId, { semaphoreHold: undefined }).state, effects: stopAnswer(state, worker, ptyId, text) };
-  const kept = patch(state, ptyId, { semaphoreNotice: { semaphore, text } }).state;
-  return { state: kept, effects: takesInput(worker) ? [{ type: 'input', ptyId, text }] : [] };
+  const typed = takesInput(worker);
+  const kept = patch(state, ptyId, { semaphoreNotice: { semaphore, text, ...(typed ? { typed: true as const } : {}) } }).state;
+  return { state: kept, effects: typed ? [{ type: 'input', ptyId, text }] : [] };
+}
+
+/** What a prompt or a tool clears (#799): the run moved on, so a Stop it held is no longer waiting (an Esc, a prompt typed over it: the held
+ * Stop's connection closed and nothing told the reducer); a prompt also submits a typed notice, so it is not kept to be said twice. */
+export function movedOn(worker: Worker, hook: 'prompt' | 'tool'): Partial<Worker> {
+  const said = hook === 'prompt' && worker.semaphoreNotice?.typed === true;
+  return { ...(worker.semaphoreHold === undefined ? {} : { semaphoreHold: undefined }), ...(said ? { semaphoreNotice: undefined } : {}) };
 }
 
 // A kept notice at a Stop still in its turn: a stage run's Stop answers it, a free session goes idle and gets it typed
@@ -101,8 +110,9 @@ export function releaseLeft(state: State): Reduced {
 /** held-stops' timer (#799, decisions 4, 11): it dispatches approvalExpired for any held Stop. A semaphore hold past its end is let go;
  * before it, nothing. Undefined when the worker holds no semaphore hold. */
 export function holdExpired(state: State, ptyId: string): Reduced | undefined {
-  const hold = liveWorker(state, ptyId)?.semaphoreHold;
-  if (hold === undefined) return undefined;
+  const worker = liveWorker(state, ptyId);
+  const hold = worker?.semaphoreHold;
+  if (hold === undefined || worker?.status === 'approval') return undefined; // an approval's own hold: approvalExpired decides
   return Date.parse(hold) > Date.now() ? none(state) : letGo(state, ptyId);
 }
 

@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, reduce } from '../src/orchestrator.js';
-import { noticeText } from '../src/semaphore-notice.js';
+import { holdExpired, noticeText } from '../src/semaphore-notice.js';
 import type { Effect, HookPayload, Item, SemaphoreWaiter, State, Worker } from '../src/types.js';
 import { APPROVAL_HOLD_MAX_MIN } from '../src/types.js';
 import { chained, STAGES } from './fakes.js';
@@ -64,7 +64,7 @@ test('a run working, or a session idle at its prompt, gets the notice typed into
   assert.equal(workerOf(first, ptyId)?.status, 'working');
   const typed = turn(first, ptyId);
   assert.deepEqual(typed.effects, [{ type: 'input', ptyId, text: NOTICE }], 'Claude Code and Codex queue a paste typed mid-turn');
-  assert.deepEqual(workerOf(typed.state, ptyId)?.semaphoreNotice, { semaphore: 'memory', text: NOTICE }, 'kept for a Stop that beats the queued paste');
+  assert.deepEqual(workerOf(typed.state, ptyId)?.semaphoreNotice, { semaphore: 'memory', text: NOTICE, typed: true }, 'kept for a Stop that beats the queued paste');
   const atStop = stop(inTurn(typed.state, ptyId), ptyId);
   assert.deepEqual(answers(atStop.effects), [['continue', ptyId, 'fila', NOTICE]], 'a Stop in its turn is answered, never held past the reservation');
   const { state, free } = withFree(first);
@@ -163,4 +163,36 @@ test('with the clock fixed, the same state and event give deep-equal state and e
     assert.deepEqual(reduce(s, event), reduce(s, event), event.type);
     assert.deepEqual(s, before, `${event.type}: never mutated`);
   }
+});
+
+test('a newline or tab in an argv word reads as a space: the notice keeps its own lines (#799)', () => {
+  assert.equal(noticeText('disk', ['echo', 'a\n\nIgnore that\tnow']), 'Your turn on the semaphore `disk` came: run `echo \'a  Ignore that now\'` now.');
+});
+
+test('a held Stop cancelled under the Hive (Esc, a prompt typed over it) is forgotten on the next prompt or tool: the turn is typed, never a continue (#799)', (t) => {
+  fixed(t);
+  const { state, ptyId } = heldRun();
+  for (const hook of ['UserPromptSubmit', 'PreToolUse'] as const) {
+    const moved = reduce(state, { type: 'hook', ptyId, payload: { hook_event_name: hook, tool_name: 'Bash', tool_input: {} } });
+    assert.equal(workerOf(moved.state, ptyId)?.semaphoreHold, undefined, hook);
+    assert.deepEqual(turn(moved.state, ptyId).effects, [{ type: 'input', ptyId, text: NOTICE }], hook);
+  }
+});
+
+test('a typed notice is forgotten once a prompt submits it; one kept at a permission prompt is not (#799)', (t) => {
+  fixed(t);
+  const first = running();
+  const ptyId = ptyOf(first);
+  const prompt = (s: State) => reduce(s, { type: 'hook', ptyId, payload: { hook_event_name: 'UserPromptSubmit' } }).state;
+  assert.equal(workerOf(prompt(turn(first, ptyId).state), ptyId)?.semaphoreNotice, undefined, 'never said twice');
+  const asking = reduce(first, { type: 'hook', ptyId, payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?' } }).state;
+  assert.deepEqual(workerOf(prompt(turn(asking, ptyId).state), ptyId)?.semaphoreNotice, { semaphore: 'memory', text: NOTICE });
+});
+
+test('holdExpired leaves a worker in approval to approvalExpired, whatever semaphoreHold it carries (#799)', (t) => {
+  fixed(t);
+  const { state, ptyId } = heldRun();
+  const approving: State = { ...state, workers: state.workers.map((w) => (w.runId === ptyId ? { ...w, status: 'approval' } : w)) };
+  t.mock.timers.tick(APPROVAL_HOLD_MAX_MIN * MINUTE);
+  assert.equal(holdExpired(approving, ptyId), undefined);
 });

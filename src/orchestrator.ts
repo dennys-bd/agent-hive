@@ -15,7 +15,7 @@ import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
 import { boot, clearSessions, closeTerminals, createActivity, dismissCrash, exit, checkpointCaptured, capturedFirst, freeSessionDone, openProjectShell, openSession, openTerminal, quit, restart, restarting, restored, restoreFailed, restoring, continueStage, stageStarted, stop } from './runs.js';
 import { answer, answerFeedback, approvalExpired, approve, awaitApproval, extendApproval, typeFeedback } from './approval.js';
-import { holdExpired, releasedOnExit, releaseLeft, stopWithPlace, turnCame } from './semaphore-notice.js';
+import { holdExpired, movedOn, releasedOnExit, releaseLeft, stopWithPlace, turnCame } from './semaphore-notice.js';
 import { askHandoff, needsHandoff, pendingEnd, withoutPending } from './handoff.js';
 import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
 import { exitOf, transitionByKey } from './transitions.js';
@@ -891,9 +891,9 @@ function applyHook(initial: State, ptyId: string, p: HookPayload, branch?: strin
   switch (p.hook_event_name) {
     case 'SessionStart': return sessionStart(state, ptyId, worker, p, branch);
     case 'UserPromptSubmit':
-      return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'prompt' } });
+      return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'prompt' }, ...movedOn(worker, 'prompt') }); // #799
     case 'PreToolUse':
-      return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'tool', detail: describeTool(p) } });
+      return patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'tool', detail: describeTool(p) }, ...movedOn(worker, 'tool') }); // #799
     case 'Notification': {
       const kind = String(p.notification_type ?? '');
       if (!WAITING_NOTIFICATIONS.includes(kind)) return none(state);

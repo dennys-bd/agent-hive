@@ -750,7 +750,7 @@ export interface Worker {
   foldedMs?: number; // #617: the run's time already folded into the stages an in-place continuation left; runShare counts past it
   foldedWaitingMs?: number; // #617: the waiting inside foldedMs
   semaphoreHold?: string; // #799: ISO; its Stop is held for a place in a semaphore's line until then
-  semaphoreNotice?: { semaphore: string; text: string }; // #799: a turn's notice kept for its next Stop in that turn
+  semaphoreNotice?: { semaphore: string; text: string; typed?: true }; // #799: a turn's notice kept for its next Stop in that turn
 }
 
 /** A line of the menu bar's list (#192): what GET /ptys returns per live pty (#570), a worker's run or a terminal (#283). */
