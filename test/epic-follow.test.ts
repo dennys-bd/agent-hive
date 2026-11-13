@@ -50,6 +50,8 @@ const TO_DONE: Transition = { from: 'review', to: 'done', when: 'done', sources:
 const ARCHIVE: Transition = { from: 'done', to: END, when: 'done', sources: { board: [{ type: 'archive' }] } };
 const ISSUE: Transition[] = [TO_DEV, TO_REVIEW, BACK, TO_DONE, ARCHIVE];
 const ARCHIVED = { type: 'sourceAction', itemId: 'board:E', taskId: 'board:E', action: { type: 'archive' } };
+// #843: an epic moving into its last stage closes its issue, after the move's writes
+const CLOSED = { type: 'sourceAction', itemId: 'board:E', taskId: 'board:E', action: { type: 'close' } };
 // The task as if it entered its stage `ms` ago: what isDue counts `after` from
 const aged = (t: Task, ms: number): Task => ({ ...t, enteredAt: new Date(Date.now() - ms).toISOString() });
 const column = (name: string) => ({ type: 'setColumn', itemId: 'board:E', column: name });
@@ -77,13 +79,13 @@ test('every child done, with the last stage\'s done exit to end: the epic moves 
   const { state, effects } = followEpics(before);
   assert.equal(epicIn(state), undefined);
   assert.deepEqual(state.tasks.map((t) => t.item.itemId), ['board:c1']);
-  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:E', column: 'Done' }, { type: 'setColumn', itemId: 'board:E', column: 'Shipped' }]);
+  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:E', column: 'Done' }, CLOSED, { type: 'setColumn', itemId: 'board:E', column: 'Shipped' }]);
 });
 
 test('every child done and no done exit to end: the epic moves to the last stage and stays there (#31)', () => {
   const { state, effects } = followEpics(at([epic('build', ['c1']), child('c1', 'done')]));
   assert.equal(epicIn(state)?.stage, 'done');
-  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:E', column: 'Done' }]);
+  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:E', column: 'Done' }, CLOSED]);
   const again = deepFreeze(state);
   assert.equal(followEpics(again).state, again, 'the next pass leaves it there');
 });
@@ -135,7 +137,7 @@ test('the epic counts no try, keeps no try record and gets no handover: only the
 
 test('every child done with the epic in review: one pass takes review → done, writing Done, and does not archive it before done\'s after (#213)', () => {
   const { state, effects } = followEpics(at([epic('review', ['c1']), child('c1', 'done')], ISSUE, FLOW));
-  assert.deepEqual(effects, [column('Done')]);
+  assert.deepEqual(effects, [column('Done'), CLOSED]);
   assert.deepEqual([epicIn(state)?.stage, epicIn(state)?.boardColumn, epicIn(state)?.leaving], ['done', 'Done', undefined]);
 });
 
@@ -152,7 +154,7 @@ test('in done the epic waits out done\'s after: before it the same state, after 
 test('a last stage with no after: the epic moves into it and leaves through done → end in the same pass (#213)', () => {
   const { after: _after, ...atOnce } = FLOW[3];
   const { state, effects } = followEpics(at([epic('review', ['c1']), child('c1', 'done')], ISSUE, [...FLOW.slice(0, 3), atOnce]));
-  assert.deepEqual(effects, [column('Done'), ARCHIVED]);
+  assert.deepEqual(effects, [column('Done'), CLOSED, ARCHIVED]);
   assert.deepEqual([epicIn(state)?.stage, epicIn(state)?.leaving], ['done', true]);
 });
 
@@ -234,7 +236,7 @@ test('a child in another flow neither places its epic nor keeps it from finishin
   assert.equal(epicIn(ahead.state)?.stage, 'build', 'brainstorm is no stage of delivery: c2 places nothing');
   const done = followEpics(twoFlows([epic('build', ['c1', 'c2']), child('c1', 'done'), inDiscovery('c2')], [ENDS]));
   assert.equal(epicIn(done.state), undefined, 'c1, its one child in delivery, is done: into done and out through its end');
-  assert.deepEqual(done.effects, [column('Done'), column('Shipped')]);
+  assert.deepEqual(done.effects, [column('Done'), CLOSED, column('Shipped')]);
   const elsewhere = twoFlows([epic('spec', ['c2']), inDiscovery('c2')]);
   assert.equal(followEpics(elsewhere).state, elsewhere, 'every child in the other flow: the epic stays');
 });

@@ -46,12 +46,26 @@ function ended(state: State, task: Task, last: Stage): Reduced {
   return exit === undefined || exit.to !== END || !isDue(task, last, Date.now()) ? none(state) : follow(state, task, exit);
 }
 
-// Every child done (#213): into the last stage by the same move as any other (In Review → Done writes its move Done), then, in the same
-// pass, out through its end once due. Without such an exit it sits in the last stage
+// The epic just moved into its last stage closes its issue, as a normal card's merged PR does (#843), unless the transition it took writes a
+// close already, or the stage's onStart, which moved wrote too. Every source type supports close (SOURCE_ACTIONS); sourceWrites skips a
+// task not on a source
+function closedOnEntry(into: Reduced, task: Task, placed: Task, last: Stage): Reduced {
+  const direct = outgoing(into.state.transitions, task.stage).find((t) => t.to === last.name);
+  const written = [...(onSource(direct?.sources, task.item.source) ?? []), ...(onSource(last.onStart, task.item.source) ?? [])];
+  if (written.some((a) => a.type === 'close')) return into;
+  const closed = sourceWrites(placed, [{ type: 'close' }]);
+  return { state: withTask(into.state, closed.task), effects: [...into.effects, ...closed.effects] };
+}
+
+// Every child done (#213): into the last stage by the same move as any other (In Review → Done writes its move Done), its issue closed
+// (#843), then, in the same pass, out through its end once due. Without such an exit it sits in the last stage
 function finished(state: State, task: Task, last: Stage): Reduced {
-  const into = task.stage === last.name ? none(state) : moved(state, task, last);
-  const placed = placedOf(into.state, task);
-  if (placed === undefined || placed.stage !== last.name || placed.leaving) return into;
+  const entering = task.stage !== last.name;
+  const went = entering ? moved(state, task, last) : none(state);
+  const reached = placedOf(went.state, task);
+  if (reached === undefined || reached.stage !== last.name || reached.leaving) return went;
+  const into = entering ? closedOnEntry(went, task, reached, last) : went;
+  const placed = placedOf(into.state, task) ?? reached;
   const out = ended(into.state, placed, last);
   return out.state === into.state ? into : { state: out.state, effects: [...into.effects, ...out.effects] };
 }

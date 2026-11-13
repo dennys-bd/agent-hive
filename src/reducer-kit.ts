@@ -258,9 +258,10 @@ export function clearedError(state: State, task: Task): State {
 // A task that just entered its stage (#268, #283, #315, #629): its live activity drops the stopped mark, a free run's mark (#812: it belongs to
 // the visit it was made in), an awaited approval, a queued
 // handover (#134: transit.ts writes the new one after the entry) and a handoff being written (#692), which belong to the stage left behind; in a manual gate it awaits approval from its entry, its activity born for it when it has
-// none, since approve acts on an activity. A gate task that resolves to no workspace gets none.
+// none, since approve acts on an activity. A gate task that resolves to no workspace gets none. A show epic gets none: its children's stage
+// moves it, and followEpics holds an epic with an approval, so it would wait in the gate for a click (#843).
 function enteredStage(state: State, task: Task): State {
-  const gate = isGate(stageOf(state.stages, task.stage));
+  const gate = task.item.epic === undefined && isGate(stageOf(state.stages, task.stage));
   const live = activityOf(state, taskId(task));
   const born = live ? { state, activity: live } : gate ? ensureActivity(state, task) : undefined;
   if (!born) return state;
