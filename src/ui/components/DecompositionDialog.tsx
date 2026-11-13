@@ -27,16 +27,18 @@ const hiveChoice = ({ entry }: DecompositionHive): DecompositionChoice => ({ sou
 const sourceNames = (preview: DecompositionPreview): string[] =>
   [...(preview.hive === undefined ? [] : [HIVE_SOURCE]), ...(preview.target === HIVE_SOURCE ? [] : preview.sources.map((s) => s.name))];
 
+const sameEntry = (a: TaskEntry, b: TaskEntry): boolean => (a === null || b === null ? a === b : a.flow === b.flow && a.stage === b.stage);
+
 // The choice on open (#784, decision 5): the last write's while the preview still offers its source; else the hive for a recorded hive
 // target, a hive goal (preselected) or no GitHub source; else the first source, the goal's own (sourcesOf sorts it first), with its column
 function openingChoice(preview: DecompositionPreview, last?: DecompositionChoice): DecompositionChoice {
-  if (last?.source !== undefined && sourceNames(preview).includes(last.source)) return last;
   const { hive } = preview;
+  // an entry the preview no longer offers (its flow edited since the last write) falls back to the suggested one, never a blank enabled picker
+  if (last?.source === HIVE_SOURCE && hive !== undefined && last.entry !== undefined && !hive.entries.some((e) => sameEntry(e, last.entry ?? null))) return hiveChoice(hive);
+  if (last?.source !== undefined && sourceNames(preview).includes(last.source)) return last;
   if (hive !== undefined && (preview.target === HIVE_SOURCE || hive.preselected === true || preview.sources.length === 0)) return hiveChoice(hive);
   return preview.target === HIVE_SOURCE ? {} : chosen(preview.sources[0]);
 }
-
-const sameEntry = (a: TaskEntry, b: TaskEntry): boolean => (a === null || b === null ? a === b : a.flow === b.flow && a.stage === b.stage);
 
 // entra em (#784, decision 9): sem fluxo, a flow, flow · stage, in the preview's order. A flow's first stage right after the flow is left out:
 // the flow alone lands there. Values are the entries' indexes, never their labels, so a flow named with " · " cannot collide
@@ -205,6 +207,8 @@ function DecompositionDialog({ activityId }: { activityId: string }) {
   const hive = choice.source === HIVE_SOURCE ? preview?.hive : undefined; // #784: the hive chosen, and offered
   // #784, decision 3: blank until the preview loads, then the chosen target's title
   const title = preview === undefined ? '' : t(hive === undefined ? 'decomposition.title' : 'decomposition.titleHive');
+  // a running write's words come from its own choice until the preview loads (or when its read failed), so a hive write never reads issues
+  const isHive = hive !== undefined || (preview === undefined && lastChoice(activityId)?.source === HIVE_SOURCE);
   const canWrite = preview !== undefined && !isRunning && isWritable(preview, choice);
   const write = (): void => { void writeDecomposition(activityId, choice); };
   const close = (): void => closeDecomposition(activityId);
@@ -224,9 +228,9 @@ function DecompositionDialog({ activityId }: { activityId: string }) {
         {preview && <Target preview={preview} hive={hive} />}
         {preview && <Sources preview={preview} choice={choice} isRunning={isRunning} onChoice={setChoice} />}
         {/* #781: mounted from the open and filled when the write starts, so a screen reader announces it; sr-only while empty, so it takes no row */}
-        <p role="status" className={isRunning ? `${MUTED} text-sm` : 'sr-only'}>{isRunning ? t(hive === undefined ? 'decomposition.running' : 'decomposition.runningHive') : ''}</p>
+        <p role="status" className={isRunning ? `${MUTED} text-sm` : 'sr-only'}>{isRunning ? t(isHive ? 'decomposition.runningHive' : 'decomposition.running') : ''}</p>
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
-        <Footer isRunning={isRunning} canWrite={canWrite} isHive={hive !== undefined} onWrite={write} onClose={close} />
+        <Footer isRunning={isRunning} canWrite={canWrite} isHive={isHive} onWrite={write} onClose={close} />
       </DialogContent>
     </Dialog>
   );

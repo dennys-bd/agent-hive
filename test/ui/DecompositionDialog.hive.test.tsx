@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DecompositionHost } from '@/components/DecompositionDialog';
-import { openDecomposition } from '@/hooks/use-decomposition-write';
+import { openDecomposition, resetDecompositionWrites, writeDecomposition } from '@/hooks/use-decomposition-write';
 import { setLanguage } from '@/i18n';
 import type { DecompositionHive, DecompositionPreview, TaskEntry } from '../../src/types';
 
@@ -158,4 +158,27 @@ test('under sem fluxo criar tarefas posts entry null (#784)', async () => {
   await user.click(screen.getByRole('option', { name: 'sem fluxo' }));
   await user.click(createTasks());
   await waitFor(() => expect(posts()).toEqual([[PATH, expect.objectContaining({ body: JSON.stringify({ source: 'hive', entry: null }) })]]));
+});
+
+test('a hive write reopened while it runs reads criando tarefas and the hive\'s note even when its preview read fails (#784)', async () => {
+  resetDecompositionWrites();
+  const release = held(() => json({ ok: true }));
+  openDecomposition('a-I1', 'HIVE-1');
+  void writeDecomposition('a-I1', { source: 'hive', entry: null });
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  fetchMock.mockImplementationOnce(async () => json({ error: 'boom' }, 500)); // the preview read, after the POST went out
+  render(<DecompositionHost />);
+  expect(await screen.findByRole('button', { name: 'criando tarefas…' })).toBeDisabled();
+  expect(screen.getByRole('status')).toHaveTextContent(RUNNING_HIVE);
+  await act(async () => { release(); });
+});
+
+test('a last hive choice whose entry the preview no longer offers opens on the suggested entry, criar tarefas enabled (#784)', async () => {
+  resetDecompositionWrites();
+  answer = () => json({ error: 'stopped', code: 'hive' }, 502);
+  await writeDecomposition('a-I1', { source: 'hive', entry: { flow: 'gone' } });
+  show();
+  await screen.findByRole('dialog', { name: 'Criar tarefas' });
+  expect(screen.getByLabelText('entra em')).toHaveTextContent('main');
+  expect(createTasks()).toBeEnabled();
 });
