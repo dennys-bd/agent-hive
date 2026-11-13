@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -13,6 +13,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), dismiss: vi.fn() } }));
 // with no hive is DecompositionDialog.test.tsx's, unchanged.
 const ENTRIES: TaskEntry[] = [null, { flow: 'main' }, { flow: 'main', stage: 'goal' }, { flow: 'main', stage: 'spec' }, { flow: 'other' }, { flow: 'other', stage: 'build' }];
 const HIVE: DecompositionHive = { entries: ENTRIES, entry: { flow: 'main' }, tasks: 4, delivery: { path: 'docs/site-decomposition.md', local: true } };
+const PATH = '/activities/a-I1/decomposition';
 const SOURCES = [{ name: 'board', statuses: ['Backlog', 'Goals'], column: 'Backlog' }];
 const GITHUB_ONLY: DecompositionPreview = { title: 'Site for XPTO', issues: 5, blockers: 3, suggestions: 0, problems: [], warnings: [], repository: 'acme/site', sources: SOURCES };
 const PREVIEW: DecompositionPreview = { ...GITHUB_ONLY, hive: HIVE };
@@ -22,6 +23,7 @@ const json = (body: unknown, status = 200): Response => new Response(JSON.string
 let preview: DecompositionPreview = PREVIEW;
 let answer: () => Response | Promise<Response> = () => json({ ok: true });
 const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => (init?.method === 'POST' ? answer() : json(preview)));
+const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
 const show = (): void => { openDecomposition('a-I1', 'HIVE-1'); render(<DecompositionHost />); };
 type User = ReturnType<typeof userEvent.setup>;
 // Opens a picker and answers its options' labels, left open so the test picks one
@@ -29,6 +31,16 @@ async function optionsOf(user: User, picker: string): Promise<string[]> {
   await user.click(screen.getByRole('combobox', { name: picker }));
   return (await screen.findAllByRole('option')).map((o) => o.textContent ?? '');
 }
+const createTasks = (): HTMLElement => screen.getByRole('button', { name: 'criar tarefas' });
+const createIssues = (): HTMLElement => screen.getByRole('button', { name: 'criar issues' });
+const RUNNING_HIVE = 'pode fechar: a criação continua em segundo plano e as tarefas aparecem no fluxo ao terminar. se algo falhar, um aviso aparece.';
+// A POST that answers only when the test lets it, so the running state can be read
+function held(response: () => Response): () => void {
+  let release = (): void => undefined;
+  answer = () => new Promise((resolve) => { release = () => resolve(response()); });
+  return () => release();
+}
+
 beforeEach(() => {
   setLanguage('pt');
   preview = PREVIEW;
@@ -92,4 +104,58 @@ test('entra em lists sem fluxo, each flow and its later stages, without the firs
   expect(await optionsOf(user, 'entra em')).toEqual(['sem fluxo', 'main', 'main · spec', 'other']);
   await user.click(screen.getByRole('option', { name: 'sem fluxo' }));
   expect(screen.getByLabelText('entra em')).toHaveTextContent('sem fluxo');
+});
+
+test('a top-level deliveryRefusal with none in hive leaves criar tarefas enabled under the hive and disables criar issues under a GitHub source (#784)', async () => {
+  const user = userEvent.setup();
+  const refusal = 'the decomposition file is in no git checkout';
+  preview = { ...PRESELECTED, deliveryRefusal: refusal };
+  show();
+  await screen.findByRole('dialog', { name: 'Criar tarefas' });
+  expect(createTasks()).toBeEnabled();
+  expect(screen.queryByText(refusal)).toBeNull();
+  await optionsOf(user, 'source');
+  await user.click(screen.getByRole('option', { name: 'board' }));
+  expect(await screen.findByText(refusal)).toHaveClass('text-destructive');
+  expect(createIssues()).toBeDisabled();
+});
+
+test.each([
+  { refusal: 'a task already holds this goal\'s issue as its origin' },
+  { deliveryRefusal: 'the decomposition file\'s checkout is on acme/docs\'s default branch (main): the Hive never pushes it' },
+])('the hive\'s own refusal %o shows its words and disables criar tarefas; a GitHub source stays choosable (#784)', async (extra) => {
+  const user = userEvent.setup();
+  preview = { ...PREVIEW, hive: { ...HIVE, preselected: true, ...extra } };
+  show();
+  expect(await screen.findByText(Object.values(extra)[0]!)).toHaveClass('text-destructive');
+  expect(createTasks()).toBeDisabled();
+  await optionsOf(user, 'source');
+  await user.click(screen.getByRole('option', { name: 'board' }));
+  expect(createIssues()).toBeEnabled();
+});
+
+test('criar tarefas posts the hive and the suggested entry; while it runs the primary reads criando tarefas…, entra em is disabled and the note is the hive\'s (#784)', async () => {
+  const user = userEvent.setup();
+  const release = held(() => json({ ok: true }));
+  preview = PRESELECTED;
+  show();
+  await screen.findByRole('dialog', { name: 'Criar tarefas' });
+  await user.click(createTasks());
+  expect(screen.getByRole('button', { name: 'criando tarefas…' })).toBeDisabled();
+  expect(screen.getByLabelText('entra em')).toBeDisabled();
+  expect(screen.getByRole('status')).toHaveTextContent(RUNNING_HIVE);
+  await waitFor(() => expect(posts()).toEqual([[PATH, expect.objectContaining({ body: JSON.stringify({ source: 'hive', entry: { flow: 'main' } }) })]]));
+  await act(async () => { release(); });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
+
+test('under sem fluxo criar tarefas posts entry null (#784)', async () => {
+  const user = userEvent.setup();
+  preview = PRESELECTED;
+  show();
+  await screen.findByRole('dialog', { name: 'Criar tarefas' });
+  await optionsOf(user, 'entra em');
+  await user.click(screen.getByRole('option', { name: 'sem fluxo' }));
+  await user.click(createTasks());
+  await waitFor(() => expect(posts()).toEqual([[PATH, expect.objectContaining({ body: JSON.stringify({ source: 'hive', entry: null }) })]]));
 });

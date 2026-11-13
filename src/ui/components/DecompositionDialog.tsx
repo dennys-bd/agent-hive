@@ -142,6 +142,16 @@ function Target({ preview, hive }: { preview: DecompositionPreview; hive?: Decom
   );
 }
 
+// criar issues or criar tarefas (#865; #784, decision 11): no problem, then the chosen target's own needs. The top-level repository and
+// deliveryRefusal are the GitHub target's, never read under the hive; a recorded hive target with the hive gone has no choice, so nothing
+function isWritable(preview: DecompositionPreview, choice: DecompositionChoice): boolean {
+  if (preview.problems.length > 0) return false;
+  const { hive } = preview;
+  if (choice.source === HIVE_SOURCE) return hive !== undefined && choice.entry !== undefined && hive.deliveryRefusal === undefined && hive.refusal === undefined;
+  const source = preview.sources.find((s) => s.name === choice.source);
+  return preview.repository !== undefined && preview.deliveryRefusal === undefined && source !== undefined && choice.column !== undefined;
+}
+
 // The source and its second picker (#865; #784: the hive first, with entra em in place of coluna), or why there is none. Both stay disabled
 // while the write runs (#781); a recorded hive target locks the source on the hive (decision 6)
 function Sources({ preview, choice, isRunning, onChoice }: { preview: DecompositionPreview; choice: DecompositionChoice; isRunning: boolean; onChoice(choice: DecompositionChoice): void }) {
@@ -161,20 +171,20 @@ function Sources({ preview, choice, isRunning, onChoice }: { preview: Decomposit
 }
 
 // #781: while the write runs, fechar replaces cancelar, since closing leaves the write going rather than cancelling it, and the primary is busy
-// with no second press. esc is the key's own name, as SearchChrome's
-function Footer({ isRunning, canWrite, onWrite, onClose }: { isRunning: boolean; canWrite: boolean; onWrite(): void; onClose(): void }) {
+// with no second press. esc is the key's own name, as SearchChrome's. #784: the hive's words under the hive
+function Footer({ isRunning, canWrite, isHive, onWrite, onClose }: { isRunning: boolean; canWrite: boolean; isHive: boolean; onWrite(): void; onClose(): void }) {
   if (isRunning) {
     return (
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onClose}>{t('base.close')}<span aria-hidden="true" className="text-xs tracking-widest opacity-60">esc</span></Button>
-        <Button type="button" disabled><Spinner />{t('decomposition.creating')}</Button>
+        <Button type="button" disabled><Spinner />{t(isHive ? 'decomposition.creatingHive' : 'decomposition.creating')}</Button>
       </DialogFooter>
     );
   }
   return (
     <DialogFooter>
       <Button type="button" variant="outline" onClick={onClose}>{t('base.cancel')}</Button>
-      <Button type="button" onClick={onWrite} disabled={!canWrite}>{t('decomposition.create')}<ButtonKeyHint id="confirm" /></Button>
+      <Button type="button" onClick={onWrite} disabled={!canWrite}>{t(isHive ? 'decomposition.createHive' : 'decomposition.create')}<ButtonKeyHint id="confirm" /></Button>
     </DialogFooter>
   );
 }
@@ -192,11 +202,10 @@ function DecompositionDialog({ activityId }: { activityId: string }) {
     getJson<DecompositionPreview>(`/activities/${encodeURIComponent(activityId)}/decomposition`)
       .then((read) => { setPreview(read); setChoice(openingChoice(read, lastChoice(activityId))); }, (err: Error) => setReadFailure(err.message));
   }, [activityId]);
-  const source = preview?.sources.find((s) => s.name === choice.source);
   const hive = choice.source === HIVE_SOURCE ? preview?.hive : undefined; // #784: the hive chosen, and offered
   // #784, decision 3: blank until the preview loads, then the chosen target's title
   const title = preview === undefined ? '' : t(hive === undefined ? 'decomposition.title' : 'decomposition.titleHive');
-  const canWrite = preview !== undefined && preview.problems.length === 0 && preview.repository !== undefined && preview.deliveryRefusal === undefined && source !== undefined && choice.column !== undefined && !isRunning;
+  const canWrite = preview !== undefined && !isRunning && isWritable(preview, choice);
   const write = (): void => { void writeDecomposition(activityId, choice); };
   const close = (): void => closeDecomposition(activityId);
   // the confirm shortcut, as every other dialog's (#585); only while criar issues is enabled
@@ -215,9 +224,9 @@ function DecompositionDialog({ activityId }: { activityId: string }) {
         {preview && <Target preview={preview} hive={hive} />}
         {preview && <Sources preview={preview} choice={choice} isRunning={isRunning} onChoice={setChoice} />}
         {/* #781: mounted from the open and filled when the write starts, so a screen reader announces it; sr-only while empty, so it takes no row */}
-        <p role="status" className={isRunning ? `${MUTED} text-sm` : 'sr-only'}>{isRunning ? t('decomposition.running') : ''}</p>
+        <p role="status" className={isRunning ? `${MUTED} text-sm` : 'sr-only'}>{isRunning ? t(hive === undefined ? 'decomposition.running' : 'decomposition.runningHive') : ''}</p>
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
-        <Footer isRunning={isRunning} canWrite={canWrite} onWrite={write} onClose={close} />
+        <Footer isRunning={isRunning} canWrite={canWrite} isHive={hive !== undefined} onWrite={write} onClose={close} />
       </DialogContent>
     </Dialog>
   );
