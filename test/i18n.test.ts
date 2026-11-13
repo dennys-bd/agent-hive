@@ -298,17 +298,17 @@ test('the commands stage\'s Settings copy reads as the spec and the per-workspac
   assert.equal('settings.stages.commands.missing' in MESSAGES.en, false);
 });
 
-test('the per-workspace commands editor reads as the handoff writes it, in both languages; the enabled-in keys are gone (#755)', () => {
+test('the per-workspace commands editor reads as the handoff writes it, in both languages; the enabled-in keys are gone (#755, #804)', () => {
   const keys = [
     'settings.commands.col.impls', 'settings.commands.all', 'settings.commands.others', 'settings.commands.addImpl', 'settings.commands.addImplFor', 'settings.commands.missing',
     'settings.commands.col.menu', 'settings.commands.stagesOnly', 'settings.commands.menu', 'settings.commands.removeImpl', 'settings.error.commandImpls',
   ] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
-    'comando em cada workspace', 'todos os workspaces', 'os demais workspaces', '+ workspace', 'adicionar workspace a {name}', 'não existe em {list}',
+    'comando em cada workspace · revezamento', 'todos os workspaces', 'os demais workspaces', '+ workspace', 'adicionar workspace a {name}', 'não existe em {list}',
     'no menu', 'só etapas', '{name} no menu da tarefa', 'remover {name} de {workspace}', '{name} precisa de um comando em pelo menos um workspace',
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
-    'command in each workspace', 'all workspaces', 'the other workspaces', '+ workspace', 'add a workspace to {name}', 'missing in {list}',
+    'command in each workspace · semaphore', 'all workspaces', 'the other workspaces', '+ workspace', 'add a workspace to {name}', 'missing in {list}',
     'in menu', 'stages only', '{name} in the task menu', 'remove {name} from {workspace}', '{name} needs a command in at least one workspace',
   ]);
   for (const key of ['settings.commands.col.workspaces', 'settings.commands.col.command', 'settings.commands.workspaces', 'settings.commands.nowhere']) {
@@ -721,5 +721,26 @@ test('the Command Semaphores card reads as the screen writes it, in both languag
   assert.deepEqual(read(), [
     'Command Semaphores', '+ semaphore', 'a line with no semaphore runs at once', 'memory: at the same time', 'memory: turn reservation', 'remove memory',
     'tokens, usage, semaphores', 'how much the Hive may spend, in tokens, how it slows down as usage rises and how many heavy commands run together.',
+  ]);
+});
+
+test('the semaphore picker, its hint and the commands card foot read as the screen writes them, in both languages (#804)', () => {
+  const read = (): string[] => [
+    t('settings.commands.semaphore.label', { command: 'testes', workspace: 'core-api', semaphore: 'memory' }), t('settings.commands.semaphore.none'),
+    t('settings.commands.semaphore.title', { name: 'memory' }), t('settings.commands.semaphore.titleNone'), t('settings.commands.semaphore.note'),
+    t('settings.commands.semaphore.empty'), t('settings.commands.semaphore.allLines', { name: 'memory', n: 2 }),
+    t('settings.commands.semaphore.someLines', { name: 'memory', workspaces: 'agent-hive' }), t('settings.commands.semaphore.foot'), t('settings.commands.semaphore.footLink'),
+  ];
+  setLanguage('pt');
+  assert.deepEqual(read(), [
+    'revezamento de testes em core-api: memory', 'nenhum', 'revezamento: memory', 'sem revezamento', 'a linha espera a vez com as outras do mesmo revezamento',
+    'nenhum revezamento ainda · crie um em regras › revezamentos', 'memory nas 2 linhas', 'memory em agent-hive',
+    'põe a linha num revezamento, que limita quantas executam juntas no Hive todo:', 'regras › revezamentos',
+  ]);
+  setLanguage('en');
+  assert.deepEqual(read(), [
+    "testes's semaphore in core-api: memory", 'none', 'semaphore: memory', 'no semaphore', 'the line waits its turn with the others of the same semaphore',
+    'no semaphore yet · create one in rules › Command Semaphores', 'memory on the 2 lines', 'memory in agent-hive',
+    'puts the line in a semaphore, which caps how many run together across the whole Hive:', 'rules › Command Semaphores',
   ]);
 });

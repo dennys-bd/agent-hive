@@ -4,7 +4,7 @@ import { SEMAPHORE_NAME } from '../../run-commands.js';
 import { timeoutMs } from '../../timeout.js';
 import type { CommandSemaphore, SemaphoreState } from '../../types.js';
 import { currentLanguage, LOCALE, t } from '../i18n.js';
-import { type CommandDraft, type ImplDraft, stackedImpls } from './settings-commands.js';
+import { type CommandDraft, type ImplDraft, lineLabel, stackedImpls } from './settings-commands.js';
 import type { SettingsProblem, WorkspaceDraft } from './settings-form.js';
 
 /** A row of the card (#803): texts as typed. id is what a line's semaphore holds and the React key, never sent; savedName is the name it was
@@ -61,19 +61,13 @@ const lineWithout = ({ semaphore: _semaphore, ...line }: ImplDraft): ImplDraft =
 export const withoutSemaphore = (commands: readonly CommandDraft[], id: string): CommandDraft[] =>
   commands.map((c) => ({ ...c, impls: c.impls.map((i) => (i.semaphore === id ? lineWithout(i) : i)) }));
 
-// A line's place as the commands editor labels it (CommandImpls.tsx): its workspace's name, or all / the other workspaces when it has none
-const placeOf = (line: ImplDraft, count: number, workspaces: readonly WorkspaceDraft[]): string =>
-  (line.workspace === null
-    ? t(count > 1 ? 'settings.commands.others' : 'settings.commands.all')
-    : workspaces.find((w) => w.id === line.workspace)?.name.trim() ?? '');
-
 /** Decision 7: per command in Comb order, the lines pointing at the row in the editor's stacked order; it reads the draft, so #804's pick shows
  * before the save. "—" when no line points at it. */
 export function semaphoreLines(commands: readonly CommandDraft[], workspaces: readonly WorkspaceDraft[], id: string): string {
   const list = new Intl.ListFormat(LOCALE[currentLanguage()], { type: 'conjunction' });
   const lines = commands.flatMap((c) => {
     const stacked = stackedImpls(c, workspaces);
-    const places = stacked.filter((i) => i.semaphore === id).map((i) => placeOf(i, stacked.length, workspaces));
+    const places = stacked.filter((i) => i.semaphore === id).map((i) => lineLabel(i, stacked, workspaces));
     return places.length === 0 ? [] : [t('settings.semaphores.lines', { command: c.name.trim(), workspaces: list.format(places) })];
   });
   return lines.length === 0 ? '—' : lines.join(' · ');

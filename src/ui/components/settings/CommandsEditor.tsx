@@ -1,4 +1,4 @@
-import { ChevronDownIcon, ChevronUpIcon, XIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronUpIcon, HourglassIcon, XIcon } from 'lucide-react';
 import { useState } from 'react';
 import { CommandImpls } from '@/components/settings/CommandImpls';
 import { EnvEditor } from '@/components/settings/EnvEditor';
@@ -9,10 +9,11 @@ import { t, tPlural } from '@/i18n';
 import { type CommandDraft, emptyCommand, emptyEnvRow, overrides } from '@/lib/settings-commands';
 import type { WorkspaceDraft, SettingsDraft } from '@/lib/settings-form';
 import { settingAnchor } from '@/lib/settings-search';
+import type { SemaphoreDraft } from '@/lib/settings-semaphores';
 
-interface CommandsEditorProps { draft: SettingsDraft; onChange(patch: Partial<SettingsDraft>): void }
+interface CommandsEditorProps { draft: SettingsDraft; onChange(patch: Partial<SettingsDraft>): void; onOpenRules(): void }
 interface CommandRowProps {
-  row: CommandDraft; n: number; workspaces: WorkspaceDraft[]; expanded: boolean;
+  row: CommandDraft; n: number; workspaces: WorkspaceDraft[]; semaphores: SemaphoreDraft[]; expanded: boolean;
   onChange(patch: Partial<CommandDraft>): void; onRemove(): void; onToggle(open: boolean): void;
 }
 
@@ -60,13 +61,13 @@ function MenuCell({ row, onChange }: Pick<CommandRowProps, 'row' | 'onChange'>) 
   );
 }
 
-function CommandRow({ row, n, workspaces, expanded, onChange, onRemove, onToggle }: CommandRowProps) {
+function CommandRow({ row, n, workspaces, semaphores, expanded, onChange, onRemove, onToggle }: CommandRowProps) {
   const remove = t('settings.commands.remove', { n });
   return (
     <>
       <fieldset aria-label={t('settings.commands.row', { n })} className={`${GRID} min-w-0 border-b`}>
         <Input aria-label={t('settings.commands.name', { n })} value={row.name} placeholder={t('settings.commands.namePlaceholder')} onChange={(e) => onChange({ name: e.target.value })} />
-        <CommandImpls row={row} n={n} workspaces={workspaces} onChange={(impls) => onChange({ impls })} />
+        <CommandImpls row={row} n={n} workspaces={workspaces} semaphores={semaphores} onChange={(impls) => onChange({ impls })} />
         <Input aria-label={t('settings.commands.timeout', { n })} className="font-mono" value={row.timeout} placeholder={t('settings.commands.timeoutPlaceholder')} onChange={(e) => onChange({ timeout: e.target.value })} />
         <VariablesCell row={row} expanded={expanded} onChange={onChange} onToggle={onToggle} />
         <MenuCell row={row} onChange={onChange} />
@@ -80,9 +81,9 @@ function CommandRow({ row, n, workspaces, expanded, onChange, onRemove, onToggle
 /** Settings › workspaces' commands (#300, #511, #755): the Comb's commands as one table, each with a line per workspace, an optional timeout,
  * its own variables folded under its row and whether the task menu offers it; the note under it says how the lines resolve. Which rows are
  * open is view state, never the draft. */
-export function CommandsEditor({ draft, onChange }: CommandsEditorProps) {
+export function CommandsEditor({ draft, onChange, onOpenRules }: CommandsEditorProps) {
   const [open, setOpen] = useState<string[]>([]);
-  const { commands, workspaces } = draft;
+  const { commands, workspaces, commandSemaphores } = draft;
   const update = (id: string, patch: Partial<CommandDraft>): void => onChange({ commands: commands.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
   const toggle = (id: string) => (on: boolean): void => setOpen((ids) => (on ? [...ids, id] : ids.filter((i) => i !== id)));
   return (
@@ -94,7 +95,7 @@ export function CommandsEditor({ draft, onChange }: CommandsEditorProps) {
         </div>
         {commands.map((row, i) => (
           <CommandRow
-            key={row.id} row={row} n={i + 1} workspaces={workspaces} expanded={open.includes(row.id) && row.env.length > 0}
+            key={row.id} row={row} n={i + 1} workspaces={workspaces} semaphores={commandSemaphores} expanded={open.includes(row.id) && row.env.length > 0}
             onChange={(patch) => update(row.id, patch)} onRemove={() => onChange({ commands: commands.filter((c) => c.id !== row.id) })} onToggle={toggle(row.id)}
           />
         ))}
@@ -102,7 +103,12 @@ export function CommandsEditor({ draft, onChange }: CommandsEditorProps) {
           <Button type="button" variant="ghost" size="sm" onClick={() => onChange({ commands: [...commands, emptyCommand()] })}>{t('settings.commands.add')}</Button>
         </div>
       </div>
-      <p className="text-muted-foreground text-xs">{t('settings.commands.note')}</p>
+      {/* #804 decision 9: the note keeps its own span, so the hourglass sentence and the link read after it, as the screen's foot */}
+      <p className="text-muted-foreground text-xs">
+        <span>{t('settings.commands.note')}</span>{' · '}
+        <HourglassIcon aria-hidden className="inline size-3 align-[-2px]" />{' '}{t('settings.commands.semaphore.foot')}{' '}
+        <button type="button" className="text-review" onClick={onOpenRules}>{t('settings.commands.semaphore.footLink')}</button>
+      </p>
     </div>
   );
 }
