@@ -9,7 +9,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { worktreePath } from '../src/worktree.js';
 import { activityOf } from '../src/activities.js';
 import { slugFor } from '../src/tasks.js';
-import { readyOn } from './fixtures/work.js';
+import { readyOn, workPath } from './fixtures/work.js';
 import { AUTH, STAGES, bodyFlows, fakeSpawn, goneItem, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -17,6 +17,7 @@ import { hiveFetch, SECRET } from './secret-client.js';
 const ORPHAN = 'hive-9-gone'; // a worktree every repo's git lists under .hive/worktrees, owned by no task
 // A source with one rule (#293, #688) no test lists a Repo for, and no default workspace: a task's workspace is the hint a test lists, or none.
 const ROUTED: SourceTaskProps = { defaults: { auto: true, entry: { flow: 'main' } }, rules: [{ field: 'Repo', op: 'equals', value: 'hive', set: { workspace: 'hive' } }] };
+const GONE_SITE = { error: 'workspace site is gone', code: 'workspace_gone', workspace: 'site' }; // #748: the sentence, its code and the name
 
 interface Two {
   base: string; server: HiveServer; workers: FakeWorker[]; hive: Workspace; site: Workspace;
@@ -184,7 +185,7 @@ test('POST /tasks takes a Comb workspace for the new task and refuses an unknown
   assert.deepEqual(await res.json(), { error: 'unknown workspace' });
 });
 
-test('a task whose workspace was removed reads as gone: bases and the terminal answer 409 workspace <name> is gone (#179); delete activity no longer does (#746)', async (t) => {
+test('a task whose workspace was removed reads as gone: bases and the terminal answer 409 workspace <name> is gone with code workspace_gone and the name (#179, #748); delete activity no longer does (#746)', async (t) => {
   const two = await startTwo(t, {}, 0);
   two.listed.push(item('1', 'site'));
   await two.server.poll();
@@ -198,10 +199,7 @@ test('a task whose workspace was removed reads as gone: bases and the terminal a
     await hiveFetch(`${two.base}/tasks/board:I1/bases`),
     await postJson(`${two.base}/tasks/board:I1/open`, { kind: 'terminal' }),
   ];
-  for (const res of answers) {
-    assert.equal(res.status, 409, res.url);
-    assert.deepEqual(await res.json(), { error: 'workspace site is gone' });
-  }
+  for (const res of answers) assert.deepEqual([res.status, await res.json()], [409, GONE_SITE], res.url);
 });
 
 test('a task whose workspace left the config starts no run: an open with picks and a start answer 409; added back, its run loads <home>/plugins/<workspace> (#317)', async (t) => {
@@ -217,12 +215,35 @@ test('a task whose workspace left the config starts no run: an open with picks a
     await postJson(`${two.base}/tasks/board:I1/open`, { kind: 'claude', specializedAgent: 'hive:designer' }),
     await postJson(`${two.base}/tasks/board:I1/start`, { base: null }),
   ];
-  for (const res of answers) assert.deepEqual([res.status, await res.json()], [409, { error: 'workspace site is gone' }], res.url);
+  for (const res of answers) assert.deepEqual([res.status, await res.json()], [409, GONE_SITE], res.url); // #748: the start's 409 carries them too
   assert.equal(two.workers.length, 0, 'nothing spawned');
   assert.equal((await postJson(`${two.base}/settings`, two.body)).status, 200); // site back: the save's render lands before it answers
   await opened(postJson(`${two.base}/tasks/board:I1/open`, { kind: 'claude' }));
   const dir = launchFlag(two.workers[0]?.launch, '--plugin-dir');
   assert.ok(dir?.endsWith(join('plugins', 'site')), dir);
+});
+
+test('a task whose workspace was removed answers its files tree and a session open 409 with code workspace_gone and the name (#748)', async (t) => {
+  const two = await startTwo(t, {}, 0);
+  two.listed.push(item('1', 'site'));
+  await two.server.poll();
+  await two.server.dispatch({ type: 'setAuto', taskId: 'board:I1', auto: false });
+  const worktree = worktreePath(two.site.path, 'hive-1-task-1');
+  await mkdir(worktree, { recursive: true }); // on disk: the poll after the save must not drop it
+  await readyOn(two.server, 'board:I1', { path: worktree, branch: 'hive/1-task-1', base: null, local: false });
+  await opened(postJson(`${two.base}/tasks/board:I1/open`, { kind: 'claude' }));
+  const activity = activityOf(two.server.getState()!, 'board:I1');
+  const worker = two.server.getState()!.workers.find((w) => w.activityId === activity?.id && w.status !== 'empty');
+  assert.ok(worker?.runId !== undefined && worker.sessionId !== undefined);
+  const { runId, sessionId } = worker;
+  await two.server.dispatch({ type: 'exit', ptyId: runId }); // straight to the reducer: a kept session the route would resume
+  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive] })).status, 200);
+  const path = workPath(two.server, 'board:I1');
+  const answers = [
+    await hiveFetch(`${two.base}${path}/tree`),
+    await postJson(`${two.base}${path}/sessions/${sessionId}/open`), // the workspace check comes before the transcript's
+  ];
+  for (const res of answers) assert.deepEqual([res.status, await res.json()], [409, GONE_SITE], res.url);
 });
 
 test('POST /tasks/:id/open on a manual task with no workspace is 400 choose a workspace and creates nothing; with { workspace } it saves the choice and creates the worktree there before the terminal opens (#179, #237)', async (t) => {

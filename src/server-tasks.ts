@@ -4,7 +4,7 @@ import { activityParam, taskTarget } from './activity-routes.js';
 import { createTask, UNKNOWN_STAGE_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from './create-task.js';
 import { branchFor, inFlow, slugFor, canOpenSession, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
 import { hiveAction, runsAgent } from './stage-agent.js';
-import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
+import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
 import { baseRemote, workspaceBase } from './fork.js';
 import { discardOrphan } from './server-orphan.js';
 import { AWAITING_MESSAGE } from './server-approval.js';
@@ -65,7 +65,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
   running: RUNNING_MESSAGE, deleting: DELETING_MESSAGE, nothingToDelete: NOTHING_TO_DELETE_MESSAGE,
 };
 
-export interface Refusal { status: number; message: string; issue?: { number: number; url: string } } // #767: an issue the failed create left behind
+export interface Refusal { status: number; message: string; issue?: { number: number; url: string }; code?: string; workspace?: string } // #767: an issue the failed create left behind; #748: a gone workspace's code and name
 
 export interface TaskRouteDeps {
   treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
@@ -195,13 +195,13 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
 }
 
 export const refuse = (res: Response, refusal: Refusal): void => {
-  // #767: a failed create that left an issue says which, so the client does not retry it into a second one
-  res.status(refusal.status).json({ error: refusal.message, ...(refusal.issue === undefined ? {} : { issue: refusal.issue }) });
+  // #767: a failed create that left an issue says which, so the client does not retry it into a second one. #748: a gone workspace's code and name, which the page words; undefined drops out of the JSON
+  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace, ...(refusal.issue === undefined ? {} : { issue: refusal.issue }) });
 };
 
 /** The task's workspace, or the route's answer when it has none (#179): 409 when the name it holds is gone, 400 when no rule answers one. */
 export function workspaceOf(config: Pick<Config, 'comb'>, task: Task, tasks: readonly Task[] = []): Workspace | Refusal {
-  return taskWorkspace(config, task, tasks) ?? { status: task.workspace === undefined ? HTTP_BAD_REQUEST : HTTP_CONFLICT, message: noWorkspaceReason(task) };
+  return taskWorkspace(config, task, tasks) ?? { status: task.workspace === undefined ? HTTP_BAD_REQUEST : HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) };
 }
 
 /** A workspace the body names for a task (#179): a Comb workspace, on a task whose workspace may still change. */
@@ -269,10 +269,7 @@ export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
       return;
     }
     const event = await startEvent(deps, current, itemId, req.body); // an old client's { raiseMax } is ignored
-    if ('status' in event) {
-      res.status(event.status).json({ error: event.message });
-      return;
-    }
+    if ('status' in event) return refuse(res, event); // #748: workspaceOf's code and name with it
     const discarded = await discardOrphan(deps, current, itemId, req.body); // #861: before the start, so its worktree is made from the base
     if (discarded) return void res.status(discarded.status).json({ error: discarded.error, code: discarded.code });
     const found = current.state.tasks.find((c) => c.item.itemId === itemId);

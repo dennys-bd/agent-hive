@@ -1,6 +1,6 @@
 import { realpath, stat } from 'node:fs/promises';
 import type { Express, Request, Response } from 'express';
-import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
+import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
 import { resolveActivityPath } from './ide.js';
 import { resultOf } from './activities.js';
 import { activityParam, keptTarget, UNKNOWN_ACTIVITY_MESSAGE, LOCAL_ACTIVITY_MESSAGE } from './activity-routes.js';
@@ -35,7 +35,7 @@ interface TaskFolders { worktree?: string; workspace: string } // no worktree: a
 /** Where a task's files resolve (#258): its worktree, or its workspace root once that is gone; a task with no workspace has neither (409). */
 function taskFolders(config: Pick<Config, 'comb'>, task: Task, activity: Activity | undefined): TaskFolders | Refusal {
   const workspace = taskWorkspace(config, task);
-  return workspace ? { ...(activity ? { worktree: workDir(workspace.path, task, activity) } : {}), workspace: workspace.path } : { status: HTTP_CONFLICT, message: noWorkspaceReason(task) };
+  return workspace ? { ...(activity ? { worktree: workDir(workspace.path, task, activity) } : {}), workspace: workspace.path } : { status: HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) };
 }
 
 /** Every string of the task's result, at any key, that resolves to a file (#258, #697): relative to its worktree (its workspace once the

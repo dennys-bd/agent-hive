@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { taskWorkspace, loadConfig, loadConfigIfPresent, parseConfig, predatesComb, workspaceByName, workspaceScope, requireWorkspace, unnamedWorkspacePath } from '../src/config.js';
+import { noWorkspaceFields, noWorkspaceReason, taskWorkspace, loadConfig, loadConfigIfPresent, parseConfig, predatesComb, workspaceByName, workspaceScope, requireWorkspace, unnamedWorkspacePath } from '../src/config.js';
 import { type LegacyStage, migrateConfig, transitionsOf } from '../src/config-migrate.js';
 import { flatten } from '../src/flows.js';
+import { spawnFailureCode } from '../src/spawn-failure.js';
 import { SHORTCUTS } from '../src/shortcut-registry.js';
 import type { SourceTaskProps, Config } from '../src/types.js';
 import { MCP_DEFAULTS, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, SIGNALS_DEFAULTS, APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RESERVED_ENV_NAMES, SHUTDOWN_IDLE_DEFAULT, WORKSPACE_PRESET_COLORS } from '../src/types.js';
@@ -1417,4 +1418,10 @@ test('a cross-flow resume is checked against the destination flow\'s stage: anot
     { message: 'hive.config.json: "comb.flows[0].transitions[0].session" resumes a session of claude in a stage of codex: use "handoff" to switch agents (#692)' });
   assert.throws(() => crossed('previous', { clearSession: true }),
     { message: `hive.config.json: "comb.flows[0].transitions[0].session" resumes the session of "${String(main.stages[0].name)}", which clears it when it ends (#494)` });
+});
+
+test('noWorkspaceFields names the code and the gone workspace, nothing for a task with none; the sentence beside it still reads as workspace_gone (#748)', () => {
+  assert.deepEqual(noWorkspaceFields({}), {});
+  assert.deepEqual(noWorkspaceFields({ workspace: 'site' }), { code: 'workspace_gone', workspace: 'site' });
+  assert.equal(spawnFailureCode(noWorkspaceReason({ workspace: 'site' })), 'workspace_gone');
 });

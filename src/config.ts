@@ -717,6 +717,10 @@ export const NO_WORKSPACE_MESSAGE = 'choose a workspace';
 /** Why a task has no workspace (#179): the name it holds is gone from the Comb, or no rule answers one. */
 export const noWorkspaceReason = (task: Pick<Task, 'workspace'>): string => (task.workspace === undefined ? NO_WORKSPACE_MESSAGE : `workspace ${task.workspace} is gone`);
 
+/** What a gone-workspace refusal carries besides its sentence, so the UI words it (#748); nothing for a task with no workspace. */
+export const noWorkspaceFields = (task: Pick<Task, 'workspace'>): { code?: 'workspace_gone'; workspace?: string } =>
+  task.workspace === undefined ? {} : { code: 'workspace_gone', workspace: task.workspace };
+
 /** taskWorkspace, or a throw with noWorkspaceReason: what the effects run git in. */
 export function requireWorkspace(config: Pick<Config, 'comb'>, task: Pick<Task, 'workspace' | 'item'>): Workspace {
   const workspace = taskWorkspace(config, task);

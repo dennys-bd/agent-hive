@@ -2,7 +2,7 @@ import { access, lstat, readdir } from 'node:fs/promises';
 import { join, posix, relative, win32 } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { canDiff } from './task-runs.js';
-import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
+import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
 import type { TaskRouteDeps, Refusal } from './server-tasks.js';
 import { liveTarget } from './activity-routes.js';
 import { revealCommand } from './platform-commands.js';
@@ -27,8 +27,9 @@ const NO_WORKTREE_MESSAGE = 'tarefa sem worktree no disco';
 // --literal-pathspecs: a folder named `:(top)` or `*` is a name, not pathspec magic
 const NESTED_STATUS_ARGS = ['--literal-pathspecs', 'status', '--porcelain=v2', '-z', '--untracked-files=all', '--ignored=matching'];
 
+// #748: a gone workspace's code and name ride along, for the page to word; undefined drops out of the JSON
 const refuse = (res: Response, refusal: Refusal): void => {
-  res.status(refusal.status).json({ error: refusal.message });
+  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace });
 };
 
 /** A nested repository's view of a folder's children (#1), from its `git status` limited to that folder (paths relative to the repository):
@@ -117,7 +118,7 @@ export function treeRoot(state: State, config: Parameters<typeof taskWorkspace>[
   const { task, activity } = target;
   if (!task) return workspaceByName(config, activity.workspace)?.path ?? { status: HTTP_NOT_FOUND, message: UNKNOWN_WORKSPACE_MESSAGE };
   const workspace = taskWorkspace(config, task);
-  if (!workspace) return { status: HTTP_CONFLICT, message: noWorkspaceReason(task) };
+  if (!workspace) return { status: HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) };
   if (!canDiff(task, activity, 'worktree')) return { status: HTTP_CONFLICT, message: NO_WORKTREE_MESSAGE };
   return taskDir(workspace.path, activity);
 }
