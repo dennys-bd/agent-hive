@@ -66,6 +66,12 @@ test('a transition into the last stage that already closes the issue writes one 
   assert.equal(closes(effects).length, 1);
 });
 
+test('a last stage whose onStart already closes the issue writes one close only (#843)', () => {
+  const onStart = FLOW.map((s) => (s.name === 'done' ? { ...s, onStart: { board: [{ type: 'close' as const }] } } : s));
+  const { effects } = followEpics({ ...at([epic('review', ['c1']), child('c1', 'done')]), ...flowed(onStart, [TO_DONE]) });
+  assert.equal(closes(effects).length, 1);
+});
+
 test('a local epic and one already in the last stage write no close (#843)', () => {
   const local = followEpics(at([{ ...epic('review', ['c1']), created: true }, child('c1', 'done')]));
   assert.equal(epicIn(local.state)?.stage, 'done');

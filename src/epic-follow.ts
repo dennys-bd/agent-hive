@@ -47,10 +47,12 @@ function ended(state: State, task: Task, last: Stage): Reduced {
 }
 
 // The epic just moved into its last stage closes its issue, as a normal card's merged PR does (#843), unless the transition it took writes a
-// close already. Every source type supports close (SOURCE_ACTIONS); sourceWrites skips a task not on a source
+// close already, or the stage's onStart, which moved wrote too. Every source type supports close (SOURCE_ACTIONS); sourceWrites skips a
+// task not on a source
 function closedOnEntry(into: Reduced, task: Task, placed: Task, last: Stage): Reduced {
   const direct = outgoing(into.state.transitions, task.stage).find((t) => t.to === last.name);
-  if (onSource(direct?.sources, task.item.source)?.some((a) => a.type === 'close')) return into;
+  const written = [...(onSource(direct?.sources, task.item.source) ?? []), ...(onSource(last.onStart, task.item.source) ?? [])];
+  if (written.some((a) => a.type === 'close')) return into;
   const closed = sourceWrites(placed, [{ type: 'close' }]);
   return { state: withTask(into.state, closed.task), effects: [...into.effects, ...closed.effects] };
 }
