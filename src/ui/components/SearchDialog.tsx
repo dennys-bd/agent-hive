@@ -150,11 +150,20 @@ function searchKeys({ current, search, ctx, root, onClose }: KeyArgs) {
 
 const NOTE = 'px-2.5 py-3 text-[13px] text-muted-foreground';
 
-function NoResult({ term, canCreate, onCreate }: { term: string; canCreate: boolean; onCreate(): void }) {
+/** The no-result rows (#774, decision 3): + criar tarefa opens the create-task dialog with the term; + nova atividade the Start dialog,
+ * which creates it on arrival and starts on it (#584). */
+interface NoResultCreates { onCreateTask(): void; onNewActivity(): void }
+
+function NoResult({ term, canCreate, onCreateTask, onNewActivity }: { term: string; canCreate: boolean } & NoResultCreates) {
   return (
     <>
       <p className={NOTE}>{t('search.none', { term })}</p>
-      {canCreate && <CommandItem value="create" onSelect={onCreate} className={ROW}><PlusIcon />{t('search.createTask', { term })}</CommandItem>}
+      {canCreate && (
+        <>
+          <CommandItem value="create-task" onSelect={onCreateTask} className={ROW}><PlusIcon />{t('search.createTask', { term })}</CommandItem>
+          <CommandItem value="new-activity" onSelect={onNewActivity} className={ROW}><PlusIcon />{t('search.newActivity', { term })}</CommandItem>
+        </>
+      )}
     </>
   );
 }
@@ -166,12 +175,12 @@ function filesNote(search: SearchState, ctx: OperationContext, tree: TreeState |
   return tree?.status === 'error' ? 'search.files.failed' : undefined;
 }
 
-interface EmptyListProps { note?: MessageKey; term: string; canCreate: boolean; onCreate(): void }
+interface EmptyListProps extends NoResultCreates { note?: MessageKey; term: string; canCreate: boolean }
 
-// What the list says with no row: the arquivos scope's note (#133), inline, no toast; else nothing found, with + criar tarefa in tarefas (#584)
-function EmptyList({ note, term, canCreate, onCreate }: EmptyListProps) {
+// What the list says with no row: the arquivos scope's note (#133), inline, no toast; else nothing found, with the two create rows in tarefas (#584, #774)
+function EmptyList({ note, term, ...rows }: EmptyListProps) {
   if (note !== undefined) return <p className={NOTE}>{t(note)}</p>;
-  return term === '' ? null : <NoResult term={term} canCreate={canCreate} onCreate={onCreate} />;
+  return term === '' ? null : <NoResult term={term} {...rows} />;
 }
 
 /** The search (⌘P; ⌘⇧P on comandos; #584): activities, tasks and the Hive's operations in one box, with scopes. Mounted only while open, so
@@ -189,7 +198,8 @@ export function SearchDialog({ scope: initial, ctx, activities, returnTo, page: 
   const current = rows.get(selected);
   const term = query.trim();
   const onKeyDown = searchKeys({ current, search, ctx: on, root: ctx, onClose });
-  const create = (): void => { onClose(); ctx.nav.startTask({ title: term }); };
+  const createTask = (): void => { onClose(); ctx.nav.createTask(term); };
+  const newActivity = (): void => { onClose(); ctx.nav.startTask({ title: term }); };
   return (
     <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
       <DialogContent
@@ -215,7 +225,7 @@ export function SearchDialog({ scope: initial, ctx, activities, returnTo, page: 
                 })}
               </CommandGroup>
             ))}
-            {groups.length === 0 && !(scope === 'files' && tree?.status === 'loading') && <EmptyList note={filesNote(search, ctx, tree)} term={term} canCreate={page === undefined && scope === 'tasks'} onCreate={create} />}
+            {groups.length === 0 && !(scope === 'files' && tree?.status === 'loading') && <EmptyList note={filesNote(search, ctx, tree)} term={term} canCreate={page === undefined && scope === 'tasks'} onCreateTask={createTask} onNewActivity={newActivity} />}
           </CommandList>
           <SearchFooter secondary={secondaryOf(current)} count={groups.reduce((n, g) => n + g.rows.length, 0)} />
         </Command>

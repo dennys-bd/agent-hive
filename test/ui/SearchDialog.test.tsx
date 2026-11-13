@@ -118,15 +118,27 @@ test('Esc clears the field when it has text, and closes only once it is empty (#
   expect(onClose).toHaveBeenCalled();
 });
 
-test('no result says so; in tarefas it offers + criar tarefa, which opens the Start dialog creating that title (#584)', async () => {
+test('no result says so; in tarefas it offers + criar tarefa, then + nova atividade, which opens the Start dialog creating that title (#584, #774)', async () => {
   const user = userEvent.setup();
-  const { nav } = renderSearch();
+  const { nav, onClose } = renderSearch();
   await user.keyboard('zzqq');
   expect(screen.getByText('nada encontrado para "zzqq"')).toBeInTheDocument();
   expect(screen.queryByRole('option')).not.toBeInTheDocument();
   await user.keyboard('{Tab}{Tab}'); // tudo → atividades → tarefas
-  await user.click(screen.getByRole('option', { name: '+ criar tarefa "zzqq"' }));
+  expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['+ criar tarefa "zzqq"', '+ nova atividade "zzqq"']);
+  await user.click(screen.getByRole('option', { name: '+ nova atividade "zzqq"' }));
   expect(nav.startTask).toHaveBeenCalledWith({ title: 'zzqq' });
+  expect(nav.createTask).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+test('↵ on + criar tarefa closes the search and calls createTask with the term, not startTask (#774)', async () => {
+  const user = userEvent.setup();
+  const { nav, onClose } = renderSearch('tasks');
+  await user.keyboard('zzqq{Enter}');
+  expect(nav.createTask).toHaveBeenCalledWith('zzqq');
+  expect(nav.startTask).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledOnce();
 });
 
 test('comandos list every available operation with its shortcut; ↵ closes the search and runs it (#584)', async () => {

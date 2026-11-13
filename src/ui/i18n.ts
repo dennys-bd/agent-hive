@@ -17,6 +17,8 @@ const en = {
   'header.openRight': 'open right sidebar',
   'header.github': 'GitHub', // #352: a proper noun, the same in both languages
   'header.github.title': 'open on GitHub',
+  'header.createTask': '+ create task', // #774: the source header's way into the create-task dialog
+  'header.createTask.title': 'create a task in this source · opens the create-task dialog',
   'rail.label': 'views', // #220: the view rail
   'rail.activities': 'activities',
   'rail.flow': 'tasks',
@@ -352,6 +354,7 @@ const en = {
   'start.subtitle': '{title} · stage {stage}',
   'create.title': 'Create task', // #771: the create-task dialog
   'create.context': 'only creates the task, starts no activity',
+  'create.fromSource': ' · from the {source} table', // #774: after create.context when a source header opened the dialog
   'create.name': 'title',
   'create.body': 'description',
   'create.workspace': 'workspace',
@@ -652,6 +655,7 @@ const en = {
   'search.group.pending': 'need you',
   'search.none': 'nothing found for "{term}"',
   'search.createTask': '+ create task "{term}"',
+  'search.newActivity': '+ new activity "{term}"', // #774: the Start dialog creating the term, under search.createTask
   'search.key.navigate': 'navigate',
   'search.key.open': 'open',
   'search.key.actions': 'actions',
@@ -3270,6 +3274,8 @@ const pt: Record<MessageKey, string> = {
   'header.openRight': 'abrir lateral direita',
   'header.github': 'GitHub',
   'header.github.title': 'abrir no GitHub',
+  'header.createTask': '+ criar tarefa',
+  'header.createTask.title': 'criar tarefa nesta source · abre o diálogo criar tarefa',
   'rail.label': 'views',
   'rail.activities': 'atividades',
   'rail.flow': 'tarefas',
@@ -3607,6 +3613,7 @@ const pt: Record<MessageKey, string> = {
   'start.taskPlaceholder': 'buscar ou criar tarefa…',
   'create.title': 'Criar tarefa', // #771: the create-task dialog
   'create.context': 'só cria a tarefa, sem iniciar atividade',
+  'create.fromSource': ' · da tabela de {source}',
   'create.name': 'título',
   'create.body': 'descrição',
   'create.workspace': 'workspace',
@@ -3905,6 +3912,7 @@ const pt: Record<MessageKey, string> = {
   'search.group.pending': 'precisam de você',
   'search.none': 'nada encontrado para "{term}"',
   'search.createTask': '+ criar tarefa "{term}"',
+  'search.newActivity': '+ nova atividade "{term}"',
   'search.key.navigate': 'navegar',
   'search.key.open': 'abrir',
   'search.key.actions': 'ações',

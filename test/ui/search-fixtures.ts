@@ -23,7 +23,7 @@ export const stateOf = (tasks: Task[], extra: Partial<State> = {}): State => wit
 }))); // #629: each run's activity and record, the worktree fields on each task's activity, and each workspace's local pair
 
 export const navOf = (): SearchNav => ({
-  openActivity: vi.fn(), showFlow: vi.fn(), startTask: vi.fn(), dialog: vi.fn(), openRun: vi.fn(), openDiff: vi.fn(), openPr: vi.fn(), openConsole: vi.fn(), openStarted: vi.fn(), closeTab: vi.fn(),
+  openActivity: vi.fn(), showFlow: vi.fn(), startTask: vi.fn(), createTask: vi.fn(), dialog: vi.fn(), openRun: vi.fn(), openDiff: vi.fn(), openPr: vi.fn(), openConsole: vi.fn(), openStarted: vi.fn(), closeTab: vi.fn(),
   openPreview: vi.fn(), openChanges: vi.fn(),
 });
 

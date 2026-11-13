@@ -696,3 +696,13 @@ test('the cross-flow copy reads as the spec writes it, in both languages (#691)'
     'arrives from {list}', '{transition} enters this stage: change its target before removing it', '{transition} enters this flow: change its target before deleting it',
   ]);
 });
+
+test('the create-task entry points\' copy reads as the spec writes it, in both languages (#774)', () => {
+  const read = (): string[] => [
+    t('search.createTask', { term: 'x' }), t('search.newActivity', { term: 'x' }), t('header.createTask'), t('header.createTask.title'), t('create.fromSource', { source: 'work' }),
+  ];
+  setLanguage('pt');
+  assert.deepEqual(read(), ['+ criar tarefa "x"', '+ nova atividade "x"', '+ criar tarefa', 'criar tarefa nesta source · abre o diálogo criar tarefa', ' · da tabela de work']);
+  setLanguage('en');
+  assert.deepEqual(read(), ['+ create task "x"', '+ new activity "x"', '+ create task', 'create a task in this source · opens the create-task dialog', ' · from the work table']);
+});

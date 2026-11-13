@@ -153,11 +153,13 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
   const hasConfig = targets.configs?.some((s) => s.name === draft.source) === true;
   const routeBox = isGithub && status !== undefined && draft.source !== undefined && hasConfig
     ? <CreateRouteBox source={draft.source} title={draft.title} labels={draft.labels} status={status} sources={targets.configs ?? []} flows={state.flows} /> : null;
+  // #774 decision 9: a source header names its table; from ⌘P the line is unchanged
+  const context = source === undefined ? t('create.context') : `${t('create.context')}${t('create.fromSource', { source })}`;
   const primary: DialogAction = isGithub ? issueAction(issue, isIssueReady) : hiveAction(draft, setError, onOpenTask);
 
   return (
     <DialogBase
-      open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }} title={t('create.title')} context={t('create.context')}
+      open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }} title={t('create.title')} context={context}
       error={isGithub ? issue.failure && <IssueFailureLine failure={issue.failure} /> : error}
       initialFocus="none" primary={primary}
     >

@@ -1,5 +1,5 @@
 import { ExternalLinkIcon, SearchIcon } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { repoName } from '../../pull-requests';
 import { displayBinding } from '../../shortcuts';
 import type { HIVE_SOURCE } from '../../tasks';
@@ -10,7 +10,9 @@ import { HeaderSlot } from '@/components/HeaderSlot';
 import { useIsFlowShown } from '@/components/MainDock';
 import { Button } from '@/components/ui/button';
 import { useBackKeys } from '@/hooks/use-back-keys';
+import { CreateTaskOpenContext } from '@/hooks/use-create-task-dialog';
 import { t } from '@/i18n';
+import { CreateTargetsContext } from '@/lib/create-targets';
 import { isSettingsClosed, onShortcutKey } from '@/lib/dock-layout';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
@@ -156,6 +158,21 @@ function GithubButton({ url }: { url: string }) {
   );
 }
 
+// + criar tarefa (#774, tasks.hv.html): the source header's way into the create-task dialog, opened on that source. Only where the dialog can
+// create in it (decision 8): the hive source while hive is on, a GitHub source with a repository for new issues. None outside the dock (decision 11)
+function SourceCreateButton({ source }: { source: SourceConfig | typeof HIVE_SOURCE }) {
+  const open = useContext(CreateTaskOpenContext);
+  const { hiveSource, sources } = useContext(CreateTargetsContext);
+  const name = typeof source === 'string' ? source : source.name;
+  const canCreate = typeof source === 'string' ? hiveSource : sources.some((s) => s.name === name);
+  if (open === undefined || !canCreate) return null;
+  return (
+    <Button type="button" variant="outline" size="xs" title={t('header.createTask.title')} onClick={() => open({ source: name })}>
+      {t('header.createTask')}
+    </Button>
+  );
+}
+
 interface FlowHeaderProps {
   state: State; search?: string; onSearch?(term: string): void; // #757: absent on the issue page, which has nothing to search
   isShown?: boolean;
@@ -168,7 +185,7 @@ interface FlowHeaderProps {
 }
 
 /** The flow's header (redesign 10, #542): fluxo, the sources legend and exibir (#574), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does.
- * With `mode` source it is the source header (#756, handoff §2) and with `mode` repo the repository header (#757, handoff 02): no last poll, a narrower search. With `back` (#911) it starts with the back button. With `github` (#352), GitHub ↗ sits right before atualizar. It renders in the window header's center column (#295, HeaderSlot),
+ * With `mode` source it is the source header (#756, handoff §2) and with `mode` repo the repository header (#757, handoff 02): no last poll, a narrower search. With `back` (#911) it starts with the back button. With `github` (#352), GitHub ↗ sits right before atualizar. With mode source and inside the dock, + criar tarefa (#774) sits before the search. It renders in the window header's center column (#295, HeaderSlot),
  * the header's 44px and border its own. */
 export function FlowHeader({ state, search, onSearch, isShown = true, onRefresh, mode = TASKS_MODE, legend, display, back, github }: FlowHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -192,6 +209,7 @@ export function FlowHeader({ state, search, onSearch, isShown = true, onRefresh,
       {back && <BackButton back={back} />}
       {title}
       <span className="flex-1" />
+      {mode.kind === 'source' && <SourceCreateButton source={mode.source} />}
       {onSearch && <SearchField label={t(mode.kind === 'repo' ? 'repos.search' : 'flow.search')} value={search ?? ''} isShown={isShown} isNarrow={!isTasks} onChange={onSearch} />}
       {polled !== undefined && <span>{t('flow.updated', { time: polled })}</span>}
       {github !== undefined && !isTasks && <GithubButton url={github} />}

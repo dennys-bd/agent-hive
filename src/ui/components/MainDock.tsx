@@ -26,6 +26,7 @@ import type { OpenDiff, OpenFileHow, OpenPr, OpenRun } from '@/components/termin
 import { type ConsoleChannels, ConsoleChannelsContext, type OpenStageOutput, shownChannel, useConsoleOpener } from '@/hooks/use-console';
 import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
 import { type CenterLayouts, useCenterLayouts } from '@/hooks/use-center-layouts';
+import { useCreateTaskDialog } from '@/hooks/use-create-task-dialog';
 import { useFileOpener } from '@/hooks/use-file-opener';
 import { useDock } from '@/hooks/use-dock';
 import { type HeaderShell, useHeaderShell } from '@/hooks/use-header-shell';
@@ -306,6 +307,7 @@ export function MainDock(props: MainDockProps) {
   const openStart = (start: StartRequest = {}): void => (newActivity === undefined ? activateTab('automation') : setNewIn(start));
   const openNewActivity = (workspace?: string): void => openStart({ workspace });
   const showFlow = (taskId: string): void => { activateTab('automation'); if (showTask) showTask(taskId); else onSelect({ taskId }); };
+  const createDialog = useCreateTaskDialog({ workspaces, flows, sourceWorkspaces, onOpenTask: showFlow }); // #774: abrir shows the task in the flow (decision 10)
   const searchClose = useSearchClose(current, layouts, openUserRun);
   // Markdown: Open Preview (#697) and Git: Open Changes (#668): the focused editor names its activity by id; the tab opens in the focused group,
   // as any file does
@@ -321,7 +323,7 @@ export function MainDock(props: MainDockProps) {
     nav: {
       openActivity: open, showFlow, startTask: ({ itemId, title }) => openStart({ taskId: itemId, title }), openSettings: search.openSettings,
       openRun: openUserRun, openDiff: openTaskDiff, openPr, openConsole, openStarted, closeTab: searchClose.close,
-      openPreview: openFileAs({ preview: true }), openChanges: openFileAs({ changes: true }),
+      openPreview: openFileAs({ preview: true }), openChanges: openFileAs({ changes: true }), createTask: (title) => createDialog.open({ title, workspace: selection.center === 'activities' ? current?.activity.workspace : undefined }),
     },
   };
   const quick = useQuickActions({ workspaces, current, openRun: openUserRun, newActivity: openNewActivity, hasKeys: hasHeader, search: searchHost });
@@ -389,7 +391,7 @@ export function MainDock(props: MainDockProps) {
   const shownActivity = selection.center === 'activities' && current ? activityKey(current) : undefined; // where a copy opens as a tab (#587, #590)
   return (
     <Openers openRun={openUserRun} openStarted={openStarted} openDiff={openTaskDiff} openPr={openPr} openIssue={openIssue} openFile={openActivityFile} openConsole={openConsole} openStageOutput={openStageOutput}>
-      {copySession ? copySession(shownActivity, content) : content}
+      {createDialog.provide(copySession ? copySession(shownActivity, content) : content)}
     </Openers>
   );
 }
