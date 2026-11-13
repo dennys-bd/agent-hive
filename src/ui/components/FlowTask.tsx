@@ -268,7 +268,7 @@ interface FlowTaskProps {
 function FooterStatus({ task, state, status, tries }: { task: Task; state: State; status: TaskStatus; tries: string | undefined }) {
   const groupRef = useRef<HTMLSpanElement>(null);
   const statusRef = useRef<HTMLSpanElement>(null); // an ellipsized status leaves the group unclipped, so it is measured on its own
-  const waitFor = semaphoreWait(task, state)?.semaphore;
+  const waitFor = status.tone === 'backoff' && backoffUntil(task, state) === undefined ? semaphoreWait(task, state)?.semaphore : undefined; // only on the wait's own aguardando, never on a question's or an API backoff's word
   const full = [status.text, tries].filter((part) => part !== undefined).join(' · ');
   return (
     <CutTitle text={full} cutRef={[groupRef, statusRef]}>

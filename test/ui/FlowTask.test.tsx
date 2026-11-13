@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { FlowTask, taskAction } from '@/components/FlowTask';
 import { TreeProgress } from '@/components/TreeProgress';
@@ -569,6 +570,24 @@ test('a worker in a semaphore line shows na vez de memory · 2º and the footer 
   expect(within(tile()).getByText('aguardando')).toBeTruthy();
   await userEvent.click(within(tile()).getByRole('button', { name: /executar .* agora/ }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/semaphores/memory/run-now', expect.objectContaining({ method: 'POST', body: JSON.stringify({ ptyId: 's1' }) })), { timeout: 4000 });
+});
+
+test('executar agora toasts its own copy on a failure, never the server\'s words, and stays quiet when the place is already gone (#805)', async () => {
+  const toastError = vi.spyOn(toast, 'error').mockImplementation(() => '');
+  const refuse = (status: number, body: object) => fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
+  try {
+    const c = task({ workerId: 's1' });
+    render(<FlowTask task={c} state={state(c, [working()], inLine([{ ptyId: 's1', place: 2 }]))} dragHandlers={{} as never} isDimmed={false} isDropBefore={false} isSelected={false} />);
+    refuse(500, { error: 'internal detail' });
+    await userEvent.click(within(tile()).getByRole('button', { name: /executar .* agora/ }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('não foi possível executar agora'), { timeout: 4000 });
+    toastError.mockClear();
+    refuse(409, { error: 'not in line', code: 'not_in_line' });
+    await userEvent.click(within(tile()).getByRole('button', { name: /executar .* agora/ }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), { timeout: 4000 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(toastError).not.toHaveBeenCalled();
+  } finally { toastError.mockRestore(); }
 });
 
 test('during a turn the line counts down the reservation and offers no executar agora (#805)', () => {

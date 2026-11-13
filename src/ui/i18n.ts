@@ -1485,7 +1485,7 @@ const en = {
   'semaphore.runNow': 'run now',
   'semaphore.runNowLabel': 'run #{id} now, over the limit of {sem}',
   'semaphore.waitTitle': 'waiting for its turn on {sem}',
-  'semaphore.runNowFailed': 'could not run now: the run no longer waits for its turn',
+  'semaphore.runNowFailed': 'could not run now',
   'task.dismissError': 'dismiss error', // #354: the card's ✕ beside the error, its label and title
   'task.continue': 'continue',
   'restart.branch': 'The branch {branch} was already published and stays as it is; the stage starts over on the new branch {newBranch}.',
@@ -4777,7 +4777,7 @@ const pt: Record<MessageKey, string> = {
   'semaphore.runNow': 'executar agora',
   'semaphore.runNowLabel': 'executar #{id} agora, acima do limite de {sem}',
   'semaphore.waitTitle': 'aguardando a vez de {sem}',
-  'semaphore.runNowFailed': 'não foi possível executar agora: a execução já não espera a vez',
+  'semaphore.runNowFailed': 'não foi possível executar agora',
   'task.dismissError': 'dispensar erro', // #354
   'task.continue': 'continuar',
   'restart.branch': 'O branch {branch} já foi publicado e fica como está; a etapa recomeça no novo branch {newBranch}.',
