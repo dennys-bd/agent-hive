@@ -419,10 +419,10 @@ function itemRead(state: State, { source, itemId, entry }: Extract<HiveEvent, { 
 }
 
 // A stopped task in a stage a save turned into a manual gate awaits approval from now, as if it had just entered (#315), on its activity, born
-// for it when it has none (#629).
+// for it when it has none (#629). A show epic never awaits one: its children move it (#843).
 function awaitGate(state: State, task: Task): State {
   const live = activityOf(state, taskId(task));
-  if (live?.workerId !== undefined || live?.approval || !isGate(stageOf(state.stages, task.stage))) return state;
+  if (task.item.epic !== undefined || live?.workerId !== undefined || live?.approval || !isGate(stageOf(state.stages, task.stage))) return state;
   const born = ensureActivity(state, task);
   return born ? withActivity(born.state, { ...born.activity, approval: { since: new Date().toISOString() } }) : state;
 }
