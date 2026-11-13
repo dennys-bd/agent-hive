@@ -83,3 +83,30 @@ export function stopWithPlace(state: State, ptyId: string, worker: Worker): Redu
   if (worker.freeSession !== true && hasPlace(state, ptyId)) return held(cleared, ptyId);
   return notice === undefined ? undefined : patch(cleared, ptyId, IDLE);
 }
+
+// A held Stop let go with no decision: the worker idle at its prompt, as after any Stop; its turn, when it comes, arrives as input
+const letGo = (state: State, ptyId: string): Reduced =>
+  ({ state: patch(state, ptyId, { ...IDLE, semaphoreHold: undefined }).state, effects: [{ type: 'release', ptyId }] });
+
+/** After a snapshot (#799, decision 6): every held Stop whose pty has no place and no turn left in any semaphore is released. A missed turn
+ * keeps its place at the back, so it never releases by itself (decision 7). */
+export function releaseLeft(state: State): Reduced {
+  const left = state.workers.flatMap((w) => (w.semaphoreHold !== undefined && w.runId !== undefined && !hasPlace(state, w.runId) ? [w.runId] : []));
+  return left.reduce<Reduced>((r, ptyId) => {
+    const next = letGo(r.state, ptyId);
+    return { state: next.state, effects: [...r.effects, ...next.effects] };
+  }, none(state));
+}
+
+/** held-stops' timer (#799, decisions 4, 11): it dispatches approvalExpired for any held Stop. A semaphore hold past its end is let go;
+ * before it, nothing. Undefined when the worker holds no semaphore hold. */
+export function holdExpired(state: State, ptyId: string): Reduced | undefined {
+  const hold = liveWorker(state, ptyId)?.semaphoreHold;
+  if (hold === undefined) return undefined;
+  return Date.parse(hold) > Date.now() ? none(state) : letGo(state, ptyId);
+}
+
+/** A pty's end (#799, decision 6): a Stop it held for a place gets no decision, beside whatever its exit reduced to. */
+export function releasedOnExit(state: State, ptyId: string, reduced: Reduced): Reduced {
+  return liveWorker(state, ptyId)?.semaphoreHold === undefined ? reduced : { ...reduced, effects: [{ type: 'release', ptyId }, ...reduced.effects] };
+}

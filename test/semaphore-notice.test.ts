@@ -114,3 +114,53 @@ test('a Stop after hive_done, after hive_ask, or with background work in flight 
   const busy = stop(lined, ptyId, { background_tasks: [{ id: 'b1' }] });
   assert.deepEqual([isHold(busy.effects), workerOf(busy.state, ptyId)?.lastEvent], [false, { kind: 'background', detail: '1' }]);
 });
+
+// Task 1's stage run, its Stop held for a place in memory
+const heldRun = (): { state: State; ptyId: string } => {
+  const first = running();
+  const ptyId = ptyOf(first);
+  return { state: stop(inLine(first, ptyId), ptyId).state, ptyId };
+};
+
+test('exit of a held worker gives a release; a snapshot that leaves it no place releases it idle; one where it still has a place keeps the hold (#799)', (t) => {
+  fixed(t);
+  const { state, ptyId } = heldRun();
+  const isRelease = (e: Effect): boolean => e.type === 'release' && e.ptyId === ptyId;
+  assert.ok(reduce(state, { type: 'exit', ptyId }).effects.some(isRelease));
+  assert.equal(reduce(running(), { type: 'exit', ptyId: ptyOf(running()) }).effects.some((e) => e.type === 'release'), false, 'no hold, no release');
+  const left = reduce(state, { type: 'setSemaphores', semaphores: { memory: { runs: [], line: [] } } });
+  assert.deepEqual(left.effects, [{ type: 'release', ptyId }], 'three missed turns: nobody holds a Stop for a line it left');
+  const idle = workerOf(left.state, ptyId);
+  assert.deepEqual([idle?.status, idle?.lastEvent, idle?.semaphoreHold], ['waiting', { kind: 'turn' }, undefined]);
+  const still = reduce(state, { type: 'setSemaphores', semaphores: { memory: { runs: ['other'], line: [{ ptyId: 'x', place: 1 }, { ptyId, place: 2 }] } } });
+  assert.deepEqual([still.effects, workerOf(still.state, ptyId)?.semaphoreHold], [[], HOLD_END], 'a missed turn never releases it by itself');
+});
+
+test('approvalExpired before the hold\'s end changes nothing; past it the hold is released and the worker idle (#799)', (t) => {
+  fixed(t);
+  const { state, ptyId } = heldRun();
+  const early = reduce(state, { type: 'approvalExpired', ptyId });
+  assert.deepEqual([early.effects, workerOf(early.state, ptyId)?.semaphoreHold], [[], HOLD_END]);
+  t.mock.timers.tick(APPROVAL_HOLD_MAX_MIN * MINUTE);
+  const expired = reduce(state, { type: 'approvalExpired', ptyId });
+  assert.deepEqual(expired.effects, [{ type: 'release', ptyId }]);
+  const idle = workerOf(expired.state, ptyId);
+  assert.deepEqual([idle?.status, idle?.lastEvent, idle?.semaphoreHold], ['waiting', { kind: 'turn' }, undefined], 'its turn, when it comes, arrives as input');
+});
+
+test('with the clock fixed, the same state and event give deep-equal state and effects twice, and the input state is unchanged (#799)', (t) => {
+  fixed(t);
+  const first = running();
+  const ptyId = ptyOf(first);
+  const lined = inLine(first, ptyId);
+  const { state } = heldRun();
+  for (const [s, event] of [
+    [lined, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } }],
+    [state, { type: 'semaphoreTurn', ptyId, semaphore: 'memory', argv: TEST, until: UNTIL }],
+    [state, { type: 'setSemaphores', semaphores: {} }],
+  ] as const) {
+    const before = structuredClone(s);
+    assert.deepEqual(reduce(s, event), reduce(s, event), event.type);
+    assert.deepEqual(s, before, `${event.type}: never mutated`);
+  }
+});
