@@ -416,7 +416,7 @@ test('hive:designer rendered with a value for each convention carries each where
   const text = valued(await agentText('designer'), DESIGNER_VALUES);
   const mine = renderedFor(text);
   for (const part of ['`design/screens/<screen>.hv.html`', '`design/screens/design-handoff.md`', 'in Spanish (its headings too, except the first line', 'Talk in Portuguese.',
-    'The design system, `docs/design-system.md`, then each file it names', "the design system's, `docs/design-system.md`;", "the design system's path, `docs/design-system.md`,", 'writes `hv-tokens.css` from the token files']) {
+    'The design system, `docs/design-system.md`, then each file it names', "the design system's, `docs/design-system.md`, and, when a screen departs on purpose from the design system or a pattern the other screens set, why;", "the design system's path, `docs/design-system.md`,", 'writes `hv-tokens.css` from the token files']) {
     assert.ok(mine.includes(part), part);
   }
   const other = renderedFor(text, 'b');
@@ -693,15 +693,24 @@ test('hive:designer keeps one living folder and hands off a text by default, des
   const text = await agentText('designer');
   const prose = flat(text);
   for (const part of ['One living folder, never dated per task', 'No mark tells a proposed screen from a built one', 'Only when the request asks for a file',
-    'Your answer ends with the handoff text', 'its first line `## Design handoff`']) assert.ok(prose.includes(part), part);
+    "Your answer ends with the design handoff's text", 'always `## Design handoff`: later stages find it by that line']) assert.ok(prose.includes(part), part);
+  assert.doesNotMatch(text, /gh issue|On the issue/, 'the designer posts nothing to the task\'s source: the calling session passes the design handoff on (#438)');
   assert.doesNotMatch(text, /<folder>\/handoff\.md|`handoff\.md`|<YYYY-MM-DD>-<slug>/, 'the dated folder and its handoff.md are gone');
 });
 
-test('hive:design-reviewer takes the living folder and the round\'s screens, and reads design-handoff.md when it exists, else the spec or the request for the states (#743)', async () => {
+test('hive:design-reviewer takes the living folder and the round\'s screens, and never reads design-handoff.md, written after the review; the states come from the spec or the request (#743, #438)', async () => {
   const text = await agentText('design-reviewer');
   const prose = flat(text);
   for (const part of ['`design-handoff.md`', 'the screens the round wrote or changed', "the spec or the round's request", 'the other screens of the folder']) assert.ok(prose.includes(part), part);
   assert.doesNotMatch(text, /<folder>\/handoff\.md|`handoff\.md` of the other designs/, 'no dated design folder is read');
+  // #438: one ranking, in the shared rules; a departure's reason comes from what the reviewer is given, since a design handoff is written only on request
+  const design = await readFile(join(PLUGIN, 'reference', 'design.md'), 'utf8');
+  assert.ok(design.includes('## Ranking') && !design.includes('polish only is') && !design.includes('Return strengths'), 'design.md ranks once and asks for no strengths');
+  for (const part of ['Rank each finding `blocking` or `advisory` as "Ranking" of `reference/design.md` says', "unless the spec, the round's request or the prompt says why", "the most specific wins: what the user asked for in the round's request", 'Read only inside the worktree', 'A run that ends in an error is a `blocking` finding', 'its parts were not seen rendered', 'The only commands you run are']) assert.ok(prose.includes(part), part);
+  assert.doesNotMatch(text, /the handoff|docs repository|Bash runs|designsDir/, 'the design handoff by its name, no docs repository, no runner tool named in the body, the folder from the prompt');
+  assert.match(text, /```markdown\n## Design Review\n/, 'the output model is fenced, so its headings are not the agent\'s own');
+  assert.ok(design.includes('exits 1 when it does not') && design.includes('exits 2 when it could not run'), 'design.md says what each exit of the check means');
+  assert.doesNotMatch(await agentText('designer'), /[^`]the handoff[^`]|the design folder/, 'the designer names the design handoff and the designs folder as the glossary does');
 });
 
 test('/hive:new-build finds the design handoff in {result.design}, else in design-handoff.md when the branch added or changed it, else on the issue (#743)', async () => {

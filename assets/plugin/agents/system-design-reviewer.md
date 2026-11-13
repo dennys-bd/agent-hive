@@ -75,6 +75,7 @@ review; do not invent any.
 
 ## Output Format
 
+```markdown
 ## System Design Review
 
 **Verdict:** clean | changes needed
@@ -84,6 +85,7 @@ review; do not invent any.
 
 ### Advisory
 - `<file>` · `<cell id>`: <problem>. Fix: <fix>
+```
 
 The verdict is `clean` when no blocking finding remains. A blocking finding's source is the code's line, or in a proposal the line of
 the spec or the brief.

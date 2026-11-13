@@ -40,6 +40,7 @@ Verify before you report: a dependency you suspect is confirmed by the scopes or
 
 ## Output Format
 
+```markdown
 ## Decomposition Review
 
 **Verdict:** clean | changes needed
@@ -49,5 +50,6 @@ Verify before you report: a dependency you suspect is confirmed by the scopes or
 
 ### Advisory
 - `<id>` · <category>: <problem> — Fix: <fix>
+```
 
 The verdict is `clean` when no blocking finding remains. The session that dispatched you applies what it accepts and takes the rest to the user: say what you found, not what to do with it.

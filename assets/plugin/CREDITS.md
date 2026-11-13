@@ -15,7 +15,7 @@ Source: the `affaan-m/ECC` repository at tag `v2.2.1`, its `agents/`, `commands/
 | `agents/code-reviewer.md` | `agents/code-reviewer.md` |
 | `agents/security-reviewer.md` | `agents/security-reviewer.md` |
 | `skills/new-pr/SKILL.md` | `commands/pr.md` |
-| `reference/design.md` ("Direction", "Bans", "Critique") | `skills/frontend-design-direction/SKILL.md`: the direction, the anti-patterns and the review checklist; read by `agents/designer.md` and `agents/design-reviewer.md` |
+| `reference/design.md` ("Direction", "Bans", "Critique") | `skills/frontend-design-direction/SKILL.md`: the direction, the anti-patterns and the review checklist; read by `agents/designer.md.liquid` and `agents/design-reviewer.md` |
 
 ## superpowers — MIT
 
@@ -33,14 +33,14 @@ Source: the `obra/superpowers` repository at tag `v6.4.1`, its `skills/brainstor
 
 Source: the `pbakaus/impeccable` repository at commit `c63b8dd7dd5a5f3c32eaabe1af76d0694f863ed2`, its `.agent/skills/impeccable/`.
 
-| Section of `reference/design.md` | Ported from | Feeds |
+| Section | Ported from | Feeds |
 |---|---|---|
-| "Craft floor", "Bans" | `reference/craft-floor.md` | `agents/designer.md`, `agents/design-reviewer.md` |
-| "Refinement preserves, redesign replaces", "Operate and Read" | `SKILL.md`, `reference/operate.md` | `agents/designer.md` |
-| "Audit" | `reference/audit.md` | `agents/design-reviewer.md`, and `agents/designer.md`'s self-check as a subagent |
-| "Critique" | `reference/critique.md` | `agents/design-reviewer.md`, and `agents/designer.md`'s self-check as a subagent |
-| "Polish", "Distill" | `reference/polish.md`, `reference/distill.md` | `agents/designer.md` (refine) |
-| "Normalize" | `reference/extract.md` | `agents/designer.md` (normalize) |
+| `reference/design.md`: "Craft floor", "Bans" | `reference/craft-floor.md` | `agents/designer.md.liquid`, `agents/design-reviewer.md` |
+| `reference/design.md`: "Refinement preserves, redesign replaces", "Operate and Read" | `SKILL.md`, `reference/operate.md` | `agents/designer.md.liquid` |
+| `reference/design.md`: "Audit" | `reference/audit.md` | `agents/design-reviewer.md`, and `agents/designer.md.liquid`'s self-check as a subagent |
+| `reference/design.md`: "Critique" | `reference/critique.md` | `agents/design-reviewer.md`, and `agents/designer.md.liquid`'s self-check as a subagent |
+| `agents/designer.md.liquid`: "Polish", "Distill" | `reference/polish.md`, `reference/distill.md` | its refine mode |
+| `agents/designer.md.liquid`: "Normalize" | `reference/extract.md` | its normalize mode |
 
 ## What "ported" means here
 

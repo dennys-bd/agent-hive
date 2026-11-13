@@ -77,7 +77,7 @@ The minimum every screen meets. Check it on the built result.
 - The brief wins: honour pinned fonts, palettes, eras and materials.
 - An update, sync, normalize or refine changes only what the run is for.
 - Keep the incumbent identity, behaviour, copy and everything outside scope.
-- Never replace factual copy or add claims on your own; propose them in the handoff.
+- Never replace factual copy or add claims on your own; propose them in the design handoff.
 - Redesign only when asked; then treat the old look as an anti-reference and
   keep product truth, content and function.
 - Never split the difference by polishing the look a redesign discarded.
@@ -117,7 +117,7 @@ Read:
 
 ## Audit
 
-Technical checks of what is measurable. Report; do not fix.
+Technical checks of what is measurable.
 
 - Accessibility at WCAG AA: contrast 4.5:1 for text, 3:1 for large text and UI parts.
 - Every control has a label or accessible name; inputs have labels.
@@ -131,12 +131,13 @@ Technical checks of what is measurable. Report; do not fix.
   `mobile`; Operate's density applies at 1280 px, or at the screen's own width.
 - No fixed widths that break narrow screens.
 - Colours come from tokens; dark and light themes both keep contrast.
-- Every state the spec names is present.
-- Every option of every tweak renders without clipping or overlap.
+- Every state the spec or the round's request names is there: a section of
+  its screen, a tweak, or a state its controls reach.
+- Every option of every tweak (each enum value, each boolean both ways, a text
+  at its default and at a long value, a number at its bounds) renders with no
+  clipping, no overlap and no scroll inside its section.
 - No URL or absolute path outside the screen's folder (`## The .hv.html format`).
 - The screen is specific to this product, not interchangeable with another.
-- Rank each finding: what breaks the task, AA compliance or the layout is
-  `blocking`; polish only is `advisory`.
 - Name the evidence: rendered at which width, or read from the CSS.
 
 ## Critique
@@ -151,7 +152,8 @@ The design review, with a review checklist folded in as questions.
 - Do boards, grids, toolbars and tiles keep stable dimensions?
 - Do assets carry the subject rather than fill space?
 - Does motion help orientation rather than mask slowness?
-- Does it match the design system and the patterns earlier designs set, or say why not?
+- Does it match the design system and the patterns the folder's other screens
+  set, or is the reason it departs given?
 - Heuristics: system status visible; the product's words; undo and escape;
   consistency; error prevention; recognition over recall; shortcuts for experts;
   minimal design; errors that name the recovery; help in place.
@@ -159,8 +161,19 @@ The design review, with a review checklist folded in as questions.
   bridges between screens; no jargon; no visual noise.
 - Walk the screen as a hurried expert, a first-timer, a keyboard and
   screen-reader user, and a distracted mobile user.
-- Return strengths, then the three to five issues that matter most, each with
-  why it matters and a concrete fix.
+
+## Ranking
+
+How a finding of "Audit" or "Critique" is ranked, by the reviewer and by the
+designer checking its own screens.
+
+- `blocking`: breaks "The .hv.html format", a ban, the craft floor, AA
+  accessibility, the layout at a declared width (or at the screen's own width
+  when it declares none), a missing state, or the design system or a pattern
+  the folder's other screens set, with no reason given for it.
+- `advisory`: everything else worth changing, and two cases the line above
+  would otherwise take: markup repeated across screens that should be a part,
+  and a line of the check about a screen or a part the round did not touch.
 
 ## The .hv.html format
 
@@ -198,8 +211,8 @@ frame, with no network.
 - Real copy in the product's own words and languages; never lorem ipsum.
 - Scripts only show states and interactions: no `fetch`, `XMLHttpRequest`
   or `WebSocket`. Clicks go through the kit ("Interactions" below).
-- No secret, token or absolute home path in a screen or the handoff: the
-  handoff may be posted to a public issue.
+- No secret, token or absolute home path in a screen or the design
+  handoff: it may be posted to a public issue.
 
 ### Tweaks
 
@@ -266,7 +279,7 @@ A state the user picks from the pane is a tweak; a state the screen's own
 controls reach is `data-hv-set`, never both. What the product reveals on hover is
 `data-hv-hover`, never a tweak. Behaviour the kit cannot
 express, such as text typed into a filter that narrows a list, goes in a
-short `<script>` of the screen, and the handoff names it.
+short `<script>` of the screen, and the design handoff names it.
 
 ### Parts
 
@@ -295,7 +308,7 @@ screen that includes it.
   and its name does not end in `.hv.html`. A part may include parts, up to
   4 levels from the screen, never in a cycle.
 - `src` is relative to the including file's folder and stays inside the
-  design folder: no absolute path, no `..`, no dot segment, no symbolic
+  designs folder: no absolute path, no `..`, no dot segment, no symbolic
   link.
 - Content that differs per screen goes through slots. A part declares
   `<hv-slot name="<name>">default</hv-slot>`. The screen fills it with a
@@ -315,8 +328,9 @@ screen that includes it.
 
 ### The check
 
-Run from the docs repository, `<folder>` the design folder, quoted. It prints
-nothing and exits 0 when the folder passes:
+`<folder>` is the designs folder, quoted. It prints nothing and exits 0 when
+the folder passes, one line per finding and exits 1 when it does not, and an
+error on stderr and exits 2 when it could not run:
 
 ```bash
 node "${HIVE_PLUGIN_ROOT}/scripts/check-hv.mjs" "<folder>"
@@ -354,11 +368,13 @@ chromium --headless --no-first-run --user-data-dir="$tmp/profile" --host-resolve
 ```
 
 Screenshot each enum option once, and each boolean the other way: copy the
-screen into the temporary folder with `data-tweak-<name>="<value>"` added to
-its `<html>` tag, one copy per value, the other tweaks at their default.
+designs folder into the temporary folder and write there, beside the screen's
+copy so its relative links still hold, one copy of the screen per value, with
+`data-tweak-<name>="<value>"` added to its `<html>` tag and the other tweaks
+at their default.
 
 A screen that includes parts shows its `<hv-include>` markers from disk,
-not the parts: say in the handoff that its parts were not seen rendered.
+not the parts: say that its parts were not seen rendered.
 
 One round at each width the screen declares (`desktop` 1280, `tablet` 768,
 `mobile` 390 px, as `--window-size`), or at its own width when it declares
