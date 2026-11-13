@@ -174,8 +174,9 @@ export function ApprovalVerdict({ task, state, approval }: { task: Task; state: 
 /** The detail's status box while the task awaits approval (#268, #685, redesign 06): with a held session the time it has left; aprovar, and
  * estender on a held session; under them the feedback box, always open, on every awaiting task, manual gates included. Keyed by `since` in
  * the panel, so a new stage end mounts an empty box. `activity` is the task's live one (#629). `createsIssues` (#865): the stage's
- * decomposition is not on GitHub yet, so criar issues takes aprovar's place and opens the window's decomposition dialog (#781), which writes it and ends the stage. */
-export function ApprovalActions({ task, activity, openSession = false, createsIssues = false }: { task: Task; activity?: ApprovalOf; openSession?: boolean; createsIssues?: boolean }) {
+ * decomposition is not written yet, so its create button takes aprovar's place and opens the window's decomposition dialog (#781), which writes
+ * it and ends the stage. `createsTasks` (#784): the dialog will offer the hive first, so the button says criar tarefas. */
+export function ApprovalActions({ task, activity, openSession = false, createsIssues = false, createsTasks = false }: { task: Task; activity?: ApprovalOf; openSession?: boolean; createsIssues?: boolean; createsTasks?: boolean }) {
   const input = useRef<HTMLTextAreaElement>(null);
   // A request from the F key (#585), taken on mount and whenever one arrives: the cursor goes into the box. In an effect, which runs once the
   // textarea is in the document; StrictMode's second run finds the request already taken
@@ -195,7 +196,7 @@ export function ApprovalActions({ task, activity, openSession = false, createsIs
       {until !== undefined && <p className="text-muted-foreground text-xs">{t('worker.approvalLeft', { time: countdown(until, Date.now()) })}</p>}
       <div className="flex flex-wrap gap-2">
         {createsIssues
-          ? <Button type="button" size="sm" className={DETAIL_BUTTON} onClick={() => openDecomposition(activity.id, taskRef(task))}>{t('decomposition.create')}</Button>
+          ? <Button type="button" size="sm" className={DETAIL_BUTTON} onClick={() => openDecomposition(activity.id, taskRef(task))}>{t(createsTasks ? 'decomposition.createHive' : 'decomposition.create')}</Button>
           : <Button type="button" size="sm" className={DETAIL_BUTTON} onClick={() => act(url('approve'))}>{t('approval.approve')}</Button>}
         {until !== undefined && <Button type="button" size="sm" variant="outline" className={DETAIL_OUTLINE} onClick={() => act(url('approval/extend'))}>{t('approval.extend')}</Button>}
       </div>

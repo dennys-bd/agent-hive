@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ApprovalActions } from '@/components/ApprovalActions';
 import { DecompositionHost } from '@/components/DecompositionDialog';
+import { StatusBox } from '@/components/DetailSections';
 import { Flow } from '@/components/Flow';
 import { CreateTargetsContext, HIVE_ONLY } from '@/lib/create-targets';
 import { closeDecomposition, useDecompositionWrite } from '@/hooks/use-decomposition-write';
@@ -70,4 +71,15 @@ test('A on a pending decomposition in a Comb with no GitHub source and the hive 
   fireEvent.keyDown(screen.getByText('#1 Task 1').closest('li')!, { key: 'a' });
   await waitFor(() => expect(posts()).toEqual([expect.stringMatching(/\/approve$/)]));
   expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+test('the status box reads criar tarefas in place of aprovar for a hive goal with the hive on, criar issues for a GitHub goal with a sync, aprovar with the hive off and no sync (#784)', () => {
+  const { rerender } = render(<StatusBox task={task} state={pending({})} isActivity={false} />);
+  expect(screen.getByRole('button', { name: 'criar tarefas' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'aprovar' })).toBeNull();
+  const github: Task = { ...task, item: { ...task.item, source: 'board', url: 'https://github.com/acme/site/issues/1' } };
+  rerender(<StatusBox task={github} state={{ ...pending(), tasks: [github] }} isActivity={false} />);
+  expect(screen.getByRole('button', { name: 'criar issues' })).toBeInTheDocument();
+  rerender(<CreateTargetsContext.Provider value={{ ...HIVE_ONLY, hiveSource: false }}><StatusBox task={task} state={pending({})} isActivity={false} /></CreateTargetsContext.Provider>);
+  expect(screen.getByRole('button', { name: 'aprovar' })).toBeInTheDocument();
 });

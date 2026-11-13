@@ -21,7 +21,7 @@ import { statusText, t } from '@/i18n';
 import { sessionPath } from '@/lib/copy-targets';
 import { CreateTargetsContext } from '@/lib/create-targets';
 import { isMarkdownPath } from '@/lib/doc-links';
-import { answerableActivity, backoffUntil, createsIssues, taskState } from '@/lib/task-state';
+import { answerableActivity, backoffUntil, createsIssues, createsTasks, taskState } from '@/lib/task-state';
 import { backoffLabel, clock, compact, fmt } from '@/lib/usage';
 import { shownSize } from '@/lib/xterm-setup';
 import { baseName } from '../../base-name';
@@ -97,7 +97,7 @@ export function StatusBox({ task, state, isActivity }: { task: Task; state: Stat
       {answerable?.approval && <ApprovalVerdict key={`verdict:${task.item.itemId}:${answerable.approval.since}`} task={task} state={state} approval={answerable.approval} />} {/* #693: under the head, a new stage end mounts it closed; #763: a key of its own, never the actions' */}
       {isActivity && <RunLines task={task} state={state} />}
       <CommandsLine task={task} state={state} /> {/* #755: a commands stage's progress or failure, with ver saída */}
-      {answerable && <ApprovalActions key={`actions:${task.item.itemId}:${answerable.approval?.since ?? ''}`} task={task} activity={answerable} openSession={openFeedbackSession(task, state) !== undefined} createsIssues={createsIssues(task, state, hiveSource)} />}
+      {answerable && <ApprovalActions key={`actions:${task.item.itemId}:${answerable.approval?.since ?? ''}`} task={task} activity={answerable} openSession={openFeedbackSession(task, state) !== undefined} createsIssues={createsIssues(task, state, hiveSource)} createsTasks={createsTasks(task, state, hiveSource)} />}
       <StoppedActions task={task} state={state} />
     </section>
   );
