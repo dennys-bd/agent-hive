@@ -298,17 +298,17 @@ test('the commands stage\'s Settings copy reads as the spec and the per-workspac
   assert.equal('settings.stages.commands.missing' in MESSAGES.en, false);
 });
 
-test('the per-workspace commands editor reads as the handoff writes it, in both languages; the enabled-in keys are gone (#755)', () => {
+test('the per-workspace commands editor reads as the handoff writes it, in both languages; the enabled-in keys are gone (#755, #804)', () => {
   const keys = [
     'settings.commands.col.impls', 'settings.commands.all', 'settings.commands.others', 'settings.commands.addImpl', 'settings.commands.addImplFor', 'settings.commands.missing',
     'settings.commands.col.menu', 'settings.commands.stagesOnly', 'settings.commands.menu', 'settings.commands.removeImpl', 'settings.error.commandImpls',
   ] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
-    'comando em cada workspace', 'todos os workspaces', 'os demais workspaces', '+ workspace', 'adicionar workspace a {name}', 'não existe em {list}',
+    'comando em cada workspace · revezamento', 'todos os workspaces', 'os demais workspaces', '+ workspace', 'adicionar workspace a {name}', 'não existe em {list}',
     'no menu', 'só etapas', '{name} no menu da tarefa', 'remover {name} de {workspace}', '{name} precisa de um comando em pelo menos um workspace',
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
-    'command in each workspace', 'all workspaces', 'the other workspaces', '+ workspace', 'add a workspace to {name}', 'missing in {list}',
+    'command in each workspace · semaphore', 'all workspaces', 'the other workspaces', '+ workspace', 'add a workspace to {name}', 'missing in {list}',
     'in menu', 'stages only', '{name} in the task menu', 'remove {name} from {workspace}', '{name} needs a command in at least one workspace',
   ]);
   for (const key of ['settings.commands.col.workspaces', 'settings.commands.col.command', 'settings.commands.workspaces', 'settings.commands.nowhere']) {
