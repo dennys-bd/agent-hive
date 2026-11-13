@@ -391,3 +391,16 @@ test('a 400 shows its own inline error, not the 502\'s, and keeps criar issue; a
   await user.type(screen.getByLabelText('título'), '!');
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
+
+test('opened from a source table the header line ends with · da tabela de <source>; opened without one it is create.context alone (#774)', () => {
+  const { unmount } = open({ source: 'work', targets: TARGETS });
+  expect(screen.getByText('só cria a tarefa, sem iniciar atividade · da tabela de work')).toBeInTheDocument();
+  unmount();
+  const again = open({ title: 'Fix login', workspace: 'site' });
+  expect(screen.getByText('só cria a tarefa, sem iniciar atividade')).toBeInTheDocument();
+  expect(screen.queryByText(/da tabela de/)).not.toBeInTheDocument();
+  again.unmount();
+  setLanguage('en');
+  open({ source: 'hive' });
+  expect(screen.getByText('only creates the task, starts no activity · from the hive table')).toBeInTheDocument();
+});
