@@ -53,6 +53,7 @@ import { createKeepAwake, type KeepAwakeSpawn, spawnKeepAwake } from './keep-awa
 import { syncsFor, effectiveLimits, isChildSession, reduce, SIGNALS } from './orchestrator.js';
 import { shutdownCommand } from './platform-commands.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
+import { posixShell } from './posix-shell.js';
 import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-requests.js';
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { readUnlisted, unlistedStarted } from './poll-reads.js';
@@ -344,7 +345,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // never fails the boot or the save, since a missing shim only means the command runs without its semaphore
   let shimsInstall: Promise<void> = Promise.resolve();
   const installShims = (config: Config): Promise<void> => {
-    shimsInstall = shimsInstall.then(() => installCommandShims(home, config, config.language ?? systemLanguage, process.platform)).then(() => undefined, (err: unknown) => { log.error(`command shims: ${errorMessage(err)}`); });
+    shimsInstall = shimsInstall.then(() => installCommandShims(home, config, config.language ?? systemLanguage, { platform: process.platform, sh: posixShell().shell })).then(() => undefined, (err: unknown) => { log.error(`command shims: ${errorMessage(err)}`); });
     return shimsInstall;
   };
   // Answers the install, awaited by the boot so no pty spawns before the shims exist; it never rejects

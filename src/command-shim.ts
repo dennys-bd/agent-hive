@@ -3,7 +3,7 @@ import { join, posix, type PlatformPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lineWords, type SemaphoresConfig } from './command-semaphores.js';
 import { shellQuote } from './shell-init.js';
-import { BIN_MODE } from './shim.js';
+import { BIN_MODE, type ShimInstall } from './shim.js';
 import type { Language } from './types.js';
 
 // The command shims (#800): one template, assets/bin/command-shim, rendered per first word of a line with a Command Semaphore into
@@ -34,35 +34,64 @@ export const commandShimDir = (home: string): string => join(home, COMMAND_SHIMS
 export const commandShimsEnvFile = (commandShims: string, ptyId: string, path: PlatformPath = posix): string =>
   path.join(path.dirname(commandShims), COMMAND_SHIMS_ENV_DIR, `${ptyId}.sh`);
 
-// A path is never looked up on PATH, so no shim could catch it; . and .. would name the folder itself or the home
-const isShimmable = (word: string): boolean => !word.includes('/') && word !== '.' && word !== '..';
+/** `assets/bin/command-shim.cmd`, the shim's twin on win32 (#806), which PowerShell and cmd.exe find through PATHEXT. */
+const commandShimCmdSource = (): string => fileURLToPath(new URL('../../assets/bin/command-shim.cmd', import.meta.url));
 
-/** Decision 2: the distinct first words of every line with a semaphore, in any workspace: the folder is the Hive's, one for all of them;
- * the match per workspace stays the daemon's. */
-export function shimWords(config: Pick<SemaphoresConfig, 'comb'>): string[] {
-  const words = config.comb.commands.flatMap((c) => c.impls).flatMap((impl) => {
-    const first = impl.semaphore === undefined ? undefined : lineWords(impl.command)?.[0];
-    return first !== undefined && isShimmable(first) ? [first] : [];
-  });
-  return [...new Set(words)];
+const CMD_PLACEHOLDER = /__HIVE_(COMMAND|SH)__/g;
+/** The twin as written: cmd.exe expands %NAME% while reading a line, even in quotes, so a % in the sh.exe path or in the word is written %%
+ * (#645, #806); one pass, so a word holding the other's text stays whole. The template's own %~dp0 and %* stay as they are. */
+export const renderCommandShimCmd = (template: string, word: string, sh: string): string =>
+  template.replace(CMD_PLACEHOLDER, (_match, key: string) => (key === 'SH' ? sh : word).replaceAll('%', '%%'));
+
+// What a Windows file name cannot hold (#806 decision 12); lineWords already refuses all but :
+const WIN32_UNNAMEABLE = /[\\:<>"|?*]/;
+// A path is never looked up on PATH, so no shim could catch it; . and .. would name the folder itself or the home
+const isShimmable = (word: string, platform: NodeJS.Platform): boolean =>
+  !word.includes('/') && word !== '.' && word !== '..' && (platform !== 'win32' || !WIN32_UNNAMEABLE.test(word));
+
+// #806 decision 12: Windows' file system does not tell Pnpm from pnpm, and word pnpm's twin pnpm.cmd is word pnpm.cmd's shim: the first
+// word keeps both its names, a later one that would reuse either gets no shim
+function oneFilePerName(words: readonly string[]): string[] {
+  return words.reduce<{ kept: string[]; names: string[] }>((acc, word) => {
+    const names = [word, `${word}.cmd`].map((name) => name.toLowerCase());
+    return names.some((name) => acc.names.includes(name)) ? acc : { kept: [...acc.kept, word], names: [...acc.names, ...names] };
+  }, { kept: [], names: [] }).kept;
 }
 
-/** Decisions 1, 3: every word's shim written, then every other file of the folder deleted, so a line removed and saved takes its shim
- * with it when no other line needs that word. A tmp file renamed over the shim: a shim running a command keeps the file it is reading.
- * Answers the words; a save rewrites them all, so a change of language reaches every shim (#801). None on win32: Windows has no command shim until node 5 of #704, and its join reads \ and : in a word. */
-export async function installCommandShims(home: string, config: Pick<SemaphoresConfig, 'comb'>, language: Language, platform: NodeJS.Platform): Promise<string[]> {
-  if (platform === 'win32') return [];
+/** Decision 2 of #800: the distinct first words of every line with a semaphore, in any workspace; on win32 only those a file can be named
+ * after, one per name (#806). */
+export function shimWords(config: Pick<SemaphoresConfig, 'comb'>, platform: NodeJS.Platform): string[] {
+  const words = config.comb.commands.flatMap((c) => c.impls).flatMap((impl) => {
+    const first = impl.semaphore === undefined ? undefined : lineWords(impl.command)?.[0];
+    return first !== undefined && isShimmable(first, platform) ? [first] : [];
+  });
+  const distinct = [...new Set(words)];
+  return platform === 'win32' ? oneFilePerName(distinct) : distinct;
+}
+
+// A tmp file renamed over the shim: a shim running a command keeps the file it is reading
+async function writeAtomically(dir: string, name: string, text: string): Promise<void> {
+  const tmp = join(dir, `.${name}.new`);
+  await writeFile(tmp, text, { mode: SHIM_MODE });
+  await chmod(tmp, SHIM_MODE); // writeFile's mode applies only to a new file
+  await rename(tmp, join(dir, name));
+}
+
+/** Decisions 1, 3 of #800 and 1, 13 of #806: every word's shim written, on win32 with its .cmd twin, then every other file of the folder
+ * deleted, so a line removed and saved takes its shim with it. Answers the words; a save rewrites them all, so a change of language
+ * reaches every shim (#801). */
+export async function installCommandShims(home: string, config: Pick<SemaphoresConfig, 'comb'>, language: Language, { platform, sh }: ShimInstall): Promise<string[]> {
   const dir = commandShimDir(home);
   await mkdir(dir, { recursive: true, mode: BIN_MODE });
   const template = await readFile(commandShimSource(), 'utf8');
-  const words = shimWords(config);
+  const twin = platform === 'win32' ? await readFile(commandShimCmdSource(), 'utf8') : undefined;
+  const words = shimWords(config, platform);
   for (const word of words) {
-    const tmp = join(dir, `.${word}.new`);
-    await writeFile(tmp, renderCommandShim(template, word, language, platform), { mode: SHIM_MODE });
-    await chmod(tmp, SHIM_MODE); // writeFile's mode applies only to a new file
-    await rename(tmp, join(dir, word));
+    await writeAtomically(dir, word, renderCommandShim(template, word, language, platform));
+    if (twin !== undefined) await writeAtomically(dir, `${word}.cmd`, renderCommandShimCmd(twin, word, sh));
   }
-  const stale = (await readdir(dir)).filter((name) => !words.includes(name));
+  const kept = twin === undefined ? words : words.flatMap((word) => [word, `${word}.cmd`]);
+  const stale = (await readdir(dir)).filter((name) => !kept.includes(name));
   await Promise.all(stale.map((name) => rm(join(dir, name), { recursive: true, force: true })));
   return words;
 }

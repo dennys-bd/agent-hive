@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { claudeEnvLine, commandShimDir, commandShimSource, installCommandShims, renderCommandShim, shimWords } from '../src/command-shim.js';
+import { claudeEnvLine, commandShimDir, commandShimSource, installCommandShims, renderCommandShim, renderCommandShimCmd, shimWords } from '../src/command-shim.js';
 import type { Command } from '../src/types.js';
 import { assertMode, NO_POSIX_SIGNALS, SH_LAUNCHER } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
@@ -233,7 +233,7 @@ test('shimWords: the distinct first words of every line with a semaphore, in any
     commandOf('quoted', line('"pnpm" test', 'memory')),
     commandOf('local', line('./scripts/e2e.sh', 'memory'), line('. ./env.sh', 'disk', 'web'), line('bin/e2e', 'disk', 'api')),
   );
-  assert.deepEqual(shimWords(config), ['pnpm', 'docker']);
+  assert.deepEqual(shimWords(config, 'darwin'), ['pnpm', 'docker']);
 });
 
 test('installCommandShims writes one executable shim per word into <home>/command-shims, and a save without a word deletes its file and keeps the rest (#800)', async (t) => {
@@ -241,19 +241,41 @@ test('installCommandShims writes one executable shim per word into <home>/comman
   const dir = commandShimDir(home);
   assert.equal(dir, join(home, 'command-shims'));
   const both = commandsConfig(commandOf('test', line('pnpm test', 'memory')), commandOf('up', line('docker compose up', 'disk')));
-  assert.deepEqual(await installCommandShims(home, both, 'pt', 'darwin'), ['pnpm', 'docker']);
+  assert.deepEqual(await installCommandShims(home, both, 'pt', { platform: 'darwin', sh: '/bin/sh' }), ['pnpm', 'docker']);
   assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm', 'pt', 'darwin'));
   await assertMode(t, dir, 0o700);
   await assertMode(t, join(dir, 'pnpm'), 0o755);
   await writeFile(join(dir, 'stray'), 'left by an older version');
-  await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))), 'en', 'linux');
+  await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))), 'en', { platform: 'linux', sh: '/bin/sh' });
   assert.deepEqual(await readdir(dir), ['docker']);
 });
 
-test('installCommandShims on win32 writes nothing and answers no word: Windows has no command shim until node 5 of #704 (#800)', async (t) => {
+test('shimWords on win32: none for a word holding :, nor for one sharing a file name, in any case, with an earlier word or its twin; all of them elsewhere (#806)', () => {
+  const config = commandsConfig(
+    commandOf('test', line('pnpm test', 'memory'), line('Pnpm lint', 'memory'), line('PNPM.cmd x', 'memory')),
+    commandOf('odd', line('a:b run', 'memory')),
+  );
+  assert.deepEqual(shimWords(config, 'win32'), ['pnpm']);
+  assert.deepEqual(shimWords(config, 'linux'), ['pnpm', 'Pnpm', 'PNPM.cmd', 'a:b']);
+});
+
+test('renderCommandShimCmd writes the sh.exe path and the word with % doubled and leaves the template\'s own %~dp0 and %* alone (#806)', () => {
+  assert.equal(renderCommandShimCmd('"__HIVE_SH__" "%~dp0__HIVE_COMMAND__" %*', 'a%b', 'C:\\Git 100%\\bin\\sh.exe'), '"C:\\Git 100%%\\bin\\sh.exe" "%~dp0a%%b" %*');
+});
+
+test('installCommandShims on win32 writes each word\'s POSIX shim and its .cmd twin, and a save keeps both of every current word and deletes the rest (#806)', async (t) => {
   const home = await tempDir(t, 'home-');
-  assert.deepEqual(await installCommandShims(home, commandsConfig(commandOf('test', line('pnpm test', 'memory'))), 'en', 'win32'), []);
-  assert.equal(existsSync(commandShimDir(home)), false);
+  const dir = commandShimDir(home);
+  const install = { platform: 'win32', sh: 'C:\\Program Files\\Git\\bin\\sh.exe' } as const;
+  const both = commandsConfig(commandOf('test', line('pnpm test', 'memory')), commandOf('up', line('docker compose up', 'disk')));
+  assert.deepEqual(await installCommandShims(home, both, 'en', install), ['pnpm', 'docker']);
+  assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm', 'en', 'win32'));
+  const twin = await readFile(join(dir, 'pnpm.cmd'), 'utf8');
+  assert.match(twin, /^set MSYS2_ARG_CONV_EXCL=\*\r?$/m);
+  assert.match(twin, /^"C:\\Program Files\\Git\\bin\\sh\.exe" "%~dp0pnpm" %\*\r?$/m);
+  await writeFile(join(dir, 'stray.cmd'), 'left by an older version');
+  await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))), 'en', install);
+  assert.deepEqual((await readdir(dir)).sort(), ['docker', 'docker.cmd']);
 });
 
 test('claudeEnvLine prepends the folder, quoted, to PATH and exports it (#800)', () => {
