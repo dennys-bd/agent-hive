@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { activityOf, otherSlugs, recordOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { createTask, UNKNOWN_STAGE_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from './create-task.js';
+import type { ReportRetry } from './source-errors.js';
 import { branchFor, inFlow, slugFor, canOpenSession, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
 import { hiveAction, runsAgent } from './stage-agent.js';
 import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
@@ -65,9 +66,10 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
   running: RUNNING_MESSAGE, deleting: DELETING_MESSAGE, nothingToDelete: NOTHING_TO_DELETE_MESSAGE,
 };
 
-export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string } // #767/#811: the item a failed create left behind; #748: a gone workspace's code and name
+export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string; resetsAt?: string } // #812: a source's rate limit, when to retry; #767/#811: the item a failed create left behind; #748: a gone workspace's code and name
 
 export interface TaskRouteDeps {
+  reportRetry: ReportRetry; // #812: a create the source rate limited puts the source in backoff
   treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
   exec: Exec; // git for the base popup (#131) and the delete-activity route (#182, #573); tests inject a fake
   log: Pick<Logger, 'debug' | 'error' | 'info' | 'warn'>; // the transcripts' deletion (#236): a file already gone at debug, a failure at error; the worktree setup's steps at info (#299); a failed create's source words at warn (#772)
@@ -196,7 +198,7 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
 
 export const refuse = (res: Response, refusal: Refusal): void => {
   // #767: a failed create that left an issue says which, so the client does not retry it into a second one. #748: a gone workspace's code and name, which the page words; undefined drops out of the JSON
-  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace, ...(refusal.ref === undefined ? {} : { ref: refusal.ref }) });
+  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace, ...(refusal.ref === undefined ? {} : { ref: refusal.ref }), ...(refusal.resetsAt === undefined ? {} : { resetsAt: refusal.resetsAt }) });
 };
 
 /** The task's workspace, or the route's answer when it has none (#179): 409 when the name it holds is gone, 400 when no rule answers one. */
@@ -505,12 +507,12 @@ function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
 
 // A task created in the Comb (#132) or on a source (#846): from the stage header's `+`, or from any local process that speaks HTTP (a Claude
 // session fed by another tool's MCP); like every dashboard POST it needs the x-hive-ui header. createTask picks the destination.
-function registerCreateRoute(app: Express, { requireLive, dispatch, poll, latest, log }: TaskRouteDeps): void {
+function registerCreateRoute(app: Express, { requireLive, dispatch, poll, latest, log, reportRetry }: TaskRouteDeps): void {
   app.post('/tasks', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
     const { config, sources } = current.runtime;
-    const created = await createTask({ state: current.state, config, sources, dispatch, poll, latest, log }, req.body);
+    const created = await createTask({ state: current.state, config, sources, dispatch, poll, latest, log, reportRetry }, req.body);
     if ('status' in created) return refuse(res, created);
     res.status(HTTP_CREATED).json(created); // itemId: what the new activity dialog starts it by
   });

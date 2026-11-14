@@ -11,7 +11,7 @@ import { SourceRateLimitError } from '../src/source-errors.js';
 import type { ItemField, Source, SourceItem, SourceSpec } from '../src/types.js';
 import { HOUR_MS } from '../src/usage.js';
 import { combConfig, fakeSpawn, GITHUB_ENTRY, goneItem, move, OPTIONS, tempHive, WORKSPACE } from './fakes.js';
-import { SECRET } from './secret-client.js';
+import { hiveFetch, SECRET } from './secret-client.js';
 
 // #812: two sources of no GitHub shape (no quota()), work and notes. A listing throws the fake's limited; every write its writeLimited, else
 // a move or an action records itself
@@ -21,6 +21,8 @@ interface Harness { base: string; server: HiveServer; work: Fake; notes: Fake }
 const STAGES: LegacyStage[] = [{ name: 'fila', from: { work: ['Ready'], notes: ['Ready'] }, onStart: { work: [move('In progress')] }, onFinish: { work: [{ type: 'close' }] }, prompt: 'x' }];
 const FIELDS: ItemField[] = [{ name: 'Priority', type: 'singleSelect', value: 'P1', options: ['P0', 'P1'] }];
 const inMs = (ms: number): string => new Date(Date.now() + ms).toISOString();
+const postJson = (url: string, body: unknown): Promise<Response> =>
+  hiveFetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body) });
 const listing = (id: string): SourceItem => ({ item: { itemId: id, id, title: `Task ${id}`, body: '', url: '' }, column: 'Ready' });
 
 function fakeSource(fake: Fake): Source {
@@ -106,4 +108,21 @@ test('reportRetry, the read model loop\'s path, puts a source in backoff as a po
   const state = h.server.getState()!;
   assert.equal(state.syncs.notes.backoffUntil, until);
   assert.deepEqual([shouldPoll(state, 'notes', Date.now()), shouldPoll(state, 'work', Date.now())], [false, true]);
+});
+
+test('a field write, a blocker write and a create the source rate limits each answer 429 { error, resetsAt } and leave the source in backoff, each attempted inside the last one\'s wait (#812)', async (t) => {
+  const h = await start(t);
+  const item = encodeURIComponent('work:12');
+  const writes: [string, unknown][] = [
+    [`/sources/work/items/${item}/fields`, { field: 'Priority', value: 'P0' }],
+    [`/sources/work/items/${item}/blockers`, { action: 'add', kind: 'blockedBy', ref: '7' }],
+    ['/tasks', { title: 'Fix', stage: 'fila', source: 'work' }],
+  ];
+  for (const [i, [path, body]] of writes.entries()) {
+    const until = inMs(HOUR_MS * (i + 1)); // each later than the last, so each report shows in the state
+    h.work.writeLimited = new SourceRateLimitError(until);
+    const res = await postJson(`${h.base}${path}`, body);
+    assert.deepEqual([res.status, await res.json()], [429, { error: h.work.writeLimited.message, resetsAt: until }], path);
+    assert.equal(h.server.getState()!.syncs.work.backoffUntil, until, path);
+  }
 });

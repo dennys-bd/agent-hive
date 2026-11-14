@@ -1065,7 +1065,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   let preloadPr = deps.preloadPr; // #497: bound after the PR routes, which own the changes' reader
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
   mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
-    relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
+    relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log, reportRetry }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
     reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory, preloadPr: (url) => preloadPr?.(url) ?? Promise.resolve(),
     benchmark: drafter({ dispatch, home, pluginSource: shippedPlugin, exec, log, version: benchVersion, now: () => new Date(), queue: benchQueue,
       live: () => (live ? { config: live.runtime.config, experiments: live.state.benchmark.experiments } : undefined) }) }); // #478: the benchmark tools' drafter; #344: a local session's hive_reply
@@ -1300,7 +1300,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // create, start, bases, close, session, session exit, delete-activity, move, reset-order, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
-  const taskDeps = { treeWatch, exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
+  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts });
@@ -1335,7 +1335,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     await poll();
     res.json({ ok: true });
   });
-  registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
+  registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log, reportRetry }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
@@ -1348,7 +1348,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const itemStore: ItemStore | undefined = deps.readModel && readLoop && {
     db: deps.readModel, source: async () => (await readAccess())?.source, notify: notifyReadModel, refetch: readLoop.refetch,
   };
-  registerProjectRoutes(app, { requireLive, dispatch, log, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686), GET /sources/:name/create-options (#768): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
+  registerProjectRoutes(app, { requireLive, dispatch, log, reportRetry, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686), GET /sources/:name/create-options (#768): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
   // #181: the reads answer from the model, as the login the sync reads with (ponytail: a stat of gh's hosts.yml per read in cli mode); the writes
   // go to GitHub with the Hive's own login (#757), and their answer is upserted and named by the sync's own readModel event (#183)
   const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : {
