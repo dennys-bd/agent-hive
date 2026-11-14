@@ -5,7 +5,7 @@ import { followEpics } from '../src/epic-follow.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { END, type Item, type Stage, type State, type Task, type Transition } from '../src/types.js';
 import { move } from './fakes.js';
-import { withWork } from './fixtures/work.js';
+import { activityIdOf, withWork } from './fixtures/work.js';
 import { flowed, mainFlows } from './fixtures/main-flow.js';
 
 // #843: a show epic finishes by itself: it never waits on a gate's approval, and moving into its flow's last stage closes its issue.
@@ -114,4 +114,39 @@ test('an epic with an activity, moved through In Review into Done by its childre
   assert.deepEqual(archives(effects), [ARCHIVE]);
   assert.deepEqual(deletes(effects), [], 'its source leaves the activity alone');
   assert.equal(epicIn(state)?.leaving, true);
+});
+
+const stamped = (deleteActivity: boolean): Partial<Item> => ({ epic: { follows: 'behind', switchAt: 'dev', deleteActivity } });
+const WORKTREE = { worktree: '/h/hive-e', branch: 'hive/e' };
+const dueEpic = (deleteActivity: boolean): Task => ({ ...epic('done', ['c1'], stamped(deleteActivity)), enteredAt: PAST_AFTER() });
+
+test('with deleteActivity on its stamp and Done\'s action deleteActivity, a due epic deletes its activity first; activityDeleted then takes Done → end and writes the archive (#856)', () => {
+  const first = tick(withWork(delivery([dueEpic(true), child('c1', 'done')]), 'board:E', WORKTREE));
+  assert.equal(deletes(first.effects).length, 1);
+  assert.deepEqual(archives(first.effects), [], 'the exit waits for the delete');
+  assert.equal(activityOf(first.state, 'board:E')?.deleting, true);
+  const { state, effects } = reduce(first.state, { type: 'activityDeleted', activityId: activityIdOf('board:E') });
+  assert.deepEqual(archives(effects), [ARCHIVE]);
+  assert.equal(epicIn(state)?.leaving, true);
+});
+
+test('with deleteActivity on and nothing the scope covers, the due epic takes Done → end at once (#856, #236)', () => {
+  const { effects } = tick(withWork(delivery([dueEpic(true), child('c1', 'done')]), 'board:E'));
+  assert.deepEqual([deletes(effects).length, archives(effects)], [0, [ARCHIVE]]);
+});
+
+test('with deleteActivity off on its stamp, the due epic takes Done → end straight and its activity stays (#856)', () => {
+  const { state, effects } = tick(withWork(delivery([dueEpic(false), child('c1', 'done')]), 'board:E', WORKTREE));
+  assert.deepEqual([deletes(effects).length, archives(effects)], [0, [ARCHIVE]]);
+  assert.equal(activityOf(state, 'board:E')?.worktree, '/h/hive-e');
+});
+
+test('an epic whose last stage runs commands never runs them, its stamp on or off: it takes Done → end once due, with no worker (#856, #31)', () => {
+  const commands = FLOW.map((s) => (s.name === 'done' ? { ...s, action: 'commands' as const, commands: ['test'], after: '12h' } : s));
+  const tasks = [dueEpic(true), { ...child('c1', 'done'), auto: false }]; // c1 off, so the fill has no other task to run there
+  const due: State = { ...withWork(delivery(tasks, commands), 'board:E', WORKTREE), maxConcurrent: 1, workers: initialState(1).workers };
+  const { state, effects } = tick(due);
+  assert.deepEqual(effects.filter((e) => e.type === 'spawn'), []);
+  assert.equal(activityOf(state, 'board:E')?.commands, undefined);
+  assert.deepEqual([deletes(effects).length, archives(effects)], [0, [ARCHIVE]]);
 });

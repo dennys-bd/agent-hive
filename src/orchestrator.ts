@@ -1,5 +1,5 @@
 
-import { inAction, inFlow, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, HIVE_SOURCE, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
+import { inAction, inFlow, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, HIVE_SOURCE, isBlocked, isGate, markRemoved, mergeTasks, moveTask, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
 import { benchmarkReduce, isBenchmarkEvent } from './benchmark-reducer.js';
 import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
@@ -20,7 +20,7 @@ import { askHandoff, needsHandoff, pendingEnd, withoutPending } from './handoff.
 import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
 import { exitOf, transitionByKey } from './transitions.js';
 import { leaveFlow } from './leave-flow.js';
-import { beingDeleted, clearedError, deletingOf, sourceWrites, continueInPlace, dropActivity, dropWorker, keptMarks, ensureActivity, emptyWorker, takeWorker, releaseWorker, liveWorker, none, occupiedCount, occupy, workerCount, patch, type Reduced, releaseRun, settleEntries, shouldWrite, slugTaken, unmarked, withError, withTask } from './reducer-kit.js';
+import { beingDeleted, clearedError, deletingOf, continueInPlace, dropActivity, dropWorker, keptMarks, ensureActivity, emptyWorker, takeWorker, releaseWorker, liveWorker, none, occupiedCount, occupy, workerCount, patch, type Reduced, releaseRun, settleEntries, shouldWrite, slugTaken, unmarked, withError, withTask } from './reducer-kit.js';
 import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, forgetUnopenedLocal, newLocalSession, openLocalSession, settleCopy, withLocalTurn } from './session-copy.js';
 import { clearSession, renameSession } from './session-clear.js';
 import { canContinue, continueIntoHeld, fill, gateOf, startHeldRun } from './fill.js';
@@ -35,6 +35,7 @@ import { renameStages } from './stage-rename.js';
 import { placeVanished } from './vanished-stages.js';
 import { flatten } from './flows.js';
 import { followEpics } from './epic-follow.js';
+import { startDeleteActivity } from './delete-activity.js';
 import { blockerSet, closeLeftChildren, closeRefsTo, linkParent } from './hive-blockers.js';
 import { isUuid } from './uuid.js';
 
@@ -491,28 +492,6 @@ function runActions(state: State, effects: Effect[] = []): Reduced {
     return { state: next.state, effects: [...r.effects, ...next.effects] };
   }, { state, effects });
   return passed.state === state ? passed : runActions(passed.state, passed.effects);
-}
-
-// The delete-activity stage acts: its onStart list written in order (as occupy does, #515), then the effect, with the scope it
-// removes (#236). No worker, no signal, no budget: a git command of the Hive, not a Claude session. `deleting` marks the task until the
-// answer, so a poll, a stage edit or a second start overlapping a slow remove never emits a second deletion for it. With nothing the
-// scope covers on the task (#236) there is no effect and no mark: the task moves on at once.
-function startDeleteActivity(given: State, task: Task): Reduced {
-  // #629: a task with no activity but kept sessions in scope deletes through a fresh one, as main's delete saw them on the task
-  const born = nothingToDelete(given, task, given.deleteActivity) ? undefined : ensureActivity(given, task);
-  if (!born) { // #236: nothing the scope covers is on the task, so the stage only moves it on
-    const { state: advanced, effects } = advance(given, task, { trigger: 'done' }); // #134: a delete activity ends with done
-    return { state: advanced, effects };
-  }
-  const { state, activity } = born;
-  const written = sourceWrites(task, onSource(stageOf(state.stages, task.stage)?.onStart, task.item.source));
-  const started = written.task;
-  const marked: Activity = { ...activity, deleting: true };
-  const closed = closeTerminals(state, task); // its terminals first (#573): git never runs under one
-  return {
-    state: withActivity(withTask(closed.state, started), marked),
-    effects: [...closed.effects, ...written.effects, { type: 'deleteActivity', activity: marked, task: started, scope: state.deleteActivity }],
-  };
 }
 
 // Changing the cap is about the automation's workers (#459): a free session lives among the workers but outside the cap, so it is kept as
