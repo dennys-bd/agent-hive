@@ -182,6 +182,7 @@ export interface SourceSync {
   polledAt?: string; // ISO, the last successful poll
   quota?: SourceQuota; // drives this source's backoff and its header meter
   error?: string; // the last poll failure; cleared by the next success
+  backoffUntil?: string; // ISO (#812): a call the source rate limited asked it to wait until then; its timer poll stops, the next success clears it
 }
 
 /** How the Hive itself reaches GitHub: the `gh` CLI the user already logged in, or the Hive's own OAuth token. */
@@ -1635,6 +1636,7 @@ export type HiveEvent =
   | { type: 'setWorkspace'; taskId: string; workspace: string } // right-click › Workspace (#179)
   | { type: 'rateLimits'; agent: AgentId; ptyId?: string; rateLimits: RateLimits; replace?: boolean } // agent: whose plan (#929); no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
   | { type: 'sourceQuota'; source: string; quota: SourceQuota }
+  | { type: 'sourceBackoff'; source: string; until: string } // #812: a call the source rate limited reports its retry time (ISO); the later time wins
   | { type: 'pollFailed'; source: string; message: string } // that source's listItems rejected (#180): its tasks stay as they are
   | { type: 'setSources'; sources: string[] } // like setWorkspaces: the Comb's sources, from the config on every save (#180)
   | { type: 'renameSources'; renames: Record<string, string> } // a save that renamed sources (#278): old name → new name, one simultaneous map; dispatched first by reconfigure
@@ -2065,6 +2067,8 @@ export interface IssuePage extends RepoIssue {
 export interface ReadOptions { fresh?: boolean } // #282: fresh reads GitHub now, not the read model
 
 /** What every source adapter implements; src/source.ts builds one per comb.sources entry (#180). */
+export interface CreatedRef { id: string; url: string } // #811: the created item's id in its source (GitHub: the issue number) and its link
+
 export interface Source {
   resolveFields(): Promise<void>; // every column name the config cites exists on the source
   listItems(): Promise<SourceItem[]>; // tasks in any cited column, in source order
@@ -2079,7 +2083,7 @@ export interface Source {
   setField?(itemId: string, field: string, value: FieldValue): Promise<FieldWrite>; // #686: writes, then re-reads the item
   relate?(itemId: string, change: BlockerChange): Promise<BlockerWrite>; // #56: writes the relation, then re-reads the item's relations
   findBlockers?(itemId: string, text: string): Promise<BlockerRef[]>; // #57: issues of the item's repository whose title matches, at most 8
-  create?(fields: { title: string; body?: string; column: string | null; labels: string[] }): Promise<{ itemId?: string; issue: { number: number; url: string } }>; // #846: a new issue in column, resolving to its item's adapter id (namespaced: its itemId); #767: with labels, and off the Project (no itemId) when column is null; a type that cannot create leaves it out
+  create?(fields: { title: string; body?: string; column: string | null; labels: string[] }): Promise<{ itemId?: string; ref: CreatedRef }>; // #846: a new item (GitHub: an issue) in column, resolving to its item's adapter id (namespaced: its itemId); #767: with labels, and off the Project (no itemId) when column is null; a type that cannot create leaves it out
   createOptions?(): Promise<{ statuses: string[]; labels: string[] }>; // #768: the create dialog's menus; rejects with CreateRefusedError when the source has no repository
   project?(options?: ReadOptions): Promise<ProjectView>; // #756: the source's native view, every issue unfiltered; #282: from the read model unless fresh
 }

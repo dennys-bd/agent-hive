@@ -91,4 +91,19 @@ export const MIGRATIONS: readonly string[] = [
     BEGIN DELETE FROM pull_changes WHERE source = new.source AND repository = new.repository AND number = new.number; END;
   CREATE TRIGGER pull_changes_gone AFTER DELETE ON issues WHEN old.kind = 'pr'
     BEGIN DELETE FROM pull_changes WHERE source = old.source AND repository = old.repository AND number = old.number; END;`,
+  // #813: the items of any tracker, source-agnostic: one row per item under the replace rule, its values, relations, scope fields and listing order
+  // beside it. Only CREATEs, so a GitHub row is untouched; the sync cursor reuses sync_scopes (kind 'items', the scope in repository)
+  `CREATE TABLE source_items (source TEXT NOT NULL, node_id TEXT NOT NULL, scope TEXT NOT NULL, key TEXT NOT NULL, updated_at TEXT NOT NULL,
+    values_sig TEXT NOT NULL, parent_id TEXT, parent_key TEXT, parent_title TEXT, content_id TEXT, data TEXT NOT NULL, written_at INTEGER,
+    PRIMARY KEY (source, node_id));
+  CREATE INDEX source_items_by_scope ON source_items (source, scope);
+  CREATE TABLE source_listings (source TEXT NOT NULL, scope TEXT NOT NULL, position INTEGER NOT NULL, node_id TEXT NOT NULL,
+    PRIMARY KEY (source, scope, position));
+  CREATE TABLE source_item_values (source TEXT NOT NULL, node_id TEXT NOT NULL, field TEXT NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL,
+    value TEXT NOT NULL, PRIMARY KEY (source, node_id, field, position));
+  CREATE INDEX source_item_values_by_value ON source_item_values (source, field, value);
+  CREATE TABLE source_fields (source TEXT NOT NULL, scope TEXT NOT NULL, position INTEGER NOT NULL, name TEXT NOT NULL, kind TEXT, options TEXT,
+    PRIMARY KEY (source, scope, position));
+  CREATE TABLE source_relations (source TEXT NOT NULL, node_id TEXT NOT NULL, kind TEXT NOT NULL, position INTEGER NOT NULL, target_id TEXT,
+    target_key TEXT, title TEXT, state TEXT NOT NULL, PRIMARY KEY (source, node_id, kind, position));`,
 ];

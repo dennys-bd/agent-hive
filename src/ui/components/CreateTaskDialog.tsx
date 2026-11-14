@@ -114,10 +114,10 @@ function hiveAction(draft: CreateDraft, setError: (error: string | undefined) =>
 function IssueFailureLine({ failure }: { failure: IssueFailure }) {
   // a 400 created nothing, so the retry is safe once a field changes (decision 15); its line says why, not that GitHub failed
   if (failure.kind !== 'placed') return <>{t(failure.kind === 'refused' ? 'create.issueRefused' : 'create.issueFailed', { repository: failure.repository })}</>;
-  const { number, url } = failure.issue;
+  const { id, url } = failure.ref;
   return (
     <>
-      {t('create.issuePlaced', { number, repository: failure.repository })}{' '}
+      {t('create.issuePlaced', { id, repository: failure.repository })}{' '}
       <Button type="button" variant="link" size="xs" className="h-auto p-0" onClick={() => window.open(url, '_blank', 'noreferrer')}>{t('create.viewOnGitHub')}</Button>
     </>
   );

@@ -1317,7 +1317,7 @@ test('parseConfig refuses each comb.createIn rule and a malformed repository, na
   assert.throws(() => parseConfig(github({ createIn: '' })), { message: 'hive.config.json: "comb.createIn" must be a non-empty string' });
   assert.throws(() => parseConfig(github({ createIn: 'nope' })), { message: 'hive.config.json: "comb.createIn" must be "hive" or a source\'s name' });
   assert.throws(() => parseConfig(github({ hiveSource: false })), { message: 'hive.config.json: "comb.createIn" is "hive" but "comb.hiveSource" is false' });
-  assert.throws(() => parseConfig(github({ createIn: 'board' })), { message: 'hive.config.json: "comb.createIn" names a source without "repository"' });
+  assert.throws(() => parseConfig(github({ createIn: 'board' })), { message: 'hive.config.json: "comb.createIn" names a source that cannot take new tasks' });
   assert.throws(() => parseConfig(combConfig({ stages: LOCAL_STAGES, hiveSource: false })), { message: 'hive.config.json: "comb.hiveSource" can be false only with at least one source' });
   for (const repository of ['acme', 'acme/app/x', 'a b/c', 7]) {
     assert.throws(() => parseConfig(github({ source: { ...GITHUB_SOURCE, repository } })), /"comb\.sources\[0\]\.repository" must be a repository as owner\/name/, String(repository));

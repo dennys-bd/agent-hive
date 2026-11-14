@@ -4,6 +4,7 @@ import { hiveProject } from './hive-project.js';
 import type { Logger } from './log.js';
 import { inBackoff } from './polling.js';
 import { CreateRefusedError } from './source-create.js';
+import { answeredRateLimit, type ReportRetry } from './source-errors.js';
 import { entryStage, HIVE_SOURCE, itemSource } from './tasks.js';
 import type { FieldWrite, HiveEvent, ProjectView, Source, Stage, State } from './types.js';
 
@@ -27,6 +28,7 @@ type FieldSource = Required<Pick<Source, 'fieldsOf' | 'setField'>>;
 export interface ProjectRouteDeps {
   requireLive(res: Response): { state: State; runtime: { sources: ReadonlyMap<string, ProjectSource> } } | undefined;
   dispatch(event: HiveEvent): Promise<unknown>; // #686: itemRead, the re-read item applied to its task alone, no poll
+  reportRetry: ReportRetry; // #812: a read or write the source rate limited puts the source in backoff and answers 429
   log?: Logger;
   refreshOptions?(repositories: string[]): Promise<void>; // #282: the read model loop's, present exactly when there is a read model
 }
@@ -77,8 +79,9 @@ async function applied(deps: ProjectRouteDeps, source: string, itemId: string, w
 }
 
 // A failed read or write (#686): an item the source does not have is a 404; a write that failed midway answers the re-read item beside the
-// error, applied like a good write, so the UI resyncs; any other failure of the source is a 502 with its words
+// error, applied like a good write, so the UI resyncs; a rate limit is a 429 with its retry time (#812); any other failure of the source is a 502 with its words
 async function failed(deps: ProjectRouteDeps, res: Response, source: string, itemId: string, err: unknown): Promise<void> {
+  if (await answeredRateLimit(err, source, deps.reportRetry, res)) return;
   if (err instanceof ItemNotOnSourceError) return void res.status(HTTP_NOT_FOUND).json({ error: err.message });
   if (err instanceof PartialWriteError) return void res.status(HTTP_BAD_GATEWAY).json({ error: err.message, ...(await applied(deps, source, itemId, err.written)) });
   res.status(HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });

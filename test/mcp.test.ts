@@ -610,9 +610,9 @@ test('hive_create_task resolves its source like POST /tasks: absent is comb.crea
   const client = await connect(t, base, ptyId);
   assert.deepEqual(await call(client, 'hive_create_task', { title: 'Default' }), { text: 'HIVE-1', isError: false });
   assert.deepEqual(await call(client, 'hive_create_task', { title: 'Named', source: 'hive' }), { text: 'HIVE-2', isError: false });
-  assert.deepEqual(await call(client, 'hive_create_task', { title: 'Nope', source: 'board' }), { text: noCreateMessage('board'), isError: true });
+  assert.deepEqual(await call(client, 'hive_create_task', { title: 'Nope', source: 'board' }), { text: noCreateMessage({ name: 'board', type: 'github' }), isError: true });
   const res = await hiveFetch(`${base}/tasks`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ title: 'Nope', stage: 'fila', source: 'board' }) });
-  assert.deepEqual(await res.json(), { error: noCreateMessage('board') }, 'the route answers the same words');
+  assert.deepEqual(await res.json(), { error: noCreateMessage({ name: 'board', type: 'github' }) }, 'the route answers the same words');
   assert.equal(server.getState()!.tasks.filter((c) => c.created).length, 2);
 });
 

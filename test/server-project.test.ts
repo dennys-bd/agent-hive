@@ -24,6 +24,7 @@ function routes(t: TestContext, sources: Record<string, ViewSource>, extra: Part
   const state: State = { ...initialState(0), ...flowed(STAGES), ...extra };
   registerProjectRoutes(app, {
     requireLive: () => ({ state, runtime: { sources: new Map(Object.entries(sources)) } }),
+    reportRetry: async () => {},
     dispatch: async (event) => { dispatched.push(event); if (rejecting) throw new Error('reducer failed'); },
     ...extraDeps,
   });

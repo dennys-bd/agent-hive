@@ -190,7 +190,7 @@ function filterProblem(sources: SourceDraft[]): SettingsProblem | undefined {
 // The server checks the rest (the source itself, each source's from).
 // The parser's four createIn rules (#846, createInProblem), named before the round trip
 function createInDraftProblem(draft: SettingsDraft): SettingsProblem | undefined {
-  const sources = draft.sources.map((r) => ({ name: r.name.trim(), ...(r.repository === '' ? {} : { repository: r.repository }) }));
+  const sources = draft.sources.map((r) => ({ name: r.name.trim(), type: r.type, ...(r.repository === '' ? {} : { repository: r.repository }) }));
   const problem = createInProblem({ hiveSource: draft.hiveSource, createIn: createInName(draft), sources });
   return problem === undefined ? undefined : { section: 'flow', message: t(problem) };
 }

@@ -688,7 +688,7 @@ test('validateSettings names each createIn rule on the flow section before the s
   const problem = (key: Parameters<typeof t>[0]) => ({ section: 'flow', message: t(key) });
   assert.equal(validateSettings(draft), undefined);
   assert.deepEqual(validateSettings({ ...draft, createIn: 'hive', hiveSource: false }), problem('settings.error.createIn.hiveOff'));
-  assert.deepEqual(validateSettings({ ...draft, sources: [{ ...work, repository: '' }] }), problem('settings.error.createIn.noRepository'));
+  assert.deepEqual(validateSettings({ ...draft, sources: [{ ...work, repository: '' }] }), problem('settings.error.createIn.cannotCreate'));
   assert.deepEqual(validateSettings({ ...draft, createIn: 'a-removed-row' }), problem('settings.error.createIn.unknown'));
   assert.deepEqual(validateSettings({ ...draft, sources: [], createIn: 'hive', hiveSource: false }), problem('settings.error.hiveSource.noSource'));
 });

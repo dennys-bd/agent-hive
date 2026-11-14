@@ -14,6 +14,7 @@ import { GITHUB_ENTRY, combConfig, fakeGql, fakeSourceFactory, FILTER } from '..
 const options = [{ id: 'O_ready', name: 'Ready' }, { id: 'O_prog', name: 'In progress' }, { id: 'O_rev', name: 'In review' }];
 const fields = { repositoryOwner: { projectV2: { id: 'PVT_1', field: { id: 'F_status', options } } } };
 const ISSUE_URL = 'https://github.com/acme/app/issues/9';
+const REF = { id: '9', url: ISSUE_URL };
 const ISSUE = { createIssue: { issue: { id: 'I_9', number: 9, url: ISSUE_URL } } };
 const LABELS = { repository: { labels: { nodes: [{ id: 'L_bug', name: 'bug' }, { id: 'L_docs', name: 'docs' }] } } };
 const specWith = (extra: Record<string, unknown> = {}) => {
@@ -37,7 +38,7 @@ test('create makes the issue in the source\'s repository, adds it to the Project
   });
   const source = createSource(specWith({ repository: 'acme/app' }), { gql });
   await source.resolveFields();
-  assert.deepEqual(await source.create?.({ title: 'Fix login', body: 'steps', column: 'Ready', labels: [] }), { itemId: 'PVTI_9', issue: { number: 9, url: ISSUE_URL } });
+  assert.deepEqual(await source.create?.({ title: 'Fix login', body: 'steps', column: 'Ready', labels: [] }), { itemId: 'PVTI_9', ref: REF });
   assert.deepEqual(calls.slice(1).map((c) => [c.name, c.variables]), [
     ['repositoryId', { owner: 'acme', name: 'app' }],
     ['createIssue', { repositoryId: 'R_app', title: 'Fix login', body: 'steps' }],
@@ -60,13 +61,13 @@ test('create refuses a source without a repository, and a column the Status lack
   assert.deepEqual(calls.map((c) => c.name), ['fields', 'fields', 'repositoryLabels'], 'reads only: no mutation ran');
 });
 
-test('a failure after the issue exists throws IssuePlacementError naming its url and carrying its number (#846, #767)', async () => {
+test('a failure after the issue exists throws IssuePlacementError naming its url and carrying its ref, the number as the string id (#811) (#846, #767)', async () => {
   const { gql } = fakeGql({ fields, repositoryId: { repository: { id: 'R_app' } }, createIssue: ISSUE }); // addProjectItem unanswered: the fake throws
   const source = createSource(specWith({ repository: 'acme/app' }), { gql });
   await source.resolveFields();
   const err = await source.create!({ title: 'x', column: 'Ready', labels: [] }).then(() => undefined, (e: unknown) => e);
   assert.ok(err instanceof IssuePlacementError);
-  assert.deepEqual([err.message, err.issue], [`issue ${ISSUE_URL} was created but not labeled or placed on the Project: unexpected graphql call: addProjectItem`, { number: 9, url: ISSUE_URL }]);
+  assert.deepEqual([err.message, err.ref], [`issue ${ISSUE_URL} was created but not labeled or placed on the Project: unexpected graphql call: addProjectItem`, REF]);
 });
 
 test('create sends the label ids to the new issue; column null runs no Project write and answers no itemId (#767)', async () => {
@@ -75,7 +76,7 @@ test('create sends the label ids to the new issue; column null runs no Project w
   });
   const source = createSource(specWith({ repository: 'acme/app' }), { gql });
   await source.resolveFields();
-  assert.deepEqual(await source.create?.({ title: 'Fix', column: null, labels: ['docs', 'bug'] }), { issue: { number: 9, url: ISSUE_URL } });
+  assert.deepEqual(await source.create?.({ title: 'Fix', column: null, labels: ['docs', 'bug'] }), { ref: REF });
   assert.deepEqual(calls.slice(1).map((c) => [c.name, c.variables]), [
     ['repositoryLabels', { owner: 'acme', name: 'app' }],
     ['repositoryId', { owner: 'acme', name: 'app' }],
@@ -85,11 +86,10 @@ test('create sends the label ids to the new issue; column null runs no Project w
 });
 
 test('namespaced create answers the item under its source\'s name, and an issue off the Project as it is (#846, #767)', async () => {
-  const issue = { number: 9, url: ISSUE_URL };
-  const create = async ({ column }: Parameters<NonNullable<Source['create']>>[0]) => (column === null ? { issue } : { itemId: 'PVTI_9', issue });
+  const create = async ({ column }: Parameters<NonNullable<Source['create']>>[0]) => (column === null ? { ref: REF } : { itemId: 'PVTI_9', ref: REF });
   const board = namespaced(GITHUB_ENTRY, { ...fakeSourceFactory().factory(specWith()), create });
-  assert.deepEqual(await board.create?.({ title: 'x', column: 'Ready', labels: [] }), { itemId: 'board:PVTI_9', issue });
-  assert.deepEqual(await board.create?.({ title: 'x', column: null, labels: [] }), { issue });
+  assert.deepEqual(await board.create?.({ title: 'x', column: 'Ready', labels: [] }), { itemId: 'board:PVTI_9', ref: REF });
+  assert.deepEqual(await board.create?.({ title: 'x', column: null, labels: [] }), { ref: REF });
 });
 
 test('repositoryLabels reads the repository\'s labels by owner and name, and throws for a repository that is gone (#767)', async () => {

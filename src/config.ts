@@ -421,7 +421,7 @@ const CREATE_IN_ERROR: Record<CreateInProblem, string> = {
   'settings.error.hiveSource.noSource': '"comb.hiveSource" can be false only with at least one source',
   'settings.error.createIn.hiveOff': '"comb.createIn" is "hive" but "comb.hiveSource" is false',
   'settings.error.createIn.unknown': '"comb.createIn" must be "hive" or a source\'s name',
-  'settings.error.createIn.noRepository': '"comb.createIn" names a source without "repository"',
+  'settings.error.createIn.cannotCreate': '"comb.createIn" names a source that cannot take new tasks',
 };
 
 // Required, no default (#846): an old file gets both from config-migrate.ts. After the stages, so any other fault of the Comb is named first.

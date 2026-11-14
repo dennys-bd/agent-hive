@@ -105,7 +105,7 @@ test('every blocker already closed: the relations are written, the call is refus
 test('a ref the task\'s source does not read refuses the call with the forms its adapter\'s error names, through the route\'s own relate (#810)', async (t) => {
   const refuses = { relate: async (_itemId: string, change: BlockerChange): Promise<never> => { throw new BadBlockerRefError(change.ref, githubRefs.forms); } };
   const live = { state: { ...initialState(1), tasks: [TASK] }, runtime: { sources: new Map([['gh', refuses]]) } };
-  const deps = { dispatch: async () => undefined, latest: () => undefined };
+  const deps = { dispatch: async () => undefined, latest: () => undefined, reportRetry: async () => {} };
   const h = await harness(t, { relate: (itemId, change) => relateItem(deps, live, itemId, change) });
   assert.deepEqual(await stopWith(h.client, { block: ['acme/r12'] }), { text: 'acme/r12: "acme/r12" is no ref: write 12, #12, owner/repo#12 or a task id', isError: true });
   assert.deepEqual(h.dispatched, []);

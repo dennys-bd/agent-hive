@@ -13,6 +13,16 @@ test('createTargetsOf keeps every source with a repository, with its type; desti
   expect(destinations({ hiveSource: true, createIn: 'hive', sources: [] })).toEqual([{ name: 'hive' }]);
 });
 
+test('createTargetsOf offers every source the predicate accepts, a type with no repository included; the default still leaves a GitHub source with no repository out (#811)', () => {
+  const tracker = { ...CONFIG, name: 'tracker', type: 'tracker' } as unknown as SourceConfig;
+  const configs: SourceConfig[] = [tracker, { ...CONFIG, name: 'bare' }];
+  const targets = createTargetsOf({ sources: configs, createIn: 'tracker' }, (s) => (s.type as string) === 'tracker');
+  expect(targets.sources).toEqual([{ name: 'tracker', type: 'tracker' }]);
+  expect(destinations(targets)).toEqual([{ name: 'tracker', type: 'tracker' }, { name: 'hive' }]);
+  expect(repositoryLabel(targets.sources[0], targets.sources)).toBe('tracker');
+  expect(createTargetsOf({ sources: [{ ...CONFIG, name: 'bare' }] }).sources).toEqual([]);
+});
+
 const SOURCES = [{ name: 'work', type: 'github' as const, repository: 'acme/app' }, { name: 'docs', type: 'github' as const, repository: 'acme/docs' }];
 const TARGETS: CreateTargets = { hiveSource: true, createIn: 'hive', sources: SOURCES };
 const DEFAULTS = { work: 'site', bare: 'hive' }; // bare has a default workspace but no repository, so it is no destination

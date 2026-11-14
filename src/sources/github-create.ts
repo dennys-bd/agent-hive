@@ -1,4 +1,4 @@
-import type { Gql } from '../types.js';
+import type { CreatedRef, Gql } from '../types.js';
 import type { ItemStore } from '../read-model/items.js';
 import { CreateRefusedError, IssuePlacementError } from '../source-create.js';
 import { ADD_PROJECT_ITEM, CREATE_ISSUE, labelsMutation, REPOSITORY_ID, REPOSITORY_LABELS, SET_OPTION, type AddProjectItemData, type CreateIssueData, type RepositoryLabelsData } from './github-queries.js';
@@ -26,11 +26,11 @@ export interface IssueTarget { repositoryId: string; project?: { projectId: stri
 
 /** The issue, then its labels, then its Project item and Status, in that order (#846, #767). A failure once the issue exists throws
  * IssuePlacementError naming its url, so the user can find it: nothing is rolled back. Off the Project, no item and no itemId. */
-export async function createProjectIssue(gql: Gql, target: IssueTarget, fields: { title: string; body?: string; labelIds: string[] }): Promise<{ itemId?: string; issue: { number: number; url: string } }> {
+export async function createProjectIssue(gql: Gql, target: IssueTarget, fields: { title: string; body?: string; labelIds: string[] }): Promise<{ itemId?: string; ref: CreatedRef }> {
   const created = (await gql(CREATE_ISSUE, { repositoryId: target.repositoryId, title: fields.title, body: fields.body ?? '' })) as CreateIssueData;
   const issue = created.createIssue?.issue;
   if (!issue) throw new Error('GitHub created no issue');
-  const made = { issue: { number: issue.number, url: issue.url } };
+  const made = { ref: { id: String(issue.number), url: issue.url } };
   try {
     // a scalar Gql carries no list: one ID! variable per label, as the field write's labels (#60)
     const { labelIds } = fields;
@@ -43,7 +43,7 @@ export async function createProjectIssue(gql: Gql, target: IssueTarget, fields: 
     await gql(SET_OPTION, { projectId, itemId, fieldId: statusFieldId, singleSelectOptionId: optionId });
     return { itemId, ...made };
   } catch (err) {
-    throw new IssuePlacementError(`issue ${issue.url} was created but not labeled or placed on the Project: ${errorMessage(err)}`, made.issue);
+    throw new IssuePlacementError(`issue ${issue.url} was created but not labeled or placed on the Project: ${errorMessage(err)}`, made.ref);
   }
 }
 

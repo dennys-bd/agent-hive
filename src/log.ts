@@ -184,6 +184,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'renameStages': return `renameStages ${Object.entries(event.renames).map(([from, to]) => `${from}→${to}`).join(',')}`; // #861
     case 'renameSources': return `renameSources ${Object.entries(event.renames).map(([from, to]) => `${from}→${to}`).join(',')}`;
     case 'sourceQuota': return `sourceQuota source=${event.source} remaining=${event.quota.remaining}/${event.quota.limit} resetsAt=${event.quota.resetsAt}`;
+    case 'sourceBackoff': return `sourceBackoff source=${event.source} until=${event.until}`; // #812
     case 'hook': {
       const { hook_event_name: name, tool_name: tool, reason, source } = event.payload;
       return `hook ${name} pty=${shortId(event.ptyId)}${field('tool', tool)}${field('reason', reason)}${field('source', source)}`;
