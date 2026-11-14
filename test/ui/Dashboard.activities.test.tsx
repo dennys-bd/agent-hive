@@ -161,6 +161,27 @@ test('a board whose last poll failed shows its error above the board (#180, #533
   expect(within(screen.getByRole('main')).getByText('source notes: project not found')).toBeInTheDocument();
 });
 
+const pad = (n: number): string => String(n).padStart(2, '0');
+
+test('a source in rate-limit backoff says until when, after its error line when it has one, in EN and PT; a passed wait shows nothing (#812)', () => {
+  const until = new Date(Date.now() + 60 * 60_000);
+  const time = `${pad(until.getHours())}:${pad(until.getMinutes())}`;
+  const syncs = {
+    notes: { error: 'rate limited', backoffUntil: until.toISOString() },
+    work: { backoffUntil: until.toISOString() },
+    old: { backoffUntil: new Date(Date.now() - 60_000).toISOString() },
+  };
+  const cases = [['en', 'tasks', 'waiting until'], ['pt', 'tarefas', 'aguardando até']] as const;
+  for (const [language, tasks, waiting] of cases) {
+    setLanguage(language);
+    const { unmount } = render(<Dashboard state={{ ...base, syncs }} hasSource locale="pt-BR" tick={0} onSelect={() => {}} />);
+    fireEvent.click(view(tasks)); // the window opens on activities (#746)
+    const lines = within(screen.getByRole('main')).getAllByText(/^source /).map((el) => el.textContent);
+    expect(lines, language).toEqual(['source notes: rate limited', `source notes: ${waiting} ${time}`, `source work: ${waiting} ${time}`]);
+    unmount();
+  }
+});
+
 test('a picked activity shows its bar in the window header: the title, the facts, dormir on the focused run and the ⋯ (#536, #221)', async () => {
   const user = userEvent.setup();
   render(<Home state={base} />);

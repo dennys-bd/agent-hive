@@ -9,8 +9,8 @@ export type ProjectState = { kind: 'loading' } | { kind: 'error'; message: strin
 const HTTP_TOO_MANY_REQUESTS = 429;
 const pad = (n: number): string => String(n).padStart(2, '0');
 
-// The quota's reset as local HH:MM; an unreadable one reads empty
-function clock(iso: string | undefined): string {
+// A time as local HH:MM, the quota's reset and a source's rate-limit wait (#812); an unreadable one reads empty
+export function clock(iso: string | undefined): string {
   const at = new Date(iso ?? '');
   return Number.isNaN(at.getTime()) ? '' : `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }

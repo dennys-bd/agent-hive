@@ -40,6 +40,7 @@ import { hasTree } from '@/lib/tree-groups';
 import { consoleRunsOf, useConsoleChannels } from '@/hooks/use-console';
 import { type DisplayControls, useDisplayOptions } from '@/hooks/use-flow-view';
 import { useRepositories } from '@/hooks/use-repositories';
+import { clock } from '@/hooks/use-project';
 import { centerOfRepo, type TasksCenter, type TasksNav, useTasksCenter } from '@/hooks/use-tasks-center';
 import { FONT_FAMILY } from '@/lib/xterm-setup';
 
@@ -54,13 +55,19 @@ const manualSignal = (state: State): EffectiveLimits => ({ signal: state.signal,
 
 const NO_SOURCES: SourcesNav = { sources: [], auth: 'cli' }; // no config handed (the tests' harness): only hive
 
-// A source whose last poll failed says so above the flow (#180, #533); a status a source no longer configured left in state.json stays hidden
+// A source whose last poll failed says so above the flow (#180, #533), and one in rate-limit backoff says until when, after its error line
+// (#812 decision 11): read against now on every render, and the Dashboard redraws every tick, so a passed wait leaves by itself.
+// A status a source no longer configured left in state.json stays hidden
 function SyncErrors({ syncs }: { syncs: Record<string, SourceSync> }) {
-  const errors = Object.entries(syncs).flatMap(([name, { error }]) => (error ? [{ name, error }] : []));
-  if (errors.length === 0) return null;
+  const now = Date.now();
+  const lines = Object.entries(syncs).flatMap(([name, { error, backoffUntil }]) => [
+    ...(error ? [{ key: `${name}:error`, text: t('header.sourceError', { name, error }) }] : []),
+    ...(backoffUntil !== undefined && Date.parse(backoffUntil) > now ? [{ key: `${name}:wait`, text: t('header.sourceWaiting', { name, time: clock(backoffUntil) }) }] : []),
+  ]);
+  if (lines.length === 0) return null;
   return (
     <div className="flex flex-col gap-1 px-3.5 pt-2 text-xs text-destructive">
-      {errors.map(({ name, error }) => <span key={name}>{t('header.sourceError', { name, error })}</span>)}
+      {lines.map(({ key, text }) => <span key={key}>{text}</span>)}
     </div>
   );
 }
