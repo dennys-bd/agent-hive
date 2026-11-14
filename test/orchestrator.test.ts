@@ -381,6 +381,14 @@ test('closeTask removes a source task out of the listing or an orphan with every
   assert.equal(reduce(deleting, { type: 'closeTask', taskId: 'board:item1' }).state, deleting, 'git is removing its worktree (#182)');
 });
 
+test('a confirmed closeTask drops a listed task that is not leaving; one being deleted is still refused; an unconfirmed one keeps the guard (#856)', () => {
+  const listedOnly = polled(base(0), [listed(1)]).state; // listed, no worker, not leaving
+  assert.equal(reduce(listedOnly, { type: 'closeTask', taskId: 'board:item1' }).state, listedOnly, 'unconfirmed: refused, as today');
+  assert.deepEqual(reduce(listedOnly, { type: 'closeTask', taskId: 'board:item1', confirmed: true }).state.tasks, []);
+  const deleting = withLive(listedOnly, 1, { deleting: true });
+  assert.equal(reduce(deleting, { type: 'closeTask', taskId: 'board:item1', confirmed: true }).state, deleting, 'the removal\'s answer must still find it (#182)');
+});
+
 test('reducer never mutates its input', () => {
   const before = base(2);
   const snapshot = JSON.stringify(before);

@@ -194,7 +194,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'restored': return restored(state, event); // no fill: the task stays as it was in its stage (#619)
     case 'restoreFailed': return restoreFailed(state, event.itemId); // no fill: only the mark goes (#619)
     case 'clearSessions': return clearSessions(state, event); // no fill: the fill never reads sessions (#283)
-    case 'closeTask': return fill(closeTask(state, event.taskId));
+    case 'closeTask': return fill(closeTask(state, event.taskId, event.confirmed === true));
     case 'worktreeGone': return worktreeGone(state, event.activityId); // no fill, no effects: fill never looks at the path
     case 'deletingActivity': return deletingActivity(state, liveTaskId(state, event.activityId)); // no fill: nothing freed, one task less to pick
     case 'activityRemoved': return fill(activityRemoved(state, liveTaskId(state, event.activityId))); // the task may be a candidate again, here or in the stage it advanced to (#210)
@@ -703,12 +703,14 @@ function drainForShutdown(reduced: Reduced, now: number): Reduced {
 }
 
 // The remove of a source task out of the listing or an orphan (#568), or of a stopped local task (#132), or a leaving task whose source action
-// succeeded (#286), or a local goal whose decomposition is on GitHub (#865): the task goes, every session on
-// it with it (the stage run, every session and its terminals, #164, #283); the worktree stays on disk (#182).
-function closeTask(state: State, id: string): Reduced {
+// succeeded (#286), or a local goal whose decomposition is on GitHub (#865), or any task whose leaving action the source confirmed (#856): the
+// task goes, every session on it with it (the stage run, every session and its terminals, #164, #283); the worktree stays on disk (#182).
+function closeTask(state: State, id: string, confirmed: boolean): Reduced {
   const task = state.tasks.find((c) => taskId(c) === id);
-  // deleting: the removal's answer must still find the task (#182); canRemoveCreated already refuses a deleting local task
-  if (!task || activityOf(state, id)?.deleting || !(task.outOfListing !== undefined || task.orphan || task.leaving || canRemoveCreated(task, state) || isWrittenGoal(state, task))) return none(state);
+  // deleting: the removal's answer must still find the task (#182), confirmed or not; canRemoveCreated already refuses a deleting local task
+  if (!task || activityOf(state, id)?.deleting) return none(state);
+  // #856: the source confirmed a leaving action, so the item is gone there whatever mark the task lost meanwhile (#802 lost its leaving one)
+  if (!confirmed && !(task.outOfListing !== undefined || task.orphan || task.leaving || canRemoveCreated(task, state) || isWrittenGoal(state, task))) return none(state);
   return dropTask(state, task);
 }
 

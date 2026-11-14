@@ -211,6 +211,7 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'error' }), 'error');
   assert.equal(describeEvent({ type: 'start', itemId: 'PVTI_1' }), 'start #PVTI_1');
   assert.equal(describeEvent({ type: 'closeTask', taskId: 'PVTI_1' }), 'close task=#PVTI_1');
+  assert.equal(describeEvent({ type: 'closeTask', taskId: 'PVTI_1', confirmed: true }), 'close task=#PVTI_1 confirmed');
   assert.equal(describeEvent({ type: 'done', ptyId: PTY }), 'done pty=1a2b3c4d');
   assert.equal(describeEvent({ type: 'done', ptyId: PTY, result: { spec: 'x', plan: 'y' } }), 'done pty=1a2b3c4d result=spec,plan');
   assert.equal(describeEvent({ type: 'pr', ptyId: PTY, url: 'https://github.com/acme/r/pull/9' }), 'pr pty=1a2b3c4d');

@@ -205,7 +205,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'restored': return `restored #${event.itemId}${event.branch === undefined ? '' : ` branch=${event.branch}`}`;
     case 'restoreFailed': return `restoreFailed #${event.itemId}`;
     case 'clearSessions': return `clearSessions ${act(event.activityId)} ${shortId(event.sessionId)}`;
-    case 'closeTask': return `close task=#${event.taskId}`;
+    case 'closeTask': return `close task=#${event.taskId}${event.confirmed ? ' confirmed' : ''}`; // #856
     case 'done': return `done pty=${shortId(event.ptyId)}${event.result ? ` result=${Object.keys(event.result).join(',')}` : ''}${event.verdict === undefined ? '' : ` verdict=${event.verdict}`}`; // keys only; a verdict's name is config, the evidence is never logged (#134)
     case 'pr': return `pr pty=${shortId(event.ptyId)}`;
     case 'prStates': return `prStates ${event.states.map((s) => `#${prNumber(s.url)}=${s.state}`).join(',')}`; // numbers, never the links

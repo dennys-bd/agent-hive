@@ -2875,6 +2875,7 @@ test('a leaving sourceAction (#286): the source applies it and the task leaves t
   assert.deepEqual(accepting.urls, ['https://github.com/acme/r/issues/1'], 'the task\'s url travels with the action (#568)');
   assert.deepEqual(server.getState()?.tasks, [], 'closeTask took it out');
   assert.ok(lines.includes('INFO sourceAction #board:I1 archive ok'), lines.join('\n'));
+  assert.ok(lines.includes('DEBUG close task=#board:I1 confirmed'), lines.join('\n')); // #856: the source's ok confirms the close
 
   const refusing = fakeSourceFactory(0, undefined, 'must have admin rights');
   const other = await start(t, archived, undefined, {}, { sourceFactory: refusing.factory });
