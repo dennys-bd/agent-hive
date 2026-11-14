@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sourceSpec, createSource, createSources, namespaced, resolveSources } from '../src/source.js';
 import { groupUnderEpics, listFilterOptions, listProjects, listStatusOptions, treeLinks } from '../src/sources/github.js';
-import { RelationRereadError } from '../src/sources/github-blockers.js';
+import { RelationRereadError } from '../src/blocker-errors.js';
 import { ITEMS, ITEM_FIELDS, type GhItemNode } from '../src/sources/github-queries.js';
 import { PROJECT_ITEM_LIMIT } from '../src/sources/github-pages.js';
 import { citedColumns, itemSource } from '../src/tasks.js';
