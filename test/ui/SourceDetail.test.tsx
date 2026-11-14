@@ -164,3 +164,22 @@ test('the hint names the switch stage and the last stage; a pick stores the stag
   render(<Harness source={{ ...work(), switchAt: 'gone' }} stages={[STAGES[0], STAGES[2]]} onDraft={vi.fn()} onRemove={vi.fn()} />);
   expect(screen.getByLabelText(t('settings.switchAt'))).toHaveTextContent('fila');
 });
+
+test('the epic delete-activity switch: off on a new source, a click patches the draft, labelled in both languages, disabled under ignore (#856)', () => {
+  for (const language of ['en', 'pt'] as const) {
+    setLanguage(language);
+    const onDraft = vi.fn();
+    const { unmount } = render(<Harness source={work()} onDraft={onDraft} onRemove={vi.fn()} />);
+    const toggle = screen.getByRole('switch', { name: t('settings.epicDeleteActivity') });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(onDraft).toHaveBeenLastCalledWith(expect.objectContaining({ epicDeleteActivity: true }));
+    unmount();
+  }
+  setLanguage('en');
+  expect(t('settings.epicDeleteActivity')).toBe("delete an epic's activity in its last stage");
+  setLanguage('pt');
+  expect(t('settings.epicDeleteActivity')).toBe('excluir a atividade do épico na última etapa'); // lowercase, as every label (design system); the glossary's PT names: atividade, etapa
+  render(<Harness source={{ ...work(), epics: 'ignore' }} onDraft={vi.fn()} onRemove={vi.fn()} />);
+  expect(screen.getByRole('switch', { name: t('settings.epicDeleteActivity') })).toBeDisabled();
+});

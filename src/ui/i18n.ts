@@ -889,6 +889,7 @@ const en = {
   'settings.epicFollows.ahead': 'the furthest ahead',
   'settings.epicFollows.aheadThenBehind': 'furthest ahead, then furthest behind',
   'settings.epicFollows.ignored': 'doesn\'t apply with "ignore": the epic moves on its own',
+  'settings.epicDeleteActivity': "delete an epic's activity in its last stage", // #856
   'settings.switchAt': 'switches at',
   'settings.switchAt.hint': "the epic's stage comes from its children · up to {stage}, the furthest ahead · then the furthest behind until {last}",
   'settings.filter': 'task filter',
@@ -4183,6 +4184,7 @@ const pt: Record<MessageKey, string> = {
   'settings.epicFollows.ahead': 'a mais avançada',
   'settings.epicFollows.aheadThenBehind': 'a mais avançada, depois a mais atrasada',
   'settings.epicFollows.ignored': 'não vale com "ignorar": o épico anda sozinho',
+  'settings.epicDeleteActivity': 'excluir a atividade do épico na última etapa', // #856
   'settings.switchAt': 'troca em',
   'settings.switchAt.hint': 'a etapa do épico vem das filhas · até {stage}, a mais avançada · depois, a mais atrasada até {last}',
   'settings.filter': 'filtro de tarefas',
