@@ -179,6 +179,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
     case 'rateLimits': return fill(setRateLimits(state, event)); // a reading is an input of the gate: a window that reset can open a job, one that filled can close it
     case 'sourceQuota': return none(withSync(state, event.source, (s) => ({ ...s, quota: event.quota }))); // display and that source's backoff only: no fill, no effects
+    case 'sourceBackoff': return none(withSync(state, event.source, (s) => withRetryWait(s, event.until))); // #812: no fill, no effects, like sourceQuota
     case 'pollFailed': return none(withSync(state, event.source, (s) => ({ ...s, error: event.message }))); // its tasks stay as they are
     case 'setSources': return none({ ...state, syncs: syncsFor(state.syncs, event.sources) }); // a removed source's tasks turn orphan (started) or leave at the next poll (#568)
     case 'renameSources': return none(renameSources(state, event.renames)); // a save that renamed sources (#278): no fill; setSources and the poll follow
@@ -387,7 +388,15 @@ function withSync(state: State, source: string, change: (status: SourceSync) => 
   return Object.hasOwn(state.syncs, source) ? { ...state, syncs: { ...state.syncs, [source]: change(state.syncs[source]) } } : state;
 }
 
-// A source's listing (#180) merges only its own tasks, swaps its ids in the source order and stamps when it answered, clearing its error.
+// #812 decision 3: the later of the stored wait and `until`, so no caller reopens a source another asked to hold. An unparsable `until` asks
+// nothing: no reader could compare it, and syncOf would drop it on the next boot
+function withRetryWait(status: SourceSync, until: string): SourceSync {
+  const at = Date.parse(until);
+  if (Number.isNaN(at) || Date.parse(status.backoffUntil ?? '') >= at) return status;
+  return { ...status, backoffUntil: until };
+}
+
+// A source's listing (#180) merges only its own tasks, swaps its ids in the source order and stamps when it answered, clearing its error and its rate-limit wait (#812).
 // No source (#132) merges nothing but still settles a removed source's tasks and runs the deletions: the poll drives the fill and `after`.
 function poll(state: State, { source, items: listed, reads }: Extract<HiveEvent, { type: 'poll' }>): Reduced {
   const sources = Object.keys(state.syncs);
@@ -397,7 +406,7 @@ function poll(state: State, { source, items: listed, reads }: Extract<HiveEvent,
   const polledAt = new Date().toISOString();
   const merged = withoutLeft(state, mergeTasks(state.tasks, state.flows, { source, items: listed, ...(reads === undefined ? {} : { reads }) }, sources, order, state, polledAt));
   return runActions(settleEntries(state.tasks, {
-    ...withSync(merged.state, source, ({ error: _error, ...status }) => ({ ...status, polledAt })), sourceOrder: order, error: undefined,
+    ...withSync(merged.state, source, ({ error: _error, backoffUntil: _backoffUntil, ...status }) => ({ ...status, polledAt })), sourceOrder: order, error: undefined,
   }), merged.effects);
 }
 
