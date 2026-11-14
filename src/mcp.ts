@@ -37,7 +37,8 @@ const CLOSE_REASONS = ['wontDo', 'duplicate'] as const satisfies readonly CloseR
 const DUPLICATE_OF_MESSAGE = 'duplicateOf needs reason "duplicate" and the original issue\'s number, a positive integer';
 export const CANNOT_CLOSE_MESSAGE = 'this task\'s source cannot close it; call hive_stop without reason';
 export const BLOCK_WITH_REASON_MESSAGE = 'block records what the task waits for; it takes no reason or duplicateOf';
-export const BLOCK_MESSAGE = 'block must be 1 to 10 refs, each an issue (12, #12, owner/repo#12) or a task id';
+// #810: no fixed forms, which would grow with every source type; a refused ref's own message names its task's (decision 7)
+export const BLOCK_MESSAGE = 'block must be 1 to 10 refs, each an id of the task\'s source or a task id';
 export const CANNOT_BLOCK_MESSAGE = 'this task\'s source cannot record a blocker; call hive_stop without block';
 export const NOT_BLOCKED_MESSAGE = 'none of these blockers is open; go on with the task';
 export const NO_SESSION_MESSAGE = 'your session id is not known yet';
@@ -175,7 +176,7 @@ async function stopBlocked(deps: McpDeps, ptyId: string, block: (number | string
 function registerStopTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_stop', {
     description: 'Tell the Hive this task will not be done: your session is stopped. Pass reason "wontDo" or "duplicate" (with duplicateOf, the original issue number) to have the Hive close the issue; never close it yourself. Without reason nothing is written to the source.'
-      + ' When the task cannot go on until another issue is done, pass block instead (that issue\'s number, or several: 12, #12, owner/repo#12): the Hive records the blocker and starts the task again once it closes. block takes no reason.',
+      + ' When the task cannot go on until another item is done, pass block instead (that item\'s id in your task\'s source, or several, or a task id): the Hive records the blocker and starts the task again once it closes. block takes no reason.',
     inputSchema: { reason: z.enum(CLOSE_REASONS).optional(), duplicateOf: z.number().optional(), block: z.array(z.union([z.number(), z.string()])).optional() },
   }, async ({ reason, duplicateOf, block }) => recorded(deps, header, 'hive_stop', async () => {
     const ptyId = livePtyId(deps, header);

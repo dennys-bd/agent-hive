@@ -1,4 +1,6 @@
 import type { BlockerChange, BlockerRef, BlockerWrite, Gql, Item, ItemBlockers } from '../types.js';
+import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from '../blocker-errors.js';
+import { GITHUB_REF, githubRefs } from './github-refs.js';
 import { readItem, reread, type FieldsContext } from './github-fields.js';
 import {
   ADD_BLOCKED_BY, ISSUE_ID, issueRepo, relationsQuery, REMOVE_BLOCKED_BY, SEARCH_ISSUES, type GhBlockerRef, type GhIssueRelations, type IssueIdData,
@@ -20,34 +22,14 @@ export function blockersOf(issue: GhIssueRelations, repo: string): ItemBlockers 
   return { blockedBy: refsOf(issue.blockedBy?.nodes, repo), blocking: refsOf(issue.blocking?.nodes, repo) };
 }
 
-/** A ref that is none of `12`, `#12` or `owner/repo#12` (#56). */
-export class BadBlockerRefError extends Error {
-  constructor(ref: string) { super(`"${ref}" names no issue: write 12, #12 or owner/repo#12`); }
-}
-/** No issue answers the ref (#56). */
-export class BlockerRefNotFoundError extends Error {
-  constructor(ref: string) { super(`no issue ${ref}`); }
-}
-/** The ref is the item itself (#56). */
-export class SelfBlockerError extends Error {
-  constructor() { super('an issue cannot block itself'); }
-}
-/** The relation was written but its re-read failed (#56): the relations ride along when they were read, so the caller can still answer;
- * undefined when even they failed, since empty lists would show the relation just written as gone. */
-export class RelationRereadError extends Error {
-  constructor(message: string, readonly blockers?: ItemBlockers) { super(message); }
-}
-
 const NO_BLOCKERS: ItemBlockers = { blockedBy: [], blocking: [] };
-// `12`, `#12` or `owner/repo#12`; the repository needs its `#`, so `acme/r12` is no ref. Nine digits stay inside GraphQL's Int
-const REF = /^(?:([\w.-]+)\/([\w.-]+)#|#?)(\d{1,9})$/;
 
 type IssueKey = { owner: string; name: string; number: number };
 
 // The issue a ref names; a short one is in the item's own repository, as GitHub's own picker reads it
 function parseRef(ref: string, own: { owner: string; name: string }): IssueKey {
-  const match = REF.exec(ref.trim());
-  if (!match) throw new BadBlockerRefError(ref);
+  const match = GITHUB_REF.exec(ref.trim());
+  if (!match) throw new BadBlockerRefError(ref, githubRefs.forms);
   const [, owner, name, digits] = match;
   return owner === undefined || name === undefined ? { ...own, number: Number(digits) } : { owner, name, number: Number(digits) };
 }

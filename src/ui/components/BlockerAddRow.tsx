@@ -1,25 +1,17 @@
 import { type KeyboardEvent, useId, useState } from 'react';
+import { readsRef, type RefGrammar } from '../../blocker-refs';
 import type { BlockerChange, BlockerRef, ItemBlockers } from '../../types';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useBlockerSearch } from '@/hooks/use-blocker-search';
 import { t } from '@/i18n';
+import { badRefText } from '@/lib/blocker-errors';
 
 type Kind = BlockerChange['kind'];
 
 /** A ref as the blockers section shows it (#57): `#12` for an issue of the item's own repository; `owner/repo#12`, a qualified `foo-12` and a
  * hive `HIVE-3` already carry their own form (#56), so a second `#` would read `#owner/repo#12`. */
 export const shownBlockerId = (id: string): string => (/^\d+$/.test(id) ? `#${id}` : id);
-
-// #56's ref forms: `12` or `#12` (sent as the bare number), `owner/repo#12`, a task id (`HIVE-3`, a qualified `foo-12`); anything else is a search
-const NUMBER = /^#?(\d{1,9})$/;
-const NAMED = /^(?:[\w.-]+\/[\w.-]+#\d{1,9}|[A-Za-z][\w.]*-\d+)$/;
-
-/** The ref the field's text names, in the form the blockers route takes; undefined when the text is only a search. */
-export function typedRef(text: string): string | undefined {
-  const trimmed = text.trim();
-  return NUMBER.exec(trimmed)?.[1] ?? (NAMED.test(trimmed) ? trimmed : undefined);
-}
 
 interface Option { ref: string; label: string; title?: string; isTyped: boolean }
 
@@ -71,25 +63,29 @@ function Suggestions({ id, options, active, isLoading, onActive, onPick }: Sugge
 export interface BlockerAddRowProps {
   source: string; itemId: string; selfId: string; blockers: ItemBlockers; isBusy: boolean;
   kind?: Kind; // #61: a fixed kind and no select: the Project's blocked-by cell only adds blocked-by
+  grammar?: RefGrammar; // #810: the item's source type's ref forms; absent on a hive task, which reads only a task id
   onAdd(kind: Kind, ref: string): void; onCancel(): void;
 }
 
 /** The blockers section's add row (#57, handoff 3): the kind (blocked by first) unless the caller fixes it (#61), then the field and its suggestions. ↑/↓ move the highlight,
- * ↵ adds the highlighted suggestion or, with none, the typed ref; Escape closes the row. The field and the select own Escape, and the key is
- * prevented, so the details panel never closes with it; an open select's Escape, already prevented by Radix, closes only the select. */
-export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, kind: fixedKind, onAdd, onCancel }: BlockerAddRowProps) {
+ * ↵ adds the highlighted suggestion or, with none, the typed ref; with neither it names the forms the item's source type reads,
+ * under the field (#810). Escape closes the row. The field and the select own Escape, and the key is prevented, so the details panel never closes with it; an open select's Escape, already prevented by Radix, closes only the select. */
+export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, kind: fixedKind, grammar, onAdd, onCancel }: BlockerAddRowProps) {
   const listId = useId();
   const [chosenKind, setKind] = useState<Kind>('blockedBy');
   const kind = fixedKind ?? chosenKind;
   const [text, setText] = useState('');
+  const [refusal, setRefusal] = useState<string>(); // #810: ↵ with nothing to add, in the UI's language; typing again clears it
   // The highlighted option by its ref, not its index: a search answer that swaps the list never moves the highlight onto another issue
   const [activeRef, setActiveRef] = useState<string>();
   const { candidates, loading } = useBlockerSearch(source, itemId, text);
-  const options = optionsOf(typedRef(text), candidates, new Set([selfId, ...blockers[kind].map((r) => r.id)]));
+  const options = optionsOf(readsRef(grammar, text), candidates, new Set([selfId, ...blockers[kind].map((r) => r.id)]));
   const active = options.findIndex((o) => o.ref === activeRef); // -1: nothing highlighted
   const setActive = (index: number): void => setActiveRef(options[index]?.ref);
+  // ↵ with no highlighted option and no typed ref picks undefined: nothing is sent, the forms are named instead (#810)
   const pick = (ref: string | undefined): void => {
-    if (ref !== undefined && !isBusy) onAdd(kind, ref);
+    if (ref === undefined) setRefusal(badRefText(grammar));
+    else if (!isBusy) onAdd(kind, ref);
   };
   const closeOnEscape = (e: KeyboardEvent<HTMLElement>): void => {
     if (e.key !== 'Escape' || e.defaultPrevented) return;
@@ -113,9 +109,10 @@ export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, kind: 
         <Input
           autoFocus role="combobox" aria-label={t('blockers.search')} placeholder={t('blockers.search')} value={text} readOnly={isBusy}
           aria-expanded={options.length > 0} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
-          className="h-6 min-w-0 flex-1 px-2 text-xs md:text-xs" onChange={(e) => { setText(e.target.value); setActive(-1); }} onKeyDown={onKeyDown}
+          className="h-6 min-w-0 flex-1 px-2 text-xs md:text-xs" onChange={(e) => { setText(e.target.value); setActive(-1); setRefusal(undefined); }} onKeyDown={onKeyDown}
         />
       </div>
+      {refusal !== undefined && <p role="alert" className="text-destructive text-xs">{refusal}</p>}
       {options.length > 0 && <Suggestions id={listId} options={options} active={active} isLoading={loading} onActive={setActive} onPick={pick} />}
     </div>
   );
