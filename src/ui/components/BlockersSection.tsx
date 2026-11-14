@@ -100,7 +100,7 @@ export function BlockersSection({ task, state }: { task: Task; state: State }) {
       ))}
       {isAdding && (
         <BlockerAddRow
-          source={source} itemId={task.item.itemId} selfId={task.item.id} blockers={blockers} isBusy={pending !== undefined}
+          source={source} itemId={task.item.itemId} selfId={task.item.id} blockers={blockers} isBusy={pending !== undefined} grammar={grammar}
           onAdd={(kind, ref) => void add(kind, ref)} onCancel={() => setIsAdding(false)}
         />
       )}

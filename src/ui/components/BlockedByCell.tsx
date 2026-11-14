@@ -104,7 +104,7 @@ export function BlockedByCell({ source, item, onRow }: BlockedByCellProps) {
         {openFirst(item.blockedBy ?? []).map((r) => <RefRow key={r.id} blocker={r} isBusy={isPending} onRemove={() => void edit('remove', r.id)} />)}
         <BlockerAddRow
           key={addKey} kind="blockedBy" source={source} itemId={item.itemId} selfId={item.id} blockers={{ blockedBy: item.blockedBy ?? [], blocking: [] }}
-          isBusy={isPending} onAdd={(_kind, ref) => void add(ref)} onCancel={() => onOpenChange(false)}
+          isBusy={isPending} grammar={grammar} onAdd={(_kind, ref) => void add(ref)} onCancel={() => onOpenChange(false)}
         />
         {error !== undefined && <p role="alert" className="text-destructive">{error}</p>}
       </PopoverContent>

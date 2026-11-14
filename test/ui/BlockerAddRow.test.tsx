@@ -4,6 +4,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { BlockerAddRow, type BlockerAddRowProps } from '@/components/BlockerAddRow';
 import { setLanguage } from '@/i18n';
 import { findBlockerCandidates } from '@/lib/blockers-api';
+import { REF_GRAMMARS, type RefGrammar } from '../../src/blocker-refs';
 import type { BlockerRef, ItemBlockers } from '../../src/types';
 
 vi.mock('@/lib/blockers-api', () => ({ findBlockerCandidates: vi.fn() }));
@@ -19,7 +20,7 @@ function setup(props: Partial<BlockerAddRowProps> = {}) {
   const user = userEvent.setup();
   const onAdd = vi.fn();
   const onCancel = vi.fn();
-  render(<BlockerAddRow source="work" itemId="work:PVTI_40" selfId="40" blockers={BLOCKERS} isBusy={false} onAdd={onAdd} onCancel={onCancel} {...props} />);
+  render(<BlockerAddRow source="work" itemId="work:PVTI_40" selfId="40" blockers={BLOCKERS} isBusy={false} grammar={REF_GRAMMARS.github} onAdd={onAdd} onCancel={onCancel} {...props} />);
   return { user, onAdd, onCancel, field: screen.getByRole('combobox', { name: FIELD }) };
 }
 const options = (): (string | null)[] =>
@@ -96,4 +97,41 @@ test('a fixed kind renders no kind select and adds as that kind (#61)', async ()
   expect(screen.queryByRole('combobox', { name: 'tipo' })).not.toBeInTheDocument();
   await user.keyboard('#12{Enter}');
   expect(onAdd).toHaveBeenCalledWith('blocking', '12');
+});
+
+// A source type whose refs read ABC-12 and none of them short (#810)
+const ABC: RefGrammar = { refOf: (text) => (/^ABC-\d+$/.test(text) ? text : undefined), isShort: () => false, forms: 'ABC-12' };
+
+test('the row reads the refs of its item\'s source type: ABC-12 under a grammar that reads it, and never GitHub\'s 12 there (#810)', async () => {
+  find.mockResolvedValue([]);
+  const { user, onAdd, field } = setup({ grammar: ABC });
+  await user.keyboard('ABC-12');
+  expect(options()).toEqual(['adicionar ABC-12']);
+  await user.keyboard('{Enter}');
+  expect(onAdd).toHaveBeenCalledWith('blockedBy', 'ABC-12');
+  await user.clear(field);
+  await user.keyboard('12');
+  expect(screen.queryByRole('listbox', { name: 'sugestões' })).not.toBeInTheDocument();
+});
+
+test('↵ with nothing highlighted and no ref the type reads sends nothing and names its forms under the field, finds listed or not; typing clears it (#810)', async () => {
+  const { user, onAdd, field } = setup();
+  await user.keyboard('acme/r12{Enter}');
+  expect(screen.getByRole('alert')).toHaveTextContent('escreva 12, #12, owner/repo#12 ou o id de uma tarefa');
+  await user.type(field, 'x');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  await screen.findByRole('option', { name: /#31/ }); // the finds listed, none highlighted
+  await user.keyboard('{Enter}');
+  expect(screen.getByRole('alert')).toBeInTheDocument();
+  expect(onAdd).not.toHaveBeenCalled();
+});
+
+test('on a hive task, with no grammar, ↵ on 12 says to write a task id, and a task id is still offered (#810)', async () => {
+  find.mockResolvedValue([]);
+  const { user, onAdd, field } = setup({ source: 'hive', itemId: 'local:1', selfId: 'HIVE-1', grammar: undefined });
+  await user.keyboard('12{Enter}');
+  expect(screen.getByRole('alert')).toHaveTextContent(/^escreva o id de uma tarefa$/);
+  await user.clear(field);
+  await user.keyboard('HIVE-3{Enter}');
+  expect(onAdd).toHaveBeenCalledWith('blockedBy', 'HIVE-3');
 });

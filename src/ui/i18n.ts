@@ -233,6 +233,7 @@ const en = {
   'blockers.refused': 'the source refused the change',
   'blockers.badRequest': 'write {forms} or a task id',
   'blockers.badRefHive': 'write a task id', // #810: a hive task reads only a task id
+  'blockers.badRef': 'write {forms} or a task id', // #810: ↵ with no ref the item's source type reads
   'blockers.unexpected': 'Unexpected error',
   'detail.deleteActivity': 'delete activity',
   'detail.deleteActivityBlocked.running': 'a worker or session is running on this task',
@@ -3533,6 +3534,7 @@ const pt: Record<MessageKey, string> = {
   'blockers.refused': 'a source recusou a mudança',
   'blockers.badRequest': 'escreva {forms} ou o id de uma tarefa',
   'blockers.badRefHive': 'escreva o id de uma tarefa',
+  'blockers.badRef': 'escreva {forms} ou o id de uma tarefa',
   'blockers.unexpected': 'Erro inesperado',
   'detail.deleteActivity': 'excluir atividade',
   'detail.deleteActivityBlocked.running': 'um worker ou sessão está executando nessa tarefa',

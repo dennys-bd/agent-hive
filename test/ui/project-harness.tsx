@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import { ProjectTable } from '@/components/ProjectTable';
 import { forgetProjects } from '@/hooks/use-project';
 import { setLanguage } from '@/i18n';
+import { CreateTargetsContext, HIVE_ONLY } from '@/lib/create-targets';
 import { resetViewState } from '@/lib/view-state';
 import type { ProjectItem, ProjectView, SourceConfig, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -52,8 +53,10 @@ export function resetProjectTest(): void {
 }
 
 export const ALL = ['status', 'field:Priority', 'labels', 'assignee', 'field:Estimate', 'field:Target', 'field:Progress', 'field:Sprint', 'pr'];
-export function renderTable({ onGoTo = vi.fn(), onOpenIssue = vi.fn(), tasks = [TASK] }: { onGoTo?: (taskId: string) => void; onOpenIssue?: (item: ProjectItem) => void; tasks?: Task[] } = {}) {
-  return render(<ProjectTable state={state(tasks)} source={SOURCE} onGoTo={onGoTo} onOpenIssue={onOpenIssue} />);
+// configs: the Dashboard's comb.sources, for a test that types a ref into the blocked-by cell (#810); absent, the default context
+export function renderTable({ onGoTo = vi.fn(), onOpenIssue = vi.fn(), tasks = [TASK], configs }: { onGoTo?: (taskId: string) => void; onOpenIssue?: (item: ProjectItem) => void; tasks?: Task[]; configs?: SourceConfig[] } = {}) {
+  const table = <ProjectTable state={state(tasks)} source={SOURCE} onGoTo={onGoTo} onOpenIssue={onOpenIssue} />;
+  return render(configs === undefined ? table : <CreateTargetsContext.Provider value={{ ...HIVE_ONLY, configs }}>{table}</CreateTargetsContext.Provider>);
 }
 export const rowOf = (id: string): HTMLElement => screen.getByText(id).closest('tr')!;
 // The issue numbers of the rows shown, group rows skipped

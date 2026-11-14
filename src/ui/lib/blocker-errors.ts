@@ -14,3 +14,7 @@ export function blockerErrorText(err: unknown, grammar: RefGrammar | undefined):
   if (code === 'blockers.badRequest') return grammar === undefined ? t('blockers.badRefHive') : t('blockers.badRequest', { forms: grammar.forms });
   return t(CODES.find((c) => c === code) ?? 'blockers.unexpected');
 }
+
+/** #810 decision 11: what ↵ with nothing to add says under the field: the item's source type's forms, or a task id alone on a hive task. */
+export const badRefText = (grammar: RefGrammar | undefined): string =>
+  (grammar === undefined ? t('blockers.badRefHive') : t('blockers.badRef', { forms: grammar.forms }));
