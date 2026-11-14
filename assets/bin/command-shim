@@ -54,7 +54,8 @@ on_path() (
     for ext in '' $exts; do
       file=$dir/$1$ext
       [ "$file" -ef "$0" ] && continue
-      [ -f "$file" ] && [ -x "$file" ] && { printf '%s\n' "$file"; exit 0; }
+      # Windows runs a PATHEXT name by its extension, as findExec takes it on isFile alone; MSYS's noacl mount marks no .bat or .cmd -x
+      [ -f "$file" ] && { [ -n "$ext" ] || [ -x "$file" ]; } && { printf '%s\n' "$file"; exit 0; }
     done
   done
   exit 1

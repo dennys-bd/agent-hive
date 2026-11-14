@@ -19,6 +19,9 @@ for f in "$CMDS/pnpm.bat" "$CMDS/pnpm.cmd" "$VBS/pnpm.vbs" "$REAL/pnpm" "$SHIMS/
   t=; [ -f "$f" ] && t="$t f"; [ -x "$f" ] && t="$t x"; [ "$f" -ef "$SHIM" ] && t="$t ef-shim"
   echo "file $f:$t ls=$(ls -li "$f" 2>&1)"
 done
+for f in "$CMDS/pnpm.cmd" "$CMDS/pnpm.bat"; do
+  out=$("$f" a b 2>&1); echo "exec $f: code=$? out=$out"
+done
 `;
 
 test('diag #806: what sh.exe sees', { skip: process.platform !== 'win32' && 'diag runs on the Windows lane only' }, async (t) => {
