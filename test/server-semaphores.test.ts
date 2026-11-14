@@ -196,7 +196,7 @@ test('a Hive started with its config and State has its semaphores from the first
   await waitFor(() => isDeepStrictEqual(server.getState()?.semaphores, { memory: { runs: [], line: [] } }));
 });
 
-test('the server writes a shim per first word with the first config, a save that drops the line drops its shim, and a failed install never fails the save (#800)', { skip: process.platform === 'win32' && 'win32 installs no command shim until node 5 of #704' }, async (t) => {
+test('the server writes a shim per first word with the first config, a save that drops the line drops its shim, and a failed install never fails the save (#800, #806)', async (t) => {
   const { base, repo, home } = await startHive(t);
   const pnpm = join(home, 'command-shims', 'pnpm');
   await waitFor(() => existsSync(pnpm));
@@ -209,7 +209,7 @@ test('the server writes a shim per first word with the first config, a save that
 });
 
 // #800: listen() answers once the boot's install is done, so no run of the boot or the poll spawns before the shims exist
-test('a Hive started with its config and State has its command shims written before listen resolves (#800)', { skip: process.platform === 'win32' && 'win32 installs no command shim until node 5 of #704' }, async (t) => {
+test('a Hive started with its config and State has its command shims written before listen resolves (#800, #806)', async (t) => {
   const { home, repo } = await tempHive(t);
   const { factory } = fakeSourceFactory();
   const config = parseConfig(combConfig({ sources: [GITHUB_ENTRY], path: repo, commands: [TEST_COMMAND], commandSemaphores: [MEMORY] }));

@@ -232,21 +232,32 @@ test('a terminal\'s env names its own history file, puts the command shims then 
   assert.equal('HIVE_PWSH' in terminalEnv('C:\\h', 'T1', 'C:\\bin', { platform: 'win32' }), false, 'no PowerShell found: the plain $SHELL');
 });
 
-test('ptyEnv puts the command shims first on PATH, never <home>/bin, and points CLAUDE_ENV_FILE at the run\'s <home>/command-shims-env/<ptyId>.sh over an inherited one; on win32 it leaves both alone (#800)', () => {
+test('ptyEnv puts the command shims first on PATH, never <home>/bin, and points CLAUDE_ENV_FILE at the run\'s <home>/command-shims-env/<ptyId>.sh over an inherited one (#800)', () => {
   const env = ptyEnv({ PATH: '/usr/bin:/bin', CLAUDE_ENV_FILE: '/outer/env.sh' }, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin', COMMAND_SHIMS);
   assert.deepEqual([env.PATH, env.CLAUDE_ENV_FILE], [`${COMMAND_SHIMS}:/usr/bin:/bin`, '/hive/command-shims-env/W1.sh']);
   assert.equal(ptyEnv({}, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'linux', COMMAND_SHIMS).PATH, COMMAND_SHIMS, 'no PATH: the folder alone');
-  const win = ptyEnv({ Path: 'C:\\bin' }, 'W1', 4242, 'C:\\t\\W1', SECRET_FILE_PATH, 'win32', 'C:\\h\\command-shims');
-  assert.deepEqual([win.Path, 'PATH' in win, 'CLAUDE_ENV_FILE' in win], ['C:\\bin', false, false]);
 });
 
-test('shimsFirst puts the command shims back first on a PATH a workspace replaced, leaves one already first alone and leaves win32 alone (#800, #738)', () => {
+test('ptyEnv on win32 writes one PATH key, the command shims first with ;, a Path from PowerShell dropped, and CLAUDE_ENV_FILE as a win32 path (#806)', () => {
+  const shims = 'C:\\h\\command-shims';
+  const win = ptyEnv({ Path: 'C:\\bin', CLAUDE_ENV_FILE: 'C:\\outer.sh' }, 'W1', 4242, 'C:\\t\\W1', SECRET_FILE_PATH, 'win32', shims);
+  assert.deepEqual([win.PATH, 'Path' in win, win.CLAUDE_ENV_FILE], [`${shims};C:\\bin`, false, 'C:\\h\\command-shims-env\\W1.sh']);
+});
+
+test('shimsFirst puts the command shims back first on a PATH a workspace replaced and leaves one already first alone (#800, #738)', () => {
   assert.equal(shimsFirst({ PATH: '/ws/bin:/bin' }, COMMAND_SHIMS, 'darwin').PATH, `${COMMAND_SHIMS}:/ws/bin:/bin`);
   const first = { PATH: `${COMMAND_SHIMS}:/bin` };
   assert.equal(shimsFirst(first, COMMAND_SHIMS, 'linux'), first, 'already first: the same env');
   assert.equal(shimsFirst({}, COMMAND_SHIMS, 'linux').PATH, COMMAND_SHIMS);
-  const win = { Path: 'C:\\bin' };
-  assert.equal(shimsFirst(win, COMMAND_SHIMS, 'win32'), win);
+});
+
+test('shimsFirst on win32 reads the path in any case and writes one PATH key with ;, the folder first, every other casing dropped; elsewhere Path is its own (#806)', () => {
+  const shims = 'C:\\h\\command-shims';
+  assert.deepEqual(shimsFirst({ Path: 'C:\\bin', HOME: 'C:\\u' }, shims, 'win32'), { PATH: `${shims};C:\\bin`, HOME: 'C:\\u' });
+  assert.deepEqual(shimsFirst({ Path: `${shims};C:\\bin` }, shims, 'win32'), { PATH: `${shims};C:\\bin` }, 'already first: still one PATH key');
+  assert.deepEqual(shimsFirst({ PATH: 'C:\\old', Path: 'C:\\ws' }, shims, 'win32'), { PATH: `${shims};C:\\ws` }, 'the later key, as the spread meant');
+  assert.deepEqual(shimsFirst({}, shims, 'win32'), { PATH: shims });
+  assert.deepEqual(shimsFirst({ PATH: '/bin', Path: 'kept' }, COMMAND_SHIMS, 'linux'), { PATH: `${COMMAND_SHIMS}:/bin`, Path: 'kept' });
 });
 
 test('windowsShell answers pwsh.exe\'s full path when both are found, powershell.exe\'s when only that one is, one on PATH after the install folders, and nothing when neither is or off win32 (#645)', () => {

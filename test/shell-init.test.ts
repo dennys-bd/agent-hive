@@ -33,6 +33,12 @@ test('pwshQuote is a word PowerShell reads literally: in single quotes, each of 
   assert.equal(pwshQuote('a\u2018b\u2019c\u201ad\u201be'), "'a\u2018\u2018b\u2019\u2019c\u201a\u201ad\u201b\u201be'");
 });
 
+test('renderShellInit puts the command shims\' folder, pwshQuoted, before the shim folder on the profile\'s PATH (#806)', () => {
+  const paths = { ...PATHS, bin: 'C:\\h\\bin', commandShims: "C:\\h\\it's\\command-shims" };
+  assert.equal(renderShellInit("$env:PATH = __HIVE_COMMAND_SHIMS__ + ';' + __HIVE_BIN__ + ';' + $env:PATH\n", 'pwsh/profile.ps1', [], paths),
+    "$env:PATH = 'C:\\h\\it''s\\command-shims' + ';' + 'C:\\h\\bin' + ';' + $env:PATH\n");
+});
+
 test('renderShellInit renders the PowerShell profile: the shim folder put back first on PATH and one function per agent calling sh.exe on its shim, every path pwshQuoted (#645)', () => {
   const shims = [{ command: 'claude', path: "C:\\h\\it's\\bin\\claude" }, { command: 'codex', path: 'C:\\h\\bin\\codex' }];
   const paths = { sh: 'C:\\Program Files\\Git\\bin\\sh.exe', bin: "C:\\h\\it's\\bin", commandShims: 'C:\\h\\command-shims' };
@@ -57,7 +63,7 @@ test('installShellInit writes every init file under <home>/shell/, its folders f
     for (const id of AGENT_IDS) assert.ok(text.includes(`function ${AGENTS[id].command}`) && text.includes(quoted(file, shimPath(home, AGENTS[id]))), `${file}: ${id}`);
   }
   const profile = await readFile(join(dir, 'pwsh', 'profile.ps1'), 'utf8');
-  assert.ok(profile.includes(`$env:PATH = ${pwshQuote(shimDir(home))} + ';' + $env:PATH`), 'the shim folder back first on PATH');
+  assert.ok(profile.includes(`$env:PATH = ${pwshQuote(commandShimDir(home))} + ';' + ${pwshQuote(shimDir(home))} + ';' + $env:PATH`), 'the command shims, then the shim folder, back first on PATH (#806)');
   assert.ok(profile.includes(`& ${pwshQuote(INSTALL.sh)} ${pwshQuote(shimPath(home, AGENTS.claude))} @args`), 'claude through sh.exe');
   for (const folder of ['', 'zsh', 'bash', 'fish', 'pwsh']) await assertMode(t, join(dir, folder), 0o700, folder); // win32: no POSIX mode bits
   await writeFile(join(dir, 'bash', 'rc'), 'from a previous version');
