@@ -3,6 +3,7 @@ import type { GhToken } from './github-token.js';
 import { gqlFor, loggedGql } from './sources/github-gql.js';
 import { createGithubSource } from './sources/github.js';
 import { RelationRereadError } from './blocker-errors.js';
+import { REF_GRAMMARS, type RefGrammar } from './blocker-refs.js';
 import { citedColumns } from './tasks.js';
 import { parseAuth } from './config.js';
 import { isNetworkError } from './fork.js';
@@ -35,16 +36,14 @@ export function createSource(spec: SourceSpec, deps: SourceDeps): Source {
   }
 }
 
-const SHORT_REF = /^\d+$/; // #56: a blocker in the item's own repository; `owner/repo#n` names another
-
-/** #56: a source's blocker ids as its tasks' own ids read. Under qualifyId a short ref takes the shown prefix on the way out (`12` -> `foo-12`)
- * and drops it on the way in; `owner/repo#n` passes both ways as it is. */
+/** #56, #810: a source's blocker ids as its tasks' own ids read. Under qualifyId an id the type's grammar calls short takes the shown prefix
+ * on the way out (GitHub: `12` -> `foo-12`) and drops it on the way in; every other ref (`owner/repo#n`, a Jira `ABC-12`) passes both ways. */
 interface BlockerIds { shownRef(r: BlockerRef): BlockerRef; shownBlockers(b: ItemBlockers): ItemBlockers; ownRef(ref: string): string }
-function blockerIds(qualifyId: boolean, shown: string): BlockerIds {
-  const shownRef = (r: BlockerRef): BlockerRef => (qualifyId && SHORT_REF.test(r.id) ? { ...r, id: `${shown}-${r.id}` } : r);
+function blockerIds(qualifyId: boolean, shown: string, grammar: RefGrammar): BlockerIds {
+  const shownRef = (r: BlockerRef): BlockerRef => (qualifyId && grammar.isShort(r.id) ? { ...r, id: `${shown}-${r.id}` } : r);
   const ownRef = (ref: string): string => {
     const rest = ref.slice(shown.length + 1);
-    return qualifyId && ref.startsWith(`${shown}-`) && SHORT_REF.test(rest) ? rest : ref;
+    return qualifyId && ref.startsWith(`${shown}-`) && grammar.isShort(rest) ? rest : ref;
   };
   return { shownRef, shownBlockers: (b) => ({ blockedBy: b.blockedBy.map(shownRef), blocking: b.blocking.map(shownRef) }), ownRef };
 }
@@ -62,8 +61,9 @@ function shownRelate(relate: NonNullable<Source['relate']>, own: (itemId: string
 }
 
 /** One adapter behind its entry's name (#180): what it lists is namespaced (`<name>:<id>`, `source` set, the id qualified under qualifyId with
- * the prefix, else the name) and what it is handed is stripped back to its own id. The adapter never sees the prefix. */
-export function namespaced(entry: SourceConfig, adapter: Source): Source {
+ * the prefix, else the name) and what it is handed is stripped back to its own id. The adapter never sees the prefix. The blocker ids go by
+ * `grammar`, the entry type's unless a test hands another (#810). */
+export function namespaced(entry: SourceConfig, adapter: Source, grammar: RefGrammar = REF_GRAMMARS[entry.type]): Source {
   const prefix = `${entry.name}:`;
   const own = (itemId: string): string => (itemId.startsWith(prefix) ? itemId.slice(prefix.length) : itemId);
   const shownPrefix = entry.prefix ?? entry.name;
@@ -74,7 +74,7 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
     ...(children === undefined ? {} : { children: children.map(named) }),
     ...(closedChildren === undefined ? {} : { closedChildren: closedChildren.map(named) }),
   });
-  const ids = blockerIds(entry.qualifyId, shownPrefix);
+  const ids = blockerIds(entry.qualifyId, shownPrefix, grammar);
   const item = (t: Item): Item => ({
     ...t, ...tree(t), ...(t.blockers ? { blockers: ids.shownBlockers(t.blockers) } : {}),
     itemId: named(t.itemId), source: entry.name, ...(entry.qualifyId ? { id: `${shownPrefix}-${t.id}` } : {}),
