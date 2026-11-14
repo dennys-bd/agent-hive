@@ -122,8 +122,9 @@ export function startShim(r: Rig, args: readonly string[], o: ShimOptions = {}):
 }
 export const runShim = (r: Rig, args: readonly string[], o?: ShimOptions): Promise<Ran> => startShim(r, args, o).done;
 
-export async function until(check: () => boolean): Promise<void> {
-  for (let i = 0; i < 500 && !check(); i += 1) await sleep(10);
+// tries: 10 ms each; the default is 5 s, and sh.exe in a ConPTY on the Windows lane may need longer (#806)
+export async function until(check: () => boolean, tries = 500): Promise<void> {
+  for (let i = 0; i < tries && !check(); i += 1) await sleep(10);
   assert.ok(check(), 'never happened');
 }
 
