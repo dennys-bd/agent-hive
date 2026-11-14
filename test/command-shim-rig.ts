@@ -8,11 +8,12 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { delimiter, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import pty from 'node-pty';
 import { isPidAlive } from '../src/command-semaphores.js';
 import { commandShimSource, renderCommandShim } from '../src/command-shim.js';
 import { envValue } from '../src/exec-path.js';
+import { posixShell, posixShellEnv } from '../src/posix-shell.js';
 import { SECRET_HEADER } from '../src/secret.js';
-import { NO_POSIX_SHELL } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
 
 export const WORD = 'pnpm';
@@ -23,7 +24,6 @@ export const FAKE_EXIT = 7;
 export const REFUSED_EXIT = 75;
 export const SHIM_TIMEOUT_MS = 10_000;
 export const NO_ANSWER_MS = 3_000; // the shim's -m 2, plus the binary's own run
-export const POSIX = { skip: NO_POSIX_SHELL };
 
 // The real binary the shim finds: each arg on a line, then its stdin, a mark that it ended, and exit 7. With FAKE_PID_FILE: its pid there
 // and a long sleep, for a signal to end
@@ -66,6 +66,12 @@ export async function fakeDaemon(t: TestContext, answer: Answer, isChildDone: ()
   return { port: (server.address() as AddressInfo).port, seen };
 }
 
+// On win32 sh.exe and curl need the runner's own env (SYSTEMROOT for sockets, #806), with one PATH key and MSYS's argument rule (#631);
+// elsewhere the minimal env keeps the machine's own out of the shim
+export const baseEnv = (): NodeJS.ProcessEnv => (process.platform === 'win32'
+  ? { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toUpperCase() !== 'PATH')), ...posixShellEnv('win32') }
+  : {});
+
 /** A PATH of `dirs` first, then the test's own, for sh, curl and sleep. */
 export const searchPath = (...dirs: string[]): string => [...dirs, envValue(process.env, 'PATH') ?? ''].join(delimiter);
 
@@ -86,7 +92,7 @@ export async function rig(root: string, port: number, word: string, platform: No
   const secretFile = join(root, 'hive.secret');
   await writeFile(secretFile, `${SECRET_HEADER}: ${SECRET}\n`);
   const done = join(root, 'done');
-  const env = { HOME: root, PATH: searchPath(shims, real), HIVE_PTY_ID: 'R1', HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile, FAKE_DONE: done };
+  const env = { ...baseEnv(), HOME: root, PATH: searchPath(shims, real), HIVE_PTY_ID: 'R1', HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile, FAKE_DONE: done };
   return { root, shim, done, env };
 }
 
@@ -105,7 +111,7 @@ export function startShim(r: Rig, args: readonly string[], o: ShimOptions = {}):
   const argv = o.closedStdin !== undefined ? ['-c', `exec ${o.closedStdin} "$0" "$@" <&-`, r.shim, ...args]
     : o.lastArg !== undefined ? ['-c', 'exec "$0" "$@" "$SHIM_TEST_ARG"', r.shim, ...args] : [r.shim, ...args];
   const env = { ...r.env, ...o.env, ...(o.lastArg === undefined ? {} : { SHIM_TEST_ARG: o.lastArg }) };
-  const child = spawn(o.closedStdin ?? '/bin/sh', argv, { env, timeout: SHIM_TIMEOUT_MS });
+  const child = spawn(o.closedStdin ?? posixShell().shell, argv, { env, timeout: SHIM_TIMEOUT_MS });
   let stdout = '';
   let stderr = '';
   child.stdout.on('data', (c: Buffer) => { stdout += c.toString(); });
@@ -119,4 +125,13 @@ export const runShim = (r: Rig, args: readonly string[], o?: ShimOptions): Promi
 export async function until(check: () => boolean): Promise<void> {
   for (let i = 0; i < 500 && !check(); i += 1) await sleep(10);
   assert.ok(check(), 'never happened');
+}
+
+// A real terminal: the shim under the POSIX shell in a pty (a ConPTY on win32), as a task's terminal runs it
+export function inTerminal(r: Rig): { term: pty.IPty; output(): string; exited: Promise<number> } {
+  const term = pty.spawn(posixShell().shell, [r.shim, 'test'], { env: r.env as Record<string, string>, cols: 200, rows: 10 });
+  let out = '';
+  term.onData((d) => { out += d; });
+  const exited = new Promise<number>((resolve) => term.onExit(({ exitCode }) => resolve(exitCode)));
+  return { term, output: () => out, exited };
 }

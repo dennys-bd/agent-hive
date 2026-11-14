@@ -15,7 +15,9 @@ export async function assertMode(t: TestContext, path: string, mode: number, mes
     assert.equal((await stat(path)).mode & MODE_BITS, mode, message);
   });
 }
-// #800: the command shim is a POSIX sh script; Windows brings its own in node 5 of #704
-export const NO_POSIX_SHELL: string | false = process.platform === 'win32' && 'win32 runs no POSIX command shim: node 5 of #704 brings its own';
+// #806: Node's kill on win32 is TerminateProcess, and a console Ctrl-C reaches Git's sh.exe launcher too: no trap of the shim's sees either
+export const NO_POSIX_SIGNALS: string | false = process.platform === 'win32' && 'win32 sends no POSIX signal: Node\'s kill is TerminateProcess, which no trap of the shim\'s sees';
+// #806 decision 15: whether stty works under sh.exe in a ConPTY is the lane's own question, checked either way in command-shim-win32.test.ts
+export const NO_POSIX_TTY: string | false = process.platform === 'win32' && 'a ConPTY may refuse sh.exe\'s stty: command-shim-win32.test.ts checks the wait\'s key there either way';
 // #806: Git's bin\sh.exe is a launcher, so the shim runs in its child: the Windows pid it sends is that child's, never the one Node started
 export const SH_LAUNCHER: string | false = process.platform === 'win32' && 'Git\'s bin\\sh.exe is a launcher: the shim\'s Windows pid is its child\'s, not the pid Node started';
