@@ -40,7 +40,17 @@ const relationOf = (row: Row): SourceRelation => ({
   title: nullable(row, 'title'), state: text(row, 'state'),
 });
 
-export function sourceItemsOf(db: DatabaseSync, now: () => number) {
+// Each entry's position within its group (a field, a relation kind), so a multi-valued field keeps its order
+function positioned<T>(entries: readonly T[], group: (entry: T) => string): [number, T][] {
+  const seen = new Map<string, number>();
+  return entries.map((entry): [number, T] => {
+    const position = seen.get(group(entry)) ?? 0;
+    seen.set(group(entry), position + 1);
+    return [position, entry];
+  });
+}
+
+function writersOf(db: DatabaseSync, now: () => number) {
   const upsert = db.prepare(upsertSql('source_items', COLUMNS));
   const dropValues = db.prepare('DELETE FROM source_item_values WHERE source = ? AND node_id = ?');
   const addValue = db.prepare('INSERT INTO source_item_values (source, node_id, field, position, kind, value) VALUES (?, ?, ?, ?, ?, ?)');
@@ -50,35 +60,16 @@ export function sourceItemsOf(db: DatabaseSync, now: () => number) {
   const addField = db.prepare('INSERT INTO source_fields (source, scope, position, name, kind, options) VALUES (?, ?, ?, ?, ?, ?)');
   const dropListing = db.prepare('DELETE FROM source_listings WHERE source = ? AND scope = ?');
   const addListed = db.prepare('INSERT INTO source_listings (source, scope, position, node_id) VALUES (?, ?, ?, ?)');
-  const unlist = db.prepare(`DELETE FROM source_listings WHERE source = ? AND node_id ${IN_IDS}`);
-  const removals = OWN_TABLES.map((table) => db.prepare(`DELETE FROM ${table} WHERE source = ? AND node_id ${IN_IDS}`));
-  const listed = db.prepare('SELECT node_id FROM source_listings WHERE source = ? AND scope = ? ORDER BY position');
-  const fieldRows = db.prepare('SELECT * FROM source_fields WHERE source = ? AND scope = ? ORDER BY position');
-  const itemRows = db.prepare(`SELECT * FROM source_items WHERE source = ? AND node_id ${IN_IDS}`);
-  const valueRows = db.prepare(`SELECT * FROM source_item_values WHERE source = ? AND node_id ${IN_IDS} ORDER BY field, position`);
-  const relationRows = db.prepare(`SELECT * FROM source_relations WHERE source = ? AND node_id ${IN_IDS} ORDER BY kind, position`);
-  const cursorRow = db.prepare(`SELECT cursor FROM sync_scopes WHERE source = ? AND repository = ? AND kind = '${ITEMS_KIND}'`);
-  const setCursor = db.prepare(UPSERT_CURSOR);
+  const upsertCursor = db.prepare(UPSERT_CURSOR);
   return {
     upsertItem: (item: SourceItem, origin: UpsertOrigin): boolean => written(upsert.run({ ...item, data: JSON.stringify(item.data), ...stamp(now(), origin) })),
     setValues: (source: string, nodeId: string, values: readonly SourceItemValue[]): void => inTransaction(db, () => {
       dropValues.run(source, nodeId);
-      // position counts within the field, so a multi-valued field keeps its order
-      const seen = new Map<string, number>();
-      for (const v of values) {
-        const position = seen.get(v.field) ?? 0;
-        seen.set(v.field, position + 1);
-        addValue.run(source, nodeId, v.field, position, v.kind, v.value);
-      }
+      for (const [position, v] of positioned(values, (e) => e.field)) addValue.run(source, nodeId, v.field, position, v.kind, v.value);
     }),
     setRelations: (source: string, nodeId: string, relations: readonly SourceRelation[]): void => inTransaction(db, () => {
       dropRelations.run(source, nodeId);
-      const seen = new Map<string, number>();
-      for (const r of relations) {
-        const position = seen.get(r.kind) ?? 0;
-        seen.set(r.kind, position + 1);
-        addRelation.run(source, nodeId, r.kind, position, r.targetId, r.targetKey, r.title, r.state);
-      }
+      for (const [position, r] of positioned(relations, (e) => e.kind)) addRelation.run(source, nodeId, r.kind, position, r.targetId, r.targetKey, r.title, r.state);
     }),
     setFields: (source: string, scope: string, fields: readonly SourceField[]): void => inTransaction(db, () => {
       dropFields.run(source, scope);
@@ -88,6 +79,18 @@ export function sourceItemsOf(db: DatabaseSync, now: () => number) {
       dropListing.run(source, scope);
       for (const [position, nodeId] of nodeIds.entries()) addListed.run(source, scope, position, nodeId);
     }),
+    setCursor: (source: string, scope: string, cursor: string): void => { upsertCursor.run(source, scope, cursor, new Date(now()).toISOString()); },
+  };
+}
+
+function readersOf(db: DatabaseSync) {
+  const listed = db.prepare('SELECT node_id FROM source_listings WHERE source = ? AND scope = ? ORDER BY position');
+  const fieldRows = db.prepare('SELECT * FROM source_fields WHERE source = ? AND scope = ? ORDER BY position');
+  const itemRows = db.prepare(`SELECT * FROM source_items WHERE source = ? AND node_id ${IN_IDS}`);
+  const valueRows = db.prepare(`SELECT * FROM source_item_values WHERE source = ? AND node_id ${IN_IDS} ORDER BY field, position`);
+  const relationRows = db.prepare(`SELECT * FROM source_relations WHERE source = ? AND node_id ${IN_IDS} ORDER BY kind, position`);
+  const cursorRow = db.prepare(`SELECT cursor FROM sync_scopes WHERE source = ? AND repository = ? AND kind = '${ITEMS_KIND}'`);
+  return {
     // A fixed number of queries for any number of ids: a listing is rebuilt on every poll
     items: (source: string, nodeIds: readonly string[]): StoredSourceItem[] => {
       const ids = JSON.stringify(nodeIds);
@@ -107,9 +110,19 @@ export function sourceItemsOf(db: DatabaseSync, now: () => number) {
       const row = cursorRow.get(source, scope);
       return row === undefined ? null : nullable(row, 'cursor');
     },
-    setCursor: (source: string, scope: string, cursor: string): void => { setCursor.run(source, scope, cursor, new Date(now()).toISOString()); },
+  };
+}
+
+/** The store of #813: the writers, the readers and the removal of the ids a reconcile no longer finds. */
+export type SourceItems = ReturnType<typeof writersOf> & ReturnType<typeof readersOf> & { removeItems(source: string, nodeIds: readonly string[]): void };
+
+export function sourceItemsOf(db: DatabaseSync, now: () => number): SourceItems {
+  const unlist = db.prepare(`DELETE FROM source_listings WHERE source = ? AND node_id ${IN_IDS}`);
+  const removals = OWN_TABLES.map((table) => db.prepare(`DELETE FROM ${table} WHERE source = ? AND node_id ${IN_IDS}`));
+  return {
+    ...writersOf(db, now), ...readersOf(db),
     // Gaps left in a listing's positions keep its order, since reads sort by position
-    removeItems: (source: string, nodeIds: readonly string[]): void => inTransaction(db, () => {
+    removeItems: (source, nodeIds) => inTransaction(db, () => {
       const ids = JSON.stringify(nodeIds);
       unlist.run(source, ids);
       for (const removal of removals) removal.run(source, ids);
