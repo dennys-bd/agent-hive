@@ -5,7 +5,7 @@ import { createEvent, createTask, HIVE_ISSUE_FIELDS_MESSAGE, LABELS_MESSAGE, STA
 import { CreateRefusedError, IssuePlacementError } from '../src/source-create.js';
 import { taskOfPr } from '../src/activities.js';
 import { GITHUB_ENTRY } from './fakes.js';
-import type { HiveEvent, Source, State, Task } from '../src/types.js';
+import type { HiveEvent, Source, SourceConfig, State, Task } from '../src/types.js';
 import { flowed } from './fixtures/main-flow.js';
 
 const STATE: State = { ...initialState(0), ...flowed([{ name: 'fila', from: {}, prompt: 'x' }]), workspaces: ['hive'] };
@@ -73,10 +73,37 @@ test('createTask refuses hive when off, an unknown source, one without a reposit
   const off = { ...COMB, hiveSource: false, createIn: 'roadmap' };
   assert.deepEqual(await createTask(fakeDeps(off).deps, { title: 'x', stage: 'fila', source: 'hive' }), { status: 409, message: HIVE_OFF_MESSAGE });
   for (const source of ['nope', 7, '']) assert.deepEqual(await createTask(fakeDeps().deps, { title: 'x', stage: 'fila', source }), { status: 400, message: UNKNOWN_SOURCE_MESSAGE }, String(source));
-  assert.deepEqual(await createTask(fakeDeps().deps, { title: 'x', stage: 'fila', source: 'notes' }), { status: 400, message: noCreateMessage('notes') });
+  assert.deepEqual(await createTask(fakeDeps().deps, { title: 'x', stage: 'fila', source: 'notes' }), { status: 400, message: noCreateMessage({ name: 'notes', type: 'github' }) });
   assert.deepEqual(await createTask(fakeDeps().deps, { title: 'x', stage: 'fila', source: 'roadmap', workspace: 'hive' }), { status: 400, message: WORKSPACE_ON_SOURCE_MESSAGE });
   assert.deepEqual(await createTask(fakeDeps().deps, { title: 'x', stage: 'later', source: 'roadmap' }), { status: 400, message: noColumnMessage('later', 'roadmap') });
   assert.deepEqual(await createTask(fakeDeps().deps, { title: ' ', stage: 'fila', source: 'roadmap' }), { status: 400, message: 'título obrigatório' });
+});
+
+// #811: a type SourceFields does not have yet, with no repository: only an injected predicate lets it create
+const TRACKER = { ...GITHUB_ENTRY, name: 'tracker', type: 'tracker' } as unknown as SourceConfig;
+const TRACKER_REF = { id: 'T-1', url: 'https://tracker.example/T-1' };
+
+function trackerDeps(can?: CreateDeps['canCreate']) {
+  const made: unknown[] = [];
+  const deps: CreateDeps = {
+    state: STATE, config: { comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [TRACKER] } },
+    sources: new Map<string, Pick<Source, 'create'>>([['tracker', { create: async (f) => { made.push(f); return { itemId: 'tracker:T-1', ref: TRACKER_REF }; } }]]),
+    dispatch: async () => [], poll: async () => {}, latest: () => STATE, ...(can === undefined ? {} : { canCreate: can }),
+  };
+  return { deps, made };
+}
+
+test('createTask creates in a source of another type with no repository when the predicate accepts it, and answers its ref (#811)', async () => {
+  const run = trackerDeps(() => true);
+  assert.deepEqual(await createTask(run.deps, { title: 'Fix', source: 'tracker', status: 'Todo' }), { itemId: 'tracker:T-1', ref: TRACKER_REF, notice: notInFlowNotice('tracker', 'tracker:T-1') });
+  assert.deepEqual(run.made, [{ title: 'Fix', body: '', column: 'Todo', labels: [] }]);
+});
+
+test('a source the predicate refuses answers 400: neutral for another type, the repository hint kept for GitHub (#811)', async () => {
+  const run = trackerDeps(() => false);
+  assert.deepEqual(await createTask(run.deps, { title: 'x', source: 'tracker', status: 'Todo' }), { status: 400, message: 'source tracker cannot create tasks' });
+  assert.deepEqual(run.made, []);
+  assert.equal(noCreateMessage({ name: 'notes', type: 'github' }), 'source notes cannot create tasks: it has no repository for new issues');
 });
 
 test('createTask answers a notice when the poll leaves the new item out, and 502 with the source\'s words when the create fails (#846)', async () => {

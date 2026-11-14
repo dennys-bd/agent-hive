@@ -214,7 +214,7 @@ test('POST /tasks with a source creates the item in the stage\'s first column, p
   sources.work.hidden = true;
   assert.deepEqual(await (await postJson(`${sources.base}/tasks`, { title: 'Hidden', stage: 'dev', source: 'work' })).json(), { itemId: 'work:102', ref: { id: '102', url: 'https://github.com/acme/app/issues/102' }, notice: notInFlowNotice('work', 'work:102') });
   const refused = await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'notes' });
-  assert.deepEqual([refused.status, await refused.json()], [400, { error: noCreateMessage('notes') }]);
+  assert.deepEqual([refused.status, await refused.json()], [400, { error: noCreateMessage({ name: 'notes', type: 'github' }) }]);
 });
 
 test('POST /tasks answers 502 with the ref when the issue exists but was not placed, and with no ref when nothing was created (#767)', async (t) => {
