@@ -274,7 +274,7 @@ test('a label picked becomes a chip, + label leaves out what was picked, a new r
   expect(screen.queryByRole('button', { name: /^tirar / })).not.toBeInTheDocument();
 });
 
-const ISSUE = { number: 912, url: 'https://github.com/acme/app/issues/912' };
+const REF = { id: '912', url: 'https://github.com/acme/app/issues/912' };
 const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)) as unknown);
 type Before = (user: ReturnType<typeof userEvent.setup>) => Promise<void>;
 // opens under issue no GitHub (work, by the workspace), runs before, posts, and answers the POST with answer
@@ -314,7 +314,7 @@ test('an issue in the flow toasts its stage with one flow, flow · stage with tw
   ];
   for (const [extra, shown, message] of cases) {
     vi.mocked(toast).mockClear(); onClose.mockClear(); fetchMock.mockClear();
-    const { unmount } = await answered({ id: 'APP-7', itemId: 'gh:1', issue: ISSUE, ...extra }, { flows: shown });
+    const { unmount } = await answered({ id: 'APP-7', itemId: 'gh:1', ref: REF, ...extra }, { flows: shown });
     expect(posts()[0]).toEqual({ title: 'Fix', body: '', source: 'work', labels: [], status: 'Backlog' });
     const [text, options] = vi.mocked(toast).mock.calls[0] as [string, { action: { label: string; onClick(): void } }];
     expect([text, options.action.label]).toEqual([message, 'abrir']);
@@ -332,11 +332,11 @@ test('a notice toasts that the issue is still outside the hive, with ver no GitH
   ];
   for (const [before, line] of cases) {
     vi.mocked(toast.info).mockClear(); onClose.mockClear(); fetchMock.mockClear();
-    const { unmount } = await answered({ issue: { ...ISSUE, number: 88 }, notice: 'created off the Project' }, { before });
+    const { unmount } = await answered({ ref: { ...REF, id: '88' }, notice: 'created off the Project' }, { before });
     const [text, options] = vi.mocked(toast.info).mock.calls[0] as [string, { description: string; action: { label: string; onClick(): void } }];
     expect([text, options.description, options.action.label]).toEqual(['Issue #88 criada, ainda fora do hive', line, 'ver no GitHub']);
     options.action.onClick();
-    expect(opened).toHaveBeenLastCalledWith(ISSUE.url, '_blank', 'noreferrer');
+    expect(opened).toHaveBeenLastCalledWith(REF.url, '_blank', 'noreferrer');
     unmount();
   }
   expect(vi.mocked(toast)).not.toHaveBeenCalled();
@@ -370,11 +370,11 @@ test('a 502 with no issue keeps every field, says nothing was created, and tenta
 
 test('a 502 that carries the issue links it and offers fechar, which posts nothing; an edit does not take it back (#772)', async () => {
   const opened = vi.spyOn(window, 'open').mockImplementation(() => null);
-  const user = await refused({ error: 'not on the Project', issue: ISSUE }, 502);
+  const user = await refused({ error: 'not on the Project', ref: REF }, 502);
   const alert = screen.getByRole('alert');
   expect(alert).toHaveTextContent('a issue #912 foi criada em acme/app, mas não entrou no project.');
   await user.click(within(alert).getByRole('button', { name: 'ver no GitHub' }));
-  expect(opened).toHaveBeenCalledWith(ISSUE.url, '_blank', 'noreferrer');
+  expect(opened).toHaveBeenCalledWith(REF.url, '_blank', 'noreferrer');
   await user.type(screen.getByLabelText('título'), '!');
   expect(screen.getByRole('alert')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'fechar' }));

@@ -43,7 +43,7 @@ async function startSources(t: TestContext, maxConcurrent = 0, qualifyNotes = tr
       },
       setColumn: async (itemId, column) => { fake.writes.push(`${itemId}→${column}`); },
       apply: async (itemId, action) => { fake.writes.push(`${itemId} ${action.type}`); },
-      create: async ({ title, column }) => { if (fake.createError) throw fake.createError; fake.made += 1; const id = String(100 + fake.made); fake.writes.push(`create ${title}→${column}`); if (!fake.hidden) fake.listed.push(listing(id, title)); return { itemId: id, issue: { number: Number(id), url: `https://github.com/acme/app/issues/${id}` } }; },
+      create: async ({ title, column }) => { if (fake.createError) throw fake.createError; fake.made += 1; const id = String(100 + fake.made); fake.writes.push(`create ${title}→${column}`); if (!fake.hidden) fake.listed.push(listing(id, title)); return { itemId: id, ref: { id, url: `https://github.com/acme/app/issues/${id}` } }; },
     };
   };
   const { log, lines } = fakeLog();
@@ -208,24 +208,24 @@ test('POST /tasks with a source creates the item in the stage\'s first column, p
   await sources.server.poll();
   const res = await postJson(`${sources.base}/tasks`, { title: 'Fix', stage: 'dev', source: 'work' });
   assert.equal(res.status, 201);
-  assert.deepEqual(await res.json(), { id: '101', itemId: 'work:101', issue: { number: 101, url: 'https://github.com/acme/app/issues/101' }, stage: 'dev' });
+  assert.deepEqual(await res.json(), { id: '101', itemId: 'work:101', ref: { id: '101', url: 'https://github.com/acme/app/issues/101' }, stage: 'dev' });
   assert.deepEqual(sources.work.writes, ['create Fix→Ready']);
   assert.ok(sources.server.getState()?.tasks.some((c) => c.item.itemId === 'work:101'), 'in the state when the answer arrives');
   sources.work.hidden = true;
-  assert.deepEqual(await (await postJson(`${sources.base}/tasks`, { title: 'Hidden', stage: 'dev', source: 'work' })).json(), { itemId: 'work:102', issue: { number: 102, url: 'https://github.com/acme/app/issues/102' }, notice: notInFlowNotice('work', 'work:102') });
+  assert.deepEqual(await (await postJson(`${sources.base}/tasks`, { title: 'Hidden', stage: 'dev', source: 'work' })).json(), { itemId: 'work:102', ref: { id: '102', url: 'https://github.com/acme/app/issues/102' }, notice: notInFlowNotice('work', 'work:102') });
   const refused = await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'notes' });
   assert.deepEqual([refused.status, await refused.json()], [400, { error: noCreateMessage('notes') }]);
 });
 
-test('POST /tasks answers 502 with the issue when the issue exists but was not placed, and with no issue when nothing was created (#767)', async (t) => {
+test('POST /tasks answers 502 with the ref when the issue exists but was not placed, and with no ref when nothing was created (#767)', async (t) => {
   const sources = await startSources(t);
   const [work, notes] = sources.body.sources ?? [];
   assert.equal((await postJson(`${sources.base}/settings`, { ...sources.body, sources: [{ ...work, repository: 'acme/app' }, notes] })).status, 200);
-  const issue = { number: 7, url: 'https://github.com/acme/app/issues/7' };
-  const placement = new IssuePlacementError(`issue ${issue.url} was created but not labeled or placed on the Project: down`, issue);
+  const ref = { id: '7', url: 'https://github.com/acme/app/issues/7' };
+  const placement = new IssuePlacementError(`issue ${ref.url} was created but not labeled or placed on the Project: down`, ref);
   sources.work.createError = placement;
   const placed = await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'work' });
-  assert.deepEqual([placed.status, await placed.json()], [502, { error: placement.message, issue }]);
+  assert.deepEqual([placed.status, await placed.json()], [502, { error: placement.message, ref }]);
   sources.work.createError = new Error('no access');
   const failed = await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'work' });
   assert.deepEqual([failed.status, await failed.json()], [502, { error: 'no access' }]);
@@ -235,15 +235,15 @@ test('a failed create on a source leaves the source\'s words in hive.log on one 
   const sources = await startSources(t);
   const [work, notes] = sources.body.sources ?? [];
   assert.equal((await postJson(`${sources.base}/settings`, { ...sources.body, sources: [{ ...work, repository: 'acme/app' }, notes] })).status, 200);
-  const issue = { number: 7, url: 'https://github.com/acme/app/issues/7' };
-  const failures = [new CreateRefusedError('unknown label: nope'), new IssuePlacementError(`issue ${issue.url} was created but not placed on the Project:\ndown`, issue), new Error('no access')];
+  const ref = { id: '7', url: 'https://github.com/acme/app/issues/7' };
+  const failures = [new CreateRefusedError('unknown label: nope'), new IssuePlacementError(`issue ${ref.url} was created but not placed on the Project:\ndown`, ref), new Error('no access')];
   for (const err of failures) {
     sources.work.createError = err;
     await postJson(`${sources.base}/tasks`, { title: 'x', stage: 'dev', source: 'work' });
   }
   assert.deepEqual(sources.lines.filter((l) => l.startsWith('WARN create on')), [
     'WARN create on work: GitHub refused the write: unknown label: nope',
-    `WARN create on work: GitHub refused the write: issue ${issue.url} was created but not placed on the Project: down`,
+    `WARN create on work: GitHub refused the write: issue ${ref.url} was created but not placed on the Project: down`,
     'WARN create on work: GitHub refused the write: no access',
   ]);
 });

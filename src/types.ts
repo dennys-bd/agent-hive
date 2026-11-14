@@ -2065,6 +2065,8 @@ export interface IssuePage extends RepoIssue {
 export interface ReadOptions { fresh?: boolean } // #282: fresh reads GitHub now, not the read model
 
 /** What every source adapter implements; src/source.ts builds one per comb.sources entry (#180). */
+export interface CreatedRef { id: string; url: string } // #811: the created item's id in its source (GitHub: the issue number) and its link
+
 export interface Source {
   resolveFields(): Promise<void>; // every column name the config cites exists on the source
   listItems(): Promise<SourceItem[]>; // tasks in any cited column, in source order
@@ -2079,7 +2081,7 @@ export interface Source {
   setField?(itemId: string, field: string, value: FieldValue): Promise<FieldWrite>; // #686: writes, then re-reads the item
   relate?(itemId: string, change: BlockerChange): Promise<BlockerWrite>; // #56: writes the relation, then re-reads the item's relations
   findBlockers?(itemId: string, text: string): Promise<BlockerRef[]>; // #57: issues of the item's repository whose title matches, at most 8
-  create?(fields: { title: string; body?: string; column: string | null; labels: string[] }): Promise<{ itemId?: string; issue: { number: number; url: string } }>; // #846: a new issue in column, resolving to its item's adapter id (namespaced: its itemId); #767: with labels, and off the Project (no itemId) when column is null; a type that cannot create leaves it out
+  create?(fields: { title: string; body?: string; column: string | null; labels: string[] }): Promise<{ itemId?: string; ref: CreatedRef }>; // #846: a new item (GitHub: an issue) in column, resolving to its item's adapter id (namespaced: its itemId); #767: with labels, and off the Project (no itemId) when column is null; a type that cannot create leaves it out
   createOptions?(): Promise<{ statuses: string[]; labels: string[] }>; // #768: the create dialog's menus; rejects with CreateRefusedError when the source has no repository
   project?(options?: ReadOptions): Promise<ProjectView>; // #756: the source's native view, every issue unfiltered; #282: from the read model unless fresh
 }
