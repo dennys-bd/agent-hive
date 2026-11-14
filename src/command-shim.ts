@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { lineWords, type SemaphoresConfig } from './command-semaphores.js';
 import { shellQuote } from './shell-init.js';
 import { BIN_MODE } from './shim.js';
+import type { Language } from './types.js';
 
 // The command shims (#800): one template, assets/bin/command-shim, rendered per first word of a line with a Command Semaphore into
 // <home>/command-shims/<word>, first on every pty's PATH, as the agents' shims are rendered into <home>/bin (#696).
@@ -13,14 +14,16 @@ export const COMMAND_SHIMS_DIR = 'command-shims'; // <home>/command-shims: first
 // /tmp whose parent another account could own; beside the shims, never among them, since that folder is on PATH and the install deletes
 // every file of it that is no shim
 export const COMMAND_SHIMS_ENV_DIR = 'command-shims-env';
-const COMMAND = '__HIVE_COMMAND__';
+// One pass over both placeholders (#801: the wait's line speaks the Hive's language), so a word holding the other's text stays whole
+const PLACEHOLDER = /__HIVE_(COMMAND|LANGUAGE)__/g;
 const SHIM_MODE = 0o755;
 
 /** `assets/bin/command-shim` in the Hive's own checkout, resolved from dist/src/ as shimSource is. */
 export const commandShimSource = (): string => fileURLToPath(new URL('../../assets/bin/command-shim', import.meta.url));
 
 /** The shim as written for `word`: quoted, since a first word lineWords takes can still hold a # or a ! (it never holds a quote). */
-export const renderCommandShim = (template: string, word: string): string => template.replaceAll(COMMAND, () => shellQuote(word));
+export const renderCommandShim = (template: string, word: string, language: Language): string =>
+  template.replace(PLACEHOLDER, (_match, key: string) => shellQuote(key === 'COMMAND' ? word : language));
 
 export const commandShimDir = (home: string): string => join(home, COMMAND_SHIMS_DIR);
 
@@ -43,8 +46,8 @@ export function shimWords(config: Pick<SemaphoresConfig, 'comb'>): string[] {
 
 /** Decisions 1, 3: every word's shim written, then every other file of the folder deleted, so a line removed and saved takes its shim
  * with it when no other line needs that word. A tmp file renamed over the shim: a shim running a command keeps the file it is reading.
- * Answers the words. None on win32: Windows has no command shim until node 5 of #704, and its join reads \ and : in a word. */
-export async function installCommandShims(home: string, config: Pick<SemaphoresConfig, 'comb'>, platform: NodeJS.Platform): Promise<string[]> {
+ * Answers the words; a save rewrites them all, so a change of language reaches every shim (#801). None on win32: Windows has no command shim until node 5 of #704, and its join reads \ and : in a word. */
+export async function installCommandShims(home: string, config: Pick<SemaphoresConfig, 'comb'>, language: Language, platform: NodeJS.Platform): Promise<string[]> {
   if (platform === 'win32') return [];
   const dir = commandShimDir(home);
   await mkdir(dir, { recursive: true, mode: BIN_MODE });
@@ -52,7 +55,7 @@ export async function installCommandShims(home: string, config: Pick<SemaphoresC
   const words = shimWords(config);
   for (const word of words) {
     const tmp = join(dir, `.${word}.new`);
-    await writeFile(tmp, renderCommandShim(template, word), { mode: SHIM_MODE });
+    await writeFile(tmp, renderCommandShim(template, word, language), { mode: SHIM_MODE });
     await chmod(tmp, SHIM_MODE); // writeFile's mode applies only to a new file
     await rename(tmp, join(dir, word));
   }

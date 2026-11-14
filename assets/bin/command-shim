@@ -1,9 +1,11 @@
 #!/bin/sh
 # The Hive's command shim (#800), rendered for each first word of a line with a Command Semaphore into <home>/command-shims/<word>, first
 # on every pty's PATH. It asks the daemon before the real command runs (#798's answers): run, or no answer at all, runs it as typed; run
-# <semaphore> runs it and gives the permit back when it ends; refused tells the agent it is in line and stops; wait (until node 2.4's wait
-# in place) gives the place back and runs it. A Hive down or stuck costs at most 2 s, never the command.
+# <semaphore> runs it and gives the permit back when it ends; refused tells the agent it is in line and stops; wait (a terminal's) stays in
+# place until its turn (#801). A Hive down or stuck costs at most 2 s, never the command.
 word=__HIVE_COMMAND__
+language=__HIVE_LANGUAGE__ # the Hive's, rendered on every boot and save (#801): en or pt
+acquire_now= # set only by the wait's r, never taken from the env
 case $0 in */*) self_dir=${0%/*} ;; *) self_dir=. ;; esac
 self_dir=$(CDPATH= cd -- "$self_dir" && pwd)
 
@@ -43,7 +45,7 @@ curl=$(on_path curl) || exec "$real" "$@"
 acquire() {
   for arg in "$@"; do set -- "$@" --data-urlencode "arg=$arg"; shift; done
   "$curl" -q -sf --noproxy '*' -m 2 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/semaphores/acquire" -H "x-hive-pty: $HIVE_PTY_ID" \
-    -H @"$HIVE_SECRET_FILE" --data-urlencode "arg=$word" -d "pid=$$" "$@"
+    -H @"$HIVE_SECRET_FILE" --data-urlencode "arg=$word" -d "pid=$$" ${acquire_now:+-d now=true} "$@"
 }
 
 # No answer within 2 s, or a non-2xx: as typed. Only the reply's first line counts, read as data and never evaluated
@@ -108,6 +110,88 @@ run_held() {
   exit "$code"
 }
 
+# #801: the wait's one line, in the card's own words (#805); the key is offered only where it is read
+wait_line() {
+  if [ "$language" = pt ]; then
+    printf 'hive: %s aguardando a vez de %s · %sº' "$word" "$name" "$place"
+    [ -n "$tty_saved" ] && printf ' · r executa agora'
+    printf ' · Ctrl-C sai'
+  else
+    printf 'hive: %s waiting on %s · place %s' "$word" "$name" "$place"
+    [ -n "$tty_saved" ] && printf ' · r runs it now'
+    printf ' · Ctrl-C leaves'
+  fi
+}
+
+# On a TTY stderr the line is rewritten in place; elsewhere (a log) one line per change, never a \r
+show_line() { if [ -t 2 ]; then printf '\r\033[K%s' "$(wait_line)" >&2; else printf '%s\n' "$(wait_line)" >&2; fi; }
+end_wait() {
+  [ -n "$tty_saved" ] && stty "$tty_saved" 2>/dev/null
+  tty_saved=
+  [ -t 2 ] && printf '\r\033[K' >&2
+  :
+}
+
+# A Ctrl-C reaches dd or sleep and the shim alike (one foreground group); a TERM to the shim alone waits out the tick, at most 1 s
+on_wait_signal() {
+  trap '' INT TERM HUP
+  end_wait
+  release
+  exit "$1"
+}
+
+# One tick of the wait, 1 s. On a TTY stdin a timed read of one byte (-icanon min 0 time 10) is the clock, and r answers 0; any other key
+# is dropped, so a stray Enter never runs over the limit, and sleeps out a second, so a paste or an arrow key is no burst of acquires.
+# Elsewhere a sleep, and no key is ever read
+tick() {
+  if [ -n "$tty_saved" ]; then
+    case "$(dd bs=1 count=1 2>/dev/null)" in r|R) return 0 ;; '') return 1 ;; esac
+  fi
+  sleep 1
+  return 1
+}
+
+# The terminal's foreground group is the shim's own; ps pads its columns, which the unquoted split drops. No ps: no key
+in_foreground() {
+  set -- $(ps -o tpgid= -o pgid= -p $$ 2>/dev/null)
+  [ $# -eq 2 ] && [ "$1" = "$2" ]
+}
+
+# #801: a terminal waits in place by asking again every second (#797: the daemon keeps no connection open). run <name> is its turn, or
+# r's now granted above the limit; any other answer, or none, gives the place back and runs as typed, so no place outlives the wait
+wait_in_place() {
+  trap 'on_wait_signal 130' INT
+  trap 'on_wait_signal 143' TERM
+  trap 'on_wait_signal 129' HUP
+  trap 'on_wait_signal 131' QUIT
+  # bash puts its own modes back on a Ctrl-Z and never the job's on fg, so a resumed wait sets its own again
+  trap '[ -n "$tty_saved" ] && stty -icanon -echo min 0 time 10 2>/dev/null' CONT
+  tty_saved=
+  # The key only in the terminal's foreground: from a background job (pnpm test &) stty and dd would stop it on SIGTTOU or SIGTTIN
+  if [ -t 0 ] && in_foreground; then
+    tty_saved=$(stty -g 2>/dev/null) && stty -icanon -echo min 0 time 10 2>/dev/null || tty_saved=
+  fi
+  shown=
+  while :; do
+    [ "$place" = "$shown" ] || { show_line; shown=$place; }
+    if tick; then acquire_now=1; else acquire_now=; fi
+    reply=$(acquire "$@") || break
+    read -r answer next spot rest <<EOF
+$reply
+EOF
+    [ "$next" = "$name" ] || break
+    case "$answer:$spot" in
+      run:) end_wait; run_held "$@" ;;
+      wait:|wait:*[!0-9]*) break ;;
+      wait:*) place=$spot ;;
+      *) break ;;
+    esac
+  done
+  end_wait
+  release
+  exec "$real" "$@"
+}
+
 case "$answer:${name:+name}:${place:+place}" in
   run::) exec "$real" "$@" ;; # no semaphore on this argv, or a permit this pty already holds: nothing to give back
   run:name:) run_held "$@" ;;
@@ -116,6 +200,6 @@ case "$answer:${name:+name}:${place:+place}" in
     printf 'hive: %s refused: the semaphore %s is full and you are %s in line. Do not retry: you will be told when your turn comes.\n' \
       "$word" "$name" "$(ordinal "$place")" >&2
     exit 75 ;;
-  wait:name:place) release; exec "$real" "$@" ;; # until node 2.4 waits in place: no place stays in line with nobody waiting
+  wait:name:place) wait_in_place "$@" ;;
 esac
 exec "$real" "$@"
