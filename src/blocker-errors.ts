@@ -1,5 +1,5 @@
 // The blocker refusals every source type throws (#56), outside src/sources/ since #810: the route and namespaced read them for any type, and
-// a second type's adapter imports them without reaching into GitHub's. Words with no source's vocabulary: "issue" is GitHub's
+// a second type's adapter imports them without reaching into GitHub's. Their words name no source's vocabulary, since "issue" is GitHub's
 import type { ItemBlockers } from './types.js';
 
 /** A ref the item's source type does not read (#810 decision 7): the adapter knows its type's forms and the route does not, so the sentence

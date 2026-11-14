@@ -98,7 +98,8 @@ function failed(deps: RelateDeps, itemId: string, err: unknown): RelateOutcome {
     // Nothing read: refused, so the UI does not show the written relation as gone; a retry is a no-op, relate reads before it writes
     return err.blockers === undefined ? refusalOf('refused') : { blockers: err.blockers };
   }
-  // #810: the adapter's own sentence, which names its type's forms; the route cannot, since it does not know the source's type
+  // #810: the adapter's own sentence, which names its type's forms; the route cannot, since it does not know the source's type.
+  // It echoes the ref, which changeOf and refsOf cap at 200 characters before any adapter sees it
   if (err instanceof BadBlockerRefError) return { refusal: { status: HTTP_BAD_REQUEST, error: err.message, code: BLOCKER_CODES.badRequest } };
   const known = KNOWN.find(([type]) => err instanceof type);
   if (known !== undefined) return refusalOf(known[1]);

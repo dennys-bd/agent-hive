@@ -68,8 +68,8 @@ export interface BlockerAddRowProps {
 }
 
 /** The blockers section's add row (#57, handoff 3): the kind (blocked by first) unless the caller fixes it (#61), then the field and its suggestions. ↑/↓ move the highlight,
- * ↵ adds the highlighted suggestion or, with none, the typed ref; with neither it names the forms the item's source type reads, under the field (#810). Escape closes the row. The field and the select own Escape, and the key is
- * prevented, so the details panel never closes with it; an open select's Escape, already prevented by Radix, closes only the select. */
+ * ↵ adds the highlighted suggestion or, with none, the typed ref; with neither it names the forms the item's source type reads,
+ * under the field (#810). Escape closes the row. The field and the select own Escape, and the key is prevented, so the details panel never closes with it; an open select's Escape, already prevented by Radix, closes only the select. */
 export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, kind: fixedKind, grammar, onAdd, onCancel }: BlockerAddRowProps) {
   const listId = useId();
   const [chosenKind, setKind] = useState<Kind>('blockedBy');
