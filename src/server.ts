@@ -511,7 +511,8 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // #812 decisions 8, 9: a call the source rate limited reports its retry first; the caller then fails exactly as it always has
   async function retryOf(source: string, err: unknown): Promise<void> {
-    if (isRateLimited(err)) await reportRetry(source, err.retryAt);
+    // Never throws: a failed report must not swallow the failure the caller records right after it
+    if (isRateLimited(err)) await reportRetry(source, err.retryAt).catch((e: unknown) => log.error(`source ${source} backoff: ${errorMessage(e)}`));
   }
 
   // Fires an event's effects without making the caller wait on them (#476): dispatch reduces and assigns live.state
