@@ -5,6 +5,7 @@
 # place until its turn (#801). A Hive down or stuck costs at most 2 s, never the command.
 word=__HIVE_COMMAND__
 language=__HIVE_LANGUAGE__ # the Hive's, rendered on every boot and save (#801): en or pt
+acquire_now= # set only by the wait's r, never taken from the env
 case $0 in */*) self_dir=${0%/*} ;; *) self_dir=. ;; esac
 self_dir=$(CDPATH= cd -- "$self_dir" && pwd)
 
@@ -140,14 +141,20 @@ on_wait_signal() {
 }
 
 # One tick of the wait, 1 s. On a TTY stdin a timed read of one byte (-icanon min 0 time 10) is the clock, and r answers 0; any other key
-# is dropped, so a stray Enter never runs over the limit. Elsewhere a sleep, and no key is ever read
+# is dropped, so a stray Enter never runs over the limit, and sleeps out a second, so a paste or an arrow key is no burst of acquires.
+# Elsewhere a sleep, and no key is ever read
 tick() {
   if [ -n "$tty_saved" ]; then
-    case "$(dd bs=1 count=1 2>/dev/null)" in r|R) return 0 ;; esac
-    return 1
+    case "$(dd bs=1 count=1 2>/dev/null)" in r|R) return 0 ;; '') return 1 ;; esac
   fi
   sleep 1
   return 1
+}
+
+# The terminal's foreground group is the shim's own; ps pads its columns, which the unquoted split drops. No ps: no key
+in_foreground() {
+  set -- $(ps -o tpgid= -o pgid= -p $$ 2>/dev/null)
+  [ $# -eq 2 ] && [ "$1" = "$2" ]
 }
 
 # #801: a terminal waits in place by asking again every second (#797: the daemon keeps no connection open). run <name> is its turn, or
@@ -156,8 +163,14 @@ wait_in_place() {
   trap 'on_wait_signal 130' INT
   trap 'on_wait_signal 143' TERM
   trap 'on_wait_signal 129' HUP
+  trap 'on_wait_signal 131' QUIT
+  # bash puts its own modes back on a Ctrl-Z and never the job's on fg, so a resumed wait sets its own again
+  trap '[ -n "$tty_saved" ] && stty -icanon -echo min 0 time 10 2>/dev/null' CONT
   tty_saved=
-  if [ -t 0 ]; then tty_saved=$(stty -g 2>/dev/null) && stty -icanon -echo min 0 time 10 2>/dev/null || tty_saved=; fi
+  # The key only in the terminal's foreground: from a background job (pnpm test &) stty and dd would stop it on SIGTTOU or SIGTTIN
+  if [ -t 0 ] && in_foreground; then
+    tty_saved=$(stty -g 2>/dev/null) && stty -icanon -echo min 0 time 10 2>/dev/null || tty_saved=
+  fi
   shown=
   while :; do
     [ "$place" = "$shown" ] || { show_line; shown=$place; }

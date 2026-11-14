@@ -75,8 +75,8 @@ test('in a terminal r runs it now: the next acquire carries now, the binary runs
   await until(() => acquires(seen).length >= 2);
   assert.ok(!acquires(seen)[1].body.includes(NOW));
   shell.term.write('r');
-  await until(() => shell.output().includes('stdin:') || acquires(seen).some((s) => s.body.includes(NOW)));
-  shell.term.write('typed\n\x04'); // the binary's cat reads lines again: the tty was restored
+  await until(() => shell.output().includes('arg:test')); // the binary started, so the tty was restored before anything is typed
+  shell.term.write('typed\n\x04'); // the binary's cat reads lines again, and ^D ends it
   assert.equal(await shell.exited, FAKE_EXIT);
   assert.match(shell.output(), /stdin:typed/);
   assert.ok(acquires(seen).at(-1)?.body.includes(NOW));

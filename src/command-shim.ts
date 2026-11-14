@@ -14,8 +14,8 @@ export const COMMAND_SHIMS_DIR = 'command-shims'; // <home>/command-shims: first
 // /tmp whose parent another account could own; beside the shims, never among them, since that folder is on PATH and the install deletes
 // every file of it that is no shim
 export const COMMAND_SHIMS_ENV_DIR = 'command-shims-env';
-const COMMAND = '__HIVE_COMMAND__';
-const LANGUAGE = '__HIVE_LANGUAGE__'; // #801: the wait's line speaks the Hive's language
+// One pass over both placeholders (#801: the wait's line speaks the Hive's language), so a word holding the other's text stays whole
+const PLACEHOLDER = /__HIVE_(COMMAND|LANGUAGE)__/g;
 const SHIM_MODE = 0o755;
 
 /** `assets/bin/command-shim` in the Hive's own checkout, resolved from dist/src/ as shimSource is. */
@@ -23,7 +23,7 @@ export const commandShimSource = (): string => fileURLToPath(new URL('../../asse
 
 /** The shim as written for `word`: quoted, since a first word lineWords takes can still hold a # or a ! (it never holds a quote). */
 export const renderCommandShim = (template: string, word: string, language: Language): string =>
-  template.replaceAll(COMMAND, () => shellQuote(word)).replaceAll(LANGUAGE, () => shellQuote(language));
+  template.replace(PLACEHOLDER, (_match, key: string) => shellQuote(key === 'COMMAND' ? word : language));
 
 export const commandShimDir = (home: string): string => join(home, COMMAND_SHIMS_DIR);
 
