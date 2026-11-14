@@ -52,8 +52,7 @@ export function preselect(opened: { workspace?: string; source?: string }, targe
 }
 
 /** The repositório menu's line (#772, decision 4): the repository, and the source after it only when another source names the same one,
- * since the wire carries the source's name. */
-// A source with no repository is named by its own name: there is no repository to share (#811)
+ * since the wire carries the source's name. A source with no repository is named by its own name: there is none to share (#811). */
 export function repositoryLabel(source: CreateSource, sources: readonly CreateSource[]): string {
   if (source.repository === undefined) return source.name;
   const isShared = sources.filter((s) => s.repository === source.repository).length > 1;

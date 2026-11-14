@@ -36,9 +36,13 @@ export const STATUS_MESSAGE = "status must be a Status option's name or null";
 export const PR_HIVE_ONLY_MESSAGE = 'pr creates in hive only: leave source out or set it to "hive"';
 export const PR_URL_MESSAGE = 'pr must be a GitHub pull request link';
 export const PR_TAKEN_MESSAGE = 'a task already holds this PR';
-// The repository hint is GitHub's; another type has no such thing to point at (#811)
-export const noCreateMessage = (entry: Pick<SourceConfig, 'name' | 'type'>): string =>
-  entry.type === 'github' ? `source ${entry.name} cannot create tasks: it has no repository for new issues` : `source ${entry.name} cannot create tasks`;
+// Why a source of each type cannot create (#811): a Record, so a new type must say whether it has a reason to point at, as canCreate's switch
+// makes it say how it creates; undefined = only the neutral words
+const NO_CREATE_REASON: Record<SourceConfig['type'], string | undefined> = { github: 'it has no repository for new issues' };
+export const noCreateMessage = (entry: Pick<SourceConfig, 'name' | 'type'>): string => {
+  const reason = NO_CREATE_REASON[entry.type] as string | undefined; // a test's cast type finds no entry
+  return reason === undefined ? `source ${entry.name} cannot create tasks` : `source ${entry.name} cannot create tasks: ${reason}`;
+};
 export const noColumnMessage = (stage: string, name: string): string => `stage ${stage} reads no column of source ${name}`;
 // Neutral on why: a filtered item and a poll that failed or was rate limited both land here, and the next poll brings the second in
 export const notInFlowNotice = (name: string, itemId: string): string => `created ${itemId} on ${name}; it is not in the flow yet: the source's filter may leave it out, or the next poll will bring it in`;
