@@ -152,7 +152,7 @@ async function fakeAt(dir: string, name: string, text: string): Promise<void> {
   await writeFile(join(dir, name), text);
   await chmod(join(dir, name), 0o755);
 }
-const CMD_REFUSAL = (n: number): string => `hive: pnpm: cmd.exe cannot pass argument ${n} (it has %, a line break or NUL)\n`;
+const CMD_REFUSAL = (n: number): string => `hive: pnpm: cmd.exe cannot pass argument ${n} (it has %, ", a line break or NUL)\n`;
 
 test('the win32 shim finds <word><ext> per PATH folder in PATHEXT\'s order and without case, past a folder holding only pnpm.vbs (#806)', async (t) => {
   const { r } = await setup(t, 'run', WORD, 'win32');
@@ -191,7 +191,7 @@ test('the win32 shim refuses an argument with %, a CR or a LF for a .cmd or .bat
     const cmds = join(r.root, 'cmds');
     await fakeAt(cmds, `pnpm${ext}`, named('cmds'));
     const env = { PATH: searchPath(dirname(r.shim), cmds) };
-    const cases: [string[], string | undefined, number][] = [[['test', '50%'], undefined, 2], [['test'], 'a\rb', 2], [[], 'a\nb', 1], [['50%', 'test'], undefined, 1]];
+    const cases: [string[], string | undefined, number][] = [[['test', '50%'], undefined, 2], [['a"b'], undefined, 1], [['test'], 'a\rb', 2], [[], 'a\nb', 1], [['50%', 'test'], undefined, 1]];
     for (const [args, lastArg, n] of cases) {
       const ran = await runShim(r, args, { env, lastArg });
       assert.deepEqual([ran.code, ran.stdout, ran.stderr], [126, '', CMD_REFUSAL(n)], `${ext} ${JSON.stringify([...args, lastArg])}`);
@@ -259,8 +259,15 @@ test('shimWords on win32: none for a word holding :, nor for one sharing a file 
   assert.deepEqual(shimWords(config, 'linux'), ['pnpm', 'Pnpm', 'PNPM.cmd', 'a:b']);
 });
 
-test('renderCommandShimCmd writes the sh.exe path and the word with % doubled and leaves the template\'s own %~dp0 and %* alone (#806)', () => {
-  assert.equal(renderCommandShimCmd('"__HIVE_SH__" "%~dp0__HIVE_COMMAND__" %*', 'a%b', 'C:\\Git 100%\\bin\\sh.exe'), '"C:\\Git 100%%\\bin\\sh.exe" "%~dp0a%%b" %*');
+test('shimWords on win32: none for a word with a runnable extension, a device name or a trailing dot, which a shim file cannot be named after (#806)', () => {
+  const words = ['PNPM.cmd', 'node.exe', 'git.bat', 'foo.ps1', 'run.COM', 'nul', 'CON', 'aux.txt', 'com1', 'lpt9', 'pnpm.', 'pnpm', 'console', 'nulls'];
+  const config = commandsConfig(...words.map((word) => commandOf(word, line(`${word} x`, 'memory'))));
+  assert.deepEqual(shimWords(config, 'win32'), ['pnpm', 'console', 'nulls']);
+});
+
+test('renderCommandShimCmd writes the sh.exe path, the shims\' folder and the word with % doubled and leaves the template\'s own %* alone (#806)', () => {
+  assert.equal(renderCommandShimCmd('"__HIVE_SH__" "__HIVE_DIR__\\__HIVE_COMMAND__" %*', 'a%b', 'C:\\Git 100%\\bin\\sh.exe', 'C:\\h 5%\\command-shims'),
+    '"C:\\Git 100%%\\bin\\sh.exe" "C:\\h 5%%\\command-shims\\a%%b" %*');
 });
 
 test('installCommandShims on win32 writes each word\'s POSIX shim and its .cmd twin, and a save keeps both of every current word and deletes the rest (#806)', async (t) => {
@@ -272,10 +279,20 @@ test('installCommandShims on win32 writes each word\'s POSIX shim and its .cmd t
   assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm', 'en', 'win32'));
   const twin = await readFile(join(dir, 'pnpm.cmd'), 'utf8');
   assert.match(twin, /^set MSYS2_ARG_CONV_EXCL=\*\r?$/m);
-  assert.match(twin, /^"C:\\Program Files\\Git\\bin\\sh\.exe" "%~dp0pnpm" %\*\r?$/m);
+  assert.ok(twin.split(/\r?\n/).includes(`"C:\\Program Files\\Git\\bin\\sh.exe" "${dir}\\pnpm" %*`), twin);
   await writeFile(join(dir, 'stray.cmd'), 'left by an older version');
   await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))), 'en', install);
   assert.deepEqual((await readdir(dir)).sort(), ['docker', 'docker.cmd']);
+});
+
+test('installCommandShims writes every other word and sweeps when one shim cannot be replaced, then reports it for the next save to retry (#806)', async (t) => {
+  const home = await tempDir(t, 'home-');
+  const dir = commandShimDir(home);
+  await mkdir(join(dir, 'pnpm', 'held'), { recursive: true }); // a rename over a non-empty folder fails on every OS, as one over an open file does on Windows
+  await writeFile(join(dir, 'stray'), 'left by an older version');
+  const both = commandsConfig(commandOf('test', line('pnpm test', 'memory')), commandOf('up', line('docker compose up', 'disk')));
+  await assert.rejects(installCommandShims(home, both, 'en', { platform: 'linux', sh: '/bin/sh' }), /1 shim\(s\) not replaced/);
+  assert.deepEqual((await readdir(dir)).sort(), ['docker', 'pnpm'], 'docker written, the stray swept, no tmp left');
 });
 
 test('claudeEnvLine prepends the folder, quoted, to PATH and exports it; on win32 in MSYS\'s form, since Git\'s bash splits PATH at : (#800, #806)', () => {

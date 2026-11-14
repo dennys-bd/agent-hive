@@ -50,7 +50,7 @@ test('on the Windows lane a worker\'s Git bash and PowerShell find the command s
   const psEnv = /pwsh\.exe$/i.test(pwsh) ? env : { ...env, PSModulePath: '' }; // as pty-spawn.test.ts: 5.1 breaks on pwsh 7's PSModulePath
   const ps = await run(pwsh, ['-NoProfile', '-NonInteractive', '-Command', '@(Get-Command pnpm)[0].Source'], { env: psEnv, timeout: RUN_TIMEOUT_MS });
   assert.ok(sameFile(ps.stdout, join(shims, 'pnpm.cmd')), ps.stdout);
-  // planning decision 1: the twin starts the shim as %~dp0pnpm, backslashes and all; a lost folder would run the twin again, forever
+  // planning decision 1: the twin starts the shim by its full Windows path, backslashes and all; a lost folder would run the twin again, forever
   const twin = resolveExec(join(shims, 'pnpm.cmd'), ['test'], { platform: 'win32', env });
   const ran = await run(twin.file, [...twin.args], { env: { ...env, ...twin.env }, windowsVerbatimArguments: twin.windowsVerbatimArguments, timeout: RUN_TIMEOUT_MS });
   assert.match(ran.stdout, /^real pnpm test\r?$/m);

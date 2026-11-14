@@ -65,7 +65,8 @@ real=$(on_path "$word") || { echo "$word: not found on PATH" >&2; exit 127; }
 # #806 decision 4: cmd.exe expands %…% even in quotes and ends its line at a break, so no quoting carries them to a .cmd or .bat. Refused
 # as cmdRunner in src/exec-path.ts refuses them, by position and never by value (an argument may carry a secret), and never passed on
 # changed, so outside a Hive pty too. Before any acquire, so no permit or place is taken for a command that cannot start. A NUL never
-# reaches an argv; only the message names it. 126: found, but cannot run
+# reaches an argv; only the message names it. A " too: MSYS escapes it as \" for the C runtime, which cmd.exe does not read, so it would
+# toggle cmd.exe's quoting and let & or | through (the BatBadBut class). 126: found, but cannot run
 refuse_for_cmd() {
   case "$real" in *.[Cc][Mm][Dd]|*.[Bb][Aa][Tt]) ;; *) return 0 ;; esac
   cr=$(printf '\r')
@@ -75,8 +76,8 @@ refuse_for_cmd() {
   for arg in "$@"; do
     n=$((n + 1))
     case "$arg" in
-      *%*|*"$cr"*|*"$lf"*)
-        printf 'hive: %s: cmd.exe cannot pass argument %s (it has %%, a line break or NUL)\n' "$word" "$n" >&2
+      *%*|*\"*|*"$cr"*|*"$lf"*)
+        printf 'hive: %s: cmd.exe cannot pass argument %s (it has %%, ", a line break or NUL)\n' "$word" "$n" >&2
         exit 126 ;;
     esac
   done
