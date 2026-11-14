@@ -344,7 +344,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // never fails the boot or the save, since a missing shim only means the command runs without its semaphore
   let shimsInstall: Promise<void> = Promise.resolve();
   const installShims = (config: Config): Promise<void> => {
-    shimsInstall = shimsInstall.then(() => installCommandShims(home, config, process.platform)).then(() => undefined, (err: unknown) => { log.error(`command shims: ${errorMessage(err)}`); });
+    shimsInstall = shimsInstall.then(() => installCommandShims(home, config, config.language ?? systemLanguage, process.platform)).then(() => undefined, (err: unknown) => { log.error(`command shims: ${errorMessage(err)}`); });
     return shimsInstall;
   };
   // Answers the install, awaited by the boot so no pty spawns before the shims exist; it never rejects

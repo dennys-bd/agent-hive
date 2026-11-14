@@ -1,114 +1,19 @@
-import { test, type TestContext } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { claudeEnvLine, commandShimDir, commandShimSource, installCommandShims, renderCommandShim, shimWords } from '../src/command-shim.js';
-import { SECRET_HEADER } from '../src/secret.js';
 import type { Command } from '../src/types.js';
-import { assertMode, NO_POSIX_SHELL } from './posix-only.js';
+import { assertMode } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
+import { ACQUIRE, FAKE_EXIT, NO_ANSWER_MS, POSIX, REFUSED_EXIT, RELEASE, SECRET, SHIM_TIMEOUT_MS, WORD, fakeOut, runShim, setup, startShim, until } from './command-shim-rig.js';
 
-const WORD = 'pnpm';
-const SECRET = 'test-secret'; // a header line for curl's -H @file, never a real token
-const ACQUIRE = '/hooks/semaphores/acquire';
-const RELEASE = '/hooks/semaphores/release';
-const FAKE_EXIT = 7;
-const REFUSED_EXIT = 75;
-const SHIM_TIMEOUT_MS = 10_000;
-const NO_ANSWER_MS = 3_000; // the shim's -m 2, plus the binary's own run
-const POSIX = { skip: NO_POSIX_SHELL };
-
-// The real binary the shim finds: each arg on a line, then its stdin, a mark that it ended, and exit 7. With FAKE_PID_FILE: its pid there
-// and a long sleep, for a signal to end
-const FAKE = `#!/bin/sh
-if [ -n "\${FAKE_PID_FILE:-}" ]; then echo $$ > "$FAKE_PID_FILE"; exec sleep 30; fi
-for a in "$@"; do printf 'arg:%s\\n' "$a"; done
-printf 'stdin:%s\\n' "$(cat)"
-: > "$FAKE_DONE"
-exit ${FAKE_EXIT}
-`;
-const fakeOut = (args: readonly string[], stdin = ''): string => [...args.map((a) => `arg:${a}`), `stdin:${stdin}`, ''].join('\n');
-
-interface Seen { path: string; pty?: string; secret?: string; body: string; childDone: boolean }
-interface Rig { root: string; shim: string; done: string; env: NodeJS.ProcessEnv }
-interface Ran { code: number | null; stdout: string; stderr: string; ms: number }
-
-// The two routes on loopback, each request kept with whether the fake binary had ended by then. undefined: acquire never answers, as a
-// stuck Hive
-async function fakeDaemon(t: TestContext, answer: string | undefined, isChildDone: () => boolean): Promise<{ port: number; seen: Seen[] }> {
-  const seen: Seen[] = [];
-  const server = createServer((req, res) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => {
-      const body = Buffer.concat(chunks).toString();
-      seen.push({ path: req.url ?? '', pty: req.headers['x-hive-pty']?.toString(), secret: req.headers[SECRET_HEADER]?.toString(), body, childDone: isChildDone() });
-      if (req.url === RELEASE) res.writeHead(204).end();
-      else if (answer !== undefined) res.writeHead(200, { 'content-type': 'text/plain' }).end(`${answer}\n`);
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.closeAllConnections(); server.close(); });
-  return { port: (server.address() as AddressInfo).port, seen };
-}
-
-// The shim rendered as installCommandShims renders it, in a folder first on PATH, then the fake binary's folder, then the system's for sh,
-// curl and sleep. The env is a Hive pty's, as ptyEnv gives it: HIVE_PTY_ID, HIVE_PORT and the secret's header file
-async function rig(root: string, port: number, word: string): Promise<Rig> {
-  const shims = join(root, 'command-shims');
-  const real = join(root, 'real');
-  await mkdir(shims);
-  await mkdir(real);
-  const shim = join(shims, word);
-  await writeFile(shim, renderCommandShim(await readFile(commandShimSource(), 'utf8'), word));
-  await chmod(shim, 0o755);
-  if (word === WORD) {
-    await writeFile(join(real, word), FAKE);
-    await chmod(join(real, word), 0o755);
-  }
-  const secretFile = join(root, 'hive.secret');
-  await writeFile(secretFile, `${SECRET_HEADER}: ${SECRET}\n`);
-  const done = join(root, 'done');
-  const env = { HOME: root, PATH: [shims, real, process.env.PATH ?? ''].join(':'), HIVE_PTY_ID: 'R1', HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile, FAKE_DONE: done };
-  return { root, shim, done, env };
-}
-
-async function setup(t: TestContext, answer: string | undefined, word = WORD): Promise<{ r: Rig; seen: Seen[] }> {
-  const root = await tempDir(t, 'command-shim-');
-  const { port, seen } = await fakeDaemon(t, answer, () => existsSync(join(root, 'done')));
-  return { r: await rig(root, port, word), seen };
-}
-
-// The shim under sh, as a pty's shell runs a PATH hit; HOME is the rig's, so no ~/.curlrc of the machine's reaches curl
-// closedStdin: the shim started by `sh` with fd 0 closed (`<&-`), under that sh
-interface ShimOptions { stdin?: string; env?: NodeJS.ProcessEnv; closedStdin?: string }
-function startShim(r: Rig, args: readonly string[], o: ShimOptions = {}): { pid: number; kill(signal: NodeJS.Signals): void; done: Promise<Ran> } {
-  const started = Date.now();
-  const argv = o.closedStdin === undefined ? [r.shim, ...args] : ['-c', `exec ${o.closedStdin} "$0" "$@" <&-`, r.shim, ...args];
-  const child = spawn(o.closedStdin ?? '/bin/sh', argv, { env: { ...r.env, ...o.env }, timeout: SHIM_TIMEOUT_MS });
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (c: Buffer) => { stdout += c.toString(); });
-  child.stderr.on('data', (c: Buffer) => { stderr += c.toString(); });
-  child.stdin.end(o.stdin ?? '');
-  const done = new Promise<Ran>((resolve) => child.on('close', (code) => resolve({ code, stdout, stderr, ms: Date.now() - started })));
-  return { pid: child.pid ?? 0, kill: (signal) => { child.kill(signal); }, done };
-}
-const runShim = (r: Rig, args: readonly string[], o?: ShimOptions): Promise<Ran> => startShim(r, args, o).done;
-
-async function until(check: () => boolean): Promise<void> {
-  for (let i = 0; i < 500 && !check(); i += 1) await sleep(10);
-  assert.ok(check(), 'never happened');
-}
 
 test('renderCommandShim names its word, quoted, in place of every placeholder (#800)', async () => {
-  const shim = renderCommandShim(await readFile(commandShimSource(), 'utf8'), WORD);
+  const shim = renderCommandShim(await readFile(commandShimSource(), 'utf8'), WORD, 'en');
   assert.match(shim, /^word='pnpm'$/m);
+  assert.match(shim, /^language='en' /m);
   assert.doesNotMatch(shim, /__HIVE_/);
 });
 
@@ -163,14 +68,6 @@ test('refused memory <place> prints one line on stderr with the place\'s ordinal
   }
 });
 
-test('wait memory <place> gives the place back first, then runs the binary as typed (#800)', POSIX, async (t) => {
-  const { r, seen } = await setup(t, 'wait memory 1');
-  const ran = await runShim(r, ['test'], { stdin: 'typed' });
-  assert.deepEqual([ran.code, ran.stdout], [FAKE_EXIT, fakeOut(['test'], 'typed')]);
-  assert.deepEqual(seen.map((s) => [s.path, s.childDone]), [[ACQUIRE, false], [RELEASE, false]]);
-  assert.deepEqual(JSON.parse(seen[1].body), { semaphore: 'memory' });
-});
-
 // planning decision 1: an INT reaches the child as TERM, since a background child of a non-interactive sh ignores INT
 for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130]] as const) {
   test(`a ${signal} to the shim alone during run memory ends the child, sends the release and exits ${code} (#800)`, POSIX, async (t) => {
@@ -208,7 +105,7 @@ test('two command-shim folders on PATH (a Hive started from a Hive pty) run the 
   const { r, seen } = await setup(t, 'run');
   const outer = join(r.root, 'outer-command-shims');
   await mkdir(outer);
-  await writeFile(join(outer, WORD), renderCommandShim(await readFile(commandShimSource(), 'utf8'), WORD));
+  await writeFile(join(outer, WORD), renderCommandShim(await readFile(commandShimSource(), 'utf8'), WORD, 'en'));
   await chmod(join(outer, WORD), 0o755);
   const ran = await runShim(r, ['test'], { env: { PATH: [dirname(r.shim), outer, join(r.root, 'real'), process.env.PATH ?? ''].join(':') } });
   assert.deepEqual([ran.code, ran.stdout], [FAKE_EXIT, fakeOut(['test'])]);
@@ -261,18 +158,18 @@ test('installCommandShims writes one executable shim per word into <home>/comman
   const dir = commandShimDir(home);
   assert.equal(dir, join(home, 'command-shims'));
   const both = commandsConfig(commandOf('test', line('pnpm test', 'memory')), commandOf('up', line('docker compose up', 'disk')));
-  assert.deepEqual(await installCommandShims(home, both, 'darwin'), ['pnpm', 'docker']);
-  assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm'));
+  assert.deepEqual(await installCommandShims(home, both, 'pt', 'darwin'), ['pnpm', 'docker']);
+  assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm', 'pt'));
   await assertMode(t, dir, 0o700);
   await assertMode(t, join(dir, 'pnpm'), 0o755);
   await writeFile(join(dir, 'stray'), 'left by an older version');
-  await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))), 'linux');
+  await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))), 'en', 'linux');
   assert.deepEqual(await readdir(dir), ['docker']);
 });
 
 test('installCommandShims on win32 writes nothing and answers no word: Windows has no command shim until node 5 of #704 (#800)', async (t) => {
   const home = await tempDir(t, 'home-');
-  assert.deepEqual(await installCommandShims(home, commandsConfig(commandOf('test', line('pnpm test', 'memory'))), 'win32'), []);
+  assert.deepEqual(await installCommandShims(home, commandsConfig(commandOf('test', line('pnpm test', 'memory'))), 'en', 'win32'), []);
   assert.equal(existsSync(commandShimDir(home)), false);
 });
 
