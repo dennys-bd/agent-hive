@@ -1,4 +1,5 @@
 import type { BlockerChange, BlockerRef, BlockerWrite, Gql, Item, ItemBlockers } from '../types.js';
+import { GITHUB_REF } from './github-refs.js';
 import { readItem, reread, type FieldsContext } from './github-fields.js';
 import {
   ADD_BLOCKED_BY, ISSUE_ID, issueRepo, relationsQuery, REMOVE_BLOCKED_BY, SEARCH_ISSUES, type GhBlockerRef, type GhIssueRelations, type IssueIdData,
@@ -39,14 +40,12 @@ export class RelationRereadError extends Error {
 }
 
 const NO_BLOCKERS: ItemBlockers = { blockedBy: [], blocking: [] };
-// `12`, `#12` or `owner/repo#12`; the repository needs its `#`, so `acme/r12` is no ref. Nine digits stay inside GraphQL's Int
-const REF = /^(?:([\w.-]+)\/([\w.-]+)#|#?)(\d{1,9})$/;
 
 type IssueKey = { owner: string; name: string; number: number };
 
 // The issue a ref names; a short one is in the item's own repository, as GitHub's own picker reads it
 function parseRef(ref: string, own: { owner: string; name: string }): IssueKey {
-  const match = REF.exec(ref.trim());
+  const match = GITHUB_REF.exec(ref.trim());
   if (!match) throw new BadBlockerRefError(ref);
   const [, owner, name, digits] = match;
   return owner === undefined || name === undefined ? { ...own, number: Number(digits) } : { owner, name, number: Number(digits) };
