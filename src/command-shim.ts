@@ -96,5 +96,11 @@ export async function installCommandShims(home: string, config: Pick<SemaphoresC
   return words;
 }
 
-/** Decision 16: the one line of a run's command-shims.sh, which Claude Code's Bash tool sources before each command. */
-export const claudeEnvLine = (dir: string): string => `PATH=${shellQuote(dir)}:$PATH; export PATH\n`;
+/** #806 decision 8: a Windows path as MSYS spells it, C:\a\b as /c/a/b: Git's bash reads PATH :-separated, and C: would split there. */
+export const msysPath = (path: string): string =>
+  path.replace(/^([A-Za-z]):/, (_match, drive: string) => `/${drive.toLowerCase()}`).replaceAll('\\', '/');
+
+/** #800 decision 16: the one line of a run's command-shims.sh, which Claude Code's Bash tool sources before each command; on win32 that
+ * tool is Git's bash, so the folder goes in MSYS's form (#806). */
+export const claudeEnvLine = (dir: string, platform: NodeJS.Platform): string =>
+  `PATH=${shellQuote(platform === 'win32' ? msysPath(dir) : dir)}:$PATH; export PATH\n`;

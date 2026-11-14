@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { claudeEnvLine, commandShimDir, commandShimSource, installCommandShims, renderCommandShim, renderCommandShimCmd, shimWords } from '../src/command-shim.js';
+import { claudeEnvLine, commandShimDir, commandShimSource, installCommandShims, msysPath, renderCommandShim, renderCommandShimCmd, shimWords } from '../src/command-shim.js';
 import type { Command } from '../src/types.js';
 import { assertMode, NO_POSIX_SIGNALS, SH_LAUNCHER } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
@@ -278,6 +278,8 @@ test('installCommandShims on win32 writes each word\'s POSIX shim and its .cmd t
   assert.deepEqual((await readdir(dir)).sort(), ['docker', 'docker.cmd']);
 });
 
-test('claudeEnvLine prepends the folder, quoted, to PATH and exports it (#800)', () => {
-  assert.equal(claudeEnvLine("/h/it's"), "PATH='/h/it'\\''s':$PATH; export PATH\n");
+test('claudeEnvLine prepends the folder, quoted, to PATH and exports it; on win32 in MSYS\'s form, since Git\'s bash splits PATH at : (#800, #806)', () => {
+  assert.equal(claudeEnvLine("/h/it's", 'darwin'), "PATH='/h/it'\\''s':$PATH; export PATH\n");
+  assert.equal(claudeEnvLine("C:\\Users\\it's\\command-shims", 'win32'), "PATH='/c/Users/it'\\''s/command-shims':$PATH; export PATH\n");
+  assert.deepEqual([msysPath('D:\\a\\b'), msysPath('\\\\server\\share\\x')], ['/d/a/b', '//server/share/x']);
 });

@@ -63,6 +63,7 @@ test('launchInternalPty runs ptyCommand through the POSIX shell in the pty host,
   assert.deepEqual([pty.options.env.HIVE_PTY_ID, pty.options.env.HIVE_PORT, pty.options.env.HIVE_SECRET_FILE, pty.options.env.HIVE_SECRET, pty.options.env.CLAUDECODE], ['W1', '4242', SECRET_FILE_PATH, undefined, undefined]);
   assert.ok(pty.args[1].includes('-H @"$HIVE_SECRET_FILE"'), 'curl reads the header from the file: only its path is ever in an argv (#467)');
   assert.ok(!pty.args[1].includes('$HIVE_SECRET"'), 'no shell expands the secret into curl\'s argv, which every account reads through ps');
+  assert.equal(Object.keys(pty.options.env).filter((name) => name.toUpperCase() === 'PATH').length, 1, 'one PATH key: on the lane the Hive\'s own env has Path (#806)');
   assert.equal(host.has('W1'), true);
 });
 
@@ -204,7 +205,7 @@ test('launchInternalPty writes the run\'s command-shims.sh into <home>/command-s
   const host = createPtyHost((f, a, o) => { atSpawn = readFileSync(file, 'utf8'); return spawnPty(f, a, o); });
   const h = handlers();
   await launchInternalPty(LAUNCH, h.handlers, { ptys: host, secretFile: SECRET_FILE_PATH, commandShims }).started;
-  assert.equal(atSpawn, claudeEnvLine(commandShims));
+  assert.equal(atSpawn, claudeEnvLine(commandShims, process.platform));
   assert.equal(existsSync(join(base, 'hive-runs', 'W1', 'command-shims.sh')), false);
   await assertMode(t, dir, 0o700);
   await assertMode(t, file, 0o600);
