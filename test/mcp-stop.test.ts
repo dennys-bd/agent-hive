@@ -8,7 +8,9 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BLOCK_MESSAGE, BLOCK_WITH_REASON_MESSAGE, CANNOT_BLOCK_MESSAGE, mountMcp, NOT_BLOCKED_MESSAGE } from '../src/mcp.js';
 import { initialState } from '../src/orchestrator.js';
-import type { RelateOutcome } from '../src/server-blockers.js';
+import { BadBlockerRefError } from '../src/blocker-errors.js';
+import { relateItem, type RelateOutcome } from '../src/server-blockers.js';
+import { githubRefs } from '../src/sources/github-refs.js';
 import type { RecordInput } from '../src/facts.js';
 import { MCP_DEFAULTS } from '../src/types.js';
 import type { BlockerChange, Config, HiveEvent, State, Task, Worker } from '../src/types.js';
@@ -22,9 +24,9 @@ const TASK: Task = { item: { itemId: ITEM_ID, id: '1', title: 'T', body: '', url
 const REFUSED: RelateOutcome = { refusal: { status: 404, error: 'no such issue or task to relate', code: 'blockers.unknownRef' } };
 
 interface Harness { client: Client; asked: BlockerChange[]; dispatched: HiveEvent[]; records: RecordInput[]; state(): State }
-interface Options { refused?: string[]; closed?: string[]; canRelate?: boolean }
+interface Options { refused?: string[]; closed?: string[]; canRelate?: boolean; relate?: (itemId: string, change: BlockerChange) => Promise<RelateOutcome> }
 
-async function harness(t: TestContext, { refused = [], closed = [], canRelate = true }: Options = {}): Promise<Harness> {
+async function harness(t: TestContext, { refused = [], closed = [], canRelate = true, relate: custom }: Options = {}): Promise<Harness> {
   const workers: Worker[] = [{ id: 'w1', runId: 'p1', status: 'working', activityId: activityIdOf(ITEM_ID) }];
   let state: State = withWork({ ...initialState(1), tasks: [TASK], workers }, ITEM_ID, { workerId: 'w1' });
   const asked: BlockerChange[] = [];
@@ -41,7 +43,7 @@ async function harness(t: TestContext, { refused = [], closed = [], canRelate = 
   const app = express().use(express.json());
   mountMcp(app, {
     exec: async () => ({ stdout: '' }), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
-    dispatch: async (event) => { dispatched.push(event); return []; }, canClose: () => true, relate, canRelate: () => canRelate,
+    dispatch: async (event) => { dispatched.push(event); return []; }, canClose: () => true, relate: custom ?? relate, canRelate: () => canRelate,
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused }, benchmark: { draft: unused },
   });
   const http = app.listen(0);
@@ -98,4 +100,22 @@ test('every blocker already closed: the relations are written, the call is refus
   assert.deepEqual(await stopWith(h.client, { block: [5, 6] }), { text: NOT_BLOCKED_MESSAGE, isError: true });
   assert.deepEqual([h.asked.length, h.dispatched], [2, []]);
   assert.deepEqual(reasons(h.records), ['not_blocked']);
+});
+
+test('a ref the task\'s source does not read refuses the call with the forms its adapter\'s error names, through the route\'s own relate (#810)', async (t) => {
+  const refuses = { relate: async (_itemId: string, change: BlockerChange): Promise<never> => { throw new BadBlockerRefError(change.ref, githubRefs.forms); } };
+  const live = { state: { ...initialState(1), tasks: [TASK] }, runtime: { sources: new Map([['gh', refuses]]) } };
+  const deps = { dispatch: async () => undefined, latest: () => undefined };
+  const h = await harness(t, { relate: (itemId, change) => relateItem(deps, live, itemId, change) });
+  assert.deepEqual(await stopWith(h.client, { block: ['acme/r12'] }), { text: 'acme/r12: "acme/r12" is no ref: write 12, #12, owner/repo#12 or a task id', isError: true });
+  assert.deepEqual(h.dispatched, []);
+});
+
+test('block\'s texts name no source type\'s forms: the malformed-block refusal and hive_stop\'s description point to the task\'s own source (#810)', async (t) => {
+  const h = await harness(t);
+  assert.equal(BLOCK_MESSAGE, 'block must be 1 to 10 refs, each an id of the task\'s source or a task id');
+  const { tools } = await h.client.listTools();
+  const description = tools.find((tool) => tool.name === 'hive_stop')?.description ?? '';
+  assert.match(description, /that item's id in your task's source, or several, or a task id/);
+  assert.doesNotMatch(description, /owner\/repo#12/);
 });

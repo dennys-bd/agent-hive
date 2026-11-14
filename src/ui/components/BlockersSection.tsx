@@ -1,9 +1,11 @@
 import { XIcon } from 'lucide-react';
 import { useState } from 'react';
 import { HIVE_SOURCE, sourceOf } from '../../tasks';
+import type { RefGrammar } from '../../blocker-refs';
 import type { BlockerChange, BlockerRef, Item, ItemBlockers, State, Task } from '../../types';
 import { BlockerAddRow, shownBlockerId } from '@/components/BlockerAddRow';
 import { Button } from '@/components/ui/button';
+import { useRefGrammar } from '@/hooks/use-ref-grammar';
 import { type MessageKey, t } from '@/i18n';
 import { blockerErrorText } from '@/lib/blocker-errors';
 import { editBlocker } from '@/lib/blockers-api';
@@ -30,7 +32,7 @@ function refState(blocker: BlockerRef, source: string, tasks: readonly Task[]): 
 }
 
 // One edit at a time per section, and no optimistic change: the list stays as the state has it, so a refusal needs no rollback, only its copy
-function useBlockerEdit(source: string, itemId: string) {
+function useBlockerEdit(source: string, itemId: string, grammar: RefGrammar | undefined) {
   const [pending, setPending] = useState<string>();
   const [error, setError] = useState<string>();
   const edit = async (key: string, change: BlockerChange): Promise<boolean> => {
@@ -40,7 +42,7 @@ function useBlockerEdit(source: string, itemId: string) {
       await editBlocker(source, itemId, change);
       return true;
     } catch (err) {
-      setError(blockerErrorText(err));
+      setError(blockerErrorText(err, grammar));
       return false;
     } finally {
       setPending(undefined);
@@ -72,7 +74,8 @@ function BlockerRow({ kind, blocker, stateText, isPending, onRemove }: RowProps)
 export function BlockersSection({ task, state }: { task: Task; state: State }) {
   const [isAdding, setIsAdding] = useState(false);
   const source = sourceOf(task);
-  const { pending, error, edit } = useBlockerEdit(source, task.item.itemId);
+  const grammar = useRefGrammar(source);
+  const { pending, error, edit } = useBlockerEdit(source, task.item.itemId, grammar);
   if (!hasBlockersSection(task)) return null;
   const blockers = task.item.blockers ?? NONE;
   const add = async (kind: Kind, ref: string): Promise<void> => {
@@ -97,7 +100,7 @@ export function BlockersSection({ task, state }: { task: Task; state: State }) {
       ))}
       {isAdding && (
         <BlockerAddRow
-          source={source} itemId={task.item.itemId} selfId={task.item.id} blockers={blockers} isBusy={pending !== undefined}
+          source={source} itemId={task.item.itemId} selfId={task.item.id} blockers={blockers} isBusy={pending !== undefined} grammar={grammar}
           onAdd={(kind, ref) => void add(kind, ref)} onCancel={() => setIsAdding(false)}
         />
       )}

@@ -1,8 +1,10 @@
 import { XIcon } from 'lucide-react';
 import { Fragment, useState } from 'react';
+import type { RefGrammar } from '../../blocker-refs';
 import type { BlockerChange, BlockerRef, ProjectItem } from '../../types';
 import { BlockerAddRow, shownBlockerId } from '@/components/BlockerAddRow';
 import { FieldCell } from '@/components/FieldCell';
+import { useRefGrammar } from '@/hooks/use-ref-grammar';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { t } from '@/i18n';
@@ -36,7 +38,7 @@ export function BlockedByList({ refs }: { refs?: BlockerRef[] }) {
 export interface BlockedByCellProps { source: string; item: ProjectItem; onRow(row: ProjectItem): void }
 
 // One edit at a time and no optimistic change: the row changes only with the route's answer, so a refusal needs no rollback, only its copy
-function useBlockedByEdit(source: string, item: ProjectItem, onRow: (row: ProjectItem) => void) {
+function useBlockedByEdit(source: string, item: ProjectItem, onRow: (row: ProjectItem) => void, grammar: RefGrammar | undefined) {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string>();
   const edit = async (action: BlockerChange['action'], ref: string): Promise<boolean> => {
@@ -48,7 +50,7 @@ function useBlockedByEdit(source: string, item: ProjectItem, onRow: (row: Projec
       onRow({ ...item, blockedBy });
       return true;
     } catch (err) {
-      setError(blockerErrorText(err));
+      setError(blockerErrorText(err, grammar));
       return false;
     } finally {
       setIsPending(false);
@@ -82,7 +84,8 @@ function RefRow({ blocker, isBusy, onRemove }: RefRowProps) {
 export function BlockedByCell({ source, item, onRow }: BlockedByCellProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [addKey, setAddKey] = useState(0); // a new key remounts the add row: its field empties after an add that landed
-  const { isPending, error, edit, clearError } = useBlockedByEdit(source, item, onRow);
+  const grammar = useRefGrammar(source);
+  const { isPending, error, edit, clearError } = useBlockedByEdit(source, item, onRow, grammar);
   const label = t('project.col.blockedBy');
   const onOpenChange = (next: boolean): void => {
     setIsOpen(next);
@@ -101,7 +104,7 @@ export function BlockedByCell({ source, item, onRow }: BlockedByCellProps) {
         {openFirst(item.blockedBy ?? []).map((r) => <RefRow key={r.id} blocker={r} isBusy={isPending} onRemove={() => void edit('remove', r.id)} />)}
         <BlockerAddRow
           key={addKey} kind="blockedBy" source={source} itemId={item.itemId} selfId={item.id} blockers={{ blockedBy: item.blockedBy ?? [], blocking: [] }}
-          isBusy={isPending} onAdd={(_kind, ref) => void add(ref)} onCancel={() => onOpenChange(false)}
+          isBusy={isPending} grammar={grammar} onAdd={(_kind, ref) => void add(ref)} onCancel={() => onOpenChange(false)}
         />
         {error !== undefined && <p role="alert" className="text-destructive">{error}</p>}
       </PopoverContent>

@@ -107,7 +107,7 @@ test('the popover\'s add row has the field focused and no kind select; a typed #
   const user = userEvent.setup();
   const after = { blockedBy: [closed('521', 'Old pager'), open('274', 'Dock layout'), open('99', 'Search')], blocking: [] };
   showBlockedBy(BLOCKED, () => jsonRes({ blockers: after }));
-  renderTable();
+  renderTable({ configs: [SOURCE] });
   await screen.findByText('3 de 3');
   await user.click(cell12());
   expect(await screen.findByRole('combobox', { name: FIELD })).toHaveFocus();
@@ -123,7 +123,7 @@ test('a refusal shows its blockers copy inside the popover, no toast, and the ro
   const user = userEvent.setup();
   const onOpenIssue = vi.fn();
   showBlockedBy(BLOCKED, () => jsonRes({ error: 'the other item is already blocked by this one', code: 'blockers.cycle' }, 409));
-  renderTable({ onOpenIssue });
+  renderTable({ onOpenIssue, configs: [SOURCE] });
   await screen.findByText('3 de 3');
   await user.click(cell12());
   await user.keyboard('#40{Enter}');
