@@ -27,7 +27,7 @@ import { registerSessionRoutes } from './server-sessions.js';
 import { registerDismissErrorRoute, registerRetryRoute } from './server-retry.js';
 import { registerFlowRoutes } from './server-task-flow.js';
 import { parseRunPick } from './run-pick.js';
-import type { Activity, AgentAvailability, BaseOptions, Source, Task, TaskPr, Session, DeleteActivityScope, Config, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
+import type { Activity, AgentAvailability, BaseOptions, Source, Task, TaskPr, Session, DeleteActivityScope, Config, CreatedRef, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
 import { dropCheckpoints } from './checkpoints.js';
 import { dropBranches, dropStageStart, leftBehind } from './restart.js';
 import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree, wordsOf } from './worktree.js';
@@ -65,7 +65,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
   running: RUNNING_MESSAGE, deleting: DELETING_MESSAGE, nothingToDelete: NOTHING_TO_DELETE_MESSAGE,
 };
 
-export interface Refusal { status: number; message: string; issue?: { number: number; url: string }; code?: string; workspace?: string } // #767: an issue the failed create left behind; #748: a gone workspace's code and name
+export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string } // #767/#811: the item a failed create left behind; #748: a gone workspace's code and name
 
 export interface TaskRouteDeps {
   treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
@@ -196,7 +196,7 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
 
 export const refuse = (res: Response, refusal: Refusal): void => {
   // #767: a failed create that left an issue says which, so the client does not retry it into a second one. #748: a gone workspace's code and name, which the page words; undefined drops out of the JSON
-  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace, ...(refusal.issue === undefined ? {} : { issue: refusal.issue }) });
+  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace, ...(refusal.ref === undefined ? {} : { ref: refusal.ref }) });
 };
 
 /** The task's workspace, or the route's answer when it has none (#179): 409 when the name it holds is gone, 400 when no rule answers one. */
