@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
 import { followEpics } from '../src/epic-follow.js';
 import { initialState, reduce } from '../src/orchestrator.js';
-import type { Item, Stage, State, Task, Transition } from '../src/types.js';
+import { END, type Item, type Stage, type State, type Task, type Transition } from '../src/types.js';
 import { move } from './fakes.js';
 import { withWork } from './fixtures/work.js';
 import { flowed, mainFlows } from './fixtures/main-flow.js';
@@ -86,4 +86,32 @@ test('a parent epic in Done whose child epic left the Hive, listed in its closed
   const { state, effects } = followEpics(before);
   assert.equal(state.tasks.find((t) => t.item.itemId === 'board:R')?.stage, 'done');
   assert.deepEqual(effects, []);
+});
+
+// #856: the delivery flow's Done, a delete-activity stage that waits 12h, and its Done → end that archives the item
+const PAST_AFTER = (): string => new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString();
+const DONE_FLOW: Stage[] = FLOW.map((s) => (s.name === 'done' ? { ...s, action: 'deleteActivity' as const, after: '12h' } : s));
+const DONE_END: Transition = { from: 'done', to: END, when: 'done', sources: { board: [{ type: 'archive' }] } };
+const delivery = (tasks: Task[], stages: Stage[] = DONE_FLOW): State => ({ ...at(tasks), ...flowed(stages, [TO_DONE, DONE_END]) });
+const aged = (s: State): State => withTasks(s, s.tasks.map((t) => (t.item.itemId === 'board:E' ? { ...t, enteredAt: PAST_AFTER() } : t)));
+const ARCHIVE = { type: 'sourceAction', itemId: 'board:E', taskId: 'board:E', action: { type: 'archive' } };
+const archives = (effects: readonly unknown[]) => effects.filter((e) => (e as { action?: { type: string } }).action?.type === 'archive');
+const deletes = (effects: readonly unknown[]) => effects.filter((e) => (e as { type: string }).type === 'deleteActivity');
+const tick = (s: State) => reduce(s, { type: 'tick' });
+
+// #770's path: c1 in In Review moves the epic into the gate, then c1 in Done moves it into Done, each through a whole reduction
+function intoDone(start: State): State {
+  const inReview = tick(start).state;
+  return tick(withTasks(inReview, inReview.tasks.map((t) => (t.item.itemId === 'board:c1' ? child('c1', 'done') : t)))).state;
+}
+
+test('an epic with an activity, moved through In Review into Done by its children, takes Done → end once Done\'s after has passed and writes its archive (#856, #770)', () => {
+  const done = intoDone(withWork(delivery([epic('dev', ['c1']), child('c1', 'review')]), 'board:E'));
+  assert.equal(epicIn(done)?.stage, 'done');
+  assert.notEqual(activityOf(done, 'board:E'), undefined, 'the epic keeps its activity');
+  assert.deepEqual(archives(tick(done).effects), [], 'not before Done\'s after');
+  const { state, effects } = tick(aged(done));
+  assert.deepEqual(archives(effects), [ARCHIVE]);
+  assert.deepEqual(deletes(effects), [], 'its source leaves the activity alone');
+  assert.equal(epicIn(state)?.leaving, true);
 });
