@@ -110,3 +110,12 @@ test('a ref the task\'s source does not read refuses the call with the forms its
   assert.deepEqual(await stopWith(h.client, { block: ['acme/r12'] }), { text: 'acme/r12: "acme/r12" is no ref: write 12, #12, owner/repo#12 or a task id', isError: true });
   assert.deepEqual(h.dispatched, []);
 });
+
+test('block\'s texts name no source type\'s forms: the malformed-block refusal and hive_stop\'s description point to the task\'s own source (#810)', async (t) => {
+  const h = await harness(t);
+  assert.equal(BLOCK_MESSAGE, 'block must be 1 to 10 refs, each an id of the task\'s source or a task id');
+  const { tools } = await h.client.listTools();
+  const description = tools.find((tool) => tool.name === 'hive_stop')?.description ?? '';
+  assert.match(description, /that item's id in your task's source, or several, or a task id/);
+  assert.doesNotMatch(description, /owner\/repo#12/);
+});
