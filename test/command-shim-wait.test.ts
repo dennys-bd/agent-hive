@@ -31,7 +31,7 @@ test('with stdin not a TTY the key is never offered nor sent: no acquire carries
 
 test('in Portuguese the wait\'s line speaks it, with the place as an ordinal (#801)', { ...POSIX, timeout: SHIM_TIMEOUT_MS }, async (t) => {
   const { r } = await setup(t, moving);
-  await writeFile(r.shim, renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm', 'pt'));
+  await writeFile(r.shim, renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm', 'pt', process.platform));
   const ran = await runShim(r, ['test']);
   assert.match(ran.stderr, /^hive: pnpm aguardando a vez de memory · 2º · Ctrl-C sai$/m);
 });

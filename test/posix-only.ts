@@ -17,3 +17,5 @@ export async function assertMode(t: TestContext, path: string, mode: number, mes
 }
 // #800: the command shim is a POSIX sh script; Windows brings its own in node 5 of #704
 export const NO_POSIX_SHELL: string | false = process.platform === 'win32' && 'win32 runs no POSIX command shim: node 5 of #704 brings its own';
+// #806: Git's bin\sh.exe is a launcher, so the shim runs in its child: the Windows pid it sends is that child's, never the one Node started
+export const SH_LAUNCHER: string | false = process.platform === 'win32' && 'Git\'s bin\\sh.exe is a launcher: the shim\'s Windows pid is its child\'s, not the pid Node started';

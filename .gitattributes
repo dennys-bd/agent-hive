@@ -5,3 +5,6 @@ assets/shell/** text eol=lf
 assets/bin/shim.cmd text eol=crlf
 # #655: the plugin reader matches LF frontmatter, and a Windows checkout with core.autocrlf would give every template CRLF
 assets/plugin/** text eol=lf
+# #806: the command shim runs under Git's sh.exe on Windows as the agent shim does; its .cmd twin is a batch file
+assets/bin/command-shim text eol=lf
+assets/bin/command-shim.cmd text eol=crlf

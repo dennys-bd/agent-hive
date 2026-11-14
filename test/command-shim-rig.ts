@@ -6,9 +6,11 @@ import { existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { isPidAlive } from '../src/command-semaphores.js';
 import { commandShimSource, renderCommandShim } from '../src/command-shim.js';
+import { envValue } from '../src/exec-path.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { NO_POSIX_SHELL } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
@@ -34,7 +36,7 @@ exit ${FAKE_EXIT}
 `;
 export const fakeOut = (args: readonly string[], stdin = ''): string => [...args.map((a) => `arg:${a}`), `stdin:${stdin}`, ''].join('\n');
 
-export interface Seen { path: string; pty?: string; secret?: string; body: string; childDone: boolean }
+export interface Seen { path: string; pty?: string; secret?: string; body: string; childDone: boolean; pidAlive: boolean }
 export interface Rig { root: string; shim: string; done: string; env: NodeJS.ProcessEnv }
 export interface Ran { code: number | null; stdout: string; stderr: string; ms: number }
 
@@ -48,7 +50,10 @@ export async function fakeDaemon(t: TestContext, answer: Answer, isChildDone: ()
     req.on('data', (chunk: Buffer) => chunks.push(chunk));
     req.on('end', () => {
       const body = Buffer.concat(chunks).toString();
-      seen.push({ path: req.url ?? '', pty: req.headers['x-hive-pty']?.toString(), secret: req.headers[SECRET_HEADER]?.toString(), body, childDone: isChildDone() });
+      const pid = Number(new URLSearchParams(body).get('pid'));
+      // #806 decision 5: the daemon probes the pid it got; an MSYS pid would not be a live Windows one
+      const pidAlive = req.url === ACQUIRE && Number.isInteger(pid) && pid > 0 && isPidAlive(pid);
+      seen.push({ path: req.url ?? '', pty: req.headers['x-hive-pty']?.toString(), secret: req.headers[SECRET_HEADER]?.toString(), body, childDone: isChildDone(), pidAlive });
       if (req.url === RELEASE) res.writeHead(204).end();
       else {
         const text = typeof answer === 'function' ? answer(seen.filter((s) => s.path === ACQUIRE).length, body) : answer;
@@ -61,15 +66,18 @@ export async function fakeDaemon(t: TestContext, answer: Answer, isChildDone: ()
   return { port: (server.address() as AddressInfo).port, seen };
 }
 
+/** A PATH of `dirs` first, then the test's own, for sh, curl and sleep. */
+export const searchPath = (...dirs: string[]): string => [...dirs, envValue(process.env, 'PATH') ?? ''].join(delimiter);
+
 // The shim rendered as installCommandShims renders it, in a folder first on PATH, then the fake binary's folder, then the system's for sh,
 // curl and sleep. The env is a Hive pty's, as ptyEnv gives it: HIVE_PTY_ID, HIVE_PORT and the secret's header file
-export async function rig(root: string, port: number, word: string): Promise<Rig> {
+export async function rig(root: string, port: number, word: string, platform: NodeJS.Platform = process.platform): Promise<Rig> {
   const shims = join(root, 'command-shims');
   const real = join(root, 'real');
   await mkdir(shims);
   await mkdir(real);
   const shim = join(shims, word);
-  await writeFile(shim, renderCommandShim(await readFile(commandShimSource(), 'utf8'), word, 'en'));
+  await writeFile(shim, renderCommandShim(await readFile(commandShimSource(), 'utf8'), word, 'en', platform));
   await chmod(shim, 0o755);
   if (word === WORD) {
     await writeFile(join(real, word), FAKE);
@@ -78,23 +86,26 @@ export async function rig(root: string, port: number, word: string): Promise<Rig
   const secretFile = join(root, 'hive.secret');
   await writeFile(secretFile, `${SECRET_HEADER}: ${SECRET}\n`);
   const done = join(root, 'done');
-  const env = { HOME: root, PATH: [shims, real, process.env.PATH ?? ''].join(':'), HIVE_PTY_ID: 'R1', HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile, FAKE_DONE: done };
+  const env = { HOME: root, PATH: searchPath(shims, real), HIVE_PTY_ID: 'R1', HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile, FAKE_DONE: done };
   return { root, shim, done, env };
 }
 
-export async function setup(t: TestContext, answer: Answer, word = WORD): Promise<{ r: Rig; seen: Seen[] }> {
+export async function setup(t: TestContext, answer: Answer, word = WORD, platform: NodeJS.Platform = process.platform): Promise<{ r: Rig; seen: Seen[] }> {
   const root = await tempDir(t, 'command-shim-');
   const { port, seen } = await fakeDaemon(t, answer, () => existsSync(join(root, 'done')));
-  return { r: await rig(root, port, word), seen };
+  return { r: await rig(root, port, word, platform), seen };
 }
 
 // The shim under sh, as a pty's shell runs a PATH hit; HOME is the rig's, so no ~/.curlrc of the machine's reaches curl
-// closedStdin: the shim started by `sh` with fd 0 closed (`<&-`), under that sh
-export interface ShimOptions { stdin?: string; env?: NodeJS.ProcessEnv; closedStdin?: string }
+// closedStdin: the shim started by `sh` with fd 0 closed (`<&-`), under that sh. lastArg: one more argument, appended by sh itself from
+// SHIM_TEST_ARG, since a Windows command line cannot carry a line break to an MSYS program whole: Cygwin splits it there (#806)
+export interface ShimOptions { stdin?: string; env?: NodeJS.ProcessEnv; closedStdin?: string; lastArg?: string }
 export function startShim(r: Rig, args: readonly string[], o: ShimOptions = {}): { pid: number; kill(signal: NodeJS.Signals): void; done: Promise<Ran> } {
   const started = Date.now();
-  const argv = o.closedStdin === undefined ? [r.shim, ...args] : ['-c', `exec ${o.closedStdin} "$0" "$@" <&-`, r.shim, ...args];
-  const child = spawn(o.closedStdin ?? '/bin/sh', argv, { env: { ...r.env, ...o.env }, timeout: SHIM_TIMEOUT_MS });
+  const argv = o.closedStdin !== undefined ? ['-c', `exec ${o.closedStdin} "$0" "$@" <&-`, r.shim, ...args]
+    : o.lastArg !== undefined ? ['-c', 'exec "$0" "$@" "$SHIM_TEST_ARG"', r.shim, ...args] : [r.shim, ...args];
+  const env = { ...r.env, ...o.env, ...(o.lastArg === undefined ? {} : { SHIM_TEST_ARG: o.lastArg }) };
+  const child = spawn(o.closedStdin ?? '/bin/sh', argv, { env, timeout: SHIM_TIMEOUT_MS });
   let stdout = '';
   let stderr = '';
   child.stdout.on('data', (c: Buffer) => { stdout += c.toString(); });

@@ -5,15 +5,18 @@ import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { claudeEnvLine, commandShimDir, commandShimSource, installCommandShims, renderCommandShim, shimWords } from '../src/command-shim.js';
 import type { Command } from '../src/types.js';
-import { assertMode } from './posix-only.js';
+import { assertMode, SH_LAUNCHER } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
-import { ACQUIRE, FAKE_EXIT, NO_ANSWER_MS, POSIX, REFUSED_EXIT, RELEASE, SECRET, SHIM_TIMEOUT_MS, WORD, fakeOut, runShim, setup, startShim, until } from './command-shim-rig.js';
+import { ACQUIRE, FAKE_EXIT, NO_ANSWER_MS, POSIX, REFUSED_EXIT, RELEASE, SECRET, SHIM_TIMEOUT_MS, WORD, fakeOut, runShim, searchPath, setup, startShim, until } from './command-shim-rig.js';
 
 
-test('renderCommandShim names its word, quoted, in place of every placeholder (#800)', async () => {
-  const shim = renderCommandShim(await readFile(commandShimSource(), 'utf8'), WORD, 'en');
+test('renderCommandShim names its word, its language and its platform, quoted, in place of every placeholder (#800, #806)', async () => {
+  const template = await readFile(commandShimSource(), 'utf8');
+  const shim = renderCommandShim(template, WORD, 'en', 'darwin');
   assert.match(shim, /^word='pnpm'$/m);
   assert.match(shim, /^language='en' /m);
+  assert.match(shim, /^platform='darwin' /m);
+  assert.match(renderCommandShim(template, WORD, 'en', 'win32'), /^platform='win32' /m);
   assert.doesNotMatch(shim, /__HIVE_/);
 });
 
@@ -105,7 +108,7 @@ test('two command-shim folders on PATH (a Hive started from a Hive pty) run the 
   const { r, seen } = await setup(t, 'run');
   const outer = join(r.root, 'outer-command-shims');
   await mkdir(outer);
-  await writeFile(join(outer, WORD), renderCommandShim(await readFile(commandShimSource(), 'utf8'), WORD, 'en'));
+  await writeFile(join(outer, WORD), renderCommandShim(await readFile(commandShimSource(), 'utf8'), WORD, 'en', process.platform));
   await chmod(join(outer, WORD), 0o755);
   const ran = await runShim(r, ['test'], { env: { PATH: [dirname(r.shim), outer, join(r.root, 'real'), process.env.PATH ?? ''].join(':') } });
   assert.deepEqual([ran.code, ran.stdout], [FAKE_EXIT, fakeOut(['test'])]);
@@ -137,6 +140,84 @@ for (const sh of ['/bin/sh', '/bin/dash'].filter((path) => existsSync(path))) {
   });
 }
 
+// #806: a real binary that names its tag and its own file name, exit 7. A shebang script off win32; on the lane a batch file, since MSYS
+// hands a .cmd or .bat to cmd.exe, which reads no shebang (planning decision 6)
+const named = (tag: string): string => (process.platform === 'win32'
+  ? `@echo ran:${tag}:%~nx0\r\n@exit /b ${FAKE_EXIT}\r\n`
+  : `#!/bin/sh\nprintf 'ran:${tag}:%s\\n' "\${0##*/}"\nexit ${FAKE_EXIT}\n`);
+async function fakeAt(dir: string, name: string, text: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, name), text);
+  await chmod(join(dir, name), 0o755);
+}
+const CMD_REFUSAL = (n: number): string => `hive: pnpm: cmd.exe cannot pass argument ${n} (it has %, a line break or NUL)\n`;
+
+test('the win32 shim finds <word><ext> per PATH folder in PATHEXT\'s order and without case, past a folder holding only pnpm.vbs (#806)', POSIX, async (t) => {
+  const { r } = await setup(t, 'run', WORD, 'win32');
+  const vbs = join(r.root, 'vbs');
+  const cmds = join(r.root, 'cmds');
+  await fakeAt(vbs, 'pnpm.vbs', named('vbs'));
+  await fakeAt(cmds, 'pnpm.bat', named('cmds'));
+  await fakeAt(cmds, 'pnpm.cmd', named('cmds'));
+  const PATH = searchPath(dirname(r.shim), vbs, cmds, join(r.root, 'real'));
+  const cases: [string | undefined, string][] = [[undefined, 'pnpm.bat'], ['.VBS;.CMD;.BAT', 'pnpm.cmd'], ['.cmd;.bat', 'pnpm.cmd'], ['.Bat;.Cmd', 'pnpm.bat']];
+  for (const [PATHEXT, name] of cases) {
+    const ran = await runShim(r, ['test'], { env: { PATH, PATHEXT } });
+    assert.deepEqual([ran.code, ran.stdout.trim()], [FAKE_EXIT, `ran:cmds:${name}`], PATHEXT ?? 'no PATHEXT: .COM;.EXE;.BAT;.CMD');
+  }
+});
+
+test('the win32 shim takes <dir>/<word> as given before its PATHEXT names in the same folder (#806)', POSIX, async (t) => {
+  const { r } = await setup(t, 'run', WORD, 'win32');
+  await fakeAt(join(r.root, 'real'), 'pnpm.cmd', named('real'));
+  const ran = await runShim(r, ['test']);
+  assert.deepEqual([ran.code, ran.stdout], [FAKE_EXIT, fakeOut(['test'])]);
+});
+
+test('the win32 shim never runs its own .cmd twin: the shims\' folder is skipped with it (#806)', POSIX, async (t) => {
+  const { r } = await setup(t, 'run', WORD, 'win32');
+  await fakeAt(dirname(r.shim), 'pnpm.cmd', named('twin'));
+  const cmds = join(r.root, 'cmds');
+  await fakeAt(cmds, 'pnpm.cmd', named('cmds'));
+  const ran = await runShim(r, ['test'], { env: { PATH: searchPath(dirname(r.shim), cmds) } });
+  assert.equal(ran.stdout.trim(), 'ran:cmds:pnpm.cmd');
+});
+
+test('the win32 shim refuses an argument with %, a CR or a LF for a .cmd or .bat real binary: 126, its position only, before any acquire, outside a Hive pty too (#806)', POSIX, async (t) => {
+  for (const ext of ['.cmd', '.bat']) {
+    const { r, seen } = await setup(t, 'run', WORD, 'win32');
+    const cmds = join(r.root, 'cmds');
+    await fakeAt(cmds, `pnpm${ext}`, named('cmds'));
+    const env = { PATH: searchPath(dirname(r.shim), cmds) };
+    const cases: [string[], string | undefined, number][] = [[['test', '50%'], undefined, 2], [['test'], 'a\rb', 2], [[], 'a\nb', 1], [['50%', 'test'], undefined, 1]];
+    for (const [args, lastArg, n] of cases) {
+      const ran = await runShim(r, args, { env, lastArg });
+      assert.deepEqual([ran.code, ran.stdout, ran.stderr], [126, '', CMD_REFUSAL(n)], `${ext} ${JSON.stringify([...args, lastArg])}`);
+    }
+    const outside = await runShim(r, ['50%'], { env: { ...env, HIVE_PTY_ID: undefined } });
+    assert.deepEqual([outside.code, outside.stderr], [126, CMD_REFUSAL(1)], 'never passed on changed');
+    assert.deepEqual(seen, [], 'no acquire, so no permit or place is taken');
+  }
+});
+
+test('the win32 shim passes %, a CR and a LF whole to a real binary that is no batch file (#806)', POSIX, async (t) => {
+  const { r } = await setup(t, 'run', WORD, 'win32');
+  for (const lastArg of ['a\rb', 'a\nb']) {
+    const ran = await runShim(r, ['50%'], { lastArg });
+    assert.deepEqual([ran.code, ran.stdout], [FAKE_EXIT, fakeOut(['50%', lastArg])], JSON.stringify(lastArg));
+  }
+});
+
+test('the win32 shim sends a pid the daemon finds alive: its Windows pid on the lane, $$ where /proc has no winpid (#806)', POSIX, async (t) => {
+  const { r, seen } = await setup(t, 'run', WORD, 'win32');
+  const shim = startShim(r, ['test']);
+  assert.equal((await shim.done).code, FAKE_EXIT);
+  assert.equal(seen[0].pidAlive, true);
+  await t.test('the pid is the one Node started', { skip: SH_LAUNCHER }, () => {
+    assert.equal(new URLSearchParams(seen[0].body).get('pid'), String(shim.pid));
+  });
+});
+
 const line = (command: string, semaphore?: string, workspace: string | null = null): Command['impls'][number] =>
   ({ workspace, command, ...(semaphore === undefined ? {} : { semaphore }) });
 const commandOf = (name: string, ...impls: Command['impls']): Command => ({ name, impls, menu: true, env: {} });
@@ -159,7 +240,7 @@ test('installCommandShims writes one executable shim per word into <home>/comman
   assert.equal(dir, join(home, 'command-shims'));
   const both = commandsConfig(commandOf('test', line('pnpm test', 'memory')), commandOf('up', line('docker compose up', 'disk')));
   assert.deepEqual(await installCommandShims(home, both, 'pt', 'darwin'), ['pnpm', 'docker']);
-  assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm', 'pt'));
+  assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm', 'pt', 'darwin'));
   await assertMode(t, dir, 0o700);
   await assertMode(t, join(dir, 'pnpm'), 0o755);
   await writeFile(join(dir, 'stray'), 'left by an older version');

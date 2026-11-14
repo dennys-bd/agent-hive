@@ -14,16 +14,19 @@ export const COMMAND_SHIMS_DIR = 'command-shims'; // <home>/command-shims: first
 // /tmp whose parent another account could own; beside the shims, never among them, since that folder is on PATH and the install deletes
 // every file of it that is no shim
 export const COMMAND_SHIMS_ENV_DIR = 'command-shims-env';
-// One pass over both placeholders (#801: the wait's line speaks the Hive's language), so a word holding the other's text stays whole
-const PLACEHOLDER = /__HIVE_(COMMAND|LANGUAGE)__/g;
+// One pass over every placeholder (#801, #806), so a word holding another's text stays whole
+const PLACEHOLDER = /__HIVE_(COMMAND|LANGUAGE|PLATFORM)__/g;
 const SHIM_MODE = 0o755;
 
 /** `assets/bin/command-shim` in the Hive's own checkout, resolved from dist/src/ as shimSource is. */
 export const commandShimSource = (): string => fileURLToPath(new URL('../../assets/bin/command-shim', import.meta.url));
 
-/** The shim as written for `word`: quoted, since a first word lineWords takes can still hold a # or a ! (it never holds a quote). */
-export const renderCommandShim = (template: string, word: string, language: Language): string =>
-  template.replace(PLACEHOLDER, (_match, key: string) => shellQuote(key === 'COMMAND' ? word : language));
+/** The shim as written for `word`: quoted, since a first word lineWords takes can still hold a # or a ! (it never holds a quote). `platform`
+ * is the Hive's (#806 decision 2): the script's win32 branches read it, so a test on any OS renders and runs the win32 shim. */
+export function renderCommandShim(template: string, word: string, language: Language, platform: NodeJS.Platform): string {
+  const values = { COMMAND: word, LANGUAGE: language, PLATFORM: platform };
+  return template.replace(PLACEHOLDER, (_match, key: keyof typeof values) => shellQuote(values[key]));
+}
 
 export const commandShimDir = (home: string): string => join(home, COMMAND_SHIMS_DIR);
 
@@ -55,7 +58,7 @@ export async function installCommandShims(home: string, config: Pick<SemaphoresC
   const words = shimWords(config);
   for (const word of words) {
     const tmp = join(dir, `.${word}.new`);
-    await writeFile(tmp, renderCommandShim(template, word, language), { mode: SHIM_MODE });
+    await writeFile(tmp, renderCommandShim(template, word, language, platform), { mode: SHIM_MODE });
     await chmod(tmp, SHIM_MODE); // writeFile's mode applies only to a new file
     await rename(tmp, join(dir, word));
   }
