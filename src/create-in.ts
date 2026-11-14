@@ -3,20 +3,6 @@
 import { HIVE_SOURCE } from './tasks.js';
 import type { SourceFields } from './types.js';
 
-export type CreateInProblem =
-  | 'settings.error.hiveSource.noSource' | 'settings.error.createIn.hiveOff' | 'settings.error.createIn.unknown' | 'settings.error.createIn.noRepository';
-
-export interface CreateInFields { hiveSource: boolean; createIn: string; sources: readonly { name: string; repository?: string }[] }
-
-/** The first rule `fields` break, or undefined: hive off needs a source; createIn is hive while it is on, or a source with a repository. */
-export function createInProblem({ hiveSource, createIn, sources }: CreateInFields): CreateInProblem | undefined {
-  if (!hiveSource && sources.length === 0) return 'settings.error.hiveSource.noSource';
-  if (createIn === HIVE_SOURCE) return hiveSource ? undefined : 'settings.error.createIn.hiveOff';
-  const source = sources.find((s) => s.name === createIn);
-  if (source === undefined) return 'settings.error.createIn.unknown';
-  return source.repository === undefined ? 'settings.error.createIn.noRepository' : undefined;
-}
-
 /** What the predicate reads of a source (#811): its type and, for GitHub, the repository new issues go to. */
 export interface CreateCandidate { type: SourceFields['type']; repository?: string }
 export type CanCreate = (source: CreateCandidate) => boolean;
@@ -27,4 +13,18 @@ export function canCreate(source: CreateCandidate): boolean {
   switch (source.type) {
     case 'github': return source.repository !== undefined;
   }
+}
+
+export type CreateInProblem =
+  | 'settings.error.hiveSource.noSource' | 'settings.error.createIn.hiveOff' | 'settings.error.createIn.unknown' | 'settings.error.createIn.cannotCreate';
+
+export interface CreateInFields { hiveSource: boolean; createIn: string; sources: readonly (CreateCandidate & { name: string })[] }
+
+/** The first rule `fields` break, or undefined: hive off needs a source; createIn is hive while it is on, or a source canCreate accepts (#811). */
+export function createInProblem({ hiveSource, createIn, sources }: CreateInFields, can: CanCreate = canCreate): CreateInProblem | undefined {
+  if (!hiveSource && sources.length === 0) return 'settings.error.hiveSource.noSource';
+  if (createIn === HIVE_SOURCE) return hiveSource ? undefined : 'settings.error.createIn.hiveOff';
+  const source = sources.find((s) => s.name === createIn);
+  if (source === undefined) return 'settings.error.createIn.unknown';
+  return can(source) ? undefined : 'settings.error.createIn.cannotCreate';
 }
