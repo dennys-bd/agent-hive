@@ -260,14 +260,13 @@ test('shimWords on win32: none for a word holding :, nor for one sharing a file 
 });
 
 test('shimWords on win32: none for a word with a runnable extension, a device name or a trailing dot, which a shim file cannot be named after (#806)', () => {
-  const words = ['PNPM.cmd', 'node.exe', 'git.bat', 'foo.ps1', 'run.COM', 'nul', 'CON', 'aux.txt', 'com1', 'lpt9', 'pnpm.', 'pnpm', 'console', 'nulls'];
+  const words = ['PNPM.cmd', 'node.exe', 'git.bat', 'foo.ps1', 'run.COM', 'tool.js', 'x.vbs', 'nul', 'CON', 'aux.txt', 'com1', 'lpt9', 'pnpm.', 'pnpm', 'console', 'nulls'];
   const config = commandsConfig(...words.map((word) => commandOf(word, line(`${word} x`, 'memory'))));
   assert.deepEqual(shimWords(config, 'win32'), ['pnpm', 'console', 'nulls']);
 });
 
-test('renderCommandShimCmd writes the sh.exe path, the shims\' folder and the word with % doubled and leaves the template\'s own %* alone (#806)', () => {
-  assert.equal(renderCommandShimCmd('"__HIVE_SH__" "__HIVE_DIR__\\__HIVE_COMMAND__" %*', 'a%b', 'C:\\Git 100%\\bin\\sh.exe', 'C:\\h 5%\\command-shims'),
-    '"C:\\Git 100%%\\bin\\sh.exe" "C:\\h 5%%\\command-shims\\a%%b" %*');
+test('renderCommandShimCmd writes the sh.exe path and the word with % doubled and leaves the template\'s own %~dp0 and %* alone (#806)', () => {
+  assert.equal(renderCommandShimCmd('"__HIVE_SH__" "%~dp0__HIVE_COMMAND__" %*', 'a%b', 'C:\\Git 100%\\bin\\sh.exe'), '"C:\\Git 100%%\\bin\\sh.exe" "%~dp0a%%b" %*');
 });
 
 test('installCommandShims on win32 writes each word\'s POSIX shim and its .cmd twin, and a save keeps both of every current word and deletes the rest (#806)', async (t) => {
@@ -279,7 +278,7 @@ test('installCommandShims on win32 writes each word\'s POSIX shim and its .cmd t
   assert.equal(await readFile(join(dir, 'pnpm'), 'utf8'), renderCommandShim(await readFile(commandShimSource(), 'utf8'), 'pnpm', 'en', 'win32'));
   const twin = await readFile(join(dir, 'pnpm.cmd'), 'utf8');
   assert.match(twin, /^set MSYS2_ARG_CONV_EXCL=\*\r?$/m);
-  assert.ok(twin.split(/\r?\n/).includes(`"C:\\Program Files\\Git\\bin\\sh.exe" "${dir}\\pnpm" %*`), twin);
+  assert.match(twin, /^"C:\\Program Files\\Git\\bin\\sh\.exe" "%~dp0pnpm" %\*\r?$/m);
   await writeFile(join(dir, 'stray.cmd'), 'left by an older version');
   await installCommandShims(home, commandsConfig(commandOf('up', line('docker compose up', 'disk'))), 'en', install);
   assert.deepEqual((await readdir(dir)).sort(), ['docker', 'docker.cmd']);
@@ -291,7 +290,7 @@ test('installCommandShims writes every other word and sweeps when one shim canno
   await mkdir(join(dir, 'pnpm', 'held'), { recursive: true }); // a rename over a non-empty folder fails on every OS, as one over an open file does on Windows
   await writeFile(join(dir, 'stray'), 'left by an older version');
   const both = commandsConfig(commandOf('test', line('pnpm test', 'memory')), commandOf('up', line('docker compose up', 'disk')));
-  await assert.rejects(installCommandShims(home, both, 'en', { platform: 'linux', sh: '/bin/sh' }), /1 shim\(s\) not replaced/);
+  await assert.rejects(installCommandShims(home, both, 'en', { platform: 'linux', sh: '/bin/sh' }), /1 shim file\(s\) not replaced or removed/);
   assert.deepEqual((await readdir(dir)).sort(), ['docker', 'pnpm'], 'docker written, the stray swept, no tmp left');
 });
 

@@ -37,14 +37,12 @@ export const commandShimsEnvFile = (commandShims: string, ptyId: string, path: P
 /** `assets/bin/command-shim.cmd`, the shim's twin on win32 (#806), which PowerShell and cmd.exe find through PATHEXT. */
 const commandShimCmdSource = (): string => fileURLToPath(new URL('../../assets/bin/command-shim.cmd', import.meta.url));
 
-const CMD_PLACEHOLDER = /__HIVE_(COMMAND|SH|DIR)__/g;
-/** The twin as written: cmd.exe expands %NAME% while reading a line, even in quotes, so a % in the sh.exe path, the folder or the word is
- * written %% (#645, #806); one pass, so a word holding another's text stays whole. The folder is written whole, never %~dp0: cmd.exe
- * resolves that against the cwd for a batch file started by a quoted bare name, and a repository's own file of the word would run. */
-export function renderCommandShimCmd(template: string, word: string, sh: string, dir: string): string {
-  const values: Record<string, string> = { COMMAND: word, SH: sh, DIR: dir };
-  return template.replace(CMD_PLACEHOLDER, (_match, key: string) => (values[key] ?? '').replaceAll('%', '%%'));
-}
+const CMD_PLACEHOLDER = /__HIVE_(COMMAND|SH)__/g;
+/** The twin as written: cmd.exe expands %NAME% while reading a line, even in quotes, so a % in the sh.exe path or in the word is written %%
+ * (#645, #806); one pass, so a word holding the other's text stays whole. The template's own %~dp0 and %* stay as they are: the folder
+ * as %~dp0, never written whole, since cmd.exe reads a batch file in the OEM code page and a home such as C:\Users\João would not survive. */
+export const renderCommandShimCmd = (template: string, word: string, sh: string): string =>
+  template.replace(CMD_PLACEHOLDER, (_match, key: string) => (key === 'SH' ? sh : word).replaceAll('%', '%%'));
 
 // What a Windows file name cannot hold (#806 decision 12); lineWords already refuses all but :
 const WIN32_UNNAMEABLE = /[\\:<>"|?*]/;
@@ -52,7 +50,7 @@ const WIN32_UNNAMEABLE = /[\\:<>"|?*]/;
 const WIN32_RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\.|$)|[. ]$/i;
 // A word with a runnable extension would put the sh text under that extension first on PATH: cmd.exe would read it as a batch file, a
 // native caller as a program
-const WIN32_RUNNABLE = /\.(com|exe|bat|cmd|ps1)$/i;
+const WIN32_RUNNABLE = /\.(com|exe|bat|cmd|ps1|vbs|vbe|js|jse|wsf|wsh|msc)$/i; // what cmd.exe, PowerShell or Windows Script Host would run
 const isWin32Nameable = (word: string): boolean => ![WIN32_UNNAMEABLE, WIN32_RESERVED, WIN32_RUNNABLE].some((re) => re.test(word));
 // A path is never looked up on PATH, so no shim could catch it; . and .. would name the folder itself or the home
 const isShimmable = (word: string, platform: NodeJS.Platform): boolean =>
@@ -88,7 +86,7 @@ async function writeAtomically(dir: string, name: string, text: string): Promise
     await rename(tmp, join(dir, name));
     return undefined;
   } catch (err) {
-    await rm(tmp, { force: true });
+    await rm(tmp, { recursive: true, force: true }).catch(() => undefined); // a leftover tmp is swept by the next install
     return err instanceof Error ? err : new Error(String(err));
   }
 }
@@ -105,7 +103,7 @@ export async function installCommandShims(home: string, config: Pick<SemaphoresC
   const failed: Error[] = [];
   for (const word of words) {
     const files = [{ name: word, text: renderCommandShim(template, word, language, platform) }];
-    if (twin !== undefined) files.push({ name: `${word}.cmd`, text: renderCommandShimCmd(twin, word, sh, dir) });
+    if (twin !== undefined) files.push({ name: `${word}.cmd`, text: renderCommandShimCmd(twin, word, sh) });
     for (const { name, text } of files) {
       const err = await writeAtomically(dir, name, text);
       if (err !== undefined) failed.push(err);
@@ -113,9 +111,11 @@ export async function installCommandShims(home: string, config: Pick<SemaphoresC
   }
   const kept = twin === undefined ? words : words.flatMap((word) => [word, `${word}.cmd`]);
   const stale = (await readdir(dir)).filter((name) => !kept.includes(name));
-  await Promise.all(stale.map((name) => rm(join(dir, name), { recursive: true, force: true })));
+  // Windows refuses to delete a stale shim a running sh.exe holds open, as it refuses the rename: reported with the rest, never in their place
+  const swept = await Promise.allSettled(stale.map((name) => rm(join(dir, name), { recursive: true, force: true })));
+  swept.forEach((result) => { if (result.status === 'rejected') failed.push(result.reason instanceof Error ? result.reason : new Error(String(result.reason))); });
   // Every other word is written and the sweep ran: one shim held open never keeps a save from the rest
-  if (failed.length > 0) throw new Error(`${failed.length} shim(s) not replaced, the next save retries: ${failed[0].message}`);
+  if (failed.length > 0) throw new Error(`${failed.length} shim file(s) not replaced or removed, the next save retries: ${failed[0].message}`);
   return words;
 }
 
