@@ -30,6 +30,7 @@ function routes(t: TestContext, sources: Record<string, RelateSource>, tasks: Ta
     requireLive: () => ({ state, runtime: { sources: new Map(Object.entries(sources)) } }),
     dispatch: async (event) => { dispatched.push(event); if (event.type === 'blockerSet') state = reduce(state, event).state; },
     latest: () => state,
+    reportRetry: async () => {},
     log,
   });
   const server = app.listen(0);
@@ -159,7 +160,7 @@ test('relateItem writes as the route does, the path picked by the item\'s own so
   const low: Task = { ...GH_TASK, item: { ...GH_TASK.item, itemId: 'low:PVTI_1', source: 'low' } };
   let state: State = { ...initialState(0), tasks: [hive(1), hive(2), GH_TASK, low], syncs: { low: { quota: LOW } } };
   const dispatched: HiveEvent[] = [];
-  const deps = { dispatch: async (event: HiveEvent) => { dispatched.push(event); if (event.type === 'blockerSet') state = reduce(state, event).state; }, latest: () => state };
+  const deps = { dispatch: async (event: HiveEvent) => { dispatched.push(event); if (event.type === 'blockerSet') state = reduce(state, event).state; }, latest: () => state, reportRetry: async () => {} };
   const work: RelateSource = { relate: async () => ({ blockers: SEVEN, entry: ENTRY }) };
   const live = () => ({ state, runtime: { sources: new Map(Object.entries({ work, low: work })) } });
   assert.deepEqual(await relateItem(deps, live(), 'local:1', add('HIVE-2')), { blockers: { blockedBy: [{ id: 'HIVE-2', title: 'T2', state: 'open' }], blocking: [] } });

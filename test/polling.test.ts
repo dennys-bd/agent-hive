@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, reduce } from '../src/orchestrator.js';
-import { IDLE_POLL_INTERVAL_MS, isSourceQuota, POLL_INTERVAL_MS, QUOTA_RESERVE, shouldPoll } from '../src/polling.js';
+import { IDLE_POLL_INTERVAL_MS, inBackoff, inRetryWait, isSourceQuota, POLL_INTERVAL_MS, QUOTA_RESERVE, shouldPoll, syncOf } from '../src/polling.js';
 import type { SourceQuota, State } from '../src/types.js';
 import { flowed } from './fixtures/main-flow.js';
 
@@ -65,4 +65,29 @@ test('isSourceQuota accepts the read shape and rejects anything else', () => {
   assert.equal(isSourceQuota({ ...valid, resetsAt: 7 }), false);
   assert.equal(isSourceQuota({ ...valid, at: undefined }), false);
   for (const value of [undefined, null, 'x', 5, []]) assert.equal(isSourceQuota(value), false, String(value));
+});
+
+const waitUntil = (state: State, until: string, board = 'board'): State => ({ ...state, syncs: { ...state.syncs, [board]: { ...state.syncs[board], backoffUntil: until } } });
+
+test('shouldPoll is false while the source waits out a rate limit, true once the time has passed, and another source in the same state still polls (#812)', () => {
+  const waiting = waitUntil(readAt(free, NOW - POLL_INTERVAL_MS, 'notes'), iso(NOW + MINUTE_MS));
+  assert.deepEqual([shouldPoll(waiting, 'board', NOW), shouldPoll(waiting, 'notes', NOW)], [false, true]);
+  assert.equal(inRetryWait(waiting.syncs.board, NOW), true);
+  assert.equal(shouldPoll(waitUntil(readAt(busy, NOW - IDLE_POLL_INTERVAL_MS), iso(NOW + MINUTE_MS)), 'board', NOW), false, 'a stale read does not break the wait');
+  assert.equal(shouldPoll(waitUntil(free, iso(NOW - 1)), 'board', NOW), true, 'past: the wait lifts by itself');
+  assert.equal(shouldPoll(waitUntil(free, iso(NOW)), 'board', NOW), true, 'a time right now counts as passed');
+  assert.equal(shouldPoll(waitUntil(free, 'garbage'), 'board', NOW), true, 'an unparsable time is no wait');
+  assert.equal(inBackoff(waiting.syncs.board, NOW), false, 'the quota backoff stays the quota\'s alone (#294)');
+});
+
+test('a source with no quota reading is never in the quota backoff, whatever else its status holds (#812 decision 12)', () => {
+  const statuses = [undefined, {}, { polledAt: iso(NOW), error: 'x' }, { backoffUntil: iso(NOW + MINUTE_MS) }];
+  for (const status of statuses) assert.equal(inBackoff(status, NOW), false, JSON.stringify(status));
+});
+
+test('syncOf keeps a backoffUntil Date.parse reads and drops any other, beside the fields it already keeps (#812)', () => {
+  const until = iso(NOW + MINUTE_MS);
+  const valid = quota(4320, NOW + MINUTE_MS);
+  assert.deepEqual(syncOf({ polledAt: iso(NOW), quota: valid, error: 'x', backoffUntil: until }), { polledAt: iso(NOW), quota: valid, error: 'x', backoffUntil: until });
+  for (const bad of ['soon', 7, null, {}]) assert.deepEqual(syncOf({ backoffUntil: bad }), {}, String(bad));
 });

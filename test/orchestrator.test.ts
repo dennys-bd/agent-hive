@@ -2558,6 +2558,24 @@ test('pollFailed records the error on its source and leaves every task as it is;
   assert.equal(reduce(first, { type: 'pollFailed', source: 'gone', message: 'x' }).state, first, 'a removed board records nothing');
 });
 
+test('sourceBackoff keeps the later of the stored wait and its own, with no effect and no fill; an unknown source or an unparsable time records nothing; the next good poll clears it with the error (#812)', () => {
+  const first = polled({ ...base(0), syncs: { board: {}, notes: {} } }, [listed(1, 'Ready')]).state;
+  const earlier = '2026-11-14T12:30:00.000Z';
+  const later = '2026-11-14T13:00:00.000Z';
+  const waiting = reduce(first, { type: 'sourceBackoff', source: 'board', until: earlier });
+  assert.deepEqual([waiting.state.tasks, waiting.effects, waiting.state.syncs.board.backoffUntil], [first.tasks, [], earlier]);
+  const extended = reduce(waiting.state, { type: 'sourceBackoff', source: 'board', until: later }).state;
+  assert.equal(extended.syncs.board.backoffUntil, later);
+  assert.equal(reduce(extended, { type: 'sourceBackoff', source: 'board', until: earlier }).state.syncs.board.backoffUntil, later, 'an earlier time never reopens it');
+  assert.equal(reduce(extended, { type: 'sourceBackoff', source: 'board', until: 'soon' }).state.syncs.board.backoffUntil, later, 'an unparsable time asks nothing');
+  assert.deepEqual(extended.syncs.notes, {}, 'the other source is untouched');
+  assert.equal(extended.syncs.board.polledAt, first.syncs.board.polledAt, 'the last success stands');
+  assert.equal(reduce(first, { type: 'sourceBackoff', source: 'gone', until: later }).state, first, 'a removed source records nothing');
+  const failed = reduce(extended, { type: 'pollFailed', source: 'board', message: 'rate limited' }).state;
+  const cleared = polled(failed, [listed(1, 'Ready')]).state.syncs.board;
+  assert.deepEqual([cleared.backoffUntil, cleared.error], [undefined, undefined]);
+});
+
 test('renameSources carries a source to its new name (#278): every task of it, out-of-listing and orphan ones too, the running one\'s worker, the source order and its status; another source\'s task stays; a poll of the new name then matches every task', () => {
   const first = filled(1, 3).state; // item1 runs in spec, item2 and item3 wait
   const notes: Task = { item: { ...item(9), itemId: 'notes:item9', source: 'notes' }, stage: 'review', boardColumn: 'In review', auto: true };

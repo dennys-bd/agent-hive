@@ -3,6 +3,7 @@ import { ItemNotOnSourceError } from './field-values.js';
 import { blockerProblem, hiveCandidates } from './hive-blockers.js';
 import type { Logger } from './log.js';
 import { backoffAnswer, refusedInBackoff } from './server-project.js';
+import { rateLimitAnswer, type ReportRetry } from './source-errors.js';
 import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from './sources/github-blockers.js';
 import { HIVE_SOURCE, itemSource } from './tasks.js';
 import type { BlockerChange, BlockerRef, BlockerWrite, HiveEvent, ItemBlockers, Source, State } from './types.js';
@@ -43,10 +44,11 @@ export interface BlockerRouteDeps {
   requireLive(res: Response): { state: State; runtime: { sources: ReadonlyMap<string, RelateSource> } } | undefined;
   dispatch(event: HiveEvent): Promise<unknown>; // blockerSet for a hive task; itemRead with a source write's re-read entry
   latest(): State | undefined;
+  reportRetry: ReportRetry; // #812: a relation the source rate limited puts the source in backoff and answers 429
   log?: Logger;
 }
 type Live = NonNullable<ReturnType<BlockerRouteDeps['requireLive']>>;
-type RelateDeps = Pick<BlockerRouteDeps, 'dispatch' | 'latest' | 'log'>;
+type RelateDeps = Pick<BlockerRouteDeps, 'dispatch' | 'latest' | 'log' | 'reportRetry'>;
 
 /** A refusal as the route answers it (#294): status and body, so the route and hive_stop's block read the same words. */
 export interface RelateRefusal { status: number; error: string; code?: string; resetsAt?: string }
@@ -114,7 +116,8 @@ async function relateOnSource(deps: RelateDeps, current: Live, name: string, ite
   try {
     written = await relate(itemId, change);
   } catch (err) {
-    return failed(deps, itemId, err);
+    const limited = await rateLimitAnswer(err, name, deps.reportRetry); // #812: before the adapter's own refusals
+    return limited === undefined ? failed(deps, itemId, err) : { refusal: limited };
   }
   if (written.entry !== undefined) {
     try {

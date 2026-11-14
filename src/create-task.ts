@@ -5,6 +5,7 @@ import type { Logger } from './log.js';
 import { canCreate, type CanCreate } from './create-in.js';
 import { HIVE_SOURCE, itemSource, onSource, stageOf } from './tasks.js';
 import { CreateRefusedError, IssuePlacementError } from './source-create.js';
+import { rateLimitAnswer, type ReportRetry } from './source-errors.js';
 import type { Refusal } from './server-tasks.js'; // a type only: no runtime cycle
 import type { CombConfig, CreatedRef, Effect, HiveEvent, Source, SourceConfig, State } from './types.js';
 
@@ -65,6 +66,7 @@ export interface CreateDeps {
   poll(names: string[], manual?: string[]): Promise<void>; // manual: item ids that enter the state with auto off
   latest(): State | undefined;
   canCreate?: CanCreate; // #811: whether a source takes new tasks; absent = canCreate. A test hands one that accepts a type the union lacks
+  reportRetry?: ReportRetry; // #812: POST /tasks' rate-limit report; hive_create_task hands none, as it hands no log, and keeps its refusal
   log?: Pick<Logger, 'warn'>; // #772: a failed create's words to hive.log; hive_create_task hands none, since its answer gives them to the agent
 }
 
@@ -179,7 +181,9 @@ async function createInSource(deps: CreateDeps, body: unknown, entry: SourceConf
   try {
     made = await source.create({ title: event.title, body: event.body, column, labels: fields.labels });
   } catch (err) {
-    return createFailure(err, name, deps.log);
+    // #812 decision 7: a rate limit created nothing, so a 429 with its retry time is a safe retry; anything else keeps #767's answers
+    const limited = deps.reportRetry === undefined ? undefined : await rateLimitAnswer(err, name, deps.reportRetry);
+    return limited === undefined ? createFailure(err, name, deps.log) : { status: limited.status, message: limited.error, resetsAt: limited.resetsAt };
   }
   // #767: an issue off the Project is listed by no source, so a poll for it would only spend quota
   if (made.itemId === undefined) return { ref: made.ref, notice: offProjectNotice(made.ref.url) };

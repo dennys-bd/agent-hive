@@ -8,6 +8,7 @@ const en = {
   'header.sourceError': 'source {name}: {error}',
   'header.brand': 'hive', // #533
   'header.workers': 'workers {active}/{max}', // #227: the brand's count, the signal popover's first row (#295) and the flow sidebar's worker cap
+  'header.sourceWaiting': 'source {name}: waiting until {time}', // #812: a source in rate-limit backoff, after its error line
   'header.flow': 'tasks',
   'header.activities': 'activities',
   'header.signalTitle': 'signal {signal} · {effect}', // #221, #295: the brand's title, what the signal holds back in the middle; the popover's toggle changes it
@@ -3305,6 +3306,7 @@ export type MessageKey = keyof typeof en;
 const pt: Record<MessageKey, string> = {
   'footer.max': 'máx.',
   'header.sourceError': 'source {name}: {error}',
+  'header.sourceWaiting': 'source {name}: aguardando até {time}',
   'header.brand': 'hive',
   'header.workers': 'workers {active}/{max}',
   'header.flow': 'tarefas',

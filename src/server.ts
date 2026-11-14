@@ -81,6 +81,7 @@ import { accessFor, type ReadAccess } from './read-model/access.js';
 import type { ReadModel, SyncKind } from './read-model/db.js';
 import type { ItemStore } from './read-model/items.js';
 import type { UsageStore } from './usage-store.js';
+import { isRateLimited, type ReportRetry } from './source-errors.js';
 import { createReadModelLoop, readModelEvent, type RefetchOutcome } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
@@ -219,6 +220,7 @@ export interface ServerDeps {
 export interface HiveServer {
   dispatch(event: HiveEvent): Promise<Effect[]>;
   poll(names?: string[], manual?: string[]): Promise<void>; // every named source (all by default), in parallel (#180); manual: items born with auto off (#846)
+  reportRetry: ReportRetry; // #812: a dispatch of sourceBackoff, what every caller of a source outside the poll reports a rate limit through
   boot(saved: State): Promise<void>; // strays killed, then the boot reducer
   refreshPlanLimits(replace?: boolean, agents?: readonly AgentId[]): Promise<string | undefined>; // the failure's reason, undefined when read (or nothing to read); agents: only these (#223)
   listen(port: number | undefined): Promise<number>; // tried first; taken, or undefined, the OS picks one (#466)
@@ -502,6 +504,17 @@ export function createServer(deps: ServerDeps): HiveServer {
     await dispatch({ type: 'error', message });
   }
 
+  // #812 decision 4: the one entry a source's rate limit is reported through: the poll, the effects, the write routes and the read model loop
+  async function reportRetry(source: string, until: string): Promise<void> {
+    await dispatch({ type: 'sourceBackoff', source, until });
+  }
+
+  // #812 decisions 8, 9: a call the source rate limited reports its retry first; the caller then fails exactly as it always has
+  async function retryOf(source: string, err: unknown): Promise<void> {
+    // Never throws: a failed report must not swallow the failure the caller records right after it
+    if (isRateLimited(err)) await reportRetry(source, err.retryAt).catch((e: unknown) => log.error(`source ${source} backoff: ${errorMessage(e)}`));
+  }
+
   // Fires an event's effects without making the caller wait on them (#476): dispatch reduces and assigns live.state
   // synchronously before its first await, so the state this event produces is already there once this call returns; only the
   // effects (deleteActivity, sourceAction, spawn) that reduction can emit run in the background. Each effect already reports its own
@@ -515,14 +528,15 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function runEffect(effect: Effect, runtime: Runtime, size?: TerminalSize): Promise<void> {
     switch (effect.type) {
       case 'setColumn': {
-        const source = runtime.sources.get(itemSource(effect.itemId) ?? '');
+        const name = itemSource(effect.itemId) ?? '';
+        const source = runtime.sources.get(name);
         if (!source) { // the source was removed in Settings (#180): nothing to write to
           log.info(`${describeEffect(effect)} dropped: no source`);
           return;
         }
         await wiring.sourceAction(live?.state, effect.itemId, 'move', source.setColumn(effect.itemId, effect.column)) // source.action (#742)
           .then(() => log.info(`${describeEffect(effect)} ok`))
-          .catch((err) => fail(`source.setColumn(${effect.column})`, err));
+          .catch(async (err) => { await retryOf(name, err); await fail(`source.setColumn(${effect.column})`, err); });
         return;
       }
       case 'sourceAction':
@@ -692,6 +706,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     try {
       await wiring.sourceAction(live?.state, effect.taskId, effect.action.type, source.apply(effect.itemId, effect.action, url)); // source.action (#742)
     } catch (err) {
+      await retryOf(name, err);
       await fail(`source.apply(${effect.action.type})`, err);
       await dispatch({ type: 'sourceActionFailed', taskId: effect.taskId, message: errorMessage(err), leaving: isLeaving(effect.action) });
       return;
@@ -755,6 +770,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       if (isStale(runtime)) return;
       const message = errorMessage(err);
       log.error(`source ${name}: ${message}`);
+      await retryOf(name, err); // #812 decision 9: the wait, then the error beside it
       await dispatch({ type: 'pollFailed', source: name, message });
     }
     if (!isStale(runtime)) await refreshQuota(name, source); // success or failure: the reset time matters most when the limit just hit
@@ -1050,7 +1066,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   let preloadPr = deps.preloadPr; // #497: bound after the PR routes, which own the changes' reader
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
   mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
-    relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
+    relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log, reportRetry }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
     reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory, preloadPr: (url) => preloadPr?.(url) ?? Promise.resolve(),
     benchmark: drafter({ dispatch, home, pluginSource: shippedPlugin, exec, log, version: benchVersion, now: () => new Date(), queue: benchQueue,
       live: () => (live ? { config: live.runtime.config, experiments: live.state.benchmark.experiments } : undefined) }) }); // #478: the benchmark tools' drafter; #344: a local session's hive_reply
@@ -1285,7 +1301,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // create, start, bases, close, session, session exit, delete-activity, move, reset-order, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
-  const taskDeps = { treeWatch, exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
+  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts });
@@ -1320,12 +1336,12 @@ export function createServer(deps: ServerDeps): HiveServer {
     await poll();
     res.json({ ok: true });
   });
-  registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
+  registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log, reportRetry }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
   const readLoop = deps.readModel && createReadModelLoop({
-    db: deps.readModel, log, notify: notifyReadModel, access: readAccess,
+    db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
   });
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
@@ -1333,7 +1349,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const itemStore: ItemStore | undefined = deps.readModel && readLoop && {
     db: deps.readModel, source: async () => (await readAccess())?.source, notify: notifyReadModel, refetch: readLoop.refetch,
   };
-  registerProjectRoutes(app, { requireLive, dispatch, log, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686), GET /sources/:name/create-options (#768): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
+  registerProjectRoutes(app, { requireLive, dispatch, log, reportRetry, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686), GET /sources/:name/create-options (#768): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
   // #181: the reads answer from the model, as the login the sync reads with (ponytail: a stat of gh's hosts.yml per read in cli mode); the writes
   // go to GitHub with the Hive's own login (#757), and their answer is upserted and named by the sync's own readModel event (#183)
   const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : {
@@ -1513,6 +1529,6 @@ export function createServer(deps: ServerDeps): HiveServer {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 
-  return { dispatch, poll, boot, refreshPlanLimits, listen, close, getState: () => live?.state, notifyReadModel,
+  return { dispatch, poll, reportRetry, boot, refreshPlanLimits, listen, close, getState: () => live?.state, notifyReadModel,
     refetchIssue: (repository: string, number: number) => readLoop?.refetch(repository, number) ?? Promise.resolve<RefetchOutcome>('skipped') };
 }
