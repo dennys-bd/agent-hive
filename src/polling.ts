@@ -11,14 +11,18 @@ export function inBackoff(status: SourceSync | undefined, now: number): boolean 
   return quota !== undefined && quota.remaining < QUOTA_RESERVE && Date.parse(quota.resetsAt) > now;
 }
 
+// #812 decision 5: a call the source rate limited asked it to wait until backoffUntil. An unparsable time is no wait: NaN fails the >.
+// inBackoff stays the quota's alone, since it also drives #294's and #834's quota refusals
+export const inRetryWait = (status: SourceSync | undefined, now: number): boolean => Date.parse(status?.backoffUntil ?? '') > now;
+
 // A missing or unparsable stamp reads as stale: NaN fails the `<`.
 const isStale = (status: SourceSync | undefined, now: number): boolean => !(now - Date.parse(status?.polledAt ?? '') < IDLE_POLL_INTERVAL_MS);
 
-/** Whether a timer tick should poll `source` (#180: each source on its own quota and poll time): never inside its quota backoff; otherwise
- * when a job could start or its last read is stale. */
+/** Whether a timer tick should poll `source` (#180: each source on its own quota and poll time): never inside its quota backoff (#294) nor
+ * while it waits out a rate limit (#812); otherwise when a job could start or its last read is stale. */
 export function shouldPoll(state: State, source: string, now: number): boolean {
   const status = Object.hasOwn(state.syncs, source) ? state.syncs[source] : undefined;
-  return !inBackoff(status, now) && (canSchedule(state, now) || isStale(status, now));
+  return !inBackoff(status, now) && !inRetryWait(status, now) && (canSchedule(state, now) || isStale(status, now));
 }
 
 const isCount = (value: unknown): value is number => Number.isFinite(value) && (value as number) >= 0;
@@ -30,9 +34,15 @@ export function isSourceQuota(value: unknown): value is SourceQuota {
   return isCount(limit) && isCount(remaining) && typeof resetsAt === 'string' && typeof at === 'string';
 }
 
+// #812 decision 2: a wait is kept only as a time Date.parse reads, so a reopened Hive never waits on one it cannot compare
+const isTime = (value: unknown): value is string => typeof value === 'string' && !Number.isNaN(Date.parse(value));
+
 /** One source's saved status for state-store (#180): each field kept only in the shape the Hive writes, anything else dropped. */
 export function syncOf(value: unknown): SourceSync {
   if (typeof value !== 'object' || value === null) return {};
-  const { polledAt, quota, error } = value as SourceSync;
-  return { ...(typeof polledAt === 'string' ? { polledAt } : {}), ...(isSourceQuota(quota) ? { quota } : {}), ...(typeof error === 'string' ? { error } : {}) };
+  const { polledAt, quota, error, backoffUntil } = value as SourceSync;
+  return {
+    ...(typeof polledAt === 'string' ? { polledAt } : {}), ...(isSourceQuota(quota) ? { quota } : {}), ...(typeof error === 'string' ? { error } : {}),
+    ...(isTime(backoffUntil) ? { backoffUntil } : {}),
+  };
 }
