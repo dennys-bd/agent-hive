@@ -406,6 +406,10 @@ test('poll, pollFailed and sourceQuota lines name the source, a source-less poll
   assert.equal(describeEvent({ type: 'renameStages', renames: { Backlog: 'Spec', a: 'b' } }), 'renameStages Backlog→Spec,a→b'); // #861
 });
 
+test('a sourceBackoff line names the source and the time it waits until (#812)', () => {
+  assert.equal(describeEvent({ type: 'sourceBackoff', source: 'notes', until: '2026-11-14T13:00:00.000Z' }), 'sourceBackoff source=notes until=2026-11-14T13:00:00.000Z');
+});
+
 test('describeEffect names a local session by its workspace and a copy\'s first run, and dropCopiedTranscript by the short id only, never the dir (#587)', () => {
   const worker = { id: 'a1b2c3d4-9', status: 'working' as const, runId: 'b1b2c3d4-9' };
   assert.equal(describeEffect({ type: 'spawnSession', worker, activity: LOCAL_HIVE, sessionId: 'c1b2c3d4-9', continues: false, copy: { from: 'd1b2c3d4-9' } }),
