@@ -8,6 +8,7 @@ import { reconcile, refetchIssue, stampReconcile, type RefetchDeps } from './rec
 import { syncAssignees, syncIssueTypes, syncLabels, syncMilestones, syncRepo } from './repo-scopes.js';
 import type { RestGet, RestQuota } from './rest.js';
 import { EMPTY_REPORT, mergeReports, PartialSyncError, SyncStopped, syncScope, type SyncDeps, type SyncReport } from './sync.js';
+import type { ReportRetry } from '../source-errors.js';
 
 export const RECONCILE_EVERY_MS = 24 * 60 * 60 * 1000; // the full listing's spacing (#180): every page of it is a 200, so once a day bounds its cost
 export const REFETCH_COOLDOWN_MS = 10_000; // an issue page opened again within it reads the model, not GitHub
@@ -98,6 +99,7 @@ export interface ReadModelLoopDeps {
   notify(repository: string, kinds: SyncKind[]): void; // the readModel event
   log: Pick<Logger, 'error' | 'warn' | 'debug'>;
   now?: () => Date;
+  reportRetry?: ReportRetry; // #812: a call the source rate limited reports its retry here; #824's Jira round is the first caller, until then optional
 }
 
 export interface ReadModelLoop {

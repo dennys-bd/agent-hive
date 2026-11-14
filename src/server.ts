@@ -81,6 +81,7 @@ import { accessFor, type ReadAccess } from './read-model/access.js';
 import type { ReadModel, SyncKind } from './read-model/db.js';
 import type { ItemStore } from './read-model/items.js';
 import type { UsageStore } from './usage-store.js';
+import { isRateLimited, type ReportRetry } from './source-errors.js';
 import { createReadModelLoop, readModelEvent, type RefetchOutcome } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
@@ -219,6 +220,7 @@ export interface ServerDeps {
 export interface HiveServer {
   dispatch(event: HiveEvent): Promise<Effect[]>;
   poll(names?: string[], manual?: string[]): Promise<void>; // every named source (all by default), in parallel (#180); manual: items born with auto off (#846)
+  reportRetry: ReportRetry; // #812: a dispatch of sourceBackoff, what every caller of a source outside the poll reports a rate limit through
   boot(saved: State): Promise<void>; // strays killed, then the boot reducer
   refreshPlanLimits(replace?: boolean, agents?: readonly AgentId[]): Promise<string | undefined>; // the failure's reason, undefined when read (or nothing to read); agents: only these (#223)
   listen(port: number | undefined): Promise<number>; // tried first; taken, or undefined, the OS picks one (#466)
@@ -502,6 +504,16 @@ export function createServer(deps: ServerDeps): HiveServer {
     await dispatch({ type: 'error', message });
   }
 
+  // #812 decision 4: the one entry a source's rate limit is reported through: the poll, the effects, the write routes and the read model loop
+  async function reportRetry(source: string, until: string): Promise<void> {
+    await dispatch({ type: 'sourceBackoff', source, until });
+  }
+
+  // #812 decisions 8, 9: a call the source rate limited reports its retry first; the caller then fails exactly as it always has
+  async function retryOf(source: string, err: unknown): Promise<void> {
+    if (isRateLimited(err)) await reportRetry(source, err.retryAt);
+  }
+
   // Fires an event's effects without making the caller wait on them (#476): dispatch reduces and assigns live.state
   // synchronously before its first await, so the state this event produces is already there once this call returns; only the
   // effects (deleteActivity, sourceAction, spawn) that reduction can emit run in the background. Each effect already reports its own
@@ -515,14 +527,15 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function runEffect(effect: Effect, runtime: Runtime, size?: TerminalSize): Promise<void> {
     switch (effect.type) {
       case 'setColumn': {
-        const source = runtime.sources.get(itemSource(effect.itemId) ?? '');
+        const name = itemSource(effect.itemId) ?? '';
+        const source = runtime.sources.get(name);
         if (!source) { // the source was removed in Settings (#180): nothing to write to
           log.info(`${describeEffect(effect)} dropped: no source`);
           return;
         }
         await wiring.sourceAction(live?.state, effect.itemId, 'move', source.setColumn(effect.itemId, effect.column)) // source.action (#742)
           .then(() => log.info(`${describeEffect(effect)} ok`))
-          .catch((err) => fail(`source.setColumn(${effect.column})`, err));
+          .catch(async (err) => { await retryOf(name, err); await fail(`source.setColumn(${effect.column})`, err); });
         return;
       }
       case 'sourceAction':
@@ -692,6 +705,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     try {
       await wiring.sourceAction(live?.state, effect.taskId, effect.action.type, source.apply(effect.itemId, effect.action, url)); // source.action (#742)
     } catch (err) {
+      await retryOf(name, err);
       await fail(`source.apply(${effect.action.type})`, err);
       await dispatch({ type: 'sourceActionFailed', taskId: effect.taskId, message: errorMessage(err), leaving: isLeaving(effect.action) });
       return;
@@ -755,6 +769,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       if (isStale(runtime)) return;
       const message = errorMessage(err);
       log.error(`source ${name}: ${message}`);
+      await retryOf(name, err); // #812 decision 9: the wait, then the error beside it
       await dispatch({ type: 'pollFailed', source: name, message });
     }
     if (!isStale(runtime)) await refreshQuota(name, source); // success or failure: the reset time matters most when the limit just hit
@@ -1325,7 +1340,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
   const readLoop = deps.readModel && createReadModelLoop({
-    db: deps.readModel, log, notify: notifyReadModel, access: readAccess,
+    db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
   });
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
@@ -1513,6 +1528,6 @@ export function createServer(deps: ServerDeps): HiveServer {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 
-  return { dispatch, poll, boot, refreshPlanLimits, listen, close, getState: () => live?.state, notifyReadModel,
+  return { dispatch, poll, reportRetry, boot, refreshPlanLimits, listen, close, getState: () => live?.state, notifyReadModel,
     refetchIssue: (repository: string, number: number) => readLoop?.refetch(repository, number) ?? Promise.resolve<RefetchOutcome>('skipped') };
 }
