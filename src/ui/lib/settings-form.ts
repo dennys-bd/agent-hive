@@ -44,6 +44,7 @@ export interface SourceDraft {
   filter: FilterRule[]; // #245: the rules as edited; one may have no values yet, which validateSettings refuses before a save
   taskProps: SourceTaskPropsDraft; // #688: the defaults and the rules as edited
   epics: EpicsMode; epicFollows: EpicFollows; // #30
+  epicDeleteActivity: boolean; // #856
   switchAt: string; // #30: a stage draft's id, '' = the default (switchAtStage); sent by name
 }
 export interface SettingsDraft {
@@ -104,6 +105,7 @@ export const emptySource = (workspace = '', flowId = ''): SourceDraft => ({
 const sourceDraft = (b: SourceConfig): SourceDraft => ({
   ...emptySource(), name: b.name, savedName: b.name, qualifyId: b.qualifyId, prefix: b.prefix ?? '', type: b.type,
   owner: b.owner, number: String(b.number), repository: b.repository ?? '', filter: b.filter, epics: b.epics, epicFollows: b.epicFollows,
+  epicDeleteActivity: b.epicDeleteActivity,
 });
 
 // #846: the saved name as its row's id; hive, or a name no row has, stays as written for createInDraftProblem to name
@@ -285,7 +287,7 @@ export function sourceFrom(row: SourceDraft, scope: FlowScope): SourceConfig {
   const key = { name: row.name.trim(), qualifyId: row.qualifyId, ...optional('prefix', row.prefix) };
   return {
     ...key, type: 'github', owner: row.owner.trim(), number: Number(row.number), ...optional('repository', row.repository), filter: row.filter, taskProps: taskPropsFrom(row.taskProps, scope),
-    epics: row.epics, epicFollows: row.epicFollows, switchAt: switchAtName(row.switchAt, scope.stages),
+    epics: row.epics, epicFollows: row.epicFollows, epicDeleteActivity: row.epicDeleteActivity, switchAt: switchAtName(row.switchAt, scope.stages),
   };
 }
 

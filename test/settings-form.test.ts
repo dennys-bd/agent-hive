@@ -15,7 +15,7 @@ import { mainFlows } from './fixtures/main-flow.js';
 
 // #30: not a new source's keys, so draftFrom visibly reads them; switchAt on STAGES' second stage
 const sentOf = (body: SettingsBody) => flatten(body.flows ?? []);
-const EPICS = { epics: 'hide', epicFollows: 'ahead', switchAt: 'dev' } as const;
+const EPICS = { epics: 'hide', epicFollows: 'ahead', switchAt: 'dev', epicDeleteActivity: false } as const;
 
 // A saved run command (#300), two env entries so the draft's lines keep their order
 const FRONT_LINE = 'pnpm run dev -- --port $PORT';
@@ -67,7 +67,7 @@ const CONFIG: Config = {
   reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
 };
 const withSources = (sources: SourceConfig[]): Config => ({ ...CONFIG, comb: { ...CONFIG.comb, sources } });
-const GH_ROW = { name: 'work', savedName: 'work', qualifyId: false, prefix: '', type: 'github', owner: 'acme', number: '6', repository: '', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'hide', epicFollows: 'ahead', switchAt: '' };
+const GH_ROW = { name: 'work', savedName: 'work', qualifyId: false, prefix: '', type: 'github', owner: 'acme', number: '6', repository: '', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'hide', epicFollows: 'ahead', epicDeleteActivity: false, switchAt: '' };
 const info = (config?: Config, configured = true): SettingsInfo => ({ configured, home: '/home', config, language: config?.language ?? 'en', agents: [{ agent: 'claude', available: true }] });
 // id is generated per row (React key material, never sent to the server): every literal comparison strips it out.
 // #877: a stage draft's judge row carries a React id of its own
@@ -215,7 +215,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
   const row: SourceDraft = { ...emptySource('hive', blank.flows[0].id), name: 'notes', number: '7' };
   const bare = toSettingsBody({ ...blank, sources: [row], stages: [{ ...emptyStage(blank.flows[0].id), name: 'fila', from: { [row.id]: ['Ready'] } }], rules: [{ ...emptyRule('day'), percent: '80', kind: 'signal', value: 'red' }] });
   assert.deepEqual(bare.commandSemaphores, [], 'no config: none, always sent (#796)');
-  assert.deepEqual(bare.sources, [{ name: 'notes', qualifyId: false, type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }]);
+  assert.deepEqual(bare.sources, [{ name: 'notes', qualifyId: false, type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' }]);
   assert.deepEqual(sentOf(bare).stages, [{ name: 'fila', from: { notes: ['Ready'] } }], 'session=new, empty model / onStart / prompt stay absent');
   assert.deepEqual(bare.usageRules, [{ source: 'day', percent: 80, signal: 'red' }], 'the consequence list folds back into keys; the absent one stays absent');
   assert.deepEqual(bare.budget, {});
@@ -252,6 +252,13 @@ test('the task filter rules round-trip: the row holds the saved rules, the body 
   assert.deepEqual(row.filter, rules);
   assert.deepEqual(toSettingsBody(draft).sources, filtered.comb.sources, 'an untouched form saves the rules it loaded');
   assert.deepEqual(emptySource().filter, [], 'a new row starts with no rule');
+});
+
+test('a source row carries epicDeleteActivity from the config to the body; a new row starts off (#856)', () => {
+  assert.equal(emptySource().epicDeleteActivity, false);
+  const saved = draftFrom(info(withSources([{ ...CONFIG.comb.sources[0], epicDeleteActivity: true }])));
+  assert.equal(saved.sources[0].epicDeleteActivity, true);
+  assert.equal(toSettingsBody(saved).sources?.[0].epicDeleteActivity, true);
 });
 
 test('each source row carries its epics keys (#30): switchAt loaded as its stage draft id and sent by name; a rename carries it, a removal falls back to Build, else the first stage; a new row gets show, aheadThenBehind and the default', () => {
@@ -399,7 +406,7 @@ test('source rows: a valid name (not "local" or "hive"), unique, a prefix like t
   const [work] = valid.sources;
   const stage = { ...emptyStage(valid.flows[0].id), name: 'dev', from: { [work.id]: ['Ready'], [notes.id]: ['todo'] }, onStart: { [notes.id]: [{ type: 'move' as const, column: 'doing' }] } };
   const body = toSettingsBody({ ...valid, sources: [work, notes], stages: [stage] });
-  assert.deepEqual(body.sources?.[1], { name: 'notes', qualifyId: true, prefix: 'N', type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'dev' });
+  assert.deepEqual(body.sources?.[1], { name: 'notes', qualifyId: true, prefix: 'N', type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'dev' });
   assert.deepEqual(sentOf(body).stages[0], { name: 'dev', from: { work: ['Ready'], notes: ['todo'] }, onStart: { notes: [{ type: 'move', column: 'doing' }] } }, 'no entry, no key');
   assert.deepEqual(sentOf(toSettingsBody({ ...valid, sources: [notes], stages: [stage] })).stages[0].from, { notes: ['todo'] }, 'a removed row\'s entries go with it');
   assert.deepEqual(toSettingsBody({ ...valid, sources: [notes] }).auth, { github: 'api' }, 'a GitHub source sends auth');

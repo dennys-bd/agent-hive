@@ -424,7 +424,7 @@ test('canMoveToStage and canRemoveCreated read every worker of the task (#164, #
 
 test('canDismissError is canMoveToStage without its epic clause: an idle epic passes, a held or leaving task does not (#354)', () => {
   const plain = task(1, DEV);
-  const epic: WithWork = { ...plain, item: { ...plain.item, epic: { follows: 'behind', switchAt: 'done' } } };
+  const epic: WithWork = { ...plain, item: { ...plain.item, epic: { follows: 'behind', switchAt: 'done', deleteActivity: false } } };
   assert.deepEqual([canMoveToStage(epic, runsOf([])), canDismissError(epic, runsOf([]))], [false, true], 'an epic: its refused end action is dismissable (#31)');
   assert.deepEqual([canMoveToStage(plain, runsOf([])), canDismissError(plain, runsOf([]))], [true, true]);
   const held = runsFor([{ ...plain, workerId: 's1' }]);

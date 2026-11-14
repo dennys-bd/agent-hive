@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import type { SourceConfig } from '../../src/types';
 import { type CreateTargets, createTargetsOf, destinations, preselect, repositoryLabel } from '@/lib/create-targets';
 
-const CONFIG: SourceConfig = { name: 'x', qualifyId: false, type: 'github', owner: 'me', number: 1, filter: [], taskProps: { defaults: { auto: true, entry: null }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
+const CONFIG: SourceConfig = { name: 'x', qualifyId: false, type: 'github', owner: 'me', number: 1, filter: [], taskProps: { defaults: { auto: true, entry: null }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' };
 
 test('createTargetsOf keeps every source with a repository, with its type; destinations puts the default first and lists hive only while it is on (#846, #893)', () => {
   const configs: SourceConfig[] = [{ ...CONFIG, name: 'roadmap', repository: 'me/site' }, { ...CONFIG, name: 'bare' }];

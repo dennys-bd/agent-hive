@@ -31,7 +31,7 @@ test('in the flow, tirar do fluxo follows mover para etapa; disabled with its re
   expect(leave().previousElementSibling).toHaveTextContent(/^mover para etapa/);
   expect(leave()).toHaveAttribute('data-disabled');
   expect(within(leave()).getByText('um worker ou sessão está executando nessa tarefa')).toHaveClass('text-muted-foreground', 'text-xs');
-  rerender(view({ ...task(), item: { ...task().item, epic: { follows: 'behind', switchAt: 'dev' } } }));
+  rerender(view({ ...task(), item: { ...task().item, epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } } }));
   expect(within(leave()).getByText('um epic segue as etapas das filhas')).toBeInTheDocument();
   rerender(view(task({ leaving: true })));
   expect(within(leave()).getByText('uma ação na source está em andamento')).toBeInTheDocument();

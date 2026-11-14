@@ -4,21 +4,22 @@ import { EPIC_FOLLOWS, EPICS_MODES, type SourceConfig, type Stage } from './type
 // written out: config.ts calls this file, so importing it back would make the two import each other.
 const FILE = 'hive.config.json';
 
-export type SourceEpics = Pick<SourceConfig, 'epics' | 'epicFollows' | 'switchAt'>;
+export type SourceEpics = Pick<SourceConfig, 'epics' | 'epicFollows' | 'switchAt' | 'epicDeleteActivity'>;
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], field: string): T {
   if (!allowed.includes(value as T)) throw new Error(`${FILE}: "${field}" must be one of: ${allowed.join(', ')}`);
   return value as T;
 }
 
-/** The three keys, required whatever the mode (#30): one message for missing and unknown. switchAt is judged against the stages by
- * requireSwitchAt, where they are known. */
+/** The four keys, required whatever the mode (#30, #856's epicDeleteActivity): one message for missing and unknown. switchAt is judged
+ * against the stages by requireSwitchAt, where they are known. */
 export function parseSourceEpics(raw: Record<string, unknown>, field: string): SourceEpics {
   const epics = oneOf(raw.epics, EPICS_MODES, `${field}.epics`);
   const epicFollows = oneOf(raw.epicFollows, EPIC_FOLLOWS, `${field}.epicFollows`);
   if (raw.switchAt === undefined) throw new Error(`${FILE}: "${field}.switchAt" is required`);
   if (typeof raw.switchAt !== 'string' || raw.switchAt === '') throw new Error(`${FILE}: "${field}.switchAt" must be a non-empty string`);
-  return { epics, epicFollows, switchAt: raw.switchAt };
+  if (typeof raw.epicDeleteActivity !== 'boolean') throw new Error(`${FILE}: "${field}.epicDeleteActivity" must be a boolean`); // #856
+  return { epics, epicFollows, switchAt: raw.switchAt, epicDeleteActivity: raw.epicDeleteActivity };
 }
 
 /** Every source's switchAt names a stage of the flow (#30). Stage names are unique and compared exactly; only GitHub has sources today, so

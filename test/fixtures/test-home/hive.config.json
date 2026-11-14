@@ -13,7 +13,7 @@
         "number": 0,
         "filter": [],
         "taskProps": { "defaults": { "workspace": "agent-hive", "auto": true, "entry": { "flow": "main" } }, "rules": [] },
-        "epics": "show", "epicFollows": "aheadThenBehind", "switchAt": "Dev",
+        "epics": "show", "epicFollows": "aheadThenBehind", "switchAt": "Dev", "epicDeleteActivity": false,
         "qualifyId": false
       }
     ],

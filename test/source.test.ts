@@ -319,7 +319,9 @@ test('epics: show stamps an issue with sub-issues as an epic carrying the source
   const epic = { ...item(1), content: { ...item(1).content, subIssuesSummary: { total: 2 } } };
   const read = async (spec: SourceSpec) => createSource(spec, { gql: fakeGql({ items: page([epic, item(2)]), relations: {} }).gql }).listItems();
   const [shown, leaf] = (await read(config)).map((c) => c.item);
-  assert.deepEqual(shown.epic, { follows: EPICS.epicFollows, switchAt: EPICS.switchAt }, 'show is what combConfig gives a source');
+  assert.deepEqual(shown.epic, { follows: EPICS.epicFollows, switchAt: EPICS.switchAt, deleteActivity: EPICS.epicDeleteActivity }, 'show is what combConfig gives a source');
+  const [deleting] = (await read(specOf({ source: { ...GITHUB_SOURCE, ...EPICS, epicDeleteActivity: true } }))).map((c) => c.item);
+  assert.equal(deleting.epic?.deleteActivity, true, 'the source\'s epicDeleteActivity travels on the stamp (#856)');
   assert.ok(!('epic' in leaf), 'a leaf is no epic');
   assert.ok((await read(ignored)).every((c) => !('epic' in c.item)), 'ignore: a regular task');
   assert.deepEqual((await read(hidden)).map((c) => [c.item.id, 'epic' in c.item]), [['2', false]], 'hide: the epic is gone');

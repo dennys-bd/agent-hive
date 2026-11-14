@@ -87,7 +87,7 @@ test('startMode never offers Restart on a checkout task: it would reset the user
 
 test('startMode is none for a show epic in any stage, run before or not: it never runs (#31)', () => {
   const state = { stages, workers: [] };
-  const item = { ...task('spec').item, children: ['board:2'], epic: { follows: 'behind' as const, switchAt: 'dev' } };
+  const item = { ...task('spec').item, children: ['board:2'], epic: { follows: 'behind' as const, switchAt: 'dev', deleteActivity: false } };
   for (const c of [task('spec', { item }), ran('spec', { item, stopped: true }), task('done', { item })]) assert.equal(startMode(c, state), 'none', c.stage);
 });
 

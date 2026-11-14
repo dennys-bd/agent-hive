@@ -923,7 +923,7 @@ test('blockedMessage names the task\'s own blockers, then each inherited one wit
 
 test('POST /tasks/:id/start is 409 for a show epic: it never runs (#31)', async (t) => {
   const { base, server, workers } = await start(t); // 1 worker, I1 working
-  const epic = { itemId: 'board:I2', source: 'board', id: '2', title: 'epic', body: '', url: 'https://github.com/acme/r/issues/2', epic: { follows: 'behind' as const, switchAt: 'fila' } };
+  const epic = { itemId: 'board:I2', source: 'board', id: '2', title: 'epic', body: '', url: 'https://github.com/acme/r/issues/2', epic: { follows: 'behind' as const, switchAt: 'fila', deleteActivity: false } };
   await server.dispatch({ type: 'poll', source: 'board', items: [{ item: { itemId: 'board:I1', source: 'board', id: '1', title: 'from Ready', body: '', url: 'https://github.com/acme/r/issues/1' }, column: 'Ready' }, { item: epic, column: 'Ready' }] });
   const refused = await postJson(`${base}/tasks/board:I2/start`);
   assert.equal(refused.status, 409);

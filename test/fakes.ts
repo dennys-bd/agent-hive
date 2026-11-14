@@ -174,7 +174,7 @@ export const FIXED: SourceTaskProps = { defaults: { workspace: 'hive', auto: tru
 export const sourceEntry = (fields: Record<string, unknown>): Record<string, unknown> => ({ name: SOURCE, qualifyId: false, taskProps: FIXED, ...fields });
 /** The epics keys every GitHub source fixture carries (#30): a new source's mode and follows, switchAt on STAGES' one stage. combConfig gives
  * them to every GitHub entry, switchAt on the fixture's own first stage; a key the entry sets wins, undefined included. */
-export const EPICS = { epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' } as const;
+export const EPICS = { epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila', epicDeleteActivity: false } as const;
 /** The GitHub source every setup body fixture sends. */
 export const GITHUB_ENTRY: SourceConfig = { name: SOURCE, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
 

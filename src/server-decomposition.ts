@@ -82,7 +82,7 @@ const githubSources = (config: Pick<Config, 'comb'>): GithubSourceConfig[] => co
 // value, so nothing flips. Under show and hide the goal never runs as a task; under ignore, or off any GitHub source of the Comb, none
 function epicOf(config: Pick<Config, 'comb'>, task: Task): Item['epic'] {
   const source = githubSources(config).find((s) => s.name === task.item.source);
-  return source === undefined || source.epics === 'ignore' ? undefined : { follows: source.epicFollows, switchAt: source.switchAt };
+  return source === undefined || source.epics === 'ignore' ? undefined : { follows: source.epicFollows, switchAt: source.switchAt, deleteActivity: source.epicDeleteActivity };
 }
 
 // The file the result names, wherever it is (#936: a docsRepo outside the worktree included), resolved as the file routes resolve it (#258,

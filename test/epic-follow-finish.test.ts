@@ -21,7 +21,7 @@ const TO_DONE: Transition = { from: 'review', to: 'done', when: 'done', sources:
 const node = (id: string, extra: Partial<Item> = {}): Item => ({ itemId: `board:${id}`, id, title: id, body: '', url: '', source: 'board', ...extra });
 const child = (id: string, stage: string, parent = 'board:E'): Task => ({ item: node(id, { parent }), stage, boardColumn: COLUMN[stage], auto: true });
 const epic = (stage: string, children: string[], extra: Partial<Item> = {}): Task => ({
-  item: node('E', { children: children.map((id) => `board:${id}`), epic: { follows: 'behind', switchAt: 'dev' }, ...extra }), stage, boardColumn: COLUMN[stage], auto: true,
+  item: node('E', { children: children.map((id) => `board:${id}`), epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false }, ...extra }), stage, boardColumn: COLUMN[stage], auto: true,
 });
 const at = (tasks: Task[], transitions: Transition[] = [TO_DONE]): State =>
   ({ ...initialState(0), workspaces: ['hive'], syncs: { board: {} }, ...flowed(FLOW, transitions), tasks });
@@ -81,7 +81,7 @@ test('a local epic and one already in the last stage write no close (#843)', () 
 });
 
 test('a parent epic in Done whose child epic left the Hive, listed in its closedChildren, stays in Done (#843)', () => {
-  const parent: Task = { item: node('R', { children: ['board:E'], closedChildren: ['board:E'], epic: { follows: 'behind', switchAt: 'dev' } }), stage: 'done', boardColumn: 'Done', auto: true };
+  const parent: Task = { item: node('R', { children: ['board:E'], closedChildren: ['board:E'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } }), stage: 'done', boardColumn: 'Done', auto: true };
   const before = at([parent]);
   const { state, effects } = followEpics(before);
   assert.equal(state.tasks.find((t) => t.item.itemId === 'board:R')?.stage, 'done');

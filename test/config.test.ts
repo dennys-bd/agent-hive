@@ -147,6 +147,14 @@ test('parseConfig reads no terminal key: a file that still holds one parses as i
   assert.deepEqual(leftover, parseConfig(GITHUB));
 });
 
+test('a source requires epicDeleteActivity as a boolean, naming the field; a valid one round-trips (#856)', () => {
+  const source = (patch: Record<string, unknown>) => () => parseConfig(github({ source: { ...GITHUB_SOURCE, ...patch } }));
+  const message = 'hive.config.json: "comb.sources[0].epicDeleteActivity" must be a boolean';
+  assert.throws(source({ epicDeleteActivity: undefined }), { message }, 'missing');
+  assert.throws(source({ epicDeleteActivity: 'yes' }), { message }, 'not a boolean');
+  assert.equal(parseConfig(github({ source: { ...GITHUB_SOURCE, epicDeleteActivity: true } })).comb.sources[0].epicDeleteActivity, true);
+});
+
 test('a GitHub source requires epics, epicFollows and switchAt, naming the field; an unknown value is refused (#30)', () => {
   const source = (patch: Record<string, unknown>) => () => parseConfig(github({ source: { ...GITHUB_SOURCE, ...patch } }));
   const missing: [string, string][] = [

@@ -69,7 +69,7 @@ test('a task outside the flow: abrir to its session while one is live, abrir to 
   expect(taskAction(stopped, state(stopped, [], { activityRecords: records }))).toBe('details'); // /continue refuses a stageless task
   expect(taskAction(stageless(), state(stageless()))).toBe('start');
   expect(taskAction(task({ stopped: true }), state(task({ stopped: true }), [], { activityRecords: records }))).toBe('continue');
-  const epic = stageless({ item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  const epic = stageless({ item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } } });
   expect(taskAction(epic, state(epic))).toBeUndefined(); // a show epic never runs
   const leaving = stageless({ leaving: true });
   expect(taskAction(leaving, state(leaving))).toBeUndefined();
@@ -189,7 +189,7 @@ test('a task held by an ancestor shows its own blockers, then each inherited one
 
 test('an epic hides the ⊘ line when its blockers are only its children, and names only the others when there are (#54)', () => {
   const child = (n: string): Task => ({ ...task(), item: { ...task().item, itemId: `C${n}`, id: n, title: `Child ${n}` } });
-  const epic = (blockedBy: string[]): Task => task({ item: { ...task().item, blockedBy, children: ['C2', 'C3'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  const epic = (blockedBy: string[]): Task => task({ item: { ...task().item, blockedBy, children: ['C2', 'C3'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } } });
   const withChildren = (e: Task): State => ({ ...state(e), tasks: [e, child('2'), child('3')] });
   const { rerender } = render(<Flow state={withChildren(epic(['2', '3']))} flow={firstFlow(withChildren(epic(['2', '3'])))} />);
   expect(within(tile()).queryByText(/⊘/)).not.toBeInTheDocument();
@@ -422,7 +422,7 @@ test('a task with an error shows ✕ dispensar erro after its status, which post
   expect(onOpen).not.toHaveBeenCalled();
   rerender(<Flow state={state(task())} flow={firstFlow(state(task()))} onOpen={onOpen} />);
   expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
-  const epic = task({ error: 'archive refused', item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  const epic = task({ error: 'archive refused', item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } } });
   rerender(<Flow state={state(epic)} flow={firstFlow(state(epic))} onOpen={onOpen} />);
   expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
   rerender(<Flow state={state(task({ error: 'pty: posix_spawnp failed.', workerId: 's1' }), [working()])} flow={firstFlow(state(task({ error: 'pty: posix_spawnp failed.', workerId: 's1' }), [working()]))} onOpen={onOpen} />);
@@ -433,7 +433,7 @@ test('a task with an error shows ✕ dispensar erro after its status, which post
 });
 
 test('a show epic reads aguarda filhas · done/total in muted, before any other state, with no button and no auto badge, in both languages (#31)', () => {
-  const epic = task({ item: { ...task().item, children: ['C1', 'C2', 'C3'], closedChildren: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  const epic = task({ item: { ...task().item, children: ['C1', 'C2', 'C3'], closedChildren: ['C1'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } } });
   const { rerender } = render(<Flow state={state(epic)} flow={firstFlow(state(epic))} />);
   expect(within(tile()).getByText('aguarda filhas · 1/3')).toHaveClass('text-muted-foreground');
   expect(within(tile()).queryByRole('button', { name: /^(iniciar|abrir|continuar|excluir|aprovar)$/ })).not.toBeInTheDocument();
@@ -445,7 +445,7 @@ test('a show epic reads aguarda filhas · done/total in muted, before any other 
 });
 
 test('a show epic whose end action was refused shows its error in destructive instead of the wait (#31)', () => {
-  const epic = task({ error: 'archive refused', item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  const epic = task({ error: 'archive refused', item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } } });
   render(<Flow state={state(epic)} flow={firstFlow(state(epic))} />);
   expect(within(tile()).queryByText(/aguarda filhas/)).not.toBeInTheDocument();
   expect(tile()).toHaveClass('border-destructive');

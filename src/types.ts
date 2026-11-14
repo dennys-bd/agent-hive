@@ -254,7 +254,7 @@ export interface SourceTaskProps { defaults: TaskProps; rules: TaskRule[] }
 export type SourceFields = {
   type: 'github'; owner: string; number: number; filter: TaskFilter; taskProps: SourceTaskProps;
   repository?: string; // #846: owner/name new issues are created in; absent = the source is no destination
-  epics: EpicsMode; epicFollows: EpicFollows; // #30: required whatever the mode
+  epics: EpicsMode; epicFollows: EpicFollows; epicDeleteActivity: boolean; // #30, #856: required whatever the mode
   switchAt: string; // #30: a stage name of comb.stages, checked by the parser
 };
 
@@ -307,7 +307,7 @@ export interface Item {
   parent?: string; // #28: the parent's itemId, from the sub-issues of the listed items; absent on a task created in the Hive and on an issue with no parent on the Project
   children?: string[]; // #28: the itemIds of the sub-issues on the Project, any column, in sub-issue order; absent or empty = a leaf
   closedChildren?: string[]; // #28: those of `children` closed on GitHub: what counts a child that left the Hive as done
-  epic?: { follows: EpicFollows; switchAt: string }; // #31: stamped by the GitHub adapter under epics: show on an issue with sub-issues: it never runs and its stage follows its children; absent otherwise
+  epic?: { follows: EpicFollows; switchAt: string; deleteActivity: boolean }; // #31: stamped by the GitHub adapter under epics: show on an issue with sub-issues: it never runs and its stage follows its children; absent otherwise. deleteActivity: the source's epicDeleteActivity (#856), read by the epic pass so the reducer needs no source lookup
   blockers?: ItemBlockers; // #56: the relations the UI shows and edits, both directions, sub-issues never; absent = none read. Not the start gate: that is blockedBy
 }
 
@@ -822,13 +822,13 @@ export type EpicsMode = (typeof EPICS_MODES)[number];
 /** Which child an epic's stage follows (#30, computed by #31): the furthest behind, the furthest ahead, or ahead up to switchAt and behind after. */
 export const EPIC_FOLLOWS = ['behind', 'ahead', 'aheadThenBehind'] as const;
 export type EpicFollows = (typeof EPIC_FOLLOWS)[number];
-/** A new source's epics keys (#27, #30). The parser itself has no default. */
-export const NEW_SOURCE_EPICS: { epics: EpicsMode; epicFollows: EpicFollows } = { epics: 'show', epicFollows: 'aheadThenBehind' };
+/** A new source's epics keys (#27, #30), the epic's activity delete off (#856). The parser itself has no default. */
+export const NEW_SOURCE_EPICS: Pick<SourceConfig, 'epics' | 'epicFollows' | 'epicDeleteActivity'> = { epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false };
 /** The stage a new source switches at, else the flow's first (#30). */
 export const SWITCH_AT_DEFAULT = 'Build';
 /** The epic rule a decomposition's hive write stamps on a hive goal (#782, #687 decision 5): the defaults a new GitHub source gets. A flow
  * with no Build stage falls back to behind, by epicStage's own rule, so it holds for every flow. */
-export const HIVE_EPIC: NonNullable<Item['epic']> = { follows: NEW_SOURCE_EPICS.epicFollows, switchAt: SWITCH_AT_DEFAULT };
+export const HIVE_EPIC: NonNullable<Item['epic']> = { follows: NEW_SOURCE_EPICS.epicFollows, switchAt: SWITCH_AT_DEFAULT, deleteActivity: false };
 
 /** The coding agents a stage can run (#516): ids only, their per-agent facts live in agents.ts. #101 adds codex here and there. */
 export const AGENT_IDS = ['claude', 'codex'] as const; // #927: codex runs flow stages; its free sessions are #931

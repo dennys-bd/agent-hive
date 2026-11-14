@@ -38,7 +38,7 @@ test('placesAgain holds only for a new task: not started, not placed by hand, no
   for (const extra of [{ placedByHand: true }, { created: true }, { orphan: true }, { leaving: true }] as const) {
     assert.equal(placesAgain({ ...TASK, ...extra }, empty), false, Object.keys(extra)[0]);
   }
-  assert.equal(placesAgain({ ...TASK, item: { ...TASK.item, epic: { follows: 'behind', switchAt: 'Build' } } }, empty), false, 'an epic follows its children');
+  assert.equal(placesAgain({ ...TASK, item: { ...TASK.item, epic: { follows: 'behind', switchAt: 'Build', deleteActivity: false } } }, empty), false, 'an epic follows its children');
 });
 
 test('placed: another stage enters it, null takes it out of the flow, undefined and the same stage leave it as it is (#670)', () => {
