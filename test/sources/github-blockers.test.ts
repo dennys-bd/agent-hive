@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BadBlockerRefError, BlockerRefNotFoundError, findBlockers, relateItem, RelationRereadError, SelfBlockerError } from '../../src/sources/github-blockers.js';
+import { findBlockers, relateItem } from '../../src/sources/github-blockers.js';
+import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from '../../src/blocker-errors.js';
 import type { FieldsContext } from '../../src/sources/github-fields.js';
 import { ADD_BLOCKED_BY, ISSUE_ID, ITEM_FIELDS, relationsQuery, REMOVE_BLOCKED_BY, SEARCH_ISSUES, type GhItemFieldsNode } from '../../src/sources/github-queries.js';
 import { parseConfig } from '../../src/config.js';
@@ -80,6 +81,7 @@ test('relateItem sends nothing for a relation already as asked, an add that exis
 test('relateItem refuses a bad ref, an issue that does not exist and the item itself, before any mutation (#56)', async () => {
   const { gql, calls } = blockerGql([]);
   await assert.rejects(relateItem(ctxOf(gql), 'PVTI_1', change('add', 'blockedBy', 'acme/site12')), BadBlockerRefError);
+  await assert.rejects(relateItem(ctxOf(gql), 'PVTI_1', change('add', 'blockedBy', 'acme/site12')), { message: '"acme/site12" is no ref: write 12, #12, owner/repo#12 or a task id' });
   await assert.rejects(relateItem(ctxOf(gql), 'PVTI_1', change('add', 'blockedBy', 'HIVE-3')), BadBlockerRefError);
   await assert.rejects(relateItem(ctxOf(gql), 'PVTI_1', change('add', 'blockedBy', '99')), BlockerRefNotFoundError);
   await assert.rejects(relateItem(ctxOf(gql), 'PVTI_1', change('add', 'blocking', '#12')), SelfBlockerError);

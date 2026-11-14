@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdir, readFile } from 'node:fs/promises';
+import { join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readsRef, REF_GRAMMARS, TASK_ID } from '../src/blocker-refs.js';
 import { githubRefs } from '../src/sources/github-refs.js';
 
@@ -20,4 +23,14 @@ test('readsRef tries the type\'s grammar, then a task id; with no grammar, a hiv
   assert.deepEqual(['#12', 'acme/r#12', 'HIVE-3', 'foo-12', 'acme/r12', 'pager'].map((text) => readsRef(githubRefs, text)), ['12', 'acme/r#12', 'HIVE-3', 'foo-12', undefined, undefined]);
   assert.deepEqual(['12', '#12', ' HIVE-3 ', 'foo.bar-7'].map((text) => readsRef(undefined, text)), [undefined, undefined, 'HIVE-3', 'foo.bar-7']);
   assert.equal(TASK_ID.test('3-HIVE'), false);
+});
+
+const ROOT = fileURLToPath(new URL('../../', import.meta.url)); // this file runs from dist/test/: the sources are two levels up
+
+test('no file under src/ outside src/sources/ imports src/sources/github-blockers.ts (#810)', async () => {
+  const files = (await readdir(join(ROOT, 'src'), { recursive: true })).map((p) => p.split(sep).join('/'))
+    .filter((p) => /\.tsx?$/.test(p) && !p.startsWith('sources/'));
+  const importers: string[] = [];
+  for (const p of files) if (/github-blockers(\.js)?['"]/.test(await readFile(join(ROOT, 'src', p), 'utf8'))) importers.push(`src/${p}`);
+  assert.deepEqual(importers, []);
 });

@@ -3,7 +3,7 @@ import { ItemNotOnSourceError } from './field-values.js';
 import { blockerProblem, hiveCandidates } from './hive-blockers.js';
 import type { Logger } from './log.js';
 import { backoffAnswer, refusedInBackoff } from './server-project.js';
-import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from './sources/github-blockers.js';
+import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from './blocker-errors.js';
 import { HIVE_SOURCE, itemSource } from './tasks.js';
 import type { BlockerChange, BlockerRef, BlockerWrite, HiveEvent, ItemBlockers, Source, State } from './types.js';
 
@@ -23,17 +23,17 @@ const REF_MAX = 200; // an owner (39), a repository (100), `/`, `#` and a number
 
 const REFUSALS: Record<Refusal, { status: number; error: string }> = {
   unknownItem: { status: HTTP_NOT_FOUND, error: 'no such item on this source' },
-  unknownRef: { status: HTTP_NOT_FOUND, error: 'no such issue or task to relate' },
+  unknownRef: { status: HTTP_NOT_FOUND, error: 'no such item or task to relate' },
   crossSource: { status: HTTP_BAD_REQUEST, error: 'a relation joins two items of the same source' },
   self: { status: HTTP_BAD_REQUEST, error: 'an item cannot block itself' },
   cycle: { status: HTTP_CONFLICT, error: 'the other item is already blocked by this one' },
   refused: { status: HTTP_BAD_GATEWAY, error: 'the source refused the relation' },
-  badRequest: { status: HTTP_BAD_REQUEST, error: 'the body must be { action: add | remove, kind: blockedBy | blocking, ref }, ref an issue (12, #12, owner/repo#12) or a task id' },
+  badRequest: { status: HTTP_BAD_REQUEST, error: 'the body must be { action: add | remove, kind: blockedBy | blocking, ref }' },
 };
 const NO_BLOCKERS: ItemBlockers = { blockedBy: [], blocking: [] };
 // The adapter's refusals that are the request's own, each to its code; anything else is the source's (502)
 const KNOWN: [new (...args: never[]) => Error, Refusal][] = [
-  [BadBlockerRefError, 'badRequest'], [BlockerRefNotFoundError, 'unknownRef'], [SelfBlockerError, 'self'], [ItemNotOnSourceError, 'unknownItem'],
+  [BlockerRefNotFoundError, 'unknownRef'], [SelfBlockerError, 'self'], [ItemNotOnSourceError, 'unknownItem'],
 ];
 
 type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers'>>;
@@ -98,6 +98,8 @@ function failed(deps: RelateDeps, itemId: string, err: unknown): RelateOutcome {
     // Nothing read: refused, so the UI does not show the written relation as gone; a retry is a no-op, relate reads before it writes
     return err.blockers === undefined ? refusalOf('refused') : { blockers: err.blockers };
   }
+  // #810: the adapter's own sentence, which names its type's forms; the route cannot, since it does not know the source's type
+  if (err instanceof BadBlockerRefError) return { refusal: { status: HTTP_BAD_REQUEST, error: err.message, code: BLOCKER_CODES.badRequest } };
   const known = KNOWN.find(([type]) => err instanceof type);
   if (known !== undefined) return refusalOf(known[1]);
   deps.log?.error(`blockers of ${itemId} refused: ${errorMessage(err)}`);

@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { GhToken } from './github-token.js';
 import { gqlFor, loggedGql } from './sources/github-gql.js';
 import { createGithubSource } from './sources/github.js';
-import { RelationRereadError } from './sources/github-blockers.js';
+import { RelationRereadError } from './blocker-errors.js';
 import { citedColumns } from './tasks.js';
 import { parseAuth } from './config.js';
 import { isNetworkError } from './fork.js';

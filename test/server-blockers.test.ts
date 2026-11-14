@@ -5,7 +5,7 @@ import express from 'express';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { ItemNotOnSourceError } from '../src/field-values.js';
 import { canRelateItem, refsOf, registerBlockerRoutes, relateItem } from '../src/server-blockers.js';
-import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from '../src/sources/github-blockers.js';
+import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from '../src/blocker-errors.js';
 import type { BlockerChange, HiveEvent, ItemBlockers, Source, SourceItem, State, Task } from '../src/types.js';
 import { fakeLog } from './fakes.js';
 
@@ -81,7 +81,7 @@ test('a source\'s item goes through relate with its namespaced id; an entry is d
 
 test('the source path refuses with a code and never answers GitHub\'s words, which go to the log; inside the quota backoff it is a 429 (#56)', async (t) => {
   const thrown: Record<string, Error> = {
-    bad: new BadBlockerRefError('x'), gone: new BlockerRefNotFoundError('99'), self: new SelfBlockerError(), other: new ItemNotOnSourceError('PVTI_9'),
+    bad: new BadBlockerRefError('x', '12, #12, owner/repo#12'), gone: new BlockerRefNotFoundError('99'), self: new SelfBlockerError(), other: new ItemNotOnSourceError('PVTI_9'),
     raw: new Error('Resource not accessible by integration'),
   };
   const relate: NonNullable<RelateSource['relate']> = async (_itemId, change) => { throw thrown[change.ref]; };
@@ -181,4 +181,21 @@ test('refsOf reads hive_stop\'s block as the route\'s refs: positive integers an
   assert.deepEqual(refsOf([12, ' #13 ', 'acme/site#14', 'HIVE-2']), ['12', '#13', 'acme/site#14', 'HIVE-2']);
   const bad: (number | string)[][] = [[], [0], [-3], [1.5], [' '], ['x'.repeat(201)], Array.from({ length: 11 }, (_, i) => i + 1)];
   for (const block of bad) assert.equal(refsOf(block), undefined, JSON.stringify(block).slice(0, 40));
+});
+
+test('a source whose refs read ABC-12 gets ABC-12 at relate and its blockers back unchanged; its BadBlockerRefError answers 400 with its own words (#810)', async (t) => {
+  const asked: string[] = [];
+  const ABC: ItemBlockers = { blockedBy: [{ id: 'ABC-12', title: 'T12', state: 'open' }], blocking: [] };
+  const jira: RelateSource = {
+    relate: async (_itemId, change) => {
+      if (change.ref === 'acme/r12') throw new BadBlockerRefError(change.ref, 'ABC-12');
+      asked.push(change.ref);
+      return { blockers: ABC };
+    },
+  };
+  const h = routes(t, { jira });
+  assert.deepEqual(await post(h.base, 'jira', 'jira:J1', add('ABC-12')), [200, { blockers: ABC }]);
+  assert.deepEqual(asked, ['ABC-12']);
+  assert.deepEqual(await post(h.base, 'jira', 'jira:J1', add('acme/r12')), [400, { error: '"acme/r12" is no ref: write ABC-12 or a task id', code: 'blockers.badRequest' }]);
+  assert.deepEqual(h.dispatched, []);
 });
