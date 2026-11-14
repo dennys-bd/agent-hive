@@ -3,10 +3,17 @@
 # on every pty's PATH. It asks the daemon before the real command runs (#798's answers): run, or no answer at all, runs it as typed; run
 # <semaphore> runs it and gives the permit back when it ends; refused tells the agent it is in line and stops; wait (a terminal's) stays in
 # place until its turn (#801). A Hive down or stuck costs at most 2 s, never the command.
+# Windows runs the same shim under Git's sh.exe (#806).
 word=__HIVE_COMMAND__
 language=__HIVE_LANGUAGE__ # the Hive's, rendered on every boot and save (#801): en or pt
+platform=__HIVE_PLATFORM__ # #806: the Hive's process.platform, rendered as the word is; every win32 branch reads it, never uname
 acquire_now= # set only by the wait's r, never taken from the env
-case $0 in */*) self_dir=${0%/*} ;; *) self_dir=. ;; esac
+# On win32 the .cmd twin starts this file as %~dp0<word>, a path with backslashes (#806): cut at either, or the folder is lost
+if [ "$platform" = win32 ]; then
+  case $0 in *[/\\]*) self_dir=${0%[/\\]*} ;; *) self_dir=. ;; esac
+else
+  case $0 in */*) self_dir=${0%/*} ;; *) self_dir=. ;; esac
+fi
 self_dir=$(CDPATH= cd -- "$self_dir" && pwd)
 
 # Every command-shim folder this command has passed through, its own first, in the env of whatever it starts: with two on PATH (a Hive
@@ -14,22 +21,69 @@ self_dir=$(CDPATH= cd -- "$self_dir" && pwd)
 HIVE_COMMAND_SHIM_DIRS=$self_dir${HIVE_COMMAND_SHIM_DIRS:+:$HIVE_COMMAND_SHIM_DIRS}
 export HIVE_COMMAND_SHIM_DIRS
 
+# #806 decision 3: on win32, after the word as given (an MSYS script, or an .exe through MSYS's own suffix), the names PATHEXT's runnable
+# extensions make, in its order, the set namesOf in src/exec-path.ts runs; lowercased, since Windows' file system ignores the case and a
+# test folder elsewhere does not. A .vbs or .js on PATHEXT is nothing sh can start. :-joined, for on_path's IFS
+runnable_exts() (
+  IFS=';'
+  set -f
+  exts=
+  for ext in ${PATHEXT:-.COM;.EXE;.BAT;.CMD}; do
+    case "$ext" in
+      .[Cc][Oo][Mm]) exts=$exts:.com ;;
+      .[Ee][Xx][Ee]) exts=$exts:.exe ;;
+      .[Bb][Aa][Tt]) exts=$exts:.bat ;;
+      .[Cc][Mm][Dd]) exts=$exts:.cmd ;;
+    esac
+  done
+  printf '%s' "${exts#:}"
+)
+exts=
+if [ "$platform" = win32 ]; then exts=$(runnable_exts); fi
+
 # The first regular executable <dir>/<name> on PATH outside those folders that is not this file under another name (a link to the shim
 # elsewhere on PATH would exec itself forever), as the agent shim's real_cli; -f, since the shell's own lookup skips a folder of that name.
-# Copied, not sourced, since a helper would be one more file every shim must find. A subshell, so IFS and set -f stay its own. Builtins only:
-# the word could name any external command.
+# The folders are compared with -ef (#806): on Windows one folder has two spellings (an 8.3 name, another case), and a missed one would
+# run this shim's own .cmd twin. Copied, not sourced, since a helper would be one more file every shim must find. A subshell, so IFS and
+# set -f stay its own. Builtins only: the word could name any external command.
 on_path() (
   IFS=:
   set -f
   for dir in $PATH; do
-    for shims in $HIVE_COMMAND_SHIM_DIRS; do [ "$dir" = "$shims" ] && continue 2; done
-    [ "$dir/$1" -ef "$0" ] && continue
-    [ -f "$dir/$1" ] && [ -x "$dir/$1" ] && { printf '%s\n' "$dir/$1"; exit 0; }
+    for shims in $HIVE_COMMAND_SHIM_DIRS; do [ "$dir" -ef "$shims" ] && continue 2; done
+    for ext in '' $exts; do
+      file=$dir/$1$ext
+      [ "$file" -ef "$0" ] && continue
+      # Windows runs a PATHEXT name by its extension, as findExec takes it on isFile alone; MSYS's noacl mount marks no .bat or .cmd -x
+      [ -f "$file" ] && { [ -n "$ext" ] || [ -x "$file" ]; } && { printf '%s\n' "$file"; exit 0; }
+    done
   done
   exit 1
 )
 
 real=$(on_path "$word") || { echo "$word: not found on PATH" >&2; exit 127; }
+
+# #806 decision 4: cmd.exe expands %…% even in quotes and ends its line at a break, so no quoting carries them to a .cmd or .bat. Refused
+# as cmdRunner in src/exec-path.ts refuses them, by position and never by value (an argument may carry a secret), and never passed on
+# changed, so outside a Hive pty too. Before any acquire, so no permit or place is taken for a command that cannot start. A NUL never
+# reaches an argv; only the message names it. A " too: MSYS escapes it as \" for the C runtime, which cmd.exe does not read, so it would
+# toggle cmd.exe's quoting and let & or | through (the BatBadBut class). 126: found, but cannot run
+refuse_for_cmd() {
+  case "$real" in *.[Cc][Mm][Dd]|*.[Bb][Aa][Tt]) ;; *) return 0 ;; esac
+  cr=$(printf '\r')
+  lf='
+'
+  n=0
+  for arg in "$@"; do
+    n=$((n + 1))
+    case "$arg" in
+      *%*|*\"*|*"$cr"*|*"$lf"*)
+        printf 'hive: %s: cmd.exe cannot pass argument %s (it has %%, ", a line break or NUL)\n' "$word" "$n" >&2
+        exit 126 ;;
+    esac
+  done
+}
+if [ "$platform" = win32 ]; then refuse_for_cmd "$@"; fi
 
 # Not in a Hive pty: as typed
 [ -n "${HIVE_PTY_ID:-}" ] && [ -n "${HIVE_PORT:-}" ] && [ -n "${HIVE_SECRET_FILE:-}" ] || exec "$real" "$@"
@@ -38,14 +92,23 @@ real=$(on_path "$word") || { echo "$word: not found on PATH" >&2; exit 127; }
 # as with no answer
 curl=$(on_path curl) || exec "$real" "$@"
 
+# #806 decision 5: the daemon probes pid with process.kill(pid, 0) to free a permit whose holder died (#798), and an MSYS pid is no Windows
+# pid: on win32 the shell's own Windows pid, $$ when /proc cannot tell it. In braces, so a missing file is no fatal redirection
+shim_pid=$$
+if [ "$platform" = win32 ]; then
+  winpid=
+  { read -r winpid < "/proc/$$/winpid"; } 2>/dev/null
+  case "$winpid" in ''|*[!0-9]*) ;; *) shim_pid=$winpid ;; esac
+fi
+
 # The argv as a form, one arg field per word, this word first: sh cannot JSON-escape an arg, and curl url-encodes each value whole (#932).
-# pid is this shell's, which the daemon probes to free a permit whose holder died (#798). The secret goes as curl's header file, never in an
-# argv (#467), and never through a proxy the env names: the Hive is on loopback. -q first, so no ~/.curlrc (a --trace) ever applies. The
-# function's own positional args become curl's, so the user's stay as typed for the exec below.
+# pid is this shell's (its Windows pid on win32, #806), which the daemon probes to free a permit whose holder died (#798). The secret goes
+# as curl's header file, never in an argv (#467), and never through a proxy the env names: the Hive is on loopback. -q first, so no
+# ~/.curlrc (a --trace) ever applies. The function's own positional args become curl's, so the user's stay as typed for the exec below.
 acquire() {
   for arg in "$@"; do set -- "$@" --data-urlencode "arg=$arg"; shift; done
   "$curl" -q -sf --noproxy '*' -m 2 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/semaphores/acquire" -H "x-hive-pty: $HIVE_PTY_ID" \
-    -H @"$HIVE_SECRET_FILE" --data-urlencode "arg=$word" -d "pid=$$" ${acquire_now:+-d now=true} "$@"
+    -H @"$HIVE_SECRET_FILE" --data-urlencode "arg=$word" -d "pid=$shim_pid" ${acquire_now:+-d now=true} "$@"
 }
 
 # No answer within 2 s, or a non-2xx: as typed. Only the reply's first line counts, read as data and never evaluated
@@ -167,8 +230,10 @@ wait_in_place() {
   # bash puts its own modes back on a Ctrl-Z and never the job's on fg, so a resumed wait sets its own again
   trap '[ -n "$tty_saved" ] && stty -icanon -echo min 0 time 10 2>/dev/null' CONT
   tty_saved=
-  # The key only in the terminal's foreground: from a background job (pnpm test &) stty and dd would stop it on SIGTTOU or SIGTTIN
-  if [ -t 0 ] && in_foreground; then
+  # The key only in the terminal's foreground: from a background job (pnpm test &) stty and dd would stop it on SIGTTOU or SIGTTIN. On
+  # win32 MSYS's ps has no tpgid column, so the check is skipped (#806 decision 11). Known ceiling: a background job in Git's bash may stop
+  # on the read there; the card's run now (#805) still covers a terminal without the key
+  if [ -t 0 ] && { [ "$platform" = win32 ] || in_foreground; }; then
     tty_saved=$(stty -g 2>/dev/null) && stty -icanon -echo min 0 time 10 2>/dev/null || tty_saved=
   fi
   shown=

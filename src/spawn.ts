@@ -112,25 +112,31 @@ export function withoutHiveEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  */
 export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmpDir: string, secretFile: string, platform: NodeJS.Platform, commandShims: string): NodeJS.ProcessEnv {
   const windowsTemp = platform === 'win32' ? { TEMP: tmpDir, TMP: tmpDir } : {};
-  return { ...withoutHiveEnv(base), TMPDIR: tmpDir, ...windowsTemp, ...shimsEnv(base.PATH, ptyId, platform, commandShims), HIVE_PTY_ID: ptyId, HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile };
+  // #800 decision 16, #806 decision 8: Claude Code's Bash tool reads the run's <ptyId>.sh on every OS, a path in the run's own spelling
+  const claudeEnvFile = commandShimsEnvFile(commandShims, ptyId, platform === 'win32' ? win32 : posix);
+  const env = { ...withoutHiveEnv(base), TMPDIR: tmpDir, ...windowsTemp, CLAUDE_ENV_FILE: claudeEnvFile, HIVE_PTY_ID: ptyId, HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile };
+  return shimsFirst(env, commandShims, platform);
 }
 
-// #800, decisions 14 and 16: the command shims first on PATH, and Claude Code's Bash tool told the same through the run's <ptyId>.sh
-// (spawn-internal.ts writes it), since that tool's shell may rebuild PATH. <home>/bin stays off: a worker's bare claude would register a
-// terminal session. Not on win32: Windows brings its own shim in node 5, and its env names the variable Path
-function shimsEnv(path: string | undefined, ptyId: string, platform: NodeJS.Platform, commandShims: string): Record<string, string> {
-  if (platform === 'win32') return {};
-  const full = path === undefined || path === '' ? commandShims : `${commandShims}${posix.delimiter}${path}`;
-  return { PATH: full, CLAUDE_ENV_FILE: commandShimsEnvFile(commandShims, ptyId) };
+const pathDelimiter = (platform: NodeJS.Platform): string => (platform === 'win32' ? win32.delimiter : posix.delimiter);
+
+// #806 decision 6: Windows' env names ignore case and a child of PowerShell has Path, so on win32 the path is written as one PATH key with
+// every other casing dropped: two keys leave a winner Windows does not define, and MSYS converts only PATH for sh -c. Elsewhere Path is a
+// variable of its own
+function withPath(env: NodeJS.ProcessEnv, path: string, platform: NodeJS.Platform): NodeJS.ProcessEnv {
+  const rest = platform === 'win32' ? Object.fromEntries(Object.entries(env).filter(([name]) => name.toUpperCase() !== 'PATH')) : env;
+  return { ...rest, PATH: path };
 }
 
-// #800: launch.env may carry a workspace's own PATH (#738), spread after ptyEnv's; the command shims go back first on the merged env.
-// Not on win32 (node 5), as shimsEnv
+// #800 decision 14: the command shims first on PATH; <home>/bin stays off, since a worker's bare claude would register a terminal session.
+// launch.env may carry a workspace's own PATH (#738), spread after ptyEnv's, so spawn-internal.ts applies this again on the merged env. On
+// win32 the path is read in any case (envValue: the later key, as the spread meant) and always written back as one PATH key (#806)
 export function shimsFirst(env: NodeJS.ProcessEnv, commandShims: string, platform: NodeJS.Platform): NodeJS.ProcessEnv {
-  if (platform === 'win32') return env;
-  const path = env.PATH ?? '';
-  if (path === commandShims || path.startsWith(`${commandShims}${posix.delimiter}`)) return env;
-  return { ...env, PATH: path === '' ? commandShims : `${commandShims}${posix.delimiter}${path}` };
+  const delimiter = pathDelimiter(platform);
+  const path = (platform === 'win32' ? envValue(env, 'PATH') : env.PATH) ?? '';
+  const isFirst = path === commandShims || path.startsWith(`${commandShims}${delimiter}`);
+  if (isFirst && platform !== 'win32') return env;
+  return withPath(env, isFirst ? path : path === '' ? commandShims : `${commandShims}${delimiter}${path}`, platform);
 }
 
 /** What a kept terminal's shell gets on top of ptyEnv (#696): a history file of its own, kept with it until it is forgotten, the command
@@ -141,7 +147,7 @@ export function shimsFirst(env: NodeJS.ProcessEnv, commandShims: string, platfor
 export interface TerminalEnvOptions { platform: NodeJS.Platform; pwsh?: string }
 
 export function terminalEnv(home: string, terminalId: string, path: string, { platform, pwsh }: TerminalEnvOptions): Record<string, string> {
-  const delimiter = platform === 'win32' ? win32.delimiter : posix.delimiter;
+  const delimiter = pathDelimiter(platform);
   const shell: Record<string, string> = platform === 'win32' && pwsh !== undefined ? { HIVE_PWSH: pwsh } : {};
   const front = `${commandShimDir(home)}${delimiter}${shimDir(home)}`; // #800: the command shims, then the agents' shims
   return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? front : `${front}${delimiter}${path}`, HIVE_SHELL_DIR: shellInitDir(home), ...shell };

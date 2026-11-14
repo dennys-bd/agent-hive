@@ -28,14 +28,14 @@ function removeEnvFile(file: string, onError: PtyHandlers['onError']): void {
 }
 
 // #800: the line Claude Code's Bash tool sources (CLAUDE_ENV_FILE, ptyEnv), one file per run, so what a SessionStart hook appends to it
-// stays this run's. Written on every OS: ptyEnv names it only off win32. A leftover of a run with this id is dropped first, so the
+// stays this run's. Written on every OS, where ptyEnv names it (#806). A leftover of a run with this id is dropped first, so the
 // exclusive write makes the file anew with its own mode
 function writeEnvFile(file: string, commandShims: string): void {
   const dir = path.dirname(file);
   mkdirSync(dir, { recursive: true, mode: ENV_DIR_MODE });
   chmodSync(dir, ENV_DIR_MODE); // mkdir's mode applies only to a folder it makes
   rmSync(file, { force: true });
-  writeFileSync(file, claudeEnvLine(commandShims), { mode: ENV_FILE_MODE, flag: 'wx' });
+  writeFileSync(file, claudeEnvLine(commandShims, process.platform), { mode: ENV_FILE_MODE, flag: 'wx' });
 }
 
 // The run in the host through `sh -c ptyCommand`, with `tmp` as its TMPDIR (and TEMP / TMP on win32, #644). A failure is `started` rejecting: the pool reports it as
