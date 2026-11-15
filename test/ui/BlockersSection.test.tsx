@@ -15,7 +15,7 @@ const edit = vi.mocked(editBlocker);
 
 const WORK: SourceConfig = {
   name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [],
-  taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila',
+  taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila', epicDeleteActivity: false,
 };
 // The Dashboard's comb.sources (#810): the section reads its task's source type from them
 const show = (task: Task, state: State) =>

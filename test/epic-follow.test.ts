@@ -30,7 +30,7 @@ const ENDS: Transition = { from: 'done', to: END, when: 'done', sources: { board
 const node = (id: string, extra: Partial<Item> = {}): Item => ({ itemId: `board:${id}`, id, title: id, body: '', url: '', source: 'board', ...extra });
 const child = (id: string, stage: string): Task => ({ item: node(id, { parent: 'board:E' }), stage, boardColumn: COLUMN[stage], auto: true });
 const epic = (stage: string, children: string[], follows: EpicFollows = 'behind', extra: Partial<Item> = {}): Task => ({
-  item: node('E', { children: children.map((id) => `board:${id}`), epic: { follows, switchAt: 'build' }, ...extra }), stage, boardColumn: COLUMN[stage], auto: true,
+  item: node('E', { children: children.map((id) => `board:${id}`), epic: { follows, switchAt: 'build', deleteActivity: false }, ...extra }), stage, boardColumn: COLUMN[stage], auto: true,
 });
 const at = (tasks: Task[], transitions: Transition[] = [], stages: Stage[] = STAGES): State =>
   deepFreeze({ ...initialState(0), workspaces: ['hive'], syncs: { board: {} }, ...flowed(stages, transitions), tasks });
@@ -91,7 +91,7 @@ test('every child done and no done exit to end: the epic moves to the last stage
 });
 
 test('a sub-epic moves before its parent epic in the same pass, so the parent reads it already moved (#31)', () => {
-  const root: Task = { item: node('R', { children: ['board:E'], epic: { follows: 'behind', switchAt: 'build' } }), stage: 'spec', boardColumn: 'Backlog', auto: true };
+  const root: Task = { item: node('R', { children: ['board:E'], epic: { follows: 'behind', switchAt: 'build', deleteActivity: false } }), stage: 'spec', boardColumn: 'Backlog', auto: true };
   const { state } = followEpics(at([root, epic('spec', ['c1'], 'behind', { parent: 'board:R' }), child('c1', 'build')]));
   assert.deepEqual(state.tasks.map((t) => [t.item.itemId, t.stage]), [['board:R', 'build'], ['board:E', 'build'], ['board:c1', 'build']]);
 });

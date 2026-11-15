@@ -923,7 +923,7 @@ test('blockedMessage names the task\'s own blockers, then each inherited one wit
 
 test('POST /tasks/:id/start is 409 for a show epic: it never runs (#31)', async (t) => {
   const { base, server, workers } = await start(t); // 1 worker, I1 working
-  const epic = { itemId: 'board:I2', source: 'board', id: '2', title: 'epic', body: '', url: 'https://github.com/acme/r/issues/2', epic: { follows: 'behind' as const, switchAt: 'fila' } };
+  const epic = { itemId: 'board:I2', source: 'board', id: '2', title: 'epic', body: '', url: 'https://github.com/acme/r/issues/2', epic: { follows: 'behind' as const, switchAt: 'fila', deleteActivity: false } };
   await server.dispatch({ type: 'poll', source: 'board', items: [{ item: { itemId: 'board:I1', source: 'board', id: '1', title: 'from Ready', body: '', url: 'https://github.com/acme/r/issues/1' }, column: 'Ready' }, { item: epic, column: 'Ready' }] });
   const refused = await postJson(`${base}/tasks/board:I2/start`);
   assert.equal(refused.status, 409);
@@ -2875,6 +2875,7 @@ test('a leaving sourceAction (#286): the source applies it and the task leaves t
   assert.deepEqual(accepting.urls, ['https://github.com/acme/r/issues/1'], 'the task\'s url travels with the action (#568)');
   assert.deepEqual(server.getState()?.tasks, [], 'closeTask took it out');
   assert.ok(lines.includes('INFO sourceAction #board:I1 archive ok'), lines.join('\n'));
+  assert.ok(lines.includes('DEBUG close task=#board:I1 confirmed'), lines.join('\n')); // #856: the source's ok confirms the close
 
   const refusing = fakeSourceFactory(0, undefined, 'must have admin rights');
   const other = await start(t, archived, undefined, {}, { sourceFactory: refusing.factory });

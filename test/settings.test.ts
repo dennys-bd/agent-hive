@@ -473,7 +473,7 @@ test('POST /settings with stages persists them, GET /settings returns them, an o
 test('GET /settings/source-columns builds the source from the query and answers its settingsOptions', async (t) => {
   const { base, configs } = await start(t);
   assert.deepEqual(await json(hiveFetch(`${base}/settings/source-columns?type=github&owner=acme&number=6`)), OPTIONS);
-  assert.deepEqual(configs.at(-1)?.source, { name: 'setup', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: { defaults: { workspace: 'setup', auto: true, entry: null }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'Build' }, 'the query carries no filter, no routing and no epics keys: listing Status options gets the empty filter, a placeholder workspace and a new source\'s epics keys');
+  assert.deepEqual(configs.at(-1)?.source, { name: 'setup', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: { defaults: { workspace: 'setup', auto: true, entry: null }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'Build' }, 'the query carries no filter, no routing and no epics keys: listing Status options gets the empty filter, a placeholder workspace and a new source\'s epics keys');
 });
 
 test('GET /settings/source-columns carries the transport: auth=api is honoured, anything else is cli', async (t) => {
@@ -646,12 +646,12 @@ test('POST /hooks/status answers the limits line for a valid payload, an empty b
 test('POST /settings carries each source\'s epics keys: written inside the source, a change rebuilds it, and a missing key, an unknown mode or a switchAt off the flow answers 400 before the write (#30)', async (t) => {
   const { base, home, configs } = await start(t);
   const saved = async (): Promise<SourceConfig> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.sources[0];
-  const epicsOf = ({ epics, epicFollows, switchAt }: SourceConfig) => ({ epics, epicFollows, switchAt });
+  const epicsOf = ({ epics, epicFollows, switchAt, epicDeleteActivity }: SourceConfig) => ({ epics, epicFollows, switchAt, epicDeleteActivity });
   assert.equal((await postSettings(base, BODY)).status, 200);
   assert.deepEqual(epicsOf(await saved()), EPICS);
   const before = configs.length;
   assert.equal((await postSettings(base, { ...BODY, sources: [{ ...GITHUB_ENTRY, epics: 'hide', epicFollows: 'behind' }] })).status, 200);
-  assert.deepEqual(epicsOf(await saved()), { epics: 'hide', epicFollows: 'behind', switchAt: 'fila' });
+  assert.deepEqual(epicsOf(await saved()), { epics: 'hide', epicFollows: 'behind', switchAt: 'fila', epicDeleteActivity: false });
   assert.equal(configs.at(-1)?.source.epics, 'hide', 'the live source is built with the new mode');
   assert.equal(configs.length, before + 1, 'a different mode needs a new source, resolved once');
   const refused = async (source: unknown, error: RegExp): Promise<void> => {

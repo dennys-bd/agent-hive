@@ -12,7 +12,7 @@ const AT = '2026-10-11T00:00:00.000Z';
 export const keyOf = (from: string): string => transitionKey({ from, when: 'done' });
 
 const TASK: Task = {
-  item: { itemId: 'board:I1', id: '1', title: 'T', body: '', url: '', source: 'board', epic: { follows: 'ahead', switchAt: 'A' } },
+  item: { itemId: 'board:I1', id: '1', title: 'T', body: '', url: '', source: 'board', epic: { follows: 'ahead', switchAt: 'A', deleteActivity: false } },
   stage: 'A', boardColumn: 'Ready', auto: true,
 };
 const ACTIVITY: Activity = {

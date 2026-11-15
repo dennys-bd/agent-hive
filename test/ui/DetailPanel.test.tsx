@@ -593,7 +593,7 @@ test('dispensar sits under the task\'s error and under a failed start, outside t
   const failed = render(<Panel state={movedWork({ ...IDLE, tasks: [{ ...STOPPED, error: `${SPAWN_FAILED}pty: posix_spawnp failed.` }] })} initial={TASK} />);
   expect(before(screen.getByRole('alert'), screen.getByRole('button', { name: 'dispensar' }))).toBe(true);
   failed.unmount();
-  const epic: WithWork = { ...STOPPED, error: 'archive refused', item: { ...STOPPED.item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } };
+  const epic: WithWork = { ...STOPPED, error: 'archive refused', item: { ...STOPPED.item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } } };
   const shownEpic = render(<Panel state={movedWork({ ...IDLE, tasks: [epic] })} initial={TASK} />);
   expect(screen.getByRole('button', { name: 'dispensar' })).toBeEnabled();
   shownEpic.unmount();

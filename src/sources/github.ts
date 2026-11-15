@@ -103,8 +103,8 @@ function issueItem(node: GhItemNode, names: Set<string>, taskProps: SourceTaskPr
 }
 
 // #31: under show an issue with sub-issues is an epic: it never runs and its stage follows its children, by the source's own rule
-const asEpic = (task: SourceItem, { epicFollows, switchAt }: GithubSourceConfig): SourceItem =>
-  ({ ...task, item: { ...task.item, epic: { follows: epicFollows, switchAt } } });
+const asEpic = (task: SourceItem, { epicFollows, switchAt, epicDeleteActivity }: GithubSourceConfig): SourceItem =>
+  ({ ...task, item: { ...task.item, epic: { follows: epicFollows, switchAt, deleteActivity: epicDeleteActivity } } }); // #856
 
 /** What the settings form offers a source's filter rules (#245): the values on its items and its single-select fields. #282: the items from the
  * stored listing when there is one, so the form does not pay the items read on each open; else read live. The owner may be `@me`. */

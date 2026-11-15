@@ -166,6 +166,17 @@ function FollowsRow({ id, source, stages, onChange }: EpicsProps) {
   );
 }
 
+/** #856: the one stage action an epic may run, its last stage's delete activity; off at 50% under ignore, as the rows above. */
+function DeleteActivityRow({ id, source, onChange }: Omit<EpicsProps, 'stages'>) {
+  const off = source.epics === 'ignore';
+  return (
+    <div id={settingAnchor('settings.epicDeleteActivity', source.id)} className="group flex items-center gap-3" data-disabled={off}>
+      <Switch id={`${id}-epic-delete`} checked={source.epicDeleteActivity} disabled={off} onCheckedChange={(epicDeleteActivity) => onChange({ epicDeleteActivity })} />
+      <Label htmlFor={`${id}-epic-delete`}>{t('settings.epicDeleteActivity')}</Label>
+    </div>
+  );
+}
+
 /** The epics block (#30, handoff árvore §1): a border on top, rows 12px apart; the mode and its hint, what the epic's stage follows, the note. */
 function EpicsBlock({ id, source, stages, onChange }: EpicsProps) {
   return (
@@ -183,6 +194,7 @@ function EpicsBlock({ id, source, stages, onChange }: EpicsProps) {
         <p className={HINT}>{t('settings.epics.hint')}</p>
       </div>
       <FollowsRow id={id} source={source} stages={stages} onChange={onChange} />
+      <DeleteActivityRow id={id} source={source} onChange={onChange} />
       <p className="text-muted-foreground text-xs">{t('settings.source.epicsHint')}</p>
     </div>
   );
@@ -243,7 +255,7 @@ export function sourceEntries(source: SourceDraft): SettingEntry[] {
     ...(github ? (['settings.owner', 'settings.project', 'settings.source.repository'] as const) : []),
     'settings.sources.qualifyId',
     ...(source.qualifyId ? (['settings.sources.prefix'] as const) : []),
-    ...(github ? (['settings.source.filter', 'settings.epics', 'settings.epicFollows'] as const) : []),
+    ...(github ? (['settings.source.filter', 'settings.epics', 'settings.epicFollows', 'settings.epicDeleteActivity'] as const) : []),
     ...(github && source.epicFollows === 'aheadThenBehind' ? (['settings.switchAt'] as const) : []),
     'settings.taskProps.title',
   ];

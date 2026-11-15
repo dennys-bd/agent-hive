@@ -1,5 +1,6 @@
 import { activityOf } from './activities.js';
 import { withColumnWrite } from './column-write.js';
+import { startDeleteActivity } from './delete-activity.js';
 import { none, type Reduced, settleEntries, shouldWrite, sourceWrites, withTask } from './reducer-kit.js';
 import { flowOf } from './flows.js';
 import { allDone, depthOf, epicStage } from './task-tree.js';
@@ -39,11 +40,17 @@ function moved(state: State, task: Task, target: Stage): Reduced {
   return { state: withTask(went.state, started.task), effects: [...went.effects, ...started.effects] };
 }
 
+// The one stage action an epic runs (#856): its last stage's delete activity, when its source's epicDeleteActivity stamped it on. Its answer,
+// activityDeleted, advances the epic through this same done exit, as it does a task's
+const deletesFirst = (task: Task, last: Stage): boolean => last.action === 'deleteActivity' && task.item.epic?.deleteActivity === true;
+
 // Out through the last stage's done exit to end once that stage is due (#213): the epic waits its `after` there as any task does. isDue is
-// checked on each reduction, not scheduled: the polls keep reductions coming. The stage's own action never runs for it (#31). No such exit, or not due yet: the state itself
+// checked on each reduction, not scheduled: the polls keep reductions coming. The stage's own action never runs for it (#31), but for a
+// delete activity its source allows (#856), which goes first. No such exit, or not due yet: the state itself
 function ended(state: State, task: Task, last: Stage): Reduced {
   const exit = exitOf(state, last.name, 'done');
-  return exit === undefined || exit.to !== END || !isDue(task, last, Date.now()) ? none(state) : follow(state, task, exit);
+  if (exit === undefined || exit.to !== END || !isDue(task, last, Date.now())) return none(state);
+  return deletesFirst(task, last) ? startDeleteActivity(state, task) : follow(state, task, exit);
 }
 
 // The epic just moved into its last stage closes its issue, as a normal card's merged PR does (#843), unless the transition it took writes a

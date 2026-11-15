@@ -337,7 +337,7 @@ test('POST on a GitHub goal under epics show or hide stamps it an epic with its 
     assert.equal((await post(url, CHOICE)).status, 200, epics);
     assert.deepEqual(events.slice(-3), [
       { type: 'decompositionIssue', taskId: 'board:I7', id: 'done', number: 7 },
-      { type: 'markEpic', taskId: 'board:I7', epic: { follows: 'aheadThenBehind', switchAt: 'fila' } },
+      { type: 'markEpic', taskId: 'board:I7', epic: { follows: 'aheadThenBehind', switchAt: 'fila', deleteActivity: false } },
       { type: 'approve', activityId: activityIdOf('board:I7') },
     ], epics);
   }

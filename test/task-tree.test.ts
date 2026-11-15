@@ -78,7 +78,7 @@ test('treeStarted is true when any task of the item\'s whole tree meets the pred
 
 // #31: the flow in pipeline order, switching at Build; E lists c1 and c2
 const FLOW = ['Backlog', 'Spec', 'Build', 'Review', LAST].map((name) => ({ name }));
-const epicOf = (follows: EpicFollows, children = ['c1', 'c2']): Task => task('E', 'Backlog', { children, epic: { follows, switchAt: 'Build' } });
+const epicOf = (follows: EpicFollows, children = ['c1', 'c2']): Task => task('E', 'Backlog', { children, epic: { follows, switchAt: 'Build', deleteActivity: false } });
 const stageFor = (follows: EpicFollows, [first, second]: [string, string]): string | undefined => {
   const tasks = [epicOf(follows), task('c1', first, { parent: 'E' }), task('c2', second, { parent: 'E' })];
   return epicStage(tasks, FLOW, tasks[0]);

@@ -73,7 +73,7 @@ const tree = (): State => {
 const epicStageOf = (state: State): string | undefined => taskIn(state, 'local:1')?.stage;
 
 test('HIVE_EPIC is the rule a new GitHub source\'s epics get; the fill never takes a hive epic, as it takes the same task unstamped (#782)', () => {
-  assert.deepEqual(HIVE_EPIC, { follows: 'aheadThenBehind', switchAt: 'Build' });
+  assert.deepEqual(HIVE_EPIC, { follows: 'aheadThenBehind', switchAt: 'Build', deleteActivity: false });
   const goal = create(base(), 'Goal');
   const spawned = (state: State) => reduce(state, { type: 'setMax', max: 1 }).effects.filter((e) => e.type === 'spawn');
   assert.equal(spawned(goal).length, 1, 'unstamped, a free worker takes it');

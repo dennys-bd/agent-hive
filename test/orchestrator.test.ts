@@ -381,6 +381,14 @@ test('closeTask removes a source task out of the listing or an orphan with every
   assert.equal(reduce(deleting, { type: 'closeTask', taskId: 'board:item1' }).state, deleting, 'git is removing its worktree (#182)');
 });
 
+test('a confirmed closeTask drops a listed task that is not leaving; one being deleted is still refused; an unconfirmed one keeps the guard (#856)', () => {
+  const listedOnly = polled(base(0), [listed(1)]).state; // listed, no worker, not leaving
+  assert.equal(reduce(listedOnly, { type: 'closeTask', taskId: 'board:item1' }).state, listedOnly, 'unconfirmed: refused, as today');
+  assert.deepEqual(reduce(listedOnly, { type: 'closeTask', taskId: 'board:item1', confirmed: true }).state.tasks, []);
+  const deleting = withLive(listedOnly, 1, { deleting: true });
+  assert.equal(reduce(deleting, { type: 'closeTask', taskId: 'board:item1', confirmed: true }).state, deleting, 'the removal\'s answer must still find it (#182)');
+});
+
 test('reducer never mutates its input', () => {
   const before = base(2);
   const snapshot = JSON.stringify(before);
@@ -3615,14 +3623,14 @@ test('forkSynced sets the sync on its activity, a new object, with no effect and
 });
 
 test('the fill never picks a show epic: the leaf behind it takes the worker (#31)', () => {
-  const epic: SourceItem = { item: { ...item(1), children: ['board:item2'], epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' };
+  const epic: SourceItem = { item: { ...item(1), children: ['board:item2'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } }, column: 'Backlog' };
   const { state } = polled(base(1), [epic, listed(2)]);
   assert.deepEqual(owners(state, occupied(state)), ['board:item2']);
   assert.ok(!cands(state).some((c) => c.item.itemId === 'board:item1'));
 });
 
 test('moveToStage and a start on a show epic are no-ops: its children decide its stage, and it never runs (#31)', () => {
-  const epic: SourceItem = { item: { ...item(1), epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' };
+  const epic: SourceItem = { item: { ...item(1), epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } }, column: 'Backlog' };
   const before = polled(base(0), [epic]).state;
   const moved = reduce(before, { type: 'moveToStage', taskId: 'board:item1', stage: 'review' });
   assert.equal(task(moved.state, 1)?.stage, 'spec');
@@ -3633,7 +3641,7 @@ test('moveToStage and a start on a show epic are no-ops: its children decide its
 });
 
 test('a poll that moves the children moves their show epic in the same reduction, through spec → dev\'s transition and then dev\'s onStart (#31, #213)', () => {
-  const epic = (column: string): SourceItem => ({ item: { ...item(1), children: ['board:item2', 'board:item3'], epic: { follows: 'behind', switchAt: 'dev' } }, column });
+  const epic = (column: string): SourceItem => ({ item: { ...item(1), children: ['board:item2', 'board:item3'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } }, column });
   const first = polled(base(0), [epic('Backlog'), listed(2), listed(3)]).state;
   assert.equal(task(first, 1)?.stage, 'spec', 'every child in spec: the epic stays');
   const { state, effects } = polled(first, [epic('Backlog'), listed(2, 'Ready'), listed(3, 'Ready')]);
@@ -3747,7 +3755,7 @@ const EPIC_STAGES: LegacyStage[] = [
 ];
 
 test('the last child reaching Done takes its epic review → done through that transition; it waits out done\'s after, leaves with archive, and task.closed reports done via archive (#213)', () => {
-  const epic = (column: string): SourceItem => ({ item: { ...item(1), children: ['board:item2'], epic: { follows: 'behind', switchAt: 'review' } }, column });
+  const epic = (column: string): SourceItem => ({ item: { ...item(1), children: ['board:item2'], epic: { follows: 'behind', switchAt: 'review', deleteActivity: false } }, column });
   const own = (effects: Effect[]): Effect[] => effects.filter((e) => 'itemId' in e && e.itemId === 'board:item1');
   const reviewing = polled(base(0, EPIC_STAGES), [epic('In review'), listed(2, 'In review')]).state;
   assert.equal(task(reviewing, 1)?.stage, 'review');
@@ -3821,7 +3829,7 @@ test('leaveFlow takes a stopped task out of the flow: stage, enteredAt, pin, tri
 });
 
 test('leaveFlow is ignored while a stage run holds the task, and for a show epic, a task already outside and one whose activity is being deleted (#566)', () => {
-  const epic = polled(base(0), [{ item: { ...item(1), epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' }]).state;
+  const epic = polled(base(0), [{ item: { ...item(1), epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } }, column: 'Backlog' }]).state;
   const cases: Record<string, State> = {
     running: filled(1, 1).state,
     epic,

@@ -254,7 +254,7 @@ export interface SourceTaskProps { defaults: TaskProps; rules: TaskRule[] }
 export type SourceFields = {
   type: 'github'; owner: string; number: number; filter: TaskFilter; taskProps: SourceTaskProps;
   repository?: string; // #846: owner/name new issues are created in; absent = the source is no destination
-  epics: EpicsMode; epicFollows: EpicFollows; // #30: required whatever the mode
+  epics: EpicsMode; epicFollows: EpicFollows; epicDeleteActivity: boolean; // #30, #856: required whatever the mode
   switchAt: string; // #30: a stage name of comb.stages, checked by the parser
 };
 
@@ -307,7 +307,7 @@ export interface Item {
   parent?: string; // #28: the parent's itemId, from the sub-issues of the listed items; absent on a task created in the Hive and on an issue with no parent on the Project
   children?: string[]; // #28: the itemIds of the sub-issues on the Project, any column, in sub-issue order; absent or empty = a leaf
   closedChildren?: string[]; // #28: those of `children` closed on GitHub: what counts a child that left the Hive as done
-  epic?: { follows: EpicFollows; switchAt: string }; // #31: stamped by the GitHub adapter under epics: show on an issue with sub-issues: it never runs and its stage follows its children; absent otherwise
+  epic?: { follows: EpicFollows; switchAt: string; deleteActivity: boolean }; // #31: stamped by the GitHub adapter under epics: show on an issue with sub-issues: it never runs and its stage follows its children; absent otherwise. deleteActivity: the source's epicDeleteActivity (#856), read by the epic pass so the reducer needs no source lookup
   blockers?: ItemBlockers; // #56: the relations the UI shows and edits, both directions, sub-issues never; absent = none read. Not the start gate: that is blockedBy
 }
 
@@ -822,13 +822,13 @@ export type EpicsMode = (typeof EPICS_MODES)[number];
 /** Which child an epic's stage follows (#30, computed by #31): the furthest behind, the furthest ahead, or ahead up to switchAt and behind after. */
 export const EPIC_FOLLOWS = ['behind', 'ahead', 'aheadThenBehind'] as const;
 export type EpicFollows = (typeof EPIC_FOLLOWS)[number];
-/** A new source's epics keys (#27, #30). The parser itself has no default. */
-export const NEW_SOURCE_EPICS: { epics: EpicsMode; epicFollows: EpicFollows } = { epics: 'show', epicFollows: 'aheadThenBehind' };
+/** A new source's epics keys (#27, #30), the epic's activity delete off (#856). The parser itself has no default. */
+export const NEW_SOURCE_EPICS: Pick<SourceConfig, 'epics' | 'epicFollows' | 'epicDeleteActivity'> = { epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false };
 /** The stage a new source switches at, else the flow's first (#30). */
 export const SWITCH_AT_DEFAULT = 'Build';
 /** The epic rule a decomposition's hive write stamps on a hive goal (#782, #687 decision 5): the defaults a new GitHub source gets. A flow
  * with no Build stage falls back to behind, by epicStage's own rule, so it holds for every flow. */
-export const HIVE_EPIC: NonNullable<Item['epic']> = { follows: NEW_SOURCE_EPICS.epicFollows, switchAt: SWITCH_AT_DEFAULT };
+export const HIVE_EPIC: NonNullable<Item['epic']> = { follows: NEW_SOURCE_EPICS.epicFollows, switchAt: SWITCH_AT_DEFAULT, deleteActivity: false };
 
 /** The coding agents a stage can run (#516): ids only, their per-agent facts live in agents.ts. #101 adds codex here and there. */
 export const AGENT_IDS = ['claude', 'codex'] as const; // #927: codex runs flow stages; its free sessions are #931
@@ -1659,7 +1659,7 @@ export type HiveEvent =
   | { type: 'restoreFailed'; itemId: string } // #619: the restore's git failed: the mark goes
   | { type: 'clearSessions'; activityId: string; sessionId: string } // one session's limpar in the panel (#304); a record id (#629)
   | { type: 'createTask'; title: string; body: string; stage?: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string }; parent?: string; epic?: NonNullable<Item['epic']> } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67) parent (#782): the itemId of the new task's parent; one that is no task in the state is ignored. epic (#783): the task is born an epic, so the fill never picks it, even in the reduction that creates it
-  | { type: 'closeTask'; taskId: string } // close on a task out of the listing or an orphan (#568), remove on a stopped local one (#132): the task and its session go; the worktree of a task off the source stays (#182), a local task's goes first, in the route (#542)
+  | { type: 'closeTask'; taskId: string; confirmed?: true } // close on a task out of the listing or an orphan (#568), remove on a stopped local one (#132): the task and its session go; the worktree of a task off the source stays (#182), a local task's goes first, in the route (#542). confirmed: the source answered ok to a leaving action (#856): dropped whatever its marks, unless its activity is being deleted
   | { type: 'done'; ptyId: string; result?: Record<string, unknown>; verdict?: string; evidence?: string } // hive_done: the command is finished; result is merged into the task (#99); verdict / evidence: how it ended and why (#134)
   | { type: 'pr'; ptyId: string; url: string; slice?: PrSlice } // hive_pr: the PR the worker opened, https only (#99), and its slice (#698)
   | { type: 'prStates'; states: TaskPr[] } // after the poll: the states the PR query read (#207)

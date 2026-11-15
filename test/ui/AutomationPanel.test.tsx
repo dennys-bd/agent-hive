@@ -18,8 +18,8 @@ const state = (workers: Worker[], tasks: Task[] = []): State => withPointedWork(
   signal: 'yellow', signals: SIGNALS_DEFAULTS, maxConcurrent: 5, workers, ...flowed([{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }], []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
 const taskProps = { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] };
-const roadmap: SourceConfig = { name: 'roadmap', type: 'github', owner: 'acme', number: 7, filter: [], taskProps, qualifyId: false, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
-const notes: SourceConfig = { name: 'notes', type: 'github', owner: 'acme', number: 8, filter: [], taskProps, qualifyId: false, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
+const roadmap: SourceConfig = { name: 'roadmap', type: 'github', owner: 'acme', number: 7, filter: [], taskProps, qualifyId: false, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' };
+const notes: SourceConfig = { name: 'notes', type: 'github', owner: 'acme', number: 8, filter: [], taskProps, qualifyId: false, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' };
 const TASKS = [task('1', 'roadmap'), task('2', 'roadmap'), task('3', 'notes'), task('4')];
 const STATE = state([{ id: 's1', status: 'working', activityId: activityIdOf('I1'), runId: 'W1' }], TASKS);
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });

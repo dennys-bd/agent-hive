@@ -694,7 +694,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     const leave = async (applied: boolean): Promise<void> => {
       if (!isLeaving(effect.action)) return;
       if (applied) leftItems.record(name, effect.itemId, Date.now());
-      await dispatch({ type: 'closeTask', taskId: effect.taskId });
+      // #856: only the source's ok confirms the close; with no source nothing was confirmed and today's guard decides
+      await dispatch(applied ? { type: 'closeTask', taskId: effect.taskId, confirmed: true } : { type: 'closeTask', taskId: effect.taskId });
     };
     const source = runtime.sources.get(name);
     if (!source) {

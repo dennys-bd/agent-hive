@@ -54,7 +54,7 @@ test('task.moved names who moved it: by hand, an approval, a merge, a stage\'s a
 });
 
 test('a show epic\'s task.moved is by epic unless the event names it; closeTask moves a task on_finish (#723)', () => {
-  const epic = (stage: string): Task => task(1, stage, { item: item(1, { children: ['board:I2'], epic: { follows: 'behind', switchAt: 'dev' } }) });
+  const epic = (stage: string): Task => task(1, stage, { item: item(1, { children: ['board:I2'], epic: { follows: 'behind', switchAt: 'dev', deleteActivity: false } }) });
   const prev = withWork(base([epic('review'), task(2)]), 'board:I1');
   const next = withWork(base([epic('dev')]), 'board:I1');
   const by = (event: HiveEvent): unknown => field(only(deriveFacts(prev, next, event, NOW), 'task.moved')[0], 'by');

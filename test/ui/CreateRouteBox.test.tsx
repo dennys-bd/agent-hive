@@ -8,7 +8,7 @@ import type { Flow, SourceConfig } from '../../src/types';
 
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), info: vi.fn() }) }));
 
-const base = { qualifyId: false, type: 'github' as const, owner: 'me', number: 1, epics: 'show' as const, epicFollows: 'aheadThenBehind' as const, switchAt: 'Spec' };
+const base = { qualifyId: false, type: 'github' as const, owner: 'me', number: 1, epics: 'show' as const, epicFollows: 'aheadThenBehind' as const, epicDeleteActivity: false, switchAt: 'Spec' };
 const hiveSource: SourceConfig = {
   ...base, name: 'agent-hive', repository: 'me/agent-hive', filter: [],
   taskProps: {

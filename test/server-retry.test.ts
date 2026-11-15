@@ -71,7 +71,7 @@ test('POST /tasks/:id/dismiss-error dispatches one dismissError for a task with 
 });
 
 test('POST /tasks/:id/dismiss-error lets an idle epic through, which retry still refuses (#354, #31)', async (t) => {
-  const epic: Task = { ...TASK, item: { ...item, epic: { follows: 'behind', switchAt: 'fix' } } };
+  const epic: Task = { ...TASK, item: { ...item, epic: { follows: 'behind', switchAt: 'fix', deleteActivity: false } } };
   const { post, events } = await route(t, { task: epic });
   assert.deepEqual(await post(ID, 'dismiss-error'), { status: 200, body: { ok: true } });
   assert.deepEqual(await post(ID), { status: 409, body: { error: 'tarefa já está executando' } });

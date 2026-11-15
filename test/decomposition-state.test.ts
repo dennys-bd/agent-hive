@@ -61,7 +61,7 @@ test('closeTask takes a local goal whose decomposition is written even while its
 });
 
 // #556: the stamp the route sends for a goal whose source runs epics: show or hide
-const EPIC: NonNullable<Item['epic']> = { follows: 'aheadThenBehind', switchAt: 'spec' };
+const EPIC: NonNullable<Item['epic']> = { follows: 'aheadThenBehind', switchAt: 'spec', deleteActivity: false };
 const goalOf = (state: State) => state.tasks.find((t) => t.item.itemId === ID);
 
 test('markEpic stamps item.epic on the task without touching the state it read; no effect, no worker change, still awaiting in its stage (#556)', () => {
