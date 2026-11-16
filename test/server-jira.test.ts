@@ -1,9 +1,10 @@
+import { mkdir } from 'node:fs/promises';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
-import { jiraCredential, readCredentials, saveJiraCredential } from '../src/credentials.js';
-import { JIRA_LOGIN_MESSAGE, normalizeJiraSite, registerJiraRoutes } from '../src/server-jira.js';
+import { credentialsPath, jiraCredential, readCredentials, saveJiraCredential } from '../src/credentials.js';
+import { JIRA_LOGIN_MESSAGE, JIRA_SAVE_MESSAGE, normalizeJiraSite, registerJiraRoutes } from '../src/server-jira.js';
 import { fakeLog } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -100,4 +101,51 @@ test('a site that is no host answers 400 invalid-site and a non-string login 400
   assert.deepEqual(await answered(connect(h, { site: SITE, email: 1, token: TOKEN })), [400, { error: JIRA_LOGIN_MESSAGE }]);
   assert.equal(h.calls.length, 0);
   assert.deepEqual(await readCredentials(h.env), {});
+});
+
+const list = (h: Harness): Promise<[number, unknown]> => answered(fetch(`${h.base}/settings/jira/sites`));
+const remove = (h: Harness, site: string): Promise<Response> => fetch(`${h.base}/settings/jira/sites/${encodeURIComponent(site)}`, { method: 'DELETE' });
+const stored = { email: EMAIL, token: TOKEN, accountId: 'acc-x' };
+
+test('the listing answers every stored site sorted, each with its own state, even when the others fail (#817)', async (t) => {
+  const h = await routes(t, (url) => (url.includes('//ok.') ? json({ accountId: 'acc-ok' }) : url.includes('//gone.') ? json({}, 401) : json({}, 500)));
+  assert.deepEqual(await list(h), [200, []], 'nothing stored, nothing listed');
+  for (const site of ['ok.atlassian.net', 'gone.atlassian.net', 'down.atlassian.net']) await saveJiraCredential(site, stored, h.env);
+  assert.deepEqual(await list(h), [200, [
+    { site: 'down.atlassian.net', state: 'unreachable' },
+    { site: 'gone.atlassian.net', state: 'refused' },
+    { site: 'ok.atlassian.net', state: 'connected', name: 'acc-ok' }, // no displayName: the account id, never the stored email
+  ]]);
+  assert.ok(h.calls.every((c) => c.auth === BASIC), 'each site checked with its own stored login');
+});
+
+test('disconnect removes the site\'s login and the listing no longer has it; a site with no login is a 204 too (#817)', async (t) => {
+  const h = await routes(t, () => json(ME));
+  await saveJiraCredential(SITE, stored, h.env);
+  await saveJiraCredential('other.atlassian.net', stored, h.env);
+  assert.equal((await remove(h, SITE)).status, 204);
+  assert.equal(await jiraCredential(SITE, h.env), undefined);
+  assert.deepEqual(await list(h), [200, [{ site: 'other.atlassian.net', state: 'connected', name: 'Ana' }]]);
+  assert.equal((await remove(h, SITE)).status, 204);
+});
+
+test('no answer and no log line holds the email or the token (#817)', async (t) => {
+  const bodies: string[] = [];
+  const keep = async (res: Promise<Response>): Promise<void> => { bodies.push(await (await res).text()); };
+  for (const answer of [() => json(ME), () => json({}, 401), () => json({ secret: TOKEN }, 500)] as Answer[]) {
+    const h = await routes(t, answer);
+    await keep(connect(h, { site: SITE, email: EMAIL, token: TOKEN }));
+    await saveJiraCredential(SITE, stored, h.env);
+    await keep(fetch(`${h.base}/settings/jira/sites`));
+    await keep(remove(h, SITE));
+    for (const text of [...bodies, ...h.lines]) assert.ok(!text.includes(EMAIL) && !text.includes(TOKEN), text);
+  }
+});
+
+test('a login that cannot be written answers 500 and logs the site, never the login (#817)', async (t) => {
+  const h = await routes(t, () => json(ME));
+  await mkdir(credentialsPath(h.env), { recursive: true }); // the rename onto a directory fails
+  assert.deepEqual(await answered(connect(h, { site: SITE, email: EMAIL, token: TOKEN })), [500, { error: JIRA_SAVE_MESSAGE }]);
+  assert.ok(h.lines.some((l) => l.startsWith(`ERROR jira site ${SITE} not saved: `)), h.lines.join('\n'));
+  assert.ok(!h.lines.some((l) => l.includes(EMAIL) || l.includes(TOKEN)));
 });
