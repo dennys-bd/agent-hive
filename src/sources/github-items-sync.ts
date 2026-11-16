@@ -1,5 +1,5 @@
 import type { Logger } from '../log.js';
-import { blockingRows, normalizeItem, readListing, storeListing, type ItemStore, type ItemsRead, type ListingKey, type StoredListing } from '../read-model/items.js';
+import { normalizeItem, readListing, storeListing, type ItemStore, type ItemsRead, type ListingKey, type StoredListing, writeBlocking } from '../read-model/items.js';
 import { applyWriteAnswer } from '../read-model/write-answer.js';
 import type { Gql, InheritedBlocker, SourceItem } from '../types.js';
 import { blockersOf } from './github-blockers.js';
@@ -91,7 +91,7 @@ export interface ItemsSync {
 
 function storeBlocking(store: ItemStore, source: string, relations: ReadonlyMap<string, GhIssueRelations | null>): void {
   store.db.transaction(() => {
-    for (const [id, issue] of relations) store.db.setBlocking(source, id, blockingRows(issue));
+    for (const [id, issue] of relations) writeBlocking(store.db, source, id, issue);
   });
 }
 

@@ -7,8 +7,9 @@ import { prDetailsOf } from './pr-details.js';
 import { count, itemTablesOf } from './item-tables.js';
 import { optionTablesOf } from './option-tables.js';
 import { pullTablesOf } from './pull-tables.js';
-import type { CheckRow, CommentRow, FieldValueRow, IssueDetails, IssueRow, IssueView, ItemRow, OpenPull, PullChangesRow, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, ProjectFieldRow, RelationKind, RelationRow, RepoRow, ReviewRow, StoredItemRows, UpsertOrigin } from './rows.js';
+import type { CheckRow, CommentRow, IssueDetails, IssueRow, IssueView, OpenPull, PullChangesRow, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, RepoRow, ReviewRow, StoredItemRows, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
+import { sourceItemsOf, type SourceItems } from './source-items.js';
 import { inTransaction, issueOf, nullable, prOf, type Row, stamp, text, upsertSql, written } from './sql.js';
 
 /** The read model's file in the daemon's home (#178). A cache: deleting it costs one full resync, so it has no backup. */
@@ -91,17 +92,9 @@ export interface ReadModel {
   // #497: the diff and threads read at a head; only an open PR's, whether it wrote
   prChanges(source: string, repository: string, number: number): PullChangesRow | undefined;
   setPrChanges(source: string, repository: string, number: number, row: PullChangesRow): boolean;
-  upsertItem(row: ItemRow, origin: UpsertOrigin): boolean; // #190: a Project item's own columns; whether it wrote
-  setItemValues(source: string, itemNodeId: string, values: FieldValueRow[]): void; // #282: replaces the item's set values
-  setIssueRelations(source: string, issueNodeId: string, kinds: RelationKind[], rows: RelationRow[]): void; // replaces those kinds' rows
-  setBlocking(source: string, itemNodeId: string, rows: RelationRow[] | null): void; // blocking_read 1 and the rows; null: 0, the issue is gone
+  items: SourceItems; // #833: a Project's items, values, relations, fields and listings, on #813's source-agnostic rows
   setIssueDetails(source: string, issueNodeId: string, updatedAt: string, details: IssueDetails, origin: UpsertOrigin): boolean; // the replace rule's, on the row's own updated_at
-  setProjectFields(source: string, project: string, fields: ProjectFieldRow[]): void; // replaced whole
-  projectFields(source: string, project: string): ProjectFieldRow[]; // in the project's order
-  setListing(source: string, project: string, nodeIds: string[]): void; // replaces the Project's listing whole
-  removeUnlisted(source: string, project: string): void; // the items it no longer names, their values and relations; their issues stay
-  listing(source: string, project: string): string[]; // item node ids in position order
-  itemRows(source: string, nodeIds: string[]): StoredItemRows[]; // in the order asked; an id not stored is skipped
+  githubItemRows(source: string, nodeIds: readonly string[]): StoredItemRows[]; // #833: in the order asked; an id not stored is skipped
   transaction<T>(run: () => T): T;
   close(): void;
 }
@@ -278,8 +271,9 @@ export function restrict(path: string): void {
 function modelOf(db: DatabaseSync, now: () => number): ReadModel {
   const reads = readsOf(db);
   const repos = repoTablesOf(db);
+  const items = sourceItemsOf(db, now);
   return {
-    ...upsertsOf(db, now), ...removalsOf(db), ...reads, ...repos, ...countsOf(db), ...pullTablesOf(db), ...itemTablesOf(db, now), ...optionTablesOf(db),
+    ...upsertsOf(db, now), ...removalsOf(db), ...reads, ...repos, ...countsOf(db), ...pullTablesOf(db), ...itemTablesOf(db, now, items), items, ...optionTablesOf(db),
     ...prChangesOf(db, now),
     ...prDetailsOf(db, now, { comments: reads.comments, repo: repos.repo }),
     transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close(),

@@ -6,8 +6,10 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
+import { readListing } from '../../src/read-model/items.js';
 import { issueFromRest } from '../../src/read-model/normalize.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
+import type { GhItemNode } from '../../src/sources/github-queries.js';
 import { tempDir } from '../temp-dir.js';
 import { CLOSING_PRS, COMMENT_ROW, commentRow, ISSUE_ROW, issueRow, OTHER_SOURCE, REPO, REPO_ROW, REST_ISSUE, SOURCE, T1, T2, T3 } from './fixtures.js';
 import { assertMode } from '../posix-only.js';
@@ -249,5 +251,70 @@ test('migration 6 drops the #190 items and listings: a model at version 5 opens 
   raw.close();
   const { db, resync } = await openReadModel(path);
   t.after(() => db.close());
-  assert.deepEqual([resync, db.listing('s', 'acme/6'), db.itemRows('s', ['PVTI_1']), db.projectFields('s', 'acme/6')], [false, [], [], []]);
+  assert.deepEqual([resync, db.items.listing('s', 'acme/6'), db.githubItemRows('s', ['PVTI_1']), db.items.fields('s', 'acme/6')], [false, [], [], []]);
+});
+
+// #833: rows as #282's tables held them, one of every shape the copy maps
+function seedProjectTables(raw: DatabaseSync): void {
+  const insert = (table: string, rows: Record<string, string | number | null>[]): void => {
+    for (const row of rows) {
+      const columns = Object.keys(row);
+      raw.prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`).run(...Object.values(row));
+    }
+  };
+  const issue = (n: number) => ({
+    source: SOURCE, node_id: `I_${n}`, repository: 'acme/r', number: n, kind: 'issue', state: 'open', title: `T${n}`, body: '', labels: '[]',
+    assignees: '[]', created_at: T1, updated_at: T1, comments: 0, url: `https://github.com/acme/r/issues/${n}`,
+  });
+  insert('issues', [issue(1), issue(2)]);
+  const item = (n: number, project: string, contentType: string | null, issueNodeId: string | null, blockingRead: number | null) => ({
+    source: SOURCE, node_id: `PVTI_${n}`, project, content_type: contentType, issue_node_id: issueNodeId, blocking_read: blockingRead, values_sig: `sig${n}`, updated_at: T1,
+  });
+  insert('project_items', [
+    item(1, 'acme/6', 'Issue', 'I_1', 1), item(2, 'acme/6', 'Issue', 'I_2', 0), item(3, 'acme/6', 'Issue', 'I_3', null), // I_3: no issues row
+    item(6, 'acme/6', 'DraftIssue', null, null), item(9, 'acme/7', 'Issue', 'I_1', null), // I_1 is an item of two Projects
+  ]);
+  insert('project_listings', ['PVTI_2', 'PVTI_1', 'PVTI_6', 'PVTI_3'].map((node_id, position) => ({ source: SOURCE, project: 'acme/6', position, node_id })));
+  insert('project_listings', [{ source: SOURCE, project: 'acme/7', position: 0, node_id: 'PVTI_9' }]);
+  const value = (field: string, kind: string, v: string) => ({ source: SOURCE, item_node_id: 'PVTI_1', field, kind, value: v });
+  insert('item_field_values', [value('Status', 'name', 'Ready'), value('Area', 'text', 'api'), value('Estimate', 'number', '3.5'), value('Due', 'date', '2026-10-20'), value('Sprint', 'title', 'Sprint 1')]);
+  const field = (position: number, name: string, dataType: string, options: string | null) => ({ source: SOURCE, project: 'acme/6', position, name, data_type: dataType, options });
+  insert('project_fields', [field(0, 'Status', 'SINGLE_SELECT', '["Ready"]'), field(1, 'Sprint', 'ITERATION', '["Sprint 1"]'), field(2, 'Notes', 'TEXT', null)]);
+  const relation = (kind: string, position: number, n: number, nodeId: string | null = null) =>
+    ({ source: SOURCE, issue_node_id: 'I_1', kind, position, node_id: nodeId, number: n, title: `T${n}`, state: 'OPEN', repository: 'acme/r' });
+  insert('issue_relations', [relation('blockedBy', 0, 7), relation('subIssue', 1, 4, 'I_4'), relation('blocking', 0, 5)]);
+}
+
+test('the #833 migration moves a file\'s Project rows onto the source-agnostic tables and drops the five old ones; the listing reads back as before', async (t) => {
+  const path = join(await tempDir(t, 'read-model-'), READ_MODEL_FILE);
+  const raw = new DatabaseSync(path);
+  raw.exec(`${MIGRATIONS.slice(0, -1).join(' ')} PRAGMA user_version = ${MIGRATIONS.length - 1};`);
+  seedProjectTables(raw);
+  raw.close();
+  const { db, resync } = await openReadModel(path);
+  t.after(() => db.close());
+  assert.deepEqual([resync, peek(path, 'PRAGMA user_version')], [false, MIGRATIONS.length]);
+  const six = readListing(db, { source: SOURCE, project: 'acme/6' });
+  assert.deepEqual(six.nodes.map((n) => n.id), ['PVTI_2', 'PVTI_1', 'PVTI_6', 'PVTI_3'], 'the listing in its stored order');
+  assert.deepEqual(six.nodes[1]?.fieldValues?.nodes, [
+    { text: 'api', field: { name: 'Area' } }, { date: '2026-10-20', field: { name: 'Due' } }, { number: 3.5, field: { name: 'Estimate' } },
+    { title: 'Sprint 1', field: { name: 'Sprint' } }, { name: 'Ready', field: { name: 'Status' } },
+  ], 'every value kind back under its own key');
+  const blocker = (n: number) => ({ number: n, title: `T${n}`, state: 'OPEN', repository: { nameWithOwner: 'acme/r' } });
+  const relationsOf = (node: GhItemNode | undefined): unknown[] => [node?.content?.blockedBy?.nodes, node?.content?.subIssues?.nodes];
+  const own = [[blocker(7)], [{ id: 'I_4', ...blocker(4) }]];
+  assert.deepEqual(relationsOf(six.nodes[1]), own, 'blockedBy and the sub-issue');
+  assert.deepEqual(six.nodes.slice(2).map((n) => n.content), [{ __typename: 'DraftIssue' }, null], 'a draft keeps its type; an issue item with no issues row has no content');
+  assert.deepEqual([six.relations.get('PVTI_1'), six.relations.get('PVTI_2'), six.relations.get('PVTI_6')], [{ blocking: { nodes: [blocker(5)] } }, null, undefined], 'blocking_read 1, 0 and NULL');
+  const seven = readListing(db, { source: SOURCE, project: 'acme/7' });
+  assert.deepEqual([relationsOf(seven.nodes[0]), seven.relations.get('PVTI_9')], [own, undefined], 'the issue\'s relations copied for its item in the other Project too');
+  assert.deepEqual(db.items.items(SOURCE, ['PVTI_1', 'PVTI_3', 'PVTI_6']).map((r) => [r.item.key, r.item.contentId, r.item.data]), [
+    ['acme/r#1', 'I_1', { contentType: 'Issue' }], ['PVTI_3', 'I_3', { contentType: 'Issue' }], ['PVTI_6', null, { contentType: 'DraftIssue' }],
+  ]);
+  assert.deepEqual(db.items.items(SOURCE, ['PVTI_1'])[0]?.values.map((v) => v.kind), ['text', 'date', 'number', 'iteration', 'option']);
+  assert.deepEqual(db.items.fields(SOURCE, 'acme/6'), [
+    { name: 'Status', kind: 'SINGLE_SELECT', options: ['Ready'] }, { name: 'Sprint', kind: 'ITERATION', options: ['Sprint 1'] }, { name: 'Notes', kind: 'TEXT', options: null },
+  ]);
+  const gone = "('project_items', 'project_listings', 'item_field_values', 'project_fields', 'issue_relations', 'project_items_by_project', 'item_field_values_by_value')";
+  assert.equal(peek(path, `SELECT COUNT(*) FROM sqlite_master WHERE name IN ${gone}`), 0, 'the five tables and their indexes are gone');
 });

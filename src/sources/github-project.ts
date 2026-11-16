@@ -143,5 +143,5 @@ export async function readProject(gql: Gql, read: ProjectRead): Promise<Omit<Pro
  * truncated (a Project of exactly 1000 says so); store the flag with the listing if that misleads. */
 export function storedProject(db: ReadModel, key: ListingKey, read: ProjectRead): Omit<ProjectView, 'statuses'> {
   const { nodes } = readListing(db, key);
-  return viewOf(nodes, rebuildFields(db.projectFields(key.source, key.project)), read, nodes.length >= PROJECT_ITEM_LIMIT);
+  return viewOf(nodes, rebuildFields(db.items.fields(key.source, key.project)), read, nodes.length >= PROJECT_ITEM_LIMIT);
 }

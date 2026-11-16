@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { migrate } from '../../src/read-model/db.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
-import { sourceItemsOf, type SourceItem, type SourceItemValue } from '../../src/read-model/source-items.js';
+import { sourceItemsOf, type SourceItem, type SourceItemValue, type SourceRelation } from '../../src/read-model/source-items.js';
 import { issueRow, SOURCE, T1, T2, T3 } from './fixtures.js';
 
 const JIRA = 'jira:acme.example:acct-1';
@@ -20,15 +20,15 @@ const open = () => {
 };
 const count = (db: DatabaseSync, sql: string): number => Number(db.prepare(sql).get()?.n);
 
-test('a file one migration behind keeps its GitHub rows after the full migration', () => {
+test('#813\'s migration only creates: a file before it keeps its GitHub rows untouched', () => {
   const db = new DatabaseSync(':memory:');
-  migrate(db, MIGRATIONS.slice(0, -1));
+  migrate(db, MIGRATIONS.slice(0, -2));
   const r = issueRow(1, T1);
   db.prepare(`INSERT INTO issues (source, node_id, repository, number, kind, state, title, body, labels, assignees, created_at, updated_at, comments)
     VALUES (?, ?, ?, ?, 'issue', 'open', ?, '', '[]', '[]', ?, ?, 0)`).run(SOURCE, r.nodeId, r.repository, r.number, r.title, T1, T1);
   db.prepare("INSERT INTO project_items (source, node_id, project, values_sig, updated_at) VALUES (?, 'PVTI_1', 'P1', 's', ?)").run(SOURCE, T1);
-  migrate(db, MIGRATIONS);
-  assert.equal(Number(db.prepare('PRAGMA user_version').get()?.user_version), MIGRATIONS.length);
+  migrate(db, MIGRATIONS.slice(0, -1));
+  assert.equal(Number(db.prepare('PRAGMA user_version').get()?.user_version), MIGRATIONS.length - 1);
   assert.equal(count(db, 'SELECT COUNT(*) AS n FROM issues'), 1);
   assert.equal(count(db, 'SELECT COUNT(*) AS n FROM project_items'), 1);
   assert.equal(count(db, 'SELECT COUNT(*) AS n FROM source_items'), 0);
@@ -108,8 +108,39 @@ test('a GitHub-shaped item reads back whole and its content_id reaches the closi
   const values: SourceItemValue[] = [{ field: 'Size', kind: 'number', value: '3' }, { field: 'Sprint', kind: 'iteration', value: 'Sprint 4' }];
   store.setValues(SOURCE, 'PVTI_1', values);
   const [read] = store.items(SOURCE, ['PVTI_1']);
-  assert.deepEqual(read, { item: gh, values, relations: [] });
+  assert.deepEqual(read, { item: gh, values, relations: [], relationsRead: null });
   const pr = db.prepare(`SELECT p.number FROM source_items s JOIN issue_pull_requests p ON p.source = s.source AND p.issue_node_id = s.content_id
     WHERE s.source = ? AND s.node_id = ?`).get(SOURCE, 'PVTI_1');
   assert.equal(Number(pr?.number), 70);
+});
+
+const rel = (kind: SourceRelation['kind'], targetKey: string): SourceRelation => ({ kind, targetId: null, targetKey, title: null, state: 'open' });
+
+test('setRelations with kinds replaces only those kinds; each kind keeps its own positions (#833)', () => {
+  const { store } = open();
+  store.upsertItem(item(1), 'sync');
+  store.setRelations(JIRA, 'N1', [rel('blockedBy', 'HIVE-2'), rel('subItem', 'HIVE-3'), rel('blocking', 'HIVE-4')]);
+  store.setRelations(JIRA, 'N1', [rel('blocking', 'HIVE-5'), rel('blocking', 'HIVE-6')], ['blocking']);
+  store.setRelations(JIRA, 'N1', [rel('blockedBy', 'HIVE-7')], ['blockedBy', 'subItem']);
+  assert.deepEqual(store.items(JIRA, ['N1'])[0]?.relations.map((r) => [r.kind, r.targetKey]), [['blockedBy', 'HIVE-7'], ['blocking', 'HIVE-5'], ['blocking', 'HIVE-6']]);
+});
+
+test('the relations-read marker is null until set, answers what was set, and an upsert of its item keeps it (#833)', () => {
+  const { store } = open();
+  for (const n of [1, 2, 3]) store.upsertItem(item(n), 'sync');
+  store.setRelationsRead(JIRA, 'N1', true);
+  store.setRelationsRead(JIRA, 'N2', false);
+  assert.equal(store.upsertItem(item(1, T2, { data: { title: 'New' } }), 'write'), true);
+  assert.deepEqual(store.items(JIRA, ['N1', 'N2', 'N3']).map((r) => r.relationsRead), [true, false, null]);
+  store.setRelationsRead(JIRA, 'N1', null);
+  assert.equal(store.items(JIRA, ['N1'])[0]?.relationsRead, null);
+});
+
+test('unlisted answers the items of a scope its listing does not name, and only that scope\'s (#833)', () => {
+  const { store } = open();
+  for (const n of [1, 2, 3]) store.upsertItem(item(n), 'sync');
+  store.upsertItem(item(4, T1, { scope: 'S2' }), 'sync');
+  store.setListing(JIRA, 'S1', ['N1']);
+  assert.deepEqual(store.unlisted(JIRA, 'S1').sort(), ['N2', 'N3']);
+  assert.deepEqual(store.unlisted(JIRA, 'S2'), ['N4'], 'a scope with no listing names none of its items');
 });

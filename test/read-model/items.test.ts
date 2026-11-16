@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
 import { normalizeItem, readListing, storeListing, writeItem, type ListingKey } from '../../src/read-model/items.js';
+import { applyWriteAnswer } from '../../src/read-model/write-answer.js';
 import { WireError } from '../../src/read-model/normalize.js';
 import type { GhIssueRelations, GhItemNode } from '../../src/sources/github-queries.js';
 import { tempDir } from '../temp-dir.js';
@@ -23,10 +24,10 @@ const BLOCKED: GhIssueRelations = { blocking: { nodes: [{ ...seven, number: 5, t
 test('the replace rule on the item\'s updatedAt (#190): a new item writes, an unchanged one writes nothing, an older one is refused, a newer write lands', async () => {
   const db = await memoryModel();
   const row = (updatedAt: string) => normalizeItem(SOURCE, PROJECT, at('Ready', updatedAt)).item;
-  assert.equal(db.upsertItem(row(T2), 'sync'), true);
-  assert.equal(db.upsertItem(row(T2), 'sync'), false, 'unchanged: no disk write');
-  assert.equal(db.upsertItem(row(T1), 'sync'), false, 'older');
-  assert.equal(db.upsertItem(row(T3), 'write'), true, 'newer');
+  assert.equal(db.items.upsertItem(row(T2), 'sync'), true);
+  assert.equal(db.items.upsertItem(row(T2), 'sync'), false, 'unchanged: no disk write');
+  assert.equal(db.items.upsertItem(row(T1), 'sync'), false, 'older');
+  assert.equal(db.items.upsertItem(row(T3), 'write'), true, 'newer');
 });
 
 test('the write window (#282): a poll page read before a write, landing after it inside the window, changes neither the item\'s values nor its issue details; past the window it does. Relations follow every read', async () => {
@@ -70,9 +71,9 @@ test('a full read drops an item no longer listed with its values and relations; 
   storeListing(db, KEY, read([at('Ready', T1, 2)]), new Map());
   assert.deepEqual(ids(db), ['PVTI_2']);
   assert.equal(db.issue(SOURCE, 'acme/r', 1)?.title, 'T1', 'the issue stays');
-  assert.equal(db.upsertItem(normalizeItem(SOURCE, PROJECT, blocked).item, 'sync'), true, 'no item row was left to compare with');
-  const [rows] = db.itemRows(SOURCE, ['PVTI_1']);
-  assert.deepEqual([rows?.values, rows?.relations, rows?.item.blockingRead], [[], [], null], 'its values, relations and marker went with it');
+  assert.equal(db.items.upsertItem(normalizeItem(SOURCE, PROJECT, blocked).item, 'sync'), true, 'no item row was left to compare with');
+  const [rows] = db.githubItemRows(SOURCE, ['PVTI_1']);
+  assert.deepEqual([rows?.values, rows?.relations, rows?.relationsRead], [[], [], null], 'its values, relations and marker went with it');
 });
 
 test('one listing per Project and reading account: the read is unfiltered, so the Hive\'s sources over one Project share it; another account keeps its own (#282)', async () => {
@@ -83,17 +84,17 @@ test('one listing per Project and reading account: the read is unfiltered, so th
   assert.deepEqual([ids(db), ids(db, other)], [['PVTI_1', 'PVTI_2'], ['PVTI_3']]);
 });
 
-test('a field value is found by SQL, through the index on item_field_values (source, field, value) (#282)', async (t) => {
+test('a field value is found by SQL, through the index on source_item_values (source, field, value) (#282, #833)', async (t) => {
   const path = join(await tempDir(t, 'read-model-'), READ_MODEL_FILE);
   const { db } = await openReadModel(path);
   t.after(() => db.close());
   storeListing(db, KEY, read([at('Ready', T1, 1), at('In review', T1, 2)]), new Map());
   const raw = new DatabaseSync(path);
   t.after(() => raw.close());
-  const sql = 'SELECT item_node_id FROM item_field_values WHERE source = ? AND field = ? AND value = ?';
-  assert.deepEqual(raw.prepare(sql).all(SOURCE, 'Status', 'In review').map((row) => row.item_node_id), ['PVTI_2']);
+  const sql = 'SELECT node_id FROM source_item_values WHERE source = ? AND field = ? AND value = ?';
+  assert.deepEqual(raw.prepare(sql).all(SOURCE, 'Status', 'In review').map((row) => row.node_id), ['PVTI_2']);
   const plan = raw.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(SOURCE, 'Status', 'In review').map((row) => String(row.detail));
-  assert.ok(plan.some((step) => step.includes('item_field_values_by_value')), plan.join('\n'));
+  assert.ok(plan.some((step) => step.includes('source_item_values_by_value')), plan.join('\n'));
 });
 
 test('the relations marker (#190, #282): read, gone (null) or never read (undefined); a full read that asked none keeps what was read', async () => {
@@ -113,12 +114,12 @@ test('the Project\'s fields are replaced whole on each full read and read back i
     { name: 'Sprint', dataType: 'ITERATION', configuration: { iterations: [{ title: 'S1' }] } }, { name: 'Notes', dataType: 'TEXT' },
   ];
   storeListing(db, KEY, { nodes: [], fields }, new Map());
-  assert.deepEqual(db.projectFields(SOURCE, PROJECT), [
-    { name: 'Status', dataType: 'SINGLE_SELECT', options: ['Ready'] }, { name: 'Sprint', dataType: 'ITERATION', options: ['S1'] },
-    { name: 'Notes', dataType: 'TEXT', options: null },
+  assert.deepEqual(db.items.fields(SOURCE, PROJECT), [
+    { name: 'Status', kind: 'SINGLE_SELECT', options: ['Ready'] }, { name: 'Sprint', kind: 'ITERATION', options: ['S1'] },
+    { name: 'Notes', kind: 'TEXT', options: null },
   ]);
   storeListing(db, KEY, { nodes: [], fields: [{ name: 'Notes', dataType: 'TEXT' }] }, new Map());
-  assert.deepEqual(db.projectFields(SOURCE, PROJECT), [{ name: 'Notes', dataType: 'TEXT', options: null }]);
+  assert.deepEqual(db.items.fields(SOURCE, PROJECT), [{ name: 'Notes', kind: 'TEXT', options: null }]);
 });
 
 test('an item whose issue row is gone rebuilds with no content; a draft keeps its type (#282)', async () => {
@@ -158,13 +159,37 @@ test('a write changing only the milestone is kept against a page read before it,
   assert.equal(readListing(db, KEY).nodes[0]?.content?.milestone?.title, 'v2');
 });
 
-test('an issue that is an item of two Projects keeps its relations when one Project drops it (#282)', async () => {
+test('an issue that is an item of two Projects: each item keeps its own relations, so one Project dropping its item leaves the other\'s (#282, #833)', async () => {
   const db = await memoryModel();
   const other: ListingKey = { ...KEY, project: 'acme/7' };
   const blocked = itemNode(1, 'Ready', T1, { blockedBy: { nodes: [seven] } });
   storeListing(db, KEY, read([blocked]), new Map());
   storeListing(db, other, read([{ ...blocked, id: 'PVTI_9' }]), new Map());
   storeListing(db, KEY, read([]), new Map());
-  const [rows] = db.itemRows(SOURCE, ['PVTI_9']);
-  assert.deepEqual(rows?.relations.map((r) => r.number), [7]);
+  const [rows] = db.githubItemRows(SOURCE, ['PVTI_9']);
+  assert.deepEqual(rows?.relations.map((r) => r.targetKey), ['acme/r#7']);
+});
+
+test('normalizeItem: an issue item is keyed <owner>/<repo>#<number> and points at its issue; a draft is keyed by its node id; data carries the content type (#833)', () => {
+  const issue = normalizeItem(SOURCE, PROJECT, at('Ready', T1, 3));
+  const draft = normalizeItem(SOURCE, PROJECT, { id: 'PVTI_6', updatedAt: T1, fieldValueByName: { name: 'Ready' }, content: { __typename: 'DraftIssue' } });
+  assert.deepEqual([issue.item.key, issue.item.contentId, issue.item.scope, issue.item.data, issue.item.parentId], ['acme/r#3', 'I_3', PROJECT, { contentType: 'Issue' }, null]);
+  assert.deepEqual(issue.values, [{ field: 'Status', kind: 'option', value: 'Ready' }]);
+  assert.deepEqual([draft.item.key, draft.item.contentId, draft.item.data, draft.relations], ['PVTI_6', null, { contentType: 'DraftIssue' }, undefined]);
+});
+
+test('a write\'s re-read (a move, a field, a relation) upserts only that item in source_items, and the readModel event names issues as before (#833)', async () => {
+  const db = await memoryModel();
+  storeListing(db, KEY, read([at('Ready', T1, 1), at('Ready', T1, 2)]), new Map());
+  const other = db.items.items(SOURCE, ['PVTI_2']);
+  const fieldValues = { nodes: [{ name: 'In review', field: { name: 'Status' } }, { text: 'api', field: { name: 'Area' } }] };
+  const moved = itemNode(1, 'In review', T2, { blockedBy: { nodes: [seven] } }, { fieldValues });
+  const notified: unknown[] = [];
+  const kinds = applyWriteAnswer({ db, notify: (repository, k) => notified.push([repository, k]) }, 'acme/r', { items: [normalizeItem(SOURCE, PROJECT, moved)] });
+  assert.deepEqual([kinds, notified], [['issues'], [['acme/r', ['issues']]]]);
+  const [one] = db.items.items(SOURCE, ['PVTI_1']);
+  assert.deepEqual([one?.item.updatedAt, one?.values.map((v) => [v.field, v.kind, v.value]), one?.relations.map((r) => [r.kind, r.targetKey])],
+    [T2, [['Area', 'text', 'api'], ['Status', 'option', 'In review']], [['blockedBy', 'acme/r#7']]]);
+  assert.deepEqual(db.items.items(SOURCE, ['PVTI_2']), other, 'the other item is untouched');
+  assert.deepEqual(db.items.listing(SOURCE, PROJECT), ['PVTI_1', 'PVTI_2'], 'the listing keeps its order');
 });

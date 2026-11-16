@@ -123,7 +123,7 @@ const SYNCED = { cursor: null, etag: 'E', syncedAt: T1 };
 test('the contract (#282): itemFields over the wire ITEM_FIELDS node equals itemFields over it stored and rebuilt, once the repository\'s options are stored', async () => {
   const db = await memoryModel();
   writeItem(db, normalizeItem(SOURCE, PROJECT, FIELDS_NODE), 'write');
-  db.setProjectFields(SOURCE, PROJECT, fieldRowsOf(RAW_FIELDS));
+  db.items.setFields(SOURCE, PROJECT, fieldRowsOf(RAW_FIELDS));
   assert.equal(rebuildFieldsNode(db, SOURCE, PROJECT, 'PVTI_2'), undefined, 'no options synced yet: the editor reads live');
   db.setLabels(SOURCE, 'acme/r', ['Docs', 'bug']);
   db.setAssignees(SOURCE, 'acme/r', ['bia', 'ana']);

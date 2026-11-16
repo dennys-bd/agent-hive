@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openReadModel } from '../../src/read-model/db.js';
-import { normalizeItem, readListing, type ItemStore, type ListingKey } from '../../src/read-model/items.js';
+import { normalizeItem, readListing, type ItemStore, type ListingKey, writeBlocking } from '../../src/read-model/items.js';
 import { createItemsSync, FULL_READ_MAX_AGE_MS, joinRelations, readProbe, type ItemsSyncDeps } from '../../src/sources/github-items-sync.js';
 import { PROBE, type GhIssueRelations, type GhItemNode } from '../../src/sources/github-queries.js';
 import type { Gql, SourceItem } from '../../src/types.js';
@@ -108,7 +108,7 @@ test('a failed relations query stores nothing and rejects the poll; the next pol
 test('relate fetches only the kept tasks with no stored relations, and stores what it read (#190)', async () => {
   const { sync, db, calls } = await harness(['S1']);
   await sync.list(KEY);
-  db.setBlocking(SOURCE, 'PVTI_2', null);
+  writeBlocking(db, SOURCE, 'PVTI_2', null);
   calls.length = 0;
   const related = await sync.relate(SOURCE, [task(1), task(2)], { nodes: [node(1), node(2)], relations: new Map([['PVTI_1', ISSUE], ['PVTI_2', undefined]]) });
   assert.deepEqual(calls, ['relations 1']);
@@ -122,13 +122,13 @@ test('answer stores a write\'s re-read item with origin write and the relations 
   await sync.answer(itemNode(1, 'In review', T2), new Map([['PVTI_1', null]]), KEY.project);
   const back = readListing(db, KEY);
   assert.deepEqual([back.nodes[0]?.fieldValueByName?.name, back.relations.get('PVTI_1')], ['In review', null]);
-  assert.equal(db.upsertItem(normalizeItem(SOURCE, KEY.project, node(1, T2)).item, 'sync'), false, 'a poll read before it, in its second, does not undo it');
+  assert.equal(db.items.upsertItem(normalizeItem(SOURCE, KEY.project, node(1, T2)).item, 'sync'), false, 'a poll read before it, in its second, does not undo it');
 });
 
 test('answer stores nothing without a login, and logs a failure instead of throwing it (#190)', async () => {
   const none = await harness(['S1'], {}, async () => undefined);
   await none.sync.answer(node(1), new Map(), KEY.project);
-  assert.equal(none.db.upsertItem(normalizeItem(SOURCE, KEY.project, node(1)).item, 'sync'), true, 'no row was there');
+  assert.equal(none.db.items.upsertItem(normalizeItem(SOURCE, KEY.project, node(1)).item, 'sync'), true, 'no row was there');
   const { log, lines } = fakeLog();
   const failing = await harness(['S1'], { log }, async () => { throw new Error('no credentials'); });
   await failing.sync.answer(node(1), new Map(), KEY.project);
