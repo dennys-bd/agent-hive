@@ -15,6 +15,19 @@ export class SourceRateLimitError extends Error {
 
 export const isRateLimited = (err: unknown): err is SourceRateLimitError => err instanceof SourceRateLimitError;
 
+/** A source call that cannot be made because the source has no credential, or the server refused the one it has (401). `source` names which
+ * one, so any source can reuse it and a reader can tell them apart. */
+export class SourceNotConnectedError extends Error {
+  readonly source: string;
+  constructor(source: string) {
+    super(`${source} is not connected`);
+    this.name = 'SourceNotConnectedError';
+    this.source = source;
+  }
+}
+
+export const isNotConnected = (err: unknown): err is SourceNotConnectedError => err instanceof SourceNotConnectedError;
+
 /** The one entry every caller of a source reports a rate limit through (#812 decision 4): the server's dispatch of sourceBackoff. */
 export type ReportRetry = (source: string, until: string) => Promise<void>;
 

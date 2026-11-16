@@ -202,6 +202,8 @@ export interface Credentials {
   github?: { token: string; login: string };
   /** An external MCP server's header value by server name (#333). */
   mcp?: Record<string, { value: string }>;
+  /** A Jira Cloud login by bare site host (#816). */
+  jira?: Record<string, { email: string; token: string; accountId: string }>;
 }
 
 /** What GET /settings/github/auth answers: never the token, only what the screen shows. */
