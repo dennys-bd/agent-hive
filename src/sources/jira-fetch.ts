@@ -9,7 +9,7 @@ const UNAUTHORIZED = 401;
 const TOO_MANY_REQUESTS = 429;
 const NO_CONTENT = 204;
 // A bare lowercase host: the credential only ever goes to a host the user named, never to one smuggled in through a scheme, path, port or userinfo.
-const BARE_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+export const BARE_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
 export interface JiraFetchDeps {
   /** Where the login comes from; the stored one by default, so another login can supply it without this function changing. */
