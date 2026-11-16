@@ -12,7 +12,7 @@ export interface JiraSyncDeps {
   project: string;
   now?: () => number;
 }
-/** changed: an upsert wrote, an item was removed or the listing changed, so 5.6 knows whether to emit readModel. */
+/** changed: an upsert wrote, an item was removed, the listing or the fields changed, so 5.6 knows whether to emit readModel. */
 export interface JiraSyncResult { changed: boolean }
 
 type Db = JiraSyncDeps['db'];
@@ -41,6 +41,13 @@ function writeIssue(db: Db, { item, values }: JiraItemRows): boolean {
   return true;
 }
 
+// Whether the fields differ from the stored ones: a new status is a new column, so it is a change 5.6 must emit
+function writeFields(db: Db, source: string, project: string, fields: readonly SourceField[]): boolean {
+  if (JSON.stringify(fields) === JSON.stringify(db.items.fields(source, project))) return false;
+  db.items.setFields(source, project, fields);
+  return true;
+}
+
 async function readFieldRows(call: JiraCall, project: string): Promise<SourceField[]> {
   const [fields, statuses] = await Promise.all([readFields(call), readStatuses(call, project)]);
   return fieldRowsOf(fields, statuses);
@@ -60,13 +67,13 @@ export async function syncProject({ call, db, source, project, now = Date.now }:
   const rows = read.issues.map((issue) => jiraItemOf(source, project, issue, read.names, read.schema));
   const changed = db.transaction(() => {
     const wrote = rows.map((r) => writeIssue(db, r)).includes(true); // map, not some: every row is written
-    if (fields !== undefined) db.items.setFields(source, project, fields);
+    const fieldsChanged = fields !== undefined && writeFields(db, source, project, fields);
     const listed = writeListing(db, source, project);
     // an unreadable stored cursor is not a floor: the next good round replaces it
     const from = minutes === undefined ? null : cursor;
     const next = latest(rows, from);
     if (next !== null && next !== cursor) db.items.setCursor(source, project, next);
-    return wrote || listed;
+    return wrote || listed || fieldsChanged;
   });
   return { changed };
 }
@@ -87,9 +94,9 @@ export async function reconcileProject({ call, db, source, project }: JiraSyncDe
     // #568's guard: an empty answer over stored items is a lost permission or a bad answer more often than an emptied project
     const gone = answered.size === 0 ? [] : scopeItems(db, source, project).map((i) => i.nodeId).filter((id) => !answered.has(id));
     if (gone.length > 0) db.items.removeItems(source, gone);
-    db.items.setFields(source, project, fields);
+    const fieldsChanged = writeFields(db, source, project, fields);
     const listed = writeListing(db, source, project);
-    return listed || gone.length > 0;
+    return listed || gone.length > 0 || fieldsChanged;
   });
   return { changed };
 }

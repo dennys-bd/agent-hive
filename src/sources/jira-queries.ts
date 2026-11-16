@@ -17,6 +17,8 @@ export const SEARCH_FIELDS: readonly string[] = ['*navigable', 'description']; /
 export const SEARCH_EXPAND = 'names,schema';
 export const PAGE_SIZE = 100;
 const MINUTE_MS = 60_000;
+// A hard stop for a server that never ends its paging: 1000 pages of 100 is far past any project the Hive lists
+const MAX_PAGES = 1000;
 
 type Json = Record<string, unknown>;
 
@@ -87,14 +89,18 @@ function searchPageOf(value: unknown): JiraSearchPage {
   };
 }
 
-/** Every page of a JQL search, merged. A repeated token throws: a server answering the same one forever would otherwise page forever. */
+/** Every page of a JQL search, merged. A token seen before throws, and so does paging past MAX_PAGES: a server cycling its tokens would
+ * otherwise page forever and hold every page in memory. */
 export async function searchIssues(call: JiraCall, jql: string, fields: readonly string[], expand?: string): Promise<JiraFieldMeta & { issues: JiraIssue[] }> {
   const pages: JiraSearchPage[] = [];
+  const seen = new Set<string>();
   let token: string | undefined;
   do {
+    if (pages.length >= MAX_PAGES) throw new WireError('jira search page count');
     const body = JSON.stringify({ jql, fields, expand, maxResults: PAGE_SIZE, nextPageToken: token });
     const page = searchPageOf(await call('/search/jql', { method: 'POST', body }));
-    if (page.nextPageToken !== undefined && page.nextPageToken === token) throw new WireError('jira search nextPageToken');
+    if (page.nextPageToken !== undefined && seen.has(page.nextPageToken)) throw new WireError('jira search nextPageToken');
+    if (page.nextPageToken !== undefined) seen.add(page.nextPageToken);
     pages.push(page);
     token = page.isLast === true ? undefined : page.nextPageToken;
   } while (token !== undefined);
@@ -134,9 +140,10 @@ export async function readComments(call: JiraCall, id: string): Promise<JiraComm
   if (!ISSUE_REF.test(id)) throw new Error('jira issue id or key is not one');
   const comments: JiraComment[] = [];
   let total = Number.POSITIVE_INFINITY;
-  while (comments.length < total) {
+  for (let pages = 0; comments.length < total; pages += 1) {
+    if (pages >= MAX_PAGES) throw new WireError('jira comments page count');
     const page = recordAt(await call(`/issue/${encodeURIComponent(id)}/comment?startAt=${comments.length}&maxResults=${PAGE_SIZE}`), 'jira comments');
-    if (typeof page.total !== 'number') throw new WireError('jira comments total');
+    if (typeof page.total !== 'number' || !Number.isInteger(page.total) || page.total < 0) throw new WireError('jira comments total');
     total = page.total;
     const read = arrayAt(page.comments, 'jira comments').map(commentOf);
     if (read.length === 0) break;

@@ -75,6 +75,8 @@ test('searchIssues refuses a page that is not a search page, and a token that re
   await assert.rejects(searchIssues(fakeJira([[]]).call, 'j', FIELDS), /jira search page/);
   const looping = fakeJira([{ issues: [], nextPageToken: 't1' }, { issues: [], nextPageToken: 't1' }]);
   await assert.rejects(searchIssues(looping.call, 'j', FIELDS), /nextPageToken/);
+  const cycling = fakeJira([{ issues: [], nextPageToken: 't1' }, { issues: [], nextPageToken: 't2' }, { issues: [], nextPageToken: 't1' }]);
+  await assert.rejects(searchIssues(cycling.call, 'j', FIELDS), /nextPageToken/);
 });
 
 test('readIssue asks the search\'s fields and expand, and answers the issue with its names and schema', async () => {
@@ -110,6 +112,11 @@ test('readComments pages by startAt until total and answers each comment as Mark
 test('readComments stops on an empty page even if total says more, and refuses a page without total', async () => {
   assert.deepEqual(await readComments(fakeJira([{ total: 5, comments: [] }]).call, '1'), []);
   await assert.rejects(readComments(fakeJira([{ comments: [] }]).call, '1'), /jira comments total/);
+});
+
+test('readComments refuses a total that is not a count', async () => {
+  await assert.rejects(readComments(fakeJira([{ comments: [], total: Number.NaN }]).call, 'ABC-1'), /jira comments total/);
+  await assert.rejects(readComments(fakeJira([{ comments: [], total: -1 }]).call, 'ABC-1'), /jira comments total/);
 });
 
 test('readStatuses answers the union over issue types, first seen first, each with its category', async () => {

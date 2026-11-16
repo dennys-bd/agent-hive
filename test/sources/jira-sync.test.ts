@@ -167,6 +167,14 @@ test('an empty reconcile answer over stored items removes nothing', async () => 
   assert.deepEqual(stored(db), before);
 });
 
+test('a reconcile that only finds new fields or statuses reports a change', async () => {
+  const db = await memory();
+  await syncProject({ call: fakeJira([page([issue(1, T1)])]).call, db, source: SOURCE, project: 'ABC' });
+  assert.deepEqual(await reconcileProject({ call: fakeJira([ids(1)]).call, db, source: SOURCE, project: 'ABC' }), { changed: false });
+  db.items.setFields(SOURCE, 'ABC', []);
+  assert.deepEqual(await reconcileProject({ call: fakeJira([ids(1)]).call, db, source: SOURCE, project: 'ABC' }), { changed: true });
+});
+
 test('an issue moved to another project is dropped from this listing but its row, now that project\'s, stays', async () => {
   const db = await memory();
   await syncProject({ call: fakeJira([page([issue(1, T1), issue(2, T1)])]).call, db, source: SOURCE, project: 'ABC' });

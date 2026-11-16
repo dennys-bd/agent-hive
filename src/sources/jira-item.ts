@@ -51,11 +51,13 @@ function scalarOf(type: string, value: unknown): string | undefined {
 // One row per element, in Jira's order: the store keeps a multi-valued field's order by position
 function valuesOf(fields: Json, names: Record<string, string>, schema: Record<string, JiraSchema>): SourceItemValue[] {
   return Object.entries(fields).flatMap(([id, value]): SourceItemValue[] => {
-    const s = schema[id];
+    // own keys only: an id such as `constructor` must not find an inherited member of the plain objects the wire built
+    const s = Object.hasOwn(schema, id) ? schema[id] : undefined;
     const kind = kindOf(s);
     if (OWN_FIELDS.has(id) || s === undefined || kind === undefined) return [];
     const elements = s.type === 'array' ? (Array.isArray(value) ? value : []) : [value];
-    const field = names[id] ?? id;
+    const named = Object.hasOwn(names, id) ? names[id] : undefined;
+    const field = typeof named === 'string' ? named : id;
     return elements.flatMap((element): SourceItemValue[] => {
       const scalar = scalarOf(elementType(s), element);
       return scalar === undefined ? [] : [{ field, kind, value: scalar }];
