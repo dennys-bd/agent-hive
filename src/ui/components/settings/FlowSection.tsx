@@ -51,7 +51,7 @@ export function FlowSection({ draft, source, flow, agents, launchWorkspace, onCh
 export function searchEntries(draft: SettingsDraft): SettingEntry[] {
   return [
     ...cardEntries('flow', 'settings.sources', ['settings.sources.createIn', 'settings.sources.local', 'settings.prefix']),
-    ...(draft.sources.some((b) => b.type === 'github') ? [settingEntry('settings.connections', 'flow')] : []),
+    settingEntry('settings.connections', 'flow'),
     settingEntry('settings.stages', 'flow'),
     ...draft.sources.flatMap(sourceEntries),
     ...draft.stages.flatMap(stageEntries),

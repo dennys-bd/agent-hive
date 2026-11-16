@@ -105,7 +105,7 @@ test('sources starts with the local row: Hive badge, the prefix field, its ids a
   expect(screen.getByRole('button', { name: '+ source' })).toBeInTheDocument();
 });
 
-test('conexões lists GitHub through the gh CLI, used by the github sources, and + conexão is disabled (#524)', async () => {
+test('conexões lists GitHub through the gh CLI, used by the github sources, and + conexão is enabled (#524, #817)', async () => {
   const user = userEvent.setup();
   render(<Settings info={info} onSaved={vi.fn()} onCancel={vi.fn()} />);
   await open(user, 'flow');
@@ -121,7 +121,7 @@ test('conexões lists GitHub through the gh CLI, used by the github sources, and
   expect(within(row).getByText(`${t('settings.connections.detected')} · ${t('settings.connections.usedBy', { sources: 'board, core' })}`)).toBeInTheDocument();
   expect(within(row).getByRole('button', { name: t('settings.connections.signIn') })).toBeEnabled();
 
-  expect(screen.getByRole('button', { name: t('settings.connections.add') })).toBeDisabled();
+  expect(screen.getByRole('button', { name: t('settings.connections.add') })).toBeEnabled();
   expect(screen.queryByLabelText(t('settings.epics'))).not.toBeInTheDocument();
   expect(screen.queryByRole('radio', { name: t('settings.auth.api') })).not.toBeInTheDocument();
 });

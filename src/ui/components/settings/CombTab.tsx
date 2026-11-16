@@ -41,12 +41,12 @@ export function CombTab({ draft, options, githubProjects, github, agents, launch
         onEdit={onEditSource} onAdd={onAddSource} onPrefix={(prefix) => onChange({ prefix })}
         hiveSource={draft.hiveSource} createIn={draft.createIn} onHiveSource={(hiveSource) => onChange({ hiveSource })} onCreateIn={(createIn) => onChange({ createIn })}
       />
-      {hasGithub && (
-        <ConnectionsGroup
-          auth={draft.auth} github={github} sourceNames={githubSources.map((b) => b.name.trim() || t('settings.source.unnamed'))}
-          onConnect={onConnectGithub} onAuthChange={(auth: GithubAuth) => onChange({ auth })} onOpenQuota={onOpenRules}
-        />
-      )}
+      <ConnectionsGroup
+        githubRow={hasGithub ? {
+          auth: draft.auth, github, sourceNames: githubSources.map((b) => b.name.trim() || t('settings.source.unnamed')),
+          onConnect: onConnectGithub, onAuthChange: (auth: GithubAuth) => onChange({ auth }), onOpenQuota: onOpenRules,
+        } : undefined}
+      />
       {/* (#515, #134, #887, #565) the stages card, over the open flow: StageEditor owns it, since its header's + etapa and + transição act on its selection */}
       <FlowStages
         draft={draft} newFlow={newFlow} flowTasks={flowTasks} stage={stage} focus={focus} onChange={onChange}

@@ -344,7 +344,8 @@ test('the local source edits the prefix; removing the only source hides the GitH
   const removeButton = screen.getByRole('button', { name: t('settings.sources.remove') });
   await user.click(removeButton);
   expect(screen.getAllByText(t('settings.sources.none'))).toHaveLength(2); // the sources card and the stage's ao começar (#266)
-  expect(screen.queryByRole('heading', { level: 2, name: t('settings.connections') })).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: t('settings.connections') })).toBeInTheDocument(); // #817: the card stays for Jira
+  expect(screen.queryByTestId('connection-row')).not.toBeInTheDocument(); // the GitHub row goes with the last GitHub source
   expect(screen.queryByLabelText(t('settings.owner'))).not.toBeInTheDocument();
   expect(screen.queryByRole('table', { name: t('settings.stages.onStart') })).not.toBeInTheDocument(); // no source, no on-start actions to set (#134, #266)
   expect(screen.getByLabelText(t('settings.stages.name'))).toHaveValue('fila');
