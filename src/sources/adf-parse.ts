@@ -6,13 +6,16 @@ import { parseInline } from './adf-inline.js';
 
 interface Step { nodes: AdfNode[]; next: number }
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-const HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/;
+// a backtick fence's info string holds no backtick (CommonMark), so an inline code span that opens a line is not a fence
+const FENCE = /^ {0,3}(?:(`{3,})([^`]*)|(~{3,})([^\n]*))$/;
+// `[^\n]*`, not `.*`: `.` stops at U+2028, and the failed `$` would then retry every split of the space run before it
+const HEADING = /^ {0,3}(#{1,6})(?:[ \t]+([^\n]*))?$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
-const ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])(?:[ \t]+(.*))?$/;
+const ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])(?:[ \t]+([^\n]*))?$/;
 const RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 const HTML = /^ {0,3}<(?:[A-Za-z][\w-]*(?:[\s/>]|$)|\/[A-Za-z]|!--)/;
 const IMAGE = /(?<!\\)!\[[^[\]]*\]\([^()]*\)/;
+const CODE_SPAN = /`+[^`]*`+/g;
 /** What a list item and a block quote may hold in Jira's schema; a heading or a quote inside them is flattened. */
 const NESTABLE = new Set(['paragraph', 'bulletList', 'orderedList', 'codeBlock']);
 
@@ -77,7 +80,9 @@ function codeBlock(text: string, language: string): AdfNode {
 }
 
 function fenced(lines: string[], at: number): Step {
-  const [, marker, info] = FENCE.exec(lines[at]) ?? ['', '```', ''];
+  const match = FENCE.exec(lines[at]);
+  const marker = match?.[1] ?? match?.[3] ?? '```';
+  const info = match?.[2] ?? match?.[4] ?? '';
   const close = new RegExp(`^ {0,3}${marker[0] === '`' ? '`' : '~'}{${marker.length},}[ \\t]*$`);
   let end = at + 1;
   while (end < lines.length && !close.test(lines[end])) end += 1;
@@ -122,7 +127,7 @@ function nestable(nodes: AdfNode[]): AdfNode[] {
 function paragraph(lines: string[], at: number): Step {
   let end = at + 1;
   while (end < lines.length && !isBlank(lines[end]) && !startsBlock(lines[end])) end += 1;
-  if (lines.slice(at, end).some((line) => IMAGE.test(line))) return literal(lines, at, end);
+  if (lines.slice(at, end).some((line) => IMAGE.test(line.replace(CODE_SPAN, '')))) return literal(lines, at, end);
   const text = lines.slice(at, end).map((line, index, all) => (index < all.length - 1 ? withoutBreakMark(line) : line).trim()).join('\n');
   return { nodes: [{ type: 'paragraph', content: parseInline(text) }], next: end };
 }
@@ -147,7 +152,9 @@ function list(lines: string[], at: number, depth: number): Step {
     if (!match || match[1].length !== indent.length || /\d/.test(match[2]) !== ordered || match[2].slice(-1) !== marker.slice(-1)) break;
     const item = itemBody(lines, cursor, match);
     const content = nestable(parseBlocks(item.body, depth + 1));
-    items.push({ type: 'listItem', content: content.length > 0 ? content : [emptyParagraph()] });
+    // Jira wants a list item to open with a paragraph or a code block, never with a list
+    const opens = content.length > 0 && (content[0].type === 'paragraph' || content[0].type === 'codeBlock');
+    items.push({ type: 'listItem', content: opens ? content : [emptyParagraph(), ...content] });
     next = item.next;
     cursor = item.next;
     while (cursor < lines.length && isBlank(lines[cursor])) cursor += 1;

@@ -130,7 +130,7 @@ function assertValid(adf: AdfDoc): void {
     if (node.type === 'text' && node.marks?.some((mark) => mark.type === 'code')) {
       assert.ok(node.marks.every((mark) => mark.type === 'code' || mark.type === 'link'), 'code sits only beside a link');
     }
-    if (node.type === 'listItem') assert.ok(node.content?.length, 'a list item holds a block');
+    if (node.type === 'listItem') assert.ok(['paragraph', 'codeBlock'].includes(node.content?.[0]?.type ?? ''), 'a list item opens with a paragraph');
     for (const child of node.content ?? []) walk(child, node.type);
   };
   for (const node of adf.content) walk(node, 'doc');
@@ -250,5 +250,29 @@ test('hostile text converts in linear time', () => {
   for (const input of inputs) markdownToAdf(input);
   adfToMarkdown(doc(p(text(`x${' '.repeat(n)}y`, { type: 'strong' }))));
   // generous: the quadratic paths these inputs once hit took seconds each; a loaded CI machine still finishes well inside it
+  assert.ok(performance.now() - started < 3000, `took ${Math.round(performance.now() - started)} ms`);
+});
+
+test('inline code opening a line is not read as a fence', () => {
+  const adf = doc(p(text('``x', { type: 'code' })), p(text('after')));
+  assert.deepEqual(markdownToAdf(adfToMarkdown(adf)), adf);
+  const fences = doc(p(text('```js', { type: 'code' }), text(' fences')), p(text('rest')));
+  assert.deepEqual(markdownToAdf(adfToMarkdown(fences)), fences);
+});
+
+test('image syntax inside inline code stays inline code', () => {
+  const adf = doc(p(text('see '), text('![a](b.png)', { type: 'code' })));
+  assert.deepEqual(markdownToAdf(adfToMarkdown(adf)), adf);
+});
+
+test('a list item never opens with a list', () => {
+  for (const md of ['- - a', '1.\n   - x']) assertValid(markdownToAdf(md));
+  assert.equal(markdownToAdf('- - a').content[0].content?.[0].content?.[0].type, 'paragraph');
+});
+
+test('a block marker line ending in U+2028 parses in linear time', () => {
+  const started = performance.now();
+  for (const marker of ['#', '-', '1.']) markdownToAdf(`${marker}${' '.repeat(40_000)}\u2028`);
+  markdownToAdf(`a\n-${' '.repeat(40_000)}\u2028`);
   assert.ok(performance.now() - started < 3000, `took ${Math.round(performance.now() - started)} ms`);
 });
