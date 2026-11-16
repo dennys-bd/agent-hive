@@ -103,6 +103,7 @@ import { registerLaunchOptionsRoute } from './launch-options.js';
 import { registerOpenRoute, registerResolveRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
+import { registerJiraRoutes } from './server-jira.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
 import { createCustomStore } from './custom-store.js';
 import { createPluginRender } from './plugin-render.js';
@@ -1174,6 +1175,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     };
     res.json(status);
   });
+  registerJiraRoutes(app, { log, env: deps.credentialsEnv }); // #817: next to the GitHub login, outside requireLive: the first Jira source is created in setup mode
 
   // Serializes saves: two concurrent POST /settings would race on hive.config.json.tmp and
   // into configure()/reconfigure(). Chaining queues them in arrival order; each request

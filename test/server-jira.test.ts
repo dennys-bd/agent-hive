@@ -4,8 +4,10 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { credentialsPath, jiraCredential, readCredentials, saveJiraCredential } from '../src/credentials.js';
+import { createServer } from '../src/server.js';
 import { JIRA_LOGIN_MESSAGE, JIRA_SAVE_MESSAGE, normalizeJiraSite, registerJiraRoutes } from '../src/server-jira.js';
 import { fakeLog } from './fakes.js';
+import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
 const SITE = 'acme.atlassian.net';
@@ -148,4 +150,20 @@ test('a login that cannot be written answers 500 and logs the site, never the lo
   assert.deepEqual(await answered(connect(h, { site: SITE, email: EMAIL, token: TOKEN })), [500, { error: JIRA_SAVE_MESSAGE }]);
   assert.ok(h.lines.some((l) => l.startsWith(`ERROR jira site ${SITE} not saved: `)), h.lines.join('\n'));
   assert.ok(!h.lines.some((l) => l.includes(EMAIL) || l.includes(TOKEN)));
+});
+
+test('in setup mode the daemon answers GET /settings/jira/sites, and a DELETE needs x-hive-ui like every dashboard write (#817)', async (t) => {
+  const home = await tempDir(t, 'jira-home-');
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'jira-cfg-') };
+  const { log } = fakeLog();
+  const server = createServer({ home, log, secret: SECRET, credentialsEnv: env });
+  const port = await server.listen(undefined);
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${port}/settings/jira/sites`;
+  await saveJiraCredential(SITE, { email: EMAIL, token: TOKEN, accountId: 'acc-1' }, env);
+  assert.equal((await hiveFetch(`${url}/${SITE}`, { method: 'DELETE' })).status, 403);
+  assert.ok(await jiraCredential(SITE, env), 'refused by the gate, nothing removed');
+  assert.equal((await hiveFetch(`${url}/${SITE}`, { method: 'DELETE', headers: { 'x-hive-ui': '1' } })).status, 204);
+  const res = await hiveFetch(url); // nothing stored any more, so no call leaves for a real Jira
+  assert.deepEqual([res.status, await res.json()], [200, []]);
 });
