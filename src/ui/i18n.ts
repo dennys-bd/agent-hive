@@ -1156,6 +1156,7 @@ const en = {
   'settings.connections.quota': 'quota in rules',
   'settings.connections.signIn': 'sign in with GitHub',
   'settings.connections.useCli': 'use gh CLI',
+  'settings.connections.jira.failed': 'Unexpected error', // #817: a failed listing, connect or disconnect; the reason is in hive.log
   'settings.source.crumb': 'path',
   'settings.source.unnamed': 'unnamed source',
   'settings.source.fields': 'source',
@@ -4453,6 +4454,7 @@ const pt: Record<MessageKey, string> = {
   'settings.connections.quota': 'quota em regras',
   'settings.connections.signIn': 'entrar com GitHub',
   'settings.connections.useCli': 'usar gh CLI',
+  'settings.connections.jira.failed': 'Erro inesperado',
   'settings.source.crumb': 'caminho',
   'settings.source.unnamed': 'source sem nome',
   'settings.source.fields': 'source',
