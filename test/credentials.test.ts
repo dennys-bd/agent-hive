@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { credentialsPath, readCredentials, writeCredentials } from '../src/credentials.js';
+import { credentialsPath, jiraCredential, readCredentials, removeJiraCredential, saveJiraCredential, writeCredentials } from '../src/credentials.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { assertMode } from './posix-only.js';
 
@@ -93,4 +93,33 @@ test('a stored mcp map keeps each well-formed value and drops a malformed entry 
   assert.deepEqual(await readCredentials(env), { github: { token: 'gho_x', login: 'ana' }, mcp: { docs: { value: 'Bearer t0k' } } }, 'a non-string value must never reach a header');
   await writeFile(path, JSON.stringify({ asana: { token: 'sibling' }, mcp: ['x'] }));
   assert.deepEqual(await readCredentials(env), { asana: { token: 'sibling' } });
+});
+
+const ANA = { email: 'ana@example.com', token: 'fake-jira-token-1', accountId: 'acc-1' };
+const BOB = { email: 'bob@example.com', token: 'fake-jira-token-2', accountId: 'acc-2' };
+
+test('a jira credential round-trips by site, keeps every sibling key and is owner-only (#816)', async (t) => {
+  const env = await configHome(t);
+  await writeCredentials({ github: { token: 'gho_x', login: 'ana' }, mcp: { srv: { value: 'v' } } }, env);
+  assert.equal(await jiraCredential('a.atlassian.net', env), undefined);
+  await saveJiraCredential('a.atlassian.net', ANA, env);
+  await saveJiraCredential('b.atlassian.net', BOB, env);
+  assert.deepEqual(await jiraCredential('a.atlassian.net', env), ANA);
+  assert.deepEqual(await jiraCredential('b.atlassian.net', env), BOB);
+  await assertMode(t, credentialsPath(env), OWNER_ONLY_FILE);
+  await removeJiraCredential('a.atlassian.net', env);
+  assert.equal(await jiraCredential('a.atlassian.net', env), undefined);
+  assert.deepEqual(await readCredentials(env), { github: { token: 'gho_x', login: 'ana' }, mcp: { srv: { value: 'v' } }, jira: { 'b.atlassian.net': BOB } });
+});
+
+test('a stored jira map keeps each well-formed site and drops a malformed entry in place; a map that is no object is dropped whole (#816)', async (t) => {
+  const env = await configHome(t);
+  await writeCredentials({}, env);
+  const path = credentialsPath(env);
+  await writeFile(path, JSON.stringify({ github: { token: 'gho_x', login: 'ana' }, jira: { 'ok.atlassian.net': ANA, 'bad1': { ...ANA, token: 7 }, 'bad2': 'x', 'bad3': { email: 'a' } } }));
+  assert.deepEqual(await readCredentials(env), { github: { token: 'gho_x', login: 'ana' }, jira: { 'ok.atlassian.net': ANA } });
+  await writeFile(path, JSON.stringify({ jira: ['x'] }));
+  assert.deepEqual(await readCredentials(env), {});
+  await writeFile(path, JSON.stringify({ jira: 'x' }));
+  assert.deepEqual(await readCredentials(env), {});
 });

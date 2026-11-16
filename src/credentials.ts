@@ -32,6 +32,21 @@ function mcpValues(raw: unknown): Record<string, { value: string }> | undefined 
   return Object.fromEntries(Object.entries(raw).flatMap(([name, entry]) => (isRecord(entry) && typeof entry.value === 'string' ? [[name, { value: entry.value }]] : [])));
 }
 
+export type JiraCredential = NonNullable<Credentials['jira']>[string];
+
+// #816: a site's login by host; an entry with a non-string field is dropped, as a malformed github is: it would reach the Basic header as
+// [object Object]. A map that is no object is dropped whole.
+function jiraEntries(raw: unknown): Record<string, JiraCredential> | undefined {
+  if (!isRecord(raw)) return undefined;
+  return Object.fromEntries(
+    Object.entries(raw).flatMap(([site, e]) =>
+      isRecord(e) && typeof e.email === 'string' && typeof e.token === 'string' && typeof e.accountId === 'string'
+        ? [[site, { email: e.email, token: e.token, accountId: e.accountId }]]
+        : [],
+    ),
+  );
+}
+
 /**
  * What is stored, `{}` when nothing is. A missing, unreadable or corrupt file reads as "not logged in", never as a
  * boot failure. A `github` field with a non-string token or login is dropped the same way (the `mcp` map is kept entry by entry, #333), but in place: every other
@@ -44,9 +59,10 @@ export async function readCredentials(env?: NodeJS.ProcessEnv): Promise<Credenti
   try {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    const { github, mcp, ...rest } = parsed as { github?: unknown; mcp?: unknown } & Record<string, unknown>;
+    const { github, mcp, jira, ...rest } = parsed as { github?: unknown; mcp?: unknown; jira?: unknown } & Record<string, unknown>;
     const values = mcpValues(mcp);
-    return { ...rest, ...(isGithubCredential(github) ? { github } : {}), ...(values ? { mcp: values } : {}) } as Credentials;
+    const sites = jiraEntries(jira);
+    return { ...rest, ...(isGithubCredential(github) ? { github } : {}), ...(values ? { mcp: values } : {}), ...(sites ? { jira: sites } : {}) } as Credentials;
   } catch {
     return {};
   }
@@ -68,4 +84,20 @@ export async function writeCredentials(next: Credentials, env?: NodeJS.ProcessEn
     await unlink(tmp).catch(() => undefined);
     throw err;
   }
+}
+
+export async function jiraCredential(site: string, env?: NodeJS.ProcessEnv): Promise<JiraCredential | undefined> {
+  const { jira } = await readCredentials(env);
+  return jira !== undefined && Object.hasOwn(jira, site) ? jira[site] : undefined;
+}
+
+export async function saveJiraCredential(site: string, cred: JiraCredential, env?: NodeJS.ProcessEnv): Promise<void> {
+  const current = await readCredentials(env);
+  await writeCredentials({ ...current, jira: { ...current.jira, [site]: cred } }, env);
+}
+
+export async function removeJiraCredential(site: string, env?: NodeJS.ProcessEnv): Promise<void> {
+  const current = await readCredentials(env);
+  const { [site]: _gone, ...left } = current.jira ?? {};
+  await writeCredentials({ ...current, jira: left }, env);
 }
