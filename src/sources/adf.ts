@@ -26,8 +26,9 @@ export const kids = (node: AdfNode): AdfNode[] => (Array.isArray(node.content) ?
 const marksOf = (node: AdfNode): AdfMark[] => (Array.isArray(node.marks) ? node.marks.filter((mark): mark is AdfMark => hasType(mark)) : []);
 const isList = (node: AdfNode): boolean => node.type === 'bulletList' || node.type === 'orderedList';
 
-export function adfToMarkdown(doc: AdfDoc | AdfNode): string {
-  return blocks(kids(doc), 0);
+/** Jira answers `null` for an empty description, so an absent document reads as no Markdown. */
+export function adfToMarkdown(doc: AdfDoc | AdfNode | null | undefined): string {
+  return hasType(doc) ? blocks(kids(doc), 0) : '';
 }
 
 /** Two lists of one kind in a row take the other marker (`*`, `)`), or the parser would read them back as one list. */
@@ -117,7 +118,9 @@ function withoutTrailingBreaks(nodes: AdfNode[]): AdfNode[] {
 
 /** A `!` right before a link would read back as an image, so it is escaped there. */
 function inline(nodes: AdfNode[]): string {
-  return nodes.map(inlineNode).reduce((out, part) => (out.endsWith('!') && part.startsWith('[') ? `${out.slice(0, -1)}\\!${part}` : out + part), '');
+  const parts = nodes.map(inlineNode).filter((part) => part !== '');
+  // one join, not a growing string: a remote paragraph may hold many thousand nodes
+  return parts.map((part, index) => (part.endsWith('!') && parts[index + 1]?.startsWith('[') ? `${part.slice(0, -1)}\\!` : part)).join('');
 }
 
 function inlineNode(node: AdfNode): string {

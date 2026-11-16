@@ -276,3 +276,14 @@ test('a block marker line ending in U+2028 parses in linear time', () => {
   markdownToAdf(`a\n-${' '.repeat(40_000)}\u2028`);
   assert.ok(performance.now() - started < 3000, `took ${Math.round(performance.now() - started)} ms`);
 });
+
+test('an absent document reads as no Markdown', () => {
+  assert.equal(adfToMarkdown(null), '');
+});
+
+test('a paragraph of many thousand nodes renders in linear time', () => {
+  const nodes = Array.from({ length: 80_000 }, (_, index) => (index % 2 === 0 ? text('!') : text('a', link('https://e.com'))));
+  const started = performance.now();
+  adfToMarkdown(doc(p(...nodes)));
+  assert.ok(performance.now() - started < 3000, `took ${Math.round(performance.now() - started)} ms`);
+});
