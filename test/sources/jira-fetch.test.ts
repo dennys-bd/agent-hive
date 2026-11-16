@@ -55,6 +55,25 @@ test('a 429 throws SourceRateLimitError with retryAt from seconds, an HTTP date,
   assert.equal(await retryAtOf({ 'Retry-After': 'soon' }), new Date(NOW + 60_000).toISOString());
 });
 
+test('a zero or past Retry-After waits the default and a huge one is capped at an hour, never losing the rate-limit error', async () => {
+  const retryAtOf = async (value: string): Promise<string> => {
+    const { deps } = harness(json({}, 429, { 'Retry-After': value }));
+    const err = await jiraFetch(SITE, '/x', undefined, deps).catch((e: unknown) => e);
+    assert.ok(isRateLimited(err), value);
+    return err.retryAt;
+  };
+  assert.equal(await retryAtOf('0'), new Date(NOW + 60_000).toISOString());
+  assert.equal(await retryAtOf('Mon, 31 Dec 2029 23:00:00 GMT'), new Date(NOW + 60_000).toISOString());
+  assert.equal(await retryAtOf('99999999999999999999'), new Date(NOW + 3_600_000).toISOString());
+  assert.equal(await retryAtOf('31536000'), new Date(NOW + 3_600_000).toISOString());
+});
+
+test('a path without a leading slash is refused before any fetch', async () => {
+  const { calls, deps } = harness(json({}));
+  await assert.rejects(jiraFetch(SITE, 'issue/X-1', undefined, deps), /must start with \//);
+  assert.equal(calls.length, 0);
+});
+
 test('a 401 and a missing credential throw SourceNotConnectedError; the missing one never calls fetch', async () => {
   const unauthorized = harness(json({}, 401));
   const err = await jiraFetch(SITE, '/x', undefined, unauthorized.deps).catch((e: unknown) => e);
