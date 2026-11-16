@@ -5,7 +5,7 @@ import { WireError } from '../../src/read-model/normalize.js';
 import { SourceRateLimitError } from '../../src/source-errors.js';
 import { jiraItemOf } from '../../src/sources/jira-item.js';
 import type { JiraCall, JiraIssue } from '../../src/sources/jira-queries.js';
-import { syncProject } from '../../src/sources/jira-sync.js';
+import { reconcileProject, syncProject } from '../../src/sources/jira-sync.js';
 
 const SOURCE = 'jira:acme.example:acct-1';
 const T1 = '2026-11-16T10:00:00.000+0000';
@@ -141,5 +141,53 @@ test('a project key that is not a Jira key is refused before any call', async ()
   const { call, sent } = fakeJira([]);
   await assert.rejects(syncProject({ call, db, source: SOURCE, project: 'abc' }), /project key/);
   await assert.rejects(syncProject({ call, db, source: SOURCE, project: 'ABC" OR project = "XYZ' }), /project key/);
+  assert.equal(sent.length, 0);
+});
+
+const ids = (...n: number[]) => ({ issues: n.map((i) => ({ id: String(10000 + i) })), isLast: true });
+
+test('the reconcile asks only ids, removes an issue the project no longer lists, rebuilds the listing and re-reads fields', async () => {
+  const db = await memory();
+  await syncProject({ call: fakeJira([page([issue(1, T1), issue(2, T1), issue(3, T1)])]).call, db, source: SOURCE, project: 'ABC' });
+  db.items.setFields(SOURCE, 'ABC', []);
+
+  const { call, sent } = fakeJira([ids(1, 3)]);
+  assert.deepEqual(await reconcileProject({ call, db, source: SOURCE, project: 'ABC' }), { changed: true });
+  assert.deepEqual(searchBodies(sent), [{ jql: 'project = "ABC" ORDER BY key ASC', fields: ['id'], maxResults: 100 }]);
+  assert.deepEqual(db.items.items(SOURCE, ['10002']), [], 'its row, values and relations are gone');
+  assert.deepEqual(db.items.listing(SOURCE, 'ABC'), ['10001', '10003']);
+  assert.deepEqual(db.items.fields(SOURCE, 'ABC'), STORED_FIELDS);
+});
+
+test('an empty reconcile answer over stored items removes nothing', async () => {
+  const db = await memory();
+  await syncProject({ call: fakeJira([page([issue(1, T1), issue(2, T1)])]).call, db, source: SOURCE, project: 'ABC' });
+  const before = stored(db);
+  assert.deepEqual(await reconcileProject({ call: fakeJira([{ issues: [], isLast: true }]).call, db, source: SOURCE, project: 'ABC' }), { changed: false });
+  assert.deepEqual(stored(db), before);
+});
+
+test('an issue moved to another project is dropped from this listing but its row, now that project\'s, stays', async () => {
+  const db = await memory();
+  await syncProject({ call: fakeJira([page([issue(1, T1), issue(2, T1)])]).call, db, source: SOURCE, project: 'ABC' });
+  const moved = jiraItemOf(SOURCE, 'DEF', { ...issue(2, T3), key: 'DEF-7' }, NAMES, SCHEMA); // as DEF's sync stores it
+  assert.equal(db.items.upsertItem(moved.item, 'sync'), true);
+
+  assert.deepEqual(await reconcileProject({ call: fakeJira([ids(1)]).call, db, source: SOURCE, project: 'ABC' }), { changed: true });
+  assert.deepEqual(db.items.listing(SOURCE, 'ABC'), ['10001']);
+  assert.equal(db.items.items(SOURCE, ['10002'])[0]?.item.scope, 'DEF');
+});
+
+test('a reconcile limited on a page removes nothing and reaches the caller; a bad key is refused before any call', async () => {
+  const db = await memory();
+  await syncProject({ call: fakeJira([page([issue(1, T1), issue(2, T1)])]).call, db, source: SOURCE, project: 'ABC' });
+  const before = stored(db);
+  const limited = new SourceRateLimitError('2026-11-16T11:00:00.000Z');
+  await assert.rejects(reconcileProject({ call: fakeJira([{ issues: [{ id: '10001' }], nextPageToken: 't1' }, limited]).call, db, source: SOURCE, project: 'ABC' }),
+    (err) => err === limited);
+  assert.deepEqual(stored(db), before);
+
+  const { call, sent } = fakeJira([]);
+  await assert.rejects(reconcileProject({ call, db, source: SOURCE, project: 'A-1' }), /project key/);
   assert.equal(sent.length, 0);
 });

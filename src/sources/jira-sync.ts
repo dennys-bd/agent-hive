@@ -1,7 +1,8 @@
 import type { ReadModel } from '../read-model/db.js';
+import { WireError } from '../read-model/normalize.js';
 import type { SourceField, SourceItem } from '../read-model/source-items.js';
 import { fieldRowsOf, type JiraItemRows, jiraItemOf } from './jira-item.js';
-import { type JiraCall, projectJql, readFields, readStatuses, SEARCH_EXPAND, SEARCH_FIELDS, searchIssues, sinceMinutes } from './jira-queries.js';
+import { type JiraCall, type JiraIssue, projectJql, readFields, readStatuses, SEARCH_EXPAND, SEARCH_FIELDS, searchIssues, sinceMinutes } from './jira-queries.js';
 
 /** source is the reading account (jira:<site>:<accountId>), project the key and the store's scope. now fixes the window in tests. */
 export interface JiraSyncDeps {
@@ -66,6 +67,29 @@ export async function syncProject({ call, db, source, project, now = Date.now }:
     const next = latest(rows, from);
     if (next !== null && next !== cursor) db.items.setCursor(source, project, next);
     return wrote || listed;
+  });
+  return { changed };
+}
+
+const ID_ONLY: readonly string[] = ['id'];
+
+function idOf(issue: JiraIssue): string {
+  if (issue.id === undefined || issue.id === '') throw new WireError('jira reconcile id');
+  return issue.id;
+}
+
+/** The daily id pass: an issue moved away or deleted never shows in `updated >=`. Fields and statuses are re-read here too. */
+export async function reconcileProject({ call, db, source, project }: JiraSyncDeps): Promise<JiraSyncResult> {
+  const read = await searchIssues(call, projectJql(project), ID_ONLY);
+  const answered = new Set(read.issues.map(idOf));
+  const fields = await readFieldRows(call, project);
+  const changed = db.transaction(() => {
+    // #568's guard: an empty answer over stored items is a lost permission or a bad answer more often than an emptied project
+    const gone = answered.size === 0 ? [] : scopeItems(db, source, project).map((i) => i.nodeId).filter((id) => !answered.has(id));
+    if (gone.length > 0) db.items.removeItems(source, gone);
+    db.items.setFields(source, project, fields);
+    const listed = writeListing(db, source, project);
+    return listed || gone.length > 0;
   });
   return { changed };
 }
