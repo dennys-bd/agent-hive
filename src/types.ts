@@ -214,6 +214,17 @@ export interface GithubAuthStatus {
   error?: string;
 }
 
+/** What GET /settings/jira/sites answers per site (#817): never the stored email or the token. */
+export interface JiraSiteStatus {
+  site: string;
+  state: 'connected' | 'refused' | 'unreachable';
+  name?: string; // the account's displayName, only when connected
+}
+
+/** A connect refusal's code (#817): the UI maps each to its own copy, the raw message stays in hive.log. */
+export const JIRA_CONNECT_ERRORS = ['invalid-site', 'refused', 'unreachable'] as const;
+export type JiraConnectError = (typeof JIRA_CONNECT_ERRORS)[number];
+
 /** The task filter's criteria and operators (#245), in the order the settings form lists them. */
 export const FILTER_FIELDS = ['assignee', 'label', 'milestone', 'repository', 'projectField', 'blocked'] as const;
 export const FILTER_OPS = ['any', 'none'] as const;

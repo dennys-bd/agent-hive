@@ -1,11 +1,14 @@
+import { useState } from 'react';
+import { JiraConnections } from '@/components/settings/JiraConnections';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useJiraSites } from '@/hooks/use-jira-sites';
 import { t } from '@/i18n';
 import { settingAnchor } from '@/lib/settings-search';
 import type { GithubAuth, GithubAuthStatus } from '../../../types';
 
-interface GithubRowProps { auth: GithubAuth; github?: GithubAuthStatus; sourceNames: string[]; onConnect(): void; onAuthChange(auth: GithubAuth): void; onOpenQuota(): void }
+export interface GithubRowProps { auth: GithubAuth; github?: GithubAuthStatus; sourceNames: string[]; onConnect(): void; onAuthChange(auth: GithubAuth): void; onOpenQuota(): void }
 
 // The status half of the row's one line (#524): gh CLI is detected, the Hive login is pending, connected as @login or not yet.
 function statusText(auth: GithubAuth, github?: GithubAuthStatus): string {
@@ -51,15 +54,22 @@ function GithubRow({ auth, github, sourceNames, onConnect, onAuthChange, onOpenQ
 // a source's detail links here (#524): its connection line opens the list scrolled to this group
 export const CONNECTIONS_ANCHOR = settingAnchor('settings.connections');
 
-/** conexões (#524): replaces the old "GitHub access" card. One row per service the Hive can reach — only GitHub today, so
- * `+ conexão` stays disabled until a second service exists. */
-export function ConnectionsGroup(props: GithubRowProps) {
+export interface ConnectionsGroupProps { githubRow?: GithubRowProps } // GitHub's row only when a GitHub source exists (#817)
+
+/** conexões (#524): one row per service the Hive can reach. The card always renders (#817): GitHub's row only when a GitHub source exists,
+ * then one row per connected Jira site. `+ conexão` opens the Jira form, the only service that connects from here. */
+export function ConnectionsGroup({ githubRow }: ConnectionsGroupProps) {
+  const jira = useJiraSites();
+  const [isFormOpen, setFormOpen] = useState(false);
+  const isEmpty = githubRow === undefined && jira.sites?.length === 0 && !isFormOpen;
   return (
     <SettingsGroup
       title="settings.connections" hint="settings.connections.hint" flush
-      action={<Button type="button" variant="ghost" size="sm" disabled>{t('settings.connections.add')}</Button>}
+      action={<Button type="button" variant="ghost" size="sm" onClick={() => setFormOpen(true)}>{t('settings.connections.add')}</Button>}
     >
-      <GithubRow {...props} />
+      {isEmpty && <p className="border-t px-5 py-3 text-muted-foreground text-xs">{t('settings.connections.empty')}</p>}
+      {githubRow && <GithubRow {...githubRow} />}
+      <JiraConnections jira={jira} isFormOpen={isFormOpen} onFormOpen={setFormOpen} />
     </SettingsGroup>
   );
 }

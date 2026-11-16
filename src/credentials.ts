@@ -98,6 +98,8 @@ export async function saveJiraCredential(site: string, cred: JiraCredential, env
 
 export async function removeJiraCredential(site: string, env?: NodeJS.ProcessEnv): Promise<void> {
   const current = await readCredentials(env);
-  const { [site]: _gone, ...left } = current.jira ?? {};
+  // nothing to remove, nothing written: an unreadable file reads as {} and a rewrite would drop every other login
+  if (current.jira === undefined || !Object.hasOwn(current.jira, site)) return;
+  const { [site]: _gone, ...left } = current.jira;
   await writeCredentials({ ...current, jira: left }, env);
 }
