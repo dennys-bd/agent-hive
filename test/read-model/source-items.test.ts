@@ -20,15 +20,15 @@ const open = () => {
 };
 const count = (db: DatabaseSync, sql: string): number => Number(db.prepare(sql).get()?.n);
 
-test('a file one migration behind keeps its GitHub rows after the full migration', () => {
+test('#813\'s migration only creates: a file before it keeps its GitHub rows untouched', () => {
   const db = new DatabaseSync(':memory:');
-  migrate(db, MIGRATIONS.slice(0, -1));
+  migrate(db, MIGRATIONS.slice(0, -2));
   const r = issueRow(1, T1);
   db.prepare(`INSERT INTO issues (source, node_id, repository, number, kind, state, title, body, labels, assignees, created_at, updated_at, comments)
     VALUES (?, ?, ?, ?, 'issue', 'open', ?, '', '[]', '[]', ?, ?, 0)`).run(SOURCE, r.nodeId, r.repository, r.number, r.title, T1, T1);
   db.prepare("INSERT INTO project_items (source, node_id, project, values_sig, updated_at) VALUES (?, 'PVTI_1', 'P1', 's', ?)").run(SOURCE, T1);
-  migrate(db, MIGRATIONS);
-  assert.equal(Number(db.prepare('PRAGMA user_version').get()?.user_version), MIGRATIONS.length);
+  migrate(db, MIGRATIONS.slice(0, -1));
+  assert.equal(Number(db.prepare('PRAGMA user_version').get()?.user_version), MIGRATIONS.length - 1);
   assert.equal(count(db, 'SELECT COUNT(*) AS n FROM issues'), 1);
   assert.equal(count(db, 'SELECT COUNT(*) AS n FROM project_items'), 1);
   assert.equal(count(db, 'SELECT COUNT(*) AS n FROM source_items'), 0);

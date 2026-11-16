@@ -109,5 +109,23 @@ export const MIGRATIONS: readonly string[] = [
   // #833: GitHub's Project items move onto #813's tables, so a file opens with its items and the first listing answers before any GraphQL read.
   // relations_read is #190's three-state marker (blocking_read), outside the replace rule. A relation was an issue's; the store keys it per
   // item, so it is copied once for each item that shows the issue. `||` with a NULL is NULL: a target with no repository or number has no key
-  `ALTER TABLE source_items ADD COLUMN relations_read INTEGER;`,
+  `ALTER TABLE source_items ADD COLUMN relations_read INTEGER;
+  INSERT INTO source_items (source, node_id, scope, key, updated_at, values_sig, content_id, data, written_at, relations_read)
+    SELECT p.source, p.node_id, p.project,
+      CASE WHEN p.content_type = 'Issue' AND i.node_id IS NOT NULL THEN i.repository || '#' || i.number ELSE p.node_id END,
+      p.updated_at, p.values_sig, p.issue_node_id, json_object('contentType', p.content_type), p.written_at, p.blocking_read
+    FROM project_items p LEFT JOIN issues i ON i.source = p.source AND i.node_id = p.issue_node_id;
+  INSERT INTO source_listings (source, scope, position, node_id) SELECT source, project, position, node_id FROM project_listings;
+  INSERT INTO source_item_values (source, node_id, field, position, kind, value)
+    SELECT source, item_node_id, field, 0, CASE kind WHEN 'name' THEN 'option' WHEN 'title' THEN 'iteration' ELSE kind END, value FROM item_field_values;
+  INSERT INTO source_fields (source, scope, position, name, kind, options) SELECT source, project, position, name, data_type, options FROM project_fields;
+  INSERT INTO source_relations (source, node_id, kind, position, target_id, target_key, title, state)
+    SELECT p.source, p.node_id, CASE r.kind WHEN 'subIssue' THEN 'subItem' ELSE r.kind END, r.position, r.node_id,
+      r.repository || '#' || r.number, r.title, r.state
+    FROM issue_relations r JOIN project_items p ON p.source = r.source AND p.issue_node_id = r.issue_node_id;
+  DROP TABLE issue_relations;
+  DROP TABLE project_fields;
+  DROP TABLE item_field_values;
+  DROP TABLE project_listings;
+  DROP TABLE project_items;`,
 ];
