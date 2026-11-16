@@ -249,5 +249,5 @@ test('migration 6 drops the #190 items and listings: a model at version 5 opens 
   raw.close();
   const { db, resync } = await openReadModel(path);
   t.after(() => db.close());
-  assert.deepEqual([resync, db.listing('s', 'acme/6'), db.itemRows('s', ['PVTI_1']), db.projectFields('s', 'acme/6')], [false, [], [], []]);
+  assert.deepEqual([resync, db.items.listing('s', 'acme/6'), db.githubItemRows('s', ['PVTI_1']), db.items.fields('s', 'acme/6')], [false, [], [], []]);
 });

@@ -2,7 +2,8 @@ import { STATUS } from '../field-values.js';
 import type { GhBlockerRef, GhIssueRelations, GhItemFieldsNode, GhItemNode, GhProjectField, GhPullRequest, GhSubIssue } from '../sources/github-queries.js';
 import type { ProjectPr, Signal } from '../types.js';
 import type { ReadModel, ScopeKind } from './db.js';
-import type { FieldValueRow, IssueDetails, IssueRow, ProjectFieldRow, RelationRow, StoredItemRows } from './rows.js';
+import type { IssueDetails, IssueRow, StoredItemRows } from './rows.js';
+import type { SourceField, SourceItemValue, SourceRelation } from './source-items.js';
 
 // The rows back into the node the poll's steps and the views read (#282). The contract test compares the consumers' answers over this node and
 // the wire's, not the nodes: a key no consumer reads (a draft's title, a PR item's fields) is not rebuilt
@@ -15,15 +16,29 @@ const pullRequestOf = (pr: ProjectPr): GhPullRequest => ({
   number: pr.number, url: pr.url, state: PR_STATE[pr.state], merged: pr.state === 'merged', isDraft: pr.draft === true,
   statusCheckRollup: pr.checks === undefined ? null : { state: ROLLUP[pr.checks] },
 });
-const refOf = (r: RelationRow): GhBlockerRef => ({ number: r.number ?? 0, title: r.title ?? '', state: r.state, repository: { nameWithOwner: r.repository ?? '' } });
-const subIssueOf = (r: RelationRow): GhSubIssue => ({
-  id: r.nodeId ?? '', state: r.state === 'CLOSED' ? 'CLOSED' : 'OPEN', ...(r.number === null ? {} : { number: r.number }),
-  ...(r.title === null ? {} : { title: r.title }), ...(r.repository === null ? {} : { repository: { nameWithOwner: r.repository } }),
-});
-const fieldValueOf = (v: FieldValueRow) => ({ [v.kind]: v.kind === 'number' ? Number(v.value) : v.value, field: { name: v.field } });
+// The neutral kind back to the GhFieldValue key that holds it (#833)
+const GH_KEY: Record<SourceItemValue['kind'], 'name' | 'text' | 'number' | 'date' | 'title'> = { option: 'name', text: 'text', number: 'number', date: 'date', iteration: 'title' };
+const fieldValueOf = (v: SourceItemValue) => ({ [GH_KEY[v.kind]]: v.kind === 'number' ? Number(v.value) : v.value, field: { name: v.field } });
+// target_key is <owner>/<repo>#<number>: split at its last #, since a repository name has none
+function targetOf(r: SourceRelation): { repository: string; number: number } | null {
+  if (r.targetKey === null) return null;
+  const at = r.targetKey.lastIndexOf('#');
+  return { repository: r.targetKey.slice(0, at), number: Number(r.targetKey.slice(at + 1)) };
+}
+const refOf = (r: SourceRelation): GhBlockerRef => {
+  const target = targetOf(r);
+  return { number: target?.number ?? 0, title: r.title ?? '', state: r.state, repository: { nameWithOwner: target?.repository ?? '' } };
+};
+const subIssueOf = (r: SourceRelation): GhSubIssue => {
+  const target = targetOf(r);
+  return {
+    id: r.targetId ?? '', state: r.state === 'CLOSED' ? 'CLOSED' : 'OPEN', ...(r.title === null ? {} : { title: r.title }),
+    ...(target === null ? {} : { number: target.number, repository: { nameWithOwner: target.repository } }),
+  };
+};
 
 function issueContent(rows: StoredItemRows, issue: IssueRow, details: IssueDetails): Content {
-  const of = (kind: RelationRow['kind']): RelationRow[] => rows.relations.filter((r) => r.kind === kind);
+  const of = (kind: SourceRelation['kind']): SourceRelation[] => rows.relations.filter((r) => r.kind === kind);
   return {
     __typename: 'Issue', id: issue.nodeId, number: issue.number, title: issue.title, body: issue.body, url: details.url,
     state: issue.state === 'open' ? 'OPEN' : 'CLOSED', author: issue.author === null ? null : { login: issue.author }, comments: { totalCount: issue.comments },
@@ -32,15 +47,15 @@ function issueContent(rows: StoredItemRows, issue: IssueRow, details: IssueDetai
     milestone: details.milestone === null ? null : { title: details.milestone }, issueType: details.issueType === null ? null : { name: details.issueType },
     parent: details.parentNumber === null ? null : { number: details.parentNumber, title: details.parentTitle ?? '' },
     subIssuesSummary: details.subIssuesTotal === null ? null : { total: details.subIssuesTotal, completed: details.subIssuesCompleted ?? 0 },
-    subIssues: { nodes: of('subIssue').map(subIssueOf) }, blockedBy: { nodes: of('blockedBy').map(refOf) },
+    subIssues: { nodes: of('subItem').map(subIssueOf) }, blockedBy: { nodes: of('blockedBy').map(refOf) },
     closedByPullRequestsReferences: { nodes: rows.pullRequests.map(pullRequestOf) }, repository: { nameWithOwner: issue.repository },
   };
 }
 
 // An issue item whose issues row is gone (the REST reconcile removed it) has no content: the next full read drops the item too
 function contentOf(rows: StoredItemRows): GhItemNode['content'] {
-  const type = rows.item.contentType;
-  if (type === null) return null;
+  const type = rows.item.data.contentType;
+  if (typeof type !== 'string') return null;
   if (type !== 'Issue') return { __typename: type };
   return rows.issue === undefined || rows.details === undefined ? null : issueContent(rows, rows.issue, rows.details);
 }
@@ -56,15 +71,14 @@ export function rebuildNode(rows: StoredItemRows): GhItemNode {
 
 /** What the relations query answered of the item (#190's three states): undefined never read, null the issue is gone, else its blocking. */
 export function blockingOf(rows: StoredItemRows): GhIssueRelations | null | undefined {
-  const read = rows.item.blockingRead;
-  if (read === null) return undefined;
-  return read === 0 ? null : { blocking: { nodes: rows.relations.filter((r) => r.kind === 'blocking').map(refOf) } };
+  if (rows.relationsRead === null) return undefined;
+  return !rows.relationsRead ? null : { blocking: { nodes: rows.relations.filter((r) => r.kind === 'blocking').map(refOf) } };
 }
 
 /** The stored fields back into the shape projectFields(), projectBuiltins() and itemFields() read (#282): options or iterations by name. */
-export const rebuildFields = (rows: ProjectFieldRow[]): GhProjectField[] => rows.map((f) => ({
-  name: f.name, ...(f.dataType === null ? {} : { dataType: f.dataType }),
-  ...(f.options === null ? {} : f.dataType === 'ITERATION' ? { configuration: { iterations: f.options.map((title) => ({ title })) } } : { options: f.options.map((name) => ({ name })) }),
+export const rebuildFields = (rows: SourceField[]): GhProjectField[] => rows.map((f) => ({
+  name: f.name, ...(f.kind === null ? {} : { dataType: f.kind }),
+  ...(f.options === null ? {} : f.kind === 'ITERATION' ? { configuration: { iterations: f.options.map((title) => ({ title })) } } : { options: f.options.map((name) => ({ name })) }),
 }));
 
 const ownerOf = (repository: string): string => repository.slice(0, repository.indexOf('/'));
@@ -77,9 +91,9 @@ const optionsStored = (db: ReadModel, source: string, repository: string): boole
  * is no issue, or its options were never synced, and the editor reads live. The ids are empty: a write never resolves against this node, it reads
  * ITEM_FIELDS live. */
 export function rebuildFieldsNode(db: ReadModel, source: string, project: string, itemId: string): GhItemFieldsNode | undefined {
-  const [rows] = db.itemRows(source, [itemId]);
+  const [rows] = db.githubItemRows(source, [itemId]);
   const repository = rows?.issue?.repository;
-  if (rows === undefined || rows.item.project !== project || repository === undefined || !optionsStored(db, source, repository)) return undefined;
+  if (rows === undefined || rows.item.scope !== project || repository === undefined || !optionsStored(db, source, repository)) return undefined;
   const node = rebuildNode(rows);
   if (!node.content) return undefined;
   const choices = {
@@ -88,5 +102,5 @@ export function rebuildFieldsNode(db: ReadModel, source: string, project: string
     milestones: { nodes: db.milestones(source, repository).map((title) => ({ id: '', title })) },
     issueTypes: { nodes: db.issueTypes(source, ownerOf(repository)).map((name) => ({ id: '', name })) },
   };
-  return { ...node, project: { id: '', fields: { nodes: rebuildFields(db.projectFields(source, project)) } }, content: { ...node.content, repository: { nameWithOwner: repository, ...choices } } };
+  return { ...node, project: { id: '', fields: { nodes: rebuildFields(db.items.fields(source, project)) } }, content: { ...node.content, repository: { nameWithOwner: repository, ...choices } } };
 }

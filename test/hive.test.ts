@@ -97,16 +97,16 @@ test('bootHive opens the read model before the boot adapters and hands it to eac
   const { home } = await hiveWithConfig(t, WITH_SOURCE);
   const hive = await bootHive(home, { sourceFactory: recording(fakeSourceFactory().factory) });
   t.after(() => hive.server.close());
-  assert.deepEqual(stores[0]?.db.listing('github:github.com:bia', 'acme/6'), [], 'open: it answers a read');
+  assert.deepEqual(stores[0]?.db.items.listing('github:github.com:bia', 'acme/6'), [], 'open: it answers a read');
 
   const broken = await hiveWithConfig(t, WITH_SOURCE);
   const setup = await bootHive(broken.home, { sourceFactory: recording(unreadable) });
   t.after(() => setup.server.close()); // a second close() is a no-op: this one only covers a failed assertion
   const kept = stores.at(-1);
   assert.ok(kept !== undefined, 'the boot adapter got the store');
-  assert.deepEqual(kept.db.listing('github:github.com:bia', 'acme/6'), [], 'open: leaving setup mode by a save reads it');
+  assert.deepEqual(kept.db.items.listing('github:github.com:bia', 'acme/6'), [], 'open: leaving setup mode by a save reads it');
   await setup.server.close();
-  assert.throws(() => kept.db.listing('github:github.com:bia', 'acme/6'), 'the server closes it');
+  assert.throws(() => kept.db.items.listing('github:github.com:bia', 'acme/6'), 'the server closes it');
 });
 
 test('bootHive in setup mode hands the read model to the first Settings save, so leaving setup mode needs no restart (#401)', async (t) => {
@@ -123,7 +123,7 @@ test('bootHive in setup mode hands the read model to the first Settings save, so
   const saved = await fetch(`http://127.0.0.1:${setup.port}/settings`, { method: 'POST', headers: { ...asClient(home), 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body) });
   assert.equal(saved.status, 200, await saved.text());
   assert.equal((await settingsInfo(home, setup.port)).configured, true);
-  assert.deepEqual(stores.at(-1)?.db.listing('github:github.com:bia', 'acme/6'), [], "the save's adapter stores its items in the open model");
+  assert.deepEqual(stores.at(-1)?.db.items.listing('github:github.com:bia', 'acme/6'), [], "the save's adapter stores its items in the open model");
 });
 
 test('bootHive sweeps the prompt files a previous run left, in hive mode and in setup mode; hive mode keeps the directory', async (t) => {

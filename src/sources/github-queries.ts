@@ -53,7 +53,7 @@ export const SELECT_FIELDS = `query($login: String!, $number: Int!) {
 }`;
 
 // #282: a sub-issue as the poll and the editors read it: its node id and state (#211, #28), and its number, title and repository, which the
-// start gate and the read model's issue_relations keep
+// start gate and the read model's source_relations keep
 const SUB_ISSUE_NODES = 'nodes { id number title state repository { nameWithOwner } }';
 // The PRs that close an issue (#756), merged or closed included, with their checks' rollup; isDraft so the read model's issue_pull_requests
 // carry the same draft flag whichever of their two writers wrote last (#282)
@@ -61,7 +61,7 @@ const CLOSING_PRS = `closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, 
 // What the poll and the editors read of an issue alike (#282): the issues row issueFromGql makes, what the native view shows, what the read model
 // keeps beside it. One line: a test matches across it
 const ISSUE_FIELDS = `id number title body url state createdAt updatedAt closedAt author { login } comments { totalCount } parent { number title } subIssuesSummary { completed total } subIssues(first: ${SUB_ISSUE_LIMIT}) { ${SUB_ISSUE_NODES} } blockedBy(first: ${RELATION_LIMIT}) { ${BLOCKER_NODES} } ${CLOSING_PRS}`;
-// The project's fields with their kind and their options or iterations (#756): what the view groups by and the read model's project_fields
+// The project's fields with their kind and their options or iterations (#756): what the view groups by and the read model's source_fields
 const PROJECT_FIELD_LIST = `fields(first: ${FIELD_LIMIT}) { nodes { ... on ProjectV2FieldCommon { name dataType } ... on ProjectV2SingleSelectField { options { name } } ... on ProjectV2IterationField { configuration { iterations { title } } } } }`;
 
 // Each set value of an item with its field's name, of every kind the native view renders (#756); ITEM_FIELDS reads the same (#686)
@@ -224,7 +224,7 @@ export interface GhRateLimit { limit?: unknown; remaining?: unknown; resetAt?: u
  * date date (ISO day), an iteration title; ITEMS asks only the first two, so any other kind answers {} there. */
 export interface GhFieldValue { name?: string; text?: string; number?: number; date?: string; title?: string; field?: { name?: string } | null }
 /** A sub-issue as the items read asks it (#211, #28, #282): its node id and state, what groupUnderEpics and treeLinks read; its number, title and
- * repository, what the start gate and the read model's issue_relations keep. The read model stores what it is given, so all three are optional. */
+ * repository, what the start gate and the read model's source_relations keep. The read model stores what it is given, so all three are optional. */
 export interface GhSubIssue { id: string; state: 'OPEN' | 'CLOSED'; number?: number; title?: string; repository?: { nameWithOwner: string } }
 export interface GhItemNode {
   id: string;
