@@ -106,4 +106,8 @@ export const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (source, scope, position));
   CREATE TABLE source_relations (source TEXT NOT NULL, node_id TEXT NOT NULL, kind TEXT NOT NULL, position INTEGER NOT NULL, target_id TEXT,
     target_key TEXT, title TEXT, state TEXT NOT NULL, PRIMARY KEY (source, node_id, kind, position));`,
+  // #833: GitHub's Project items move onto #813's tables, so a file opens with its items and the first listing answers before any GraphQL read.
+  // relations_read is #190's three-state marker (blocking_read), outside the replace rule. A relation was an issue's; the store keys it per
+  // item, so it is copied once for each item that shows the issue. `||` with a NULL is NULL: a target with no repository or number has no key
+  `ALTER TABLE source_items ADD COLUMN relations_read INTEGER;`,
 ];

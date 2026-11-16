@@ -3,7 +3,7 @@ import type { UpsertOrigin } from './rows.js';
 import { groupBy, inTransaction, nullable, type Row, stamp, text, upsertSql, written } from './sql.js';
 
 // The items of any tracker (#813), in neutral rows: the common columns are here, each tracker's own content is the `data` JSON. Nothing in
-// this file names a tracker, so a new source adds no table. Not on ReadModel yet: a later node wires it.
+// this file names a tracker, so a new source adds no table. `ReadModel` exposes it as `items` (#833).
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export interface SourceItem {
@@ -16,7 +16,8 @@ export interface SourceItem {
 export interface SourceItemValue { field: string; kind: 'text' | 'number' | 'date' | 'option' | 'iteration'; value: string }
 export interface SourceRelation { kind: 'blockedBy' | 'blocking' | 'subItem'; targetId: string | null; targetKey: string | null; title: string | null; state: string }
 export interface SourceField { name: string; kind: string | null; options: string[] | null }
-export interface StoredSourceItem { item: SourceItem; values: SourceItemValue[]; relations: SourceRelation[] }
+/** relationsRead (#833): #190's three states, outside the replace rule. null never read, false the item's content is gone, true read. */
+export interface StoredSourceItem { item: SourceItem; values: SourceItemValue[]; relations: SourceRelation[]; relationsRead: boolean | null }
 
 const COLUMNS: readonly string[] = ['source', 'node_id', 'scope', 'key', 'updated_at', 'values_sig', 'parent_id', 'parent_key', 'parent_title', 'content_id', 'data'];
 const IN_IDS = 'IN (SELECT value FROM json_each(?))';
@@ -54,7 +55,8 @@ function writersOf(db: DatabaseSync, now: () => number) {
   const upsert = db.prepare(upsertSql('source_items', COLUMNS));
   const dropValues = db.prepare('DELETE FROM source_item_values WHERE source = ? AND node_id = ?');
   const addValue = db.prepare('INSERT INTO source_item_values (source, node_id, field, position, kind, value) VALUES (?, ?, ?, ?, ?, ?)');
-  const dropRelations = db.prepare('DELETE FROM source_relations WHERE source = ? AND node_id = ?');
+  const dropRelations = db.prepare(`DELETE FROM source_relations WHERE source = ? AND node_id = ? AND kind ${IN_IDS}`);
+  const markRead = db.prepare('UPDATE source_items SET relations_read = ? WHERE source = ? AND node_id = ?');
   const addRelation = db.prepare('INSERT INTO source_relations (source, node_id, kind, position, target_id, target_key, title, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   const dropFields = db.prepare('DELETE FROM source_fields WHERE source = ? AND scope = ?');
   const addField = db.prepare('INSERT INTO source_fields (source, scope, position, name, kind, options) VALUES (?, ?, ?, ?, ?, ?)');
@@ -67,10 +69,13 @@ function writersOf(db: DatabaseSync, now: () => number) {
       dropValues.run(source, nodeId);
       for (const [position, v] of positioned(values, (e) => e.field)) addValue.run(source, nodeId, v.field, position, v.kind, v.value);
     }),
-    setRelations: (source: string, nodeId: string, relations: readonly SourceRelation[]): void => inTransaction(db, () => {
-      dropRelations.run(source, nodeId);
+    // Only the given kinds' rows are replaced (absent: every kind), since two readers each write their own kinds
+    setRelations: (source: string, nodeId: string, relations: readonly SourceRelation[], kinds?: readonly SourceRelation['kind'][]): void => inTransaction(db, () => {
+      dropRelations.run(source, nodeId, JSON.stringify(kinds ?? RELATION_KINDS));
       for (const [position, r] of positioned(relations, (e) => e.kind)) addRelation.run(source, nodeId, r.kind, position, r.targetId, r.targetKey, r.title, r.state);
     }),
+    // Not in COLUMNS, so an upsert of the item never resets it
+    setRelationsRead: (source: string, nodeId: string, read: boolean | null): void => { markRead.run(read === null ? null : Number(read), source, nodeId); },
     setFields: (source: string, scope: string, fields: readonly SourceField[]): void => inTransaction(db, () => {
       dropFields.run(source, scope);
       for (const [position, f] of fields.entries()) addField.run(source, scope, position, f.name, f.kind, f.options === null ? null : JSON.stringify(f.options));
@@ -83,26 +88,31 @@ function writersOf(db: DatabaseSync, now: () => number) {
   };
 }
 
+const readOf = (row: Row): boolean | null => (row.relations_read === null ? null : Number(row.relations_read) === 1);
+
 function readersOf(db: DatabaseSync) {
   const listed = db.prepare('SELECT node_id FROM source_listings WHERE source = ? AND scope = ? ORDER BY position');
   const fieldRows = db.prepare('SELECT * FROM source_fields WHERE source = ? AND scope = ? ORDER BY position');
   const itemRows = db.prepare(`SELECT * FROM source_items WHERE source = ? AND node_id ${IN_IDS}`);
   const valueRows = db.prepare(`SELECT * FROM source_item_values WHERE source = ? AND node_id ${IN_IDS} ORDER BY field, position`);
   const relationRows = db.prepare(`SELECT * FROM source_relations WHERE source = ? AND node_id ${IN_IDS} ORDER BY kind, position`);
+  const unlistedRows = db.prepare(`SELECT node_id FROM source_items WHERE source = $source AND scope = $scope
+    AND node_id NOT IN (SELECT node_id FROM source_listings WHERE source = $source AND scope = $scope)`);
   const cursorRow = db.prepare(`SELECT cursor FROM sync_scopes WHERE source = ? AND repository = ? AND kind = '${ITEMS_KIND}'`);
   return {
     // A fixed number of queries for any number of ids: a listing is rebuilt on every poll
     items: (source: string, nodeIds: readonly string[]): StoredSourceItem[] => {
       const ids = JSON.stringify(nodeIds);
-      const byId = new Map(itemRows.all(source, ids).map((row): [string, SourceItem] => [text(row, 'node_id'), itemOf(row)]));
+      const byId = new Map(itemRows.all(source, ids).map((row): [string, Row] => [text(row, 'node_id'), row]));
       const valuesBy = groupBy(valueRows.all(source, ids), 'node_id', itemValueOf);
       const relationsBy = groupBy(relationRows.all(source, ids), 'node_id', relationOf);
       return nodeIds.flatMap((nodeId): StoredSourceItem[] => {
-        const item = byId.get(nodeId);
-        return item === undefined ? [] : [{ item, values: valuesBy.get(nodeId) ?? [], relations: relationsBy.get(nodeId) ?? [] }];
+        const row = byId.get(nodeId);
+        return row === undefined ? [] : [{ item: itemOf(row), values: valuesBy.get(nodeId) ?? [], relations: relationsBy.get(nodeId) ?? [], relationsRead: readOf(row) }];
       });
     },
     listing: (source: string, scope: string): string[] => listed.all(source, scope).map((row) => text(row, 'node_id')),
+    unlisted: (source: string, scope: string): string[] => unlistedRows.all({ source, scope }).map((row) => text(row, 'node_id')),
     fields: (source: string, scope: string): SourceField[] => fieldRows.all(source, scope).map((row) => ({
       name: text(row, 'name'), kind: nullable(row, 'kind'), options: row.options === null ? null : (JSON.parse(text(row, 'options')) as string[]),
     })),
