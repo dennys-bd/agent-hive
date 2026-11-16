@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { JIRA_CONNECT_ERRORS, type JiraConnectError, type JiraSiteStatus } from '../../types';
 import { t } from '@/i18n';
@@ -29,9 +29,12 @@ const outcomeOf = (err: unknown): JiraConnectOutcome => {
 /** GET /settings/jira/sites when the card mounts and after every connect or disconnect (#817). No polling: nothing changes on its own. */
 export function useJiraSites(): JiraSites {
   const [sites, setSites] = useState<JiraSiteStatus[]>();
+  const latest = useRef(0); // overlapping reloads can answer out of order: only the newest one's answer is shown
   const reload = useCallback(async (): Promise<void> => {
+    const n = ++latest.current;
     try {
       const answer = await getJson<unknown>(SITES);
+      if (n !== latest.current) return;
       setSites(Array.isArray(answer) ? (answer as JiraSiteStatus[]) : []); // the server's array, else nothing to show
     } catch {
       failed();

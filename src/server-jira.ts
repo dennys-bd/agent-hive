@@ -35,7 +35,7 @@ export function normalizeJiraSite(raw: unknown): string | undefined {
 function myselfOf(body: unknown): Myself | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
   const { accountId, displayName } = body as { accountId?: unknown; displayName?: unknown };
-  if (typeof accountId !== 'string' || (displayName !== undefined && typeof displayName !== 'string')) return undefined;
+  if (typeof accountId !== 'string' || accountId === '' || (displayName !== undefined && typeof displayName !== 'string')) return undefined;
   return { accountId, ...(displayName === undefined ? {} : { displayName }) };
 }
 

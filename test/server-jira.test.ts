@@ -84,6 +84,7 @@ test('a 429, a 500, a network failure or a body without a string accountId or di
     ['500', () => json({}, 500)],
     ['network', () => { throw new TypeError('fetch failed'); }],
     ['no accountId', () => json({ displayName: 'Ana' })],
+    ['empty accountId', () => json({ accountId: '', displayName: 'Ana' })],
     ['non-string displayName', () => json({ accountId: 'acc-1', displayName: 7 })],
     ['not an object', () => json('Ana')],
   ];

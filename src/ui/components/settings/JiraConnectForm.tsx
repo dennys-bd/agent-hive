@@ -49,7 +49,7 @@ export function JiraConnectForm({ site: fixedSite, onSubmit, onClose }: JiraConn
     setPending(false);
     setOutcome(result);
   };
-  const onKeyDown = (event: KeyboardEvent): void => { if (event.key === 'Escape') onClose(); };
+  const onKeyDown = (event: KeyboardEvent): void => { if (event.key === 'Escape' && !isPending) onClose(); }; // a running connect would save with no form left to show it
   const input = (name: string, value: string, set: (v: string) => void, extra: ComponentProps<typeof Input> = {}) => (
     <Input id={`${id}-${name}`} value={value} onChange={(e) => set(e.target.value)} aria-describedby={`${id}-${name}-hint`} {...extra} />
   );

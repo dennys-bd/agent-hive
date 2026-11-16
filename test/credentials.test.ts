@@ -112,6 +112,14 @@ test('a jira credential round-trips by site, keeps every sibling key and is owne
   assert.deepEqual(await readCredentials(env), { github: { token: 'gho_x', login: 'ana' }, mcp: { srv: { value: 'v' } }, jira: { 'b.atlassian.net': BOB } });
 });
 
+test('removing a site with no login writes nothing, so an unreadable file is never rewritten without its other logins (#817)', async (t) => {
+  const env = await configHome(t);
+  await writeCredentials({}, env);
+  await writeFile(credentialsPath(env), 'not json');
+  await removeJiraCredential('a.atlassian.net', env);
+  assert.equal(await readFile(credentialsPath(env), 'utf8'), 'not json');
+});
+
 test('a stored jira map keeps each well-formed site and drops a malformed entry in place; a map that is no object is dropped whole (#816)', async (t) => {
   const env = await configHome(t);
   await writeCredentials({}, env);
