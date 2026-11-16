@@ -1,4 +1,5 @@
 import { WireError } from '../read-model/normalize.js';
+import { type AdfNode, adfToMarkdown } from './adf.js';
 
 /** One call to the site's REST API v3, path from /rest/api/3 on. 5.2 binds it from jiraFetch, so the site and the credential stay in the transport. */
 export type JiraCall = (path: string, init?: RequestInit) => Promise<unknown>;
@@ -110,4 +111,62 @@ export async function readIssue(call: JiraCall, idOrKey: string): Promise<JiraFi
   const query = new URLSearchParams({ fields: SEARCH_FIELDS.join(','), expand: SEARCH_EXPAND });
   const json = recordAt(await call(`/issue/${encodeURIComponent(idOrKey)}?${query}`), 'jira issue');
   return { issue: issueAt(json, 'jira issue'), ...metaOf(json) };
+}
+
+export interface JiraFieldDef { id: string; name: string; schema: JiraSchema | null }
+/** A workflow status; category is its statusCategory key (new, indeterminate, done). */
+export interface JiraStatus { name: string; category: string }
+export interface JiraLinkType { name: string; inward: string; outward: string }
+/** created as UTC ISO, so 5.2 sorts comments oldest first as text; body as Markdown. */
+export interface JiraComment { id: string; author: string | null; created: string; body: string }
+
+function commentOf(value: unknown): JiraComment {
+  const c = recordAt(value, 'jira comments');
+  const created = utcIso(c.created);
+  if (created === undefined) throw new WireError('jira comment created');
+  const author = typeof c.author === 'object' && c.author !== null && !Array.isArray(c.author) ? (c.author as Json).displayName : undefined;
+  // the codec checks every node before reading it (adf.ts), so the unchecked wire value is safe to hand it
+  return { id: textAt(c, 'id', 'jira comment'), author: typeof author === 'string' ? author : null, created, body: adfToMarkdown(c.body as AdfNode | null | undefined) };
+}
+
+/** Every comment of an issue, paged by startAt; an empty page ends it even if total says more. */
+export async function readComments(call: JiraCall, id: string): Promise<JiraComment[]> {
+  if (!ISSUE_REF.test(id)) throw new Error('jira issue id or key is not one');
+  const comments: JiraComment[] = [];
+  let total = Number.POSITIVE_INFINITY;
+  while (comments.length < total) {
+    const page = recordAt(await call(`/issue/${encodeURIComponent(id)}/comment?startAt=${comments.length}&maxResults=${PAGE_SIZE}`), 'jira comments');
+    if (typeof page.total !== 'number') throw new WireError('jira comments total');
+    total = page.total;
+    const read = arrayAt(page.comments, 'jira comments').map(commentOf);
+    if (read.length === 0) break;
+    comments.push(...read);
+  }
+  return comments;
+}
+
+/** The union of the project's workflow statuses over its issue types, first seen first. */
+export async function readStatuses(call: JiraCall, key: string): Promise<JiraStatus[]> {
+  if (!PROJECT_KEY.test(key)) throw new Error('jira project key is not a Jira key');
+  const types = arrayAt(await call(`/project/${encodeURIComponent(key)}/statuses`), 'jira statuses');
+  const all = types.flatMap((t) => arrayAt(recordAt(t, 'jira statuses').statuses, 'jira statuses').map((s) => {
+    const status = recordAt(s, 'jira statuses');
+    return { name: textAt(status, 'name', 'jira statuses'), category: textAt(recordAt(status.statusCategory, 'jira statuses'), 'key', 'jira statuses') };
+  }));
+  return all.filter((s, i) => all.findIndex((o) => o.name === s.name) === i);
+}
+
+export async function readFields(call: JiraCall): Promise<JiraFieldDef[]> {
+  return arrayAt(await call('/field'), 'jira fields').map((f) => {
+    const field = recordAt(f, 'jira fields');
+    return { id: textAt(field, 'id', 'jira fields'), name: textAt(field, 'name', 'jira fields'), schema: schemaOf(field.schema) ?? null };
+  });
+}
+
+export async function readLinkTypes(call: JiraCall): Promise<JiraLinkType[]> {
+  const json = recordAt(await call('/issueLinkType'), 'jira link types');
+  return arrayAt(json.issueLinkTypes, 'jira link types').map((t) => {
+    const type = recordAt(t, 'jira link types');
+    return { name: textAt(type, 'name', 'jira link type'), inward: textAt(type, 'inward', 'jira link type'), outward: textAt(type, 'outward', 'jira link type') };
+  });
 }

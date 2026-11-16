@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
-import { type JiraCall, projectJql, readIssue, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
+import { adfToMarkdown } from '../../src/sources/adf.js';
+import { type JiraCall, projectJql, readComments, readFields, readIssue, readLinkTypes, readStatuses, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
 
 interface Sent { path: string; method: string; body: unknown }
 
@@ -87,4 +88,65 @@ test('readIssue refuses an id or key that is neither, before any call', async ()
   const { call, sent } = fakeJira([]);
   for (const ref of ['..', 'abc-1', 'ABC-1/comment', '']) await assert.rejects(readIssue(call, ref), /id or key/, ref);
   assert.equal(sent.length, 0);
+});
+
+const doc = (text: string) => ({ version: 1, type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+const comment = (id: string, text: string, author: unknown = { displayName: 'Ana Lima' }) =>
+  ({ id, author, created: '2026-11-16T07:00:00.000-0300', body: doc(text) });
+
+test('readComments pages by startAt until total and answers each comment as Markdown', async () => {
+  const { call, sent } = fakeJira([
+    { startAt: 0, maxResults: 2, total: 3, comments: [comment('1', 'one'), comment('2', 'two', null)] },
+    { startAt: 2, maxResults: 2, total: 3, comments: [comment('3', 'three')] },
+  ]);
+  const comments = await readComments(call, '10001');
+  assert.deepEqual(sent.map((s) => s.path), ['/issue/10001/comment?startAt=0&maxResults=100', '/issue/10001/comment?startAt=2&maxResults=100']);
+  assert.deepEqual(comments.map((c) => [c.id, c.author, c.created]), [
+    ['1', 'Ana Lima', '2026-11-16T10:00:00.000Z'], ['2', null, '2026-11-16T10:00:00.000Z'], ['3', 'Ana Lima', '2026-11-16T10:00:00.000Z'],
+  ]);
+  assert.equal(comments[0]?.body, adfToMarkdown(doc('one') as Parameters<typeof adfToMarkdown>[0]));
+});
+
+test('readComments stops on an empty page even if total says more, and refuses a page without total', async () => {
+  assert.deepEqual(await readComments(fakeJira([{ total: 5, comments: [] }]).call, '1'), []);
+  await assert.rejects(readComments(fakeJira([{ comments: [] }]).call, '1'), /jira comments total/);
+});
+
+test('readStatuses answers the union over issue types, first seen first, each with its category', async () => {
+  const { call, sent } = fakeJira([[
+    { name: 'Story', statuses: [{ name: 'To Do', statusCategory: { key: 'new' } }, { name: 'In Progress', statusCategory: { key: 'indeterminate' } }] },
+    { name: 'Bug', statuses: [{ name: 'To Do', statusCategory: { key: 'new' } }, { name: 'Done', statusCategory: { key: 'done' } }] },
+  ]]);
+  assert.deepEqual(await readStatuses(call, 'ABC'), [
+    { name: 'To Do', category: 'new' }, { name: 'In Progress', category: 'indeterminate' }, { name: 'Done', category: 'done' },
+  ]);
+  assert.deepEqual(sent.map((s) => s.path), ['/project/ABC/statuses']);
+});
+
+test('readStatuses refuses a key that is not a Jira key before any call, and an answer that is not a list', async () => {
+  const none = fakeJira([]);
+  await assert.rejects(readStatuses(none.call, '..'), /project key/);
+  assert.equal(none.sent.length, 0);
+  await assert.rejects(readStatuses(fakeJira([{}]).call, 'ABC'), /jira statuses/);
+});
+
+test('readFields answers each field\'s id, name and schema; a field without a schema has null', async () => {
+  const { call } = fakeJira([[
+    { id: 'summary', name: 'Summary', schema: { type: 'string', system: 'summary' } },
+    { id: 'customfield_1', name: 'Team', schema: { type: 'option', custom: 'x' } },
+    { id: 'thumbnail', name: 'Images' },
+  ]]);
+  assert.deepEqual(await readFields(call), [
+    { id: 'summary', name: 'Summary', schema: { type: 'string' } },
+    { id: 'customfield_1', name: 'Team', schema: { type: 'option' } },
+    { id: 'thumbnail', name: 'Images', schema: null },
+  ]);
+  await assert.rejects(readFields(fakeJira([[{ id: 'x' }]]).call), /jira fields/);
+});
+
+test('readLinkTypes answers each type with its two phrases', async () => {
+  const { call, sent } = fakeJira([{ issueLinkTypes: [{ id: '1', name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }] }]);
+  assert.deepEqual(await readLinkTypes(call), [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }]);
+  assert.deepEqual(sent.map((s) => s.path), ['/issueLinkType']);
+  await assert.rejects(readLinkTypes(fakeJira([[]]).call), /jira link types/);
 });
