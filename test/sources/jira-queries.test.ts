@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { type JiraCall, postTransition, projectJql, readComments, readAssignable, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
+import { deleteIssueLink, type JiraCall, postIssueLink, postTransition, projectJql, readComments, readAssignable, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, searchPage, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
 
 interface Sent { path: string; method: string; body: unknown }
 
@@ -278,4 +278,19 @@ test('readAssignable refuses a bad key before any call, a body that is no list, 
   const never = endless(Array.from({ length: 100 }, (_, i) => ({ accountId: `acc-${i}`, displayName: 'Ana Lima' })));
   await assert.rejects(readAssignable(never.call, 'ABC'), /jira assignable page count/);
   assert.equal(never.calls(), 1000);
+});
+
+test('postIssueLink posts the type and both ends, deleteIssueLink deletes by a digits id only, searchPage reads one page and never follows its token (#828)', async () => {
+  const { call, sent } = fakeJira([undefined, undefined, { issues: [{ id: '1', key: 'ABC-1' }], nextPageToken: 't1' }]);
+  await postIssueLink(call, 'Blocks', 'ABC-2', 'ABC-1');
+  await deleteIssueLink(call, '20001');
+  assert.deepEqual((await searchPage(call, 'project = "ABC"', ['summary'], 8)).issues, [{ id: '1', key: 'ABC-1', fields: {} }]);
+  assert.deepEqual(sent, [
+    { path: '/issueLink', method: 'POST', body: { type: { name: 'Blocks' }, inwardIssue: { key: 'ABC-2' }, outwardIssue: { key: 'ABC-1' } } },
+    { path: '/issueLink/20001', method: 'DELETE', body: undefined },
+    { path: '/search/jql', method: 'POST', body: { jql: 'project = "ABC"', fields: ['summary'], maxResults: 8 } },
+  ]);
+  const none = fakeJira([]);
+  for (const id of ['../1', 'L1', '']) await assert.rejects(deleteIssueLink(none.call, id), /link id/, id);
+  assert.equal(none.sent.length, 0);
 });
