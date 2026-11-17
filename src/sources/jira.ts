@@ -8,8 +8,8 @@ import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
 import { JiraNotFoundError } from './jira-fetch.js';
 import { jiraItemOf } from './jira-item.js';
 import { isListed, type JiraSourceConfig, listedTasks, projectOf, taskOf } from './jira-listing.js';
-import { type JiraCall, type JiraIssueRead, postTransition, readComments, readIssue, readMyself, readStatuses, readTransitions } from './jira-queries.js';
-import { type CategoryOf, linkedIds, storedCategories } from './jira-relations.js';
+import { type JiraCall, type JiraIssueRead, postTransition, readComments, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions } from './jira-queries.js';
+import { type CategoryOf, checkLinkTypes, findBlockers, linkedIds, relate, type RelationsContext, storedCategories } from './jira-relations.js';
 import { writeIssue } from './jira-sync.js';
 import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
 
@@ -55,6 +55,15 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
   }
   const readTask = async (cred: JiraCredential, itemId: string): Promise<{ task: SourceItem; isOwn: boolean }> => keep(cred, await readIssue(call, itemId));
 
+  // #828: what jira-relations.ts reads and writes through, under this account's rows
+  const relations = (cred: JiraCredential): RelationsContext => ({
+    call, blockingTypes: source.blockingLinkTypes, categories: (ids) => categoriesOf(cred, ids),
+    keep: (read) => {
+      const { task, isOwn } = keep(cred, read);
+      return { task, isListed: isOwn && isListed(task, source, columns, cred.displayName) };
+    },
+  });
+
   async function resolveFields(): Promise<void> {
     const cred = await account();
     const names = (await readStatuses(call, source.project)).map((s) => s.name);
@@ -62,6 +71,7 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     if (missing !== undefined) throw new Error(`"${missing.column}" is not a status of ${source.project}: ${names.join(', ')}`);
     // checked in the same answer, so a wrong name shows as the source's sync error before any stage closes
     if (!names.includes(source.doneStatus)) throw new Error(`"${source.doneStatus}" is not a status of ${source.project}: ${names.join(', ')}`);
+    await checkLinkTypes(call, source.site, source.blockingLinkTypes);
     const me = await readMyself(call);
     // another account is reconnecting's business: the store key hangs on the account id, so only the name of this one is renewed
     if (me.accountId === cred.accountId && me.displayName !== undefined && me.displayName !== cred.displayName) {
@@ -150,5 +160,10 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     return (await readStatuses(call, source.project)).map((s) => s.name);
   }
 
-  return { resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments };
+  return {
+    resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments,
+    relate: async (itemId, change) => relate(relations(await account()), itemId, change),
+    findBlockers: (_itemId, text) => findBlockers({ call, project: source.project }, text), // the search is the project's, whatever the item
+    linkTypes: () => readLinkTypes(call),
+  };
 }

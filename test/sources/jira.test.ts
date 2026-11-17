@@ -6,9 +6,10 @@ import { JiraNotFoundError } from '../../src/sources/jira-fetch.js';
 import { createJiraSource, type JiraSourceConfig } from '../../src/sources/jira.js';
 import type { FilterRule } from '../../src/types.js';
 import { JIRA_ENTRY } from '../fakes.js';
-import { adapter, CITED, CRED, doc, end, fakeJira, inward, issue, outward, read, ROWS, seeded, STATUSES } from './jira-fakes.js';
+import { adapter, BLOCKS, CITED, CRED, doc, end, fakeJira, inward, issue, outward, read, RELATES, ROWS, seeded, STATUSES } from './jira-fakes.js';
 
 const markdown = (text: string): string => adfToMarkdown(doc(text) as Parameters<typeof adfToMarkdown>[0]);
+const LINK_TYPES = { issueLinkTypes: [BLOCKS, RELATES] };
 const ids = (tasks: { item: { id: string } }[]): string[] => tasks.map((t) => t.item.id);
 
 test('with no credential, listItems and resolveFields reject not connected before any call, and stored answers [] (#820)', async () => {
@@ -74,7 +75,7 @@ test('resolveFields rejects naming a cited column the statuses lack, and renews 
   ];
   for (const [me, expected] of cases) {
     const renamed: string[] = [];
-    await adapter({ call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /myself': [me] }).call, renamed }).resolveFields();
+    await adapter({ call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /issueLinkType': [LINK_TYPES], 'GET /myself': [me] }).call, renamed }).resolveFields();
     assert.deepEqual(renamed, expected, JSON.stringify(me));
   }
 });
@@ -82,11 +83,18 @@ test('resolveFields rejects naming a cited column the statuses lack, and renews 
 test('a name renewal that fails to write never fails the resolve, and is logged (#820)', async () => {
   const warned: string[] = [];
   const source = createJiraSource(JIRA_ENTRY, CITED, {
-    call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /myself': [{ accountId: 'acc-1', displayName: 'Ana L.' }] }).call,
+    call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /issueLinkType': [LINK_TYPES], 'GET /myself': [{ accountId: 'acc-1', displayName: 'Ana L.' }] }).call,
     credential: async () => CRED, renewName: async () => { throw new Error('EACCES'); }, log: { warn: (line: string) => { warned.push(line); } },
   });
   await source.resolveFields();
   assert.deepEqual(warned, ['jira:acme.example: display name not renewed (EACCES)']);
+});
+
+test('resolveFields rejects naming the first blocking type the site lacks, with the site\'s types, before /myself (#828)', async () => {
+  const fake = fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /issueLinkType': [LINK_TYPES] });
+  await assert.rejects(adapter({ call: fake.call, source: { blockingLinkTypes: ['Blocks', 'Depends', 'Gates'] } }).resolveFields(),
+    { message: '"Depends" is not a link type of acme.example: Blocks, Relates' });
+  assert.equal(fake.sent.includes('GET /myself'), false);
 });
 
 test('settingsOptions answers the project\'s statuses in Jira\'s order (#820)', async () => {
