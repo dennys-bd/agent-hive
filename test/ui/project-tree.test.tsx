@@ -16,26 +16,26 @@ const hiveTask = (n: number, at: string, parent?: number): Task => ({
 });
 
 test('two levels nest in order: each child right after its parent, after its earlier siblings\' subtrees (#584 decision 1)', () => {
-  const items = Object.freeze([row(1), row(2, { parent: 1 }), row(3, { parent: 2 }), row(4), row(5, { parent: 1 })]);
+  const items = Object.freeze([row(1), row(2, { parent: '1' }), row(3, { parent: '2' }), row(4), row(5, { parent: '1' })]);
   expect(lines(items)).toEqual([['1', 0, 2], ['2', 1, 1], ['3', 2, 0], ['5', 1, 0], ['4', 0, 0]]);
 });
 
 test('a collapsed parent hides its whole subtree, grandchildren included; nothing expanded shows the roots alone (#584 decision 3)', () => {
-  const items = [row(1), row(2, { parent: 1 }), row(3, { parent: 2 }), row(4)];
+  const items = [row(1), row(2, { parent: '1' }), row(3, { parent: '2' }), row(4)];
   expect(lines(items, [items[1]])).toEqual([['1', 0, 1], ['4', 0, 0]]);
   expect(lines(items, [])).toEqual([['1', 0, 1], ['4', 0, 0]]);
 });
 
 test('a child whose parent is not in the list is a root (#584 decision 2)', () => {
-  expect(lines([row(7, { parent: 99 }), row(8)])).toEqual([['7', 0, 0], ['8', 0, 0]]);
+  expect(lines([row(7, { parent: '99' }), row(8)])).toEqual([['7', 0, 0], ['8', 0, 0]]);
 });
 
 test('siblings keep the input\'s order, the sort\'s or the Project\'s (#584 decision 6)', () => {
-  expect(lines([row(1), row(5, { parent: 1 }), row(2, { parent: 1 })])).toEqual([['1', 0, 2], ['5', 1, 0], ['2', 1, 0]]);
+  expect(lines([row(1), row(5, { parent: '1' }), row(2, { parent: '1' })])).toEqual([['1', 0, 2], ['5', 1, 0], ['2', 1, 0]]);
 });
 
 test('a cycle in parent yields roots; a row hanging off the cycle still nests; a row that is its own parent is a root (#584 decision 5)', () => {
-  const items = [row(1, { parent: 2 }), row(2, { parent: 1 }), row(3, { parent: 1 }), row(4, { parent: 4 })];
+  const items = [row(1, { parent: '2' }), row(2, { parent: '1' }), row(3, { parent: '1' }), row(4, { parent: '4' })];
   expect(lines(items)).toEqual([['1', 0, 1], ['3', 1, 0], ['2', 0, 0], ['4', 0, 0]]);
 });
 
@@ -51,7 +51,7 @@ test('the count is the parent\'s own progress field, found by kind, not by name 
 });
 
 test('with no progress value, the count is the parent\'s children in the whole view and the closed ones; a source row is never done by its status (#584 decision 9)', () => {
-  const items = [row(1), row(2, { parent: 1, closedAt: '2026-10-04T10:00:00Z' }), row(3, { parent: 1, status: 'review' }), row(4, { parent: 9 })];
+  const items = [row(1), row(2, { parent: '1', closedAt: '2026-10-04T10:00:00Z' }), row(3, { parent: '1', status: 'review' }), row(4, { parent: '9' })];
   expect(subIssueCount(items[0], { fields: [], items }, FLOWS)).toEqual({ done: 1, n: 2 });
   expect(subIssueCount(items[0], { ...VIEW, items }, FLOWS)).toEqual({ done: 1, n: 2 }); // the field exists, the parent has no value
 });
