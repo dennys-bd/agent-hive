@@ -49,6 +49,12 @@ test('addableActions offers only what keeps the list valid, per source type and 
   assert.deepEqual(types(addableActions([], 'github', COLUMNS, true)), ['move:Ready', 'move:Done', 'close'], 'nothing that leaves on start');
 });
 
+test('addableActions for a jira source offers its columns\' moves, close, delete and archive, and never remove (#823)', () => {
+  assert.deepEqual(types(addableActions([], 'jira', COLUMNS, false)), ['move:Ready', 'move:Done', 'close', 'delete', 'archive']);
+  assert.deepEqual(types(addableActions([], 'jira', COLUMNS, true)), ['move:Ready', 'move:Done', 'close'], 'nothing that leaves on start');
+  assert.deepEqual(types(addableActions([ARCHIVE], 'jira', COLUMNS, false)), ['move:Ready', 'move:Done', 'close'], 'one leaving action per list');
+});
+
 test('withAction keeps a leaving action last; withoutAction returns a new list (#515)', () => {
   assert.deepEqual(withAction([ARCHIVE], CLOSE), [CLOSE, ARCHIVE]);
   assert.deepEqual(withAction([move('A')], ARCHIVE), [move('A'), ARCHIVE]);
