@@ -14,7 +14,7 @@ function fieldsOf(values: readonly SourceItemValue[]): Record<string, string | n
   }));
 }
 
-/** A stored Jira issue as a project row (#826): the field write's `row` now, 6.2's view later. The id is the key; the itemId the adapter's own,
+/** A stored Jira issue as a project row (#826), its parent named by the parent's key: the field write's `row` now, 6.2's view later. The id is the key; the itemId the adapter's own,
  * namespaced by source.ts as every row is. No pull requests and no blockers yet: 6.3 reads the relations. */
 export function jiraProjectItem(stored: Stored, source: Pick<JiraSourceConfig, 'site' | 'taskProps'>, isOut: boolean): ProjectItem {
   const { item, column } = taskOf(stored, source);
@@ -22,6 +22,7 @@ export function jiraProjectItem(stored: Stored, source: Pick<JiraSourceConfig, '
   return {
     itemId: item.itemId, id: item.id, title: item.title, body: item.body, url: item.url,
     ...(column === '' ? {} : { status: column }),
+    ...(stored.item.parentKey === null ? {} : { parent: stored.item.parentKey }),
     labels, assignees,
     ...(item.workspaceHint === undefined ? {} : { workspaceHint: item.workspaceHint }),
     fields: fieldsOf(stored.values), pullRequests: [],

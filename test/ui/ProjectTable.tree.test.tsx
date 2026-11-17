@@ -15,7 +15,7 @@ afterEach(() => vi.unstubAllGlobals());
 // #584: #12 (Ready) holds #13 (Ready); #20 (Ready) holds #21, which sits in Todo. No Progress value, so the badge counts the children
 const TREE: ProjectView = {
   ...VIEW,
-  items: [row(12, { status: 'Ready' }), row(13, { status: 'Ready', parent: 12 }), row(20, { status: 'Ready' }), row(21, { status: 'Todo', parent: 20 })],
+  items: [row(12, { status: 'Ready' }), row(13, { status: 'Ready', parent: '12' }), row(20, { status: 'Ready' }), row(21, { status: 'Todo', parent: '20' })],
 };
 const answerTree = async (input: RequestInfo | URL): Promise<Response> => jsonRes(String(input).endsWith('/project') ? TREE : { ok: true });
 const byStatus = (): void => resetViewState({ projectViews: { roadmap: { groupBy: 'status', collapsed: [], columns: ALL } } });
