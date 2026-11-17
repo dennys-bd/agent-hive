@@ -44,6 +44,8 @@ export function JiraReadNotice({ error, onOpenConnections }: { error?: JiraReadE
   if (error.kind === 'not-connected') {
     return <p role="alert" className={`${NOTICE} text-destructive`}><span>{t('settings.source.jira.error.notConnected')}</span> · <ConnectionsLink onClick={onOpenConnections} /></p>;
   }
-  const text = error.kind === 'rate-limited' ? t('settings.source.jira.error.rateLimited', { time: clock(error.resetsAt) }) : t('settings.source.jira.error.failed');
+  const time = error.kind === 'rate-limited' ? clock(error.resetsAt) : '';
+  // An unreadable reset reads empty (clock), and "try again at " would end on nothing
+  const text = error.kind === 'rate-limited' ? (time === '' ? t('settings.source.jira.error.rateLimitedNoTime') : t('settings.source.jira.error.rateLimited', { time })) : t('settings.source.jira.error.failed');
   return <p role="alert" className={`${NOTICE} text-destructive`}>{text}</p>;
 }
