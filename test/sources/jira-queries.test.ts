@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { type JiraCall, postTransition, projectJql, readComments, readAssignable, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
+import { putFields, readAssignableUsers, readEditable, readSprints } from '../../src/sources/jira-edit.js';
+import { type JiraCall, PAGE_SIZE, postTransition, projectJql, readComments, readAssignable, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
 
 interface Sent { path: string; method: string; body: unknown }
 
@@ -150,8 +151,8 @@ test('readFields answers each field\'s id, name and schema; a field without a sc
     { id: 'thumbnail', name: 'Images' },
   ]]);
   assert.deepEqual(await readFields(call), [
-    { id: 'summary', name: 'Summary', schema: { type: 'string' } },
-    { id: 'customfield_1', name: 'Team', schema: { type: 'option' } },
+    { id: 'summary', name: 'Summary', schema: { type: 'string', system: 'summary' } },
+    { id: 'customfield_1', name: 'Team', schema: { type: 'option', custom: 'x' } },
     { id: 'thumbnail', name: 'Images', schema: null },
   ]);
   await assert.rejects(readFields(fakeJira([[{ id: 'x' }]]).call), /jira fields/);
@@ -278,4 +279,56 @@ test('readAssignable refuses a bad key before any call, a body that is no list, 
   const never = endless(Array.from({ length: 100 }, (_, i) => ({ accountId: `acc-${i}`, displayName: 'Ana Lima' })));
   await assert.rejects(readAssignable(never.call, 'ABC'), /jira assignable page count/);
   assert.equal(never.calls(), 1000);
+});
+
+test('readEditable reads *all with editmeta, names and schema, and answers the edit screen in its order, lenient on what it cannot read (#826)', async () => {
+  const { call, sent } = fakeJira([{
+    id: '10001', key: 'ABC-1', fields: { summary: 'S' }, names: { customfield_1: 'Team' }, schema: { customfield_1: { type: 'option', custom: 'x:select' } },
+    editmeta: { fields: {
+      customfield_1: { name: 'Team', required: true, schema: { type: 'option', custom: 'x:select' }, operations: ['set'], allowedValues: [{ id: '1', value: 'Platform' }, { id: '2', name: 'Web' }, { value: 'no id' }] },
+      labels: { name: 'Labels', schema: { type: 'array', items: 'string', system: 'labels' }, operations: ['add', 'set', 'remove'] },
+      broken: 'x',
+    } },
+  }]);
+  const read = await readEditable(call, '10001');
+  assert.equal(sent[0].path, '/issue/10001?fields=*all&expand=editmeta%2Cnames%2Cschema');
+  assert.deepEqual(read.schema, { customfield_1: { type: 'option', custom: 'x:select' } });
+  assert.deepEqual(read.editable, [
+    { id: 'customfield_1', name: 'Team', schema: { type: 'option', custom: 'x:select' }, required: true, operations: ['set'], allowedValues: [{ id: '1', label: 'Platform' }, { id: '2', label: 'Web' }] },
+    { id: 'labels', name: 'Labels', schema: { type: 'array', items: 'string', system: 'labels' }, required: false, operations: ['add', 'set', 'remove'], allowedValues: [] },
+  ]);
+  await assert.rejects(readEditable(fakeJira([]).call, '..'), /id or key/);
+});
+
+test('readAssignableUsers pages until a short page and answers each account\'s id and name (#826)', async () => {
+  const full = Array.from({ length: PAGE_SIZE }, (_, i) => ({ accountId: `acc-${i}`, displayName: `User ${i}` }));
+  const { call, sent } = fakeJira([full, [{ accountId: 'acc-x', displayName: 'Ana Lima', emailAddress: 'ana@example.com' }]]);
+  const users = await readAssignableUsers(call, 'ABC-1');
+  assert.equal(users.length, PAGE_SIZE + 1);
+  assert.deepEqual(users.at(-1), { accountId: 'acc-x', displayName: 'Ana Lima' });
+  assert.deepEqual(sent.map((s) => s.path), [
+    `/user/assignable/search?issueKey=ABC-1&startAt=0&maxResults=${PAGE_SIZE}`, `/user/assignable/search?issueKey=ABC-1&startAt=${PAGE_SIZE}&maxResults=${PAGE_SIZE}`,
+  ]);
+  await assert.rejects(readAssignableUsers(fakeJira([[{ displayName: 'Bea' }]]).call, 'ABC-1'), /jira assignable accountId/);
+  await assert.rejects(readAssignableUsers(fakeJira([]).call, 'abc'), /id or key/);
+});
+
+test('readSprints reads the scrum boards, then each one\'s active and future sprints, once by id, active first (#826)', async () => {
+  const { call, sent } = fakeJira([
+    { values: [{ id: 1 }, { id: 2 }], isLast: true },
+    { values: [{ id: 9, name: 'Sprint 9', state: 'future' }, { id: 8, name: 'Sprint 8', state: 'active' }], isLast: true },
+    { values: [{ id: 8, name: 'Sprint 8', state: 'active' }, { id: 10, name: 'Sprint 10', state: 'future' }], isLast: true },
+  ]);
+  assert.deepEqual((await readSprints(call, 'ABC')).map((s) => s.name), ['Sprint 8', 'Sprint 9', 'Sprint 10']);
+  assert.deepEqual(sent.map((s) => s.path), [
+    '/board?projectKeyOrId=ABC&type=scrum&startAt=0', '/board/1/sprint?state=active%2Cfuture&startAt=0', '/board/2/sprint?state=active%2Cfuture&startAt=0',
+  ]);
+  await assert.rejects(readSprints(fakeJira([]).call, 'abc'), /project key/);
+});
+
+test('putFields sends PUT /issue/{id} with { fields } and refuses a ref that is neither before any call (#826)', async () => {
+  const { call, sent } = fakeJira([undefined]);
+  await putFields(call, '10001', { customfield_1: { id: '2' } });
+  assert.deepEqual(sent, [{ path: '/issue/10001', method: 'PUT', body: { fields: { customfield_1: { id: '2' } } } }]);
+  await assert.rejects(putFields(fakeJira([]).call, 'ABC-1/x', {}), /id or key/);
 });

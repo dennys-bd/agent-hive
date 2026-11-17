@@ -11,6 +11,7 @@ import { type FieldAnswer, readFields, writeField } from '@/hooks/use-item-field
 import { t } from '@/i18n';
 
 const MUTED = 'text-muted-foreground';
+const MULTI_KINDS: ReadonlySet<ItemField['type']> = new Set(['assignees', 'labels', 'multiSelect', 'users']);
 
 export interface FieldEditorProps {
   itemId: string; // namespaced: the source is its prefix
@@ -69,7 +70,7 @@ function ChoiceEditor({ itemId, field, display, onWritten }: EditorProps) {
             <span className="truncate">{option}</span>
           </DropdownMenuItem>
         ))}
-        {field.value !== null && field.name !== STATUS && ( // a task is always in a column: Status is changed, never cleared
+        {field.value !== null && field.name !== STATUS && !field.isRequired && ( // a required field (#826) is never cleared; a task is always in a column: Status is changed, never cleared
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => void write(null)}>{t('field.clear')}</DropdownMenuItem>
@@ -156,8 +157,9 @@ function InputEditor({ itemId, field, display, onWritten }: EditorProps) {
 export function FieldEditor(props: FieldEditorProps) {
   const { field } = props;
   const editor: EditorProps = { ...props, display: props.display ?? <FieldText value={field.value} /> };
-  if (field.readOnly) return <span className="min-w-0 truncate" title={t('field.readOnly')}>{editor.display}</span>;
-  if (field.type === 'assignees' || field.type === 'labels') return <MultiEditor {...editor} />;
+  // longText and datetime are read-only text until the design handoff's editors land (docs/agent/hive/design/2026-11-17-jira-fields/), so neither falls into ChoiceEditor
+  if (field.readOnly || field.type === 'longText' || field.type === 'datetime') return <span className="min-w-0 truncate" title={t('field.readOnly')}>{editor.display}</span>;
+  if (MULTI_KINDS.has(field.type)) return <MultiEditor {...editor} />;
   if (field.type === 'text' || field.type === 'number' || field.type === 'date') return <InputEditor {...editor} />;
   return <ChoiceEditor {...editor} />;
 }

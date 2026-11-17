@@ -42,7 +42,7 @@ test('hiveProject has one row per hive task in the Hive\'s order, a source task 
       itemId: 'local:1', id: 'HIVE-1', title: 'T1', body: 'b1', url: '', status: 'dev', labels: [], assignees: [], fields: { [WORKSPACE_FIELD]: 'hive' },
       pullRequests: [{ number: 12, url: 'https://github.com/acme/r/pull/12', state: 'open' }, { number: 14, url: 'https://github.com/acme/r/pull/14', state: 'merged' }],
     },
-    { itemId: 'local:2', id: 'HIVE-2', title: 'T2', body: 'b2', url: '', labels: [], assignees: [], fields: {}, pullRequests: [], parent: 1 },
+    { itemId: 'local:2', id: 'HIVE-2', title: 'T2', body: 'b2', url: '', labels: [], assignees: [], fields: {}, pullRequests: [], parent: '1' },
     { itemId: 'local:3', id: 'HIVE-3', title: 'T3', body: 'b3', url: '', status: 'write', labels: [], assignees: [], fields: {}, pullRequests: [] },
   ]);
 });

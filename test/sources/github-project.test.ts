@@ -219,7 +219,7 @@ test('project answers each issue\'s parent by its number; an issue with no paren
   const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, items: page(nodes) }).gql });
   await source.resolveFields();
   const { items } = await source.project!();
-  assert.deepEqual(items.map((i) => i.parent), [2, undefined, undefined]);
+  assert.deepEqual(items.map((i) => i.parent), ['2', undefined, undefined]);
   assert.equal('parent' in items[1], false);
   assert.equal('parent' in items[2], false);
 });

@@ -165,3 +165,37 @@ test('the labels are checkboxes like the assignees, the current ones first: a to
   await user.click(screen.getByRole('checkbox', { name: 'bug' }));
   await waitFor(() => expect(posted()).toEqual([[PATH, { field: 'Labels', value: ['ui', 'bug'] }]]));
 });
+
+test('a multiSelect toggles a value and writes the whole set (#826)', async () => {
+  const user = userEvent.setup();
+  renderEditor({ name: 'Components', type: 'multiSelect', value: ['Core'], options: ['Core', 'Web'] });
+  await user.click(trigger('Components'));
+  await user.click(screen.getByRole('checkbox', { name: 'Web' }));
+  await waitFor(() => expect(posted()).toEqual([[PATH, { field: 'Components', value: ['Core', 'Web'] }]]));
+});
+
+test('a user picks one name (#826)', async () => {
+  const user = userEvent.setup();
+  renderEditor({ name: 'Assignee', type: 'user', value: 'Ana Lima', options: ['Ana Lima', 'Bea'] });
+  trigger('Assignee').focus();
+  await user.keyboard('{Enter}');
+  await user.click(screen.getByRole('menuitem', { name: 'Bea' }));
+  await waitFor(() => expect(posted()).toEqual([[PATH, { field: 'Assignee', value: 'Bea' }]]));
+});
+
+test('a required field shows no clear (#826)', async () => {
+  const user = userEvent.setup();
+  renderEditor({ name: 'Team', type: 'singleSelect', value: 'Platform', options: ['Platform', 'Web'], isRequired: true });
+  trigger('Team').focus();
+  await user.keyboard('{Enter}');
+  await screen.findByRole('menuitem', { name: 'Web' });
+  expect(screen.queryByRole('menuitem', { name: 'limpar' })).not.toBeInTheDocument();
+});
+
+test('a longText and a datetime stay read-only text until their editors land (#826)', () => {
+  renderEditor({ name: 'Description', type: 'longText', value: 'Line one' });
+  renderEditor({ name: 'Due', type: 'datetime', value: '2026-11-17T10:00:00Z' });
+  expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getByText('Line one')).toBeInTheDocument();
+  expect(screen.getByText('2026-11-17T10:00:00Z')).toBeInTheDocument();
+});
