@@ -49,3 +49,9 @@ test('nenhum is a value offered first, next to @me, and reads nenhum on its chip
   rerender(<FilterRules rules={[{ field: 'assignee', op: 'any', values: ['@me', NO_VALUE] }]} onChange={onChange} />);
   expect(screen.getByRole('combobox', { name: 'valores' })).toHaveTextContent('@menenhum');
 });
+
+test('type="jira" leaves out milestone and repository: a Jira issue has neither (#822)', async () => {
+  render(<FilterRules type="jira" rules={[LABEL]} onChange={vi.fn()} />);
+  fireEvent.click(screen.getByRole('combobox', { name: 'critério' }));
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['responsável', 'label', 'bloqueado']);
+});
