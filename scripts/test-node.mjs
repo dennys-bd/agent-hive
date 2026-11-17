@@ -27,15 +27,14 @@ export function testFiles({ root, exclude = [] }) {
 }
 
 // the repo root, as the old `node --test dist/...` line ran from it: tests that read process.cwd() keep seeing the root
-const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const DIST = join(ROOT, 'dist');
+export const ROOT = fileURLToPath(new URL('../', import.meta.url));
+export const DIST = join(ROOT, 'dist');
 // test-timeout is passed through because NODE_OPTIONS refuses it (#654). With it goes --test-force-exit: a timed-out test whose
 // handle stays open (a timer, a child) otherwise keeps its file's process, and the runner, alive
 // --junit puts the reporters on this argv, not in NODE_OPTIONS: a test that runs its own node --test would inherit them and write over the report
 // root: a dist/-shaped tree other than dist/, for test-node.test.ts's own runs
 const OPTIONS = { shard: { type: 'string' }, root: { type: 'string' }, exclude: { type: 'string', multiple: true }, 'test-timeout': { type: 'string' }, junit: { type: 'string' } };
 
-// Every boot copies the Hive's plugin into CODEX_HOME (#934), so a run gets a throwaway one and never touches the user's.
 function run(args) {
   const { values } = parseArgs({ args, options: OPTIONS, strict: true });
   const root = values.root ?? DIST;
@@ -43,8 +42,14 @@ function run(args) {
   const shard = values.shard === undefined ? [] : [`--test-shard=${values.shard}`];
   const timeout = values['test-timeout'] === undefined ? [] : [`--test-timeout=${values['test-timeout']}`, '--test-force-exit'];
   const junit = values.junit === undefined ? [] : ['--test-reporter=spec', '--test-reporter-destination=stdout', '--test-reporter=junit', `--test-reporter-destination=${values.junit}`];
+  runFiles({ root, files, args: [...shard, ...timeout, ...junit] });
+}
+
+// Every boot copies the Hive's plugin into CODEX_HOME (#934), so a run gets a throwaway one and never touches the user's.
+/** Runs `files` (relative to `root`) under node --test with `args` before them; test-affected.mjs runs its selection through it (#867). */
+export function runFiles({ root, files, args = [] }) {
   const home = mkdtempSync(join(tmpdir(), 'hive-test-'));
-  const child = spawn(process.execPath, ['--test', ...shard, ...timeout, ...junit, ...files.map((file) => join(root, file))], {
+  const child = spawn(process.execPath, ['--test', ...args, ...files.map((file) => join(root, file))], {
     cwd: ROOT,
     stdio: 'inherit',
     env: { ...process.env, CODEX_HOME: home, CLAUDE_CONFIG_DIR: join(home, 'claude') },

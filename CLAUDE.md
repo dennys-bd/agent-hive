@@ -6,12 +6,13 @@ A macOS app that keeps several `claude` workers running on the tasks of its sour
 
 | What | Command |
 |---|---|
-| Tests (the gate: lint, `tsc`, `node --test` and vitest, run in parallel) | `pnpm test` |
+| Tests before a commit (lint and `tsc` whole, only the node and vitest tests the branch affects, at a quarter of the cores) | `pnpm test:affected` |
+| The whole suite, as CI runs it | `pnpm test` |
 | Lint | `pnpm lint` |
 | Run with the window | `pnpm start` |
 | Run without the window | `pnpm run:headless <path>` |
 
-`pnpm test` must be green before any commit. There is no coverage gate.
+`pnpm test:affected` must be green before any commit; CI runs the whole suite on every PR and is its gate (#867). The selection walks the compiled tests' imports from the diff against the merge-base with `origin/main`, plus uncommitted and untracked files; a changed file outside `src/` and `test/` runs every test, unless it is Markdown outside `assets/`. There is no coverage gate.
 
 ## Where things are
 
