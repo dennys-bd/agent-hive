@@ -4,7 +4,7 @@ import { getJson } from '@/lib/api';
 import { projectsUrl } from '@/lib/settings-form';
 import type { GithubAuth, ProjectSummary } from '../../types';
 
-export const DEFAULT_OWNER = '@me';
+const DEFAULT_OWNER = '@me';
 
 /** The GitHub half of the new-source dialog (#514): the owner, the projects it lists, the picked number, and the one error line the dialog shares with the Jira half. */
 export function useGithubNewSource(auth: GithubAuth) {
