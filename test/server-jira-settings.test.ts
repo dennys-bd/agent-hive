@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
+import { once } from 'node:events';
 import express from 'express';
 import { saveJiraCredential } from '../src/credentials.js';
 import { createServer } from '../src/server.js';
@@ -49,7 +50,8 @@ async function routes(t: TestContext, answer: Answer, login = true): Promise<Har
   registerJiraSettingsRoutes(app, deps);
   app.get('/settings/source-columns', (req, res) => jiraColumns(req, res, deps));
   app.get('/settings/filter-options', (req, res) => jiraFilterOptions(req, res, deps));
-  const server = app.listen(0);
+  const server = app.listen(0, '127.0.0.1'); // the host the test calls: a wildcard bind can share its port with another test's 127.0.0.1 server on macOS
+  await once(server, 'listening'); // with a host, the bind is async and address() is null until then
   t.after(() => server.close());
   return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, lines, calls };
 }
