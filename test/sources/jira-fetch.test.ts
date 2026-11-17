@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { JiraNotFoundError, jiraFetch } from '../../src/sources/jira-fetch.js';
+import { JiraHttpError, JiraNotFoundError, jiraFetch } from '../../src/sources/jira-fetch.js';
 import { isNotConnected, isRateLimited } from '../../src/source-errors.js';
 
 const SITE = 'acme.atlassian.net';
@@ -106,4 +106,18 @@ test('another status, a bad body and every error keep the token, the header and 
 test('a 404 throws JiraNotFoundError, worded as the status and never quoting the body (#820)', async () => {
   const { deps } = harness(json({ errorMessages: ['Issue does not exist'] }, 404));
   await assert.rejects(jiraFetch(SITE, '/issue/10001', {}, deps), (err: unknown) => err instanceof JiraNotFoundError && err.message === 'jira api: HTTP 404');
+});
+
+test('another non-ok status throws JiraHttpError with the keys of the body\'s errors, [] when it is not JSON, and never quotes the body (#823)', async () => {
+  const body = { errorMessages: [], errors: { issuesInUnlicensedProjects: { count: 1, issueIdsOrKeys: ['ABC-1'], message: `plan ${CRED.token}` } } };
+  const refused = await jiraFetch(SITE, '/issue/archive', { method: 'PUT' }, harness(json(body, 400)).deps).catch((e: unknown) => e);
+  assert.ok(refused instanceof JiraHttpError);
+  assert.deepEqual([refused.status, refused.errorKeys, refused.message], [400, ['issuesInUnlicensedProjects'], 'jira api: HTTP 400']);
+  const broken = await jiraFetch(SITE, '/x', undefined, harness(new Response(`oops ${CRED.token}`, { status: 500 })).deps).catch((e: unknown) => e);
+  assert.ok(broken instanceof JiraHttpError);
+  assert.deepEqual([broken.status, broken.errorKeys, broken.message], [500, [], 'jira api: HTTP 500']);
+  const listed = await jiraFetch(SITE, '/x', undefined, harness(json({ errors: ['a'] }, 400)).deps).catch((e: unknown) => e);
+  assert.ok(listed instanceof JiraHttpError);
+  assert.deepEqual(listed.errorKeys, [], 'an errors array is no errors object');
+  for (const err of [refused, broken]) assert.ok(!err.message.includes(CRED.token) && !err.message.includes(BASIC) && !err.message.includes('plan'));
 });

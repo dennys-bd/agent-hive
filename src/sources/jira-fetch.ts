@@ -20,6 +20,25 @@ export class JiraNotFoundError extends Error {
   }
 }
 
+/** Any other non-ok answer (#823): typed, so a caller tells refusals apart by status and by the keys of Jira's `errors` object. Only the keys
+ * are kept, since the messages beside them can quote the issue, and the message is the transport's, as before. */
+export class JiraHttpError extends Error {
+  readonly status: number;
+  readonly errorKeys: string[];
+  constructor(status: number, errorKeys: string[]) {
+    super(`jira api: HTTP ${status}`);
+    this.name = 'JiraHttpError';
+    this.status = status;
+    this.errorKeys = errorKeys;
+  }
+}
+
+/** The keys of a Jira answer's `errors` object; [] when the body is not an object or has none. */
+export function errorKeysOf(body: unknown): string[] {
+  const errors = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).errors : undefined;
+  return typeof errors === 'object' && errors !== null && !Array.isArray(errors) ? Object.keys(errors) : [];
+}
+
 export interface JiraFetchDeps {
   /** Where the login comes from; the stored one by default, so another login can supply it without this function changing. */
   credential?: (site: string) => Promise<JiraCredential | undefined>;
@@ -54,7 +73,8 @@ export async function jiraFetch(site: string, path: string, init: RequestInit = 
   if (res.status === UNAUTHORIZED) throw new SourceNotConnectedError(source);
   if (res.status === TOO_MANY_REQUESTS) throw new SourceRateLimitError(retryAtOf(res.headers.get('retry-after'), (deps.now ?? Date.now)()));
   if (res.status === NOT_FOUND) throw new JiraNotFoundError();
-  if (!res.ok) throw new Error(`jira api: HTTP ${res.status}`);
+  // the catch keeps a body that is not JSON (and res.json's message quoting it) out
+  if (!res.ok) throw new JiraHttpError(res.status, errorKeysOf(await res.json().catch(() => undefined)));
   if (res.status === NO_CONTENT) return undefined;
   return res.json().catch(() => {
     throw new Error('jira api: invalid JSON body'); // res.json() would quote the body
