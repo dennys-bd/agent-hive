@@ -12,7 +12,7 @@ A macOS app that keeps several `claude` workers running on the tasks of its sour
 | Run with the window | `pnpm start` |
 | Run without the window | `pnpm run:headless <path>` |
 
-`pnpm test:affected` must be green before any commit; CI runs the whole suite on every PR and is its gate (#867). The selection walks the compiled tests' imports from the diff against the merge-base with `origin/main`, plus uncommitted and untracked files; a changed file outside `src/` and `test/` that is not Markdown runs every node test. There is no coverage gate.
+`pnpm test:affected` must be green before any commit; CI runs the whole suite on every PR and is its gate (#867). The selection walks the compiled tests' imports from the diff against the merge-base with `origin/main`, plus uncommitted and untracked files; a changed file outside `src/` and `test/` runs every test, unless it is Markdown outside `assets/`. There is no coverage gate.
 
 ## Where things are
 
