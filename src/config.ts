@@ -15,7 +15,7 @@ import { checkClearedResumes, checkResumedAgents, parseVerdicts } from './config
 import { hiveActionRaw, parseStageAgent, runsAgentRaw } from './config-stage-agent.js';
 import { parseFork } from './fork.js';
 import { commandsIn, parseEnv, parseCommandSemaphores, parseCommands, parseStageCi, parseStageCommands, parseStageEvaluate, parseTimeout } from './run-commands.js';
-import { parseSourceEpics, refuseTopLevelEpics, requireSwitchAt } from './config-epics.js';
+import { parseEpicDeleteActivity, parseEpicKeys, refuseTopLevelEpics, requireSwitchAt } from './config-epics.js';
 import { parseShortcuts } from './shortcuts.js';
 import { isTrustedHost } from './trusted-hosts.js';
 import { parseEditorConfig } from './editor-config.js';
@@ -129,7 +129,7 @@ export function parseSource(raw: unknown, field: string, workspaces: readonly st
         filter: parseFilter(raw.filter, `${field}.filter`), // after owner and number: a source missing those still names them first
         taskProps: parseSourceTaskProps(raw.taskProps, `${field}.taskProps`, workspaces),
         ...(raw.repository === undefined ? {} : { repository: requireRepository(raw.repository, `${field}.repository`) }),
-        ...parseSourceEpics(raw, field), // #30: last, so a source from before the keys names its older faults first
+        ...parseEpicKeys(raw, field), epicDeleteActivity: parseEpicDeleteActivity(raw, field), // #30, #856: last, so a source from before the keys names its older faults first
       };
     default:
       throw new Error(`${CONFIG_FILE}: "${field}.type" must be one of: ${SOURCE_TYPES.join(', ')}`);
