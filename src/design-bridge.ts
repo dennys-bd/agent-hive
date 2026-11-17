@@ -90,7 +90,8 @@ function sizeReporter(post: (message: Record<string, unknown>) => void): { postS
   let last = '';
   let natural = -1;
   const postSize = (): void => {
-    const height = root.scrollHeight;
+    // <html>'s own box, not its scrollHeight: the root's scroll size is never below the frame's, so a shorter content would not shrink it (#777)
+    const height = Math.ceil(root.getBoundingClientRect().height);
     const wide = root.scrollWidth > root.clientWidth ? root.scrollWidth : -1;
     const key = `${height}:${wide}:${root.clientWidth}:${natural}`;
     if (key === last) return;
