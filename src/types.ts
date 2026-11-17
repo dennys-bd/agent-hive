@@ -262,7 +262,7 @@ export interface TaskProps { workspace?: string; auto: boolean; entry: TaskEntry
 export interface TaskRule { field: string; op: RuleOp; value: string; set: Partial<TaskProps> }
 /** A source's task properties (#688): the defaults and 0 to RULES_MAX rules; per property, the first matching rule that sets it wins. */
 export interface SourceTaskProps { defaults: TaskProps; rules: TaskRule[] }
-/** Which of a Jira project's levels the Hive reads as its tree (#820): epics as parents, sub-tasks as children. Parsed now; node 6 reads it. */
+/** Which of a Jira project's levels the Hive reads as its tree (#820): epics as parents, sub-tasks as children. Read by jira-tree.ts (#830). */
 export type JiraTree = { epics: boolean; subtasks: boolean };
 /** What an adapter reads of one source: its type's own fields and its task properties (#179, #688), one member per type under `type`. */
 export type SourceFields =
@@ -276,7 +276,7 @@ export type SourceFields =
     type: 'jira'; site: string; project: string; // #820: a bare host and a project key, both checked by the parser
     filter: TaskFilter; taskProps: SourceTaskProps; // the parser refuses a milestone or repository rule: an issue has neither
     epics: EpicsMode; epicFollows: EpicFollows; switchAt: string; // no epicDeleteActivity: a Jira epic's is false (6.5)
-    tree: JiraTree; blockingLinkTypes: string[]; // parsed only, read by node 6
+    tree: JiraTree; blockingLinkTypes: string[]; // tree read by jira-tree.ts (#830); blockingLinkTypes parsed only, read by 6.3
     issueType: string; subtaskType: string; doneStatus: string; // each checked by the node that first reads it (5.5, 6.6)
   };
 

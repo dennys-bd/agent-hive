@@ -4,6 +4,7 @@ import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type { Item, ItemFacets, SourceConfig, SourceItem } from '../types.js';
 import type { JiraIssue } from './jira-queries.js';
+import { groupUnderParents, isHidden, treeLinks, withTree } from './jira-tree.js';
 
 export type JiraSourceConfig = Extract<SourceConfig, { type: 'jira' }>;
 /** What the mapping reads of a stored issue: its row and its values, as the store and jiraItemOf both answer them. */
@@ -32,7 +33,7 @@ export function issueReader({ item, values }: Stored): (field: string) => string
 }
 
 /** A stored issue as the Hive's task, its status the column. As GitHub's issueItem: the hint only from a rule, auto and entry resolved whole
- * (never ??: a rule's null entry is a value). No tree, epic or blockers: node 6 reads them. */
+ * (never ??: a rule's null entry is a value). Its tree is jira-tree.ts's, read over the whole listing (#830). */
 export function taskOf(stored: Stored, source: Listed): SourceItem {
   const { item: row, values } = stored;
   const facets: ItemFacets = { assignees: textsOf(row.data.assignees), labels: textsOf(row.data.labels), fields: fieldsOf(values) };
@@ -61,7 +62,14 @@ export function projectOf(issue: JiraIssue): string | undefined {
   return typeof key === 'string' ? key : undefined;
 }
 
-/** The scope's listing in its stored order, each issue as its task, kept when its status is a cited column. */
-export function listedTasks(items: Pick<SourceItems, 'listing' | 'items'>, rows: string, source: Listed & Pick<JiraSourceConfig, 'project'>, columns: ReadonlySet<string>): SourceItem[] {
-  return items.items(rows, items.listing(rows, source.project)).map((stored) => taskOf(stored, source)).filter((task) => columns.has(task.column));
+/** What a listing reads of the source: its mapping, its project, its tree toggles and its epics keys. */
+export type ListedSource = Listed & Pick<JiraSourceConfig, 'project' | 'tree' | 'epics' | 'epicFollows' | 'switchAt'>;
+
+/** The scope's listing in its stored order, each issue as its task with its tree (#830), kept when its status is a cited column and it is no
+ * parent `epics: hide` takes off; children follow their parent. The links are read over every stored issue, before a status drops one. */
+export function listedTasks(items: Pick<SourceItems, 'listing' | 'items'>, rows: string, source: ListedSource, columns: ReadonlySet<string>): SourceItem[] {
+  const stored = items.items(rows, items.listing(rows, source.project));
+  const links = treeLinks(stored, source.tree);
+  const tasks = stored.map((s) => withTree(taskOf(s, source), links.get(s.item.nodeId), source)).filter((task) => columns.has(task.column));
+  return groupUnderParents(tasks).filter((task) => !isHidden(task, source));
 }
