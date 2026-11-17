@@ -1,10 +1,10 @@
 // Every load-time migration a hive.config.json may need: #511 (each workspace's run commands and its setup timeout in minutes), #513 (the
-// menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #924 (claudeArgs into agentArgs), #927 (agentArgs.codex), #482 (each agent's default model and switch), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list), #727 (retired keys) and #564 (a flat comb as one main flow). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
+// menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #924 (claudeArgs into agentArgs), #927 (agentArgs.codex), #873 (each agent record's copilot), #482 (each agent's default model and switch), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list), #727 (retired keys) and #564 (a flat comb as one main flow). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
 // idempotent; malformed entries pass through untouched, so parseConfig still names their fault.
 
 import { MAIN_FLOW } from './flows.js';
 import { hasFixedVerdicts } from './stage-agent.js';
-import { AGENT_IDS, END, FILE_ICONS_DEFAULTS, type SourceAction, type Stage, type Transition } from './types.js';
+import { END, FILE_ICONS_DEFAULTS, type SourceAction, type Stage, type Transition } from './types.js';
 
 type Entry = Record<string, unknown>;
 
@@ -94,7 +94,9 @@ export function migrateAgentArgs(raw: unknown): unknown {
   return rest.agentArgs !== undefined ? rest : { ...rest, agentArgs: { [LEGACY_AGENT]: claudeArgs ?? [] } };
 }
 
-const everyAgent = <T>(value: T): Record<string, T> => Object.fromEntries(AGENT_IDS.map((id) => [id, value]));
+/** The agents there were before #873: what a pre-#482 file's records list. Frozen, as LEGACY_AGENT, so migrateCopilot alone decides copilot's entry. */
+const PRE_COPILOT_AGENTS = ['claude', 'codex'];
+const everyAgent = <T>(value: T): Record<string, T> => Object.fromEntries(PRE_COPILOT_AGENTS.map((id) => [id, value]));
 
 /** A pre-#482 file gains agentModels with every agent at null (the CLI's own default: what it ran) and agentEnabled with every agent on,
  * whichever it lacks; a present key, a wrong one included, is kept for the parser; a file with both comes back as the same reference. */
@@ -111,6 +113,21 @@ export function migrateAgentDefaults(raw: unknown): unknown {
  * names that), comes back as the same reference. */
 export const migrateCodexArgs = (raw: unknown): unknown =>
   (isRecord(raw) && isRecord(raw.agentArgs) && raw.agentArgs.codex === undefined ? { ...raw, agentArgs: { ...raw.agentArgs, codex: [] } } : raw);
+
+// #873: copilot's entry in each agent record: no arguments, the CLI's own model, and off until its hooks land (#608 node 2)
+const COPILOT_KEYS = ['agentArgs', 'agentModels', 'agentEnabled'] as const;
+const COPILOT_DEFAULT: Record<(typeof COPILOT_KEYS)[number], unknown> = { agentArgs: [], agentModels: null, agentEnabled: false };
+
+/** A pre-#873 file's agent records gain copilot's entry, whichever lack it; a missing or malformed record is the parser's to name. A file with all
+ * three comes back as the same reference. */
+export function migrateCopilot(raw: unknown): unknown {
+  if (!isRecord(raw)) return raw;
+  const added = COPILOT_KEYS.flatMap((key) => {
+    const record = raw[key];
+    return isRecord(record) && record.copilot === undefined ? [[key, { ...record, copilot: COPILOT_DEFAULT[key] }]] : [];
+  });
+  return added.length === 0 ? raw : { ...raw, ...Object.fromEntries(added) };
+}
 
 /** A pre-#754 file gains fileIcons with the form's defaults; a present key, a wrong one included, comes back as the same reference for the parser. */
 export const migrateFileIcons = (raw: unknown): unknown => (isRecord(raw) && raw.fileIcons === undefined ? { ...raw, fileIcons: FILE_ICONS_DEFAULTS } : raw);
@@ -190,4 +207,4 @@ export function migrateFlows(raw: unknown): unknown {
 }
 
 /** Every load-time migration, oldest first: readConfig's one entry point. */
-export const migrateConfig = (raw: unknown): unknown => migrateFlows(migrateAgentDefaults(migrateCreateIn(migrateRetiredKeys(migrateTransitions(migrateFileIcons(migrateCodexArgs(migrateAgentArgs(migrateDefaultAgent(migrateStageActions(migrateOnClose(migrateWorkspaces(raw))))))))))));
+export const migrateConfig = (raw: unknown): unknown => migrateFlows(migrateCopilot(migrateAgentDefaults(migrateCreateIn(migrateRetiredKeys(migrateTransitions(migrateFileIcons(migrateCodexArgs(migrateAgentArgs(migrateDefaultAgent(migrateStageActions(migrateOnClose(migrateWorkspaces(raw)))))))))))));

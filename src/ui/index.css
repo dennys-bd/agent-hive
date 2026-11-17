@@ -51,6 +51,7 @@
   --color-signal-red: var(--signal-red);
   --color-agent-claude: var(--agent-claude);
   --color-agent-codex: var(--agent-codex);
+  --color-agent-copilot: var(--agent-copilot);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

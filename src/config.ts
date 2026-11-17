@@ -33,8 +33,9 @@ export const SOURCE_TYPES: readonly SourceConfig['type'][] = ['github', 'jira'];
 export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
 export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'commandSemaphores' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor'> = {
   logLevel: 'info',
-  agentArgs: { claude: [], codex: [] },
-  agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, // #482: a first save without them
+  agentArgs: { claude: [], codex: [], copilot: [] },
+  // #482: a first save without them; #873: copilot off until its hooks land (#608 node 2): a worker of it never leaves working before
+  agentModels: { claude: null, codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false },
   budget: {},
   usageRules: [],
   reviewer: REVIEWER_DEFAULTS, // #328: the one key with a default a first save writes

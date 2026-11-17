@@ -245,11 +245,11 @@ test('POST /activities/:id/evaluate/stop ends the evaluation, stopped, with no v
 });
 
 test('a row with no model runs its agent\'s default model; a row naming a disabled agent breaks the stage before any git (#482)', async (t) => {
-  const h = await harness(t, { env: { SCORES: scoresJson([8, 9]) }, agentModels: { claude: 'opus', codex: null } });
+  const h = await harness(t, { env: { SCORES: scoresJson([8, 9]) }, agentModels: { claude: 'opus', codex: null, copilot: null } });
   await h.runner.run(h.runtime, h.effect([]));
   assert.match(await h.read('judge.args'), /--model opus/);
   const off = await harness(t);
-  const runtime = { ...off.runtime, config: { ...off.runtime.config, agentEnabled: { claude: true, codex: false } } };
+  const runtime = { ...off.runtime, config: { ...off.runtime.config, agentEnabled: { claude: true, codex: false, copilot: false } } };
   await off.runner.run(runtime, off.effect([{ agent: 'codex', focus: 'slow' }]));
   assert.equal(brokenText(off), 'reviewer 1 (codex): agent codex is disabled: enable it in Settings › execution › agents');
   assert.deepEqual([off.prepared, off.events.length], [[], 1]);

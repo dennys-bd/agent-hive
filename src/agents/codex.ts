@@ -127,6 +127,7 @@ const headless = (run: HeadlessRun): string[] => [
 
 export const codexRunner: AgentRunner = {
   hostEnv: [MCP_SECRET_ENV, `${MCP_TOKEN_ENV}*`], // a Hive started inside a Codex run never hands the outer secret to its own children
+  promptFlag: undefined, // the prompt is its last positional word
   launch: (run) => [...resumeWords(run.session), ...overrides(run), TRUST_FLAG, ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model])],
   // A fork is a new Codex id holding the source's turns (§7), under the same overrides as a launch. No -m: a copy runs no stage, as
   // Claude's passes none. No name: fork has no name flag, the Hive's entry carries it. Never the placeholder id: Codex has no --session-id (§3)
@@ -152,5 +153,6 @@ export const codexRunner: AgentRunner = {
   statusLimits: () => undefined,
   strayPattern: (ptyId) => ptyId, // in the x-hive-pty header's literal (§12)
   runEnv: ({ secret, withHive, external }): Record<string, string> => ({ ...(withHive ? { [MCP_SECRET_ENV]: secret } : {}), ...headerEnv(external) }),
+  runFiles: () => [], // everything rides -c overrides
   hookPayload,
 };

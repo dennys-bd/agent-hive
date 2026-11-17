@@ -40,6 +40,7 @@
   --signal-red: var(--destructive);
   --agent-claude: #d97757; /* #669: the agent's own colour, the usage group's agent mark only (#223: in the footer) */
   --agent-codex: #b392f0; /* #927: Codex's own colour, the usage group's agent mark only (#223: in the footer); a violet apart from green, yellow and red */
+  --agent-copilot: #6cb6ff; /* #873: Copilot's own colour, the agent's mark only; a blue apart from green, yellow, red, Claude's orange and Codex's violet */
   --file-icon-saturate: 0.45; /* #754: muted file icons, through .file-icon-muted in index.css; tuned here, not in code */
   --file-icon-opacity: 0.7;
 }
@@ -81,6 +82,7 @@
   --signal-ink: #ffffff;
   --agent-claude: #d97757; /* #669: the same on both themes; redeclared because test/theme.test.ts wants every literal token here */
   --agent-codex: #7c4dcc; /* #927: a darker violet for white, as --backoff is */
+  --agent-copilot: #0969da; /* #873: a darker blue for white, as --agent-codex is */
   --file-icon-saturate: 0.55; /* #754: a little more of each on white, where a faded icon washes out */
   --file-icon-opacity: 0.8;
 }

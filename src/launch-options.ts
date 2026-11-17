@@ -7,7 +7,7 @@ import type { AgentRun } from './agents/runner.js';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from './agents/claude-models.js';
 import { agentRoles, CODEX_PLUGIN } from './agents/codex-home.js';
 import { codexModelsCache } from './codex-models.js';
-import { CLAUDE_MODEL } from './config-agent-args.js';
+import { foreignModel } from './config-agent-args.js';
 import { isLaunchArgs, isLaunchModel, savedLaunch } from './launch-pick.js';
 import { isRecord } from './rate-limits.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
@@ -71,10 +71,11 @@ export function launchOptions(codex: readonly LaunchOption[], agentArgs: Record<
   return {
     claude: { aliases: [...CLAUDE_ALIASES], versions: [...CLAUDE_VERSIONS], specializedAgents: agents, skills, args: [...agentArgs.claude] },
     codex: { aliases: [], versions: [...codex], specializedAgents: agents, skills, args: [...agentArgs.codex] },
+    copilot: { aliases: [], versions: [], specializedAgents: agents, skills, args: [...agentArgs.copilot] }, // #873: its picks are #608's node 4
   };
 }
 
-type LaunchRefusal = 'terminal' | 'continue' | 'model' | 'codexModel' | 'specializedAgent' | 'args' | 'workspace';
+type LaunchRefusal = 'terminal' | 'continue' | 'model' | 'codexModel' | 'copilotModel' | 'specializedAgent' | 'args' | 'workspace';
 const refusal = (key: LaunchRefusal, language: Language): Refusal => ({ status: HTTP_BAD_REQUEST, message: MESSAGES[language][`launch.refused.${key}`] });
 
 // The dialog's workspace (#316): one the config has. #317: none is a 400, since a run outside a workspace has no plugin folder
@@ -114,7 +115,7 @@ export function checkLaunch(body: unknown, agent: AgentId | undefined, roles: re
   if (agent === undefined) return refusal('terminal', language);
   if (continueId !== undefined) return refusal('continue', language);
   if (model !== undefined && !isLaunchModel(model)) return refusal('model', language);
-  if (agent === 'codex' && isLaunchModel(model) && CLAUDE_MODEL.test(model)) return refusal('codexModel', language);
+  if (isLaunchModel(model) && foreignModel(agent, model)) return refusal(agent === 'copilot' ? 'copilotModel' : 'codexModel', language); // #927, #873
   if (specializedAgent !== undefined && !(typeof specializedAgent === 'string' && roles.includes(specializedAgent))) return refusal('specializedAgent', language);
   if (args !== undefined && !isLaunchArgs(args)) return refusal('args', language);
   const launch: LaunchPick = {

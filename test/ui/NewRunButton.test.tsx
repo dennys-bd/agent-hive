@@ -24,7 +24,7 @@ async function pick(user: ReturnType<typeof userEvent.setup>, item: string): Pro
   plus().focus();
   await user.keyboard('{Enter}');
   const names = (await screen.findAllByRole('menuitem')).map((i) => i.textContent?.replace(/(Ctrl\+|Shift\+|Alt\+|⌘|⇧|⌥)+[A-Z]$/, ''));
-  expect(names).toEqual(['terminal', 'diff', 'arquivo', 'claudepadrão', 'codex', 'nova sessão…']);
+  expect(names).toEqual(['terminal', 'diff', 'arquivo', 'claudepadrão', 'codex', 'copilot', 'nova sessão…']);
   await user.click(screen.getByRole('menuitem', { name: new RegExp(`^${item}`) }));
 }
 
@@ -193,7 +193,7 @@ test('the + of a local activity is titled with its workspace and offers terminal
   plus().focus();
   await user.keyboard('{Enter}');
   expect(await screen.findByText('nova sessão em hive')).toBeInTheDocument();
-  expect(screen.getAllByRole('menuitem').map((i) => i.textContent?.replace(/(Ctrl\+|Shift\+|Alt\+|⌘|⇧|⌥)+[A-Z]$/, ''))).toEqual(['terminal', 'arquivo', 'claudepadrão', 'codex', 'nova sessão…']);
+  expect(screen.getAllByRole('menuitem').map((i) => i.textContent?.replace(/(Ctrl\+|Shift\+|Alt\+|⌘|⇧|⌥)+[A-Z]$/, ''))).toEqual(['terminal', 'arquivo', 'claudepadrão', 'codex', 'copilot', 'nova sessão…']);
   await user.click(screen.getByRole('menuitem', { name: /^claude/ }));
   expect(fetchMock).toHaveBeenCalledWith('/activities/local%3Ahive/sessions', expect.objectContaining({ method: 'POST' }));
   await waitFor(() => expect(openRun).toHaveBeenCalledWith({ ptyId: 'L3', kind: 'session', project: 'hive', title: 'hive' }));
@@ -204,13 +204,14 @@ test('newRunEntries lists terminal, each agent (the default one with newSession\
     { kind: 'terminal', label: 'terminal', key: 'newTerminal', disabled: false },
     { kind: 'claude', label: 'claude', key: 'newSession', disabled: false },
     { kind: 'codex', label: 'codex', key: undefined, disabled: false },
+    { kind: 'copilot', label: 'copilot', key: undefined, disabled: false },
     { kind: 'diff', label: 'diff', key: 'openDiff', disabled: false },
   ]);
   const noWorktree = task({ worktree: undefined });
   expect(newRunEntries({ kind: 'task', task: bareTask(noWorktree), activity: liveIn(noWorktree) }, 'claude', ALL_AGENTS).map((e) => [e.kind, e.disabled])).toEqual([
-    ['terminal', false], ['claude', false], ['codex', false], ['diff', true],
+    ['terminal', false], ['claude', false], ['codex', false], ['copilot', false], ['diff', true],
   ]);
-  expect(newRunEntries({ kind: 'local', workspace: 'hive', activity: localPairOf('hive').activity }, 'claude', ALL_AGENTS).map((e) => e.kind)).toEqual(['terminal', 'claude', 'codex']);
+  expect(newRunEntries({ kind: 'local', workspace: 'hive', activity: localPairOf('hive').activity }, 'claude', ALL_AGENTS).map((e) => e.kind)).toEqual(['terminal', 'claude', 'codex', 'copilot']);
   const settingUp = task({ setup: { consoleId: 'C1', rows: [] } });
   expect(newRunEntries({ kind: 'task', task: bareTask(settingUp), activity: liveIn(settingUp) }, 'claude', ALL_AGENTS).every((e) => e.disabled)).toBe(true);
 });
@@ -257,6 +258,7 @@ function Center({ c }: { c: WithWork }) {
 const OPTIONS: LaunchOptions = {
   claude: { aliases: [], versions: [], specializedAgents: [], skills: [], args: [] },
   codex: { aliases: [], versions: [], specializedAgents: [], skills: [], args: [] },
+  copilot: { aliases: [], versions: [], specializedAgents: [], skills: [], args: [] },
 };
 
 test('every + item has its icon, the agents their mark in their own colour, padrão on the default one; arquivo and nova sessão… show their keys; no PR item (#257)', async () => {

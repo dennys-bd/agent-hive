@@ -29,9 +29,9 @@ test('turning an agent off sends agentEnabled; off, it hides tornar padrão, say
   const onChange = vi.fn();
   const { unmount } = renderCard({}, ALL_AGENTS, onChange);
   fireEvent.click(within(section('codex')).getByRole('switch', { name: t('settings.agents.enabled.of', { agent: 'codex' }) }));
-  expect(onChange).toHaveBeenCalledWith({ agentEnabled: { claude: true, codex: false } });
+  expect(onChange).toHaveBeenCalledWith({ agentEnabled: { claude: true, codex: false, copilot: false } });
   unmount();
-  renderCard({ agentEnabled: { claude: true, codex: false } });
+  renderCard({ agentEnabled: { claude: true, codex: false, copilot: false } });
   const codex = section('codex');
   expect(within(codex).queryByRole('button', { name: t('settings.agents.makeDefault') })).not.toBeInTheDocument();
   expect(within(codex).getByText(t('settings.agents.disabled', { agent: 'codex' }))).toBeInTheDocument();
@@ -58,5 +58,16 @@ test('each installed agent has its model field and its arguments field, mono wit
     expect(screen.getByLabelText(t('settings.agentArgs', { agent }))).toHaveAttribute('placeholder', t('settings.agents.args.none'));
   }
   fireEvent.change(screen.getByLabelText(t('settings.agentArgs', { agent: 'claude' })), { target: { value: '--verbose' } });
-  expect(onChange).toHaveBeenCalledWith({ agentArgs: { claude: '--verbose', codex: '' } });
+  expect(onChange).toHaveBeenCalledWith({ agentArgs: { claude: '--verbose', codex: '', copilot: '' } });
+});
+
+test('Settings › execution › agents lists copilot with its mark and its switch, in English and Portuguese (#873)', () => {
+  for (const language of ['en', 'pt'] as const) {
+    setLanguage(language);
+    const { unmount } = renderCard();
+    const copilot = section('copilot');
+    expect(copilot.querySelector('svg[data-icon="copilot"]')).not.toBeNull();
+    expect(within(copilot).getByRole('switch', { name: t('settings.agents.enabled.of', { agent: 'copilot' }) })).toBeInTheDocument();
+    unmount();
+  }
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, parseConfig } from '../src/config.js';
-import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateCodexArgs, migrateAgentDefaults, migrateFileIcons, migrateFlows, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
+import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateCodexArgs, migrateCopilot, migrateAgentDefaults, migrateFileIcons, migrateFlows, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
 import { combConfig, FILTER, LOCAL_STAGES } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -280,7 +280,7 @@ test('migrateAgentArgs moves claudeArgs into agentArgs.claude, gives a file with
 
 test('migrateConfig runs migrateAgentArgs: a pre-#924 file parses with its claudeArgs as agentArgs.claude (#924)', () => {
   const { agentArgs: _gone, ...raw } = combConfig({ stages: LOCAL_STAGES });
-  assert.deepEqual(parseConfig(migrateConfig({ ...raw, claudeArgs: ['--permission-mode', 'auto'] })).agentArgs, { claude: ['--permission-mode', 'auto'], codex: [] });
+  assert.deepEqual(parseConfig(migrateConfig({ ...raw, claudeArgs: ['--permission-mode', 'auto'] })).agentArgs, { claude: ['--permission-mode', 'auto'], codex: [], copilot: [] });
 });
 
 test('migrateCodexArgs gives a saved agentArgs without codex an empty list, keeps one that has it, and migrateConfig runs it after migrateAgentArgs (#927)', () => {
@@ -290,7 +290,7 @@ test('migrateCodexArgs gives a saved agentArgs without codex an empty list, keep
   const { agentArgs: _gone, ...bare } = file;
   assert.equal(migrateCodexArgs(bare), bare, 'no agentArgs: migrateAgentArgs makes it first');
   assert.equal(migrateCodexArgs('x'), 'x');
-  assert.deepEqual(parseConfig(migrateConfig({ ...bare, claudeArgs: ['--x'] })).agentArgs, { claude: ['--x'], codex: [] });
+  assert.deepEqual(parseConfig(migrateConfig({ ...bare, claudeArgs: ['--x'] })).agentArgs, { claude: ['--x'], codex: [], copilot: [] });
 });
 
 test('migrateAgentDefaults gives a file from before #482 every agent at null in agentModels and on in agentEnabled; a present key is kept; migrateConfig runs it (#482)', () => {
@@ -302,7 +302,7 @@ test('migrateAgentDefaults gives a file from before #482 every agent at null in 
   assert.deepEqual((migrateAgentDefaults(kept) as Record<string, unknown>).agentModels, { claude: 'opus', codex: null });
   assert.equal(migrateAgentDefaults('x'), 'x');
   const parsed = parseConfig(migrateConfig(bare));
-  assert.deepEqual([parsed.agentModels, parsed.agentEnabled], [{ claude: null, codex: null }, { claude: true, codex: true }]);
+  assert.deepEqual([parsed.agentModels, parsed.agentEnabled], [{ claude: null, codex: null, copilot: null }, { claude: true, codex: true, copilot: false }]);
 });
 
 test('migrateFlows wraps a flat comb as one main flow and drops the flat keys (#564)', () => {
@@ -316,4 +316,17 @@ test('migrateFlows returns a comb with flows, or no comb, as the same reference 
   const withFlows = { comb: { flows: [], stages: [] } }; // both keys: the parser refuses it by name
   assert.equal(migrateFlows(withFlows), withFlows);
   for (const odd of [null, 7, 'x', [], {}, { comb: {} }, { comb: 'no' }]) assert.equal(migrateFlows(odd), odd, JSON.stringify(odd));
+});
+
+test('migrateCopilot gives each agent record without copilot no args, no model and off; a file with all three comes back as the same reference (#873)', () => {
+  const file = combConfig({ stages: LOCAL_STAGES });
+  const old = { ...file, agentArgs: { claude: ['--x'], codex: [] }, agentModels: { claude: 'opus', codex: null }, agentEnabled: { claude: true, codex: true } };
+  assert.deepEqual(migrateCopilot(old), {
+    ...old,
+    agentArgs: { claude: ['--x'], codex: [], copilot: [] }, agentModels: { claude: 'opus', codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false },
+  });
+  assert.equal(migrateCopilot(file), file, "today's shape comes back as the same reference");
+  assert.equal(migrateCopilot('x'), 'x');
+  const { agentModels: _models, agentEnabled: _enabled, ...preDefaults } = old;
+  assert.deepEqual(parseConfig(migrateConfig(preDefaults)).agentEnabled, { claude: true, codex: true, copilot: false }, 'a pre-#482 file: no migration turns copilot on');
 });

@@ -99,3 +99,13 @@ test('the caption buttons\' room: --window-overlay from titlebar-area-x / -width
   assert.match(INDEX, /--window-overlay:\s*calc\(100vw - env\(titlebar-area-x, 0px\) - env\(titlebar-area-width, calc\(100vw - 138px\)\)\)/);
   assert.match(INDEX, /\[data-window-overlay="strip"\],\s*\[data-window-overlay="columns"\] > :last-child\s*\{[^}]*padding-right:\s*calc\(var\(--window-overlay\) \+ 0\.5rem\)/);
 });
+
+test('--agent-copilot is declared in both themes, apart from green, yellow, red, Claude\'s and Codex\'s, and reads at 3:1 on the background (#873)', () => {
+  assert.ok(DARK.has('--agent-copilot') && block(LIGHT_BLOCK).has('--agent-copilot'), 'both themes');
+  for (const [name, tokens] of [['dark', DARK], ['light', LIGHT]] as const) {
+    const copilot = tokens.get('--agent-copilot') ?? '';
+    for (const other of ['--working', '--waiting', '--destructive', '--agent-claude', '--agent-codex']) assert.notEqual(copilot, tokens.get(other), `${name}: ${other}`);
+    const ratio = contrast(copilot, tokens.get('--background') ?? '');
+    assert.ok(ratio >= UI_MIN, `${name}: --agent-copilot on --background is ${ratio.toFixed(2)}:1`);
+  }
+});

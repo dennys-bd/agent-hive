@@ -151,11 +151,11 @@ test("blindnessLeak answers the first forbidden word an arm's worker would read 
 
 test('prepareRun carries the main config\'s default models into the run\'s config, so a stage with no model runs the Hive\'s default; an arm on a disabled agent is refused before any branch (#482)', async (t) => {
   const { hiveDir, deps } = await benchHome(t);
-  const models = { claude: 'opus', codex: null };
+  const models = { claude: 'opus', codex: null, copilot: null };
   const done = await prepareRun(EXP, EXP.arms[0], 1, { ...deps, config: { ...deps.config, agentModels: models } });
   assert.deepEqual(parseConfig(await readJson(join(done.home, 'hive.config.json'))).agentModels, models);
   const codex = experiment({ arms: [arm('a1', 'A', { stages: { Build: { agent: 'codex', prompt: 'B' } } })] });
-  const off = { ...deps, config: { ...deps.config, agentEnabled: { claude: true, codex: false } } };
+  const off = { ...deps, config: { ...deps.config, agentEnabled: { claude: true, codex: false, copilot: false } } };
   const runs = await readdir(join(hiveDir, 'benchmark', 'exp-1', 'runs')).catch(() => []);
   await assert.rejects(prepareRun(codex, codex.arms[0], 1, off), { message: 'agent codex is disabled: enable it in Settings › execution › agents' });
   assert.deepEqual(await readdir(join(hiveDir, 'benchmark', 'exp-1', 'runs')).catch(() => []), runs, 'no run home was written');

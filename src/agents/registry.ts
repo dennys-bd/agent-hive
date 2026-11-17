@@ -4,10 +4,11 @@ import { planLimitAgents } from '../agents.js';
 import type { AgentId, PlanLimitsReport } from '../types.js';
 import { claudeRunner } from './claude.js';
 import { codexRunner } from './codex.js';
+import { copilotRunner } from './copilot.js';
 import type { AgentRunner } from './runner.js';
 
 /** A Record, so a new id in AGENT_IDS fails tsc until its runner exists. */
-export const runners: Record<AgentId, AgentRunner> = { claude: claudeRunner, codex: codexRunner };
+export const runners: Record<AgentId, AgentRunner> = { claude: claudeRunner, codex: codexRunner, copilot: copilotRunner };
 
 /** The Hive's own plan-limits readings (#929): the agents `planLimitAgents(agents)` names (#223), in AGENT_IDS order, one after the other.
  * A failing agent is listed with its reason, so one agent's failure never costs another's reading. `table` is the tests' seam. */

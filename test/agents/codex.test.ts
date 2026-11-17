@@ -73,8 +73,8 @@ test('no model has no -m, no protocol text no developer_instructions, and a run 
 
 test('the MCP secret is in the run\'s env, never in an argv word; a run without the Hive\'s server gets none (#927)', () => {
   const server = { port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: [] };
-  assert.deepEqual(codexRunner.runEnv(server), { HIVE_MCP_SECRET: SECRET });
-  assert.deepEqual(codexRunner.runEnv({ ...server, withHive: false }), {});
+  assert.deepEqual(codexRunner.runEnv(server, RUN), { HIVE_MCP_SECRET: SECRET });
+  assert.deepEqual(codexRunner.runEnv({ ...server, withHive: false }, RUN), {});
   assert.equal(JSON.stringify(codexRunner.launch(STAGE_RUN)).includes(SECRET), false);
 });
 
@@ -247,8 +247,8 @@ test('each external server follows the Hive\'s as -c overrides, with or without 
   assert.deepEqual(codexRunner.launch({ ...STAGE_RUN, external: EXTERNAL }), [...HOOKS, ...MCP, ...EXTERNAL_ARGS, ...HIVE_PLUGIN, PROTOCOL_ARG, ...STARTUP, ...TAIL]);
   assert.deepEqual(codexRunner.launch({ ...RUN, withHive: false, external: EXTERNAL }), [...HOOKS, ...EXTERNAL_ARGS, ...HIVE_PLUGIN, ...STARTUP, '--dangerously-bypass-hook-trust']);
   const server = { port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: EXTERNAL };
-  assert.deepEqual(codexRunner.runEnv(server), { HIVE_MCP_SECRET: SECRET, HIVE_MCP_TOKEN_1: 'Bearer t0k' });
-  assert.deepEqual(codexRunner.runEnv({ ...server, withHive: false }), { HIVE_MCP_TOKEN_1: 'Bearer t0k' });
+  assert.deepEqual(codexRunner.runEnv(server, RUN), { HIVE_MCP_SECRET: SECRET, HIVE_MCP_TOKEN_1: 'Bearer t0k' });
+  assert.deepEqual(codexRunner.runEnv({ ...server, withHive: false }, RUN), { HIVE_MCP_TOKEN_1: 'Bearer t0k' });
   assert.equal(JSON.stringify(codexRunner.launch({ ...STAGE_RUN, external: EXTERNAL })).includes('t0k'), false);
 });
 

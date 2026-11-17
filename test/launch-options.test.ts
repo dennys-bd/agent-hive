@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import express from 'express';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from '../src/agents/claude-models.js';
 import { pluginSource } from '../src/hooks-settings.js';
-import { hasSkill, launchRun, pluginSkills, registerLaunchOptionsRoute, specializedAgents } from '../src/launch-options.js';
+import { askedLaunch, hasSkill, launchRun, pluginSkills, registerLaunchOptionsRoute, specializedAgents } from '../src/launch-options.js';
 import { createPluginRender, pluginRenderPath, type PluginRender } from '../src/plugin-render.js';
 import type { TaskRouteDeps } from '../src/server-tasks.js';
 import { MESSAGES } from '../src/ui/i18n.js';
@@ -35,7 +35,7 @@ test('specializedAgents lists the Hive plugin\'s agents as hive:<name>, sorted b
 test('GET /launch-options lists Claude\'s hand-kept models, Codex\'s in visible-then-hidden order, the plugin\'s agents for both and each agent\'s config args (#257)', async (t) => {
   const { base, home } = await startReviews(t, { exec: withCodex(() => CODEX_MODELS) });
   const { workspaces: _saved, ...rest } = settingsBody('');
-  const agentArgs = { claude: ['--permission-mode', 'auto'], codex: ['--sandbox', 'workspace-write'] };
+  const agentArgs = { claude: ['--permission-mode', 'auto'], codex: ['--sandbox', 'workspace-write'], copilot: [] };
   assert.equal((await send(base, 'POST', '/settings', { ...rest, agentArgs })).status, 200, 'an API save that omits workspaces keeps them');
   const res = await send(base, 'GET', '/launch-options?workspace=hive');
   assert.equal(res.status, 200);
@@ -113,7 +113,7 @@ test('GET /launch-options?workspace= lists the agents delivered to that workspac
   const { render, workspaces } = await renderedHome(t);
   const app = express();
   registerLaunchOptionsRoute(app, {
-    requireLive: (() => ({ runtime: { config: { agentArgs: { claude: [], codex: [] }, comb: { workspaces } } } })) as unknown as TaskRouteDeps['requireLive'],
+    requireLive: (() => ({ runtime: { config: { agentArgs: { claude: [], codex: [], copilot: [] }, comb: { workspaces } } } })) as unknown as TaskRouteDeps['requireLive'],
     exec: async () => ({ stdout: '[]' }),
     log: { info: () => undefined, error: () => undefined, debug: () => undefined, warn: () => undefined },
     language: () => 'en',
@@ -149,4 +149,15 @@ test('pluginSkills lists a rendered folder\'s skills by bare name, sorted, with 
   assert.ok(skills.some((s) => s.name === 'new-plan' && s.description.startsWith('Plan stage for one task: read the task')));
   assert.deepEqual(skills.map((s) => s.name), [...skills.map((s) => s.name)].sort());
   assert.deepEqual([hasSkill(render.dir('a'), 'new-plan'), hasSkill(render.dir('a'), 'gone'), hasSkill(render.dir('a'), '../agents')], [true, false, false]);
+});
+
+test('the open route refuses a bare Claude alias on a copilot session with copilot\'s own message and takes a claude- id; codex keeps its key (#873)', () => {
+  const pluginDir = (): string => assert.fail('no specialized agent asked: the plugin is not read');
+  for (const language of ['en', 'pt'] as const) {
+    assert.deepEqual(askedLaunch({ model: 'sonnet' }, 'copilot', language, pluginDir), { status: 400, message: MESSAGES[language]['launch.refused.copilotModel'] });
+    assert.deepEqual(askedLaunch({ model: 'claude-sonnet-5.5' }, 'codex', language, pluginDir), { status: 400, message: MESSAGES[language]['launch.refused.codexModel'] });
+  }
+  assert.deepEqual(askedLaunch({ model: 'claude-sonnet-5.5' }, 'copilot', 'en', pluginDir), { launch: { model: 'claude-sonnet-5.5' } });
+  assert.equal(MESSAGES.en['launch.refused.copilotModel'], '"model" is another agent\'s model alias; a copilot session needs a Copilot model id');
+  assert.doesNotMatch(MESSAGES.pt['launch.refused.copilotModel'], /\brod(ar|ando)\b/);
 });

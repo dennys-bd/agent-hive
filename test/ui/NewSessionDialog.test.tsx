@@ -19,6 +19,7 @@ const OPTIONS: LaunchOptions = {
     args: ['--permission-mode', 'auto'],
   },
   codex: { aliases: [], versions: [{ id: 'gpt-5.6-terra', hint: 'GPT-5.6 Terra' }], specializedAgents: [{ name: 'hive:designer', description: 'Designs the interface' }], skills: [], args: [] },
+  copilot: { aliases: [], versions: [], specializedAgents: [], skills: [], args: [] },
 };
 const answer = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (_path: string) => answer(OPTIONS));

@@ -85,7 +85,7 @@ test('a plan row keeps its agent; rulesFrom writes it only when it is not the de
 });
 
 test('agentOptions puts the default agent first; rulersInUse gives a plan measure one ruler per agent its rows read, naming only a non-default one (#929)', () => {
-  assert.deepEqual([agentOptions('claude'), agentOptions('codex')], [['claude', 'codex'], ['codex', 'claude']]);
+  assert.deepEqual([agentOptions('claude'), agentOptions('codex')], [['claude', 'codex', 'copilot'], ['codex', 'claude', 'copilot']]);
   const rows = [row({ source: 'week' }), row({ source: 'week', agent: 'codex' }), row({ source: 'week', agent: 'claude' }), row({ source: 'day', agent: 'codex' })];
   assert.deepEqual(rulersInUse(rows, 'claude'), [{ source: 'week' }, { source: 'week', agent: 'codex' }, { source: 'day' }]);
   assert.deepEqual(rulerRows(rows, { source: 'week' }, 'claude'), [rows[0], rows[2]]);

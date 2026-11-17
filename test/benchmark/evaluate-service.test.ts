@@ -16,7 +16,7 @@ const STATE: State = stateWith(experiment({ rounds: [
   { n: 2, runs: [run('bbbb1', { round: 2, status: 'done' }), run('bbbb2', { round: 2, armId: 'a2', status: 'running' })] },
 ] }));
 
-const LIVE = { agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true } };
+const LIVE = { agentModels: { claude: null, codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false } };
 
 function service(evaluateRun: (token: string, deps: EvaluateDeps) => Promise<BenchRunEvaluation | undefined>, abortWaitMs?: number) {
   const events: HiveEvent[] = [];
@@ -118,7 +118,7 @@ test('an evaluation runs each collector, the tester and the judge with no model 
   const seen: EvaluateContext[] = [];
   const evaluator = createBenchEvaluator({
     latest: () => state, dispatch: async () => undefined, folderOf: (id) => `/hive/benchmark/${id}`, log: fakeLog().log, now: () => Date.parse(AT),
-    config: () => ({ ...LIVE, agentModels: { claude: 'opus', codex: null } }),
+    config: () => ({ ...LIVE, agentModels: { claude: 'opus', codex: null, copilot: null } }),
     runDeps: (signal) => ({ signal }) as EvaluateDeps, evaluateRun: async (ctx) => { seen.push(ctx); return EVAL; },
   });
   await evaluator.evaluate('exp-1', ['aaaa1']);
@@ -129,7 +129,7 @@ test('an evaluation runs each collector, the tester and the judge with no model 
 test('an evaluation whose collector, tester or judge names a disabled agent, or that starts with no live config, is refused before any run: no evaluateRun, a warning with the reason (#482)', async () => {
   const evaluation = { ...defaultEvaluation('claude'), collectors: [{ agent: 'claude' as const }, { agent: 'codex' as const }] };
   const state = stateWith(experiment({ evaluation, rounds: [{ n: 1, runs: [run('aaaa1', { status: 'done' })] }] }));
-  for (const [config, reason] of [[() => ({ ...LIVE, agentEnabled: { claude: true, codex: false } }), 'agent codex is disabled'], [() => undefined, 'no live configuration']] as const) {
+  for (const [config, reason] of [[() => ({ ...LIVE, agentEnabled: { claude: true, codex: false, copilot: false } }), 'agent codex is disabled'], [() => undefined, 'no live configuration']] as const) {
     const { log, lines } = fakeLog();
     let called = false;
     const events: HiveEvent[] = [];
