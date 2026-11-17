@@ -1,3 +1,4 @@
+import type { MachineFor } from './machine.js';
 import { stripVTControlCharacters } from 'node:util';
 import { noWorkspaceReason, taskWorkspace } from './config.js';
 import { type ConsoleStore, runHeader, stageChannel } from './console.js';
@@ -18,6 +19,7 @@ import { taskDir } from './worktree.js';
 type StageCommandEffect = Extract<Effect, { type: 'stageCommand' }>;
 
 export interface StageCommandDeps {
+  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
   exec: Exec; // #854: the remote read behind a fork's GH_REPO
   pool: Pick<PtyPool, 'start' | 'kill'>;
   ptys: Pick<PtyHost, 'has' | 'subscribe'>;

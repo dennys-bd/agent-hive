@@ -10,7 +10,7 @@ import type { Session, CopySummary, Exec, SessionRef, SessionTarget } from './ty
 import { runners } from './agents/registry.js';
 import { cleanTitle } from './usage.js';
 
-type Deps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'exec' | 'log'>;
+type Deps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'exec' | 'log' | 'machineFor'>;
 interface Planned { from: SessionRef; to: SessionTarget; source: CopySide; target: CopySide; session: Session }
 
 const HTTP_BAD_REQUEST = 400;

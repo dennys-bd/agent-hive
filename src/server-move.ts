@@ -116,7 +116,7 @@ const refuse = (res: Response, { status, message }: Refusal): void => {
 
 /** POST /activities/:id/tree/move (#594, #629): the drop on the files sidebar. The root is the tree's own (treeRoot); no value of the request
  *  picks it. Not /tasks/:id/move: that is the flow's reorder of a task (#122). */
-export function registerMoveRoutes(app: Express, { requireLive, language }: Pick<TaskRouteDeps, 'requireLive' | 'language'>): void {
+export function registerMoveRoutes(app: Express, { requireLive, language }: Pick<TaskRouteDeps, 'requireLive' | 'language' | 'machineFor'>): void {
   app.post('/activities/:id/tree/move', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;

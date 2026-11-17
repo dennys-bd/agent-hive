@@ -57,7 +57,7 @@ async function dropStale(deps: Pick<TaskRouteDeps, 'reviews' | 'notifyReview' | 
 /** GET /activities/:id/diff?scope=stage|worktree|commit|checkpoint (with `&checkpoint=<n>` for the last; #270, #591): the task's worktree on disk against the scope's base, as files, hunks and lines. The path
  * comes from the slug (taskDir), never from the activity's worktree path, which a hook posts. No value of the request reaches git: `scope` only picks a
  * branch here, and the base is a sha or a ref the Hive stored. Read-only for the repo: see taskDiff. */
-export function registerDiffRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'reviews' | 'notifyReview' | 'log'>): void {
+export function registerDiffRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'reviews' | 'notifyReview' | 'log' | 'machineFor'>): void {
   const { exec, requireLive } = deps;
   // The latest diff started per task and scope: only its files may drop marks, an older one finishing late would drop a mark made
   // against a newer diff. ponytail: one entry per task and scope, never pruned; a task's three keys are a few bytes

@@ -1,3 +1,4 @@
+import type { MachineFor } from './machine.js';
 import type { Express, Request, Response } from 'express';
 import { activityOf, otherSlugs, recordOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
@@ -69,6 +70,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
 export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string; resetsAt?: string } // #812: a source's rate limit, when to retry; #767/#811: the item a failed create left behind; #748: a gone workspace's code and name
 
 export interface TaskRouteDeps {
+  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
   reportRetry: ReportRetry; // #812: a create the source rate limited puts the source in backoff
   treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
   exec: Exec; // git for the base popup (#131) and the delete-activity route (#182, #573); tests inject a fake

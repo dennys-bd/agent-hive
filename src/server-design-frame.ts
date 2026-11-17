@@ -1,6 +1,7 @@
 // The design pane's frame (#108): an authenticated call mints a URL for one Hive design of an activity, and a read-only route serves that
 // design's folder under the URL's token, outside the secret gate. A sandboxed frame has an opaque origin and no usable credential, so the
 // token is the capability and the route never reads the port's cookie. Every answer carries its own sandboxing policy.
+import type { MachineFor } from './machine.js';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, extname, posix, relative, resolve, sep } from 'node:path';
 import type { Express, Request, Response } from 'express';
@@ -30,8 +31,8 @@ const NOT_DESIGN_MESSAGE = 'not a Hive design';
 const REFUSED_POLICY = "sandbox; default-src 'none'; frame-ancestors 'self'";
 
 type Live = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
-interface FrameDeps { tokens: DesignFrameTokens; log: Pick<Logger, 'debug'> }
-interface MintDeps { requireLive: TaskRouteDeps['requireLive']; tokens: DesignFrameTokens; exec: Exec }
+interface FrameDeps { tokens: DesignFrameTokens; log: Pick<Logger, 'debug'>; machineFor?: MachineFor }
+interface MintDeps { requireLive: TaskRouteDeps['requireLive']; tokens: DesignFrameTokens; exec: Exec; machineFor?: MachineFor }
 
 /** A before frame's folder (#675): `folder` of `commit` in the repository at `top`, in git's path space (posix, relative to top). */
 export interface BaseFolder { top: string; commit: string; folder: string }

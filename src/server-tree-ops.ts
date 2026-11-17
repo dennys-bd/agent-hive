@@ -169,7 +169,7 @@ function treeRoute(app: Express, name: string, requireLive: TaskRouteDeps['requi
 }
 
 /** POST /activities/:id/tree/create, /tree/rename, /tree/trash and /tree/file (#818): the files tree's own operations, beside tree/move. */
-export function registerTreeOpsRoutes(app: Express, { requireLive, exec }: Pick<TaskRouteDeps, 'requireLive' | 'exec'>): void {
+export function registerTreeOpsRoutes(app: Express, { requireLive, exec }: Pick<TaskRouteDeps, 'requireLive' | 'exec' | 'machineFor'>): void {
   treeRoute(app, 'tree/create', requireLive, async (res, root, raw) => {
     const body = createBody(raw);
     if (!body) return refuse(res, refusal(HTTP_BAD_REQUEST, CREATE_BODY_MESSAGE));

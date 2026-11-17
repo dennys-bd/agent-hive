@@ -1,3 +1,4 @@
+import type { MachineFor } from './machine.js';
 import type { Express, Request, Response } from 'express';
 import { canDiff } from './task-runs.js';
 import { worktreeRows } from './tasks.js';
@@ -25,6 +26,7 @@ const TASK_OWNED_MESSAGE = "use the task's remove"; // a task's worktree goes th
 const UNKNOWN_WORKSPACE_MESSAGE = 'unknown workspace';
 
 export interface WorktreeRouteDeps {
+  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
   exec: Exec; // git; tests inject a fake and see the calls
   log: Pick<Logger, 'info' | 'error'>;
   /** The workspace is read at call time: a POST /settings may have moved it (#202). baseBranch: what the activities' worktree line counts from (#586). */

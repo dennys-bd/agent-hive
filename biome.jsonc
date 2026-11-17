@@ -1,0 +1,74 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "includes": ["**", "!**/handoff"] },
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false },
+  "css": { "parser": { "tailwindDirectives": true } },
+  "linter": {
+    "enabled": true,
+    "rules": { "preset": "recommended" }
+  },
+  "overrides": [
+    {
+      "includes": ["test/**"],
+      "linter": { "rules": { "style": { "noNonNullAssertion": "off" } } }
+    },
+    // #158: a task's disk, processes and ptys go through its Machine (src/machine.ts). The two overrides below turn the rule off for the
+    // files allowed a direct import: the host's own, and the ones 7.2 to 7.5 have still to move, each node deleting its own lines
+    {
+      "includes": ["src/**", "!src/ui/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "node:fs": "A task's disk is its machine's: go through Machine (src/machine.ts, #158). A host-only file is listed in biome.jsonc.",
+                  "node:fs/promises": "A task's disk is its machine's: go through Machine (src/machine.ts, #158). A host-only file is listed in biome.jsonc.",
+                  "node:child_process": "A task's processes are its machine's: go through Machine (src/machine.ts, #158). A host-only file is listed in biome.jsonc.",
+                  "fs": "Import node:fs, which is restricted the same way (#158).",
+                  "fs/promises": "Import node:fs/promises, which is restricted the same way (#158).",
+                  "child_process": "Import node:child_process, which is restricted the same way (#158)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    // Host-only, permanent: what is not a task's (config, state, credentials, logs, the Hive's home, the daemon) and the machine's own code
+    {
+      "includes": [
+        "src/agents/**", "src/benchmark/**", "src/read-model/**", "src/sources/**",
+        "src/*-store.ts", "src/config.ts", "src/credentials.ts", "src/github-token.ts", "src/daemon*.ts", "src/hive.ts", "src/home-*.ts",
+        "src/log.ts", "src/facts.ts", "src/editor-*.ts", "src/server-editor-install.ts", "src/plugin-render.ts", "src/launch-options.ts",
+        "src/custom-*.ts", "src/command-shim.ts", "src/shim.ts", "src/shell-init.ts", "src/exec-path.ts", "src/posix-shell.ts",
+        "src/kill-tree.ts", "src/pty-host.ts", "src/spawn.ts", "src/spawn-internal.ts", "src/terminal-files.ts", "src/terminal-wire.ts",
+        "src/headless-run.ts", "src/worker-lsp.ts", "src/server-memory.ts", "src/settings-save.ts", "src/replace-file.ts",
+        "src/keep-awake.ts", "src/locale-env.ts", "src/main-window-bounds.ts", "src/item-sources.ts", "src/items-catalogue.ts",
+        "src/machine.ts", "src/machine-local*.ts", "src/machine-run.ts"
+      ],
+      "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
+    },
+    // Pending: files a sibling node still has to move; each node deletes its own group
+    {
+      "includes": [
+        // 7.2 (#159): worktree, setup and spawn on the machine
+        "src/checkpoints.ts", "src/hooks-settings.ts", "src/restart.ts", "src/server-spawn.ts", "src/server-terminals.ts",
+        "src/shell-procs.ts", "src/worktree.ts", "src/worktree-setup.ts", "src/worktree-steps.ts", "src/worktree-teardown.ts",
+        // 7.3 (#160): files, editor, diff, formatters and checkers on the machine
+        "src/check-run.ts", "src/diff.ts", "src/format-run.ts", "src/formatter-detect.ts", "src/server-check.ts",
+        "src/server-decomposition.ts", "src/server-design-frame.ts", "src/server-editor.ts", "src/server-file-base.ts",
+        "src/server-files.ts", "src/server-move.ts", "src/server-open.ts", "src/server-tree.ts", "src/server-tree-ops.ts", "src/tree-paths.ts",
+        // 7.4 (#161): git, transcripts, language servers and processes on the machine
+        "src/lsp-host.ts", "src/lsp-process.ts", "src/transcript.ts", "src/server.ts",
+        // unowned, 7.5 (#882): nested repos, tree watch, design parts and exit cwd on the machine
+        "src/worktree-nested.ts", "src/worktree-stranded.ts", "src/nested-check.ts", "src/server-nested.ts",
+        "src/tree-watch-root.ts", "src/design-parts.ts", "src/server-exit.ts"
+      ],
+      "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
+    }
+  ]
+}
