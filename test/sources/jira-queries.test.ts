@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { type JiraCall, postTransition, projectJql, readComments, readFields, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
+import { type JiraCall, postTransition, projectJql, readComments, readFields, readIssue, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
 
 interface Sent { path: string; method: string; body: unknown }
 
@@ -20,6 +20,12 @@ function fakeJira(answers: unknown[]): { call: JiraCall; sent: Sent[] } {
 }
 
 const FIELDS = ['*navigable', 'description'];
+
+// The same page forever, counting the calls: what MAX_PAGES (1000) must stop
+function endless(page: unknown): { call: JiraCall; calls: () => number } {
+  let calls = 0;
+  return { call: async () => { calls += 1; return page; }, calls: () => calls };
+}
 
 test('projectJql quotes the key, adds the relative window and always orders by key', () => {
   assert.equal(projectJql('ABC'), 'project = "ABC" ORDER BY key ASC');
@@ -179,4 +185,32 @@ test('readTransitions answers each transition\'s id and target, postTransition p
   await assert.rejects(postTransition(none.call, 'ABC-1/x', '11'), /id or key/);
   assert.equal(none.sent.length, 0);
   await assert.rejects(readTransitions(fakeJira([{}]).call, '10001'), /jira transitions/);
+});
+
+test('readProjects pages /project/search by startAt until isLast and answers each key and name in Jira\'s order (#821)', async () => {
+  const { call, sent } = fakeJira([
+    { startAt: 0, maxResults: 1, total: 2, isLast: false, values: [{ id: '1', key: 'ABC', name: 'Alpha', projectTypeKey: 'software' }] },
+    { startAt: 1, maxResults: 1, total: 2, isLast: true, values: [{ id: '2', key: 'XYZ', name: 'Zed' }] },
+  ]);
+  assert.deepEqual(await readProjects(call), [{ key: 'ABC', name: 'Alpha' }, { key: 'XYZ', name: 'Zed' }]);
+  assert.deepEqual(sent.map((s) => s.path), ['/project/search?startAt=0&maxResults=100', '/project/search?startAt=1&maxResults=100']);
+});
+
+test('readLabels pages /label until isLast and answers the names (#821)', async () => {
+  const { call, sent } = fakeJira([{ isLast: false, values: ['api', 'wip'] }, { isLast: true, values: ['ux'] }]);
+  assert.deepEqual(await readLabels(call), ['api', 'wip', 'ux']);
+  assert.deepEqual(sent.map((s) => s.path), ['/label?startAt=0&maxResults=100', '/label?startAt=2&maxResults=100']);
+});
+
+test('readProjects and readLabels stop on an empty page, refuse a malformed body, and stop after MAX_PAGES (#821)', async () => {
+  assert.deepEqual(await readProjects(fakeJira([{ values: [] }]).call), []);
+  await assert.rejects(readProjects(fakeJira([{ values: 'nope' }]).call), WireError);
+  await assert.rejects(readProjects(fakeJira([{ isLast: true, values: [{ key: 'ABC' }] }]).call), /jira project name/);
+  await assert.rejects(readLabels(fakeJira([{ isLast: true, values: ['api', 7] }]).call), /jira label/);
+  const projects = endless({ isLast: false, values: [{ key: 'ABC', name: 'Alpha' }] });
+  await assert.rejects(readProjects(projects.call), /jira projects page count/);
+  assert.equal(projects.calls(), 1000);
+  const labels = endless({ isLast: false, values: ['api'] });
+  await assert.rejects(readLabels(labels.call), /jira labels page count/);
+  assert.equal(labels.calls(), 1000);
 });

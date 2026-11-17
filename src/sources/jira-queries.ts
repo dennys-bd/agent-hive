@@ -204,3 +204,42 @@ export async function readTransitions(call: JiraCall, id: string): Promise<JiraT
 export async function postTransition(call: JiraCall, id: string, transition: string): Promise<void> {
   await call(`${issuePath(id)}/transitions`, { method: 'POST', body: JSON.stringify({ transition: { id: transition } }) });
 }
+
+export interface JiraProject { key: string; name: string }
+
+interface Page<T> { items: T[]; last: boolean }
+
+// Paged by startAt, as readComments: each endpoint says its own end through pageOf, an empty page ends any of them, and MAX_PAGES stops a
+// body that never ends from holding the request
+async function readPages<T>(call: JiraCall, path: string, what: string, pageOf: (body: unknown, startAt: number) => Page<T>): Promise<T[]> {
+  const read: T[] = [];
+  const join = path.includes('?') ? '&' : '?';
+  for (let pages = 0; ; pages += 1) {
+    if (pages >= MAX_PAGES) throw new WireError(`${what} page count`);
+    const page = pageOf(await call(`${path}${join}startAt=${read.length}&maxResults=${PAGE_SIZE}`), read.length);
+    read.push(...page.items);
+    if (page.last || page.items.length === 0) return read;
+  }
+}
+
+// The PageBean most list endpoints answer: values, ended by isLast
+function valuesPage<T>(body: unknown, what: string, itemOf: (value: unknown) => T): Page<T> {
+  const page = recordAt(body, what);
+  return { items: arrayAt(page.values, what).map(itemOf), last: page.isLast === true };
+}
+
+/** Every project the login can see (#821), in Jira's order. */
+export async function readProjects(call: JiraCall): Promise<JiraProject[]> {
+  return readPages(call, '/project/search', 'jira projects', (body) => valuesPage(body, 'jira projects', (value) => {
+    const project = recordAt(value, 'jira projects');
+    return { key: textAt(project, 'key', 'jira project'), name: textAt(project, 'name', 'jira project') };
+  }));
+}
+
+/** The site's labels (#821): Jira keeps no per-project list. */
+export async function readLabels(call: JiraCall): Promise<string[]> {
+  return readPages(call, '/label', 'jira labels', (body) => valuesPage(body, 'jira labels', (value) => {
+    if (typeof value !== 'string') throw new WireError('jira label');
+    return value;
+  }));
+}
