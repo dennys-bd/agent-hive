@@ -505,6 +505,13 @@ test('GET /settings/filter-options answers the source\'s options through the tra
   assert.deepEqual(await json(hiveFetch(`${base}/settings/source-columns?type=github&owner=acme&number=6`)), OPTIONS);
 });
 
+// Locks in behaviour already present: it passes on its first run
+test('type=github on filter-options and source-columns answers as today, so the UI\'s GitHub calls are unchanged (#821)', async (t) => {
+  const { base } = await start(t, 0, { settingsGql: () => optionsGql() });
+  assert.deepEqual(await json(hiveFetch(`${base}/settings/filter-options?type=github&owner=acme&number=6`)), await json(hiveFetch(`${base}/settings/filter-options?owner=acme&number=6`)));
+  assert.deepEqual(await json(hiveFetch(`${base}/settings/source-columns?type=github&owner=acme&number=6`)), OPTIONS);
+});
+
 test('GET /settings/filter-options answers 400 without an owner or a numeric number, and 502 with the message when GitHub fails (#245)', async (t) => {
   const { base } = await start(t, 0, { settingsGql: () => fakeGql({}).gql });
   for (const query of ['', 'owner=acme', 'number=6', 'owner=&number=6', 'owner=acme&number=x']) {

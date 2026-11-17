@@ -2,7 +2,12 @@ import type { Express, Request, Response } from 'express';
 import { type JiraRouteDeps, normalizeJiraSite } from './server-jira.js';
 import { answeredRateLimit, isNotConnected, type ReportRetry } from './source-errors.js';
 import { jiraFetch } from './sources/jira-fetch.js';
-import { type JiraCall, PROJECT_KEY, readIssueTypes, readLinkTypes, readProjects, readStatuses } from './sources/jira-queries.js';
+import { storedKindOf } from './sources/jira-item.js';
+import {
+  type JiraCall, type JiraCreateField, type JiraFieldDef, PROJECT_KEY, readAssignable, readCreateFields, readFields, readIssueTypes, readLabels, readLinkTypes,
+  readProjects, readStatuses,
+} from './sources/jira-queries.js';
+import type { FilterOptions } from './types.js';
 
 // What the Settings form reads of a Jira source before it is saved (#821). Registered next to the connection routes, outside requireLive:
 // the first Jira source is created in setup mode
@@ -73,3 +78,22 @@ export function registerJiraSettingsRoutes(app: Express, deps: JiraRouteDeps): v
  * readStatuses straight over the call: building a source would need a placeholder for every required key of the jira member. */
 export const jiraColumns = (req: Request, res: Response, deps: JiraRouteDeps): Promise<void> =>
   projectRoute(req, res, deps, async (call, project) => (await readStatuses(call, project)).map((s) => s.name));
+
+// A field the sync stores a value for, as one entry (#821). An option field offers the union, first seen first, of what every create
+// screen of the project allows; a field on none offers [], and so does any other kind
+function projectFieldOf(field: JiraFieldDef, screens: readonly JiraCreateField[]): FilterOptions['projectFields'] {
+  const kind = storedKindOf(field);
+  if (kind === undefined) return [];
+  const options = kind === 'option' ? [...new Set(screens.filter((s) => s.name === field.name).flatMap((s) => s.allowedValues))] : [];
+  return [{ name: field.name, options }];
+}
+
+// 1 + N calls after the first round (N = the project's issue types). The jira member refuses milestone and repository rules, so both are []
+async function filterOptions(call: JiraCall, project: string): Promise<FilterOptions> {
+  const [fields, assignable, labels, types] = await Promise.all([readFields(call), readAssignable(call, project), readLabels(call), readIssueTypes(call, project)]);
+  const screens = (await Promise.all(types.map((type) => readCreateFields(call, project, type.id)))).flat();
+  return { assignees: [...new Set(['@me', ...assignable])], labels, milestones: [], repositories: [], projectFields: fields.flatMap((f) => projectFieldOf(f, screens)) };
+}
+
+/** GET /settings/filter-options?type=jira (#821): the existing FilterOptions shape, read live, so it works before the first sync. */
+export const jiraFilterOptions = (req: Request, res: Response, deps: JiraRouteDeps): Promise<void> => projectRoute(req, res, deps, filterOptions);

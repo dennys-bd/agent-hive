@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { saveJiraCredential } from '../src/credentials.js';
 import { createServer } from '../src/server.js';
-import { jiraColumns, registerJiraSettingsRoutes } from '../src/server-jira-settings.js';
+import { jiraColumns, jiraFilterOptions, registerJiraSettingsRoutes } from '../src/server-jira-settings.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -48,13 +48,14 @@ async function routes(t: TestContext, answer: Answer, login = true): Promise<Har
   const app = express();
   registerJiraSettingsRoutes(app, deps);
   app.get('/settings/source-columns', (req, res) => jiraColumns(req, res, deps));
+  app.get('/settings/filter-options', (req, res) => jiraFilterOptions(req, res, deps));
   const server = app.listen(0);
   t.after(() => server.close());
   return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, lines, calls };
 }
 
 const SITE_ROUTES = ['/settings/jira/projects', '/settings/jira/link-types'];
-const PROJECT_ROUTES = ['/settings/jira/issue-types', '/settings/source-columns']; // Task 7 adds /settings/filter-options
+const PROJECT_ROUTES = ['/settings/jira/issue-types', '/settings/source-columns', '/settings/filter-options']
 const ALL_ROUTES = (): string[] => [...SITE_ROUTES, ...PROJECT_ROUTES];
 const url = (route: string, site = SITE, project = 'ABC'): string =>
   `${route}?type=jira&site=${encodeURIComponent(site)}${PROJECT_ROUTES.includes(route) ? `&project=${encodeURIComponent(project)}` : ''}`;
@@ -137,4 +138,34 @@ test('in setup mode the daemon answers every Jira settings route, 409 with no st
     const res = await hiveFetch(`http://127.0.0.1:${port}${url(route)}`);
     assert.deepEqual([res.status, await res.json()], [409, { error: 'not-connected' }], route);
   }
+});
+
+test('filter-options?type=jira answers @me first, the site\'s labels, no milestones or repositories, and one entry per stored field with its options merged (#821)', async (t) => {
+  const h = await routes(t, fakeJira({
+    '/field': [[
+      { id: 'summary', name: 'Summary', schema: { type: 'string', system: 'summary' } }, // an own field: no entry
+      { id: 'customfield_1', name: 'Team', schema: { type: 'option' } },
+      { id: 'components', name: 'Components', schema: { type: 'array', items: 'component' } },
+      { id: 'customfield_2', name: 'Points', schema: { type: 'number' } },
+      { id: 'customfield_3', name: 'Sprint', schema: { type: 'array', items: 'json' } }, // an unknown kind: no entry
+      { id: 'thumbnail', name: 'Images' }, // no schema: no entry
+    ]],
+    '/user/assignable/search': [[
+      { accountId: 'acc-1', displayName: 'Ana Lima' }, { accountId: 'acc-2', displayName: 'Bea' }, { accountId: 'acc-3' }, { accountId: 'acc-4', displayName: 'Ana Lima' },
+    ]],
+    '/label': [{ isLast: true, values: ['api', 'wip'] }],
+    '/issue/createmeta/ABC/issuetypes': [{ startAt: 0, total: 2, issueTypes: [{ id: '10001', name: 'Story', subtask: false }, { id: '10002', name: 'Sub-task', subtask: true }] }],
+    '/issue/createmeta/ABC/issuetypes/10001': [{ startAt: 0, total: 2, fields: [
+      { fieldId: 'customfield_1', name: 'Team', schema: { type: 'option' }, allowedValues: [{ id: '1', value: 'Core' }, { id: '2', value: 'Web' }] },
+      { fieldId: 'components', name: 'Components', schema: { type: 'array', items: 'component' }, allowedValues: [{ id: '5', name: 'API' }] },
+    ] }],
+    '/issue/createmeta/ABC/issuetypes/10002': [{ startAt: 0, total: 1, fields: [
+      { fieldId: 'customfield_1', name: 'Team', schema: { type: 'option' }, allowedValues: [{ id: '2', value: 'Web' }, { id: '3', value: 'Ops' }] },
+    ] }],
+  }));
+  assert.deepEqual(await get(h, url('/settings/filter-options')), [200, {
+    assignees: ['@me', 'Ana Lima', 'Bea'], labels: ['api', 'wip'], milestones: [], repositories: [],
+    projectFields: [{ name: 'Team', options: ['Core', 'Web', 'Ops'] }, { name: 'Components', options: ['API'] }, { name: 'Points', options: [] }],
+  }]);
+  assert.ok(h.calls.includes('/user/assignable/search?project=ABC&startAt=0&maxResults=100'), h.calls.join('\n'));
 });

@@ -104,7 +104,7 @@ import { registerOpenRoute, registerResolveRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
 import { type JiraRouteDeps, registerJiraRoutes } from './server-jira.js';
-import { jiraColumns, registerJiraSettingsRoutes } from './server-jira-settings.js';
+import { jiraColumns, jiraFilterOptions, registerJiraSettingsRoutes } from './server-jira-settings.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
 import { createCustomStore } from './custom-store.js';
 import { createPluginRender } from './plugin-render.js';
@@ -1127,8 +1127,9 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   });
 
-  // #245: a github source's filter options, which the form asks together with its columns. The number rides as text and must be one.
+  // #245: a source's filter options, which the form asks together with its columns: GitHub's below, Jira's for type=jira (#821). The number rides as text and must be one.
   app.get('/settings/filter-options', async (req: Request, res: Response) => {
+    if (req.query.type === 'jira') return jiraFilterOptions(req, res, jiraDeps); // #821: github, or no type (today's callers), runs the path below
     const { owner, number } = req.query;
     if (typeof owner !== 'string' || owner === '' || typeof number !== 'string' || !/^\d+$/.test(number)) {
       res.status(HTTP_BAD_REQUEST).json({ error: 'owner e number obrigatórios' });
