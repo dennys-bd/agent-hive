@@ -1,3 +1,4 @@
+import { jiraCredential } from '../credentials.js';
 import type { Logger } from '../log.js';
 import { POLL_INTERVAL_MS, QUOTA_RESERVE } from '../polling.js';
 import type { RepoRef } from '../repos/repositories.js';
@@ -9,6 +10,9 @@ import { syncAssignees, syncIssueTypes, syncLabels, syncMilestones, syncRepo } f
 import type { RestGet, RestQuota } from './rest.js';
 import { EMPTY_REPORT, mergeReports, PartialSyncError, SyncStopped, syncScope, type SyncDeps, type SyncReport } from './sync.js';
 import type { ReportRetry } from '../source-errors.js';
+import { jiraFetch } from '../sources/jira-fetch.js';
+import type { JiraCall } from '../sources/jira-queries.js';
+import { syncJira, type JiraRoundDeps, type JiraRoundSource } from './jira-round.js';
 
 export { RECONCILE_EVERY_MS } from './reconcile.js';
 export const REFETCH_COOLDOWN_MS = 10_000; // an issue page opened again within it reads the model, not GitHub
@@ -94,10 +98,12 @@ export interface ReadModelLoopDeps {
   db: ReadModel;
   access(): Promise<ReadAccess | undefined>; // the login auth.github names now, and its transports; none without a login
   repositories(): Promise<RepoRef[]>; // what listRepositories lists now, an original's role and pair included (#186); none before a config
+  jiraSources(): Promise<JiraRoundSource[]>; // #824: each jira member of the config now, with its retry wait; none before a config
   notify(repository: string, kinds: SyncKind[]): void; // the readModel event
   log: Pick<Logger, 'error' | 'warn' | 'debug'>;
   now?: () => Date;
-  reportRetry?: ReportRetry; // #812: a call the source rate limited reports its retry here; #824's Jira round is the first caller, until then optional
+  reportRetry: ReportRetry; // #812: a call the source rate limited reports its retry here; the Jira round's 429 (#824)
+  jira?: Partial<Pick<JiraRoundDeps, 'credential' | 'call'>>; // #824: a test's fakes; absent, the stored login and jiraFetch, as SourceDeps.jira
 }
 
 export interface ReadModelLoop {
@@ -141,8 +147,17 @@ function coreOf(deps: ReadModelLoopDeps): LoopCore {
   };
 }
 
-function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): { runOnce(): Promise<void>; running(): Promise<void> | undefined } {
-  let round: Promise<void> | undefined;
+// The Jira round's deps (#824): the loop's own, and the site's stored login and jiraFetch with its default credential reader
+function jiraDepsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): JiraRoundDeps {
+  return {
+    db: deps.db, notify: deps.notify, log: deps.log, now: core.now, reportRetry: deps.reportRetry, isStopped,
+    credential: deps.jira?.credential ?? ((site: string) => jiraCredential(site)),
+    call: deps.jira?.call ?? ((site: string): JiraCall => (path, init) => jiraFetch(site, path, init)),
+  };
+}
+
+// GitHub's part of a round (#180), as it was: its REST backoff and a missing login stop only the repositories (#824)
+function repositoriesRound(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): () => Promise<void> {
   async function syncOne(sync: RefetchDeps, ref: RepoRef): Promise<void> {
     const { repository } = ref;
     const { report, error, commentsBlocked } = await syncRepository({ ...sync, isStopped }, ref);
@@ -151,8 +166,9 @@ function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => bool
     if (error !== undefined) deps.log.error(`read model: the sync of ${repository} failed: ${reasonOf(error)}`);
     if (report.kinds.length > 0) deps.notify(repository, report.kinds); // a partial round too: what it stored is in the model
   }
-  async function runRound(): Promise<void> {
+  return async () => {
     try {
+      if (core.inBackoff()) return; // no login or listing read inside the backoff, as when runOnce held the whole round
       const repositories = await deps.repositories();
       if (repositories.length === 0) return; // before a config, or none on GitHub: no login read, no request
       const sync = await core.access();
@@ -164,11 +180,27 @@ function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => bool
     } catch (err) {
       deps.log.error(`read model: the round failed: ${reasonOf(err)}`);
     }
+  };
+}
+
+function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): { runOnce(): Promise<void>; running(): Promise<void> | undefined } {
+  let round: Promise<void> | undefined;
+  const repositories = repositoriesRound(deps, core, isStopped);
+  const jira = jiraDepsOf(deps, core, isStopped);
+  // #824: the repositories first, so GitHub's round keeps its timing; each part in its own try, so neither stops the other
+  async function runRound(): Promise<void> {
+    await repositories();
+    try {
+      await syncJira(jira, await deps.jiraSources());
+    } catch (err) {
+      deps.log.error(`read model: the Jira round failed: ${reasonOf(err)}`);
+    }
   }
   return {
     running: () => round,
     runOnce: () => {
-      if (isStopped() || round !== undefined || core.inBackoff()) return Promise.resolve(); // a round still running makes this tick a no-op
+      // a round still running makes this tick a no-op; GitHub's backoff is the repositories' own check now (#824)
+      if (isStopped() || round !== undefined) return Promise.resolve();
       round = runRound().finally(() => {
         round = undefined;
       });

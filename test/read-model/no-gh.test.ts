@@ -43,7 +43,7 @@ const holder = (exec: Exec): GhToken =>
 async function twoRounds(db: ReadModel, access: Parameters<typeof createReadModelLoop>[0]['access']): Promise<string[]> {
   const errors: string[] = [];
   const log = { error: (line: string) => { errors.push(line); }, warn: () => undefined, debug: () => undefined };
-  const loop = createReadModelLoop({ db, access, repositories: async () => [REF], notify: () => undefined, log, now: NOW });
+  const loop = createReadModelLoop({ db, access, repositories: async () => [REF], jiraSources: async () => [], reportRetry: async () => undefined, notify: () => undefined, log, now: NOW });
   await loop.runOnce();
   await loop.runOnce();
   return errors;
