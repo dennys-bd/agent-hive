@@ -5,11 +5,12 @@ import { SourceNotConnectedError } from '../source-errors.js';
 import type { Citation } from '../tasks.js';
 import type { ItemAction, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
 import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
+import { createJiraIssue, readJiraCreateOptions } from './jira-create.js';
 import { JiraNotFoundError } from './jira-fetch.js';
 import { jiraItemOf } from './jira-item.js';
 import { isListed, type JiraSourceConfig, listedTasks, projectOf, taskOf } from './jira-listing.js';
 import { type JiraCall, postTransition, readComments, readIssue, readMyself, readStatuses, readTransitions } from './jira-queries.js';
-import { writeIssue } from './jira-sync.js';
+import { writeIssue, writeListing } from './jira-sync.js';
 import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
 
 export type { JiraSourceConfig } from './jira-listing.js';
@@ -101,6 +102,14 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     await readTask(cred, itemId);
   }
 
+  // #831: the new issue placed by the move, whose reads store it; the listing is rebuilt too, since listItems reads it and the poll that
+  // follows the create must list the issue before the next round
+  async function placeNew(itemId: string, status: string): Promise<void> {
+    await moveTo(itemId, status);
+    const cred = await account();
+    if (db !== undefined) db.transaction(() => writeListing(db, rowsOf(cred), source.project));
+  }
+
   // The key the comment links need: the stored row's, else one live read, since the adapter is handed the issue id
   async function keyOf(cred: JiraCredential, itemId: string): Promise<string> {
     const row = db?.items.items(rowsOf(cred), [itemId])[0];
@@ -144,5 +153,9 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     return (await readStatuses(call, source.project)).map((s) => s.name);
   }
 
-  return { resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments };
+  return {
+    resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments,
+    create: (fields) => createJiraIssue({ call, source, place: placeNew }, fields),
+    createOptions: () => readJiraCreateOptions(call, source.project),
+  };
 }
