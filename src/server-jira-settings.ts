@@ -2,7 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { type JiraRouteDeps, normalizeJiraSite } from './server-jira.js';
 import { answeredRateLimit, isNotConnected, type ReportRetry } from './source-errors.js';
 import { jiraFetch } from './sources/jira-fetch.js';
-import { type JiraCall, PROJECT_KEY, readIssueTypes, readLinkTypes, readProjects } from './sources/jira-queries.js';
+import { type JiraCall, PROJECT_KEY, readIssueTypes, readLinkTypes, readProjects, readStatuses } from './sources/jira-queries.js';
 
 // What the Settings form reads of a Jira source before it is saved (#821). Registered next to the connection routes, outside requireLive:
 // the first Jira source is created in setup mode
@@ -68,3 +68,8 @@ export function registerJiraSettingsRoutes(app: Express, deps: JiraRouteDeps): v
   app.get(`${ROUTE}/link-types`, (req: Request, res: Response) => siteRoute(req, res, deps, readLinkTypes));
   app.get(`${ROUTE}/issue-types`, (req: Request, res: Response) => projectRoute(req, res, deps, readIssueTypes));
 }
+
+/** GET /settings/source-columns?type=jira (#821): the project's status names in Jira's order, as the adapter's settingsOptions answers them.
+ * readStatuses straight over the call: building a source would need a placeholder for every required key of the jira member. */
+export const jiraColumns = (req: Request, res: Response, deps: JiraRouteDeps): Promise<void> =>
+  projectRoute(req, res, deps, async (call, project) => (await readStatuses(call, project)).map((s) => s.name));

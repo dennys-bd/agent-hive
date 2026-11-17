@@ -104,7 +104,7 @@ import { registerOpenRoute, registerResolveRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
 import { type JiraRouteDeps, registerJiraRoutes } from './server-jira.js';
-import { registerJiraSettingsRoutes } from './server-jira-settings.js';
+import { jiraColumns, registerJiraSettingsRoutes } from './server-jira-settings.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
 import { createCustomStore } from './custom-store.js';
 import { createPluginRender } from './plugin-render.js';
@@ -1109,6 +1109,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   const jiraDeps: JiraRouteDeps = { log, env: deps.credentialsEnv }; // #817, #821: one set of deps for every Jira settings route
   app.get('/settings/source-columns', async (req: Request, res: Response) => {
+    if (req.query.type === 'jira') return jiraColumns(req, res, jiraDeps); // #821: github, or no type, runs today's path below
     let spec: SourceSpec;
     try {
       // only the source and the transport matter here; the name cites no source column

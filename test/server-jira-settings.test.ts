@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { saveJiraCredential } from '../src/credentials.js';
 import { createServer } from '../src/server.js';
-import { registerJiraSettingsRoutes } from '../src/server-jira-settings.js';
+import { jiraColumns, registerJiraSettingsRoutes } from '../src/server-jira-settings.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -47,13 +47,14 @@ async function routes(t: TestContext, answer: Answer, login = true): Promise<Har
   const deps = { log, env, fetch: fake };
   const app = express();
   registerJiraSettingsRoutes(app, deps);
+  app.get('/settings/source-columns', (req, res) => jiraColumns(req, res, deps));
   const server = app.listen(0);
   t.after(() => server.close());
   return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, lines, calls };
 }
 
 const SITE_ROUTES = ['/settings/jira/projects', '/settings/jira/link-types'];
-const PROJECT_ROUTES = ['/settings/jira/issue-types']; // Task 5 adds /settings/source-columns, Task 7 /settings/filter-options
+const PROJECT_ROUTES = ['/settings/jira/issue-types', '/settings/source-columns']; // Task 7 adds /settings/filter-options
 const ALL_ROUTES = (): string[] => [...SITE_ROUTES, ...PROJECT_ROUTES];
 const url = (route: string, site = SITE, project = 'ABC'): string =>
   `${route}?type=jira&site=${encodeURIComponent(site)}${PROJECT_ROUTES.includes(route) ? `&project=${encodeURIComponent(project)}` : ''}`;
@@ -75,6 +76,16 @@ test('issue-types answers id, name and subtask, and link-types each type with it
   }));
   assert.deepEqual(await get(h, url('/settings/jira/issue-types')), [200, [{ id: '10001', name: 'Story', subtask: false }, { id: '10002', name: 'Sub-task', subtask: true }]]);
   assert.deepEqual(await get(h, url('/settings/jira/link-types')), [200, [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }]]);
+});
+
+test('source-columns?type=jira answers the project\'s status names in Jira\'s order (#821)', async (t) => {
+  const todo = { name: 'To Do', statusCategory: { key: 'new' } };
+  const h = await routes(t, fakeJira({ '/project/ABC/statuses': [[
+    { name: 'Story', statuses: [todo, { name: 'In Progress', statusCategory: { key: 'indeterminate' } }] },
+    { name: 'Bug', statuses: [todo, { name: 'Done', statusCategory: { key: 'done' } }] },
+  ]] }));
+  assert.deepEqual(await get(h, url('/settings/source-columns')), [200, ['To Do', 'In Progress', 'Done']]);
+  assert.deepEqual(h.calls, ['/project/ABC/statuses']);
 });
 
 test('a site with no stored login answers 409 not-connected on every route and no fetch leaves; a 401 answers 409 too (#821)', async (t) => {
