@@ -9,6 +9,7 @@ import { copilotRunner, instructionsDir } from '../../src/agents/copilot.js';
 import { copilotHome } from '../../src/agents/copilot-home.js';
 import { copilotHooksPlugin } from '../../src/agents/copilot-hooks.js';
 import type { AgentRun, McpServer, RunMcpServer } from '../../src/agents/runner.js';
+import { hookCommand, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
 import { runTmpDir } from '../../src/run-tmp.js';
 import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
@@ -119,12 +120,13 @@ test('copy, clear, headless, hooks, transcripts and limits answer their placehol
   assert.deepEqual([await copilotRunner.countMessages('/x.jsonl'), await copilotRunner.planLimits(), copilotRunner.statusLimits({}, 0)], [0, undefined, undefined]);
 });
 
-test('prepareHome writes the empty hooks plugin under the Hive\'s home: a manifest Copilot loads and no hook yet (#873)', async (t) => {
+test('prepareHome writes the hooks plugin under the Hive\'s home for the boot\'s port, beside its shim (#873, #874)', async (t) => {
   const home = await tempDir(t, 'copilot-home-');
   await copilotRunner.prepareHome(home, 4242);
   assert.equal(copilotHooksPlugin(home), join(home, 'copilot', 'hooks-plugin'));
   assert.equal(JSON.parse(await readFile(join(copilotHooksPlugin(home), '.claude-plugin', 'plugin.json'), 'utf8')).name, 'hive-hooks');
-  assert.deepEqual(JSON.parse(await readFile(join(copilotHooksPlugin(home), 'hooks', 'hooks.json'), 'utf8')), { hooks: {} });
+  const { hooks } = JSON.parse(await readFile(join(copilotHooksPlugin(home), 'hooks', 'hooks.json'), 'utf8'));
+  assert.equal(hooks.Stop[0].hooks[0].command, hookCommand(4242, STOP_HOOK_TIMEOUT_S), 'the boot\'s port reaches the plugin');
   assert.ok(existsSync(shimPath(home, AGENTS.copilot)), 'its shim, as every agent boot found');
 });
 
