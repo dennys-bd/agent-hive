@@ -3,6 +3,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hookCommand, STOP_HOOK_TIMEOUT_S } from '../hooks-settings.js';
+import { isRecord } from '../rate-limits.js';
 import type { HookPayload } from '../types.js';
 
 /** Every hook event the Hive registers for Copilot (#874). No PermissionRequest: it fires under auto-approval too (spike §2). No SessionEnd:
@@ -32,5 +33,34 @@ export async function writeCopilotHooksPlugin(home: string, port: number): Promi
   ]);
 }
 
-/** Every payload dropped until node 2: none would move a worker the reducer's way yet. */
-export const hookPayload = (): HookPayload | undefined => undefined;
+// PermissionRequest fires under auto-approval too, so it is no wait (spike §2); the pty's exit ends the run, and /clear sends a SessionEnd for a
+// live worker (spike §3). Neither is registered; one that arrives anyway is dropped
+const DROPPED: readonly string[] = ['PermissionRequest', 'SessionEnd'];
+
+// toolArgs is a JSON string in Copilot's native payload (spike §2); only an object reaches tool_input, where describeTool and the PR check read it
+function toolArgs(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'string') return isRecord(value) ? value : undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined; // a forged or cut string: no tool input, as a payload without one
+  }
+}
+
+// The spike recorded only native tool payloads, so Claude's tool_name / tool_input win and Copilot's toolName / toolArgs fill them when missing
+function withToolFields(raw: HookPayload & Record<string, unknown>): HookPayload {
+  const name = raw.tool_name ?? (typeof raw.toolName === 'string' ? raw.toolName : undefined);
+  const input = raw.tool_input ?? toolArgs(raw.toolArgs);
+  if (name === raw.tool_name && input === raw.tool_input) return raw;
+  return { ...raw, ...(name === undefined ? {} : { tool_name: name }), ...(input === undefined ? {} : { tool_input: input }) };
+}
+
+/** Copilot's hook as the reducer reads Claude's (#874). Every field is read as unknown: nothing in a forged body throws. */
+export function hookPayload(raw: HookPayload): HookPayload | undefined {
+  if (DROPPED.includes(raw.hook_event_name)) return undefined;
+  if (!isRecord(raw)) return raw;
+  // a subagent's own prompt and Stop carry its id as session_id plus agent_id (spike §2): its prompt would turn the worker green
+  if (typeof raw.agent_id === 'string' && raw.agent_id !== '') return undefined;
+  return withToolFields(raw);
+}

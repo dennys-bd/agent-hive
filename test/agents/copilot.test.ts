@@ -109,11 +109,12 @@ test('the stray pattern matches the argv\'s MCP path; the command line runs copi
   assert.equal(line.includes(SECRET), false);
 });
 
-test('copy, clear, headless, hooks, transcripts and limits answer their placeholders until nodes 2 to 7 (#873)', async () => {
+test('copy, clear, headless, transcripts and limits answer their placeholders until nodes 3 to 7; hooks pass a Stop on (#873, #874)', async () => {
   assert.deepEqual([copilotRunner.copy(RUN, ID), copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({}), copilotRunner.headlessMcp], [undefined, undefined, ['COPILOT_ALLOW_ALL'], [], false]);
   assert.throws(() => copilotRunner.headless({ dir: '/t', schema: '{}', schemaPath: '/t/s', answerPath: '/t/a' }), { message: 'copilot: headless runs are not supported yet' });
   assert.equal(copilotRunner.headlessAnswer('{}', undefined), undefined);
-  assert.equal(copilotRunner.hookPayload({ hook_event_name: 'Stop', session_id: ID }), undefined);
+  const stop = { hook_event_name: 'Stop', session_id: ID };
+  assert.equal(copilotRunner.hookPayload(stop), stop);
   assert.deepEqual([copilotRunner.transcriptDir('/repo'), copilotRunner.ownsTranscript('/x', '/repo', ID)], [undefined, false]);
   assert.deepEqual(await copilotRunner.sessionFiles('/repo', ID), []);
   assert.deepEqual(await copilotRunner.readTurn('/x.jsonl'), { tokens: 0 });
