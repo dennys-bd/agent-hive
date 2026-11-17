@@ -115,6 +115,11 @@ export function namespaced(entry: SourceConfig, adapter: Source, grammar: RefGra
   });
   // #567: one item's read under the listed ids, through listItems' own item mapping; the url passes untouched
   const read = (r: SourceItemRead): SourceItemRead => ('entry' in r ? { ...r, entry: { ...r.entry, item: item(r.entry.item) } } : 'item' in r ? { ...r, item: item(r.item) } : r);
+  // #767: an issue off the Project has no item to name; #831: the parent reaches the adapter as its own id, as every id it is handed
+  const created = create && (async (fields: Parameters<NonNullable<Source['create']>>[0]) => {
+    const made = await create(fields.parent === undefined ? fields : { ...fields, parent: own(fields.parent) });
+    return made.itemId === undefined ? made : { ...made, itemId: `${prefix}${made.itemId}` };
+  });
   return {
     ...adapter,
     listItems: async () => shown(await adapter.listItems()),
@@ -122,8 +127,7 @@ export function namespaced(entry: SourceConfig, adapter: Source, grammar: RefGra
     ...(stored ? { stored: async () => shown(await stored()) } : {}),
     setColumn: (itemId, column) => adapter.setColumn(own(itemId), column),
     apply: (itemId, action, url) => adapter.apply(own(itemId), action, url),
-    // #767: an issue off the Project has no item to name
-    ...(create ? { create: async (fields: Parameters<NonNullable<Source['create']>>[0]) => { const made = await create(fields); return made.itemId === undefined ? made : { ...made, itemId: `${prefix}${made.itemId}` }; } } : {}),
+    ...(created ? { create: created } : {}),
     ...(comments ? { comments: (itemId: string) => comments(own(itemId)) } : {}),
     ...(project ? { project: async (options?: ReadOptions) => rows(await project(options)) } : {}),
     ...(fieldsOf ? { fieldsOf: (itemId: string, options?: ReadOptions) => fieldsOf(own(itemId), options) } : {}),
