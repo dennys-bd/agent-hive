@@ -82,6 +82,7 @@ import type { ReadModel, SyncKind } from './read-model/db.js';
 import type { ItemStore } from './read-model/items.js';
 import type { UsageStore } from './usage-store.js';
 import { isRateLimited, type ReportRetry } from './source-errors.js';
+import { jiraRoundSources } from './read-model/jira-round.js';
 import { createReadModelLoop, readModelEvent, type RefetchOutcome } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
@@ -1351,6 +1352,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const readLoop = deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
+    jiraSources: async () => (live ? jiraRoundSources(live.runtime.config.comb.sources, live.state.syncs) : []), // #824: per round, so a Settings save takes the next one
   });
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
   // #567: after the loop, whose refetch reads an issue the Project no longer holds

@@ -6,6 +6,11 @@ import { closingPrsFromGql, commentFromRest, issueFromRest, WireError } from './
 import type { CommentRow, IssueRow, IssueView } from './rows.js';
 import { EMPTY_REPORT, mergeReports, storePullFlags, throwIfStopped, type SyncDeps, type SyncReport } from './sync.js';
 
+export const RECONCILE_EVERY_MS = 24 * 60 * 60 * 1000; // the full listing's spacing (#180): every page of it is a 200, so once a day bounds its cost
+
+/** Whether a reconcile stamped at `at` is due at `now` (#180, #824): an absent or unreadable stamp is, since NaN fails the <=. */
+export const isReconcileDue = (at: string | null | undefined, now: Date): boolean => !(now.getTime() - Date.parse(at ?? '') <= RECONCILE_EVERY_MS);
+
 // since never reports what was deleted or transferred (#180): the full listing and the refetch are the only ways a row leaves the model
 
 const API_REPOSITORY = /^https:\/\/api\.github\.com\/repos\/([^/]+\/[^/]+)$/;

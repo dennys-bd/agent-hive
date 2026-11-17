@@ -10,9 +10,10 @@ import {
 import { assigneesPath, issueTypesPath, labelsPath, milestonesPath, repoPath } from '../../src/read-model/repo-scopes.js';
 import type { RestGet } from '../../src/read-model/rest.js';
 import { scopePath } from '../../src/read-model/sync.js';
+import type { JiraCall } from '../../src/sources/jira-queries.js';
 import type { Gql } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
-import { deferred, fakeLinks, fakeRest, github, HEAD, issueRow, NO_GQL, NOW, ok, OPTION_PATHS, pagesAt, REF, REPO, REPO_SCOPE_PATHS, REPO_SCOPES, REST_REPO, restComment, restIssue, restLabel, restPr, SOURCE, SYNCED, T1, T2, tempModel } from './fixtures.js';
+import { deferred, fakeJira, fakeLinks, fakeRest, github, HEAD, issueRow, JIRA_CRED, JIRA_ROWS, JIRA_SITE, jiraIssue, jiraPage, NO_GQL, NOW, ok, OPTION_PATHS, pagesAt, REF, REPO, REPO_SCOPE_PATHS, REPO_SCOPES, REST_REPO, restComment, restIssue, restLabel, restPr, SOURCE, SYNCED, T1, T2, tempModel } from './fixtures.js';
 
 const OTHER = 'acme/other';
 const listing = (repository: string): string[] => [`repos/${repository}/issues?state=all&per_page=100`, `repos/${repository}/issues/comments?per_page=100`];
@@ -83,7 +84,7 @@ function loopOn(db: ReadModel, rest: RestGet, extra: Partial<ReadModelLoopDeps> 
   const notified: [string, SyncKind[]][] = [];
   const links = fakeLinks();
   const loop = createReadModelLoop({
-    db, access: async () => ({ source: SOURCE, rest, gql: links.gql }), repositories: async () => [REF], log: quiet, now: NOW,
+    db, access: async () => ({ source: SOURCE, rest, gql: links.gql }), repositories: async () => [REF], jiraSources: async () => [], reportRetry: async () => undefined, log: quiet, now: NOW,
     notify: (repository, kinds) => {
       notified.push([repository, kinds]);
     },
@@ -460,4 +461,55 @@ test('two concurrent refreshOptions for one repository make one set of REST call
   assert.equal(calls.length, 4);
   await loop.refreshOptions([REPO]).catch(() => undefined);
   assert.ok(calls.length > 4, 'once settled, a refresh runs again');
+});
+
+const JIRA_ABC = `${JIRA_SITE}/ABC`;
+const jiraOn = (call: (site: string) => JiraCall): Partial<ReadModelLoopDeps> => ({
+  jiraSources: async () => [{ name: 'board', site: JIRA_SITE, project: 'ABC' }], jira: { credential: async () => JIRA_CRED, call },
+});
+
+test('with the REST quota in backoff the Jira groups still sync while the repositories make no request (#824)', async (t) => {
+  const db = await tempModel(t);
+  const low = { limit: 5000, remaining: QUOTA_RESERVE - 1, used: 4501, resetsAt: new Date(NOW().getTime() + 60_000).toISOString() };
+  const paths: string[] = [];
+  const page = jiraPage([jiraIssue('ABC', 1)]);
+  const jira = fakeJira({ [JIRA_ABC]: [page, page] });
+  const { loop } = loopOn(db, async (path) => { paths.push(path); return ok([], { quota: low }); }, jiraOn(jira.call));
+  await loop.runOnce(); // learns the reading
+  const learned = paths.length;
+  await loop.runOnce();
+  assert.equal(paths.length, learned, 'no GitHub request inside the backoff');
+  assert.equal(jira.searches().length, 2, 'the Jira group synced in both rounds');
+});
+
+test('with no GitHub login the Jira groups still sync and name what changed (#824)', async (t) => {
+  const db = await tempModel(t);
+  const jira = fakeJira({ [JIRA_ABC]: [jiraPage([jiraIssue('ABC', 1)])] });
+  const { loop, notified } = loopOn(db, async () => ok([]), { access: async () => undefined, ...jiraOn(jira.call) });
+  await loop.runOnce();
+  assert.deepEqual(db.items.listing(JIRA_ROWS, 'ABC'), ['10001']);
+  assert.deepEqual(notified, [[JIRA_ABC, ['items']]]);
+});
+
+test('stop() waits for a Jira group in flight: its writes land before the database may close (#824)', async (t) => {
+  const db = await tempModel(t);
+  const gate = deferred();
+  const called = deferred();
+  const jira = fakeJira({ [JIRA_ABC]: [jiraPage([jiraIssue('ABC', 1)])] });
+  const gated = (site: string): JiraCall => async (path, init) => {
+    called.resolve();
+    await gate.promise;
+    return jira.call(site)(path, init);
+  };
+  const { loop } = loopOn(db, async () => ok([]), { repositories: async () => [], ...jiraOn(gated) });
+  const order: string[] = [];
+  const round = loop.runOnce().then(() => { order.push('round'); });
+  await called.promise;
+  const stopped = loop.stop().then(() => { order.push('stop'); });
+  await setImmediate();
+  assert.deepEqual(order, [], 'stop waits for the Jira group');
+  gate.resolve();
+  await Promise.all([round, stopped]);
+  assert.deepEqual(order, ['round', 'stop']);
+  assert.notEqual(db.items.cursor(JIRA_ROWS, 'ABC'), null, 'the group finished its writes');
 });
