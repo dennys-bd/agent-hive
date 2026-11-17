@@ -113,6 +113,8 @@ export async function searchIssues(call: JiraCall, jql: string, fields: readonly
 }
 
 /** The path of one issue (#819, #820): the user's or Jira's id or key, checked and encoded before it reaches a REST path. */
+export const isIssueRef = (idOrKey: string): boolean => ISSUE_REF.test(idOrKey);
+
 export function issuePath(idOrKey: string): string {
   if (!ISSUE_REF.test(idOrKey)) throw new Error('jira issue id or key is not one');
   return `/issue/${encodeURIComponent(idOrKey)}`;
@@ -249,7 +251,9 @@ export async function readLabels(call: JiraCall): Promise<string[]> {
   }));
 }
 
-export interface JiraIssueType { id: string; name: string; subtask: boolean }
+/** An issue type of the project (#821): subtask splits issueType from subtaskType in the form; hierarchyLevel (#831) is Jira's -1 for a
+ * subtask, 0 for a standard type, 1 for an epic, what a create under a parent is checked against. */
+export interface JiraIssueType { id: string; name: string; subtask: boolean; hierarchyLevel: number }
 /** One field of an issue type's create screen (#821): the values it allows, as the sync stores them. */
 export interface JiraCreateField { name: string; allowedValues: string[] }
 
@@ -265,7 +269,14 @@ function countedPage<T>(page: Json, list: unknown, startAt: number, what: string
 function issueTypeOf(value: unknown): JiraIssueType {
   const type = recordAt(value, 'jira issue types');
   if (typeof type.subtask !== 'boolean') throw new WireError('jira issue type subtask');
-  return { id: textAt(type, 'id', 'jira issue type'), name: textAt(type, 'name', 'jira issue type'), subtask: type.subtask };
+  if (typeof type.hierarchyLevel !== 'number') throw new WireError('jira issue type hierarchyLevel');
+  return { id: textAt(type, 'id', 'jira issue type'), name: textAt(type, 'name', 'jira issue type'), subtask: type.subtask, hierarchyLevel: type.hierarchyLevel };
+}
+
+/** A new issue (#831): POST /issue with the fields as Jira names them, answered by its id and key. */
+export async function createIssue(call: JiraCall, fields: Record<string, unknown>): Promise<{ id: string; key: string }> {
+  const json = recordAt(await call('/issue', { method: 'POST', body: JSON.stringify({ fields }) }), 'jira created issue');
+  return { id: textAt(json, 'id', 'jira created issue'), key: textAt(json, 'key', 'jira created issue') };
 }
 
 // An allowed value as jira-item.ts's scalarOf reads one: an option's value, else a priority's, component's or version's name

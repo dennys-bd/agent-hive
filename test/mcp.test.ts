@@ -10,7 +10,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ASK_REPLY, canCloseTask, mountMcp, NO_SESSION_MESSAGE, NOT_PARTICIPANT_MESSAGE, REPLY_TEXT_MESSAGE, THREAD_RESOLVED_MESSAGE, UNKNOWN_THREAD_MESSAGE, UNKNOWN_WORKER_MESSAGE } from '../src/mcp.js';
 import { conventionsAnswer, forkConventions, nestedConventions } from '../src/mcp-conventions.js';
-import { noCreateMessage } from '../src/create-task.js';
+import { noCreateMessage, NO_ISSUE_TYPES_MESSAGE } from '../src/create-task.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
 import { BODY_MESSAGE, DESCRIPTION_MESSAGE, MEMORY_FULL_MESSAGE, MEMORY_SECRET_MESSAGE, memoryPath, memoryUsed, NO_FIELD_MESSAGE, WHY_MESSAGE } from '../src/memory.js';
 import { worktreePath } from '../src/worktree.js';
@@ -19,7 +19,7 @@ import { activityOf, localActivityId, prsOf, recordOf, resultOf } from '../src/a
 import { systemLanguage } from '../src/language.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
-import type { Activity, Config, Exec, SourceConfig, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
+import type { Activity, Config, Exec, Source, SourceConfig, SourceSpec, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
 import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import type { LegacyStage } from '../src/config-migrate.js';
@@ -614,6 +614,16 @@ test('hive_create_task resolves its source like POST /tasks: absent is comb.crea
   const res = await hiveFetch(`${base}/tasks`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ title: 'Nope', stage: 'fila', source: 'board' }) });
   assert.deepEqual(await res.json(), { error: noCreateMessage({ name: 'board', type: 'github' }) }, 'the route answers the same words');
   assert.equal(server.getState()!.tasks.filter((c) => c.created).length, 2);
+});
+
+test('hive_create_task passes issueType and parent through to createTask: a GitHub source refuses either as POST /tasks does (#831)', async (t) => {
+  // fakeSourceFactory's sources have no create; one that has it reaches the hierarchy check, which refuses before any write
+  const withCreate = (config: SourceSpec): Source => ({ ...fakeSourceFactory().factory(config), create: async () => { throw new Error('create must not be reached'); } });
+  const { base, ptyId } = await start(t, [{ ...GITHUB_ENTRY, repository: 'acme/app' }], {}, undefined, { sourceFactory: withCreate });
+  const client = await connect(t, base, ptyId);
+  for (const extra of [{ issueType: 'Story' }, { parent: 'board:PVTI_1' }]) {
+    assert.deepEqual(await call(client, 'hive_create_task', { title: 'x', source: 'board', ...extra }), { text: NO_ISSUE_TYPES_MESSAGE, isError: true }, JSON.stringify(extra));
+  }
 });
 
 test('hive_stop with block on a hive task writes the relation through blockerSet and leaves the task blocked, not stopped, and not refilled (#294)', async (t) => {

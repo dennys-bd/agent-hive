@@ -5,12 +5,13 @@ import { SourceNotConnectedError } from '../source-errors.js';
 import type { Citation } from '../tasks.js';
 import type { FieldValue, FieldWrite, ItemAction, ItemField, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
 import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
+import { createJiraIssue, readJiraCreateOptions } from './jira-create.js';
 import { JiraNotFoundError } from './jira-fetch.js';
 import { type JiraFieldsContext, jiraFieldsOf, jiraSetField } from './jira-fields.js';
 import { type JiraItemRows, jiraItemOf } from './jira-item.js';
 import { isFiltered, isListed, type JiraSourceConfig, listedTasks, projectOf, storedLabels, taskOf } from './jira-listing.js';
 import { type JiraCall, type JiraFieldMeta, type JiraIssue, postTransition, readComments, readIssue, readMyself, readStatuses, readTransitions } from './jira-queries.js';
-import { writeIssue } from './jira-sync.js';
+import { writeIssue, writeListing } from './jira-sync.js';
 import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
 
 export type { JiraSourceConfig } from './jira-listing.js';
@@ -107,6 +108,14 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     await readTask(cred, itemId);
   }
 
+  // #831: the new issue placed by the move, whose reads store it; the listing is rebuilt too, since listItems reads it and the poll that
+  // follows the create must list the issue before the next round
+  async function placeNew(itemId: string, status: string): Promise<void> {
+    await moveTo(itemId, status);
+    const cred = await account();
+    if (db !== undefined) db.transaction(() => writeListing(db, rowsOf(cred), source.project));
+  }
+
   // The key the comment links need: the stored row's, else one live read, since the adapter is handed the issue id
   async function keyOf(cred: JiraCredential, itemId: string): Promise<string> {
     const row = db?.items.items(rowsOf(cred), [itemId])[0];
@@ -165,5 +174,9 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
   const fieldsOf = async (itemId: string): Promise<ItemField[]> => jiraFieldsOf(await fieldsContext(), itemId);
   const setField = async (itemId: string, field: string, value: FieldValue): Promise<FieldWrite> => jiraSetField(await fieldsContext(), itemId, field, value);
 
-  return { resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments, fieldsOf, setField };
+  return {
+    resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments, fieldsOf, setField,
+    create: (fields) => createJiraIssue({ call, source, place: placeNew }, fields),
+    createOptions: () => readJiraCreateOptions(call, source.project),
+  };
 }

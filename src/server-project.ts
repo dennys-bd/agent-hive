@@ -1,12 +1,13 @@
 import type { Express, Request, Response } from 'express';
 import { checkValue, ItemNotOnSourceError, PartialWriteError, STATUS } from './field-values.js';
+import { sourceTypeName } from './create-in.js';
 import { hiveProject } from './hive-project.js';
 import type { Logger } from './log.js';
 import { inBackoff } from './polling.js';
 import { CreateRefusedError } from './source-create.js';
 import { answeredRateLimit, type ReportRetry } from './source-errors.js';
 import { entryStage, HIVE_SOURCE, itemSource } from './tasks.js';
-import type { FieldWrite, HiveEvent, ProjectView, Source, Stage, State } from './types.js';
+import type { FieldWrite, HiveEvent, ProjectView, Source, SourceConfig, Stage, State } from './types.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
@@ -26,7 +27,7 @@ type FieldSource = Required<Pick<Source, 'fieldsOf' | 'setField'>>;
 
 /** What the native view's routes need (#756, #686): the live state and sources, and the dispatch a write's re-read item goes through. */
 export interface ProjectRouteDeps {
-  requireLive(res: Response): { state: State; runtime: { sources: ReadonlyMap<string, ProjectSource> } } | undefined;
+  requireLive(res: Response): { state: State; runtime: { sources: ReadonlyMap<string, ProjectSource>; config: { comb: { sources: readonly Pick<SourceConfig, 'name' | 'type'>[] } } } } | undefined;
   dispatch(event: HiveEvent): Promise<unknown>; // #686: itemRead, the re-read item applied to its task alone, no poll
   reportRetry: ReportRetry; // #812: a read or write the source rate limited puts the source in backoff and answers 429
   log?: Logger;
@@ -186,7 +187,7 @@ function registerFieldRoutes(app: Express, deps: ProjectRouteDeps): void {
   });
 }
 
-/** GET /sources/:name/create-options (#768): the create dialog's status and labels menus. `hive` is a known source with no repository (400);
+/** GET /sources/:name/create-options (#768): the create dialog's status, labels and, for a type with issue types, issue type menus (#768, #831). `hive` is a known source with no repository (400);
  * a source whose adapter cannot answer them is a 404. With no read model the read is refused inside the quota backoff, as the native view's
  * (#282: with one, a live fallback for labels not yet synced is not). The adapter's CreateRefusedError is a 400, any other failure a 502
  * with the source's words and no lists. */
@@ -203,9 +204,10 @@ function registerCreateOptionsRoute(app: Express, deps: ProjectRouteDeps): void 
       res.json(await source.createOptions());
     } catch (err) {
       const isRefused = err instanceof CreateRefusedError;
-      // #772: the dialog shows its own words, so a GitHub failure's go to hive.log, on one line as githubRefusal writes them; the refusal is the
-      // fixed no-repository sentence. The GitHub transports never put the token in an error (src/sources/github-gql.ts)
-      if (!isRefused) deps.log?.warn(`create-options of ${name}: GitHub refused the read: ${errorMessage(err).replace(/\s+/g, ' ')}`);
+      // #772: the dialog shows its own words, so a source's failure goes to hive.log on one line, named by its type (#831); the refusal is
+      // the fixed no-repository sentence. The source transports never put the token in an error (github-gql.ts, jira-fetch.ts)
+      const type = current.runtime.config.comb.sources.find((c) => c.name === name)?.type;
+      if (!isRefused) deps.log?.warn(`create-options of ${name}: ${sourceTypeName(type)} refused the read: ${errorMessage(err).replace(/\s+/g, ' ')}`);
       res.status(isRefused ? HTTP_BAD_REQUEST : HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
     }
   });

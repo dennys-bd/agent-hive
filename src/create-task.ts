@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { taskOfPr } from './activities.js';
 import { isPrUrl } from './orchestrator.js';
 import type { Logger } from './log.js';
-import { canCreate, type CanCreate } from './create-in.js';
+import { canCreate, hasIssueTypes, sourceTypeName, type CanCreate } from './create-in.js';
 import { HIVE_SOURCE, itemSource, onSource, stageOf } from './tasks.js';
 import { CreateRefusedError, IssuePlacementError } from './source-create.js';
 import { rateLimitAnswer, type ReportRetry } from './source-errors.js';
@@ -39,7 +39,7 @@ export const PR_URL_MESSAGE = 'pr must be a GitHub pull request link';
 export const PR_TAKEN_MESSAGE = 'a task already holds this PR';
 // Why a source of each type cannot create (#811): a Record, so a new type must say whether it has a reason to point at, as canCreate's switch
 // makes it say how it creates; undefined = only the neutral words
-const NO_CREATE_REASON: Record<SourceConfig['type'], string | undefined> = { github: 'it has no repository for new issues', jira: 'it cannot create issues yet' };
+const NO_CREATE_REASON: Record<SourceConfig['type'], string | undefined> = { github: 'it has no repository for new issues', jira: undefined };
 export const noCreateMessage = (entry: Pick<SourceConfig, 'name' | 'type'>): string => {
   const reason = NO_CREATE_REASON[entry.type] as string | undefined; // a test's cast type finds no entry
   return reason === undefined ? `source ${entry.name} cannot create tasks` : `source ${entry.name} cannot create tasks: ${reason}`;
@@ -139,14 +139,35 @@ async function createInHive(deps: CreateDeps, body: unknown, pr?: CreatePr): Pro
 const isLabels = (labels: unknown): labels is string[] => Array.isArray(labels) && labels.length <= LABELS_MAX && new Set(labels).size === labels.length
   && labels.every((l) => typeof l === 'string' && l !== '' && l.length <= LABEL_MAX);
 
+const ISSUE_TYPE_MAX = 100; // characters: far past any Jira type's name
+export const ISSUE_TYPE_MESSAGE = `issueType must be an issue type's name of at most ${ISSUE_TYPE_MAX} characters`;
+export const NO_ISSUE_TYPES_MESSAGE = 'issueType and parent are fields of a source with issue types';
+export const parentMessage = (name: string): string => `parent must be an issue of source ${name}`;
+
+type Hierarchy = { issueType?: string; parent?: string };
+
+// #831: a type's name and the parent's itemId, for a type with issue types. The parent need not be a task in the state (an epic under
+// epics: hide is none); the adapter reads it and the type live, so only the shape is checked here
+function hierarchyOf(body: unknown, entry: Pick<SourceConfig, 'name' | 'type'>): Hierarchy | Refusal {
+  const { issueType, parent } = (body ?? {}) as { issueType?: unknown; parent?: unknown };
+  if (issueType === undefined && parent === undefined) return {};
+  if (!hasIssueTypes(entry.type)) return { status: HTTP_BAD_REQUEST, message: NO_ISSUE_TYPES_MESSAGE };
+  if (issueType !== undefined && (typeof issueType !== 'string' || issueType === '' || issueType.length > ISSUE_TYPE_MAX)) return { status: HTTP_BAD_REQUEST, message: ISSUE_TYPE_MESSAGE };
+  const prefix = `${entry.name}:`;
+  if (parent !== undefined && (typeof parent !== 'string' || !parent.startsWith(prefix) || parent.length === prefix.length)) return { status: HTTP_BAD_REQUEST, message: parentMessage(entry.name) };
+  return { ...(issueType === undefined ? {} : { issueType }), ...(parent === undefined ? {} : { parent }) };
+}
+
 // #767: the new issue's labels and, from status, its column (a Status option's name, or null: off the Project), or why not. Whether the
 // names exist is the adapter's check, where the ids are
-function issueFields(body: unknown): { labels: string[]; column?: string | null } | Refusal {
+function issueFields(body: unknown, entry: Pick<SourceConfig, 'name' | 'type'>): { labels: string[]; column?: string | null; hierarchy: Hierarchy } | Refusal {
   const { labels = [], status, stage } = (body ?? {}) as { labels?: unknown; status?: unknown; stage?: unknown };
   if (!isLabels(labels)) return { status: HTTP_BAD_REQUEST, message: LABELS_MESSAGE };
   if (status !== undefined && status !== null && typeof status !== 'string') return { status: HTTP_BAD_REQUEST, message: STATUS_MESSAGE };
   if (status !== undefined && stage !== undefined) return { status: HTTP_BAD_REQUEST, message: STATUS_OR_STAGE_MESSAGE };
-  return { labels, ...(status === undefined ? {} : { column: status }) };
+  const hierarchy = hierarchyOf(body, entry);
+  if ('status' in hierarchy) return hierarchy;
+  return { labels, ...(status === undefined ? {} : { column: status }), hierarchy };
 }
 
 // #566: with no status, the column a source task is born in is its stage's first from column there
@@ -157,10 +178,10 @@ function stageColumn(state: State, stage: string | undefined, name: string): str
 
 // #767: a name the source refused created nothing (400, a safe retry); an issue left behind rides on the 502, so no retry makes a second one.
 // #772: either way the dialog shows its own words, so the source's go to hive.log, on one line as githubRefusal writes them (src/server-pr.ts).
-// The GitHub transports never put the token in an error (src/sources/github-gql.ts), so the line carries none
-function createFailure(err: unknown, name: string, log: CreateDeps['log']): Refusal {
+// A source's transports (github-gql.ts, jira-fetch.ts) never put the token in an error, so the line carries none
+function createFailure(err: unknown, entry: Pick<SourceConfig, 'name' | 'type'>, log: CreateDeps['log']): Refusal {
   const message = errorMessage(err);
-  log?.warn(`create on ${name}: GitHub refused the write: ${message.replace(/\s+/g, ' ')}`);
+  log?.warn(`create on ${entry.name}: ${sourceTypeName(entry.type)} refused the write: ${message.replace(/\s+/g, ' ')}`);
   if (err instanceof CreateRefusedError) return { status: HTTP_BAD_REQUEST, message };
   return { status: HTTP_BAD_GATEWAY, message, ...(err instanceof IssuePlacementError ? { ref: err.ref } : {}) };
 }
@@ -171,7 +192,7 @@ async function createInSource(deps: CreateDeps, body: unknown, entry: SourceConf
   const source = deps.sources.get(name);
   if (!(deps.canCreate ?? canCreate)(entry) || !source?.create) return { status: HTTP_BAD_REQUEST, message: noCreateMessage(entry) };
   if (((body ?? {}) as { workspace?: unknown }).workspace !== undefined) return { status: HTTP_BAD_REQUEST, message: WORKSPACE_ON_SOURCE_MESSAGE };
-  const fields = issueFields(body);
+  const fields = issueFields(body, entry);
   if ('status' in fields) return fields;
   const event = createEvent(deps.state, deps.config.comb.prefix, body);
   if ('status' in event) return event;
@@ -179,11 +200,11 @@ async function createInSource(deps: CreateDeps, body: unknown, entry: SourceConf
   if (column !== null && typeof column === 'object') return column;
   let made: Awaited<ReturnType<NonNullable<Source['create']>>>;
   try {
-    made = await source.create({ title: event.title, body: event.body, column, labels: fields.labels });
+    made = await source.create({ title: event.title, body: event.body, column, labels: fields.labels, ...fields.hierarchy });
   } catch (err) {
     // #812 decision 7: a rate limit created nothing, so a 429 with its retry time is a safe retry; anything else keeps #767's answers
     const limited = deps.reportRetry === undefined ? undefined : await rateLimitAnswer(err, name, deps.reportRetry);
-    return limited === undefined ? createFailure(err, name, deps.log) : { status: limited.status, message: limited.error, resetsAt: limited.resetsAt };
+    return limited === undefined ? createFailure(err, entry, deps.log) : { status: limited.status, message: limited.error, resetsAt: limited.resetsAt };
   }
   // #767: an issue off the Project is listed by no source, so a poll for it would only spend quota
   if (made.itemId === undefined) return { ref: made.ref, notice: offProjectNotice(made.ref.url) };

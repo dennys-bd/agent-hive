@@ -185,8 +185,8 @@ test('criar em comes preselected by where the dialog opened, and the hint shows 
 
 test('a destination that is not available stays visible, disabled, with its reason (#772)', () => {
   const { unmount } = open({ title: 'Fix', workspace: 'site' }); // HIVE_ONLY: no source has a repository
-  expect(destination('issue no GitHub')).toBeDisabled();
-  expect(screen.getByText('nenhuma source GitHub tem repositório para novas issues')).toBeInTheDocument();
+  expect(destination('issue numa source')).toBeDisabled();
+  expect(screen.getByText('nenhuma source aceita novas issues')).toBeInTheDocument();
   unmount();
   open({ title: 'Fix', targets: { ...TARGETS, hiveSource: false, createIn: 'work' } });
   expect(destination('hive')).toBeDisabled();

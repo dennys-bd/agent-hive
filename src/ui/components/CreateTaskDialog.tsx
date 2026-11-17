@@ -1,7 +1,7 @@
 import { useContext, useState } from 'react';
 import { toast } from 'sonner';
 import { HIVE_SOURCE } from '../../tasks';
-import type { State } from '../../types';
+import type { SourceFields, State } from '../../types';
 import { CreateField as Field } from '@/components/CreateField';
 import { CreateRouteBox } from '@/components/CreateRouteBox';
 import { CreateIssueFields } from '@/components/CreateIssueFields';
@@ -16,7 +16,7 @@ import { type CreateDraft, useCreateDraft } from '@/hooks/use-create-draft';
 import { type IssueFailure, useCreateIssue } from '@/hooks/use-create-issue';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
-import { type CreateTargets, CreateTargetsContext, preselect } from '@/lib/create-targets';
+import { type CreateTargets, CreateTargetsContext, ISSUE_COPY, placeOf, preselect, sharedCopy } from '@/lib/create-targets';
 
 export interface CreateTaskDialogProps {
   state: Pick<State, 'workspaces' | 'flows' | 'sourceWorkspaces'>;
@@ -63,14 +63,14 @@ const bodyOf = (d: CreateDraft, workspace: string) =>
 
 // Decision 3: both options stay, the unavailable one disabled with its reason; decision 2: the hint only when the workspace picked the source
 function DestinationSwitch({ value, targets, hint, onPick }: { value: CreateDraft['destination']; targets: CreateTargets; hint?: string; onPick(d: CreateDraft['destination']): void }) {
-  const isGithubOff = targets.sources.length === 0;
-  const lines = [...(hint === undefined ? [] : [hint]), ...(targets.hiveSource ? [] : [t('create.hiveOff')]), ...(isGithubOff ? [t('create.noRepository')] : [])];
+  const isSourceOff = targets.sources.length === 0;
+  const lines = [...(hint === undefined ? [] : [hint]), ...(targets.hiveSource ? [] : [t('create.hiveOff')]), ...(isSourceOff ? [t('create.noSource')] : [])];
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <span id="create-in" className="text-[13px] text-muted-foreground">{t('create.in')}</span>
       <ToggleGroup type="single" aria-labelledby="create-in" value={value} onValueChange={(v) => { if (v) onPick(v as CreateDraft['destination']); }} className="w-full gap-0.5 bg-muted p-0.5">
         <ToggleGroupItem value="hive" disabled={!targets.hiveSource} className={SEGMENT}>{t('create.inHive')}</ToggleGroupItem>
-        <ToggleGroupItem value="github" disabled={isGithubOff} className={SEGMENT}>{t('create.inGithub')}</ToggleGroupItem>
+        <ToggleGroupItem value="github" disabled={isSourceOff} className={SEGMENT}>{t(sharedCopy(targets.sources).in)}</ToggleGroupItem>
       </ToggleGroup>
       {lines.map((line) => <span key={line} className="text-muted-foreground text-xs">{line}</span>)}
     </div>
@@ -111,14 +111,16 @@ function hiveAction(draft: CreateDraft, setError: (error: string | undefined) =>
 }
 
 // Decisions 13 to 15: the dialog's own words, the repository named; the server's are in hive.log (Task 1)
-function IssueFailureLine({ failure }: { failure: IssueFailure }) {
-  // a 400 created nothing, so the retry is safe once a field changes (decision 15); its line says why, not that GitHub failed
-  if (failure.kind !== 'placed') return <>{t(failure.kind === 'refused' ? 'create.issueRefused' : 'create.issueFailed', { repository: failure.repository })}</>;
+function IssueFailureLine({ failure, type }: { failure: IssueFailure; type: SourceFields['type'] }) {
+  const lines = ISSUE_COPY[type];
+  const where = { repository: failure.repository, project: failure.repository }; // GitHub's lines name a repository, Jira's a project
+  // a 400 created nothing, so the retry is safe once a field changes (decision 15); its line says why, Jira's in Jira's words
+  if (failure.kind !== 'placed') return <>{t(lines[failure.kind], { ...where, reason: failure.reason ?? '' })}</>;
   const { id, url } = failure.ref;
   return (
     <>
-      {t('create.issuePlaced', { id, repository: failure.repository })}{' '}
-      <Button type="button" variant="link" size="xs" className="h-auto p-0" onClick={() => window.open(url, '_blank', 'noreferrer')}>{t('create.viewOnGitHub')}</Button>
+      {t(lines.placed, { ...where, id })}{' '}
+      <Button type="button" variant="link" size="xs" className="h-auto p-0" onClick={() => window.open(url, '_blank', 'noreferrer')}>{t(lines.view)}</Button>
     </>
   );
 }
@@ -137,13 +139,18 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
   const targets = useContext(CreateTargetsContext);
   // the destination the dialog opened on: computed once, so a later config push does not move the user's pick
   const [picked] = useState(() => preselect({ workspace, source }, targets, state.sourceWorkspaces));
-  const api = useCreateDraft({ title, workspace, destination: picked.destination, source: picked.source ?? targets.sources[0]?.name });
+  // #831: each source's default issue type, read once with the draft
+  const defaultTypes = Object.fromEntries(targets.sources.flatMap((s) => (s.issueType === undefined ? [] : [[s.name, s.issueType]])));
+  const api = useCreateDraft({ title, workspace, destination: picked.destination, source: picked.source ?? targets.sources[0]?.name, defaultTypes });
   const { draft } = api;
   const [error, setError] = useState<string>();
-  const repository = targets.sources.find((s) => s.name === draft.source)?.repository;
-  const issue = useCreateIssue({ draft, repository, flows: state.flows, onOpenTask });
+  const target = targets.sources.find((s) => s.name === draft.source);
+  const repository = placeOf(target); // the repository or the Jira project (#831): where the issue goes
+  const issue = useCreateIssue({ draft, repository, type: target?.type, flows: state.flows, onOpenTask });
   const isGithub = draft.destination === 'github';
-  const hint = picked.hinted && isGithub && opened !== undefined ? t('create.hinted', { workspace: opened }) : undefined;
+  // decision 2: the hint names the type of the source the workspace picked (#831)
+  const hinted = targets.sources.find((s) => s.name === picked.source);
+  const hint = picked.hinted && isGithub && opened !== undefined && hinted !== undefined ? t(ISSUE_COPY[hinted.type].hinted, { workspace: opened }) : undefined;
   // an edit after a refusal answers it: the old message would describe a draft that is no longer there
   const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); issue.clear(); set(value); };
   // status is set once the source's options arrived (decision 6); a repository a config push took away would make the create a silent no-op
@@ -160,7 +167,7 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
   return (
     <DialogBase
       open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }} title={t('create.title')} context={context}
-      error={isGithub ? issue.failure && <IssueFailureLine failure={issue.failure} /> : error}
+      error={isGithub ? issue.failure && target && <IssueFailureLine failure={issue.failure} type={target.type} /> : error}
       initialFocus="none" primary={primary}
     >
       <div className="flex flex-col gap-4">
@@ -171,7 +178,7 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
           <Textarea id="create-body" value={draft.body} onChange={(e) => edited(api.setBody)(e.target.value)} />
         </Field>
         <DestinationSwitch value={draft.destination} targets={targets} hint={hint} onPick={edited(api.setDestination)} />
-        {isGithub ? <CreateIssueFields draft={draft} sources={targets.sources} options={api.options} onRetry={api.retryOptions} onSource={edited(api.setSource)} onStatus={edited(api.setStatus)} onAddLabel={edited(api.addLabel)} onRemoveLabel={edited(api.removeLabel)} /> : <HiveFields draft={draft} workspaces={state.workspaces} current={workspace} flows={state.flows} onWorkspace={edited(api.setWorkspace)} onStage={edited(api.setStage)} />}
+        {isGithub ? <CreateIssueFields draft={draft} sources={targets.sources} options={api.options} onRetry={api.retryOptions} onSource={edited(api.setSource)} onIssueType={edited(api.setIssueType)} onStatus={edited(api.setStatus)} onAddLabel={edited(api.addLabel)} onRemoveLabel={edited(api.removeLabel)} /> : <HiveFields draft={draft} workspaces={state.workspaces} current={workspace} flows={state.flows} onWorkspace={edited(api.setWorkspace)} onStage={edited(api.setStage)} />}
         {routeBox}
       </div>
     </DialogBase>
