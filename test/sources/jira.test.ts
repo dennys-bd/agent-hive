@@ -125,6 +125,16 @@ test('resolveFields rejects naming a cited column the statuses lack, and renews 
   }
 });
 
+test('a name renewal that fails to write never fails the resolve, and is logged (#820)', async () => {
+  const warned: string[] = [];
+  const source = createJiraSource(JIRA_ENTRY, CITED, {
+    call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /myself': [{ accountId: 'acc-1', displayName: 'Ana L.' }] }).call,
+    credential: async () => CRED, renewName: async () => { throw new Error('EACCES'); }, log: { warn: (line: string) => { warned.push(line); } },
+  });
+  await source.resolveFields();
+  assert.deepEqual(warned, ['jira:acme.example: display name not renewed (EACCES)']);
+});
+
 test('settingsOptions answers the project\'s statuses in Jira\'s order (#820)', async () => {
   assert.deepEqual(await adapter({ call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES] }).call }).settingsOptions(), ['To Do', 'In Progress', 'Done']);
 });

@@ -151,3 +151,10 @@ test('renewJiraName rewrites a different name only, and gives a site with no log
   await renewJiraName('other.example', 'Bea', env);
   assert.equal(await jiraCredential('other.example', env), undefined);
 });
+
+test('concurrent credential updates are serialized: a name renewal never writes an older token back (#820)', async (t) => {
+  const env = await configHome(t);
+  await saveJiraCredential('acme.example', { ...ANA, displayName: 'Ana Lima' }, env);
+  await Promise.all([renewJiraName('acme.example', 'Ana L.', env), saveJiraCredential('acme.example', { ...ANA, token: 'fake-token-new', displayName: 'Ana L.' }, env)]);
+  assert.deepEqual(await jiraCredential('acme.example', env), { ...ANA, token: 'fake-token-new', displayName: 'Ana L.' });
+});

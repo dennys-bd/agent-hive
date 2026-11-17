@@ -58,6 +58,7 @@ function jiraAdapter(source: JiraSourceConfig, cited: Citation[], deps: SourceDe
   const renew = deps.jira?.renewName ?? ((site: string, name: string) => renewJiraName(site, name));
   return createJiraSource(source, cited, {
     call, credential: () => credential(source.site), renewName: (name) => renew(source.site, name), ...(deps.items === undefined ? {} : { items: deps.items }),
+    ...(deps.log === undefined ? {} : { log: deps.log }),
   });
 }
 

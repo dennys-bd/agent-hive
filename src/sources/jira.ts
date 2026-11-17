@@ -1,4 +1,5 @@
 import type { JiraCredential } from '../credentials.js';
+import type { Logger } from '../log.js';
 import type { ReadModel } from '../read-model/db.js';
 import { SourceNotConnectedError } from '../source-errors.js';
 import type { Citation } from '../tasks.js';
@@ -18,6 +19,7 @@ export interface JiraAdapterDeps {
   call: JiraCall;
   credential(): Promise<JiraCredential | undefined>;
   renewName(name: string): Promise<void>;
+  log?: Pick<Logger, 'warn'>;
   items?: { db: Pick<ReadModel, 'items' | 'transaction'> }; // absent (headless, setup mode): nothing is listed
 }
 
@@ -49,7 +51,10 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     if (missing !== undefined) throw new Error(`"${missing.column}" is not a status of ${source.project}: ${names.join(', ')}`);
     const me = await readMyself(call);
     // another account is reconnecting's business: the store key hangs on the account id, so only the name of this one is renewed
-    if (me.accountId === cred.accountId && me.displayName !== undefined && me.displayName !== cred.displayName) await deps.renewName(me.displayName);
+    if (me.accountId === cred.accountId && me.displayName !== undefined && me.displayName !== cred.displayName) {
+      // best effort: the name only caches @me, so a credentials write that fails must not mark valid statuses as a broken source
+      await deps.renewName(me.displayName).catch((err: unknown) => deps.log?.warn(`jira:${source.site}: display name not renewed (${err instanceof Error ? err.message : String(err)})`));
+    }
   }
 
   async function listItems(): Promise<SourceItem[]> {
