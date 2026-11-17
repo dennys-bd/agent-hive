@@ -108,6 +108,9 @@ test('the flow and stage keys exist in both languages', () => {
   assert.match(MESSAGES.pt['settings.stages.action.deleteActivity.hint'], /nunca usa force/);
   assert.match(MESSAGES.pt['settings.stages.exit.actionsHint'], /tiram a tarefa do Hive/); // #286
   assert.match(MESSAGES.en['settings.stages.exit.actionsHint'], /take the task out of the Hive/);
+  assert.match(MESSAGES.en['settings.stages.exit.actionsHint'], /delete deletes the issue for good/); // #823: the hint shows for a Jira source too
+  assert.match(MESSAGES.pt['settings.stages.exit.actionsHint'], /apagar apaga a issue, sem volta/);
+  for (const language of ['en', 'pt'] as const) assert.doesNotMatch(MESSAGES[language]['settings.stages.exit.actionsHint'], /GitHub/, language);
   assert.deepEqual(['archive', 'remove', 'close', 'delete'].map((a) => MESSAGES.pt[`settings.stages.finish.${a}` as keyof typeof MESSAGES.pt]), ['arquivar', 'remover da source', 'concluir', 'apagar'], 'the sai block\'s words (#515)');
 });
 

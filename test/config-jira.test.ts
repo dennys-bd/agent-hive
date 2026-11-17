@@ -51,7 +51,8 @@ test('a milestone or repository rule is refused naming the rule and the type; th
   assert.deepEqual(parseConfig(jira({ filter })).comb.sources[0].filter, filter);
 });
 
-test('a close on a jira source is refused: move is its one action today (#820)', () => {
-  const stages = [{ ...STAGES[0], onFinish: { board: [{ type: 'close' }] } }];
-  assert.throws(() => parseConfig(jira({}, { stages })), /"close" is not supported by source board \(jira\): move/);
+test('a jira source\'s onFinish takes close, delete and archive, and refuses remove naming it and the type (#823)', () => {
+  const finishing = (type: string) => [{ ...STAGES[0], onFinish: { board: [{ type }] } }];
+  for (const type of ['close', 'delete', 'archive']) assert.doesNotThrow(() => parseConfig(jira({}, { stages: finishing(type) })), type);
+  assert.throws(() => parseConfig(jira({}, { stages: finishing('remove') })), /"remove" is not supported by source board \(jira\): move, close, delete, archive/);
 });

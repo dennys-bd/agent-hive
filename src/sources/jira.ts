@@ -4,6 +4,7 @@ import type { ReadModel } from '../read-model/db.js';
 import { SourceNotConnectedError } from '../source-errors.js';
 import type { Citation } from '../tasks.js';
 import type { ItemAction, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
+import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
 import { JiraNotFoundError } from './jira-fetch.js';
 import { jiraItemOf } from './jira-item.js';
 import { isListed, type JiraSourceConfig, listedTasks, projectOf, taskOf } from './jira-listing.js';
@@ -49,6 +50,8 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     const names = (await readStatuses(call, source.project)).map((s) => s.name);
     const missing = cited.find((c) => !names.includes(c.column));
     if (missing !== undefined) throw new Error(`"${missing.column}" is not a status of ${source.project}: ${names.join(', ')}`);
+    // checked in the same answer, so a wrong name shows as the source's sync error before any stage closes
+    if (!names.includes(source.doneStatus)) throw new Error(`"${source.doneStatus}" is not a status of ${source.project}: ${names.join(', ')}`);
     const me = await readMyself(call);
     // another account is reconnecting's business: the store key hangs on the account id, so only the name of this one is renewed
     if (me.accountId === cred.accountId && me.displayName !== undefined && me.displayName !== cred.displayName) {
@@ -83,12 +86,12 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
   }
 
   // The live read decides, since a stale row could skip a needed move; the re-read keeps a poll read before the move from moving it back
-  async function setColumn(itemId: string, column: string): Promise<void> {
+  async function moveTo(itemId: string, status: string): Promise<void> {
     const cred = await account();
     const before = await readTask(cred, itemId);
-    if (before.task.column === column) return;
-    const transition = (await readTransitions(call, itemId)).find((t) => t.to === column);
-    if (transition === undefined) throw new Error(`${before.task.item.id}: no transition to "${column}"`);
+    if (before.task.column === status) return;
+    const transition = (await readTransitions(call, itemId)).find((t) => t.to === status);
+    if (transition === undefined) throw new Error(`${before.task.item.id}: no transition to "${status}"`);
     await postTransition(call, itemId, transition.id);
     await readTask(cred, itemId);
   }
@@ -109,14 +112,32 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     }));
   }
 
-  // SOURCE_ACTIONS.jira is move alone; 5.5 adds close, delete and archive
-  async function apply(_itemId: string, action: ItemAction): Promise<void> {
-    throw new Error(`"${action.type}" is not an action of a jira source`);
+  // The rows go with the issue: neither a deleted nor an archived one shows in the incremental sync, so the next poll would list it again.
+  // One Jira no longer has is already off it: its row goes, else the action would fail on every try until the daily reconcile
+  async function leave(itemId: string, type: 'delete' | 'archive'): Promise<void> {
+    const cred = await account();
+    const drop = (ids: string[]): void => db?.items.removeItems(rowsOf(cred), ids);
+    const read = await readIssue(call, itemId).catch((err: unknown) => {
+      if (err instanceof JiraNotFoundError) return undefined;
+      throw err;
+    });
+    if (read === undefined) return drop([itemId]);
+    const { issue } = read; // the subtask ids before the write, which takes them with it
+    const id = issue.id ?? itemId; // the row's node id, even when the caller named the key
+    await (type === 'delete' ? deleteIssue(call, id) : archiveIssue(call, id, issue.key ?? id));
+    drop([id, ...subtaskIds(issue)]);
+  }
+
+  // url is not read: the issue id reaches any project. A close reason has no Jira counterpart, so every close is the move to doneStatus
+  async function apply(itemId: string, action: ItemAction): Promise<void> {
+    if (action.type === 'close') return moveTo(itemId, source.doneStatus);
+    if (action.type === 'delete' || action.type === 'archive') return leave(itemId, action.type);
+    throw new Error(`"${action.type}" is not an action of a jira source`); // remove: Jira has no Project to take an item off
   }
 
   async function settingsOptions(): Promise<string[]> {
     return (await readStatuses(call, source.project)).map((s) => s.name);
   }
 
-  return { resolveFields, listItems, stored, item, setColumn, apply, settingsOptions, comments };
+  return { resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments };
 }

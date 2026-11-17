@@ -356,7 +356,7 @@ export const isLeaving = (a: SourceAction): boolean => LEAVING_ACTIONS.includes(
 /** The single source of what each source type can do (#286): the config, the adapters and the settings form read it. */
 export const SOURCE_ACTIONS: Record<SourceFields['type'], SourceAction['type'][]> = {
   github: ['move', 'archive', 'remove', 'close', 'delete'],
-  jira: ['move'], // #820: 5.5 adds close, delete and archive
+  jira: ['move', 'close', 'delete', 'archive'], // #823: no remove, since Jira has no Project to take an item off
 };
 
 /** What a stage does with a stopped task instead of running a prompt (#573: was cleanup): deleteActivity deletes the task's activity; commands
