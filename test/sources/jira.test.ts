@@ -1,72 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { JiraCredential } from '../../src/credentials.js';
-import { openReadModel, type ReadModel } from '../../src/read-model/db.js';
 import { isNotConnected } from '../../src/source-errors.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
 import { JiraNotFoundError } from '../../src/sources/jira-fetch.js';
 import { createJiraSource, type JiraSourceConfig } from '../../src/sources/jira.js';
-import type { JiraCall, JiraIssue } from '../../src/sources/jira-queries.js';
-import { syncProject } from '../../src/sources/jira-sync.js';
-import type { Citation } from '../../src/tasks.js';
-import type { FilterRule, Source } from '../../src/types.js';
+import type { FilterRule } from '../../src/types.js';
 import { JIRA_ENTRY } from '../fakes.js';
+import { adapter, CITED, CRED, doc, fakeJira, issue, read, ROWS, seeded, STATUSES } from './jira-fakes.js';
 
-const ROWS = 'jira:acme.example:acc-1';
-const CRED: JiraCredential = { email: 'ana@example.com', token: 'fake-token-820', accountId: 'acc-1', displayName: 'Ana Lima' };
-const CITED: Citation[] = [{ column: 'To Do', by: 'fila' }, { column: 'In Progress', by: 'fila' }];
-const NAMES = { components: 'Components' };
-const SCHEMA = { components: { type: 'array', items: 'component' } };
-const STATUSES = [{ name: 'Story', statuses: ['To Do', 'In Progress', 'Done'].map((name) => ({ name, statusCategory: { key: 'new' } })) }];
-const doc = (text: string) => ({ version: 1, type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
 const markdown = (text: string): string => adfToMarkdown(doc(text) as Parameters<typeof adfToMarkdown>[0]);
-
-const issue = (n: number, status: string, fields: Record<string, unknown> = {}): JiraIssue => ({
-  id: String(10000 + n), key: `ABC-${n}`,
-  fields: {
-    summary: `Issue ${n}`, updated: '2026-11-16T10:00:00.000+0000', created: '2026-11-01T10:00:00.000+0000', description: doc(`Body ${n}`),
-    status: { name: status, statusCategory: { key: 'new' } }, project: { key: 'ABC' }, assignee: { displayName: 'Ana Lima' }, labels: ['api'],
-    components: [{ name: 'Core' }, { name: 'Web' }], ...fields,
-  },
-});
-const read = (i: JiraIssue) => ({ ...i, names: NAMES, schema: SCHEMA }); // what readIssue reads from
-
-// The read model a 5.6 round would leave: the issues synced under ROWS, the listing in key order
-async function seeded(issues: JiraIssue[]): Promise<ReadModel> {
-  const { db } = await openReadModel(':memory:');
-  const call: JiraCall = async (path) => {
-    if (path === '/search/jql') return { issues, names: NAMES, schema: SCHEMA, isLast: true };
-    if (path === '/field') return [];
-    if (path === '/project/ABC/statuses') return STATUSES;
-    throw new Error(`unexpected ${path}`);
-  };
-  await syncProject({ call, db, source: ROWS, project: 'ABC' });
-  return db;
-}
-
-interface Fake { call: JiraCall; sent: string[]; bodies: unknown[] }
-// Each `METHOD path` (query left out) answers its queue in order; an Error answer is thrown, as the transport would
-function fakeJira(answers: Record<string, unknown[]> = {}): Fake {
-  const sent: string[] = [];
-  const bodies: unknown[] = [];
-  const call: JiraCall = async (path, init = {}) => {
-    const key = `${init.method ?? 'GET'} ${path.split('?')[0]}`;
-    sent.push(key);
-    if (typeof init.body === 'string') bodies.push(JSON.parse(init.body));
-    const queue = answers[key];
-    if (queue === undefined || queue.length === 0) throw new Error(`unexpected ${key}`);
-    const answer = queue.shift();
-    if (answer instanceof Error) throw answer;
-    return answer;
-  };
-  return { call, sent, bodies };
-}
-
-interface Setup { call?: JiraCall; db?: ReadModel; cred?: JiraCredential | null; source?: Partial<JiraSourceConfig>; renamed?: string[] }
-const adapter = ({ call = fakeJira().call, db, cred = CRED, source = {}, renamed = [] }: Setup): Source =>
-  createJiraSource({ ...JIRA_ENTRY, ...source }, CITED, {
-    call, credential: async () => cred ?? undefined, renewName: async (name) => { renamed.push(name); }, ...(db === undefined ? {} : { items: { db } }),
-  });
 const ids = (tasks: { item: { id: string } }[]): string[] => tasks.map((t) => t.item.id);
 
 test('with no credential, listItems and resolveFields reject not connected before any call, and stored answers [] (#820)', async () => {
