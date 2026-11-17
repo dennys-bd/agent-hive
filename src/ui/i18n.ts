@@ -426,6 +426,11 @@ const en = {
   'create.issueFailed': "couldn't create the issue in {repository}: GitHub failed. nothing was created. what you wrote is still here.",
   'create.issuePlaced': 'issue #{id} was created in {repository}, but did not enter the Project.',
   'create.issueRefused': 'GitHub refused the issue in {repository}: a label or the status no longer exists. nothing was created.',
+  'create.issueType': 'issue type',
+  'create.issueFailedJira': "couldn't create the issue in {project}: Jira failed. nothing was created. what you wrote is still here.",
+  'create.issuePlacedJira': 'issue {id} was created in {project}, but did not reach the status.',
+  'create.issueRefusedJira': 'Jira refused the issue in {project}: {reason}. nothing was created.',
+  'create.viewOnJira': 'view on Jira',
   'start.task': 'tasks',
   'start.taskPlaceholder': 'search or create a task…',
   'start.taskHint': 'every activity starts from at least one task. if it does not exist, create it here.', // #893: under Nova atividade's task field
@@ -3763,6 +3768,11 @@ const pt: Record<MessageKey, string> = {
   'create.issueFailed': 'não deu para criar a issue em {repository}: o GitHub falhou. nada foi criado. o que você escreveu continua aqui.',
   'create.issuePlaced': 'a issue #{id} foi criada em {repository}, mas não entrou no project.',
   'create.issueRefused': 'o GitHub recusou a issue em {repository}: uma label ou o status não existe mais. nada foi criado.',
+  'create.issueType': 'tipo de issue',
+  'create.issueFailedJira': 'não deu para criar a issue em {project}: o Jira falhou. nada foi criado. o que você escreveu continua aqui.',
+  'create.issuePlacedJira': 'a issue {id} foi criada em {project}, mas não chegou ao status.',
+  'create.issueRefusedJira': 'o Jira recusou a issue em {project}: {reason}. nada foi criado.',
+  'create.viewOnJira': 'ver no Jira',
   'start.taskHint': 'toda atividade parte de pelo menos uma tarefa. se ela não existir, crie aqui.', // #893: under Nova atividade's task field
   'start.search': 'buscar tarefa',
   'start.noTask': 'nenhuma tarefa encontrada',

@@ -10,17 +10,18 @@ const HTTP_BAD_REQUEST = 400;
 /** POST /tasks' answer for an issue (src/create-task.ts `Created`, #767): the task once a source listed it, else why not. */
 export type IssueAnswer = { id: string; ref: CreatedRef; stage?: string } | { ref: CreatedRef; notice: string };
 /** Why the issue was not made (decisions 13 to 15); placed: it exists, off the Project, so nothing may post it again. */
-export type IssueFailure = { kind: 'retry' | 'refused'; repository: string } | { kind: 'placed'; repository: string; ref: CreatedRef };
+export type IssueFailure = { kind: 'retry' | 'refused'; repository: string; reason?: string } | { kind: 'placed'; repository: string; ref: CreatedRef };
 
-/** Decision 10: never workspace, stage or auto; the issue takes the auto its source's task properties give. */
+/** Decision 10: never workspace, stage or auto; the issue takes the auto its source's task properties give. #831: the type when the source has them. */
 export const issueBodyOf = (draft: CreateDraft, source: string, status: string | null) =>
-  ({ title: draft.title.trim(), body: draft.body, source, labels: draft.labels, status });
+  ({ title: draft.title.trim(), body: draft.body, source, labels: draft.labels, status, ...(draft.issueType === undefined ? {} : { issueType: draft.issueType }) });
 
-/** parseJson's error carries the status and the body (src/ui/lib/api.ts); a 502 that made the issue names it in body.ref (#767, #811). */
+/** `repository` holds where the issue goes: the repository, or the Jira project (#831). A refusal keeps the server's words as its reason.
+ * parseJson's error carries the status and the body (src/ui/lib/api.ts); a 502 that made the issue names it in body.ref (#767, #811). */
 export function failureOf(err: unknown, repository: string): IssueFailure {
-  const { status, body } = (err ?? {}) as { status?: unknown; body?: { ref?: CreatedRef } };
+  const { status, body } = (err ?? {}) as { status?: unknown; body?: { ref?: CreatedRef; error?: unknown } };
   if (body?.ref !== undefined) return { kind: 'placed', repository, ref: body.ref };
-  return { kind: status === HTTP_BAD_REQUEST ? 'refused' : 'retry', repository };
+  return { kind: status === HTTP_BAD_REQUEST ? 'refused' : 'retry', repository, ...(typeof body?.error === 'string' ? { reason: body.error } : {}) };
 }
 
 /** Decision 11: the flow is named only when the Comb has more than one, so it tells something apart. */

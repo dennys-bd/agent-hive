@@ -6,8 +6,9 @@ import type { SourceConfig, SourceFields } from '../../types.js';
 /** A create row's destination (#846): a source carries its type, which criar em names under it (#893); hive carries none. */
 export interface Destination { name: string; type?: SourceFields['type'] }
 
-/** A source a task may be created in (#846); its repository for new issues, when its type has one, names it in the create dialog's menu (#772, #811). */
-export type CreateSource = Required<Destination> & { repository?: string };
+/** A source a task may be created in (#846): its repository for new issues (GitHub, #772, #811), or its project and the issue type a new issue
+ * defaults to (Jira, #831); the dialog names the one it has. */
+export type CreateSource = Required<Destination> & { repository?: string; project?: string; issueType?: string };
 
 /** Where a task may be created from the UI (#846): hive while it is on, the default destination, and every source that can create (canCreate), which the create dialog names (#772). */
 export interface CreateTargets {
@@ -21,9 +22,12 @@ export interface Preselected { destination: 'hive' | 'github'; source?: string; 
 /** No config handed (a test harness, a dialog outside the Dashboard): today's behaviour. */
 export const HIVE_ONLY: CreateTargets = { hiveSource: true, createIn: HIVE_SOURCE, sources: [] };
 
+// What names the source in the dialog, from its config: a GitHub repository, or a Jira project with its default issue type (#831)
+const placeOfConfig = (s: SourceConfig): Partial<CreateSource> => (s.type === 'jira' ? { project: s.project, issueType: s.issueType } : s.repository === undefined ? {} : { repository: s.repository });
+
 export const createTargetsOf = (nav: { sources: readonly SourceConfig[]; hiveSource?: boolean; createIn?: string }, can: CanCreate = canCreate): CreateTargets => ({
   hiveSource: nav.hiveSource !== false, createIn: nav.createIn ?? HIVE_SOURCE, configs: nav.sources,
-  sources: nav.sources.flatMap((s) => (can(s) ? [{ name: s.name, type: s.type, ...(s.type === 'github' && s.repository !== undefined ? { repository: s.repository } : {}) }] : [])),
+  sources: nav.sources.flatMap((s) => (can(s) ? [{ name: s.name, type: s.type, ...placeOfConfig(s) }] : [])),
 });
 
 /** The destinations a create row offers, the default first; hive only while it is on. */
@@ -51,12 +55,16 @@ export function preselect(opened: { workspace?: string; source?: string }, targe
   return hiveSource || sources[0] === undefined ? hive : github(sources[0].name);
 }
 
+/** Where a source's new issues go (#831): its repository or its project; undefined for none. */
+export const placeOf = (source: CreateSource | undefined): string | undefined => source?.repository ?? source?.project;
+
 /** The repositório menu's line (#772, decision 4): the repository, and the source after it only when another source names the same one,
  * since the wire carries the source's name. A source with no repository is named by its own name: there is none to share (#811). */
 export function repositoryLabel(source: CreateSource, sources: readonly CreateSource[]): string {
-  if (source.repository === undefined) return source.name;
-  const isShared = sources.filter((s) => s.repository === source.repository).length > 1;
-  return isShared ? `${source.repository} · ${source.name}` : source.repository;
+  const place = placeOf(source);
+  if (place === undefined) return source.name;
+  const isShared = sources.filter((s) => placeOf(s) === place).length > 1;
+  return isShared ? `${place} · ${source.name}` : place;
 }
 
 /** Provided by the Dashboard, read by the Start dialog and fluxo… (#846) without threading props through the dock, the tables and the pages. */

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { SourceConfig } from '../../src/types';
-import { type CreateTargets, createTargetsOf, destinations, preselect, repositoryLabel } from '@/lib/create-targets';
+import { type CreateTargets, createTargetsOf, destinations, placeOf, preselect, repositoryLabel } from '@/lib/create-targets';
 
 const CONFIG: SourceConfig = { name: 'x', qualifyId: false, type: 'github', owner: 'me', number: 1, filter: [], taskProps: { defaults: { auto: true, entry: null }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' };
 
@@ -54,6 +54,8 @@ const JIRA: SourceConfig = {
   epics: 'ignore', epicFollows: 'behind', switchAt: 'fila', tree: { epics: false, subtasks: false }, blockingLinkTypes: [], issueType: 'Story', subtaskType: 'Sub-task', doneStatus: 'Done',
 };
 
-test('a jira source is no create destination yet (#820)', () => {
-  expect(createTargetsOf({ sources: [JIRA] }).sources).toEqual([]);
+test('a jira source a predicate accepts carries its project and default issue type, and placeOf names either kind (#831)', () => {
+  const [tickets] = createTargetsOf({ sources: [JIRA] }, () => true).sources;
+  expect(tickets).toEqual({ name: 'tickets', type: 'jira', project: 'ABC', issueType: 'Story' });
+  expect([placeOf(tickets), placeOf(SOURCES[0]), placeOf(undefined)]).toEqual(['ABC', 'acme/app', undefined]);
 });
