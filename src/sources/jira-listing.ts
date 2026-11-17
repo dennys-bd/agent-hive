@@ -50,9 +50,12 @@ export function taskOf(stored: Stored, source: Listed): SourceItem {
   };
 }
 
+/** The source's filter drops the task (#826): a project row's `out`. An uncited column is not out; the UI knows it from the stages. */
+export const isFiltered = (task: SourceItem, source: Pick<JiraSourceConfig, 'filter'>, me: string | undefined): boolean => !matchesRules(source.filter, task.item, me);
+
 /** Whether listItems lists a task: its status a cited column and the source's filter passed, `@me` read as the stored name. */
 export const isListed = (task: SourceItem, source: Pick<JiraSourceConfig, 'filter'>, columns: ReadonlySet<string>, me: string | undefined): boolean =>
-  columns.has(task.column) && matchesRules(source.filter, task.item, me);
+  columns.has(task.column) && !isFiltered(task, source, me);
 
 /** The project key a read issue answers, from its project field; undefined when Jira answered none. */
 export function projectOf(issue: JiraIssue): string | undefined {
