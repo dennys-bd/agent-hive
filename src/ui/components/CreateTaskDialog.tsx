@@ -14,9 +14,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type CreateDraft, useCreateDraft } from '@/hooks/use-create-draft';
 import { type IssueFailure, useCreateIssue } from '@/hooks/use-create-issue';
-import { type MessageKey, t } from '@/i18n';
+import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
-import { type CreateTargets, CreateTargetsContext, placeOf, preselect } from '@/lib/create-targets';
+import { type CreateTargets, CreateTargetsContext, ISSUE_COPY, placeOf, preselect, sharedCopy } from '@/lib/create-targets';
 
 export interface CreateTaskDialogProps {
   state: Pick<State, 'workspaces' | 'flows' | 'sourceWorkspaces'>;
@@ -63,14 +63,14 @@ const bodyOf = (d: CreateDraft, workspace: string) =>
 
 // Decision 3: both options stay, the unavailable one disabled with its reason; decision 2: the hint only when the workspace picked the source
 function DestinationSwitch({ value, targets, hint, onPick }: { value: CreateDraft['destination']; targets: CreateTargets; hint?: string; onPick(d: CreateDraft['destination']): void }) {
-  const isGithubOff = targets.sources.length === 0;
-  const lines = [...(hint === undefined ? [] : [hint]), ...(targets.hiveSource ? [] : [t('create.hiveOff')]), ...(isGithubOff ? [t('create.noRepository')] : [])];
+  const isSourceOff = targets.sources.length === 0;
+  const lines = [...(hint === undefined ? [] : [hint]), ...(targets.hiveSource ? [] : [t('create.hiveOff')]), ...(isSourceOff ? [t('create.noSource')] : [])];
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <span id="create-in" className="text-[13px] text-muted-foreground">{t('create.in')}</span>
       <ToggleGroup type="single" aria-labelledby="create-in" value={value} onValueChange={(v) => { if (v) onPick(v as CreateDraft['destination']); }} className="w-full gap-0.5 bg-muted p-0.5">
         <ToggleGroupItem value="hive" disabled={!targets.hiveSource} className={SEGMENT}>{t('create.inHive')}</ToggleGroupItem>
-        <ToggleGroupItem value="github" disabled={isGithubOff} className={SEGMENT}>{t('create.inGithub')}</ToggleGroupItem>
+        <ToggleGroupItem value="github" disabled={isSourceOff} className={SEGMENT}>{t(sharedCopy(targets.sources).in)}</ToggleGroupItem>
       </ToggleGroup>
       {lines.map((line) => <span key={line} className="text-muted-foreground text-xs">{line}</span>)}
     </div>
@@ -111,14 +111,8 @@ function hiveAction(draft: CreateDraft, setError: (error: string | undefined) =>
 }
 
 // Decisions 13 to 15: the dialog's own words, the repository named; the server's are in hive.log (Task 1)
-// #831: the lines that name GitHub have Jira variants, picked by the source's type
-const FAILURE_LINES = {
-  github: { retry: 'create.issueFailed', refused: 'create.issueRefused', placed: 'create.issuePlaced', view: 'create.viewOnGitHub' },
-  jira: { retry: 'create.issueFailedJira', refused: 'create.issueRefusedJira', placed: 'create.issuePlacedJira', view: 'create.viewOnJira' },
-} as const satisfies Record<SourceFields['type'], Record<IssueFailure['kind'] | 'view', MessageKey>>;
-
 function IssueFailureLine({ failure, type }: { failure: IssueFailure; type: SourceFields['type'] }) {
-  const lines = FAILURE_LINES[type];
+  const lines = ISSUE_COPY[type];
   const where = { repository: failure.repository, project: failure.repository }; // GitHub's lines name a repository, Jira's a project
   // a 400 created nothing, so the retry is safe once a field changes (decision 15); its line says why, Jira's in Jira's words
   if (failure.kind !== 'placed') return <>{t(lines[failure.kind], { ...where, reason: failure.reason ?? '' })}</>;
@@ -152,9 +146,11 @@ export function CreateTaskDialog({ state, title, workspace: opened, source, onOp
   const [error, setError] = useState<string>();
   const target = targets.sources.find((s) => s.name === draft.source);
   const repository = placeOf(target); // the repository or the Jira project (#831): where the issue goes
-  const issue = useCreateIssue({ draft, repository, flows: state.flows, onOpenTask });
+  const issue = useCreateIssue({ draft, repository, type: target?.type, flows: state.flows, onOpenTask });
   const isGithub = draft.destination === 'github';
-  const hint = picked.hinted && isGithub && opened !== undefined ? t('create.hinted', { workspace: opened }) : undefined;
+  // decision 2: the hint names the type of the source the workspace picked (#831)
+  const hinted = targets.sources.find((s) => s.name === picked.source);
+  const hint = picked.hinted && isGithub && opened !== undefined && hinted !== undefined ? t(ISSUE_COPY[hinted.type].hinted, { workspace: opened }) : undefined;
   // an edit after a refusal answers it: the old message would describe a draft that is no longer there
   const edited = <T,>(set: (value: T) => void) => (value: T): void => { setError(undefined); issue.clear(); set(value); };
   // status is set once the source's options arrived (decision 6); a repository a config push took away would make the create a silent no-op

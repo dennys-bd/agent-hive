@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { CreateTaskDialog } from '@/components/CreateTaskDialog';
 import { type CreateDraft, withOptions } from '@/hooks/use-create-draft';
@@ -34,11 +35,15 @@ const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
   return name === undefined || init !== undefined ? new Promise<Response>((resolve) => { settle = resolve; }) : Promise.resolve(json(OPTIONS[name], 200));
 });
 const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)) as unknown);
-const open = (source: string) => render(
-  <CreateTargetsContext.Provider value={TARGETS}>
-    <CreateTaskDialog state={{ workspaces: ['hive'], flows: [], sourceWorkspaces: {} }} source={source} title="Fix" onClose={vi.fn()} onOpenTask={vi.fn()} />
+const JIRA_ONLY: CreateTargets = { ...TARGETS, sources: [TARGETS.sources[1]] };
+const radio = (name: string) => screen.getByRole('radio', { name });
+// tickets' default workspace is site, so opening on site under JIRA_ONLY picks it with the hint
+const openWith = (targets: CreateTargets, props: { source?: string; workspace?: string } = {}) => render(
+  <CreateTargetsContext.Provider value={targets}>
+    <CreateTaskDialog state={{ workspaces: ['hive', 'site'], flows: [], sourceWorkspaces: { tickets: 'site' } }} title="Fix" onClose={vi.fn()} onOpenTask={vi.fn()} {...props} />
   </CreateTargetsContext.Provider>,
 );
+const open = (source: string) => openWith(TARGETS, { source });
 const box = (name: string | RegExp) => screen.getByRole('combobox', { name });
 
 beforeEach(() => { setLanguage('pt'); fetchMock.mockClear(); vi.stubGlobal('fetch', fetchMock); });
@@ -93,4 +98,45 @@ test('the Jira failure lines name the project, a refusal gives Jira\'s reason, a
     }
     unmount();
   }
+});
+
+test('with only Jira sources the dialog says issue no Jira and project, names the project in the menu, and the workspace hint names Jira (#831)', () => {
+  openWith(JIRA_ONLY, { workspace: 'site' });
+  expect(radio('issue no Jira')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByText('o workspace site tem uma source Jira, por isso a issue vem marcada.')).toBeInTheDocument();
+  expect(screen.getByText('os projects das sources Jira configuradas')).toBeInTheDocument();
+  expect(box('project')).toHaveTextContent('ABC');
+  expect(screen.queryByText(/GitHub/)).not.toBeInTheDocument();
+});
+
+test('with GitHub and Jira sources the destination and the place field use the neutral words (#831)', () => {
+  open('work');
+  expect(radio('issue numa source')).toHaveAttribute('aria-checked', 'true');
+  expect(box('repositório ou project')).toHaveTextContent('acme/app');
+  expect(screen.getByText('os repositórios e projects das sources configuradas')).toBeInTheDocument();
+});
+
+// opens on tickets alone, posts, and answers the POST with answer
+async function created(answer: unknown) {
+  const user = userEvent.setup();
+  const view = openWith(JIRA_ONLY, { source: 'tickets' });
+  await waitFor(() => expect(box(/status/)).toBeEnabled());
+  await user.click(screen.getByRole('button', { name: 'criar issue' }));
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  settle(json(answer, 201));
+  return view;
+}
+
+test('a Jira issue\'s toasts name its key with no #, and the notice offers ver no Jira (#831)', async () => {
+  const opened = vi.spyOn(window, 'open').mockImplementation(() => null);
+  vi.mocked(toast).mockClear(); vi.mocked(toast.info).mockClear();
+  const first = await created({ id: 'ABC-7', itemId: 'tickets:10007', ref: REF });
+  await waitFor(() => expect(vi.mocked(toast)).toHaveBeenCalledWith('Issue ABC-7 criada · em tarefas › sem fluxo', expect.anything()));
+  first.unmount(); fetchMock.mockClear();
+  await created({ ref: REF, notice: 'created ABC-7 on tickets; it is not in the flow yet' });
+  await waitFor(() => expect(vi.mocked(toast.info)).toHaveBeenCalledOnce());
+  const [text, options] = vi.mocked(toast.info).mock.calls[0] as [string, { action: { label: string; onClick(): void } }];
+  expect([text, options.action.label]).toEqual(['Issue ABC-7 criada, ainda fora do hive', 'ver no Jira']);
+  options.action.onClick();
+  expect(opened).toHaveBeenCalledWith(REF.url, '_blank', 'noreferrer');
 });

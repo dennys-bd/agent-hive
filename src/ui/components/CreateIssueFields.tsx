@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, Sele
 import { hasIssueTypes } from '../../create-in.js';
 import { type CreateDraft, type OptionsEntry, creatableTypes } from '@/hooks/use-create-draft';
 import { t } from '@/i18n';
-import { type CreateTargets, placeOf, repositoryLabel } from '@/lib/create-targets';
+import { type CreateTargets, placeOf, repositoryLabel, sharedCopy } from '@/lib/create-targets';
 
 // Radix items cannot carry null: fora do project has a value no Status option can have, as NO_FLOW does in CreateTaskDialog
 const OFF_PROJECT = '\u0000off-project';
@@ -84,12 +84,13 @@ function LabelChips({ entry, repository, picked, onAdd, onRemove }: LabelChipsPr
 
 /** The issue form (#772): repositório, status and labels of the source's create options, with the loading state and the retry line. */
 export function CreateIssueFields({ draft, sources, options, onRetry, onSource, onIssueType, onStatus, onAddLabel, onRemoveLabel }: CreateIssueFieldsProps) {
+  const copy = sharedCopy(sources);
   const source = sources.find((s) => s.name === draft.source);
   const repository = placeOf(source) ?? '';
   const hasTypes = source !== undefined && hasIssueTypes(source.type); // #831: a Jira issue always has a status, and a type
   return (
     <>
-      <Field id="create-repository" label={t('create.repository')} hint={t('create.repositoryHint')}>
+      <Field id="create-repository" label={t(copy.place)} hint={t(copy.placeHint)}>
         <RepositoryMenu sources={sources} value={draft.source} onPick={onSource} />
       </Field>
       <Field id="create-status" label={t('create.status')} note={hasTypes ? undefined : t('create.onProject')}>

@@ -1,6 +1,7 @@
 import { createContext } from 'react';
 import { canCreate, type CanCreate } from '../../create-in.js';
 import { HIVE_SOURCE } from '../../tasks.js';
+import type { MessageKey } from '../i18n.js';
 import type { SourceConfig, SourceFields } from '../../types.js';
 
 /** A create row's destination (#846): a source carries its type, which criar em names under it (#893); hive carries none. */
@@ -53,6 +54,30 @@ export function preselect(opened: { workspace?: string; source?: string }, targe
   if (isSource(createIn)) return github(createIn);
   // A createIn that names no available destination falls back to the first one that is
   return hiveSource || sources[0] === undefined ? hive : github(sources[0].name);
+}
+
+/** What the create dialog says of a source's issues, per type (#831): the destination, the workspace hint, the place field, the failure
+ * lines, the link and how an issue's id reads (GitHub's #912, Jira's ABC-7). A Record, so a new type has to say. */
+export interface IssueCopy {
+  in: MessageKey; hinted: MessageKey; place: MessageKey; placeHint: MessageKey; view: MessageKey; refPrefix: string;
+  retry: MessageKey; refused: MessageKey; placed: MessageKey;
+}
+export const ISSUE_COPY: Record<SourceFields['type'], IssueCopy> = {
+  github: {
+    in: 'create.inGithub', hinted: 'create.hinted', place: 'create.repository', placeHint: 'create.repositoryHint', view: 'create.viewOnGitHub', refPrefix: '#',
+    retry: 'create.issueFailed', refused: 'create.issueRefused', placed: 'create.issuePlaced',
+  },
+  jira: {
+    in: 'create.inJira', hinted: 'create.hintedJira', place: 'create.project', placeHint: 'create.projectHint', view: 'create.viewOnJira', refPrefix: '',
+    retry: 'create.issueFailedJira', refused: 'create.issueRefusedJira', placed: 'create.issuePlacedJira',
+  },
+};
+const NEUTRAL: Pick<IssueCopy, 'in' | 'place' | 'placeHint'> = { in: 'create.inSource', place: 'create.place', placeHint: 'create.placeHint' };
+
+/** The words for every source at once, the destination and the place menu (#831): the one type's, else (none, or several) the neutral ones. */
+export function sharedCopy(sources: readonly CreateSource[]): Pick<IssueCopy, 'in' | 'place' | 'placeHint'> {
+  const types = [...new Set(sources.map((s) => s.type))];
+  return types.length === 1 ? ISSUE_COPY[types[0]] : NEUTRAL;
 }
 
 /** Where a source's new issues go (#831): its repository or its project; undefined for none. */

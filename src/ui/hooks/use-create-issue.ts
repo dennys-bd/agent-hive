@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import type { CreatedRef, State } from '../../types.js';
+import type { CreatedRef, SourceFields, State } from '../../types.js';
 import type { CreateDraft } from '@/hooks/use-create-draft';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
+import { ISSUE_COPY, type IssueCopy } from '@/lib/create-targets';
 
 const HTTP_BAD_REQUEST = 400;
 
@@ -30,9 +31,10 @@ export function whereOf(flows: State['flows'], stage: string): string {
   return flows.length > 1 && flow !== undefined ? `${flow.name} · ${stage}` : stage;
 }
 
-/** Decisions 11 and 12: the task's toast with abrir, or the info toast with ver no GitHub for an issue no source lists yet. */
-export function toastIssue(made: IssueAnswer, { flows, isOffProject, onOpenTask }: { flows: State['flows']; isOffProject: boolean; onOpenTask(id: string): void }): void {
-  const { id: refId, url } = made.ref;
+/** Decisions 11 and 12: the task's toast with abrir, or the info toast with ver no GitHub or Jira for an issue no source lists yet. */
+export function toastIssue(made: IssueAnswer, { flows, isOffProject, onOpenTask, copy }: { flows: State['flows']; isOffProject: boolean; onOpenTask(id: string): void; copy: IssueCopy }): void {
+  const refId = `${copy.refPrefix}${made.ref.id}`; // #831: GitHub's #912, Jira's ABC-7
+  const { url } = made.ref;
   if ('id' in made) {
     const message = made.stage === undefined ? t('create.issueNoFlow', { id: refId }) : t('create.issueDone', { id: refId, where: whereOf(flows, made.stage) });
     toast(message, { action: { label: t('create.open'), onClick: () => onOpenTask(made.id) } });
@@ -40,20 +42,20 @@ export function toastIssue(made: IssueAnswer, { flows, isOffProject, onOpenTask 
   }
   toast.info(t('create.issueOutside', { id: refId }), {
     description: t(isOffProject ? 'create.issueOffProject' : 'create.issueOutsideHint'),
-    action: { label: t('create.viewOnGitHub'), onClick: () => window.open(url, '_blank', 'noreferrer') },
+    action: { label: t(copy.view), onClick: () => window.open(url, '_blank', 'noreferrer') },
   });
 }
 
-export function useCreateIssue({ draft, repository, flows, onOpenTask }: { draft: CreateDraft; repository: string | undefined; flows: State['flows']; onOpenTask(id: string): void }) {
+export function useCreateIssue({ draft, repository, type, flows, onOpenTask }: { draft: CreateDraft; repository: string | undefined; type: SourceFields['type'] | undefined; flows: State['flows']; onOpenTask(id: string): void }) {
   const [failure, setFailure] = useState<IssueFailure>();
   const [isPosting, setIsPosting] = useState(false);
   const create = async (): Promise<void> => {
     const { source, status } = draft;
-    if (source === undefined || status === undefined || repository === undefined) return;
+    if (source === undefined || status === undefined || repository === undefined || type === undefined) return;
     setFailure(undefined);
     setIsPosting(true);
     try {
-      toastIssue(await postJson<IssueAnswer>('/tasks', issueBodyOf(draft, source, status)), { flows, isOffProject: status === null, onOpenTask });
+      toastIssue(await postJson<IssueAnswer>('/tasks', issueBodyOf(draft, source, status)), { flows, isOffProject: status === null, onOpenTask, copy: ISSUE_COPY[type] });
     } catch (err) {
       setFailure(failureOf(err, repository)); // the dialog's own words (decision 13); the server left its own in hive.log (Task 1)
       throw err; // keeps the dialog open

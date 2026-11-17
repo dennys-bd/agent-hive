@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { SourceConfig } from '../../src/types';
-import { type CreateTargets, createTargetsOf, destinations, placeOf, preselect, repositoryLabel } from '@/lib/create-targets';
+import { type CreateTargets, createTargetsOf, ISSUE_COPY, destinations, placeOf, preselect, repositoryLabel, sharedCopy } from '@/lib/create-targets';
 
 const CONFIG: SourceConfig = { name: 'x', qualifyId: false, type: 'github', owner: 'me', number: 1, filter: [], taskProps: { defaults: { auto: true, entry: null }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' };
 
@@ -47,6 +47,12 @@ test('repositoryLabel names the repository, and the source too only where two so
   expect(repositoryLabel(shared[0], shared)).toBe('acme/app · work');
   expect(repositoryLabel(shared[2], shared)).toBe('acme/app · triage');
   expect(repositoryLabel(shared[1], shared)).toBe('acme/docs');
+});
+
+test('repositoryLabel names a Jira source by its project, and sharedCopy is the one type\'s words, else the neutral ones (#831)', () => {
+  const tickets = { name: 'tickets', type: 'jira' as const, project: 'ABC' };
+  expect(repositoryLabel(tickets, [...SOURCES, tickets])).toBe('ABC');
+  expect([sharedCopy(SOURCES).in, sharedCopy([tickets]).in, sharedCopy([...SOURCES, tickets]).in, sharedCopy([]).in]).toEqual([ISSUE_COPY.github.in, ISSUE_COPY.jira.in, 'create.inSource', 'create.inSource']);
 });
 
 const JIRA: SourceConfig = {
