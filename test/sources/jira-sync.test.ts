@@ -29,7 +29,7 @@ const issue = (n: number, updated: string, title = `Issue ${n}`): JiraIssue => (
   fields: {
     summary: title, updated, status: { name: 'To Do', statusCategory: { key: 'new' } }, issuetype: { name: 'Story', hierarchyLevel: 0 },
     customfield_10001: n, customfield_10020: [{ id: 1, name: 'Sprint 3' }], parent: { id: '10000', key: 'ABC-0', fields: { summary: 'Epic' } },
-    issuelinks: [{ type: { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' },
+    issuelinks: [{ id: '20099', type: { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' },
       outwardIssue: { id: '10099', key: 'ABC-99', fields: { summary: 'Other', status: { statusCategory: { key: 'done' } } } } }],
   },
 });
@@ -74,7 +74,7 @@ test('a first sync pages to the end and stores every issue in key order with its
   assert.deepEqual(two?.values, [{ field: 'Issue Type', kind: 'option', value: 'Story' }, { field: 'Story Points', kind: 'number', value: '2' }]);
   assert.deepEqual([two?.item.key, two?.item.parentKey, two?.item.data.status, two?.item.data.statusCategory, two?.item.data.hierarchyLevel],
     ['ABC-2', 'ABC-0', 'To Do', 'new', 0]);
-  assert.deepEqual(two?.item.data.links, [{ type: 'Blocks', direction: 'outward', phrase: 'blocks', id: '10099', key: 'ABC-99', title: 'Other', statusCategory: 'done' }]);
+  assert.deepEqual(two?.item.data.links, [{ type: 'Blocks', direction: 'outward', phrase: 'blocks', linkId: '20099', id: '10099', key: 'ABC-99', title: 'Other', statusCategory: 'done' }]);
 });
 
 test('a second sync sends the relative window from the cursor, upserts only what came back and advances the cursor', async () => {
