@@ -4,13 +4,13 @@ import type { RepoRef } from '../repos/repositories.js';
 import type { ReadAccess } from './access.js';
 import type { ReadModel, SyncKind } from './db.js';
 import { pollOne, syncPulls } from './pulls.js';
-import { reconcile, refetchIssue, stampReconcile, type RefetchDeps } from './reconcile.js';
+import { isReconcileDue, reconcile, refetchIssue, stampReconcile, type RefetchDeps } from './reconcile.js';
 import { syncAssignees, syncIssueTypes, syncLabels, syncMilestones, syncRepo } from './repo-scopes.js';
 import type { RestGet, RestQuota } from './rest.js';
 import { EMPTY_REPORT, mergeReports, PartialSyncError, SyncStopped, syncScope, type SyncDeps, type SyncReport } from './sync.js';
 import type { ReportRetry } from '../source-errors.js';
 
-export const RECONCILE_EVERY_MS = 24 * 60 * 60 * 1000; // the full listing's spacing (#180): every page of it is a 200, so once a day bounds its cost
+export { RECONCILE_EVERY_MS } from './reconcile.js';
 export const REFETCH_COOLDOWN_MS = 10_000; // an issue page opened again within it reads the model, not GitHub
 
 /** What a refetch did (#180): 2.2's issue page waits for it, so the caller needs the outcome. */
@@ -23,10 +23,8 @@ export interface RoundResult { report: SyncReport; error?: unknown; commentsBloc
 export const readModelEvent = (repository: string, kinds: SyncKind[]): string =>
   `event: readModel\ndata: ${JSON.stringify({ type: 'readModel', repository, kinds })}\n\n`;
 
-// An absent or unreadable stamp is due: NaN fails the <=
 function reconcileDue(deps: SyncDeps, repository: string): boolean {
-  const at = deps.db.scope(deps.source, repository, 'reconcile')?.syncedAt;
-  return !(deps.now().getTime() - Date.parse(at ?? '') <= RECONCILE_EVERY_MS);
+  return isReconcileDue(deps.db.scope(deps.source, repository, 'reconcile')?.syncedAt, deps.now());
 }
 
 interface Independent { report: SyncReport; errors: unknown[] }
