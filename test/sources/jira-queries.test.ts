@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { type JiraCall, postTransition, projectJql, readComments, readAssignable, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
+import { createIssue, type JiraCall, postTransition, projectJql, readComments, readAssignable, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
 
 interface Sent { path: string; method: string; body: unknown }
 
@@ -217,13 +217,13 @@ test('readProjects and readLabels stop on an empty page, refuse a malformed body
 
 test('readIssueTypes pages createmeta by its total and answers id, name and subtask; values is read when issueTypes is absent (#821)', async () => {
   const { call, sent } = fakeJira([
-    { startAt: 0, maxResults: 1, total: 2, issueTypes: [{ id: '10001', name: 'Story', subtask: false, description: 'x' }] },
-    { startAt: 1, maxResults: 1, total: 2, issueTypes: [{ id: '10002', name: 'Sub-task', subtask: true }] },
+    { startAt: 0, maxResults: 1, total: 2, issueTypes: [{ id: '10001', name: 'Story', subtask: false, hierarchyLevel: 0, description: 'x' }] },
+    { startAt: 1, maxResults: 1, total: 2, issueTypes: [{ id: '10002', name: 'Sub-task', subtask: true, hierarchyLevel: -1 }] },
   ]);
-  assert.deepEqual(await readIssueTypes(call, 'ABC'), [{ id: '10001', name: 'Story', subtask: false }, { id: '10002', name: 'Sub-task', subtask: true }]);
+  assert.deepEqual(await readIssueTypes(call, 'ABC'), [{ id: '10001', name: 'Story', subtask: false, hierarchyLevel: 0 }, { id: '10002', name: 'Sub-task', subtask: true, hierarchyLevel: -1 }]);
   assert.deepEqual(sent.map((s) => s.path), ['/issue/createmeta/ABC/issuetypes?startAt=0&maxResults=100', '/issue/createmeta/ABC/issuetypes?startAt=1&maxResults=100']);
-  const values = fakeJira([{ startAt: 0, total: 1, values: [{ id: '10003', name: 'Bug', subtask: false }] }]);
-  assert.deepEqual(await readIssueTypes(values.call, 'ABC'), [{ id: '10003', name: 'Bug', subtask: false }]);
+  const values = fakeJira([{ startAt: 0, total: 1, values: [{ id: '10003', name: 'Bug', subtask: false, hierarchyLevel: 0 }] }]);
+  assert.deepEqual(await readIssueTypes(values.call, 'ABC'), [{ id: '10003', name: 'Bug', subtask: false, hierarchyLevel: 0 }]);
 });
 
 test('readIssueTypes refuses a bad key before any call, a page without a total, a subtask that is no boolean, and paging past MAX_PAGES (#821)', async () => {
@@ -232,9 +232,25 @@ test('readIssueTypes refuses a bad key before any call, a page without a total, 
   assert.equal(none.sent.length, 0);
   await assert.rejects(readIssueTypes(fakeJira([{ issueTypes: [] }]).call, 'ABC'), /jira issue types total/);
   await assert.rejects(readIssueTypes(fakeJira([{ total: 1, issueTypes: [{ id: '1', name: 'Story', subtask: 'no' }] }]).call, 'ABC'), /jira issue type subtask/);
-  const never = endless({ startAt: 0, total: 1_000_000, issueTypes: [{ id: '1', name: 'Story', subtask: false }] });
+  const never = endless({ startAt: 0, total: 1_000_000, issueTypes: [{ id: '1', name: 'Story', subtask: false, hierarchyLevel: 0 }] });
   await assert.rejects(readIssueTypes(never.call, 'ABC'), /jira issue types page count/);
   assert.equal(never.calls(), 1000);
+});
+
+test('readIssueTypes answers each type\'s hierarchyLevel and refuses a type without a numeric one (#831)', async () => {
+  const { call } = fakeJira([{ startAt: 0, total: 2, issueTypes: [{ id: '10000', name: 'Epic', subtask: false, hierarchyLevel: 1 }, { id: '10003', name: 'Sub-task', subtask: true, hierarchyLevel: -1 }] }]);
+  assert.deepEqual((await readIssueTypes(call, 'ABC')).map((t) => [t.name, t.hierarchyLevel]), [['Epic', 1], ['Sub-task', -1]]);
+  for (const hierarchyLevel of [undefined, '0']) {
+    await assert.rejects(readIssueTypes(fakeJira([{ total: 1, issueTypes: [{ id: '1', name: 'Story', subtask: false, hierarchyLevel }] }]).call, 'ABC'), /jira issue type hierarchyLevel/, String(hierarchyLevel));
+  }
+});
+
+test('createIssue posts the fields to /issue and answers its id and key; an answer without either is a WireError (#831)', async () => {
+  const fields = { project: { key: 'ABC' }, summary: 'Fix', issuetype: { id: '10001' }, labels: [] };
+  const { call, sent } = fakeJira([{ id: '10007', key: 'ABC-7', self: 'https://acme.example/rest/api/3/issue/10007' }]);
+  assert.deepEqual(await createIssue(call, fields), { id: '10007', key: 'ABC-7' });
+  assert.deepEqual(sent, [{ path: '/issue', method: 'POST', body: { fields } }]);
+  await assert.rejects(createIssue(fakeJira([{ id: '10007' }]).call, fields), WireError);
 });
 
 test('readCreateFields answers each field\'s name and allowed values, an option\'s value else its name, [] when it allows none (#821)', async () => {
