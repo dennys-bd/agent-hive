@@ -1,6 +1,7 @@
 import type { JiraCredential } from '../credentials.js';
 import type { Logger } from '../log.js';
-import type { ReportRetry } from '../source-errors.js';
+import { inRetryWait } from '../polling.js';
+import { isNotConnected, isRateLimited, type ReportRetry } from '../source-errors.js';
 import type { JiraCall } from '../sources/jira-queries.js';
 import { reconcileProject, syncProject, type JiraSyncDeps } from '../sources/jira-sync.js';
 import type { SourceConfig, SourceSync } from '../types.js';
@@ -74,20 +75,40 @@ async function syncGroup(deps: JiraRoundDeps, group: JiraGroup, accountId: strin
   }
 }
 
-// No login for the site: no call, one debug line. The poll reports the missing login through listItems, not the loop
-async function runGroup(deps: JiraRoundDeps, group: JiraGroup): Promise<void> {
-  const cred = await deps.credential(group.site);
-  if (cred === undefined) {
-    deps.log.debug(`read model: ${whereOf(group)} is not synced: jira:${group.site} is not connected`);
-    return;
-  }
-  await syncGroup(deps, group, cred.accountId);
+const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+// The limit belongs to the site and account, so every source of the shared sync waits. A failed report is logged, never thrown
+async function reportAll(deps: JiraRoundDeps, group: JiraGroup, until: string): Promise<void> {
+  await Promise.all(group.sources.map((source) => deps.reportRetry(source.name, until).catch((err: unknown) => {
+    deps.log.error(`read model: the retry of ${source.name} was not reported: ${reasonOf(err)}`);
+  })));
 }
 
-/** The Jira part of a round (#824): one sync per site and project, in config order; checked for a stop before each group. */
+// A missing login or a 401: one debug line, as the poll reports it through listItems. A 429: the retry for the group, and the cursor stays,
+// since syncProject writes nothing on a failed page. Anything else: one error line. The poll owns the source's error on its sync line
+async function runGroup(deps: JiraRoundDeps, group: JiraGroup): Promise<void> {
+  const where = whereOf(group);
+  try {
+    const cred = await deps.credential(group.site);
+    if (cred === undefined) {
+      deps.log.debug(`read model: ${where} is not synced: jira:${group.site} is not connected`);
+      return;
+    }
+    await syncGroup(deps, group, cred.accountId);
+  } catch (err) {
+    if (isRateLimited(err)) await reportAll(deps, group, err.retryAt);
+    else if (isNotConnected(err)) deps.log.debug(`read model: ${where} is not synced: ${err.message}`);
+    else deps.log.error(`read model: the sync of ${where} failed: ${reasonOf(err)}`);
+  }
+}
+
+/** The Jira part of a round (#824): one sync per site and project, in config order. A group waits while any of its sources waits out a
+ * rate limit (a write's 429 holds for the shared sync too). A stop is checked before each group. Never rejects. */
 export async function syncJira(deps: JiraRoundDeps, sources: readonly JiraRoundSource[]): Promise<void> {
   for (const group of groupsOf(sources)) {
     if (deps.isStopped()) return; // the database must never close under a Jira transaction
+    const now = deps.now().getTime();
+    if (group.sources.some((source) => inRetryWait(source, now))) continue;
     await runGroup(deps, group);
   }
 }

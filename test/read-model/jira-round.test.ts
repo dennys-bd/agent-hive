@@ -5,6 +5,7 @@ import { openReadModel, READ_MODEL_FILE, type ReadModel, type SyncKind } from '.
 import { groupsOf, jiraRoundSources, syncJira, type JiraRoundDeps, type JiraRoundSource } from '../../src/read-model/jira-round.js';
 import { RECONCILE_EVERY_MS } from '../../src/read-model/reconcile.js';
 import type { JiraCall } from '../../src/sources/jira-queries.js';
+import { SourceNotConnectedError, SourceRateLimitError } from '../../src/source-errors.js';
 import { tempDir } from '../temp-dir.js';
 import { GITHUB_ENTRY, JIRA_ENTRY } from '../fakes.js';
 import { fakeJira, JIRA_CRED, JIRA_ROWS, JIRA_SITE, jiraIssue, jiraPage, NOW, tempModel } from './fixtures.js';
@@ -108,4 +109,76 @@ test('the reconcile runs only past 24 h, re-stamps, and its stamp holds across a
   again.at(AT + RECONCILE_EVERY_MS + 2);
   await syncJira(again.deps, [BOARD]);
   assert.deepEqual(jira.searches().slice(4).map((s) => s.fields), [INCREMENTAL], 'no reconcile right after a restart');
+});
+
+const RETRY_AT = '2026-10-12T12:05:00.000Z';
+const JIRA_T2 = '2026-10-13T10:00:00.000+0000'; // after the first sync, before AT + 24 h + 1
+
+test('a 429 reports the retry for every source of the group, stores nothing, and the next group still syncs in the round (#824)', async (t) => {
+  const db = await tempModel(t);
+  const jira = fakeJira({ [ABC]: [new SourceRateLimitError(RETRY_AT)], [OPS_KEY]: [jiraPage([jiraIssue('OPS', 2)])] });
+  const round = roundOn(db, jira.call);
+  await syncJira(round.deps, [BOARD, BUGS, OPS]);
+  assert.deepEqual(round.reported, [['board', RETRY_AT], ['bugs', RETRY_AT]]);
+  assert.equal(db.items.cursor(JIRA_ROWS, 'ABC'), null, 'the limited sync stored nothing');
+  assert.deepEqual(db.items.listing(JIRA_ROWS, 'OPS'), ['10002']);
+  assert.deepEqual(round.errors, []);
+});
+
+test('a retry report that fails is logged, never thrown, and the group\'s other sources are still reported (#824)', async (t) => {
+  const db = await tempModel(t);
+  const reported: string[] = [];
+  const round = roundOn(db, fakeJira({ [ABC]: [new SourceRateLimitError(RETRY_AT)] }).call, {
+    reportRetry: async (source) => {
+      if (source === 'board') throw new Error('dispatch failed');
+      reported.push(source);
+    },
+  });
+  await assert.doesNotReject(syncJira(round.deps, [BOARD, BUGS]));
+  assert.deepEqual(reported, ['bugs']);
+  assert.deepEqual(round.errors, ['read model: the retry of board was not reported: dispatch failed']);
+});
+
+test('a group with one source in its retry wait makes no call, and syncs once that time has passed (#824)', async (t) => {
+  const db = await tempModel(t);
+  const waiting = { ...BOARD, backoffUntil: new Date(AT + 60_000).toISOString() };
+  const jira = fakeJira({ [ABC]: [jiraPage([jiraIssue('ABC', 1)])] });
+  const round = roundOn(db, jira.call);
+  await syncJira(round.deps, [waiting, BUGS]);
+  assert.deepEqual(jira.sent, []);
+  round.at(AT + 60_001);
+  await syncJira(round.deps, [waiting, BUGS]);
+  assert.equal(jira.searches().length, 1);
+  assert.deepEqual(db.items.listing(JIRA_ROWS, 'ABC'), ['10001']);
+});
+
+test('a 401 mid-round ends the group as a missing login does: no report, no error log, one debug line, no rejection (#824)', async (t) => {
+  const db = await tempModel(t);
+  const jira = fakeJira({ [ABC]: [new SourceNotConnectedError(`jira:${JIRA_SITE}`)], [OPS_KEY]: [jiraPage([jiraIssue('OPS', 2)])] });
+  const round = roundOn(db, jira.call);
+  await assert.doesNotReject(syncJira(round.deps, [BOARD, OPS]));
+  assert.deepEqual([round.reported, round.errors], [[], []]);
+  assert.equal(round.debugs.length, 1);
+  assert.deepEqual(db.items.listing(JIRA_ROWS, 'OPS'), ['10002']);
+});
+
+test('a 5xx is one error log naming the site and project, and the next group still runs (#824)', async (t) => {
+  const db = await tempModel(t);
+  const jira = fakeJira({ [ABC]: [new Error('jira api: HTTP 502')], [OPS_KEY]: [jiraPage([jiraIssue('OPS', 2)])] });
+  const round = roundOn(db, jira.call);
+  await syncJira(round.deps, [BOARD, OPS]);
+  assert.deepEqual(round.errors, ['read model: the sync of acme.example/ABC failed: jira api: HTTP 502']);
+  assert.deepEqual(db.items.listing(JIRA_ROWS, 'OPS'), ['10002']);
+});
+
+test('a reconcile that fails after the sync changed rows still notifies once, logs once, and stays due (#824)', async (t) => {
+  const db = await tempModel(t);
+  const jira = fakeJira({ [ABC]: [jiraPage([jiraIssue('ABC', 1)]), jiraPage([jiraIssue('ABC', 1, JIRA_T2, 'Renamed')]), new Error('jira api: HTTP 502')] });
+  const round = roundOn(db, jira.call);
+  await syncJira(round.deps, [BOARD]);
+  round.at(AT + RECONCILE_EVERY_MS + 1);
+  await syncJira(round.deps, [BOARD]);
+  assert.deepEqual(round.notified, [[ABC, ['items']], [ABC, ['items']]]);
+  assert.equal(round.errors.length, 1);
+  assert.equal(db.scope(JIRA_ROWS, 'ABC', 'reconcile')?.syncedAt, new Date(AT).toISOString(), 'no stamp: the reconcile is still due');
 });
