@@ -89,9 +89,9 @@ export const copilotRunner: AgentRunner = {
   runFiles,
   hookPayload,
   // its shim (#932's pattern), then the hooks plugin every run's second --plugin-dir names; nothing in the user's Copilot home
-  prepareHome: async (home) => {
+  prepareHome: async (home, port) => {
     await installShim(home, AGENTS.copilot, { platform: process.platform, sh: posixShell().shell });
-    await writeCopilotHooksPlugin(home);
+    await writeCopilotHooksPlugin(home, port); // #874: the hook command carries the boot's port
   },
   mcpConfig,
   lspPlugin: () => [], // the workspace's language servers are out of scope (#873)

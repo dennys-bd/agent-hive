@@ -64,7 +64,8 @@ function machineRun(home: string, id: AgentId, run: RunInputs = RUN): AgentRun {
 function todays(home: string, id: AgentId, run: RunInputs = RUN): Pick<PtyLaunch, 'promptPath' | 'env' | 'agent'> {
   const runner = runners[id];
   const command = agentCommand(id, process.platform, { ...process.env, A: '1' });
-  return { promptPath: join(home, 'prompts', `${SLUG}.md`), env: { A: '1', ...runner.runEnv(serverOf(), machineRun(home, id, run)) }, agent: { command, argv: runner.launch(machineRun(home, id, run)) } };
+  const agentRun = machineRun(home, id, run);
+  return { promptPath: join(home, 'prompts', `${SLUG}.md`), env: { A: '1', ...runner.runEnv(serverOf(), agentRun) }, agent: { command, argv: runner.launch(agentRun) } };
 }
 const launched = ({ promptPath, env, agent }: PtyLaunch): Pick<PtyLaunch, 'promptPath' | 'env' | 'agent'> => ({ promptPath, env, agent });
 

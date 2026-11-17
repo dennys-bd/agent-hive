@@ -9,6 +9,7 @@ import { copilotRunner, instructionsDir } from '../../src/agents/copilot.js';
 import { copilotHome } from '../../src/agents/copilot-home.js';
 import { copilotHooksPlugin } from '../../src/agents/copilot-hooks.js';
 import type { AgentRun, McpServer, RunMcpServer } from '../../src/agents/runner.js';
+import { hookCommand, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
 import { runTmpDir } from '../../src/run-tmp.js';
 import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
@@ -108,23 +109,25 @@ test('the stray pattern matches the argv\'s MCP path; the command line runs copi
   assert.equal(line.includes(SECRET), false);
 });
 
-test('copy, clear, headless, hooks, transcripts and limits answer their placeholders until nodes 2 to 7 (#873)', async () => {
+test('copy, clear, headless, transcripts and limits answer their placeholders until nodes 3 to 7; hooks pass a Stop on (#873, #874)', async () => {
   assert.deepEqual([copilotRunner.copy(RUN, ID), copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({}), copilotRunner.headlessMcp], [undefined, undefined, ['COPILOT_ALLOW_ALL'], [], false]);
   assert.throws(() => copilotRunner.headless({ dir: '/t', schema: '{}', schemaPath: '/t/s', answerPath: '/t/a' }), { message: 'copilot: headless runs are not supported yet' });
   assert.equal(copilotRunner.headlessAnswer('{}', undefined), undefined);
-  assert.equal(copilotRunner.hookPayload({ hook_event_name: 'Stop', session_id: ID }), undefined);
+  const stop = { hook_event_name: 'Stop', session_id: ID };
+  assert.equal(copilotRunner.hookPayload(stop), stop);
   assert.deepEqual([copilotRunner.transcriptDir('/repo'), copilotRunner.ownsTranscript('/x', '/repo', ID)], [undefined, false]);
   assert.deepEqual(await copilotRunner.sessionFiles('/repo', ID), []);
   assert.deepEqual(await copilotRunner.readTurn('/x.jsonl'), { tokens: 0 });
   assert.deepEqual([await copilotRunner.countMessages('/x.jsonl'), await copilotRunner.planLimits(), copilotRunner.statusLimits({}, 0)], [0, undefined, undefined]);
 });
 
-test('prepareHome writes the empty hooks plugin under the Hive\'s home: a manifest Copilot loads and no hook yet (#873)', async (t) => {
+test('prepareHome writes the hooks plugin under the Hive\'s home for the boot\'s port, beside its shim (#873, #874)', async (t) => {
   const home = await tempDir(t, 'copilot-home-');
   await copilotRunner.prepareHome(home, 4242);
   assert.equal(copilotHooksPlugin(home), join(home, 'copilot', 'hooks-plugin'));
   assert.equal(JSON.parse(await readFile(join(copilotHooksPlugin(home), '.claude-plugin', 'plugin.json'), 'utf8')).name, 'hive-hooks');
-  assert.deepEqual(JSON.parse(await readFile(join(copilotHooksPlugin(home), 'hooks', 'hooks.json'), 'utf8')), { hooks: {} });
+  const { hooks } = JSON.parse(await readFile(join(copilotHooksPlugin(home), 'hooks', 'hooks.json'), 'utf8'));
+  assert.equal(hooks.Stop[0].hooks[0].command, hookCommand(4242, STOP_HOOK_TIMEOUT_S), 'the boot\'s port reaches the plugin');
   assert.ok(existsSync(shimPath(home, AGENTS.copilot)), 'its shim, as every agent boot found');
 });
 

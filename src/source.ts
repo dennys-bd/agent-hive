@@ -20,6 +20,7 @@ import { flatten } from './flows.js';
 /** #820: what a test fakes of a jira source; each part defaults to the real one: jiraFetch, the stored login, the name rewrite. */
 export interface JiraDeps {
   call?: JiraCall;
+  agile?: JiraCall; // #826: the Agile API's transport; absent, jiraFetch with api agile
   credential?: (site: string) => Promise<JiraCredential | undefined>;
   renewName?: (site: string, name: string) => Promise<void>;
 }
@@ -55,9 +56,10 @@ export function createSource(spec: SourceSpec, deps: SourceDeps): Source {
 function jiraAdapter(source: JiraSourceConfig, cited: Citation[], deps: SourceDeps): Source {
   const credential = deps.jira?.credential ?? ((site: string) => jiraCredential(site));
   const call = deps.jira?.call ?? ((path: string, init?: RequestInit) => jiraFetch(source.site, path, init, { credential }));
+  const agile = deps.jira?.agile ?? ((path: string, init?: RequestInit) => jiraFetch(source.site, path, init, { credential, api: 'agile' }));
   const renew = deps.jira?.renewName ?? ((site: string, name: string) => renewJiraName(site, name));
   return createJiraSource(source, cited, {
-    call, credential: () => credential(source.site), renewName: (name) => renew(source.site, name), ...(deps.items === undefined ? {} : { items: deps.items }),
+    call, agile, credential: () => credential(source.site), renewName: (name) => renew(source.site, name), ...(deps.items === undefined ? {} : { items: deps.items }),
     ...(deps.log === undefined ? {} : { log: deps.log }),
   });
 }

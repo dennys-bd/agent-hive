@@ -50,9 +50,12 @@ export function taskOf(stored: Stored, source: Listed): SourceItem {
   };
 }
 
+/** The source's filter drops the task (#826): a project row's `out`. An uncited column is not out; the UI knows it from the stages. */
+export const isFiltered = (task: SourceItem, source: Pick<JiraSourceConfig, 'filter'>, me: string | undefined): boolean => !matchesRules(source.filter, task.item, me);
+
 /** Whether listItems lists a task: its status a cited column and the source's filter passed, `@me` read as the stored name. */
 export const isListed = (task: SourceItem, source: Pick<JiraSourceConfig, 'filter'>, columns: ReadonlySet<string>, me: string | undefined): boolean =>
-  columns.has(task.column) && matchesRules(source.filter, task.item, me);
+  columns.has(task.column) && !isFiltered(task, source, me);
 
 /** The project key a read issue answers, from its project field; undefined when Jira answered none. */
 export function projectOf(issue: JiraIssue): string | undefined {
@@ -72,4 +75,9 @@ export function listedTasks(items: Pick<SourceItems, 'listing' | 'items'>, rows:
   const links = treeLinks(stored, source.tree);
   const tasks = stored.map((s) => withTree(taskOf(s, source), links.get(s.item.nodeId), source)).filter((task) => columns.has(task.column));
   return groupUnderParents(tasks).filter((task) => !isHidden(task, source));
+}
+
+/** The labels on the source's stored issues, once each and sorted (#826): Jira has no per-project list, and these are what the user picks from. */
+export function storedLabels(items: Pick<SourceItems, 'listing' | 'items'>, rows: string, project: string): string[] {
+  return [...new Set(items.items(rows, items.listing(rows, project)).flatMap((s) => textsOf(s.item.data.labels)))].sort();
 }

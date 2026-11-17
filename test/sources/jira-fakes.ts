@@ -59,8 +59,8 @@ export function fakeJira(answers: Record<string, unknown[]> = {}): Fake {
   return { call, sent, paths, bodies };
 }
 
-export interface Setup { call?: JiraCall; db?: ReadModel; cred?: JiraCredential | null; source?: Partial<JiraSourceConfig>; renamed?: string[] }
-export const adapter = ({ call = fakeJira().call, db, cred = CRED, source = {}, renamed = [] }: Setup): Source =>
+export interface Setup { call?: JiraCall; agile?: JiraCall; db?: ReadModel; cred?: JiraCredential | null; source?: Partial<JiraSourceConfig>; renamed?: string[] }
+export const adapter = ({ call = fakeJira().call, agile = fakeJira().call, db, cred = CRED, source = {}, renamed = [] }: Setup): Source =>
   createJiraSource({ ...JIRA_ENTRY, ...source }, CITED, {
-    call, credential: async () => cred ?? undefined, renewName: async (name) => { renamed.push(name); }, ...(db === undefined ? {} : { items: { db } }),
+    call, agile, credential: async () => cred ?? undefined, renewName: async (name) => { renamed.push(name); }, ...(db === undefined ? {} : { items: { db } }),
   });
