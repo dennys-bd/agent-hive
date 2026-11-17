@@ -787,3 +787,40 @@ test('a model typed in the execução agentes card redraws fluxo\'s padrão befo
   await user.click(within(screen.getByRole('region', { name: t('settings.agents') })).getByRole('button', { name: t('settings.section.flow') }));
   expect(screen.getByRole('combobox', { name: t('newSession.model') })).toHaveTextContent('padrão · claude-opus-4-0');
 });
+
+const CONFIG = info.config as NonNullable<SettingsInfo['config']>;
+const JIRA_INFO: SettingsInfo = {
+  ...info,
+  config: {
+    ...CONFIG,
+    comb: {
+      ...CONFIG.comb,
+      sources: [...CONFIG.comb.sources, {
+        name: 'tickets', qualifyId: false, type: 'jira', site: 'acme.atlassian.net', project: 'ABC', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] },
+        epics: 'show', epicFollows: 'behind', switchAt: 'fila', tree: { epics: true, subtasks: true }, blockingLinkTypes: ['Blocks'], issueType: 'Task', subtaskType: 'Subtask', doneStatus: 'Done',
+      }],
+      flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'], tickets: ['To Do'] } }], transitions: [] }],
+    },
+  },
+};
+// A Jira site's answers on top of the default handler (#822)
+const jiraFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const url = String(input);
+  if (url === '/settings/jira/sites') return jsonResponse([{ site: 'acme.atlassian.net', state: 'connected', name: 'Ana Lima' }]);
+  if (url.startsWith('/settings/jira/projects')) return jsonResponse([{ key: 'ABC', name: 'Alpha' }, { key: 'XYZ', name: 'Zed' }]);
+  if (url.startsWith('/settings/jira/issue-types')) return jsonResponse([{ id: '1', name: 'Task', subtask: false }, { id: '2', name: 'Subtask', subtask: true }]);
+  if (url.startsWith('/settings/jira/link-types')) return jsonResponse([{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }]);
+  if (url.startsWith('/settings/source-columns?type=jira')) return jsonResponse(['To Do', 'Done']);
+  return defaultFetch(input, init);
+};
+
+test('a Jira source reads its projects, statuses, filter options, issue types and link types when Settings opens (#822)', async () => {
+  fetchMock.mockImplementation(jiraFetch);
+  render(<Settings info={JIRA_INFO} onSaved={vi.fn()} />);
+  const chosen = 'site=acme.atlassian.net&project=ABC';
+  for (const url of [
+    '/settings/jira/projects?site=acme.atlassian.net', '/settings/jira/link-types?site=acme.atlassian.net', `/settings/jira/issue-types?${chosen}`,
+    `/settings/source-columns?type=jira&${chosen}`, `/settings/filter-options?type=jira&${chosen}`,
+  ]) await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(url));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli')); // the GitHub row as today
+});

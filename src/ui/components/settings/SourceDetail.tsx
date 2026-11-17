@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import type { JiraLoad, JiraRowOptions } from '@/hooks/use-jira-source-options';
 import { type MessageKey, t } from '@/i18n';
 import { TYPE_LABEL } from '@/lib/flow-sources';
 import { switchAtStage } from '@/lib/settings-epics';
-import type { FlowDraft, SourceDraft, StageDraft } from '@/lib/settings-form';
+import type { FlowDraft, JiraDraft, SourceDraft, StageDraft } from '@/lib/settings-form';
 import { contextEntries, named, type SettingEntry, settingAnchor } from '@/lib/settings-search';
 import type { SourceTaskPropsDraft } from '@/lib/setup-source-task-props';
 import { EPIC_FOLLOWS, EPICS_MODES, type EpicFollows, type EpicsMode, type FilterOptions, type GithubAuth, type ProjectSummary } from '../../../types';
@@ -23,6 +24,9 @@ interface SourceDetailProps {
   onChange(patch: Partial<SourceDraft>): void; onRemove(): void; onLoadProjects(): void;
   /** Loads this row's columns; `number` when the project select passes its new value (the `source` prop still holds the one just left). */
   onLoadColumns(number?: string): void;
+  jira?: JiraRowOptions; // #822: a jira row's projects, issue and link types and inline errors; undefined until a read answers
+  columns?: string[]; // #822: the row's statuses, the done status select's choices
+  onLoadJira(jira: JiraDraft, load: JiraLoad): void; // #822: a site or project pick's reads, with the draft just picked
   /** Back to the sources list, its Connections group (#524): the field row's "change" link. */
   onOpenList(): void;
 }

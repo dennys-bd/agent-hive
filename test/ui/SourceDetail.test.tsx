@@ -30,7 +30,7 @@ function Harness({ source: initial, auth = 'cli', filterOptions, stages = STAGES
   return (
     <SourceDetail
       source={source} flows={[{ id: FLOW, name: 'main' }]} stages={stages} workspaces={['hive', 'site']} githubProjects={[]} needsToken={false} auth={auth} filterOptions={filterOptions}
-      onChange={change} onRemove={onRemove} onLoadProjects={vi.fn()} onLoadColumns={vi.fn()} onOpenList={onOpenList}
+      onChange={change} onRemove={onRemove} onLoadProjects={vi.fn()} onLoadColumns={vi.fn()} onLoadJira={vi.fn()} onOpenList={onOpenList}
     />
   );
 }

@@ -7,6 +7,7 @@ import type { TransitionFocus } from '@/components/settings/StageEditor';
 import { SettingsFooter } from '@/components/settings/SettingsFooter';
 import { SettingsNav } from '@/components/settings/SettingsNav';
 import { Button } from '@/components/ui/button';
+import { type JiraLoad, useJiraSourceOptions } from '@/hooks/use-jira-source-options';
 import { t } from '@/i18n';
 import { getJson, postJson } from '@/lib/api';
 import type { NewSource } from '@/lib/flow-sources';
@@ -103,6 +104,8 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
     mounted.current = true;
   }, [info]);
 
+  const jira = useJiraSourceOptions();
+
   // #245: a failure shows its message like a columns failure and leaves the rules as they are: the picker still takes typed values.
   const loadFilterOptions = useCallback(async (current: SettingsDraft, row: SourceDraft) => {
     const url = filterOptionsUrl(current, row);
@@ -110,8 +113,8 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
     try {
       const listed = await getJson<FilterOptions>(url);
       setFilterOptions((o) => ({ ...o, [row.id]: listed }));
-    } catch (err) { setError((err as Error).message); }
-  }, []);
+    } catch (err) { if (row.type === 'jira') jira.fail(row.id, 'project', err); else setError((err as Error).message); }
+  }, [jira.fail]);
 
   const loadColumns = useCallback(async (current: SettingsDraft, row: SourceDraft) => {
     void loadFilterOptions(current, row); // in parallel, and sent first: a row's options come with its columns (#245)
@@ -120,10 +123,19 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
     try {
       const listed = await getJson<string[]>(url);
       setOptions((o) => ({ ...o, [row.id]: listed }));
-    } catch (err) { setError((err as Error).message); }
-  }, [loadFilterOptions]);
+    } catch (err) { if (row.type === 'jira') jira.fail(row.id, 'project', err); else setError((err as Error).message); }
+  }, [loadFilterOptions, jira.fail]);
+
+  // #822: the site select reads the projects; the project select the columns and filter options (loadColumns) and the issue and link types
+  const loadJira = useCallback((current: SettingsDraft, row: SourceDraft, load: JiraLoad) => {
+    if (load === 'site') { void jira.loadSite(row); return; }
+    void loadColumns(current, row);
+    void jira.loadProject(row);
+  }, [jira.loadSite, jira.loadProject, loadColumns]);
+  const loadJiraRow = (row: SourceDraft): void => { loadJira(draft, row, 'site'); loadJira(draft, row, 'project'); };
 
   const loadProjects = useCallback(async (row: SourceDraft) => {
+    if (row.type === 'jira') { loadJira(draft, row, 'site'); return; }
     const url = projectsUrl(draft.auth, row);
     if (!url) { setError(t('settings.error.owner')); return; }
     const owner = row.owner.trim();
@@ -136,14 +148,14 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
       setDraft((d) => ({ ...d, sources: d.sources.map((b) => (b.id === row.id ? { ...b, number } : b)) }));
       await loadColumns(draft, { ...row, number });
     } catch (err) { setError((err as Error).message); }
-  }, [draft, loadColumns]);
+  }, [draft, loadColumns, loadJira]);
 
   // A source just added through sources › + source (#514): its projects rode along with the dialog, so only its columns are missing.
   function addSource({ source: row, projects }: NewSource): void {
     setDraft((d) => ({ ...d, sources: [...d.sources, row] }));
     setGithubProjects((p) => ({ ...p, [row.id]: projects }));
     setView({ section: 'flow', source: row.id });
-    void loadColumns(draft, row);
+    if (row.type === 'jira') loadJiraRow(row); else void loadColumns(draft, row);
   }
 
   const refreshGithub = useCallback(async () => {
@@ -170,6 +182,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount only, like the imperative openSetup() did
   useEffect(() => {
     if (draft.auth === 'cli') for (const row of draft.sources) if (row.type === 'github') void loadProjects(row); // api without a token lists nothing: the user connects first
+    for (const row of draft.sources) if (row.type === 'jira') loadJiraRow(row); // a Jira row reads whatever the GitHub transport is
   }, []);
 
   async function save(confirmed = false): Promise<void> {
@@ -237,6 +250,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
                 flowTasks: (id) => flowTaskCount(saved.flows.find((f) => f.id === id)?.name ?? '', info.config?.comb.flows ?? [], state?.tasks ?? []),
                 options, githubProjects, github, filterOptions, focus, stage: view.stage === undefined ? undefined : { id: view.stage, n: jump?.n ?? 0 },
                 onConnectGithub: () => void connect(), onLoadProjects: (row) => void loadProjects(row), onLoadColumns: (row) => void loadColumns(draft, row),
+                jiraOptions: jira.rows, onLoadJira: (row, load) => loadJira(draft, row, load),
                 onOpenSource: (id) => setView({ section: 'flow', source: id }), onAddSource: addSource, onOpenRules: () => setView({ section: 'rules' }),
               }}
             />
