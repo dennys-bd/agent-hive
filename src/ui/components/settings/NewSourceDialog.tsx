@@ -10,6 +10,7 @@ import { type MessageKey, t } from '@/i18n';
 import { getJson } from '@/lib/api';
 import { NEW_SOURCE_TYPES, newSourceDraft, newSourceProblem, type NewSource } from '@/lib/flow-sources';
 import { projectsUrl } from '@/lib/settings-form';
+import { EMPTY_JIRA } from '@/lib/settings-jira';
 import { workspaceNameFor } from '../../../tasks';
 import type { GithubAuth, ProjectSummary } from '../../../types';
 
@@ -88,7 +89,7 @@ export function NewSourceDialog({ open, auth, workspaces, takenNames, flowId, on
   }
 
   function add(): void {
-    const fields = { owner, number, name, workspace };
+    const fields = { type: 'github' as const, owner, number, jira: EMPTY_JIRA, name, workspace };
     const problem = newSourceProblem(fields, takenNames);
     if (problem) { setError(problem); return; }
     onAdd({ source: newSourceDraft(fields, flowId), projects });

@@ -3,6 +3,7 @@ import { WORKSPACE_NAME, isReservedSource } from '../../tasks.js';
 import type { SourceFields, FilterRule, GithubAuth, GithubAuthStatus, ProjectSummary, TaskProp } from '../../types.js';
 import { type MessageKey, t } from '../i18n.js';
 import { type SourceDraft, emptySource } from './settings-form.js';
+import type { JiraDraft, JiraIssueType, JiraLinkType } from './settings-jira.js';
 import { entryLabel, type FlowScope, PROP_LABEL, propMode } from './setup-source-task-props.js';
 
 /** The types the dialog offers (#514): Jira's form lands with 5.4 (#822). */
@@ -11,22 +12,53 @@ export const NEW_SOURCE_TYPES = ['github'] as const satisfies readonly SourceFie
 export const TYPE_LABEL: Record<SourceFields['type'], MessageKey> = { github: 'settings.sources.type.github', jira: 'settings.sources.type.jira' };
 /** Who a source belongs to, as its row and header show it (#820): GitHub's owner, a Jira source's site. */
 export const sourceOwner = (source: SourceFields): string => (source.type === 'github' ? source.owner : source.site);
-export interface NewSourceFields { owner: string; number: string; name: string; workspace: string }
+export interface NewSourceFields { type: SourceFields['type']; owner: string; number: string; jira: JiraDraft; name: string; workspace: string }
 /** What the dialog hands the Settings page: the row, and the owner's projects it loaded, so the detail's select shows them at once. */
 export interface NewSource { source: SourceDraft; projects: ProjectSummary[] }
 
+// The names the defaults look for (#822, user): Jira's own defaults on a new project
+const DONE_STATUS = 'Done';
+const TASK_TYPE = 'Task';
+const SUBTASK_TYPE = 'Subtask';
+const BLOCKS_LINK = 'Blocks';
+const named = (names: readonly string[], wanted: string): string => (names.includes(wanted) ? wanted : (names[0] ?? ''));
+
+/** A new Jira row's defaults from its project's statuses and issue types and the site's link types (#822). The statuses route answers no
+ * category, so Done is found by name, else the last in Jira's order; a project with no sub-task type leaves subtaskType empty, which
+ * validateSettings refuses. */
+export function jiraDefaults(statuses: readonly string[], issueTypes: readonly JiraIssueType[], linkTypes: readonly JiraLinkType[]): Omit<JiraDraft, 'site' | 'project'> {
+  const typesOf = (subtask: boolean): string[] => issueTypes.filter((type) => type.subtask === subtask).map((type) => type.name);
+  return {
+    tree: { epics: true, subtasks: true },
+    blockingLinkTypes: linkTypes.some((link) => link.name === BLOCKS_LINK) ? [BLOCKS_LINK] : [],
+    issueType: named(typesOf(false), TASK_TYPE),
+    subtaskType: named(typesOf(true), SUBTASK_TYPE),
+    doneStatus: statuses.includes(DONE_STATUS) ? DONE_STATUS : (statuses.at(-1) ?? ''),
+  };
+}
+
 export const needsGithubToken = (auth: GithubAuth, github?: GithubAuthStatus): boolean => auth === 'api' && !github?.connected;
 
+// The row's place in its type (#822): GitHub's project number, a Jira site and project
+function pickProblem(f: NewSourceFields): string | undefined {
+  if (f.type === 'github') return f.number === '' ? t('settings.error.project') : undefined;
+  if (f.jira.site === '') return t('newSource.error.site');
+  return f.jira.project === '' ? t('settings.error.project') : undefined;
+}
+
 export function newSourceProblem(f: NewSourceFields, taken: readonly string[]): string | undefined {
+  const picked = pickProblem(f);
+  if (picked !== undefined) return picked;
   const name = f.name.trim();
-  if (f.number === '') return t('settings.error.project');
   if (!WORKSPACE_NAME.test(name) || isReservedSource(name)) return t('newSource.error.name');
   if (taken.includes(name)) return t('settings.error.sourceDuplicate', { name });
   return f.workspace === '' ? t('newSource.error.workspace') : undefined;
 }
 
-export const newSourceDraft = (f: NewSourceFields, flowId: string): SourceDraft =>
-  ({ ...emptySource(f.workspace, flowId), type: 'github', name: f.name.trim(), owner: f.owner.trim(), number: f.number });
+export function newSourceDraft(f: NewSourceFields, flowId: string): SourceDraft {
+  const row = { ...emptySource(f.workspace, flowId), name: f.name.trim() };
+  return f.type === 'jira' ? { ...row, type: 'jira', jira: f.jira } : { ...row, type: 'github', owner: f.owner.trim(), number: f.number };
+}
 
 function ruleText(rule: FilterRule): string {
   if (rule.field === 'blocked') return `${t(rule.op === 'any' ? 'settings.filter.op.is' : 'settings.filter.op.isNot')} ${t('settings.filter.field.blocked')}`;

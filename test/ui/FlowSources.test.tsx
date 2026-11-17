@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Settings } from '@/components/settings/Settings';
 import { setLanguage, t } from '@/i18n';
 import { newSourceDraft } from '@/lib/flow-sources';
+import { EMPTY_JIRA } from '@/lib/settings-jira';
 import type { SettingsSection } from '@/lib/settings-sections';
 import type { SettingsInfo } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -207,7 +208,7 @@ test('remover source on the detail drops it and returns to the list (#514)', asy
 });
 
 test('opened with newSource (from the header), the page starts on that source (#514)', async () => {
-  const newSource = { source: newSourceDraft({ owner: 'acme', number: '2', name: 'extra', workspace: 'hive' }, 'f1'), projects: [{ number: 2, title: 'Two', url: '' }] };
+  const newSource = { source: newSourceDraft({ type: 'github', owner: 'acme', number: '2', jira: EMPTY_JIRA, name: 'extra', workspace: 'hive' }, 'f1'), projects: [{ number: 2, title: 'Two', url: '' }] };
   render(<Settings info={info} newSource={newSource} onSaved={vi.fn()} onCancel={vi.fn()} />);
 
   const nav = screen.getByRole('navigation', { name: t('settings.nav') });

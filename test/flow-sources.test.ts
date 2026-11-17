@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
-import { sourceOwner, sourceSummary, TYPE_LABEL, needsGithubToken, NEW_SOURCE_TYPES, newSourceDraft, newSourceProblem } from '../src/ui/lib/flow-sources.js';
+import { jiraDefaults, sourceOwner, sourceSummary, TYPE_LABEL, needsGithubToken, NEW_SOURCE_TYPES, newSourceDraft, newSourceProblem } from '../src/ui/lib/flow-sources.js';
 import { GITHUB_ENTRY, JIRA_ENTRY } from './fakes.js';
-import { jiraDraft } from '../src/ui/lib/settings-jira.js';
+import { EMPTY_JIRA, jiraDraft } from '../src/ui/lib/settings-jira.js';
 import { emptySource } from '../src/ui/lib/settings-form.js';
+import type { JiraIssueType, JiraLinkType } from '../src/sources/jira-queries.js';
 import type { TaskRuleDraft } from '../src/ui/lib/setup-source-task-props.js';
 
 const SCOPE = { flows: [{ id: 'f1', name: 'delivery' }], stages: [] };
-const fields = { owner: ' acme ', number: '7', name: ' agent-hive ', workspace: 'hive' };
+const fields = { type: 'github' as const, owner: ' acme ', number: '7', jira: EMPTY_JIRA, name: ' agent-hive ', workspace: 'hive' };
 
 test('sourceSummary: project, filter, then one part per task property in registry order, joined by " · " (#514, #688)', () => {
   setLanguage('pt');
@@ -74,4 +75,34 @@ test('a jira row\'s summary starts with its project key (#820)', () => {
 test('a jira row with no project yet reads as none in its summary (#822)', () => {
   setLanguage('pt');
   assert.equal(sourceSummary({ ...emptySource('hive', 'f1'), name: 'tickets', type: 'jira' }, SCOPE).split(' · ')[0], t('settings.sources.noProject'));
+});
+
+const LINKS: JiraLinkType[] = [{ name: 'Relates', inward: 'relates to', outward: 'relates to' }, { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }];
+
+test('jiraDefaults picks Done, Task, Subtask and Blocks when the project has them, both tree levels on (#822)', () => {
+  const types: JiraIssueType[] = [{ id: '1', name: 'Story', subtask: false }, { id: '2', name: 'Task', subtask: false }, { id: '3', name: 'Sub-task', subtask: true }, { id: '4', name: 'Subtask', subtask: true }];
+  assert.deepEqual(jiraDefaults(['To Do', 'Done', 'Archived'], types, LINKS), {
+    tree: { epics: true, subtasks: true }, blockingLinkTypes: ['Blocks'], issueType: 'Task', subtaskType: 'Subtask', doneStatus: 'Done',
+  });
+});
+
+test('jiraDefaults falls back to the last status, the first type of each kind, an empty sub-task type and no blocking link type (#822)', () => {
+  const types: JiraIssueType[] = [{ id: '1', name: 'Story', subtask: false }, { id: '2', name: 'Bug', subtask: false }, { id: '3', name: 'Sub-task', subtask: true }];
+  assert.deepEqual(jiraDefaults(['Open', 'Closed'], types, LINKS.slice(0, 1)), {
+    tree: { epics: true, subtasks: true }, blockingLinkTypes: [], issueType: 'Story', subtaskType: 'Sub-task', doneStatus: 'Closed',
+  });
+  const bare = jiraDefaults([], types.slice(0, 2), []);
+  assert.deepEqual([bare.subtaskType, bare.doneStatus], ['', ''], 'no sub-task type and no status: left empty for validateSettings to refuse');
+});
+
+test('newSourceProblem refuses a jira row with no site or no project; newSourceDraft builds a complete jira row (#822)', () => {
+  setLanguage('pt');
+  const jira = { ...EMPTY_JIRA, site: 'acme.atlassian.net', project: 'ABC', issueType: 'Task', subtaskType: 'Subtask', doneStatus: 'Done', blockingLinkTypes: ['Blocks'] };
+  const picked = { ...fields, type: 'jira' as const, number: '', jira };
+  assert.equal(newSourceProblem(picked, []), undefined, 'a jira row needs no GitHub project number');
+  assert.equal(newSourceProblem({ ...picked, jira: { ...jira, site: '' } }, []), t('newSource.error.site'));
+  assert.equal(newSourceProblem({ ...picked, jira: { ...jira, project: '' } }, []), t('settings.error.project'));
+  const row = newSourceDraft(picked, 'f1');
+  assert.deepEqual({ ...row, id: 'x' }, { ...emptySource('hive', 'f1'), id: 'x', type: 'jira', name: 'agent-hive', jira });
+  assert.deepEqual(row.jira.tree, { epics: true, subtasks: true });
 });
