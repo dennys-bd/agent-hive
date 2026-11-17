@@ -35,12 +35,14 @@ export function toMachineError(err: unknown): MachineError {
   }, { cause: err });
 }
 
-// The cap is checked on the stat, so an oversized file is never read; and again on the bytes, for a file that grew in between
+// The cap is checked on the stat, so an oversized file is never read (only a regular file's size means anything); and again on the bytes, for a file that grew in between
 function readCapped(path: string, options: { maxBytes: number; encoding: BufferEncoding }): Promise<string>;
 function readCapped(path: string, options: { maxBytes: number }): Promise<Buffer>;
 async function readCapped(path: string, { maxBytes, encoding }: { maxBytes: number; encoding?: BufferEncoding }): Promise<string | Buffer> {
   const tooLarge = (): MachineError => new MachineError(`file over ${maxBytes} bytes`, { code: MachineError.TOO_LARGE });
-  if ((await stat(path)).size > maxBytes) throw tooLarge();
+  const info = await stat(path);
+  if (!info.isFile()) throw new MachineError(`not a regular file: ${path}`, { code: MachineError.NOT_FILE });
+  if (info.size > maxBytes) throw tooLarge();
   const bytes = await readFile(path);
   if (bytes.length > maxBytes) throw tooLarge();
   return encoding === undefined ? bytes : bytes.toString(encoding);

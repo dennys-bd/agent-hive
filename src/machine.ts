@@ -27,6 +27,8 @@ export interface MachineErrorFields { code?: string | number; stderr?: string; s
  * code: an errno string or an exit code. */
 export class MachineError extends Error {
   static readonly TOO_LARGE = 'too_large'; // fs.readFile over its maxBytes
+  static readonly NOT_FILE = 'not_file'; // fs.readFile of a FIFO, a device or a folder: its size says nothing, so the cap could not hold
+  static readonly BAD_NAME = 'bad_name'; // pty.spawn with a ptyId or prompt name that is not one plain file name
   readonly code: string | number | undefined;
   readonly stderr: string;
   readonly stdout: string;
@@ -93,7 +95,7 @@ export interface RunProcess {
   timeoutMs?: number; // absent: no limit
   signal?: AbortSignal;
   maxBytes?: number; // per stream; EDITOR_FILE_MAX by default
-  onOutput?: (text: string) => void; // every decoded chunk of either stream, live
+  onOutput?: (text: string) => void; // every decoded chunk of either stream, live; it must not throw: it runs in the stream's data event
   windowsVerbatimArguments?: boolean; // the .cmd runner's line (#632)
 }
 

@@ -28,6 +28,12 @@ test('fs.readFile refuses a file over maxBytes with too_large, and answers one a
   assert.equal(await fs.readFile(file, { maxBytes: 10, encoding: 'utf8' }), '0123456789');
 });
 
+test('fs.readFile refuses a folder with not_file: only a regular file\'s size bounds the read (#158)', async (t) => {
+  const dir = await tempDir(t, 'machine-');
+  const { fs } = createLocalMachine(deps());
+  await assert.rejects(fs.readFile(dir, { maxBytes: 1024 }), (err: unknown) => err instanceof MachineError && err.code === MachineError.NOT_FILE);
+});
+
 test('fs.writeAtomic writes the text with the original\'s mode, and a rename that fails leaves no temp file beside it (#158)', async (t) => {
   const dir = await tempDir(t, 'machine-');
   const file = join(dir, 'a.sh');

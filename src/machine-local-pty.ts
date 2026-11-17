@@ -8,7 +8,7 @@ import { agentCommand } from './agents/command.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, McpServer } from './agents/runner.js';
 import { hooksPath, PROMPTS_DIR, writeMcpConfig } from './hooks-settings.js';
-import type { MachinePty, RunSpec } from './machine.js';
+import { MachineError, type MachinePty, type RunSpec } from './machine.js';
 import type { PtyHost } from './pty-host.js';
 import { writePrompt } from './spawn.js';
 import type { LaunchPty, PtyHandle, PtyHandlers, PtyLaunch, SpawnOptions } from './types.js';
@@ -44,8 +44,16 @@ async function protocolFile(dir: string, ptyId: string, text: string | undefined
 }
 
 // The prompt, the MCP config (none for a runner whose server rides its argv, #927) and the protocol, then the runner's argv over their paths
+// Every file name the machine joins under prompts/ is one plain name: once a RunSpec can come over the link (node 8), a `/` or `..` would write outside it
+const PLAIN_NAME = /^[\w-][\w.-]*$/;
+function requirePlainName(name: string): void {
+  if (!PLAIN_NAME.test(name)) throw new MachineError(`not a plain file name: ${JSON.stringify(name)}`, { code: MachineError.BAD_NAME });
+}
+
 async function agentLaunch(deps: LocalPtyDeps, spec: RunSpec, agent: AgentSpec): Promise<PtyLaunch> {
   const { ptyId, cwd } = spec;
+  requirePlainName(ptyId);
+  if (spec.prompt !== undefined) requirePlainName(spec.prompt.name);
   const dir = join(deps.home, PROMPTS_DIR);
   const port = deps.port();
   const runner = runners[agent.id];

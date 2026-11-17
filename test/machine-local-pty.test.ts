@@ -6,8 +6,8 @@ import { AGENTS } from '../src/agents.js';
 import { agentCommand } from '../src/agents/command.js';
 import { runners } from '../src/agents/registry.js';
 import type { AgentRun, McpServer } from '../src/agents/runner.js';
-import { hooksPath } from '../src/hooks-settings.js';
-import type { RunInputs, RunSpec } from '../src/machine.js';
+import { hooksPath, PROMPTS_DIR } from '../src/hooks-settings.js';
+import { MachineError, type RunInputs, type RunSpec } from '../src/machine.js';
 import { createLocalPty, type LocalPtyDeps } from '../src/machine-local-pty.js';
 import { posixShell } from '../src/posix-shell.js';
 import { createPtyHost } from '../src/pty-host.js';
@@ -68,7 +68,7 @@ function todays(home: string, id: AgentId, run: RunInputs = RUN): Pick<PtyLaunch
 }
 const launched = ({ promptPath, env, agent }: PtyLaunch): Pick<PtyLaunch, 'promptPath' | 'env' | 'agent'> => ({ promptPath, env, agent });
 
-test('a Claude stage run writes its prompt, its 0600 MCP config holding the secret and its 0600 protocol, and hands on what spawn hands today (#158)', async (t) => {
+test('a Claude stage run writes its prompt, its 0600 MCP config holding the secret and its 0600 protocol, and hands on the runner\'s own launch over the machine\'s paths (#158)', async (t) => {
   const home = await homeIn(t);
   const { handed, launch } = recorder();
   await createLocalPty(depsIn(home, launch)).spawn(stageRun('claude'), HANDLERS).started;
@@ -82,7 +82,7 @@ test('a Claude stage run writes its prompt, its 0600 MCP config holding the secr
   assert.deepEqual([handed[0].ptyId, handed[0].slug, handed[0].cwd, handed[0].port], [PTY_ID, SLUG, CWD, PORT]);
 });
 
-test('a Codex stage run writes no MCP file, its server rides the argv, and hands on what spawn hands today (#158, #927)', async (t) => {
+test('a Codex stage run writes no MCP file, its server rides the argv, and hands on the runner\'s own launch over the machine\'s paths (#158, #927)', async (t) => {
   const home = await homeIn(t);
   const { handed, launch } = recorder();
   // Codex reads the plugin folder's agents/ on every launch, so its pluginDir must exist (the plan's /plugins/acme does not)
@@ -136,6 +136,18 @@ test('lent values reach the run\'s env last, and no file the machine writes and 
   assert.ok(!JSON.stringify(handed[0].agent).includes(LENT), 'never in the argv, which every account reads through ps');
   const prompts = join(home, 'prompts');
   for (const name of await readdir(prompts)) assert.ok(!(await readFile(join(prompts, name), 'utf8')).includes(LENT), name);
+});
+
+test('a ptyId or a prompt name that is not one plain file name rejects started with bad_name and writes nothing (#158)', async (t) => {
+  const home = await tempDir(t, 'machine-pty-');
+  await mkdir(join(home, PROMPTS_DIR));
+  const { handed, launch } = recorder();
+  const pty = createLocalPty(depsIn(home, launch));
+  const isBadName = (err: unknown): boolean => err instanceof MachineError && err.code === MachineError.BAD_NAME;
+  await assert.rejects(pty.spawn({ ...stageRun('claude'), ptyId: '../escape' }, HANDLERS).started, isBadName);
+  await assert.rejects(pty.spawn({ ...stageRun('claude'), prompt: { name: 'a/b', text: 'x' } }, HANDLERS).started, isBadName);
+  assert.deepEqual(handed, []);
+  assert.deepEqual(await readdir(join(home, PROMPTS_DIR)), []);
 });
 
 test('a file that cannot be written rejects started and launches nothing, so the pool reports spawnFailed (#158)', async (t) => {
