@@ -112,10 +112,15 @@ export async function searchIssues(call: JiraCall, jql: string, fields: readonly
   };
 }
 
-export async function readIssue(call: JiraCall, idOrKey: string): Promise<JiraFieldMeta & { issue: JiraIssue }> {
+/** The path of one issue (#819, #820): the user's or Jira's id or key, checked and encoded before it reaches a REST path. */
+function issuePath(idOrKey: string): string {
   if (!ISSUE_REF.test(idOrKey)) throw new Error('jira issue id or key is not one');
+  return `/issue/${encodeURIComponent(idOrKey)}`;
+}
+
+export async function readIssue(call: JiraCall, idOrKey: string): Promise<JiraFieldMeta & { issue: JiraIssue }> {
   const query = new URLSearchParams({ fields: SEARCH_FIELDS.join(','), expand: SEARCH_EXPAND });
-  const json = recordAt(await call(`/issue/${encodeURIComponent(idOrKey)}?${query}`), 'jira issue');
+  const json = recordAt(await call(`${issuePath(idOrKey)}?${query}`), 'jira issue');
   return { issue: issueAt(json, 'jira issue'), ...metaOf(json) };
 }
 
@@ -137,12 +142,12 @@ function commentOf(value: unknown): JiraComment {
 
 /** Every comment of an issue, paged by startAt; an empty page ends it even if total says more. */
 export async function readComments(call: JiraCall, id: string): Promise<JiraComment[]> {
-  if (!ISSUE_REF.test(id)) throw new Error('jira issue id or key is not one');
+  const path = issuePath(id);
   const comments: JiraComment[] = [];
   let total = Number.POSITIVE_INFINITY;
   for (let pages = 0; comments.length < total; pages += 1) {
     if (pages >= MAX_PAGES) throw new WireError('jira comments page count');
-    const page = recordAt(await call(`/issue/${encodeURIComponent(id)}/comment?startAt=${comments.length}&maxResults=${PAGE_SIZE}`), 'jira comments');
+    const page = recordAt(await call(`${path}/comment?startAt=${comments.length}&maxResults=${PAGE_SIZE}`), 'jira comments');
     if (typeof page.total !== 'number' || !Number.isInteger(page.total) || page.total < 0) throw new WireError('jira comments total');
     total = page.total;
     const read = arrayAt(page.comments, 'jira comments').map(commentOf);
@@ -176,4 +181,26 @@ export async function readLinkTypes(call: JiraCall): Promise<JiraLinkType[]> {
     const type = recordAt(t, 'jira link types');
     return { name: textAt(type, 'name', 'jira link type'), inward: textAt(type, 'inward', 'jira link type'), outward: textAt(type, 'outward', 'jira link type') };
   });
+}
+
+export interface JiraMyself { accountId: string; displayName?: string }
+/** A transition the issue can take now (#820): its id and the status it leads to. */
+export interface JiraTransition { id: string; to: string }
+
+export async function readMyself(call: JiraCall): Promise<JiraMyself> {
+  const me = recordAt(await call('/myself'), 'jira myself');
+  const name = me.displayName;
+  return { accountId: textAt(me, 'accountId', 'jira myself'), ...(typeof name === 'string' ? { displayName: name } : {}) };
+}
+
+export async function readTransitions(call: JiraCall, id: string): Promise<JiraTransition[]> {
+  const json = recordAt(await call(`${issuePath(id)}/transitions`), 'jira transitions');
+  return arrayAt(json.transitions, 'jira transitions').map((t) => {
+    const transition = recordAt(t, 'jira transitions');
+    return { id: textAt(transition, 'id', 'jira transition'), to: textAt(recordAt(transition.to, 'jira transition to'), 'name', 'jira transition to') };
+  });
+}
+
+export async function postTransition(call: JiraCall, id: string, transition: string): Promise<void> {
+  await call(`${issuePath(id)}/transitions`, { method: 'POST', body: JSON.stringify({ transition: { id: transition } }) });
 }
