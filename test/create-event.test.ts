@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, isUuid, reduce } from '../src/orchestrator.js';
-import { createEvent, createTask, HIVE_ISSUE_FIELDS_MESSAGE, LABELS_MESSAGE, STATUS_MESSAGE, STATUS_OR_STAGE_MESSAGE, HIVE_OFF_MESSAGE, NO_STAGE_ON_SOURCE_MESSAGE, notInFlowNotice, offProjectNotice, noColumnMessage, noCreateMessage, PR_HIVE_ONLY_MESSAGE, PR_TAKEN_MESSAGE, PR_URL_MESSAGE, UNKNOWN_SOURCE_MESSAGE, UNKNOWN_STAGE_MESSAGE, WORKSPACE_ON_SOURCE_MESSAGE, type CreateDeps } from '../src/create-task.js';
+import { createEvent, createTask, ISSUE_TYPE_MESSAGE, NO_ISSUE_TYPES_MESSAGE, parentMessage, HIVE_ISSUE_FIELDS_MESSAGE, LABELS_MESSAGE, STATUS_MESSAGE, STATUS_OR_STAGE_MESSAGE, HIVE_OFF_MESSAGE, NO_STAGE_ON_SOURCE_MESSAGE, notInFlowNotice, offProjectNotice, noColumnMessage, noCreateMessage, PR_HIVE_ONLY_MESSAGE, PR_TAKEN_MESSAGE, PR_URL_MESSAGE, UNKNOWN_SOURCE_MESSAGE, UNKNOWN_STAGE_MESSAGE, WORKSPACE_ON_SOURCE_MESSAGE, type CreateDeps } from '../src/create-task.js';
 import { CreateRefusedError, IssuePlacementError } from '../src/source-create.js';
 import { taskOfPr } from '../src/activities.js';
-import { GITHUB_ENTRY } from './fakes.js';
+import { GITHUB_ENTRY, JIRA_ENTRY } from './fakes.js';
 import type { HiveEvent, Source, SourceConfig, State, Task } from '../src/types.js';
 import { flowed } from './fixtures/main-flow.js';
 
@@ -42,16 +42,19 @@ const ROADMAP = { ...GITHUB_ENTRY, name: 'roadmap', repository: 'acme/app' };
 const COMB = { prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [ROADMAP, { ...GITHUB_ENTRY, name: 'notes' }] };
 const ON_SOURCE: State = { ...STATE, ...flowed([{ name: 'fila', from: { roadmap: ['Todo'] }, prompt: 'x' }, { name: 'later', from: {} }]) };
 const REF = { id: '9', url: 'https://github.com/acme/app/issues/9' };
+const JIRA_REF = { id: 'ABC-7', url: 'https://acme.example/browse/ABC-7' };
+const TICKET: Task = { item: { itemId: 'tickets:10007', id: 'ABC-7', title: 'Fix login', body: '', url: JIRA_REF.url, source: 'tickets' }, stage: 'fila', boardColumn: 'To Do', auto: true };
+const JIRA_COMB = { ...COMB, sources: [...COMB.sources, JIRA_ENTRY] };
 const MADE: Task = { item: { itemId: 'roadmap:PVTI_9', id: '9', title: 'Fix login', body: '', url: '', source: 'roadmap' }, stage: 'fila', boardColumn: 'Todo', auto: true };
 
-function fakeDeps(comb = COMB, { listed = true, fail, pollFails, offProject = false }: { listed?: boolean; fail?: Error; pollFails?: string; offProject?: boolean } = {}) {
+function fakeDeps(comb: CreateDeps['config']['comb'] = COMB, { listed = true, fail, pollFails, offProject = false, canCreate }: { listed?: boolean; fail?: Error; pollFails?: string; offProject?: boolean; canCreate?: CreateDeps['canCreate'] } = {}) {
   const made: unknown[] = []; const polled: string[][] = []; const events: string[] = [];
   let state = ON_SOURCE;
   const deps: CreateDeps = {
-    state: ON_SOURCE, config: { comb },
-    sources: new Map<string, Pick<Source, 'create'>>([['roadmap', { create: async (f) => { if (fail) throw fail; made.push(f); return offProject ? { ref: REF } : { itemId: 'roadmap:PVTI_9', ref: REF }; } }], ['notes', {}]]),
+    state: ON_SOURCE, config: { comb }, ...(canCreate === undefined ? {} : { canCreate }),
+    sources: new Map<string, Pick<Source, 'create'>>([['roadmap', { create: async (f) => { if (fail) throw fail; made.push(f); return offProject ? { ref: REF } : { itemId: 'roadmap:PVTI_9', ref: REF }; } }], ['notes', {}], ['tickets', { create: async (f) => { if (fail) throw fail; made.push(f); return { itemId: 'tickets:10007', ref: JIRA_REF }; } }]]),
     dispatch: async (e) => { events.push(e.type); return []; },
-    poll: async (names) => { polled.push(names); if (pollFails) throw new Error(pollFails); if (listed) state = { ...state, tasks: [MADE] }; },
+    poll: async (names) => { polled.push(names); if (pollFails) throw new Error(pollFails); if (listed) state = { ...state, tasks: [MADE, TICKET] }; },
     latest: () => state,
   };
   return { deps, made, polled, events };
@@ -236,4 +239,37 @@ test('createTask answers a create refusal 400, a placement failure 502 with the 
   const placement = new IssuePlacementError(`issue ${REF.url} was created but not labeled or placed on the Project: down`, REF);
   assert.deepEqual(await createTask(fakeDeps(COMB, { fail: placement }).deps, body), { status: 502, message: placement.message, ref: REF });
   assert.deepEqual(await createTask(fakeDeps(COMB, { fail: new Error('no access') }).deps, body), { status: 502, message: 'no access' });
+});
+
+// canCreate still refuses a jira source until Task 9: the tests hand one that accepts it
+const OPEN = { canCreate: () => true };
+
+test('createTask creates in a jira source with its issue type and parent, polls it and answers the task under its key (#831)', async () => {
+  const run = fakeDeps(JIRA_COMB, OPEN);
+  assert.deepEqual(await createTask(run.deps, { title: 'Fix login', source: 'tickets', status: 'To Do', issueType: 'Sub-task', parent: 'tickets:10001' }), { id: 'ABC-7', itemId: 'tickets:10007', ref: JIRA_REF, stage: 'fila' });
+  assert.deepEqual([run.made, run.polled], [[{ title: 'Fix login', body: '', column: 'To Do', labels: [], issueType: 'Sub-task', parent: 'tickets:10001' }], [['tickets']]]);
+});
+
+test('issueType or parent on a source with no issue types, a bad issueType and a parent outside the source are refused before create (#831)', async () => {
+  const cases: [Record<string, unknown>, string][] = [
+    [{ source: 'roadmap', issueType: 'Story' }, NO_ISSUE_TYPES_MESSAGE], [{ source: 'roadmap', parent: 'roadmap:PVTI_1' }, NO_ISSUE_TYPES_MESSAGE],
+    [{ source: 'tickets', issueType: '' }, ISSUE_TYPE_MESSAGE], [{ source: 'tickets', issueType: 'x'.repeat(101) }, ISSUE_TYPE_MESSAGE], [{ source: 'tickets', issueType: 7 }, ISSUE_TYPE_MESSAGE],
+    [{ source: 'tickets', parent: 'roadmap:PVTI_1' }, parentMessage('tickets')], [{ source: 'tickets', parent: 'tickets:' }, parentMessage('tickets')], [{ source: 'tickets', parent: 10001 }, parentMessage('tickets')],
+  ];
+  for (const [extra, message] of cases) {
+    const run = fakeDeps(JIRA_COMB, OPEN);
+    assert.deepEqual(await createTask(run.deps, { title: 'x', status: 'To Do', ...extra }), { status: 400, message }, JSON.stringify(extra));
+    assert.deepEqual(run.made, [], JSON.stringify(extra));
+  }
+});
+
+test('a failed create names the source\'s type in hive.log: Jira for a jira source, GitHub as before (#831)', async () => {
+  const lines: string[] = [];
+  const log = { warn: (line: string) => { lines.push(line); } };
+  const refused = new CreateRefusedError('a Jira issue always has a status');
+  for (const source of ['tickets', 'roadmap']) {
+    const run = fakeDeps(JIRA_COMB, { ...OPEN, fail: refused });
+    await createTask({ ...run.deps, log }, { title: 'x', source, status: 'To Do' });
+  }
+  assert.deepEqual(lines, ['create on tickets: Jira refused the write: a Jira issue always has a status', 'create on roadmap: GitHub refused the write: a Jira issue always has a status']);
 });

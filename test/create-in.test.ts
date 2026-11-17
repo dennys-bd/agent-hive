@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SourceFields } from '../src/types.js';
-import { canCreate, createInProblem } from '../src/create-in.js';
+import { canCreate, createInProblem, hasIssueTypes, sourceTypeName } from '../src/create-in.js';
 
 test('canCreate: a GitHub source can create only with a repository for new issues (#811)', () => {
   assert.equal(canCreate({ type: 'github', repository: 'acme/app' }), true);
@@ -19,4 +19,9 @@ test('createInProblem answers cannotCreate for a source canCreate refuses, and p
 test('a jira source cannot take new tasks yet, so createIn may not name it (#820)', () => {
   assert.equal(canCreate({ type: 'jira' }), false);
   assert.equal(createInProblem({ hiveSource: true, createIn: 'tickets', sources: [{ name: 'tickets', type: 'jira' }] }), 'settings.error.createIn.cannotCreate');
+});
+
+test('only a jira source has issue types, and each type is named in a log line (#831)', () => {
+  assert.deepEqual([hasIssueTypes('jira'), hasIssueTypes('github'), hasIssueTypes('tracker')], [true, false, false]);
+  assert.deepEqual([sourceTypeName('github'), sourceTypeName('jira'), sourceTypeName(undefined), sourceTypeName('tracker')], ['GitHub', 'Jira', 'the source', 'the source']);
 });
