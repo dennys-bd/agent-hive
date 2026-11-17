@@ -8,8 +8,17 @@ const MS_PER_SECOND = 1000;
 const UNAUTHORIZED = 401;
 const TOO_MANY_REQUESTS = 429;
 const NO_CONTENT = 204;
+const NOT_FOUND = 404;
 // A bare lowercase host: the credential only ever goes to a host the user named, never to one smuggled in through a scheme, path, port or userinfo.
 export const BARE_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/** A 404 (#820): typed, so a reader tells a gone issue apart without matching message text. The message is the transport's, as before. */
+export class JiraNotFoundError extends Error {
+  constructor() {
+    super(`jira api: HTTP ${NOT_FOUND}`);
+    this.name = 'JiraNotFoundError';
+  }
+}
 
 export interface JiraFetchDeps {
   /** Where the login comes from; the stored one by default, so another login can supply it without this function changing. */
@@ -44,6 +53,7 @@ export async function jiraFetch(site: string, path: string, init: RequestInit = 
   });
   if (res.status === UNAUTHORIZED) throw new SourceNotConnectedError(source);
   if (res.status === TOO_MANY_REQUESTS) throw new SourceRateLimitError(retryAtOf(res.headers.get('retry-after'), (deps.now ?? Date.now)()));
+  if (res.status === NOT_FOUND) throw new JiraNotFoundError();
   if (!res.ok) throw new Error(`jira api: HTTP ${res.status}`);
   if (res.status === NO_CONTENT) return undefined;
   return res.json().catch(() => {

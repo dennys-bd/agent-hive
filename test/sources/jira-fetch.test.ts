@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { jiraFetch } from '../../src/sources/jira-fetch.js';
+import { JiraNotFoundError, jiraFetch } from '../../src/sources/jira-fetch.js';
 import { isNotConnected, isRateLimited } from '../../src/source-errors.js';
 
 const SITE = 'acme.atlassian.net';
@@ -101,4 +101,9 @@ test('another status, a bad body and every error keep the token, the header and 
   }
   await assert.rejects(jiraFetch(SITE, '/x', undefined, harness(json({}, 503)).deps), { message: 'jira api: HTTP 503' });
   await assert.rejects(jiraFetch(SITE, '/x', undefined, harness(new Response('nope', { status: 200 })).deps), { message: 'jira api: invalid JSON body' });
+});
+
+test('a 404 throws JiraNotFoundError, worded as the status and never quoting the body (#820)', async () => {
+  const { deps } = harness(json({ errorMessages: ['Issue does not exist'] }, 404));
+  await assert.rejects(jiraFetch(SITE, '/issue/10001', {}, deps), (err: unknown) => err instanceof JiraNotFoundError && err.message === 'jira api: HTTP 404');
 });
