@@ -67,7 +67,7 @@ async function agentLaunch(deps: LocalPtyDeps, spec: RunSpec, agent: AgentSpec):
   const run: AgentRun = { ...agent.run, ptyId, cwd, port, hooksPath: hooksPath(deps.home), mcpPath, ...protocol };
   const argv = agent.copy ? runner.copy(run, agent.copy.from, agent.copy.name) : runner.launch(run);
   if (argv === undefined) throw new Error(`${AGENTS[agent.id].label} cannot copy a session`);
-  const env = { ...spec.env, ...runner.runEnv(server), ...spec.lent }; // #927: no workspace variable stands in for the MCP secret; a lent value wins
+  const env = { ...spec.env, ...runner.runEnv(server, run), ...spec.lent }; // #927: no workspace variable stands in for the MCP secret; a lent value wins
   const command = agentCommand(agent.id, deps.platform, { ...deps.env, ...spec.env }); // #633
   return { ...shared(spec, port), env, ...(promptPath === undefined ? {} : { promptPath }), agent: { command, argv } };
 }
