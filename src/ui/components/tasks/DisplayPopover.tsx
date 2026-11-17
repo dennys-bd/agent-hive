@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { DisplayControls } from '@/hooks/use-flow-view';
 import { type MessageKey, t } from '@/i18n';
+import { sourceOwner } from '@/lib/flow-sources';
 import { type DisplayOptions, HIDDEN_EPICS, LOOP_LABELS, LOOPS } from '@/lib/flow-view';
 
 type Patch = (patch: Partial<DisplayOptions>) => void;
@@ -22,7 +23,7 @@ export interface DisplaySource { name: string; detail?: string; count: number }
 export function displaySources(nav: SourcesNav | undefined, tasks: Task[]): DisplaySource[] {
   const count = (name: string): number => tasks.filter((c) => sourceOf(c) === name).length;
   const hive = nav?.hiveSource === false ? [] : [{ name: HIVE_SOURCE, count: count(HIVE_SOURCE) }];
-  return [...hive, ...(nav?.sources ?? []).map((s) => ({ name: s.name, detail: `${s.owner} · ${t(`tasks.header.source.${s.type}` as MessageKey)}`, count: count(s.name) }))];
+  return [...hive, ...(nav?.sources ?? []).map((s) => ({ name: s.name, detail: `${sourceOwner(s)} · ${t(`tasks.header.source.${s.type}` as MessageKey)}`, count: count(s.name) }))];
 }
 
 /** The header's legend (decision 10): todas as sources, the checked names in the popover's order, or nenhuma source; a stale name is ignored. */

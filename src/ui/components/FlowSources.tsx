@@ -1,4 +1,4 @@
-import { HexagonIcon, type LucideIcon, MoreHorizontalIcon, SquareKanbanIcon } from 'lucide-react';
+import { HexagonIcon, type LucideIcon, MoreHorizontalIcon, SquareKanbanIcon, TicketIcon } from 'lucide-react';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { fixedShortcut } from '../../shortcut-registry';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { t } from '@/i18n';
 import { getJson } from '@/lib/api';
+import { sourceOwner } from '@/lib/flow-sources';
 import { isInDialog, isMac, isTextField, pressedFixed } from '@/lib/shortcut-bindings';
 
 /** What the flow sidebar knows of the sources (redesign 09): the configured sources, the transport the project list is read with, and
@@ -24,7 +25,7 @@ export interface FlowSourcesProps { nav: SourcesNav; tasks: Task[]; selected?: s
 
 const ROW = 'flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-accent/50 data-[selected]:bg-muted';
 const ICON = 'size-4 shrink-0 text-muted-foreground';
-const TYPE_ICON: Record<SourceConfig['type'], LucideIcon> = { github: SquareKanbanIcon }; // lucide has no GitHub brand icon (decision 12)
+const TYPE_ICON: Record<SourceConfig['type'], LucideIcon> = { github: SquareKanbanIcon, jira: TicketIcon }; // lucide has no GitHub brand icon (decision 12)
 
 // The config keeps only the owner and the number; whether the owner is a user or an org lives in the project's own url, which the settings
 // list answers
@@ -110,7 +111,7 @@ function SourceRow({ source, index, count, nav, isSelected, onPick, onOnly }: So
   return (
     // biome-ignore lint/a11y/useSemanticElements: see above
     <div
-      role="button" tabIndex={0} title={tipOf(source.name, source.owner, keyOf(index))} className={ROW} data-selected={isSelected ? '' : undefined} aria-pressed={isSelected}
+      role="button" tabIndex={0} title={tipOf(source.name, sourceOwner(source), keyOf(index))} className={ROW} data-selected={isSelected ? '' : undefined} aria-pressed={isSelected}
       onClick={(e) => { if (e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest('button')) onPick(source.name); }}
       onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onPick(source.name); } }}
     >
@@ -120,7 +121,7 @@ function SourceRow({ source, index, count, nav, isSelected, onPick, onOnly }: So
         <Count n={count} />
         <SourceMenu source={source} nav={nav} onOnly={onOnly} />
       </span>
-      <span className="pl-6 text-muted-foreground text-xs">{`${source.owner} · ${t(`flow.source.type.${source.type}`)}`}</span>
+      <span className="pl-6 text-muted-foreground text-xs">{`${sourceOwner(source)} · ${t(`flow.source.type.${source.type}`)}`}</span>
     </div>
   );
 }

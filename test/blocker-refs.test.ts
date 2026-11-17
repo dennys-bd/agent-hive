@@ -8,6 +8,7 @@ import { namespaced } from '../src/source.js';
 import type { ItemBlockers, Source, SourceConfig } from '../src/types.js';
 import { EPICS, FILTER, FIXED, goneItem } from './fakes.js';
 import { githubRefs } from '../src/sources/github-refs.js';
+import { jiraRefs } from '../src/sources/jira-refs.js';
 
 test('GitHub\'s grammar reads 12 and #12 as 12, owner/repo#12 as it is, and nothing else: no acme/r12, no task id, no 10-digit number (#810)', () => {
   assert.equal(REF_GRAMMARS.github, githubRefs);
@@ -66,4 +67,12 @@ test('namespaced under qualifyId prefixes only what the type calls short: ABC-12
   assert.deepEqual((await github.listItems())[0].item.blockers, shown);
   for (const ref of ['foo-12', 'acme/r#12']) await github.relate?.('work:PVTI_1', { action: 'add', kind: 'blockedBy', ref });
   assert.deepEqual(askedGh, ['PVTI_1 12', 'PVTI_1 acme/r#12']);
+});
+
+test('Jira\'s grammar reads a key as it is and nothing else, and calls no ref short (#820)', () => {
+  assert.equal(REF_GRAMMARS.jira, jiraRefs);
+  const cases: [string, string | undefined][] = [['ABC-12', 'ABC-12'], [' AB_2-7 ', 'AB_2-7'], ['abc-12', undefined], ['12', undefined], ['acme/r#12', undefined], ['', undefined]];
+  for (const [text, ref] of cases) assert.equal(jiraRefs.refOf(text), ref, JSON.stringify(text));
+  assert.deepEqual(['ABC-12', '12'].map((id) => jiraRefs.isShort(id)), [false, false]);
+  assert.equal(jiraRefs.forms, 'ABC-12');
 });

@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
-import { sourceSummary, needsGithubToken, NEW_SOURCE_TYPES, newSourceDraft, newSourceProblem } from '../src/ui/lib/flow-sources.js';
+import { sourceOwner, sourceSummary, TYPE_LABEL, needsGithubToken, NEW_SOURCE_TYPES, newSourceDraft, newSourceProblem } from '../src/ui/lib/flow-sources.js';
+import { GITHUB_ENTRY, JIRA_ENTRY } from './fakes.js';
 import { emptySource } from '../src/ui/lib/settings-form.js';
 import type { TaskRuleDraft } from '../src/ui/lib/setup-source-task-props.js';
 
@@ -53,4 +54,13 @@ test('needsGithubToken: only api without a connected account (#514)', () => {
   assert.equal(needsGithubToken('cli', undefined), false);
   assert.equal(needsGithubToken('api', { connected: false }), true);
   assert.equal(needsGithubToken('api', { connected: true, login: 'ana' }), false);
+});
+
+test('a jira source has its label, its site as its owner part, and its type copy in both languages (#820)', () => {
+  assert.equal(TYPE_LABEL.jira, 'settings.sources.type.jira');
+  assert.deepEqual([sourceOwner(GITHUB_ENTRY), sourceOwner(JIRA_ENTRY)], ['acme', 'acme.example']);
+  for (const [language, project] of [['en', 'jira project'], ['pt', 'projeto jira']] as const) {
+    setLanguage(language);
+    assert.deepEqual([t('settings.sources.type.jira'), t('flow.source.type.jira'), t('tasks.header.source.jira')], ['Jira', project, project], language);
+  }
 });

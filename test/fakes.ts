@@ -176,7 +176,14 @@ export const sourceEntry = (fields: Record<string, unknown>): Record<string, unk
  * them to every GitHub entry, switchAt on the fixture's own first stage; a key the entry sets wins, undefined included. */
 export const EPICS = { epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila', epicDeleteActivity: false } as const;
 /** The GitHub source every setup body fixture sends. */
-export const GITHUB_ENTRY: SourceConfig = { name: SOURCE, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
+export const GITHUB_ENTRY: Extract<SourceConfig, { type: 'github' }> = { name: SOURCE, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
+
+/** A Jira source (#820): every key its member requires, switchAt on STAGES' one stage. */
+export const JIRA_ENTRY: Extract<SourceConfig, { type: 'jira' }> = {
+  name: 'tickets', qualifyId: false, type: 'jira', site: 'acme.example', project: 'ABC', filter: [], taskProps: FIXED,
+  epics: 'ignore', epicFollows: 'behind', switchAt: 'fila', tree: { epics: false, subtasks: false }, blockingLinkTypes: ['Blocks'],
+  issueType: 'Story', subtaskType: 'Sub-task', doneStatus: 'Done',
+};
 
 /** A move to `column` (#286): what every onStart and most onFinish entries are. */
 export const move = (column: string): MoveAction => ({ type: 'move', column });

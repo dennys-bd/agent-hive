@@ -23,7 +23,7 @@ const missed = (miss: RouteMiss): CreateRoute => ({ taken: false, missed: miss }
 
 /** facetsOf's counterpart: a new issue has no assignee, milestone or Project field besides Status, and facets leave Status out. */
 export const draftFacets = (draft: CreateDraft, source: SourceConfig): ItemFacets =>
-  ({ assignees: [], labels: draft.labels, ...(source.repository === undefined ? {} : { repository: source.repository }), fields: {} });
+  ({ assignees: [], labels: draft.labels, ...(source.type === 'github' && source.repository !== undefined ? { repository: source.repository } : {}), fields: {} });
 
 /** itemReader's counterpart: what a task-properties rule reads of the draft. */
 export const draftReader = (draft: CreateDraft) => (field: string): string[] => {

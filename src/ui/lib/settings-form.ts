@@ -104,8 +104,8 @@ export const emptySource = (workspace = '', flowId = ''): SourceDraft => ({
 // switchAt is set by draftFrom once the stages are drafted (#30): their ids come from the rows; taskProps too, once the flows and stages are (#670)
 const sourceDraft = (b: SourceConfig): SourceDraft => ({
   ...emptySource(), name: b.name, savedName: b.name, qualifyId: b.qualifyId, prefix: b.prefix ?? '', type: b.type,
-  owner: b.owner, number: String(b.number), repository: b.repository ?? '', filter: b.filter, epics: b.epics, epicFollows: b.epicFollows,
-  epicDeleteActivity: b.epicDeleteActivity,
+  filter: b.filter, epics: b.epics, epicFollows: b.epicFollows,
+  ...(b.type === 'github' ? { owner: b.owner, number: String(b.number), repository: b.repository ?? '', epicDeleteActivity: b.epicDeleteActivity } : {}),
 });
 
 // #846: the saved name as its row's id; hive, or a name no row has, stays as written for createInDraftProblem to name

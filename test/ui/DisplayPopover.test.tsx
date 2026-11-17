@@ -2,7 +2,7 @@ import { type BoundFunctions, type queries, render, screen, within } from '@test
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import type { SourcesNav } from '@/components/FlowSources';
-import { displayProps } from '@/components/tasks/DisplayPopover';
+import { displayProps, displaySources } from '@/components/tasks/DisplayPopover';
 import { useDisplayOptions } from '@/hooks/use-flow-view';
 import { setLanguage } from '@/i18n';
 import { readFlowView } from '@/lib/flow-view';
@@ -146,4 +146,14 @@ test('in English: display, loops, loop labels, hide epics, the switch and the le
   await user.click(pop.getByRole('checkbox', { name: 'site' }));
   expect(legend()).toBe('no source');
   expect(pop.getByRole('button', { name: 'all' })).toBeInTheDocument();
+});
+
+const JIRA: SourceConfig = {
+  name: 'tickets', qualifyId: false, type: 'jira', site: 'acme.example', project: 'ABC', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: null }, rules: [] },
+  epics: 'ignore', epicFollows: 'behind', switchAt: 'fila', tree: { epics: false, subtasks: false }, blockingLinkTypes: [], issueType: 'Story', subtaskType: 'Sub-task', doneStatus: 'Done',
+};
+
+test('a jira source\'s row names its site and its type (#820)', () => {
+  setLanguage('en');
+  expect(displaySources({ sources: [JIRA], auth: 'cli', hiveSource: false }, [])).toEqual([{ name: 'tickets', detail: 'acme.example · jira project', count: 0 }]);
 });

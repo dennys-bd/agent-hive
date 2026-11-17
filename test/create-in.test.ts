@@ -15,3 +15,8 @@ test('createInProblem answers cannotCreate for a source canCreate refuses, and p
   const tracker = { name: 'tracker', type: 'tracker' as unknown as SourceFields['type'] };
   assert.equal(createInProblem({ hiveSource: true, createIn: 'tracker', sources: [tracker] }, (s) => (s.type as string) === 'tracker'), undefined);
 });
+
+test('a jira source cannot take new tasks yet, so createIn may not name it (#820)', () => {
+  assert.equal(canCreate({ type: 'jira' }), false);
+  assert.equal(createInProblem({ hiveSource: true, createIn: 'tickets', sources: [{ name: 'tickets', type: 'jira' }] }), 'settings.error.createIn.cannotCreate');
+});

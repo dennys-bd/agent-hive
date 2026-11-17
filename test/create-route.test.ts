@@ -4,7 +4,7 @@ import { draftFacets, draftReader, routeOf, type CreateDraft } from '../src/crea
 import { entryFor } from '../src/task-entry.js';
 import { createGithubSource } from '../src/sources/github.js';
 import type { FilterRule, Flow, SourceConfig, SourceTaskProps, Stage } from '../src/types.js';
-import { fakeGql, FIXED, GITHUB_ENTRY } from './fakes.js';
+import { fakeGql, FIXED, GITHUB_ENTRY, JIRA_ENTRY } from './fakes.js';
 import { itemNode } from './read-model/fixtures.js';
 
 const st = (name: string, from: Record<string, string[]> = {}): Stage => ({ name, from, prompt: '/x' });
@@ -94,4 +94,8 @@ test('routeOf agrees with the poll: the same labels and Status, listed through t
     assert.equal(answer.entry?.stage, stage.name, `${labels}/${status}: stage`);
     assert.equal(answer.workspace, listed.item.workspaceHint ?? props.defaults.workspace, `${labels}/${status}: workspace`);
   }
+});
+
+test('draftFacets carries no repository for a jira source (#820)', () => {
+  assert.deepEqual(draftFacets({ source: 'tickets', title: 'T', labels: ['api'], status: 'To Do' }, JIRA_ENTRY), { assignees: [], labels: ['api'], fields: {} });
 });

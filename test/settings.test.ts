@@ -645,8 +645,12 @@ test('POST /hooks/status answers the limits line for a valid payload, an empty b
 
 test('POST /settings carries each source\'s epics keys: written inside the source, a change rebuilds it, and a missing key, an unknown mode or a switchAt off the flow answers 400 before the write (#30)', async (t) => {
   const { base, home, configs } = await start(t);
-  const saved = async (): Promise<SourceConfig> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.sources[0];
-  const epicsOf = ({ epics, epicFollows, switchAt, epicDeleteActivity }: SourceConfig) => ({ epics, epicFollows, switchAt, epicDeleteActivity });
+  const saved = async (): Promise<Extract<SourceConfig, { type: 'github' }>> => {
+    const [source] = (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.sources;
+    assert.ok(source.type === 'github');
+    return source;
+  };
+  const epicsOf = ({ epics, epicFollows, switchAt, epicDeleteActivity }: Extract<SourceConfig, { type: 'github' }>) => ({ epics, epicFollows, switchAt, epicDeleteActivity });
   assert.equal((await postSettings(base, BODY)).status, 200);
   assert.deepEqual(epicsOf(await saved()), EPICS);
   const before = configs.length;

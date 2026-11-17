@@ -33,6 +33,9 @@ export function createSource(spec: SourceSpec, deps: SourceDeps): Source {
       const gql = deps.gql ?? gqlFor((auth ?? parseAuth(undefined)).github, { ghToken: deps.ghToken });
       return createGithubSource(source, cited, deps.log ? loggedGql(gql, deps.log) : gql, deps.log, deps.items);
     }
+    case 'jira':
+      // #820: the adapter lands later in this delivery; until the parser accepts the type, no spec reaches here
+      throw new Error(`source ${source.name}: the jira adapter is not built yet`);
   }
 }
 
