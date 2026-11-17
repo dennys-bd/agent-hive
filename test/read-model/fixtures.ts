@@ -3,9 +3,11 @@ import type { TestContext } from 'node:test';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
 import { checkPath, pullPath, reviewsPath } from '../../src/read-model/pulls.js';
 import { assigneesPath, issueTypesPath, labelsPath, milestonesPath, repoPath } from '../../src/read-model/repo-scopes.js';
+import type { JiraCredential } from '../../src/credentials.js';
 import type { RefetchDeps } from '../../src/read-model/reconcile.js';
 import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
 import type { CommentRow, IssueRow, PullKey, RepoRow } from '../../src/read-model/rows.js';
+import type { JiraCall, JiraIssue } from '../../src/sources/jira-queries.js';
 import type { GhItemNode, GhPullRequest } from '../../src/sources/github-queries.js';
 import type { RepoRef } from '../../src/repos/repositories.js';
 import type { Gql, ProjectPr } from '../../src/types.js';
@@ -196,3 +198,41 @@ export const itemNode = (n: number, status: string, updatedAt = T1, content: Par
   },
   ...extra,
 });
+
+// #824: a Jira site for the read model's round. Ids are 10000 + n across projects: every project of a site shares the account's store key
+export const JIRA_SITE = 'acme.example';
+export const JIRA_CRED: JiraCredential = { email: 'ana@example.com', token: 'fake-token-824', accountId: 'acc-1' };
+export const JIRA_ROWS = `jira:${JIRA_SITE}:acc-1`;
+export const JIRA_T1 = '2026-10-05T09:00:00.000+0000'; // before NOW, so an incremental window is never negative
+export const jiraIssue = (project: string, n: number, updated = JIRA_T1, title = `Issue ${n}`): JiraIssue => ({
+  id: String(10000 + n), key: `${project}-${n}`,
+  fields: { summary: title, updated, status: { name: 'To Do', statusCategory: { key: 'new' } }, issuetype: { name: 'Story', hierarchyLevel: 0 } },
+});
+export const jiraPage = (issues: JiraIssue[]): Record<string, unknown> => ({ issues, names: { summary: 'Summary' }, schema: { summary: { type: 'string' } }, isLast: true });
+const JIRA_FIELDS = [{ id: 'summary', name: 'Summary', schema: { type: 'string' } }];
+const JIRA_STATUSES = [{ name: 'Story', statuses: [{ name: 'To Do', statusCategory: { key: 'new' } }] }];
+const STATUSES_PATH = /^\/project\/[A-Z][A-Z0-9_]*\/statuses$/;
+const JQL_PROJECT = /^project = "([A-Z][A-Z0-9_]*)"/;
+
+export interface JiraSent { site: string; path: string; jql?: string; fields?: unknown }
+/** Jira as a fake (#824): each `<site>/<project>`'s searches answer in order, an Error thrown, a search past the end an error too; fields and
+ * statuses answer whenever asked. The queues are shared by every call(site), as one site's transport is. */
+export function fakeJira(searches: Record<string, unknown[]>): { call(site: string): JiraCall; sent: JiraSent[]; searches(): JiraSent[] } {
+  const sent: JiraSent[] = [];
+  const next = new Map<string, number>();
+  const call = (site: string): JiraCall => async (path, init = {}) => {
+    const body = typeof init.body === 'string' ? (JSON.parse(init.body) as { jql?: string; fields?: unknown }) : {};
+    sent.push({ site, path, ...(body.jql === undefined ? {} : { jql: body.jql, fields: body.fields }) });
+    if (path === '/field') return JIRA_FIELDS;
+    if (STATUSES_PATH.test(path)) return JIRA_STATUSES;
+    if (path !== '/search/jql') throw new Error(`fake jira: unexpected ${path}`);
+    const key = `${site}/${JQL_PROJECT.exec(body.jql ?? '')?.[1] ?? '?'}`;
+    const index = next.get(key) ?? 0;
+    next.set(key, index + 1);
+    const answer = searches[key]?.[index];
+    if (answer instanceof Error) throw answer;
+    if (answer === undefined) throw new Error(`fake jira: no search answer ${index} for ${key}`);
+    return answer;
+  };
+  return { call, sent, searches: () => sent.filter((s) => s.path === '/search/jql') };
+}

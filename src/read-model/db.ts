@@ -33,8 +33,8 @@ const COUNTS = `SELECT COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'open')
 const UPSERT_SCOPE = `INSERT INTO sync_scopes (source, repository, kind, cursor, etag, synced_at) VALUES ($source, $repository, $kind, $cursor, $etag, $syncedAt)
   ON CONFLICT (source, repository, kind) DO UPDATE SET cursor = excluded.cursor, etag = excluded.etag, synced_at = excluded.synced_at`;
 
-/** The `repo`, `labels`, `assignees`, `milestones` and `issueTypes` kinds keep only an ETag: each is replaced whole on a 200 (#181, #282). `pulls`: a PR's own fields changed (#186). `pullChanges`: a PR's stored changes, revalidated (#497). */
-export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels' | 'assignees' | 'milestones' | 'issueTypes' | 'pulls' | 'pullChanges';
+/** The `repo`, `labels`, `assignees`, `milestones` and `issueTypes` kinds keep only an ETag: each is replaced whole on a 200 (#181, #282). `pulls`: a PR's own fields changed (#186). `pullChanges`: a PR's stored changes, revalidated (#497). `items`: a Jira project's rows, the kind its cursor already uses in sync_scopes (#824). */
+export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels' | 'assignees' | 'milestones' | 'issueTypes' | 'pulls' | 'pullChanges' | 'items';
 /** A part of a PR's poll (#186, #187): pulls/{n}, its head's check runs, combined status and check suites, and its reviews. */
 export type PullPart = 'pr' | 'runs' | 'status' | 'suites' | 'reviews';
 /** A row of sync_scopes (#180): the two incremental scopes, the full listing's, whose synced_at spaces it, and an open PR's poll parts (#186),
