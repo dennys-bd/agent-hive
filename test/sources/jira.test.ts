@@ -130,10 +130,10 @@ test('comments answers Jira\'s order with the author (Former user for a deleted 
   assert.deepEqual(fake.sent, ['GET /issue/10001/comment'], 'the key comes from the stored row: no issue read');
 });
 
-test('apply rejects every action, naming it (#820)', async () => {
-  for (const action of [{ type: 'close' }, { type: 'archive' }, { type: 'delete' }] as const) {
-    await assert.rejects(adapter({}).apply('10001', action, ''), { message: `"${action.type}" is not an action of a jira source` });
-  }
+test('apply rejects remove, which a Jira source has no Project for, naming it (#823)', async () => {
+  const fake = fakeJira();
+  await assert.rejects(adapter({ call: fake.call }).apply('10001', { type: 'remove' }, ''), { message: '"remove" is not an action of a jira source' });
+  assert.deepEqual(fake.sent, []);
 });
 
 test('resolveFields rejects a doneStatus the project lacks, naming it and the statuses, before reading /myself (#823)', async () => {

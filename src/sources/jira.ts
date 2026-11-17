@@ -4,6 +4,7 @@ import type { ReadModel } from '../read-model/db.js';
 import { SourceNotConnectedError } from '../source-errors.js';
 import type { Citation } from '../tasks.js';
 import type { ItemAction, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
+import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
 import { JiraNotFoundError } from './jira-fetch.js';
 import { jiraItemOf } from './jira-item.js';
 import { isListed, type JiraSourceConfig, listedTasks, projectOf, taskOf } from './jira-listing.js';
@@ -85,12 +86,12 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
   }
 
   // The live read decides, since a stale row could skip a needed move; the re-read keeps a poll read before the move from moving it back
-  async function setColumn(itemId: string, column: string): Promise<void> {
+  async function moveTo(itemId: string, status: string): Promise<void> {
     const cred = await account();
     const before = await readTask(cred, itemId);
-    if (before.task.column === column) return;
-    const transition = (await readTransitions(call, itemId)).find((t) => t.to === column);
-    if (transition === undefined) throw new Error(`${before.task.item.id}: no transition to "${column}"`);
+    if (before.task.column === status) return;
+    const transition = (await readTransitions(call, itemId)).find((t) => t.to === status);
+    if (transition === undefined) throw new Error(`${before.task.item.id}: no transition to "${status}"`);
     await postTransition(call, itemId, transition.id);
     await readTask(cred, itemId);
   }
@@ -111,14 +112,24 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     }));
   }
 
-  // SOURCE_ACTIONS.jira is move alone; 5.5 adds close, delete and archive
-  async function apply(_itemId: string, action: ItemAction): Promise<void> {
-    throw new Error(`"${action.type}" is not an action of a jira source`);
+  // The rows go with the issue: neither a deleted nor an archived one shows in the incremental sync, so the next poll would list it again
+  async function leave(itemId: string, type: 'delete' | 'archive'): Promise<void> {
+    const cred = await account();
+    const { issue } = await readIssue(call, itemId); // the subtask ids before the write, which takes them with it
+    await (type === 'delete' ? deleteIssue(call, itemId) : archiveIssue(call, itemId, issue.key ?? itemId));
+    if (db !== undefined) db.items.removeItems(rowsOf(cred), [itemId, ...subtaskIds(issue)]);
+  }
+
+  // url is not read: the issue id reaches any project. A close reason has no Jira counterpart, so every close is the move to doneStatus
+  async function apply(itemId: string, action: ItemAction): Promise<void> {
+    if (action.type === 'close') return moveTo(itemId, source.doneStatus);
+    if (action.type === 'delete' || action.type === 'archive') return leave(itemId, action.type);
+    throw new Error(`"${action.type}" is not an action of a jira source`); // remove: Jira has no Project to take an item off
   }
 
   async function settingsOptions(): Promise<string[]> {
     return (await readStatuses(call, source.project)).map((s) => s.name);
   }
 
-  return { resolveFields, listItems, stored, item, setColumn, apply, settingsOptions, comments };
+  return { resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments };
 }
