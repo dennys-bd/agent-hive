@@ -656,12 +656,16 @@ export interface Task {
   columnWrite?: ColumnWrite; // set with every setColumn effect, cleared by the poll that confirms, overrides or outlives it (#889)
 }
 
+/** Where an activity's worktree and runs are (#158): `'local'`, the host itself, or a paired machine's certificate fingerprint (`AB:CD:…`). */
+export type MachineId = string;
+
 /** The work in progress inside a workspace (glossary: activity): a task's worktree and branch, or the checkout, and its run. Deleting the
  * activity removes it; its ActivityRecord (same id) stays. */
 export interface Activity {
   id: string; // randomUUID() for a task's activity; `local:<workspace>` for a workspace's local activity
   kind: 'task' | 'local';
   workspace: string; // frozen at creation
+  machine?: MachineId; // #158: frozen at creation like workspace; absent = the local machine. Nothing sets or reads it until a remote machine exists
   slug?: string; // task activities: from the first task's slugFor; names the worktree path, the branch template and the prompt file
   worktree?: string; branch?: string; worktreeGone?: true;
   local?: true; // runs in the workspace's checkout (#444), set by a start's popup
