@@ -9,7 +9,9 @@ import { citedColumns, itemSource } from '../src/tasks.js';
 import { parseConfig } from '../src/config.js';
 import { MAIN_FLOW } from '../src/flows.js';
 import type { FieldWrite, Item, ProjectView, SourceItemRead, Source, SourceConfig, SourceSpec, TaskFilter, TaskRule } from '../src/types.js';
-import { EPICS, SOURCE, STAGES, FILTER, FIXED, chained, combConfig, fakeGql, fakeLog, goneItem, move } from './fakes.js';
+import { SourceNotConnectedError } from '../src/source-errors.js';
+import type { JiraCredential } from '../src/credentials.js';
+import { EPICS, JIRA_ENTRY, SOURCE, STAGES, FILTER, FIXED, chained, combConfig, fakeGql, fakeLog, goneItem, move } from './fakes.js';
 
 const GITHUB_SOURCE = { type: 'github', owner: 'acme', number: 6, filter: FILTER };
 /** The SourceSpec the server would build from a Comb with the GitHub source and `extra` on top (source, columns or a top-level key). */
@@ -928,4 +930,35 @@ test('namespaced hands project and fieldsOf their read options, so ?fresh=1 and 
   await source.project?.({ fresh: true });
   await source.fieldsOf?.('work:PVTI_1', { fresh: true });
   assert.deepEqual(asked, [{ fresh: true }, { fresh: true }]);
+});
+
+const JIRA_CRED: JiraCredential = { email: 'ana@example.com', token: 'fake-token-820', accountId: 'acc-1' };
+
+test('createSource builds a jira adapter over its site\'s call and login; with no store it lists nothing (#820)', async () => {
+  const paths: string[] = [];
+  const statuses = [{ name: 'Story', statuses: [{ name: 'To Do', statusCategory: { key: 'new' } }] }];
+  const spec: SourceSpec = { source: JIRA_ENTRY, stages: [], transitions: [] };
+  const source = createSource(spec, { jira: { call: async (path) => { paths.push(path); return statuses; }, credential: async (site) => (site === 'acme.example' ? JIRA_CRED : undefined) } });
+  assert.deepEqual(await source.settingsOptions(), ['To Do']);
+  assert.deepEqual(paths, ['/project/ABC/statuses']);
+  assert.deepEqual(await source.listItems(), []);
+});
+
+test('namespaced passes a jira source\'s blocker ids untouched under qualifyId: no Jira key is short (#820)', async () => {
+  const blockers = { blockedBy: [{ id: 'ABC-12', title: 'T', state: 'open' as const }], blocking: [] };
+  const adapter: Source = {
+    item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {},
+    listItems: async () => [{ item: { itemId: '10001', id: 'ABC-1', title: 'T', body: '', url: '', blockers }, column: 'To Do' }],
+  };
+  const [listed] = await namespaced({ ...JIRA_ENTRY, qualifyId: true, prefix: 'ABC' }, adapter).listItems();
+  assert.deepEqual([listed.item.itemId, listed.item.id, listed.item.blockers], ['tickets:10001', 'ABC-ABC-1', blockers]);
+});
+
+test('at boot a source whose login is missing is kept and its poll rejects not connected; a save still refuses it (#820)', async () => {
+  const missing = new SourceNotConnectedError('jira:acme.example');
+  const source: Source = { item: goneItem, resolveFields: async () => { throw missing; }, listItems: async () => [], settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {} };
+  const kept = (await resolveSources(new Map([['tickets', source]]), { deferOffline: true })).get('tickets');
+  assert.ok(kept);
+  await assert.rejects(kept.listItems(), missing);
+  await assert.rejects(resolveSources(new Map([['tickets', source]])), { message: 'source tickets: jira:acme.example is not connected' });
 });

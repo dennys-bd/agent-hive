@@ -4,7 +4,12 @@ import { gqlFor, loggedGql } from './sources/github-gql.js';
 import { createGithubSource } from './sources/github.js';
 import { RelationRereadError } from './blocker-errors.js';
 import { REF_GRAMMARS, type RefGrammar } from './blocker-refs.js';
-import { citedColumns } from './tasks.js';
+import { citedColumns, type Citation } from './tasks.js';
+import { jiraCredential, renewJiraName, type JiraCredential } from './credentials.js';
+import { isNotConnected } from './source-errors.js';
+import { jiraFetch } from './sources/jira-fetch.js';
+import { createJiraSource, type JiraSourceConfig } from './sources/jira.js';
+import type { JiraCall } from './sources/jira-queries.js';
 import { parseAuth } from './config.js';
 import { isNetworkError } from './fork.js';
 import type { Logger } from './log.js';
@@ -12,10 +17,18 @@ import type { ItemStore } from './read-model/items.js';
 import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, ReadOptions, SourceItem, SourceItemRead } from './types.js';
 import { flatten } from './flows.js';
 
+/** #820: what a test fakes of a jira source; each part defaults to the real one: jiraFetch, the stored login, the name rewrite. */
+export interface JiraDeps {
+  call?: JiraCall;
+  credential?: (site: string) => Promise<JiraCredential | undefined>;
+  renewName?: (site: string, name: string) => Promise<void>;
+}
+
 export interface SourceDeps {
   gql?: Gql; // GraphQL runner, injectable for tests; the default is the transport `auth.github` names
   log?: Logger; // every GraphQL call is logged at debug
   ghToken?: GhToken; // #503: cli's credential, held once per daemon; absent, cli GraphQL stays on gh
+  jira?: JiraDeps; // #820: a jira source's transport, login and name rewrite; absent, the real ones
   items?: ItemStore; // #190: the read model a GitHub adapter stores its items in; absent (headless, setup mode, most tests): the wire as before
 }
 
@@ -34,9 +47,18 @@ export function createSource(spec: SourceSpec, deps: SourceDeps): Source {
       return createGithubSource(source, cited, deps.log ? loggedGql(gql, deps.log) : gql, deps.log, deps.items);
     }
     case 'jira':
-      // #820: the adapter lands later in this delivery; until the parser accepts the type, no spec reaches here
-      throw new Error(`source ${source.name}: the jira adapter is not built yet`);
+      return jiraAdapter(source, cited, deps);
   }
+}
+
+// One transport per site, the credential read on every call, so a reconnect is picked up with no new adapter
+function jiraAdapter(source: JiraSourceConfig, cited: Citation[], deps: SourceDeps): Source {
+  const credential = deps.jira?.credential ?? ((site: string) => jiraCredential(site));
+  const call = deps.jira?.call ?? ((path: string, init?: RequestInit) => jiraFetch(source.site, path, init, { credential }));
+  const renew = deps.jira?.renewName ?? ((site: string, name: string) => renewJiraName(site, name));
+  return createJiraSource(source, cited, {
+    call, credential: () => credential(source.site), renewName: (name) => renew(source.site, name), ...(deps.items === undefined ? {} : { items: deps.items }),
+  });
 }
 
 /** #56, #810: a source's blocker ids as its tasks' own ids read. Under qualifyId an id the type's grammar calls short takes the shown prefix
@@ -163,8 +185,10 @@ export async function resolveSources(sources: ReadonlyMap<string, Source>, opts:
       await source.resolveFields();
       resolved.set(name, source);
     } catch (err) {
-      if (opts.deferOffline !== true || !isNetworkError(err)) throw new Error(`source ${name}: ${reasonOf(err)}`);
-      opts.log?.warn(`source ${name}: offline at boot, resolved on a later poll (${reasonOf(err).split('\n')[0]})`);
+      // #291, #820: neither an offline source nor one whose login is missing is a broken config at boot; its next poll shows why
+      const deferred = isNetworkError(err) || isNotConnected(err);
+      if (opts.deferOffline !== true || !deferred) throw new Error(`source ${name}: ${reasonOf(err)}`);
+      opts.log?.warn(`source ${name}: ${isNotConnected(err) ? 'not connected' : 'offline'} at boot, resolved on a later poll (${reasonOf(err).split('\n')[0]})`);
       resolved.set(name, resolvedOnPoll(name, source, opts.log));
     }
   }
