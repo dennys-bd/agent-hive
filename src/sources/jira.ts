@@ -10,6 +10,7 @@ import { jiraItemOf } from './jira-item.js';
 import { isListed, type JiraSourceConfig, listedTasks, projectOf, taskOf } from './jira-listing.js';
 import { type JiraCall, postTransition, readComments, readIssue, readMyself, readStatuses, readTransitions } from './jira-queries.js';
 import { writeIssue } from './jira-sync.js';
+import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
 
 export type { JiraSourceConfig } from './jira-listing.js';
 
@@ -42,7 +43,10 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     const rows = jiraItemOf(rowsOf(cred), source.project, read.issue, read.names, read.schema);
     const isOwn = projectOf(read.issue) === source.project;
     if (isOwn && db !== undefined) db.transaction(() => writeIssue(db, rows, 'write'));
-    return { task: taskOf(rows, source), isOwn };
+    // #830: its tree read over the stored listing with the issue in its place, so a single read's links equal the next listing's
+    const listing = db === undefined ? [] : db.items.items(rowsOf(cred), db.items.listing(rowsOf(cred), source.project));
+    const links = treeLinks(isOwn ? inPlace(listing, rows) : [rows], source.tree);
+    return { task: withTree(taskOf(rows, source), links.get(rows.item.nodeId), source), isOwn };
   }
 
   async function resolveFields(): Promise<void> {
@@ -78,7 +82,8 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     try {
       const { task, isOwn } = await readTask(cred, itemId);
       if (!isOwn) return { reason: 'project', item: task.item };
-      return { reason: isListed(task, source, columns, cred.displayName) ? 'listing' : 'filter', entry: task };
+      // a parent epics: hide takes off is judged as filtered, as on GitHub: it keeps its entry
+      return { reason: isListed(task, source, columns, cred.displayName) && !isHidden(task, source) ? 'listing' : 'filter', entry: task };
     } catch (err) {
       if (err instanceof JiraNotFoundError) return { reason: 'gone' };
       throw err;
