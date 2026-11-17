@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { fieldRowsOf, jiraItemOf, linksOf } from '../../src/sources/jira-item.js';
-import type { JiraIssue, JiraSchema } from '../../src/sources/jira-queries.js';
+import { fieldRowsOf, jiraItemOf, linksOf, storedKindOf } from '../../src/sources/jira-item.js';
+import type { JiraFieldDef, JiraIssue, JiraSchema } from '../../src/sources/jira-queries.js';
 
 const SOURCE = 'jira:acme.example:acct-1';
 const DESCRIPTION = { version: 1, type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello' }] }] };
@@ -121,4 +121,16 @@ test('fieldRowsOf puts Status first with the statuses, then each field the mappi
     { name: 'Story Points', kind: 'number', options: null },
     { name: 'Components', kind: 'option', options: null },
   ]);
+});
+
+test('storedKindOf names the kind the sync stores a field under, and none for an own field, no schema or an unknown kind (#821)', () => {
+  const cases: [JiraFieldDef, string | undefined][] = [
+    [{ id: 'customfield_1', name: 'Team', schema: { type: 'option' } }, 'option'],
+    [{ id: 'components', name: 'Components', schema: { type: 'array', items: 'component' } }, 'option'],
+    [{ id: 'customfield_2', name: 'Points', schema: { type: 'number' } }, 'number'],
+    [{ id: 'summary', name: 'Summary', schema: { type: 'string' } }, undefined],
+    [{ id: 'customfield_3', name: 'Sprint', schema: { type: 'array', items: 'json' } }, undefined],
+    [{ id: 'thumbnail', name: 'Images', schema: null }, undefined],
+  ];
+  for (const [field, kind] of cases) assert.equal(storedKindOf(field), kind, field.id);
 });

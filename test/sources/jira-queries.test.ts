@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { type JiraCall, postTransition, projectJql, readComments, readFields, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
+import { type JiraCall, postTransition, projectJql, readComments, readAssignable, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
 
 interface Sent { path: string; method: string; body: unknown }
 
@@ -20,6 +20,12 @@ function fakeJira(answers: unknown[]): { call: JiraCall; sent: Sent[] } {
 }
 
 const FIELDS = ['*navigable', 'description'];
+
+// The same page forever, counting the calls: what MAX_PAGES (1000) must stop
+function endless(page: unknown): { call: JiraCall; calls: () => number } {
+  let calls = 0;
+  return { call: async () => { calls += 1; return page; }, calls: () => calls };
+}
 
 test('projectJql quotes the key, adds the relative window and always orders by key', () => {
   assert.equal(projectJql('ABC'), 'project = "ABC" ORDER BY key ASC');
@@ -179,4 +185,97 @@ test('readTransitions answers each transition\'s id and target, postTransition p
   await assert.rejects(postTransition(none.call, 'ABC-1/x', '11'), /id or key/);
   assert.equal(none.sent.length, 0);
   await assert.rejects(readTransitions(fakeJira([{}]).call, '10001'), /jira transitions/);
+});
+
+test('readProjects pages /project/search by startAt until isLast and answers each key and name in Jira\'s order (#821)', async () => {
+  const { call, sent } = fakeJira([
+    { startAt: 0, maxResults: 1, total: 2, isLast: false, values: [{ id: '1', key: 'ABC', name: 'Alpha', projectTypeKey: 'software' }] },
+    { startAt: 1, maxResults: 1, total: 2, isLast: true, values: [{ id: '2', key: 'XYZ', name: 'Zed' }] },
+  ]);
+  assert.deepEqual(await readProjects(call), [{ key: 'ABC', name: 'Alpha' }, { key: 'XYZ', name: 'Zed' }]);
+  assert.deepEqual(sent.map((s) => s.path), ['/project/search?startAt=0&maxResults=100', '/project/search?startAt=1&maxResults=100']);
+});
+
+test('readLabels pages /label until isLast and answers the names (#821)', async () => {
+  const { call, sent } = fakeJira([{ isLast: false, values: ['api', 'wip'] }, { isLast: true, values: ['ux'] }]);
+  assert.deepEqual(await readLabels(call), ['api', 'wip', 'ux']);
+  assert.deepEqual(sent.map((s) => s.path), ['/label?startAt=0&maxResults=100', '/label?startAt=2&maxResults=100']);
+});
+
+test('readProjects and readLabels stop on an empty page, refuse a malformed body, and stop after MAX_PAGES (#821)', async () => {
+  assert.deepEqual(await readProjects(fakeJira([{ values: [] }]).call), []);
+  await assert.rejects(readProjects(fakeJira([{ values: 'nope' }]).call), WireError);
+  await assert.rejects(readProjects(fakeJira([{ isLast: true, values: [{ key: 'ABC' }] }]).call), /jira project name/);
+  await assert.rejects(readLabels(fakeJira([{ isLast: true, values: ['api', 7] }]).call), /jira label/);
+  const projects = endless({ isLast: false, values: [{ key: 'ABC', name: 'Alpha' }] });
+  await assert.rejects(readProjects(projects.call), /jira projects page count/);
+  assert.equal(projects.calls(), 1000);
+  const labels = endless({ isLast: false, values: ['api'] });
+  await assert.rejects(readLabels(labels.call), /jira labels page count/);
+  assert.equal(labels.calls(), 1000);
+});
+
+test('readIssueTypes pages createmeta by its total and answers id, name and subtask; values is read when issueTypes is absent (#821)', async () => {
+  const { call, sent } = fakeJira([
+    { startAt: 0, maxResults: 1, total: 2, issueTypes: [{ id: '10001', name: 'Story', subtask: false, description: 'x' }] },
+    { startAt: 1, maxResults: 1, total: 2, issueTypes: [{ id: '10002', name: 'Sub-task', subtask: true }] },
+  ]);
+  assert.deepEqual(await readIssueTypes(call, 'ABC'), [{ id: '10001', name: 'Story', subtask: false }, { id: '10002', name: 'Sub-task', subtask: true }]);
+  assert.deepEqual(sent.map((s) => s.path), ['/issue/createmeta/ABC/issuetypes?startAt=0&maxResults=100', '/issue/createmeta/ABC/issuetypes?startAt=1&maxResults=100']);
+  const values = fakeJira([{ startAt: 0, total: 1, values: [{ id: '10003', name: 'Bug', subtask: false }] }]);
+  assert.deepEqual(await readIssueTypes(values.call, 'ABC'), [{ id: '10003', name: 'Bug', subtask: false }]);
+});
+
+test('readIssueTypes refuses a bad key before any call, a page without a total, a subtask that is no boolean, and paging past MAX_PAGES (#821)', async () => {
+  const none = fakeJira([]);
+  await assert.rejects(readIssueTypes(none.call, 'abc'), /project key/);
+  assert.equal(none.sent.length, 0);
+  await assert.rejects(readIssueTypes(fakeJira([{ issueTypes: [] }]).call, 'ABC'), /jira issue types total/);
+  await assert.rejects(readIssueTypes(fakeJira([{ total: 1, issueTypes: [{ id: '1', name: 'Story', subtask: 'no' }] }]).call, 'ABC'), /jira issue type subtask/);
+  const never = endless({ startAt: 0, total: 1_000_000, issueTypes: [{ id: '1', name: 'Story', subtask: false }] });
+  await assert.rejects(readIssueTypes(never.call, 'ABC'), /jira issue types page count/);
+  assert.equal(never.calls(), 1000);
+});
+
+test('readCreateFields answers each field\'s name and allowed values, an option\'s value else its name, [] when it allows none (#821)', async () => {
+  const { call, sent } = fakeJira([{ startAt: 0, total: 3, fields: [
+    { fieldId: 'customfield_1', key: 'customfield_1', name: 'Team', required: false, schema: { type: 'option' }, allowedValues: [{ id: '1', value: 'Core' }, { id: '2', value: 'Web' }] },
+    { fieldId: 'priority', name: 'Priority', schema: { type: 'priority' }, allowedValues: [{ id: '3', name: 'High' }, { id: '4' }] },
+    { fieldId: 'summary', name: 'Summary', schema: { type: 'string' } },
+  ] }]);
+  assert.deepEqual(await readCreateFields(call, 'ABC', '10001'), [
+    { name: 'Team', allowedValues: ['Core', 'Web'] }, { name: 'Priority', allowedValues: ['High'] }, { name: 'Summary', allowedValues: [] },
+  ]);
+  assert.deepEqual(sent.map((s) => s.path), ['/issue/createmeta/ABC/issuetypes/10001?startAt=0&maxResults=100']);
+  const values = fakeJira([{ startAt: 0, total: 1, values: [{ fieldId: 'customfield_1', name: 'Team', allowedValues: [{ value: 'Ops' }] }] }]);
+  assert.deepEqual(await readCreateFields(values.call, 'ABC', '10001'), [{ name: 'Team', allowedValues: ['Ops'] }]);
+});
+
+test('readCreateFields refuses a type id that is none and a bad key before any call, and a field with no name (#821)', async () => {
+  const none = fakeJira([]);
+  await assert.rejects(readCreateFields(none.call, 'ABC', '1/x'), /issue type id/);
+  await assert.rejects(readCreateFields(none.call, 'AB-1', '10001'), /project key/);
+  assert.equal(none.sent.length, 0);
+  await assert.rejects(readCreateFields(fakeJira([{ total: 1, fields: [{ fieldId: 'x' }] }]).call, 'ABC', '10001'), /jira create field name/);
+});
+
+test('readAssignable pages until a short page and answers the display names in Jira\'s order, skipping an account without one (#821)', async () => {
+  const full = Array.from({ length: 100 }, (_, i) => (i === 5 ? { accountId: 'acc-5' } : { accountId: `acc-${i}`, displayName: `User ${i}` }));
+  const { call, sent } = fakeJira([full, [{ accountId: 'acc-x', displayName: 'Ana Lima' }]]);
+  const names = await readAssignable(call, 'ABC');
+  assert.deepEqual(names, [...full.flatMap((u) => ('displayName' in u ? [u.displayName] : [])), 'Ana Lima']);
+  assert.deepEqual(sent.map((s) => s.path), [
+    '/user/assignable/search?project=ABC&startAt=0&maxResults=100',
+    '/user/assignable/search?project=ABC&startAt=100&maxResults=100', // the skipped account still counts
+  ]);
+});
+
+test('readAssignable refuses a bad key before any call, a body that is no list, and paging past MAX_PAGES (#821)', async () => {
+  const none = fakeJira([]);
+  await assert.rejects(readAssignable(none.call, '..'), /project key/);
+  assert.equal(none.sent.length, 0);
+  await assert.rejects(readAssignable(fakeJira([{ values: [] }]).call, 'ABC'), /jira assignable/);
+  const never = endless(Array.from({ length: 100 }, (_, i) => ({ accountId: `acc-${i}`, displayName: 'Ana Lima' })));
+  await assert.rejects(readAssignable(never.call, 'ABC'), /jira assignable page count/);
+  assert.equal(never.calls(), 1000);
 });

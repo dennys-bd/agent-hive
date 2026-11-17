@@ -157,10 +157,15 @@ export async function readComments(call: JiraCall, id: string): Promise<JiraComm
   return comments;
 }
 
+/** A project key as a path part (#821): the user's text from Settings, checked before it reaches a REST path, as issuePath does for issues. */
+function projectPart(key: string): string {
+  if (!PROJECT_KEY.test(key)) throw new Error('jira project key is not a Jira key');
+  return encodeURIComponent(key);
+}
+
 /** The union of the project's workflow statuses over its issue types, first seen first. */
 export async function readStatuses(call: JiraCall, key: string): Promise<JiraStatus[]> {
-  if (!PROJECT_KEY.test(key)) throw new Error('jira project key is not a Jira key');
-  const types = arrayAt(await call(`/project/${encodeURIComponent(key)}/statuses`), 'jira statuses');
+  const types = arrayAt(await call(`/project/${projectPart(key)}/statuses`), 'jira statuses');
   const all = types.flatMap((t) => arrayAt(recordAt(t, 'jira statuses').statuses, 'jira statuses').map((s) => {
     const status = recordAt(s, 'jira statuses');
     return { name: textAt(status, 'name', 'jira statuses'), category: textAt(recordAt(status.statusCategory, 'jira statuses'), 'key', 'jira statuses') };
@@ -203,4 +208,110 @@ export async function readTransitions(call: JiraCall, id: string): Promise<JiraT
 
 export async function postTransition(call: JiraCall, id: string, transition: string): Promise<void> {
   await call(`${issuePath(id)}/transitions`, { method: 'POST', body: JSON.stringify({ transition: { id: transition } }) });
+}
+
+export interface JiraProject { key: string; name: string }
+
+interface Page<T> { items: T[]; last: boolean }
+
+// Paged by startAt, as readComments: each endpoint says its own end through pageOf, an empty page ends any of them, and MAX_PAGES stops a
+// body that never ends from holding the request
+async function readPages<T>(call: JiraCall, path: string, what: string, pageOf: (body: unknown, startAt: number) => Page<T>): Promise<T[]> {
+  const read: T[] = [];
+  const join = path.includes('?') ? '&' : '?';
+  for (let pages = 0; ; pages += 1) {
+    if (pages >= MAX_PAGES) throw new WireError(`${what} page count`);
+    const page = pageOf(await call(`${path}${join}startAt=${read.length}&maxResults=${PAGE_SIZE}`), read.length);
+    read.push(...page.items);
+    if (page.last || page.items.length === 0) return read;
+  }
+}
+
+// The PageBean most list endpoints answer: values, ended by isLast
+function valuesPage<T>(body: unknown, what: string, itemOf: (value: unknown) => T): Page<T> {
+  const page = recordAt(body, what);
+  return { items: arrayAt(page.values, what).map(itemOf), last: page.isLast === true };
+}
+
+/** Every project the login can see (#821), in Jira's order. */
+export async function readProjects(call: JiraCall): Promise<JiraProject[]> {
+  return readPages(call, '/project/search', 'jira projects', (body) => valuesPage(body, 'jira projects', (value) => {
+    const project = recordAt(value, 'jira projects');
+    return { key: textAt(project, 'key', 'jira project'), name: textAt(project, 'name', 'jira project') };
+  }));
+}
+
+/** The site's labels (#821): Jira keeps no per-project list. */
+export async function readLabels(call: JiraCall): Promise<string[]> {
+  return readPages(call, '/label', 'jira labels', (body) => valuesPage(body, 'jira labels', (value) => {
+    if (typeof value !== 'string') throw new WireError('jira label');
+    return value;
+  }));
+}
+
+export interface JiraIssueType { id: string; name: string; subtask: boolean }
+/** One field of an issue type's create screen (#821): the values it allows, as the sync stores them. */
+export interface JiraCreateField { name: string; allowedValues: string[] }
+
+const TYPE_ID = /^\d+$/;
+
+// createmeta's pages carry a total and no isLast
+function countedPage<T>(page: Json, list: unknown, startAt: number, what: string, itemOf: (value: unknown) => T): Page<T> {
+  if (typeof page.total !== 'number' || !Number.isInteger(page.total) || page.total < 0) throw new WireError(`${what} total`);
+  const items = arrayAt(list, what).map(itemOf);
+  return { items, last: startAt + items.length >= page.total };
+}
+
+function issueTypeOf(value: unknown): JiraIssueType {
+  const type = recordAt(value, 'jira issue types');
+  if (typeof type.subtask !== 'boolean') throw new WireError('jira issue type subtask');
+  return { id: textAt(type, 'id', 'jira issue type'), name: textAt(type, 'name', 'jira issue type'), subtask: type.subtask };
+}
+
+// An allowed value as jira-item.ts's scalarOf reads one: an option's value, else a priority's, component's or version's name
+function allowedOf(value: unknown): string[] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return [];
+  const { value: text, name } = value as Json;
+  if (typeof text === 'string' && text !== '') return [text];
+  return typeof name === 'string' && name !== '' ? [name] : [];
+}
+
+function createFieldOf(value: unknown): JiraCreateField {
+  const field = recordAt(value, 'jira create fields');
+  return { name: textAt(field, 'name', 'jira create field'), allowedValues: Array.isArray(field.allowedValues) ? field.allowedValues.flatMap(allowedOf) : [] };
+}
+
+/** The project's issue types with their subtask flag (#821), so the form splits issueType from subtaskType. issueTypes is the documented
+ * key; values is read too until a real site confirms which one Jira answers. */
+export async function readIssueTypes(call: JiraCall, project: string): Promise<JiraIssueType[]> {
+  return readPages(call, `/issue/createmeta/${projectPart(project)}/issuetypes`, 'jira issue types', (body, startAt) => {
+    const page = recordAt(body, 'jira issue types');
+    return countedPage(page, page.issueTypes ?? page.values, startAt, 'jira issue types', issueTypeOf);
+  });
+}
+
+/** One issue type's create screen (#821): the only per-project source of allowed values that needs no admin permission. */
+export async function readCreateFields(call: JiraCall, project: string, typeId: string): Promise<JiraCreateField[]> {
+  if (!TYPE_ID.test(typeId)) throw new Error('jira issue type id is not one');
+  return readPages(call, `/issue/createmeta/${projectPart(project)}/issuetypes/${encodeURIComponent(typeId)}`, 'jira create fields', (body, startAt) => {
+    const page = recordAt(body, 'jira create fields');
+    return countedPage(page, page.fields ?? page.values, startAt, 'jira create fields', createFieldOf);
+  });
+}
+
+const nameOf = (value: unknown): string | undefined => {
+  const name = recordAt(value, 'jira assignable').displayName;
+  return typeof name === 'string' && name !== '' ? name : undefined;
+};
+
+/** The display names of the accounts the project's issues can be assigned to (#821), in Jira's order; an account with none is left out.
+ * The pager counts every account read, skipped ones included, so a skip never shifts startAt. */
+export async function readAssignable(call: JiraCall, project: string): Promise<string[]> {
+  // ponytail: a short page ends it, as the spec says; Jira's user search can answer short before the end (it filters after paging). Page
+  // until an empty page if a site misses assignees
+  const names = await readPages(call, `/user/assignable/search?project=${projectPart(project)}`, 'jira assignable', (body) => {
+    const users = arrayAt(body, 'jira assignable').map(nameOf);
+    return { items: users, last: users.length < PAGE_SIZE };
+  });
+  return names.filter((name): name is string => name !== undefined);
 }
