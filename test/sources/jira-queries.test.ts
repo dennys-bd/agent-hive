@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { type JiraCall, postTransition, projectJql, readComments, readFields, readIssue, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
+import { type JiraCall, postTransition, projectJql, readComments, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
 
 interface Sent { path: string; method: string; body: unknown }
 
@@ -213,4 +213,48 @@ test('readProjects and readLabels stop on an empty page, refuse a malformed body
   const labels = endless({ isLast: false, values: ['api'] });
   await assert.rejects(readLabels(labels.call), /jira labels page count/);
   assert.equal(labels.calls(), 1000);
+});
+
+test('readIssueTypes pages createmeta by its total and answers id, name and subtask; values is read when issueTypes is absent (#821)', async () => {
+  const { call, sent } = fakeJira([
+    { startAt: 0, maxResults: 1, total: 2, issueTypes: [{ id: '10001', name: 'Story', subtask: false, description: 'x' }] },
+    { startAt: 1, maxResults: 1, total: 2, issueTypes: [{ id: '10002', name: 'Sub-task', subtask: true }] },
+  ]);
+  assert.deepEqual(await readIssueTypes(call, 'ABC'), [{ id: '10001', name: 'Story', subtask: false }, { id: '10002', name: 'Sub-task', subtask: true }]);
+  assert.deepEqual(sent.map((s) => s.path), ['/issue/createmeta/ABC/issuetypes?startAt=0&maxResults=100', '/issue/createmeta/ABC/issuetypes?startAt=1&maxResults=100']);
+  const values = fakeJira([{ startAt: 0, total: 1, values: [{ id: '10003', name: 'Bug', subtask: false }] }]);
+  assert.deepEqual(await readIssueTypes(values.call, 'ABC'), [{ id: '10003', name: 'Bug', subtask: false }]);
+});
+
+test('readIssueTypes refuses a bad key before any call, a page without a total, a subtask that is no boolean, and paging past MAX_PAGES (#821)', async () => {
+  const none = fakeJira([]);
+  await assert.rejects(readIssueTypes(none.call, 'abc'), /project key/);
+  assert.equal(none.sent.length, 0);
+  await assert.rejects(readIssueTypes(fakeJira([{ issueTypes: [] }]).call, 'ABC'), /jira issue types total/);
+  await assert.rejects(readIssueTypes(fakeJira([{ total: 1, issueTypes: [{ id: '1', name: 'Story', subtask: 'no' }] }]).call, 'ABC'), /jira issue type subtask/);
+  const never = endless({ startAt: 0, total: 1_000_000, issueTypes: [{ id: '1', name: 'Story', subtask: false }] });
+  await assert.rejects(readIssueTypes(never.call, 'ABC'), /jira issue types page count/);
+  assert.equal(never.calls(), 1000);
+});
+
+test('readCreateFields answers each field\'s name and allowed values, an option\'s value else its name, [] when it allows none (#821)', async () => {
+  const { call, sent } = fakeJira([{ startAt: 0, total: 3, fields: [
+    { fieldId: 'customfield_1', key: 'customfield_1', name: 'Team', required: false, schema: { type: 'option' }, allowedValues: [{ id: '1', value: 'Core' }, { id: '2', value: 'Web' }] },
+    { fieldId: 'priority', name: 'Priority', schema: { type: 'priority' }, allowedValues: [{ id: '3', name: 'High' }, { id: '4' }] },
+    { fieldId: 'summary', name: 'Summary', schema: { type: 'string' } },
+  ] }]);
+  assert.deepEqual(await readCreateFields(call, 'ABC', '10001'), [
+    { name: 'Team', allowedValues: ['Core', 'Web'] }, { name: 'Priority', allowedValues: ['High'] }, { name: 'Summary', allowedValues: [] },
+  ]);
+  assert.deepEqual(sent.map((s) => s.path), ['/issue/createmeta/ABC/issuetypes/10001?startAt=0&maxResults=100']);
+  const values = fakeJira([{ startAt: 0, total: 1, values: [{ fieldId: 'customfield_1', name: 'Team', allowedValues: [{ value: 'Ops' }] }] }]);
+  assert.deepEqual(await readCreateFields(values.call, 'ABC', '10001'), [{ name: 'Team', allowedValues: ['Ops'] }]);
+});
+
+test('readCreateFields refuses a type id that is none and a bad key before any call, and a field with no name (#821)', async () => {
+  const none = fakeJira([]);
+  await assert.rejects(readCreateFields(none.call, 'ABC', '1/x'), /issue type id/);
+  await assert.rejects(readCreateFields(none.call, 'AB-1', '10001'), /project key/);
+  assert.equal(none.sent.length, 0);
+  await assert.rejects(readCreateFields(fakeJira([{ total: 1, fields: [{ fieldId: 'x' }] }]).call, 'ABC', '10001'), /jira create field name/);
 });
