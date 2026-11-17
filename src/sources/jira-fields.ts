@@ -1,10 +1,12 @@
-import { STATUS } from '../field-values.js';
-import type { FieldValue, ItemField, SourceItem } from '../types.js';
-import { type Choice, currentChoices, type Kind, kindOf, shownValue } from './jira-field-kinds.js';
+import { checkValue, STATUS } from '../field-values.js';
+import type { FieldValue, FieldWrite, ItemField, SourceItem } from '../types.js';
+import { bodyOf, type Choice, currentChoices, type Kind, kindOf, shownValue } from './jira-field-kinds.js';
 import type { JiraEditable, JiraEditRead, JiraSprint, JiraUser } from './jira-edit.js';
-import { readAssignableUsers, readEditable, readSprints } from './jira-edit.js';
+import { putFields, readAssignableUsers, readEditable, readSprints } from './jira-edit.js';
+import { JiraBadRequestError } from './jira-fetch.js';
 import type { JiraItemRows } from './jira-item.js';
 import type { JiraSourceConfig } from './jira-listing.js';
+import { jiraProjectItem } from './jira-project-item.js';
 import { type JiraCall, type JiraFieldMeta, type JiraIssue, readTransitions } from './jira-queries.js';
 
 /** What the field reads and writes run on (#826): the site's two calls, the source, and the adapter's own store, move and listing reads. */
@@ -97,4 +99,34 @@ async function readAll(ctx: JiraFieldsContext, id: string): Promise<FieldsRead> 
 /** #826: the issue's fields in the panel's order, read live each time (ReadOptions.fresh has nothing to add) and stored as a write. */
 export async function jiraFieldsOf(ctx: JiraFieldsContext, id: string): Promise<ItemField[]> {
   return (await readAll(ctx, id)).fields.map((f) => f.field);
+}
+
+// The PUT of one field; Jira's refusal shows its reason under the fields' names, which only the read knows (#826)
+async function put(ctx: JiraFieldsContext, id: string, found: FieldRead, value: FieldValue, names: Record<string, string>): Promise<void> {
+  const body = bodyOf(found.kind, found.field.name, found.choices, value); // a refusal throws here, before the call
+  try {
+    await putFields(ctx.call, id, { [found.id]: body });
+  } catch (err) {
+    throw err instanceof JiraBadRequestError ? new Error(err.named(names)) : err;
+  }
+}
+
+/** #826, the #686 contract: checked against a fresh read, written at once (Status by its transition), then read again, which stores it; the
+ * answer is that read's fields, the row and, for a listed task, the entry. */
+export async function jiraSetField(ctx: JiraFieldsContext, id: string, name: string, value: FieldValue): Promise<FieldWrite> {
+  const before = await readAll(ctx, id);
+  const found = before.fields.find((f) => f.field.name === name);
+  if (found === undefined) throw new Error(`"${name}" is not a field of ${before.key}`);
+  const checked = checkValue(found.field, value);
+  if ('error' in checked) throw new Error(checked.error);
+  if (name === STATUS) await ctx.setColumn(id, String(checked.value));
+  else await put(ctx, id, found, checked.value, before.names);
+  // ponytail: the route's fresh read, this one and the re-read are three panel reads per write; one cached read if a site's rate limit bites
+  const after = await readAll(ctx, id);
+  const { rows, task, isOwn } = after.kept;
+  return {
+    fields: after.fields.map((f) => f.field),
+    row: jiraProjectItem(rows, ctx.source, ctx.isFiltered(task)),
+    ...(isOwn && ctx.isListed(task) ? { entry: task } : {}),
+  };
 }

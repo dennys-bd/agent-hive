@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { STATUS } from '../../src/field-values.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { jiraFieldsOf, type JiraFieldsContext } from '../../src/sources/jira-fields.js';
+import { markdownToAdf } from '../../src/sources/adf-parse.js';
+import { JiraBadRequestError } from '../../src/sources/jira-fetch.js';
+import { jiraFieldsOf, type JiraFieldsContext, jiraSetField } from '../../src/sources/jira-fields.js';
 import { jiraItemOf, SPRINT_FIELD, TEXTAREA_FIELD } from '../../src/sources/jira-item.js';
 import { taskOf } from '../../src/sources/jira-listing.js';
 import type { JiraCall, JiraSchema } from '../../src/sources/jira-queries.js';
@@ -131,4 +133,71 @@ test('a field with no set operation is read only, and the users and sprints are 
   assert.deepEqual(fields.find((f) => f.name === 'Code'), { name: 'Code', type: 'text', value: 'X1', readOnly: true });
   assert.deepEqual(h.call.sent, ['GET /issue/10001', 'GET /issue/10001/transitions']);
   assert.deepEqual(h.agile.sent, []);
+});
+
+const WRITTEN = edit({ updated: '2026-11-17T10:00:00.000+0000', customfield_1: { id: '2', value: 'Web' } });
+
+test('setField writes each kind with the body of the kind table, by id, then re-reads and stores (#826)', async () => {
+  const cases: [string, unknown, Record<string, unknown>][] = [
+    ['Team', 'Web', { customfield_1: { id: '2' } }],
+    ['Priority', 'High', { priority: { id: '3' } }],
+    ['Issue Type', 'Bug', { issuetype: { id: '11' } }],
+    ['Tags', ['A', 'B'], { customfield_2: [{ id: '5' }, { id: '6' }] }],
+    ['Fix versions', [], { fixVersions: [] }],
+    ['Assignee', 'Bea', { assignee: { accountId: 'acc-2' } }],
+    ['Assignee', null, { assignee: null }],
+    ['Reviewers', ['Bea', 'Caio'], { customfield_8: [{ accountId: 'acc-2' }, { accountId: 'acc-4' }] }],
+    ['Sprint', 'Sprint 9', { customfield_9: 9 }],
+    ['Sprint', null, { customfield_9: null }],
+    ['Notes', 'Hi **there**', { customfield_6: markdownToAdf('Hi **there**') }],
+    ['Starts', '2026-11-18T09:00:00.000+01:00', { customfield_5: '2026-11-18T09:00:00.000+01:00' }],
+    ['Labels', ['api', 'new'], { labels: ['api', 'new'] }],
+    ['Points', 8, { customfield_3: 8 }],
+  ];
+  for (const [name, value, fields] of cases) {
+    const h = harness(reads(2), { 'PUT /issue/10001': [undefined] });
+    await jiraSetField(h.ctx, '10001', name, value as never);
+    assert.deepEqual(h.call.bodies, [{ fields }], name);
+    assert.equal(h.kept.length, 2, `${name}: both reads stored`);
+  }
+});
+
+test('the write answers the re-read: its fields, the row under the key with the new value, and the entry of a listed task (#826)', async () => {
+  const answers = reads(2);
+  answers.call['GET /issue/10001'][1] = WRITTEN;
+  const h = harness(answers, { 'PUT /issue/10001': [undefined] });
+  const written = await jiraSetField(h.ctx, '10001', 'Team', 'Web');
+  assert.equal(written.fields.find((f) => f.name === 'Team')?.value, 'Web');
+  assert.deepEqual([written.row.itemId, written.row.id, written.row.fields.Team, written.row.updatedAt], ['10001', 'ABC-1', 'Web', '2026-11-17T10:00:00.000Z']);
+  assert.equal(written.entry?.item.id, 'ABC-1');
+  const quiet = harness(reads(2), { 'PUT /issue/10001': [undefined] });
+  assert.equal('entry' in (await jiraSetField({ ...quiet.ctx, isListed: () => false }, '10001', 'Team', 'Web')), false);
+});
+
+test('Status runs the transition through setColumn and sends no PUT (#826)', async () => {
+  const h = harness(reads(2));
+  await jiraSetField(h.ctx, '10001', STATUS, 'In Progress');
+  assert.deepEqual(h.moved, [['10001', 'In Progress']]);
+  assert.equal(h.call.sent.includes('PUT /issue/10001'), false);
+});
+
+test('a read-only, required or unknown field, an unknown option, an ambiguous user and a spaced label are refused before any PUT (#826)', async () => {
+  const refused: [string, unknown, RegExp, ReturnType<typeof reads>?][] = [
+    ['Region', 'x', /"Region" is read only/],
+    ['Team', null, /"Team" is required/],
+    ['Nope', 'x', /"Nope" is not a field of ABC-1/],
+    ['Tags', ['Z'], /"Tags" takes one of its options/],
+    ['Labels', ['two words'], /"two words" cannot contain a space/],
+    ['Assignee', 'Bea', /"Bea" names more than one account/, reads(1, edit(), [...USERS, { accountId: 'acc-5', displayName: 'Bea' }])],
+  ];
+  for (const [name, value, message, answers] of refused) {
+    const h = harness(answers ?? reads(1));
+    await assert.rejects(jiraSetField(h.ctx, '10001', name, value as never), message, name);
+    assert.equal(h.call.sent.includes('PUT /issue/10001'), false, name);
+  }
+});
+
+test('a 400 on the write shows Jira\'s reason under the field\'s name (#826)', async () => {
+  const h = harness(reads(1), { 'PUT /issue/10001': [new JiraBadRequestError(['customfield_9'], { customfield_9: 'Sprint is closed' }, [])] });
+  await assert.rejects(jiraSetField(h.ctx, '10001', 'Sprint', 'Sprint 9'), { message: 'Sprint: Sprint is closed' });
 });
