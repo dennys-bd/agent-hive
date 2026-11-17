@@ -17,15 +17,16 @@ const issue = (fields: Record<string, unknown> = {}): JiraIssue => ({
     components: [{ name: 'Core' }, { name: 'Web' }], customfield_10001: { value: 'Platform' }, ...fields,
   },
 });
+const NO_ROWS = (): undefined => undefined;
 const rows = (fields: Record<string, unknown> = {}) => jiraItemOf(ROWS, 'ABC', issue(fields), NAMES, SCHEMA);
 
 test('a stored issue is its task: the id as itemId, the key as id, the browse url, its facets, and its status as the column (#820)', () => {
-  assert.deepEqual(taskOf(rows(), JIRA_ENTRY), {
+  assert.deepEqual(taskOf(rows(), JIRA_ENTRY, NO_ROWS), {
     column: 'To Do',
     item: {
       itemId: '10001', id: 'ABC-1', title: 'Ship it', body: '', url: 'https://acme.example/browse/ABC-1', createdAt: '2026-11-01T10:00:00.000Z',
       facets: { assignees: ['Ana Lima'], labels: ['api'], fields: { Components: 'Core, Web', Team: 'Platform' } },
-      autoOnEntry: true, entry: { flow: 'main' },
+      blockers: { blockedBy: [], blocking: [] }, autoOnEntry: true, entry: { flow: 'main' },
     },
   });
 });
@@ -35,7 +36,7 @@ test('the task properties come from the first matching rule per property, else t
     { field: 'Components', op: 'equals' as const, value: 'Web', set: { workspace: 'site', auto: false } },
     { field: 'assignee', op: 'equals' as const, value: 'Ana Lima', set: { entry: null } },
   ] };
-  const { item } = taskOf(rows(), { ...JIRA_ENTRY, taskProps });
+  const { item } = taskOf(rows(), { ...JIRA_ENTRY, taskProps }, NO_ROWS);
   assert.deepEqual([item.workspaceHint, item.autoOnEntry, item.entry], ['site', false, null]);
 });
 
@@ -45,7 +46,7 @@ test('the reader reads the title, each label, the assignee\'s name and any store
 });
 
 test('isListed needs a cited column and the filter, @me as the stored name (#820)', () => {
-  const task = taskOf(rows(), JIRA_ENTRY);
+  const task = taskOf(rows(), JIRA_ENTRY, NO_ROWS);
   const mine: FilterRule[] = [{ field: 'assignee', op: 'any', values: ['@me'] }];
   assert.equal(isListed(task, { filter: [] }, new Set(['To Do']), undefined), true);
   assert.equal(isListed(task, { filter: [] }, new Set(['Done']), undefined), false);

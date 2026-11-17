@@ -8,12 +8,14 @@ import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
 import { JiraNotFoundError } from './jira-fetch.js';
 import { jiraItemOf } from './jira-item.js';
 import { isListed, type JiraSourceConfig, listedTasks, projectOf, taskOf } from './jira-listing.js';
-import { type JiraCall, postTransition, readComments, readIssue, readMyself, readStatuses, readTransitions } from './jira-queries.js';
+import { type JiraCall, type JiraIssueRead, postTransition, readComments, readIssue, readMyself, readStatuses, readTransitions } from './jira-queries.js';
+import { type CategoryOf, linkedIds, storedCategories } from './jira-relations.js';
 import { writeIssue } from './jira-sync.js';
 import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
 
 export type { JiraSourceConfig } from './jira-listing.js';
 
+const NO_CATEGORIES: CategoryOf = () => undefined; // no store: every blocker keeps its link's own category
 const FORMER_USER = 'Former user'; // what Jira itself shows for a deleted account
 
 /** What a Jira adapter is built from (#820): the site's call, its stored login, the name writer and the read model 5.6 fills. */
@@ -37,17 +39,21 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     return cred;
   }
 
-  // One issue read live, stored as a write only when it is in the source's project: its scope would otherwise put it into this listing
-  async function readTask(cred: JiraCredential, itemId: string): Promise<{ task: SourceItem; isOwn: boolean }> {
-    const read = await readIssue(call, itemId);
+  // #828: the linked issues' stored categories, under this account's rows
+  const categoriesOf = (cred: JiraCredential, ids: readonly string[]): CategoryOf =>
+    (db === undefined ? NO_CATEGORIES : storedCategories(db.items, rowsOf(cred), ids));
+
+  // One read issue as its task, stored as a write only when it is in the source's project: its scope would otherwise put it into this listing
+  function keep(cred: JiraCredential, read: JiraIssueRead): { task: SourceItem; isOwn: boolean } {
     const rows = jiraItemOf(rowsOf(cred), source.project, read.issue, read.names, read.schema);
     const isOwn = projectOf(read.issue) === source.project;
     if (isOwn && db !== undefined) db.transaction(() => writeIssue(db, rows, 'write'));
     // #830: its tree read over the stored listing with the issue in its place, so a single read's links equal the next listing's
     const listing = !isOwn || db === undefined ? [] : db.items.items(rowsOf(cred), db.items.listing(rowsOf(cred), source.project));
     const links = treeLinks(inPlace(listing, rows), source.tree);
-    return { task: withTree(taskOf(rows, source), links.get(rows.item.nodeId), source), isOwn };
+    return { task: withTree(taskOf(rows, source, categoriesOf(cred, linkedIds([rows]))), links.get(rows.item.nodeId), source), isOwn };
   }
+  const readTask = async (cred: JiraCredential, itemId: string): Promise<{ task: SourceItem; isOwn: boolean }> => keep(cred, await readIssue(call, itemId));
 
   async function resolveFields(): Promise<void> {
     const cred = await account();

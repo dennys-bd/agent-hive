@@ -6,7 +6,7 @@ import { JiraNotFoundError } from '../../src/sources/jira-fetch.js';
 import { createJiraSource, type JiraSourceConfig } from '../../src/sources/jira.js';
 import type { FilterRule } from '../../src/types.js';
 import { JIRA_ENTRY } from '../fakes.js';
-import { adapter, CITED, CRED, doc, fakeJira, issue, read, ROWS, seeded, STATUSES } from './jira-fakes.js';
+import { adapter, CITED, CRED, doc, end, fakeJira, inward, issue, outward, read, ROWS, seeded, STATUSES } from './jira-fakes.js';
 
 const markdown = (text: string): string => adfToMarkdown(doc(text) as Parameters<typeof adfToMarkdown>[0]);
 const ids = (tasks: { item: { id: string } }[]): string[] => tasks.map((t) => t.item.id);
@@ -31,9 +31,21 @@ test('listItems answers the cited, filtered issues in listing order from the rea
     item: {
       itemId: '10001', id: 'ABC-1', title: 'Issue 1', body: markdown('Body 1'), url: 'https://acme.example/browse/ABC-1', createdAt: '2026-11-01T10:00:00.000Z',
       facets: { assignees: ['Ana Lima'], labels: ['api'], fields: { Components: 'Core, Web' } }, workspaceHint: 'site', autoOnEntry: true, entry: { flow: 'main' },
+      blockers: { blockedBy: [], blocking: [] },
     },
   });
   assert.deepEqual(fake.sent, [], 'a listing makes no call to Jira');
+});
+
+test('listItems answers blockers on every task, and a source filter\'s blocked rule drops a task with an open blocker (#828)', async () => {
+  const db = await seeded([issue(1, 'To Do', { issuelinks: [inward('20001', end(2))] }), issue(2, 'To Do', { issuelinks: [outward('20001', end(1))] }), issue(3, 'To Do')]);
+  assert.deepEqual((await adapter({ db }).listItems()).map((t) => [t.item.id, t.item.blockers]), [
+    ['ABC-1', { blockedBy: [{ id: 'ABC-2', title: 'Issue 2', state: 'open' }], blocking: [] }],
+    ['ABC-2', { blockedBy: [], blocking: [{ id: 'ABC-1', title: 'Issue 1', state: 'open' }] }],
+    ['ABC-3', { blockedBy: [], blocking: [] }],
+  ]);
+  const unblocked: FilterRule[] = [{ field: 'blocked', op: 'none' }];
+  assert.deepEqual(ids(await adapter({ db, source: { filter: unblocked } }).listItems()), ['ABC-2', 'ABC-3']);
 });
 
 test('stored answers every cited issue unfiltered; with no store, both listings are empty (#820)', async () => {

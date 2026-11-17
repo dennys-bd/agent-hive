@@ -64,3 +64,14 @@ export const adapter = ({ call = fakeJira().call, db, cred = CRED, source = {}, 
   createJiraSource({ ...JIRA_ENTRY, ...source }, CITED, {
     call, credential: async () => cred ?? undefined, renewName: async (name) => { renamed.push(name); }, ...(db === undefined ? {} : { items: { db } }),
   });
+
+export const BLOCKS = { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' };
+export const DEPENDS = { name: 'Depends', inward: 'is needed by', outward: 'needs' };
+export const RELATES = { name: 'Relates', inward: 'relates to', outward: 'relates to' };
+/** The other end of a link as an issue's read names it: id 10000 + n, key <project>-<n>, its summary and its category snapshot. */
+export const end = (n: number, { category = 'new', project = 'ABC' } = {}) =>
+  ({ id: String(10000 + n), key: `${project}-${n}`, fields: { summary: `Issue ${n}`, status: { statusCategory: { key: category } } } });
+type End = ReturnType<typeof end>;
+/** One issuelinks[] entry as the holding issue's read answers it: inwardIssue names an issue whose outward phrase points at this one. */
+export const inward = (linkId: string, other: End, type = BLOCKS) => ({ id: linkId, type, inwardIssue: other });
+export const outward = (linkId: string, other: End, type = BLOCKS) => ({ id: linkId, type, outwardIssue: other });
