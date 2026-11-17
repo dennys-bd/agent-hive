@@ -1,6 +1,7 @@
 // A Jira source's draft and its pure edges (#822), out of settings-form.ts, which is near 400 lines. Pure, so node:test checks it.
 import type { JiraIssueType, JiraLinkType, JiraProject } from '../../sources/jira-queries.js';
 import type { SourceFields } from '../../types.js';
+import { type MessageKey, t } from '../i18n.js';
 
 export type { JiraIssueType, JiraLinkType, JiraProject };
 type JiraFields = Extract<SourceFields, { type: 'jira' }>;
@@ -41,3 +42,15 @@ export function jiraReadError(err: unknown): JiraReadError {
 
 /** A select's values: the saved one first while the options load, then the listed ones, each once (as RepositoryRow keeps its repository). */
 export const withCurrent = (current: string, listed: readonly string[]): string[] => [...new Set([...(current === '' ? [] : [current]), ...listed])];
+
+type RequiredKey = 'site' | 'project' | 'issueType' | 'subtaskType' | 'doneStatus';
+// The parser's order (#820): the first empty key is the one named
+const REQUIRED: readonly (readonly [RequiredKey, MessageKey])[] = [
+  ['site', 'settings.error.jira.site'], ['project', 'settings.error.jira.project'], ['issueType', 'settings.error.jira.issueType'],
+  ['subtaskType', 'settings.error.jira.subtaskType'], ['doneStatus', 'settings.error.jira.doneStatus'],
+];
+/** The message refusing a Jira row with an empty required key, naming it (#822); undefined when the parser will take every key. */
+export function jiraProblem(source: string, jira: JiraDraft): string | undefined {
+  const empty = REQUIRED.find(([key]) => jira[key] === '');
+  return empty === undefined ? undefined : t(empty[1], { source, project: jira.project });
+}

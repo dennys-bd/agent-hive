@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import { sourceOwner, sourceSummary, TYPE_LABEL, needsGithubToken, NEW_SOURCE_TYPES, newSourceDraft, newSourceProblem } from '../src/ui/lib/flow-sources.js';
 import { GITHUB_ENTRY, JIRA_ENTRY } from './fakes.js';
+import { jiraDraft } from '../src/ui/lib/settings-jira.js';
 import { emptySource } from '../src/ui/lib/settings-form.js';
 import type { TaskRuleDraft } from '../src/ui/lib/setup-source-task-props.js';
 
@@ -67,5 +68,10 @@ test('a jira source has its label, its site as its owner part, and its type copy
 
 test('a jira row\'s summary starts with its project key (#820)', () => {
   setLanguage('pt');
-  assert.equal(sourceSummary({ ...emptySource('hive', 'f1'), name: 'tickets', type: 'jira', saved: JIRA_ENTRY }, SCOPE).split(' · ')[0], 'ABC');
+  assert.equal(sourceSummary({ ...emptySource('hive', 'f1'), name: 'tickets', type: 'jira', jira: jiraDraft(JIRA_ENTRY) }, SCOPE).split(' · ')[0], 'ABC');
+});
+
+test('a jira row with no project yet reads as none in its summary (#822)', () => {
+  setLanguage('pt');
+  assert.equal(sourceSummary({ ...emptySource('hive', 'f1'), name: 'tickets', type: 'jira' }, SCOPE).split(' · ')[0], t('settings.sources.noProject'));
 });
