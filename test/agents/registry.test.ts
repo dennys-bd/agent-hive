@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AGENTS } from '../../src/agents.js';
+import { AGENTS, planLimitAgents } from '../../src/agents.js';
 import { planLimitsReading, runners } from '../../src/agents/registry.js';
 import { transcriptDir } from '../../src/agents/claude-transcript.js';
 import { AGENT_IDS, type AgentId, type RateLimits } from '../../src/types.js';
@@ -36,7 +36,8 @@ test('planLimitsReading reads every agent whose entry has plan limits and lists 
 });
 
 test('Codex has plan limits too, and one agent\'s failure never costs another\'s reading (#929)', async () => {
-  assert.deepEqual(AGENT_IDS.filter((id) => AGENTS[id].planLimits), ['claude', 'codex', 'copilot']);
+  assert.deepEqual(AGENT_IDS.filter((id) => AGENTS[id].planLimits), ['claude', 'codex']);
+  assert.equal(planLimitAgents().includes('copilot'), false, 'node 7 (#879) turns it on');
   const codex: RateLimits = { at: '2026-10-12T12:00:00.000Z', windows: { thirty_day: { usedPercent: 40, resetsAt: '2026-11-01T00:00:00.000Z' } } };
   const report = await planLimitsReading(undefined, { claude: { planLimits: async () => { throw new Error('no Claude Code OAuth token'); } }, codex: { planLimits: async () => codex }, copilot: { planLimits: async () => undefined } });
   assert.deepEqual(report, { readings: [{ agent: 'codex', rateLimits: codex }], failures: [{ agent: 'claude', reason: 'no Claude Code OAuth token' }] });

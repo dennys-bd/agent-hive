@@ -75,7 +75,8 @@ const copilotEnv = ({ ptyId, protocolText }: AgentRun): Record<string, string> =
 });
 
 export const copilotRunner: AgentRunner = {
-  hostEnv: [], // nothing the spike saw would stop a child Copilot from starting
+  // An inherited COPILOT_ALLOW_ALL=true would trust every folder and approve every tool in every run; the Hive never sets it, and the user's shell must not either
+  hostEnv: ['COPILOT_ALLOW_ALL'],
   promptFlag: PROMPT_FLAG,
   launch: (run) => [...hiveFlags(run), ...sessionWords(run.session), ...run.extraArgs, ...tailWords(run)],
   copy: () => undefined, // node 3

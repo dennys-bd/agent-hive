@@ -158,6 +158,6 @@ test('the open route refuses a bare Claude alias on a copilot session with copil
     assert.deepEqual(askedLaunch({ model: 'claude-sonnet-5.5' }, 'codex', language, pluginDir), { status: 400, message: MESSAGES[language]['launch.refused.codexModel'] });
   }
   assert.deepEqual(askedLaunch({ model: 'claude-sonnet-5.5' }, 'copilot', 'en', pluginDir), { launch: { model: 'claude-sonnet-5.5' } });
-  assert.equal(MESSAGES.en['launch.refused.copilotModel'], '"model" is a Claude alias; a copilot session needs a Copilot model id');
+  assert.equal(MESSAGES.en['launch.refused.copilotModel'], '"model" is another agent\'s model alias; a copilot session needs a Copilot model id');
   assert.doesNotMatch(MESSAGES.pt['launch.refused.copilotModel'], /\brod(ar|ando)\b/);
 });

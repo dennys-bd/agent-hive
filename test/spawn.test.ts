@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { posixShell } from '../src/posix-shell.js';
@@ -84,6 +84,12 @@ test('withoutHiveEnv strips every runner\'s host env (CLAUDECODE, CLAUDE_CODE_CH
   const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/n', HIVE_SECRET: SECRET, HIVE_MCP_SECRET: SECRET, HIVE_MCP_TOKEN_0: 'Bearer t0k', HIVE_MCP_TOKEN_12: 'x', HIVE_HOME: '/h', HIVE_PWSH: 'C:\\x\\pwsh.exe', HOME: '/Users/x' };
   assert.deepEqual(ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin', COMMAND_SHIMS), { PATH: `${COMMAND_SHIMS}:/bin`, CLAUDE_ENV_FILE: '/hive/command-shims-env/W1.sh', HOME: '/Users/x', TMPDIR: '/runs/W1', HIVE_PTY_ID: 'W1', HIVE_PORT: '4242', HIVE_SECRET_FILE: SECRET_FILE_PATH });
   assert.throws(() => ptyCommand({ ptyId: 'W1', slug: 's', cwd: '/wt', port: 4242 }), { message: 'pty: a run launch with no agent' });
+});
+
+test('withoutHiveEnv drops COPILOT_ALLOW_ALL: an inherited one would trust every folder and approve every tool (#873)', () => {
+  const env = ptyEnv({ PATH: '/bin', COPILOT_ALLOW_ALL: 'true', HOME: '/Users/x' }, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin', COMMAND_SHIMS);
+  assert.equal('COPILOT_ALLOW_ALL' in env, false);
+  assert.equal(env.HOME, '/Users/x');
 });
 
 test('runTmpDir is <base>/hive-runs/<ptyId>, under os.tmpdir() by default (#428)', () => {
@@ -356,7 +362,7 @@ test('without HIVE_PWSH a SHELL naming bash starts bash on the Hive\'s rc file e
 test('ptyCommand puts the prompt behind the runner\'s prompt flag, last; no prompt file leaves no flag; a launch with no flag keeps the bare prompt (#873)', () => {
   const agent = { command: 'copilot', argv: ['--session-id', 'S1'], promptFlag: '-i' };
   const line = ptyCommand({ ...LAUNCH, agent });
-  assert.ok(line.includes(`'copilot' '--session-id' 'S1' -i "$(cat '/repo/.hive/prompts/hive-1-task.md')"; curl `), line);
+  assert.ok(line.includes(`'copilot' '--session-id' 'S1' '-i' "$(cat '/repo/.hive/prompts/hive-1-task.md')"; curl `), line);
   const { promptPath: _none, ...bare } = LAUNCH;
   const empty = ptyCommand({ ...bare, agent });
   assert.ok(empty.includes(`'copilot' '--session-id' 'S1'; curl `), 'a session with no prompt leaves no dangling -i');
@@ -371,6 +377,17 @@ test('writeRunFiles writes each of a run\'s files, its folders made, this user\'
   assert.equal(await readFile(path, 'utf8'), 'PROTOCOL');
   await assertMode(t, path, 0o600);
   await writeRunFiles([]);
+});
+
+test('writeRunFiles refuses a file already at the path, a planted symlink included, and never follows it (#873)', async (t) => {
+  const dir = await tempDir(t, 'run-files-');
+  const target = join(dir, 'target');
+  await writeFile(target, 'KEEP');
+  await symlink(target, join(dir, 'planted'));
+  await writeFile(join(dir, 'there'), 'OLD');
+  await assert.rejects(writeRunFiles([{ path: join(dir, 'planted'), content: 'X' }]), { code: 'EEXIST' });
+  await assert.rejects(writeRunFiles([{ path: join(dir, 'there'), content: 'X' }]), { code: 'EEXIST' });
+  assert.deepEqual([await readFile(target, 'utf8'), await readFile(join(dir, 'there'), 'utf8')], ['KEEP', 'OLD']);
 });
 
 test('claude and codex name no prompt flag and write no run file: their prompt is the last word, their protocol rides a flag (#873)', () => {

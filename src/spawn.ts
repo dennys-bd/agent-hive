@@ -78,11 +78,11 @@ const RUN_FILE_MODE = 0o600; // a run's own file may hold its protocol and the w
 const RUN_DIR_MODE = 0o700;
 
 /** #873: a run's own files, its runner's runFiles (Copilot's protocol), written before its pty starts, each folder made. A run's path is new
- * (its pty id), so the modes apply at creation. */
+ * (its pty id), so the modes apply at creation, and 'wx' refuses a file already there (planted) instead of following a symlink. */
 export async function writeRunFiles(files: readonly { path: string; content: string }[]): Promise<void> {
   await Promise.all(files.map(async ({ path, content }) => {
     await mkdir(dirname(path), { recursive: true, mode: RUN_DIR_MODE });
-    await writeFile(path, content, { mode: RUN_FILE_MODE });
+    await writeFile(path, content, { mode: RUN_FILE_MODE, flag: 'wx' });
   }));
 }
 
@@ -247,7 +247,7 @@ export function ptyCommand(o: PtyLaunch): string {
     `HIVE_PTY_ID=${o.ptyId} HIVE_PORT=${o.port} ${shellQuote(o.agent.command)}`, // #633: on win32 an .exe's full path (spaces, backslashes); one rule on every OS
     ...o.agent.argv.map(shellWord),
     // a session starts with no prompt (#164); #873: behind the runner's own flag (Copilot's -i, a constant of its runner), else the last word
-    ...(o.promptPath === undefined ? [] : [...(o.agent.promptFlag === undefined ? [] : [o.agent.promptFlag]), `"$(cat ${shellQuote(o.promptPath)})"`]),
+    ...(o.promptPath === undefined ? [] : [...(o.agent.promptFlag === undefined ? [] : [shellQuote(o.agent.promptFlag)]), `"$(cat ${shellQuote(o.promptPath)})"`]),
   ].join(' ');
   return `${line}; ${trailer}`;
 }

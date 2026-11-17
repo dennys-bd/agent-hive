@@ -124,8 +124,7 @@ test('the agent copy (#516): neutral delete activity texts, the execution hint, 
   ctx.after(() => setLanguage('en'));
   for (const language of ['pt', 'en'] as const) {
     for (const key of ['confirm.deleteActivity.session', 'settings.deleteActivity.session', 'settings.deleteActivity.transcripts.hint'] as const) assert.doesNotMatch(MESSAGES[language][key], /claude/i, `${language}.${key}`);
-    // #873: the one refusal that must name what it refuses (a Claude alias on copilot)
-    const naming = Object.entries(MESSAGES[language]).filter(([key, text]) => key !== 'launch.refused.copilotModel' && /claude/i.test(text)).map(([key]) => key);
+    const naming = Object.entries(MESSAGES[language]).filter(([, text]) => /claude/i.test(text)).map(([key]) => key);
     assert.deepEqual(naming, [], language);
   }
   assert.deepEqual([MESSAGES.pt['settings.section.execution.hint'], MESSAGES.en['settings.section.execution.hint']], ['agente, branches, excluir atividade', 'agent, branches, delete activity']);

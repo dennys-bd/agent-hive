@@ -104,12 +104,12 @@ test('the stray pattern matches the argv\'s MCP path; the command line runs copi
   assert.match(`@${MCP}`, new RegExp(copilotRunner.strayPattern(PTY)));
   assert.equal(copilotRunner.promptFlag, '-i');
   const line = ptyCommand({ ptyId: PTY, slug: 'hive-1-task', cwd: RUN.cwd, port: 4242, promptPath: PROMPT, agent: { command: 'copilot', argv, promptFlag: copilotRunner.promptFlag } });
-  assert.ok(line.includes(`'copilot' --plugin-dir '${PLUGIN}' --plugin-dir '${HOOKS_PLUGIN}' --additional-mcp-config '@${MCP}' '--allow-tool=hive' '--session-id' '${ID}' -i "$(cat '${PROMPT}')"; curl `), line);
+  assert.ok(line.includes(`'copilot' --plugin-dir '${PLUGIN}' --plugin-dir '${HOOKS_PLUGIN}' --additional-mcp-config '@${MCP}' '--allow-tool=hive' '--session-id' '${ID}' '-i' "$(cat '${PROMPT}')"; curl `), line);
   assert.equal(line.includes(SECRET), false);
 });
 
 test('copy, clear, headless, hooks, transcripts and limits answer their placeholders until nodes 2 to 7 (#873)', async () => {
-  assert.deepEqual([copilotRunner.copy(RUN, ID), copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({}), copilotRunner.headlessMcp], [undefined, undefined, [], [], false]);
+  assert.deepEqual([copilotRunner.copy(RUN, ID), copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({}), copilotRunner.headlessMcp], [undefined, undefined, ['COPILOT_ALLOW_ALL'], [], false]);
   assert.throws(() => copilotRunner.headless({ dir: '/t', schema: '{}', schemaPath: '/t/s', answerPath: '/t/a' }), { message: 'copilot: headless runs are not supported yet' });
   assert.equal(copilotRunner.headlessAnswer('{}', undefined), undefined);
   assert.equal(copilotRunner.hookPayload({ hook_event_name: 'Stop', session_id: ID }), undefined);

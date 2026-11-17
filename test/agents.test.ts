@@ -134,9 +134,9 @@ test('agentCommand: on win32 an .exe gives its full path; a .cmd or a name found
   }
 });
 
-test('copilot runs as `copilot`, chooses its session id, resumes any folder and reports plan limits; its shim passes its commands and its no-conversation flags (#873)', () => {
+test('copilot runs as `copilot`, chooses its session id, resumes any folder and reads no plan limits until node 7 (#879); its shim passes its commands and its no-conversation flags (#873)', () => {
   const { copilot } = AGENTS;
-  assert.deepEqual([copilot.label, copilot.command, copilot.canChooseSessionId, copilot.resumesAnyFolder, copilot.planLimits], ['Copilot', 'copilot', true, true, true]);
+  assert.deepEqual([copilot.label, copilot.command, copilot.canChooseSessionId, copilot.resumesAnyFolder, copilot.planLimits], ['Copilot', 'copilot', true, true, false]);
   assert.deepEqual(copilot.subcommands, ['app', 'login', 'help', 'init', 'config', 'update', 'version', 'workflow', 'sessions', 'memories', 'plugin', 'mcp', 'skill', 'instruction', 'lsp', 'sandbox', 'completion']);
   assert.deepEqual(copilot.shimFlags, ['-p', '--prompt', '--acp', '-h', '--help', '-v', '--version']);
   assert.deepEqual(resumeOf('copilot', ['--resume', '01a12d45-1dff-7000-8000-000000000001']), { kind: 'new' }, 'node 4 owns the reader');

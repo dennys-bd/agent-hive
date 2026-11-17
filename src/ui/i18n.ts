@@ -580,7 +580,7 @@ const en = {
   'launch.refused.continue': 'a "continueId" resume runs with what its session was opened with: no "model", "specializedAgent" or "args"',
   'launch.refused.model': '"model" must be 1 to 100 letters, digits or . _ : [ ] / -, not starting with -',
   'launch.refused.codexModel': '"model" is a model name of another agent; a codex session needs a Codex model name',
-  'launch.refused.copilotModel': '"model" is a Claude alias; a copilot session needs a Copilot model id', // #873
+  'launch.refused.copilotModel': '"model" is another agent\'s model alias; a copilot session needs a Copilot model id', // #873
   'launch.refused.specializedAgent': '"specializedAgent" must be one of the Hive plugin\'s agents (hive:<name>)',
   'launch.refused.args': '"args" must be a list of at most 32 arguments, each 1 to 200 characters',
   'launch.refused.workspace': '"workspace" must name one of the workspaces', // #317: GET /launch-options with no workspace, or one the config does not have
@@ -3915,7 +3915,7 @@ const pt: Record<MessageKey, string> = {
   'launch.refused.continue': 'uma retomada ("continueId") executa com o que a sessão abriu: sem "model", "specializedAgent" nem "args"',
   'launch.refused.model': '"model" precisa ter de 1 a 100 letras, dígitos ou . _ : [ ] / -, sem começar com -',
   'launch.refused.codexModel': '"model" é um modelo de outro agente; uma sessão do codex precisa de um modelo do Codex',
-  'launch.refused.copilotModel': '"model" é um apelido do Claude; uma sessão do copilot precisa de um id de modelo do Copilot', // #873
+  'launch.refused.copilotModel': '"model" é um apelido de modelo de outro agente; uma sessão do copilot precisa de um id de modelo do Copilot', // #873
   'launch.refused.specializedAgent': '"specializedAgent" precisa ser um dos agentes do plugin do Hive (hive:<nome>)',
   'launch.refused.args': '"args" precisa ser uma lista de até 32 argumentos, cada um com 1 a 200 caracteres',
   'launch.refused.workspace': '"workspace" precisa ser um dos workspaces',

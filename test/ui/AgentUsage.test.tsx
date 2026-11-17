@@ -80,7 +80,7 @@ test('compact: 28px bars, no reset time, ↻ kept (#223)', () => {
   const chip = screen.getByTitle(/^claude ·/);
   expect(bars(chip).map((bar) => bar.classList.contains('w-7'))).toEqual([true, true]);
   expect(screen.queryByText('1h39m')).not.toBeInTheDocument();
-  expect(screen.getAllByRole('button', { name: /^atualizar/ })).toHaveLength(3);
+  expect(screen.getAllByRole('button', { name: /^atualizar/ })).toHaveLength(2);
 });
 
 test('minimal: the mark and the highest % in its band, — without a reading; no bars, no ↻ (#223)', () => {

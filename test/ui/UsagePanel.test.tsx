@@ -30,7 +30,7 @@ test('a chip opens the panel: title, count, ↻ todos and ×; per agent its age,
   expect(chip()).toHaveAttribute('aria-expanded', 'true');
   expect(panel).toHaveFocus();
   expect(panel).toHaveClass('absolute', 'bottom-full', 'left-0', 'w-[440px]', 'max-h-[440px]', 'rounded-tr-[8px]', 'border-b-0', 'bg-popover');
-  expect(panel).toHaveTextContent('3 agentes');
+  expect(panel).toHaveTextContent('2 agentes');
   expect(within(panel).getByRole('button', { name: '↻ todos' })).toBeInTheDocument();
   expect(within(panel).getByRole('button', { name: 'fechar' })).toBeInTheDocument();
   const [claudeRow, codexRow] = within(panel).getAllByRole('listitem');
@@ -50,7 +50,7 @@ test('↻ todos posts {} and spins every ↻, chip and panel alike, until the an
   await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '↻ todos' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/plan-limits/refresh', expect.objectContaining({ body: '{}' }));
   const all = screen.getAllByRole('button', { name: /^atualizar/ });
-  expect(all).toHaveLength(6); // three chips, three rows
+  expect(all).toHaveLength(4); // two chips, two rows
   expect(all.every(spinning)).toBe(true);
   expect(screen.getByRole('dialog')).toBeInTheDocument();
   answer(ok());

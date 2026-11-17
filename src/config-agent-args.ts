@@ -36,7 +36,7 @@ interface ForeignRule { pattern: RegExp; is: string; needs: string }
 // #927, #873: which models belong to another agent, per agent; one with no rule (claude) takes any name
 const FOREIGN_MODELS: Partial<Record<AgentId, ForeignRule>> = {
   codex: { pattern: CLAUDE_MODEL, is: 'a Claude model', needs: 'a Codex model name' },
-  copilot: { pattern: CLAUDE_ALIAS, is: 'a Claude alias', needs: 'a Copilot model id' }, // a claude-… id is Copilot's own (spike §5)
+  copilot: { pattern: CLAUDE_ALIAS, is: "another agent's model alias", needs: 'a Copilot model id' }, // a claude-… id is Copilot's own (spike §5)
 };
 
 const brokenRule = (agent: AgentId, model: string): ForeignRule | undefined => {
