@@ -103,7 +103,8 @@ import { registerLaunchOptionsRoute } from './launch-options.js';
 import { registerOpenRoute, registerResolveRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
-import { registerJiraRoutes } from './server-jira.js';
+import { type JiraRouteDeps, registerJiraRoutes } from './server-jira.js';
+import { registerJiraSettingsRoutes } from './server-jira-settings.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
 import { createCustomStore } from './custom-store.js';
 import { createPluginRender } from './plugin-render.js';
@@ -1106,6 +1107,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   });
 
+  const jiraDeps: JiraRouteDeps = { log, env: deps.credentialsEnv }; // #817, #821: one set of deps for every Jira settings route
   app.get('/settings/source-columns', async (req: Request, res: Response) => {
     let spec: SourceSpec;
     try {
@@ -1175,7 +1177,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     };
     res.json(status);
   });
-  registerJiraRoutes(app, { log, env: deps.credentialsEnv }); // #817: next to the GitHub login, outside requireLive: the first Jira source is created in setup mode
+  registerJiraRoutes(app, jiraDeps); // #817: next to the GitHub login, outside requireLive: the first Jira source is created in setup mode
+  registerJiraSettingsRoutes(app, jiraDeps); // #821: the same, for what the form reads before the source is saved
 
   // Serializes saves: two concurrent POST /settings would race on hive.config.json.tmp and
   // into configure()/reconfigure(). Chaining queues them in arrival order; each request
