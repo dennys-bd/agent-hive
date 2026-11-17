@@ -45,8 +45,8 @@ function run(args) {
   runFiles({ root, files, args: [...shard, ...timeout, ...junit] });
 }
 
-/** Runs `files` (relative to `root`) under node --test with `args` before them; test-affected.mjs runs its selection through it (#867). */
 // Every boot copies the Hive's plugin into CODEX_HOME (#934), so a run gets a throwaway one and never touches the user's.
+/** Runs `files` (relative to `root`) under node --test with `args` before them; test-affected.mjs runs its selection through it (#867). */
 export function runFiles({ root, files, args = [] }) {
   const home = mkdtempSync(join(tmpdir(), 'hive-test-'));
   const child = spawn(process.execPath, ['--test', ...args, ...files.map((file) => join(root, file))], {

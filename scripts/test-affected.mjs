@@ -11,6 +11,8 @@ const CORES_PER_WORKER = 4;
 // tsc's output keeps every runtime edge and erases `import type`: a static or dynamic import, a re-export and a file read through new URL
 const EDGES = [/\bfrom\s+['"](\.{1,2}\/[^'"]+)['"]/g, /\bimport\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g, /new URL\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*,\s*import\.meta\.url/g];
 const COMPILED = /\.(c|m)?ts$/;
+// Guards that read the whole tree (readdir of src/ or test/) instead of importing it: any change could be the one they catch
+const TREE_GUARDS = Object.freeze(['test/blocker-refs.test.js', 'test/temp-dir.test.js', 'test/tree-spawns.test.js']);
 
 export const workers = (cores) => Math.max(1, Math.floor(cores / CORES_PER_WORKER));
 
@@ -18,9 +20,10 @@ export const workers = (cores) => Math.max(1, Math.floor(cores / CORES_PER_WORKE
 export function changedFiles(git) {
   try {
     const base = git(['merge-base', 'HEAD', BASE_REF]).trim();
-    const diff = git(['diff', '--name-only', base]);
-    const untracked = git(['ls-files', '--others', '--exclude-standard']);
-    const files = [...new Set(`${diff}\n${untracked}`.split('\n').filter(Boolean))].sort();
+    // -z: a path with a space or a non-ASCII character comes back raw instead of quoted
+    const diff = git(['diff', '--name-only', '-z', base, '--']);
+    const untracked = git(['ls-files', '--others', '--exclude-standard', '-z']);
+    const files = [...new Set(`${diff}\0${untracked}`.split('\0').filter(Boolean))].sort();
     return { base, files };
   } catch (error) {
     console.error(`test-affected: no merge-base with ${BASE_REF}, running everything (${error.message})`);
@@ -28,8 +31,9 @@ export function changedFiles(git) {
   }
 }
 
-// A test that reads a file outside src/ and test/ (a plugin template, a config) has no import edge to it, so such a change runs every test
-const blinds = (file) => !file.startsWith('src/') && !file.startsWith('test/') && !file.endsWith('.md');
+// A test that reads a file outside src/ and test/ (a plugin template, a config) has no import edge to it, so such a change runs every test.
+// Markdown is exempt (CLAUDE.md, a README) except under assets/, whose agents and commands the plugin tests read
+const blinds = (file) => !file.startsWith('src/') && !file.startsWith('test/') && (!file.endsWith('.md') || file.startsWith('assets/'));
 
 function edgesOf(file) {
   const text = readFileSync(file, 'utf8');
@@ -71,9 +75,9 @@ export function selectTests({ repo, root, changed }) {
   const blind = changed.find(blinds);
   if (blind !== undefined) return { full: blind };
   const hit = targets({ repo, root, changed });
-  if (hit.size === 0) return { files: [] };
+  if (changed.every((file) => file.endsWith('.md'))) return { files: [] };
   const edges = edgeCache();
-  const files = testFiles({ root }).filter((test) => [...reaches(join(root, test), root, edges)].some((file) => hit.has(file)));
+  const files = testFiles({ root }).filter((test) => TREE_GUARDS.includes(test) || [...reaches(join(root, test), root, edges)].some((file) => hit.has(file)));
   return { files };
 }
 
@@ -101,6 +105,10 @@ function runVitest(changes, count) {
   const bin = join(ROOT, 'node_modules', 'vitest', 'vitest.mjs');
   const child = spawn(process.execPath, [bin, 'run', ...changed, `--maxWorkers=${count}`, '--passWithNoTests'], { cwd: ROOT, stdio: 'inherit' });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));
+  child.on('error', (error) => {
+    console.error(`test-affected: ${error.message}`);
+    process.exitCode = 1;
+  });
   child.on('exit', (code) => {
     process.exitCode = code ?? 1;
   });
