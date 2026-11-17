@@ -10,14 +10,19 @@ type Stored = Pick<StoredSourceItem, 'item'>;
 type Epics = Pick<Extract<SourceConfig, { type: 'jira' }>, 'epics' | 'epicFollows' | 'switchAt'>;
 
 const EPIC_LEVEL = 1;
+const STANDARD_LEVEL = 0;
 const SUBTASK_LEVEL = -1;
 const DONE = 'done'; // the status category key Jira gives every done status, whatever its name
 
 const levelOf = ({ item }: Stored): unknown => item.data.hierarchyLevel;
 
-// An epic's link needs the epic toggle and a subtask's the subtask one; any other pair is a level the Hive does not read
-const counts = (tree: JiraTree, parent: Stored, child: Stored): boolean =>
-  levelOf(parent) === EPIC_LEVEL ? tree.epics : levelOf(child) === SUBTASK_LEVEL && tree.subtasks;
+// Epic to standard issue needs the epic toggle, standard issue to subtask the subtask one. Any other pair is a level the Hive does not read,
+// which also caps a tree at three levels whatever the wire claims, so no chain or cycle of epics can grow it
+function counts(tree: JiraTree, parent: Stored, child: Stored): boolean {
+  const [above, below] = [levelOf(parent), levelOf(child)];
+  if (above === EPIC_LEVEL && below === STANDARD_LEVEL) return tree.epics;
+  return above === STANDARD_LEVEL && below === SUBTASK_LEVEL && tree.subtasks;
+}
 
 /** Each stored issue's tree links over a whole listing, keyed by node id, read before a status or a filter drops one: a child filtered out is
  * still a child. A parent outside the listing (another project, never synced) links nothing, so its child is a root. Children keep listing order. */
@@ -31,10 +36,14 @@ export function treeLinks(listing: readonly Stored[], tree: JiraTree): Map<strin
     const parent = parentOf(s);
     return parent === undefined ? [] : [[s.item.nodeId, parent]];
   }));
-  const under = new Map<string, Stored[]>(); // built once here, so a project's listing costs one pass rather than one scan per parent
+  // built once here and pushed into in place, being this function's own: a large epic costs one pass, never a copy per child
+  const under = new Map<string, Stored[]>();
   for (const s of listing) {
     const parent = parents.get(s.item.nodeId);
-    if (parent !== undefined) under.set(parent, [...(under.get(parent) ?? []), s]);
+    if (parent === undefined) continue;
+    const kids = under.get(parent);
+    if (kids === undefined) under.set(parent, [s]);
+    else kids.push(s);
   }
   return new Map(listing.map((s): [string, TreeLinks] => {
     const kids = under.get(s.item.nodeId) ?? [];

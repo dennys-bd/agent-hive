@@ -44,8 +44,8 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     const isOwn = projectOf(read.issue) === source.project;
     if (isOwn && db !== undefined) db.transaction(() => writeIssue(db, rows, 'write'));
     // #830: its tree read over the stored listing with the issue in its place, so a single read's links equal the next listing's
-    const listing = db === undefined ? [] : db.items.items(rowsOf(cred), db.items.listing(rowsOf(cred), source.project));
-    const links = treeLinks(isOwn ? inPlace(listing, rows) : [rows], source.tree);
+    const listing = !isOwn || db === undefined ? [] : db.items.items(rowsOf(cred), db.items.listing(rowsOf(cred), source.project));
+    const links = treeLinks(inPlace(listing, rows), source.tree);
     return { task: withTree(taskOf(rows, source), links.get(rows.item.nodeId), source), isOwn };
   }
 

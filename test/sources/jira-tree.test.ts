@@ -43,6 +43,8 @@ test('epics: hide drops every parent and keeps its children; show stamps each by
   const shown = links(await listed(tree(), { tree: BOTH, epics: 'show', epicFollows: 'ahead', switchAt: 'fila' }));
   const epic = { follows: 'ahead', switchAt: 'fila', deleteActivity: false };
   assert.deepEqual(shown.map((t) => [t.id, t.epic]), [['ABC-1', epic], ['ABC-2', epic], ['ABC-3', undefined]]);
+  const ignored = links(await listed(tree(), { tree: BOTH, epics: 'ignore' }));
+  assert.deepEqual(ignored.map((t) => [t.id, t.children, t.epic]), [['ABC-1', ['10002'], undefined], ['ABC-2', ['10003', '10004'], undefined], ['ABC-3', undefined, undefined]]);
 });
 
 test('a parent outside the project, or a level above the epic, links nothing: the child is a root (#830)', async () => {
@@ -79,4 +81,8 @@ test('item() answers the re-read issue with its tree from the stored listing (#8
   assert.deepEqual([answer.reason, answer.entry.column, answer.entry.item.parent, answer.entry.item.children], ['listing', 'In Progress', '10001', ['10003', '10004']]);
   const hidden = await adapter({ call: fakeJira({ 'GET /issue/10002': [read(reread)] }).call, db, source: { tree: BOTH, epics: 'hide' } }).item('10002', '');
   assert.equal(hidden.reason, 'filter', 'a parent epics: hide takes off is judged as filtered');
+  const fresh = issue(5, 'To Do', { issuetype: SUBTASK, parent: under(2) }); // created after the last sync: appended to the listing
+  const first = await adapter({ call: fakeJira({ 'GET /issue/10005': [read(fresh)] }).call, db: await seeded(tree()), source: { tree: BOTH } }).item('10005', '');
+  assert.ok('entry' in first);
+  assert.equal(first.entry.item.parent, '10002');
 });
