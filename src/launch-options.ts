@@ -7,7 +7,7 @@ import type { AgentRun } from './agents/runner.js';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from './agents/claude-models.js';
 import { agentRoles, CODEX_PLUGIN } from './agents/codex-home.js';
 import { codexModelsCache } from './codex-models.js';
-import { CLAUDE_MODEL } from './config-agent-args.js';
+import { foreignModel } from './config-agent-args.js';
 import { isLaunchArgs, isLaunchModel, savedLaunch } from './launch-pick.js';
 import { isRecord } from './rate-limits.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
@@ -114,7 +114,7 @@ export function checkLaunch(body: unknown, agent: AgentId | undefined, roles: re
   if (agent === undefined) return refusal('terminal', language);
   if (continueId !== undefined) return refusal('continue', language);
   if (model !== undefined && !isLaunchModel(model)) return refusal('model', language);
-  if (agent === 'codex' && isLaunchModel(model) && CLAUDE_MODEL.test(model)) return refusal('codexModel', language);
+  if (isLaunchModel(model) && foreignModel(agent, model)) return refusal('codexModel', language); // #927; copilot's own key comes with its id (#873)
   if (specializedAgent !== undefined && !(typeof specializedAgent === 'string' && roles.includes(specializedAgent))) return refusal('specializedAgent', language);
   if (args !== undefined && !isLaunchArgs(args)) return refusal('args', language);
   const launch: LaunchPick = {

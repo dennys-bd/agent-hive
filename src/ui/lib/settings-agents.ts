@@ -1,7 +1,7 @@
 // Settings › execução's agents (#482): each agent's default model as typed and its switch, and the problems a save would meet, named before
 // the round trip as parseConfig names them.
 import { agentName } from '../../agents.js';
-import { CLAUDE_MODEL } from '../../config-agent-args.js';
+import { foreignModel } from '../../config-agent-args.js';
 import { isLaunchModel } from '../../launch-pick.js';
 import { AGENT_IDS, type AgentId } from '../../types.js';
 import { t } from '../i18n.js';
@@ -27,7 +27,7 @@ export function agentsProblem(draft: Pick<SettingsDraft, 'agentModels' | 'agentE
   for (const agent of AGENT_IDS) {
     const model = draft.agentModels[agent].trim();
     if (model !== '' && !isLaunchModel(model)) return { section: 'execution', message: t('settings.agents.error.model', { agent: agentName(agent) }) };
-    if (agent === 'codex' && CLAUDE_MODEL.test(model)) return { section: 'execution', message: t('settings.agents.error.claudeModel', { agent: agentName(agent), model }) };
+    if (foreignModel(agent, model)) return { section: 'execution', message: t('settings.agents.error.claudeModel', { agent: agentName(agent), model }) };
   }
   const n = draft.stages.findIndex((stage) => namedAgents(stage).some((agent) => !draft.agentEnabled[agent]));
   const stage = draft.stages[n];
