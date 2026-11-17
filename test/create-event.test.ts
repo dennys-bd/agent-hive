@@ -241,8 +241,7 @@ test('createTask answers a create refusal 400, a placement failure 502 with the 
   assert.deepEqual(await createTask(fakeDeps(COMB, { fail: new Error('no access') }).deps, body), { status: 502, message: 'no access' });
 });
 
-// canCreate still refuses a jira source until Task 9: the tests hand one that accepts it
-const OPEN = { canCreate: () => true };
+const OPEN = {};
 
 test('createTask creates in a jira source with its issue type and parent, polls it and answers the task under its key (#831)', async () => {
   const run = fakeDeps(JIRA_COMB, OPEN);
@@ -272,4 +271,9 @@ test('a failed create names the source\'s type in hive.log: Jira for a jira sour
     await createTask({ ...run.deps, log }, { title: 'x', source, status: 'To Do' });
   }
   assert.deepEqual(lines, ['create on tickets: Jira refused the write: a Jira issue always has a status', 'create on roadmap: GitHub refused the write: a Jira issue always has a status']);
+});
+
+test('a jira source passes the create gate, and its noCreateMessage has only the neutral words (#831)', async () => {
+  assert.deepEqual(await createTask(fakeDeps(JIRA_COMB).deps, { title: 'x', source: 'tickets', status: 'To Do' }), { id: 'ABC-7', itemId: 'tickets:10007', ref: JIRA_REF, stage: 'fila' });
+  assert.equal(noCreateMessage({ name: 'tickets', type: 'jira' }), 'source tickets cannot create tasks');
 });
