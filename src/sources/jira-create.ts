@@ -2,14 +2,15 @@ import { WireError } from '../read-model/normalize.js';
 import { CreateRefusedError, IssuePlacementError } from '../source-create.js';
 import type { CreatedRef, Source } from '../types.js';
 import { markdownToAdf } from './adf-parse.js';
-import { JiraNotFoundError } from './jira-fetch.js';
+import { JiraHttpError, JiraNotFoundError } from './jira-fetch.js';
 import type { JiraSourceConfig } from './jira-listing.js';
-import { createIssue, type JiraCall, type JiraIssueType, readIssue, readIssueTypes, readLabels, readStatuses } from './jira-queries.js';
+import { createIssue, isIssueRef, type JiraCall, type JiraIssueType, readIssue, readIssueTypes, readLabels, readStatuses } from './jira-queries.js';
 
 // A Jira source's create (#831), out of jira.ts so it stays small: the checks before any write, the POST, then the placement the adapter hands
 type CreateFields = Parameters<NonNullable<Source['create']>>[0];
 type CreateOptions = Awaited<ReturnType<NonNullable<Source['createOptions']>>>;
 
+const HTTP_BAD_REQUEST = 400;
 const SUBTASK_LEVEL = -1; // Jira's hierarchyLevel: -1 a subtask, 0 a standard issue, 1 an epic
 const WHITESPACE = /\s/;
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -32,6 +33,8 @@ function columnOf(fields: CreateFields): string {
 
 // Read live: an epic under epics: hide is no task and is still a parent, and a gone one is a refusal with nothing written
 async function readParent(call: JiraCall, id: string): Promise<Parent> {
+  // a malformed id would fail in issuePath as a plain error, a 502; it is the caller's input, so a 400 with nothing sent
+  if (!isIssueRef(id)) throw new CreateRefusedError(`parent ${id} is not a Jira issue id or key`);
   const read = await readIssue(call, id).catch((err: unknown) => {
     throw err instanceof JiraNotFoundError ? new CreateRefusedError(`parent ${id} is not an issue Jira has`) : err;
   });
@@ -47,13 +50,24 @@ function typeFor(types: readonly JiraIssueType[], fields: CreateFields, source: 
   const expected = parent === undefined ? undefined : parent.level - 1;
   const name = fields.issueType ?? (expected === SUBTASK_LEVEL ? source.subtaskType : source.issueType);
   const type = types.find((t) => t.name === name);
-  if (type === undefined) throw new CreateRefusedError(`issue type "${name}" is not one of ${source.project}'s: ${types.map((t) => t.name).join(', ')}`);
+  // when the name is the source's own default, say so: the fix is in Settings, not in the request
+  const whose = fields.issueType === undefined ? `the source's ${expected === SUBTASK_LEVEL ? 'subtaskType' : 'issueType'} ` : '';
+  if (type === undefined) throw new CreateRefusedError(`${whose}issue type "${name}" is not one of ${source.project}'s: ${types.map((t) => t.name).join(', ')}`);
   if (parent === undefined && type.hierarchyLevel === SUBTASK_LEVEL) throw new CreateRefusedError(`issue type "${name}" needs a parent`);
   if (parent !== undefined && type.hierarchyLevel !== expected) {
     const takes = types.filter((t) => t.hierarchyLevel === expected).map((t) => t.name).join(', ');
     throw new CreateRefusedError(`issue type "${name}" cannot go under ${parent.key}: it takes ${takes}`);
   }
   return type;
+}
+
+// A 400 on the POST created nothing (a required field, a type the screen refuses): a refusal, not a retry. The transport keeps only the
+// errors object's keys (field ids), never Jira's words, so those are what the line names
+function refused(err: unknown): never {
+  if (err instanceof JiraHttpError && err.status === HTTP_BAD_REQUEST) {
+    throw new CreateRefusedError(err.errorKeys.length === 0 ? 'Jira refused the issue' : `Jira refused the issue: ${err.errorKeys.join(', ')}`);
+  }
+  throw err;
 }
 
 /** A new issue in the source's project (#831), checked before any write, then placed in `column`. Nothing is rolled back: a failure once the
@@ -68,7 +82,7 @@ export async function createJiraIssue({ call, source, place }: JiraCreateDeps, f
   const made = await createIssue(call, {
     project: { key: source.project }, summary: fields.title, issuetype: { id: type.id }, labels: fields.labels,
     ...(body === '' ? {} : { description: markdownToAdf(body) }), ...(parent === undefined ? {} : { parent: { id: parent.id } }),
-  });
+  }).catch(refused);
   const ref = { id: made.key, url: `https://${source.site}/browse/${encodeURIComponent(made.key)}` };
   try {
     await place(made.id, column); // POST /issue leaves it in the workflow's first status

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CreateRefusedError, IssuePlacementError } from '../../src/source-create.js';
 import { markdownToAdf } from '../../src/sources/adf-parse.js';
-import { JiraNotFoundError } from '../../src/sources/jira-fetch.js';
+import { JiraHttpError, JiraNotFoundError } from '../../src/sources/jira-fetch.js';
 import type { ReadModel } from '../../src/read-model/db.js';
 import { adapter, type Fake, fakeJira, issue, read, ROWS, seeded, STATUSES } from './jira-fakes.js';
 
@@ -65,6 +65,7 @@ test('under a subtask, a chosen type of the wrong level, a subtask type with no 
     [{ parent: '10021', issueType: 'Sub-task' }, { 'GET /issue/10021': [typed(21, 1)] }, 'issue type "Sub-task" cannot go under ABC-21: it takes Story, Bug'],
     [{ issueType: 'Sub-task' }, {}, 'issue type "Sub-task" needs a parent'],
     [{ parent: '10099' }, { 'GET /issue/10099': [new JiraNotFoundError()] }, 'parent 10099 is not an issue Jira has'],
+    [{ parent: '../x' }, {}, 'parent ../x is not a Jira issue id or key'],
   ];
   for (const [asked, extra, message] of cases) {
     const fake = fakeJira(answers(extra));
@@ -113,4 +114,13 @@ test('createOptions answers the project\'s statuses, the site\'s labels and ever
     statuses: ['To Do', 'In Progress', 'Done'], labels: ['api', 'ux'],
     issueTypes: [{ name: 'Epic', level: 1 }, { name: 'Story', level: 0 }, { name: 'Bug', level: 0 }, { name: 'Sub-task', level: -1 }],
   });
+});
+
+test('a source default the project lacks is named as the source\'s, and a 400 on the POST is a refusal naming Jira\'s field keys (#831)', async () => {
+  const types = { ...TYPES, total: 3, issueTypes: TYPES.issueTypes.filter((t) => t.name !== 'Story') };
+  await assert.rejects(create(fakeJira(answers({ 'GET /issue/createmeta/ABC/issuetypes': [types] }))), refusedWith('the source\'s issueType issue type "Story" is not one of ABC\'s: Epic, Bug, Sub-task'));
+  const required = fakeJira(answers({ 'POST /issue': [new JiraHttpError(400, ['customfield_10010'])] }));
+  await assert.rejects(create(required), refusedWith('Jira refused the issue: customfield_10010'));
+  assert.deepEqual(required.sent, ['GET /issue/createmeta/ABC/issuetypes', 'POST /issue'], 'nothing placed after a refused POST');
+  await assert.rejects(create(fakeJira(answers({ 'POST /issue': [new JiraHttpError(500, [])] }))), (err: unknown) => err instanceof JiraHttpError);
 });
