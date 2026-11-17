@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { JiraHttpError, JiraNotFoundError, jiraFetch } from '../../src/sources/jira-fetch.js';
+import { JiraBadRequestError, JiraHttpError, JiraNotFoundError, jiraFetch } from '../../src/sources/jira-fetch.js';
 import { isNotConnected, isRateLimited } from '../../src/source-errors.js';
 
 const SITE = 'acme.atlassian.net';
@@ -126,4 +126,36 @@ test('a 201 or a 200 with no body answers undefined, as POST /issueLink gives it
   assert.equal(await jiraFetch(SITE, '/issueLink', { method: 'POST' }, harness(new Response(null, { status: 201 })).deps), undefined);
   assert.equal(await jiraFetch(SITE, '/x', undefined, harness(new Response('', { status: 200 })).deps), undefined);
   assert.equal(await jiraFetch(SITE, '/issueLink/1', { method: 'DELETE' }, harness(new Response(null, { status: 204 })).deps), undefined);
+});
+
+test('api agile calls the Agile API under the same site and header (#826)', async () => {
+  const { calls, deps } = harness(json({ values: [] }));
+  await jiraFetch(SITE, '/board?type=scrum', {}, { ...deps, api: 'agile' });
+  assert.equal(calls[0].url, `https://${SITE}/rest/agile/1.0/board?type=scrum`);
+  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, `Basic ${BASIC}`);
+});
+
+test('a 400 throws JiraBadRequestError with Jira\'s errors and errorMessages, named on request; a body with neither keeps the status message (#826)', async () => {
+  const body = { errors: { customfield_10020: 'Sprint is closed', priority: 7 }, errorMessages: ['Issue type cannot change'], token: 'x' };
+  const err = await jiraFetch(SITE, '/issue/10001', { method: 'PUT' }, harness(json(body, 400)).deps).catch((e: unknown) => e);
+  assert.ok(err instanceof JiraBadRequestError);
+  assert.ok(err instanceof JiraHttpError, 'the #823 refusals still read it by status and keys');
+  assert.deepEqual([err.status, err.errorKeys], [400, ['customfield_10020', 'priority']]);
+  assert.equal(err.message, 'customfield_10020: Sprint is closed; Issue type cannot change');
+  assert.equal(err.named({ customfield_10020: 'Sprint' }), 'Sprint: Sprint is closed; Issue type cannot change');
+  for (const res of [json({}, 400), new Response('not json', { status: 400 }), json({ errors: { a: 1 } }, 400)]) {
+    await assert.rejects(jiraFetch(SITE, '/x', {}, harness(res).deps), (e: unknown) => !(e instanceof JiraBadRequestError) && e instanceof JiraHttpError && e.message === 'jira api: HTTP 400');
+  }
+});
+
+test('a 400 keeps at most 10 parts, each cut to 300 characters (#826)', async () => {
+  const errors = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`f${i}`, 'e'.repeat(500)]));
+  const body = { errors, errorMessages: ['m1', 'm2', 'm3', 'm4'] };
+  const err = await jiraFetch(SITE, '/x', { method: 'PUT' }, harness(json(body, 400)).deps).catch((e: unknown) => e);
+  assert.ok(err instanceof JiraBadRequestError);
+  const parts = err.message.split('; ');
+  assert.equal(parts.length, 10);
+  assert.ok(parts.every((p) => p.length <= 300 + 'f0: '.length));
+  assert.equal(parts[0], `f0: ${'e'.repeat(300)}`);
+  assert.equal(parts[9], 'm2');
 });

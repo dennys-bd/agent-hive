@@ -6,7 +6,7 @@ import { initialState } from '../src/orchestrator.js';
 import { ItemNotOnSourceError, PartialWriteError } from '../src/field-values.js';
 import { CreateRefusedError } from '../src/source-create.js';
 import { registerProjectRoutes, type ProjectRouteDeps } from '../src/server-project.js';
-import type { FieldValue, FieldWrite, HiveEvent, ItemField, ProjectItem, ProjectView, Source, SourceItem, Stage, State, Task } from '../src/types.js';
+import type { FieldValue, SourceConfig, FieldWrite, HiveEvent, ItemField, ProjectItem, ProjectView, Source, SourceItem, Stage, State, Task } from '../src/types.js';
 import { fakeLog } from './fakes.js';
 import { flowed } from './fixtures/main-flow.js';
 
@@ -18,12 +18,14 @@ const LOW = { limit: 5000, remaining: 499, resetsAt: '2999-01-01T00:00:00.000Z',
 type ViewSource = Partial<Pick<Source, 'project' | 'fieldsOf' | 'setField' | 'settingsOptions' | 'createOptions'>>;
 
 // The project routes alone over these sources and this state, answering the base URL; every dispatched event lands in `dispatched`
-function routes(t: TestContext, sources: Record<string, ViewSource>, extra: Partial<State> = {}, dispatched: HiveEvent[] = [], rejecting = false, extraDeps: Pick<ProjectRouteDeps, 'refreshOptions' | 'log'> = {}): string {
+function routes(t: TestContext, sources: Record<string, ViewSource>, extra: Partial<State> = {}, dispatched: HiveEvent[] = [], rejecting = false, extraDeps: Pick<ProjectRouteDeps, 'refreshOptions' | 'log'> = {}, types: Readonly<Record<string, SourceConfig['type']>> = {}): string {
   const app = express();
   app.use(express.json());
   const state: State = { ...initialState(0), ...flowed(STAGES), ...extra };
+  // #831: the route names a source by its config entry's type; a source the test does not type is a GitHub one
+  const config: { comb: { sources: Pick<SourceConfig, 'name' | 'type'>[] } } = { comb: { sources: Object.keys(sources).map((name) => ({ name, type: types[name] ?? 'github' })) } };
   registerProjectRoutes(app, {
-    requireLive: () => ({ state, runtime: { sources: new Map(Object.entries(sources)) } }),
+    requireLive: () => ({ state, runtime: { sources: new Map(Object.entries(sources)), config } }),
     reportRetry: async () => {},
     dispatch: async (event) => { dispatched.push(event); if (rejecting) throw new Error('reducer failed'); },
     ...extraDeps,
@@ -278,4 +280,16 @@ test('GET /sources/:name/create-options leaves a GitHub failure\'s words in hive
   }, {}, [], false, { log });
   for (const name of ['broken', 'unplaced']) await fetch(optionsUrl(base, name));
   assert.deepEqual(lines, ['WARN create-options of broken: GitHub refused the read: Bad credentials']);
+});
+
+test('GET /sources/:name/create-options answers a jira source\'s statuses, labels and issue types, and logs its failure as Jira\'s (#831)', async (t) => {
+  const menus = { statuses: ['To Do', 'Done'], labels: ['api'], issueTypes: [{ name: 'Story', level: 0 }, { name: 'Sub-task', level: -1 }] };
+  const { log, lines } = fakeLog();
+  const base = routes(t, {
+    tickets: { createOptions: async () => menus }, broken: { createOptions: async () => { throw new Error('jira api: HTTP 500'); } },
+  }, {}, [], false, { log }, { tickets: 'jira', broken: 'jira' });
+  const res = await fetch(optionsUrl(base, 'tickets'));
+  assert.deepEqual([res.status, await res.json()], [200, menus]);
+  await fetch(optionsUrl(base, 'broken'));
+  assert.deepEqual(lines, ['WARN create-options of broken: Jira refused the read: jira api: HTTP 500']);
 });

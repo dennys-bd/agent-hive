@@ -4,16 +4,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { CreateDraft, OptionsEntry } from '@/hooks/use-create-draft';
+import { hasIssueTypes } from '../../create-in.js';
+import { type CreateDraft, type OptionsEntry, creatableTypes } from '@/hooks/use-create-draft';
 import { t } from '@/i18n';
-import { type CreateTargets, repositoryLabel } from '@/lib/create-targets';
+import { type CreateTargets, placeOf, repositoryLabel, sharedCopy } from '@/lib/create-targets';
 
 // Radix items cannot carry null: fora do project has a value no Status option can have, as NO_FLOW does in CreateTaskDialog
 const OFF_PROJECT = '\u0000off-project';
 
 export interface CreateIssueFieldsProps {
   draft: CreateDraft; sources: CreateTargets['sources']; options: OptionsEntry | undefined;
-  onRetry(): void; onSource(source: string): void; onStatus(status: string | null): void; onAddLabel(label: string): void; onRemoveLabel(label: string): void;
+  onRetry(): void; onSource(source: string): void; onIssueType(type: string): void; onStatus(status: string | null): void; onAddLabel(label: string): void; onRemoveLabel(label: string): void;
 }
 
 function RepositoryMenu({ sources, value, onPick }: { sources: CreateTargets['sources']; value?: string; onPick(source: string): void }) {
@@ -27,15 +28,27 @@ function RepositoryMenu({ sources, value, onPick }: { sources: CreateTargets['so
   );
 }
 
-function StatusMenu({ entry, value, onPick }: { entry: OptionsEntry | undefined; value: string | null | undefined; onPick(status: string | null): void }) {
+function TypeMenu({ entry, value, onPick }: { entry: OptionsEntry | undefined; value: string | undefined; onPick(type: string): void }) {
+  const types = entry?.state === 'ready' ? creatableTypes(entry.options) : [];
+  return (
+    <Select disabled={entry?.state !== 'ready'} value={value} onValueChange={onPick}>
+      <SelectTrigger id="create-issue-type" className="w-full"><SelectValue placeholder={entry?.state === 'loading' ? t('create.loading') : undefined} /></SelectTrigger>
+      <SelectContent>
+        {types.map((type) => <SelectItem key={type.name} value={type.name}>{type.name}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function StatusMenu({ entry, value, canLeaveProject, onPick }: { entry: OptionsEntry | undefined; value: string | null | undefined; canLeaveProject: boolean; onPick(status: string | null): void }) {
   const statuses = entry?.state === 'ready' ? entry.options.statuses : [];
   return (
     <Select disabled={entry?.state !== 'ready'} value={value === null ? OFF_PROJECT : value} onValueChange={(v) => onPick(v === OFF_PROJECT ? null : v)}>
       <SelectTrigger id="create-status" className="w-full"><SelectValue placeholder={entry?.state === 'loading' ? t('create.loading') : undefined} /></SelectTrigger>
       <SelectContent>
         {statuses.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-        <SelectSeparator />
-        <SelectItem value={OFF_PROJECT}>{t('create.offProject')}</SelectItem>
+        {canLeaveProject && <SelectSeparator />}
+        {canLeaveProject && <SelectItem value={OFF_PROJECT}>{t('create.offProject')}</SelectItem>}
       </SelectContent>
     </Select>
   );
@@ -70,16 +83,24 @@ function LabelChips({ entry, repository, picked, onAdd, onRemove }: LabelChipsPr
 }
 
 /** The issue form (#772): repositório, status and labels of the source's create options, with the loading state and the retry line. */
-export function CreateIssueFields({ draft, sources, options, onRetry, onSource, onStatus, onAddLabel, onRemoveLabel }: CreateIssueFieldsProps) {
-  const repository = sources.find((s) => s.name === draft.source)?.repository ?? '';
+export function CreateIssueFields({ draft, sources, options, onRetry, onSource, onIssueType, onStatus, onAddLabel, onRemoveLabel }: CreateIssueFieldsProps) {
+  const copy = sharedCopy(sources);
+  const source = sources.find((s) => s.name === draft.source);
+  const repository = placeOf(source) ?? '';
+  const hasTypes = source !== undefined && hasIssueTypes(source.type); // #831: a Jira issue always has a status, and a type
   return (
     <>
-      <Field id="create-repository" label={t('create.repository')} hint={t('create.repositoryHint')}>
+      <Field id="create-repository" label={t(copy.place)} hint={t(copy.placeHint)}>
         <RepositoryMenu sources={sources} value={draft.source} onPick={onSource} />
       </Field>
-      <Field id="create-status" label={t('create.status')} note={t('create.onProject')}>
-        <StatusMenu entry={options} value={draft.status} onPick={onStatus} />
+      <Field id="create-status" label={t('create.status')} note={hasTypes ? undefined : t('create.onProject')}>
+        <StatusMenu entry={options} value={draft.status} canLeaveProject={!hasTypes} onPick={onStatus} />
       </Field>
+      {hasTypes && (
+        <Field id="create-issue-type" label={t('create.issueType')}>
+          <TypeMenu entry={options} value={draft.issueType} onPick={onIssueType} />
+        </Field>
+      )}
       <LabelChips entry={options} repository={repository} picked={draft.labels} onAdd={onAddLabel} onRemove={onRemoveLabel} />
       {options?.state === 'failed' && (
         <p className="text-destructive text-xs">

@@ -28,7 +28,7 @@ function scopeItems(db: Db, source: string, project: string): SourceItem[] {
 }
 
 // Rebuilt from the store, by key number, as every search's ORDER BY key: stable, and not moved by a Rank change that leaves updated alone
-function writeListing(db: Db, source: string, project: string): boolean {
+export function writeListing(db: Db, source: string, project: string): boolean {
   const next = scopeItems(db, source, project).sort(byKey).map((item) => item.nodeId);
   if (JSON.stringify(next) === JSON.stringify(db.items.listing(source, project))) return false;
   db.items.setListing(source, project, next);

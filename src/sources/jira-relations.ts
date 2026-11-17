@@ -14,6 +14,8 @@ import { jiraRefs } from './jira-refs.js';
 export type BlockingLink = Pick<JiraLink, 'type' | 'direction' | 'id' | 'key' | 'title' | 'statusCategory'>;
 /** A linked issue's status category in the read model: undefined when the model has no row for it, null when its row has none. */
 export type CategoryOf = (nodeId: string) => string | null | undefined;
+/** No store to read: every blocker keeps its link's own category. */
+export const NO_CATEGORIES: CategoryOf = () => undefined;
 
 const DONE = 'done';
 const FOUND_MAX = 8; // the add row's list (#57), as GitHub's

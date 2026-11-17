@@ -4,8 +4,8 @@ import { type AdfNode, adfToMarkdown } from './adf.js';
 
 /** One call to the site's REST API v3, path from /rest/api/3 on. 5.2 binds it from jiraFetch, so the site and the credential stay in the transport. */
 export type JiraCall = (path: string, init?: RequestInit) => Promise<unknown>;
-/** A field's schema as Jira answers it; an array's element kind is `items`. */
-export interface JiraSchema { type: string; items?: string }
+/** A field's schema as Jira answers it; an array's element kind is `items`. custom and system (#826) tell a sprint, a textarea and the labels apart. */
+export interface JiraSchema { type: string; items?: string; custom?: string; system?: string }
 /** One issue as a search or a read answers it. id and key are checked by the mapping (jira-item.ts), since a reconcile asks only id. */
 export interface JiraIssue { id?: string; key?: string; fields: Record<string, unknown> }
 /** What every page and a single read carry with `expand=names,schema`: each field id's name and schema, so the mapping never reads source_fields. */
@@ -13,25 +13,25 @@ export interface JiraFieldMeta { names: Record<string, string>; schema: Record<s
 export interface JiraSearchPage extends JiraFieldMeta { issues: JiraIssue[]; nextPageToken?: string; isLast?: boolean }
 
 export const PROJECT_KEY = /^[A-Z][A-Z0-9_]*$/;
-const ISSUE_REF = /^(\d+|[A-Z][A-Z0-9_]*-\d+)$/;
+export const ISSUE_REF = /^(\d+|[A-Z][A-Z0-9_]*-\d+)$/;
 export const SEARCH_FIELDS: readonly string[] = ['*navigable', 'description']; // description named in case *navigable leaves it out
 export const SEARCH_EXPAND = 'names,schema';
 export const PAGE_SIZE = 100;
 const MINUTE_MS = 60_000;
 // A hard stop for a server that never ends its paging: 1000 pages of 100 is far past any project the Hive lists
-const MAX_PAGES = 1000;
+export const MAX_PAGES = 1000;
 
-type Json = Record<string, unknown>;
+export type Json = Record<string, unknown>;
 
-function recordAt(value: unknown, what: string): Json {
+export function recordAt(value: unknown, what: string): Json {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new WireError(what);
   return value as Json;
 }
-function arrayAt(value: unknown, what: string): unknown[] {
+export function arrayAt(value: unknown, what: string): unknown[] {
   if (!Array.isArray(value)) throw new WireError(what);
   return value;
 }
-function textAt(json: Json, key: string, what: string): string {
+export function textAt(json: Json, key: string, what: string): string {
   const value = json[key];
   if (typeof value !== 'string') throw new WireError(`${what} ${key}`);
   return value;
@@ -58,15 +58,15 @@ export function sinceMinutes(cursor: string, now: number): number | undefined {
   return Number.isFinite(at) ? Math.max(1, Math.ceil((now - at) / MINUTE_MS) + 1) : undefined;
 }
 
-function schemaOf(value: unknown): JiraSchema | undefined {
+export function schemaOf(value: unknown): JiraSchema | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
-  const { type, items } = value as Json;
+  const { type, items, custom, system } = value as Json;
   if (typeof type !== 'string') return undefined;
-  return typeof items === 'string' ? { type, items } : { type };
+  return { type, ...(typeof items === 'string' ? { items } : {}), ...(typeof custom === 'string' ? { custom } : {}), ...(typeof system === 'string' ? { system } : {}) };
 }
 
 // Anything unreadable is dropped, which becomes "unknown kind, no row" downstream, never a refusal
-function metaOf(json: Json): JiraFieldMeta {
+export function metaOf(json: Json): JiraFieldMeta {
   const names = Object.fromEntries(Object.entries(typeof json.names === 'object' && json.names !== null ? json.names : {})
     .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
   const schema = Object.fromEntries(Object.entries(typeof json.schema === 'object' && json.schema !== null ? json.schema : {})
@@ -74,7 +74,7 @@ function metaOf(json: Json): JiraFieldMeta {
   return { names, schema };
 }
 
-function issueAt(value: unknown, what: string): JiraIssue {
+export function issueAt(value: unknown, what: string): JiraIssue {
   const issue = recordAt(value, what);
   return {
     id: optionalText(issue, 'id', what), key: optionalText(issue, 'key', what),
@@ -114,6 +114,8 @@ export async function searchIssues(call: JiraCall, jql: string, fields: readonly
 }
 
 /** The path of one issue (#819, #820): the user's or Jira's id or key, checked and encoded before it reaches a REST path. */
+export const isIssueRef = (idOrKey: string): boolean => ISSUE_REF.test(idOrKey);
+
 export function issuePath(idOrKey: string): string {
   if (!ISSUE_REF.test(idOrKey)) throw new Error('jira issue id or key is not one');
   return `/issue/${encodeURIComponent(idOrKey)}`;
@@ -272,7 +274,9 @@ export async function readLabels(call: JiraCall): Promise<string[]> {
   }));
 }
 
-export interface JiraIssueType { id: string; name: string; subtask: boolean }
+/** An issue type of the project (#821): subtask splits issueType from subtaskType in the form; hierarchyLevel (#831) is Jira's -1 for a
+ * subtask, 0 for a standard type, 1 for an epic, what a create under a parent is checked against. */
+export interface JiraIssueType { id: string; name: string; subtask: boolean; hierarchyLevel: number }
 /** One field of an issue type's create screen (#821): the values it allows, as the sync stores them. */
 export interface JiraCreateField { name: string; allowedValues: string[] }
 
@@ -288,7 +292,14 @@ function countedPage<T>(page: Json, list: unknown, startAt: number, what: string
 function issueTypeOf(value: unknown): JiraIssueType {
   const type = recordAt(value, 'jira issue types');
   if (typeof type.subtask !== 'boolean') throw new WireError('jira issue type subtask');
-  return { id: textAt(type, 'id', 'jira issue type'), name: textAt(type, 'name', 'jira issue type'), subtask: type.subtask };
+  if (typeof type.hierarchyLevel !== 'number') throw new WireError('jira issue type hierarchyLevel');
+  return { id: textAt(type, 'id', 'jira issue type'), name: textAt(type, 'name', 'jira issue type'), subtask: type.subtask, hierarchyLevel: type.hierarchyLevel };
+}
+
+/** A new issue (#831): POST /issue with the fields as Jira names them, answered by its id and key. */
+export async function createIssue(call: JiraCall, fields: Record<string, unknown>): Promise<{ id: string; key: string }> {
+  const json = recordAt(await call('/issue', { method: 'POST', body: JSON.stringify({ fields }) }), 'jira created issue');
+  return { id: textAt(json, 'id', 'jira created issue'), key: textAt(json, 'key', 'jira created issue') };
 }
 
 // An allowed value as jira-item.ts's scalarOf reads one: an option's value, else a priority's, component's or version's name

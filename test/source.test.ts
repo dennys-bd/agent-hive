@@ -954,6 +954,17 @@ test('namespaced passes a jira source\'s blocker ids untouched under qualifyId: 
   assert.deepEqual([listed.item.itemId, listed.item.id, listed.item.blockers], ['tickets:10001', 'ABC-ABC-1', blockers]);
 });
 
+test('namespaced strips the source\'s prefix from a create\'s parent, as from every id it is handed, and names the created item (#831)', async () => {
+  const made: unknown[] = [];
+  const adapter: Source = {
+    item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => [],
+    create: async (fields) => { made.push(fields); return { itemId: '10007', ref: { id: 'ABC-7', url: 'https://acme.example/browse/ABC-7' } }; },
+  };
+  const created = await namespaced(JIRA_ENTRY, adapter).create?.({ title: 'T', column: 'To Do', labels: [], issueType: 'Sub-task', parent: 'tickets:10001' });
+  assert.deepEqual(made, [{ title: 'T', column: 'To Do', labels: [], issueType: 'Sub-task', parent: '10001' }]);
+  assert.equal(created?.itemId, 'tickets:10007');
+});
+
 test('at boot a source whose login is missing is kept and its poll rejects not connected; a save still refuses it (#820)', async () => {
   const missing = new SourceNotConnectedError('jira:acme.example');
   const source: Source = { item: goneItem, resolveFields: async () => { throw missing; }, listItems: async () => [], settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {} };

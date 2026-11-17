@@ -27,7 +27,7 @@ function rowOf(task: Task, records: ActivityRecord[]): ProjectItem {
     labels: [], assignees: [],
     fields: task.workspace === undefined ? {} : { [WORKSPACE_FIELD]: task.workspace },
     pullRequests: prsOf(item.itemId, records),
-    ...(parent === undefined ? {} : { parent: Number(parent) }),
+    ...(parent === undefined ? {} : { parent }),
   };
 }
 

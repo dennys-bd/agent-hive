@@ -1,4 +1,4 @@
-import { STATUS } from '../field-values.js';
+import { MAX_TEXT, STATUS } from '../field-values.js';
 import { WireError } from '../read-model/normalize.js';
 import type { SourceField, SourceItem, SourceItemValue } from '../read-model/source-items.js';
 import { type AdfNode, adfToMarkdown } from './adf.js';
@@ -30,11 +30,24 @@ const textOf = (value: unknown): string | undefined => (typeof value === 'string
 // exported for the blocker search (#828), which reads a found issue's category as the mapping does
 export const statusCategoryOf = (fields: Json | undefined): string | null => textOf(recordOf(recordOf(fields?.status)?.statusCategory)?.key) ?? null;
 
+/** Jira Software's sprint field and Jira's multi-line text field (#826), told apart from any other json or string field by their custom type. */
+export const SPRINT_FIELD = 'com.pyxis.greenhopper.jira:gh-sprint';
+export const TEXTAREA_FIELD = 'com.atlassian.jira.plugin.system.customfieldtypes:textarea';
+
+/** The issue's sprint as one name (#826): the one not closed, else its last; the stored value and the panel's both read it. */
+export function sprintName(value: unknown): string | undefined {
+  const sprints = (Array.isArray(value) ? value : []).map(recordOf).filter((s): s is Json => s !== undefined && textOf(s.name) !== undefined);
+  const open = sprints.find((s) => s.state !== 'closed');
+  return textOf((open ?? sprints.at(-1))?.name);
+}
+
 // An array's kind is its elements'
 const elementType = (schema: JiraSchema): string => (schema.type === 'array' ? (schema.items ?? '') : schema.type);
 
 function kindOf(schema: JiraSchema | null | undefined): SourceItemValue['kind'] | undefined {
   if (schema === null || schema === undefined) return undefined;
+  if (schema.custom === SPRINT_FIELD) return 'option';
+  if (schema.custom === TEXTAREA_FIELD) return 'text';
   const type = elementType(schema);
   if (type === 'string' || type === 'user') return 'text';
   if (type === 'number') return 'number';
@@ -51,6 +64,18 @@ function scalarOf(type: string, value: unknown): string | undefined {
   return textOf(option?.value) ?? textOf(option?.name);
 }
 
+// A field's scalars in Jira's order: a sprint is one name, a textarea its Markdown cut to the facet's cap, anything else one per element
+function scalarsOf(s: JiraSchema, value: unknown): string[] {
+  if (s.custom === SPRINT_FIELD) return [sprintName(value)].filter((v): v is string => v !== undefined);
+  if (s.custom === TEXTAREA_FIELD) {
+    // the codec checks every node before reading it (adf.ts), so the unchecked wire value is safe to hand it
+    const markdown = typeof value === 'string' ? value : adfToMarkdown(value as AdfNode | null | undefined);
+    return markdown === '' ? [] : [markdown.slice(0, MAX_TEXT)];
+  }
+  const elements = s.type === 'array' ? (Array.isArray(value) ? value : []) : [value];
+  return elements.flatMap((e) => [scalarOf(elementType(s), e)].filter((v): v is string => v !== undefined));
+}
+
 // One row per element, in Jira's order: the store keeps a multi-valued field's order by position
 function valuesOf(fields: Json, names: Record<string, string>, schema: Record<string, JiraSchema>): SourceItemValue[] {
   return Object.entries(fields).flatMap(([id, value]): SourceItemValue[] => {
@@ -58,13 +83,9 @@ function valuesOf(fields: Json, names: Record<string, string>, schema: Record<st
     const s = Object.hasOwn(schema, id) ? schema[id] : undefined;
     const kind = kindOf(s);
     if (OWN_FIELDS.has(id) || s === undefined || kind === undefined) return [];
-    const elements = s.type === 'array' ? (Array.isArray(value) ? value : []) : [value];
     const named = Object.hasOwn(names, id) ? names[id] : undefined;
     const field = typeof named === 'string' ? named : id;
-    return elements.flatMap((element): SourceItemValue[] => {
-      const scalar = scalarOf(elementType(s), element);
-      return scalar === undefined ? [] : [{ field, kind, value: scalar }];
-    });
+    return scalarsOf(s, value).map((scalar): SourceItemValue => ({ field, kind, value: scalar }));
   });
 }
 

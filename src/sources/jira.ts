@@ -3,24 +3,26 @@ import type { Logger } from '../log.js';
 import type { ReadModel } from '../read-model/db.js';
 import { SourceNotConnectedError } from '../source-errors.js';
 import type { Citation } from '../tasks.js';
-import type { ItemAction, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
+import type { FieldValue, FieldWrite, ItemAction, ItemField, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
 import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
+import { createJiraIssue, readJiraCreateOptions } from './jira-create.js';
 import { JiraNotFoundError } from './jira-fetch.js';
-import { jiraItemOf } from './jira-item.js';
-import { isListed, type JiraSourceConfig, listedTasks, projectOf, taskOf } from './jira-listing.js';
+import { type JiraFieldsContext, jiraFieldsOf, jiraSetField } from './jira-fields.js';
+import { type JiraItemRows, jiraItemOf } from './jira-item.js';
+import { isFiltered, isListed, type JiraSourceConfig, listedTasks, projectOf, storedLabels, taskOf } from './jira-listing.js';
 import { type JiraCall, type JiraIssueRead, postTransition, readComments, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions } from './jira-queries.js';
-import { type CategoryOf, checkLinkTypes, findBlockers, linkedIds, relate, type RelationsContext, storedCategories } from './jira-relations.js';
-import { writeIssue } from './jira-sync.js';
+import { type CategoryOf, checkLinkTypes, findBlockers, linkedIds, NO_CATEGORIES, relate, type RelationsContext, storedCategories } from './jira-relations.js';
+import { writeIssue, writeListing } from './jira-sync.js';
 import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
 
 export type { JiraSourceConfig } from './jira-listing.js';
 
-const NO_CATEGORIES: CategoryOf = () => undefined; // no store: every blocker keeps its link's own category
 const FORMER_USER = 'Former user'; // what Jira itself shows for a deleted account
 
 /** What a Jira adapter is built from (#820): the site's call, its stored login, the name writer and the read model 5.6 fills. */
 export interface JiraAdapterDeps {
   call: JiraCall;
+  agile: JiraCall; // #826: the Agile API's call, for the sprints, bound as call is
   credential(): Promise<JiraCredential | undefined>;
   renewName(name: string): Promise<void>;
   log?: Pick<Logger, 'warn'>;
@@ -43,24 +45,27 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
   const categoriesOf = (cred: JiraCredential, ids: readonly string[]): CategoryOf =>
     (db === undefined ? NO_CATEGORIES : storedCategories(db.items, rowsOf(cred), ids));
 
-  // One read issue as its task, stored as a write only when it is in the source's project: its scope would otherwise put it into this listing
-  function keep(cred: JiraCredential, read: JiraIssueRead): { task: SourceItem; isOwn: boolean } {
+  // One issue's read stored as a write only when it is in the source's project: its scope would otherwise put it into this listing
+  function keep(cred: JiraCredential, read: JiraIssueRead): { rows: JiraItemRows; task: SourceItem; isOwn: boolean } {
     const rows = jiraItemOf(rowsOf(cred), source.project, read.issue, read.names, read.schema);
     const isOwn = projectOf(read.issue) === source.project;
     if (isOwn && db !== undefined) db.transaction(() => writeIssue(db, rows, 'write'));
     // #830: its tree read over the stored listing with the issue in its place, so a single read's links equal the next listing's
     const listing = !isOwn || db === undefined ? [] : db.items.items(rowsOf(cred), db.items.listing(rowsOf(cred), source.project));
     const links = treeLinks(inPlace(listing, rows), source.tree);
-    return { task: withTree(taskOf(rows, source, categoriesOf(cred, linkedIds([rows]))), links.get(rows.item.nodeId), source), isOwn };
+    return { rows, task: withTree(taskOf(rows, source, categoriesOf(cred, linkedIds([rows]))), links.get(rows.item.nodeId), source), isOwn };
   }
-  const readTask = async (cred: JiraCredential, itemId: string): Promise<{ task: SourceItem; isOwn: boolean }> => keep(cred, await readIssue(call, itemId));
 
+  async function readTask(cred: JiraCredential, itemId: string): Promise<{ task: SourceItem; isOwn: boolean }> {
+    const { task, isOwn } = keep(cred, await readIssue(call, itemId));
+    return { task, isOwn };
+  }
   // #828: what jira-relations.ts reads and writes through, under this account's rows
   const relations = (cred: JiraCredential): RelationsContext => ({
     call, blockingTypes: source.blockingLinkTypes, categories: (ids) => categoriesOf(cred, ids),
     keep: (read) => {
       const { task, isOwn } = keep(cred, read);
-      return { task, isListed: isOwn && isListed(task, source, columns, cred.displayName) };
+      return { task, isListed: isOwn && isListed(task, source, columns, cred.displayName) && !isHidden(task, source) };
     },
   });
 
@@ -117,6 +122,14 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     await readTask(cred, itemId);
   }
 
+  // #831: the new issue placed by the move, whose reads store it; the listing is rebuilt too, since listItems reads it and the poll that
+  // follows the create must list the issue before the next round
+  async function placeNew(itemId: string, status: string): Promise<void> {
+    await moveTo(itemId, status);
+    const cred = await account();
+    if (db !== undefined) db.transaction(() => writeListing(db, rowsOf(cred), source.project));
+  }
+
   // The key the comment links need: the stored row's, else one live read, since the adapter is handed the issue id
   async function keyOf(cred: JiraCredential, itemId: string): Promise<string> {
     const row = db?.items.items(rowsOf(cred), [itemId])[0];
@@ -160,8 +173,25 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     return (await readStatuses(call, source.project)).map((s) => s.name);
   }
 
+  // #826: what the field reads and writes run on, under the account that reads them
+  async function fieldsContext(): Promise<JiraFieldsContext> {
+    const cred = await account();
+    const me = cred.displayName;
+    return {
+      call, agile: deps.agile, source, keep: (read) => keep(cred, read), setColumn: moveTo,
+      labels: () => (db === undefined ? [] : storedLabels(db.items, rowsOf(cred), source.project)),
+      isListed: (task) => isListed(task, source, columns, me) && !isHidden(task, source), isFiltered: (task) => isFiltered(task, source, me),
+    };
+  }
+
+  // #826: every read is live, so ReadOptions.fresh has nothing to add
+  const fieldsOf = async (itemId: string): Promise<ItemField[]> => jiraFieldsOf(await fieldsContext(), itemId);
+  const setField = async (itemId: string, field: string, value: FieldValue): Promise<FieldWrite> => jiraSetField(await fieldsContext(), itemId, field, value);
+
   return {
-    resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments,
+    resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments, fieldsOf, setField,
+    create: (fields) => createJiraIssue({ call, source, place: placeNew }, fields),
+    createOptions: () => readJiraCreateOptions(call, source.project),
     relate: async (itemId, change) => relate(relations(await account()), itemId, change),
     findBlockers: (_itemId, text) => findBlockers({ call, project: source.project }, text), // the search is the project's, whatever the item
     linkTypes: () => readLinkTypes(call),

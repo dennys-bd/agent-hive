@@ -2004,7 +2004,7 @@ export interface ProjectPr { number: number; url: string; state: PrState; checks
  * for progress, an ISO date for dates, else text. `body` is what a task created from it starts with. */
 export interface ProjectItem {
   itemId: string; // namespaced like Item.itemId
-  id: string; // issue number
+  id: string; // the id the source shows: a GitHub issue number, a Jira key (#826)
   title: string;
   body: string;
   url: string;
@@ -2020,7 +2020,7 @@ export interface ProjectItem {
   updatedAt?: string;
   closedAt?: string;
   blockedBy?: BlockerRef[]; // #61: the issue's blocked-by relations, open and closed; absent = not read
-  parent?: number; // #582: the parent issue's number; on a hive row, n of the parent's local:<n>
+  parent?: string; // #582, #826: the parent's id in the form the source shows (a GitHub issue number, a Jira key); on a hive row, n of the parent's local:<n>
 }
 
 /** A source's native view (#756): its Status options in order, each with the stage that cites it, its fields, where its built-in fields
@@ -2035,10 +2035,14 @@ export type FieldValue = string | number | string[] | null;
 /** One field of an item as its editors read it (#686): its kind, its current value and, for a choice, what it can be. */
 export interface ItemField {
   name: string;
-  type: ProjectField['type'] | 'assignees' | 'labels'; // milestone and issueType are already ProjectField kinds; assignees and labels are the issue's own
+  // milestone and issueType are already ProjectField kinds; assignees and labels are the issue's own. #826: multiSelect, user, users, longText and
+  // datetime are Jira's value shapes the older kinds cannot carry; ProjectField['type'] is unchanged
+  type: ProjectField['type'] | 'assignees' | 'labels' | 'multiSelect' | 'user' | 'users' | 'longText' | 'datetime';
   value: FieldValue; // unset on the source = null; assignees and labels = [] when none
   options?: string[]; // single-select options, iterations, open milestones, issue types, assignable logins, the repository's labels
   readOnly?: true; // repository, progress, parentIssue, other
+  isOpen?: true; // #826: a value outside options is accepted (a Jira label is free text)
+  isRequired?: true; // #826: never cleared, neither null nor []
 }
 
 /** What a field write answers (#686): the item re-read after it. `entry` is absent when the item is out of the source's listing. */
@@ -2113,8 +2117,8 @@ export interface Source {
   relate?(itemId: string, change: BlockerChange): Promise<BlockerWrite>; // #56: writes the relation, then re-reads the item's relations
   findBlockers?(itemId: string, text: string): Promise<BlockerRef[]>; // #57: issues of the item's repository whose title matches, at most 8
   linkTypes?(): Promise<LinkType[]>; // #828: the site's issue link types, read live, for a source whose type has them
-  create?(fields: { title: string; body?: string; column: string | null; labels: string[] }): Promise<{ itemId?: string; ref: CreatedRef }>; // #846: a new item (GitHub: an issue) in column, resolving to its item's adapter id (namespaced: its itemId); #767: with labels, and off the Project (no itemId) when column is null; a type that cannot create leaves it out
-  createOptions?(): Promise<{ statuses: string[]; labels: string[] }>; // #768: the create dialog's menus; rejects with CreateRefusedError when the source has no repository
+  create?(fields: { title: string; body?: string; column: string | null; labels: string[]; issueType?: string; parent?: string }): Promise<{ itemId?: string; ref: CreatedRef }>; // #846: a new item (GitHub: an issue) in column, resolving to its item's adapter id (namespaced: its itemId); #767: with labels, and off the Project (no itemId) when column is null; #831: issueType (a type's name) and parent (namespaced: its itemId; the adapter: its own id) for a type with issue types, which GitHub ignores; a type that cannot create leaves it out
+  createOptions?(): Promise<{ statuses: string[]; labels: string[]; issueTypes?: { name: string; level: number }[] }>; // #768: the create dialog's menus; rejects with CreateRefusedError when the source has no repository; #831: issueTypes, each with Jira's hierarchy level, only for a type with issue types
   project?(options?: ReadOptions): Promise<ProjectView>; // #756: the source's native view, every issue unfiltered; #282: from the read model unless fresh
 }
 

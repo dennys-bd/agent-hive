@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { fieldRowsOf, jiraItemOf, linksOf, storedKindOf } from '../../src/sources/jira-item.js';
+import { MAX_TEXT } from '../../src/field-values.js';
+import { fieldRowsOf, jiraItemOf, linksOf, SPRINT_FIELD, storedKindOf, TEXTAREA_FIELD } from '../../src/sources/jira-item.js';
 import type { JiraFieldDef, JiraIssue, JiraSchema } from '../../src/sources/jira-queries.js';
 
 const SOURCE = 'jira:acme.example:acct-1';
@@ -134,4 +135,23 @@ test('storedKindOf names the kind the sync stores a field under, and none for an
     [{ id: 'thumbnail', name: 'Images', schema: null }, undefined],
   ];
   for (const [field, kind] of cases) assert.equal(storedKindOf(field), kind, field.id);
+});
+
+test('a sprint stores its open sprint\'s name, else its last; a textarea its Markdown cut to MAX_TEXT; a multi-user picker one row per user (#826)', () => {
+  const names = { customfield_20: 'Sprint', customfield_21: 'Notes', customfield_22: 'Reviewers' };
+  const schema: Record<string, JiraSchema> = {
+    customfield_20: { type: 'array', items: 'json', custom: SPRINT_FIELD }, customfield_21: { type: 'string', custom: TEXTAREA_FIELD }, customfield_22: { type: 'array', items: 'user' },
+  };
+  const ours = (fields: Record<string, unknown>) => jiraItemOf(SOURCE, 'ABC', issue(fields), names, schema).values.filter((v) => Object.values(names).includes(v.field));
+  assert.deepEqual(ours({
+    customfield_20: [{ id: 7, name: 'Sprint 7', state: 'closed' }, { id: 8, name: 'Sprint 8', state: 'active' }],
+    customfield_21: DESCRIPTION, customfield_22: [{ displayName: 'Ana Lima' }, { displayName: 'Bea' }],
+  }), [
+    { field: 'Sprint', kind: 'option', value: 'Sprint 8' }, { field: 'Notes', kind: 'text', value: 'Hello' },
+    { field: 'Reviewers', kind: 'text', value: 'Ana Lima' }, { field: 'Reviewers', kind: 'text', value: 'Bea' },
+  ]);
+  const long = { version: 1, type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x'.repeat(MAX_TEXT + 5) }] }] };
+  assert.deepEqual(ours({ customfield_20: [{ id: 6, name: 'Sprint 6', state: 'closed' }, { id: 7, name: 'Sprint 7', state: 'closed' }], customfield_21: long }), [
+    { field: 'Sprint', kind: 'option', value: 'Sprint 7' }, { field: 'Notes', kind: 'text', value: 'x'.repeat(MAX_TEXT) },
+  ]);
 });

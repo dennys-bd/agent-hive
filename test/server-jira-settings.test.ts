@@ -74,10 +74,10 @@ test('projects pages until isLast and answers each key and name, with the site\'
 
 test('issue-types answers id, name and subtask, and link-types each type with its two phrases (#821)', async (t) => {
   const h = await routes(t, fakeJira({
-    '/issue/createmeta/ABC/issuetypes': [{ startAt: 0, total: 2, issueTypes: [{ id: '10001', name: 'Story', subtask: false }, { id: '10002', name: 'Sub-task', subtask: true }] }],
+    '/issue/createmeta/ABC/issuetypes': [{ startAt: 0, total: 2, issueTypes: [{ id: '10001', name: 'Story', subtask: false, hierarchyLevel: 0 }, { id: '10002', name: 'Sub-task', subtask: true, hierarchyLevel: -1 }] }],
     '/issueLinkType': [{ issueLinkTypes: [{ id: '1', name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }] }],
   }));
-  assert.deepEqual(await get(h, url('/settings/jira/issue-types')), [200, [{ id: '10001', name: 'Story', subtask: false }, { id: '10002', name: 'Sub-task', subtask: true }]]);
+  assert.deepEqual(await get(h, url('/settings/jira/issue-types')), [200, [{ id: '10001', name: 'Story', subtask: false, hierarchyLevel: 0 }, { id: '10002', name: 'Sub-task', subtask: true, hierarchyLevel: -1 }]]);
   assert.deepEqual(await get(h, url('/settings/jira/link-types')), [200, [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }]]);
 });
 
@@ -156,7 +156,7 @@ test('filter-options?type=jira answers @me first, the site\'s labels, no milesto
       { accountId: 'acc-1', displayName: 'Ana Lima' }, { accountId: 'acc-2', displayName: 'Bea' }, { accountId: 'acc-3' }, { accountId: 'acc-4', displayName: 'Ana Lima' },
     ]],
     '/label': [{ isLast: true, values: ['api', 'wip'] }],
-    '/issue/createmeta/ABC/issuetypes': [{ startAt: 0, total: 2, issueTypes: [{ id: '10001', name: 'Story', subtask: false }, { id: '10002', name: 'Sub-task', subtask: true }] }],
+    '/issue/createmeta/ABC/issuetypes': [{ startAt: 0, total: 2, issueTypes: [{ id: '10001', name: 'Story', subtask: false, hierarchyLevel: 0 }, { id: '10002', name: 'Sub-task', subtask: true, hierarchyLevel: -1 }] }],
     '/issue/createmeta/ABC/issuetypes/10001': [{ startAt: 0, total: 2, fields: [
       { fieldId: 'customfield_1', name: 'Team', schema: { type: 'option' }, allowedValues: [{ id: '1', value: 'Core' }, { id: '2', value: 'Web' }] },
       { fieldId: 'components', name: 'Components', schema: { type: 'array', items: 'component' }, allowedValues: [{ id: '5', name: 'API' }] },

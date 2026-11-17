@@ -6,6 +6,7 @@ import { JiraNotFoundError } from '../../src/sources/jira-fetch.js';
 import { createJiraSource, type JiraSourceConfig } from '../../src/sources/jira.js';
 import type { FilterRule } from '../../src/types.js';
 import { JIRA_ENTRY } from '../fakes.js';
+import type { JiraIssue } from '../../src/sources/jira-queries.js';
 import { adapter, BLOCKS, CITED, CRED, doc, end, fakeJira, inward, issue, outward, read, RELATES, ROWS, seeded, STATUSES } from './jira-fakes.js';
 
 const markdown = (text: string): string => adfToMarkdown(doc(text) as Parameters<typeof adfToMarkdown>[0]);
@@ -83,6 +84,7 @@ test('resolveFields rejects naming a cited column the statuses lack, and renews 
 test('a name renewal that fails to write never fails the resolve, and is logged (#820)', async () => {
   const warned: string[] = [];
   const source = createJiraSource(JIRA_ENTRY, CITED, {
+    agile: fakeJira().call,
     call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /issueLinkType': [LINK_TYPES], 'GET /myself': [{ accountId: 'acc-1', displayName: 'Ana L.' }] }).call,
     credential: async () => CRED, renewName: async () => { throw new Error('EACCES'); }, log: { warn: (line: string) => { warned.push(line); } },
   });
@@ -160,4 +162,33 @@ test('resolveFields rejects a doneStatus the project lacks, naming it and the st
   const fake = fakeJira({ 'GET /project/ABC/statuses': [STATUSES] });
   await assert.rejects(adapter({ call: fake.call, source: { doneStatus: 'Closed' } }).resolveFields(), { message: '"Closed" is not a status of ABC: To Do, In Progress, Done' });
   assert.deepEqual(fake.sent, ['GET /project/ABC/statuses']);
+});
+
+// What readEditable answers for issue 1 of this file: Components on the edit screen
+const editRead = (i: JiraIssue) => ({
+  ...read(i), editmeta: { fields: { components: { name: 'Components', required: false, schema: { type: 'array', items: 'component' }, operations: ['set'], allowedValues: [{ id: '20', name: 'Core' }, { id: '21', name: 'Web' }] } } },
+});
+const NO_TRANSITIONS = { transitions: [] };
+
+test('fieldsOf reads the issue live and stores it as a write; setField stores the written value, so a projectField rule lists the task (#826)', async () => {
+  const db = await seeded([issue(1, 'To Do', { components: [{ id: '20', name: 'Core' }] })]);
+  const filter: FilterRule[] = [{ field: 'projectField', name: 'Components', op: 'any', values: ['Web'] }];
+  const after = issue(1, 'To Do', { components: [{ id: '21', name: 'Web' }], updated: '2026-11-17T10:00:00.000+0000' });
+  const fake = fakeJira({
+    'GET /issue/10001': [editRead(issue(1, 'To Do', { components: [{ id: '20', name: 'Core' }] })), editRead(after)],
+    'GET /issue/10001/transitions': [NO_TRANSITIONS, NO_TRANSITIONS],
+    'PUT /issue/10001': [undefined],
+  });
+  const source = adapter({ call: fake.call, db, source: { filter } });
+  assert.deepEqual(ids(await source.listItems()), []);
+  const written = await source.setField?.('10001', 'Components', ['Web']);
+  assert.deepEqual(fake.bodies, [{ fields: { components: [{ id: '21' }] } }]);
+  assert.equal(written?.row.id, 'ABC-1');
+  assert.deepEqual(ids(await source.listItems()), ['ABC-1']);
+});
+
+test('fieldsOf with no credential rejects not connected before any call (#826)', async () => {
+  const fake = fakeJira();
+  await assert.rejects(adapter({ call: fake.call, cred: null }).fieldsOf?.('10001') ?? Promise.reject(new Error('no fieldsOf')), (err: unknown) => isNotConnected(err));
+  assert.deepEqual(fake.sent, []);
 });

@@ -10,7 +10,8 @@ export interface TreeRow<T> { item: T; depth: number; childCount: number }
 /** How a list's rows read for the tree (#585 decision 1): the id the expanded set and the links hold, and the key a child's `parent` number names. */
 export interface TreeKeys<T> { idOf(row: T): string; keyOf(row: T): string }
 
-interface Parented { parent?: number }
+// A ProjectItem names its parent as a string (#826), a repository's issue as a number (#757): the links compare both as text
+interface Parented { parent?: string | number }
 
 const LOCAL = /^local:(\d+)$/;
 
@@ -85,6 +86,6 @@ export function subIssueCount(parent: ProjectItem, view: Pick<ProjectView, 'fiel
   const progress = PROGRESS.exec(value);
   if (progress !== null) return { done: Number(progress[1]), n: Number(progress[2]) };
   const key = keyOf(parent);
-  const children = view.items.filter((i) => i.itemId !== parent.itemId && i.parent !== undefined && String(i.parent) === key);
+  const children = view.items.filter((i) => i.itemId !== parent.itemId && i.parent === key);
   return { done: children.filter((c) => isDone(c, flows)).length, n: children.length };
 }
