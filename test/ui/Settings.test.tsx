@@ -865,7 +865,7 @@ test('a Jira project read a newer pick overtook lands no options and shows no er
   await waitFor(() => expect(late).toHaveLength(2));
   await pick('ABC · Alpha');
   await waitFor(() => expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('project=ABC') && String(u).startsWith('/settings/source-columns')).length).toBeGreaterThan(1));
-  late.forEach((release) => release());
+  for (const release of late) release();
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
