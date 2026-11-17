@@ -3,12 +3,13 @@ import type { Logger } from '../log.js';
 import type { ReadModel } from '../read-model/db.js';
 import { SourceNotConnectedError } from '../source-errors.js';
 import type { Citation } from '../tasks.js';
-import type { ItemAction, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
+import type { FieldValue, FieldWrite, ItemAction, ItemField, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
 import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
 import { JiraNotFoundError } from './jira-fetch.js';
-import { jiraItemOf } from './jira-item.js';
-import { isListed, type JiraSourceConfig, listedTasks, projectOf, taskOf } from './jira-listing.js';
-import { type JiraCall, postTransition, readComments, readIssue, readMyself, readStatuses, readTransitions } from './jira-queries.js';
+import { type JiraFieldsContext, jiraFieldsOf, jiraSetField } from './jira-fields.js';
+import { type JiraItemRows, jiraItemOf } from './jira-item.js';
+import { isFiltered, isListed, type JiraSourceConfig, listedTasks, projectOf, storedLabels, taskOf } from './jira-listing.js';
+import { type JiraCall, type JiraFieldMeta, type JiraIssue, postTransition, readComments, readIssue, readMyself, readStatuses, readTransitions } from './jira-queries.js';
 import { writeIssue } from './jira-sync.js';
 import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
 
@@ -19,6 +20,7 @@ const FORMER_USER = 'Former user'; // what Jira itself shows for a deleted accou
 /** What a Jira adapter is built from (#820): the site's call, its stored login, the name writer and the read model 5.6 fills. */
 export interface JiraAdapterDeps {
   call: JiraCall;
+  agile: JiraCall; // #826: the Agile API's call, for the sprints, bound as call is
   credential(): Promise<JiraCredential | undefined>;
   renewName(name: string): Promise<void>;
   log?: Pick<Logger, 'warn'>;
@@ -37,16 +39,20 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     return cred;
   }
 
-  // One issue read live, stored as a write only when it is in the source's project: its scope would otherwise put it into this listing
-  async function readTask(cred: JiraCredential, itemId: string): Promise<{ task: SourceItem; isOwn: boolean }> {
-    const read = await readIssue(call, itemId);
+  // One issue's read stored as a write only when it is in the source's project: its scope would otherwise put it into this listing
+  function keep(cred: JiraCredential, read: JiraFieldMeta & { issue: JiraIssue }): { rows: JiraItemRows; task: SourceItem; isOwn: boolean } {
     const rows = jiraItemOf(rowsOf(cred), source.project, read.issue, read.names, read.schema);
     const isOwn = projectOf(read.issue) === source.project;
     if (isOwn && db !== undefined) db.transaction(() => writeIssue(db, rows, 'write'));
     // #830: its tree read over the stored listing with the issue in its place, so a single read's links equal the next listing's
     const listing = !isOwn || db === undefined ? [] : db.items.items(rowsOf(cred), db.items.listing(rowsOf(cred), source.project));
     const links = treeLinks(inPlace(listing, rows), source.tree);
-    return { task: withTree(taskOf(rows, source), links.get(rows.item.nodeId), source), isOwn };
+    return { rows, task: withTree(taskOf(rows, source), links.get(rows.item.nodeId), source), isOwn };
+  }
+
+  async function readTask(cred: JiraCredential, itemId: string): Promise<{ task: SourceItem; isOwn: boolean }> {
+    const { task, isOwn } = keep(cred, await readIssue(call, itemId));
+    return { task, isOwn };
   }
 
   async function resolveFields(): Promise<void> {
@@ -144,5 +150,20 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     return (await readStatuses(call, source.project)).map((s) => s.name);
   }
 
-  return { resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments };
+  // #826: what the field reads and writes run on, under the account that reads them
+  async function fieldsContext(): Promise<JiraFieldsContext> {
+    const cred = await account();
+    const me = cred.displayName;
+    return {
+      call, agile: deps.agile, source, keep: (read) => keep(cred, read), setColumn: moveTo,
+      labels: () => (db === undefined ? [] : storedLabels(db.items, rowsOf(cred), source.project)),
+      isListed: (task) => isListed(task, source, columns, me) && !isHidden(task, source), isFiltered: (task) => isFiltered(task, source, me),
+    };
+  }
+
+  // #826: every read is live, so ReadOptions.fresh has nothing to add
+  const fieldsOf = async (itemId: string): Promise<ItemField[]> => jiraFieldsOf(await fieldsContext(), itemId);
+  const setField = async (itemId: string, field: string, value: FieldValue): Promise<FieldWrite> => jiraSetField(await fieldsContext(), itemId, field, value);
+
+  return { resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments, fieldsOf, setField };
 }

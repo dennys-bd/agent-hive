@@ -76,3 +76,8 @@ export function listedTasks(items: Pick<SourceItems, 'listing' | 'items'>, rows:
   const tasks = stored.map((s) => withTree(taskOf(s, source), links.get(s.item.nodeId), source)).filter((task) => columns.has(task.column));
   return groupUnderParents(tasks).filter((task) => !isHidden(task, source));
 }
+
+/** The labels on the source's stored issues, once each and sorted (#826): Jira has no per-project list, and these are what the user picks from. */
+export function storedLabels(items: Pick<SourceItems, 'listing' | 'items'>, rows: string, project: string): string[] {
+  return [...new Set(items.items(rows, items.listing(rows, project)).flatMap((s) => textsOf(s.item.data.labels)))].sort();
+}
