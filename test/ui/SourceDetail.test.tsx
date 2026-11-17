@@ -5,7 +5,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { SourceDetail } from '@/components/settings/SourceDetail';
 import { setLanguage, t } from '@/i18n';
 import { type SourceDraft, type StageDraft, emptySource, emptyStage } from '@/lib/settings-form';
-import type { FilterOptions, GithubAuth } from '../../src/types';
+import type { FilterOptions, GithubAuth, SourceConfig } from '../../src/types';
 const FLOW = 'f';
 
 beforeEach(() => setLanguage('pt'));
@@ -182,4 +182,17 @@ test('the epic delete-activity switch: off on a new source, a click patches the 
   expect(t('settings.epicDeleteActivity')).toBe('excluir a atividade do épico na última etapa'); // lowercase, as every label (design system); the glossary's PT names: atividade, etapa
   render(<Harness source={{ ...work(), epics: 'ignore' }} onDraft={vi.fn()} onRemove={vi.fn()} />);
   expect(screen.getByRole('switch', { name: t('settings.epicDeleteActivity') })).toBeDisabled();
+});
+
+const JIRA: Extract<SourceConfig, { type: 'jira' }> = {
+  name: 'tickets', qualifyId: false, type: 'jira', site: 'acme.example', project: 'ABC', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: null }, rules: [] },
+  epics: 'ignore', epicFollows: 'behind', switchAt: 'fila', tree: { epics: false, subtasks: false }, blockingLinkTypes: [], issueType: 'Story', subtaskType: 'Sub-task', doneStatus: 'Done',
+};
+
+test('a jira source shows its name and type, read-only, and no field to edit until its form lands (#820)', () => {
+  render(<Harness source={{ ...emptySource('hive'), name: 'tickets', type: 'jira', saved: JIRA }} onDraft={vi.fn()} onRemove={vi.fn()} />);
+  expect(screen.getByLabelText(t('settings.sources.name'))).toBeDisabled();
+  expect(screen.getByLabelText(t('settings.sourceType'))).toHaveValue('Jira');
+  for (const label of ['settings.owner', 'settings.project', 'settings.sources.qualifyId'] as const) expect(screen.queryByLabelText(t(label))).not.toBeInTheDocument();
+  for (const name of [t('settings.source.filter'), t('settings.taskProps.title')]) expect(screen.queryByRole('heading', { level: 2, name })).not.toBeInTheDocument();
 });

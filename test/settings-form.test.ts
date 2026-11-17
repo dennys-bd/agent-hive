@@ -10,7 +10,7 @@ import { emptyRule, type RuleDraft } from '../src/ui/lib/settings-rules.js';
 import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRule, Command, SettingsInfo, SettingsBody } from '../src/types.js';
 import { flatten, MAIN_FLOW } from '../src/flows.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, DELETE_ACTIVITY_DEFAULTS, CONSOLE_LINES_DEFAULT, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { FIXED } from './fakes.js';
+import { FIXED, JIRA_ENTRY } from './fakes.js';
 import { mainFlows } from './fixtures/main-flow.js';
 
 // #30: not a new source's keys, so draftFrom visibly reads them; switchAt on STAGES' second stage
@@ -786,4 +786,23 @@ test('a form with semaphores saves commandSemaphores and every line\'s semaphore
   assert.equal(validateSettings(draft), undefined);
   const bad = [{ ...draft.commandSemaphores[0], limit: '0' }];
   assert.deepEqual(validateSettings({ ...draft, commandSemaphores: bad, budgetHour: 'abc' }), { section: 'rules', message: t('settings.error.semaphoreLimit', { name: 'memory' }) }, 'before the budget');
+});
+
+const JIRA_SAVED: SourceConfig = { ...JIRA_ENTRY, switchAt: 'dev' };
+
+test('a jira source drafts with its saved entry whole and saves it back unchanged; no project is asked of it (#820)', () => {
+  const config = withSources([CONFIG.comb.sources[0], JIRA_SAVED]);
+  const draft = draftFrom(info(config));
+  assert.deepEqual([draft.sources[1].type, draft.sources[1].saved], ['jira', JIRA_SAVED]);
+  assert.deepEqual(toSettingsBody(draft).sources, config.comb.sources);
+  assert.notEqual(validateSettings(draft)?.message, t('settings.error.project'));
+});
+
+test('a stage renamed in the same save carries into a jira source\'s switchAt (#820)', () => {
+  const draft = draftFrom(info(withSources([CONFIG.comb.sources[0], JIRA_SAVED])));
+  const renamed = { ...draft, stages: draft.stages.map((s) => (s.name === 'dev' ? { ...s, name: 'build' } : s)) };
+  const saved = toSettingsBody(renamed).sources?.[1];
+  assert.ok(saved);
+  assert.deepEqual([saved.type, saved.switchAt], ['jira', 'build']);
+  assert.deepEqual({ ...saved, switchAt: 'dev' }, JIRA_SAVED);
 });

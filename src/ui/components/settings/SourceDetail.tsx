@@ -103,21 +103,22 @@ type FieldsGroupProps = Pick<SourceDetailProps, 'source' | 'githubProjects' | 'n
 
 /** name, type, then the type's own fields, side by side in the design's one grid row (#524); GitHub ends on the connection line. */
 function FieldsGroup({ id, source, githubProjects, needsToken, auth, filterOptions, onChange, onLoadProjects, onLoadColumns, onOpenList }: FieldsGroupProps) {
+  const isGithub = source.type === 'github'; // #820: a jira row is read-only until its form lands
   return (
     <SettingsGroup title="settings.source.fields" anchor={settingAnchor('settings.source.fields', source.id)}>
       <div className="grid grid-cols-[repeat(2,minmax(0,1fr))_minmax(0,1.4fr)_minmax(0,1fr)] items-end gap-3">
         <div id={settingAnchor('settings.sources.name', source.id)} className={FIELD}>
           <Label htmlFor={`${id}-name`}>{t('settings.sources.name')}</Label>
-          <Input id={`${id}-name`} defaultValue={source.name} onChange={(e) => onChange({ name: e.target.value })} />
+          <Input id={`${id}-name`} disabled={!isGithub} defaultValue={source.name} onChange={(e) => onChange({ name: e.target.value })} />
         </div>
         <div id={settingAnchor('settings.sourceType', source.id)} className={FIELD}>
           <Label htmlFor={`${id}-type`}>{t('settings.sourceType')}</Label>
           {/* read-only (#514): a source keeps the type it was added with */}
           <Input id={`${id}-type`} disabled value={t(TYPE_LABEL[source.type])} />
         </div>
-        <GithubFields id={id} source={source} githubProjects={githubProjects} needsToken={needsToken} onChange={onChange} onLoadProjects={onLoadProjects} onLoadColumns={onLoadColumns} />
+        {isGithub && <GithubFields id={id} source={source} githubProjects={githubProjects} needsToken={needsToken} onChange={onChange} onLoadProjects={onLoadProjects} onLoadColumns={onLoadColumns} />}
       </div>
-      <QualifyRow id={id} source={source} onChange={onChange} />
+      {isGithub && <QualifyRow id={id} source={source} onChange={onChange} />}
       {source.type === 'github' && <RepositoryRow id={id} source={source} linked={filterOptions?.linkedRepositories ?? []} onChange={onChange} />}
       {source.type === 'github' && (
         <p className="border-t pt-3 text-muted-foreground text-xs">
@@ -239,7 +240,7 @@ export function SourceDetail({ source, flows, stages, workspaces, githubProjects
       {source.type === 'github' && (
         <FilterGroup id={id} source={source} stages={stages} filterOptions={filterOptions} onChange={onChange} />
       )}
-      <TaskPropsGroup id={id} source={source} flows={flows} stages={stages} workspaces={workspaces} onChange={onChange} />
+      {source.type === 'github' && <TaskPropsGroup id={id} source={source} flows={flows} stages={stages} workspaces={workspaces} onChange={onChange} />}
       <Button type="button" variant="outline" className="self-start text-destructive" onClick={onRemove}>{t('settings.sources.remove')}</Button>
     </>
   );
@@ -253,11 +254,11 @@ export function sourceEntries(source: SourceDraft): SettingEntry[] {
   const labels: readonly MessageKey[] = [
     'settings.source.fields', 'settings.sources.name', 'settings.sourceType',
     ...(github ? (['settings.owner', 'settings.project', 'settings.source.repository'] as const) : []),
-    'settings.sources.qualifyId',
-    ...(source.qualifyId ? (['settings.sources.prefix'] as const) : []),
+    ...(github ? (['settings.sources.qualifyId'] as const) : []),
+    ...(github && source.qualifyId ? (['settings.sources.prefix'] as const) : []),
     ...(github ? (['settings.source.filter', 'settings.epics', 'settings.epicFollows', 'settings.epicDeleteActivity'] as const) : []),
     ...(github && source.epicFollows === 'aheadThenBehind' ? (['settings.switchAt'] as const) : []),
-    'settings.taskProps.title',
+    ...(github ? (['settings.taskProps.title'] as const) : []),
   ];
   return [{ label: path[2], path: path.slice(0, 2), view, anchor: settingAnchor('settings.source.fields', source.id) }, ...contextEntries(labels, view, path, source.id)];
 }

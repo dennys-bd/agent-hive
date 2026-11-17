@@ -64,3 +64,8 @@ test('a jira source has its label, its site as its owner part, and its type copy
     assert.deepEqual([t('settings.sources.type.jira'), t('flow.source.type.jira'), t('tasks.header.source.jira')], ['Jira', project, project], language);
   }
 });
+
+test('a jira row\'s summary starts with its project key (#820)', () => {
+  setLanguage('pt');
+  assert.equal(sourceSummary({ ...emptySource('hive', 'f1'), name: 'tickets', type: 'jira', saved: JIRA_ENTRY }, SCOPE).split(' · ')[0], 'ABC');
+});

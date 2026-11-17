@@ -36,6 +36,7 @@ function ruleText(rule: FilterRule): string {
 
 // The project part (#514): the loaded title once it joins the row, else the number alone.
 function projectPart(source: SourceDraft, title?: string): string {
+  if (source.saved !== undefined) return source.saved.project; // #820: a jira row's project is its key
   if (source.number === '') return t('settings.sources.noProject');
   return title === undefined ? `#${source.number}` : `#${source.number} ${title}`;
 }

@@ -45,6 +45,7 @@ export interface SourceDraft {
   taskProps: SourceTaskPropsDraft; // #688: the defaults and the rules as edited
   epics: EpicsMode; epicFollows: EpicFollows; // #30
   epicDeleteActivity: boolean; // #856
+  saved?: Extract<SourceConfig, { type: 'jira' }>; // #820: a jira source's entry whole; until 5.4 draws its form only switchAt and taskProps follow the row
   switchAt: string; // #30: a stage draft's id, '' = the default (switchAtStage); sent by name
 }
 export interface SettingsDraft {
@@ -105,7 +106,7 @@ export const emptySource = (workspace = '', flowId = ''): SourceDraft => ({
 const sourceDraft = (b: SourceConfig): SourceDraft => ({
   ...emptySource(), name: b.name, savedName: b.name, qualifyId: b.qualifyId, prefix: b.prefix ?? '', type: b.type,
   filter: b.filter, epics: b.epics, epicFollows: b.epicFollows,
-  ...(b.type === 'github' ? { owner: b.owner, number: String(b.number), repository: b.repository ?? '', epicDeleteActivity: b.epicDeleteActivity } : {}),
+  ...(b.type === 'github' ? { owner: b.owner, number: String(b.number), repository: b.repository ?? '', epicDeleteActivity: b.epicDeleteActivity } : { saved: b }),
 });
 
 // #846: the saved name as its row's id; hive, or a name no row has, stays as written for createInDraftProblem to name
@@ -204,7 +205,8 @@ function sourcesProblem(sources: SourceDraft[]): SettingsProblem | undefined {
   const names = sources.map((b) => b.name.trim());
   const twice = names.find((name, i) => names.indexOf(name) !== i);
   if (twice !== undefined) return { section: 'flow', message: t('settings.error.sourceDuplicate', { name: twice }) };
-  if (sources.some((b) => b.number === '')) return { section: 'flow', message: t('settings.error.project') };
+  // #820: only a github row picks a project
+  if (sources.some((b) => b.type === 'github' && b.number === '')) return { section: 'flow', message: t('settings.error.project') };
   return filterProblem(sources);
 }
 
@@ -284,6 +286,8 @@ export function validateSettings(draft: SettingsDraft): SettingsProblem | undefi
 /** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the
  * name it resolves to among `stages` (#30). */
 export function sourceFrom(row: SourceDraft, scope: FlowScope): SourceConfig {
+  // #820: the form edits no jira key yet; switchAt and taskProps follow the row so a rename in the same save carries, as on a github row
+  if (row.saved !== undefined) return { ...row.saved, switchAt: switchAtName(row.switchAt, scope.stages), taskProps: taskPropsFrom(row.taskProps, scope) };
   const key = { name: row.name.trim(), qualifyId: row.qualifyId, ...optional('prefix', row.prefix) };
   return {
     ...key, type: 'github', owner: row.owner.trim(), number: Number(row.number), ...optional('repository', row.repository), filter: row.filter, taskProps: taskPropsFrom(row.taskProps, scope),
