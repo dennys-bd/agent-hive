@@ -24,6 +24,8 @@ import type { FilterOptions, GithubAuthStatus, ProjectSummary, SettingsInfo, Set
 
 interface SettingsProps { info: SettingsInfo; state?: State; newSource?: NewSource; view?: SettingsView; onSaved(result: SettingsResult): Promise<void>; onCancel?(): void }
 
+const without = <T,>(record: Record<string, T>, key: string): Record<string, T> => Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
+
 const AUTH_POLL_MS = 2000; // the login runs on the server; the page asks while a flow is pending (the settings screen has no SSE)
 
 export function Settings({ info, state, newSource, view: opening, onSaved, onCancel }: SettingsProps) {
@@ -107,31 +109,44 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
   const jira = useJiraSourceOptions();
 
   // #245: a failure shows its message like a columns failure and leaves the rules as they are: the picker still takes typed values.
-  const loadFilterOptions = useCallback(async (current: SettingsDraft, row: SourceDraft) => {
+  // #822: a Jira row passes its project guard, so an answer or failure a newer pick or a site change overtook lands nowhere.
+  const loadFilterOptions = useCallback(async (current: SettingsDraft, row: SourceDraft, isCurrent: () => boolean = () => true) => {
     const url = filterOptionsUrl(current, row);
     if (!url) return;
     try {
       const listed = await getJson<FilterOptions>(url);
-      setFilterOptions((o) => ({ ...o, [row.id]: listed }));
-    } catch (err) { if (row.type === 'jira') jira.fail(row.id, 'project', err); else setError((err as Error).message); }
+      if (isCurrent()) setFilterOptions((o) => ({ ...o, [row.id]: listed }));
+    } catch (err) {
+      if (!isCurrent()) return;
+      if (row.type === 'jira') jira.fail(row.id, 'project', err); else setError((err as Error).message);
+    }
   }, [jira.fail]);
 
-  const loadColumns = useCallback(async (current: SettingsDraft, row: SourceDraft) => {
-    void loadFilterOptions(current, row); // in parallel, and sent first: a row's options come with its columns (#245)
+  const loadColumns = useCallback(async (current: SettingsDraft, row: SourceDraft, isCurrent: () => boolean = () => true) => {
+    void loadFilterOptions(current, row, isCurrent); // in parallel, and sent first: a row's options come with its columns (#245)
     const url = sourceColumnsUrl(current, row);
     if (!url) return;
     try {
       const listed = await getJson<string[]>(url);
-      setOptions((o) => ({ ...o, [row.id]: listed }));
-    } catch (err) { if (row.type === 'jira') jira.fail(row.id, 'project', err); else setError((err as Error).message); }
+      if (isCurrent()) setOptions((o) => ({ ...o, [row.id]: listed }));
+    } catch (err) {
+      if (!isCurrent()) return;
+      if (row.type === 'jira') jira.fail(row.id, 'project', err); else setError((err as Error).message);
+    }
   }, [loadFilterOptions, jira.fail]);
 
-  // #822: the site select reads the projects; the project select the columns and filter options (loadColumns) and the issue and link types
+  // #822: the site select reads the projects; the project select the columns and filter options (loadColumns) and the issue and link types.
+  // A new site also drops the old project's statuses and filter options.
   const loadJira = useCallback((current: SettingsDraft, row: SourceDraft, load: JiraLoad) => {
-    if (load === 'site') { void jira.loadSite(row); return; }
-    void loadColumns(current, row);
+    if (load === 'site') {
+      void jira.loadSite(row);
+      setOptions((o) => without(o, row.id));
+      setFilterOptions((o) => without(o, row.id));
+      return;
+    }
     void jira.loadProject(row);
-  }, [jira.loadSite, jira.loadProject, loadColumns]);
+    void loadColumns(current, row, jira.projectGuard(row.id)); // the guard is taken after loadProject has counted this read
+  }, [jira.loadSite, jira.loadProject, jira.projectGuard, loadColumns]);
   const loadJiraRow = (row: SourceDraft): void => { loadJira(draft, row, 'site'); loadJira(draft, row, 'project'); };
 
   const loadProjects = useCallback(async (row: SourceDraft) => {

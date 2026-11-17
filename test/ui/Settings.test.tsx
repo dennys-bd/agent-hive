@@ -841,3 +841,31 @@ test('picking another project of a Jira source rereads its statuses, filter opti
   }
   expect(fetchMock).not.toHaveBeenCalledWith(expect.stringMatching(/^\/settings\/jira\/projects/));
 });
+
+test('a Jira project read a newer pick overtook lands no options and shows no error (#822)', async () => {
+  const user = userEvent.setup();
+  const late: Array<() => void> = [];
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.includes('project=XYZ') && (url.startsWith('/settings/source-columns') || url.startsWith('/settings/filter-options'))) {
+      await new Promise<void>((resolve) => { late.push(resolve); });
+      return new Response('{}', { status: 500, headers: { 'content-type': 'application/json' } });
+    }
+    return jiraFetch(input, init);
+  });
+  render(<Settings info={JIRA_INFO} onSaved={vi.fn()} />);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/jira/projects?site=acme.atlassian.net'));
+  await openSource(user, 'tickets');
+  const pick = async (name: string): Promise<void> => {
+    screen.getByLabelText(t('settings.source.jira.project')).focus();
+    await user.keyboard('{Enter}');
+    await user.click(await screen.findByRole('option', { name }));
+  };
+  await pick('XYZ · Zed');
+  await waitFor(() => expect(late).toHaveLength(2));
+  await pick('ABC · Alpha');
+  await waitFor(() => expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('project=ABC') && String(u).startsWith('/settings/source-columns')).length).toBeGreaterThan(1));
+  late.forEach((release) => release());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
