@@ -49,6 +49,8 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     const names = (await readStatuses(call, source.project)).map((s) => s.name);
     const missing = cited.find((c) => !names.includes(c.column));
     if (missing !== undefined) throw new Error(`"${missing.column}" is not a status of ${source.project}: ${names.join(', ')}`);
+    // checked in the same answer, so a wrong name shows as the source's sync error before any stage closes
+    if (!names.includes(source.doneStatus)) throw new Error(`"${source.doneStatus}" is not a status of ${source.project}: ${names.join(', ')}`);
     const me = await readMyself(call);
     // another account is reconnecting's business: the store key hangs on the account id, so only the name of this one is renewed
     if (me.accountId === cred.accountId && me.displayName !== undefined && me.displayName !== cred.displayName) {

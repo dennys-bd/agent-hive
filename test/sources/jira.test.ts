@@ -193,3 +193,9 @@ test('apply rejects every action, naming it (#820)', async () => {
     await assert.rejects(adapter({}).apply('10001', action, ''), { message: `"${action.type}" is not an action of a jira source` });
   }
 });
+
+test('resolveFields rejects a doneStatus the project lacks, naming it and the statuses, before reading /myself (#823)', async () => {
+  const fake = fakeJira({ 'GET /project/ABC/statuses': [STATUSES] });
+  await assert.rejects(adapter({ call: fake.call, source: { doneStatus: 'Closed' } }).resolveFields(), { message: '"Closed" is not a status of ABC: To Do, In Progress, Done' });
+  assert.deepEqual(fake.sent, ['GET /project/ABC/statuses']);
+});
