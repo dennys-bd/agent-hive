@@ -434,7 +434,7 @@ test('parseConfig rejects missing or wrong-typed fields with the field name', ()
   assert.throws(() => parseConfig({ commandSemaphores: [] }), { message: 'hive.config.json: "comb" is required' }); // #796: the list is read first
   assert.throws(() => parseConfig(github({ source: { type: 'github', owner: '@me' } })), /comb\.sources\[0\]\.number/);
   assert.throws(() => parseConfig(github({ source: { type: 'github', number: 1 } })), /comb\.sources\[0\]\.owner/);
-  assert.throws(() => parseConfig(github({ source: { type: 'asana', id: 1 } })), { message: 'hive.config.json: "comb.sources[0].type" must be one of: github' });
+  assert.throws(() => parseConfig(github({ source: { type: 'asana', id: 1 } })), { message: 'hive.config.json: "comb.sources[0].type" must be one of: github, jira' });
   assert.throws(() => parseConfig({ ...GITHUB, agentArgs: { claude: 'x' } }), /agentArgs/);
 });
 

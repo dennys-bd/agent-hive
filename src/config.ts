@@ -15,6 +15,7 @@ import { checkClearedResumes, checkResumedAgents, parseVerdicts } from './config
 import { hiveActionRaw, parseStageAgent, runsAgentRaw } from './config-stage-agent.js';
 import { parseFork } from './fork.js';
 import { commandsIn, parseEnv, parseCommandSemaphores, parseCommands, parseStageCi, parseStageCommands, parseStageEvaluate, parseTimeout } from './run-commands.js';
+import { parseJiraSource } from './config-jira.js';
 import { parseEpicDeleteActivity, parseEpicKeys, refuseTopLevelEpics, requireSwitchAt } from './config-epics.js';
 import { parseShortcuts } from './shortcuts.js';
 import { isTrustedHost } from './trusted-hosts.js';
@@ -28,7 +29,7 @@ import { MCP_DEFAULTS, type McpSettings, AGENT_IDS, REVIEWER_DEFAULTS, type Revi
 
 export const CONFIG_FILE = 'hive.config.json';
 
-export const SOURCE_TYPES: readonly SourceConfig['type'][] = ['github'];
+export const SOURCE_TYPES: readonly SourceConfig['type'][] = ['github', 'jira'];
 export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
 export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'commandSemaphores' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor'> = {
   logLevel: 'info',
@@ -131,6 +132,8 @@ export function parseSource(raw: unknown, field: string, workspaces: readonly st
         ...(raw.repository === undefined ? {} : { repository: requireRepository(raw.repository, `${field}.repository`) }),
         ...parseEpicKeys(raw, field), epicDeleteActivity: parseEpicDeleteActivity(raw, field), // #30, #856: last, so a source from before the keys names its older faults first
       };
+    case 'jira':
+      return parseJiraSource(raw, field, workspaces, parseFilter);
     default:
       throw new Error(`${CONFIG_FILE}: "${field}.type" must be one of: ${SOURCE_TYPES.join(', ')}`);
   }
