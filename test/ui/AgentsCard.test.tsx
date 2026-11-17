@@ -60,3 +60,14 @@ test('each installed agent has its model field and its arguments field, mono wit
   fireEvent.change(screen.getByLabelText(t('settings.agentArgs', { agent: 'claude' })), { target: { value: '--verbose' } });
   expect(onChange).toHaveBeenCalledWith({ agentArgs: { claude: '--verbose', codex: '', copilot: '' } });
 });
+
+test('Settings › execution › agents lists copilot with its mark and its switch, in English and Portuguese (#873)', () => {
+  for (const language of ['en', 'pt'] as const) {
+    setLanguage(language);
+    const { unmount } = renderCard();
+    const copilot = section('copilot');
+    expect(copilot.querySelector('svg[data-icon="copilot"]')).not.toBeNull();
+    expect(within(copilot).getByRole('switch', { name: t('settings.agents.enabled.of', { agent: 'copilot' }) })).toBeInTheDocument();
+    unmount();
+  }
+});

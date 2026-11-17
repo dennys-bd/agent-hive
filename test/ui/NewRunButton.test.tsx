@@ -273,8 +273,7 @@ test('every + item has its icon, the agents their mark in their own colour, padr
   expect(screen.getByRole('menuitem', { name: /^arquivo/ }).textContent).toMatch(/F$/);
   expect(screen.getByRole('menuitem', { name: /^nova sessão…/ }).textContent).toMatch(/S$/);
   expect(screen.queryByRole('menuitem', { name: /mostrar PR/ })).not.toBeInTheDocument();
-  // copilot's mark joins in the UI task (#873): until then its item has none
-  for (const item of screen.getAllByRole('menuitem').filter((i) => !i.textContent?.startsWith('copilot'))) expect(item.querySelector('svg')).not.toBeNull();
+  for (const item of screen.getAllByRole('menuitem')) expect(item.querySelector('svg')).not.toBeNull();
 });
 
 test('padrão and newSession\'s key follow the default agent (#257)', async () => {

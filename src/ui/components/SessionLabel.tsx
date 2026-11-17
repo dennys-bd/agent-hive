@@ -4,16 +4,17 @@ import { SESSION_ID_CHARS } from '../../tasks';
 import { type AgentId, NEW_SESSION } from '../../types';
 import { ClaudeIcon } from '@/components/ClaudeIcon';
 import { CodexIcon } from '@/components/CodexIcon';
+import { CopilotIcon } from '@/components/CopilotIcon';
 import { useSessionAgent } from '@/components/review-context';
 import { t } from '@/i18n';
 
 /** Each agent's own mark (#516, #591): the footer's usage group (#223) and every place a review names a session. Partial, so an agent added
  * without a logo still reads, by its name. */
-export const AGENT_ICON: Partial<Record<AgentId, ComponentType<{ className?: string }>>> = { claude: ClaudeIcon, codex: CodexIcon };
+export const AGENT_ICON: Partial<Record<AgentId, ComponentType<{ className?: string }>>> = { claude: ClaudeIcon, codex: CodexIcon, copilot: CopilotIcon };
 
 /** Each agent's own colour (#669), on its mark only: the footer's usage group, the +'s agents and the new session dialog's agent select (#257).
  * Partial, so an agent without one keeps currentColor. */
-export const AGENT_COLOR: Partial<Record<AgentId, string>> = { claude: 'text-agent-claude', codex: 'text-agent-codex' };
+export const AGENT_COLOR: Partial<Record<AgentId, string>> = { claude: 'text-agent-claude', codex: 'text-agent-codex', copilot: 'text-agent-copilot' };
 
 const MARK = 'size-3.5 shrink-0';
 
