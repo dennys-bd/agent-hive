@@ -44,8 +44,10 @@ test('the bridge posts ready and the height and width on load, then each new siz
   });
   const { sent } = harness();
   const root = document.documentElement;
+  let boxHeight = 0;
+  vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => box(0, 0, 0, boxHeight));
   const size = (height: number, width: number, client = 1280): void => {
-    Object.defineProperty(root, 'scrollHeight', { configurable: true, value: height });
+    boxHeight = height;
     Object.defineProperty(root, 'scrollWidth', { configurable: true, value: width });
     Object.defineProperty(root, 'clientWidth', { configurable: true, value: client });
   };
@@ -59,10 +61,12 @@ test('the bridge posts ready and the height and width on load, then each new siz
   observed();
   size(900, 1440, 768); // the frame narrowed: the same overflow is news again
   observed();
+  size(402, 768, 768); // the content got shorter than the frame: the frame follows it down (#777)
+  observed();
   expect(sent()).toEqual([
     { hive: 'design', type: 'ready' }, { hive: 'design', type: 'size', height: 640, natural: 0 }, // content that fits reports no width: the frame's own is not a wish
     { hive: 'design', type: 'size', height: 900, natural: 0 }, { hive: 'design', type: 'size', height: 900, width: 1440, natural: 0 },
-    { hive: 'design', type: 'size', height: 900, width: 1440, natural: 0 },
+    { hive: 'design', type: 'size', height: 900, width: 1440, natural: 0 }, { hive: 'design', type: 'size', height: 402, natural: 0 },
   ]);
   message({ hive: 'design', type: 'theme', theme: 'light' }, null); // not from the parent
   message({ hive: 'design', type: 'theme', theme: 'blue' });
@@ -264,10 +268,15 @@ test('size carries natural, the content\'s own width read with <html> at max-con
   let height = 600;
   Object.defineProperty(root, 'clientWidth', { configurable: true, get: () => frameWidth });
   Object.defineProperty(root, 'scrollWidth', { configurable: true, get: () => frameWidth });
-  Object.defineProperty(root, 'scrollHeight', { configurable: true, get: () => height });
   root.style.width = '50%';
   // An 879.5 px fixed-width child: at max-content <html> takes the child's width, at any other the frame's
-  const measured = vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => box(0, 0, root.style.width === 'max-content' ? 879.5 : frameWidth, height));
+  // the height is read on every report (#777): only a read at max-content is a measure
+  let measures = 0;
+  vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => {
+    const natural = root.style.width === 'max-content';
+    if (natural) measures += 1;
+    return box(0, 0, natural ? 879.5 : frameWidth, height);
+  });
   start();
   window.dispatchEvent(new Event('load'));
   frameWidth = 390;
@@ -275,9 +284,9 @@ test('size carries natural, the content\'s own width read with <html> at max-con
   height = 700;
   design({ type: 'theme', theme: 'light' });
   design({ type: 'tweak', name: 'layout', value: 'list' });
-  expect(measured).toHaveBeenCalledTimes(1); // the load's: the messages wait for the frame
+  expect(measures).toBe(1); // the load's: the messages wait for the frame
   flush();
-  expect(measured).toHaveBeenCalledTimes(3);
+  expect(measures).toBe(3);
   expect(root.style.width).toBe('50%');
   expect(sent().filter((data) => (data as { type: string }).type === 'size')).toEqual([
     { hive: 'design', type: 'size', height: 600, natural: 880 }, // measured at 1280
