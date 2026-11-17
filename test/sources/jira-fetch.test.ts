@@ -121,3 +121,9 @@ test('another non-ok status throws JiraHttpError with the keys of the body\'s er
   assert.deepEqual(listed.errorKeys, [], 'an errors array is no errors object');
   for (const err of [refused, broken]) assert.ok(!err.message.includes(CRED.token) && !err.message.includes(BASIC) && !err.message.includes('plan'));
 });
+
+test('a 201 or a 200 with no body answers undefined, as POST /issueLink gives it (#828)', async () => {
+  assert.equal(await jiraFetch(SITE, '/issueLink', { method: 'POST' }, harness(new Response(null, { status: 201 })).deps), undefined);
+  assert.equal(await jiraFetch(SITE, '/x', undefined, harness(new Response('', { status: 200 })).deps), undefined);
+  assert.equal(await jiraFetch(SITE, '/issueLink/1', { method: 'DELETE' }, harness(new Response(null, { status: 204 })).deps), undefined);
+});
