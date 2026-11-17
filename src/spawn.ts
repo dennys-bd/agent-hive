@@ -1,6 +1,5 @@
-import { writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, posix, win32 } from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join, posix, win32 } from 'node:path';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
 import { commandShimDir, commandShimsEnvFile } from './command-shim.js';
@@ -75,16 +74,24 @@ export async function writePrompt(promptsDir: string, slug: string, text: string
   return path;
 }
 
+const RUN_FILE_MODE = 0o600; // a run's own file may hold its protocol and the workspace's lessons (#797)
+const RUN_DIR_MODE = 0o700;
+
+/** #873: a run's own files, its runner's runFiles (Copilot's protocol), written before its pty starts, each folder made. A run's path is new
+ * (its pty id), so the modes apply at creation. */
+export async function writeRunFiles(files: readonly { path: string; content: string }[]): Promise<void> {
+  await Promise.all(files.map(async ({ path, content }) => {
+    await mkdir(dirname(path), { recursive: true, mode: RUN_DIR_MODE });
+    await writeFile(path, content, { mode: RUN_FILE_MODE });
+  }));
+}
+
 /** A run's session as its runner reads it (#924): continue resumes the id, new starts under it (the Hive generated it); no id at all leaves the
  * choice to the agent. The worktree is not here: the Hive created it and the run starts inside it (PtyLaunch.cwd). */
 export const runSession = (sessionId: string | undefined, policy: SessionPolicy): AgentRun['session'] =>
   (sessionId === undefined ? undefined : { id: sessionId, resume: policy === 'continue' });
 
-/** A run's own temp dir (#428): TMPDIR for everything the run starts, removed when it exits. Under the daemon's own temp dir, which the OS
- * purges, so the dir of a run a daemon crash interrupted still goes eventually. */
-export function runTmpDir(ptyId: string, base = tmpdir()): string {
-  return join(base, 'hive-runs', ptyId);
-}
+export { runTmpDir } from './run-tmp.js'; // #873: moved, so a runner can name the run's tmp dir; every caller still imports it from here
 
 // The Hive's own variables no child inherits (see ptyEnv); every runner's hostEnv joins them (#924)
 // HIVE_PWSH too (#645): only terminalEnv sets it, so an inherited one never picks the terminal's shell
@@ -239,7 +246,8 @@ export function ptyCommand(o: PtyLaunch): string {
     `cd ${shellQuote(o.cwd)} &&`,
     `HIVE_PTY_ID=${o.ptyId} HIVE_PORT=${o.port} ${shellQuote(o.agent.command)}`, // #633: on win32 an .exe's full path (spaces, backslashes); one rule on every OS
     ...o.agent.argv.map(shellWord),
-    ...(o.promptPath === undefined ? [] : [`"$(cat ${shellQuote(o.promptPath)})"`]), // a session starts with no prompt (#164)
+    // a session starts with no prompt (#164); #873: behind the runner's own flag (Copilot's -i, a constant of its runner), else the last word
+    ...(o.promptPath === undefined ? [] : [...(o.agent.promptFlag === undefined ? [] : [o.agent.promptFlag]), `"$(cat ${shellQuote(o.promptPath)})"`]),
   ].join(' ');
   return `${line}; ${trailer}`;
 }

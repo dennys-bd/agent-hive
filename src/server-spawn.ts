@@ -4,7 +4,7 @@ import { runEnv, workspaceBase } from './fork.js';
 import { AGENTS, agentOf, agentRefusal, defaultModel, disabledRefusal, ranAgent, runModel } from './agents.js';
 import { agentCommand } from './agents/command.js';
 import { runners } from './agents/registry.js';
-import type { AgentRun, RunMcpServer } from './agents/runner.js';
+import type { AgentRun, AgentRunner, RunMcpServer } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
 import { shownBase } from './setup-rows.js';
 import { type PrepareHooks, runTaskSetup } from './task-setup.js';
@@ -22,7 +22,7 @@ import { recordStageStart } from './restart.js';
 import { commandIn } from './run-commands.js';
 import type { Runtime } from './server.js';
 import { agentPrompt } from './stage-agent.js';
-import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, windowsShell, writePrompt } from './spawn.js';
+import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, windowsShell, writePrompt, writeRunFiles } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
 import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
@@ -51,6 +51,9 @@ function sessionPlace(config: Runtime['config'], { activity, task, continues, re
 
 // A task's activity is born with its slug (#629); the task's own is what it would have been
 const workSlug = (activity: Activity, task: Task): string => activity.slug ?? slugFor(task.item);
+
+// #873: only a runner with a flag adds the key, so Claude's and Codex's launches stay what they were
+const promptFlagOf = ({ promptFlag }: AgentRunner): { promptFlag?: string } => (promptFlag === undefined ? {} : { promptFlag });
 
 /** The protocol files a run on `task` is told (#167, #797): its workspace's, with that workspace's memory under the protocol; the global ones
  * for a task whose workspace does not resolve. */
@@ -254,11 +257,11 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       ptyId, cwd, port, withHive: true, external, hooksPath, pluginDir: launch.pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
       protocolPath, protocolText, // #927: Codex takes the protocol as text; Claude keeps the path. picked: runModel's model, the config's args (#924) then the picks' (#290)
     };
+    await writeRunFiles(runner.runFiles(run)); // #873: the run's own files (Copilot's protocol), before its pty reads them
     pool.start({
       ptyId,
-      // #927: the runner's env over the workspace's, so no workspace variable can stand in for the MCP secret
-      // #633: an .exe's full path on win32, looked up in the env the pty gets (the launch's over the daemon's); a .cmd stays bare for sh.exe
-      launch: { ptyId, slug, cwd, env: { ...env, ...runner.runEnv(server) }, port, promptPath, ...sized(size), agent: { command: agentCommand(agent, process.platform, { ...process.env, ...env }), argv: runner.launch(run) } },
+      // #927: the runner's env over the workspace's (no workspace variable stands in for the MCP secret); #633: an .exe's full path on win32, a .cmd bare for sh.exe
+      launch: { ptyId, slug, cwd, env: { ...env, ...runner.runEnv(server, run) }, port, promptPath, ...sized(size), agent: { command: agentCommand(agent, process.platform, { ...process.env, ...env }), argv: runner.launch(run), ...promptFlagOf(runner) } },
       ...handlers(ptyId, slug),
     });
   }
@@ -314,9 +317,10 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       await dispatch({ type: 'spawnFailed', ptyId, message: `${AGENTS[agent].label} cannot copy a session` });
       return;
     }
+    await writeRunFiles(runner.runFiles(run)); // #873: as spawn's; a copy's too, which reads the same protocol
     pool.start({
       ptyId,
-      launch: { ptyId, slug: place.slug, cwd: place.cwd, env: { ...env, ...runner.runEnv(server) }, port, ...(promptPath === undefined ? {} : { promptPath }), ...sized(size), agent: { command: agentCommand(agent, process.platform, { ...process.env, ...env }), argv } },
+      launch: { ptyId, slug: place.slug, cwd: place.cwd, env: { ...env, ...runner.runEnv(server, run) }, port, ...(promptPath === undefined ? {} : { promptPath }), ...sized(size), agent: { command: agentCommand(agent, process.platform, { ...process.env, ...env }), argv, ...promptFlagOf(runner) } },
       ...handlers(ptyId, place.slug),
     });
   }

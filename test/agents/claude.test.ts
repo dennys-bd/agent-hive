@@ -95,7 +95,7 @@ test('a copy, with and without a name: the pinned argv and command line; no sess
 
 test('Claude\'s stray pattern is its MCP config path, its run needs no env of its own, and it keeps the protocol as a path (#927)', () => {
   assert.equal(runners.claude.strayPattern('W1'), mcpConfigPattern('W1'));
-  assert.deepEqual(runners.claude.runEnv({ port: 4242, ptyId: 'W1', secret: 'not-in-argv', withHive: true, external: [] }), {});
+  assert.deepEqual(runners.claude.runEnv({ port: 4242, ptyId: 'W1', secret: 'not-in-argv', withHive: true, external: [] }, RUN), {});
   const argv = runners.claude.launch({ ...RUN, protocolPath: STAGE_MD, protocolText: 'PROTOCOL-TEXT', session: { id: ID, resume: false } });
   assert.equal(JSON.stringify(argv).includes('PROTOCOL-TEXT'), false, 'the text is for an agent that takes it so');
   assert.deepEqual(argv.flat(), [...flat({ flags: [['--settings', HOOKS], ['--plugin-dir', PLUGIN], ['--append-system-prompt-file', STAGE_MD]], words: [] }), '--session-id', ID]);

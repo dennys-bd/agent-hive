@@ -57,6 +57,7 @@ export interface HeadlessRun {
 
 export interface AgentRunner {
   hostEnv: readonly string[]; // what no child of the Hive may inherit from the process the Hive was started from; a name ending in * stands for every variable with that prefix
+  promptFlag: string | undefined; // #873: the flag ptyCommand puts the prompt behind (Copilot takes no positional prompt: -i); undefined = the last word
   launch(run: AgentRun): LaunchArg[];
   copy(run: AgentRun, from: string, name?: string): LaunchArg[] | undefined;
   clear(run: AgentRun): LaunchArg[] | undefined;
@@ -64,7 +65,8 @@ export interface AgentRunner {
   headless(run: HeadlessRun): string[]; // #330: the argv after the command; the prompt goes on stdin
   headlessAnswer(stdout: string, answerFile: string | undefined): string | undefined; // #330: the final message's text; answerFile: answerPath's content
   strayPattern(ptyId: string): string; // #927: what killStray / isStrayAlive match in this agent's argv for the run of ptyId
-  runEnv(server: McpServer): Record<string, string>; // #927: what the run's env carries for this agent, over the workspace's (the MCP secret for Codex)
+  runEnv(server: McpServer, run: AgentRun): Record<string, string>; // #927: what the run's env carries for this agent, over the workspace's (the MCP secret for Codex); #873: the run, for a folder named after its pty id
+  runFiles(run: AgentRun): { path: string; content: string }[]; // #873: absolute paths the spawn writes (0600, folders made) before the pty starts; [] = none
   // #928: the agent's hook as the reducer reads it, before anything else reads it; undefined drops it. The body is any local process's
   hookPayload(raw: HookPayload): HookPayload | undefined;
   prepareHome(home: string, port: number): Promise<void>;

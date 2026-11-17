@@ -2148,7 +2148,7 @@ export interface PtyLaunch {
   slug: string; // names the prompt file and the worktree directory
   cwd: string; // the task's worktree: where the worker runs. The Hive created it, so no runner needs a worktree flag of its own
   port: number;
-  agent?: { command: string; argv: LaunchArg[] }; // #924: the agent's CLI and the argv its runner rendered (launch or copy); absent for a terminal
+  agent?: { command: string; argv: LaunchArg[]; promptFlag?: string }; // #924: the agent's CLI and the argv its runner rendered (launch or copy); absent for a terminal. #873: promptFlag, what the prompt goes behind (Copilot's -i); absent = its last word
   promptPath?: string; // the rendered prompt on disk: the command line reads it with $(cat …); absent = the agent starts with no prompt (#164)
   terminal?: true; // a terminal in the task's worktree (#283, #647): no agent
   run?: { command: string; env: Record<string, string> }; // with terminal: a workspace's run command instead of the interactive shell (#300); the run ends with it (#353); env: the command's own only (#738), names passed ENV_NAME

@@ -81,6 +81,7 @@ function headlessAnswer(stdout: string): string | undefined {
 export const claudeRunner: AgentRunner = {
   // CLAUDECODE: a Hive started from inside Claude Code would stop the child from starting; CLAUDE_CODE_CHILD_SESSION turns its transcript off
   hostEnv: ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'],
+  promptFlag: undefined, // the prompt is its last positional word
   launch: (run) => [...hiveFlags(run), ...run.extraArgs, ...agentWords(run), ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), ...sessionWords(run.session)],
   copy: (run, from, name) => (run.session === undefined ? undefined : [...hiveFlags(run), ...run.extraArgs, ...copyWords(from, run.session.id, name)]),
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear): there is no argv to render
@@ -89,6 +90,7 @@ export const claudeRunner: AgentRunner = {
   headlessAnswer: (stdout) => headlessAnswer(stdout),
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --mcp-config path holds the pty id (#696)
   runEnv: () => ({}), // the secret is in its MCP file (0600) and curl's header file
+  runFiles: () => [], // its protocol rides --append-system-prompt-file
   hookPayload: (raw) => raw, // the reducer's hook rules are Claude Code's own events (#928)
   // Arrows on purpose: registry.ts sits in import cycles with usage.ts and transcript.ts, and an arrow reads the binding at call time
   prepareHome: (home, port) => prepareClaudeHome(home, port),

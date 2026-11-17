@@ -6,7 +6,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { posixShell } from '../src/posix-shell.js';
-import { HANDOFF_PROMPT, PWSH_LOADER, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, shimsFirst, terminalEnv, verdictsLine, windowsShell, withHandoff, writePrompt } from '../src/spawn.js';
+import { HANDOFF_PROMPT, PWSH_LOADER, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, shimsFirst, terminalEnv, verdictsLine, windowsShell, withHandoff, writePrompt, writeRunFiles } from '../src/spawn.js';
+import { assertMode } from './posix-only.js';
 import { runners } from '../src/agents/registry.js';
 import { shellQuote } from '../src/shell-init.js';
 import { claudeLaunch, LAUNCH, plainArgs } from './fakes.js';
@@ -350,4 +351,29 @@ test('without HIVE_PWSH a SHELL naming bash starts bash on the Hive\'s rc file e
   const dir = await tempDir(t, 'terminal line-');
   const bash = await stub(dir, 'bash', 'bash');
   assert.deepEqual(await runLine(dir, {}, `SHELL=${shellQuote(bash)}; `), ['bash', '--rcfile', '/hs/bash/rc']);
+});
+
+test('ptyCommand puts the prompt behind the runner\'s prompt flag, last; no prompt file leaves no flag; a launch with no flag keeps the bare prompt (#873)', () => {
+  const agent = { command: 'copilot', argv: ['--session-id', 'S1'], promptFlag: '-i' };
+  const line = ptyCommand({ ...LAUNCH, agent });
+  assert.ok(line.includes(`'copilot' '--session-id' 'S1' -i "$(cat '/repo/.hive/prompts/hive-1-task.md')"; curl `), line);
+  const { promptPath: _none, ...bare } = LAUNCH;
+  const empty = ptyCommand({ ...bare, agent });
+  assert.ok(empty.includes(`'copilot' '--session-id' 'S1'; curl `), 'a session with no prompt leaves no dangling -i');
+  assert.ok(ptyCommand(LAUNCH).includes(`'--session-id' `) && ptyCommand(LAUNCH).includes(` "$(cat '/repo/.hive/prompts/hive-1-task.md')"; curl `), 'claude: the prompt stays its last word');
+  assert.equal(ptyCommand(LAUNCH).includes(' -i '), false);
+});
+
+test('writeRunFiles writes each of a run\'s files, its folders made, this user\'s only; none writes nothing (#873)', async (t) => {
+  const dir = await tempDir(t, 'run-files-');
+  const path = join(dir, 'run', 'copilot-instructions', 'hive.instructions.md');
+  await writeRunFiles([{ path, content: 'PROTOCOL' }]);
+  assert.equal(await readFile(path, 'utf8'), 'PROTOCOL');
+  await assertMode(t, path, 0o600);
+  await writeRunFiles([]);
+});
+
+test('claude and codex name no prompt flag and write no run file: their prompt is the last word, their protocol rides a flag (#873)', () => {
+  const run = { ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, external: [], hooksPath: '/h', pluginDir: '/p', protocolText: 'P', extraArgs: [] };
+  assert.deepEqual([runners.claude.promptFlag, runners.codex.promptFlag, runners.claude.runFiles(run), runners.codex.runFiles(run)], [undefined, undefined, [], []]);
 });
