@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { type JiraCall, projectJql, readComments, readFields, readIssue, readLinkTypes, readStatuses, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
+import { type JiraCall, postTransition, projectJql, readComments, readFields, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
 
 interface Sent { path: string; method: string; body: unknown }
 
@@ -156,4 +156,27 @@ test('readLinkTypes answers each type with its two phrases', async () => {
   assert.deepEqual(await readLinkTypes(call), [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }]);
   assert.deepEqual(sent.map((s) => s.path), ['/issueLinkType']);
   await assert.rejects(readLinkTypes(fakeJira([[]]).call), /jira link types/);
+});
+
+test('readMyself answers the account id and the name, which may be absent, and refuses an answer with no account id (#820)', async () => {
+  const { call, sent } = fakeJira([{ accountId: 'acc-1', displayName: 'Ana Lima', emailAddress: 'ana@example.com' }, { accountId: 'acc-2' }, { displayName: 'Bea' }]);
+  assert.deepEqual(await readMyself(call), { accountId: 'acc-1', displayName: 'Ana Lima' });
+  assert.deepEqual(await readMyself(call), { accountId: 'acc-2' });
+  await assert.rejects(readMyself(call), /jira myself accountId/);
+  assert.deepEqual(sent.map((s) => s.path), ['/myself', '/myself', '/myself']);
+});
+
+test('readTransitions answers each transition\'s id and target, postTransition posts the id, and both refuse a ref that is neither before any call (#820)', async () => {
+  const { call, sent } = fakeJira([{ transitions: [{ id: '11', name: 'Start', to: { id: '3', name: 'In Progress' } }] }, undefined]);
+  assert.deepEqual(await readTransitions(call, '10001'), [{ id: '11', to: 'In Progress' }]);
+  await postTransition(call, '10001', '11');
+  assert.deepEqual(sent, [
+    { path: '/issue/10001/transitions', method: 'GET', body: undefined },
+    { path: '/issue/10001/transitions', method: 'POST', body: { transition: { id: '11' } } },
+  ]);
+  const none = fakeJira([]);
+  await assert.rejects(readTransitions(none.call, '..'), /id or key/);
+  await assert.rejects(postTransition(none.call, 'ABC-1/x', '11'), /id or key/);
+  assert.equal(none.sent.length, 0);
+  await assert.rejects(readTransitions(fakeJira([{}]).call, '10001'), /jira transitions/);
 });

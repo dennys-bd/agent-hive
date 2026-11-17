@@ -10,7 +10,7 @@ import { emptyRule, type RuleDraft } from '../src/ui/lib/settings-rules.js';
 import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRule, Command, SettingsInfo, SettingsBody } from '../src/types.js';
 import { flatten, MAIN_FLOW } from '../src/flows.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, DELETE_ACTIVITY_DEFAULTS, CONSOLE_LINES_DEFAULT, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { FIXED } from './fakes.js';
+import { FIXED, JIRA_ENTRY } from './fakes.js';
 import { mainFlows } from './fixtures/main-flow.js';
 
 // #30: not a new source's keys, so draftFrom visibly reads them; switchAt on STAGES' second stage
@@ -33,13 +33,14 @@ const TRANSITIONS: Transition[] = [
   { from: 'done', to: 'end', when: 'done' },
 ];
 
+const GITHUB_SOURCE: Extract<SourceConfig, { type: 'github' }> = { name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS };
 const CONFIG: Config = {
   auth: { github: 'api' },
   comb: {
     prefix: 'HIVE',
     workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }],
     commands: [FRONT], hiveSource: true, createIn: 'hive',
-    sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
+    sources: [GITHUB_SOURCE],
     flows: mainFlows(STAGES, TRANSITIONS),
   },
   commandSemaphores: [{ name: 'memory', limit: 2, reservation: '2m' }], // not empty, so draftFrom visibly reads it (#796)
@@ -256,9 +257,11 @@ test('the task filter rules round-trip: the row holds the saved rules, the body 
 
 test('a source row carries epicDeleteActivity from the config to the body; a new row starts off (#856)', () => {
   assert.equal(emptySource().epicDeleteActivity, false);
-  const saved = draftFrom(info(withSources([{ ...CONFIG.comb.sources[0], epicDeleteActivity: true }])));
+  const saved = draftFrom(info(withSources([{ ...GITHUB_SOURCE, epicDeleteActivity: true }])));
   assert.equal(saved.sources[0].epicDeleteActivity, true);
-  assert.equal(toSettingsBody(saved).sources?.[0].epicDeleteActivity, true);
+  const [sent] = toSettingsBody(saved).sources ?? [];
+  assert.ok(sent?.type === 'github');
+  assert.equal(sent.epicDeleteActivity, true);
 });
 
 test('each source row carries its epics keys (#30): switchAt loaded as its stage draft id and sent by name; a rename carries it, a removal falls back to Build, else the first stage; a new row gets show, aheadThenBehind and the default', () => {
@@ -677,13 +680,15 @@ test('the form loads the saved transitions by stage id and sends them back; a br
   assert.deepEqual(validateSettings({ ...draft, stages: [{ ...draft.stages[0], approval: true }] }), { section: 'flow', message: t('settings.transitions.error.useApproved', { name: name(t('flow.end')), stage: 'Build' }), transition: draft.transitions[0].id });
 });
 
-const REPO_CONFIG: Config = { ...CONFIG, comb: { ...CONFIG.comb, createIn: 'work', sources: [{ ...CONFIG.comb.sources[0], repository: 'acme/app' }] } };
+const REPO_CONFIG: Config = { ...CONFIG, comb: { ...CONFIG.comb, createIn: 'work', sources: [{ ...GITHUB_SOURCE, repository: 'acme/app' }] } };
 
 test('draftFrom keys createIn by its source\'s row; toSettingsBody sends it by the row\'s name, a rename included, with hiveSource and each repository (#846)', () => {
   const draft = draftFrom(info(REPO_CONFIG));
   assert.deepEqual([draft.hiveSource, draft.createIn, draft.sources[0].repository], [true, draft.sources[0].id, 'acme/app']);
   const body = toSettingsBody({ ...draft, sources: [{ ...draft.sources[0], name: 'job' }] });
-  assert.deepEqual([body.hiveSource, body.createIn, body.sources?.[0].repository, body.renames], [true, 'job', 'acme/app', { work: 'job' }]);
+  const [sent] = body.sources ?? [];
+  assert.ok(sent?.type === 'github');
+  assert.deepEqual([body.hiveSource, body.createIn, sent.repository, body.renames], [true, 'job', 'acme/app', { work: 'job' }]);
   assert.equal('repository' in (toSettingsBody({ ...draft, createIn: 'hive', sources: [{ ...draft.sources[0], repository: '' }] }).sources?.[0] ?? {}), false, 'none sends no key');
   assert.deepEqual([draftFrom(info()).hiveSource, draftFrom(info()).createIn], [true, 'hive'], 'a new form: hive on, tasks created there');
 });
@@ -781,4 +786,23 @@ test('a form with semaphores saves commandSemaphores and every line\'s semaphore
   assert.equal(validateSettings(draft), undefined);
   const bad = [{ ...draft.commandSemaphores[0], limit: '0' }];
   assert.deepEqual(validateSettings({ ...draft, commandSemaphores: bad, budgetHour: 'abc' }), { section: 'rules', message: t('settings.error.semaphoreLimit', { name: 'memory' }) }, 'before the budget');
+});
+
+const JIRA_SAVED: SourceConfig = { ...JIRA_ENTRY, switchAt: 'dev' };
+
+test('a jira source drafts with its saved entry whole and saves it back unchanged; no project is asked of it (#820)', () => {
+  const config = withSources([CONFIG.comb.sources[0], JIRA_SAVED]);
+  const draft = draftFrom(info(config));
+  assert.deepEqual([draft.sources[1].type, draft.sources[1].saved], ['jira', JIRA_SAVED]);
+  assert.deepEqual(toSettingsBody(draft).sources, config.comb.sources);
+  assert.notEqual(validateSettings(draft)?.message, t('settings.error.project'));
+});
+
+test('a stage renamed in the same save carries into a jira source\'s switchAt (#820)', () => {
+  const draft = draftFrom(info(withSources([CONFIG.comb.sources[0], JIRA_SAVED])));
+  const renamed = { ...draft, stages: draft.stages.map((s) => (s.name === 'dev' ? { ...s, name: 'build' } : s)) };
+  const saved = toSettingsBody(renamed).sources?.[1];
+  assert.ok(saved);
+  assert.deepEqual([saved.type, saved.switchAt], ['jira', 'build']);
+  assert.deepEqual({ ...saved, switchAt: 'dev' }, JIRA_SAVED);
 });

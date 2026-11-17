@@ -48,3 +48,12 @@ test('repositoryLabel names the repository, and the source too only where two so
   expect(repositoryLabel(shared[2], shared)).toBe('acme/app · triage');
   expect(repositoryLabel(shared[1], shared)).toBe('acme/docs');
 });
+
+const JIRA: SourceConfig = {
+  name: 'tickets', qualifyId: false, type: 'jira', site: 'acme.example', project: 'ABC', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: null }, rules: [] },
+  epics: 'ignore', epicFollows: 'behind', switchAt: 'fila', tree: { epics: false, subtasks: false }, blockingLinkTypes: [], issueType: 'Story', subtaskType: 'Sub-task', doneStatus: 'Done',
+};
+
+test('a jira source is no create destination yet (#820)', () => {
+  expect(createTargetsOf({ sources: [JIRA] }).sources).toEqual([]);
+});

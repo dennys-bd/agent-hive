@@ -12,6 +12,7 @@ export type CanCreate = (source: CreateCandidate) => boolean;
 export function canCreate(source: CreateCandidate): boolean {
   switch (source.type) {
     case 'github': return source.repository !== undefined;
+    case 'jira': return false; // #820: node 6 adds create
   }
 }
 

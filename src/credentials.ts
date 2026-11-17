@@ -35,13 +35,14 @@ function mcpValues(raw: unknown): Record<string, { value: string }> | undefined 
 export type JiraCredential = NonNullable<Credentials['jira']>[string];
 
 // #816: a site's login by host; an entry with a non-string field is dropped, as a malformed github is: it would reach the Basic header as
-// [object Object]. A map that is no object is dropped whole.
+// [object Object]. A map that is no object is dropped whole. A displayName that is no string is dropped with the login kept (#820): it is
+// only what @me reads.
 function jiraEntries(raw: unknown): Record<string, JiraCredential> | undefined {
   if (!isRecord(raw)) return undefined;
   return Object.fromEntries(
     Object.entries(raw).flatMap(([site, e]) =>
       isRecord(e) && typeof e.email === 'string' && typeof e.token === 'string' && typeof e.accountId === 'string'
-        ? [[site, { email: e.email, token: e.token, accountId: e.accountId }]]
+        ? [[site, { email: e.email, token: e.token, accountId: e.accountId, ...(typeof e.displayName === 'string' ? { displayName: e.displayName } : {}) }]]
         : [],
     ),
   );
@@ -86,20 +87,44 @@ export async function writeCredentials(next: Credentials, env?: NodeJS.ProcessEn
   }
 }
 
+// One read-modify-write at a time in this process: a background name renewal (#820) racing a reconnect or a GitHub login would otherwise
+// write its older snapshot over the newer token. ponytail: in-process only; a second Hive process on the same home is not serialized
+let pending: Promise<unknown> = Promise.resolve();
+
+/** Reads the file, applies `change`, writes what it answers; undefined writes nothing. Serialized with every other update. */
+export function updateCredentials(change: (current: Credentials) => Credentials | undefined, env?: NodeJS.ProcessEnv): Promise<void> {
+  const run = pending.then(async () => {
+    const next = change(await readCredentials(env));
+    if (next !== undefined) await writeCredentials(next, env);
+  });
+  pending = run.catch(() => undefined); // one failed write never blocks the next
+  return run;
+}
+
 export async function jiraCredential(site: string, env?: NodeJS.ProcessEnv): Promise<JiraCredential | undefined> {
   const { jira } = await readCredentials(env);
   return jira !== undefined && Object.hasOwn(jira, site) ? jira[site] : undefined;
 }
 
 export async function saveJiraCredential(site: string, cred: JiraCredential, env?: NodeJS.ProcessEnv): Promise<void> {
-  const current = await readCredentials(env);
-  await writeCredentials({ ...current, jira: { ...current.jira, [site]: cred } }, env);
+  await updateCredentials((current) => ({ ...current, jira: { ...current.jira, [site]: cred } }), env);
 }
 
 export async function removeJiraCredential(site: string, env?: NodeJS.ProcessEnv): Promise<void> {
-  const current = await readCredentials(env);
   // nothing to remove, nothing written: an unreadable file reads as {} and a rewrite would drop every other login
-  if (current.jira === undefined || !Object.hasOwn(current.jira, site)) return;
-  const { [site]: _gone, ...left } = current.jira;
-  await writeCredentials({ ...current, jira: left }, env);
+  await updateCredentials((current) => {
+    if (current.jira === undefined || !Object.hasOwn(current.jira, site)) return undefined;
+    const { [site]: _gone, ...left } = current.jira;
+    return { ...current, jira: left };
+  }, env);
+}
+
+/** #820: the account's name as /myself answers it. Written only when the site has a login and the name changed, so a resolve that finds
+ * nothing new never rewrites the file. */
+export async function renewJiraName(site: string, name: string, env?: NodeJS.ProcessEnv): Promise<void> {
+  await updateCredentials((current) => {
+    const entry = current.jira !== undefined && Object.hasOwn(current.jira, site) ? current.jira[site] : undefined;
+    if (entry === undefined || entry.displayName === name) return undefined;
+    return { ...current, jira: { ...current.jira, [site]: { ...entry, displayName: name } } };
+  }, env);
 }

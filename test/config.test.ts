@@ -152,7 +152,9 @@ test('a source requires epicDeleteActivity as a boolean, naming the field; a val
   const message = 'hive.config.json: "comb.sources[0].epicDeleteActivity" must be a boolean';
   assert.throws(source({ epicDeleteActivity: undefined }), { message }, 'missing');
   assert.throws(source({ epicDeleteActivity: 'yes' }), { message }, 'not a boolean');
-  assert.equal(parseConfig(github({ source: { ...GITHUB_SOURCE, epicDeleteActivity: true } })).comb.sources[0].epicDeleteActivity, true);
+  const [parsed] = parseConfig(github({ source: { ...GITHUB_SOURCE, epicDeleteActivity: true } })).comb.sources;
+  assert.ok(parsed.type === 'github');
+  assert.equal(parsed.epicDeleteActivity, true);
 });
 
 test('a GitHub source requires epics, epicFollows and switchAt, naming the field; an unknown value is refused (#30)', () => {
@@ -432,7 +434,7 @@ test('parseConfig rejects missing or wrong-typed fields with the field name', ()
   assert.throws(() => parseConfig({ commandSemaphores: [] }), { message: 'hive.config.json: "comb" is required' }); // #796: the list is read first
   assert.throws(() => parseConfig(github({ source: { type: 'github', owner: '@me' } })), /comb\.sources\[0\]\.number/);
   assert.throws(() => parseConfig(github({ source: { type: 'github', number: 1 } })), /comb\.sources\[0\]\.owner/);
-  assert.throws(() => parseConfig(github({ source: { type: 'asana', id: 1 } })), { message: 'hive.config.json: "comb.sources[0].type" must be one of: github' });
+  assert.throws(() => parseConfig(github({ source: { type: 'asana', id: 1 } })), { message: 'hive.config.json: "comb.sources[0].type" must be one of: github, jira' });
   assert.throws(() => parseConfig({ ...GITHUB, agentArgs: { claude: 'x' } }), /agentArgs/);
 });
 
@@ -1315,7 +1317,9 @@ const WITH_REPO = { ...GITHUB_SOURCE, repository: 'acme/app' };
 
 test('parseConfig reads comb.hiveSource, comb.createIn and a GitHub source\'s repository; an absent repository stays absent (#846)', () => {
   const config = parseConfig(github({ source: WITH_REPO, hiveSource: false, createIn: 'board' }));
-  assert.deepEqual([config.comb.hiveSource, config.comb.createIn, config.comb.sources[0].repository], [false, 'board', 'acme/app']);
+  const [source] = config.comb.sources;
+  assert.ok(source.type === 'github');
+  assert.deepEqual([config.comb.hiveSource, config.comb.createIn, source.repository], [false, 'board', 'acme/app']);
   assert.deepEqual([parseConfig(github()).comb.hiveSource, parseConfig(github()).comb.createIn], [true, 'hive']);
   assert.equal('repository' in parseConfig(github()).comb.sources[0], false);
 });

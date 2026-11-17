@@ -39,7 +39,7 @@ export const PR_URL_MESSAGE = 'pr must be a GitHub pull request link';
 export const PR_TAKEN_MESSAGE = 'a task already holds this PR';
 // Why a source of each type cannot create (#811): a Record, so a new type must say whether it has a reason to point at, as canCreate's switch
 // makes it say how it creates; undefined = only the neutral words
-const NO_CREATE_REASON: Record<SourceConfig['type'], string | undefined> = { github: 'it has no repository for new issues' };
+const NO_CREATE_REASON: Record<SourceConfig['type'], string | undefined> = { github: 'it has no repository for new issues', jira: 'it cannot create issues yet' };
 export const noCreateMessage = (entry: Pick<SourceConfig, 'name' | 'type'>): string => {
   const reason = NO_CREATE_REASON[entry.type] as string | undefined; // a test's cast type finds no entry
   return reason === undefined ? `source ${entry.name} cannot create tasks` : `source ${entry.name} cannot create tasks: ${reason}`;

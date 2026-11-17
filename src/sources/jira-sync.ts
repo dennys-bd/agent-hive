@@ -1,5 +1,6 @@
 import type { ReadModel } from '../read-model/db.js';
 import { WireError } from '../read-model/normalize.js';
+import type { UpsertOrigin } from '../read-model/rows.js';
 import type { SourceField, SourceItem } from '../read-model/source-items.js';
 import { fieldRowsOf, type JiraItemRows, jiraItemOf } from './jira-item.js';
 import { type JiraCall, type JiraIssue, projectJql, readFields, readStatuses, SEARCH_EXPAND, SEARCH_FIELDS, searchIssues, sinceMinutes } from './jira-queries.js';
@@ -34,9 +35,9 @@ function writeListing(db: Db, source: string, project: string): boolean {
   return true;
 }
 
-// Values only when the upsert wrote: a page read before a write cannot undo it through the side table
-function writeIssue(db: Db, { item, values }: JiraItemRows): boolean {
-  if (!db.items.upsertItem(item, 'sync')) return false;
+// Values only when the upsert wrote: a page read before a write cannot undo it through the side table. origin: the adapter's reads are writes (#820)
+export function writeIssue(db: Db, { item, values }: JiraItemRows, origin: UpsertOrigin = 'sync'): boolean {
+  if (!db.items.upsertItem(item, origin)) return false;
   db.items.setValues(item.source, item.nodeId, values);
   return true;
 }

@@ -72,7 +72,7 @@ async function connect(req: Request, res: Response, { log, env, fetch }: JiraRou
     return void res.status(HTTP_BAD_REQUEST).json({ error: check.error });
   }
   try {
-    await saveJiraCredential(site, { ...login, accountId: check.me.accountId }, env);
+    await saveJiraCredential(site, { ...login, accountId: check.me.accountId, ...(check.me.displayName === undefined ? {} : { displayName: check.me.displayName }) }, env);
   } catch (err) {
     log.error(`jira site ${site} not saved: ${errorMessage(err)}`);
     return void res.status(HTTP_SERVER_ERROR).json({ error: JIRA_SAVE_MESSAGE });

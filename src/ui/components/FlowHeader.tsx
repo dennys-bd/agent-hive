@@ -13,6 +13,7 @@ import { useBackKeys } from '@/hooks/use-back-keys';
 import { CreateTaskOpenContext } from '@/hooks/use-create-task-dialog';
 import { t } from '@/i18n';
 import { CreateTargetsContext } from '@/lib/create-targets';
+import { sourceOwner } from '@/lib/flow-sources';
 import { isSettingsClosed, onShortcutKey } from '@/lib/dock-layout';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
@@ -87,7 +88,7 @@ function SearchField({ label, value, isShown, isNarrow, onChange }: { label: str
 function SourceHeading({ source }: { source: SourceConfig | typeof HIVE_SOURCE }) {
   const name = <span className="font-semibold text-[13px] text-foreground">{typeof source === 'string' ? source : source.name}</span>;
   if (typeof source === 'string') return <>{name}<span>{t('tasks.header.hive')}</span></>;
-  return <>{name}<span>{`${t(`tasks.header.source.${source.type}`)} · ${source.owner}`}</span></>;
+  return <>{name}<span>{`${t(`tasks.header.source.${source.type}`)} · ${sourceOwner(source)}`}</span></>;
 }
 
 /** A repository header's tab (#758): its PR list, or its issues. */

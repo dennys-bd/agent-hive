@@ -5,10 +5,12 @@ import { type MessageKey, t } from '../i18n.js';
 import { type SourceDraft, emptySource } from './settings-form.js';
 import { entryLabel, type FlowScope, PROP_LABEL, propMode } from './setup-source-task-props.js';
 
-/** The types the dialog offers (#514): Jira has no adapter yet; a new adapter joins here with its spec. */
+/** The types the dialog offers (#514): Jira's form lands with 5.4 (#822). */
 export const NEW_SOURCE_TYPES = ['github'] as const satisfies readonly SourceFields['type'][];
 /** The type badge / read-only type field label; a Record, so a new source type fails tsc until it has one. */
-export const TYPE_LABEL: Record<SourceFields['type'], MessageKey> = { github: 'settings.sources.type.github' };
+export const TYPE_LABEL: Record<SourceFields['type'], MessageKey> = { github: 'settings.sources.type.github', jira: 'settings.sources.type.jira' };
+/** Who a source belongs to, as its row and header show it (#820): GitHub's owner, a Jira source's site. */
+export const sourceOwner = (source: SourceFields): string => (source.type === 'github' ? source.owner : source.site);
 export interface NewSourceFields { owner: string; number: string; name: string; workspace: string }
 /** What the dialog hands the Settings page: the row, and the owner's projects it loaded, so the detail's select shows them at once. */
 export interface NewSource { source: SourceDraft; projects: ProjectSummary[] }
@@ -34,6 +36,7 @@ function ruleText(rule: FilterRule): string {
 
 // The project part (#514): the loaded title once it joins the row, else the number alone.
 function projectPart(source: SourceDraft, title?: string): string {
+  if (source.saved !== undefined) return source.saved.project; // #820: a jira row's project is its key
   if (source.number === '') return t('settings.sources.noProject');
   return title === undefined ? `#${source.number}` : `#${source.number} ${title}`;
 }

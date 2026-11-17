@@ -23,7 +23,7 @@ export const HIVE_ONLY: CreateTargets = { hiveSource: true, createIn: HIVE_SOURC
 
 export const createTargetsOf = (nav: { sources: readonly SourceConfig[]; hiveSource?: boolean; createIn?: string }, can: CanCreate = canCreate): CreateTargets => ({
   hiveSource: nav.hiveSource !== false, createIn: nav.createIn ?? HIVE_SOURCE, configs: nav.sources,
-  sources: nav.sources.flatMap((s) => (can(s) ? [{ name: s.name, type: s.type, ...(s.repository === undefined ? {} : { repository: s.repository }) }] : [])),
+  sources: nav.sources.flatMap((s) => (can(s) ? [{ name: s.name, type: s.type, ...(s.type === 'github' && s.repository !== undefined ? { repository: s.repository } : {}) }] : [])),
 });
 
 /** The destinations a create row offers, the default first; hive only while it is on. */

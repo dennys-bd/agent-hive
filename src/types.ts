@@ -203,7 +203,7 @@ export interface Credentials {
   /** An external MCP server's header value by server name (#333). */
   mcp?: Record<string, { value: string }>;
   /** A Jira Cloud login by bare site host (#816). */
-  jira?: Record<string, { email: string; token: string; accountId: string }>;
+  jira?: Record<string, { email: string; token: string; accountId: string; displayName?: string }>; // displayName: #820, what @me resolves to with no call
 }
 
 /** What GET /settings/github/auth answers: never the token, only what the screen shows. */
@@ -262,14 +262,23 @@ export interface TaskProps { workspace?: string; auto: boolean; entry: TaskEntry
 export interface TaskRule { field: string; op: RuleOp; value: string; set: Partial<TaskProps> }
 /** A source's task properties (#688): the defaults and 0 to RULES_MAX rules; per property, the first matching rule that sets it wins. */
 export interface SourceTaskProps { defaults: TaskProps; rules: TaskRule[] }
-/** What an adapter reads of one source: its type's own fields and its task properties (#179, #688). One type today; the next adapter (Jira)
- * joins as another member under the same `type` key. */
-export type SourceFields = {
-  type: 'github'; owner: string; number: number; filter: TaskFilter; taskProps: SourceTaskProps;
-  repository?: string; // #846: owner/name new issues are created in; absent = the source is no destination
-  epics: EpicsMode; epicFollows: EpicFollows; epicDeleteActivity: boolean; // #30, #856: required whatever the mode
-  switchAt: string; // #30: a stage name of comb.stages, checked by the parser
-};
+/** Which of a Jira project's levels the Hive reads as its tree (#820): epics as parents, sub-tasks as children. Parsed now; node 6 reads it. */
+export type JiraTree = { epics: boolean; subtasks: boolean };
+/** What an adapter reads of one source: its type's own fields and its task properties (#179, #688), one member per type under `type`. */
+export type SourceFields =
+  | {
+    type: 'github'; owner: string; number: number; filter: TaskFilter; taskProps: SourceTaskProps;
+    repository?: string; // #846: owner/name new issues are created in; absent = the source is no destination
+    epics: EpicsMode; epicFollows: EpicFollows; epicDeleteActivity: boolean; // #30, #856: required whatever the mode
+    switchAt: string; // #30: a stage name of comb.stages, checked by the parser
+  }
+  | {
+    type: 'jira'; site: string; project: string; // #820: a bare host and a project key, both checked by the parser
+    filter: TaskFilter; taskProps: SourceTaskProps; // the parser refuses a milestone or repository rule: an issue has neither
+    epics: EpicsMode; epicFollows: EpicFollows; switchAt: string; // no epicDeleteActivity: a Jira epic's is false (6.5)
+    tree: JiraTree; blockingLinkTypes: string[]; // parsed only, read by node 6
+    issueType: string; subtaskType: string; doneStatus: string; // each checked by the node that first reads it (5.5, 6.6)
+  };
 
 /** One external source of the Comb (#180): its fields under the key the columns, the item ids, the state and the UI use. */
 export type SourceConfig = SourceFields & {
@@ -347,6 +356,7 @@ export const isLeaving = (a: SourceAction): boolean => LEAVING_ACTIONS.includes(
 /** The single source of what each source type can do (#286): the config, the adapters and the settings form read it. */
 export const SOURCE_ACTIONS: Record<SourceFields['type'], SourceAction['type'][]> = {
   github: ['move', 'archive', 'remove', 'close', 'delete'],
+  jira: ['move'], // #820: 5.5 adds close, delete and archive
 };
 
 /** What a stage does with a stopped task instead of running a prompt (#573: was cleanup): deleteActivity deletes the task's activity; commands
@@ -836,7 +846,7 @@ export type EpicsMode = (typeof EPICS_MODES)[number];
 export const EPIC_FOLLOWS = ['behind', 'ahead', 'aheadThenBehind'] as const;
 export type EpicFollows = (typeof EPIC_FOLLOWS)[number];
 /** A new source's epics keys (#27, #30), the epic's activity delete off (#856). The parser itself has no default. */
-export const NEW_SOURCE_EPICS: Pick<SourceConfig, 'epics' | 'epicFollows' | 'epicDeleteActivity'> = { epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false };
+export const NEW_SOURCE_EPICS: Pick<Extract<SourceConfig, { type: 'github' }>, 'epics' | 'epicFollows' | 'epicDeleteActivity'> = { epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false };
 /** The stage a new source switches at, else the flow's first (#30). */
 export const SWITCH_AT_DEFAULT = 'Build';
 /** The epic rule a decomposition's hive write stamps on a hive goal (#782, #687 decision 5): the defaults a new GitHub source gets. A flow

@@ -7,7 +7,7 @@ import { initialState } from '../src/orchestrator.js';
 import { shouldPoll } from '../src/polling.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { createSources } from '../src/source.js';
-import { SourceRateLimitError } from '../src/source-errors.js';
+import { SourceNotConnectedError, SourceRateLimitError } from '../src/source-errors.js';
 import type { ItemField, Source, SourceItem, SourceSpec } from '../src/types.js';
 import { HOUR_MS } from '../src/usage.js';
 import { combConfig, fakeSpawn, GITHUB_ENTRY, goneItem, move, OPTIONS, tempHive, WORKSPACE } from './fakes.js';
@@ -15,7 +15,7 @@ import { hiveFetch, SECRET } from './secret-client.js';
 
 // #812: two sources of no GitHub shape (no quota()), work and notes. A listing throws the fake's limited; every write its writeLimited, else
 // a move or an action records itself
-interface Fake { listed: SourceItem[]; limited?: SourceRateLimitError; writeLimited?: SourceRateLimitError; writes: string[] }
+interface Fake { listed: SourceItem[]; limited?: SourceRateLimitError; failure?: Error; writeLimited?: SourceRateLimitError; writes: string[] }
 interface Harness { base: string; server: HiveServer; work: Fake; notes: Fake }
 
 const STAGES: LegacyStage[] = [{ name: 'fila', from: { work: ['Ready'], notes: ['Ready'] }, onStart: { work: [move('In progress')] }, onFinish: { work: [{ type: 'close' }] }, prompt: 'x' }];
@@ -30,7 +30,7 @@ function fakeSource(fake: Fake): Source {
   const limitedOnly = (): Error => fake.writeLimited ?? new Error('this fake answers a write only with its rate limit');
   return {
     item: goneItem, resolveFields: async () => {}, settingsOptions: async () => OPTIONS,
-    listItems: async () => { if (fake.limited) throw fake.limited; return [...fake.listed]; },
+    listItems: async () => { if (fake.limited) throw fake.limited; if (fake.failure) throw fake.failure; return [...fake.listed]; },
     setColumn: async (itemId, column) => write(`${itemId}→${column}`),
     apply: async (itemId, action) => write(`${itemId} ${action.type}`),
     fieldsOf: async () => FIELDS,
@@ -72,6 +72,17 @@ test('a listing the source rate limits puts that source alone in backoff with it
   await h.server.poll(); // a manual refresh bypasses shouldPoll, as it bypasses the quota backoff
   const cleared = h.server.getState()!.syncs.notes;
   assert.deepEqual([cleared.backoffUntil, cleared.error], [undefined, undefined]);
+});
+
+test('a listing that rejects not connected shows the error on its sync line with no wait; the next good poll clears it (#820)', async (t) => {
+  const h = await start(t, 1);
+  h.notes.failure = new SourceNotConnectedError('jira:acme.example');
+  await h.server.poll();
+  const { notes } = h.server.getState()!.syncs;
+  assert.deepEqual([notes.error, notes.backoffUntil], ['jira:acme.example is not connected', undefined]);
+  h.notes.failure = undefined;
+  await h.server.poll();
+  assert.equal(h.server.getState()!.syncs.notes.error, undefined);
 });
 
 test('a move the source rate limits puts the source in backoff, then fails as before: the error bar names the write, nothing is written (#812)', async (t) => {
