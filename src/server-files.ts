@@ -84,7 +84,7 @@ function registerRefRoutes(app: Express, { exec, requireLive }: Pick<TaskRouteDe
 
 // An activity's files (#258, #629): the list the details panel links (files), which open in the editor pane (#717), and a terminal's task
 // references (open-ref). The IDE click (open-file) is gone with the IDE (#818).
-export function registerFileRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive'>): void {
+export function registerFileRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'machineFor'>): void {
   const { requireLive } = deps;
 
   app.get('/activities/:id/files', async (req: Request, res: Response) => {

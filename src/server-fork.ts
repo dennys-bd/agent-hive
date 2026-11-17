@@ -1,3 +1,4 @@
+import type { MachineFor } from './machine.js';
 import type { Express, Request, Response } from 'express';
 import { workspaceByName } from './config.js';
 import { forkRepos, remotesOf, syncFork, workspaceBase } from './fork.js';
@@ -16,6 +17,7 @@ const NOT_MANUAL_MESSAGE = 'a fork deste workspace não sincroniza à mão';
 const PATH_MESSAGE = 'path precisa ser a pasta de um repositório git';
 
 export interface ForkRouteDeps {
+  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
   requireLive(res: Response): { runtime: { config: Pick<Config, 'comb' | 'baseBranch'> } } | undefined;
   exec: Exec; // git for the remotes and the base, gh for the sync
 }

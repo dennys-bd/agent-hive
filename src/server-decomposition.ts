@@ -1,3 +1,4 @@
+import type { MachineFor } from './machine.js';
 import { readFile, stat } from 'node:fs/promises';
 import type { Express, Request, Response } from 'express';
 import { resultOf } from './activities.js';
@@ -41,6 +42,7 @@ const HIVE_TARGET_MESSAGE = 'a decomposição já começou a ser escrita no hive
 
 /** What the decomposition's routes need (#865). */
 export interface DecompositionRouteDeps {
+  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'> } } | undefined;
   dispatch(event: HiveEvent): Promise<unknown>; // each step's decompositionIssue, then markEpic (#556) and approve, or closeTask
   latest(): State | undefined; // #783: the state after each hive step's dispatch, which checks the step landed

@@ -1,3 +1,4 @@
+import type { MachineFor } from './machine.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
@@ -41,6 +42,7 @@ const UNKNOWN_AGENT_MESSAGE = `agent precisa ser um destes agentes: ${AGENT_IDS.
 const NO_WAKE_MESSAGE = 'o terminal não pode acordar: a atividade, a worktree ou o workspace não existe mais';
 
 export interface TerminalRouteDeps {
+  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
   requireLive(res: Response): { state: State; runtime: Runtime } | undefined;
   live(): { state: State; runtime: Runtime } | undefined; // the same, read with no answer written: after a dispatch, whose reply is the route's own
   dispatch(event: HiveEvent, size?: TerminalSize): Promise<Effect[]>; // #808: size, the page's grid, for a wake's spawn

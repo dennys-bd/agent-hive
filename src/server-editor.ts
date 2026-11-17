@@ -205,7 +205,7 @@ async function formatterStates(_req: Request, res: Response, current: Live): Pro
 }
 
 /** The editor pane's routes (#717) and Settings > editor's detected formatters (#749), behind the same requireLive as files. Whatever the disk throws answers 500 with its message. */
-export function registerEditorRoutes(app: Express, { requireLive, consoleStore }: Pick<TaskRouteDeps, 'requireLive' | 'consoleStore'>): void {
+export function registerEditorRoutes(app: Express, { requireLive, consoleStore }: Pick<TaskRouteDeps, 'requireLive' | 'consoleStore' | 'machineFor'>): void {
   const route = (handle: Handler) => async (req: Request, res: Response): Promise<void> => {
     const current = requireLive(res);
     if (!current) return;

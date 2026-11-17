@@ -116,6 +116,8 @@ import { registerHoldingsRoute } from './server-holdings.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
+import { createLocalMachines } from './machine-local.js';
+import type { MachineFor, Machines } from './machine.js';
 import { killStray, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
 import { createPtyPool, type PtyPool } from './ptys.js';
@@ -182,6 +184,7 @@ export interface ServerDeps {
   state?: State;
   sourceFactory?: SourceFactory;
   launchPty?: LaunchPty; // tests inject a fake; the default opens a real claude
+  machines?: Machines; // #158: the machines a task's disk, processes and ptys are on; tests may inject fakes; the default is the local one over exec, launchPty and the pty host
   spawnPty?: SpawnPty; // node-pty from run.ts (#251); tests a fake. Absent: NO_PTY, and an internal worker fails to start
   log?: Logger; // tests inject a fake; default writes <home>/hive.log
   facts?: FactLog; // #742: tests inject a fake; default writes <home>/facts.jsonl beside hive.log
@@ -307,19 +310,30 @@ export function createServer(deps: ServerDeps): HiveServer {
   const consoleStore = createConsoleStore(() => live?.runtime.config.consoleLines ?? CONSOLE_LINES_DEFAULT, notifyConsole);
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
   const lsp = createLspHost({ home, consoleStore, log, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
-  const ptyPool = createPtyPool((launch, handlers) => (deps.launchPty ?? launchInternalPty)(launch, handlers, { ptys, secretFile: resolve(home, SECRET_FILE), commandShims: commandShimDir(resolve(home)) }));
+  const launch = deps.launchPty ?? launchInternalPty;
+  const spawnOptions = { ptys, secretFile: resolve(home, SECRET_FILE), commandShims: commandShimDir(resolve(home)) };
+  const ptyPool = createPtyPool((ptyLaunch, handlers) => launch(ptyLaunch, handlers, spawnOptions));
   // #798: every pty's end frees what it holds on the Command Semaphores, whatever started it: a run, a terminal, a commands stage's command
   // A terminal woken in the same id (#696) has a new entry by the time the old pty's late exit runs: that exit frees nothing of the new one's
   const pool: PtyPool = { ...ptyPool, start: (o) => ptyPool.start({ ...o, onExit: () => { if (!ptyPool.has(o.ptyId)) semaphores?.ended(o.ptyId); o.onExit(); } }) };
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
+  // #158: every task's machine, the local one until node 8; 7.2 to 7.4 move their callers onto it. listen() binds the port after this
+  const machines = deps.machines ?? createLocalMachines({
+    exec, launch, ...spawnOptions, home, secret: deps.secret, agents,
+    port: () => {
+      if (boundPort === undefined) throw new Error('machine: listen() has not bound the port yet');
+      return boundPort;
+    },
+  });
+  const machineFor: MachineFor = (activity) => machines.for(activity);
   const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree, exec });
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
-  const spawner = createRunSpawner({ pool, exec, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later
+  const spawner = createRunSpawner({ pool, exec, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
-  const stageCommands = createStageCommandRunner({ exec, pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands });
+  const stageCommands = createStageCommandRunner({ exec, pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
   const evaluator = createEvaluateRunner({
     exec, agents, log, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.evaluate,
@@ -981,7 +995,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
   // #108: between the Host check and the secret. The sandboxed frame presents no credential: its URL's token is the capability, and the
   // route never reads the port's cookie
-  registerDesignFrameRoute(app, { tokens: designFrames, log });
+  registerDesignFrameRoute(app, { tokens: designFrames, log, machineFor });
   // #955: beside the design frame, before the secret: the sandboxed frame presents no credential, and the webapp holds no user data
   registerDrawioRoute(app, { root: deps.drawioRoot ?? DRAWIO_ROOT });
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -1304,13 +1318,13 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // create, start, bases, close, session, session exit, delete-activity, move, reset-order, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
-  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender };
+  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
-  registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts });
+  registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
   registerHoldingsRoute(app, { exec, log, requireLive }); // GET /workspaces/:name/holdings (#750): what a workspace still holds, for its removal dialog
   registerTaskRoutes(app, taskDeps);
-  registerDesignFrameMint(app, { requireLive, tokens: designFrames, exec }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
+  registerDesignFrameMint(app, { requireLive, tokens: designFrames, exec, machineFor }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
   // The review's conversations (#591): delivered into a session's pty, or into one openSession starts for them. A pty whose fd closed since
   // throws (EBADF, as the input effect meets it): that delivery failed, the others go on.
   const write = (ptyId: string, data: string): boolean => {
@@ -1326,10 +1340,10 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
-  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // wake, forget (#696); the shim's register under /hooks/
+  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // wake, forget (#696); the shim's register under /hooks/
   registerSemaphoreRoutes(app, { state: () => live?.state, semaphores: () => semaphores }); // #798: the shim's acquire and release under /hooks/, run now under /api/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
-  registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783)
+  registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log, machineFor }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783)
   registerConsoleRoutes(app, { requireLive, consoleStore }); // GET /console and /console/:id (#353)
   // Settings › editor's installs and the syntax packages' files (#780); a removed server's processes stop first
   registerEditorInstallRoutes(app, { home, installer: createInstaller({ home, onState: notifyEditorInstall, beforeSwap: (t) => (t.kind === 'server' ? lsp.stopServer(t.id) : Promise.resolve()) }), stopServer: (id) => lsp.stopServer(id) });
@@ -1361,7 +1375,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerRepoRoutes(app, { requireLive, exec, gql: cliGqlJson(gh), poll, log, ...repoModel });
   // The PR page (#592, #758): its read and review file, then its writes to GitHub; its reads answer from the read model and its writes upsert
   // their answer (#187), so it registers after the read loop
-  const prDeps = { requireLive, dispatch, log, exec, prReviews, notifyPrReview, gql: prGql, gqlJson: cliGqlJson(gh), gh, ...repoModel };
+  const prDeps = { requireLive, dispatch, log, exec, prReviews, notifyPrReview, gql: prGql, gqlJson: cliGqlJson(gh), gh, ...repoModel, machineFor };
   const changesReader = registerPrRoutes(app, prDeps);
   // #497: hive_pr's preload, over the repositories the Hive lists now (a Settings change takes the next call)
   preloadPr ??= preloaderOf({
@@ -1369,7 +1383,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, exec)).some((r) => r.repository === repository),
   }, changesReader);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
-  registerForkRoutes(app, { requireLive, exec }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
+  registerForkRoutes(app, { requireLive, exec, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
   registerNestedRoute(app, { config: () => live?.runtime.config }); // GET /settings/nested-repos (#653): also in setup mode, as /settings/remotes
 
   // The usage group's ↻ (#223): `{ agent }` reads that agent only, `{}` every agent with plan limits (↻ todos); either replaces the held

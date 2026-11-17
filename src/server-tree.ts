@@ -212,7 +212,7 @@ function registerFolderRoute(app: Express, { exec, requireLive, treeWatch }: Pic
 
 /** GET /activities/:id/tree, what the files sidebar reads, POST /activities/:id/reveal and GET /activities/:id/tree/folder (HIVE-22). No value of the request picks the folder: it comes
  *  from the task's slug and workspace, or the local activity's workspace (#633). */
-export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'treeWatch'>): void {
+export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'treeWatch' | 'machineFor'>): void {
   app.get('/activities/:id/tree', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
     if (!current) return;

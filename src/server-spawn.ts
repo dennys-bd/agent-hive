@@ -1,3 +1,4 @@
+import type { MachineFor } from './machine.js';
 import { readFile } from 'node:fs/promises';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
@@ -60,6 +61,7 @@ export function taskProtocol(home: string, runtime: Pick<Runtime, 'config' | 'pr
 }
 
 export interface SpawnerDeps {
+  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
   pool: Pick<PtyPool, 'start'>;
   exec: Exec; // git for the worktree step; tests inject a fake
   log: Pick<Logger, 'info' | 'error'>;

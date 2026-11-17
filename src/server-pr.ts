@@ -44,7 +44,7 @@ export const PR_ROUTE = '/repositories/:owner/:name/pulls/:number';
 
 /** What the PR routes read (#592, #758): the live state, the dispatch (a merge), git (the repositories' origins, the conflicted files), the
  * PR review files and their event, and gh, whatever auth.github says: the login the workers open their PRs with. */
-export interface PrRouteDeps extends Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'exec'> {
+export interface PrRouteDeps extends Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'exec' | 'machineFor'> {
   log: Pick<Logger, 'debug' | 'error' | 'info' | 'warn'>; // warn: a refused GitHub call (#849)
   prReviews: PrReviewStore;
   notifyPrReview(url: string): void; // the named `prReview` event on /events after every write

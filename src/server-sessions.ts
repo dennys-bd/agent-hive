@@ -33,7 +33,7 @@ const AGENT_KIND_MESSAGE = `kind precisa ser um destes agentes: ${AGENT_IDS.join
 export const FOLDER_BODY_MESSAGE = 'folder must be a non-empty string'; // #818
 export const COPY_PENDING_MESSAGE = 'uma cópia desta sessão ainda está abrindo'; // copyPending (#587)
 
-type OpenDeps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'log' | 'language' | 'plugin'>;
+type OpenDeps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'log' | 'language' | 'plugin' | 'machineFor'>;
 
 // #748: a gone workspace's code and name ride along, for the page to word; undefined drops out of the JSON
 const refuse = (res: Response, refusal: Refusal): void => {

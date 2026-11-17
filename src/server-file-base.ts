@@ -95,7 +95,7 @@ async function fileBaseOf({ against, label, repo }: BaseCommit, held: string | u
 /** GET /activities/:id/file-base?path=&against=head|task&oid= (#668), behind requireLive as the editor's routes. locate's refusals (404, a deleted
  * activity's 409, no path's 400), then 400 for an `against` other than head or task, or task on a local activity. Whatever git or the disk
  * throws answers 500 with its message. */
-export function registerFileBaseRoutes(app: Express, { requireLive, exec }: Pick<TaskRouteDeps, 'requireLive' | 'exec'>): void {
+export function registerFileBaseRoutes(app: Express, { requireLive, exec }: Pick<TaskRouteDeps, 'requireLive' | 'exec' | 'machineFor'>): void {
   app.get('/activities/:id/file-base', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;

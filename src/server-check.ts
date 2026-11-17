@@ -88,7 +88,7 @@ async function checkerStates(_req: Request, res: Response, current: Live): Promi
 
 /** POST /activities/:id/check/:checker and GET /settings/checkers (#782), behind the same requireLive as the editor's routes. Whatever the disk
  * throws answers 500 with its message. */
-export function registerCheckRoutes(app: Express, { requireLive, consoleStore }: Pick<TaskRouteDeps, 'requireLive' | 'consoleStore'>): void {
+export function registerCheckRoutes(app: Express, { requireLive, consoleStore }: Pick<TaskRouteDeps, 'requireLive' | 'consoleStore' | 'machineFor'>): void {
   const runs = createCheckRuns();
   const route = (handle: Handler) => async (req: Request, res: Response): Promise<void> => {
     const current = requireLive(res);
