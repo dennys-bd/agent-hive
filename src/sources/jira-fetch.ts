@@ -59,13 +59,19 @@ export class JiraBadRequestError extends JiraHttpError {
   }
 }
 
+const MAX_PARTS = 10;
+const MAX_PART = 300; // Jira's 400 text can be long; it reaches the panel, so it is bounded
+const cut = (text: string): string => (text.length > MAX_PART ? text.slice(0, MAX_PART) : text);
+
 // The body is read only for those two keys; one with neither, or no JSON, keeps the status-only message
 async function badRequest(res: Response): Promise<Error> {
   const body: unknown = await res.json().catch(() => undefined);
   const json = typeof body === 'object' && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
   const raw = typeof json.errors === 'object' && json.errors !== null && !Array.isArray(json.errors) ? Object.entries(json.errors) : [];
-  const errors = Object.fromEntries(raw.filter((e): e is [string, string] => typeof e[1] === 'string'));
-  const messages = Array.isArray(json.errorMessages) ? json.errorMessages.filter((m): m is string => typeof m === 'string') : [];
+  const all = raw.filter((e): e is [string, string] => typeof e[1] === 'string');
+  const errors = Object.fromEntries(all.slice(0, MAX_PARTS).map(([k, v]) => [k, cut(v)]));
+  const sent = Array.isArray(json.errorMessages) ? json.errorMessages.filter((m): m is string => typeof m === 'string') : [];
+  const messages = sent.slice(0, MAX_PARTS - Object.keys(errors).length).map(cut);
   const keys = raw.map(([key]) => key);
   return Object.keys(errors).length === 0 && messages.length === 0 ? new JiraHttpError(BAD_REQUEST, keys) : new JiraBadRequestError(keys, errors, messages);
 }

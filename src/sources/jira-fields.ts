@@ -3,7 +3,7 @@ import type { FieldValue, FieldWrite, ItemField, SourceItem } from '../types.js'
 import { bodyOf, type Choice, currentChoices, type Kind, kindOf, shownValue } from './jira-field-kinds.js';
 import type { JiraEditable, JiraEditRead, JiraSprint, JiraUser } from './jira-edit.js';
 import { putFields, readAssignableUsers, readEditable, readSprints } from './jira-edit.js';
-import { JiraBadRequestError } from './jira-fetch.js';
+import { JiraBadRequestError, JiraHttpError, JiraNotFoundError } from './jira-fetch.js';
 import type { JiraItemRows } from './jira-item.js';
 import type { JiraSourceConfig } from './jira-listing.js';
 import { jiraProjectItem } from './jira-project-item.js';
@@ -28,16 +28,30 @@ const SET = 'set';
 /** One field as the panel and a write read it: the editor's field, the Jira id it writes to, and the ids its labels name. */
 interface FieldRead { field: ItemField; id: string; kind: Kind; choices: Choice[] }
 interface FieldsRead { fields: FieldRead[]; kept: ReturnType<JiraFieldsContext['keep']>; key: string; names: Record<string, string> }
-interface Extras { users: JiraUser[]; sprints: JiraSprint[] }
+interface Extras { users: JiraUser[]; sprints: JiraSprint[]; hasUsers: boolean; hasSprints: boolean } // hasX: the read answered, so the kind is editable
 
 const dedupe = (labels: readonly string[]): string[] => [...new Set(labels)];
+
+const DENIED = new Set([403, 404]);
+// A site that hides users, sprints or transitions from this login leaves the panel up; any other failure (401, 429, 5xx) is the caller's
+const isDenied = (err: unknown): boolean => err instanceof JiraNotFoundError || (err instanceof JiraHttpError && DENIED.has(err.status));
+async function orDenied<T>(read: Promise<T>): Promise<T | undefined> {
+  try {
+    return await read;
+  } catch (err) {
+    if (isDenied(err)) return undefined;
+    throw err;
+  }
+}
 
 // The reads past the issue's own, made only when a field of that kind is editable: an issue with no user picker never pages the site's users
 async function extras(ctx: JiraFieldsContext, key: string, editable: readonly JiraEditable[]): Promise<Extras> {
   const kinds = new Set(editable.map((e) => kindOf(e.schema)));
-  const users = kinds.has('user') || kinds.has('users') ? await readAssignableUsers(ctx.call, key) : [];
-  const sprints = kinds.has('iteration') ? await readSprints(ctx.agile, ctx.source.project) : [];
-  return { users, sprints };
+  const [users, sprints] = await Promise.all([
+    kinds.has('user') || kinds.has('users') ? orDenied(readAssignableUsers(ctx.call, key)) : Promise.resolve([]),
+    kinds.has('iteration') ? orDenied(readSprints(ctx.agile, ctx.source.project)) : Promise.resolve([]),
+  ]);
+  return { users: users ?? [], sprints: sprints ?? [], hasUsers: users !== undefined, hasSprints: sprints !== undefined };
 }
 
 // Status first (#826): the current status and the statuses its transitions reach, once each, in Jira's order; written by setColumn
@@ -62,7 +76,8 @@ function choicesOf(kind: Kind, e: JiraEditable, more: Extras): Choice[] {
 function editableField(ctx: JiraFieldsContext, e: JiraEditable, raw: unknown, more: Extras): FieldRead {
   const kind = kindOf(e.schema);
   const value = shownValue(kind, raw);
-  if (kind === 'other' || !e.operations.includes(SET)) return { field: { name: e.name, type: kind, value, readOnly: true }, id: e.id, kind, choices: [] };
+  const denied = (kind === 'iteration' && !more.hasSprints) || ((kind === 'user' || kind === 'users') && !more.hasUsers);
+  if (kind === 'other' || denied || !e.operations.includes(SET)) return { field: { name: e.name, type: kind, value, readOnly: true }, id: e.id, kind, choices: [] };
   const offered = choicesOf(kind, e, more);
   const listed = kind === 'labels' ? ctx.labels() : dedupe(offered.map((c) => c.label));
   const hasOptions = kind !== 'text' && kind !== 'longText' && kind !== 'number' && kind !== 'date' && kind !== 'datetime';
@@ -88,8 +103,8 @@ async function readAll(ctx: JiraFieldsContext, id: string): Promise<FieldsRead> 
   const read = await readEditable(ctx.call, id);
   const kept = ctx.keep(read);
   const key = read.issue.key ?? id;
-  const targets = (await readTransitions(ctx.call, id)).map((t) => t.to);
-  const more = await extras(ctx, key, read.editable);
+  const [transitions, more] = await Promise.all([orDenied(readTransitions(ctx.call, id)), extras(ctx, key, read.editable)]);
+  const targets = (transitions ?? []).map((t) => t.to);
   const onScreen = new Set(read.editable.map((e) => e.id));
   const screen = read.editable.filter((e) => !HIDDEN.has(e.id)).map((e) => editableField(ctx, e, read.issue.fields[e.id], more));
   const rest = Object.keys(read.issue.fields).filter((f) => !HIDDEN.has(f) && !onScreen.has(f)).flatMap((f) => readOnlyField(f, read));
@@ -115,8 +130,11 @@ async function put(ctx: JiraFieldsContext, id: string, found: FieldRead, value: 
  * answer is that read's fields, the row and, for a listed task, the entry. */
 export async function jiraSetField(ctx: JiraFieldsContext, id: string, name: string, value: FieldValue): Promise<FieldWrite> {
   const before = await readAll(ctx, id);
-  const found = before.fields.find((f) => f.field.name === name);
+  // Status wins a name a custom field shares; any other shared name would write a guess
+  const named = before.fields.filter((f) => f.field.name === name);
+  const found = name === STATUS ? before.fields[0] : named[0];
   if (found === undefined) throw new Error(`"${name}" is not a field of ${before.key}`);
+  if (name !== STATUS && named.length > 1) throw new Error(`"${name}" names more than one field of ${before.key}`);
   const checked = checkValue(found.field, value);
   if ('error' in checked) throw new Error(checked.error);
   if (name === STATUS) await ctx.setColumn(id, String(checked.value));

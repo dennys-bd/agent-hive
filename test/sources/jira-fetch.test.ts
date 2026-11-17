@@ -141,3 +141,15 @@ test('a 400 throws JiraBadRequestError with Jira\'s errors and errorMessages, na
     await assert.rejects(jiraFetch(SITE, '/x', {}, harness(res).deps), (e: unknown) => !(e instanceof JiraBadRequestError) && e instanceof JiraHttpError && e.message === 'jira api: HTTP 400');
   }
 });
+
+test('a 400 keeps at most 10 parts, each cut to 300 characters (#826)', async () => {
+  const errors = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`f${i}`, 'e'.repeat(500)]));
+  const body = { errors, errorMessages: ['m1', 'm2', 'm3', 'm4'] };
+  const err = await jiraFetch(SITE, '/x', { method: 'PUT' }, harness(json(body, 400)).deps).catch((e: unknown) => e);
+  assert.ok(err instanceof JiraBadRequestError);
+  const parts = err.message.split('; ');
+  assert.equal(parts.length, 10);
+  assert.ok(parts.every((p) => p.length <= 300 + 'f0: '.length));
+  assert.equal(parts[0], `f0: ${'e'.repeat(300)}`);
+  assert.equal(parts[9], 'm2');
+});

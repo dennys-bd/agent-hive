@@ -87,6 +87,16 @@ export function currentChoices(kind: Kind, raw: unknown): Choice[] {
   }
 }
 
+const INSTANT = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:?\d{2})$/;
+
+/** Jira's documented yyyy-MM-ddTHH:mm:ss.SSS±hhmm: the same instant and offset, written without the colon and with Z as +0000. */
+function jiraInstant(value: string): string {
+  const m = INSTANT.exec(value);
+  if (m === null) return value; // checkValue answered it already; nothing to normalise
+  const offset = m[4] === 'Z' ? '+0000' : m[4].replace(':', '');
+  return `${m[1]}:${m[2] ?? '00'}.${(m[3] ?? '').padEnd(3, '0')}${offset}`;
+}
+
 /** The PUT body of one field, by kind; a refusal throws before any call. */
 export function bodyOf(kind: Kind, name: string, choices: readonly Choice[], value: FieldValue): unknown {
   switch (kind) {
@@ -96,7 +106,8 @@ export function bodyOf(kind: Kind, name: string, choices: readonly Choice[], val
     case 'users': return names(value).map((label) => ({ accountId: accountOf(choices, label) }));
     case 'iteration': return value === null ? null : Number(idOf(choices, String(value), name));
     case 'longText': return typeof value === 'string' ? markdownToAdf(value) : null;
-    default: return value; // text, number, date, datetime and labels: as checkValue answered them
+    case 'datetime': return typeof value === 'string' ? jiraInstant(value) : value;
+    default: return value; // text, number, date and labels: as checkValue answered them
   }
 }
 

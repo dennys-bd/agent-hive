@@ -91,6 +91,9 @@ test('an open labels field takes any label without a space; a required field ref
   for (const [type, empty] of [['singleSelect', null], ['multiSelect', []], ['users', []], ['user', null], ['text', null], ['labels', []]] as const) {
     assert.deepEqual(checkValue(field(type, { isRequired: true }), empty), { error: '"F" is required' }, type);
   }
+  for (const type of ['text', 'longText'] as const) {
+    for (const blank of ['', '  \n\t']) assert.deepEqual(checkValue(field(type, { isRequired: true }), blank), { error: '"F" is required' }, `${type} ${JSON.stringify(blank)}`);
+  }
   assert.deepEqual(checkValue(field('text', { readOnly: true, isRequired: true }), null), { error: '"F" is read only' });
 });
 

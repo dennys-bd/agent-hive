@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { STATUS } from '../../src/field-values.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
 import { markdownToAdf } from '../../src/sources/adf-parse.js';
-import { JiraBadRequestError } from '../../src/sources/jira-fetch.js';
+import { SourceNotConnectedError, SourceRateLimitError } from '../../src/source-errors.js';
+import { JiraBadRequestError, JiraHttpError, JiraNotFoundError } from '../../src/sources/jira-fetch.js';
 import { jiraFieldsOf, type JiraFieldsContext, jiraSetField } from '../../src/sources/jira-fields.js';
 import { jiraItemOf, SPRINT_FIELD, TEXTAREA_FIELD } from '../../src/sources/jira-item.js';
 import { taskOf } from '../../src/sources/jira-listing.js';
@@ -150,7 +151,9 @@ test('setField writes each kind with the body of the kind table, by id, then re-
     ['Sprint', 'Sprint 9', { customfield_9: 9 }],
     ['Sprint', null, { customfield_9: null }],
     ['Notes', 'Hi **there**', { customfield_6: markdownToAdf('Hi **there**') }],
-    ['Starts', '2026-11-18T09:00:00.000+01:00', { customfield_5: '2026-11-18T09:00:00.000+01:00' }],
+    ['Starts', '2026-11-18T09:00:00.000+01:00', { customfield_5: '2026-11-18T09:00:00.000+0100' }],
+    ['Starts', '2026-11-18T09:00Z', { customfield_5: '2026-11-18T09:00:00.000+0000' }],
+    ['Starts', '2026-11-18T09:00:05.5-0300', { customfield_5: '2026-11-18T09:00:05.500-0300' }],
     ['Labels', ['api', 'new'], { labels: ['api', 'new'] }],
     ['Points', 8, { customfield_3: 8 }],
   ];
@@ -200,4 +203,39 @@ test('a read-only, required or unknown field, an unknown option, an ambiguous us
 test('a 400 on the write shows Jira\'s reason under the field\'s name (#826)', async () => {
   const h = harness(reads(1), { 'PUT /issue/10001': [new JiraBadRequestError(['customfield_9'], { customfield_9: 'Sprint is closed' }, [])] });
   await assert.rejects(jiraSetField(h.ctx, '10001', 'Sprint', 'Sprint 9'), { message: 'Sprint: Sprint is closed' });
+});
+
+test('two fields of one name refuse the write before any PUT; a custom field named Status never shadows Status (#826)', async () => {
+  const twin: Row = ['customfield_20', 'Code', { type: 'string' }, 'Y', { operations: SET }];
+  const h = harness(reads(1, edit({}, [...ROWS_OF, twin])));
+  await assert.rejects(jiraSetField(h.ctx, '10001', 'Code', 'Z'), { message: '"Code" names more than one field of ABC-1' });
+  assert.equal(h.call.sent.includes('PUT /issue/10001'), false);
+
+  const shadow: Row = ['customfield_21', 'Status', { type: 'string' }, 'Y', { operations: SET }];
+  const s = harness(reads(2, edit({}, [...ROWS_OF, shadow])));
+  await jiraSetField(s.ctx, '10001', 'Status', 'In Progress');
+  assert.deepEqual(s.moved, [['10001', 'In Progress']]);
+});
+
+test('a 403 or 404 on the extra reads degrades their fields; anything else is rethrown (#826)', async () => {
+  const degrading = [new JiraHttpError(403, []), new JiraHttpError(404, []), new JiraNotFoundError()];
+  for (const err of degrading) {
+    const base = reads(1);
+    const h = harness({ call: { ...base.call, 'GET /user/assignable/search': [err], 'GET /issue/10001/transitions': [err] }, agile: { ...base.agile, 'GET /board': [err] } });
+    const fields = await jiraFieldsOf(h.ctx, '10001');
+    for (const name of ['Assignee', 'Reviewers', 'Sprint']) {
+      const f = fields.find((x) => x.name === name);
+      assert.equal(f?.readOnly, true, name);
+      assert.equal(f?.options, undefined, name);
+    }
+    assert.deepEqual(fields[0].options, ['To Do']);
+  }
+  for (const err of [new SourceNotConnectedError('jira:acme.example'), new SourceRateLimitError('2026-11-17T10:00:00.000Z'), new JiraHttpError(500, [])]) {
+    for (const [side, key] of [['call', 'GET /user/assignable/search'], ['call', 'GET /issue/10001/transitions'], ['agile', 'GET /board']] as const) {
+      const base = reads(1);
+      const answers: Answers = { call: { ...base.call }, agile: { ...base.agile } };
+      answers[side][key] = [err];
+      await assert.rejects(jiraFieldsOf(harness(answers).ctx, '10001'), (e: unknown) => e === err, `${err.name} ${key}`);
+    }
+  }
 });

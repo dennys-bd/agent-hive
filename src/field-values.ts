@@ -41,13 +41,15 @@ function checkText(field: ItemField, value: unknown, cap: number): Checked {
 }
 
 const isEmpty = (value: unknown): boolean => value === null || (Array.isArray(value) && value.length === 0);
+// A required text field is not met by spaces either (#826)
+const isBlankText = (field: ItemField, value: unknown): boolean => (field.type === 'text' || field.type === 'longText') && typeof value === 'string' && value.trim() === '';
 const isInstant = (value: unknown): value is string => typeof value === 'string' && ISO_INSTANT.test(value) && !Number.isNaN(Date.parse(value));
 
 /** A field write's value checked against its field (#686): the value, or why it is refused: a read-only field, a value of another kind, or a
  * choice its options lack. null clears any kind but the list kinds, which clear with []; a required field clears with neither (#826). Pure: the route's 400 before any write. */
 export function checkValue(field: ItemField, value: unknown): Checked {
   if (field.readOnly || isReadOnly(field.type)) return { error: `"${field.name}" is read only` };
-  if (field.isRequired && isEmpty(value)) return { error: `"${field.name}" is required` };
+  if (field.isRequired && (isEmpty(value) || isBlankText(field, value))) return { error: `"${field.name}" is required` };
   if (field.type === 'assignees') return checkNames(field, value, 'a list of logins', (login) => `"${login}" cannot be assigned`);
   if (field.type === 'users') return checkNames(field, value, 'a list of names', (name) => `"${name}" cannot be assigned`);
   if (field.type === 'multiSelect') return checkNames(field, value, 'a list of names', () => `"${field.name}" takes one of its options`);
