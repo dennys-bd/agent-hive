@@ -2,9 +2,12 @@
 // plugin and the Hive's hooks plugin as two --plugin-dir, the MCP servers in the run's 0600 file, the protocol as an instructions file in the
 // run's own tmp dir. Nothing is written into the user's Copilot home. Hooks, headless, transcripts and limits are their modules' (nodes 2, 5, 6, 7).
 import { dirname, join } from 'node:path';
+import { AGENTS } from '../agents.js';
 import { MCP_ROUTE, mcpConfigPattern } from '../hooks-settings.js';
+import { posixShell } from '../posix-shell.js';
 import { runTmpDir } from '../run-tmp.js';
 import { SECRET_HEADER } from '../secret.js';
+import { installShim } from '../shim.js';
 import { HEADLESS_MCP, headless, headlessAnswer } from './copilot-headless.js';
 import { copilotHooksPlugin, hookPayload, writeCopilotHooksPlugin } from './copilot-hooks.js';
 import { readCopilotPlanLimits } from './copilot-limits.js';
@@ -84,7 +87,11 @@ export const copilotRunner: AgentRunner = {
   runEnv: (_server, run) => copilotEnv(run), // the secret is in the 0600 MCP file, never in the env
   runFiles,
   hookPayload,
-  prepareHome: (home) => writeCopilotHooksPlugin(home), // its shim joins with its facts (Task 4)
+  // its shim (#932's pattern), then the hooks plugin every run's second --plugin-dir names; nothing in the user's Copilot home
+  prepareHome: async (home) => {
+    await installShim(home, AGENTS.copilot, { platform: process.platform, sh: posixShell().shell });
+    await writeCopilotHooksPlugin(home);
+  },
   mcpConfig,
   lspPlugin: () => [], // the workspace's language servers are out of scope (#873)
   transcriptDir,

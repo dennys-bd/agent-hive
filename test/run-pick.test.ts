@@ -28,7 +28,7 @@ function stateWith(column: string, sessions: Session[] = []): State {
   return withWork(polled, ID, { worktree: '/wt/hive-1-task-1' }, { sessions });
 }
 const taskIn = (state: State): Task => state.tasks.find((t) => t.item.itemId === ID)!;
-const ON = { claude: true, codex: true };
+const ON = { claude: true, codex: true, copilot: true };
 const parse = (body: unknown, state: State, agents: AgentAvailability[] = BOTH, enabled: Record<AgentId, boolean> = ON) => parseRunPick(body, state, taskIn(state), agents, 'en', () => pluginSource(), enabled);
 const refused = (answer: ReturnType<typeof parse>): Refusal | undefined => ('status' in answer ? answer : undefined);
 
@@ -72,7 +72,7 @@ test('picks on a continue or next to a handover are a 409; on a stage that runs 
 });
 
 test('an agent the config disables is a 400 naming "agent", before any session or launch check (#482)', () => {
-  const answer = refused(parse({ agent: 'codex' }, stateWith('Ready'), BOTH, { claude: true, codex: false }));
+  const answer = refused(parse({ agent: 'codex' }, stateWith('Ready'), BOTH, { claude: true, codex: false, copilot: true }));
   assert.equal(answer?.status, 400);
   assert.match(answer?.message ?? '', /"agent"/);
 });

@@ -854,7 +854,7 @@ export const SWITCH_AT_DEFAULT = 'Build';
 export const HIVE_EPIC: NonNullable<Item['epic']> = { follows: NEW_SOURCE_EPICS.epicFollows, switchAt: SWITCH_AT_DEFAULT, deleteActivity: false };
 
 /** The coding agents a stage can run (#516): ids only, their per-agent facts live in agents.ts. #101 adds codex here and there. */
-export const AGENT_IDS = ['claude', 'codex'] as const; // #927: codex runs flow stages; its free sessions are #931
+export const AGENT_IDS = ['claude', 'codex', 'copilot'] as const; // #927: codex runs flow stages; its free sessions are #931. #873: copilot runs flow stages; its hooks, copy, headless, usage and limits are #608's nodes 2 to 8
 export type AgentId = (typeof AGENT_IDS)[number];
 /** One headless run of an evaluate stage (#877): its agent and launch picks; focus on a reviewer only. */
 export interface EvaluateRow { agent: AgentId; model?: string; specializedAgent?: string; focus?: string }

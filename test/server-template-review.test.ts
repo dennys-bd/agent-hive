@@ -40,7 +40,7 @@ async function reviewFixture(t: TestContext): Promise<Fixture> {
 }
 
 interface Served { base: string; lines: string[]; calls: HeadlessInput[]; use(reviewer: Partial<ReviewerConfig>): void }
-const AGENT_CONFIG: Pick<Config, 'agentModels' | 'agentEnabled'> = { agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true } };
+const AGENT_CONFIG: Pick<Config, 'agentModels' | 'agentEnabled'> = { agentModels: { claude: null, codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false } };
 
 async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH, agentConfig = AGENT_CONFIG): Promise<Served> {
   const app = express();
@@ -165,11 +165,11 @@ test('the daemon registers the route behind its gates, waiting for a config like
 
 test('a reviewer with model null runs its agent\'s default model; a reviewer naming a disabled agent is refused 409 with the reason and runs nothing (#482)', async (t) => {
   const f = await reviewFixture(t);
-  const models = { ...AGENT_CONFIG, agentModels: { claude: 'opus', codex: null } };
+  const models = { ...AGENT_CONFIG, agentModels: { claude: 'opus', codex: null, copilot: null } };
   const { base, calls } = await serve(t, f, async () => answer([]), BOTH, models);
   assert.equal((await review(base, BUILD, BODY))[0], 200);
   assert.equal(calls[0].model, 'opus');
-  const off = await serve(t, f, async () => answer([]), BOTH, { ...AGENT_CONFIG, agentEnabled: { claude: true, codex: false } });
+  const off = await serve(t, f, async () => answer([]), BOTH, { ...AGENT_CONFIG, agentEnabled: { claude: true, codex: false, copilot: false } });
   off.use({ agent: 'codex' });
   const [status, body] = await review(off.base, BUILD, BODY);
   assert.deepEqual([status, body.code, body.error], [409, 'agent_unavailable', 'agent codex is disabled: enable it in Settings › execution › agents']);

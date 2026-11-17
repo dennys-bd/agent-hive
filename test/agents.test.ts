@@ -4,6 +4,7 @@ import { AGENTS, agentOf, agentRefusal, defaultModel, detectAgents, disabledRefu
 import { runners } from '../src/agents/registry.js';
 import { AGENT_IDS, DEFAULT_AGENT, type AgentId, type Exec } from '../src/types.js';
 import { agentCommand, agentDirs } from '../src/agents/command.js';
+import { resumeOf } from '../src/shim.js';
 
 const REFUSAL = 'agent claude is not on PATH: install it, then restart the Hive';
 
@@ -28,7 +29,7 @@ test("agentOf answers the stage's own agent, else the config's default (#516)", 
   assert.equal(DEFAULT_AGENT, 'claude');
 });
 
-const ON = { claude: true, codex: true } as const;
+const ON = { claude: true, codex: true, copilot: true } as const;
 
 test('agentRefusal passes an available, enabled agent; names one off PATH or never detected first, then a disabled one (#516, #482)', () => {
   assert.equal(agentRefusal('claude', [{ agent: 'claude', available: true }], ON), undefined);
@@ -39,7 +40,7 @@ test('agentRefusal passes an available, enabled agent; names one off PATH or nev
 });
 
 test('runModel: a pick, else the stage\'s own on the stage\'s agent, else the agent\'s default model, else none; a stage of another agent skips to the default (#290, #482)', () => {
-  const config = { defaultAgent: 'claude' as const, agentModels: { claude: 'opus', codex: null } };
+  const config = { defaultAgent: 'claude' as const, agentModels: { claude: 'opus', codex: null, copilot: null } };
   const build = { model: 'sonnet' };
   assert.equal(runModel('haiku', build, 'claude', config), 'haiku');
   assert.equal(runModel(undefined, build, 'claude', config), 'sonnet');
@@ -51,7 +52,7 @@ test('runModel: a pick, else the stage\'s own on the stage\'s agent, else the ag
 });
 
 test('withDefaultModel fills an absent model with the agent\'s default and keeps a named one or none (#482)', () => {
-  const config = { agentModels: { claude: 'opus', codex: null } };
+  const config = { agentModels: { claude: 'opus', codex: null, copilot: null } };
   assert.deepEqual(withDefaultModel({ agent: 'claude' as const, prompt: 'p' }, config), { agent: 'claude', prompt: 'p', model: 'opus' });
   assert.deepEqual(withDefaultModel({ agent: 'claude' as const, model: 'haiku' }, config), { agent: 'claude', model: 'haiku' });
   assert.deepEqual(withDefaultModel({ agent: 'codex' as const }, config), { agent: 'codex' });
@@ -92,7 +93,7 @@ test('claude reports plan limits: the header offers their refresh (#925)', () =>
 });
 
 test('codex runs as `codex`, reports plan limits (#929) and cannot choose its session id; claude can (#927)', () => {
-  assert.deepEqual(AGENT_IDS, ['claude', 'codex']);
+  assert.deepEqual(AGENT_IDS, ['claude', 'codex', 'copilot']);
   assert.deepEqual([AGENTS.codex.label, AGENTS.codex.command, AGENTS.codex.planLimits, AGENTS.codex.canChooseSessionId], ['Codex', 'codex', true, false]);
   assert.equal(AGENTS.claude.canChooseSessionId, true);
   assert.ok(AGENTS.codex.subcommands.includes('exec'));
@@ -131,4 +132,20 @@ test('agentCommand: on win32 an .exe gives its full path; a .cmd or a name found
   for (const platform of ['darwin', 'linux'] as const) {
     assert.equal(agentCommand('claude', platform, WIN_ENV, () => assert.fail('no lookup off win32')), 'claude', platform);
   }
+});
+
+test('copilot runs as `copilot`, chooses its session id, resumes any folder and reports plan limits; its shim passes its commands and its no-conversation flags (#873)', () => {
+  const { copilot } = AGENTS;
+  assert.deepEqual([copilot.label, copilot.command, copilot.canChooseSessionId, copilot.resumesAnyFolder, copilot.planLimits], ['Copilot', 'copilot', true, true, true]);
+  assert.deepEqual(copilot.subcommands, ['app', 'login', 'help', 'init', 'config', 'update', 'version', 'workflow', 'sessions', 'memories', 'plugin', 'mcp', 'skill', 'instruction', 'lsp', 'sandbox', 'completion']);
+  assert.deepEqual(copilot.shimFlags, ['-p', '--prompt', '--acp', '-h', '--help', '-v', '--version']);
+  assert.deepEqual(resumeOf('copilot', ['--resume', '01a12d45-1dff-7000-8000-000000000001']), { kind: 'new' }, 'node 4 owns the reader');
+});
+
+test('boot reports copilot unavailable when `copilot --version` fails, the others still found (#873)', async () => {
+  const exec: Exec = async (file) => {
+    if (file === 'copilot') throw Object.assign(new Error('spawn copilot ENOENT'), { code: 'ENOENT' });
+    return { stdout: '1.0.0' };
+  };
+  assert.deepEqual(await detectAgents(exec), [{ agent: 'claude', available: true }, { agent: 'codex', available: true }, { agent: 'copilot', available: false }]);
 });

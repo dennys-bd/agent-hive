@@ -34,6 +34,13 @@ export const AGENTS: Record<AgentId, AgentSpec> = {
     ],
     shimFlags: ['-h', '--help', '-V', '--version'], // #932: no -c, which is a config override in Codex
   },
+  copilot: {
+    // #873: chooses its id (--session-id, spike §3); its sessions are not kept per cwd (spike §6); planLimits read from node 7 of #608 on
+    label: 'Copilot', command: 'copilot', planLimits: true, canChooseSessionId: true, resumesAnyFolder: true,
+    // as `copilot --help` lists them (spike §8): none opens a conversation, which only flags do
+    subcommands: ['app', 'login', 'help', 'init', 'config', 'update', 'version', 'workflow', 'sessions', 'memories', 'plugin', 'mcp', 'skill', 'instruction', 'lsp', 'sandbox', 'completion'],
+    shimFlags: ['-p', '--prompt', '--acp', '-h', '--help', '-v', '--version'], // a prompt-mode run, an ACP server, help and version: no conversation to capture
+  },
 };
 
 /** Every agent, available: what the server assumes when nothing was detected (tests only: boot always detects). */

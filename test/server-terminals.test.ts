@@ -198,7 +198,7 @@ test('a register whose folder is missing, relative, split or outside the termina
     assert.ok(argv.includes(trusted), JSON.stringify(form));
   }
   const before = server.getState()?.workers.length;
-  const message = 'agent precisa ser um destes agentes: claude, codex';
+  const message = 'agent precisa ser um destes agentes: claude, codex, copilot';
   await refused(register(base, id, { agent: 'gemini' }), 400, message, 'an unknown agent');
   await refused(hiveFetch(`${base}/hooks/terminals/${id}/session`, { method: 'POST' }), 400, message, 'no form at all');
   assert.equal(server.getState()?.workers.length, before);

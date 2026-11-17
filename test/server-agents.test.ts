@@ -1,8 +1,10 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeCredentials } from '../src/credentials.js';
+import { runTmpDir } from '../src/run-tmp.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import { ptyCommand } from '../src/spawn.js';
 import type { Activity, AgentAvailability, McpSettings, Task, Exec, SettingsBody, SettingsInfo, Worker } from '../src/types.js';
@@ -79,7 +81,7 @@ test('GET /settings lists the agents found on boot; without detection every agen
   const detected = await start(t, BODY, { agents }, 0);
   assert.deepEqual(((await (await hiveFetch(`${detected.base}/settings`)).json()) as SettingsInfo).agents, agents);
   const plain = await start(t, BODY, {}, 0);
-  assert.deepEqual(((await (await hiveFetch(`${plain.base}/settings`)).json()) as SettingsInfo).agents, [{ agent: 'claude', available: true }, { agent: 'codex', available: true }]);
+  assert.deepEqual(((await (await hiveFetch(`${plain.base}/settings`)).json()) as SettingsInfo).agents, [{ agent: 'claude', available: true }, { agent: 'codex', available: true }, { agent: 'copilot', available: true }]);
 });
 
 test('the live state holds the config\'s default agent from the first save on (#925)', async (t) => {
@@ -95,7 +97,7 @@ test('the stage run\'s worker records the agent it runs (#925)', async (t) => {
 
 test('agentArgs of the stage\'s agent reaches its launch after the Hive\'s flags and before the model and the session (#924)', async (t) => {
   const stage = { ...STAGES[0], model: 'sonnet' };
-  const { server, workers } = await start(t, { ...BODY, flows: bodyFlows([stage]), agentArgs: { claude: ['--permission-mode', 'auto'], codex: [] } });
+  const { server, workers } = await start(t, { ...BODY, flows: bodyFlows([stage]), agentArgs: { claude: ['--permission-mode', 'auto'], codex: [], copilot: [] } });
   await waitFor(() => workers.length === 1);
   assert.deepEqual(plainArgs(workers[0].launch), ['--permission-mode', 'auto', '--model', 'sonnet', '--session-id', work0(server)!.sessionId!]);
   assert.match(ptyCommand(workers[0].launch), / '--permission-mode' 'auto' '--model' 'sonnet' '--session-id' /);
@@ -191,7 +193,7 @@ test('a claude stage run\'s MCP file holds the Hive\'s server and its workspace\
   assert.deepEqual(file.mcpServers.docs, { type: 'http', url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer t0k' } });
 });
 
-const MODELS = { agentModels: { claude: 'opus', codex: null } };
+const MODELS = { agentModels: { claude: 'opus', codex: null, copilot: null } };
 
 test('a stage with no model launches its agent\'s default model; with none, no model flag (#482)', async (t) => {
   const { server, workers } = await start(t, { ...BODY, ...MODELS });
@@ -209,7 +211,23 @@ test('a free session opened with no model launches the default; its own pick win
   assert.deepEqual(plainArgs(workers[0].launch).slice(0, 2), ['--model', 'opus']);
   assert.equal((await postJson(url, { kind: 'claude', model: 'sonnet' })).status, 200);
   assert.deepEqual(plainArgs(workers[1].launch).slice(0, 2), ['--model', 'sonnet']);
-  const off = await start(t, { ...BODY, agentEnabled: { claude: true, codex: false } }, {}, 0);
+  const off = await start(t, { ...BODY, agentEnabled: { claude: true, codex: false, copilot: false } }, {}, 0);
   await postJson(`${off.base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions`, { kind: 'codex' });
   assert.equal(off.workers.length, 0, 'refused before a pty: spawnFailed with the reason');
+});
+
+test('a copilot stage starts copilot with its MCP file, the Hive\'s tools allowed, the prompt behind -i and the protocol in its run\'s instructions folder; no secret in an argv word (#873)', async (t) => {
+  const stage = { ...STAGES[0], agent: 'copilot' as const, model: 'claude-sonnet-5.5' };
+  const { workers } = await start(t, { ...BODY, agentEnabled: { claude: true, codex: true, copilot: true }, flows: bodyFlows([stage]) });
+  await waitFor(() => workers.length === 1);
+  const { launch } = workers[0];
+  t.after(() => rm(runTmpDir(launch.ptyId), { recursive: true, force: true })); // the fake pool never runs the pty that would remove it
+  assert.deepEqual([launch.agent?.command, launch.agent?.promptFlag], ['copilot', '-i']);
+  assert.ok(launchFlag(launch, '--additional-mcp-config')?.endsWith(`${launch.ptyId}.mcp.json`));
+  const plain = plainArgs(launch);
+  assert.deepEqual([plain[0], plain[1], ...plain.slice(-2)], ['--allow-tool=hive', '--session-id', '--model', 'claude-sonnet-5.5']);
+  const dir = join(runTmpDir(launch.ptyId), 'copilot-instructions');
+  assert.deepEqual([launch.env?.COPILOT_CUSTOM_INSTRUCTIONS_DIRS, launch.env?.COPILOT_AUTO_UPDATE, launch.env?.COPILOT_DISABLE_RESUME_AUTO_CD], [dir, 'false', '1']);
+  assert.ok((await readFile(join(dir, 'hive.instructions.md'), 'utf8')).startsWith('---\napplyTo: "**"\n---\n\n'));
+  assert.equal(JSON.stringify(launch.agent?.argv).includes(SECRET), false);
 });

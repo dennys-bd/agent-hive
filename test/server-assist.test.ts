@@ -28,7 +28,7 @@ async function until(check: () => boolean): Promise<void> {
   while (!check()) await sleep(10);
 }
 
-const AGENT_CONFIG: Pick<Config, 'agentModels' | 'agentEnabled'> = { agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true } };
+const AGENT_CONFIG: Pick<Config, 'agentModels' | 'agentEnabled'> = { agentModels: { claude: null, codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false } };
 
 async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH, agentConfig = AGENT_CONFIG): Promise<{ base: string; lines: string[]; calls: HeadlessInput[] }> {
   const app = express();
@@ -149,7 +149,7 @@ test('the daemon registers the route behind its gates, waiting for a config like
 
 test('a request with no model runs the agent\'s default model; its own model wins (#482)', async (t) => {
   const f = await fixture(t);
-  const { base, calls } = await serve(t, f, async () => answer(5, 5, '# x'), BOTH, { ...AGENT_CONFIG, agentModels: { claude: 'opus', codex: null } });
+  const { base, calls } = await serve(t, f, async () => answer(5, 5, '# x'), BOTH, { ...AGENT_CONFIG, agentModels: { claude: 'opus', codex: null, copilot: null } });
   await ask(base, BUILD, BODY);
   await ask(base, ARCHITECT, { version: null, path: 'architect.md', text: SPECIALIST, request: 'r', model: 'haiku' }); // another item: no busy
   assert.deepEqual(calls.map((c) => c.model), ['opus', 'haiku']);

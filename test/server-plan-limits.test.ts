@@ -90,7 +90,7 @@ test('the refresh dispatches one reading per agent and answers ok while any agen
 test('{ agent } reads that agent only and replaces only its reading; {} reads every agent (#223)', async (t) => {
   const codex: RateLimits = { at: HIGH.at, windows: { thirty_day: { usedPercent: 40, resetsAt: RESET } } };
   const codexLater: RateLimits = { at: AFTER_UPGRADE.at, windows: { thirty_day: { usedPercent: 12, resetsAt: RESET } } };
-  let held: Record<AgentId, RateLimits> = { claude: HIGH, codex };
+  let held: Record<AgentId, RateLimits> = { claude: HIGH, codex, copilot: HIGH };
   const asked: (readonly AgentId[] | undefined)[] = [];
   const readPlanLimits = async (agents?: readonly AgentId[]): Promise<PlanLimitsReport> => {
     asked.push(agents);
@@ -98,7 +98,7 @@ test('{ agent } reads that agent only and replaces only its reading; {} reads ev
   };
   const { base, server } = await start(t, { readPlanLimits });
   await waitFor(() => server.getState()?.rateLimits?.codex !== undefined); // the background read after the save
-  held = { claude: AFTER_UPGRADE, codex: codexLater };
+  held = { claude: AFTER_UPGRADE, codex: codexLater, copilot: HIGH };
   const one = await postJson(`${base}/plan-limits/refresh`, { agent: 'codex' });
   assert.deepEqual([one.status, await one.json()], [200, { ok: true }]);
   assert.deepEqual(asked.at(-1), ['codex']);

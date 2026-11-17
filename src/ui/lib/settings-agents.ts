@@ -12,8 +12,10 @@ const perAgent = <T>(of: (id: AgentId) => T): Record<AgentId, T> => Object.fromE
 
 export const agentModelsDraft = (saved?: Partial<Record<AgentId, string | null>>): Record<AgentId, string> => perAgent((id) => saved?.[id] ?? '');
 export const agentModelsFrom = (draft: Record<AgentId, string>): Record<AgentId, string | null> => perAgent((id) => draft[id].trim() || null);
-/** A first setup has every agent on (#482). */
-export const agentEnabledDraft = (saved?: Partial<Record<AgentId, boolean>>): Record<AgentId, boolean> => perAgent((id) => saved?.[id] ?? true);
+/** A first setup has every agent on (#482) but copilot (#873): off until its hooks (#874) land, since a worker of it would never leave working. */
+const OFF_AT_FIRST_SETUP: readonly AgentId[] = ['copilot'];
+export const agentEnabledDraft = (saved?: Partial<Record<AgentId, boolean>>): Record<AgentId, boolean> =>
+  perAgent((id) => saved?.[id] ?? !OFF_AT_FIRST_SETUP.includes(id));
 
 // The agents a stage sends (#482): its own when it runs an agent, its rows when it evaluates; a gate's leftover agent is never sent
 const namedAgents = (stage: StageDraft): AgentId[] => [

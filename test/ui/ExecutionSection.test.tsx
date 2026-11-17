@@ -96,7 +96,7 @@ test('the agents card holds one arguments field per agent, named after it, each 
   expect(within(card).getAllByRole('textbox')).toHaveLength(AGENT_IDS.length);
   expect(within(card).getAllByText(t('settings.agentArgs.hint'))).toHaveLength(AGENT_IDS.length);
   fireEvent.change(within(card).getByLabelText(t('settings.agentArgs', { agent: 'claude' })), { target: { value: '--verbose' } });
-  expect(onChange).toHaveBeenCalledWith({ agentArgs: { claude: '--verbose', codex: '' } });
+  expect(onChange).toHaveBeenCalledWith({ agentArgs: { claude: '--verbose', codex: '', copilot: '' } });
 });
 
 test('the search lists the agents card and, per agent, its model, its arguments and its switch (#482)', () => {

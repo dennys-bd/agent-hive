@@ -20,3 +20,18 @@ test('the parser keeps codex\'s messages word for word through foreignModel (#92
     { message: 'hive.config.json: "comb.stages[0].model" "claude-sonnet-4" is a Claude model; a codex stage needs a Codex model name' });
   checkStageModels([stage({ model: 'opus' })], 'claude', 'comb');
 });
+
+test('copilot refuses a bare Claude alias by field, as its default model and on its stage, its own or the default; a claude- id and auto pass (#873)', () => {
+  for (const model of ['opus', 'sonnet', 'opus[1m]']) {
+    assert.throws(() => parseAgentModels({ ...noModels(), copilot: model }), { message: `hive.config.json: "agentModels.copilot" "${model}" is a Claude alias; copilot needs a Copilot model id` }, model);
+    assert.throws(() => checkStageModels([stage({ agent: 'copilot', model })], 'claude', 'comb'),
+      { message: `hive.config.json: "comb.stages[0].model" "${model}" is a Claude alias; a copilot stage needs a Copilot model id` }, model);
+  }
+  assert.throws(() => checkStageModels([stage({ model: 'sonnet' })], 'copilot', 'comb'), /"comb\.stages\[0\]\.model" "sonnet" is a Claude alias/, 'the default agent counts');
+  for (const model of ['claude-sonnet-5.5', 'auto']) {
+    assert.equal(parseAgentModels({ ...noModels(), copilot: model }).copilot, model);
+    checkStageModels([stage({ agent: 'copilot', model })], 'claude', 'comb');
+    assert.equal(foreignModel('copilot', model), false);
+  }
+  assert.equal(foreignModel('codex', 'claude-sonnet-5.5'), true, 'codex\'s rule unchanged');
+});

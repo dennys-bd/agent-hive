@@ -45,7 +45,7 @@ const CONFIG: Config = {
   },
   commandSemaphores: [{ name: 'memory', limit: 2, reservation: '2m' }], // not empty, so draftFrom visibly reads it (#796)
   logLevel: 'info', language: 'pt', baseBranch: 'develop',
-  agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true }, budget: { maxTokensPerHour: 50_000 }, usageRules: [{ source: 'hour', percent: 80, signal: 'yellow' }, { source: 'session', percent: 90, maxWorkers: 1, signal: 'red' }],
+  agentArgs: { claude: [], codex: [], copilot: [] }, agentModels: { claude: null, codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false }, budget: { maxTokensPerHour: 50_000 }, usageRules: [{ source: 'hour', percent: 80, signal: 'yellow' }, { source: 'session', percent: 90, maxWorkers: 1, signal: 'red' }],
   onClose: 'quit', // not the form default, so draftFrom visibly reads it (#513)
   notifications: { waiting: true, approval: false, pr: true, failed: false }, // not the form default, so draftFrom visibly reads it (#199)
   deleteActivity: { session: true, transcripts: true, nonAutoTasks: true }, // not the form defaults, so draftFrom visibly reads it (#236, #496)
@@ -115,7 +115,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
     flows: [{ name: 'main' }], stages: [], transitions: [], language: 'en', branch: '', baseBranch: '', budgetHour: '', budgetDay: '', rules: [], auth: 'cli', onClose: 'menuBar',
     deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: String(SHUTDOWN_IDLE_DEFAULT), approvalMinutes: String(APPROVAL_MINUTES_DEFAULT), rateLimitWaitMinutes: String(RATE_LIMIT_WAIT_DEFAULT), showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, theme: 'system', terminalFont: '', trustedDomains: [], consoleLines: String(CONSOLE_LINES_DEFAULT), shortcuts: {},
     defaultAgent: 'claude', // DEFAULT_AGENT on a first run (#516)
-    agentArgs: { claude: '', codex: '' }, agentModels: { claude: '', codex: '' }, agentEnabled: { claude: true, codex: true }, // no saved list (#924)
+    agentArgs: { claude: '', codex: '', copilot: '' }, agentModels: { claude: '', codex: '', copilot: '' }, agentEnabled: { claude: true, codex: true, copilot: false }, // no saved list (#924)
     fileIcons: { set: 'material', scope: 'all', muted: true }, // FILE_ICONS_DEFAULTS on a new form (#754)
     sidebarsPerView: { left: false, right: false, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, // SIDEBARS_PER_VIEW_DEFAULTS on a new form (#821)
     signals: SIGNALS_DEFAULTS, // today's table on a new form (#727)
@@ -199,7 +199,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
     closeTerminalTab: 'keep',
     closeTerminalTabNotice: false,
     defaultAgent: 'claude',
-    agentArgs: { claude: [], codex: [] }, agentModels: { claude: null, codex: null }, agentEnabled: { claude: true, codex: true },
+    agentArgs: { claude: [], codex: [], copilot: [] }, agentModels: { claude: null, codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false },
     theme: 'dark',
     fileIcons: { set: 'vscode', scope: 'folders', muted: true },
     sidebarsPerView: { left: false, right: true, rightTab: false }, notifications: { waiting: true, approval: false, pr: true, failed: false },

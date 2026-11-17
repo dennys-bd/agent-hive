@@ -18,6 +18,7 @@ const SKILLS = [{ name: 'new-plan', description: 'Plan stage for one task' }, { 
 const OPTIONS: LaunchOptions = {
   claude: { aliases: [{ id: 'opus' }], versions: [], specializedAgents: [PLANNER], skills: SKILLS, args: [] },
   codex: { aliases: [], versions: [], specializedAgents: [PLANNER], skills: SKILLS, args: [] },
+  copilot: { aliases: [], versions: [], specializedAgents: [PLANNER], skills: SKILLS, args: [] },
 };
 type Flow = { stages: StageDraft[]; transitions: TransitionDraft[] };
 const stage = (extra: Partial<StageDraft>): StageDraft => ({ ...emptyStage(FLOW), name: 'plan', ...extra });

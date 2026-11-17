@@ -1,13 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { AGENTS } from '../../src/agents.js';
 import { copilotRunner, instructionsDir } from '../../src/agents/copilot.js';
 import { copilotHome } from '../../src/agents/copilot-home.js';
 import { copilotHooksPlugin } from '../../src/agents/copilot-hooks.js';
 import type { AgentRun, McpServer, RunMcpServer } from '../../src/agents/runner.js';
 import { runTmpDir } from '../../src/run-tmp.js';
+import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
 import type { LaunchArg } from '../../src/types.js';
 import { SECRET } from '../secret-client.js';
@@ -122,6 +125,7 @@ test('prepareHome writes the empty hooks plugin under the Hive\'s home: a manife
   assert.equal(copilotHooksPlugin(home), join(home, 'copilot', 'hooks-plugin'));
   assert.equal(JSON.parse(await readFile(join(copilotHooksPlugin(home), '.claude-plugin', 'plugin.json'), 'utf8')).name, 'hive-hooks');
   assert.deepEqual(JSON.parse(await readFile(join(copilotHooksPlugin(home), 'hooks', 'hooks.json'), 'utf8')), { hooks: {} });
+  assert.ok(existsSync(shimPath(home, AGENTS.copilot)), 'its shim, as every agent boot found');
 });
 
 test('copilotHome is $COPILOT_HOME when set and not empty, else ~/.copilot (#873, spike §6)', () => {

@@ -90,7 +90,7 @@ test('GET /settings reports configured: false and the home in setup mode', async
   const { base, home } = await start(t);
   assert.deepEqual(await json<SettingsInfo>(hiveFetch(`${base}/settings`)), {
     configured: false, home, language: 'en',
-    agents: [{ agent: 'claude', available: true }, { agent: 'codex', available: true }],
+    agents: [{ agent: 'claude', available: true }, { agent: 'codex', available: true }, { agent: 'copilot', available: true }],
   }); // no systemLanguage injected: en. No proposal injected: no key.
 });
 
@@ -219,7 +219,7 @@ test('a second POST /settings reconfigures in memory, keeps agentArgs and drops 
   const rewritten = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
   assert.equal(rewritten.comb.flows[0].stages[0].from.board?.[0], 'Done');
   assert.equal('port' in rewritten, false, 'the parse ignores it, so the save drops it');
-  assert.deepEqual(rewritten.agentArgs, { claude: ['--model', 'sonnet'], codex: [] });
+  assert.deepEqual(rewritten.agentArgs, { claude: ['--model', 'sonnet'], codex: [], copilot: [] });
   await server.poll(); // reconfigure's poll runs in the background (#59)
   assert.deepEqual(server.getState()?.tasks.map((c) => c.item.title), ['from Done']);
   assert.equal(configs.at(-1)?.stages[0].from.board?.[0], 'Done');
@@ -396,7 +396,7 @@ test('a hive.config.json from before #924 keeps its claudeArgs as agentArgs.clau
   await writeFile(configFile(home), JSON.stringify({ ...saved, claudeArgs: ['--permission-mode', 'auto'] }));
   assert.equal((await postSettings(base, BODY)).status, 200);
   const rewritten = JSON.parse(await readFile(configFile(home), 'utf8')) as Record<string, unknown>;
-  assert.deepEqual(rewritten.agentArgs, { claude: ['--permission-mode', 'auto'], codex: [] });
+  assert.deepEqual(rewritten.agentArgs, { claude: ['--permission-mode', 'auto'], codex: [], copilot: [] });
   assert.equal('claudeArgs' in rewritten, false, 'the retired key is gone from the file');
 });
 
@@ -404,21 +404,21 @@ test('POST /settings takes agentArgs from the body and keeps the saved ones when
   const { base, home } = await start(t);
   const onDisk = async (): Promise<unknown> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).agentArgs;
   assert.equal((await postSettings(base, BODY)).status, 200);
-  assert.deepEqual(await onDisk(), { claude: [], codex: [] }, 'a first setup without the key starts with none');
-  assert.equal((await postSettings(base, { ...BODY, agentArgs: { claude: ['--verbose'], codex: [] } })).status, 200);
+  assert.deepEqual(await onDisk(), { claude: [], codex: [], copilot: [] }, 'a first setup without the key starts with none');
+  assert.equal((await postSettings(base, { ...BODY, agentArgs: { claude: ['--verbose'], codex: [], copilot: [] } })).status, 200);
   assert.equal((await postSettings(base, BODY)).status, 200);
-  assert.deepEqual(await onDisk(), { claude: ['--verbose'], codex: [] }, 'an API caller that omits it keeps the saved lists');
-  assert.equal((await postSettings(base, { ...BODY, agentArgs: { claude: [], codex: [] } })).status, 200);
-  assert.deepEqual(await onDisk(), { claude: [], codex: [] });
+  assert.deepEqual(await onDisk(), { claude: ['--verbose'], codex: [], copilot: [] }, 'an API caller that omits it keeps the saved lists');
+  assert.equal((await postSettings(base, { ...BODY, agentArgs: { claude: [], codex: [], copilot: [] } })).status, 200);
+  assert.deepEqual(await onDisk(), { claude: [], codex: [], copilot: [] });
 });
 
 test('POST /settings takes agentModels and agentEnabled from the body, keeps the saved ones when it has none, and refuses a stage of a disabled agent, writing nothing (#482)', async (t) => {
   const { base, home } = await start(t);
   const onDisk = async (): Promise<Config> => JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
   assert.equal((await postSettings(base, BODY)).status, 200);
-  assert.deepEqual([(await onDisk()).agentModels, (await onDisk()).agentEnabled], [{ claude: null, codex: null }, { claude: true, codex: true }], 'a first save without them');
-  const models = { claude: 'opus', codex: null };
-  const enabled = { claude: true, codex: false };
+  assert.deepEqual([(await onDisk()).agentModels, (await onDisk()).agentEnabled], [{ claude: null, codex: null, copilot: null }, { claude: true, codex: true, copilot: false }], 'a first save without them');
+  const models = { claude: 'opus', codex: null, copilot: null };
+  const enabled = { claude: true, codex: false, copilot: false };
   assert.equal((await postSettings(base, { ...BODY, agentModels: models, agentEnabled: enabled })).status, 200);
   assert.equal((await postSettings(base, BODY)).status, 200);
   assert.deepEqual([(await onDisk()).agentModels, (await onDisk()).agentEnabled], [models, enabled], 'an omitted key keeps the saved one');

@@ -99,7 +99,7 @@ test('a plan row has an agent select listing every agent, the default first and 
   expect(within(budget).queryByLabelText('agente')).not.toBeInTheDocument();
   expect(within(week).getByLabelText('agente')).toHaveTextContent('codex');
   fireEvent.click(within(week).getByLabelText('agente'));
-  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['codex', 'claude']);
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['codex', 'claude', 'copilot']);
   fireEvent.click(screen.getByRole('option', { name: 'claude' }));
   expect(onChange).toHaveBeenLastCalledWith([{ ...week70cap1, agent: 'claude' }, hour]);
 });

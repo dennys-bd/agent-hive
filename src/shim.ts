@@ -90,8 +90,8 @@ function claudeResume(args: readonly string[]): ShimResume {
 // Codex: the resume subcommand, first as the shim reads a subcommand; fork stays a passthrough (#932)
 const codexResume = (args: readonly string[]): ShimResume => (args[0] === 'resume' ? resumed(args.slice(1).find((arg) => isUuid(arg))) : NEW);
 
-// One reader per agent: a new agent fails to compile until it has one
-const RESUME_READERS: Record<AgentId, (args: readonly string[]) => ShimResume> = { claude: claudeResume, codex: codexResume };
+// One reader per agent: a new agent fails to compile until it has one. Copilot's reads every argv as a new conversation until #608's node 4
+const RESUME_READERS: Record<AgentId, (args: readonly string[]) => ShimResume> = { claude: claudeResume, codex: codexResume, copilot: () => NEW };
 
 /** The resume the args the shim posted ask for (#347). The shim parses nothing (sh cannot parse an argv safely): it posts every arg whole. */
 export const resumeOf = (agent: AgentId, args: readonly string[]): ShimResume => RESUME_READERS[agent](args);
