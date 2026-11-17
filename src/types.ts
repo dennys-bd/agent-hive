@@ -2033,10 +2033,14 @@ export type FieldValue = string | number | string[] | null;
 /** One field of an item as its editors read it (#686): its kind, its current value and, for a choice, what it can be. */
 export interface ItemField {
   name: string;
-  type: ProjectField['type'] | 'assignees' | 'labels'; // milestone and issueType are already ProjectField kinds; assignees and labels are the issue's own
+  // milestone and issueType are already ProjectField kinds; assignees and labels are the issue's own. #826: multiSelect, user, users, longText and
+  // datetime are Jira's value shapes the older kinds cannot carry; ProjectField['type'] is unchanged
+  type: ProjectField['type'] | 'assignees' | 'labels' | 'multiSelect' | 'user' | 'users' | 'longText' | 'datetime';
   value: FieldValue; // unset on the source = null; assignees and labels = [] when none
   options?: string[]; // single-select options, iterations, open milestones, issue types, assignable logins, the repository's labels
   readOnly?: true; // repository, progress, parentIssue, other
+  isOpen?: true; // #826: a value outside options is accepted (a Jira label is free text)
+  isRequired?: true; // #826: never cleared, neither null nor []
 }
 
 /** What a field write answers (#686): the item re-read after it. `entry` is absent when the item is out of the source's listing. */
