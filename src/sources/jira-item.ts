@@ -130,13 +130,13 @@ export function jiraItemOf(source: string, project: string, issue: JiraIssue, na
   };
 }
 
-/** The rows setFields stores: Status first with the workflow's statuses, then each field the mapping can give a value, by its kind. */
 /** The kind the sync stores a field's values under, or undefined when it stores none: an own field, a field with no schema or an
  * unknown kind (#821). fieldRowsOf and the Settings filter options both read it, so the two name one set of fields. */
 export function storedKindOf(field: JiraFieldDef): SourceItemValue['kind'] | undefined {
   return OWN_FIELDS.has(field.id) ? undefined : kindOf(field.schema);
 }
 
+/** The rows setFields stores: Status first with the workflow's statuses, then each field the mapping can give a value, by its kind. */
 export function fieldRowsOf(fields: readonly JiraFieldDef[], statuses: readonly JiraStatus[]): SourceField[] {
   const known = fields.flatMap((f): SourceField[] => {
     const kind = storedKindOf(f);
