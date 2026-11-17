@@ -2,9 +2,10 @@ import type { JiraCredential } from '../credentials.js';
 import type { Logger } from '../log.js';
 import type { ReportRetry } from '../source-errors.js';
 import type { JiraCall } from '../sources/jira-queries.js';
-import { syncProject, type JiraSyncDeps } from '../sources/jira-sync.js';
+import { reconcileProject, syncProject, type JiraSyncDeps } from '../sources/jira-sync.js';
 import type { SourceConfig, SourceSync } from '../types.js';
 import type { ReadModel, SyncKind } from './db.js';
+import { isReconcileDue } from './reconcile.js';
 
 /** A jira source as the round reads it (#824): its name, where it reads, and the retry wait its sync line holds (#812). */
 export interface JiraRoundSource { name: string; site: string; project: string; backoffUntil?: string }
@@ -51,9 +52,26 @@ const syncDepsOf = (deps: JiraRoundDeps, group: JiraGroup, accountId: string): J
   call: deps.call(group.site), db: deps.db, source: `jira:${group.site}:${accountId}`, project: group.project, now: () => deps.now().getTime(),
 });
 
+// Beside the items' cursor in sync_scopes, under the project as GitHub's sits under its repository: persisted, so a restart does not reconcile early
+function stamp(deps: JiraRoundDeps, sync: JiraSyncDeps): void {
+  deps.db.setScope(sync.source, sync.project, 'reconcile', { cursor: null, etag: null, syncedAt: deps.now().toISOString() });
+}
+
+// A first sync (no cursor before it) read the whole project: it counts as the reconcile, as GitHub's full first round does (#180).
+// A reconcile that fails after the sync stored rows still names them: they are in the model, and the unwritten stamp keeps it due
 async function syncGroup(deps: JiraRoundDeps, group: JiraGroup, accountId: string): Promise<void> {
-  const { changed } = await syncProject(syncDepsOf(deps, group, accountId));
-  if (changed) deps.notify(whereOf(group), ['items']); // one event per shared sync; no GitHub view reacts to items
+  const sync = syncDepsOf(deps, group, accountId);
+  const first = deps.db.items.cursor(sync.source, sync.project) === null;
+  let changed = (await syncProject(sync)).changed;
+  try {
+    if (first) stamp(deps, sync);
+    else if (isReconcileDue(deps.db.scope(sync.source, sync.project, 'reconcile')?.syncedAt, deps.now())) {
+      changed = (await reconcileProject(sync)).changed || changed;
+      stamp(deps, sync);
+    }
+  } finally {
+    if (changed) deps.notify(whereOf(group), ['items']); // one event per shared sync; no GitHub view reacts to items
+  }
 }
 
 // No login for the site: no call, one debug line. The poll reports the missing login through listItems, not the loop
