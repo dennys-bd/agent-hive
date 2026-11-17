@@ -35,13 +35,14 @@ function mcpValues(raw: unknown): Record<string, { value: string }> | undefined 
 export type JiraCredential = NonNullable<Credentials['jira']>[string];
 
 // #816: a site's login by host; an entry with a non-string field is dropped, as a malformed github is: it would reach the Basic header as
-// [object Object]. A map that is no object is dropped whole.
+// [object Object]. A map that is no object is dropped whole. A displayName that is no string is dropped with the login kept (#820): it is
+// only what @me reads.
 function jiraEntries(raw: unknown): Record<string, JiraCredential> | undefined {
   if (!isRecord(raw)) return undefined;
   return Object.fromEntries(
     Object.entries(raw).flatMap(([site, e]) =>
       isRecord(e) && typeof e.email === 'string' && typeof e.token === 'string' && typeof e.accountId === 'string'
-        ? [[site, { email: e.email, token: e.token, accountId: e.accountId }]]
+        ? [[site, { email: e.email, token: e.token, accountId: e.accountId, ...(typeof e.displayName === 'string' ? { displayName: e.displayName } : {}) }]]
         : [],
     ),
   );
@@ -102,4 +103,13 @@ export async function removeJiraCredential(site: string, env?: NodeJS.ProcessEnv
   if (current.jira === undefined || !Object.hasOwn(current.jira, site)) return;
   const { [site]: _gone, ...left } = current.jira;
   await writeCredentials({ ...current, jira: left }, env);
+}
+
+/** #820: the account's name as /myself answers it. Written only when the site has a login and the name changed, so a resolve that finds
+ * nothing new never rewrites the file. */
+export async function renewJiraName(site: string, name: string, env?: NodeJS.ProcessEnv): Promise<void> {
+  const current = await readCredentials(env);
+  const entry = current.jira !== undefined && Object.hasOwn(current.jira, site) ? current.jira[site] : undefined;
+  if (entry === undefined || entry.displayName === name) return;
+  await writeCredentials({ ...current, jira: { ...current.jira, [site]: { ...entry, displayName: name } } }, env);
 }

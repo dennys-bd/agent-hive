@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { credentialsPath, jiraCredential, readCredentials, removeJiraCredential, saveJiraCredential, writeCredentials } from '../src/credentials.js';
+import { credentialsPath, jiraCredential, readCredentials, removeJiraCredential, renewJiraName, saveJiraCredential, writeCredentials } from '../src/credentials.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { assertMode } from './posix-only.js';
 
@@ -130,4 +130,24 @@ test('a stored jira map keeps each well-formed site and drops a malformed entry 
   assert.deepEqual(await readCredentials(env), {});
   await writeFile(path, JSON.stringify({ jira: 'x' }));
   assert.deepEqual(await readCredentials(env), {});
+});
+
+test('a stored jira displayName round-trips, a non-string one is dropped with the login kept (#820)', async (t) => {
+  const env = await configHome(t);
+  await saveJiraCredential('acme.example', { ...ANA, displayName: 'Ana Lima' }, env);
+  assert.deepEqual(await jiraCredential('acme.example', env), { ...ANA, displayName: 'Ana Lima' });
+  await writeFile(credentialsPath(env), JSON.stringify({ jira: { 'acme.example': { ...ANA, displayName: 7 } } }));
+  assert.deepEqual(await jiraCredential('acme.example', env), ANA);
+});
+
+test('renewJiraName rewrites a different name only, and gives a site with no login none (#820)', async (t) => {
+  const env = await configHome(t);
+  await saveJiraCredential('acme.example', { ...ANA, displayName: 'Ana Lima' }, env);
+  const before = await readFile(credentialsPath(env), 'utf8');
+  await renewJiraName('acme.example', 'Ana Lima', env);
+  assert.equal(await readFile(credentialsPath(env), 'utf8'), before, 'the same name writes nothing');
+  await renewJiraName('acme.example', 'Ana L.', env);
+  assert.deepEqual(await jiraCredential('acme.example', env), { ...ANA, displayName: 'Ana L.' });
+  await renewJiraName('other.example', 'Bea', env);
+  assert.equal(await jiraCredential('other.example', env), undefined);
 });

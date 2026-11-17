@@ -203,7 +203,7 @@ export interface Credentials {
   /** An external MCP server's header value by server name (#333). */
   mcp?: Record<string, { value: string }>;
   /** A Jira Cloud login by bare site host (#816). */
-  jira?: Record<string, { email: string; token: string; accountId: string }>;
+  jira?: Record<string, { email: string; token: string; accountId: string; displayName?: string }>; // displayName: #820, what @me resolves to with no call
 }
 
 /** What GET /settings/github/auth answers: never the token, only what the screen shows. */

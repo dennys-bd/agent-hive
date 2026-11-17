@@ -56,7 +56,7 @@ test('a connect /myself accepts stores the login under the normalized site and a
   const h = await routes(t, () => json(ME));
   assert.deepEqual(await answered(connect(h, { site: 'https://Acme.atlassian.net/', email: EMAIL, token: TOKEN })), [200, { site: SITE, state: 'connected', name: 'Ana' }]);
   assert.deepEqual(h.calls, [{ url: `https://${SITE}/rest/api/3/myself`, auth: BASIC }], 'the candidate login, not a stored one');
-  assert.deepEqual(await jiraCredential(SITE, h.env), { email: EMAIL, token: TOKEN, accountId: 'acc-1' });
+  assert.deepEqual(await jiraCredential(SITE, h.env), { email: EMAIL, token: TOKEN, accountId: 'acc-1', displayName: 'Ana' });
   assert.ok(h.lines.includes(`INFO jira site connected: ${SITE}`), h.lines.join('\n'));
 });
 
