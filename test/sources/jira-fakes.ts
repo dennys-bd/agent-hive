@@ -11,8 +11,8 @@ import { JIRA_ENTRY } from '../fakes.js';
 export const ROWS = 'jira:acme.example:acc-1';
 export const CRED: JiraCredential = { email: 'ana@example.com', token: 'fake-token-820', accountId: 'acc-1', displayName: 'Ana Lima' };
 export const CITED: Citation[] = [{ column: 'To Do', by: 'fila' }, { column: 'In Progress', by: 'fila' }];
-const NAMES = { components: 'Components' };
-const SCHEMA = { components: { type: 'array', items: 'component' } };
+export const NAMES = { components: 'Components' };
+export const SCHEMA = { components: { type: 'array', items: 'component' } };
 export const STATUSES = [{ name: 'Story', statuses: ['To Do', 'In Progress', 'Done'].map((name) => ({ name, statusCategory: { key: 'new' } })) }];
 export const doc = (text: string) => ({ version: 1, type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
 
@@ -59,7 +59,7 @@ export function fakeJira(answers: Record<string, unknown[]> = {}): Fake {
   return { call, sent, paths, bodies };
 }
 
-export interface Setup { call?: JiraCall; db?: ReadModel; cred?: JiraCredential | null; source?: Partial<JiraSourceConfig>; renamed?: string[] }
+export interface Setup { call?: JiraCall; db?: Pick<ReadModel, 'items' | 'transaction'>; cred?: JiraCredential | null; source?: Partial<JiraSourceConfig>; renamed?: string[] }
 export const adapter = ({ call = fakeJira().call, db, cred = CRED, source = {}, renamed = [] }: Setup): Source =>
   createJiraSource({ ...JIRA_ENTRY, ...source }, CITED, {
     call, credential: async () => cred ?? undefined, renewName: async (name) => { renamed.push(name); }, ...(db === undefined ? {} : { items: { db } }),
