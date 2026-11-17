@@ -54,6 +54,9 @@ function GithubRow({ auth, github, sourceNames, onConnect, onAuthChange, onOpenQ
 // a source's detail links here (#524): its connection line opens the list scrolled to this group
 export const CONNECTIONS_ANCHOR = settingAnchor('settings.connections');
 
+/** The flow list's connections card, scrolled to once the list has rendered (#524, #822): the detail's change link and the dialog's no-site link. */
+export const scrollToConnections = (): void => { requestAnimationFrame(() => document.getElementById(CONNECTIONS_ANCHOR)?.scrollIntoView({ block: 'start' })); };
+
 export interface ConnectionsGroupProps { githubRow?: GithubRowProps } // GitHub's row only when a GitHub source exists (#817)
 
 /** conexões (#524): one row per service the Hive can reach. The card always renders (#817): GitHub's row only when a GitHub source exists,

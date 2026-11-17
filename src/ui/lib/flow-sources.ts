@@ -6,8 +6,8 @@ import { type SourceDraft, emptySource } from './settings-form.js';
 import type { JiraDraft, JiraIssueType, JiraLinkType } from './settings-jira.js';
 import { entryLabel, type FlowScope, PROP_LABEL, propMode } from './setup-source-task-props.js';
 
-/** The types the dialog offers (#514): Jira's form lands with 5.4 (#822). */
-export const NEW_SOURCE_TYPES = ['github'] as const satisfies readonly SourceFields['type'][];
+/** The types the dialog offers (#514, #822). */
+export const NEW_SOURCE_TYPES = ['github', 'jira'] as const satisfies readonly SourceFields['type'][];
 /** The type badge / read-only type field label; a Record, so a new source type fails tsc until it has one. */
 export const TYPE_LABEL: Record<SourceFields['type'], MessageKey> = { github: 'settings.sources.type.github', jira: 'settings.sources.type.jira' };
 /** Who a source belongs to, as its row and header show it (#820): GitHub's owner, a Jira source's site. */

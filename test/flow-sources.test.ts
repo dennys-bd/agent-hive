@@ -41,7 +41,7 @@ test('sourceSummary: the entry part comes right after the workspace part, before
 
 test('newSourceProblem: a picked workspace, a valid free name, a workspace; newSourceDraft builds a fixed github row, trimmed (#514)', () => {
   setLanguage('pt');
-  assert.deepEqual(NEW_SOURCE_TYPES, ['github'], 'no Jira adapter yet');
+  assert.deepEqual(NEW_SOURCE_TYPES, ['github', 'jira']);
   assert.equal(newSourceProblem(fields, ['work']), undefined);
   assert.equal(newSourceProblem({ ...fields, number: '' }, []), t('settings.error.project'));
   for (const name of ['', 'local', 'hive', '-x', 'a b']) assert.equal(newSourceProblem({ ...fields, name }, []), t('newSource.error.name'), name);

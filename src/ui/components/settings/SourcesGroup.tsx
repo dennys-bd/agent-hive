@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { scrollToConnections } from '@/components/settings/ConnectionsGroup';
 import { NewSourceDialog } from '@/components/settings/NewSourceDialog';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { Badge } from '@/components/ui/badge';
@@ -97,7 +98,7 @@ export function SourcesGroup({ sources, scope, githubProjects, auth, workspaces,
           </div>
         );
       })}
-      <NewSourceDialog open={open} onOpenChange={setOpen} auth={auth} workspaces={workspaces} takenNames={sources.map((b) => b.name.trim())} flowId={scope.flows[0]?.id ?? ''} onAdd={(added) => { setOpen(false); onAdd(added); }} />
+      <NewSourceDialog open={open} onOpenChange={setOpen} auth={auth} workspaces={workspaces} takenNames={sources.map((b) => b.name.trim())} flowId={scope.flows[0]?.id ?? ''} onAdd={(added) => { setOpen(false); onAdd(added); }} onOpenConnections={() => { setOpen(false); scrollToConnections(); }} />
     </SettingsGroup>
   );
 }

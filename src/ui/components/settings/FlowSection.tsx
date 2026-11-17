@@ -2,7 +2,7 @@ import { SourceDetail, sourceEntries } from '@/components/settings/SourceDetail'
 import { CombTab } from '@/components/settings/CombTab';
 import type { StageFocus, TransitionFocus } from '@/components/settings/StageEditor';
 import { stageEntries } from '@/components/settings/StageDetail';
-import { CONNECTIONS_ANCHOR } from '@/components/settings/ConnectionsGroup';
+import { scrollToConnections } from '@/components/settings/ConnectionsGroup';
 import { needsGithubToken, type NewSource } from '@/lib/flow-sources';
 import type { SourceDraft, SettingsDraft } from '@/lib/settings-form';
 import { cardEntries, type SettingEntry, settingEntry } from '@/lib/settings-search';
@@ -41,7 +41,7 @@ export function FlowSection({ draft, source, flow, agents, launchWorkspace, onCh
       onOpenList={() => {
         flow.onOpenSource(undefined);
         // the list renders on this click's commit, before the next frame: then the group exists to scroll to
-        requestAnimationFrame(() => document.getElementById(CONNECTIONS_ANCHOR)?.scrollIntoView({ block: 'start' }));
+        scrollToConnections();
       }}
     />
   );
