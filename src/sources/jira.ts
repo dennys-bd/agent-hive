@@ -112,12 +112,20 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     }));
   }
 
-  // The rows go with the issue: neither a deleted nor an archived one shows in the incremental sync, so the next poll would list it again
+  // The rows go with the issue: neither a deleted nor an archived one shows in the incremental sync, so the next poll would list it again.
+  // One Jira no longer has is already off it: its row goes, else the action would fail on every try until the daily reconcile
   async function leave(itemId: string, type: 'delete' | 'archive'): Promise<void> {
     const cred = await account();
-    const { issue } = await readIssue(call, itemId); // the subtask ids before the write, which takes them with it
-    await (type === 'delete' ? deleteIssue(call, itemId) : archiveIssue(call, itemId, issue.key ?? itemId));
-    if (db !== undefined) db.items.removeItems(rowsOf(cred), [itemId, ...subtaskIds(issue)]);
+    const drop = (ids: string[]): void => db?.items.removeItems(rowsOf(cred), ids);
+    const read = await readIssue(call, itemId).catch((err: unknown) => {
+      if (err instanceof JiraNotFoundError) return undefined;
+      throw err;
+    });
+    if (read === undefined) return drop([itemId]);
+    const { issue } = read; // the subtask ids before the write, which takes them with it
+    const id = issue.id ?? itemId; // the row's node id, even when the caller named the key
+    await (type === 'delete' ? deleteIssue(call, id) : archiveIssue(call, id, issue.key ?? id));
+    drop([id, ...subtaskIds(issue)]);
   }
 
   // url is not read: the issue id reaches any project. A close reason has no Jira counterpart, so every close is the move to doneStatus

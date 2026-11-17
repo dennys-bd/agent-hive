@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { ReadModel } from '../../src/read-model/db.js';
 import { isNotConnected } from '../../src/source-errors.js';
 import { archiveIssue, deleteIssue, subtaskIds } from '../../src/sources/jira-actions.js';
-import { JiraHttpError } from '../../src/sources/jira-fetch.js';
+import { JiraHttpError, JiraNotFoundError } from '../../src/sources/jira-fetch.js';
 import { adapter, fakeJira, issue, read, ROWS, seeded } from './jira-fakes.js';
 
 const PLAN = 'ABC-1: this site\'s plan does not archive issues (Jira Premium or Enterprise)';
@@ -110,5 +110,15 @@ test('with no login, delete and archive reject not connected before any call (#8
     const fake = fakeJira();
     await assert.rejects(adapter({ call: fake.call, cred: null }).apply('10001', { type }, ''), (err: unknown) => isNotConnected(err));
     assert.deepEqual(fake.sent, [], type);
+  }
+});
+
+test('delete and archive of an issue Jira no longer has drop its row and write nothing (#823)', async () => {
+  for (const type of ['delete', 'archive'] as const) {
+    const db = await four();
+    const fake = fakeJira({ 'GET /issue/10001': [new JiraNotFoundError()] });
+    await adapter({ call: fake.call, db }).apply('10001', { type }, '');
+    assert.deepEqual(fake.sent, ['GET /issue/10001'], type);
+    assert.deepEqual(storedIds(db), ['10002', '10003', '10004'], type);
   }
 });
