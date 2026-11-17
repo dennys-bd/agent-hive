@@ -1,7 +1,7 @@
 // The machine (#158, node 7.1 of #157): where a task's disk, processes and ptys are. The host's own is the local machine (machine-local.ts);
 // node 8 adds an actor's, reached over the link. Types only, but MachineError: a remote machine's failure arrives as data and is rebuilt as
 // one, so a caller reads the same fields whichever machine failed. The fs types are imported as types only, which is why this file is on
-// biome.json's host-only list.
+// biome.jsonc's host-only list.
 import type { CopyOptions, Dirent, MakeDirectoryOptions, Mode, RmOptions, Stats } from 'node:fs';
 import type { AgentRun } from './agents/runner.js';
 import type { PtyHost, PtyKeep } from './pty-host.js';
