@@ -824,3 +824,20 @@ test('a Jira source reads its projects, statuses, filter options, issue types an
   ]) await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(url));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli')); // the GitHub row as today
 });
+
+test('picking another project of a Jira source rereads its statuses, filter options, issue types and link types, not its projects (#822)', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockImplementation(jiraFetch);
+  render(<Settings info={JIRA_INFO} onSaved={vi.fn()} />);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/jira/projects?site=acme.atlassian.net'));
+  await openSource(user, 'tickets');
+  fetchMock.mockClear();
+  screen.getByLabelText(t('settings.source.jira.project')).focus();
+  await user.keyboard('{Enter}');
+  await user.click(await screen.findByRole('option', { name: 'XYZ · Zed' }));
+  const next = 'site=acme.atlassian.net&project=XYZ';
+  for (const url of [`/settings/jira/issue-types?${next}`, '/settings/jira/link-types?site=acme.atlassian.net', `/settings/source-columns?type=jira&${next}`, `/settings/filter-options?type=jira&${next}`]) {
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(url));
+  }
+  expect(fetchMock).not.toHaveBeenCalledWith(expect.stringMatching(/^\/settings\/jira\/projects/));
+});
