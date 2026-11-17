@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WireError } from '../../src/read-model/normalize.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
-import { type JiraCall, postTransition, projectJql, readComments, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
+import { type JiraCall, postTransition, projectJql, readComments, readAssignable, readCreateFields, readFields, readIssue, readIssueTypes, readLabels, readLinkTypes, readMyself, readProjects, readStatuses, readTransitions, searchIssues, sinceMinutes, utcIso } from '../../src/sources/jira-queries.js';
 
 interface Sent { path: string; method: string; body: unknown }
 
@@ -257,4 +257,25 @@ test('readCreateFields refuses a type id that is none and a bad key before any c
   await assert.rejects(readCreateFields(none.call, 'AB-1', '10001'), /project key/);
   assert.equal(none.sent.length, 0);
   await assert.rejects(readCreateFields(fakeJira([{ total: 1, fields: [{ fieldId: 'x' }] }]).call, 'ABC', '10001'), /jira create field name/);
+});
+
+test('readAssignable pages until a short page and answers the display names in Jira\'s order, skipping an account without one (#821)', async () => {
+  const full = Array.from({ length: 100 }, (_, i) => (i === 5 ? { accountId: 'acc-5' } : { accountId: `acc-${i}`, displayName: `User ${i}` }));
+  const { call, sent } = fakeJira([full, [{ accountId: 'acc-x', displayName: 'Ana Lima' }]]);
+  const names = await readAssignable(call, 'ABC');
+  assert.deepEqual(names, [...full.flatMap((u) => ('displayName' in u ? [u.displayName] : [])), 'Ana Lima']);
+  assert.deepEqual(sent.map((s) => s.path), [
+    '/user/assignable/search?project=ABC&startAt=0&maxResults=100',
+    '/user/assignable/search?project=ABC&startAt=100&maxResults=100', // the skipped account still counts
+  ]);
+});
+
+test('readAssignable refuses a bad key before any call, a body that is no list, and paging past MAX_PAGES (#821)', async () => {
+  const none = fakeJira([]);
+  await assert.rejects(readAssignable(none.call, '..'), /project key/);
+  assert.equal(none.sent.length, 0);
+  await assert.rejects(readAssignable(fakeJira([{ values: [] }]).call, 'ABC'), /jira assignable/);
+  const never = endless(Array.from({ length: 100 }, (_, i) => ({ accountId: `acc-${i}`, displayName: 'Ana Lima' })));
+  await assert.rejects(readAssignable(never.call, 'ABC'), /jira assignable page count/);
+  assert.equal(never.calls(), 1000);
 });

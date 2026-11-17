@@ -298,3 +298,20 @@ export async function readCreateFields(call: JiraCall, project: string, typeId: 
     return countedPage(page, page.fields ?? page.values, startAt, 'jira create fields', createFieldOf);
   });
 }
+
+const nameOf = (value: unknown): string | undefined => {
+  const name = recordAt(value, 'jira assignable').displayName;
+  return typeof name === 'string' && name !== '' ? name : undefined;
+};
+
+/** The display names of the accounts the project's issues can be assigned to (#821), in Jira's order; an account with none is left out.
+ * The pager counts every account read, skipped ones included, so a skip never shifts startAt. */
+export async function readAssignable(call: JiraCall, project: string): Promise<string[]> {
+  // ponytail: a short page ends it, as the spec says; Jira's user search can answer short before the end (it filters after paging). Page
+  // until an empty page if a site misses assignees
+  const names = await readPages(call, `/user/assignable/search?project=${projectPart(project)}`, 'jira assignable', (body) => {
+    const users = arrayAt(body, 'jira assignable').map(nameOf);
+    return { items: users, last: users.length < PAGE_SIZE };
+  });
+  return names.filter((name): name is string => name !== undefined);
+}
