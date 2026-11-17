@@ -795,6 +795,16 @@ function describeTool(p: HookPayload): string {
   return detail ? `${name}: ${detail}` : name;
 }
 
+// #874: an approved tool's PostToolUse, or an answered elicitation's, ends the wait its prompt opened (Copilot's approval and ask_user fire
+// nothing else). Never the worker's own question (ask) or a turn's end (turn): a tool's end answers neither. The PR safety net under
+// hive_pr runs on the same payload either way
+function toolDone(state: State, ptyId: string, worker: Worker, p: HookPayload): Reduced {
+  const answered = worker.status === 'waiting' && worker.lastEvent?.kind === 'waiting';
+  const moved = answered ? patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'tool', detail: describeTool(p) }, ...movedOn(worker, 'tool') }).state : state;
+  const prUrl = extractPrUrl(String((p.tool_input as { command?: unknown } | undefined)?.command ?? ''), p.tool_response);
+  return prUrl ? markPr(moved, ptyId, prUrl) : none(moved);
+}
+
 // The worker's own work still in flight at a Stop (#367): background tasks and session crons wake it without the user. Anything but an
 // array (an older Claude Code without the fields, a forged hook) counts as nothing, which keeps the plain turn end's wait.
 const inFlight = (p: HookPayload): number =>
@@ -891,10 +901,7 @@ function applyHook(initial: State, ptyId: string, p: HookPayload, branch?: strin
       if (worker.lastEvent?.kind === 'ask') return patch(state, ptyId, { status: 'waiting' }); // the worker's own question outranks the generic text
       return patch(state, ptyId, { status: 'waiting', question: String(p.message ?? kind), lastEvent: { kind: 'waiting', detail: kind } });
     }
-    case 'PostToolUse': {
-      const prUrl = extractPrUrl(String((p.tool_input as { command?: unknown } | undefined)?.command ?? ''), p.tool_response);
-      return prUrl ? markPr(state, ptyId, prUrl) : none(state); // the safety net under hive_pr
-    }
+    case 'PostToolUse': return toolDone(state, ptyId, worker, p); // #874
     case 'Stop': { // the end of the command only after hive_done; otherwise the worker is idle and the worker waits, unless its own work will wake it
       if (worker.done) return fill(endStage(state, ptyId, task)); // an approval stage waits for the user (#268); a handoff the next stage needs comes first (#692)
       // after hive_ask the worker ends its turn to wait for the answer: the question and the ask stay until a prompt or a tool (#99), background work or not (#367)

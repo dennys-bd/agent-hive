@@ -153,7 +153,7 @@ test('a codex turn through its runner and the reducer: working on the prompt and
   assert.deepEqual([asked?.status, asked?.question, asked?.lastEvent], ['waiting', QUESTION, { kind: 'waiting', detail: 'permission_prompt' }]);
   const approved = codexHooked(codexHooked(tooled, ptyId, CODEX_TURN.PermissionRequest).state, ptyId, CODEX_TURN.PostToolUse).state;
   assert.deepEqual(prsOf(approved, ITEM.itemId).map((pr) => pr.url), [PR_URL], 'the safety net under hive_pr reads Codex\'s Bash call');
-  assert.equal(runOf(approved, ptyId)?.status, 'waiting', 'the approval fires no hook: the next PreToolUse or Stop moves the worker (spec)');
+  assert.equal(runOf(approved, ptyId)?.status, 'working', 'the approved tool\'s PostToolUse ends the wait (#874)');
   const ended = runOf(codexHooked(approved, ptyId, CODEX_TURN.Stop).state, ptyId);
   assert.deepEqual([ended?.status, ended?.lastEvent], ['waiting', { kind: 'turn' }], 'no background_tasks on a Codex Stop: nothing in flight');
 });
