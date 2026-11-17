@@ -113,7 +113,7 @@ export async function searchIssues(call: JiraCall, jql: string, fields: readonly
 }
 
 /** The path of one issue (#819, #820): the user's or Jira's id or key, checked and encoded before it reaches a REST path. */
-function issuePath(idOrKey: string): string {
+export function issuePath(idOrKey: string): string {
   if (!ISSUE_REF.test(idOrKey)) throw new Error('jira issue id or key is not one');
   return `/issue/${encodeURIComponent(idOrKey)}`;
 }
