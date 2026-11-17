@@ -49,3 +49,14 @@ test('a PostToolUse carrying a PR URL after a wait both moves the worker and mar
   assert.deepEqual(seen(opened), ['working', undefined, { kind: 'pr' }]);
   assert.deepEqual(prsOf(opened, ID).map((pr) => pr.url), [PR]);
 });
+
+test('a PostToolUse leaves agent_needs_input open, and a subagent\'s PostToolUse never answers the worker\'s prompt (#874)', () => {
+  const needs = notified(running(), 'agent_needs_input', 'Claude needs your input');
+  assert.equal(seen(hook(needs, BASH))[0], 'waiting', 'no tool opened it, so no tool\'s end closes it');
+  const waiting = hook(notified(running(), 'permission_prompt', 'Run command: ls'), { hook_event_name: 'SessionStart', session_id: 'a0a0a0a0-0000-4000-8000-000000000001' });
+  const own = waiting.workers[0]?.sessionId;
+  assert.ok(own !== undefined, 'the worker holds its session id');
+  const child = hook(waiting, { ...BASH, session_id: 'b1b1b1b1-0000-4000-8000-000000000002' });
+  assert.equal(seen(child)[0], 'waiting', 'a subagent\'s tool');
+  assert.equal(seen(hook(waiting, { ...BASH, session_id: own }))[0], 'working', 'the worker\'s own tool');
+});

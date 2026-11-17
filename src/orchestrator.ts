@@ -795,11 +795,15 @@ function describeTool(p: HookPayload): string {
   return detail ? `${name}: ${detail}` : name;
 }
 
+// The waits a tool's end answers (#874): an approval and an elicitation. agent_needs_input is no tool's, so another tool ending leaves it open
+const TOOL_WAITS: readonly string[] = ['permission_prompt', 'elicitation_dialog', 'elicitation_url_dialog'];
+
 // #874: an approved tool's PostToolUse, or an answered elicitation's, ends the wait its prompt opened (Copilot's approval and ask_user fire
-// nothing else). Never the worker's own question (ask) or a turn's end (turn): a tool's end answers neither. The PR safety net under
-// hive_pr runs on the same payload either way
+// nothing else). Never the worker's own question (ask) or a turn's end (turn): a tool's end answers neither, and a subagent's tool never
+// answers the worker's prompt. The PR safety net under hive_pr runs on the same payload either way
 function toolDone(state: State, ptyId: string, worker: Worker, p: HookPayload): Reduced {
-  const answered = worker.status === 'waiting' && worker.lastEvent?.kind === 'waiting';
+  const wait = worker.status === 'waiting' && worker.lastEvent?.kind === 'waiting' ? worker.lastEvent.detail : undefined;
+  const answered = wait !== undefined && TOOL_WAITS.includes(wait) && !isChildSession(worker, p);
   const moved = answered ? patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'tool', detail: describeTool(p) }, ...movedOn(worker, 'tool') }).state : state;
   const prUrl = extractPrUrl(String((p.tool_input as { command?: unknown } | undefined)?.command ?? ''), p.tool_response);
   return prUrl ? markPr(moved, ptyId, prUrl) : none(moved);
