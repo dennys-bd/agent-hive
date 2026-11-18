@@ -57,7 +57,8 @@ import { posixShell } from './posix-shell.js';
 import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-requests.js';
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { readUnlisted, unlistedStarted } from './poll-reads.js';
-import { deleteActivityOnDisk, registerTaskRoutes } from './server-tasks.js';
+import { registerTaskRoutes } from './server-tasks.js';
+import { deleteActivityOnDisk } from './activity-delete.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
 import { exitEvent } from './server-exit.js';
 import { readCredentials, writeCredentials } from './credentials.js';
@@ -675,7 +676,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         const { activity, task, scope } = effect;
         const activityId = activity.id;
         // In the task's own workspace (#179); none, or one gone, is a failure a manual start retries, like a git refusal. What goes is the scope's (#236).
-        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], prs: live ? recordOf(live.state, activity.id)?.prs ?? [] : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, dispatch, facts: wiring.facts });
+        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], prs: live ? recordOf(live.state, activity.id)?.prs ?? [] : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
         // Awaited, like kill: the answer is reduced inside this batch, so the next tick sees the task moved or errored, never mid-deletion.
         await clean().then(
           () => dispatch({ type: 'activityDeleted', activityId }),
