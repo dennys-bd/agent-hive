@@ -5,7 +5,7 @@ import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
 import { forgetFailedFreeRun, forgetFailedSession, forgetUnwritten, keepRecord, touchSession, withDecompositionIssue, withEpic, withPr, withResult, withTurn } from './record-kit.js';
-import { AGENTS, liveDefaultAgent, ranAgent } from './agents.js';
+import { liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionTarget, decompositionWritten, TARGET_KEY } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
@@ -850,12 +850,12 @@ function firstFreeSession(state: State, worker: Worker, id: string, cwd?: unknow
   return (activity && recordCapturedSession(state, activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), worker.launch)) ?? state; // #257: its picks too
 }
 
-// #933: a copy of an agent that picks its own id (Codex) opened under the Hive's placeholder; the fork's SessionStart (source=fork, finding
-// §3) names it, whatever hook came before. A subagent's or a resume's SessionStart is never a fork. A free run with no id at all is #932's
-// capture below, not a copy
+// #933, #875: a copy whose fork cannot keep the Hive's id (Codex, Copilot) opened under the placeholder, forkOf naming its source; the fork's
+// first SessionStart names it, whatever hook came before. Codex's says source=fork, Copilot's resume (spike §3); the source's id (a prompt before
+// /fork ran) and the placeholder are never the fork's, and renameSession drops forkOf, so a later resume's or subagent's changes nothing
 const namedFork = (worker: Worker, p: HookPayload): p is HookPayload & { session_id: string } =>
-  p.source === 'fork' && worker.freeSession === true && worker.sessionId !== undefined && !AGENTS[ranAgent(worker)].canChooseSessionId
-  && isUuid(p.session_id) && p.session_id !== worker.sessionId;
+  worker.forkOf !== undefined && (p.source === 'fork' || p.source === 'resume') && isUuid(p.session_id)
+  && p.session_id !== worker.sessionId && p.session_id !== worker.forkOf;
 
 // The first session id wins (#24): a subagent's or a teammate's SessionStart never replaces it. A /clear's does (#655): it is the run's own new
 // conversation, so the old one's entry takes the new id. A stage run with none takes the first it hears (#927), and so does a free run with none (#932).

@@ -50,6 +50,7 @@ function newRun(event: CopyEvent, source: Session): NewRun {
     agent: source.agent, // a copy forks its source: the same agent's transcript (#925)
     ...(source.tokens === undefined ? {} : { tokens: source.tokens }),
     ...(event.copied === undefined ? {} : { copyOf: { from: source.id, dir: event.copied } }),
+    ...(AGENTS[source.agent].forkKeepsHiveId ? {} : { forkOf: source.id }), // #875: the fork's SessionStart names it (namedFork)
   };
   return { sessionId, startedAt, worker, agent: source.agent, copy: { from: source.id, ...(event.name === undefined ? {} : { name: event.name }), ...(event.notice === undefined ? {} : { notice: event.notice }) } };
 }

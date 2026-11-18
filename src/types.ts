@@ -754,6 +754,7 @@ export interface Worker {
   runId?: string; // uuid per spawn, the run (#570); stale exit/hook signals from a previous run are ignored
   activityId?: string; // #629: the activity the run works in, a task's or a workspace's local one; set on every worker that runs
   copyOf?: { from: string; dir: string }; // a copy's run until its SessionStart (#587): the source id and the transcript dir holding the temporary <from>.jsonl; never survives a boot
+  forkOf?: string; // #875: the source's session id, on a copy's run whose agent's fork cannot keep the Hive's id (AGENTS[…].forkKeepsHiveId false), until the fork's SessionStart names it; never survives a boot, as copyOf does not
   status: Status;
   draining?: boolean;
   tokens?: number; // session total at the last Stop / SessionEnd; the next delta is measured against it. A resumed session starts from its Session.tokens (#248)

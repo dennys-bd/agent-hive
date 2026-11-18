@@ -209,3 +209,45 @@ test('a codex free session resumed under its own id is not renamed; a claude cop
   const started = sessionStart(claude, FORK, 'startup');
   assert.deepEqual([started.workers.at(-1)!.sessionId, sessionsOf(started, 'local:2').map((s) => s.id)], [chosen, [chosen]], 'claude runs under the id the Hive chose');
 });
+
+// #875: A's session as Copilot's: no fork flag and no chosen id for a fork, so the copy opens under the placeholder with forkOf, and the
+// fork's first SessionStart (source=resume, a uuid neither the source's nor the placeholder) names it
+const copilotHive = (): State => withWork(hive([A, B]), 'local:1', { worktree: worktreeOf(1), sessionId: SOURCE }, { sessions: [session({ agent: 'copilot' })] });
+const TASK_B: SessionTarget = { activityId: activityIdOf('local:2') };
+
+test('a copy of a copilot or codex session opens under a placeholder with forkOf naming its source; a claude copy has none (#875)', () => {
+  for (const before of [copilotHive(), codexHive()]) {
+    const { state, effects } = copyTo(before, TASK_B, { copied: undefined });
+    const worker = state.workers.at(-1)!;
+    assert.deepEqual([worker.forkOf, spawnOf(effects).sessionId === worker.sessionId, worker.sessionId === SOURCE], [SOURCE, true, false], worker.agent);
+    assert.deepEqual(entriesOf(state, 'local:2'), [[worker.sessionId, 'no dois', 1200, worker.agent]]);
+  }
+  assert.equal('forkOf' in copyTo(hive([A, B]), TASK_B).state.workers.at(-1)!, false);
+});
+
+test('a copilot fork\'s SessionStart (source resume, a third uuid) renames the worker and the copy\'s entry, name and tokens kept, and drops forkOf; the source\'s entry keeps its id (#875)', () => {
+  const before = copilotHive();
+  const frozen = structuredClone(before);
+  const forked = sessionStart(copyTo(before, TASK_B, { copied: undefined }).state, FORK, 'resume');
+  const worker = forked.workers.at(-1)!;
+  assert.deepEqual(before, frozen, 'the input is not mutated');
+  assert.deepEqual([worker.sessionId, worker.tokens, 'forkOf' in worker], [FORK, 1200, false]);
+  assert.deepEqual(entriesOf(forked, 'local:2'), [[FORK, 'no dois', 1200, 'copilot']]);
+  assert.deepEqual(entriesOf(forked, 'local:1'), [[SOURCE, 'review', 1200, 'copilot']]);
+  assert.equal(activityOf(forked, 'local:2')?.sessionId, undefined, 'a free session never becomes the stage run\'s');
+});
+
+test('a SessionStart with the source\'s id or the placeholder changes nothing; after the rename, another uuid of any other source changes nothing (#875)', () => {
+  const copied = copyTo(copilotHive(), TASK_B, { copied: undefined }).state;
+  const placeholder = copied.workers.at(-1)!.sessionId!;
+  for (const id of [SOURCE, placeholder]) {
+    const seen = sessionStart(copied, id, 'resume');
+    const worker = seen.workers.at(-1)!;
+    assert.deepEqual([worker.sessionId, worker.forkOf, entriesOf(seen, 'local:2'), entriesOf(seen, 'local:1')], [placeholder, SOURCE, entriesOf(copied, 'local:2'), entriesOf(copied, 'local:1')], id);
+  }
+  const forked = sessionStart(copied, FORK, 'resume');
+  for (const source of ['resume', 'fork', 'startup']) {
+    const again = sessionStart(forked, SUBAGENT, source); // a later resume's or a subagent's
+    assert.deepEqual([again.workers.at(-1)!.sessionId, entriesOf(again, 'local:2')], [FORK, entriesOf(forked, 'local:2')], source);
+  }
+});
