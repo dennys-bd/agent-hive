@@ -1,4 +1,3 @@
-import { access, lstat, readdir } from 'node:fs/promises';
 import { join, posix, relative, win32 } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import type { Machine, MachineFor } from './machine.js';
@@ -8,8 +7,9 @@ import type { TaskRouteDeps, Refusal } from './server-tasks.js';
 import { liveTarget } from './activity-routes.js';
 import { revealCommand } from './platform-commands.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from './server-files.js';
+import { isLocal, pathFs, REMOTE_REFUSAL } from './machine-fs.js';
 import { treeFolder, treeItem } from './tree-paths.js';
-import type { FolderEntries, IgnoredEntries, TaskTree, Exec, GitMark, State } from './types.js';
+import type { FolderEntries, IgnoredEntries, TaskTree, GitMark, State } from './types.js';
 import { toWire } from './wire-path.js';
 import { taskDir, wordsOf } from './worktree.js';
 import { gitIn, parseStatus, TREE_STATUS_ARGS } from './git-status.js';
@@ -50,7 +50,7 @@ export function repoViewOf(status: string, inRepo: string, children: FolderEntri
   return { marks: Object.fromEntries([...childMarks, ...goneMarks]), ignored: [...children.folders, ...children.files].filter(isIgnored).sort() };
 }
 
-const holdsGit = (folder: string): Promise<boolean> => access(join(folder, '.git')).then(() => true, () => false);
+const holdsGit = (machine: Machine, folder: string): Promise<boolean> => machine.fs.access(join(folder, '.git')).then(() => true, () => false);
 
 /** The nested repository a folder of the tree lies in (#1): the nearest folder holding .git (a directory, or a worktree's file) from `folder`
  *  up, so a repository inside a nested one answers for its own files. The tree's root is left out: its own git already marks the tree.
@@ -96,7 +96,8 @@ function ignoredOf(entries: readonly string[], nested: readonly string[]): Ignor
 /** Every path of the worktree git does not ignore (tracked, and untracked not excluded), minus the deleted ones, with their marks (a deleted
  *  path's `D` in the marks only, #903); its empty folders (#818); what git ignores and its nested repositories (HIVE-22); its root, absolute;
  *  and the branch it has out (#713). Three git runs (#502): git status never lists a clean tracked file, nor an empty folder. */
-export async function taskTree(worktree: string, exec: Exec, hasGit: (folder: string) => Promise<boolean> = holdsGit): Promise<TaskTree> {
+export async function taskTree(machine: Machine, worktree: string): Promise<TaskTree> {
+  const { exec } = machine;
   const [listed, status, directories] = await Promise.all([
     gitIn(worktree, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], exec),
     gitIn(worktree, TREE_STATUS_ARGS, exec),
@@ -106,7 +107,7 @@ export async function taskTree(worktree: string, exec: Exec, hasGit: (folder: st
   // An unmerged path lists once per stage; an untracked nested repo lists as `dir/`, a folder git will not look into, so it is no file
   const entries = [...new Set(listed.split('\0'))].filter((path) => path !== '');
   const files = entries.filter((path) => !path.endsWith('/') && !deleted.has(path));
-  const { empty, nested } = await emptyFolders(worktree, directories, files, hasGit);
+  const { empty, nested } = await emptyFolders(worktree, directories, files, (folder) => holdsGit(machine, folder));
   return { root: worktree, ...(branch === undefined ? {} : { branch }), files, marks: { ...marks, ...untrackedMarks(entries, untracked) }, folders: empty, ignored: ignoredOf(ignored, nested) };
 }
 
@@ -144,18 +145,21 @@ export function treeCheckout(state: State, config: Parameters<typeof taskWorkspa
 
 // POST /activities/:id/reveal (#658): the tree's root in the file manager, or with { path } that item of the tree (#818), checked as the
 // tree's other routes check theirs
-function registerRevealRoute(app: Express, { exec, requireLive }: Pick<TaskRouteDeps, 'exec' | 'requireLive'>): void {
+function registerRevealRoute(app: Express, { exec, requireLive, machineFor }: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'machineFor'>): void {
   app.post('/activities/:id/reveal', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
-    const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
+    const id = req.params.id as string;
+    const root = treeRoot(current.state, current.runtime.config, id);
     if (typeof root !== 'string') return refuse(res, root);
+    const machine = treeMachine(current.state, id, machineFor);
+    if (!isLocal(machine)) return refuse(res, REMOTE_REFUSAL); // the file manager is this computer's; another machine's folder is not on it
     const { path } = (req.body ?? {}) as { path?: unknown };
     if (path !== undefined && (typeof path !== 'string' || path === '')) return refuse(res, { status: HTTP_BAD_REQUEST, message: REVEAL_BODY_MESSAGE });
     try {
-      const item = path === undefined ? root : await treeItem(root, path);
+      const item = path === undefined ? root : await treeItem(root, path, pathFs(machine));
       if (typeof item !== 'string') return refuse(res, item);
-      const isFile = path !== undefined && !(await lstat(item)).isDirectory(); // xdg-open would launch a file: Linux opens its folder
+      const isFile = path !== undefined && !(await machine.fs.lstat(item)).isDirectory(); // xdg-open would launch a file: Linux opens its folder
       const [file, args] = revealCommand(process.platform, item, isFile); // an unsupported platform throws here and answers 500 with its reason (#658)
       await exec(file, [...args]);
       res.status(HTTP_NO_CONTENT).end();
@@ -167,8 +171,8 @@ function registerRevealRoute(app: Express, { exec, requireLive }: Pick<TaskRoute
 
 // A directory is a folder; anything else, a symlink too, is a file: the tree opens it and never walks through it. ponytail: no cap on the
 // listing, and an expanded folder is re-read on each tree event under it (#502); a truncated answer if a huge expanded folder (node_modules) ever slows the tree
-async function diskEntries(folder: string): Promise<FolderEntries> {
-  const entries = (await readdir(folder, { withFileTypes: true })).filter((entry) => entry.name.toLowerCase() !== '.git');
+async function diskEntries(machine: Machine, folder: string): Promise<FolderEntries> {
+  const entries = (await machine.fs.readdir(folder, { withFileTypes: true })).filter((entry) => entry.name.toLowerCase() !== '.git');
   const namesOf = (isFolder: boolean): string[] => entries.filter((entry) => entry.isDirectory() === isFolder).map((entry) => entry.name).sort();
   return { files: namesOf(false), folders: namesOf(true) };
 }
@@ -184,33 +188,35 @@ export function inTreeOf(root: string, path: string, platform: NodeJS.Platform):
 // normalized: `folder` is real, and on macOS a real path need not start with the root as written. ponytail: one pathspec-limited git status
 // per read of an expanded folder inside a nested repository (on its own index or HEAD change, focus or a tree operation, #502); one status per nested repository, shared by its expanded folders, if a
 // big one ever slows the tree
-async function folderEntries(root: string, path: string, folder: string, exec: Exec, platform: NodeJS.Platform, onNested: (repo: string) => void): Promise<FolderEntries> {
-  const children = await diskEntries(folder);
-  const inTree = inTreeOf(root, path, platform);
-  const repo = await nestedRepoOf(root, inTree, holdsGit);
+async function folderEntries(machine: Machine, root: string, path: string, folder: string, onNested: (repo: string) => void): Promise<FolderEntries> {
+  const children = await diskEntries(machine, folder);
+  const inTree = inTreeOf(root, path, machine.info().platform);
+  const repo = await nestedRepoOf(root, inTree, (f) => holdsGit(machine, f));
   if (repo === undefined) return children;
   onNested(repo);
   const inRepo = inTree === repo ? '' : inTree.slice(repo.length + 1);
   // A broken nested repository (a gitdir gone, dubious ownership) must not empty the folder: it reads as HIVE-22 showed it, dimmed
-  const status = await gitIn(join(root, repo), [...NESTED_STATUS_ARGS, '--', inRepo === '' ? '.' : inRepo], exec).catch(() => undefined);
+  const status = await gitIn(join(root, repo), [...NESTED_STATUS_ARGS, '--', inRepo === '' ? '.' : inRepo], machine.exec).catch(() => undefined);
   return status === undefined ? children : { ...children, repo: repoViewOf(status, inRepo, children) };
 }
 
 // GET /activities/:id/tree/folder (HIVE-22): a folder's children from disk, what an expanded ignored folder shows. Any folder of the tree is
 // taken: the route reads names, and only a folder inside a nested repository costs a git run (#1)
-function registerFolderRoute(app: Express, { exec, requireLive, treeWatch }: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'treeWatch'>): void {
+function registerFolderRoute(app: Express, { requireLive, treeWatch, machineFor }: Pick<TaskRouteDeps, 'requireLive' | 'treeWatch' | 'machineFor'>): void {
   app.get('/activities/:id/tree/folder', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
-    const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
+    const id = req.params.id as string;
+    const root = treeRoot(current.state, current.runtime.config, id);
     if (typeof root !== 'string') return refuse(res, root);
+    const machine = treeMachine(current.state, id, machineFor);
     const { path } = req.query;
     if (typeof path !== 'string') return refuse(res, { status: HTTP_BAD_REQUEST, message: FOLDER_QUERY_MESSAGE });
     try {
-      const folder = await treeFolder(root, path);
+      const folder = await treeFolder(root, path, pathFs(machine));
       if (typeof folder !== 'string') return refuse(res, folder);
       // #502: an expanded nested repository's stage, commit and switch push; the watch ignores an unleased root
-      res.json(await folderEntries(root, path, folder, exec, process.platform, (repo) => void treeWatch.watchNested(root, repo)));
+      res.json(await folderEntries(machine, root, path, folder, (repo) => void treeWatch.watchNested(root, repo)));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: wordsOf(err) });
     }
@@ -226,7 +232,7 @@ export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec
     const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
     if (typeof root !== 'string') return refuse(res, root);
     try {
-      const tree = await taskTree(root, deps.exec);
+      const tree = await taskTree(treeMachine(current.state, req.params.id as string, deps.machineFor), root);
       const checkout = treeCheckout(current.state, current.runtime.config, req.params.id as string, root);
       res.json(checkout === undefined ? tree : { ...tree, checkout });
     } catch (err) {
