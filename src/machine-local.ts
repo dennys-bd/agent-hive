@@ -1,9 +1,11 @@
 // The local machine (#158): the host's own disk, processes and ptys behind Machine, so 7.2 to 7.4 move every caller onto it and node 8's
 // remote machine stands in for an actor's task with no caller changing again. The pty half is machine-local-pty.ts.
+import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { access, appendFile, chmod, copyFile, cp, link, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { promisify } from 'node:util';
 import { envValue } from './exec-path.js';
 import { type Machine, MachineError, type MachineExec, type MachineFs, type MachineInfo, type Machines } from './machine.js';
 import { createLocalPty, type LocalPtyDeps } from './machine-local-pty.js';
@@ -78,6 +80,13 @@ const machineExec = (exec: Exec): MachineExec => async (file, args, opts) => {
   }
 };
 
+/** The local disk with an exec over it (#159): what createLocalMachine is built on, and what a host caller with no server yet hands a
+ * function that reads a workspace folder. */
+export const localDisk = (exec: Exec): Pick<Machine, 'exec' | 'fs'> => ({ fs: LOCAL_FS, exec: machineExec(exec) });
+
+/** workspacePathProblem's own (#202): always the real git, never an injected one, as it was before the machine. */
+export const LOCAL_DISK: Pick<Machine, 'exec' | 'fs'> = localDisk(promisify(execFile));
+
 // #806: win32's env names ignore case; elsewhere PATH is PATH
 function infoOf(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, agents: readonly AgentAvailability[]): MachineInfo {
   const path = (platform === 'win32' ? envValue(env, 'PATH') : env.PATH) ?? '';
@@ -93,7 +102,7 @@ export function createLocalMachine(deps: LocalMachineDeps): Machine {
   const platform = deps.platform ?? process.platform;
   let read: MachineInfo | undefined; // nothing it holds changes while the Hive runs
   return {
-    id: LOCAL, fs: LOCAL_FS, exec: machineExec(deps.exec), run: runDetached,
+    id: LOCAL, ...localDisk(deps.exec), run: runDetached,
     pty: createLocalPty({ ...deps, env, platform }),
     info: () => {
       read ??= infoOf(env, platform, deps.agents);

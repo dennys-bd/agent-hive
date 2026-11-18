@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
@@ -19,9 +20,14 @@ import type { KeepAwakeSpawn } from '../src/keep-awake.js';
 import type { GqlJson } from '../src/sources/github-gql.js';
 import type { FactLog, RecordInput } from '../src/facts.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
-import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, SourceItemRead, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
+import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, SourceItemRead, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits, Exec } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import type { Machine, MachineFs, MachineInfo, MachinePty, RunResult } from '../src/machine.js';
+import { localDisk } from '../src/machine-local.js';
+import { runDetached } from '../src/machine-run.js';
+import { createPtyHost } from '../src/pty-host.js';
+import { posixShell } from '../src/posix-shell.js';
 import { AGENTS } from '../src/agents.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { runners } from '../src/agents/registry.js';
@@ -397,3 +403,33 @@ export async function writeTranscript(cwd: string, sessionId: string): Promise<s
   await writeFile(path, '{}\n');
   return path;
 }
+
+/** What a test gives a fake machine (#159): each part replaces the default. */
+export interface FakeMachineParts { exec?: Exec; fs?: Partial<MachineFs>; run?: Machine['run']; pty?: Partial<MachinePty>; info?: Partial<MachineInfo> }
+
+const NO_EXEC: Exec = async (file) => { throw new Error(`fakeMachine: no exec given, ${file} was called`); };
+
+// A pty side that spawns nothing: the rest is a fake PtyHost's, so an adopt or a subscribe still works
+function idlePty(): MachinePty {
+  const host = createPtyHost(fakePtys().spawnPty);
+  return {
+    spawn: () => { throw new Error('fakeMachine: no pty.spawn given'); },
+    write: (id, data) => host.write(id, data), resize: (id, cols, rows, redraw) => host.resize(id, cols, rows, redraw),
+    subscribe: (id, onData, onExit) => host.subscribe(id, onData, onExit), kill: (id) => host.kill(id), pid: (id) => host.pid(id),
+    has: (id) => host.has(id), adopt: (id, pty) => host.adopt(id, pty), forget: (id) => host.forget(id),
+  };
+}
+
+/** A Machine for a test (#159): the real local disk (temp dirs stay real), the given exec turned into MachineError as the local machine's
+ * is, runDetached unless a run is given, a pty that spawns nothing unless one is given, and this process's facts under the given ones. */
+export function fakeMachine(parts: FakeMachineParts = {}): Machine {
+  const disk = localDisk(parts.exec ?? NO_EXEC);
+  const info: MachineInfo = {
+    platform: process.platform, arch: process.arch, homedir: homedir(), tmpdir: tmpdir(), path: process.env.PATH ?? '', shell: posixShell().shell, agents: [], ...parts.info,
+  };
+  return { id: 'local', fs: { ...disk.fs, ...parts.fs }, exec: disk.exec, run: parts.run ?? runDetached, pty: { ...idlePty(), ...parts.pty }, info: () => info };
+}
+
+/** A machine run's answer (#159): code 0 passes; any other code carries the tail a step's failure shows. */
+export const runResult = (code: number | string, tail = ''): RunResult =>
+  ({ code, stdout: Buffer.alloc(0), stderr: '', tail, ...(code === 0 ? {} : { failure: `exit code ${code}` }) });
