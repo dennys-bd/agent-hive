@@ -66,3 +66,8 @@ test('planLimitsReading reads only the listed agents, in AGENT_IDS order, never 
 test('Claude Code and Copilot take an MCP config in a headless run, Codex does not (#474, #877)', () => {
   assert.deepEqual(AGENT_IDS.filter((id) => runners[id].headlessMcp), ['claude', 'copilot']);
 });
+
+test('only Copilot takes a copy\'s notice as instructions, and only Claude\'s fork keeps the Hive\'s id (#875)', () => {
+  assert.deepEqual(AGENT_IDS.map((id) => runners[id].copyNotice), ['prompt', 'prompt', 'instructions']);
+  assert.deepEqual(AGENT_IDS.filter((id) => AGENTS[id].forkKeepsHiveId), ['claude']);
+});

@@ -26,6 +26,7 @@ export interface AgentRun {
   lspPluginDir?: string;
   protocolPath?: string;
   protocolText?: string; // #927: protocolPath's content, read by the shared spawn, for an agent that takes the protocol as text (Codex)
+  notice?: string; // #875: a copy's notice, for a runner whose copyNotice is 'instructions' (Copilot's one -i holds /fork)
   model?: string;
   session?: { id: string; resume: boolean }; // launch: resume continues the session, else it starts under this id. copy: the fork's new id (resume ignored)
   extraArgs: readonly string[]; // agentArgs[agent], then a free session's own args (#257)
@@ -61,6 +62,7 @@ export interface AgentRunner {
   promptFlag: string | undefined; // #873: the flag ptyCommand puts the prompt behind (Copilot takes no positional prompt: -i); undefined = the last word
   launch(run: AgentRun): LaunchArg[];
   copy(run: AgentRun, from: string, name?: string): LaunchArg[] | undefined;
+  copyNotice: 'prompt' | 'instructions'; // #875: where spawnSession puts a copy's notice: its first prompt, or run.notice for runFiles
   clear(run: AgentRun): LaunchArg[] | undefined;
   headlessMcp: boolean; // #474: whether headless() passes HeadlessRun.mcpConfig on; the benchmark refuses a tester row whose agent cannot
   headless(run: HeadlessRun): string[]; // #330: the argv after the command; the prompt goes on stdin

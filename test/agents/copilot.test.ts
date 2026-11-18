@@ -38,6 +38,9 @@ const RUN: AgentRun = { ptyId: PTY, cwd: '/repo/.hive/worktrees/hive-1-task', po
 const SERVER: McpServer = { port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: EXTERNAL };
 const HIVE: LaunchArg[] = [['--plugin-dir', PLUGIN], ['--plugin-dir', HOOKS_PLUGIN], ['--additional-mcp-config', `@${MCP}`], '--allow-tool=hive'];
 const NEW = { id: ID, resume: false };
+const SOURCE = '01a12d45-1dff-7000-8000-000000000002';
+const NOTICE = 'Hive: this conversation was copied from task HIVE-1 (one).';
+const FRONTMATTER = '---\napplyTo: "**"\n---\n\n';
 
 // No argv word may carry the MCP secret or an external server's header value: every account reads the argv through ps (#467)
 function assertNoSecret(argv: LaunchArg[]): void {
@@ -102,6 +105,26 @@ test('no protocol text: no file and no instructions variable (#873)', () => {
   assert.deepEqual(copilotRunner.runEnv(SERVER, RUN), { COPILOT_AUTO_UPDATE: 'false', COPILOT_DISABLE_RESUME_AUTO_CD: '1' });
 });
 
+test('a copy resumes the source and runs /fork behind -i, after the agent\'s own args: no --session-id, --model, --agent or name (#875, spike §3)', () => {
+  const specializedAgent = { name: 'hive:planner', description: 'plans', instructions: 'You plan.' };
+  const argv = copilotRunner.copy({ ...RUN, session: NEW, extraArgs: ['--reasoning-effort', 'low'], model: 'auto', specializedAgent }, SOURCE, 'no dois') ?? [];
+  assert.deepEqual(argv, [...HIVE, '--resume', SOURCE, '--reasoning-effort', 'low', ['-i', '/fork']]);
+  assertNoSecret(argv);
+  const line = ptyCommand({ ptyId: PTY, slug: 'hive-1-task', cwd: RUN.cwd, port: 4242, agent: { command: 'copilot', argv, promptFlag: copilotRunner.promptFlag } });
+  assert.ok(line.includes(`'--resume' '${SOURCE}' '--reasoning-effort' 'low' -i '/fork'`), line);
+  assert.equal(line.includes('$(cat'), false, 'no prompt file: the one -i is /fork');
+});
+
+test('a copy\'s notice ends the run\'s instructions file, after the protocol or alone; the env names the folder whenever the file is written (#875)', () => {
+  const dir = instructionsDir(PTY);
+  const path = join(dir, 'hive.instructions.md');
+  const both = { ...RUN, protocolText: PROTOCOL, notice: NOTICE };
+  const alone = { ...RUN, notice: NOTICE };
+  assert.deepEqual(copilotRunner.runFiles(both), [{ path, content: `${FRONTMATTER}${PROTOCOL}\n\n${NOTICE}` }]);
+  assert.deepEqual(copilotRunner.runFiles(alone), [{ path, content: `${FRONTMATTER}${NOTICE}` }]);
+  for (const run of [both, alone]) assert.equal(copilotRunner.runEnv(SERVER, run).COPILOT_CUSTOM_INSTRUCTIONS_DIRS, dir);
+});
+
 test('the stray pattern matches the argv\'s MCP path; the command line runs copilot with the prompt behind -i, last (#873)', () => {
   const argv = copilotRunner.launch({ ...RUN, session: NEW });
   assert.match(`@${MCP}`, new RegExp(copilotRunner.strayPattern(PTY)));
@@ -113,8 +136,8 @@ test('the stray pattern matches the argv\'s MCP path; the command line runs copi
 
 const LOCAL = fakeMachine({ env: {} });
 
-test('copy, clear, transcripts and limits answer their placeholders until nodes 3 to 7; hooks pass a Stop on (#873, #874)', async () => {
-  assert.deepEqual([copilotRunner.copy(RUN, ID), copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({})], [undefined, undefined, ['COPILOT_ALLOW_ALL'], []]);
+test('clear renders no argv, since /clear is typed in the session (#875); transcripts and limits answer their placeholders until nodes 6 and 7; hooks pass a Stop on (#873, #874)', async () => {
+  assert.deepEqual([copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({})], [undefined, ['COPILOT_ALLOW_ALL'], []]);
   const stop = { hook_event_name: 'Stop', session_id: ID };
   assert.equal(copilotRunner.hookPayload(stop), stop);
   assert.deepEqual([copilotRunner.transcriptDir(LOCAL, '/repo'), copilotRunner.ownsTranscript(LOCAL, '/x', '/repo', ID)], [undefined, false]);

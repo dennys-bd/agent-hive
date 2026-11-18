@@ -5,7 +5,7 @@ import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
 import { forgetFailedFreeRun, forgetFailedSession, forgetUnwritten, keepRecord, touchSession, withDecompositionIssue, withEpic, withPr, withResult, withTurn } from './record-kit.js';
-import { AGENTS, liveDefaultAgent, ranAgent } from './agents.js';
+import { liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionTarget, decompositionWritten, TARGET_KEY } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
@@ -21,7 +21,7 @@ import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, wit
 import { exitOf, transitionByKey } from './transitions.js';
 import { leaveFlow } from './leave-flow.js';
 import { beingDeleted, clearedError, deletingOf, continueInPlace, dropActivity, dropWorker, keptMarks, ensureActivity, emptyWorker, takeWorker, releaseWorker, liveWorker, none, occupiedCount, occupy, workerCount, patch, type Reduced, releaseRun, settleEntries, shouldWrite, slugTaken, unmarked, withError, withTask } from './reducer-kit.js';
-import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, forgetUnopenedLocal, newLocalSession, openLocalSession, settleCopy, withLocalTurn } from './session-copy.js';
+import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, forgetUnforked, forgetUnopenedLocal, newLocalSession, openLocalSession, settleCopy, withLocalTurn } from './session-copy.js';
 import { clearSession, renameSession } from './session-clear.js';
 import { canContinue, continueIntoHeld, fill, gateOf, startHeldRun } from './fill.js';
 import { markForgotten, withSlept } from './slept.js';
@@ -145,7 +145,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setWorkspaces': return fill(setWorkspaces(state, event)); // a task that resolved to none may be a candidate now
     case 'setWorkspace': return fill(none(setWorkspace(state, event.taskId, event.workspace))); // idem
     case 'hook': return settleCopy(state, event.ptyId, event.payload.hook_event_name, applyHook(state, event.ptyId, event.payload, event.branch, event.tokens, event.title)); // a copy's SessionStart or early end drops its temporary transcript (#587)
-    case 'exit': return releasedOnExit(state, event.ptyId, settleCopy(state, event.ptyId, undefined, forgetUnopenedLocal(state, event.ptyId, ended(forgetUnwritten(state, event, exit(state, event.ptyId)))))); // #586: forgotten before the fill, which must never continue it; #799: a held Stop is let go
+    case 'exit': return releasedOnExit(state, event.ptyId, settleCopy(state, event.ptyId, undefined, forgetUnforked(state, event.ptyId, forgetUnopenedLocal(state, event.ptyId, ended(forgetUnwritten(state, event, exit(state, event.ptyId))))))); // #586: forgotten before the fill, which must never continue it; #799: a held Stop is let go; #875: a copy that never forked leaves no entry
     case 'done': return done(state, event.ptyId, event.result, event.verdict, event.evidence); // no fill: nothing freed, nothing loosened
     case 'pr': return markPr(state, event.ptyId, event.url, event.slice); // no fill: a PR frees nothing
     case 'prStates': return prStates(state, event.states); // no fill: a merged PR frees no worker (#207)
@@ -850,20 +850,20 @@ function firstFreeSession(state: State, worker: Worker, id: string, cwd?: unknow
   return (activity && recordCapturedSession(state, activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), worker.launch)) ?? state; // #257: its picks too
 }
 
-// #933: a copy of an agent that picks its own id (Codex) opened under the Hive's placeholder; the fork's SessionStart (source=fork, finding
-// §3) names it, whatever hook came before. A subagent's or a resume's SessionStart is never a fork. A free run with no id at all is #932's
-// capture below, not a copy
+// #933, #875: a copy whose fork cannot keep the Hive's id (Codex, Copilot) opened under the placeholder, forkOf naming its source; the fork's
+// first SessionStart names it, whatever hook came before. Codex's says source=fork, Copilot's resume (spike §3); the source's id (a prompt before
+// /fork ran) and the placeholder are never the fork's, and renameSession drops forkOf, so a later resume's or subagent's changes nothing
 const namedFork = (worker: Worker, p: HookPayload): p is HookPayload & { session_id: string } =>
-  p.source === 'fork' && worker.freeSession === true && worker.sessionId !== undefined && !AGENTS[ranAgent(worker)].canChooseSessionId
-  && isUuid(p.session_id) && p.session_id !== worker.sessionId;
+  worker.forkOf !== undefined && (p.source === 'fork' || p.source === 'resume') && isUuid(p.session_id)
+  && p.session_id !== worker.sessionId && p.session_id !== worker.forkOf;
 
-// The first session id wins (#24): a subagent's or a teammate's SessionStart never replaces it. A /clear's does (#655): it is the run's own new
+// The first session id wins (#24): a subagent's or a teammate's SessionStart never replaces it. A /clear's does (#655; Copilot's says source=new, #875): it is the run's own new
 // conversation, so the old one's entry takes the new id. A stage run with none takes the first it hears (#927), and so does a free run with none (#932).
 // Only a uuid can replace or record one: it reaches --resume / codex resume, and SESSION_ID admits a leading '-'.
 function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayload): State {
   const id = p.session_id;
   if (namedFork(worker, p)) return renameSession(state, worker, p.session_id);
-  if (p.source === 'clear' && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id);
+  if ((p.source === 'clear' || p.source === 'new') && worker.sessionId !== undefined && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id); // #875: Copilot's says new; a run with no id yet takes its first below
   if (worker.sessionId === undefined && isUuid(id)) {
     const named = patch(state, ptyId, { sessionId: id }).state;
     return worker.freeSession === true ? firstFreeSession(named, worker, id, p.cwd) : firstSession(named, worker, id);
