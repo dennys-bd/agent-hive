@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Hive's agent shim (#696, #932, #347), rendered for each agent into <home>/bin/<command>, first on every terminal's PATH. A conversation
+# The Hive's agent shim (#696, #932, #347, #876), rendered for each agent into <home>/bin/<command>, first on every terminal's PATH. A conversation
 # typed here, new or resumed, registers as a free session with the Hive's hooks, MCP and protocol; anything else runs the real CLI as typed. A
 # register the Hive refuses, or that gets no answer, never blocks the user's command.
 cli=__HIVE_COMMAND__
@@ -45,8 +45,20 @@ register() {
 }
 reply=$(register "$@") || exec "$real" "$@"
 run_id=$(printf '%s\n' "$reply" | sed -n 1p)
-hive_args=$(printf '%s\n' "$reply" | sed -n '2,$p')
+env_count=$(printf '%s\n' "$reply" | sed -n 2p)
 case "$run_id" in ''|*[!0-9a-f-]*) exec "$real" "$@" ;; esac
+# #876: line 2 counts the env lines after it, in decimal with no leading zero; anything else is a reply this shim cannot read
+case "$env_count" in ''|*[!0-9]*|0?*) exec "$real" "$@" ;; esac
+hive_args=$(printf '%s\n' "$reply" | sed -n "$((env_count + 3)),\$p")
+
+# The run's env (#876), NAME=value per line: the server checked each name against ENV_NAME and refused a line break, so export assigns the
+# value as data, never evaluated. sed's 3,2p would print line 3, so a count of 0 reads nothing
+if [ "$env_count" -gt 0 ]; then
+  hive_env=$(printf '%s\n' "$reply" | sed -n "3,$((env_count + 2))p")
+  while IFS= read -r pair; do export "$pair"; done <<EOF
+$hive_env
+EOF
+fi
 
 # The Hive's args, one per line (the server refuses an arg holding a line break), read as data and never evaluated: appended after the
 # user's, then the user's rotated to the end, so the CLI gets the Hive's first
@@ -58,8 +70,8 @@ EOF
 fi
 i=0
 while [ "$i" -lt "$user_count" ]; do set -- "$@" "$1"; shift; i=$((i + 1)); done
-# Codex reads its MCP secret header from HIVE_MCP_SECRET (#927): the value from the secret file, in the real codex's env only, never an argv,
-# and only when the reply gave it the Hive's MCP server (a task's terminal), as the runner's runEnv does
+# Codex reads its MCP secret header from HIVE_MCP_SECRET (#927): the value from the secret file, in the real codex's env only, never an argv
+# nor the reply (#876), and only when the reply gave it the Hive's MCP server (a task's terminal), as the runner's runEnv does
 case "$cli:$hive_args" in
   codex:*mcp_servers.hive.*) HIVE_PTY_ID=$run_id HIVE_MCP_SECRET=$(sed -n 's/^x-hive-secret: *//p' "$HIVE_SECRET_FILE") "$real" "$@" ;;
   *) HIVE_PTY_ID=$run_id "$real" "$@" ;;

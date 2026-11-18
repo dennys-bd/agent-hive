@@ -19,13 +19,16 @@ import { assertMode } from './posix-only.js';
 
 const run = promisify(execFile);
 const RUN_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
+// The register's reply as the server writes it (#876): the run id, the count of env lines, those NAME=value lines, then the args
+const answer = (args: readonly string[], env: readonly string[] = []): string => [RUN_ID, String(env.length), ...env, ...args].join('\n');
 const INSTALL = { platform: 'darwin', sh: '/bin/sh' } as const; // a POSIX home: no .cmd twin
 // The POSIX shim run straight with a #!/bin/sh fake CLI, a symlink and chmod: on Windows the shim runs under sh.exe through its .cmd twin (#645)
 const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX: execs the shim and a #!/bin/sh fake directly; Windows reaches it through its .cmd twin, tested below' };
 const ON_WINDOWS = { skip: process.platform !== 'win32' && 'Windows only: runs the .cmd twin through cmd.exe and Git\'s sh.exe, on the Windows lane', timeout: 60_000 };
-// A fake agent CLI: its HIVE_PTY_ID, its HIVE_MCP_SECRET when it has one (#932), then its argv, one per line, into $OUT
+// A fake agent CLI: its HIVE_PTY_ID, its HIVE_MCP_SECRET when it has one (#932), its HIVE_TEST_ENV when the reply set it (#876), then its
+// argv, one per line, into $OUT
 const FAKE_CLI = `#!/bin/sh
-{ printf '%s\\n' "pty=$HIVE_PTY_ID"; [ -z "\${HIVE_MCP_SECRET+set}" ] || printf '%s\\n' "mcp=$HIVE_MCP_SECRET"; [ $# -eq 0 ] || printf '%s\\n' "$@"; } > "$OUT"
+{ printf '%s\\n' "pty=$HIVE_PTY_ID"; [ -z "\${HIVE_MCP_SECRET+set}" ] || printf '%s\\n' "mcp=$HIVE_MCP_SECRET"; [ -z "\${HIVE_TEST_ENV+set}" ] || printf '%s\\n' "env=$HIVE_TEST_ENV"; [ $# -eq 0 ] || printf '%s\\n' "$@"; } > "$OUT"
 `;
 
 interface Seen { url: string; secret?: string; pty?: string }
@@ -83,7 +86,7 @@ async function shimmed(t: TestContext, port: number, extraEnv: Record<string, st
 }
 
 test('a new conversation registers with the Hive, runs the real claude with the Hive\'s args before the user\'s and the run id as HIVE_PTY_ID, then reports its exit (#696)', POSIX_ONLY, async (t) => {
-  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1\n--settings\n/h/hooks.json` });
+  const hive = await fakeHive(t, { status: 200, body: answer(['--session-id', 'S1', '--settings', '/h/hooks.json']) });
   const claude = await shimmed(t, hive.port);
   assert.deepEqual(await claude('fix the bug', "it's broken"), [`pty=${RUN_ID}`, '--session-id', 'S1', '--settings', '/h/hooks.json', 'fix the bug', "it's broken"]);
   assert.deepEqual(hive.seen, [
@@ -94,14 +97,14 @@ test('a new conversation registers with the Hive, runs the real claude with the 
 
 test('the reply is never evaluated: an arg with spaces, quotes or a command substitution reaches claude as one literal arg (#696)', POSIX_ONLY, async (t) => {
   const tricky = ['/h/a dir/hooks.json', "it's", '$(touch pwned)', '`id`', '"; exit 3; "'];
-  const hive = await fakeHive(t, { status: 200, body: [RUN_ID, ...tricky].join('\n') });
+  const hive = await fakeHive(t, { status: 200, body: answer(tricky) });
   const claude = await shimmed(t, hive.port);
   assert.deepEqual(await claude('go'), [`pty=${RUN_ID}`, ...tricky, 'go']);
   await assert.rejects(access('pwned'), 'nothing in the reply ran');
 });
 
 test('a proxy in the env never sees the register nor the exit report: both go straight to 127.0.0.1 (#696)', POSIX_ONLY, async (t) => {
-  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1` });
+  const hive = await fakeHive(t, { status: 200, body: answer(['--session-id', 'S1']) });
   const dead = 'http://127.0.0.1:9';
   const claude = await shimmed(t, hive.port, { http_proxy: dead, HTTP_PROXY: dead, ALL_PROXY: dead, all_proxy: dead });
   assert.deepEqual(await claude('hi'), [`pty=${RUN_ID}`, '--session-id', 'S1', 'hi']);
@@ -109,7 +112,7 @@ test('a proxy in the env never sees the register nor the exit report: both go st
 });
 
 test('a ~/.curlrc never applies to the shim\'s curl: a --trace there writes no file with the secret header (#800)', POSIX_ONLY, async (t) => {
-  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1` });
+  const hive = await fakeHive(t, { status: 200, body: answer(['--session-id', 'S1']) });
   const home = await tempDir(t, 'curlrc-');
   const trace = join(home, 'trace');
   await writeFile(join(home, '.curlrc'), `trace = "${trace}"\n`);
@@ -118,10 +121,30 @@ test('a ~/.curlrc never applies to the shim\'s curl: a --trace there writes no f
   assert.deepEqual([hive.seen.length, existsSync(trace)], [2, false]);
 });
 
-test('capturedReply answers the run id then one arg per line, and refuses an arg holding a newline (#696)', () => {
-  assert.equal(capturedReply(RUN_ID, ['--settings', '/h/a b.json']), `${RUN_ID}\n--settings\n/h/a b.json`);
-  assert.equal(capturedReply(RUN_ID, ['--x', 'two\nlines']), undefined);
-  assert.equal(capturedReply(RUN_ID, ['cr\r']), undefined);
+test('capturedReply answers the run id, the count of env lines, each NAME=value, then one arg per line; a line break or a bad name refuses it (#696, #876)', () => {
+  assert.equal(capturedReply(RUN_ID, [['COPILOT_AUTO_UPDATE', 'false'], ['DIRS', '/t/a b']], ['--settings', '/h/a b.json']),
+    `${RUN_ID}\n2\nCOPILOT_AUTO_UPDATE=false\nDIRS=/t/a b\n--settings\n/h/a b.json`);
+  assert.equal(capturedReply(RUN_ID, [], ['--x']), `${RUN_ID}\n0\n--x`, 'no env: a count of 0');
+  assert.equal(capturedReply(RUN_ID, [], ['--x', 'two\nlines']), undefined);
+  assert.equal(capturedReply(RUN_ID, [], ['cr\r']), undefined);
+  assert.equal(capturedReply(RUN_ID, [['A', 'two\nlines']], []), undefined, 'a value would start a forged line');
+  for (const name of ['1A', 'A-B', 'A B', '']) assert.equal(capturedReply(RUN_ID, [[name, 'x']], []), undefined, `name ${name}`);
+});
+
+test('the reply\'s env lines reach the real CLI\'s env as data, never evaluated, and its args start right after them, in order (#876)', POSIX_ONLY, async (t) => {
+  const value = 'a b $(touch pwned) `id` "q"';
+  const hive = await fakeHive(t, { status: 200, body: answer(['--settings', '/h/hooks.json'], [`HIVE_TEST_ENV=${value}`, 'OTHER=x=y']) });
+  const claude = await shimmed(t, hive.port);
+  assert.deepEqual(await claude('go'), [`pty=${RUN_ID}`, `env=${value}`, '--settings', '/h/hooks.json', 'go']);
+  await assert.rejects(access('pwned'), 'nothing in the env lines ran');
+});
+
+test('a reply whose line 2 is not a decimal count runs the real CLI as typed (#876)', POSIX_ONLY, async (t) => {
+  for (const count of ['x', '', '-1', '01', '1 ']) {
+    const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n${count}\n--settings\n/h/hooks.json` });
+    const claude = await shimmed(t, hive.port);
+    assert.deepEqual(await claude('go'), ['pty=T1', 'go'], JSON.stringify(count));
+  }
 });
 
 test('a captured session\'s argv puts the workspace\'s language-server plugin right after the Hive\'s own --plugin-dir, as ptyCommand does, and nothing without one (#803, #924)', () => {
@@ -134,7 +157,7 @@ test('a captured session\'s argv puts the workspace\'s language-server plugin ri
 });
 
 test('-p, --version and a subcommand pass straight through, unregistered (#696, #347)', POSIX_ONLY, async (t) => {
-  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1` });
+  const hive = await fakeHive(t, { status: 200, body: answer(['--session-id', 'S1']) });
   const claude = await shimmed(t, hive.port);
   for (const args of [['-p', 'hi'], ['--version'], ['mcp', 'list']]) {
     assert.deepEqual(await claude(...args), ['pty=T1', ...args], args.join(' '));
@@ -199,7 +222,7 @@ test('on the Windows lane the .cmd twin runs the shim under sh.exe: the real cla
 });
 
 test('every codex subcommand but resume, fork included, and every codex passthrough flag in any position reach the real codex as typed, unregistered (#932, #347)', POSIX_ONLY, async (t) => {
-  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n-c\nx=1` });
+  const hive = await fakeHive(t, { status: 200, body: answer(['-c', 'x=1']) });
   const codex = await shimmed(t, hive.port, {}, AGENTS.codex);
   assert.ok(AGENTS.codex.subcommands.includes('fork') && !AGENTS.codex.subcommands.includes('resume'));
   const typed = [...AGENTS.codex.subcommands.map((word) => [word, 'x']), ...AGENTS.codex.shimFlags.map((flag) => ['a prompt', flag])];
@@ -209,14 +232,14 @@ test('every codex subcommand but resume, fork included, and every codex passthro
 
 test('a codex whose reply has no Hive MCP server (a local terminal) gets no MCP secret in its env (#932)', POSIX_ONLY, async (t) => {
   const hiveArgs = ['-c', 'projects={"/w"={trust_level="trusted"}}'];
-  const hive = await fakeHive(t, { status: 200, body: [RUN_ID, ...hiveArgs].join('\n') });
+  const hive = await fakeHive(t, { status: 200, body: answer(hiveArgs) });
   const codex = await shimmed(t, hive.port, {}, AGENTS.codex);
   assert.deepEqual(await codex(), [`pty=${RUN_ID}`, ...hiveArgs]);
 });
 
 test('a plain codex and codex "a prompt" register with agent=codex and the shim\'s folder, then run the real codex with the Hive\'s args first and the MCP secret in its env only (#932)', POSIX_ONLY, async (t) => {
   const hiveArgs = ['-c', 'projects={"/w"={trust_level="trusted"}}', '-c', 'mcp_servers.hive.url="http://127.0.0.1:1/mcp"', '--dangerously-bypass-hook-trust'];
-  const hive = await fakeHive(t, { status: 200, body: [RUN_ID, ...hiveArgs].join('\n') });
+  const hive = await fakeHive(t, { status: 200, body: answer(hiveArgs) });
   const work = await tempDir(t, 'work-');
   const codex = await shimmed(t, hive.port, { PWD: work }, AGENTS.codex);
   assert.deepEqual(await codex(), [`pty=${RUN_ID}`, `mcp=${SECRET}`, ...hiveArgs]);
@@ -226,7 +249,7 @@ test('a plain codex and codex "a prompt" register with agent=codex and the shim\
 });
 
 test('the claude shim registers -c, -r and --resume in any position and a plain claude, each with its args posted, and gives none of them an MCP secret (#932, #347)', POSIX_ONLY, async (t) => {
-  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--settings\n/h/hooks.json` });
+  const hive = await fakeHive(t, { status: 200, body: answer(['--settings', '/h/hooks.json']) });
   const work = await tempDir(t, 'work-');
   const claude = await shimmed(t, hive.port, { PWD: work });
   const typed = [['-c'], ['--resume', 'abc'], ['go', '-r'], []];
@@ -236,7 +259,7 @@ test('the claude shim registers -c, -r and --resume in any position and a plain 
 });
 
 test('each of the user\'s args reaches the register whole, with an =, an @, spaces, quotes and a line break, and the real CLI as typed (#347)', POSIX_ONLY, async (t) => {
-  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--settings\n/h/hooks.json` });
+  const hive = await fakeHive(t, { status: 200, body: answer(['--settings', '/h/hooks.json']) });
   const claude = await shimmed(t, hive.port);
   const typed = ['a b', 'k=v', '@notes.txt', "it's", 'two\nlines']; // curl reads no file for @: content after the first =
   const out = await claude(...typed);
