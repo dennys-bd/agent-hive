@@ -207,8 +207,8 @@ test('a source whose refs read ABC-12 gets ABC-12 at relate and its blockers bac
 });
 
 const TYPES = [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }, { name: 'Relates', inward: 'relates to', outward: 'relates to' }];
-async function linkTypes(base: string, source: string): Promise<[number, unknown]> {
-  const res = await fetch(`${base}/sources/${source}/link-types`);
+async function linkTypes(base: string, source: string, query = ''): Promise<[number, unknown]> {
+  const res = await fetch(`${base}/sources/${source}/link-types${query}`);
   return [res.status, await res.json()];
 }
 
@@ -302,4 +302,11 @@ test('a relation written whose re-read failed answers 200 with the relations rea
 
 test('blockingTypesOf reads a jira entry\'s blocking types and none for a github or unknown one (#829)', () => {
   assert.deepEqual([blockingTypesOf([JIRA_ENTRY, GITHUB_ENTRY], JIRA_ENTRY.name), blockingTypesOf([JIRA_ENTRY, GITHUB_ENTRY], GITHUB_ENTRY.name), blockingTypesOf([], JIRA_ENTRY.name)], [['Blocks'], [], []]);
+});
+
+test('GET …/link-types?relations=1 leaves out the source\'s blocking types; without the flag it answers them all (#829)', async (t) => {
+  const tickets = namespaced(JIRA_ENTRY, adapter({ call: fakeJira({ 'GET /issueLinkType': [{ issueLinkTypes: TYPES }, { issueLinkTypes: TYPES }] }).call }));
+  const h = routes(t, { tickets }, [], {}, [JIRA_ENTRY]);
+  assert.deepEqual(await linkTypes(h.base, 'tickets', '?relations=1'), [200, { linkTypes: [TYPES[1]] }]);
+  assert.deepEqual(await linkTypes(h.base, 'tickets'), [200, { linkTypes: TYPES }]);
 });
