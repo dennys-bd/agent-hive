@@ -64,23 +64,37 @@ const tailWords = ({ specializedAgent, model }: AgentRun): string[] => [
   ...(model === undefined ? [] : [MODEL_FLAG, model]),
 ];
 
-// The protocol is appended to Copilot's own prompt, frontmatter and all (spike §1)
-const runFiles = ({ ptyId, protocolText }: AgentRun): { path: string; content: string }[] =>
-  (protocolText === undefined ? [] : [{ path: join(instructionsDir(ptyId), INSTRUCTIONS_FILE), content: `${APPLY_TO_ALL}${protocolText}` }]);
+// The protocol, then a copy's notice (#875): the one -i holds /fork, so the notice reaches the fork as instructions and never enters the
+// source's conversation (the spec's probe). Neither: no file and no folder
+function instructionsText({ protocolText, notice }: AgentRun): string | undefined {
+  const parts = [protocolText, notice].filter((part): part is string => part !== undefined);
+  return parts.length === 0 ? undefined : parts.join('\n\n');
+}
+
+// Appended to Copilot's own prompt, frontmatter and all (spike §1)
+function runFiles(run: AgentRun): { path: string; content: string }[] {
+  const text = instructionsText(run);
+  return text === undefined ? [] : [{ path: join(instructionsDir(run.ptyId), INSTRUCTIONS_FILE), content: `${APPLY_TO_ALL}${text}` }];
+}
 
 // No update check at start, a resume stays in the folder the Hive started it in (spike §3, §8), and the instructions folder only with its file
-const copilotEnv = ({ ptyId, protocolText }: AgentRun): Record<string, string> => ({
+const copilotEnv = (run: AgentRun): Record<string, string> => ({
   COPILOT_AUTO_UPDATE: 'false', COPILOT_DISABLE_RESUME_AUTO_CD: '1',
-  ...(protocolText === undefined ? {} : { COPILOT_CUSTOM_INSTRUCTIONS_DIRS: instructionsDir(ptyId) }),
+  ...(instructionsText(run) === undefined ? {} : { COPILOT_CUSTOM_INSTRUCTIONS_DIRS: instructionsDir(run.ptyId) }),
 });
+
+// #875: no fork flag, and --resume is refused beside --session-id (spike §3): the source resumed, and /fork run at start behind the one -i
+// (the probe). No model, agent, id or name, as Codex's copy: a copy runs no stage, and its picks are never the source's (#257)
+const FORK: LaunchArg = [PROMPT_FLAG, '/fork'];
 
 export const copilotRunner: AgentRunner = {
   // An inherited COPILOT_ALLOW_ALL=true would trust every folder and approve every tool in every run; the Hive never sets it, and the user's shell must not either
   hostEnv: ['COPILOT_ALLOW_ALL'],
   promptFlag: PROMPT_FLAG,
   launch: (run) => [...hiveFlags(run), ...sessionWords(run.session), ...run.extraArgs, ...tailWords(run)],
-  copy: () => undefined, // node 3
-  clear: () => undefined, // node 3
+  copy: (run, from) => [...hiveFlags(run), '--resume', from, ...run.extraArgs, FORK],
+  copyNotice: 'instructions', // #875: the one -i holds /fork, so the notice reaches the fork through the run's instructions file
+  clear: () => undefined, // a clear is /clear typed in the session; its SessionStart says source "new" at the next prompt (spike §3)
   headlessMcp: HEADLESS_MCP,
   headless,
   headlessAnswer,

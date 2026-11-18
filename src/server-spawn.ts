@@ -3,6 +3,7 @@ import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
 import { agentOf, agentRefusal, defaultModel, disabledRefusal, ranAgent, runModel } from './agents.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
+import { runners } from './agents/registry.js';
 import { taskBranch } from './task-runs.js';
 import { shownBase } from './setup-rows.js';
 import { type PrepareHooks, runTaskSetup } from './task-setup.js';
@@ -257,8 +258,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
 
   // The user's own agent session (#164, #283), a task's or a workspace's local one (#587). Its cwd exists (the reducer checked it), so no
   // worktree step. Every run has the Hive's MCP; a local one is offered no task tool and is told the local protocol (#256). A copy's first run
-  // (#587) forks the source, and its notice is the first prompt; the open route's prompt (#758) is one too. Either goes in a file of its own:
-  // the task's <slug>.md is its stage prompt.
+  // (#587) forks the source, and its notice is the first prompt, or the run's instructions for Copilot (#875); the open route's prompt (#758)
+  // is a first prompt too. Either goes in a file of its own: the task's <slug>.md is its stage prompt.
   async function spawnSession(runtime: Runtime, effect: SessionEffect, size?: TerminalSize): Promise<void> {
     const { worker: { runId: ptyId }, task, sessionId, continues, copy, prompt } = effect;
     if (!ptyId) return;
@@ -283,7 +284,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const machine = machineFor(effect.activity);
     const env = await runEnv(machine, place.workspace); // #854
     const external = await externalMcp(config, place.workspace.name); // #333; #256: a local session has the Hive's tools too
-    const first = copy?.notice ?? prompt;
+    const [first, notice] = runners[agent].copyNotice === 'prompt' ? [copy?.notice ?? prompt, undefined] : [prompt, copy?.notice]; // #875: Copilot's one -i holds /fork
     // #797: a task's session reads its workspace's session protocol; #256: a local one its workspace's local protocol
     const protocolPath = task === undefined ? workspaceProtocolPaths(home, place.workspace.name).local : taskProtocol(home, runtime, task).session;
     // An unreadable protocol leaves no run to exit: spawnFailed frees the worker; a write or a copy the machine refuses rejects started, which does the same (#587)
@@ -291,7 +292,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (protocol === undefined) return;
     await plugin.ready(); // #316: as spawn's, after the last await
     const model = picked.model ?? defaultModel(config, agent); // #482: a session, a copy included, runs the default when it picked none
-    const run: RunInputs = { withHive: true, external, pluginDir: place.pluginDir, lspPluginDir: lspDir(place.workspace.name), ...picked, ...(model === undefined ? {} : { model }), session: runSession(sessionId, continues ? 'continue' : 'new') };
+    const run: RunInputs = { withHive: true, external, pluginDir: place.pluginDir, lspPluginDir: lspDir(place.workspace.name), ...picked, ...(model === undefined ? {} : { model }), session: runSession(sessionId, continues ? 'continue' : 'new'), ...(notice === undefined ? {} : { notice }) };
     const copied = copy === undefined ? {} : { copy: { from: copy.from, ...(copy.name === undefined ? {} : { name: copy.name }) } };
     pool.start({
       ptyId, machine,

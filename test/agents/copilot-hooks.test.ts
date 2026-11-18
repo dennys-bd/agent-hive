@@ -71,6 +71,11 @@ test('PermissionRequest, SessionEnd and a subagent\'s own hooks are dropped; an 
   for (const agentId of ['', 42, null]) assert.equal(hookPayload(copilotHook('Stop', { agent_id: agentId }))?.hook_event_name, 'Stop', String(agentId));
 });
 
+test('a subagent\'s SessionStart is dropped too, whatever its source, so it never renames the worker\'s session (#875, spike §2)', () => {
+  const subagent = { session_id: 'eb79a357-0000-4000-8000-000000000003', agent_id: 'eb79a357-0000-4000-8000-000000000003', agent_type: 'hive:probe-agent' };
+  for (const source of ['startup', 'resume', 'new']) assert.equal(hookPayload(copilotHook('SessionStart', { ...subagent, source })), undefined, source);
+});
+
 test('a forged body never throws: an object agent_id, a number toolArgs, no hook_event_name (#874)', () => {
   const forged: HookPayload[] = [
     copilotHook('Stop', { agent_id: { id: 'x' } }),

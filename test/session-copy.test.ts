@@ -209,3 +209,89 @@ test('a codex free session resumed under its own id is not renamed; a claude cop
   const started = sessionStart(claude, FORK, 'startup');
   assert.deepEqual([started.workers.at(-1)!.sessionId, sessionsOf(started, 'local:2').map((s) => s.id)], [chosen, [chosen]], 'claude runs under the id the Hive chose');
 });
+
+// #875: A's session as Copilot's: no fork flag and no chosen id for a fork, so the copy opens under the placeholder with forkOf, and the
+// fork's first SessionStart (source=resume, a uuid neither the source's nor the placeholder) names it
+const copilotHive = (): State => withWork(hive([A, B]), 'local:1', { worktree: worktreeOf(1), sessionId: SOURCE }, { sessions: [session({ agent: 'copilot' })] });
+const TASK_B: SessionTarget = { activityId: activityIdOf('local:2') };
+
+test('a copy of a copilot or codex session opens under a placeholder with forkOf naming its source; a claude copy has none (#875)', () => {
+  for (const before of [copilotHive(), codexHive()]) {
+    const { state, effects } = copyTo(before, TASK_B, { copied: undefined });
+    const worker = state.workers.at(-1)!;
+    assert.deepEqual([worker.forkOf, spawnOf(effects).sessionId === worker.sessionId, worker.sessionId === SOURCE], [SOURCE, true, false], worker.agent);
+    assert.deepEqual(entriesOf(state, 'local:2'), [[worker.sessionId, 'no dois', 1200, worker.agent]]);
+  }
+  assert.equal('forkOf' in copyTo(hive([A, B]), TASK_B).state.workers.at(-1)!, false);
+});
+
+test('a copilot fork\'s SessionStart (source resume, a third uuid) renames the worker and the copy\'s entry, name and tokens kept, and drops forkOf; the source\'s entry keeps its id (#875)', () => {
+  const before = copilotHive();
+  const frozen = structuredClone(before);
+  const forked = sessionStart(copyTo(before, TASK_B, { copied: undefined }).state, FORK, 'resume');
+  const worker = forked.workers.at(-1)!;
+  assert.deepEqual(before, frozen, 'the input is not mutated');
+  assert.deepEqual([worker.sessionId, worker.tokens, 'forkOf' in worker], [FORK, 1200, false]);
+  assert.deepEqual(entriesOf(forked, 'local:2'), [[FORK, 'no dois', 1200, 'copilot']]);
+  assert.deepEqual(entriesOf(forked, 'local:1'), [[SOURCE, 'review', 1200, 'copilot']]);
+  assert.equal(activityOf(forked, 'local:2')?.sessionId, undefined, 'a free session never becomes the stage run\'s');
+});
+
+test('a SessionStart with the source\'s id or the placeholder changes nothing; after the rename, another uuid of any other source changes nothing (#875)', () => {
+  const copied = copyTo(copilotHive(), TASK_B, { copied: undefined }).state;
+  const placeholder = copied.workers.at(-1)!.sessionId!;
+  for (const id of [SOURCE, placeholder]) {
+    const seen = sessionStart(copied, id, 'resume');
+    const worker = seen.workers.at(-1)!;
+    assert.deepEqual([worker.sessionId, worker.forkOf, entriesOf(seen, 'local:2'), entriesOf(seen, 'local:1')], [placeholder, SOURCE, entriesOf(copied, 'local:2'), entriesOf(copied, 'local:1')], id);
+  }
+  const forked = sessionStart(copied, FORK, 'resume');
+  for (const source of ['resume', 'fork', 'startup']) {
+    const again = sessionStart(forked, SUBAGENT, source); // a later resume's or a subagent's
+    assert.deepEqual([again.workers.at(-1)!.sessionId, entriesOf(again, 'local:2')], [FORK, entriesOf(forked, 'local:2')], source);
+  }
+});
+
+// #875: Copilot's /clear starts the new session at the next prompt with source=new (spike §3); a run opened with --session-id gets "new" under
+// its own id first
+const CLEARED = 'c1ea4ed0-0000-4000-8000-000000000001';
+
+test('a SessionStart with source new and another uuid on a live copilot session moves its entry to that id; with the worker\'s own id it changes nothing (#875)', () => {
+  const opened = reduce(hive([]), { type: 'newLocalSession', activityId: localActivityId('hive'), agent: 'copilot' }).state;
+  const own = opened.workers.at(-1)!.sessionId!;
+  const same = sessionStart(opened, own, 'new');
+  assert.deepEqual([same.workers.at(-1)!.sessionId, localSessionsOf(same, 'hive').map((s) => s.id)], [own, [own]]);
+  const cleared = sessionStart(same, CLEARED, 'new');
+  assert.deepEqual([cleared.workers.at(-1)!.sessionId, localSessionsOf(cleared, 'hive').map((s) => [s.id, s.agent])], [CLEARED, [[CLEARED, 'copilot']]]);
+});
+
+test('a SessionStart with source new or clear on a free run with no id yet records it as its first session, not as a clear (#875, #932)', () => {
+  for (const source of ['new', 'clear']) {
+    const opened = reduce(hive([]), { type: 'newLocalSession', activityId: localActivityId('hive'), agent: 'codex' }).state; // codex: no id until its first SessionStart
+    assert.equal(opened.workers.at(-1)!.sessionId, undefined);
+    const first = sessionStart(opened, CLEARED, source);
+    assert.deepEqual([first.workers.at(-1)!.sessionId, localSessionsOf(first, 'hive').map((s) => s.id)], [CLEARED, [CLEARED]], source);
+  }
+});
+
+test('a clear drops a copy\'s forkOf too: the run holds a session of its own, so no later SessionStart is taken for the fork (#875)', () => {
+  const copied = copyTo(copilotHive(), TASK_B, { copied: undefined }).state;
+  const cleared = sessionStart(copied, CLEARED, 'new');
+  assert.deepEqual([cleared.workers.at(-1)!.sessionId, 'forkOf' in cleared.workers.at(-1)!], [CLEARED, false]);
+  assert.equal(sessionStart(cleared, FORK, 'resume').workers.at(-1)!.sessionId, CLEARED);
+});
+
+test('a codex or copilot copy whose run ends before the fork\'s SessionStart leaves no entry, into a task and into local, even after a hook; one the fork named keeps it; a failed spawn leaves none (#875)', () => {
+  const forks = [[copilotHive, 'resume'], [codexHive, 'fork']] as const;
+  for (const [before, source] of forks) {
+    for (const to of [TASK_B, { activityId: localActivityId('hive') }]) {
+      const label = `${source} ${to.activityId}`;
+      const copied = copyTo(before(), to, { copied: undefined }).state;
+      const ptyId = copied.workers.at(-1)!.runId!;
+      const seen = reduce(copied, { type: 'hook', ptyId, payload: { hook_event_name: 'UserPromptSubmit' } }).state; // seen: forgetUnopenedLocal alone keeps a local entry
+      assert.deepEqual(recordOf(reduce(seen, { type: 'exit', ptyId }).state, to.activityId)?.sessions, [], label);
+      assert.equal(recordOf(reduce(sessionStart(seen, FORK, source), { type: 'exit', ptyId }).state, to.activityId)?.sessions.length, 1, label);
+      assert.deepEqual(recordOf(reduce(copied, { type: 'spawnFailed', ptyId, message: 'pty: no' }).state, to.activityId)?.sessions, [], label);
+    }
+  }
+});

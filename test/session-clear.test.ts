@@ -92,3 +92,9 @@ test('renameSession moves a copy\'s placeholder to the fork\'s id keeping the en
   assert.deepEqual(before, frozen, 'the input is not mutated');
   assert.deepEqual(localSessionsOf(renamedLocal, 'hive'), [entry(NEW, { stages: [] })]);
 });
+
+test('renameSession drops the copy\'s forkOf with its placeholder: the fork is named, so no later SessionStart renames it again (#875)', () => {
+  const run = worker({ activityId: ACTIVITY, freeSession: true, forkOf: OTHER });
+  const state = renameSession(hive([run], [entry(OLD)], OTHER), run, NEW);
+  assert.deepEqual([state.workers[0].sessionId, state.workers[0].tokens, 'forkOf' in state.workers[0]], [NEW, 1200, false]);
+});

@@ -132,6 +132,7 @@ export const codexRunner: AgentRunner = {
   // A fork is a new Codex id holding the source's turns (§7), under the same overrides as a launch. No -m: a copy runs no stage, as
   // Claude's passes none. No name: fork has no name flag, the Hive's entry carries it. Never the placeholder id: Codex has no --session-id (§3)
   copy: (run, from) => ['fork', from, ...overrides(run), TRUST_FLAG, ...run.extraArgs],
+  copyNotice: 'prompt', // the notice is the fork's first prompt (#587)
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear, §8), as Claude's
   headlessMcp: false, // #474: exec has no flag that loads one MCP config file alone
   headless,

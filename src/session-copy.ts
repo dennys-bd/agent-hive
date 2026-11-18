@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { activityOf, activityOfWorker, ensureLocal, localActivityId, localWorkspaceOf, recordOf, recordTaskId, recordWithSession, withRecord } from './activities.js';
-import { touchFreeSession } from './record-kit.js';
+import { activityOf, activityOfWorker, ensureLocal, localActivityId, localWorkspaceOf, recordOf, recordTaskId, recordWithSession, taskOfWorker, withRecord } from './activities.js';
+import { forgetFailedFreeRun, touchFreeSession } from './record-kit.js';
 import { withLaunch } from './launch-pick.js';
 import { canOpenSession, taskId, runningFirst, titled } from './tasks.js';
 import { hasDirectory, localSessionsOf, continuableLocal } from './local-sessions.js';
@@ -50,6 +50,7 @@ function newRun(event: CopyEvent, source: Session): NewRun {
     agent: source.agent, // a copy forks its source: the same agent's transcript (#925)
     ...(source.tokens === undefined ? {} : { tokens: source.tokens }),
     ...(event.copied === undefined ? {} : { copyOf: { from: source.id, dir: event.copied } }),
+    ...(AGENTS[source.agent].forkKeepsHiveId ? {} : { forkOf: source.id }), // #875: the fork's SessionStart names it (namedFork)
   };
   return { sessionId, startedAt, worker, agent: source.agent, copy: { from: source.id, ...(event.name === undefined ? {} : { name: event.name }), ...(event.notice === undefined ? {} : { notice: event.notice }) } };
 }
@@ -166,6 +167,16 @@ export function forgetUnopenedLocal(before: State, ptyId: string, reduced: Reduc
   if (worker === undefined || localWorkspace(before, worker) === undefined || worker.seenAt !== undefined) return reduced;
   if (reduced.state.workers.some((s) => s.runId === ptyId && s.status !== 'empty')) return reduced;
   return { ...reduced, state: forgetFailedLocal(reduced.state, worker) };
+}
+
+/** The end of a copy's run before its fork's SessionStart (#875), Codex's and Copilot's alike: the placeholder names no session on disk, so
+ * the entry could only fail to resume, and no prompt reached the fork, so dropping it loses nothing. As a failed spawn's (#283, #812). A run
+ * the exit left live (a clean stop) keeps it. */
+export function forgetUnforked(before: State, ptyId: string, reduced: Reduced): Reduced {
+  const worker = before.workers.find((s) => s.runId === ptyId && s.status !== 'empty');
+  if (worker?.forkOf === undefined || reduced.state.workers.some((s) => s.runId === ptyId && s.status !== 'empty')) return reduced;
+  const task = taskOfWorker(reduced.state, worker);
+  return { ...reduced, state: task ? forgetFailedFreeRun(reduced.state, task, worker) : forgetFailedLocal(reduced.state, worker) };
 }
 
 const unmarked = ({ copyOf: _copyOf, ...worker }: Worker): Worker => worker;

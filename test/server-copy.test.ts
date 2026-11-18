@@ -9,6 +9,7 @@ import { chmod, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { PROMPTS_DIR, PROTOCOL_DIR } from '../src/hooks-settings.js';
+import { runTmpDir } from '../src/run-tmp.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
@@ -56,7 +57,7 @@ interface Two { base: string; server: HiveServer; workers: FakeWorker[]; repo: s
 interface Gate { onGit?: () => Promise<void> } // runs inside the next git call: what changes while a route awaits git
 
 // Two local activities in WORKSPACE, each with its worktree recorded; a session opened on the first and ended, its transcript written.
-async function twoActivities(t: TestContext): Promise<Two> {
+async function twoActivities(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BODY): Promise<Two> {
   claudeConfigDir(t, await tempDir(t, 'claude-'));
   const codex = await tempDir(t, 'codex-');
   codexHome(t, codex);
@@ -74,7 +75,7 @@ async function twoActivities(t: TestContext): Promise<Two> {
   const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
-  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
+  assert.equal((await postJson(`${base}/settings`, { ...body, workspaces: workspacesAt(repo) })).status, 200);
   for (const title of ['one', 'two']) await server.dispatch({ type: 'createTask', title, body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
   for (const c of server.getState()!.tasks) await readyOn(server, c.item.itemId, { path: worktreePath(repo, slugFor(c.item)), branch: `hive/${slugFor(c.item)}`, base: null, local: false });
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'local:1') });
@@ -302,4 +303,37 @@ test('a Codex session copies with codex fork <id>: its rollout found by id, noth
   const FORK = 'f0f0f0f0-0000-4000-8000-000000000001';
   await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: FORK, cwd: two.two, source: 'fork' } });
   assert.deepEqual(sessionsOf(server.getState()!, 'local:2').map((s) => [s.id, s.name, s.agent]), [[FORK, 'no dois', 'codex']]);
+});
+
+// #875: Copilot on, and a Copilot session of the workspace's local, ended after its first hook. A local run's exit checks no transcript
+// (#586), so the session stays listed while Copilot's transcripts read nothing yet (node 6); the copy is dispatched, since the route needs one
+const COPILOT_ON: Omit<SettingsBody, 'workspaces'> = { ...BODY, agentEnabled: { claude: true, codex: true, copilot: true } };
+const NOTICE = 'Hive: this conversation was copied from task HIVE-1 (one).';
+const dropRunTmp = (t: TestContext, ptyId: string): void => { t.after(() => rm(runTmpDir(ptyId), { recursive: true, force: true })); }; // the fake pool never runs the pty that would remove it
+
+async function copilotLocalSource(t: TestContext, two: Two): Promise<string> {
+  await two.server.dispatch({ type: 'newLocalSession', activityId: localActivityId(WORKSPACE), agent: 'copilot' });
+  await waitFor(() => two.workers.length === 2);
+  const run = two.workers[1];
+  dropRunTmp(t, run.launch.ptyId);
+  const [local] = localSessionsOf(two.server.getState()!, WORKSPACE);
+  await two.server.dispatch({ type: 'hook', ptyId: run.launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: local.id, cwd: two.repo, source: 'new' } });
+  run.handlers.onExit();
+  await waitFor(() => two.server.getState()!.workers.length === 0);
+  return local.id;
+}
+
+test('a Copilot copy resumes its source and runs /fork behind -i, writes no prompt file, and its notice ends the run\'s instructions file, after the protocol (#875)', async (t) => {
+  const two = await twoActivities(t, COPILOT_ON);
+  const source = await copilotLocalSource(t, two);
+  await two.server.dispatch({ type: 'copySession', from: { activityId: localActivityId(WORKSPACE), sessionId: source }, to: { activityId: workId(two.server.getState()!, 'local:2') }, name: 'no dois', notice: NOTICE });
+  await waitFor(() => two.workers.length === 3);
+  const { launch } = two.workers[2];
+  dropRunTmp(t, launch.ptyId);
+  assert.deepEqual([launch.cwd, launch.agent?.command, launch.promptPath], [two.two, 'copilot', undefined]);
+  assert.deepEqual([plainArgs(launch).slice(-2), launch.agent?.argv.at(-1)], [['--resume', source], ['-i', '/fork']]);
+  const dir = join(runTmpDir(launch.ptyId), 'copilot-instructions');
+  const instructions = await readFile(join(dir, 'hive.instructions.md'), 'utf8');
+  assert.ok(instructions.startsWith('---\napplyTo: "**"\n---\n\n') && instructions.endsWith(`\n\n${NOTICE}`), instructions);
+  assert.equal(launch.env?.COPILOT_CUSTOM_INSTRUCTIONS_DIRS, dir);
 });
