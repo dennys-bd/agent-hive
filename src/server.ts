@@ -75,8 +75,9 @@ import { registerDecompositionRoutes } from './server-decomposition.js';
 import { registerReviewThreadRoutes } from './server-review-threads.js';
 import { registerLocalReviewRoutes } from './server-review-local.js';
 import { registerProjectRoutes } from './server-project.js';
-import { canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
+import { blockingTypesOf, canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
 import { registerForkRoutes } from './server-fork.js';
+import { registerCopilotTrustRoute } from './server-copilot-trust.js';
 import { registerNestedRoute } from './server-nested.js';
 import { registerRepoRoutes } from './server-repos.js';
 import { accessFor, type ReadAccess } from './read-model/access.js';
@@ -1373,7 +1374,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     await poll();
     res.json({ ok: true });
   });
-  registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log, reportRetry }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead; GET /sources/:name/link-types (#828)
+  registerBlockerRoutes(app, {
+    requireLive, dispatch, latest: () => live?.state, log, reportRetry,
+    blockingLinkTypes: (name) => blockingTypesOf(live?.runtime.config.comb.sources ?? [], name),
+  }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead; GET /sources/:name/link-types (#828); POST …/relations (#829)
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
@@ -1406,6 +1410,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
   registerNestedRoute(app, { config: () => live?.runtime.config }); // GET /settings/nested-repos (#653): also in setup mode, as /settings/remotes
+  // GET /settings/copilot-trust (#880): the saved workspaces only, none in setup mode; the local machine's COPILOT_HOME, as its workers inherit it
+  registerCopilotTrustRoute(app, { workspacePaths: () => live?.runtime.config.comb.workspaces.map((w) => w.path) ?? [], info: () => machineFor({}).info() });
 
   // The usage group's ↻ (#223): `{ agent }` reads that agent only, `{}` every agent with plan limits (↻ todos); either replaces the held
   // reading, e.g. after a plan upgrade lowered the percent. The page only offers ↻ on agents with plan limits: anything else is a 400

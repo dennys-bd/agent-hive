@@ -26,7 +26,7 @@ test('a stored issue is its task: the id as itemId, the key as id, the browse ur
     item: {
       itemId: '10001', id: 'ABC-1', title: 'Ship it', body: '', url: 'https://acme.example/browse/ABC-1', createdAt: '2026-11-01T10:00:00.000Z',
       facets: { assignees: ['Ana Lima'], labels: ['api'], fields: { Components: 'Core, Web', Team: 'Platform' } },
-      blockers: { blockedBy: [], blocking: [] }, autoOnEntry: true, entry: { flow: 'main' },
+      blockers: { blockedBy: [], blocking: [] }, relations: [], autoOnEntry: true, entry: { flow: 'main' },
     },
   });
 });

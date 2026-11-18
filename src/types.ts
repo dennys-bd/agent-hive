@@ -308,6 +308,11 @@ export interface ItemBlockers { blockedBy: BlockerRef[]; blocking: BlockerRef[] 
 export interface BlockerChange { action: 'add' | 'remove'; kind: 'blockedBy' | 'blocking'; ref: string }
 /** An issue link type of a source's site (#828): its name and the phrase each end reads, as Jira answers them. */
 export interface LinkType { name: string; inward: string; outward: string }
+/** One relation of an item (#829): a non-blocking link to another item, shown as a blocker row shows it, with the link type's name and the
+ * direction and phrase this item reads it in ("relates to", "is duplicated by", a site's own). */
+export type Relation = BlockerRef & { type: string; direction: 'inward' | 'outward'; phrase: string };
+/** One edit of a relation (#829), as POST …/relations takes it: `ref` the other item's display id. */
+export interface RelationChange { action: 'add' | 'remove'; type: string; direction: 'inward' | 'outward'; ref: string }
 
 /** A blocker a task inherits from an ancestor (#424): the blocker's display id, and the ancestor's that holds it. */
 export interface InheritedBlocker { id: string; via: string }
@@ -333,6 +338,7 @@ export interface Item {
   closedChildren?: string[]; // #28: those of `children` closed on GitHub: what counts a child that left the Hive as done
   epic?: { follows: EpicFollows; switchAt: string; deleteActivity: boolean }; // #31: stamped by the GitHub adapter under epics: show on an issue with sub-issues: it never runs and its stage follows its children; absent otherwise. deleteActivity: the source's epicDeleteActivity (#856), read by the epic pass so the reducer needs no source lookup
   blockers?: ItemBlockers; // #56: the relations the UI shows and edits, both directions, sub-issues never; absent = none read. Not the start gate: that is blockedBy
+  relations?: Relation[]; // #829: the non-blocking links, in the source's order; absent = the source has none, which hides the section
 }
 
 export type SessionPolicy = 'new' | 'continue';
@@ -2051,6 +2057,8 @@ export interface FieldWrite { fields: ItemField[]; row: ProjectItem; entry?: Sou
 
 /** What a relation write answers (#56): the item's relations after it, and the re-read entry when the item is a listed task (as FieldWrite.entry). */
 export interface BlockerWrite { blockers: ItemBlockers; entry?: SourceItem }
+/** What a relation write answers (#829): the item's relations after it, and the re-read entry when the item is a listed task. */
+export interface RelationWrite { relations: Relation[]; entry?: SourceItem }
 
 /** A repository the flow sidebar lists (#757): a workspace's origin or an open PR's repository. */
 export interface RepoSummary {
@@ -2117,6 +2125,7 @@ export interface Source {
   setField?(itemId: string, field: string, value: FieldValue): Promise<FieldWrite>; // #686: writes, then re-reads the item
   relate?(itemId: string, change: BlockerChange): Promise<BlockerWrite>; // #56: writes the relation, then re-reads the item's relations
   findBlockers?(itemId: string, text: string): Promise<BlockerRef[]>; // #57: issues of the item's repository whose title matches, at most 8
+  setRelation?(itemId: string, change: RelationChange): Promise<RelationWrite>; // #829: writes a non-blocking relation, then re-reads the item's relations
   linkTypes?(): Promise<LinkType[]>; // #828: the site's issue link types, read live, for a source whose type has them
   create?(fields: { title: string; body?: string; column: string | null; labels: string[]; issueType?: string; parent?: string }): Promise<{ itemId?: string; ref: CreatedRef }>; // #846: a new item (GitHub: an issue) in column, resolving to its item's adapter id (namespaced: its itemId); #767: with labels, and off the Project (no itemId) when column is null; #831: issueType (a type's name) and parent (namespaced: its itemId; the adapter: its own id) for a type with issue types, which GitHub ignores; a type that cannot create leaves it out
   createOptions?(): Promise<{ statuses: string[]; labels: string[]; issueTypes?: { name: string; level: number }[] }>; // #768: the create dialog's menus; rejects with CreateRefusedError when the source has no repository; #831: issueTypes, each with Jira's hierarchy level, only for a type with issue types

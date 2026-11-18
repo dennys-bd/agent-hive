@@ -116,6 +116,6 @@ export const copilotRunner: AgentRunner = {
   sessionFiles,
   readTurn,
   countMessages,
-  planLimits: () => readCopilotPlanLimits(),
+  planLimits: (deps) => readCopilotPlanLimits(deps), // #879: gh api /copilot_internal/user
   statusLimits: () => undefined,
 };

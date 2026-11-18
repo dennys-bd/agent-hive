@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useId, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useId, useState } from 'react';
 import { readsRef, type RefGrammar } from '../../blocker-refs';
 import type { BlockerChange, BlockerRef, ItemBlockers } from '../../types';
 import { Input } from '@/components/ui/input';
@@ -64,13 +64,15 @@ export interface BlockerAddRowProps {
   source: string; itemId: string; selfId: string; blockers: ItemBlockers; isBusy: boolean;
   kind?: Kind; // #61: a fixed kind and no select: the Project's blocked-by cell only adds blocked-by
   grammar?: RefGrammar; // #810: the item's source type's ref forms; absent on a hive task, which reads only a task id
+  taken?: readonly string[]; // #829: the refs already held under the caller's choice, left out of the options in place of blockers[kind]
+  picker?(closeOnEscape: (e: KeyboardEvent<HTMLElement>) => void): ReactNode; // #829: the caller's own select, in place of the kind's
   onAdd(kind: Kind, ref: string): void; onCancel(): void;
 }
 
 /** The blockers section's add row (#57, handoff 3): the kind (blocked by first) unless the caller fixes it (#61), then the field and its suggestions. ↑/↓ move the highlight,
  * ↵ adds the highlighted suggestion or, with none, the typed ref; with neither it names the forms the item's source type reads,
  * under the field (#810). Escape closes the row. The field and the select own Escape, and the key is prevented, so the details panel never closes with it; an open select's Escape, already prevented by Radix, closes only the select. */
-export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, kind: fixedKind, grammar, onAdd, onCancel }: BlockerAddRowProps) {
+export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, kind: fixedKind, grammar, taken, picker, onAdd, onCancel }: BlockerAddRowProps) {
   const listId = useId();
   const [chosenKind, setKind] = useState<Kind>('blockedBy');
   const kind = fixedKind ?? chosenKind;
@@ -79,7 +81,7 @@ export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, kind: 
   // The highlighted option by its ref, not its index: a search answer that swaps the list never moves the highlight onto another issue
   const [activeRef, setActiveRef] = useState<string>();
   const { candidates, loading } = useBlockerSearch(source, itemId, text);
-  const options = optionsOf(readsRef(grammar, text), candidates, new Set([selfId, ...blockers[kind].map((r) => r.id)]));
+  const options = optionsOf(readsRef(grammar, text), candidates, new Set([selfId, ...(taken ?? blockers[kind].map((r) => r.id))]));
   const active = options.findIndex((o) => o.ref === activeRef); // -1: nothing highlighted
   const setActive = (index: number): void => setActiveRef(options[index]?.ref);
   // ↵ with no highlighted option and no typed ref picks undefined: nothing is sent, the forms are named instead (#810)
@@ -105,7 +107,7 @@ export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, kind: 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1.5">
-        {fixedKind === undefined && <KindSelect kind={kind} isBusy={isBusy} onKind={(k) => { setKind(k); setActive(-1); }} onKeyDown={closeOnEscape} />}
+        {picker ? picker(closeOnEscape) : fixedKind === undefined && <KindSelect kind={kind} isBusy={isBusy} onKind={(k) => { setKind(k); setActive(-1); }} onKeyDown={closeOnEscape} />}
         <Input
           autoFocus role="combobox" aria-label={t('blockers.search')} placeholder={t('blockers.search')} value={text} readOnly={isBusy}
           aria-expanded={options.length > 0} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}

@@ -1,4 +1,4 @@
-// Where Copilot keeps its sessions and its state (spike §6): the one lookup nodes 5, 6 and 8 of #608 share. read only, never written (#873, #878)
+// Where Copilot keeps its sessions and its state (spike §6): the one lookup nodes 5, 6 and 8 of #608 share. read only, never written (#873, #878). #880 reads its config.json (copilot-trust.ts)
 import { isAbsolute, join } from 'node:path';
 import type { MachineInfo } from '../machine.js';
 

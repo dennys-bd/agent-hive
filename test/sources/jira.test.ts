@@ -35,7 +35,7 @@ test('listItems answers the cited, filtered issues in listing order from the rea
     item: {
       itemId: '10001', id: 'ABC-1', title: 'Issue 1', body: markdown('Body 1'), url: 'https://acme.example/browse/ABC-1', createdAt: '2026-11-01T10:00:00.000Z',
       facets: { assignees: ['Ana Lima'], labels: ['api'], fields: { Components: 'Core, Web' } }, workspaceHint: 'site', autoOnEntry: true, entry: { flow: 'main' },
-      blockers: { blockedBy: [], blocking: [] },
+      blockers: { blockedBy: [], blocking: [] }, relations: [],
     },
   });
   assert.deepEqual(fake.sent, [], 'a listing makes no call to Jira');
@@ -50,6 +50,13 @@ test('listItems answers blockers on every task, and a source filter\'s blocked r
   ]);
   const unblocked: FilterRule[] = [{ field: 'blocked', op: 'none' }];
   assert.deepEqual(ids(await adapter({ db, source: { filter: unblocked } }).listItems()), ['ABC-2', 'ABC-3']);
+});
+
+test('listItems answers relations on every Jira task, [] when it has none (#829)', async () => {
+  const db = await seeded([issue(1, 'To Do', { issuelinks: [outward('20001', end(2), RELATES)] }), issue(2, 'To Do', { issuelinks: [inward('20001', end(1), RELATES)] }), issue(3, 'To Do')]);
+  assert.deepEqual((await adapter({ db }).listItems()).map((t) => [t.item.id, t.item.relations?.map((r) => `${r.phrase} ${r.id}`)]), [
+    ['ABC-1', ['relates to ABC-2']], ['ABC-2', ['relates to ABC-1']], ['ABC-3', []],
+  ]);
 });
 
 test('stored answers every cited issue unfiltered; with no store, both listings are empty (#820)', async () => {
