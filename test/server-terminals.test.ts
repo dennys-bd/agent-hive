@@ -2,8 +2,12 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { localActivityId } from '../src/activities.js';
+import { instructionsDir } from '../src/agents/copilot.js';
+import { MCP_SECRET_ENV } from '../src/agents/codex.js';
 import { localSessionsOf } from '../src/local-sessions.js';
-import { readFile } from 'node:fs/promises';
+import { runTmpDir } from '../src/run-tmp.js';
+import { existsSync } from 'node:fs';
+import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PROTOCOL_DIR } from '../src/hooks-settings.js';
 import { createServer, type HiveServer } from '../src/server.js';
@@ -64,6 +68,21 @@ const register = (base: string, id: string, form: Record<string, string> = { age
 const registerArgs = (base: string, id: string, agent: string, args: string[]): Promise<Response> =>
   hiveFetch(`${base}/hooks/terminals/${id}/session`, { method: 'POST', body: new URLSearchParams([['agent', agent], ...args.map((arg): [string, string] => ['arg', arg])]) });
 const CODEX_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3309';
+const COPILOT_FRESH_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3311';
+
+interface Reply { runId: string; env: string[]; argv: string[] }
+// The register's reply (#876): the run id, the count of env lines, those NAME=value lines, then the args
+function replyOf(text: string): Reply {
+  const [runId = '', count = '0', ...rest] = text.split('\n');
+  return { runId, env: rest.slice(0, Number(count)), argv: rest.slice(Number(count)) };
+}
+
+// A copilot register (#876): its instructions land in the real tmp dir under runTmpDir(runId), which the test removes after
+async function copilotReply(t: TestContext, base: string, id: string, args: string[] = []): Promise<Reply> {
+  const reply = replyOf(await (await registerArgs(base, id, 'copilot', args)).text());
+  t.after(() => rm(runTmpDir(reply.runId), { recursive: true, force: true }));
+  return reply;
+}
 
 test('a terminal stopped sleeps, wakes in its own id where it was, and is forgotten on demand; a live or unknown one is refused (#696)', async (t) => {
   const { base, server, workers, repo } = await start(t);
@@ -120,7 +139,7 @@ test('the shim\'s register refuses without the secret, captures a free session o
   const id = await openShell(base);
   const url = `${base}/hooks/terminals/${id}/session`;
   assert.equal((await fetch(url, { method: 'POST' })).status, 403, 'no secret');
-  const [runId, ...argv] = (await (await register(base, id)).text()).split('\n');
+  const { runId, argv } = replyOf(await (await register(base, id)).text());
   runningId = runId;
   const worker = server.getState()?.workers.find((w) => w.runId === runId);
   assert.ok(worker?.sessionId);
@@ -161,7 +180,7 @@ test('a claude typed in a task\'s terminal is told the session protocol of the t
   await server.dispatch({ type: 'createTask', title: 'T', body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
   const opened = (await (await postJson(`${base}/tasks/local:1/open`, { kind: 'terminal' })).json()) as OpenResult;
   assert.ok(opened.ptyId, 'the task\'s terminal runs');
-  const [, ...argv] = (await (await register(base, opened.ptyId ?? '')).text()).split('\n');
+  const { argv } = replyOf(await (await register(base, opened.ptyId ?? '')).text());
   assert.equal(argv[argv.indexOf('--append-system-prompt-file') + 1], join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'));
 });
 
@@ -179,7 +198,7 @@ test('a codex register answers codex\'s launch argv with the posted folder trust
   const id = await openShell(base);
   const cwd = join(repo, 'src');
   const reply = await (await register(base, id, { agent: 'codex', cwd })).text();
-  const [runId, ...argv] = reply.split('\n');
+  const { runId, argv } = replyOf(reply);
   const worker = server.getState()?.workers.find((w) => w.runId === runId);
   assert.deepEqual([worker?.agent, worker?.sessionId, worker?.freeSession, worker?.terminalId], ['codex', undefined, true, id]);
   assert.equal(argv[0], '-c', 'a new conversation: no resume');
@@ -194,7 +213,7 @@ test('a register whose folder is missing, relative, split or outside the termina
   const trusted = `projects={${JSON.stringify(repo)}={trust_level="trusted"}}`;
   const forms: Record<string, string>[] = [{ agent: 'codex' }, { agent: 'codex', cwd: 'src' }, { agent: 'codex', cwd: `${repo}/a\nb` }, { agent: 'codex', cwd: '/elsewhere' }];
   for (const form of forms) {
-    const [, ...argv] = (await (await register(base, id, form)).text()).split('\n');
+    const { argv } = replyOf(await (await register(base, id, form)).text());
     assert.ok(argv.includes(trusted), JSON.stringify(form));
   }
   const before = server.getState()?.workers.length;
@@ -209,7 +228,7 @@ test('a codex typed in a task\'s terminal gets the Hive\'s MCP server under its 
   await server.dispatch({ type: 'createTask', title: 'T', body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
   const opened = (await (await postJson(`${base}/tasks/local:1/open`, { kind: 'terminal' })).json()) as OpenResult;
   const reply = await (await register(base, opened.ptyId ?? '', { agent: 'codex', cwd: '/w' })).text();
-  const [runId, ...argv] = reply.split('\n');
+  const { runId, argv } = replyOf(reply);
   assert.ok(argv.includes(`mcp_servers.hive.http_headers={"x-hive-pty"="${runId}"}`), 'what Stop\'s pkill matches');
   assert.ok(argv.some((arg) => arg.startsWith('developer_instructions=')), 'the session protocol, as text');
   assert.equal(reply.includes(SECRET), false);
@@ -218,13 +237,13 @@ test('a codex typed in a task\'s terminal gets the Hive\'s MCP server under its 
 test('a claude resume of a local session registers under its id, with no --session-id in the reply and no second entry; while a live run holds the id it is refused (#347)', async (t) => {
   const { base, server, repo } = await start(t);
   const id = await openShell(base);
-  const [first] = (await (await register(base, id)).text()).split('\n');
+  const { runId: first } = replyOf(await (await register(base, id)).text());
   const held = server.getState()?.workers.find((w) => w.runId === first)?.sessionId ?? '';
   await refused(registerArgs(base, id, 'claude', ['--resume', held]), 409, 'essa sessão já roda em outra execução', 'two workers on one session id');
   // its SessionStart, else its exit forgets an entry that never opened (#587)
   await server.dispatch({ type: 'hook', ptyId: first, payload: { hook_event_name: 'SessionStart', session_id: held, cwd: repo, source: 'startup' } });
   await server.dispatch({ type: 'exit', ptyId: first });
-  const [runId, ...argv] = (await (await registerArgs(base, id, 'claude', ['--resume', held])).text()).split('\n');
+  const { runId, argv } = replyOf(await (await registerArgs(base, id, 'claude', ['--resume', held])).text());
   const worker = server.getState()?.workers.find((w) => w.runId === runId);
   assert.deepEqual([worker?.sessionId, worker?.activityId, worker?.resumed], [held, localActivityId(WORKSPACE), true]);
   assert.equal(argv.includes('--session-id'), false, 'the user\'s --resume picks the conversation');
@@ -236,10 +255,10 @@ test('a claude resume of a local session registers under its id, with no --sessi
 test('the register reads one arg field as a string and several as an array: -c registers with no id, a prompt and a flag stay a new conversation (#347)', async (t) => {
   const { base, server } = await start(t);
   const id = await openShell(base);
-  const [late, ...lateArgv] = (await (await registerArgs(base, id, 'claude', ['-c'])).text()).split('\n');
+  const { runId: late, argv: lateArgv } = replyOf(await (await registerArgs(base, id, 'claude', ['-c'])).text());
   const continued = server.getState()?.workers.find((w) => w.runId === late);
   assert.deepEqual([continued?.sessionId, continued?.resumed, lateArgv.includes('--session-id')], [undefined, true, false]);
-  const [fresh, ...freshArgv] = (await (await registerArgs(base, id, 'claude', ['fix the bug', '--model=opus'])).text()).split('\n');
+  const { runId: fresh, argv: freshArgv } = replyOf(await (await registerArgs(base, id, 'claude', ['fix the bug', '--model=opus'])).text());
   const created = server.getState()?.workers.find((w) => w.runId === fresh);
   assert.ok(created?.sessionId);
   assert.deepEqual([created.resumed, freshArgv.slice(-2)], [undefined, ['--session-id', created.sessionId]]);
@@ -250,14 +269,66 @@ test('a codex resume of a conversation a task\'s worktree holds is refused in th
   await server.dispatch({ type: 'createTask', title: 'T', body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
   const taskShell = ((await (await postJson(`${base}/tasks/local:1/open`, { kind: 'terminal' })).json()) as OpenResult).ptyId ?? '';
   const cwd = server.getState()?.terminals.find((x) => x.terminalId === taskShell)?.cwd;
-  const [codexRun] = (await (await register(base, taskShell, { agent: 'codex' })).text()).split('\n');
+  const { runId: codexRun } = replyOf(await (await register(base, taskShell, { agent: 'codex' })).text());
   await server.dispatch({ type: 'hook', ptyId: codexRun, payload: { hook_event_name: 'SessionStart', session_id: CODEX_ID, cwd, source: 'startup' } });
   await server.dispatch({ type: 'exit', ptyId: codexRun });
   const local = await openShell(base);
   await refused(registerArgs(base, local, 'codex', ['resume', CODEX_ID]), 409, 'essa conversa é de outro checkout', 'the worktree\'s conversation from the main checkout');
-  const [runId, ...argv] = (await (await registerArgs(base, taskShell, 'codex', ['resume', CODEX_ID])).text()).split('\n');
+  const { runId, argv } = replyOf(await (await registerArgs(base, taskShell, 'codex', ['resume', CODEX_ID])).text());
   const worker = server.getState()?.workers.find((w) => w.runId === runId);
   const taskActivity = server.getState()?.activities.find((a) => a.kind === 'task')?.id;
   assert.deepEqual([worker?.sessionId, worker?.activityId], [CODEX_ID, taskActivity]);
   assert.equal(argv.includes('resume'), false, 'the user\'s own resume word picks it');
+});
+
+test('a bare copilot register answers Copilot\'s env before its launch argv: no update check, no resume cd, its instructions folder; a new session under the Hive\'s id (#876)', async (t) => {
+  const { base, server } = await start(t);
+  const id = await openShell(base);
+  const { runId, env, argv } = await copilotReply(t, base, id);
+  assert.deepEqual(env, ['COPILOT_AUTO_UPDATE=false', 'COPILOT_DISABLE_RESUME_AUTO_CD=1', `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=${instructionsDir(runId)}`]);
+  const worker = server.getState()?.workers.find((w) => w.runId === runId);
+  assert.ok(worker?.sessionId);
+  assert.deepEqual([worker.agent, worker.resumed, argv[argv.indexOf('--session-id') + 1]], ['copilot', undefined, worker.sessionId]);
+});
+
+test('a codex register\'s reply holds no HIVE_MCP_SECRET assignment and no secret value: the shim reads it from the secret file (#876)', async (t) => {
+  const { base, server } = await start(t);
+  await server.dispatch({ type: 'createTask', title: 'T', body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
+  const opened = (await (await postJson(`${base}/tasks/local:1/open`, { kind: 'terminal' })).json()) as OpenResult;
+  const reply = await (await register(base, opened.ptyId ?? '', { agent: 'codex', cwd: '/w' })).text();
+  // The name stays in codex's own env_http_headers override (the header is read from it); only an assignment of it would carry the value
+  assert.deepEqual([replyOf(reply).env, reply.includes(SECRET), reply.split('\n').some((line) => line.startsWith(`${MCP_SECRET_ENV}=`))], [[], false, false]);
+});
+
+test('copilot --resume <uuid> of a held session registers under that id with no --session-id in the reply; --session-id <new uuid>, --continue and the picker register with none yet (#876)', async (t) => {
+  const { base, server, repo } = await start(t);
+  const id = await openShell(base);
+  const { runId: first } = await copilotReply(t, base, id);
+  const held = server.getState()?.workers.find((w) => w.runId === first)?.sessionId ?? '';
+  // its SessionStart, else its exit forgets an entry that never opened (#587)
+  await server.dispatch({ type: 'hook', ptyId: first, payload: { hook_event_name: 'SessionStart', session_id: held, cwd: repo, source: 'startup' } });
+  await server.dispatch({ type: 'exit', ptyId: first });
+  const { runId, argv } = await copilotReply(t, base, id, ['--resume', held]);
+  const worker = server.getState()?.workers.find((w) => w.runId === runId);
+  assert.deepEqual([worker?.sessionId, worker?.resumed, argv.includes('--session-id'), argv.includes('--resume')], [held, true, false, false]);
+  for (const args of [['--session-id', COPILOT_FRESH_ID], ['--continue'], ['--resume']]) {
+    const late = await copilotReply(t, base, id, args);
+    const w = server.getState()?.workers.find((x) => x.runId === late.runId);
+    assert.deepEqual([w?.sessionId, w?.resumed, late.argv.includes('--session-id')], [undefined, true, false], args.join(' '));
+  }
+});
+
+test('a copilot register writes its instructions under the run\'s own tmp dir; its exit report removes that dir, and so does its Stop (#876)', async (t) => {
+  const { base } = await start(t);
+  const id = await openShell(base);
+  const exited = await copilotReply(t, base, id);
+  const file = join(instructionsDir(exited.runId), 'hive.instructions.md');
+  assert.ok(file.startsWith(runTmpDir(exited.runId)));
+  assert.match(await readFile(file, 'utf8'), /^---\napplyTo: "\*\*"\n---\n\n/, 'the workspace\'s local protocol behind Copilot\'s frontmatter');
+  assert.equal((await hiveFetch(`${base}/hooks/exit`, { method: 'POST', headers: { 'x-hive-pty': exited.runId } })).status, 200);
+  await waitFor(() => !existsSync(runTmpDir(exited.runId)));
+  const stopped = await copilotReply(t, base, id);
+  assert.ok(existsSync(runTmpDir(stopped.runId)));
+  assert.equal((await postJson(`${base}/ptys/${stopped.runId}/stop`)).status, 200); // killCaptured: the shim's later exit report finds no worker
+  await waitFor(() => !existsSync(runTmpDir(stopped.runId)));
 });

@@ -4,8 +4,10 @@ import { readFile } from 'node:fs/promises';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { heldSession, taskOfWorker } from './activities.js';
 import { requireWorkspace } from './config.js';
+import { writeRunFiles } from './spawn.js';
 import { capturedReply, resumeOf, type ShimResume, shimPath } from './shim.js';
 import { AGENTS, knownAgent, ranAgent } from './agents.js';
+import { MCP_SECRET_ENV } from './agents/codex.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { activityDir, sourceSide } from './copy-sides.js';
@@ -34,7 +36,7 @@ const STILL_ENDING_MESSAGE = 'o terminal ainda está terminando';
 const NO_CAPTURE_MESSAGE = 'nenhum terminal vivo com esse id';
 const HTTP_SERVER_ERROR = 500;
 const HTTP_UNPROCESSABLE = 422; // not 409: the page reads a 409 on a wake as a harmless race and shows nothing, and this one has a reason to show
-const SPLIT_ARG_MESSAGE = 'um argumento do claude tem quebra de linha';
+const SPLIT_REPLY_MESSAGE = 'um argumento ou uma variável do agente não cabe na resposta';
 const RESUME_HELD_MESSAGE = 'essa sessão já roda em outra execução';
 const OTHER_CHECKOUT_MESSAGE = 'essa conversa é de outro checkout';
 const HTTP_BAD_REQUEST = 400;
@@ -56,6 +58,7 @@ export interface TerminalRouteDeps {
   lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin, which a terminal's agent loads as any run does
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, which a terminal's agent loads as any run does
   externalMcp(config: Config, workspace: string): Promise<readonly RunMcpServer[]>; // #333: the spawner's, for a captured session
+  dropRunTmp(runId: string): Promise<void>; // #876: a captured run's tmp dir (its runFiles), which no pty of the Hive's removes; never rejects
 }
 
 export const terminalParam = (req: Request): string => String(req.params.id);
@@ -159,8 +162,16 @@ function resumeTarget(live: { state: State; runtime: Runtime }, terminalId: stri
   return ref;
 }
 
-// The shim's register (#696): a free session of the terminal's activity, answered as the run id then the argv the agent gets before the user's
-// own, one arg per line, which the shim reads as data (capturedReply); an arg holding a line break refuses the register. Under /hooks/:
+// #876: the run's env as a spawn applies it (runEnv), for the shim to export. Never the Hive's own MCP secret, which the shim's codex case
+// reads from the secret file; an external server's header token (Codex's HIVE_MCP_TOKEN_<i>) does ride this loopback, secret-gated reply, as
+// the spec decides, since the run needs it and the reply is never logged
+const replyEnv = (deps: TerminalRouteDeps, agent: AgentId, run: AgentRun): [string, string][] =>
+  Object.entries(runners[agent].runEnv({ port: run.port, ptyId: run.ptyId, secret: deps.secret, withHive: run.withHive, external: run.external }, run))
+    .filter(([name]) => name !== MCP_SECRET_ENV);
+
+// The shim's register (#696): a free session of the terminal's activity, answered as the run id, the count of its env lines, those `NAME=value`
+// lines, then the argv the agent gets before the user's own, one per line, which the shim reads as data (capturedReply); an arg holding a line
+// break refuses the register. Under /hooks/:
 // secret-authenticated as a hook is, with no UI header (server.ts' gate). Its body is a form (#932): the agent the shim wraps, its $PWD and
 // each of the user's args (#347).
 function registerCapture(app: Express, deps: TerminalRouteDeps): void {
@@ -182,7 +193,11 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     if (!after || !worker) return refuse(res, { status: HTTP_CONFLICT, message: NO_CAPTURE_MESSAGE });
     // A refusal ends the run it just made: the shim runs the agent unregistered, and no run is left behind
     const unregister = async (message: string): Promise<void> => {
-      await deps.dispatch(await exitEvent(deps.live(), runId, deps.machineFor)); // #586: one builder for every exit; a captured run is never flagged
+      try {
+        await deps.dispatch(await exitEvent(deps.live(), runId, deps.machineFor)); // #586: one builder for every exit; a captured run is never flagged
+      } finally {
+        await deps.dropRunTmp(runId); // #876: whatever the write below got to, even when the exit could not be dispatched
+      }
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
     // #927, #932: Codex trusts the run's folder up front: the posted one after a cd inside the terminal's folder, never one outside it
@@ -191,11 +206,12 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     let run: AgentRun;
     try {
       run = await captureRun(deps, after, worker, { runId, cwd, sessionId });
+      await writeRunFiles(runners[agent].runFiles(run)); // #876: Copilot's instructions, under runTmpDir(runId), before the shim starts it
     } catch (err) {
       return unregister(errorMessage(err));
     }
-    const reply = capturedReply(runId, runners[agent].launch(run).flat());
-    if (reply === undefined) return unregister(SPLIT_ARG_MESSAGE);
+    const reply = capturedReply(runId, replyEnv(deps, agent, run), runners[agent].launch(run).flat());
+    if (reply === undefined) return unregister(SPLIT_REPLY_MESSAGE);
     res.type('text/plain').send(reply);
   });
 }

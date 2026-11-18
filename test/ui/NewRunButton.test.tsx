@@ -328,3 +328,13 @@ test('newRunEntries lists no session of an agent the offered list lacks (#482)',
   const kinds = newRunEntries({ kind: 'task', task: bareTask(task()), activity: liveIn(task()) }, 'claude', [{ agent: 'claude', available: true }]).map((e) => e.kind);
   expect(kinds).not.toContain('codex');
 });
+
+test('copilot, when boot did not find it, is listed disabled and named off PATH; found, its entry is enabled (#876)', async () => {
+  const user = userEvent.setup();
+  render(<AgentsContext.Provider value={[{ agent: 'claude', available: true }, { agent: 'codex', available: true }, { agent: 'copilot', available: false }]}>{wrapped(task())}</AgentsContext.Provider>);
+  plus().focus();
+  await user.keyboard('{Enter}');
+  expect(await screen.findByRole('menuitem', { name: 'copilot · fora do PATH' })).toHaveAttribute('data-disabled');
+  const target = { kind: 'task' as const, task: bareTask(task()), activity: liveIn(task()) };
+  expect(newRunEntries(target, 'claude', ALL_AGENTS).find((e) => e.kind === 'copilot')).toEqual({ kind: 'copilot', label: 'copilot', key: undefined, disabled: false });
+});

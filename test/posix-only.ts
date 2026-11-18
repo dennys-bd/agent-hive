@@ -23,3 +23,5 @@ export const NO_POSIX_TTY: string | false = process.platform === 'win32' && 'a C
 export const SH_LAUNCHER: string | false = process.platform === 'win32' && 'Git\'s bin\\sh.exe is a launcher: the shim\'s Windows pid is its child\'s, not the pid Node started';
 // #806 decision 15: the feasibility tests need Git's bash, PowerShell and a ConPTY, which only the Windows lane has
 export const ONLY_WIN32: string | false = process.platform !== 'win32' && 'Windows only: Git\'s bash, PowerShell and a ConPTY run on the Windows lane (#806)';
+// #876: whether Git's sh.exe reads a ConPTY stdin as a terminal ([ -t 0 ]) is not proven, so the copilot shim's terminal tests run on POSIX only
+export const MSYS_TTY: string | false = process.platform === 'win32' && 'MSYS\'s [ -t 0 ] over a ConPTY is not proven: the copilot shim\'s terminal check is tested on POSIX only';

@@ -2,7 +2,7 @@ import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isUuid } from './uuid.js';
-import type { AgentId } from './types.js';
+import { type AgentId, ENV_NAME } from './types.js';
 
 // The agents' shim (#696, #924, #932): one template, assets/bin/shim, rendered per agent with its command, its first-arg passthrough words and
 // its any-position passthrough flags, written into <home>/bin/<command> on every boot, as the plugin is: upgrading the Hive changes what every
@@ -55,10 +55,16 @@ export async function installShim(home: string, agent: ShimAgent, { platform, sh
 // What the shim's read loop cannot take: a line break would split one arg in two, or start a forged one
 const LINE_BREAK = /[\r\n]/;
 
-/** The register's answer (#696): the run id, then each arg claude gets before the user's own on a line of its own, which the shim reads as data
- * and never evaluates. Undefined when an arg holds a line break: the route refuses the register rather than send a split arg. */
-export const capturedReply = (runId: string, args: string[]): string | undefined =>
-  (args.some((arg) => LINE_BREAK.test(arg)) ? undefined : [runId, ...args].join('\n'));
+// An env line the shim's export takes as one assignment: a valid name (export would refuse another, or read it as an option) and no line break
+const isEnvLine = ([name, value]: readonly [string, string]): boolean => ENV_NAME.test(name) && !LINE_BREAK.test(value);
+
+/** The register's answer (#696, #876): the run id, the count of env lines in decimal, each NAME=value, then each arg the agent gets before the
+ * user's own on a line of its own. The shim reads all of it as data and never evaluates it; a count, not a marker line, since an arg could
+ * equal any marker. Undefined when an env line or an arg would not survive: the route refuses the register rather than send it. */
+export const capturedReply = (runId: string, env: readonly (readonly [string, string])[], args: readonly string[]): string | undefined =>
+  (env.every(isEnvLine) && !args.some((arg) => LINE_BREAK.test(arg))
+    ? [runId, String(env.length), ...env.map(([name, value]) => `${name}=${value}`), ...args].join('\n')
+    : undefined);
 
 /** What the args the shim posted run (#347): a new conversation, or a resume, with the session id they name when they name one. */
 export type ShimResume = { kind: 'new' } | { kind: 'resume'; sessionId?: string };
@@ -69,8 +75,9 @@ const CLAUDE_RESUMES = ['-r', '--resume', '-c', '--continue', '--session-id'];
 const CLAUDE_ID_FLAGS = ['-r', '--resume', '--session-id'];
 const flagOf = (arg: string): string => (arg.startsWith('--') ? arg.split('=')[0] : arg);
 
-// The uuid a value flag of Claude's names, `--flag <id>` or `--flag=<id>`: only a uuid can be a session id (namedSession); the last one wins
-function claudeId(args: readonly string[], flags: readonly string[] = CLAUDE_ID_FLAGS): string | undefined {
+// The uuid a value flag names, `--flag <id>` or `--flag=<id>`: only a uuid can be a session id (namedSession); the last one wins. Claude's
+// and Copilot's flags share the shape (#876)
+function flagId(args: readonly string[], flags: readonly string[]): string | undefined {
   return args.flatMap((arg, i) => {
     const flag = flagOf(arg);
     const value = flag === arg ? args[i + 1] : arg.slice(flag.length + 1);
@@ -83,15 +90,21 @@ function claudeId(args: readonly string[], flags: readonly string[] = CLAUDE_ID_
 function claudeResume(args: readonly string[]): ShimResume {
   const flags = args.map(flagOf);
   if (!flags.some((flag) => CLAUDE_RESUMES.includes(flag))) return NEW;
-  if (!flags.includes('--fork-session')) return resumed(claudeId(args));
-  return flags.includes('--session-id') ? resumed(claudeId(args, ['--session-id'])) : NEW;
+  if (!flags.includes('--fork-session')) return resumed(flagId(args, CLAUDE_ID_FLAGS));
+  return flags.includes('--session-id') ? resumed(flagId(args, ['--session-id'])) : NEW;
 }
 
 // Codex: the resume subcommand, first as the shim reads a subcommand; fork stays a passthrough (#932)
 const codexResume = (args: readonly string[]): ShimResume => (args[0] === 'resume' ? resumed(args.slice(1).find((arg) => isUuid(arg))) : NEW);
 
-// One reader per agent: a new agent fails to compile until it has one. Copilot's reads every argv as a new conversation until #608's node 4
-const RESUME_READERS: Record<AgentId, (args: readonly string[]) => ShimResume> = { claude: claudeResume, codex: codexResume, copilot: () => NEW };
+// Copilot (#876): --session-id is the run's id whether it continues a session or starts one (spike §3); --continue and the picker name none
+const COPILOT_RESUMES = ['--resume', '--continue', '--session-id'];
+const COPILOT_ID_FLAGS = ['--resume', '--session-id'];
+const copilotResume = (args: readonly string[]): ShimResume =>
+  (args.some((arg) => COPILOT_RESUMES.includes(flagOf(arg))) ? resumed(flagId(args, COPILOT_ID_FLAGS)) : NEW);
+
+// One reader per agent: a new agent fails to compile until it has one
+const RESUME_READERS: Record<AgentId, (args: readonly string[]) => ShimResume> = { claude: claudeResume, codex: codexResume, copilot: copilotResume };
 
 /** The resume the args the shim posted ask for (#347). The shim parses nothing (sh cannot parse an argv safely): it posts every arg whole. */
 export const resumeOf = (agent: AgentId, args: readonly string[]): ShimResume => RESUME_READERS[agent](args);
