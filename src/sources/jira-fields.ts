@@ -6,7 +6,7 @@ import { putFields, readAssignableUsers, readEditable, readSprints } from './jir
 import { JiraBadRequestError, JiraHttpError, JiraNotFoundError } from './jira-fetch.js';
 import type { JiraItemRows } from './jira-item.js';
 import type { JiraSourceConfig } from './jira-listing.js';
-import { jiraProjectItem } from './jira-project-item.js';
+import { jiraProjectItem, outOf } from './jira-project-item.js';
 import { type JiraCall, type JiraFieldMeta, type JiraIssue, readTransitions } from './jira-queries.js';
 
 /** What the field reads and writes run on (#826): the site's two calls, the source, and the adapter's own store, move and listing reads. */
@@ -144,7 +144,7 @@ export async function jiraSetField(ctx: JiraFieldsContext, id: string, name: str
   const { rows, task, isOwn } = after.kept;
   return {
     fields: after.fields.map((f) => f.field),
-    row: jiraProjectItem(rows, ctx.source, ctx.isFiltered(task)),
+    row: jiraProjectItem(rows, ctx.source, outOf(task, ctx.isFiltered(task), ctx.source)),
     ...(isOwn && ctx.isListed(task) ? { entry: task } : {}),
   };
 }

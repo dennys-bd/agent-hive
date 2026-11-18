@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { jiraItemOf } from '../../src/sources/jira-item.js';
-import { jiraProjectItem } from '../../src/sources/jira-project-item.js';
+import { jiraProjectItem, outOf } from '../../src/sources/jira-project-item.js';
+import { taskOf } from '../../src/sources/jira-listing.js';
+import { NO_CATEGORIES } from '../../src/sources/jira-relations.js';
 import type { JiraIssue } from '../../src/sources/jira-queries.js';
 import { PROJECT_KEYS, treeRows } from '../../src/ui/lib/project-tree.js';
 import { JIRA_ENTRY } from '../fakes.js';
@@ -20,21 +22,32 @@ const issue = (fields: Record<string, unknown> = {}): JiraIssue => ({
 const rows = (fields: Record<string, unknown> = {}) => jiraItemOf(ROWS, 'ABC', issue(fields), NAMES, SCHEMA);
 
 test('a stored issue is its project row: the key as id, the browse url, its status, a multi-valued field joined and a number as a number (#826)', () => {
-  assert.deepEqual(jiraProjectItem(rows(), JIRA_ENTRY, false), {
+  assert.deepEqual(jiraProjectItem(rows(), JIRA_ENTRY), {
     itemId: '10001', id: 'ABC-1', title: 'Ship it', body: '', url: 'https://acme.example/browse/ABC-1', status: 'To Do',
     labels: ['api'], assignees: ['Ana Lima'], fields: { Components: 'Core, Web', Team: 'Platform', Points: 5 }, pullRequests: [],
     createdAt: '2026-11-01T10:00:00.000Z', updatedAt: '2026-11-16T10:00:00.000Z',
   });
 });
 
-test('a row the filter drops is out as filter; one with no status has none (#826)', () => {
-  assert.equal(jiraProjectItem(rows(), JIRA_ENTRY, true).out, 'filter');
-  assert.equal('status' in jiraProjectItem(rows({ status: null }), JIRA_ENTRY, false), false);
+test('a row is out as the argument names it, filter or epic; with none it has no out; one with no status has none (#826, #827)', () => {
+  assert.equal(jiraProjectItem(rows(), JIRA_ENTRY, 'filter').out, 'filter');
+  assert.equal(jiraProjectItem(rows(), JIRA_ENTRY, 'epic').out, 'epic');
+  assert.equal('out' in jiraProjectItem(rows(), JIRA_ENTRY), false);
+  assert.equal('status' in jiraProjectItem(rows({ status: null }), JIRA_ENTRY), false);
+});
+
+test('outOf answers filter before epic, epic only for a task with children under epics: hide, else nothing (#827)', () => {
+  const task = taskOf(rows(), JIRA_ENTRY, NO_CATEGORIES);
+  const parent = { ...task, item: { ...task.item, children: ['10002'] } };
+  assert.equal(outOf(parent, true, { epics: 'hide' }), 'filter');
+  assert.equal(outOf(parent, false, { epics: 'hide' }), 'epic');
+  assert.equal(outOf(parent, false, { epics: 'show' }), undefined);
+  assert.equal(outOf(task, false, { epics: 'hide' }), undefined);
 });
 
 test('a sub-task\'s row names its parent by key, and the tree nests it (#826)', () => {
-  const child = jiraProjectItem(rows({ parent: { id: '10000', key: 'ABC-0', fields: { summary: 'Epic' } } }), JIRA_ENTRY, false);
+  const child = jiraProjectItem(rows({ parent: { id: '10000', key: 'ABC-0', fields: { summary: 'Epic' } } }), JIRA_ENTRY);
   assert.equal(child.parent, 'ABC-0');
-  const parent = { ...jiraProjectItem(rows(), JIRA_ENTRY, false), itemId: '10000', id: 'ABC-0' };
+  const parent = { ...jiraProjectItem(rows(), JIRA_ENTRY), itemId: '10000', id: 'ABC-0' };
   assert.deepEqual(treeRows([parent, child], new Set(['10000']), PROJECT_KEYS).map((l) => [l.item.id, l.depth]), [['ABC-0', 0], ['ABC-1', 1]]);
 });
