@@ -12,7 +12,8 @@ import { AGENTS } from './agents.js';
 import { agentDirs } from './agents/command.js';
 import { runners } from './agents/registry.js';
 import { type ExecLookup, resolveExec } from './exec-path.js';
-import { type Process, type Ran, runCapped } from './format-run.js';
+import { type Process, type Ran, runOn } from './format-run.js';
+import { runDetached } from './machine-run.js';
 import { withoutHiveEnv } from './spawn.js';
 import type { AgentId } from './types.js';
 
@@ -36,7 +37,7 @@ const DETAIL_TAIL = 2048;
 const tail = (text: string): string => text.slice(-DETAIL_TAIL);
 const detailOf = (ran: Ran): string => [tail(ran.stderr), tail(ran.stdout?.toString('utf8') ?? '')].filter((part) => part !== '').join('\n');
 
-/** What runCapped starts for `agent` (#633): the resolver's file and args, looked up in the child's own env, so its PATH decides; on win32
+/** What runOn starts for `agent` (#633): the resolver's file and args, looked up in the child's own env, so its PATH decides; on win32
  *  Claude's install folder first, and a Codex .cmd through the .cmd runner, verbatim. A name found nowhere, or an argument cmd.exe cannot
  *  carry, is the run's failure, with the resolver's words: they name the tool and never an argument's value. */
 export function headlessProcess(agent: AgentId, args: string[], env: NodeJS.ProcessEnv, lookup: Pick<ExecLookup, 'platform' | 'isFile'>): Process | HeadlessFailure {
@@ -66,7 +67,7 @@ export async function runHeadless(input: HeadlessInput, deps: HeadlessDeps = {})
     const env = { ...withoutHiveEnv(deps.env ?? process.env), ...runner.headlessEnv(run) };
     const proc = headlessProcess(input.agent, runner.headless(run), env, { platform: deps.platform ?? process.platform, isFile: deps.isFile });
     if ('failure' in proc) return proc;
-    const ran = await runCapped(proc, runner.headlessPrompt(input.prompt, schema), input.cwd ?? dir, deps.timeoutMs ?? input.timeoutMs ?? HEADLESS_TIMEOUT_MS, input.signal);
+    const ran = await runOn(runDetached, proc, runner.headlessPrompt(input.prompt, schema), input.cwd ?? dir, deps.timeoutMs ?? input.timeoutMs ?? HEADLESS_TIMEOUT_MS, input.signal);
     if (ran.failure !== undefined) return { failure: ran.failure, detail: detailOf(ran) };
     const answerFile = await readFile(run.answerPath, 'utf8').catch(() => undefined); // only Codex writes one
     const answer = runner.headlessAnswer(ran.stdout?.toString('utf8') ?? '', answerFile);

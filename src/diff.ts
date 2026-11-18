@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
-import { copyFile, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { WorkspaceBase } from './fork.js';
+import type { MachineFs, MachineInfo } from './machine.js';
 import type { Activity, Checkpoint, Task, DiffHunk, DiffLine, DiffScope, Exec, FileDiff } from './types.js';
 import { SHORT_SHA } from './tasks.js';
 import { gitOrWords, wordsOf } from './worktree.js';
@@ -125,21 +124,24 @@ async function diffGit(worktree: string, args: string[], opts: { env: NodeJS.Pro
   }
 }
 
+/** What the diff reads of a machine (#160): git, and the temp index's folder, copy and removal on its own disk. A Machine is one. */
+export interface DiffOn { exec: Exec; fs: Pick<MachineFs, 'mkdtemp' | 'copyFile' | 'rm'>; info(): Pick<MachineInfo, 'tmpdir'> }
+
 const DIFF_FLAGS = ['--no-color', '--no-ext-diff', '--no-textconv', '-M', '--src-prefix=a/', '--dst-prefix=b/'];
 
 // The worktree's index copied to a temp dir, every file added there only, and `fn` run against it; the temp dir goes whatever happens (#270)
-async function withIndexCopy<T>(worktree: string, exec: Exec, fn: (opts: { env: NodeJS.ProcessEnv; maxBuffer: number }) => Promise<T>): Promise<T> {
+async function withIndexCopy<T>(on: DiffOn, worktree: string, fn: (opts: { env: NodeJS.ProcessEnv; maxBuffer: number }) => Promise<T>): Promise<T> {
   // a linked worktree's index lives under the main repo's .git/worktrees/; git answers a path relative to the worktree or an absolute one
-  const index = resolve(worktree, (await gitOrWords(worktree, ['rev-parse', '--git-path', 'index'], exec)).trim());
-  const dir = await mkdtemp(join(tmpdir(), 'hive-diff-'));
+  const index = resolve(worktree, (await gitOrWords(worktree, ['rev-parse', '--git-path', 'index'], on.exec)).trim());
+  const dir = await on.fs.mkdtemp(join(on.info().tmpdir, 'hive-diff-'));
   try {
     const copy = join(dir, 'index');
-    await copyFile(index, copy);
+    await on.fs.copyFile(index, copy);
     const opts = { env: { ...process.env, GIT_INDEX_FILE: copy }, maxBuffer: DIFF_MAX_BYTES };
-    await diffGit(worktree, ['add', '-A'], opts, exec);
+    await diffGit(worktree, ['add', '-A'], opts, on.exec);
     return await fn(opts);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await on.fs.rm(dir, { recursive: true, force: true });
   }
 }
 
@@ -149,23 +151,23 @@ async function withIndexCopy<T>(worktree: string, exec: Exec, fn: (opts: { env: 
  * using, is never written; the add does store the untracked files' blobs in the object store, unreferenced, for gc to prune. One `diff
  * --cached -M` then gives renames and a single format to parse. The temp dir goes whatever happens.
  */
-export async function taskDiff(worktree: string, base: string, exec: Exec): Promise<FileDiff[]> {
-  return withIndexCopy(worktree, exec, async (opts) =>
-    parseDiff(await diffGit(worktree, ['-c', 'core.quotepath=off', 'diff', '--cached', ...DIFF_FLAGS, '--end-of-options', base], opts, exec)).map(withHash));
+export async function taskDiff(on: DiffOn, worktree: string, base: string): Promise<FileDiff[]> {
+  return withIndexCopy(on, worktree, async (opts) =>
+    parseDiff(await diffGit(worktree, ['-c', 'core.quotepath=off', 'diff', '--cached', ...DIFF_FLAGS, '--end-of-options', base], opts, on.exec)).map(withHash));
 }
 
 /** The worktree against `base` as an evaluation reads it (#877): `--stat` and the patch, on taskDiff's index copy, so untracked files show too. */
-export async function taskPatch(worktree: string, base: string, exec: Exec): Promise<{ stat: string; patch: string }> {
-  return withIndexCopy(worktree, exec, async (opts) => {
-    const diff = (extra: string[]): Promise<string> => diffGit(worktree, ['-c', 'core.quotepath=off', 'diff', '--cached', ...DIFF_FLAGS, ...extra, '--end-of-options', base], opts, exec);
+export async function taskPatch(on: DiffOn, worktree: string, base: string): Promise<{ stat: string; patch: string }> {
+  return withIndexCopy(on, worktree, async (opts) => {
+    const diff = (extra: string[]): Promise<string> => diffGit(worktree, ['-c', 'core.quotepath=off', 'diff', '--cached', ...DIFF_FLAGS, ...extra, '--end-of-options', base], opts, on.exec);
     return { stat: await diff(['--stat']), patch: await diff([]) };
   });
 }
 
 /** The commit scope (#591): what the last commit changed, HEAD^ against HEAD, with the pinned flags; no index copy, none of the uncommitted work. */
-export async function commitDiff(worktree: string, exec: Exec): Promise<FileDiff[]> {
+export async function commitDiff(on: Pick<DiffOn, 'exec'>, worktree: string): Promise<FileDiff[]> {
   const args = ['-c', 'core.quotepath=off', 'diff', '--no-color', '--no-ext-diff', '--no-textconv', '-M', '--src-prefix=a/', '--dst-prefix=b/', '--end-of-options', PARENT, 'HEAD'];
-  return parseDiff(await diffGit(worktree, args, { env: process.env, maxBuffer: DIFF_MAX_BYTES }, exec)).map(withHash);
+  return parseDiff(await diffGit(worktree, args, { env: process.env, maxBuffer: DIFF_MAX_BYTES }, on.exec)).map(withHash);
 }
 
 // HEAD^ as a sha (#591). A root commit has none and rev-parse --verify fails; any failure reads as that one.

@@ -13,7 +13,9 @@ import { adoptTranscript, findTranscript } from './transcript.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import { runners } from './agents/registry.js';
 import { cwdsOf } from './server-exit.js';
-import { treeRoot } from './server-tree.js';
+import { treeMachine, treeRoot } from './server-tree.js';
+import type { MachineFor } from './machine.js';
+import { pathFs } from './machine-fs.js';
 import { treeFolder } from './tree-paths.js';
 import { AGENT_IDS, type ActivityRecord, type Task, type Session, type State } from './types.js';
 import { workDir } from './worktree.js';
@@ -78,25 +80,25 @@ function registerRunRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' 
 
 // The files tree's open in the integrated terminal (#818): a folder of the tree, relative, checked as a drop's folder is, as its real path;
 // undefined without one, where every shell opened before
-async function shellFolder(current: LiveView, id: string, raw: unknown): Promise<string | Refusal | undefined> {
+async function shellFolder(current: LiveView, id: string, raw: unknown, machineFor: MachineFor): Promise<string | Refusal | undefined> {
   const { folder } = (raw ?? {}) as { folder?: unknown };
   if (folder === undefined) return undefined;
   if (typeof folder !== 'string' || folder === '') return { status: HTTP_BAD_REQUEST, message: FOLDER_BODY_MESSAGE };
   const root = treeRoot(current.state, current.runtime.config, id);
-  return typeof root === 'string' ? treeFolder(root, folder) : root;
+  return typeof root === 'string' ? treeFolder(root, folder, pathFs(treeMachine(current.state, id, machineFor))) : root;
 }
 
 // A shell (#292, #629): on a local activity, in its workspace's main checkout, from the terminal panel's +; on a task's, a terminal in its worktree.
 // With a folder (#818), in that folder of either. Answered like /open, so the page attaches the tab at once (#249). The reducer refuses
 // what it cannot open in silence too.
-function registerShellRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started'>): void {
+function registerShellRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'machineFor'>): void {
   app.post('/activities/:id/shell', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
     if (!current) return;
     const target = liveTarget(current.state, activityParam(req));
     if ('status' in target) return refuse(res, target);
     const { activity } = target;
-    const cwd = await shellFolder(current, activity.id, req.body);
+    const cwd = await shellFolder(current, activity.id, req.body, deps.machineFor);
     if (typeof cwd === 'object') return refuse(res, cwd);
     if (activity.kind === 'local') {
       const local = workspaceByName(current.runtime.config, activity.workspace); // #696: its checkout is the terminal's start dir

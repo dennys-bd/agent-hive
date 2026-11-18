@@ -1,21 +1,21 @@
 // A command-line checker's run (#782): its binary with an argv, never a shell, in the activity's folder with nothing on stdin, in a tree
-// of its own (cargo and mix start children the timeout must reach: a process group off win32, taskkill /T on win32); its report read from stdout, stderr or a file, capped, then parsed. A linter
+// of its own (the machine's run kills the whole tree on a timeout, the cap or a stop); its report read from stdout, stderr or a file, capped, then parsed. A linter
 // exits non-zero when it finds something, so a failure is a spawn error, the timeout, the cap, a report that does not read, or a non-zero exit
 // with no finding read. Every run is a console run of its checker's channel.
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseCheck } from './checker-parse.js';
 import { checkArgv, type CliCheckerDef } from './checkers.js';
 import { checkChannel, type ConsoleStore, crlf, failLine, runHeader } from './console.js';
-import { collect, launchOf } from './format-run.js';
+import { launchOf } from './format-run.js';
 import { findCandidate } from './formatter-detect.js';
-import { killTree, treeSpawnOptions } from './kill-tree.js';
+import { type Machine, MachineError, type RunResult } from './machine.js';
+import { machineCode } from './machine-fs.js';
+import { RUN_STOPPED } from './machine-run.js';
 import { CHECK_OUTPUT_MAX, CHECK_TIMEOUT_MS, type CheckAnswer, type CheckDiagnostic, type FormatLog } from './types.js';
 
 export interface CheckContext {
+  machine: Machine; // #160: the activity's: its run, its disk for the report's folder, its platform
   folder: string; // the activity's folder, a real path: the cwd, and what the report's paths resolve against
   file: string; // the saved file's absolute path
   args: readonly string[]; // the user's extra arguments, after the subcommand
@@ -39,58 +39,36 @@ const MAX_CONCURRENT_CHECKS = 4; // a save in a big monorepo must not fork a doz
 interface Ran { stdout: string; stderr: string; code: number | null; failure?: string; isSuperseded?: boolean }
 const REPORT = 'report.sarif';
 
-const exited = (code: number | null, signal: NodeJS.Signals | null): Pick<Ran, 'code' | 'failure'> =>
-  (code !== null ? { code } : { code, failure: signal === null ? 'failed to run' : `killed by ${signal}` });
-
-// The process to its end: the timer, the cap and a newer run each kill its tree at once and settle
-function run(id: string, command: string, args: string[], windowsVerbatimArguments: boolean, ctx: CheckContext): Promise<Ran> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const max = ctx.maxBytes ?? CHECK_OUTPUT_MAX;
-    const timeoutMs = ctx.timeoutMs ?? CHECK_TIMEOUT_MS;
-    const child = spawn(command, args, { cwd: ctx.folder, env: ctx.env, stdio: ['ignore', 'pipe', 'pipe'], ...(windowsVerbatimArguments ? { windowsVerbatimArguments } : {}), ...treeSpawnOptions(process.platform) });
-    const stop = (failure: string | undefined, isSuperseded = false): void => {
-      if (settled) return; // once reaped, the pid may be another process's
-      void killTree(child.pid, process.platform);
-      settle({ stdout: '', stderr: stderr().toString('utf8'), code: null, ...(failure === undefined ? {} : { failure }), isSuperseded });
-    };
-    const over = (): void => stop(`output over ${max} bytes`);
-    const stdout = collect(child.stdout, max, over);
-    const stderr = collect(child.stderr, max, over);
-    const timer = setTimeout(() => stop(`timed out after ${timeoutMs} ms`), timeoutMs);
-    const onAbort = (): void => stop(undefined, true);
-    function settle(ran: Ran): void {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      ctx.signal.removeEventListener('abort', onAbort);
-      resolve(ran);
-    }
-    ctx.signal.addEventListener('abort', onAbort, { once: true });
-    if (ctx.signal.aborted) onAbort(); // aborted while the binary was looked up
-    child.on('error', (err: NodeJS.ErrnoException) => settle({ stdout: '', stderr: '', code: null, failure: err.code === 'ENOENT' ? `${id} not found` : `failed to run (${err.code ?? 'unknown'})` }));
-    child.on('close', (code, signal) => settle({ stdout: stdout().toString('utf8'), stderr: stderr().toString('utf8'), ...exited(code, signal) }));
-  });
+// The machine's RunResult as the checker reads it (#160): an exit code is the tool's answer (a linter exits non-zero with findings), a stop
+// is a newer run's, anything else a failure in runDetached's words, but a binary not found is named by the checker alone: its path holds
+// the account name
+function ranOf(id: string, r: RunResult): Ran {
+  if (typeof r.code === 'number') return { stdout: r.stdout.toString('utf8'), stderr: r.stderr, code: r.code };
+  if (r.code === RUN_STOPPED) return { stdout: '', stderr: r.stderr, code: null, isSuperseded: true };
+  return { stdout: '', stderr: r.stderr, code: null, failure: r.code === 'ENOENT' ? `${id} not found` : (r.failure ?? 'failed to run') };
 }
 
-function reportOf(def: CliCheckerDef, ran: Ran, dir: string | undefined, max: number): Promise<string> {
+function reportOf(def: CliCheckerDef, ctx: CheckContext, ran: Ran, dir: string | undefined, max: number): Promise<string> {
   if (def.output === 'stderr') return Promise.resolve(ran.stderr);
-  if (def.output === 'file') return dir === undefined ? Promise.resolve('') : readReport(join(dir, REPORT), max);
+  if (def.output === 'file') return dir === undefined ? Promise.resolve('') : readReport(ctx.machine, join(dir, REPORT), max);
   return Promise.resolve(ran.stdout);
 }
 
-// The tool's own file is not capped by the pipes' collector: stat before reading, so a huge report is never held in memory
-async function readReport(path: string, max: number): Promise<string> {
-  const size = await stat(path).then((s) => s.size, () => 0);
-  if (size > max) throw new Error(`output over ${max} bytes`);
-  return readFile(path, 'utf8').catch(() => '');
+// The tool's own file, capped on its machine: over the cap a failure; a report it never wrote reads as empty, as before
+async function readReport(machine: Machine, path: string, max: number): Promise<string> {
+  try {
+    return await machine.fs.readFile(path, { maxBytes: max, encoding: 'utf8' });
+  } catch (err) {
+    if (machineCode(err) === MachineError.TOO_LARGE) throw new Error(`output over ${max} bytes`);
+    return '';
+  }
 }
 
 // A finished run as its diagnostics, or why it failed. ponytail: a non-zero exit whose every finding lay outside the folder reads as a failure;
 // count the findings before the path filter if a tool ever does that
 async function outcomeOf(def: CliCheckerDef, ctx: CheckContext, ran: Ran, dir: string | undefined): Promise<{ diagnostics: CheckDiagnostic[] } | { failure: string }> {
   if (ran.failure !== undefined) return { failure: ran.failure };
-  const report = await reportOf(def, ran, dir, ctx.maxBytes ?? CHECK_OUTPUT_MAX).catch((err: Error) => err);
+  const report = await reportOf(def, ctx, ran, dir, ctx.maxBytes ?? CHECK_OUTPUT_MAX).catch((err: Error) => err);
   if (report instanceof Error) return { failure: report.message };
   const parsed: CheckDiagnostic[] | { error: string } = report.trim() === '' ? [] : parseCheck(def.format, report, ctx.folder, { file: ctx.file });
   if ('error' in parsed) return { failure: parsed.error };
@@ -119,7 +97,7 @@ async function finish(def: CliCheckerDef, ctx: CheckContext, ran: Ran, dir: stri
 /** One run of a command-line checker for `ctx.file` (#782), logged as a run of its console channel: the header, the tool's stderr and, on a
  * failure, the reason in red. absent, before any console run, when no candidate is installed for the folder. Never throws on the tool's behalf. */
 export async function runCheck(def: CliCheckerDef, ctx: CheckContext): Promise<CheckAnswer> {
-  const binary = await findCandidate(def.candidates, ctx.folder, ctx.env.PATH ?? '');
+  const binary = await findCandidate(ctx.machine, def.candidates, ctx.folder, ctx.env.PATH ?? '');
   if (binary === undefined) return { state: 'absent' };
   if (ctx.signal.aborted) return { state: 'superseded' };
   const channel = checkChannel(ctx.workspace, def.id);
@@ -127,9 +105,12 @@ export async function runCheck(def: CliCheckerDef, ctx: CheckContext): Promise<C
   ctx.consoleStore.begin(channel, log.run, runHeader(ctx.label, new Date()));
   let dir: string | undefined;
   try {
-    dir = def.output === 'file' ? await mkdtemp(join(tmpdir(), 'hive-check-')) : undefined;
-    const launch = launchOf(binary, checkArgv(def, ctx.args, ctx.file, dir === undefined ? '' : join(dir, REPORT)), ctx.env, process.platform);
-    const ran = 'failure' in launch ? { stdout: '', stderr: '', code: null, failure: launch.failure } : await run(def.id, launch.command, launch.args, launch.windowsVerbatimArguments === true, ctx);
+    dir = def.output === 'file' ? await ctx.machine.fs.mkdtemp(join(ctx.machine.info().tmpdir, 'hive-check-')) : undefined;
+    const launch = launchOf(binary, checkArgv(def, ctx.args, ctx.file, dir === undefined ? '' : join(dir, REPORT)), ctx.env, ctx.machine.info().platform);
+    const ran = 'failure' in launch ? { stdout: '', stderr: '', code: null, failure: launch.failure } : ranOf(def.id, await ctx.machine.run({
+      command: launch.command, args: launch.args, cwd: ctx.folder, env: ctx.env, signal: ctx.signal,
+      timeoutMs: ctx.timeoutMs ?? CHECK_TIMEOUT_MS, maxBytes: ctx.maxBytes ?? CHECK_OUTPUT_MAX, ...(launch.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
+    }));
     return await finish(def, ctx, ran, dir, log);
   } catch (err) {
     // the run is already open in the console: an I/O throw ends it as failed rather than leaving it running
@@ -138,7 +119,7 @@ export async function runCheck(def: CliCheckerDef, ctx: CheckContext): Promise<C
     ctx.consoleStore.end(log.run, 1);
     return { state: 'failed', reason, log };
   } finally {
-    if (dir !== undefined) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    if (dir !== undefined) await ctx.machine.fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 

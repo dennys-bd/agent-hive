@@ -161,3 +161,11 @@ test('the open route refuses a bare Claude alias on a copilot session with copil
   assert.equal(MESSAGES.en['launch.refused.copilotModel'], '"model" is another agent\'s model alias; a copilot session needs a Copilot model id');
   assert.doesNotMatch(MESSAGES.pt['launch.refused.copilotModel'], /\brod(ar|ando)\b/);
 });
+
+test('a copilot session takes any Copilot model id, a claude- id and auto included, and every hive: agent the plugin lists (#876)', async (t) => {
+  const dir = await renderedPlugin(t);
+  const names = specializedAgents(dir).map((a) => a.name);
+  assert.ok(names.length > 0);
+  for (const model of ['claude-sonnet-5.5', 'gpt-6-sol', 'auto']) assert.deepEqual(askedLaunch({ model }, 'copilot', 'en', () => dir), { launch: { model } }, model);
+  for (const specializedAgent of names) assert.deepEqual(askedLaunch({ specializedAgent }, 'copilot', 'en', () => dir), { launch: { specializedAgent } }, specializedAgent);
+});

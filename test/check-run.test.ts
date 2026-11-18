@@ -5,6 +5,10 @@ import { dirname, join } from 'node:path';
 import { type CheckContext, createCheckRuns, runCheck } from '../src/check-run.js';
 import { cliCheckerDef } from '../src/checkers.js';
 import { createConsoleStore, failLine } from '../src/console.js';
+import type { RunProcess, RunResult } from '../src/machine.js';
+import { RUN_STOPPED } from '../src/machine-run.js';
+import { CHECK_OUTPUT_MAX, CHECK_TIMEOUT_MS } from '../src/types.js';
+import { fakeMachine } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 
 type Store = ReturnType<typeof createConsoleStore>;
@@ -20,7 +24,7 @@ async function tool(path: string, body: string): Promise<void> {
   await chmod(path, 0o755);
 }
 function context(folder: string, store: Store, extra: Partial<CheckContext> = {}): CheckContext {
-  return { folder, file: join(folder, 'a.py'), args: [], env: { PATH: SYSTEM_PATH }, workspace: 'hive', label: '#HIVE-1 · a.py', consoleStore: store, signal: new AbortController().signal, ...extra };
+  return { machine: fakeMachine(), folder, file: join(folder, 'a.py'), args: [], env: { PATH: SYSTEM_PATH }, workspace: 'hive', label: '#HIVE-1 · a.py', consoleStore: store, signal: new AbortController().signal, ...extra };
 }
 const history = (store: Store, channel: string): string => store.history(channel)?.history ?? '';
 // mypy -O json's line for the file it was given ($4: after --show-column-numbers -O json)
@@ -113,11 +117,8 @@ test('a temp folder that cannot be made ends the console run as failed and never
   const folder = await realpath(await tempDir(t, 'check-run-'));
   const bin = await tempDir(t, 'check-bin-');
   await tool(join(bin, 'detekt'), 'exit 0');
-  const before = process.env.TMPDIR;
-  process.env.TMPDIR = join(folder, 'missing');
-  t.after(() => { if (before === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = before; });
   const store = createConsoleStore(() => 5000);
-  const answer = await runCheck(cliCheckerDef('detekt'), context(folder, store, { file: join(folder, 'A.kt'), env: { PATH: `${bin}:${SYSTEM_PATH}` } }));
+  const answer = await runCheck(cliCheckerDef('detekt'), context(folder, store, { machine: fakeMachine({ info: { tmpdir: join(folder, 'missing') } }), file: join(folder, 'A.kt'), env: { PATH: `${bin}:${SYSTEM_PATH}` } })); // the machine's tmpdir, no longer the host's TMPDIR
   assert.ok(answer.state === 'failed');
   assert.equal(store.channels()[0].status, 'failed');
 });
@@ -147,4 +148,24 @@ test('a .cmd checker reports its diagnostics on Windows (#634)', { skip: process
   const answer = await runCheck(cliCheckerDef('yamllint'), context(folder, createConsoleStore(() => 5000), { env: { ...process.env } }));
   assert.ok(answer.state === 'done', JSON.stringify(answer));
   assert.equal(answer.diagnostics[0]?.message, 'bad');
+});
+
+// The candidate is a real stub in a temp folder, found through the default fake machine's fs (the local one); the run is fake
+test('a checker runs on the context\'s machine with no stdin, the folder as cwd and the env it is given; a stop is superseded, a missing binary names the checker only (#160)', { skip: POSIX_ONLY }, async (t) => {
+  const folder = await realpath(await tempDir(t, 'check-run-'));
+  await tool(join(folder, '.venv', 'bin', 'mypy'), 'exit 0');
+  const seen: RunProcess[] = [];
+  const answers: RunResult[] = [
+    { code: 0, stdout: Buffer.alloc(0), stderr: '', tail: '' },
+    { code: RUN_STOPPED, stdout: Buffer.alloc(0), stderr: '', tail: '', failure: 'cancelled' },
+    { code: 'ENOENT', stdout: Buffer.alloc(0), stderr: '', tail: '', failure: '/repo/wt/.venv/bin/mypy not found' },
+  ];
+  const machine = fakeMachine({ info: { platform: 'linux', path: '/machine/bin' }, run: async (p) => { seen.push(p); return answers[seen.length - 1]; } });
+  const ctx = (): CheckContext => ({ ...context(folder, createConsoleStore(() => 5000), { env: { PATH: '/machine/bin', A: '1' } }), machine });
+  assert.equal((await runCheck(MYPY, ctx())).state, 'done');
+  assert.equal((await runCheck(MYPY, ctx())).state, 'superseded');
+  const missing = await runCheck(MYPY, ctx());
+  assert.ok(missing.state === 'failed');
+  assert.equal(missing.reason, 'mypy not found');
+  assert.deepEqual([seen[0].input, seen[0].cwd, seen[0].env, seen[0].maxBytes, seen[0].timeoutMs], [undefined, folder, { PATH: '/machine/bin', A: '1' }, CHECK_OUTPUT_MAX, CHECK_TIMEOUT_MS]);
 });

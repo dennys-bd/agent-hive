@@ -1,19 +1,19 @@
 // A formatter's run on save (#749): the buffer's text in on stdin, the formatted text back on stdout, nothing on the disk, so the save stays one
 // atomic write after the version check. A supported formatter is its binary with an argv array. A custom one is the user's own line through
-// "$SHELL" -c (Git's sh.exe on Windows, #631), the third deliberate shell string (CLAUDE.md); the file reaches it only as FILE in its env. Every run is a console run.
-import { spawn } from 'node:child_process';
+// "$SHELL" -c (Git's sh.exe on Windows, #631), the third deliberate shell string (CLAUDE.md); the file reaches it only as FILE in its env. Every run is a console run, on the activity's machine (#160).
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import { type ConsoleStore, crlf, failLine, formatChannel, runHeader } from './console.js';
 import { type ExecLookup, resolveExec } from './exec-path.js';
 import { detectFormatters } from './formatter-detect.js';
 import { candidatesFor, type FormatterPick, pickFormatter } from './formatters.js';
-import { killTree, treeSpawnOptions } from './kill-tree.js';
-import { posixShell, posixShellEnv } from './posix-shell.js';
+import type { Machine } from './machine.js';
+import { withMachinePath } from './machine-fs.js';
+import { posixShellEnv } from './posix-shell.js';
 import { EDITOR_FILE_MAX, type EditorConfig, FORMAT_TIMEOUT_MS, type FormatLog, type Workspace } from './types.js';
 
 export interface FormatContext {
+  machine: Machine; // #160: the activity's: its run, its PATH, platform and shell, and its disk for the detection
   cwd: string; // the activity's folder: the tool finds its own config (pyproject.toml, .prettierrc) from here
   file: string; // the saved file's absolute path, in the argv or in FILE
   workspace: Pick<Workspace, 'name' | 'env'>;
@@ -43,60 +43,15 @@ export function launchOf(command: string, args: readonly string[], env: NodeJS.P
   }
 }
 
-// Why a run failed, in the words its console run ends with. Never an error's message: Node writes the command line into it, and a custom
-// formatter's line is the user's own text, never logged
-function failureOf(code: number | null, signal: NodeJS.Signals | null): string {
-  if (code !== null) return `exit code ${code}`;
-  return signal === null ? 'failed to run' : `killed by ${signal}`;
-}
-
-// Every chunk of a stream, until `cap` bytes: past it, onOver on each chunk (the caller acts once)
-export function collect(stream: Readable | null, cap: number, onOver: () => void): () => Buffer {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  stream?.on('data', (chunk: Buffer) => {
-    size += chunk.length;
-    if (size > cap) onOver();
-    else chunks.push(chunk);
+/** A Process on `run` (#160: a machine's, or runDetached for the host's own headless run) with `input` on stdin and each stream capped at
+ *  EDITOR_FILE_MAX: the RunResult as a Ran, its failure in the same words the run had before #160. A failure keeps the stdout it got: a CLI may say why
+ *  there (claude -p --output-format json). */
+export async function runOn(run: Machine['run'], { command, args, env, windowsVerbatimArguments }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
+  const ran = await run({
+    command, args, env, cwd, input, timeoutMs, maxBytes: EDITOR_FILE_MAX,
+    ...(signal === undefined ? {} : { signal }), ...(windowsVerbatimArguments ? { windowsVerbatimArguments } : {}),
   });
-  return () => Buffer.concat(chunks);
-}
-
-/** The process with `input` on its stdin, its output capped at EDITOR_FILE_MAX, in a tree of its own (treeSpawnOptions; spawn, since execFile drops `detached`). The
- * timer, the cap and the signal's abort (#330: the headless run's cancel) settle at once and kill the tree, so a grandchild still holding the
- * pipe never holds the caller. A failure keeps the stdout it got: a CLI may say why there (claude -p --output-format json). A stdin error
- * (EPIPE: it exited without reading) is left to the close event, which carries the exit code and stderr. */
-export function runCapped({ command, args, env, windowsVerbatimArguments }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsVerbatimArguments, ...treeSpawnOptions(process.platform) });
-    const stop = (failure: string): void => {
-      if (settled) return; // once reaped, the pid may be another process's
-      void killTree(child.pid, process.platform);
-      settle({ stdout: stdout(), stderr: stderr().toString('utf8'), failure });
-    };
-    const over = (): void => stop(`output over ${EDITOR_FILE_MAX} bytes`);
-    const stdout = collect(child.stdout, EDITOR_FILE_MAX, over);
-    const stderr = collect(child.stderr, EDITOR_FILE_MAX, over);
-    const timer = setTimeout(() => stop(`timed out after ${timeoutMs} ms`), timeoutMs);
-    const cancel = (): void => stop(CANCELLED);
-    signal?.addEventListener('abort', cancel, { once: true });
-    function settle(ran: Ran): void {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', cancel);
-      resolve(ran);
-    }
-    child.on('error', (err: NodeJS.ErrnoException) => settle({ stderr: '', failure: err.code === 'ENOENT' ? `${command} not found` : `failed to run (${err.code ?? 'unknown'})` }));
-    child.on('close', (code, killedBy) => {
-      const err = stderr().toString('utf8');
-      settle(code === 0 ? { stdout: stdout(), stderr: err } : { stdout: stdout(), stderr: err, failure: failureOf(code, killedBy) });
-    });
-    child.stdin?.on('error', () => undefined);
-    child.stdin?.end(input);
-    if (signal?.aborted) cancel(); // aborted before the spawn: there is still a tree to kill
-  });
+  return { stdout: ran.stdout, stderr: ran.stderr, ...(ran.failure === undefined ? {} : { failure: ran.failure }) };
 }
 
 // stdout as text; undefined for bytes that are not UTF-8, which a save must never write. ponytail: no NUL check (server-editor's decodeText has
@@ -122,13 +77,15 @@ function outcomeOf(ran: Ran): { text: string } | { failure: string } {
 export const customShell = (platform: NodeJS.Platform, env: NodeJS.ProcessEnv, posix: string): string =>
   (platform === 'win32' ? undefined : env.SHELL) ?? posix;
 
-// Both kinds run in the daemon's env with the workspace's on top (#738: every run of a workspace gets it). A supported pick is its binary and
+// Both kinds run in the base env with the workspace's on top (#738: every run of a workspace gets it). A supported pick is its binary and
 // argv; a custom one is the user's line in their shell, with FILE as a raw value
-function processOf(pick: FormatterPick, { file, workspace }: FormatContext): Process | { failure: string } {
-  if (pick.kind === 'supported') return launchOf(pick.binary, pick.argv(file), { ...process.env, ...workspace.env }, process.platform);
+function processOf(pick: FormatterPick, { file, workspace, machine }: Pick<FormatContext, 'file' | 'workspace' | 'machine'>): Process | { failure: string } {
+  const info = machine.info();
+  const base = withMachinePath(process.env, info); // #160: the machine's PATH; the host's env as the base is node 8's to replace
+  if (pick.kind === 'supported') return launchOf(pick.binary, pick.argv(file), { ...base, ...workspace.env }, info.platform);
   // #631: on win32 MSYS leaves the line's arguments as written; the workspace's env still wins, and FILE last
-  const env = { ...process.env, ...posixShellEnv(process.platform), ...workspace.env, FILE: file };
-  return { command: customShell(process.platform, process.env, posixShell().shell), args: ['-c', pick.command], env };
+  const env = { ...base, ...posixShellEnv(info.platform), ...workspace.env, FILE: file };
+  return { command: customShell(info.platform, base, info.shell), args: ['-c', pick.command], env };
 }
 
 /** One formatter run on `text` (#749), logged as a run of its console channel: the header, the tool's stderr and, on a failure, the reason in
@@ -138,7 +95,7 @@ export async function runFormatter(pick: FormatterPick, text: string, ctx: Forma
   const runId = randomUUID();
   ctx.consoleStore.begin(channel, runId, runHeader(ctx.label, new Date()));
   const proc = processOf(pick, ctx);
-  const ran: Ran = 'failure' in proc ? { stderr: '', failure: proc.failure } : await runCapped(proc, text, ctx.cwd, ctx.timeoutMs ?? FORMAT_TIMEOUT_MS);
+  const ran: Ran = 'failure' in proc ? { stderr: '', failure: proc.failure } : await runOn(ctx.machine.run, proc, text, ctx.cwd, ctx.timeoutMs ?? FORMAT_TIMEOUT_MS);
   if (ran.stderr !== '') ctx.consoleStore.append(runId, crlf(ran.stderr));
   const outcome = outcomeOf(ran);
   if ('text' in outcome) {
@@ -157,7 +114,7 @@ export async function runFormatter(pick: FormatterPick, text: string, ctx: Forma
 /** The format a save asks for (#749, #780): the file's language's formatters that may run in the workspace detected in the activity's folder,
  * the first that runs picked and run; undefined when none does, and the text is saved as it is. */
 export async function formatForSave(editor: EditorConfig, text: string, ctx: FormatContext): Promise<FormatOutcome | undefined> {
-  const binaries = await detectFormatters(ctx.cwd, candidatesFor(editor, ctx.file, ctx.workspace.name));
+  const binaries = await detectFormatters(ctx.machine, ctx.cwd, candidatesFor(editor, ctx.file, ctx.workspace.name));
   const pick = pickFormatter(editor, ctx.file, ctx.workspace.name, binaries);
   if (pick === undefined) return undefined;
   const outcome = await runFormatter(pick, text, ctx);

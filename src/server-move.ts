@@ -1,12 +1,12 @@
 // The file tree's drop (#594): an item of the activity's tree, or a file dragged from Finder, moved or copied into a folder of the tree. Every
 // path goes through tree-paths.ts's guards, every disk touch through MoveFs, so node:test fakes a volume boundary.
-import { cp, rename, rm } from 'node:fs/promises';
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { isInside } from './ide.js';
+import { isLocal, moveFs, REMOTE_REFUSAL } from './machine-fs.js';
 import type { TaskRouteDeps, Refusal } from './server-tasks.js';
-import { treeRoot } from './server-tree.js';
-import { destination, exists, isRootOrInside, outermost, PATH_DISK, type PathFs, refusal, rootsOf, sourceItem } from './tree-paths.js';
+import { treeMachine, treeRoot } from './server-tree.js';
+import { destination, exists, isRootOrInside, outermost, type PathFs, refusal, rootsOf, sourceItem } from './tree-paths.js';
 import type { Language } from './types.js';
 import { toWire } from './wire-path.js';
 import { wordsOf } from './worktree.js';
@@ -22,14 +22,6 @@ export interface MoveFs extends PathFs {
   cp(from: string, to: string): Promise<void>; // recursive, never over an existing path
   rm(path: string): Promise<void>; // recursive
 }
-
-// cp keeps a link a link and never overwrites
-export const MOVE_DISK: MoveFs = {
-  ...PATH_DISK,
-  rename: (from, to) => rename(from, to),
-  cp: (from, to) => cp(from, to, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true }),
-  rm: (path) => rm(path, { recursive: true }),
-};
 
 // The extension is after the last dot of a name that does not start with one (`.env` has none); a folder has none
 function splitName(name: string, isFolder: boolean): [string, string] {
@@ -80,7 +72,7 @@ export interface Moved { moved: string[]; from: string[] }
 
 /** Every source into `into`, in order, each under a free name. The guards run on every source first, so a refusal moves nothing; an fs
  *  failure rejects, and the items before it stay moved (the tree's poll shows them). */
-export async function moveItems(job: MoveJob, fs: MoveFs = MOVE_DISK): Promise<Moved | Refusal> {
+export async function moveItems(job: MoveJob, fs: MoveFs): Promise<Moved | Refusal> {
   const folders = await rootsOf(job.root, fs);
   const into = await destination(folders, job.into, fs);
   if (typeof into !== 'string') return into;
@@ -110,13 +102,13 @@ export function moveBody(raw: unknown): { sources: string[]; into: string; copy:
   return strings.length > 0 && strings.length === list.length ? { sources: strings, into, copy } : undefined;
 }
 
-const refuse = (res: Response, { status, message }: Refusal): void => {
-  res.status(status).json({ error: message });
+const refuse = (res: Response, { status, message, code }: Refusal): void => {
+  res.status(status).json({ error: message, code });
 };
 
 /** POST /activities/:id/tree/move (#594, #629): the drop on the files sidebar. The root is the tree's own (treeRoot); no value of the request
  *  picks it. Not /tasks/:id/move: that is the flow's reorder of a task (#122). */
-export function registerMoveRoutes(app: Express, { requireLive, language }: Pick<TaskRouteDeps, 'requireLive' | 'language' | 'machineFor'>): void {
+export function registerMoveRoutes(app: Express, { requireLive, language, machineFor }: Pick<TaskRouteDeps, 'requireLive' | 'language' | 'machineFor'>): void {
   app.post('/activities/:id/tree/move', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -124,8 +116,11 @@ export function registerMoveRoutes(app: Express, { requireLive, language }: Pick
     if (typeof root !== 'string') return refuse(res, root);
     const body = moveBody(req.body);
     if (!body) return refuse(res, refusal(HTTP_BAD_REQUEST, MOVE_BODY_MESSAGE));
+    const machine = treeMachine(current.state, req.params.id as string, machineFor);
+    // #160: an absolute source is a Finder path, on the host's disk; a move between two of the task's own folders is the machine's
+    if (!isLocal(machine) && body.sources.some((source) => isAbsolute(source))) return refuse(res, REMOTE_REFUSAL);
     try {
-      const moved = await moveItems({ root, ...body, suffix: COPY_SUFFIX[language()] });
+      const moved = await moveItems({ root, ...body, suffix: COPY_SUFFIX[language()] }, moveFs(machine));
       if ('status' in moved) refuse(res, moved);
       else res.json(moved);
     } catch (err) {

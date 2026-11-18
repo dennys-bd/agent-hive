@@ -3,6 +3,7 @@ import { noWorkspaceReason, taskWorkspace } from './config.js';
 import { DiffTooLarge, diffBase, taskPatch } from './diff.js';
 import { cutPatch, JUDGE_SCHEMA, judgePrompt, parseFindings, parseScores, REVIEW_SCHEMA, reviewerPrompt, type Work } from './evaluate-prompt.js';
 import { workspaceBase } from './fork.js';
+import { HOST } from './host-fs.js';
 import { type HeadlessDeps, type HeadlessResult, runHeadless } from './headless-run.js';
 import { launchRun, type SpecializedAgent, specializedAgents } from './launch-options.js';
 import type { Logger } from './log.js';
@@ -72,7 +73,7 @@ async function resolveRows(deps: EvaluateDeps, stage: Stage, workspace: string, 
 async function workOf(runtime: Runtime, { task, activity }: EvaluateEffect, workspace: Workspace, cwd: string, exec: Exec): Promise<Work | Broken> {
   try {
     const base = await diffBase(task, activity, workspaceBase(runtime.config, workspace), cwd, 'worktree', exec);
-    const diff = await taskPatch(cwd, base.commit, exec).catch((err: unknown) => {
+    const diff = await taskPatch({ ...HOST, exec }, cwd, base.commit).catch((err: unknown) => {
       if (err instanceof DiffTooLarge) return { stat: '', patch: TOO_LARGE_PATCH };
       throw err;
     });

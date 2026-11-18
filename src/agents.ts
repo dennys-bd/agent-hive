@@ -39,7 +39,7 @@ export const AGENTS: Record<AgentId, AgentSpec> = {
     label: 'Copilot', command: 'copilot', planLimits: false, canChooseSessionId: true, resumesAnyFolder: true,
     // as `copilot --help` lists them (spike §8): none opens a conversation, which only flags do
     subcommands: ['app', 'login', 'help', 'init', 'config', 'update', 'version', 'workflow', 'sessions', 'memories', 'plugin', 'mcp', 'skill', 'instruction', 'lsp', 'sandbox', 'completion'],
-    shimFlags: ['-p', '--prompt', '--acp', '-h', '--help', '-v', '--version'], // a prompt-mode run, an ACP server, help and version: no conversation to capture
+    shimFlags: ['-p', '--prompt', '--acp', '--connect', '--connect=*', '-h', '--help', '-v', '--version'], // a prompt-mode run, an ACP server, a remote session (#876), help and version: no conversation to capture
   },
 };
 

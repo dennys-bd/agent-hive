@@ -49,17 +49,13 @@
         "src/kill-tree.ts", "src/pty-host.ts", "src/spawn.ts", "src/spawn-internal.ts", "src/terminal-files.ts", "src/terminal-wire.ts",
         "src/headless-run.ts", "src/worker-lsp.ts", "src/server-memory.ts", "src/settings-save.ts", "src/replace-file.ts",
         "src/keep-awake.ts", "src/locale-env.ts", "src/main-window-bounds.ts", "src/item-sources.ts", "src/items-catalogue.ts",
-        "src/machine.ts", "src/machine-local*.ts", "src/machine-run.ts"
+        "src/machine.ts", "src/machine-local*.ts", "src/machine-run.ts", "src/host-fs.ts"
       ],
       "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
     },
     // Pending: files a sibling node still has to move; each node deletes its own group
     {
       "includes": [
-        // 7.3 (#160): files, editor, diff, formatters and checkers on the machine
-        "src/check-run.ts", "src/diff.ts", "src/format-run.ts", "src/formatter-detect.ts", "src/server-check.ts",
-        "src/server-decomposition.ts", "src/server-design-frame.ts", "src/server-editor.ts", "src/server-file-base.ts",
-        "src/server-files.ts", "src/server-move.ts", "src/server-open.ts", "src/server-tree.ts", "src/server-tree-ops.ts", "src/tree-paths.ts",
         // unowned, 7.5 (#882): nested repos, tree watch, design parts and exit cwd on the machine
         "src/worktree-nested.ts", "src/worktree-stranded.ts", "src/nested-check.ts", "src/server-nested.ts",
         "src/tree-watch-root.ts", "src/design-parts.ts", "src/server-exit.ts",

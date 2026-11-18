@@ -8,9 +8,10 @@ import { join, win32 } from 'node:path';
 import type { Readable } from 'node:stream';
 import { writeAtomically } from '../src/daemon-files.js';
 import { RETRY_DELAYS_MS, replaceFile, replaceFileSync } from '../src/replace-file.js';
-import { writeAtomic } from '../src/server-editor.js';
+import { fakeMachine } from './fake-machine.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
+const { writeAtomic } = fakeMachine().fs; // the local machine's copy
 const TMP = 'target.json.tmp';
 const TARGET = 'target.json';
 

@@ -116,6 +116,9 @@ export function startShim(r: Rig, args: readonly string[], o: ShimOptions = {}):
   let stderr = '';
   child.stdout.on('data', (c: Buffer) => { stdout += c.toString(); });
   child.stderr.on('data', (c: Buffer) => { stderr += c.toString(); });
+  // A shim that refuses before reading its stdin (an arg cmd.exe cannot carry, exit 126) can be gone before this write lands: the EPIPE is
+  // that exit racing the write, never the behaviour under test, which the exit code and the output assert
+  child.stdin.on('error', () => {});
   child.stdin.end(o.stdin ?? '');
   const done = new Promise<Ran>((resolve) => child.on('close', (code) => resolve({ code, stdout, stderr, ms: Date.now() - started })));
   return { pid: child.pid ?? 0, kill: (signal) => { child.kill(signal); }, done };

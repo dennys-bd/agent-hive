@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { createConsoleStore, failLine } from '../src/console.js';
 import { type FormatContext, formatForSave, launchOf, runFormatter } from '../src/format-run.js';
 import type { FormatterPick } from '../src/formatters.js';
+import type { RunProcess } from '../src/machine.js';
 import { EDITOR_FILE_MAX, EDITOR_DEFAULTS } from '../src/types.js';
+import { fakeMachine } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 
 type Store = ReturnType<typeof createConsoleStore>;
@@ -24,7 +26,7 @@ const ruff = (binary: string): FormatterPick => ({ kind: 'supported', name: 'ruf
 function setup(dir: string, timeoutMs?: number): { store: Store; ctx: FormatContext } {
   const store = createConsoleStore(() => 5000);
   const ctx: FormatContext = {
-    cwd: dir, file: join(dir, 'a.py'), workspace: { name: 'ui', env: { GREETING: 'hi' } }, label: '#HIVE-1 · a.py', consoleStore: store,
+    machine: fakeMachine(), cwd: dir, file: join(dir, 'a.py'), workspace: { name: 'ui', env: { GREETING: 'hi' } }, label: '#HIVE-1 · a.py', consoleStore: store,
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
   };
   return { store, ctx };
@@ -149,4 +151,22 @@ test('a .cmd formatter rewrites the text on Windows (#634)', { skip: process.pla
   const { ctx } = setup(dir);
   const outcome = await runFormatter(ruff(cmd), 'x = 1\n', ctx);
   assert.ok('text' in outcome && outcome.text.trim() === 'FORMATTED', JSON.stringify(outcome));
+});
+
+test('a formatter runs on the context\'s machine: its run gets the binary, the folder, the text on stdin and an env whose PATH is the machine\'s (#160)', async () => {
+  const seen: RunProcess[] = [];
+  const machine = fakeMachine({ info: { platform: 'linux', path: '/machine/bin' }, run: async (p) => { seen.push(p); return { code: 0, stdout: Buffer.from('X\n'), stderr: '', tail: '' }; } });
+  const store = createConsoleStore(() => 5000);
+  const ctx: FormatContext = { machine, cwd: '/repo/wt', file: '/repo/wt/a.py', workspace: { name: 'ui', env: { GREETING: 'hi' } }, label: '#HIVE-1 · a.py', consoleStore: store };
+  assert.deepEqual(await runFormatter(ruff('/repo/wt/.venv/bin/ruff'), 'x\n', ctx), { text: 'X\n' });
+  const [p] = seen;
+  assert.deepEqual([p.command, p.args, p.cwd, p.input, p.maxBytes, p.env.PATH, p.env.GREETING], ['/repo/wt/.venv/bin/ruff', ['format', '--stdin-filename', '/repo/wt/a.py', '-'], '/repo/wt', 'x\n', EDITOR_FILE_MAX, '/machine/bin', 'hi']);
+});
+
+test('a RunResult with a failure ends the formatter\'s run with that failure\'s words (#160)', async () => {
+  const machine = fakeMachine({ info: { platform: 'linux' }, run: async () => ({ code: 3, stdout: Buffer.alloc(0), stderr: 'bad config', tail: 'bad config', failure: 'exit code 3' }) });
+  const ctx: FormatContext = { machine, cwd: '/repo/wt', file: '/repo/wt/a.py', workspace: { name: 'ui', env: {} }, label: '#HIVE-1 · a.py', consoleStore: createConsoleStore(() => 5000) };
+  const outcome = await runFormatter(ruff('/repo/wt/.venv/bin/ruff'), 'x\n', ctx);
+  assert.ok('error' in outcome);
+  assert.equal(outcome.error, 'exit code 3');
 });

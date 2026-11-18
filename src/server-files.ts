@@ -1,4 +1,3 @@
-import { realpath, stat } from 'node:fs/promises';
 import type { Express, Request, Response } from 'express';
 import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
 import { resolveActivityPath } from './ide.js';
@@ -8,6 +7,8 @@ import type { TaskRouteDeps, Refusal } from './server-tasks.js';
 import { resolveRef, TASK_REF } from './task-refs.js';
 import type { Activity, Task, TaskFile, Config, State } from './types.js';
 import { workDir } from './worktree.js';
+import { fileFs } from './machine-fs.js';
+import type { Machine } from './machine.js';
 import { originRepository } from './repos/repositories.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -24,12 +25,6 @@ const refuse = (res: Response, refusal: Refusal): void => {
   res.status(refusal.status).json({ error: refusal.message });
 };
 
-// What the file routes read from the disk (#258): realpath follows symlinks, so a link out of the task's folder is caught.
-export const DISK = {
-  realpath: (path: string): Promise<string> => realpath(path),
-  isFile: (path: string): Promise<boolean> => stat(path).then((s) => s.isFile(), () => false),
-};
-
 interface TaskFolders { worktree?: string; workspace: string } // no worktree: a deleted activity's, so the main checkout
 
 /** Where a task's files resolve (#258): its worktree, or its workspace root once that is gone; a task with no workspace has neither (409). */
@@ -41,9 +36,9 @@ function taskFolders(config: Pick<Config, 'comb'>, task: Task, activity: Activit
 /** Every string of the task's result, at any key, that resolves to a file (#258, #697): relative to its worktree (its workspace once the
  *  worktree is gone), ../ or absolute, a separate docsRepo's included. What the details panel links. A URL, a number or a missing path is
  *  left out: none resolves to a file. */
-async function taskFiles(result: Record<string, unknown>, folders: TaskFolders): Promise<TaskFile[]> {
+async function taskFiles(result: Record<string, unknown>, folders: TaskFolders, machine: Machine): Promise<TaskFile[]> {
   const paths = Object.entries(result).flatMap(([key, value]) => (typeof value === 'string' && value !== '' ? [{ key, path: value }] : []));
-  const found = await Promise.all(paths.map(async (entry) => ({ ...entry, resolved: await resolveActivityPath({ ...folders, path: entry.path, ...DISK }) })));
+  const found = await Promise.all(paths.map(async (entry) => ({ ...entry, resolved: await resolveActivityPath({ ...folders, path: entry.path, ...fileFs(machine) }) })));
   return found.flatMap(({ key, path, resolved }) => ('file' in resolved ? [{ key, path, base: resolved.base }] : []));
 }
 
@@ -67,7 +62,7 @@ function openRef(res: Response, raw: unknown, state: State, repository?: string)
 
 // A terminal's task references (#588, #629), beside its file links: on a task's activity, the task's own repository, else the origin of the
 // activity's workspace (a local activity's checkout). Read-only: nothing but git remote get-url runs, nothing is dispatched.
-function registerRefRoutes(app: Express, { exec, requireLive }: Pick<TaskRouteDeps, 'exec' | 'requireLive'>): void {
+function registerRefRoutes(app: Express, { machineFor, requireLive }: Pick<TaskRouteDeps, 'machineFor' | 'requireLive'>): void {
   app.post('/activities/:id/open-ref', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -77,14 +72,14 @@ function registerRefRoutes(app: Express, { exec, requireLive }: Pick<TaskRouteDe
     const { config } = current.runtime;
     const workspace = task ? taskWorkspace(config, task) : activity && workspaceByName(config, activity.workspace);
     if (!task && !workspace) return refuse(res, { status: HTTP_NOT_FOUND, message: activity ? UNKNOWN_WORKSPACE_MESSAGE : UNKNOWN_ACTIVITY_MESSAGE });
-    const repository = task?.item.facets?.repository ?? (await originRepository({ exec }, workspace?.path));
+    const repository = task?.item.facets?.repository ?? (await originRepository(machineFor(activity ?? {}), workspace?.path));
     openRef(res, req.body, current.state, repository);
   });
 }
 
 // An activity's files (#258, #629): the list the details panel links (files), which open in the editor pane (#717), and a terminal's task
 // references (open-ref). The IDE click (open-file) is gone with the IDE (#818).
-export function registerFileRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'machineFor'>): void {
+export function registerFileRoutes(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'machineFor'>): void {
   const { requireLive } = deps;
 
   app.get('/activities/:id/files', async (req: Request, res: Response) => {
@@ -97,7 +92,7 @@ export function registerFileRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec
     const folders = taskFolders(current.runtime.config, task, activity);
     if ('status' in folders) return void res.json([]); // no workspace: no links. No IDE no longer matters: they open in the editor pane (#717)
     try {
-      res.json(await taskFiles(resultOf(current.state, task.item.itemId) ?? {}, folders));
+      res.json(await taskFiles(resultOf(current.state, task.item.itemId) ?? {}, folders, deps.machineFor(activity ?? {})));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
     }

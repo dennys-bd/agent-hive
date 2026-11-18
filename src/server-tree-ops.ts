@@ -1,15 +1,16 @@
 // The files tree's own operations (#818): a new file or folder, a rename, the trash, and an untitled file's first save. Every path goes
 // through tree/move's guards (tree-paths.ts): relative to the tree's root, inside it as written and as real, never under .git. Every disk
 // touch goes through TreeFs, so a test could fake one.
-import { lstat, mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative } from 'node:path';
 import type { Express, Request, Response } from 'express';
+import type { Machine } from './machine.js';
 import { isInside } from './ide.js';
 import { trashCommand } from './platform-commands.js';
-import { sha256, writeAtomic } from './server-editor.js';
+import { pathFs, treeFs } from './machine-fs.js';
+import { sha256 } from './server-editor.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
-import { treeRoot } from './server-tree.js';
-import { existingItem, exists, newItem, outermost, PATH_DISK, type PathFs, refusal, rootsOf } from './tree-paths.js';
+import { treeMachine, treeRoot } from './server-tree.js';
+import { existingItem, exists, newItem, outermost, type PathFs, refusal, rootsOf } from './tree-paths.js';
 import { EDITOR_FILE_MAX } from './types.js';
 import { toWire } from './wire-path.js';
 import { wordsOf } from './worktree.js';
@@ -37,30 +38,13 @@ export interface TreeFs extends PathFs {
   sameFile(a: string, b: string): Promise<boolean>; // one inode: a case-insensitive volume resolves `A.ts` to `a.ts`, a case-sensitive one does not
 }
 
-export const TREE_DISK: TreeFs = {
-  ...PATH_DISK,
-  mkdirs: async (path) => {
-    await mkdir(path, { recursive: true });
-  },
-  mkdir: (path) => mkdir(path),
-  writeNew: (path, text) => writeFile(path, text, { flag: 'wx' }),
-  replace: async (path, text) => {
-    await writeAtomic(path, text);
-  },
-  rename: (from, to) => rename(from, to),
-  sameFile: async (a, b) => {
-    const [first, second] = await Promise.all([lstat(a), lstat(b)]).catch(() => []);
-    return first !== undefined && second !== undefined && first.dev === second.dev && first.ino === second.ino;
-  },
-};
-
 const isTaken = (err: unknown): boolean => err instanceof Error && 'code' in err && err.code === 'EEXIST';
 const isText = (value: unknown): value is string => typeof value === 'string' && value !== '';
 const isRefusal = (value: unknown): value is Refusal => typeof value === 'object' && value !== null && 'status' in value && 'message' in value;
 
 /** A new empty file or folder at `path` (#818): the folders between made first; a taken name is refused, never overwritten. Its path,
  *  relative to the real root, `/`-separated on the wire (#641). */
-export async function createItem({ root, path, kind }: { root: string; path: string; kind: 'file' | 'folder' }, fs: TreeFs = TREE_DISK): Promise<string | Refusal> {
+export async function createItem({ root, path, kind }: { root: string; path: string; kind: 'file' | 'folder' }, fs: TreeFs): Promise<string | Refusal> {
   const roots = await rootsOf(root, fs);
   const target = await newItem(roots, path, fs);
   if (typeof target !== 'string') return target;
@@ -76,7 +60,7 @@ export async function createItem({ root, path, kind }: { root: string; path: str
 
 /** An item renamed or moved to `to` (#818), the folders `to` adds made first. A taken name is refused, unless it is the item itself under
  *  another case on a case-insensitive volume (APFS's `a.ts` → `A.ts`, decided by inode); a folder never moves into itself. Its new path, relative to the real root, `/`-separated on the wire (#641). */
-export async function renameItem({ root, from, to }: { root: string; from: string; to: string }, fs: TreeFs = TREE_DISK): Promise<string | Refusal> {
+export async function renameItem({ root, from, to }: { root: string; from: string; to: string }, fs: TreeFs): Promise<string | Refusal> {
   const roots = await rootsOf(root, fs);
   const item = await existingItem(roots, from, fs);
   if (typeof item !== 'string') return item;
@@ -94,7 +78,7 @@ export async function renameItem({ root, from, to }: { root: string; from: strin
 /** The items to the system trash (#818): every path checked first, so a refusal trashes nothing; then one trashCommand run with each
  *  outermost item. undefined once run; `run` rejects with the command's words. */
 export async function trashItems(
-  root: string, paths: string[], run: (file: string, args: readonly string[]) => Promise<unknown>, fs: PathFs = PATH_DISK, platform: NodeJS.Platform = process.platform,
+  root: string, paths: string[], run: (file: string, args: readonly string[]) => Promise<unknown>, fs: PathFs, platform: NodeJS.Platform,
 ): Promise<Refusal | undefined> {
   const roots = await rootsOf(root, fs);
   const checked = await Promise.all(paths.map((path) => existingItem(roots, path, fs)));
@@ -108,7 +92,7 @@ export async function trashItems(
 /** An untitled buffer's first save (#818): `path` is the OS dialog's, absolute, and must lie in the tree as written or as real; never under
  *  .git. A taken path is refused unless `replace` (the dialog's own Replace? was answered). A new file is written with wx, a replaced one
  *  atomically, as the editor saves. Its path relative to the real root, `/`-separated on the wire (#641), and the written bytes' version. */
-export async function saveNewFile({ root, path, text, replace }: { root: string; path: string; text: string; replace: boolean }, fs: TreeFs = TREE_DISK): Promise<{ path: string; version: string } | Refusal> {
+export async function saveNewFile({ root, path, text, replace }: { root: string; path: string; text: string; replace: boolean }, fs: TreeFs): Promise<{ path: string; version: string } | Refusal> {
   if (Buffer.byteLength(text, 'utf8') > EDITOR_FILE_MAX) return refusal(HTTP_TOO_LARGE, TOO_LARGE_MESSAGE);
   const roots = await rootsOf(root, fs);
   const target = await newItem(roots, relative(isInside(roots.realRoot, path) ? roots.realRoot : roots.root, path), fs);
@@ -154,14 +138,14 @@ const refuse = (res: Response, { status, message }: Refusal): void => {
 
 // What every route shares: the live state, the tree's root from the activity (never from the request), then the route's own steps;
 // whatever the disk or a command throws answers 500 with its words
-function treeRoute(app: Express, name: string, requireLive: TaskRouteDeps['requireLive'], handle: (res: Response, root: string, body: unknown) => Promise<void>): void {
+function treeRoute(app: Express, name: string, { requireLive, machineFor }: Pick<TaskRouteDeps, 'requireLive' | 'machineFor'>, handle: (res: Response, root: string, body: unknown, machine: Machine) => Promise<void>): void {
   app.post(`/activities/:id/${name}`, async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
     const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
     if (typeof root !== 'string') return refuse(res, root);
     try {
-      await handle(res, root, req.body);
+      await handle(res, root, req.body, treeMachine(current.state, req.params.id as string, machineFor));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: wordsOf(err) });
     }
@@ -169,32 +153,32 @@ function treeRoute(app: Express, name: string, requireLive: TaskRouteDeps['requi
 }
 
 /** POST /activities/:id/tree/create, /tree/rename, /tree/trash and /tree/file (#818): the files tree's own operations, beside tree/move. */
-export function registerTreeOpsRoutes(app: Express, { requireLive, exec }: Pick<TaskRouteDeps, 'requireLive' | 'exec' | 'machineFor'>): void {
-  treeRoute(app, 'tree/create', requireLive, async (res, root, raw) => {
+export function registerTreeOpsRoutes(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'machineFor'>): void {
+  treeRoute(app, 'tree/create', deps, async (res, root, raw, machine) => {
     const body = createBody(raw);
     if (!body) return refuse(res, refusal(HTTP_BAD_REQUEST, CREATE_BODY_MESSAGE));
-    const path = await createItem({ root, ...body });
+    const path = await createItem({ root, ...body }, treeFs(machine));
     if (isRefusal(path)) refuse(res, path);
     else res.json({ path });
   });
-  treeRoute(app, 'tree/rename', requireLive, async (res, root, raw) => {
+  treeRoute(app, 'tree/rename', deps, async (res, root, raw, machine) => {
     const body = renameBody(raw);
     if (!body) return refuse(res, refusal(HTTP_BAD_REQUEST, RENAME_BODY_MESSAGE));
-    const path = await renameItem({ root, ...body });
+    const path = await renameItem({ root, ...body }, treeFs(machine));
     if (isRefusal(path)) refuse(res, path);
     else res.json({ path });
   });
-  treeRoute(app, 'tree/trash', requireLive, async (res, root, raw) => {
+  treeRoute(app, 'tree/trash', deps, async (res, root, raw, machine) => {
     const paths = trashBody(raw);
     if (!paths) return refuse(res, refusal(HTTP_BAD_REQUEST, TRASH_BODY_MESSAGE));
-    const refused = await trashItems(root, paths, (file, args) => exec(file, [...args]));
+    const refused = await trashItems(root, paths, (file, args) => machine.exec(file, [...args]), pathFs(machine), machine.info().platform);
     if (refused) refuse(res, refused);
     else res.status(HTTP_NO_CONTENT).end();
   });
-  treeRoute(app, 'tree/file', requireLive, async (res, root, raw) => {
+  treeRoute(app, 'tree/file', deps, async (res, root, raw, machine) => {
     const body = fileBody(raw);
     if (!body) return refuse(res, refusal(HTTP_BAD_REQUEST, FILE_BODY_MESSAGE));
-    const saved = await saveNewFile({ root, ...body });
+    const saved = await saveNewFile({ root, ...body }, treeFs(machine));
     if (isRefusal(saved)) refuse(res, saved);
     else res.json(saved);
   });

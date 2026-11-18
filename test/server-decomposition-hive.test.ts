@@ -13,6 +13,7 @@ import { registerDecompositionRoutes } from '../src/server-decomposition.js';
 import { CREATE_ISSUE, CREATE_PULL_REQUEST, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
 import { worktreePath } from '../src/worktree.js';
 import { END, HIVE_EPIC, type CombConfig, type DecompositionPreview, type Effect, type Exec, type HiveEvent, type State, type Task, type TaskEntry } from '../src/types.js';
+import { fakeMachine } from './fake-machine.js';
 import { fakeGqlJson, fakeLog, GITHUB_ENTRY } from './fakes.js';
 import { HIVE_TREE, hiveFlows } from './fixtures/decomposition.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
@@ -79,7 +80,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const { log, lines } = fakeLog();
   const app = express();
   app.use(express.json());
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, latest: () => state, exec, gql, log, sleep: async () => undefined });
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => fakeMachine({ exec }), sleep: async () => undefined });
   const server = app.listen(0);
   t.after(() => server.close());
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/activities/${encodeURIComponent(activityIdOf(task.item.itemId))}/decomposition`;

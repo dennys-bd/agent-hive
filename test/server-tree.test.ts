@@ -11,7 +11,9 @@ import { LOCAL_ACTIVITY_MESSAGE } from '../src/activity-routes.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-files.js';
 import { worktreePath } from '../src/worktree.js';
 import type { TaskTree, Config, Exec } from '../src/types.js';
+import { MACHINE_REMOTE, MACHINE_REMOTE_MESSAGE } from '../src/machine-fs.js';
 import { hiveFetch } from './secret-client.js';
+import { fakeFiles, fakeMachine, fakeMachines } from './fake-machine.js';
 import { head, ignoredEntry, ordinary, renamed, statusText, untracked } from './fixtures/porcelain-v2.js';
 import { withLocal, workPath } from './fixtures/work.js';
 import { IGNORED_ENTRIES, postJson, startTree, task } from './fixtures/tree-server.js';
@@ -128,12 +130,12 @@ test('taskTree answers the ignored entries outermost and sorted, whatever order 
     if (args.includes('status')) return { stdout: statusText(ignoredEntry('node_modules/'), ignoredEntry('docs/'), ignoredEntry('z.log'), ignoredEntry('a.log'), ignoredEntry('.git/'), ignoredEntry('sub/.GIT/config')) };
     return { stdout: ['a.txt', ''].join('\0') };
   };
-  const tree = await taskTree('/wt', exec, async (folder) => folder === join('/wt', 'vendor/lib/'));
+  const tree = await taskTree(fakeMachine({ exec, fs: fakeFiles(join('/wt', 'vendor/lib/', '.git')) }), '/wt');
   assert.deepEqual([tree.folders, tree.ignored], [['empty'], { files: ['a.log', 'z.log'], folders: ['docs', 'node_modules', 'vendor/lib'] }]);
 });
 
 test('taskTree answers the branch from the status run\'s # branch.head: a branch, none on a detached HEAD, and a repository\'s first one before any commit (#713, #502)', async () => {
-  const treeOf = (status: string) => taskTree('/wt', async (_file, args) => ({ stdout: args.includes('status') ? status : '' }), async () => false);
+  const treeOf = (status: string) => taskTree(fakeMachine({ exec: async (_file, args) => ({ stdout: args.includes('status') ? status : '' }), fs: fakeFiles() }), '/wt');
   assert.equal((await treeOf(statusText(head('main')))).branch, 'main');
   assert.equal('branch' in (await treeOf(statusText(head('(detached)')))), false, 'detached: no branch');
   assert.equal((await treeOf(statusText('# branch.oid (initial)', '# branch.head main'))).branch, 'main');
@@ -145,7 +147,7 @@ test('taskTree marks A every listed entry under an untracked folder, a nested re
     if (args.includes('status')) return { stdout: statusText(untracked('newdir/'), untracked('vendor/lib/'), untracked('loose.txt')) };
     return { stdout: ['a.txt', 'loose.txt', 'newdir/x.ts', 'newdir/sub/y.ts', 'vendor/lib/', ''].join('\0') };
   };
-  const tree = await taskTree('/wt', exec, async (folder) => folder === join('/wt', 'vendor/lib/'));
+  const tree = await taskTree(fakeMachine({ exec, fs: fakeFiles(join('/wt', 'vendor/lib/', '.git')) }), '/wt');
   assert.deepEqual(tree.marks, { 'loose.txt': 'A', 'newdir/x.ts': 'A', 'newdir/sub/y.ts': 'A', 'vendor/lib/': 'A' });
   assert.deepEqual(tree.files, ['a.txt', 'loose.txt', 'newdir/x.ts', 'newdir/sub/y.ts']);
 });
@@ -220,4 +222,11 @@ test('untrackedMarks marks every entry under an untracked folder, a nested repos
   const marks = untrackedMarks(entries, folders);
   assert.deepEqual(marks, { 'untracked-0/': 'A', 'untracked-1/deep/er/f.ts': 'A' });
   assert.ok(performance.now() - started < 300, 'entries x folders scan');
+});
+
+test('POST /activities/:id/reveal on a machine that is not local answers 409 machine_remote and runs no reveal on the host (#160)', async (t) => {
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })], { machines: fakeMachines(fakeMachine({ id: 'AB:CD' })) });
+  const res = await postJson(`${f.base}${workPath(f.server, 'local:1')}/reveal`, { path: 'src/b.ts' });
+  assert.deepEqual([res.status, await res.json()], [409, { error: MACHINE_REMOTE_MESSAGE, code: MACHINE_REMOTE }]);
+  assert.deepEqual(f.calls, []);
 });

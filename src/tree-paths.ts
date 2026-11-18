@@ -1,7 +1,6 @@
 // The files tree's path guards (#594, #818), shared by tree/move (server-move.ts) and the tree's own operations (server-tree-ops.ts): every
 // path a route takes is relative to the tree's root and stays inside it, as written and as real (a symlink out is refused), and never
 // reaches .git. Every disk touch goes through PathFs, so node:test can fake one.
-import { lstat, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isInside } from './ide.js';
 import type { Refusal } from './server-tasks.js';
@@ -18,9 +17,6 @@ export interface PathFs {
   realpath(path: string): Promise<string>; // rejects when the path does not exist
   stat(path: string): Promise<{ isDirectory(): boolean }>; // rejects when the path does not exist
 }
-
-// lstat, not stat: a symlink is the item, not its target, and a dangling one still holds its name, so no free name lands on it
-export const PATH_DISK: PathFs = { realpath: (path) => realpath(path), stat: (path) => lstat(path) };
 
 /** The tree's root as written and as real: every guard checks a path against both. */
 export interface Roots { root: string; realRoot: string }
@@ -92,7 +88,7 @@ export async function newItem({ root, realRoot }: Roots, path: string, fs: PathF
 export const outermost = (items: string[]): string[] => [...new Set(items)].filter((item) => !items.some((other) => other !== item && isInside(other, item)));
 
 /** A folder of the tree a terminal starts in (#818): destination's checks, from the root alone. */
-export const treeFolder = async (root: string, folder: string, fs: PathFs = PATH_DISK): Promise<string | Refusal> => destination(await rootsOf(root, fs), folder, fs);
+export const treeFolder = async (root: string, folder: string, fs: PathFs): Promise<string | Refusal> => destination(await rootsOf(root, fs), folder, fs);
 
 /** An existing item of the tree a reveal shows (#818). */
-export const treeItem = async (root: string, path: string, fs: PathFs = PATH_DISK): Promise<string | Refusal> => existingItem(await rootsOf(root, fs), path, fs);
+export const treeItem = async (root: string, path: string, fs: PathFs): Promise<string | Refusal> => existingItem(await rootsOf(root, fs), path, fs);

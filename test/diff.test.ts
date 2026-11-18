@@ -8,6 +8,7 @@ import type { WorkspaceBase } from '../src/fork.js';
 import { taskDiff, taskPatch, commitDiff, DIFF_MAX_BYTES, diffBase, DiffTooLarge, isOverflow, fileHash, NoParentCommit, parseDiff, withHash } from '../src/diff.js';
 import type { Activity, Task, Exec } from '../src/types.js';
 import { tempHive } from './fakes.js';
+import { fakeMachine } from './fake-machine.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import type { WithWork } from './fixtures/work.js';
 
@@ -147,7 +148,7 @@ const copyOf = (calls: Call[]): string => calls[1]?.index ?? assert.fail('add ra
 
 test('taskDiff runs add -A and diff --cached on a copy of the worktree\'s index in a temp dir, capped at DIFF_MAX_BYTES; the real index is never touched and the temp dir goes afterwards (#270)', async (t) => {
   const { exec, calls, realIndex } = await fakeGit(t);
-  assert.deepEqual(await taskDiff('/wt', BASE, exec), parseDiff(MODIFIED).map(withHash));
+  assert.deepEqual(await taskDiff(fakeMachine({ exec: exec }), '/wt', BASE), parseDiff(MODIFIED).map(withHash));
   const copy = copyOf(calls);
   assert.notEqual(copy, realIndex);
   assert.deepEqual(calls, [
@@ -161,11 +162,33 @@ test('taskDiff runs add -A and diff --cached on a copy of the worktree\'s index 
 
 test('taskDiff rejects with git\'s own words, or DiffTooLarge past maxBuffer, and removes the temp dir either way (#270)', async (t) => {
   const failing = await fakeGit(t, Object.assign(new Error('Command failed: git diff'), { stderr: 'fatal: bad object a1b2c3d\n' }));
-  await assert.rejects(taskDiff('/wt', BASE, failing.exec), { message: 'fatal: bad object a1b2c3d' });
+  await assert.rejects(taskDiff(fakeMachine({ exec: failing.exec }), '/wt', BASE), { message: 'fatal: bad object a1b2c3d' });
   assert.ok(await gone(dirname(copyOf(failing.calls))), 'removed on failure too');
   const large = await fakeGit(t, OVERFLOW());
-  await assert.rejects(taskDiff('/wt', BASE, large.exec), DiffTooLarge);
+  await assert.rejects(taskDiff(fakeMachine({ exec: large.exec }), '/wt', BASE), DiffTooLarge);
   assert.ok(await gone(dirname(copyOf(large.calls))));
+});
+
+// The machine's own tmpdir is a tempDir, so the index copy's folder lands inside it and tempDir's cleanup holds even if the code's rm did not
+test('the temp index is made under the machine\'s tmpdir and removed with its rm, after a failed git add too (#160)', async (t) => {
+  const { realIndex } = await fakeGit(t);
+  const machineTmp = await tempDir(t, 'hive-machine-tmp-');
+  const local = fakeMachine();
+  const copies: string[] = [];
+  const removed: string[] = [];
+  const exec: Exec = async (_file, args, opts) => {
+    if (args.includes('rev-parse')) return { stdout: `${realIndex}\n` };
+    copies.push(String(opts?.env?.GIT_INDEX_FILE));
+    throw Object.assign(new Error('Command failed: git add'), { stderr: 'fatal: index.lock exists\n' });
+  };
+  const machine = fakeMachine({ exec, info: { tmpdir: machineTmp }, fs: {
+    rm: async (path, options) => { removed.push(path); await local.fs.rm(path, options); },
+  } });
+  await assert.rejects(taskDiff(machine, '/wt', BASE), { message: 'fatal: index.lock exists' });
+  assert.equal(copies.length, 1);
+  assert.ok(dirname(copies[0]).startsWith(join(machineTmp, 'hive-diff-')), copies[0]);
+  assert.deepEqual(removed, [dirname(copies[0])]);
+  assert.ok(await gone(dirname(copies[0])));
 });
 
 test('isOverflow recognises execFile\'s own rejection when the output passes maxBuffer, and nothing else (#270)', async () => {
@@ -190,7 +213,7 @@ test('taskDiff on a real repo shows a commit, an unstaged edit on top and an unt
   await writeFile(join(repo, 'ignored.txt'), 'secret\n');
   await writeFile(join(repo, 'new.txt'), 'fresh\n');
   const status = (await git('status', '--porcelain')).stdout;
-  const files = await taskDiff(repo, base, run);
+  const files = await taskDiff(fakeMachine({ exec: run }), repo, base);
   assert.deepEqual(files.map((f) => [f.path, f.status]), [['.gitignore', 'added'], ['a.txt', 'modified'], ['new.txt', 'added']]);
   assert.deepEqual(files[1].hunks[0].lines.map((l) => [l.kind, l.text]), [['context', 'one'], ['add', 'two'], ['add', 'three']]);
   assert.equal((await git('status', '--porcelain')).stdout, status, 'the real index is untouched: new.txt is still untracked');
@@ -236,7 +259,7 @@ test('diffBase: the commit scope is HEAD^ as a sha named with HEAD^; commitDiff 
     return { stdout: args.includes('rev-parse') ? `${BASE}\n` : MODIFIED };
   };
   assert.deepEqual(await diffBase(TASK, undefined, { remote: 'origin' }, '/wt', 'commit', exec), { commit: BASE, label: 'a1b2c3d (HEAD^)' });
-  assert.deepEqual(await commitDiff('/wt', exec), parseDiff(MODIFIED).map(withHash));
+  assert.deepEqual(await commitDiff(fakeMachine({ exec }), '/wt'), parseDiff(MODIFIED).map(withHash));
   assert.deepEqual(calls, [
     ['-C', '/wt', 'rev-parse', '--verify', '--quiet', 'HEAD^^{commit}'],
     ['-C', '/wt', '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=off', 'diff', '--no-color', '--no-ext-diff', '--no-textconv', '-M', '--src-prefix=a/', '--dst-prefix=b/', '--end-of-options', 'HEAD^', 'HEAD'],
@@ -262,7 +285,7 @@ test('commitDiff on a real repo shows the last commit alone, never the uncommitt
   await writeFile(join(repo, 'a.txt'), 'one\ntwo\nthree\n');
   await writeFile(join(repo, 'new.txt'), 'fresh\n');
   assert.equal((await diffBase(TASK, undefined, { remote: 'origin' }, repo, 'commit', run)).commit, (await git('rev-parse', 'HEAD^')).stdout.trim());
-  const files = await commitDiff(repo, run);
+  const files = await commitDiff(fakeMachine({ exec: run }), repo);
   assert.deepEqual(files.map((f) => [f.path, f.status]), [['a.txt', 'modified']]);
   assert.deepEqual(files[0].hunks[0].lines.map((l) => [l.kind, l.text]), [['context', 'one'], ['add', 'two']]);
 });
@@ -287,7 +310,7 @@ test('taskPatch gives the stat and the patch of the worktree against a base, unt
   const base = (await git('rev-parse', 'HEAD')).stdout.trim();
   await writeFile(join(repo, 'a.ts'), 'one\ntwo\n');
   await writeFile(join(repo, 'new.ts'), 'fresh\n');
-  const { stat, patch } = await taskPatch(repo, base, run);
+  const { stat, patch } = await taskPatch(fakeMachine({ exec: run }), repo, base);
   assert.match(stat, /a\.ts +\| +\d+/);
   assert.match(stat, /new\.ts/);
   assert.match(patch, /^diff --git a\/a\.ts b\/a\.ts/m);

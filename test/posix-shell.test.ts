@@ -5,6 +5,7 @@ import { win32 } from 'node:path';
 import { createConsoleStore } from '../src/console.js';
 import { customShell, type FormatContext, runFormatter } from '../src/format-run.js';
 import { posixShell, posixShellEnv, resolvePosixShell, type ShellLookups } from '../src/posix-shell.js';
+import { fakeMachine } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 
 const GIT = 'C:\\Program Files\\Git';
@@ -57,7 +58,7 @@ test('on the Windows lane: a custom formatter\'s line runs through Git\'s sh.exe
   process.env.PATH = `${system32()};${saved}`;
   t.after(async () => { process.env.PATH = saved; });
   const dir = await tempDir(t, 'fmt-sh-');
-  const ctx: FormatContext = { cwd: dir, file: win32.join(dir, 'a.sql'), workspace: { name: 'ui', env: {} }, label: 'ui · a.sql', consoleStore: createConsoleStore(() => 5000) };
+  const ctx: FormatContext = { machine: fakeMachine(), cwd: dir, file: win32.join(dir, 'a.sql'), workspace: { name: 'ui', env: {} }, label: 'ui · a.sql', consoleStore: createConsoleStore(() => 5000) };
   assert.deepEqual(await runFormatter({ kind: 'custom', name: 'up', command: 'tr a-z A-Z' }, 'select 1\n', ctx), { text: 'SELECT 1\n' });
   const failed = await runFormatter({ kind: 'custom', name: 'bad', command: 'cat > /dev/null; exit 3' }, 'x\n', ctx);
   assert.ok('error' in failed);
