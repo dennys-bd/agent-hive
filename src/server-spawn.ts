@@ -192,10 +192,12 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const branch = taskBranch(activity, branchFor(config, task.item)); // a Restart's -r<n> (#283)
     const base = workspaceBase(config, workspace); // #854: the base remote, the workspace's base branch over the general one, its fork
     let reused: string | undefined; // #267: the branch ensure reused, which a failed setup names
+    const machine = machineFor(activity);
     const ensure = async (git: Exec, run?: PrepareHooks): Promise<string> => {
+      const logged = { ...machine, exec: git }; // the logged exec, until the step runner takes a machine
       const prepared = activity.local
-        ? await ensureCheckout(workspace.path, branch, base, activity.base?.ref, git, workspace.nestedRepos)
-        : await ensureWorktree(workspace.path, workSlug(activity, task), branch, base, activity.base?.ref, git);
+        ? await ensureCheckout(logged, workspace.path, branch, base, activity.base?.ref, workspace.nestedRepos)
+        : await ensureWorktree(logged, workspace.path, workSlug(activity, task), branch, base, activity.base?.ref);
       run?.prepared(); // #450: the outer git alone is the worktree and branch rows' time; a local task's ensure runs with no run
       reused = prepared.reused;
       if (prepared.line) log.info(prepared.line);
@@ -203,7 +205,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       for (const line of await prepareNested(workspace, prepared, branch, activity.local === true, base.remote, git, run?.nested)) log.info(line); // #653, #450: before the setup, in its console run, each repo its row
       return prepared.path;
     };
-    if (activity.local) return ensure(exec);
+    if (activity.local) return ensure(machine.exec);
     const controller = new AbortController();
     setups.set(ptyId, controller);
     try {

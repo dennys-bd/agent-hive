@@ -9,7 +9,8 @@ import type { Activity, DeleteActivityScope, Session, Task, TaskPr, Workspace } 
 import type { MachineFor } from './machine.js';
 import { dropCheckpoints } from './checkpoints.js';
 import { dropBranches, dropStageStart, leftBehind } from './restart.js';
-import { taskDir, cleanWorktree, refuseUnmerged, removeWorktree, wordsOf } from './worktree.js';
+import { taskDir, wordsOf } from './worktree.js';
+import { cleanWorktree, refuseUnmerged, removeWorktree } from './worktree-remove.js';
 import { refusalOf, RemovalRefusal, UNEXPECTED } from './worktree-base.js';
 import type { Logger } from './log.js';
 import { teardownRunId } from './console.js';
@@ -44,7 +45,7 @@ export async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveVi
   await deps.dispatch({ type: 'deletingTask', taskId });
   try {
     const sessions = sessionsOf(current.state, task.item.itemId);
-    const workspace = stranded ? await strandedWorkspace(activity, task, deps.exec) : own;
+    const workspace = stranded ? await strandedWorkspace(activity, task, deps.machineFor(activity).exec) : own;
     if (workspace) await deleteActivityOnDisk({ workspace, activity, task, sessions, prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
     else await strandedTranscripts(activity, task, sessions, scope, deps.log); // nothing on disk to remove: only the transcripts under the path's own repo
   } catch (err) {
@@ -70,16 +71,16 @@ export async function deleteActivityOnDisk(
   job: { workspace: Workspace; activity: Activity; task: Task; sessions: Session[]; prs: readonly TaskPr[]; branch: string; scope: DeleteActivityScope; force?: { promptsDir: string } }, deps: DeleteActivityDeps,
 ): Promise<void> {
   const { workspace, activity, task, sessions, prs, branch, scope, force } = job;
-  const { exec, log } = deps;
+  const { log } = deps;
   const machine = deps.machineFor(activity);
   const repo = workspace.path;
   if (!activity.local) {
     const extras = await leftBehind(machine, repo, activity, branch); // a Restart's old branches (#283)
-    if (!force) for (const name of extras) await refuseUnmerged(repo, name, exec); // all or nothing, as cleanWorktree checks its own
+    if (!force) for (const name of extras) await refuseUnmerged(machine, repo, name); // all or nothing, as cleanWorktree checks its own
     const target = { id: teardownRunId(task.item.itemId), label: `#${task.item.id}`, workspace, force: force !== undefined };
     await removeInRun(deps, target, (before) => (force
-      ? removeWorktree(repo, activity, branch, force.promptsDir, exec, workspace.nestedRepos)
-      : cleanWorktree(repo, activity, branch, exec, before, { nested: workspace.nestedRepos, prs, log }))); // #653, #660
+      ? removeWorktree(machine, repo, activity, branch, force.promptsDir, workspace.nestedRepos)
+      : cleanWorktree(machine, repo, activity, branch, before, { nested: workspace.nestedRepos, prs, log }))); // #653, #660
     await dropBranches(machine, repo, extras, force !== undefined);
     await dropStageStart(machine, repo, activity.slug ?? slugFor(task.item)); // #812: a stage entry clears stageStart, never the ref; a missing ref is nothing
     await dropCheckpoints(machine, repo, activity.slug ?? slugFor(task.item)); // #619: every checkpoint's restore point goes with the activity; none is nothing
@@ -119,7 +120,7 @@ export function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): 
     await dispatch({ type: 'deletingActivity', activityId: live.id });
     try {
       const sessions = sessionsOf(current.state, task.item.itemId);
-      const workspace = stranded && !nothing ? await strandedWorkspace(live, task, deps.exec) : own;
+      const workspace = stranded && !nothing ? await strandedWorkspace(live, task, deps.machineFor(live).exec) : own;
       if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions, prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
       else if (stranded && !nothing) await strandedTranscripts(live, task, sessions, scope, log);
     } catch (err) {

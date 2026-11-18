@@ -16,6 +16,7 @@ import { openPlace } from './server-local.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import { AGENT_IDS, type Activity, type AgentId, type Effect, type LaunchPick, type Task, type HiveEvent, type State, type Workspace } from './types.js';
 import { prepareNested } from './worktree-nested.js';
+import type { Machine } from './machine.js';
 import { checkBase, ensureCheckout, ensureWorktree, worktreePath } from './worktree.js';
 import { isSetUp, withReused } from './worktree-setup.js';
 import { clearTeardownMarker } from './worktree-teardown.js';
@@ -75,9 +76,9 @@ function planWorktree(current: LiveView, task: Task, activity: Activity | undefi
 
 // A chosen base checked in the task's workspace (#131), then the workspace saved once it passed (#179): the last refusal, before any git that
 // changes the disk.
-async function confirmPlan(deps: TaskRouteDeps, task: Task, { task: placed, workspace, branch, place }: WorktreePlan): Promise<Refusal | undefined> {
+async function confirmPlan(deps: TaskRouteDeps, machine: Machine, task: Task, { task: placed, workspace, branch, place }: WorktreePlan): Promise<Refusal | undefined> {
   try {
-    if (place.base !== undefined) await checkBase(workspace.path, place.base.ref, branch, deps.exec, baseRemote(workspace));
+    if (place.base !== undefined) await checkBase(machine, workspace.path, place.base.ref, branch, baseRemote(workspace));
   } catch (err) {
     return { status: HTTP_CONFLICT, message: errorMessage(err) };
   }
@@ -88,17 +89,17 @@ async function confirmPlan(deps: TaskRouteDeps, task: Task, { task: placed, work
 // The worktree, or the workspace's own checkout (#444), then the setup run's `setUp` in it (#299, #351), then the task's worktree fields.
 // Inside a run (#450) its worktree and branch rows end right after the outer git, and each nested repo gets its row. The base is saved
 // with tellWorker false: a session gets no stage prompt to tell.
-async function makeWorktree(deps: TaskRouteDeps, current: LiveView, plan: WorktreePlan, activityId: string, run?: Pick<WorktreeRun, 'prepared' | 'nested' | 'setUp'>): Promise<void> {
+async function makeWorktree(deps: TaskRouteDeps, machine: Machine, current: LiveView, plan: WorktreePlan, activityId: string, run?: Pick<WorktreeRun, 'prepared' | 'nested' | 'setUp'>): Promise<void> {
   const { workspace, slug, branch, place } = plan;
   const base = workspaceBase(current.runtime.config, workspace); // #854
   const prepared = place.local
-    ? await ensureCheckout(workspace.path, branch, base, place.base?.ref, deps.exec, workspace.nestedRepos)
-    : await ensureWorktree(workspace.path, slug, branch, base, place.base?.ref, deps.exec);
+    ? await ensureCheckout(machine, workspace.path, branch, base, place.base?.ref, workspace.nestedRepos)
+    : await ensureWorktree(machine, workspace.path, slug, branch, base, place.base?.ref);
   run?.prepared();
   const { path, sync, line, reused } = prepared;
   if (line) deps.log.info(line); // #267: the base and what became of an existing branch, as a spawn logs them
   if (sync) await deps.dispatch({ type: 'forkSynced', activityId, sync }); // #854: an open's worktree keeps its sync as a spawn's does
-  for (const nested of await prepareNested(workspace, prepared, branch, place.local, base.remote, deps.exec, run?.nested)) deps.log.info(nested); // #653: before the setup
+  for (const nested of await prepareNested(workspace, prepared, branch, place.local, base.remote, machine.exec, run?.nested)) deps.log.info(nested); // #653: before the setup
   if (run) await run.setUp(workspace, path).catch((err: unknown) => { throw withReused(err, reused); });
   await deps.dispatch({ type: 'worktreeReady', activityId, path, branch, base: place.base ?? null, local: place.local });
 }
@@ -130,6 +131,9 @@ async function openNow(deps: TaskRouteDeps, current: LiveView, task: Task, open:
   await answerOpen(deps, await deps.dispatch(openEvent(open, activityId), open.size), res);
 }
 
+// The machine a first open's disk is on: its activity's when it has one, else the workspace's (the local machine until node 9)
+const machineOf = (deps: Pick<TaskRouteDeps, 'machineFor'>, current: LiveView, task: Task): Machine => deps.machineFor(activityOf(current.state, task.item.itemId) ?? {});
+
 // A first open that prepares the worktree (#351, #576), with or without setup steps. openWorktreeRun is synchronous, dispatch reduces before its own first await and nothing was
 // awaited since openTask, so the mark lands in the same turn as the checks: a second open, Start, Continue or Restart is refused from here on,
 // even while the base is checked. The run opens with the mark, so every git from the base check on is in it; a refused base ends it and drops
@@ -142,11 +146,11 @@ async function openWithSetup(deps: OpenRouteDeps, current: LiveView, task: Task,
   const base = shownBase(plan.place.base?.ref, workspaceBase(current.runtime.config, plan.workspace)); // #390: the branch row's
   const setup = openWorktreeRun(deps, { id: setupRunId(task.item.itemId), label: `#${plan.task.item.id}`, kind: 'setup', activityId, branch: plan.branch, base, nested: plan.workspace.nestedRepos });
   await Promise.all([settled, deps.dispatch({ type: 'setupStarted', activityId, consoleId: setup.id, rows: setup.rows() })]);
-  const logged: OpenRouteDeps = { ...deps, exec: setup.exec };
+  const logged: Machine = { ...machineOf(deps, current, task), exec: setup.exec }; // the setup run's exec, until the step runner takes a machine
   let refusal: Refusal | undefined;
   try { // everything after the mark: no throw may leave the task marked until the next boot
-    refusal = await confirmPlan(logged, task, plan);
-    if (!refusal) await makeWorktree(logged, current, plan, activityId, setup);
+    refusal = await confirmPlan(deps, logged, task, plan);
+    if (!refusal) await makeWorktree(deps, logged, current, plan, activityId, setup);
   } catch (err) {
     setup.end(err);
     await deps.dispatch({ type: 'setupEnded', activityId, error: errorMessage(err) });
@@ -181,13 +185,14 @@ async function openFirst(deps: OpenRouteDeps, current: LiveView, task: Task, pla
     await clearTeardownMarker(plan.workspace, path, deps.exec); // #654: a worktree brought back to life gets its teardown on the next removal
     if (!(await isSetUp(plan.workspace, path, deps.exec))) return openRechecked(deps, plan, open, res);
   }
-  const refusal = await confirmPlan(deps, task, plan);
+  const machine = machineOf(deps, current, task);
+  const refusal = await confirmPlan(deps, machine, task, plan);
   if (refusal) return refuse(res, refusal);
   const born = bornActivity(deps, res, task, plan);
   if (!born) return noActivity(res);
   try {
     await born.settled;
-    await makeWorktree(deps, current, plan, born.activityId);
+    await makeWorktree(deps, machine, current, plan, born.activityId);
   } catch (err) {
     return refuse(res, { status: HTTP_SERVER_ERROR, message: errorMessage(err) }); // git's own words
   }

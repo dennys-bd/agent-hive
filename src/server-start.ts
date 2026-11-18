@@ -66,7 +66,7 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   if (base === null) return { type: 'start', itemId, base: null, ...placed }; // the popup's default: drops a saved base
   if (typeof base !== 'string') return { type: 'start', itemId, ...placed };
   try {
-    await checkBase(workspace.path, base, branchFor(current.runtime.config, task.item), deps.exec, baseRemote(workspace));
+    await checkBase(deps.machineFor(activityOf(current.state, itemId) ?? {}), workspace.path, base, branchFor(current.runtime.config, task.item), baseRemote(workspace));
   } catch (err) {
     return { status: HTTP_CONFLICT, message: errorMessage(err) };
   }

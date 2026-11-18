@@ -4,7 +4,7 @@ import type { Logger } from './log.js';
 import type { Pty, PtyHost } from './pty-host.js';
 import { endedRows, failedRows, nestedEndedRows, nestedFailedRows, nestedHeader, nestedStartedRows, plannedRows, preparedRows, startedRows, worktreeRows } from './setup-rows.js';
 import type { Task, Effect, Exec, HiveEvent, SetupRow, Workspace } from './types.js';
-import type { BeforeRemove } from './worktree.js';
+import type { BeforeRemove } from './worktree-remove.js';
 import { isSetUp, runSetup } from './worktree-setup.js';
 import { clearTeardownMarker, runTeardown, type TeardownResult } from './worktree-teardown.js';
 import type { RunShell, StepReport } from './worktree-steps.js';

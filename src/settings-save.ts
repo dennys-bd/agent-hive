@@ -9,6 +9,7 @@ import { inFlow } from './tasks.js';
 import { parseSetup } from './setup-script.js';
 import { nestedProblemText, nestedRepoProblem } from './nested-check.js';
 import type { CombConfig, Config, Flow, Language, Workspace, SettingsBody, SourceConfig, Stage, State, UsageRule } from './types.js';
+import { LOCAL_DISK } from './machine-local.js';
 import { workspacePathProblem } from './worktree.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -117,7 +118,7 @@ async function sameFolderPair(workspaces: Workspace[]): Promise<[Workspace, Work
  * resolves to cannot be removed or re-pathed (409): its worker stays in the old repo. Any other workspace may come and go. */
 export async function workspacesRefusal(next: Config, live?: { config: Config; state: State }): Promise<Refusal | undefined> {
   for (const { path } of next.comb.workspaces) {
-    const problem = await workspacePathProblem(path);
+    const problem = await workspacePathProblem(LOCAL_DISK, path);
     if (problem) return { status: HTTP_BAD_REQUEST, message: problem };
   }
   const same = await sameFolderPair(next.comb.workspaces);

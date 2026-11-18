@@ -3,6 +3,7 @@ import type { Express, Request, Response } from 'express';
 import { workspaceByName } from './config.js';
 import { forkRepos, remotesOf, syncFork, workspaceBase } from './fork.js';
 import type { Config, ForkSyncAnswer, Workspace } from './types.js';
+import { LOCAL_DISK } from './machine-local.js';
 import { gitOrWords, workspacePathProblem } from './worktree.js';
 import { remoteHead } from './worktree-base.js';
 
@@ -47,7 +48,7 @@ export function registerForkRoutes(app: Express, deps: ForkRouteDeps): void {
   app.get('/settings/remotes', async (req: Request, res: Response) => {
     const { path } = req.query;
     if (typeof path !== 'string') return refuse(res, HTTP_BAD_REQUEST, PATH_MESSAGE);
-    const problem = await workspacePathProblem(path);
+    const problem = await workspacePathProblem(LOCAL_DISK, path);
     if (problem) return refuse(res, HTTP_BAD_REQUEST, problem);
     try {
       res.json(await remotesOf(deps.machineFor({}), path));

@@ -291,7 +291,7 @@ function basesWorkspace(current: LiveView, task: Task, query: unknown): Workspac
 
 // The popup's lists (#131). Read-only, no fetch, so it opens at once; a task that already has its worktree answers hasWorktree and the
 // UI starts it straight away. The other tasks go by slug: the branch shown is the one git lists at each task's worktree path.
-function registerBaseRoute(app: Express, { exec, requireLive }: TaskRouteDeps): void {
+function registerBaseRoute(app: Express, { machineFor, requireLive }: TaskRouteDeps): void {
   app.get('/tasks/:id/bases', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -308,7 +308,7 @@ function registerBaseRoute(app: Express, { exec, requireLive }: TaskRouteDeps): 
     const others = otherSlugs(current.state, activity);
     try {
       const orphanBranch = activity === undefined ? branchFor(current.runtime.config, task.item) : undefined; // #861: no activity: git's leftovers are an orphan
-      res.json(await baseOptions(workspace.path, activity?.slug ?? slugFor(task.item), others, workspaceBase(current.runtime.config, workspace), exec, orphanBranch));
+      res.json(await baseOptions(machineFor(activity ?? {}), workspace.path, activity?.slug ?? slugFor(task.item), others, workspaceBase(current.runtime.config, workspace), orphanBranch));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) }); // git's own words: not a repo, a broken worktree list
     }

@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorkspaceBase } from '../src/fork.js';
 import type { Exec } from '../src/types.js';
-import { cleanWorktree, ensureCheckout, removeWorktree, worktreePath } from '../src/worktree.js';
+import { ensureCheckout, worktreePath } from '../src/worktree.js';
+import { cleanWorktree, removeWorktree } from '../src/worktree-remove.js';
+import { fakeMachine } from './fakes.js';
 import { ensureNestedWorktrees, nestedBaseName, type NestedObserver, type NestedWorkspace, prepareNested, switchNested } from '../src/worktree-nested.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
@@ -117,7 +119,7 @@ test('a nested repo that is missing fails the preparation with its path named (#
 
 test('a checkout task switches docs to the task\'s branch from origin/<base>; already on it, nothing (#653)', async (t) => {
   const f = await fixture(t);
-  await ensureCheckout(f.outer, BRANCH, ORIGIN, undefined, exec, f.workspace.nestedRepos);
+  await ensureCheckout(fakeMachine({ exec }), f.outer, BRANCH, ORIGIN, undefined, f.workspace.nestedRepos);
   assert.deepEqual(await switchNested(f.workspace, BRANCH, 'main', exec), ['docs: origin/main']);
   assert.deepEqual([await git(f.outer, 'branch', '--show-current'), await git(f.docs, 'branch', '--show-current')], [BRANCH, BRANCH]);
   assert.deepEqual(await switchNested(f.workspace, BRANCH, 'main', exec), [], 'already on the branch: nothing');
@@ -126,16 +128,16 @@ test('a checkout task switches docs to the task\'s branch from origin/<base>; al
 test('a checkout task refuses when only the nested repo is dirty, before anything is switched (#653)', async (t) => {
   const f = await fixture(t);
   await writeFile(join(f.docs, 'draft.md'), 'wip');
-  await assert.rejects(ensureCheckout(f.outer, BRANCH, ORIGIN, undefined, exec, f.workspace.nestedRepos), { message: `${f.docs} has changes that are not committed:\n?? draft.md` });
+  await assert.rejects(ensureCheckout(fakeMachine({ exec }), f.outer, BRANCH, ORIGIN, undefined, f.workspace.nestedRepos), { message: `${f.docs} has changes that are not committed:\n?? draft.md` });
   assert.deepEqual([await git(f.outer, 'branch', '--show-current'), await git(f.docs, 'branch', '--show-current')], ['main', 'main']);
 });
 
 test('a checkout respawn already on the branch keeps a dirty nested repo\'s work: no refusal (#653)', async (t) => {
   const f = await fixture(t);
-  await ensureCheckout(f.outer, BRANCH, ORIGIN, undefined, exec, f.workspace.nestedRepos);
+  await ensureCheckout(fakeMachine({ exec }), f.outer, BRANCH, ORIGIN, undefined, f.workspace.nestedRepos);
   await switchNested(f.workspace, BRANCH, 'main', exec);
   await writeFile(join(f.docs, 'draft.md'), 'wip');
-  assert.deepEqual(await ensureCheckout(f.outer, BRANCH, ORIGIN, undefined, exec, f.workspace.nestedRepos), { path: f.outer });
+  assert.deepEqual(await ensureCheckout(fakeMachine({ exec }), f.outer, BRANCH, ORIGIN, undefined, f.workspace.nestedRepos), { path: f.outer });
   assert.deepEqual(await switchNested(f.workspace, BRANCH, 'main', exec), []);
 });
 
@@ -164,7 +166,7 @@ test('a normal clean refuses while a nested worktree has modified or untracked f
   await writeFile(join(dir, 'readme.md'), 'changed');
   await writeFile(join(dir, 'notes.md'), 'new');
   await assert.rejects(
-    cleanWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, { nested: ['docs'] }),
+    cleanWorktree(fakeMachine({ exec }), f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, undefined, { nested: ['docs'] }),
     { message: `${dir} has changes that are not committed:\n M readme.md\n?? notes.md`, refusal: { reason: 'dirty', path: dir, files: ' M readme.md\n?? notes.md' } },
   );
   assert.deepEqual([await exists(task), await git(dir, 'branch', '--show-current')], [true, BRANCH], 'nothing removed');
@@ -177,8 +179,8 @@ test('a normal clean removes the nested worktree first, then the task\'s: no ent
   await ensureNestedWorktrees(f.workspace, merged, BRANCH, 'main', exec);
   await ensureNestedWorktrees(f.workspace, kept, OTHER.branch, 'main', exec);
   await commit(join(kept, 'docs'), 'spec.md'); // its PR may still be open
-  await cleanWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, { nested: ['docs'] });
-  await cleanWorktree(f.outer, { slug: OTHER.slug, branch: OTHER.branch }, OTHER.branch, exec, undefined, { nested: ['docs'] });
+  await cleanWorktree(fakeMachine({ exec }), f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, undefined, { nested: ['docs'] });
+  await cleanWorktree(fakeMachine({ exec }), f.outer, { slug: OTHER.slug, branch: OTHER.branch }, OTHER.branch, undefined, { nested: ['docs'] });
   const listed = await git(f.docs, 'worktree', 'list', '--porcelain');
   assert.equal(listed.includes(merged) || listed.includes(kept), false, 'no orphan entry in the nested repo');
   assert.deepEqual([await git(f.docs, 'branch', '--list', BRANCH), await git(f.docs, 'branch', '--list', OTHER.branch)], ['', OTHER.branch]);
@@ -191,7 +193,7 @@ test('the forced removal deletes a dirty nested worktree and its branch, inside 
   await ensureNestedWorktrees(f.workspace, task, BRANCH, 'main', exec);
   await commit(join(task, 'docs'), 'spec.md');
   await writeFile(join(task, 'docs', 'draft.md'), 'wip');
-  await removeWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, await tempDir(t, 'prompts-'), exec, ['docs']);
+  await removeWorktree(fakeMachine({ exec }), f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, await tempDir(t, 'prompts-'), ['docs']);
   assert.equal((await git(f.docs, 'worktree', 'list', '--porcelain')).includes(task), false);
   assert.deepEqual([await git(f.docs, 'branch', '--list', BRANCH), await exists(task)], ['', false]);
 });
@@ -201,7 +203,7 @@ test('a nested worktree the teardown already removed counts as done (#653)', asy
   const task = await outerWorktree(f.outer);
   await ensureNestedWorktrees(f.workspace, task, BRANCH, 'main', exec);
   const teardown = async (path: string): Promise<void> => { await git(f.docs, 'worktree', 'remove', '--', join(path, 'docs')); }; // today's agent-hive teardown line
-  await cleanWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, exec, teardown, { nested: ['docs'] });
+  await cleanWorktree(fakeMachine({ exec }), f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, teardown, { nested: ['docs'] });
   assert.equal(await exists(task), false);
   assert.equal((await git(f.docs, 'worktree', 'list', '--porcelain')).includes(task), false);
 });
@@ -218,7 +220,7 @@ test('a checkout switch refuses only the nested repos that would move: one alrea
   const f = await fixture(t);
   await git(f.docs, 'checkout', '--quiet', '-b', BRANCH);
   await writeFile(join(f.docs, 'draft.md'), 'wip');
-  await ensureCheckout(f.outer, BRANCH, ORIGIN, undefined, exec, f.workspace.nestedRepos);
+  await ensureCheckout(fakeMachine({ exec }), f.outer, BRANCH, ORIGIN, undefined, f.workspace.nestedRepos);
   assert.deepEqual(await switchNested(f.workspace, BRANCH, 'main', exec), []);
   assert.equal(await git(f.outer, 'branch', '--show-current'), BRANCH);
 });
@@ -229,7 +231,7 @@ test('the forced removal still removes the task\'s worktree when a nested repo\'
   await ensureNestedWorktrees(f.workspace, task, BRANCH, 'main', exec);
   // every git call into the nested repo fails, as a corrupted one would
   const broken: Exec = (file, args, options) => (args[0] === '-C' && args[1] === f.docs ? Promise.reject(new Error('fatal: bad object HEAD')) : exec(file, args, options));
-  await removeWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, await tempDir(t, 'prompts-'), broken, ['docs']);
+  await removeWorktree(fakeMachine({ exec: broken }), f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, await tempDir(t, 'prompts-'), ['docs']);
   assert.equal(await exists(task), false);
 });
 
