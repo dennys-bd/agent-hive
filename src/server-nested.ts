@@ -4,6 +4,7 @@ import type { Express, Request, Response } from 'express';
 import { workspaceBase } from './fork.js';
 import { readNestedRepos } from './nested-check.js';
 import type { Config, Exec } from './types.js';
+import { LOCAL_DISK } from './machine-local.js';
 import { gitOrWords, workspacePathProblem } from './worktree.js';
 import { remoteHead } from './worktree-base.js';
 
@@ -32,7 +33,7 @@ export function registerNestedRoute(app: Express, deps: NestedRouteDeps): void {
     if (typeof path !== 'string') return void res.status(HTTP_BAD_REQUEST).json({ error: PATH_MESSAGE });
     const config = deps.config();
     const saved = config?.comb.workspaces.some((w) => w.path === path) === true;
-    const problem = saved ? undefined : await workspacePathProblem(path);
+    const problem = saved ? undefined : await workspacePathProblem(LOCAL_DISK, path);
     if (problem) return void res.status(HTTP_BAD_REQUEST).json({ error: problem });
     const listed = typeof repos === 'string' && repos !== '' ? repos.split(',') : [];
     try {

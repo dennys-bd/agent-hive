@@ -168,3 +168,14 @@ test('a copy\'s first run gets the runner\'s copy argv, and a run the agent cann
   const refused = pty.spawn(stageRun('claude', { ptyId: 'P2', agent: { id: 'claude', run: unsessioned, copy: { from: 'S0' } } }), HANDLERS).started;
   await assert.rejects(refused, { message: `${AGENTS.claude.label} cannot copy a session` });
 });
+
+test('a Copilot stage run writes its run files before the pty and hands on its prompt flag, as spawn does today (#159, #873)', async (t) => {
+  const home = await homeIn(t);
+  await runsIn(t); // Copilot's instructions folder is under the runs' TMPDIR
+  const { handed, launch } = recorder();
+  await createLocalPty(depsIn(home, launch)).spawn(stageRun('copilot'), HANDLERS).started;
+  assert.equal(handed[0].agent?.promptFlag, runners.copilot.promptFlag);
+  const files = runners.copilot.runFiles(machineRun(home, 'copilot'));
+  assert.ok(files.length > 0, 'Copilot takes its protocol as a file');
+  for (const file of files) assert.equal(await readFile(file.path, 'utf8'), file.content);
+});

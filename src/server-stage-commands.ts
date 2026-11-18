@@ -10,7 +10,7 @@ import { commandIn, type ResolvedCommand, resolveCommand } from './run-commands.
 import type { Runtime } from './server.js';
 import { taskBranch } from './task-runs.js';
 import { branchFor, slugFor } from './tasks.js';
-import type { Activity, Command, Effect, Exec, HiveEvent, StageCommands, Task } from './types.js';
+import type { Activity, Command, Effect, HiveEvent, StageCommands, Task } from './types.js';
 import { taskDir } from './worktree.js';
 
 // How a commands stage's command runs (#755), out of server-spawn.ts: in a pty of its own, launched as a command terminal is (ptyCommand's
@@ -19,9 +19,8 @@ import { taskDir } from './worktree.js';
 type StageCommandEffect = Extract<Effect, { type: 'stageCommand' }>;
 
 export interface StageCommandDeps {
-  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
-  exec: Exec; // #854: the remote read behind a fork's GH_REPO
-  pool: Pick<PtyPool, 'start' | 'kill'>;
+  machineFor: MachineFor; // #158: the activity's machine
+  pool: Pick<PtyPool, 'start' | 'started' | 'kill'>;
   ptys: Pick<PtyHost, 'has' | 'subscribe'>;
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
   dispatch(event: HiveEvent): Promise<Effect[]>;
@@ -79,18 +78,18 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
   // The command's pty, launched as a command terminal is: the worktree as cwd, the workspace's env under the command's own; its output fed
   // to the stage's channel and kept as a bounded tail. Its timeout kills it through the pool, never through the reducer's stop, which would
   // drop the run and lose the verdict
-  function start(runtime: Runtime, { activity, task, stage, at, ptyId }: StageCommandEffect, command: ResolvedCommand, cwd: string, env: Record<string, string>): void {
+  async function start({ activity, task, stage, at, ptyId }: StageCommandEffect, command: ResolvedCommand, cwd: string, env: Record<string, string>): Promise<void> {
     const ended = (code: number, output: string): void => void dispatch({ type: 'stageCommandEnded', activityId: activity.id, ptyId, code, output });
     pool.start({
       ptyId,
-      launch: {
-        ptyId, slug: activity.slug ?? slugFor(task.item), cwd, env, port: runtime.port, terminal: true,
-        run: { command: command.command, env: command.env },
-      },
+      machine: deps.machineFor(activity),
+      spec: { ptyId, slug: activity.slug ?? slugFor(task.item), cwd, env, terminal: true, run: { command: command.command, env: command.env } },
       onExit: () => undefined, // the end and its code come from the pty host's subscription below; the pool's exit carries no code
       onError: (message) => void dispatch({ type: 'error', message: `stage ${stage.name}: ${message}` }),
       onSpawnFailed: (message) => ended(NOT_STARTED_EXIT, message),
     });
+    // #159: the machine launches after its own awaits, so the host holds the pty once started resolves; a rejection already ended it above
+    if (!(await pool.started(ptyId).then(() => true, () => false))) return;
     let raw = '';
     let lastOutput = Number.NEGATIVE_INFINITY; // #914: this pty's last stageCommandOutput; each command has a pty of its own
     const output = (): void => {
@@ -148,7 +147,7 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
     if (cwd === undefined) return;
     const command = commandIn(commands, workspace.name, names[at] ?? '');
     if (command === undefined) return skip(effect, workspace.name);
-    start(runtime, effect, command, cwd, await runEnv(deps.exec, workspace)); // #854: a fork's GH_REPO under the workspace's env
+    await start(effect, command, cwd, await runEnv(deps.machineFor(activity), workspace)); // #854: a fork's GH_REPO under the workspace's env
   }
 
   return { run };

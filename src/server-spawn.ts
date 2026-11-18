@@ -1,11 +1,9 @@
-import type { MachineFor } from './machine.js';
-import { readFile } from 'node:fs/promises';
+import type { Machine, MachineFor, RunInputs, RunSpec } from './machine.js';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
-import { AGENTS, agentOf, agentRefusal, defaultModel, disabledRefusal, ranAgent, runModel } from './agents.js';
-import { agentCommand } from './agents/command.js';
+import { agentOf, agentRefusal, defaultModel, disabledRefusal, ranAgent, runModel } from './agents.js';
+import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { runners } from './agents/registry.js';
-import type { AgentRun, AgentRunner, RunMcpServer } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
 import { shownBase } from './setup-rows.js';
 import { type PrepareHooks, runTaskSetup } from './task-setup.js';
@@ -14,7 +12,8 @@ import { branchFor, inFlow, LOCAL_SLUG, slugFor } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName, requireWorkspace } from './config.js';
 import { commandChannel, type ConsoleStore } from './console.js';
 import { feedConsole } from './console-feed.js';
-import { workspaceProtocolPaths, writeMcpConfig, type ProtocolPaths } from './hooks-settings.js';
+import { workspaceProtocolPaths, type ProtocolPaths } from './hooks-settings.js';
+import { readProtocolText } from './home-hooks.js';
 import { hasSkill, launchRun, specializedAgents } from './launch-options.js';
 import type { Logger } from './log.js';
 import type { PluginRender } from './plugin-render.js';
@@ -23,10 +22,10 @@ import { recordStageStart } from './restart.js';
 import { commandIn } from './run-commands.js';
 import type { Runtime } from './server.js';
 import { agentPrompt } from './stage-agent.js';
-import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, windowsShell, writePrompt, writeRunFiles } from './spawn.js';
+import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, windowsShell } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
-import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
+import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, HiveEvent, Terminal, Workspace } from './types.js';
 import type { PtyPool } from './ptys.js';
 import type { TerminalSize } from './terminal-wire.js';
 import { prepareNested } from './worktree-nested.js';
@@ -53,9 +52,6 @@ function sessionPlace(config: Runtime['config'], { activity, task, continues, re
 // A task's activity is born with its slug (#629); the task's own is what it would have been
 const workSlug = (activity: Activity, task: Task): string => activity.slug ?? slugFor(task.item);
 
-// #873: only a runner with a flag adds the key, so Claude's and Codex's launches stay what they were
-const promptFlagOf = ({ promptFlag }: AgentRunner): { promptFlag?: string } => (promptFlag === undefined ? {} : { promptFlag });
-
 /** The protocol files a run on `task` is told (#167, #797): its workspace's, with that workspace's memory under the protocol; the global ones
  * for a task whose workspace does not resolve. */
 export function taskProtocol(home: string, runtime: Pick<Runtime, 'config' | 'protocol'>, task: Task): ProtocolPaths {
@@ -64,9 +60,8 @@ export function taskProtocol(home: string, runtime: Pick<Runtime, 'config' | 'pr
 }
 
 export interface SpawnerDeps {
-  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
-  pool: Pick<PtyPool, 'start'>;
-  exec: Exec; // git for the worktree step; tests inject a fake
+  machineFor: MachineFor; // #158: the activity's machine
+  pool: Pick<PtyPool, 'start' | 'started'>;
   log: Pick<Logger, 'info' | 'error'>;
   dispatch(event: HiveEvent): Promise<Effect[]>;
   exitOf(ptyId: string): Promise<HiveEvent>; // #586: the run's exit event, its transcript check made (server-exit.ts)
@@ -75,7 +70,6 @@ export interface SpawnerDeps {
   ptys: Pick<PtyHost, 'has' | 'subscribe' | 'adopt'>; // a run command's output (#353) and a worktree setup's (#351) reach the console through the pty host
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
   agents: readonly AgentAvailability[]; // the agent CLIs found on boot (#516): a stage whose agent is missing never reaches its worktree
-  secret: string; // this boot's secret (#467): the MCP config's header
   home: string; // #696: where a terminal's history and ring live
   facts?: Pick<FactLog, 'write'>; // #742: the worktree setup's worktree.step
   lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin as the last write left it; every agent launch loads it
@@ -137,7 +131,7 @@ async function sessionRun(config: Runtime['config'], effect: SessionEffect, plug
 }
 
 // #808: the page's grid on a launch, and no `size: undefined` key when it sent none: the host's fallback applies
-const sized = (size?: TerminalSize): Pick<PtyLaunch, 'size'> => (size === undefined ? {} : { size });
+const sized = (size?: TerminalSize): Pick<RunSpec, 'size'> => (size === undefined ? {} : { size });
 
 // #710: a skill stage whose skill its workspace's folder lacks never starts, as a lost specialized agent does (#257)
 const skillRefusal = (stage: Stage, pluginDir: string): string | undefined =>
@@ -157,7 +151,7 @@ function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], 
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
-  const { pool, exec, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, secret, home, facts, lspDir, plugin, externalMcp } = deps;
+  const { pool, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, home, facts, lspDir, plugin, externalMcp, machineFor } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
   // What the pool answers for any run: the exit frees it, a kill / focus failure reaches the bar, a start that never happened frees it too.
   const handlers = (ptyId: string, slug: string) => ({
@@ -165,6 +159,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     onError: (message: string): void => void fail(`worker ${slug}`, new Error(message)),
     onSpawnFailed: (message: string): void => void dispatch({ type: 'spawnFailed', ptyId, message }),
   });
+  // #159: the machine launches after writing its files; a spawn resolves once the pty exists, as when it wrote them itself. A rejection is onSpawnFailed's
+  const launched = (ptyId: string): Promise<void> => pool.started(ptyId).catch(() => undefined);
 
   // Where a stage starts (#283): HEAD in the worktree, kept as the stage-start ref and on the activity, which is what Restart resets to. One
   // per stage (#812): a start the stage already has (a free session's, an earlier run's, a feedback or handoff turn's) stays, so Restart undoes
@@ -174,7 +170,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const workspace = taskWorkspace(runtime.config, task);
     if (!workspace) return;
     try {
-      const commit = await recordStageStart(workspace.path, taskDir(workspace.path, activity), workSlug(activity, task), exec);
+      const commit = await recordStageStart(machineFor(activity), workspace.path, taskDir(workspace.path, activity), workSlug(activity, task));
       if (commit) await dispatch({ type: 'stageStarted', activityId: activity.id, stage, commit });
     } catch (err) {
       log.error(`stage start #${task.item.id}: ${errorMessage(err)}`);
@@ -192,22 +188,23 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const branch = taskBranch(activity, branchFor(config, task.item)); // a Restart's -r<n> (#283)
     const base = workspaceBase(config, workspace); // #854: the base remote, the workspace's base branch over the general one, its fork
     let reused: string | undefined; // #267: the branch ensure reused, which a failed setup names
-    const ensure = async (git: Exec, run?: PrepareHooks): Promise<string> => {
+    const machine = machineFor(activity);
+    const ensure = async (on: Machine, run?: PrepareHooks): Promise<string> => {
       const prepared = activity.local
-        ? await ensureCheckout(workspace.path, branch, base, activity.base?.ref, git, workspace.nestedRepos)
-        : await ensureWorktree(workspace.path, workSlug(activity, task), branch, base, activity.base?.ref, git);
+        ? await ensureCheckout(on, workspace.path, branch, base, activity.base?.ref, workspace.nestedRepos)
+        : await ensureWorktree(on, workspace.path, workSlug(activity, task), branch, base, activity.base?.ref);
       run?.prepared(); // #450: the outer git alone is the worktree and branch rows' time; a local task's ensure runs with no run
       reused = prepared.reused;
       if (prepared.line) log.info(prepared.line);
       if (prepared.sync) await dispatch({ type: 'forkSynced', activityId: activity.id, sync: prepared.sync }); // #854
-      for (const line of await prepareNested(workspace, prepared, branch, activity.local === true, base.remote, git, run?.nested)) log.info(line); // #653, #450: before the setup, in its console run, each repo its row
+      for (const line of await prepareNested(workspace, prepared, branch, activity.local === true, base.remote, on.exec, run?.nested)) log.info(line); // #653, #450: before the setup, in its console run, each repo its row
       return prepared.path;
     };
-    if (activity.local) return ensure(exec);
+    if (activity.local) return ensure(machine);
     const controller = new AbortController();
     setups.set(ptyId, controller);
     try {
-      return await runTaskSetup({ exec, log, dispatch, ptys, consoleStore, facts }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
+      return await runTaskSetup(machine, { log, dispatch, ptys, consoleStore, facts }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
     } catch (err) {
       throw controller.signal.aborted ? err : withReused(err, reused); // a Stop is no failure the branch could explain
     } finally {
@@ -221,7 +218,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const { worker: { runId: ptyId }, activity, task, stage, session } = effect;
     if (!ptyId) return;
     const slug = workSlug(activity, task);
-    const { config, hooksPath, promptsDir, port } = runtime;
+    const { config } = runtime;
     const placed = taskWorkspace(config, task); // #317: a task whose workspace left the config never starts: it has no folder to load
     const folder = placed ? await pluginFolder(plugin, placed.name) : { refusal: noWorkspaceReason(task) };
     const launch = 'refusal' in folder ? folder : stageLaunch(effect, config, agents, folder.pluginDir); // #516, #290: before prepare, so a run that cannot start leaves no worktree, setup or prompt behind
@@ -230,20 +227,20 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       return;
     }
     const { agent } = launch; // the agent the reducer recorded on the worker (#925), a manual start's pick included (#290)
-    const runner = runners[agent];
+    const machine = machineFor(activity);
     let cwd: string;
     let env: Record<string, string>;
     let workspace: string;
     let external: readonly RunMcpServer[];
-    let protocolText: string;
+    let protocol: string;
     const protocolPath = taskProtocol(home, runtime, task).stage; // spawn, Continue and feedback alike: the session ends the stage itself (#167); its workspace's memory under it (#797)
     try {
       const resolved = requireWorkspace(config, task);
       workspace = resolved.name;
       external = await externalMcp(config, resolved.name); // #333
-      env = await runEnv(exec, resolved); // #738, #854: the workspace prepare resolves, a fork's GH_REPO under its env; one a save removed fails the same way
+      env = await runEnv(machine, resolved); // #738, #854: the workspace prepare resolves, a fork's GH_REPO under its env; one a save removed fails the same way
       cwd = await prepare(runtime, activity, task, ptyId);
-      protocolText = await readFile(protocolPath, 'utf8'); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
+      protocol = await readProtocolText(protocolPath); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
     } catch (err) {
       await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) });
       return;
@@ -251,21 +248,12 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     // A Stop during the setup aborted it (abortSetup) and its exit freed the worker; one that landed right after the setup freed it too: no worker then.
     if (!isLive(ptyId)) return;
     if (effect.run === 'stage') await recordStart(runtime, activity, task, stage.name); // before the worker exists: nothing it commits can land first
-    const promptPath = await writePrompt(promptsDir, slug, runPrompt(effect)); // the command line reads it
-    const server = { port, ptyId, secret, withHive: true, external };
-    const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)); // the tools' channel (#99); Claude's path puts the pty id in its argv
-    await plugin.ready(); // #316: again after the setup's awaits, so a render queued meanwhile is swapped in before launch reads the folder
-    const run: AgentRun = {
-      ptyId, cwd, port, withHive: true, external, hooksPath, pluginDir: launch.pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
-      protocolPath, protocolText, // #927: Codex takes the protocol as text; Claude keeps the path. picked: runModel's model, the config's args (#924) then the picks' (#290)
-    };
-    await writeRunFiles(runner.runFiles(run)); // #873: the run's own files (Copilot's protocol), before its pty reads them
-    pool.start({
-      ptyId,
-      // #927: the runner's env over the workspace's (no workspace variable stands in for the MCP secret); #633: an .exe's full path on win32, a .cmd bare for sh.exe
-      launch: { ptyId, slug, cwd, env: { ...env, ...runner.runEnv(server, run) }, port, promptPath, ...sized(size), agent: { command: agentCommand(agent, process.platform, { ...process.env, ...env }), argv: runner.launch(run), ...promptFlagOf(runner) } },
-      ...handlers(ptyId, slug),
-    });
+    await plugin.ready(); // #316: again after the setup's awaits, so a render queued meanwhile is swapped in before the machine reads the folder
+    // picked: runModel's model, the config's args (#924) then the picks' (#290)
+    const run: RunInputs = { withHive: true, external, pluginDir: launch.pluginDir, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session) };
+    // #159: the machine writes the prompt, the MCP config, the protocol and the run's own files, then renders the argv over its own paths
+    pool.start({ ptyId, machine, spec: { ptyId, slug, cwd, env, ...sized(size), prompt: { text: runPrompt(effect), name: slug }, protocol, agent: { id: agent, run } }, ...handlers(ptyId, slug) });
+    await launched(ptyId);
   }
 
   // The user's own agent session (#164, #283), a task's or a workspace's local one (#587). Its cwd exists (the reducer checked it), so no
@@ -275,7 +263,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   async function spawnSession(runtime: Runtime, effect: SessionEffect, size?: TerminalSize): Promise<void> {
     const { worker: { runId: ptyId }, task, sessionId, continues, copy, prompt } = effect;
     if (!ptyId) return;
-    const { config, hooksPath, promptsDir, port } = runtime;
+    const { config } = runtime;
     const place = await sessionRun(config, effect, plugin); // #317: its folder too, before anything is recorded
     if ('refusal' in place) {
       await dispatch({ type: 'spawnFailed', ptyId, message: place.refusal });
@@ -293,46 +281,33 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     // #812: a free session on a task records the stage start when the stage has none, before the agent runs, so Restart can undo its work. A
     // repo session runs in the main repo, and a checkout task in the user's own checkout, which Restart never resets (#444): nothing to record
     if (task !== undefined && inFlow(task) && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
-    const env = await runEnv(exec, place.workspace); // #854
-    const external = await externalMcp(config, place.workspace.name); // #333
-    const runner = runners[agent];
-    const [first, notice] = runner.copyNotice === 'prompt' ? [copy?.notice ?? prompt, undefined] : [prompt, copy?.notice]; // #875: Copilot's one -i holds /fork
-    const server = { port, ptyId, secret, withHive: true, external }; // #256: a local session has the Hive's tools too
+    const machine = machineFor(effect.activity);
+    const env = await runEnv(machine, place.workspace); // #854
+    const external = await externalMcp(config, place.workspace.name); // #333; #256: a local session has the Hive's tools too
+    const [first, notice] = runners[agent].copyNotice === 'prompt' ? [copy?.notice ?? prompt, undefined] : [prompt, copy?.notice]; // #875: Copilot's one -i holds /fork
     // #797: a task's session reads its workspace's session protocol; #256: a local one its workspace's local protocol
     const protocolPath = task === undefined ? workspaceProtocolPaths(home, place.workspace.name).local : taskProtocol(home, runtime, task).session;
-    // A write that fails leaves no run to exit: spawnFailed frees the worker, and a copy's temporary transcript goes with it (#587)
-    const files = await Promise.all([
-      writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)),
-      first === undefined ? undefined : writePrompt(promptsDir, ptyId, first),
-      readFile(protocolPath, 'utf8'), // #927: its text, for an agent that takes it so
-    ]).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); });
-    if (files === undefined) return;
-    const [mcpPath, promptPath, protocolText] = files;
+    // An unreadable protocol leaves no run to exit: spawnFailed frees the worker; a write or a copy the machine refuses rejects started, which does the same (#587)
+    const protocol = await readProtocolText(protocolPath).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); return undefined; });
+    if (protocol === undefined) return;
     await plugin.ready(); // #316: as spawn's, after the last await
     const model = picked.model ?? defaultModel(config, agent); // #482: a session, a copy included, runs the default when it picked none
-    const run: AgentRun = {
-      ptyId, cwd: place.cwd, port, withHive: true, external, hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked, ...(model === undefined ? {} : { model }),
-      session: runSession(sessionId, continues ? 'continue' : 'new'), protocolPath, protocolText, ...(notice === undefined ? {} : { notice }),
-    };
-    const argv = copy ? runner.copy(run, copy.from, copy.name) : runner.launch(run);
-    if (argv === undefined) {
-      await dispatch({ type: 'spawnFailed', ptyId, message: `${AGENTS[agent].label} cannot copy a session` });
-      return;
-    }
-    await writeRunFiles(runner.runFiles(run)); // #873: as spawn's; a copy's too, which reads the same protocol
+    const run: RunInputs = { withHive: true, external, pluginDir: place.pluginDir, lspPluginDir: lspDir(place.workspace.name), ...picked, ...(model === undefined ? {} : { model }), session: runSession(sessionId, continues ? 'continue' : 'new'), ...(notice === undefined ? {} : { notice }) };
+    const copied = copy === undefined ? {} : { copy: { from: copy.from, ...(copy.name === undefined ? {} : { name: copy.name }) } };
     pool.start({
-      ptyId,
-      launch: { ptyId, slug: place.slug, cwd: place.cwd, env: { ...env, ...runner.runEnv(server, run) }, port, ...(promptPath === undefined ? {} : { promptPath }), ...sized(size), agent: { command: agentCommand(agent, process.platform, { ...process.env, ...env }), argv, ...promptFlagOf(runner) } },
+      ptyId, machine,
+      spec: { ptyId, slug: place.slug, cwd: place.cwd, env, ...sized(size), ...(first === undefined ? {} : { prompt: { text: first, name: ptyId } }), protocol, agent: { id: agent, run, ...copied } },
       ...handlers(ptyId, place.slug),
     });
+    await launched(ptyId);
   }
 
   // A plain terminal's launch (#696): where it wakes (the cwd it held while on disk, else its start dir), its own history, and its ring:
   // written to its log as it ends, the old one replayed first after a sleep. Its env is the workspace's (#738) under its own HISTFILE, and
   // the shim dir goes first on the workspace's PATH when it sets one, so an agent typed there is still its shim's.
-  async function keptLaunch(terminal: Terminal, startDir: string, env: Record<string, string>): Promise<Pick<PtyLaunch, 'cwd' | 'env' | 'keep'>> {
+  async function keptLaunch(machine: Machine, terminal: Terminal, startDir: string, env: Record<string, string>): Promise<Pick<RunSpec, 'cwd' | 'env' | 'keep'>> {
     await ensureTerminalsDir(home);
-    const [cwd, seed] = await Promise.all([wakeDir(terminal.cwd, startDir), readScrollback(home, terminal.terminalId)]);
+    const [cwd, seed] = await Promise.all([wakeDir(machine, terminal.cwd, startDir), readScrollback(home, terminal.terminalId)]);
     const log = scrollbackPath(home, terminal.terminalId);
     const path = env.PATH ?? process.env.PATH ?? '';
     const own = terminalEnv(home, terminal.terminalId, path, { platform: process.platform, pwsh: windowsShell({ ...process.env, ...env }, process.platform) }); // #645: looked up on every launch
@@ -345,7 +320,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   async function spawnTerminal(runtime: Runtime, { terminal, activity, task }: Extract<Effect, { type: 'spawnTerminal' }>, size?: TerminalSize): Promise<void> {
     if (activity.kind === 'local' || !task) return spawnProjectShell(runtime, terminal, size);
     const { terminalId: ptyId } = terminal;
-    const { config, port } = runtime;
+    const { config } = runtime;
     const workspace = taskWorkspace(config, task);
     if (!workspace) {
       await dispatch({ type: 'spawnFailed', ptyId, message: noWorkspaceReason(task) });
@@ -358,16 +333,15 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       return;
     }
     const startDir = taskDir(workspace.path, activity);
-    const env = await runEnv(exec, workspace); // #854: a fork's GH_REPO, resolved once per launch
-    const where = found ? { cwd: startDir, env } : await keptLaunch(terminal, startDir, env); // a command's run is never kept (#696)
+    const machine = machineFor(activity);
+    const env = await runEnv(machine, workspace); // #854: a fork's GH_REPO, resolved once per launch
+    const where = found ? { cwd: startDir, env } : await keptLaunch(machine, terminal, startDir, env); // a command's run is never kept (#696)
     pool.start({
-      ptyId,
-      launch: {
-        ptyId, slug: workSlug(activity, task), port, terminal: true, ...where, ...sized(size),
-        ...(found ? { run: { command: found.command, env: found.env } } : {}),
-      },
+      ptyId, machine,
+      spec: { ptyId, slug: workSlug(activity, task), terminal: true, ...where, ...sized(size), ...(found ? { run: { command: found.command, env: found.env } } : {}) },
       ...handlers(ptyId, workSlug(activity, task)),
     });
+    await launched(ptyId);
     // A run command's output goes to its console channel (#353); its timeout (#511) stops it the way its Stop does, through the reducer's kill
     if (found) feedConsole({ ptys, consoleStore }, commandChannel(workspace.name, found.name), ptyId, { label: `#${task.item.id}`, timeout: found.timeout, onTimeout: () => void dispatch({ type: 'stop', ptyId }) });
   }
@@ -377,17 +351,18 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   async function spawnProjectShell(runtime: Runtime, terminal: Terminal, size?: TerminalSize): Promise<void> {
     const { terminalId: ptyId } = terminal;
     const name = localWorkspaceOf(terminal.activityId) ?? '';
-    const { config, port } = runtime;
-    const workspace = workspaceByName(config, name);
+    const workspace = workspaceByName(runtime.config, name);
     if (!workspace) {
       await dispatch({ type: 'spawnFailed', ptyId, message: `workspace "${name}" não existe mais` });
       return;
     }
+    const machine = machineFor({}); // a workspace's shell: the local machine until node 9
     pool.start({
-      ptyId,
-      launch: { ptyId, slug: LOCAL_SLUG, port, terminal: true, ...sized(size), ...(await keptLaunch(terminal, workspace.path, await runEnv(exec, workspace))) },
+      ptyId, machine,
+      spec: { ptyId, slug: LOCAL_SLUG, terminal: true, ...sized(size), ...(await keptLaunch(machine, terminal, workspace.path, await runEnv(machine, workspace))) },
       ...handlers(ptyId, LOCAL_SLUG),
     });
+    await launched(ptyId);
   }
 
   const abortSetup = (ptyId: string): void => setups.get(ptyId)?.abort();

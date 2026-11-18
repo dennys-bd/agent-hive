@@ -42,7 +42,7 @@ export function conventionsAnswer(state: Pick<State, 'tasks' | 'stages' | 'activ
  * is the workspace's own, else config.baseBranch, else the base remote's HEAD, else main. */
 export async function forkConventions(exec: Exec, workspace: Workspace | undefined, config: Pick<Config, 'baseBranch'>): Promise<ForkConventions | undefined> {
   if (!workspace?.fork) return undefined;
-  const repos = await forkRepos(exec, workspace);
+  const repos = await forkRepos({ exec }, workspace);
   if (!repos) return undefined;
   const { remote, branch } = workspaceBase(config, workspace);
   const base = branch ?? (await remoteHead((...args) => gitOrWords(workspace.path, args, exec), remote));

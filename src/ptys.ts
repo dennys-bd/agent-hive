@@ -1,8 +1,10 @@
-import type { LaunchPty, PtyHandle, PtyLaunch } from './types.js';
+import type { Machine, RunSpec } from './machine.js';
+import type { PtyHandle } from './types.js';
 
 export interface StartPty {
   ptyId: string;
-  launch: PtyLaunch;
+  spec: RunSpec; // #159: what to run, with no host path in it; the machine writes its files and launches it
+  machine: Machine; // the activity's
   onExit(): void;
   onError(message: string): void; // a kill failure: the server puts it in the error bar
   onSpawnFailed(message: string): void; // `started` rejected: the entry is gone; the server frees the worker and marks the task
@@ -25,7 +27,7 @@ interface Entry {
 }
 
 /** In-memory registry of the live ptys, runs and terminals alike (#647), keyed by ptyId. Process state, not domain state: it is never persisted. */
-export function createPtyPool(spawn: LaunchPty): PtyPool {
+export function createPtyPool(): PtyPool {
   const entries = new Map<string, Entry>();
 
   function start(o: StartPty): void {
@@ -42,7 +44,7 @@ export function createPtyPool(spawn: LaunchPty): PtyPool {
       drop();
       o.onExit();
     };
-    const handle = spawn(o.launch, { onExit, onError: o.onError });
+    const handle = o.machine.pty.spawn(o.spec, { onExit, onError: o.onError });
     if (!exited) { // a spawner may fail before returning
       own = { handle, exit: onExit };
       entries.set(ptyId, own);

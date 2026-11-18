@@ -8,7 +8,7 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url)); // this file run
 const read = (path: string): Promise<string> => readFile(join(ROOT, path), 'utf8');
 
 // The spawns whose whole tree a timeout, a cap or a stop kills (#637): one shared kill, never a copy that knows only process groups
-const TREE_SPAWNERS = ['src/machine-run.ts', 'src/worktree-steps.ts'];
+const TREE_SPAWNERS = ['src/machine-run.ts']; // a setup's RUN (#159), the formatters and the checkers (#160) all run through it
 
 test('the tree spawners take treeSpawnOptions and kill through killTree, so on win32 they are not detached and taskkill reaches the tree (#637)', async () => {
   for (const path of TREE_SPAWNERS) {

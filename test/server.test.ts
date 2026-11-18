@@ -8,7 +8,7 @@ import { WebSocket } from 'ws';
 import { createSources } from '../src/source.js';
 import { parseConfig } from '../src/config.js';
 import { renderMcpConfig } from '../src/agents/claude-home.js';
-import { PROTOCOL_DIR } from '../src/hooks-settings.js';
+import { PROMPTS_DIR, PROTOCOL_DIR } from '../src/hooks-settings.js';
 import { type Logger, shortId } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { pluginRenderPath } from '../src/plugin-render.js';
@@ -16,26 +16,25 @@ import { PLAN_LIMITS_INTERVAL_MS } from '../src/rate-limits.js';
 import { keepAwakeCommand, shutdownCommand } from '../src/platform-commands.js';
 import { HOUR_MS } from '../src/usage.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
-import { fakeMachine } from './fake-machine.js';
 import { prStatesQuery } from '../src/pull-requests.js';
 import { createServer, type HiveServer, killStrays, type ServerDeps } from '../src/server.js';
 import { activityOf, prsOf, recordWithSession, resultOf, taskOfWorker } from '../src/activities.js';
 import { runSessionId } from '../src/record-kit.js';
 import { activityIdOf, readyOn, withWork, workId, workPath } from './fixtures/work.js';
 import { sessionsOf, slugFor } from '../src/tasks.js';
-import { blockedMessage, deleteActivityOnDisk, openTask } from '../src/server-tasks.js';
+import { openTask } from '../src/server-tasks.js';
+import { blockedMessage } from '../src/server-start.js';
 import { saveState } from '../src/state-store.js';
-import { createConsoleStore } from '../src/console.js';
-import { createPtyHost, NO_PTY } from '../src/pty-host.js';
 import { CONTINUE_PROMPT } from '../src/server-spawn.js';
 import { STAGE_PROTOCOL } from '../src/protocol.js';
 import { renderPrompt } from '../src/spawn.js';
 import { mergeBasePrompt } from '../src/merge-prompt.js';
 import { worktreePath } from '../src/worktree.js';
+import type { RunSpec } from '../src/machine.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceItemRead, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem } from './fakes.js';
+import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, fakeMachine, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { NO_POSIX_FAULTS } from './posix-only.js';
 import { isListing, listing, strayKill } from './stray-kill.js';
@@ -317,7 +316,7 @@ test('saving the settings starts one worker with the launch: mode, cwd, port, ho
       command: 'claude',
       argv: [
         ['--mcp-config', join(home, 'prompts', `${worker.runId}.mcp.json`)], ['--settings', join(home, 'hooks.json')], ['--plugin-dir', pluginRenderPath(home, WORKSPACE)],
-        ['--append-system-prompt-file', join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md')], // a stage run is told how to end it (#167), its workspace's memory under it (#797)
+        ['--append-system-prompt-file', join(home, PROMPTS_DIR, `${worker.runId}.protocol.md`)], // a stage run is told how to end it (#167), its workspace's memory under it (#797); #159: the machine's own copy
         '--session-id', work0(server)!.sessionId!, // #629: the activity's
       ],
     },
@@ -330,6 +329,20 @@ test('saving the settings starts one worker with the launch: mode, cwd, port, ho
   assert.match(prompt, /^Task #1: from Ready/, 'the command line reads the prompt from this file');
   assert.equal(prompt, renderPrompt(STAGES[0].prompt ?? '', task0(server).item), 'the rendered prompt and nothing after it: the protocol has its own file (#167)');
   assert.ok(!prompt.includes('curl') && !prompt.includes(worker.runId!), 'no curl and no worker id in the prompt: the id travels in the MCP config (#99)');
+});
+
+test('a stage run hands its machine a RunSpec with the prompt text, the protocol text and the agent inputs, and no host path (#159)', async (t) => {
+  const specs: RunSpec[] = [];
+  const machine = fakeMachine({ exec: noGit, pty: { spawn: (spec) => { specs.push(spec); return { started: Promise.resolve(), kill: async () => undefined }; } } });
+  const { home, repo, server } = await start(t, BODY, undefined, {}, { machines: { local: machine, for: () => machine } });
+  const slug = 'hive-1-from-ready';
+  assert.equal(specs.length, 1);
+  const [spec] = specs;
+  assert.deepEqual([spec.ptyId, spec.slug, spec.cwd], [worker0(server).runId, slug, join(repo, '.hive', 'worktrees', slug)]);
+  assert.match(spec.prompt?.text ?? '', /^Task #1: from Ready/);
+  assert.equal(spec.prompt?.name, slug);
+  assert.equal(spec.protocol, STAGE_PROTOCOL, 'the text, read on the host; the machine writes its own file');
+  assert.deepEqual([spec.agent?.id, spec.agent?.run.pluginDir, spec.agent?.run.session?.id], ['claude', pluginRenderPath(home, WORKSPACE), work0(server)?.sessionId]);
 });
 
 test('a spawn creates the task worktree before the worker exists and launches it there: the runner only ever gets a cwd', async (t) => {
@@ -2039,7 +2052,9 @@ test('POST /tasks/:id/open: a bad kind is 400 and creates nothing; terminal on a
   const { launch } = workers[1];
   assert.deepEqual([launch.slug, launch.cwd, launch.promptPath, plainArgs(launch), launchFlag(launch, '--mcp-config')],
     ['hive-1-from-ready', worktree, undefined, ['--session-id', first.sessionId], join(home, 'prompts', `${first.runId}.mcp.json`)]);
-  assert.equal(launchFlag(launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'a free session on a task is told the session protocol (#167)');
+  const sessionProtocol = join(home, PROMPTS_DIR, `${first.runId}.protocol.md`); // #159: the machine's copy of the protocol
+  assert.equal(launchFlag(launch, '--append-system-prompt-file'), sessionProtocol);
+  assert.equal(await readFile(sessionProtocol, 'utf8'), await readFile(join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'utf8'), 'a free session on a task is told the session protocol (#167)');
   assert.equal(work0(server)?.workerId, undefined, 'task.workerId stays the automatic worker\'s');
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude' }));
   const live = server.getState()!.workers;
@@ -2472,7 +2487,9 @@ test('POST /activities/:id/continue resumes the stopped stage\'s latest session 
   await waitFor(() => work0(server)?.stopped === true);
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/continue`)), { ok: true });
   assert.deepEqual(plainArgs(workers[1].launch), ['--resume', session]);
-  assert.equal(launchFlag(workers[1].launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md'), 'Continue is a stage run: the stage protocol (#167)');
+  const stageProtocol = join(home, PROMPTS_DIR, `${workers[1].launch.ptyId}.protocol.md`); // #159: the machine's copy of the protocol
+  assert.equal(launchFlag(workers[1].launch, '--append-system-prompt-file'), stageProtocol);
+  assert.equal(await readFile(stageProtocol, 'utf8'), await readFile(join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md'), 'utf8'), 'Continue is a stage run: the stage protocol (#167)');
   assert.equal(await readFile(workers[1].launch.promptPath!, 'utf8'), CONTINUE_PROMPT);
 });
 
@@ -2647,62 +2664,6 @@ test('POST /activities/:id/sessions/:session/clear keeps the transcript when the
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/sessions/${session}/clear`)), { ok: true });
   assert.deepEqual([sessions0(server), work0(server)?.sessionId], [[], undefined]);
   assert.deepEqual(await readdir(dir), [`${session}.jsonl`]);
-});
-
-test('deleteActivityOnDisk also checks and deletes the own branches a Restart left behind, before and after the task\'s own, and drops the stage-start ref (#283)', async (t) => {
-  const calls: string[][] = [];
-  const exec: Exec = async (_file, args) => {
-    const command = args.slice(2);
-    calls.push(command);
-    const listing = command[0] === 'for-each-ref' && command[1] === '--format=%(refname:lstrip=2)';
-    return { stdout: listing ? `${TASK_BRANCH}\n${TASK_BRANCH}-r2\n${TASK_BRANCH}-r3\n` : '' };
-  };
-  const task: Task = {
-    item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true,
-  };
-  const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: `${TASK_BRANCH}-r3`, stageStart: { stage: 'fila', commit: 'a1b2c3d' } }; // #629: the activity's
-  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000), machineFor: () => fakeMachine() };
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
-  const check = (b: string): string[][] => [['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${b}`], ['merge-base', '--is-ancestor', `refs/heads/${b}`, 'HEAD']];
-  assert.deepEqual(calls, [
-    ['for-each-ref', '--format=%(refname:lstrip=2)', `refs/heads/${TASK_BRANCH}`, `refs/heads/${TASK_BRANCH}-r*`],
-    ...check(TASK_BRANCH), ...check(`${TASK_BRANCH}-r2`),
-    ['worktree', 'list', '--porcelain'], ['rev-parse', '--verify', '--quiet', `refs/heads/${TASK_BRANCH}-r3`], ...check(`${TASK_BRANCH}-r3`),
-    ['branch', '-d', '--', `${TASK_BRANCH}-r3`],
-    ['branch', '-d', '--', TASK_BRANCH], ['branch', '-d', '--', `${TASK_BRANCH}-r2`],
-    ['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`],
-    ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`], // #619
-  ]);
-});
-
-test('deleteActivityOnDisk drops the stage-start ref of an activity whose start a stage entry already cleared: the ref never pins a commit after the delete (#812)', async (t) => {
-  const calls: string[][] = [];
-  const exec: Exec = async (_file, args) => {
-    calls.push(args.slice(2));
-    return { stdout: '' };
-  };
-  const task: Task = { item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true };
-  const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH }; // entered a stage: no stageStart
-  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000), machineFor: () => fakeMachine() };
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
-  assert.deepEqual(calls.slice(-3), [['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`], ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`]]);
-});
-
-test('deleteActivityOnDisk hands the record\'s PRs to the clean: a branch its merged PR squashed goes at its verified tip, no refusal (#660)', async (t) => {
-  const calls: string[][] = [];
-  const exec: Exec = async (file, args) => {
-    calls.push([file, ...(file === 'git' ? args.slice(2) : args)]);
-    if (file === 'gh') return { stdout: JSON.stringify({ state: 'MERGED', headRefOid: 'c0ffee1' }) };
-    if (args.includes('--is-ancestor')) throw Object.assign(new Error('Command failed: git merge-base'), { code: 1 }); // squashed: never an ancestor
-    return { stdout: args.includes('rev-parse') ? 'c0ffee1\n' : '' };
-  };
-  const task: Task = { item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true };
-  const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH };
-  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000), machineFor: () => fakeMachine() };
-  const pr = 'https://github.com/acme/r/pull/7';
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [{ url: pr, state: 'merged' }], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
-  assert.deepEqual(calls.filter((c) => c[0] === 'gh'), [['gh', 'pr', 'view', pr, '--json', 'state,headRefOid']]);
-  assert.ok(calls.some((c) => c.join(' ') === `git update-ref -d refs/heads/${TASK_BRANCH} c0ffee1`), calls.map((c) => c.join(' ')).join('\n'));
 });
 
 test('Restart is refused while a session or a terminal runs on the task; while its git runs the task is marked, so a continue or a start is refused (#283)', async (t) => {

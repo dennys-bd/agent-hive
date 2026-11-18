@@ -31,7 +31,7 @@ const spawnFailure = (command: string, err: NodeJS.ErrnoException): string =>
 
 // One stream's bytes up to the cap (past it onOver on every chunk; the caller acts once). A decoder per stream, so a character split
 // between two chunks keeps its bytes and the two streams never mix a half
-function watch(stream: Readable | null, cap: number, onText: (text: string) => void, onOver: () => void): () => Buffer {
+function watch(stream: Readable | null, cap: number, keep: boolean, onText: (text: string) => void, onOver: () => void): () => Buffer {
   const decoder = new StringDecoder('utf8');
   const chunks: Buffer[] = [];
   let size = 0;
@@ -40,7 +40,7 @@ function watch(stream: Readable | null, cap: number, onText: (text: string) => v
     if (text !== '') onText(text);
     size += chunk.length;
     if (size > cap) onOver();
-    else chunks.push(chunk);
+    else if (keep) chunks.push(chunk);
   });
   return () => Buffer.concat(chunks);
 }
@@ -74,8 +74,9 @@ export function runDetached(p: RunProcess): Promise<RunResult> {
       finish(code, failure);
     };
     const over = (): void => stop(RUN_OVER, `output over ${cap} bytes`);
-    const stdout = watch(child.stdout, cap, onText, over);
-    const stderr = watch(child.stderr, cap, onText, over);
+    const keep = p.tailOnly !== true;
+    const stdout = watch(child.stdout, cap, keep, onText, over);
+    const stderr = watch(child.stderr, cap, keep, onText, over);
     const timer = p.timeoutMs === undefined ? undefined : setTimeout(() => stop(RUN_TIMEOUT, `timed out after ${p.timeoutMs} ms`), p.timeoutMs);
     const onAbort = (): void => stop(RUN_STOPPED, CANCELLED);
     p.signal?.addEventListener('abort', onAbort, { once: true });

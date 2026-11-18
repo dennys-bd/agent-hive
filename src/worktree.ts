@@ -1,21 +1,15 @@
-import { execFile } from 'node:child_process';
-import { access, realpath, unlink } from 'node:fs/promises';
 import { isAbsolute, join, posix, win32 } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { promisify } from 'node:util';
-import type { Logger } from './log.js';
-import { ownBranch } from './task-runs.js';
+import type { Machine } from './machine.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, RemovalRefusal, remoteHead, setAside, settleSync, WORKTREE_PREFIX, withSync, wordsOf } from './worktree-base.js';
+import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, type Git, gitOrWords, refuseDirty, remoteHead, settleSync, WORKTREE_PREFIX, withSync, wordsOf } from './worktree-base.js';
 import { samePath } from './same-path.js';
-import { refuseDirtyNested, removeNested } from './worktree-nested.js';
+import { refuseDirtyNested } from './worktree-nested.js';
 export { branchAt, gitOrWords, wordsOf } from './worktree-base.js';
-import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type TaskPr, type Exec, isBranchName, type WorktreeRow } from './types.js';
+import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, isBranchName, type WorktreeRow } from './types.js';
 
-const execFileAsync: Exec = promisify(execFile);
-const BRANCH_NOT_FOUND = /error: branch '.*' not found/; // git branch -D on a branch already deleted; execFile's message embeds the stderr
 export const WORKTREES_DIR = 'worktrees';
 // Another git writing .git/config at the same moment (two tasks starting at once, on one daemon or two): the lock is held for milliseconds
 const CONFIG_LOCK = /could not lock config file/;
@@ -27,7 +21,7 @@ export const worktreePath = (repo: string, slug: string): string => join(repo, H
 
 // A task's activity is born with its slug (ensureActivity) and the store drops one without (#629): a path git acts on is never the worktrees
 // folder itself
-function slugOfWork(activity: Pick<Activity, 'slug'>): string {
+export function slugOfWork(activity: Pick<Activity, 'slug'>): string {
   if (!activity.slug) throw new Error('the activity has no slug');
   return activity.slug;
 }
@@ -48,58 +42,28 @@ export const workDir = (repo: string, task: Task, activity: Activity | undefined
 // start (#653): the start a new branch was made from, which a nested repo's branch starts from too; absent when the branch was reused or adopted, or no base was decided
 export interface PreparedWorktree { path: string; line?: string; sync?: ForkSyncResult; reused?: string; start?: string }
 
-const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
-
-/**
- * Removes a worker's worktree, its branch and the Hive's prompt file for the slug (in `promptsDir`, the home's prompts/). The forced
- * removal of the details panel's button (#182): only on a stopped task, never with a live process inside. Path and branch are git's own (the
- * deterministic worktree path and what git lists checked out there), never the task's: `/hooks/event` is open to any local process and
- * a forged SessionStart could point them anywhere; the branch the Hive rendered for the task (or a `-r<n>` a Restart made of it, #283) is the fallback when git no longer lists
- * the worktree. `nested` (#653): the workspace's nestedRepos, whose worktrees in this one go first (removeNested); [] removes none. Already gone (no directory, no branch, no file) is not an error: `worktree prune` always runs so a directory deleted by
- * hand leaves no stale entry. Any other git error propagates and the later steps do not run.
- */
-export async function removeWorktree(
-  repo: string, activity: Pick<Activity, 'slug' | 'branch'>, branch: string, promptsDir: string, exec: Exec = execFileAsync,
-  nested: readonly string[] = [],
-): Promise<void> {
-  const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['-C', repo, ...args]);
-  const path = worktreePath(repo, slugOfWork(activity));
-  const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path, process.platform);
-  const fallback = listed === undefined ? (ownBranch(activity, branch) ?? branch) : listed; // not listed: the branch a Restart moved the task to (#283), else the template's. null: detached
-  await removeNested({ path: repo, nestedRepos: nested }, path, fallback ?? undefined, true, exec); // #653: inside out, forced as the outer removal is
-  // --force twice: Claude Code locks the worktree while it runs and a SIGHUP kill does not release the lock
-  if (await exists(path)) await git('worktree', 'remove', '--force', '--force', '--', path);
-  await git('worktree', 'prune');
-  if (fallback !== null) {
-    await git('branch', '-D', '--', fallback).catch((err: Error) => {
-      if (!BRANCH_NOT_FOUND.test(err.message)) throw err;
-    });
-  }
-  await unlink(join(promptsDir, `${slugOfWork(activity)}.md`)).catch((err: NodeJS.ErrnoException) => {
-    if (err.code !== 'ENOENT') throw err;
-  });
-}
+export const exists = (machine: Pick<Machine, 'fs'>, path: string): Promise<boolean> => machine.fs.access(path).then(() => true, () => false);
 
 /**
  * Why `path` cannot be the Comb's workspace, undefined when it can (#202). It must be absolute and the top level of a git work tree: every
  * worktree command runs `git -C <workspace>`. git answers the top level by its real path (/private/var on macOS), so both sides go
- * through realpath. Always the real git, never an injected one: the settings save and the boot's proposal each run it once.
+ * through realpath. Its callers without a machine hand LOCAL_DISK, the real git and disk: the settings save and the boot's proposal each run it once.
  */
-export async function workspacePathProblem(path: string): Promise<string | undefined> {
+export async function workspacePathProblem(machine: Pick<Machine, 'exec' | 'fs'>, path: string): Promise<string | undefined> {
   if (!isAbsolute(path)) return `${path}: the workspace folder must be an absolute path`;
   let top: string;
   try {
-    top = (await execFileAsync('git', ['-C', path, 'rev-parse', '--show-toplevel'])).stdout.trim();
+    top = (await machine.exec('git', ['-C', path, 'rev-parse', '--show-toplevel'])).stdout.trim();
   } catch (err) {
     return `${path} is not a git repository (${wordsOf(err)})`;
   }
-  return (await realpath(path)) === (await realpath(top)) ? undefined : `${path} is not the top level of its git repository (${top})`;
+  return (await machine.fs.realpath(path)) === (await machine.fs.realpath(top)) ? undefined : `${path} is not the top level of its git repository (${top})`;
 }
 
-const hasRef = (repo: string, ref: string, exec: Exec): Promise<boolean> =>
-  gitOrWords(repo, ['rev-parse', '--verify', '--quiet', ref], exec).then(() => true, () => false);
+const hasRef = (machine: Pick<Machine, 'exec'>, repo: string, ref: string): Promise<boolean> =>
+  gitOrWords(repo, ['rev-parse', '--verify', '--quiet', ref], machine.exec).then(() => true, () => false);
 
-const hasBranch = (repo: string, branch: string, exec: Exec): Promise<boolean> => hasRef(repo, `refs/heads/${branch}`, exec);
+export const hasBranch = (machine: Pick<Machine, 'exec'>, repo: string, branch: string): Promise<boolean> => hasRef(machine, repo, `refs/heads/${branch}`);
 
 /**
  * The task's worktree, created or adopted, before the worker exists: the Hive owns it now, and the runner only gets this path as
@@ -117,12 +81,13 @@ const hasBranch = (repo: string, branch: string, exec: Exec): Promise<boolean> =
  * `worktree add` ever reject, so a default base that cannot be refreshed still starts the worker.
  */
 export async function ensureWorktree(
-  repo: string, slug: string, branch: string, base: WorkspaceBase, chosen: string | undefined, exec: Exec = execFileAsync,
+  machine: Machine, repo: string, slug: string, branch: string, base: WorkspaceBase, chosen: string | undefined,
 ): Promise<PreparedWorktree> {
+  const { exec } = machine;
   const path = worktreePath(repo, slug);
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   const listed = branchAt(await git('worktree', 'list', '--porcelain'), path, process.platform);
-  if (listed !== undefined && (await exists(path))) {
+  if (listed !== undefined && (await exists(machine, path))) {
     // Adopt only our own branch: on anything else (another branch, a detached HEAD) the path was staged by someone else, and a
     // forced removal would delete the branch found there with the work on it.
     if (listed !== branch) throw new Error(`${path} is checked out on ${listed === null ? 'a detached HEAD' : listed}, not on ${branch}`);
@@ -132,12 +97,12 @@ export async function ensureWorktree(
   const decided = chosen === undefined ? await defaultBase(git, repo, base, exec) : await chosenBase(git, base.remote, chosen);
   // A branch that already exists carries work (a removal that failed, a task respawned): checked out as it is, with no start point and no
   // fork's local merge (#854), unless its class against the start says it holds nothing to keep there (#267, existingBranch)
-  const existing = await hasBranch(repo, branch, exec);
+  const existing = await hasBranch(machine, repo, branch);
   const kept = existing ? await existingBranch(repo, branch, decided.start, exec) : undefined;
   const reused = kept?.action === 'reuse';
   const start = decided.start === undefined ? [] : [decided.start];
   const add = reused ? ['worktree', 'add', '--', path, branch] : ['worktree', 'add', kept?.action === 'reset' ? '-B' : '-b', branch, '--', path, ...start];
-  await addWorktree(git, add, { path, branch, start: decided.start }, () => hasBranch(repo, branch, exec));
+  await addWorktree(git, add, { path, branch, start: decided.start }, () => hasBranch(machine, repo, branch));
   const sync = await settleSync(decided, reused ? undefined : (...args) => gitOrWords(path, args, exec)); // #854: the local merge in the new tree only
   const line = kept?.note === undefined ? withSync(decided.line, sync) : `${withSync(decided.line, sync)} · ${kept.note}`;
   const started = reused || decided.start === undefined ? {} : { start: decided.start }; // #653: a reused branch's start is its upstream, prepareNested reads it
@@ -175,14 +140,15 @@ async function retryLocked(run: () => Promise<string>, tries = 1): Promise<strin
  * where a worktree's would (defaultBase / chosenBase) and `line` says so. `nested` (#653): the workspace's nested repos, checked for uncommitted changes with the checkout itself; switchNested moves them after it. Every call goes through gitOrWords, so a refusal carries git's words.
  */
 export async function ensureCheckout(
-  repo: string, branch: string, base: WorkspaceBase, chosen: string | undefined, exec: Exec = execFileAsync, nested: readonly string[] = [],
+  machine: Pick<Machine, 'exec'>, repo: string, branch: string, base: WorkspaceBase, chosen: string | undefined, nested: readonly string[] = [],
 ): Promise<PreparedWorktree> {
+  const { exec } = machine;
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   if ((await git('branch', '--show-current')).trim() === branch) return { path: repo }; // no switch: the task's own work in progress stays
   await refuseDirty(repo, exec);
   await refuseDirtyNested({ path: repo, nestedRepos: nested }, repo, exec, branch); // #653: no half-switched state; one already on the branch stays as it is
   if (branch.startsWith('-')) throw new Error(`${branch}: a branch cannot start with "-"`); // switch would read it as an option
-  if (await hasBranch(repo, branch, exec)) {
+  if (await hasBranch(machine, repo, branch)) {
     await git('switch', branch);
     return { path: repo };
   }
@@ -194,111 +160,6 @@ export async function ensureCheckout(
   return { path: repo, line: withSync(decided.line, sync), ...(start === undefined ? {} : { start }), ...(sync === undefined ? {} : { sync }) };
 }
 
-/** What runs in a worktree once git's checks passed and before it goes (#654): the workspace's teardown. present: git lists the worktree
- * and its folder is on disk. A rejection is a refusal: nothing is removed. */
-export type BeforeRemove = (path: string, present: boolean) => Promise<void>;
-
-/** What a clear does with a branch `branch -d` would refuse (#267): refuse, as delete activity does, or set it aside, as the start dialog's discard does. */
-export type Unmerged = 'refuse' | 'setAside';
-
-/** cleanWorktree's choices: what an unmerged branch gets (#267), the workspace's nestedRepos, whose worktrees in this one go first (#653), the
- * task's PRs, which mergedByPr reads for a branch git calls unmerged, and where a PR read that failed is logged (#660). */
-export interface CleanOptions { unmerged?: Unmerged; nested?: readonly string[]; prs?: readonly TaskPr[]; log?: Pick<Logger, 'info'> }
-
-/**
- * The delete activity stage's action, and the first try of the ⋯ menu's delete activity (#182): removes the task's worktree and its local
- * branch, both WITHOUT force (unlike removeWorktree, the forced removal). All or nothing: what git would refuse is checked first (changes
- * in the worktree; a branch `branch -d` would not delete) and a refusal rejects with the reason, leaving both in place, never a worktree
- * gone with its branch left behind. git refusing anyway (a locked worktree) still rejects with its stderr. Idempotent: a path git does
- * not list and a branch it does not know count as done; a listed path whose directory is gone is pruned. The path comes from the slug
- * alone (the activity's worktree is a SessionStart cwd any local process can post); the branch is the one git lists on that path, else
- * the activity's branch only when it is the name the Hive's template renders for this task, else nothing. The remote branch is never touched.
- * `beforeRemove` (#654) runs between the checks and the removal; its rejection removes nothing. `options.unmerged: 'setAside'` (#267) keeps an
- * unmerged branch under setAside's name instead of refusing. `options.nested` (#653): the workspace's nestedRepos, whose worktrees in this one go first
- * (removeNested); [] removes none. `options.prs` (#660): a branch git calls unmerged that mergedByPr says its PRs merged is not refused and goes
- * with `update-ref -d` at the tip it verified.
- */
-export async function cleanWorktree(
-  repo: string, activity: Pick<Activity, 'slug' | 'branch'>, branch: string, exec: Exec = execFileAsync, beforeRemove?: BeforeRemove,
-  { unmerged = 'refuse', nested = [], prs = [], log }: CleanOptions = {},
-): Promise<void> {
-  const path = worktreePath(repo, slugOfWork(activity));
-  const nestedOf = { path: repo, nestedRepos: nested };
-  const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path, process.platform);
-  const present = listed !== undefined && (await exists(path));
-  // a hook can forge the branch: trusted only when it is the template's name or a Restart's `-r<n>` of it (#283)
-  const named = listed ?? ownBranch(activity, branch);
-  const found = named !== undefined && (await hasBranch(repo, named, exec)) ? named : undefined;
-  if (present) {
-    await refuseDirty(path, exec);
-    await refuseDirtyNested(nestedOf, path, exec); // #653: an ignored nested worktree is deleted by the outer remove without a word; refuse first
-  }
-  const check = found === undefined ? undefined : await mergeCheck(repo, found, exec);
-  // #660: a squash leaves the branch off HEAD; its PRs say whether it was merged anyway
-  const byPr = found !== undefined && check?.merged === false ? await mergedByPr(repo, found, prs, exec, log) : undefined;
-  if (found !== undefined && check?.merged === false && byPr === undefined && unmerged === 'refuse') throw unmergedError(found, check.target);
-  await beforeRemove?.(path, present); // #654: after every refusal check, so a teardown never runs for a removal git would refuse
-  await removeNested(nestedOf, path, named, false, exec); // #653: inside out; a gone outer folder holds none, so this only prunes
-  if (listed !== undefined) await gitOrWords(repo, present ? ['worktree', 'remove', '--', path] : ['worktree', 'prune'], exec);
-  if (found === undefined) return;
-  // #660: branch -d refuses a squashed branch whatever was checked; update-ref deletes only the tip mergedByPr verified, so a commit made since
-  // (the teardown runs in between) makes git refuse instead of losing it
-  if (byPr !== undefined) await gitOrWords(repo, ['update-ref', '-d', `refs/heads/${found}`, byPr], exec);
-  // #267: an unmerged branch the discard clears is kept as <branch>-old-<sha7>, after its worktree went, so the rename touches no checkout
-  else if (check?.merged === false) await setAside(repo, found, exec);
-  else await gitOrWords(repo, ['branch', '-d', '--', found], exec);
-}
-
-// %(upstream:track) when the remote branch is gone (GitHub deletes the head branch after a merge): branch -d then checks HEAD, and so do we (#660)
-const GONE = '[gone]';
-
-// What `branch -d` checks (#182), by git's own rule: merged into the branch's upstream when it has one that still exists, else into HEAD of the
-// main checkout. merge-base --is-ancestor exits 1 for "not merged"; any other failure is git's words. Both refs are built here, never read off
-// the task, so neither can start with `-`.
-async function mergeCheck(repo: string, branch: string, exec: Exec): Promise<{ merged: boolean; target: string }> {
-  const ref = `refs/heads/${branch}`;
-  const [upstream = '', track = ''] = (await gitOrWords(repo, ['for-each-ref', '--format=%(upstream)%00%(upstream:track)', ref], exec)).trimEnd().split('\0');
-  const target = upstream === '' || track.includes(GONE) ? 'HEAD' : upstream;
-  return { merged: await gitAnswers(repo, ['merge-base', '--is-ancestor', ref, target], exec), target };
-}
-
-const unmergedError = (branch: string, target: string): RemovalRefusal =>
-  new RemovalRefusal(`the branch '${branch}' is not fully merged into ${target}`, { reason: 'unmerged', branch, target });
-
-/** What `branch -d` refuses, checked first (#182): rejects with the reason when the branch is not merged (mergeCheck). */
-export async function refuseUnmerged(repo: string, branch: string, exec: Exec): Promise<void> {
-  const { merged, target } = await mergeCheck(repo, branch, exec);
-  if (!merged) throw unmergedError(branch, target);
-}
-
-const PR_READ_TIMEOUT_MS = 30_000; // one gh pr view: a hung read must not hold the delete
-
-/** A branch git calls unmerged that its PRs merged (#660): no PR still open, at least one merged, and the local tip is the head GitHub merged
- * for one of them, so a commit made after the merge still refuses. Only the PRs the record holds as merged are read, at delete time, since the
- * record may be a poll behind; a read that fails, or an answer that is not MERGED, counts as not merged: a failing read never deletes.
- * Answers the verified tip, which the deletion passes to update-ref; undefined = not merged by its PRs. */
-export async function mergedByPr(repo: string, branch: string, prs: readonly TaskPr[], exec: Exec, log?: Pick<Logger, 'info'>): Promise<string | undefined> {
-  // the record's links passed isPrUrl when stored; https:// only keeps a `-` off gh's argv anyway
-  const merged = prs.filter((pr) => pr.state === 'merged' && pr.url.startsWith('https://'));
-  if (merged.length === 0 || prs.some((pr) => pr.state === 'open')) return undefined;
-  const tip = (await gitOrWords(repo, ['rev-parse', '--verify', `refs/heads/${branch}`], exec)).trim();
-  const heads = await Promise.all(merged.map((pr) => mergedHead(pr.url, exec, log)));
-  return heads.includes(tip) ? tip : undefined;
-}
-
-// The head GitHub merged for the PR, undefined when gh fails or GitHub does not call it MERGED; either is logged with the url
-async function mergedHead(url: string, exec: Exec, log?: Pick<Logger, 'info'>): Promise<string | undefined> {
-  try {
-    const { stdout } = await exec('gh', ['pr', 'view', url, '--json', 'state,headRefOid'], { timeout: PR_READ_TIMEOUT_MS });
-    const answer = JSON.parse(stdout) as { state?: unknown; headRefOid?: unknown };
-    if (answer.state === 'MERGED' && typeof answer.headRefOid === 'string') return answer.headRefOid;
-    log?.info(`mergedByPr ${url}: not merged on GitHub`);
-  } catch (err) {
-    log?.info(`mergedByPr ${url}: ${wordsOf(err)}`);
-  }
-  return undefined;
-}
-
 /**
  * Every worktree the Hive created (#181): the blocks of `git worktree list --porcelain` whose path is worktreePath(repo, <its own
  * basename>), meaning a direct child of .hive/worktrees, the only place the Hive creates one (#125). The main checkout, a worktree
@@ -306,8 +167,8 @@ async function mergedHead(url: string, exec: Exec, log?: Pick<Logger, 'info'>): 
  * (null = detached). A row's path is the Hive's own, never git's string (#640): git prints `C:/…` on Windows. Read-only; a failure
  * carries git's words.
  */
-export async function listWorktrees(repo: string, platform: NodeJS.Platform, exec: Exec = execFileAsync): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
-  const porcelain = await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec);
+export async function listWorktrees(machine: Pick<Machine, 'exec'>, repo: string, platform: NodeJS.Platform): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
+  const porcelain = await gitOrWords(repo, ['worktree', 'list', '--porcelain'], machine.exec);
   const names = platform === 'win32' ? win32 : posix; // a `C:/…` line's last name is its slug only for win32's basename
   return porcelain.split('\n').flatMap((line) => {
     if (!line.startsWith(WORKTREE_PREFIX)) return [];
@@ -332,10 +193,10 @@ async function refsOf(git: Git, remote: string): Promise<{ local: string[]; remo
 
 // #861: the worktree and the branch git holds for a task with no activity; undefined with neither. #267: the branch's class against the
 // default start and its name, for the dialog's notice and its preselected choice, when both resolve; a class git cannot tell is left out
-async function orphanOf(repo: string, branch: string, worktree: boolean, start: string, exec: Exec): Promise<BaseOptions['orphan']> {
-  const branched = await hasBranch(repo, branch, exec);
+async function orphanOf(machine: Machine, repo: string, branch: string, worktree: boolean, start: string): Promise<BaseOptions['orphan']> {
+  const branched = await hasBranch(machine, repo, branch);
   if (!worktree && !branched) return undefined;
-  const relation = branched ? await branchRelation(repo, branch, start, exec).catch(() => undefined) : undefined;
+  const relation = branched ? await branchRelation(repo, branch, start, machine.exec).catch(() => undefined) : undefined;
   return { worktree, branch: branched, ...(relation === undefined ? {} : { relation, branchName: branch }) };
 }
 
@@ -352,9 +213,9 @@ async function orphanOf(repo: string, branch: string, worktree: boolean, start: 
  * the slug is an orphan: reported, never adopted, and the lists are read.
  */
 export async function baseOptions(
-  repo: string, slug: string, others: { slug: string; id: string; title: string }[], base: Pick<WorkspaceBase, 'remote' | 'branch'>, exec: Exec = execFileAsync, orphanBranch?: string,
+  machine: Machine, repo: string, slug: string, others: { slug: string; id: string; title: string }[], base: Pick<WorkspaceBase, 'remote' | 'branch'>, orphanBranch?: string,
 ): Promise<BaseOptions> {
-  const git: Git = (...args) => gitOrWords(repo, args, exec);
+  const git: Git = (...args) => gitOrWords(repo, args, machine.exec);
   // Started with the others but awaited only past the adoption check: a failed ref read must not block a task that has its worktree.
   const refsRead = refsOf(git, base.remote);
   refsRead.catch(() => undefined); // its rejection is observed below, or not at all when the task already has its worktree
@@ -364,8 +225,8 @@ export async function baseOptions(
   ]);
   const defaultRef = `${base.remote}/${branch}`;
   const own = worktreePath(repo, slug);
-  const adoptable = branchAt(porcelain, own, process.platform) !== undefined && (await exists(own));
-  const orphan = orphanBranch === undefined ? undefined : await orphanOf(repo, orphanBranch, adoptable, defaultRef, exec);
+  const adoptable = branchAt(porcelain, own, process.platform) !== undefined && (await exists(machine, own));
+  const orphan = orphanBranch === undefined ? undefined : await orphanOf(machine, repo, orphanBranch, adoptable, defaultRef);
   if (adoptable && orphan === undefined) return { hasWorktree: true, defaultRef, tasks: [], local: [], remote: [] };
   const refs = await refsRead;
   const tasks = others.flatMap(({ slug: other, id, title }) => {
@@ -383,11 +244,11 @@ export async function baseOptions(
  * the UI is not trusted to have offered only real refs. A leading `-`, the task's own branch, and a name that is neither
  * refs/heads/<ref> nor (for <remote>/<x>) refs/remotes/<remote>/<x>.
  */
-export async function checkBase(repo: string, ref: string, ownBranch: string, exec: Exec = execFileAsync, remote = 'origin'): Promise<void> {
+export async function checkBase(machine: Pick<Machine, 'exec'>, repo: string, ref: string, ownBranch: string, remote = 'origin'): Promise<void> {
   if (ref.startsWith('-')) throw new Error(`${ref}: a base cannot start with "-"`);
   if (!isBranchName(ref)) throw new Error(`${ref}: not a branch name`);
   if (ref === ownBranch) throw new Error(`${ref} is the task's own branch`);
   const refs = [`refs/heads/${ref}`, ...(ref.startsWith(`${remote}/`) ? [`refs/remotes/${ref}`] : [])]; // #854: the workspace's base remote
-  const found = await Promise.all(refs.map((full) => hasRef(repo, full, exec)));
+  const found = await Promise.all(refs.map((full) => hasRef(machine, repo, full)));
   if (!found.some(Boolean)) throw new Error(`${ref}: no such branch`);
 }

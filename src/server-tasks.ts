@@ -1,16 +1,14 @@
 import type { MachineFor } from './machine.js';
+import { registerStartRoute } from './server-start.js';
+import { registerDeleteActivityRoute, removeCreatedWorktree } from './activity-delete.js';
 import type { Express, Request, Response } from 'express';
-import { activityOf, otherSlugs, recordOf } from './activities.js';
-import { activityParam, taskTarget } from './activity-routes.js';
+import { activityOf, otherSlugs, } from './activities.js';
 import { createTask, UNKNOWN_STAGE_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from './create-task.js';
 import type { ReportRetry } from './source-errors.js';
-import { branchFor, inFlow, slugFor, canOpenSession, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
-import { hiveAction, runsAgent } from './stage-agent.js';
+import { branchFor, inFlow, slugFor, canOpenSession, canRemoveCreated, canSetWorkspace, stageOf, type RemovalBlocker, removalBlocker, spawnedRun } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
-import { baseRemote, workspaceBase } from './fork.js';
-import { discardOrphan } from './server-orphan.js';
-import { AWAITING_MESSAGE } from './server-approval.js';
-import { LOCAL_BASES, LOCAL_MESSAGE, startLocal } from './server-local.js';
+import { workspaceBase } from './fork.js';
+import { LOCAL_BASES, } from './server-local.js';
 import type { PluginRender } from './plugin-render.js';
 import type { ReviewStore } from './review-store.js';
 import { registerDiffRoutes } from './server-diff.js';
@@ -28,20 +26,13 @@ import { registerCopyRoutes } from './server-copy.js';
 import { registerSessionRoutes } from './server-sessions.js';
 import { registerDismissErrorRoute, registerRetryRoute } from './server-retry.js';
 import { registerFlowRoutes } from './server-task-flow.js';
-import { parseRunPick } from './run-pick.js';
-import type { Activity, AgentAvailability, BaseOptions, Source, Task, TaskPr, Session, DeleteActivityScope, Config, CreatedRef, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
-import { dropCheckpoints } from './checkpoints.js';
-import { dropBranches, dropStageStart, leftBehind } from './restart.js';
-import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree, wordsOf } from './worktree.js';
-import { refusalOf, RemovalRefusal, UNEXPECTED } from './worktree-base.js';
+import type { Activity, AgentAvailability, BaseOptions, Source, Task, Config, CreatedRef, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
+import { baseOptions, } from './worktree.js';
 import type { Logger } from './log.js';
-import { type ConsoleStore, teardownRunId } from './console.js';
+import type { ConsoleStore } from './console.js';
 import type { PtyHost } from './pty-host.js';
-import { removeInRun, type WorktreeRunDeps } from './task-setup.js';
-import { removeTranscripts } from './transcript.js';
-import { isStranded, strandedTranscripts, strandedWorkspace } from './worktree-stranded.js';
 import type { FactLog } from './facts.js';
-import { sizeIn, type TerminalSize } from './terminal-wire.js';
+import type { TerminalSize } from './terminal-wire.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409; // not configured, or the state refuses what was asked
@@ -54,7 +45,6 @@ const TASK_ON_SOURCE_MESSAGE = 'tarefa ainda está na source';
 export const RUNNING_MESSAGE = 'tarefa já está executando';
 export const SETUP_RUNNING_MESSAGE = 'o setup desta tarefa ainda está em andamento'; // #351: one worktree, one setup at a time
 export const LEAVING_MESSAGE = 'tarefa saindo da source'; // #491: an archive, remove or delete of the source is in flight on it (#286)
-const EPIC_MESSAGE = 'um épico não executa: sua etapa vem das filhas'; // #31: a show epic; the reducer's start ignores it
 const DIFFERENT_STAGES_MESSAGE = 'tarefas em etapas diferentes';
 export const OUTSIDE_FLOW_MESSAGE = 'the task is outside the flow: move it into a stage first'; // #566
 export const DELETING_MESSAGE = 'atividade sendo excluída'; // a delete-activity stage or route is running git on it (#573)
@@ -70,7 +60,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
 export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string; resetsAt?: string } // #812: a source's rate limit, when to retry; #767/#811: the item a failed create left behind; #748: a gone workspace's code and name
 
 export interface TaskRouteDeps {
-  machineFor: MachineFor; // #158: the activity's machine; #160 and #161 read it
+  machineFor: MachineFor; // #158: the activity's machine; #159, #160 and #161 read it
   reportRetry: ReportRetry; // #812: a create the source rate limited puts the source in backoff
   treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
   exec: Exec; // git for the base popup (#131) and the delete-activity route (#182, #573); tests inject a fake
@@ -101,58 +91,6 @@ export type LiveView = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** Why a manual start refuses a blocked task (#283): its own blockers, then each inherited one with the ancestor that holds it (#424). An
- * open no longer does (#491): a blocker holds the stage run only. */
-export const blockedMessage = (task: Task): string => {
-  const inherited = (task.item.inheritedBlockedBy ?? []).map((b) => `${b.id} (via ${b.via})`);
-  return `task bloqueado por ${[...(task.item.blockedBy ?? []), ...inherited].join(', ')}`;
-};
-
-/** Why a manual start would be a no-op in the reducer, as the answer the route gives; undefined when it can go through. No free worker is
- * not a refusal: the reducer opens one over the cap (#116). */
-function startRefusal(state: State, itemId: string): Refusal | undefined {
-  const task = state.tasks.find((c) => c.item.itemId === itemId);
-  if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
-  if (task.item.epic !== undefined) return { status: HTTP_CONFLICT, message: EPIC_MESSAGE };
-  if (!inFlow(task)) return { status: HTTP_CONFLICT, message: OUTSIDE_FLOW_MESSAGE }; // #566: /start runs a stage; the Start dialog moves it first (3.5)
-  const activity = activityOf(state, itemId);
-  if (activity?.setup) return { status: HTTP_CONFLICT, message: SETUP_RUNNING_MESSAGE }; // before RUNNING: both paths answer the same (#351)
-  if (activity?.workerId !== undefined || inAction(activity)) return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // #755, #834: a stage action runs
-  if (activity?.deleting || activity?.approval) return { status: HTTP_CONFLICT, message: activity?.deleting ? DELETING_MESSAGE : AWAITING_MESSAGE }; // the reducer ignores both (#268)
-  const stage = stageOf(state.stages, task.stage);
-  if (hiveAction(stage) !== undefined) return undefined; // a git command of the Hive or the workspace's commands (#755): no worker, no blockers, no prompt
-  if (isBlocked(task.item)) return { status: HTTP_CONFLICT, message: blockedMessage(task) };
-  if (stage === undefined || !runsAgent(stage)) return { status: HTTP_CONFLICT, message: 'etapa sem prompt' }; // #710: a skill stage runs one
-  return undefined;
-}
-
-/** The start the body asks for. `base: null` is the popup's default and drops a saved base. No string base, or a delete activity stage (which
- * never gets one): today's start. A base must be a branch git has and not the task's own (#131), else the answer is a 409 with the
- * reason and nothing starts. The body's workspace is checked like right-click › Workspace and saved with the start (#179). The body's run picks
- * (#290) are checked by parseRunPick and travel with the event. */
-async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string, body: unknown): Promise<Extract<HiveEvent, { type: 'start' }> | Refusal> {
-  const { base, tellWorker, workspace: raw } = (body ?? {}) as { base?: unknown; tellWorker?: unknown; workspace?: unknown };
-  const found = current.state.tasks.find((c) => c.item.itemId === itemId);
-  if (!found) return { type: 'start', itemId };
-  const task = placedTask(current.state, found, raw);
-  if ('status' in task) return task;
-  const workspace = workspaceOf(current.runtime.config, task, current.state.tasks); // #179: a task with no workspace is refused here, never a silent no-op
-  if ('status' in workspace) return workspace;
-  await deps.plugin.ready(); // #316: a render a save queued lands before the picks read the folder
-  const picked = parseRunPick(body, current.state, task, deps.agents, deps.language(), () => deps.plugin.dir(workspace.name), current.runtime.config.agentEnabled); // #290: the run picks, before any git; #316: its workspace's agents
-  if ('status' in picked) return picked;
-  const placed = { ...(raw === undefined ? {} : { workspace: task.workspace }), ...picked };
-  if (stageOf(current.state.stages, task.stage)?.action === 'deleteActivity') return { type: 'start', itemId, ...placed };
-  if (base === null) return { type: 'start', itemId, base: null, ...placed }; // the popup's default: drops a saved base
-  if (typeof base !== 'string') return { type: 'start', itemId, ...placed };
-  try {
-    await checkBase(workspace.path, base, branchFor(current.runtime.config, task.item), deps.exec, baseRemote(workspace));
-  } catch (err) {
-    return { status: HTTP_CONFLICT, message: errorMessage(err) };
-  }
-  return { type: 'start', itemId, base: { ref: base, tellWorker: tellWorker === true }, ...placed };
-}
-
 /** Why a close would be a no-op in the reducer: a source task closes once it is out of the listing or orphan (#568), a local one (#132) once it stopped. */
 function closeRefusal(state: State, itemId: string): Refusal | undefined {
   const task = state.tasks.find((c) => c.item.itemId === itemId);
@@ -161,41 +99,6 @@ function closeRefusal(state: State, itemId: string): Refusal | undefined {
   if (task.outOfListing !== undefined || task.orphan || canRemoveCreated(task, state)) return undefined;
   if (!task.created) return { status: HTTP_CONFLICT, message: TASK_ON_SOURCE_MESSAGE };
   return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // a run of any kind holds it (#164, #283); deleting was refused above
-}
-
-// #660: act toasts the 409's message, so a known refusal answers its own sentence and git's words, for anything else, go to hive.log only
-const CLOSE_UNEXPECTED = 'Unexpected error';
-function closeFailure(err: unknown, log: Pick<Logger, 'error'>, id: string): string {
-  if (err instanceof RemovalRefusal) return err.message;
-  log.error(`close #${id}: ${wordsOf(err)}`);
-  return CLOSE_UNEXPECTED;
-}
-
-/** excluir task… (#542): a local task with a worktree loses it and its branch before it leaves the Hive, through the removal the
- * delete-activity route runs; both always go, as the glossary's delete activity says, the sessions and transcripts per the delete-activity scope.
- * deletingTask's mark holds the fill off while git runs, and taskDeleted drops the task in the reduction that drops the mark, so no fill in
- * between can hand it a worker: 'deleted', the close is done. deletingTask closes its terminals first (#573): git never runs under one.
- * A git refusal is the 409 with its sentence, any other failure the 409 with "Unexpected error" and git's words in hive.log; the task stays. Any other task has nothing to remove: undefined. */
-async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, taskId: string): Promise<Refusal | 'deleted' | undefined> {
-  const task = current.state.tasks.find((c) => c.item.itemId === taskId);
-  const activity = activityOf(current.state, taskId);
-  if (!task?.created || activity?.worktree === undefined || activity.local) return undefined;
-  const stranded = isStranded(current.runtime.config, activity); // #746: its workspace left the Comb
-  const own = stranded ? undefined : workspaceOf(current.runtime.config, task, current.state.tasks);
-  if (own && 'status' in own) return own;
-  const scope = current.state.deleteActivity; // the worktree and its branch always go (#573)
-  await deps.dispatch({ type: 'deletingTask', taskId });
-  try {
-    const sessions = sessionsOf(current.state, task.item.itemId);
-    const workspace = stranded ? await strandedWorkspace(activity, task, deps.exec) : own;
-    if (workspace) await deleteActivityOnDisk({ workspace, activity, task, sessions, prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
-    else await strandedTranscripts(deps.machineFor(activity), activity, task, sessions, scope, deps.log); // nothing on disk to remove: only the transcripts under the path's own repo
-  } catch (err) {
-    await deps.dispatch({ type: 'activityKept', activityId: activity.id });
-    return { status: HTTP_CONFLICT, message: closeFailure(err, deps.log, task.item.id) };
-  }
-  await deps.dispatch({ type: 'taskDeleted', taskId });
-  return 'deleted';
 }
 
 export const refuse = (res: Response, refusal: Refusal): void => {
@@ -234,7 +137,7 @@ export function openTask(state: State, itemId: string): { task: Task; activity?:
 }
 
 /** Why the delete activity button would be a no-op in the reducer (removalBlocker, one message each), or the task. */
-function removalRefusal(state: State, itemId: string): Refusal | Task {
+export function removalRefusal(state: State, itemId: string): Refusal | Task {
   const task = state.tasks.find((c) => c.item.itemId === itemId);
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
   const blocker = removalBlocker(task, state);
@@ -263,23 +166,7 @@ function moveRefusal(state: State, itemId: string, before: string | undefined): 
 export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
   const { requireLive, dispatch } = deps;
 
-  app.post('/tasks/:id/start', async (req: Request, res: Response) => {
-    const current = requireLive(res);
-    if (!current) return;
-    const itemId = req.params.id as string;
-    const refusal = startRefusal(current.state, itemId);
-    if (refusal) {
-      res.status(refusal.status).json({ error: refusal.message });
-      return;
-    }
-    const event = await startEvent(deps, current, itemId, req.body); // an old client's { raiseMax } is ignored
-    if ('status' in event) return refuse(res, event); // #748: workspaceOf's code and name with it
-    const discarded = await discardOrphan(deps, current, itemId, req.body); // #861: before the start, so its worktree is made from the base
-    if (discarded) return void res.status(discarded.status).json({ error: discarded.error, code: discarded.code });
-    const found = current.state.tasks.find((c) => c.item.itemId === itemId);
-    await dispatch({ ...event, ...(found ? startLocal(req.body, activityOf(current.state, itemId)) : {}) }, sizeIn(req.body)); // the popup's switch (#444): the reducer writes it next to the base, a delete activity stage ignores it; #808: the page's grid
-    res.json({ ok: true });
-  });
+  registerStartRoute(app, deps);
 
   app.post('/tasks/:id/close', async (req: Request, res: Response) => {
     const current = requireLive(res);
@@ -404,7 +291,7 @@ function basesWorkspace(current: LiveView, task: Task, query: unknown): Workspac
 
 // The popup's lists (#131). Read-only, no fetch, so it opens at once; a task that already has its worktree answers hasWorktree and the
 // UI starts it straight away. The other tasks go by slug: the branch shown is the one git lists at each task's worktree path.
-function registerBaseRoute(app: Express, { exec, requireLive }: TaskRouteDeps): void {
+function registerBaseRoute(app: Express, { machineFor, requireLive }: TaskRouteDeps): void {
   app.get('/tasks/:id/bases', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -421,89 +308,10 @@ function registerBaseRoute(app: Express, { exec, requireLive }: TaskRouteDeps): 
     const others = otherSlugs(current.state, activity);
     try {
       const orphanBranch = activity === undefined ? branchFor(current.runtime.config, task.item) : undefined; // #861: no activity: git's leftovers are an orphan
-      res.json(await baseOptions(workspace.path, activity?.slug ?? slugFor(task.item), others, workspaceBase(current.runtime.config, workspace), exec, orphanBranch));
+      res.json(await baseOptions(machineFor(activity ?? {}), workspace.path, activity?.slug ?? slugFor(task.item), others, workspaceBase(current.runtime.config, workspace), orphanBranch));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) }); // git's own words: not a repo, a broken worktree list
     }
-  });
-}
-
-/** What deleteActivityOnDisk needs (#654): git, the log, and what opens the teardown's console run. */
-export type DeleteActivityDeps = WorktreeRunDeps & { log: Pick<Logger, 'debug' | 'error' | 'info'>; machineFor: MachineFor };
-
-/** What deleting a task's activity runs on disk (#236, #573, #654): git first, always the worktree and its branch, all or nothing as cleanWorktree
- * is, with the workspace's teardown between git's checks and the removal (a failing step refuses as git does), or the forced removeWorktree,
- * which runs no teardown; a Restart's left-behind branches and the stage-start ref (#283) after it. Then, once git is through, the transcripts
- * when the scope covers them. A refusal rejects before any transcript goes; a transcript that cannot be deleted is logged and the deletion
- * still counts as done. The teardown is a run of the setup channel labelled by the task. The stage's effect (server.ts), the ⋯ menu's item
- * and excluir task… (#542) share it. A local task (#444) runs no git and no teardown: its branch is usually the one the user's checkout
- * holds, which `branch -d` refuses. */
-export async function deleteActivityOnDisk(
-  // sessions: every record's of the task (#629), since a git job holds no state; prs (#660): the live activity record's, which mergedByPr reads for a branch git calls unmerged
-  job: { workspace: Workspace; activity: Activity; task: Task; sessions: Session[]; prs: readonly TaskPr[]; branch: string; scope: DeleteActivityScope; force?: { promptsDir: string } }, deps: DeleteActivityDeps,
-): Promise<void> {
-  const { workspace, activity, task, sessions, prs, branch, scope, force } = job;
-  const { exec, log } = deps;
-  const repo = workspace.path;
-  if (!activity.local) {
-    const extras = await leftBehind(repo, activity, branch, exec); // a Restart's old branches (#283)
-    if (!force) for (const name of extras) await refuseUnmerged(repo, name, exec); // all or nothing, as cleanWorktree checks its own
-    const target = { id: teardownRunId(task.item.itemId), label: `#${task.item.id}`, workspace, force: force !== undefined };
-    await removeInRun(deps, target, (before) => (force
-      ? removeWorktree(repo, activity, branch, force.promptsDir, exec, workspace.nestedRepos)
-      : cleanWorktree(repo, activity, branch, exec, before, { nested: workspace.nestedRepos, prs, log }))); // #653, #660
-    await dropBranches(repo, extras, force !== undefined, exec);
-    await dropStageStart(repo, activity.slug ?? slugFor(task.item), exec); // #812: a stage entry clears stageStart, never the ref; a missing ref is nothing
-    await dropCheckpoints(repo, activity.slug ?? slugFor(task.item), exec); // #619: every checkpoint's restore point goes with the activity; none is nothing
-  }
-  if (!scope.transcripts) return;
-  await removeTranscripts(deps.machineFor(activity), taskDir(repo, activity), repo, sessions, log) // a repo session in the main repo's dir too (#208)
-    .catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
-}
-
-// The ⋯ menu's delete activity (#182, #210, #573), also posted by the Settings worktree row and `clean up all orphans` (#181). The task is
-// marked deleting before git, so no fill, manual start or delete-activity stage touches it while git runs; the answer drops the mark. Without
-// force it is the delete-activity stage's git (no --force, branch -d), all or nothing: a refusal removes nothing and is an expected answer, 200
-// with its code (#660), which the UI words and turns into the force popup. With a literal force: true it is the destructive removal; a failure
-// there is a 500 `unexpected`. Either failure leaves the task's fields: nothing was confirmed gone. A success forgets what the scope removed (#236); nothing to
-// delete (a delete-activity stage only) runs no git and just moves the task on. In a delete-activity stage a success advances the task as the
-// stage's own deletion would (the reducer's activityRemoved, so every caller gets it). The mark lands synchronously inside dispatch, right after
-// the check, so the check and the mark cannot be split by another request.
-function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
-  const { requireLive, dispatch, log } = deps;
-  app.post('/activities/:id/delete', async (req: Request, res: Response) => {
-    const current = requireLive(res);
-    if (!current) return;
-    const target = taskTarget(current.state, activityParam(req)); // a live task activity (#629)
-    if ('status' in target) return refuse(res, target);
-    const { activity: live } = target;
-    const task = removalRefusal(current.state, target.task.item.itemId);
-    if ('status' in task) return refuse(res, task);
-    const stranded = isStranded(current.runtime.config, live); // #746: its workspace left the Comb; a local one is just forgotten
-    if (live.local && !stranded) return refuse(res, { status: HTTP_CONFLICT, message: LOCAL_MESSAGE }); // #444: no worktree to remove
-    const scope = current.state.deleteActivity;
-    // nothing to delete gets past removalRefusal only in a delete activity stage (#236): no git, no transcript, no workspace; the task just moves on
-    const nothing = nothingToDelete(current.state, task, scope);
-    const own = nothing || stranded ? undefined : workspaceOf(current.runtime.config, task, current.state.tasks); // the worktree's repo (#179)
-    if (own && 'status' in own) return refuse(res, own);
-    const force = (req.body as { force?: unknown } | undefined)?.force === true; // only a literal true forces
-    const { config, promptsDir } = current.runtime;
-    await dispatch({ type: 'deletingActivity', activityId: live.id });
-    try {
-      const sessions = sessionsOf(current.state, task.item.itemId);
-      const workspace = stranded && !nothing ? await strandedWorkspace(live, task, deps.exec) : own;
-      if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions, prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
-      else if (stranded && !nothing) await strandedTranscripts(deps.machineFor(live), live, task, sessions, scope, log);
-    } catch (err) {
-      await dispatch({ type: 'activityKept', activityId: live.id });
-      const label = `deleteActivity #${task.item.id}`;
-      if (!force) return void res.json({ removed: false, refused: refusalOf(err, log, label) });
-      log.error(`${label} forced: ${wordsOf(err)}`);
-      res.status(HTTP_SERVER_ERROR).json({ error: UNEXPECTED }); // #660: the UI toasts its own copy; git's words are in hive.log
-      return;
-    }
-    await dispatch({ type: 'activityRemoved', activityId: live.id });
-    res.json({ removed: true });
   });
 }
 

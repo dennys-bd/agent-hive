@@ -4,8 +4,9 @@ import { workspaceByName } from './config.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from './server-memory.js';
 import { workspaceRows, type WorktreeRouteDeps } from './server-worktrees.js';
 import { removalBlocker, taskId, taskLabel } from './tasks.js';
-import type { Activity, HeldActivity, HoldingBlocker, State, Task, TaskPr, UnmergedBranch, Workspace, WorkspaceHoldings, WorktreeRow } from './types.js';
-import { mergedByPr, refuseUnmerged, wordsOf } from './worktree.js';
+import type { Activity, Exec, HeldActivity, HoldingBlocker, State, Task, TaskPr, UnmergedBranch, Workspace, WorkspaceHoldings, WorktreeRow } from './types.js';
+import { wordsOf } from './worktree.js';
+import { mergedByPr, refuseUnmerged } from './worktree-remove.js';
 import { RemovalRefusal, UNEXPECTED } from './worktree-base.js';
 
 // What a saved workspace still holds (#750), for the removal dialog of #751. The state's part is pure; the route (below) adds git's.
@@ -44,7 +45,7 @@ export const isRunningIn = (state: Pick<State, 'workers' | 'activities'>, name: 
 const HTTP_NOT_FOUND = 404;
 const HTTP_SERVER_ERROR = 500;
 
-export type HoldingsRouteDeps = Pick<WorktreeRouteDeps, 'exec' | 'log' | 'requireLive'>;
+export type HoldingsRouteDeps = Pick<WorktreeRouteDeps, 'log' | 'requireLive'> & { exec: Exec };
 
 // Decision 1: what delete activity would refuse. refuseUnmerged's rule (the upstream, or HEAD), then the PRs for a squash merge; a refusal
 // that is not unmerged is git failing, the route's 500
@@ -52,12 +53,12 @@ async function unmergedOf(repo: string, row: WorktreeRow, prs: readonly TaskPr[]
   const { branch } = row;
   if (branch === null) return []; // detached: no branch to refuse
   try {
-    await refuseUnmerged(repo, branch, exec);
+    await refuseUnmerged({ exec }, repo, branch);
     return [];
   } catch (err) {
     const refusal = err instanceof RemovalRefusal ? err.refusal : undefined;
     if (refusal?.reason !== 'unmerged') throw err;
-    return (await mergedByPr(repo, branch, prs, exec, log)) === undefined ? [{ slug: row.slug, branch, target: refusal.target }] : [];
+    return (await mergedByPr({ exec }, repo, branch, prs, log)) === undefined ? [{ slug: row.slug, branch, target: refusal.target }] : [];
   }
 }
 
@@ -66,7 +67,7 @@ const prsOfRow = (state: Pick<State, 'activityRecords'>, row: WorktreeRow): read
   (row.task === undefined ? [] : recordOf(state, row.task.activityId)?.prs ?? []);
 
 async function holdingsOf(workspace: Workspace, state: State, deps: HoldingsRouteDeps): Promise<WorkspaceHoldings> {
-  const worktrees = await workspaceRows(workspace, state, deps.exec); // decision 7: GET /worktrees' rows
+  const worktrees = await workspaceRows({ exec: deps.exec }, workspace, state); // decision 7: GET /worktrees' rows
   const branches = await Promise.all(worktrees.map((row) => unmergedOf(workspace.path, row, prsOfRow(state, row), deps))); // the listing's order
   const { name } = workspace;
   return { activities: heldActivities(state, name), worktrees, branches: branches.flat(), tasks: heldTasks(state, name), running: isRunningIn(state, name) };

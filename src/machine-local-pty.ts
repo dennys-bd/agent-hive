@@ -7,10 +7,11 @@ import { AGENTS } from './agents.js';
 import { agentCommand } from './agents/command.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, McpServer } from './agents/runner.js';
-import { hooksPath, PROMPTS_DIR, writeMcpConfig } from './hooks-settings.js';
+import { hooksPath, PROMPTS_DIR } from './hooks-settings.js';
+import { writeMcpConfig } from './home-hooks.js';
 import { MachineError, type MachinePty, type RunSpec } from './machine.js';
 import type { PtyHost } from './pty-host.js';
-import { writePrompt } from './spawn.js';
+import { writePrompt, writeRunFiles } from './spawn.js';
 import type { LaunchPty, PtyHandle, PtyHandlers, PtyLaunch, SpawnOptions } from './types.js';
 
 const PROTOCOL_MODE = 0o600; // a workspace's protocol carries its memory's lessons (#797)
@@ -67,9 +68,10 @@ async function agentLaunch(deps: LocalPtyDeps, spec: RunSpec, agent: AgentSpec):
   const run: AgentRun = { ...agent.run, ptyId, cwd, port, hooksPath: hooksPath(deps.home), mcpPath, ...protocol };
   const argv = agent.copy ? runner.copy(run, agent.copy.from, agent.copy.name) : runner.launch(run);
   if (argv === undefined) throw new Error(`${AGENTS[agent.id].label} cannot copy a session`);
+  await writeRunFiles(runner.runFiles(run)); // #873: the run's own files (Copilot's protocol), before its pty reads them
   const env = { ...spec.env, ...runner.runEnv(server, run), ...spec.lent }; // #927: no workspace variable stands in for the MCP secret; a lent value wins
   const command = agentCommand(agent.id, deps.platform, { ...deps.env, ...spec.env }); // #633
-  return { ...shared(spec, port), env, ...(promptPath === undefined ? {} : { promptPath }), agent: { command, argv } };
+  return { ...shared(spec, port), env, ...(promptPath === undefined ? {} : { promptPath }), agent: { command, argv, ...(runner.promptFlag === undefined ? {} : { promptFlag: runner.promptFlag }) } };
 }
 
 async function launchOf(deps: LocalPtyDeps, spec: RunSpec): Promise<PtyLaunch> {

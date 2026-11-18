@@ -109,7 +109,9 @@ test('POST …/copy into another activity copies the transcript there, spawns th
   assert.equal(copy.name, 'no dois');
   assert.match(await readFile(launch.promptPath!, 'utf8'), /^Hive: this conversation was copied from task HIVE-1 \(one\), branch feature\/x/);
   assert.ok('hive' in (JSON.parse(await readFile(launchFlag(launch, '--mcp-config')!, 'utf8')) as { mcpServers: object }).mcpServers, 'a task\'s copy has the Hive\'s tools');
-  assert.equal(launchFlag(launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'and the session protocol that goes with them (#167)');
+  const told = join(home, PROMPTS_DIR, `${launch.ptyId}.protocol.md`); // #159: the machine's copy of the protocol
+  assert.equal(launchFlag(launch, '--append-system-prompt-file'), told);
+  assert.equal(await readFile(told, 'utf8'), await readFile(join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'utf8'), 'and the session protocol that goes with them (#167)');
   const dir = transcriptDir(fakeMachine(), two);
   assert.deepEqual(await readdir(dir), [`${source}.jsonl`]);
   await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: copy.id, cwd: two } });
@@ -124,7 +126,9 @@ test('POST …/copy into the workspace\'s local runs in the checkout with the Hi
   const [local] = localSessionsOf(server.getState()!, WORKSPACE);
   assert.deepEqual([launch.cwd, launch.promptPath, plainArgs(launch).slice(-2)], [repo, undefined, ['--session-id', local.id]]);
   assert.ok('hive' in (JSON.parse(await readFile(launchFlag(launch, '--mcp-config')!, 'utf8')) as { mcpServers: object }).mcpServers, 'a local copy has the Hive\'s tools too (#256)');
-  assert.equal(launchFlag(launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'local.md'), 'and its workspace\'s local protocol (#256)');
+  const told = join(home, PROMPTS_DIR, `${launch.ptyId}.protocol.md`); // #159: the machine's copy of the protocol
+  assert.equal(launchFlag(launch, '--append-system-prompt-file'), told);
+  assert.equal(await readFile(told, 'utf8'), await readFile(join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'local.md'), 'utf8'), 'and its workspace\'s local protocol (#256)');
   const listed = (await (await hiveFetch(`${base}/ptys`)).json()) as { ptys: { label: string }[] };
   assert.deepEqual(listed.ptys.map((w) => w.label), [WORKSPACE]);
 });

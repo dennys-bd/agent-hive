@@ -5,7 +5,7 @@ import { chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { MachineError } from '../src/machine.js';
-import { createLocalMachine, createLocalMachines } from '../src/machine-local.js';
+import { createLocalMachine, createLocalMachines, LOCAL_DISK, localDisk } from '../src/machine-local.js';
 import { runDetached } from '../src/machine-run.js';
 import { posixShell } from '../src/posix-shell.js';
 import type { Exec } from '../src/types.js';
@@ -75,6 +75,14 @@ test('until node 8 every activity is on the local machine, one with an unknown m
   assert.equal(machines.for({}), machines.local);
   assert.equal(machines.for({ machine: 'AB:CD' }), machines.local);
   assert.deepEqual([machines.local.id, machines.local.run === runDetached, machines.local.pty.has('nope')], ['local', true, false]);
+});
+
+test('localDisk is the local fs and the exec turned into MachineError: what createLocalMachine is built on (#159)', async () => {
+  const failing: Exec = async () => { throw Object.assign(new Error('Command failed: git status'), { code: 128, stderr: 'fatal: not a git repository' }); };
+  const disk = localDisk(failing);
+  await assert.rejects(disk.exec('git', ['status']), (err: unknown) => err instanceof MachineError && err.code === 128 && err.stderr === 'fatal: not a git repository');
+  assert.equal(disk.fs, createLocalMachine(deps()).fs, 'one fs table');
+  assert.equal(LOCAL_DISK.fs, disk.fs);
 });
 
 const linesOf = async (lines: AsyncIterable<string>): Promise<string[]> => {

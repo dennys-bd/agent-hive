@@ -1,18 +1,18 @@
-import { stat } from 'node:fs/promises';
 import { basename, win32 } from 'node:path';
 import { AGENTS } from './agents.js';
-import { AGENT_IDS, type Exec } from './types.js';
+import type { Machine } from './machine.js';
+import { AGENT_IDS } from './types.js';
 import { childrenOf, listProcesses, type ProcessRow, subtree } from './win-procs.js';
 
-// What runs under a terminal's pty (#696): the pty runs `sh -c`, whose child is the user's shell. Every read goes through `Exec` with argv,
+// What runs under a terminal's pty (#696): the pty runs `sh -c`, whose child is the user's shell. Every read goes through the machine that hosts the pty (#159), `exec` with argv,
 // and a failure answers nothing: a cwd that cannot be read keeps the one the terminal held. On win32 (#638) there is no pgrep or lsof: one
 // PowerShell listing of the process table answers instead (src/win-procs.ts), and no cwd is read.
 
 /** The pids of `pid`'s children: pgrep -P in pgrep's order, on win32 the listing's in pid order; [] when it has none or the read fails. */
-export async function childPids(pid: number, exec: Exec, platform: NodeJS.Platform): Promise<number[]> {
+export async function childPids(machine: Machine, pid: number): Promise<number[]> {
   try {
-    if (platform === 'win32') return childrenOf(await listProcesses(exec), pid);
-    const { stdout } = await exec('pgrep', ['-P', String(pid)]);
+    if (machine.info().platform === 'win32') return childrenOf(await listProcesses(machine.exec), pid);
+    const { stdout } = await machine.exec('pgrep', ['-P', String(pid)]);
     return stdout.split('\n').map((line) => line.trim()).filter((line) => /^\d+$/.test(line)).map(Number);
   } catch {
     return [];
@@ -20,9 +20,9 @@ export async function childPids(pid: number, exec: Exec, platform: NodeJS.Platfo
 }
 
 /** A process's cwd as lsof prints it in field mode (`n<path>`); undefined when lsof fails or names none. */
-export async function processCwd(pid: number, exec: Exec): Promise<string | undefined> {
+export async function processCwd(machine: Machine, pid: number): Promise<string | undefined> {
   try {
-    const { stdout } = await exec('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn']);
+    const { stdout } = await machine.exec('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn']);
     return stdout.split('\n').find((line) => line.startsWith('n') && line.length > 1)?.slice(1);
   } catch {
     return undefined;
@@ -31,22 +31,23 @@ export async function processCwd(pid: number, exec: Exec): Promise<string | unde
 
 /** A terminal's shell cwd (#696): the shell under the pty's `sh -c`, then its cwd; undefined when the pty, the shell or lsof gives none.
  *  On win32 undefined without a call: no stock Windows tool reads another process's cwd, so the terminal wakes in its start dir (#638). */
-export async function shellCwd(ptyPid: number | undefined, exec: Exec, platform: NodeJS.Platform): Promise<string | undefined> {
-  if (ptyPid === undefined || platform === 'win32') return undefined;
-  const [shell] = await childPids(ptyPid, exec, platform);
-  return shell === undefined ? undefined : processCwd(shell, exec);
+export async function shellCwd(machine: Machine, ptyId: string): Promise<string | undefined> {
+  const ptyPid = machine.pty.pid(ptyId);
+  if (ptyPid === undefined || machine.info().platform === 'win32') return undefined;
+  const [shell] = await childPids(machine, ptyPid);
+  return shell === undefined ? undefined : processCwd(machine, shell);
 }
 
 /** Where a terminal wakes (#696): the cwd it held while that directory is still on disk, else its start dir. */
-export async function wakeDir(cwd: string, startDir: string): Promise<string> {
-  const isDir = await stat(cwd).then((found) => found.isDirectory(), () => false);
+export async function wakeDir(machine: Machine, cwd: string, startDir: string): Promise<string> {
+  const isDir = await machine.fs.stat(cwd).then((found) => found.isDirectory(), () => false);
   return isDir ? cwd : startDir;
 }
 
 // `pgrep -lf -P <pid>`: each child as its pid and its command line (macOS prints the full argv with -f); [] when it has none
-async function commandLines(pid: number, exec: Exec): Promise<{ pid: number; line: string }[]> {
+async function commandLines(machine: Machine, pid: number): Promise<{ pid: number; line: string }[]> {
   try {
-    const { stdout } = await exec('pgrep', ['-lf', '-P', String(pid)]);
+    const { stdout } = await machine.exec('pgrep', ['-lf', '-P', String(pid)]);
     return stdout.split('\n').flatMap((raw) => {
       const match = /^\s*(\d+)\s+(.+)$/.exec(raw);
       return match ? [{ pid: Number(match[1]), line: match[2] }] : [];
@@ -101,8 +102,8 @@ const winForm = (text: string): string => text.toLowerCase().replaceAll('/', '\\
 
 // win32 (#638): Git's bin\sh.exe starts usr\bin\sh.exe and the user's shell sits under that, so the levels are not fixed. The whole subtree
 // is read from one listing, a shim's line pruned with all it holds.
-async function winStrayAgents(ptyPid: number, held: Held, exec: Exec): Promise<string[]> {
-  const rows = await listProcesses(exec).catch((): ProcessRow[] => []);
+async function winStrayAgents(machine: Machine, ptyPid: number, held: Held): Promise<string[]> {
+  const rows = await listProcesses(machine.exec).catch((): ProcessRow[] => []);
   const winHeld: Held = { captured: held.captured.map(winForm), shims: held.shims.map(winForm) };
   // only the comparison takes winForm: the agent is read from the line as is, whose cmd.exe /c a slash swap would turn into \c
   const lines = subtree(rows, ptyPid, (row) => isShim(winHeld, winForm(row.line))).map((row) => row.line);
@@ -112,12 +113,13 @@ async function winStrayAgents(ptyPid: number, held: Held, exec: Exec): Promise<s
 /** The agents running in a terminal that no captured session accounts for (#696): the shell's children and theirs, whose command is an
  * agent's. A shim's own line is skipped, and so is its child (#932): a registered run is the shim's child, while a refused or passthrough one
  * execs, so it is the shell's. A line naming a captured session's id is the Hive's. On win32 the pty's whole subtree (#638). */
-export async function strayAgents(ptyPid: number | undefined, held: Held, exec: Exec, platform: NodeJS.Platform): Promise<string[]> {
+export async function strayAgents(machine: Machine, ptyId: string, held: Held): Promise<string[]> {
+  const ptyPid = machine.pty.pid(ptyId);
   if (ptyPid === undefined) return [];
-  if (platform === 'win32') return winStrayAgents(ptyPid, held, exec);
-  const [shell] = await childPids(ptyPid, exec, platform);
+  if (machine.info().platform === 'win32') return winStrayAgents(machine, ptyPid, held);
+  const [shell] = await childPids(machine, ptyPid);
   if (shell === undefined) return [];
-  const children = await commandLines(shell, exec);
-  const grandchildren = await Promise.all(children.map(async (child) => (isShim(held, child.line) ? [] : commandLines(child.pid, exec))));
+  const children = await commandLines(machine, shell);
+  const grandchildren = await Promise.all(children.map(async (child) => (isShim(held, child.line) ? [] : commandLines(machine, child.pid))));
   return unheld([...children, ...grandchildren.flat()].map(({ line }) => line), held, agentIn);
 }

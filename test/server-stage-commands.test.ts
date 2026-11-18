@@ -10,7 +10,7 @@ import { createStageCommandRunner, OUTPUT_MAX, OUTPUT_THROTTLE_MS, outputTail } 
 import type { Activity, Command, Effect, HiveEvent, SettingsBody, Stage, StageCommands, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { taskDir } from '../src/worktree.js';
-import { bodyFlows, AUTH, combConfig, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, plainArgs, SOURCE, tempHive, WORKSPACE } from './fakes.js';
+import { bodyFlows, AUTH, combConfig, fakeMachine, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, SOURCE, tempHive, WORKSPACE } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // A commands stage's commands on the server (#755): the runner alone over fakes, then end to end through a server over fake ptys.
@@ -40,8 +40,8 @@ function harness(current: () => StageCommands | undefined = () => runAt(0), prep
   const live = new Set<string>();
   const h: Omit<Harness, 'run'> = { started: [], killed: [], events: [], prepared: [], appended: [], begun: [], data: new Map(), ends: new Map() };
   const runner = createStageCommandRunner({
-    exec: async () => ({ stdout: '' }),
-    pool: { start: (o) => { h.started.push(o); if (registered) live.add(o.ptyId); }, kill: async (ptyId) => { h.killed.push(ptyId); return true; } },
+    machineFor: () => fakeMachine({ exec: async () => ({ stdout: '' }) }),
+    pool: { start: (o) => { h.started.push(o); if (registered) live.add(o.ptyId); }, started: async () => undefined, kill: async (ptyId) => { h.killed.push(ptyId); return true; } },
     ptys: { has: (ptyId) => live.has(ptyId), subscribe: (ptyId, onData, onExit) => { h.data.set(ptyId, onData); h.ends.set(ptyId, onExit); return undefined; } },
     consoleStore: { begin: (channel, _ptyId, header, group) => { h.begun.push({ channel, header, group }); }, append: (_ptyId, data) => { h.appended.push(data); }, end: () => undefined },
     dispatch: async (event) => { h.events.push(event); return []; },
@@ -80,7 +80,7 @@ test('under skip, a name with no line in the task\'s workspace writes its skippe
   assert.deepEqual(h.events.at(-1), { type: 'stageCommandEnded', activityId: 'a1', ptyId: 'P0', code: 0, output: '' });
   const next = harness(() => runAt(1));
   await next.run(runtimeWith([BUILD, E2E], stage), effect(1, stage));
-  assert.deepEqual(next.started[0]?.launch.run, { command: 'pnpm build', env: { NODE_ENV: 'production' } });
+  assert.deepEqual(next.started[0]?.spec.run, { command: 'pnpm build', env: { NODE_ENV: 'production' } });
 });
 
 test('index 0 prepares the worktree and records it, then starts the command as a command terminal: the worktree as cwd, the workspace env under the command\'s own, on the stage channel (#755)', async () => {
@@ -92,8 +92,8 @@ test('index 0 prepares the worktree and records it, then starts the command as a
   assert.deepEqual([ready.activityId, ready.path, ready.base, ready.local], ['a1', CWD, null, false]);
   const [start] = h.started;
   assert.deepEqual(
-    [start.ptyId, start.launch.cwd, start.launch.env, start.launch.run, start.launch.terminal, plainArgs(start.launch)],
-    ['P0', CWD, { FROM: 'workspace' }, { command: 'pnpm build', env: { NODE_ENV: 'production' } }, true, []],
+    [start.ptyId, start.spec.cwd, start.spec.env, start.spec.run, start.spec.terminal, start.spec.agent],
+    ['P0', CWD, { FROM: 'workspace' }, { command: 'pnpm build', env: { NODE_ENV: 'production' } }, true, undefined], // a command runs no agent
   );
   assert.equal(h.begun[0].channel.id, 'stage:checks');
   assert.equal(h.begun[0].group, 'P0', 'the run is grouped by the stage execution\'s runId');
@@ -103,7 +103,7 @@ test('index 0 prepares the worktree and records it, then starts the command as a
 test('a later index runs in the worktree with no prepare; a Stop during the setup starts nothing; a failed worktree refuses the stage (#755)', async () => {
   const later = harness(() => runAt(1));
   await later.run(runtimeWith([BUILD, LINT]), effect(1));
-  assert.deepEqual([later.prepared, later.started[0]?.launch.cwd, later.events.map((e) => e.type)], [[], CWD, ['stageCommandStarted']]);
+  assert.deepEqual([later.prepared, later.started[0]?.spec.cwd, later.events.map((e) => e.type)], [[], CWD, ['stageCommandStarted']]);
   const stopped = harness(() => undefined);
   await stopped.run(runtimeWith([BUILD, LINT]), effect(0));
   assert.deepEqual([stopped.started, stopped.events], [[], []]);

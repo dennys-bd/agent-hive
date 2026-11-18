@@ -172,8 +172,8 @@ export async function defaultBase(git: Git, repo: string, base: WorkspaceBase, e
   const branch = base.branch ?? (await remoteHead(git, base.remote));
   const own = base.fork;
   const fork = own && own.pr !== 'original' ? own : undefined;
-  const repos: ForkRepos | undefined = fork === undefined || fork.sync === 'manual' ? undefined : await forkRepos(exec, { path: repo, fork });
-  const sync = fork?.sync === 'github' ? await syncFork(exec, repos, branch) : undefined;
+  const repos: ForkRepos | undefined = fork === undefined || fork.sync === 'manual' ? undefined : await forkRepos({ exec }, { path: repo, fork });
+  const sync = fork?.sync === 'github' ? await syncFork({ exec }, repos, branch) : undefined;
   const found = await baseFor(git, base.remote, branch);
   const owner = repos === undefined ? 'origin' : ownerOf(repos.fork);
   const merge = fork?.pr === 'fork' && fork.sync === 'local' ? { remote: fork.remote, branch, owner } : undefined;

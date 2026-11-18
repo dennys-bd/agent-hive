@@ -1,5 +1,6 @@
+import type { Machine } from './machine.js';
 import { githubRepository } from './task-refs.js';
-import { type Config, type Exec, FORK_SYNCS, type ForkSync, type ForkSyncAnswer, type ForkSyncResult, type GitRemote, PR_TARGETS, type PrTarget, type Workspace, type WorkspaceFork } from './types.js';
+import { type Config, FORK_SYNCS, type ForkSync, type ForkSyncAnswer, type ForkSyncResult, type GitRemote, PR_TARGETS, type PrTarget, type Workspace, type WorkspaceFork } from './types.js';
 
 // A workspace that is a fork (#854): its config parser. The prefix is config.ts's CONFIG_FILE, written out: importing it would make
 // config.ts, which calls this parser, and this file import each other.
@@ -52,23 +53,23 @@ export function workspaceBase(config: Pick<Config, 'baseBranch'>, workspace: Pic
 export const ownerOf = (repository: string): string => repository.split('/')[0] ?? '';
 
 // A remote's GitHub repository; none when git fails or the remote is off GitHub
-const repositoryAt = (exec: Exec, path: string, remote: string): Promise<string | undefined> =>
-  exec('git', ['-C', path, 'remote', 'get-url', remote]).then(({ stdout }) => githubRepository(stdout.trim()), () => undefined);
+const repositoryAt = (machine: Pick<Machine, 'exec'>, path: string, remote: string): Promise<string | undefined> =>
+  machine.exec('git', ['-C', path, 'remote', 'get-url', remote]).then(({ stdout }) => githubRepository(stdout.trim()), () => undefined);
 
 /** The original and the fork (#854), from `git remote get-url` of the two remotes; undefined for a workspace that is not a fork or with a remote off GitHub. */
-export async function forkRepos(exec: Exec, workspace: Pick<Workspace, 'path' | 'fork'>): Promise<ForkRepos | undefined> {
+export async function forkRepos(machine: Pick<Machine, 'exec'>, workspace: Pick<Workspace, 'path' | 'fork'>): Promise<ForkRepos | undefined> {
   if (!workspace.fork) return undefined;
-  const [original, fork] = await Promise.all([repositoryAt(exec, workspace.path, workspace.fork.remote), repositoryAt(exec, workspace.path, ORIGIN)]);
+  const [original, fork] = await Promise.all([repositoryAt(machine, workspace.path, workspace.fork.remote), repositoryAt(machine, workspace.path, ORIGIN)]);
   return original !== undefined && fork !== undefined ? { original, fork } : undefined;
 }
 
 /** The repository the base remote points at (#854): what GH_REPO names; none for a workspace that is not a fork. */
-export const baseRepository = (exec: Exec, workspace: Pick<Workspace, 'path' | 'fork'>): Promise<string | undefined> =>
-  (workspace.fork ? repositoryAt(exec, workspace.path, baseRemote(workspace)) : Promise.resolve(undefined));
+export const baseRepository = (machine: Pick<Machine, 'exec'>, workspace: Pick<Workspace, 'path' | 'fork'>): Promise<string | undefined> =>
+  (workspace.fork ? repositoryAt(machine, workspace.path, baseRemote(workspace)) : Promise.resolve(undefined));
 
 /** A run's env (#854): a fork's GH_REPO under the workspace's own env, which wins; a workspace that is not a fork gets its env as it is. */
-export async function runEnv(exec: Exec, workspace: Pick<Workspace, 'path' | 'fork' | 'env'>): Promise<Record<string, string>> {
-  const repository = await baseRepository(exec, workspace);
+export async function runEnv(machine: Pick<Machine, 'exec'>, workspace: Pick<Workspace, 'path' | 'fork' | 'env'>): Promise<Record<string, string>> {
+  const repository = await baseRepository(machine, workspace);
   return repository === undefined ? workspace.env : { GH_REPO: repository, ...workspace.env };
 }
 
@@ -104,10 +105,10 @@ const countOf = (value: unknown): number => {
 
 /** The GitHub sync, fast-forward only (#854): compare the fork's base with the original's. Nothing to receive is current; commits only on the
  * fork are diverged and nothing is written; otherwise merge-upstream, which then fast-forwards. Never throws. */
-export async function syncFork(exec: Exec, repos: ForkRepos | undefined, base: string): Promise<ForkSyncAnswer> {
+export async function syncFork(machine: Pick<Machine, 'exec'>, repos: ForkRepos | undefined, base: string): Promise<ForkSyncAnswer> {
   if (repos === undefined) return { mode: 'github', base: `${ORIGIN}:${base}`, result: 'error', reason: NOT_GITHUB };
   const answer = { mode: 'github' as const, base: `${ownerOf(repos.fork)}:${base}` };
-  const gh = async (args: string[]): Promise<string> => (await exec('gh', args, { timeout: SYNC_TIMEOUT_MS })).stdout;
+  const gh = async (args: string[]): Promise<string> => (await machine.exec('gh', args, { timeout: SYNC_TIMEOUT_MS })).stdout;
   try {
     const compare = JSON.parse(await gh(['api', `repos/${repos.fork}/compare/${encodeURIComponent(base)}...${encodeURIComponent(ownerOf(repos.original))}:${encodeURIComponent(base)}`])) as { ahead_by?: unknown; behind_by?: unknown };
     const [ahead, behind] = [countOf(compare.ahead_by), countOf(compare.behind_by)];
@@ -123,8 +124,8 @@ export async function syncFork(exec: Exec, repos: ForkRepos | undefined, base: s
 }
 
 /** A repository's remotes (#854) from `git remote -v`, once each (its fetch line), with the GitHub repository each points at. */
-export async function remotesOf(exec: Exec, path: string): Promise<GitRemote[]> {
-  const { stdout } = await exec('git', ['-C', path, 'remote', '-v']);
+export async function remotesOf(machine: Pick<Machine, 'exec'>, path: string): Promise<GitRemote[]> {
+  const { stdout } = await machine.exec('git', ['-C', path, 'remote', '-v']);
   return stdout.split('\n').flatMap((line) => {
     const match = REMOTE_LINE.exec(line.trim());
     if (match === null) return [];

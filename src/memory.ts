@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { Logger } from './log.js';
-import { writeWorkspaceProtocol } from './hooks-settings.js';
+import { writeWorkspaceProtocol } from './home-hooks.js';
 import { type ProtocolFor, protocolTexts } from './protocol.js';
 import { createJsonStore } from './json-store.js';
 import {

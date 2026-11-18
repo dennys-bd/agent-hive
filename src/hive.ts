@@ -23,6 +23,7 @@ import { createServer, type HiveServer, type ServerDeps, type SourceFactory } fr
 import { loadState } from './state-store.js';
 import { hydrate } from './hydrate.js';
 import { openUsageStore } from './usage-store.js';
+import { LOCAL_DISK } from './machine-local.js';
 import { workspacePathProblem } from './worktree.js';
 import { BENCHMARK_PR_IN_NEW, MCP_DEFAULTS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type SourceItem, type Config, type Exec, type Language } from './types.js';
 import { flatten } from './flows.js';
@@ -252,7 +253,7 @@ async function bootSetupMode(
   // Nothing saved to prefill the form from (an empty home, a file from before the Comb): the folder `hive` ran in, when it is a repo's top
   // level. A viewer launched from the Dock has cwd `/`, so it proposes nothing (#202).
   const cwd = process.cwd();
-  const proposedWorkspace = proposed ?? (setupFallback?.config === undefined && (await workspacePathProblem(cwd)) === undefined ? cwd : undefined);
+  const proposedWorkspace = proposed ?? (setupFallback?.config === undefined && (await workspacePathProblem(LOCAL_DISK, cwd)) === undefined ? cwd : undefined);
   // The read loop idles until the save sets a config: a round with no repositories reads no login and sends no request
   const server = createServer({ home, setupFallback, proposedWorkspace, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }) });
   const bound = await listenAndRecord(server, home, deps.secret);

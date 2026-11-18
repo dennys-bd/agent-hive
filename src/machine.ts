@@ -51,7 +51,7 @@ export interface MachineFs {
   realpath(path: string): Promise<string>;
   access(path: string, mode?: number): Promise<void>;
   readdir(path: string): Promise<string[]>;
-  readdir(path: string, options: { withFileTypes: true }): Promise<Dirent[]>;
+  readdir(path: string, options: { withFileTypes: true; recursive?: boolean }): Promise<Dirent[]>; // recursive: the COPY step's file count (#159)
   // maxBytes required: no caller reads a worktree file through a machine without a bound. Over it: MachineError TOO_LARGE, nothing read
   readFile(path: string, options: { maxBytes: number; encoding: BufferEncoding }): Promise<string>;
   readFile(path: string, options: { maxBytes: number }): Promise<Buffer>;
@@ -103,6 +103,7 @@ export interface RunProcess {
   timeoutMs?: number; // absent: no limit
   signal?: AbortSignal;
   maxBytes?: number; // per stream; EDITOR_FILE_MAX by default
+  tailOnly?: true; // keep no stream's bytes, only the tail and onOutput: a caller that reads neither stream holds no memory (#159)
   onOutput?: (text: string) => void; // every decoded chunk of either stream, live; it must not throw: it runs in the stream's data event
   windowsVerbatimArguments?: boolean; // the .cmd runner's line (#632)
 }

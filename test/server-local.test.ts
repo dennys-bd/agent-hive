@@ -6,15 +6,11 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { activityOf, taskOfWorker } from '../src/activities.js';
 import { readyOn, workPath } from './fixtures/work.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import { createConsoleStore } from '../src/console.js';
-import { createPtyHost, NO_PTY } from '../src/pty-host.js';
-import { deleteActivityOnDisk } from '../src/server-tasks.js';
 import { LOCAL_BASES, LOCAL_MESSAGE, localOf, openPlace, startLocal } from '../src/server-local.js';
 import type { Activity, Task, DeleteActivityScope, Exec, SettingsBody, Worker } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
-import { fakeMachine } from './fake-machine.js';
-import { bodyFlows, AUTH, fakeSourceFactory, fakeLog, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, fakeSourceFactory, fakeMachine, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -23,9 +19,6 @@ import { hiveFetch, SECRET } from './secret-client.js';
 const BRANCH = 'hive/1-from-ready'; // what the default template renders for the fake source's task
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const SETUP = 'COPY .env';
-const SESSION = 'a1b2c3d4-0000-4000-8000-000000000001';
-const AT = '2026-09-27T10:00:00.000Z';
-const ALL: DeleteActivityScope = { session: true, transcripts: true, nonAutoTasks: false };
 const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], flows: bodyFlows(STAGES),
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
@@ -194,24 +187,6 @@ test('POST /activities/:id/delete answers 409 on a checkout task and runs no git
   assert.equal(res.status, 409);
   assert.deepEqual(await res.json(), { error: LOCAL_MESSAGE });
   assert.deepEqual([git.calls.length, work0(server)?.deleting], [before, undefined]);
-});
-
-test('deleteActivityOnDisk on a local task runs no git whatever the scope and deletes its sessions\' transcripts under the workspace\'s own dir, so the deleteActivity effect answers cleaned (#444)', async (t) => {
-  claudeConfigDir(t, await tempDir(t, 'claude-'));
-  const repo = await tempDir(t, 'repo-');
-  const calls: string[][] = [];
-  const exec: Exec = async (_file, args) => { calls.push(args); return { stdout: '' }; };
-  const task: Task = {
-    item: { itemId: 'I1', id: '1', title: 'T', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true,
-  };
-  const activity: Activity = { id: 'a-I1', kind: 'task', workspace: 'hive', slug: 'hive-1-t', local: true, worktree: repo, branch: BRANCH, stageStart: { stage: 'fila', commit: SHA } }; // #629: the activity's
-  const dir = transcriptDir(fakeMachine(), repo);
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, `${SESSION}.jsonl`), '{}\n');
-  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000), machineFor: () => fakeMachine() };
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [{ id: SESSION, startedAt: AT, stages: ['fila'], agent: 'claude', lastUsedAt: AT }], prs: [], branch: BRANCH, scope: ALL }, deps);
-  assert.deepEqual(calls, [], 'no worktree, no branch -d, no left-behind branches, no stage-start ref');
-  assert.deepEqual(await readdir(dir), []);
 });
 
 test('the worktree-gone check after a poll skips a checkout task: its folder is the workspace itself (#444)', async (t) => {

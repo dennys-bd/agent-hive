@@ -19,12 +19,14 @@ import type { KeepAwakeSpawn } from '../src/keep-awake.js';
 import type { GqlJson } from '../src/sources/github-gql.js';
 import type { FactLog, RecordInput } from '../src/facts.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
-import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, SourceItemRead, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
+import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, SourceItemRead, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits, Exec } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import type { Machine, MachineFs, MachineInfo, MachinePty, RunResult } from '../src/machine.js';
+import { fakeMachine as localMachine } from './fake-machine.js';
+import { createPtyHost } from '../src/pty-host.js';
 import { AGENTS } from '../src/agents.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
-import { fakeMachine } from './fake-machine.js';
 import { runners } from '../src/agents/registry.js';
 import type { AgentRun } from '../src/agents/runner.js';
 
@@ -398,3 +400,32 @@ export async function writeTranscript(cwd: string, sessionId: string): Promise<s
   await writeFile(path, '{}\n');
   return path;
 }
+
+/** What a test gives a fake machine (#159): each part replaces the default. */
+export interface FakeMachineParts { exec?: Exec; fs?: Partial<MachineFs>; run?: Machine['run']; pty?: Partial<MachinePty>; info?: Partial<MachineInfo>; process?: Machine['process'] }
+
+// A pty side that spawns nothing: the rest is a fake PtyHost's, so an adopt or a subscribe still works
+function idlePty(): MachinePty {
+  const host = createPtyHost(fakePtys().spawnPty);
+  return {
+    spawn: () => { throw new Error('fakeMachine: no pty.spawn given'); },
+    write: (id, data) => host.write(id, data), resize: (id, cols, rows, redraw) => host.resize(id, cols, rows, redraw),
+    subscribe: (id, onData, onExit) => host.subscribe(id, onData, onExit), kill: (id) => host.kill(id), pid: (id) => host.pid(id),
+    has: (id) => host.has(id), adopt: (id, pty) => host.adopt(id, pty), forget: (id) => host.forget(id),
+  };
+}
+
+/** A Machine for a test (#159): fake-machine.ts' local machine (the real disk, the given exec turned into MachineError, an exec not given
+ * answering '', the facts read from process.env at the first info()), with a pty that spawns nothing unless one is given and each given part
+ * over it. */
+export function fakeMachine(parts: FakeMachineParts = {}): Machine {
+  const base = localMachine(parts.exec === undefined ? {} : { exec: parts.exec });
+  return {
+    ...base, fs: { ...base.fs, ...parts.fs }, run: parts.run ?? base.run, pty: { ...idlePty(), ...parts.pty },
+    info: () => ({ ...base.info(), ...parts.info }), ...(parts.process === undefined ? {} : { process: parts.process }),
+  };
+}
+
+/** A machine run's answer (#159): code 0 passes; any other code carries the tail a step's failure shows. */
+export const runResult = (code: number | string, tail = ''): RunResult =>
+  ({ code, stdout: Buffer.alloc(0), stderr: '', tail, ...(code === 0 ? {} : { failure: `exit code ${code}` }) });

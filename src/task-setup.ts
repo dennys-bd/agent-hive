@@ -1,24 +1,23 @@
 import { commandLine, type ConsoleStore, crlf, failLine, okLine, runHeader, SETUP_CHANNEL, setupRunId, type WorktreeRunKind } from './console.js';
 import type { FactLog } from './facts.js';
 import type { Logger } from './log.js';
+import type { Machine, MachineExec } from './machine.js';
 import type { Pty, PtyHost } from './pty-host.js';
 import { endedRows, failedRows, nestedEndedRows, nestedFailedRows, nestedHeader, nestedStartedRows, plannedRows, preparedRows, startedRows, worktreeRows } from './setup-rows.js';
-import type { Task, Effect, Exec, HiveEvent, SetupRow, Workspace } from './types.js';
-import type { BeforeRemove } from './worktree.js';
+import type { Task, Effect, HiveEvent, SetupRow, Workspace } from './types.js';
+import type { BeforeRemove } from './worktree-remove.js';
 import { isSetUp, runSetup } from './worktree-setup.js';
 import { clearTeardownMarker, runTeardown, type TeardownResult } from './worktree-teardown.js';
-import type { RunShell, StepReport } from './worktree-steps.js';
+import type { StepReport } from './worktree-steps.js';
 import type { NestedEnd, NestedObserver } from './worktree-nested.js';
 
 // A task's worktree setup as the user sees it (#351), shared by the stage spawn and a first /open: the task's run in the setup channel of the
 // console (#353), live over the pty socket (#407) through a pipe the pty host serves, and the task's setup events.
 
 export interface WorktreeRunDeps {
-  exec: Exec; // git: the worktree's own and its git dir's
   log: Pick<Logger, 'info'>; // one line per step, the code only (#299)
   ptys: Pick<PtyHost, 'adopt' | 'subscribe'>;
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
-  run?: RunShell; // runShell unless a test injects one
   dispatch?(event: HiveEvent): Promise<Effect[]>; // a task's setupStep (#351); an orphan's run dispatches nothing
   facts?: Pick<FactLog, 'write'>; // #742: each step's worktree.step
 }
@@ -33,7 +32,7 @@ export interface WorktreeRunOptions {
 /** One worktree run in the console (#351, #654), from the first git to the end line. */
 export interface WorktreeRun {
   id: string; // the run's, in SETUP_CHANNEL: what setupStarted carries as consoleId
-  exec: Exec; // the deps' exec, each command and its outcome written to the run: the git that makes the worktree goes through it
+  machine: Machine; // the run's machine, each command and its outcome written to the run (#351, #159)
   rows(): SetupRow[]; // #390: its rows now, what setupStarted carries
   prepared(): void; // #390: the worktree made: its worktree and branch rows done; #450: called right after the outer git, before the nested repos
   nested: NestedObserver; // #450: each repo's `> nested <path>` line and row, for prepareNested
@@ -73,7 +72,7 @@ function pipePty(): PipePty {
 
 // Each command the preparation runs, as a system log shows it (#351, #576): `> git <args>` in bright white, then ok and its time in green,
 // or the failure's message in red. Never a success's stdout: it can be large and says nothing here.
-function loggedExec(exec: Exec, write: (text: string) => void): Exec {
+function loggedExec(exec: MachineExec, write: (text: string) => void): MachineExec {
   return async (file, args, opts) => {
     write(`${commandLine(`> ${[file, ...args].join(' ')}`)}\n`);
     const began = Date.now();
@@ -137,15 +136,16 @@ function nestedObserver(write: (text: string) => void, tracked: ReturnType<typeo
 /** Begins a worktree run in SETUP_CHANNEL (#351, #654): a task's setup or teardown, or an orphan's teardown, whose header names the label
  * and the kind, the output kept by the store as a command run's is. Only a task's run (activityId, #629) dispatches its steps; the caller
  * marks and unmarks the activity, since the paths differ. */
-export function openWorktreeRun(deps: WorktreeRunDeps, options: WorktreeRunOptions): WorktreeRun {
+export function openWorktreeRun(machine: Machine, deps: WorktreeRunDeps, options: WorktreeRunOptions): WorktreeRun {
   const { id, label, kind, activityId } = options;
-  const { log, dispatch, ptys, consoleStore, run, facts } = deps;
+  const { log, dispatch, ptys, consoleStore, facts } = deps;
   const pty = pipePty();
   ptys.adopt(id, pty);
   consoleStore.begin(SETUP_CHANNEL, id, runHeader(label, new Date(), kind), activityId === undefined ? undefined : id); // #390: a task's runs are a group, so the Start dialog reads its own
   ptys.subscribe(id, (data) => consoleStore.append(id, data), (exitCode) => consoleStore.end(id, exitCode));
   const write = (text: string): void => pty.emit(crlf(text));
-  const [exec, tracked, began] = [loggedExec(deps.exec, write), rowsTracker(dispatch, options), Date.now()];
+  const logged: Machine = { ...machine, exec: loggedExec(machine.exec, write) };
+  const [tracked, began] = [rowsTracker(dispatch, options), Date.now()];
   let [steps, skipped] = [0, false];
   const skip = (why: string): void => {
     skipped = true;
@@ -161,16 +161,16 @@ export function openWorktreeRun(deps: WorktreeRunDeps, options: WorktreeRunOptio
   };
   return {
     id,
-    exec,
+    machine: logged,
     rows: tracked.rows,
     prepared: tracked.prepared,
     nested: nestedObserver(write, tracked),
     setUp: async (workspace, worktree, signal) => {
-      steps = await runSetup(workspace, worktree, { exec, log, run, signal, output: write, onStep: tracked.onStep, onPlan: tracked.onPlan, onStepEnd });
+      steps = await runSetup(logged, workspace, worktree, { log, signal, output: write, onStep: tracked.onStep, onPlan: tracked.onPlan, onStepEnd });
     },
     skip,
     tearDown: async (workspace, worktree, present) => {
-      const result = present ? await runTeardown(workspace, worktree, { exec, log, run, output: write, onStepEnd }) : GONE;
+      const result = present ? await runTeardown(logged, workspace, worktree, { log, output: write, onStepEnd }) : GONE;
       if (result.outcome === 'ran') steps = result.steps;
       else skip(SKIPPED[result.outcome]);
     },
@@ -196,16 +196,16 @@ export interface SetupRunOptions { branch: string; base: string; signal?: AbortS
  * setup run between setupStarted and setupEnded in one console run. #450: the run is handed to `prepare`, which marks the outer worktree
  * made before the nested repos and passes their observer to prepareNested. A failure is rethrown after setupEnded: the spawn turns it into spawnFailed. */
 export async function runTaskSetup(
-  deps: TaskSetupDeps, task: Task, activityId: string, workspace: Workspace, worktree: string,
-  prepare: (exec: Exec, run?: PrepareHooks) => Promise<string>,
+  machine: Machine, deps: TaskSetupDeps, task: Task, activityId: string, workspace: Workspace, worktree: string,
+  prepare: (machine: Machine, run?: PrepareHooks) => Promise<string>,
   { branch, base, signal }: SetupRunOptions,
 ): Promise<string> {
-  await clearTeardownMarker(workspace, worktree, deps.exec); // #654: used again, so its next removal takes the services down again
-  if (await isSetUp(workspace, worktree, deps.exec)) return prepare(deps.exec);
-  const setup = openWorktreeRun(deps, { id: setupRunId(task.item.itemId), label: `#${task.item.id}`, kind: 'setup', activityId, branch, base, nested: workspace.nestedRepos });
+  await clearTeardownMarker(machine, workspace, worktree); // #654: used again, so its next removal takes the services down again
+  if (await isSetUp(machine, workspace, worktree)) return prepare(machine);
+  const setup = openWorktreeRun(machine, deps, { id: setupRunId(task.item.itemId), label: `#${task.item.id}`, kind: 'setup', activityId, branch, base, nested: workspace.nestedRepos });
   await deps.dispatch({ type: 'setupStarted', activityId, consoleId: setup.id, rows: setup.rows() });
   try {
-    const path = await prepare(setup.exec, setup);
+    const path = await prepare(setup.machine, setup);
     setup.prepared(); // a prepare that never marked it still ends the worktree and branch rows; after the mark, the same rows, no event
     await setup.setUp(workspace, path, signal);
     setup.end();
@@ -224,8 +224,8 @@ export interface TeardownTarget { id: string; label: string; workspace: Workspac
 /** A worktree's removal with its teardown in a console run (#654). Without force, `remove` is handed a beforeRemove that runs the teardown
  * after git's checks (or writes why it skipped); with force the run says `teardown skipped: forced` and `remove` runs alone. The run ends
  * with the outcome, or with the failure, which is rethrown so each caller answers it as it answers a git refusal. */
-export async function removeInRun(deps: WorktreeRunDeps, target: TeardownTarget, remove: (beforeRemove?: BeforeRemove) => Promise<void>): Promise<void> {
-  const run = openWorktreeRun(deps, { id: target.id, label: target.label, kind: 'teardown' });
+export async function removeInRun(machine: Machine, deps: WorktreeRunDeps, target: TeardownTarget, remove: (beforeRemove?: BeforeRemove) => Promise<void>): Promise<void> {
+  const run = openWorktreeRun(machine, deps, { id: target.id, label: target.label, kind: 'teardown' });
   if (target.force) {
     run.skip('forced');
     run.end();

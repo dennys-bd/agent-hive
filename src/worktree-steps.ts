@@ -1,31 +1,17 @@
-import { spawn } from 'node:child_process';
-import { cp, lstat, readdir, readFile, realpath, rm, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { StringDecoder } from 'node:string_decoder';
+import { basename, isAbsolute, resolve } from 'node:path';
 import { commandLine, okLine } from './console.js';
 import type { StepKind } from './facts.js';
-import { killTree, treeSpawnOptions } from './kill-tree.js';
 import type { Logger } from './log.js';
-import { posixShell, posixShellEnv } from './posix-shell.js';
-import { checkRelativePath, describeStep, parseSetup, type SetupStep } from './setup-script.js';
+import type { Machine, RunResult } from './machine.js';
+import { posixShellEnv } from './posix-shell.js';
+import { describeStep, type SetupStep } from './setup-script.js';
 import { timeoutMs as timeoutMsOf } from './timeout.js';
-import type { Exec, Workspace } from './types.js';
+import type { Workspace } from './types.js';
+import { copyStep, countFiles, readLoad, refuseLinkedParent } from './worktree-copy-step.js';
 import { gitOrWords } from './worktree.js';
 
-const TAIL_LINES = 20;
-const TAIL_CHARS = 8192; // output with no newlines (a progress bar, a binary) is bounded too: the tail lands in state.json and the UI
-const TIMEOUT = 'timeout';
+const TIMEOUT = 'timeout'; // the machine's run answers these words (src/machine-run.ts)
 const STOPPED = 'stopped'; // a Stop on the task during the stage spawn's setup (#351)
-
-export interface RunOptions {
-  cwd: string;
-  timeoutMs?: number; // absent = no limit (#511)
-  onOutput?(text: string): void; // every decoded chunk, live: the setup's console run (#351)
-  signal?: AbortSignal; // a stop (#351): the tree is killed as on a timeout, and the step fails with `stopped`
-  env?: NodeJS.ProcessEnv; // the child's whole env (#738): the Hive's with the workspace's on top; absent = the Hive's
-}
-export type RunShell = (file: string, args: string[], options: RunOptions) => Promise<void>;
 
 /** How a RUN step failed (#299): its exit code, a signal name or `timeout`, and the last lines of its output. The log reads only the code;
  * the output can print a secret (`RUN cat .env`), so only the task's error carries it. */
@@ -62,74 +48,16 @@ export interface Resume { skip: number; passed(done: number): Promise<void> }
 
 /** What running a script needs (#299, #351, #654). */
 export interface StepDeps {
-  exec: Exec; // git, for the worktree's git dir; tests inject a fake
   log: Pick<Logger, 'info'>;
   onStep?(step: string): void; // the step about to run, as describeStep writes it: a task's progress line; a teardown has none
   output?(text: string): void; // the console run (#351): a header per step and a RUN's output whole; never the log
   signal?: AbortSignal; // a stop (#351): the running RUN's tree is killed and it fails with `stopped`; no later step starts
-  run?: RunShell; // runShell unless a test injects one
-  home?: string; // where ~ expands in a COPY destination (#654): os.homedir() unless a test injects one
   onStepEnd?(report: StepReport): void; // #742: facts.jsonl's worktree.step
   onPlan?(steps: string[], skipped: number): void; // #390: the expanded steps as describeStep writes them, once before the first; skipped: what a resume skips
   resume?: Resume; // #390: runSetup's; a teardown never resumes
 }
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
-// +1: the last piece is the line still being written, or the empty one after a trailing newline.
-const keepTail = (text: string): string => text.slice(-TAIL_CHARS).split('\n').slice(-(TAIL_LINES + 1)).join('\n');
-const tailOf = (text: string): string => text.trimEnd().split('\n').slice(-TAIL_LINES).join('\n');
-
-/**
- * A RUN step (#299). The one shell string besides ptyCommand (see CLAUDE.md): the command is the user's own line from their own
- * Settings, with the power the worker already has, and a shell keeps `&&`, pipes and $VAR working. stdin is closed, so a prompt fails at
- * once instead of hanging. `treeSpawnOptions` gives the step a tree of its own, so a timeout or a stop (#351) kills what sh started
- * (pnpm and its children), not only sh: a process group off win32, `taskkill /T` over the parent tree on win32, where the spawn is not
- * detached and `windowsHide` gives sh a hidden console its children inherit. Every chunk goes to onOutput as it comes; the last TAIL_LINES are kept for the task's error.
- * The workspace's variables ride the child's env (#738), never the line.
- */
-export function runShell(file: string, args: string[], { cwd, timeoutMs, onOutput, signal, env }: RunOptions): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new RunFailure(STOPPED, '')); // stopped before it started: it never runs (#351)
-      return;
-    }
-    const child = spawn(file, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], ...treeSpawnOptions(process.platform) });
-    const decoder = new StringDecoder('utf8'); // one decoder across chunks: a character split between two keeps its bytes
-    let output = '';
-    const keep = (chunk: Buffer): void => {
-      const text = decoder.write(chunk);
-      if (text !== '') onOutput?.(text);
-      output = keepTail(output + text);
-    };
-    child.stdout.on('data', keep);
-    child.stderr.on('data', keep);
-    const release = (): void => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-    };
-    // On timeout or a stop it settles at once instead of on 'close': a grandchild that left the tree could hold the pipes open forever.
-    const settle = (code: string): void => {
-      release();
-      void killTree(child.pid, process.platform); // fired, never awaited: the step settles now
-      child.stdout.destroy();
-      child.stderr.destroy();
-      reject(new RunFailure(code, tailOf(output)));
-    };
-    const onAbort = (): void => settle(STOPPED);
-    const timer = timeoutMs === undefined ? undefined : setTimeout(() => settle(TIMEOUT), timeoutMs);
-    signal?.addEventListener('abort', onAbort, { once: true });
-    child.on('error', (err) => {
-      release();
-      reject(err);
-    });
-    child.on('close', (code, closedBy) => {
-      release();
-      if (code === 0) resolve();
-      else reject(new RunFailure(code ?? closedBy ?? 'unknown', tailOf(output)));
-    });
-  });
-}
 
 const STEP_MAX_LINES = 2;
 const STEP_MAX_CHARS = 160;
@@ -157,108 +85,47 @@ function reasonOf(err: unknown, timeout?: string): string {
 
 /** The worktree's own git dir (<repo>/.git/worktrees/<slug>), where the markers live. An answer that is no absolute path is refused: a marker
  * must never land relative to the Hive's cwd. */
-export async function gitDirOf(worktree: string, exec: Exec): Promise<string> {
-  const dir = (await gitOrWords(worktree, ['rev-parse', '--absolute-git-dir'], exec)).trim();
+export async function gitDirOf(machine: Machine, worktree: string): Promise<string> {
+  const dir = (await gitOrWords(worktree, ['rev-parse', '--absolute-git-dir'], machine.exec)).trim();
   if (!isAbsolute(dir)) throw new Error(`git named no git dir for ${worktree}`);
   return dir;
 }
 
-// A COPY / LOAD source (#299, #654), read under `root`: its real path must pass checkRelativePath against root's real path, so a symlink cannot
-// lead out of that side, to its top or into .git / .hive. Missing is its own reason, named after the side.
-const MISSING: Readonly<Record<string, string>> = { ENOENT: 'not found in', ENOTDIR: 'not a folder in' };
-
-async function insideRoot(root: string, name: string, path: string): Promise<string> {
-  const real = await realpath(join(root, path)).catch((err: NodeJS.ErrnoException) => {
-    const reason = MISSING[err.code ?? ''];
-    throw reason === undefined ? err : new Error(`${reason} ${name}`);
-  });
-  if (checkRelativePath(relative(await realpath(root), real)) !== undefined) throw new Error(`outside ${name}`);
-  return real;
-}
-
-// A relative destination (#299, #654): no folder on its way under `root` may be a symlink, or cp would write through it wherever a branch
-// pointed it (a worker can commit `config -> ~/somewhere`). The last segment is fine for a file destination: cp with force replaces a link,
-// never follows it. A folder destination (`whole`) is written into, so its last segment must not be a link either.
-async function refuseLinkedParent(root: string, name: string, path: string, whole = false): Promise<void> {
-  const parents = (whole ? path : dirname(path)).split(/[\\/]/).filter((s) => s !== '' && s !== '.');
-  for (let i = 1; i <= parents.length; i += 1) {
-    const stat = await lstat(join(root, ...parents.slice(0, i))).catch((err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT') return undefined;
-      throw err;
-    });
-    if (stat === undefined) return; // cp creates the rest as plain folders
-    if (stat.isSymbolicLink()) throw new Error(`outside ${name}`);
-  }
-}
-
-const HOME = '~';
-
-// Where a COPY writes (#654): the same relative path on the other side by default; `~` / `~/…` under the home folder and an absolute path
-// as written (the user's own line, as a RUN cp would); a relative one under phase.to, where no folder on its way may be a symlink.
-async function destinationOf(phase: Phase, step: SetupStep, home: string): Promise<string> {
-  const dest = step.dest ?? step.arg;
-  if (dest === HOME || dest.startsWith(`${HOME}/`)) return join(home, dest.slice(HOME.length));
-  if (isAbsolute(dest)) return dest;
-  await refuseLinkedParent(phase.to, phase.toName, dest, step.arg.endsWith('/') || dest.endsWith('/'));
-  return join(phase.to, dest);
-}
-
-// The files under `path`, for a result line: a folder's every non-folder entry, a symlink as one, never followed.
-async function countFiles(path: string): Promise<number> {
-  if (!(await lstat(path)).isDirectory()) return 1;
-  return (await readdir(path, { recursive: true, withFileTypes: true })).filter((entry) => !entry.isDirectory()).length;
-}
-
-// The cp filter (#654): the worktree is untrusted, so a teardown never copies its symlinks (they would be planted in the main checkout), and
-// in both phases a folder is never merged into a destination entry that is a symlink (cp would write through it, outside the side).
-function copyFilter(phase: Phase): (src: string, dest: string) => Promise<boolean> {
-  return async (src, dest) => {
-    const entry = await lstat(src);
-    if (entry.isSymbolicLink()) return phase.name !== 'teardown';
-    if (!entry.isDirectory()) return true;
-    const existing = await lstat(dest).catch((err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT') return undefined;
-      throw err;
-    });
-    if (existing?.isSymbolicLink()) throw new Error(`outside ${phase.toName}`);
-    return true;
-  };
-}
-
-// COPY <source> [destination] (#654), rsync-like: a source ending in / must be a folder (checked below) and its contents
-// land in the destination folder; any other source is copied to the destination path itself. fs.cp does both: it merges into a folder that
-// exists, overwrites files and deletes nothing.
-async function copyStep(phase: Phase, step: SetupStep, home: string): Promise<string> {
-  const source = await insideRoot(phase.from, phase.fromName, step.arg);
-  // node's realpath drops a trailing /, so the ENOTDIR a file would answer never comes: check it here
-  if (step.arg.endsWith('/') && !(await stat(source)).isDirectory()) throw new Error(`not a folder in ${phase.fromName}`);
-  const dest = await destinationOf(phase, step, home);
-  // a file into `folder/` keeps its name, as cp does; a folder source into `folder/` is the rsync-like merge above
-  const target = !step.arg.endsWith('/') && (step.dest ?? '').endsWith('/') && !(await lstat(source)).isDirectory() ? join(dest, basename(step.arg)) : dest;
-  await cp(source, target, { recursive: true, force: true, filter: copyFilter(phase) });
-  return `copied ${await countFiles(source)} files to ${step.dest ?? step.arg}`;
-}
-
 // DEL <path> (#654): only in the worktree, never through a symlinked folder. resolve drops a trailing /, so a link is removed as a link and its
 // target is never followed. Missing counts as done.
-async function delStep(worktree: string, step: SetupStep): Promise<string> {
-  await refuseLinkedParent(worktree, WORKTREE_NAME, step.arg);
+async function delStep(machine: Machine, worktree: string, step: SetupStep): Promise<string> {
+  await refuseLinkedParent(machine, worktree, WORKTREE_NAME, step.arg);
   const target = resolve(worktree, step.arg);
-  const found = await lstat(target).then(() => true, (err: NodeJS.ErrnoException) => {
+  const found = await machine.fs.lstat(target).then(() => true, (err: NodeJS.ErrnoException) => {
     if (err.code === 'ENOENT') return false;
     throw err;
   });
   if (!found) return `nothing to delete: ${step.arg}`;
-  const files = await countFiles(target);
-  await rm(target, { recursive: true });
+  const files = await countFiles(machine, target);
+  await machine.fs.rm(target, { recursive: true });
   return `deleted ${step.arg} (${files} files)`;
 }
 
-// One COPY, DEL or RUN (a LOAD never gets here: runSteps expanded it). A COPY and a DEL answer their result line.
-async function doStep(phase: Phase, worktree: string, step: SetupStep, deps: StepDeps & { timeoutMs?: number; env?: NodeJS.ProcessEnv }): Promise<string | undefined> {
-  if (step.kind === 'copy') return copyStep(phase, step, deps.home ?? homedir());
-  if (step.kind === 'del') return delStep(worktree, step);
-  await (deps.run ?? runShell)(posixShell().shell, ['-c', step.arg], { cwd: worktree, timeoutMs: deps.timeoutMs, onOutput: deps.output, signal: deps.signal, env: deps.env });
+// A RUN's answer as the step's outcome (#299): an exit code, a signal, its timeout or a stop is a RunFailure with the tail the task shows;
+// a run that never started (sh not found) fails with the machine's words, as the spawn error did
+function checkRun(ran: RunResult): void {
+  if (ran.code === 0) return;
+  const { code } = ran;
+  const ended = typeof code === 'number' || code === TIMEOUT || code === STOPPED || code.startsWith('SIG');
+  throw ended ? new RunFailure(code, ran.tail) : new Error(ran.failure ?? `failed to run (${code})`);
+}
+
+// One COPY, DEL or RUN (a LOAD never gets here: runSteps expanded it). A COPY and a DEL answer their result line. A RUN is the one shell
+// string of the step runner (see CLAUDE.md): the user's own line, run by the machine's POSIX shell in the worktree, its output live (#351)
+async function doStep(machine: Machine, phase: Phase, worktree: string, step: SetupStep, deps: StepDeps & { timeoutMs?: number; env: NodeJS.ProcessEnv }): Promise<string | undefined> {
+  if (step.kind === 'copy') return copyStep(machine, phase, step);
+  if (step.kind === 'del') return delStep(machine, worktree, step);
+  const ran = await machine.run({
+    command: machine.info().shell, args: ['-c', step.arg], cwd: worktree, env: deps.env, timeoutMs: deps.timeoutMs, signal: deps.signal,
+    maxBytes: Number.POSITIVE_INFINITY, tailOnly: true, // as runShell: no cap on the output, and only the tail kept, so a RUN that prints without end holds no memory
+    ...(deps.output === undefined ? {} : { onOutput: deps.output }),
+  });
+  checkRun(ran);
   return undefined;
 }
 
@@ -271,10 +138,9 @@ const failure = (phase: Phase, step: SetupStep, reason: string, place?: StepPlac
 
 // LOAD <file> (#299): read from the main checkout at every run, in both scripts, so editing it needs no Settings save and a branch cannot
 // change what runs; one level only. Its steps take the LOAD's line number, so a failure names a line of the Settings text.
-async function loadSteps(phase: Phase, workspace: Workspace, load: SetupStep): Promise<SetupStep[]> {
+async function loadSteps(machine: Machine, phase: Phase, workspace: Workspace, load: SetupStep): Promise<SetupStep[]> {
   try {
-    const text = await readFile(await insideRoot(workspace.path, workspace.name, load.arg), 'utf8');
-    return parseSetup(text, { allowLoad: false }).map((step) => ({ ...step, line: load.line }));
+    return (await readLoad(machine, workspace, load)).map((step) => ({ ...step, line: load.line }));
   } catch (err) {
     throw new Error(failure(phase, load, errorMessage(err)));
   }
@@ -293,13 +159,13 @@ function report(deps: StepDeps, phase: Phase, step: SetupStep, stepReport: StepR
 
 // One step (a LOAD never gets here: runSteps expanded it). One log line per step, the code and never the output, and its report (#742); the
 // console run gets a header line and a RUN's output (#351).
-async function runStep(phase: Phase, worktree: string, step: SetupStep, place: StepPlace, deps: StepDeps & { timeoutMs?: number; env?: NodeJS.ProcessEnv }): Promise<void> {
+async function runStep(machine: Machine, phase: Phase, worktree: string, step: SetupStep, place: StepPlace, deps: StepDeps & { timeoutMs?: number; env: NodeJS.ProcessEnv }): Promise<void> {
   if (deps.signal?.aborted) throw new Error(failure(phase, step, STOPPED, place)); // a stop between steps: the next one never starts (#351)
   const described = describeStep(step);
   const began = Date.now();
   deps.onStep?.(described);
   deps.output?.(`${commandLine(`> ${described}`)}\n`);
-  const done = await doStep(phase, worktree, step, deps).then((result) => ({ ok: true as const, result }), (err: unknown) => ({ ok: false as const, err }));
+  const done = await doStep(machine, phase, worktree, step, deps).then((result) => ({ ok: true as const, result }), (err: unknown) => ({ ok: false as const, err }));
   const ms = Date.now() - began;
   const outcome = done.ok ? 'ok (0)' : `failed (${done.err instanceof RunFailure ? done.err.code : 'error'})`;
   deps.log.info(`${phase.name} ${basename(worktree)} line ${step.line}: ${described} ${outcome} ${ms}ms`);
@@ -312,23 +178,23 @@ async function runStep(phase: Phase, worktree: string, step: SetupStep, place: S
 }
 
 /** A script's LOAD lines read from the main checkout and expanded in place (#299): what runSetup hashes before anything runs (#390). */
-export async function expandSteps(phase: Phase, workspace: Workspace, steps: SetupStep[]): Promise<SetupStep[]> {
-  return (await Promise.all(steps.map((step) => (step.kind === 'load' ? loadSteps(phase, workspace, step) : [step])))).flat();
+export async function expandSteps(machine: Machine, phase: Phase, workspace: Workspace, steps: SetupStep[]): Promise<SetupStep[]> {
+  return (await Promise.all(steps.map((step) => (step.kind === 'load' ? loadSteps(machine, phase, workspace, step) : [step])))).flat();
 }
 
 /** A script's steps in `worktree` (#299, #654): the LOAD lines are expanded first, then each step runs in order with the phase's timeout. A
  * resume (#390) skips the steps a failed run passed and records each step that passes; onPlan hears the whole list first. A failure throws
  * `<phase> failed at step <i> of <n> (line <l>, <step>): <reason>` (#267). Answers how many steps ran, for the run's summary. */
-export async function runSteps(phase: Phase, workspace: Workspace, worktree: string, steps: SetupStep[], deps: StepDeps): Promise<number> {
-  const expanded = await expandSteps(phase, workspace, steps); // a list runSetup already expanded holds no LOAD: the same list back
+export async function runSteps(machine: Machine, phase: Phase, workspace: Workspace, worktree: string, steps: SetupStep[], deps: StepDeps): Promise<number> {
+  const expanded = await expandSteps(machine, phase, workspace, steps); // a list runSetup already expanded holds no LOAD: the same list back
   const timeoutMs = phase.timeout === undefined ? undefined : timeoutMsOf(phase.timeout);
   // #738: every RUN sees the workspace's env, its setup's and its teardown's alike; COPY, DEL, LOAD and the Hive's git never read it.
   // #631: on win32 MSYS leaves the line's arguments as written, unless the workspace says otherwise
-  const env = { ...process.env, ...posixShellEnv(process.platform), ...workspace.env };
+  const env = { ...process.env, ...posixShellEnv(machine.info().platform), ...workspace.env };
   const skip = deps.resume?.skip ?? 0;
   deps.onPlan?.(expanded.map(describeStep), skip);
   for (const [at, step] of expanded.slice(skip).entries()) {
-    await runStep(phase, worktree, step, { index: skip + at, total: expanded.length }, { ...deps, timeoutMs, env });
+    await runStep(machine, phase, worktree, step, { index: skip + at, total: expanded.length }, { ...deps, timeoutMs, env });
     // the progress file only saves a resume: one that cannot be written costs the next run its skip, never this setup
     await deps.resume?.passed(skip + at + 1).catch(() => undefined);
   }

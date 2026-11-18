@@ -7,7 +7,9 @@ import { promisify } from 'node:util';
 import type { WorkspaceBase } from '../src/fork.js';
 import type { Exec } from '../src/types.js';
 import { branchRelation, setAside } from '../src/worktree-base.js';
-import { baseOptions, cleanWorktree, ensureWorktree, worktreePath } from '../src/worktree.js';
+import { baseOptions, ensureWorktree, worktreePath } from '../src/worktree.js';
+import { cleanWorktree } from '../src/worktree-remove.js';
+import { fakeMachine } from './fakes.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 // #267 with the real git: a branch's class against the start, and what each class makes of the task's worktree and branch.
@@ -98,7 +100,7 @@ test('ensureWorktree on a branch with no history in common with the start keeps 
   const { repo, tip } = await repoWithOrigin(t);
   const old = await unrelatedBranch(repo);
   const kept = `${BRANCH}-old-${old.slice(0, 7)}`;
-  const prepared = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  const prepared = await ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined);
   assert.deepEqual([prepared.path, prepared.reused], [worktreePath(repo, SLUG), undefined]);
   assert.deepEqual([await git(repo, 'rev-parse', BRANCH), await git(repo, 'rev-parse', kept)], [tip, old]);
   assert.ok(prepared.line?.endsWith(` · branch ${BRANCH} shares no history with origin/main: kept as ${kept}, started from origin/main`), prepared.line);
@@ -107,7 +109,7 @@ test('ensureWorktree on a branch with no history in common with the start keeps 
 test('ensureWorktree on a branch behind the start with nothing of its own recreates it at the start, and keeps nothing: every commit is in the start (#267)', async (t) => {
   const { repo, root, tip } = await repoWithOrigin(t);
   await git(repo, 'branch', BRANCH, root);
-  const prepared = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  const prepared = await ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined);
   assert.deepEqual([await git(repo, 'rev-parse', BRANCH), prepared.reused], [tip, undefined]);
   assert.ok(prepared.line?.endsWith(` · branch ${BRANCH} was behind origin/main with nothing of its own: recreated from origin/main`), prepared.line);
   assert.equal(await git(repo, 'branch', '--list', `${BRANCH}-old-*`), '');
@@ -116,7 +118,7 @@ test('ensureWorktree on a branch behind the start with nothing of its own recrea
 test('ensureWorktree on a branch with a commit of its own reuses it with that commit in place and answers reused (#267)', async (t) => {
   const { repo, root } = await repoWithOrigin(t);
   const own = await ownBranch(repo, root);
-  const prepared = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  const prepared = await ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined);
   assert.deepEqual([await git(repo, 'rev-parse', BRANCH), prepared.reused], [own, BRANCH]);
   assert.ok(!prepared.line?.includes(' · branch '), prepared.line);
 });
@@ -124,7 +126,7 @@ test('ensureWorktree on a branch with a commit of its own reuses it with that co
 test('ensureWorktree with no start resolved reuses an existing branch as it is, whatever its history (#267)', async (t) => {
   const repo = await plainRepo(t); // no origin: the base cannot be refreshed
   const old = await unrelatedBranch(repo);
-  const prepared = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  const prepared = await ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined);
   assert.deepEqual([await git(repo, 'rev-parse', BRANCH), prepared.reused], [old, BRANCH]);
   assert.match(prepared.line ?? '', /starting from the local base$/);
 });
@@ -132,29 +134,29 @@ test('ensureWorktree with no start resolved reuses an existing branch as it is, 
 test('baseOptions reports how the orphan branch relates to the default start, with its name; neither when the start does not resolve (#267)', async (t) => {
   const { repo } = await repoWithOrigin(t);
   await unrelatedBranch(repo);
-  assert.deepEqual((await baseOptions(repo, SLUG, [], ORIGIN, exec, BRANCH)).orphan, { worktree: false, branch: true, relation: 'unrelated', branchName: BRANCH });
+  assert.deepEqual((await baseOptions(fakeMachine({ exec }), repo, SLUG, [], ORIGIN, BRANCH)).orphan, { worktree: false, branch: true, relation: 'unrelated', branchName: BRANCH });
   const bare = await plainRepo(t); // no origin/main to classify against
   await unrelatedBranch(bare);
-  assert.deepEqual((await baseOptions(bare, SLUG, [], ORIGIN, exec, BRANCH)).orphan, { worktree: false, branch: true });
+  assert.deepEqual((await baseOptions(fakeMachine({ exec }), bare, SLUG, [], ORIGIN, BRANCH)).orphan, { worktree: false, branch: true });
 });
 
 test('cleanWorktree with setAside keeps an unmerged branch as <branch>-old-<sha7> instead of refusing, and still deletes a merged one with branch -d (#267)', async (t) => {
   const { repo, root } = await repoWithOrigin(t);
   const old = await unrelatedBranch(repo);
   const kept = `${BRANCH}-old-${old.slice(0, 7)}`;
-  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, { unmerged: 'setAside' });
+  await cleanWorktree(fakeMachine({ exec }), repo, { slug: SLUG, branch: BRANCH }, BRANCH, undefined, { unmerged: 'setAside' });
   assert.deepEqual([await git(repo, 'branch', '--list', BRANCH), await git(repo, 'rev-parse', kept)], ['', old]);
   await git(repo, 'branch', BRANCH, root); // merged into HEAD: delete activity's own rule deletes it
-  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, { unmerged: 'setAside' });
+  await cleanWorktree(fakeMachine({ exec }), repo, { slug: SLUG, branch: BRANCH }, BRANCH, undefined, { unmerged: 'setAside' });
   assert.equal(await git(repo, 'branch', '--list', `${BRANCH}*`), kept, 'deleted, and nothing new was kept');
 });
 
 test('deleting an activity removes its branch, so the task\'s next worktree is on a branch made again from the start (#267, acceptance 3)', async (t) => {
   const { repo, tip } = await repoWithOrigin(t);
-  const first = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
-  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec); // delete activity's own clear, never forced
+  const first = await ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined);
+  await cleanWorktree(fakeMachine({ exec }), repo, { slug: SLUG, branch: BRANCH }, BRANCH); // delete activity's own clear, never forced
   assert.equal(await git(repo, 'branch', '--list', BRANCH), '');
-  const again = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  const again = await ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined);
   assert.deepEqual([again.path, again.reused, await git(repo, 'rev-parse', BRANCH)], [first.path, undefined, tip]);
 });
 
@@ -167,6 +169,6 @@ test('with the real git, the branch of a merged PR whose remote branch was delet
   await git(repo, 'merge', '--quiet', '--ff-only', BRANCH); // the PR merged into main
   await git(repo, 'push', '--quiet', 'origin', '--delete', BRANCH); // GitHub deletes the head branch after the merge
   assert.equal(await git(repo, 'for-each-ref', '--format=%(upstream:track)', `refs/heads/${BRANCH}`), '[gone]');
-  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec);
+  await cleanWorktree(fakeMachine({ exec }), repo, { slug: SLUG, branch: BRANCH }, BRANCH);
   assert.deepEqual([await git(repo, 'branch', '--list', BRANCH), (await git(repo, 'worktree', 'list', '--porcelain')).includes(path)], ['', false]);
 });

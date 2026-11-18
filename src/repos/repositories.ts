@@ -14,7 +14,7 @@ type MaybeRef = Omit<RepoRef, 'repository'> & { repository?: string };
 
 // A workspace's own repositories (#854): a fork's original then its fork when both are on GitHub, else its origin
 async function ownRefs(machine: Pick<Machine, 'exec'>, workspace: Workspace): Promise<MaybeRef[]> {
-  const repos = workspace.fork ? await forkRepos(machine.exec, workspace) : undefined;
+  const repos = workspace.fork ? await forkRepos(machine, workspace) : undefined;
   if (repos === undefined || !workspace.fork) return [{ repository: await originRepository(machine, workspace.path), workspace: workspace.name }];
   const { pr } = workspace.fork;
   return [
