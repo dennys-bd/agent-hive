@@ -1,9 +1,9 @@
-import { existsSync } from 'node:fs';
 import type { Express, Request, Response } from 'express';
 import { activityOf, workersIn } from './activities.js';
 import { knownAgent } from './agents.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
+import type { Machine } from './machine.js';
 import { baseRemote, workspaceBase } from './fork.js';
 import { taskBranch } from './task-runs.js';
 import { openWorktreeRun, type WorktreeRun } from './task-setup.js';
@@ -174,10 +174,11 @@ async function openRechecked(deps: OpenRouteDeps, plan: WorktreePlan, open: Open
 // A first open (#164, #351, #576): the worktree made, then the session. A worktree it prepares gets the mark and the console run, with or
 // without setup steps: one still to set up, or one whose folder is not there yet (new, or gone from disk and recreated), marked in the same
 // turn as the checks with no git before it. A local task never sets up (#444), nor does a folder already set up: those make it unmarked.
-async function openFirst(deps: OpenRouteDeps, current: LiveView, task: Task, plan: WorktreePlan, open: OpenAsk, res: Response): Promise<void> {
+async function openFirst(deps: OpenRouteDeps, current: LiveView, task: Task, plan: WorktreePlan, open: OpenAsk, res: Response, machine: Machine): Promise<void> {
   if (!plan.place.local) {
     const path = worktreePath(plan.workspace.path, plan.slug);
-    if (!existsSync(path)) return openWithSetup(deps, current, task, plan, open, res);
+    const isThere = await machine.fs.access(path).then(() => true, () => false); // #160: the worktree is on the task's machine
+    if (!isThere) return openWithSetup(deps, current, task, plan, open, res);
     await clearTeardownMarker(plan.workspace, path, deps.exec); // #654: a worktree brought back to life gets its teardown on the next removal
     if (!(await isSetUp(plan.workspace, path, deps.exec))) return openRechecked(deps, plan, open, res);
   }
@@ -230,7 +231,7 @@ async function openOn(deps: OpenRouteDeps, current: LiveView, taskId: string, bo
   if (activity?.workerId !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: RUNNING_MESSAGE });
   const plan = planWorktree(current, task, activity, body);
   if ('status' in plan) return refuse(res, plan);
-  await openFirst(deps, current, task, plan, open, res);
+  await openFirst(deps, current, task, plan, open, res, deps.machineFor(activity ?? {}));
 }
 
 /** Abrir sessão on any task (#164, #237, #283): the worktree first when the task has none or it is gone from disk (#208), then a terminal (openTerminal), or an

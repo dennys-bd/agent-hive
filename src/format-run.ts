@@ -44,7 +44,7 @@ export function launchOf(command: string, args: readonly string[], env: NodeJS.P
 }
 
 /** A Process on `run` (#160: a machine's, or runDetached for the host's own headless run) with `input` on stdin and each stream capped at
- *  EDITOR_FILE_MAX: the RunResult as a Ran, its failure in the same words runCapped had. A failure keeps the stdout it got: a CLI may say why
+ *  EDITOR_FILE_MAX: the RunResult as a Ran, its failure in the same words the run had before #160. A failure keeps the stdout it got: a CLI may say why
  *  there (claude -p --output-format json). */
 export async function runOn(run: Machine['run'], { command, args, env, windowsVerbatimArguments }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
   const ran = await run({
