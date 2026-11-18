@@ -10,7 +10,7 @@ import { LOCAL_BASES, LOCAL_MESSAGE, localOf, openPlace, startLocal } from '../s
 import type { Activity, Task, DeleteActivityScope, Exec, SettingsBody, Worker } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
-import { bodyFlows, AUTH, fakeSourceFactory, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, fakeSourceFactory, fakeMachine, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -201,7 +201,7 @@ test('clearing a checkout task\'s session deletes its transcript from the worksp
   const { base, repo, server, workers } = await start(t, { ...DELETE_ACTIVITY_DEFAULTS, session: true, transcripts: true }); // transcripts needs session
   await postJson(`${base}/tasks/board:I1/start`, { base: null, local: true });
   const session = work0(server)!.sessionId!;
-  const dir = transcriptDir(repo);
+  const dir = transcriptDir(fakeMachine(), repo);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${session}.jsonl`), '{}\n'); // before the exit, as the run wrote it: an exit with none forgets the session (#586)
   workers[0].handlers.onExit();

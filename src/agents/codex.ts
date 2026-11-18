@@ -136,6 +136,8 @@ export const codexRunner: AgentRunner = {
   headlessMcp: false, // #474: exec has no flag that loads one MCP config file alone
   headless,
   headlessAnswer: (_stdout, answerFile) => (answerFile?.trim() ? answerFile.trim() : undefined), // stdout is exec's progress, never the answer
+  headlessPrompt: (prompt) => prompt, // the schema rides --output-schema
+  headlessEnv: () => ({}), // auth and config come from the inherited CODEX_HOME
   // its shim (#932) and the roles' old folder (#316). Each workspace's plugin copy and roles are the render's (plugin-render.ts); the run
   // inherits the Hive's CODEX_HOME, so it reads them
   prepareHome: async (home) => {
@@ -145,9 +147,9 @@ export const codexRunner: AgentRunner = {
   mcpConfig: () => '', // the server goes through -c: writeMcpConfig writes no file
   lspPlugin: () => [],
   transcriptDir: () => undefined, // #929: rollouts live under date folders, not per cwd: removal and copy find nothing in a dir
-  ownsTranscript: (path, _cwd, sessionId, env) => ownsRollout(path, sessionId, env),
-  sessionFiles: (cwd, id, env) => rolloutFiles(id, cwd, env),
-  readTurn: (path, since) => readRollout(path, since),
+  ownsTranscript: (machine, path, _cwd, sessionId) => ownsRollout(machine, path, sessionId),
+  sessionFiles: (machine, cwd, id) => rolloutFiles(machine, id, cwd),
+  readTurn: (machine, path, since) => readRollout(machine, path, since),
   countMessages: () => Promise.resolve(0),
   planLimits: (deps) => readCodexPlanLimits(deps), // #929: from the newest rollout's rate_limits
   statusLimits: () => undefined,

@@ -1,10 +1,10 @@
-// The JSONL plumbing every agent's transcript reader shares (#929, out of claude-transcript.ts): a regular file read line by line or for its
+// The JSONL plumbing every agent's transcript reader shares (#929, out of claude-transcript.ts): a regular file read, on the machine, line by line or for its
 // first line only, the folder and freshness checks of a subagent scan, and one stage run's usage as it adds up.
-import { createReadStream } from 'node:fs';
-import { lstat, stat } from 'node:fs/promises';
-import { createInterface } from 'node:readline';
 import { ZERO_TOKENS, type Tokens } from '../facts.js';
+import type { Machine } from '../machine.js';
 import type { TurnUsage } from '../usage.js';
+
+type Disk = Pick<Machine, 'fs'>;
 
 /** A finite number as is, anything else 0: 1e400 parses to Infinity and would jam every budget check. */
 export const finite = (value: unknown): number => (Number.isFinite(value) ? (value as number) : 0);
@@ -15,44 +15,23 @@ export const addTokens = (a: Tokens, b: Tokens): Tokens =>
 /** Finite fields can still overflow a sum; nothing non-finite may reach State.usage. */
 export const finiteTokens = (t: Tokens): boolean => Object.values(t).every(Number.isFinite);
 
-// A FIFO or a device never reaches EOF and would hold the read (and a threadpool worker) forever
-async function requireFile(path: string): Promise<void> {
-  if (!(await stat(path)).isFile()) throw new Error(`${path}: not a regular file`);
+/** Every transcript read's cap (#161): far above any transcript seen so far, so only a runaway file is refused. readTurn then rejects, and the
+ * hook goes through without tokens or a title (server.ts' readTurn). */
+export const TRANSCRIPT_MAX_BYTES = 512 * 1024 * 1024;
+
+/** Calls onLine for every line of a regular file on the machine. */
+export async function eachLine(machine: Disk, path: string, onLine: (line: string) => void): Promise<void> {
+  for await (const line of machine.fs.readLines(path, { maxBytes: TRANSCRIPT_MAX_BYTES })) onLine(line);
 }
 
-/** Calls onLine for every line of a regular file. */
-export async function eachLine(path: string, onLine: (line: string) => void): Promise<void> {
-  await requireFile(path);
-  return new Promise((resolve, reject) => {
-    const input = createReadStream(path);
-    input.on('error', reject);
-    const lines = createInterface({ input, crlfDelay: Infinity });
-    // readline.Interface re-emits the input stream's error as its own; without a listener here it throws unhandled.
-    lines.on('error', reject);
-    lines.on('line', onLine);
-    lines.on('close', resolve);
-  });
+/** A regular file's first line, undefined for an empty one; the return ends the loop, which closes the read: a Codex rollout's session_meta is its first line (#929). */
+export async function firstLine(machine: Disk, path: string): Promise<string | undefined> {
+  for await (const line of machine.fs.readLines(path, { maxBytes: TRANSCRIPT_MAX_BYTES })) return line;
+  return undefined;
 }
 
-/** A regular file's first line, undefined for an empty one; the rest is never read: a Codex rollout's session_meta is its first line (#929). */
-export async function firstLine(path: string): Promise<string | undefined> {
-  await requireFile(path);
-  return new Promise((resolve, reject) => {
-    const input = createReadStream(path);
-    input.on('error', reject);
-    const lines = createInterface({ input, crlfDelay: Infinity });
-    lines.on('error', reject);
-    lines.once('line', (line) => {
-      resolve(line);
-      lines.close();
-      input.destroy();
-    });
-    lines.on('close', () => resolve(undefined)); // after a line, a no-op: the promise is settled
-  });
-}
-
-export const isRealDir = async (path: string): Promise<boolean> => (await lstat(path).catch(() => undefined))?.isDirectory() === true;
-export const writtenSince = async (path: string, since: number): Promise<boolean> => ((await lstat(path).catch(() => undefined))?.mtimeMs ?? -1) >= since;
+export const isRealDir = async (machine: Disk, path: string): Promise<boolean> => (await machine.fs.lstat(path).catch(() => undefined))?.isDirectory() === true;
+export const writtenSince = async (machine: Disk, path: string, since: number): Promise<boolean> => ((await machine.fs.lstat(path).catch(() => undefined))?.mtimeMs ?? -1) >= since;
 
 /** One model response's usage by type, with its model and time (#742): what a stage run's tally adds up. */
 export interface UsageEntry { id: string; byType: Tokens; model?: string; at: number }

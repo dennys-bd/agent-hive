@@ -92,7 +92,7 @@ test('deleteActivityOnDisk on a local task runs no git whatever the scope and de
     item: { itemId: 'I1', id: '1', title: 'T', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true,
   };
   const activity: Activity = { id: 'a-I1', kind: 'task', workspace: 'hive', slug: 'hive-1-t', local: true, worktree: repo, branch: BRANCH, stageStart: { stage: 'fila', commit: SHA } }; // #629: the activity's
-  const dir = transcriptDir(repo);
+  const dir = transcriptDir(fakeMachine(), repo);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${SESSION}.jsonl`), '{}\n');
   const deps = { log: fakeLog().log, exec, machineFor: () => fakeMachine({ exec }), ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };

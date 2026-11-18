@@ -1,18 +1,20 @@
 // One language server process (#780), shared by every client of its (folder, binary). The host rewrites each client's request ids so answers
 // go back to their sender, sends initialize once with the root, answers every request the server makes itself, and keeps the process's end:
 // a client's shutdown and exit never reach the server.
-import { type ChildProcess, spawn } from 'node:child_process';
+// The process is the machine's and the command is resolved on the host (#635, #161).
 import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { type ChannelInfo, type ConsoleStore, commandLine, crlf, failLine, runHeader } from './console.js';
 import { type ExecCommand, findExec, resolveExec } from './exec-path.js';
 import { createDecoder, frame } from './lsp-framing.js';
+import type { Machine, MachineChild } from './machine.js';
 import { fileUri } from './lsp-uri.js';
 import { type FormatLog, LSP_CLOSE } from './types.js';
 
 export interface LspPeer { send(message: object): void; close(code: number, reason: string): void }
 export interface ProcessSpec {
   command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv;
+  machine: Pick<Machine, 'process'>; // #161: where the server runs; commandOf still resolves on the host
   root: string; // initialize's root
   shown: string; // the run's command line: the catalog's binary and its args, never an install path
   channel: ChannelInfo; label: string; consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
@@ -77,7 +79,7 @@ function commandOf(spec: ProcessSpec): ExecCommand | { failure: string } {
 class ServerProcess implements LspProcess {
   readonly log: FormatLog;
   private readonly spec: ProcessSpec;
-  private readonly child?: ChildProcess;
+  private readonly child?: MachineChild;
   private readonly exited: Promise<void>;
   private readonly peers = new Set<LspPeer>();
   private readonly pending = new Map<string, Asked>(); // the host's id → the client's
@@ -102,13 +104,13 @@ class ServerProcess implements LspProcess {
       process.nextTick(() => this.end(run.failure)); // after the constructor returns, as a spawn's own error is
       return;
     }
-    const child = spawn(run.file, run.args, { cwd: spec.cwd, env: { ...spec.env, ...run.env }, stdio: ['pipe', 'pipe', 'pipe'], windowsVerbatimArguments: run.windowsVerbatimArguments });
+    const child = spec.machine.process(run.file, [...run.args], { cwd: spec.cwd, env: { ...spec.env, ...run.env }, windowsVerbatimArguments: run.windowsVerbatimArguments });
     this.child = child;
     this.exited = new Promise((resolve) => child.once('close', () => resolve()));
     this.wire(child);
   }
 
-  private wire(child: ChildProcess): void {
+  private wire(child: MachineChild): void {
     child.stdout?.on('data', createDecoder((m) => this.fromServer(m), (reason) => this.append(`${failLine(reason)}\r\n`), (reason) => { this.append(`${failLine(reason)}\r\n`); child.kill('SIGKILL'); }));
     child.stderr?.on('data', (chunk: Buffer) => this.append(crlf(chunk.toString('utf8'))));
     child.stdin?.on('error', () => undefined); // EPIPE once the server died: its close tells

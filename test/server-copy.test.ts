@@ -13,6 +13,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
+import { fakeMachine } from './fake-machine.js';
 import { worktreePath } from '../src/worktree.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -44,13 +45,21 @@ function claudeConfigDir(t: TestContext, dir: string): void {
   process.env.CLAUDE_CONFIG_DIR = dir;
   t.after(() => { if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = previous; });
 }
+// Before createServer: the server's local machine reads CODEX_HOME at its first info() (#161), which a session's open already triggers
+function codexHome(t: TestContext, dir: string): void {
+  const previous = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = dir;
+  t.after(() => { if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous; });
+}
 
-interface Two { base: string; server: HiveServer; workers: FakeWorker[]; repo: string; home: string; git: string[][]; source: string; one: string; two: string; gate: Gate }
+interface Two { base: string; server: HiveServer; workers: FakeWorker[]; repo: string; home: string; git: string[][]; source: string; one: string; two: string; gate: Gate; codex: string }
 interface Gate { onGit?: () => Promise<void> } // runs inside the next git call: what changes while a route awaits git
 
 // Two local activities in WORKSPACE, each with its worktree recorded; a session opened on the first and ended, its transcript written.
 async function twoActivities(t: TestContext): Promise<Two> {
   claudeConfigDir(t, await tempDir(t, 'claude-'));
+  const codex = await tempDir(t, 'codex-');
+  codexHome(t, codex);
   const { home, repo } = await tempHive(t);
   const { spawn, workers } = fakeSpawn();
   const git: string[][] = [];
@@ -71,12 +80,12 @@ async function twoActivities(t: TestContext): Promise<Two> {
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'local:1') });
   const [one, two] = ['local:1', 'local:2'].map((id) => activityOf(server.getState()!, id)!); // #629: the worktrees are the activities'
   const source = sessionsOf(server.getState()!, 'local:1')[0].id;
-  const dir = transcriptDir(one.worktree!);
+  const dir = transcriptDir(fakeMachine(), one.worktree!);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${source}.jsonl`), `${TRANSCRIPT}\n`); // before the exit, as the run wrote it: an exit with none forgets the session (#586)
   workers[0].handlers.onExit();
   await waitFor(() => server.getState()!.workers.length === 0);
-  return { base, server, workers, repo, home, git, source, one: one.worktree!, two: two.worktree!, gate };
+  return { base, server, workers, repo, home, git, source, one: one.worktree!, two: two.worktree!, gate, codex };
 }
 
 test('GET …/copy answers the dialog\'s summary: both ends\' paths and branches, the transcript\'s messages, the source\'s tokens and its uncommitted changes, git read with argv arrays (#587)', async (t) => {
@@ -102,7 +111,7 @@ test('POST …/copy into another activity copies the transcript there, spawns th
   const told = join(home, PROMPTS_DIR, `${launch.ptyId}.protocol.md`); // #159: the machine's copy of the protocol
   assert.equal(launchFlag(launch, '--append-system-prompt-file'), told);
   assert.equal(await readFile(told, 'utf8'), await readFile(join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'utf8'), 'and the session protocol that goes with them (#167)');
-  const dir = transcriptDir(two);
+  const dir = transcriptDir(fakeMachine(), two);
   assert.deepEqual(await readdir(dir), [`${source}.jsonl`]);
   await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: copy.id, cwd: two } });
   assert.deepEqual(await readdir(dir), [], 'the fork has its own transcript by now');
@@ -130,9 +139,9 @@ test('POST …/copy refuses a bad body, its own activity, an unknown workspace a
   await refused(postJson(path, { to: { activityId: localActivityId(WORKSPACE) }, notice: 'yes' }), 400, 'destino inválido');
   await refused(postJson(path, { to: { activityId: workId(server.getState()!, 'local:1') }, notice: true }), 409, 'a sessão já está aqui');
   await refused(postJson(path, { to: { activityId: localActivityId('site') }, notice: true }), 404, 'atividade desconhecida'); // #629: no local activity of a workspace the Comb lacks
-  await rm(join(transcriptDir(one), `${source}.jsonl`));
+  await rm(join(transcriptDir(fakeMachine(), one), `${source}.jsonl`));
   await refused(postJson(path, { to: { activityId: workId(server.getState()!, 'local:2') }, notice: true }), 409, 'O histórico desta sessão não existe mais');
-  assert.deepEqual(await readdir(transcriptDir(two)).catch(() => []), []);
+  assert.deepEqual(await readdir(transcriptDir(fakeMachine(), two)).catch(() => []), []);
   assert.equal(server.getState()!.workers.length, 0);
 });
 
@@ -148,8 +157,8 @@ test('a local session continues in the checkout, resumed by id, and clears once 
   await waitFor(() => server.getState()!.workers.length === 0);
   await refused(open(local.id, 'site'), 404, 'atividade desconhecida'); // #629: a workspace the Comb lacks has no local record
   await refused(open(local.id), 409, 'O histórico desta sessão não existe mais'); // the fake claude wrote none
-  await mkdir(transcriptDir(repo), { recursive: true });
-  await writeFile(join(transcriptDir(repo), `${local.id}.jsonl`), `${TRANSCRIPT}\n`);
+  await mkdir(transcriptDir(fakeMachine(), repo), { recursive: true });
+  await writeFile(join(transcriptDir(fakeMachine(), repo), `${local.id}.jsonl`), `${TRANSCRIPT}\n`);
   const answer = (await (await open(local.id)).json()) as OpenResult;
   assert.deepEqual([answer.ptyId, workers[2].launch.cwd, plainArgs(workers[2].launch)], [workers[2].launch.ptyId, repo, ['--resume', local.id]]);
   workers[2].handlers.onExit();
@@ -162,7 +171,7 @@ test('a turn end of a local session\'s run reads its own transcript in the check
   const { base, server, workers, repo, source } = await twoActivities(t);
   await postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy`, { to: { activityId: localActivityId(WORKSPACE) }, notice: false });
   const [local] = localSessionsOf(server.getState()!, WORKSPACE);
-  const transcript = join(transcriptDir(repo), `${local.id}.jsonl`);
+  const transcript = join(transcriptDir(fakeMachine(), repo), `${local.id}.jsonl`);
   const lines = [{ type: 'assistant', message: { id: 'm9', usage: { input_tokens: 10, output_tokens: 5 } } }, { type: 'custom-title', customTitle: 'meu' }];
   await writeFile(transcript, `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`);
   const hook = await hiveFetch(`${base}/hooks/event`, {
@@ -178,7 +187,7 @@ test('POST …/copy whose target starts its delete activity while the copy runs 
   const { base, server, source, two, gate } = await twoActivities(t);
   gate.onGit = async () => { await server.dispatch({ type: 'deletingTask', taskId: 'local:2' }); };
   await refused(postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy`, { to: { activityId: workId(server.getState()!, 'local:2') }, notice: true }), 409, 'o destino não aceita mais a cópia');
-  assert.deepEqual(await readdir(transcriptDir(two)), []);
+  assert.deepEqual(await readdir(transcriptDir(fakeMachine(), two)), []);
   assert.equal(server.getState()!.workers.length, 0);
 });
 
@@ -201,7 +210,7 @@ test('a repo session whose copy\'s temporary transcript sits in the main repo\'s
   assert.equal((await postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy`, { to: { activityId: localActivityId(WORKSPACE) }, notice: false })).status, 200);
   await refused(postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/open`), 409, 'uma cópia desta sessão ainda está abrindo');
   workers[1].handlers.onExit();
-  await waitFor(() => server.getState()!.workers.length === 0 && !existsSync(join(transcriptDir(repo), `${source}.jsonl`)));
+  await waitFor(() => server.getState()!.workers.length === 0 && !existsSync(join(transcriptDir(fakeMachine(), repo), `${source}.jsonl`)));
   assert.equal((await postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/open`)).status, 200, 'its own transcript, adopted from the worktree\'s dir');
 });
 
@@ -214,7 +223,7 @@ test('a copy whose spawn fails before its run starts frees its worker, forgets i
   await waitFor(() => server.getState()!.workers.length === 0);
   assert.deepEqual(sessionsOf(server.getState()!, 'local:2'), []);
   assert.match(server.getState()!.error ?? '', /EACCES/);
-  await waitFor(() => !existsSync(join(transcriptDir(two), `${source}.jsonl`)));
+  await waitFor(() => !existsSync(join(transcriptDir(fakeMachine(), two), `${source}.jsonl`)));
 });
 
 // Its second boot kills the saved workers' strays by pattern (pkill), which needs the real process list
@@ -222,16 +231,16 @@ test('a boot removes the temporary transcript a saved copy mark names in its own
   const { base, server, home, repo, source, one, two } = await twoActivities(t);
   await postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy`, { to: { activityId: workId(server.getState()!, 'local:2') }, notice: false });
   const saved = structuredClone(server.getState()!);
-  const forged = { ...saved.workers.at(-1)!, id: 'forged', runId: 'c1b2c3d4-0000-4000-8000-000000000007', copyOf: { from: source, dir: transcriptDir(one) } };
+  const forged = { ...saved.workers.at(-1)!, id: 'forged', runId: 'c1b2c3d4-0000-4000-8000-000000000007', copyOf: { from: source, dir: transcriptDir(fakeMachine(), one) } };
   await server.close();
   await writeFile(join(home, 'state.json'), JSON.stringify({ ...saved, workers: [...saved.workers, forged] }));
-  await writeFile(join(transcriptDir(two), `${source}.jsonl`), `${TRANSCRIPT}\n`); // as the crashed Hive left it
+  await writeFile(join(transcriptDir(fakeMachine(), two), `${source}.jsonl`), `${TRANSCRIPT}\n`); // as the crashed Hive left it
   const again = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: async () => ({ stdout: '' }) });
   const next = `http://127.0.0.1:${await again.listen(0)}`;
   t.after(() => again.close());
   assert.equal((await postJson(`${next}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
-  await waitFor(() => !existsSync(join(transcriptDir(two), `${source}.jsonl`)));
-  assert.ok(existsSync(join(transcriptDir(one), `${source}.jsonl`)), 'the source\'s own transcript stays');
+  await waitFor(() => !existsSync(join(transcriptDir(fakeMachine(), two), `${source}.jsonl`)));
+  assert.ok(existsSync(join(transcriptDir(fakeMachine(), one), `${source}.jsonl`)), 'the source\'s own transcript stays');
 });
 
 test('a save refuses to re-path a workspace a local session runs in (409) (#587)', async (t) => {
@@ -243,12 +252,12 @@ test('a save refuses to re-path a workspace a local session runs in (409) (#587)
 
 test('a transcript the Hive cannot read answers 500 with the reason the dialog shows, to the summary and to the copy, and leaves no partial copy (#587)', { skip: NO_POSIX_FAULTS }, async (t) => {
   const { base, server, source, one, two } = await twoActivities(t);
-  const transcript = join(transcriptDir(one), `${source}.jsonl`);
+  const transcript = join(transcriptDir(fakeMachine(), one), `${source}.jsonl`);
   await chmod(transcript, 0o000); // win32: chmod 000 does not stop the owner reading the transcript
   t.after(() => chmod(transcript, 0o600));
   await refused(getJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy?toActivity=${workId(server.getState()!, 'local:2')}`), 500, 'o histórico desta sessão não pôde ser lido');
   await refused(postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy`, { to: { activityId: workId(server.getState()!, 'local:2') }, notice: false }), 500, 'o histórico desta sessão não pôde ser copiado');
-  assert.deepEqual(await readdir(transcriptDir(two)).catch(() => []), []);
+  assert.deepEqual(await readdir(transcriptDir(fakeMachine(), two)).catch(() => []), []);
   assert.equal(server.getState()!.workers.length, 0);
 });
 
@@ -268,11 +277,8 @@ test('a deleted activity\'s kept session still copies, opens and clears under /a
 });
 
 // #933: a Codex session of the first activity, ended, its rollout under a CODEX_HOME of the test's own (no transcript dir per cwd, #929)
-async function codexSource(t: TestContext, two: Two): Promise<void> {
-  const home = await tempDir(t, 'codex-');
-  const previous = process.env.CODEX_HOME;
-  process.env.CODEX_HOME = home;
-  t.after(() => { if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous; });
+async function codexSource(two: Two): Promise<void> {
+  const home = two.codex;
   await two.server.dispatch({ type: 'openSession', activityId: workId(two.server.getState()!, 'local:1'), agent: 'codex' });
   const run = two.workers.at(-1)!;
   await two.server.dispatch({ type: 'hook', ptyId: run.launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: SESSION, cwd: two.one, source: 'startup' } });
@@ -283,7 +289,7 @@ async function codexSource(t: TestContext, two: Two): Promise<void> {
 
 test('a Codex session copies with codex fork <id>: its rollout found by id, nothing copied, no copyOf mark; the fork\'s SessionStart names the copy\'s entry, the dialog\'s name kept (#933)', async (t) => {
   const two = await twoActivities(t);
-  await codexSource(t, two);
+  await codexSource(two);
   const { base, server, workers } = two;
   const path = `${base}${workPath(server, 'local:1')}/sessions/${SESSION}/copy`;
   const summary = await getJson(`${path}?toActivity=${encodeURIComponent(workId(server.getState()!, 'local:2'))}`);
@@ -292,7 +298,7 @@ test('a Codex session copies with codex fork <id>: its rollout found by id, noth
   const { launch } = workers.at(-1)!;
   assert.deepEqual([launch.cwd, launch.agent?.command, plainArgs(launch).slice(0, 2)], [two.two, 'codex', ['fork', SESSION]]);
   assert.equal(server.getState()!.workers.at(-1)!.copyOf, undefined, 'nothing placed, nothing to drop');
-  assert.deepEqual(await readdir(transcriptDir(two.two)).catch(() => []), []);
+  assert.deepEqual(await readdir(transcriptDir(fakeMachine(), two.two)).catch(() => []), []);
   const FORK = 'f0f0f0f0-0000-4000-8000-000000000001';
   await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: FORK, cwd: two.two, source: 'fork' } });
   assert.deepEqual(sessionsOf(server.getState()!, 'local:2').map((s) => [s.id, s.name, s.agent]), [[FORK, 'no dois', 'codex']]);

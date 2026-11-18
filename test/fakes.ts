@@ -3,7 +3,6 @@ import { EventEmitter } from 'node:events';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
@@ -24,10 +23,8 @@ import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, St
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import type { Machine, MachineFs, MachineInfo, MachinePty, RunResult } from '../src/machine.js';
-import { localDisk } from '../src/machine-local.js';
-import { runDetached } from '../src/machine-run.js';
+import { fakeMachine as localMachine } from './fake-machine.js';
 import { createPtyHost } from '../src/pty-host.js';
-import { posixShell } from '../src/posix-shell.js';
 import { AGENTS } from '../src/agents.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { runners } from '../src/agents/registry.js';
@@ -397,7 +394,7 @@ export function fakeKeepAwakeSpawn(): { spawn: KeepAwakeSpawn; children: FakeKee
 /** A session's transcript as Claude Code leaves it in `cwd`'s transcript dir once a prompt ran (#586): a run whose session has none is
  * forgotten at its exit. CLAUDE_CONFIG_DIR must point at a temp dir first. */
 export async function writeTranscript(cwd: string, sessionId: string): Promise<string> {
-  const dir = transcriptDir(cwd);
+  const dir = transcriptDir(fakeMachine(), cwd);
   await mkdir(dir, { recursive: true });
   const path = join(dir, `${sessionId}.jsonl`);
   await writeFile(path, '{}\n');
@@ -405,9 +402,7 @@ export async function writeTranscript(cwd: string, sessionId: string): Promise<s
 }
 
 /** What a test gives a fake machine (#159): each part replaces the default. */
-export interface FakeMachineParts { exec?: Exec; fs?: Partial<MachineFs>; run?: Machine['run']; pty?: Partial<MachinePty>; info?: Partial<MachineInfo> }
-
-const NO_EXEC: Exec = async (file) => { throw new Error(`fakeMachine: no exec given, ${file} was called`); };
+export interface FakeMachineParts { exec?: Exec; fs?: Partial<MachineFs>; run?: Machine['run']; pty?: Partial<MachinePty>; info?: Partial<MachineInfo>; process?: Machine['process'] }
 
 // A pty side that spawns nothing: the rest is a fake PtyHost's, so an adopt or a subscribe still works
 function idlePty(): MachinePty {
@@ -420,14 +415,15 @@ function idlePty(): MachinePty {
   };
 }
 
-/** A Machine for a test (#159): the real local disk (temp dirs stay real), the given exec turned into MachineError as the local machine's
- * is, runDetached unless a run is given, a pty that spawns nothing unless one is given, and this process's facts under the given ones. */
+/** A Machine for a test (#159): fake-machine.ts' local machine (the real disk, the given exec turned into MachineError, an exec not given
+ * answering '', the facts read from process.env at the first info()), with a pty that spawns nothing unless one is given and each given part
+ * over it. */
 export function fakeMachine(parts: FakeMachineParts = {}): Machine {
-  const disk = localDisk(parts.exec ?? NO_EXEC);
-  const info: MachineInfo = {
-    platform: process.platform, arch: process.arch, homedir: homedir(), tmpdir: tmpdir(), path: process.env.PATH ?? '', shell: posixShell().shell, agents: [], ...parts.info,
+  const base = localMachine(parts.exec === undefined ? {} : { exec: parts.exec });
+  return {
+    ...base, fs: { ...base.fs, ...parts.fs }, run: parts.run ?? base.run, pty: { ...idlePty(), ...parts.pty },
+    info: () => ({ ...base.info(), ...parts.info }), ...(parts.process === undefined ? {} : { process: parts.process }),
   };
-  return { id: 'local', fs: { ...disk.fs, ...parts.fs }, exec: disk.exec, run: parts.run ?? runDetached, pty: { ...idlePty(), ...parts.pty }, info: () => info };
 }
 
 /** A machine run's answer (#159): code 0 passes; any other code carries the tail a step's failure shows. */

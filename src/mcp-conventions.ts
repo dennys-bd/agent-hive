@@ -54,7 +54,7 @@ export async function forkConventions(exec: Exec, workspace: Workspace | undefin
 export async function nestedConventions(exec: Exec, workspace: Workspace | undefined): Promise<NestedConventions[]> {
   if (!workspace) return [];
   return Promise.all(workspace.nestedRepos.map(async (path) => {
-    const repository = await originRepository(exec, join(workspace.path, path));
+    const repository = await originRepository({ exec }, join(workspace.path, path));
     return repository === undefined ? { path } : { path, repository };
   }));
 }

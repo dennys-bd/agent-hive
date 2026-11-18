@@ -1,7 +1,8 @@
 // The machine (#158, node 7.1 of #157): where a task's disk, processes and ptys are. The host's own is the local machine (machine-local.ts);
 // node 8 adds an actor's, reached over the link. Types only, but MachineError: a remote machine's failure arrives as data and is rebuilt as
-// one, so a caller reads the same fields whichever machine failed. The fs types are imported as types only, which is why this file is on
+// one, so a caller reads the same fields whichever machine failed. The fs and child_process types are imported as types only, which is why this file is on
 // biome.jsonc's host-only list.
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { CopyOptions, Dirent, MakeDirectoryOptions, Mode, RmOptions, Stats } from 'node:fs';
 import type { AgentRun } from './agents/runner.js';
 import type { PtyHost, PtyKeep } from './pty-host.js';
@@ -54,6 +55,8 @@ export interface MachineFs {
   // maxBytes required: no caller reads a worktree file through a machine without a bound. Over it: MachineError TOO_LARGE, nothing read
   readFile(path: string, options: { maxBytes: number; encoding: BufferEncoding }): Promise<string>;
   readFile(path: string, options: { maxBytes: number }): Promise<Buffer>;
+  // A regular file's lines, CR LF as one break (#161). Refused before any read as readFile is: not_file, too_large, on the first next()
+  readLines(path: string, options: { maxBytes: number }): AsyncIterable<string>;
   writeFile(path: string, data: string | Uint8Array, options?: { flag?: string; mode?: Mode }): Promise<void>;
   writeAtomic(path: string, text: string): Promise<Buffer>; // a temp file beside it with its mode, renamed over it; the bytes written
   mkdir(path: string, options?: MakeDirectoryOptions): Promise<string | undefined>;
@@ -82,8 +85,13 @@ export interface MachineInfo {
   path: string;
   shell: string; // posixShell().shell
   claudeConfigDir?: string;
+  codexHome?: string; // CODEX_HOME, as claudeConfigDir is CLAUDE_CONFIG_DIR (#161)
   agents: AgentAvailability[];
 }
+
+/** A long-lived child with its three pipes (#161): a language server. Node 8.2's remote machine answers not_supported. */
+export type MachineChild = Pick<ChildProcessWithoutNullStreams, 'stdin' | 'stdout' | 'stderr' | 'pid' | 'kill' | 'on' | 'once'>;
+export interface ProcessOptions { cwd: string; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean } // the .cmd runner's line (#632)
 
 /** One detached process (#158): runCapped's and runShell's run, for the formatters, the checkers and a setup's RUN. */
 export interface RunProcess {
@@ -127,6 +135,7 @@ export interface Machine {
   fs: MachineFs;
   exec: MachineExec;
   run(p: RunProcess): Promise<RunResult>;
+  process(command: string, args: string[], options: ProcessOptions): MachineChild; // #161
   pty: MachinePty;
   info(): MachineInfo;
 }

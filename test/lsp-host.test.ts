@@ -9,9 +9,11 @@ import type { CatalogLoad, SchemaCatalog } from '../src/json-schemas.js';
 import { parseConfig } from '../src/config.js';
 import { editorDir } from '../src/editor-install.js';
 import { createLspHost, type LspHost } from '../src/lsp-host.js';
+import type { Machine } from '../src/machine.js';
 import { serverDef } from '../src/languages.js';
 import { initialState } from '../src/orchestrator.js';
 import { EDITOR_DEFAULTS, type EditorConfig, type ServerId } from '../src/types.js';
+import { fakeMachine } from './fake-machine.js';
 import { combConfig, LOCAL_STAGES } from './fakes.js';
 import { withLocal } from './fixtures/work.js';
 import { LSP_STUB, until } from './lsp-helpers.js';
@@ -55,7 +57,7 @@ const catalog = (loaded: CatalogLoad): SchemaCatalog & { loads: number } => {
 };
 
 // A home with pyright (an npm server: node runs its .bin) and clangd (a GitHub binary) installed as the stub, a workspace at a temp repo
-async function host(t: AfterHost, editor: EditorConfig = EDITOR_DEFAULTS, idleMs = 60_000, env: NodeJS.ProcessEnv = {}, log?: { error(line: string): void }, schemas: SchemaCatalog = catalog({ associations: [] })): Promise<{ lsp: LspHost; store: ReturnType<typeof createConsoleStore>; root: string; home: string }> {
+async function host(t: AfterHost, editor: EditorConfig = EDITOR_DEFAULTS, idleMs = 60_000, env: NodeJS.ProcessEnv = {}, log?: { error(line: string): void }, schemas: SchemaCatalog = catalog({ associations: [] }), machine: Machine = fakeMachine()): Promise<{ lsp: LspHost; store: ReturnType<typeof createConsoleStore>; root: string; home: string }> {
   const home = await tempDir(t, 'lsp-home-');
   const repo = await realpath(await tempDir(t, 'lsp-repo-'));
   await installServer(home, 'pyright', 'node_modules/.bin/pyright-langserver', await readFile(LSP_STUB, 'utf8'), '1.2.3');
@@ -63,10 +65,19 @@ async function host(t: AfterHost, editor: EditorConfig = EDITOR_DEFAULTS, idleMs
   const config = parseConfig(combConfig({ stages: LOCAL_STAGES, path: repo, editor }));
   const state = withLocal(initialState(0), 'hive');
   const store = createConsoleStore(() => 5000);
-  const lsp = createLspHost({ home, consoleStore: store, live: () => ({ config, state }), idleMs, log, schemas, env: { PATH: dirname(process.execPath), ...env } });
+  const lsp = createLspHost({ home, consoleStore: store, live: () => ({ config, state }), machineFor: () => machine, idleMs, log, schemas, env: { PATH: dirname(process.execPath), ...env } });
   t.after(() => lsp.stopAll());
   return { lsp, store, root: repo, home };
 }
+
+test('the host resolves the folder and starts the server on the activity\'s machine (#161)', async (t) => {
+  const base = fakeMachine();
+  const started: string[] = [];
+  const machine: Machine = { ...base, process: (command, args, options) => { started.push(options.cwd); return base.process(command, args, options); } };
+  const { lsp, root } = await host(t, EDITOR_DEFAULTS, 60_000, {}, undefined, catalog({ associations: [] }), machine);
+  await lsp.attach(new FakeSocket(), ACTIVITY, 'pyright', 'pyright-langserver');
+  assert.deepEqual(started, [root]);
+});
 
 test('a socket gets { root, log } first; two sockets on one key share one process and one initialize (#780)', async (t) => {
   const { lsp, root } = await host(t);

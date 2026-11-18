@@ -3,16 +3,17 @@ import type { Logger } from '../log.js';
 import type { ReadModel } from '../read-model/db.js';
 import { SourceNotConnectedError } from '../source-errors.js';
 import type { Citation } from '../tasks.js';
-import type { FieldValue, FieldWrite, ItemAction, ItemField, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
+import type { FieldValue, FieldWrite, ItemAction, ItemField, ProjectView, ReadOptions, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
 import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
 import { createJiraIssue, readJiraCreateOptions } from './jira-create.js';
 import { JiraNotFoundError } from './jira-fetch.js';
 import { type JiraFieldsContext, jiraFieldsOf, jiraSetField } from './jira-fields.js';
 import { type JiraItemRows, jiraItemOf } from './jira-item.js';
 import { isFiltered, isListed, type JiraSourceConfig, listedTasks, projectOf, storedLabels, taskOf } from './jira-listing.js';
+import { jiraProject } from './jira-project.js';
 import { type JiraCall, type JiraIssueRead, postTransition, readComments, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions } from './jira-queries.js';
 import { type CategoryOf, checkLinkTypes, findBlockers, linkedIds, NO_CATEGORIES, relate, type RelationsContext, storedCategories } from './jira-relations.js';
-import { writeIssue, writeListing } from './jira-sync.js';
+import { reconcileProject, syncProject, writeIssue, writeListing } from './jira-sync.js';
 import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
 
 export type { JiraSourceConfig } from './jira-listing.js';
@@ -188,6 +189,19 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
   const fieldsOf = async (itemId: string): Promise<ItemField[]> => jiraFieldsOf(await fieldsContext(), itemId);
   const setField = async (itemId: string, field: string, value: FieldValue): Promise<FieldWrite> => jiraSetField(await fieldsContext(), itemId, field, value);
 
+  // #827: the native view from the store, under the account that reads it. Only handed with a store: without one the route answers 404.
+  // fresh runs a round, then the reconcile: the round stores what changed in Jira, the reconcile drops what left the project
+  // ponytail: each fresh click pages every id of the project in the reconcile; skip it when the round changed nothing if large projects feel slow
+  const project = db === undefined ? undefined : async (options?: ReadOptions): Promise<ProjectView> => {
+    const cred = await account();
+    const rows = rowsOf(cred);
+    const deps = { call, db, source: rows, project: source.project };
+    return jiraProject({
+      items: db.items, rows, source, isFiltered: (task) => isFiltered(task, source, cred.displayName),
+      refresh: async () => { await syncProject(deps); await reconcileProject(deps); },
+    }, options);
+  };
+
   return {
     resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments, fieldsOf, setField,
     create: (fields) => createJiraIssue({ call, source, place: placeNew }, fields),
@@ -195,5 +209,6 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     relate: async (itemId, change) => relate(relations(await account()), itemId, change),
     findBlockers: (_itemId, text) => findBlockers({ call, project: source.project }, text), // the search is the project's, whatever the item
     linkTypes: () => readLinkTypes(call),
+    ...(project === undefined ? {} : { project }),
   };
 }

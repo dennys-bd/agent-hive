@@ -1695,7 +1695,7 @@ test('POST /activities/:id/delete follows the delete-activity scope (#236, #573)
   const worktree = worktreePath(repo, TASK_SLUG);
   await mkdir(worktree, { recursive: true });
   const session = work0(server)!.sessionId!;
-  const dir = transcriptDir(worktree);
+  const dir = transcriptDir(fakeMachine(), worktree);
   await mkdir(join(dir, session), { recursive: true });
   for (const file of [`${session}.jsonl`, 'other-session-0001.jsonl']) await writeFile(join(dir, file), '{}\n');
   git.clear();
@@ -1731,8 +1731,8 @@ test('with transcripts in scope a delete removes every record\'s transcripts, a 
   await mkdir(worktree, { recursive: true });
   const kept = work0(server)!.sessionId!;
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: true });
-  await mkdir(transcriptDir(repo), { recursive: true });
-  await writeFile(join(transcriptDir(repo), `${kept}.jsonl`), '{}\n'); // a repo session's transcript sits in the main repo's dir (#208)
+  await mkdir(transcriptDir(fakeMachine(), repo), { recursive: true });
+  await writeFile(join(transcriptDir(fakeMachine(), repo), `${kept}.jsonl`), '{}\n'); // a repo session's transcript sits in the main repo's dir (#208)
   await server.dispatch({ type: 'setDeleteActivity', deleteActivity: { session: true, transcripts: true, nonAutoTasks: false } });
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   await hookEvent(base, worker0(server).runId!, { hook_event_name: 'SessionStart', cwd: repo });
@@ -1741,7 +1741,7 @@ test('with transcripts in scope a delete removes every record\'s transcripts, a 
   await waitFor(() => worker0(server).status === 'empty');
   await mkdir(worktree, { recursive: true });
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: true });
-  assert.deepEqual(await readdir(transcriptDir(repo)), [], 'the kept session\'s transcript goes too');
+  assert.deepEqual(await readdir(transcriptDir(fakeMachine(), repo)), [], 'the kept session\'s transcript goes too');
   assert.deepEqual(sessions0(server), [], 'every record\'s sessions go');
 });
 
@@ -2104,13 +2104,13 @@ test('POST /activities/:id/sessions/:session/open opens a listed session in a ma
   await refused('board:I1', s, 409, 'a worktree desta sessão não existe mais');
   await server.dispatch({ type: 'deletingActivity', activityId: workId(server.getState()!, 'board:I1') });
   await server.dispatch({ type: 'activityRemoved', activityId: workId(server.getState()!, 'board:I1') }); // the Hive removed it: the session moves to the main repo
-  await rm(join(transcriptDir(worktreePath(repo, TASK_SLUG)), `${s}.jsonl`)); // #586: ranOnce's run wrote it; this refusal is about one gone
+  await rm(join(transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG)), `${s}.jsonl`)); // #586: ranOnce's run wrote it; this refusal is about one gone
   await refused('board:I1', s, 409, 'O histórico desta sessão não existe mais');
-  const from = transcriptDir(worktreePath(repo, TASK_SLUG));
+  const from = transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG));
   await mkdir(join(from, s), { recursive: true });
   await writeFile(join(from, `${s}.jsonl`), '{}\n');
   await opened(open('board:I1', s));
-  assert.deepEqual((await readdir(transcriptDir(repo))).sort(), [s, `${s}.jsonl`].sort(), 'moved before the session opened');
+  assert.deepEqual((await readdir(transcriptDir(fakeMachine(), repo))).sort(), [s, `${s}.jsonl`].sort(), 'moved before the session opened');
   assert.deepEqual(await readdir(from), []);
   assert.deepEqual([workers.length, workers[1].launch.cwd, plainArgs(workers[1].launch)], [2, repo, ['--resume', s]]);
   await refused('board:I1', s, 409, 'sessão já aberta ou desconhecida'); // its worker holds it now
@@ -2638,7 +2638,7 @@ test('POST /activities/:id/sessions/:session/clear forgets that one session and 
   await waitFor(() => worker0(server).status === 'empty');
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'board:I1') }); // a second session, held by its free session
   const second = sessions0(server).at(-1)!.id;
-  const dir = transcriptDir(worktreePath(repo, TASK_SLUG));
+  const dir = transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG));
   await mkdir(dir, { recursive: true });
   for (const id of [first, second]) await writeFile(join(dir, `${id}.jsonl`), '{}\n');
   assert.equal((await clear('nope', first)).status, 404);
@@ -2658,7 +2658,7 @@ test('POST /activities/:id/sessions/:session/clear keeps the transcript when the
   await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => work0(server)?.stopped === true);
-  const dir = transcriptDir(worktreePath(repo, TASK_SLUG));
+  const dir = transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG));
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${session}.jsonl`), '{}\n');
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/sessions/${session}/clear`)), { ok: true });

@@ -3,6 +3,7 @@ import { join, posix, win32 } from 'node:path';
 import { taskOfActivity } from './activities.js';
 import { workspaceByName } from './config.js';
 import type { Logger } from './log.js';
+import type { Machine } from './machine.js';
 import { detectNested } from './nested-check.js';
 import { samePath } from './same-path.js';
 import { slugFor, worktreeRows } from './tasks.js';
@@ -74,10 +75,10 @@ export async function strandedWorkspace(activity: Activity, task: Task, exec: Ex
 
 /** The transcripts of a forgotten stranded activity, when the scope covers them (#746): only under a repo the path names in the Hive's shape,
  * confirmed or not, since the transcripts sit under the folder Claude ran in. A failure is logged and does not stop the deletion. */
-export async function strandedTranscripts(activity: Activity, task: Task, sessions: Session[], scope: DeleteActivityScope, log: Pick<Logger, 'debug' | 'error'>): Promise<void> {
+export async function strandedTranscripts(machine: Machine, activity: Activity, task: Task, sessions: Session[], scope: DeleteActivityScope, log: Pick<Logger, 'debug' | 'error'>): Promise<void> {
   const repo = worktreeRepo(activity, task);
   if (!scope.transcripts || repo === undefined) return;
-  await removeTranscripts(taskDir(repo, activity), repo, sessions, log).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
+  await removeTranscripts(machine, taskDir(repo, activity), repo, sessions, log).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
 }
 
 type RowState = Parameters<typeof worktreeRows>[1];

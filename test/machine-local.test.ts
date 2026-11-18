@@ -1,22 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { promisify } from 'node:util';
 import { MachineError } from '../src/machine.js';
-import { createLocalMachine, createLocalMachines, LOCAL_DISK, localDisk, type LocalMachineDeps } from '../src/machine-local.js';
+import { createLocalMachine, createLocalMachines, LOCAL_DISK, localDisk } from '../src/machine-local.js';
 import { runDetached } from '../src/machine-run.js';
 import { posixShell } from '../src/posix-shell.js';
-import { createPtyHost } from '../src/pty-host.js';
-import type { Exec, LaunchPty } from '../src/types.js';
-import { fakePtys } from './fakes.js';
-import { assertMode } from './posix-only.js';
+import type { Exec } from '../src/types.js';
+import { localDeps as deps } from './fake-machine.js';
+import { assertMode, NO_POSIX_FAULTS } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
-
-const NO_LAUNCH: LaunchPty = () => ({ started: Promise.resolve(), kill: () => Promise.resolve() });
-const deps = (over: Partial<LocalMachineDeps> = {}): LocalMachineDeps => ({
-  exec: async () => ({ stdout: '' }), launch: NO_LAUNCH, ptys: createPtyHost(fakePtys().spawnPty), home: '/hive-home', secret: 'fake-secret-158',
-  secretFile: '/hive-home/hive.secret', commandShims: '/hive-home/command-shims', port: () => 4242, agents: [], ...over,
-});
 
 test('fs.readFile refuses a file over maxBytes with too_large, and answers one at the cap whole, as bytes or as text (#158)', async (t) => {
   const dir = await tempDir(t, 'machine-');
@@ -69,9 +64,9 @@ test('exec hands cwd and signal to the exec under it, and its failure rejects as
 });
 
 test('info() reads the machine once: platform, PATH, the POSIX shell, CLAUDE_CONFIG_DIR and the agents boot found (#158)', () => {
-  const machine = createLocalMachine(deps({ env: { PATH: '/usr/bin', CLAUDE_CONFIG_DIR: '/claude-config' } }));
+  const machine = createLocalMachine(deps({ env: { PATH: '/usr/bin', CLAUDE_CONFIG_DIR: '/claude-config', CODEX_HOME: '/codex-home' } }));
   const first = machine.info();
-  assert.deepEqual([first.platform, first.path, first.shell, first.claudeConfigDir, first.agents], [process.platform, '/usr/bin', posixShell().shell, '/claude-config', []]);
+  assert.deepEqual([first.platform, first.path, first.shell, first.claudeConfigDir, first.codexHome, first.agents], [process.platform, '/usr/bin', posixShell().shell, '/claude-config', '/codex-home', []]);
   assert.equal(machine.info(), first);
 });
 
@@ -88,4 +83,53 @@ test('localDisk is the local fs and the exec turned into MachineError: what crea
   await assert.rejects(disk.exec('git', ['status']), (err: unknown) => err instanceof MachineError && err.code === 128 && err.stderr === 'fatal: not a git repository');
   assert.equal(disk.fs, createLocalMachine(deps()).fs, 'one fs table');
   assert.equal(LOCAL_DISK.fs, disk.fs);
+});
+
+const linesOf = async (lines: AsyncIterable<string>): Promise<string[]> => {
+  const read: string[] = [];
+  for await (const line of lines) read.push(line);
+  return read;
+};
+const isCode = (code: string) => (err: unknown): boolean => err instanceof MachineError && err.code === code;
+
+test('fs.readLines yields every line of a file, CR LF as one break (#161)', async (t) => {
+  const file = join(await tempDir(t, 'machine-'), 'a.jsonl');
+  await writeFile(file, 'one\r\ntwo\nthree');
+  assert.deepEqual(await linesOf(createLocalMachine(deps()).fs.readLines(file, { maxBytes: 1024 })), ['one', 'two', 'three']);
+});
+
+test('fs.readLines refuses a file over maxBytes with too_large on the first next(), before any line (#161)', async (t) => {
+  const file = join(await tempDir(t, 'machine-'), 'a.jsonl');
+  await writeFile(file, 'one\ntwo\n');
+  const seen: string[] = [];
+  const read = async (): Promise<void> => { for await (const line of createLocalMachine(deps()).fs.readLines(file, { maxBytes: 4 })) seen.push(line); };
+  await assert.rejects(read(), isCode(MachineError.TOO_LARGE));
+  assert.deepEqual(seen, []);
+});
+
+// mkfifo is POSIX: the FIFO is this test's only case, so the whole test is skipped on win32
+test('fs.readLines refuses a FIFO with not_file instead of waiting on it forever (#161)', { skip: NO_POSIX_FAULTS }, async (t) => {
+  const fifo = join(await tempDir(t, 'machine-'), 'pipe.jsonl');
+  await promisify(execFile)('mkfifo', [fifo]);
+  await assert.rejects(linesOf(createLocalMachine(deps()).fs.readLines(fifo, { maxBytes: 1024 })), isCode(MachineError.NOT_FILE));
+});
+
+// return() is what a loop's break calls: it runs readLines' finally, which destroys the stream
+test('breaking out of the loop after one line ends the read: the iterator is done after it (#161)', async (t) => {
+  const file = join(await tempDir(t, 'machine-'), 'a.jsonl');
+  await writeFile(file, 'one\ntwo\n');
+  const lines = createLocalMachine(deps()).fs.readLines(file, { maxBytes: 1024 })[Symbol.asyncIterator]();
+  assert.deepEqual(await lines.next(), { done: false, value: 'one' });
+  assert.deepEqual(await lines.return?.(), { done: true, value: undefined });
+  assert.deepEqual(await lines.next(), { done: true, value: undefined });
+});
+
+test('process starts the command in the given cwd with the given env, and its stdout reaches the caller (#161)', async (t) => {
+  const dir = await tempDir(t, 'machine-');
+  const script = "process.stdout.write(require('node:path').basename(process.cwd()) + '|' + process.env.HIVE_PROBE_161)";
+  const child = createLocalMachine(deps()).process(process.execPath, ['-e', script], { cwd: dir, env: { ...process.env, HIVE_PROBE_161: 'probe' } });
+  let out = '';
+  child.stdout.on('data', (chunk: Buffer) => { out += chunk.toString('utf8'); });
+  await new Promise((resolve) => child.once('close', resolve));
+  assert.equal(out, `${basename(dir)}|probe`);
 });

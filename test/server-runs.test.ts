@@ -12,6 +12,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
+import { machineWith } from './fake-machine.js';
 
 // The sleep routes of one flow (#672), end to end through the server: the route, the reducer and the record. No worker (maxConcurrent 0):
 // every run below is a local session the test opened
@@ -95,19 +96,19 @@ test('POST /ptys/sleep sleeps the activity\'s live terminals beside its agent ru
 });
 
 test('removeTaskTranscript removes the session\'s transcript in its task\'s worktree and nothing else; with no workspace it removes nothing (#494)', async (t) => {
-  const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
+  const machine = machineWith({ claudeConfigDir: await tempDir(t, 'claude-') });
   const at = '2026-10-22T10:00:00.000Z';
   const task: Task = { item: { itemId: 'board:1', id: '1', title: 'T', body: '', url: '', source: 'board' }, stage: 'plan', boardColumn: '', auto: true, workspace: 'hive' };
   const activity: Activity = { id: 'a-board:1', kind: 'task', workspace: 'hive', slug: 'hive-1-t' };
   const [run, other] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
   const session: Session = { id: run, startedAt: at, stages: ['spec'], lastUsedAt: at, agent: 'claude' };
-  const dir = transcriptDir(worktreePath('/repo', 'hive-1-t'), env);
+  const dir = transcriptDir(machine, worktreePath('/repo', 'hive-1-t'));
   await mkdir(dir, { recursive: true });
   for (const id of [run, other]) await writeFile(join(dir, `${id}.jsonl`), '{}\n');
   const errors: string[] = [];
   const log = { debug: () => undefined, error: (line: string) => { errors.push(line); } };
-  await removeTaskTranscript(undefined, task, activity, undefined, session, log, env);
+  await removeTaskTranscript(machine, undefined, task, activity, undefined, session, log);
   assert.equal((await readdir(dir)).length, 2, 'no workspace: nothing goes');
-  await removeTaskTranscript('/repo', task, activity, undefined, session, log, env);
+  await removeTaskTranscript(machine, '/repo', task, activity, undefined, session, log);
   assert.deepEqual([await readdir(dir), errors], [[`${other}.jsonl`], []]);
 });

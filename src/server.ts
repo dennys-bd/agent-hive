@@ -312,8 +312,6 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The console's channels (#353), process state like the ptys: a Settings save reaches the next trim, a boot empties them. Before a config
   // nothing runs, so the default only types the read.
   const consoleStore = createConsoleStore(() => live?.runtime.config.consoleLines ?? CONSOLE_LINES_DEFAULT, notifyConsole);
-  // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
-  const lsp = createLspHost({ home, consoleStore, log, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
   const launch = deps.launchPty ?? launchInternalPty;
   const spawnOptions = { ptys, secretFile: resolve(home, SECRET_FILE), commandShims: commandShimDir(resolve(home)) };
   const ptyPool = createPtyPool();
@@ -331,11 +329,13 @@ export function createServer(deps: ServerDeps): HiveServer {
     },
   });
   const machineFor: MachineFor = (activity) => machines.for(activity);
+  // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
+  const lsp = createLspHost({ home, consoleStore, log, machineFor, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
   const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree, exec });
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
-  const spawner = createRunSpawner({ pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
+  const spawner = createRunSpawner({ pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
@@ -566,7 +566,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         spawner.abortSetup(effect.ptyId); // a Stop during the run's worktree setup kills its running step (#351)
         // Awaited: a spawn of the same slug later in this batch only starts once the session is gone (no `duplicate session`).
         // Unknown to the pool (started by a previous Hive): nothing to signal, free the worker ourselves.
-        if (!(await pool.kill(effect.ptyId))) await dispatch(await exitEvent(live, effect.ptyId));
+        if (!(await pool.kill(effect.ptyId))) await dispatch(await exitEvent(live, effect.ptyId, machineFor));
         return;
       case 'spawn':
         // A spawn queued behind a slow effect can reach here after close() began (#476): pool.killAll() already ran, and
@@ -616,11 +616,12 @@ export function createServer(deps: ServerDeps): HiveServer {
         return;
       case 'dropCopiedTranscript': // #587: the new session has its own transcript, or never opened; a failure only leaves a stray file
         log.info(describeEffect(effect));
-        await dropCopiedTranscript(effect.dir, effect.sessionId, log).catch((err) => log.error(`transcript copy ${describeEffect(effect)}: ${errorMessage(err)}`));
+        // the effect names no activity; the local one until node 8
+        await dropCopiedTranscript(machines.local, effect.dir, effect.sessionId, log).catch((err) => log.error(`transcript copy ${describeEffect(effect)}: ${errorMessage(err)}`));
         return;
       case 'removeTranscripts': // #494: the reducer already forgot the session; the dir is the activity's as the clear saw it
         log.info(describeEffect(effect));
-        await removeTaskTranscript(taskWorkspace(runtime.config, effect.task)?.path, effect.task, effect.activity, undefined, effect.session, log);
+        await removeTaskTranscript(machineFor(effect.activity), taskWorkspace(runtime.config, effect.task)?.path, effect.task, effect.activity, undefined, effect.session, log);
         return;
       case 'forgetScrollback': // #672: a sleeping run's transcript, once its tab closed, its session continued or it fell out of the last SLEPT_MAX
         log.info(describeEffect(effect));
@@ -641,7 +642,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         // session id also matches a `claude --resume <id>`, a tail or a grep elsewhere, and a /clear changes it. The exit frees the worker even when pkill missed
         log.info(describeEffect(effect));
         await killStray(strayOf(effect.ptyId), exec, process.platform).catch((err) => fail('kill', err));
-        await dispatch(await exitEvent(live, effect.ptyId));
+        await dispatch(await exitEvent(live, effect.ptyId, machineFor));
         return;
       case 'captureCheckpoint': { // #619: awaited, so a continue later in this batch answers the Stop only after the capture; a failure is logged
         log.info(describeEffect(effect));
@@ -857,7 +858,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // Every boot, both paths (bootHive and the first POST /settings): strays of a previous Hive die, then the boot reducer closes every run.
   async function boot(saved: State): Promise<void> {
     await killStrays(saved);
-    if (live) live = { ...live, state: trustedCopies(live.state, live.runtime.config) }; // before boot drops the marks' files (#587)
+    if (live) live = { ...live, state: trustedCopies(live.state, live.runtime.config, machineFor) }; // before boot drops the marks' files (#587)
     await dispatch({ type: 'boot' });
     await restoreScrollbacks(home, live?.state.terminals ?? [], ptys.restore); // #696: each sleeping terminal's tab replays its saved ring
     wiring.booted(createdAt);
@@ -893,11 +894,12 @@ export function createServer(deps: ServerDeps): HiveServer {
     // a local session (#587) has no task: it runs in its workspace's checkout
     const activity = worker && live ? activityOfWorker(live.state, worker) : undefined;
     const local = task === undefined && activity?.kind === 'local' && live !== undefined ? workspaceByName(live.runtime.config, activity.workspace) : undefined;
+    const machine = machineFor(activity ?? {}); // #161: the actor's transcript is checked against its own machine's home; a pty with no activity is the host's
     const agent = ranAgent(worker ?? {}); // #924: its own agent's runner; an unknown pty reads as LEGACY_RUN_AGENT and owns no transcript anyway
     // #929: the runner owns the path. A task worker's is pinned to the hook's own session id: a /clear gives a new one before the worker
     // learns it. A local session's is pinned to the worker's, never the checkout's other transcripts (#590), and to none before it is known
-    const own = (task !== undefined && workspace !== undefined && activity !== undefined && isWorkerTranscript(payload.transcript_path, workspace.path, activity, agent, undefined, payload.session_id)) // taskDir's folder (#444)
-      || (local !== undefined && worker?.sessionId !== undefined && isTranscriptIn(payload.transcript_path, local.path, agent, undefined, worker.sessionId));
+    const own = (task !== undefined && workspace !== undefined && activity !== undefined && isWorkerTranscript(machine, payload.transcript_path, workspace.path, activity, agent, payload.session_id)) // taskDir's folder (#444)
+      || (local !== undefined && worker?.sessionId !== undefined && isTranscriptIn(machine, payload.transcript_path, local.path, agent, worker.sessionId));
     return payload.transcript_path === undefined || own ? payload : { ...payload, transcript_path: undefined };
   }
 
@@ -907,7 +909,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!TURN_END_EVENTS.includes(payload.hook_event_name) || !isTranscriptPath(payload.transcript_path)) return undefined;
     const worker = workerOf(ptyId);
     if (!worker || worker.status === 'empty') return undefined;
-    return runners[ranAgent(worker)].readTurn(payload.transcript_path, wiring.usageSince(ptyId)).catch(() => undefined); // unreadable: the hook goes through without tokens or a title; usage from the open stage run's start (#742)
+    const activity = live ? activityOfWorker(live.state, worker) : undefined;
+    return runners[ranAgent(worker)].readTurn(machineFor(activity ?? {}), payload.transcript_path, wiring.usageSince(ptyId)).catch(() => undefined); // unreadable or over TRANSCRIPT_MAX_BYTES: the hook goes through without tokens or a title; usage from the open stage run's start (#742)
   }
 
   // Builds a Runtime for `config` on the port listen() bound (#466): hooks.json and every worker target the daemon actually listening.
@@ -1066,7 +1069,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   app.post('/hooks/exit', async (req: Request, res: Response) => {
     res.sendStatus(200);
     const ptyId = req.header('x-hive-pty');
-    if (ptyId && !pool.exit(ptyId)) await dispatch(await exitEvent(live, ptyId));
+    if (ptyId && !pool.exit(ptyId)) await dispatch(await exitEvent(live, ptyId, machineFor));
   });
 
   // The worker's status line posts its whole JSON here; only `rate_limits` is kept, and the reply is the line the worker's tab shows.
@@ -1367,7 +1370,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
   const readLoop = deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
-    repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
+    repositories: async () => (live ? listRepositories(live.runtime.config, live.state, machines.local) : []),
     jiraSources: async () => (live ? jiraRoundSources(live.runtime.config.comb.sources, live.state.syncs) : []), // #824: per round, so a Settings save takes the next one
   });
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
@@ -1389,7 +1392,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #497: hive_pr's preload, over the repositories the Hive lists now (a Settings change takes the next call)
   preloadPr ??= preloaderOf({
     ...repoModel, log,
-    isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, exec)).some((r) => r.repository === repository),
+    isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, machines.local)).some((r) => r.repository === repository),
   }, changesReader);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
