@@ -144,9 +144,9 @@ async function openWithSetup(deps: OpenRouteDeps, current: LiveView, task: Task,
   if (!born) return noActivity(res);
   const { activityId, settled } = born;
   const base = shownBase(plan.place.base?.ref, workspaceBase(current.runtime.config, plan.workspace)); // #390: the branch row's
-  const setup = openWorktreeRun(deps, { id: setupRunId(task.item.itemId), label: `#${plan.task.item.id}`, kind: 'setup', activityId, branch: plan.branch, base, nested: plan.workspace.nestedRepos });
+  const setup = openWorktreeRun(machineOf(deps, current, task), deps, { id: setupRunId(task.item.itemId), label: `#${plan.task.item.id}`, kind: 'setup', activityId, branch: plan.branch, base, nested: plan.workspace.nestedRepos });
   await Promise.all([settled, deps.dispatch({ type: 'setupStarted', activityId, consoleId: setup.id, rows: setup.rows() })]);
-  const logged: Machine = { ...machineOf(deps, current, task), exec: setup.exec }; // the setup run's exec, until the step runner takes a machine
+  const logged = setup.machine; // the machine whose exec writes into the setup run
   let refusal: Refusal | undefined;
   try { // everything after the mark: no throw may leave the task marked until the next boot
     refusal = await confirmPlan(deps, logged, task, plan);
@@ -179,13 +179,13 @@ async function openRechecked(deps: OpenRouteDeps, plan: WorktreePlan, open: Open
 // without setup steps: one still to set up, or one whose folder is not there yet (new, or gone from disk and recreated), marked in the same
 // turn as the checks with no git before it. A local task never sets up (#444), nor does a folder already set up: those make it unmarked.
 async function openFirst(deps: OpenRouteDeps, current: LiveView, task: Task, plan: WorktreePlan, open: OpenAsk, res: Response): Promise<void> {
+  const machine = machineOf(deps, current, task);
   if (!plan.place.local) {
     const path = worktreePath(plan.workspace.path, plan.slug);
     if (!existsSync(path)) return openWithSetup(deps, current, task, plan, open, res);
-    await clearTeardownMarker(plan.workspace, path, deps.exec); // #654: a worktree brought back to life gets its teardown on the next removal
-    if (!(await isSetUp(plan.workspace, path, deps.exec))) return openRechecked(deps, plan, open, res);
+    await clearTeardownMarker(machine, plan.workspace, path); // #654: a worktree brought back to life gets its teardown on the next removal
+    if (!(await isSetUp(machine, plan.workspace, path))) return openRechecked(deps, plan, open, res);
   }
-  const machine = machineOf(deps, current, task);
   const refusal = await confirmPlan(deps, machine, task, plan);
   if (refusal) return refuse(res, refusal);
   const born = bornActivity(deps, res, task, plan);

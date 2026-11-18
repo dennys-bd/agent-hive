@@ -334,7 +334,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
-  const spawner = createRunSpawner({ pool, exec, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
+  const spawner = createRunSpawner({ pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
@@ -676,7 +676,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         const { activity, task, scope } = effect;
         const activityId = activity.id;
         // In the task's own workspace (#179); none, or one gone, is a failure a manual start retries, like a git refusal. What goes is the scope's (#236).
-        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], prs: live ? recordOf(live.state, activity.id)?.prs ?? [] : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
+        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], prs: live ? recordOf(live.state, activity.id)?.prs ?? [] : [], branch: branchFor(runtime.config, task.item), scope }, { log, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
         // Awaited, like kill: the answer is reduced inside this batch, so the next tick sees the task moved or errored, never mid-deletion.
         await clean().then(
           () => dispatch({ type: 'activityDeleted', activityId }),
@@ -1328,7 +1328,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
-  registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
+  registerWorktreeRoutes(app, { log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
   registerHoldingsRoute(app, { exec, log, requireLive }); // GET /workspaces/:name/holdings (#750): what a workspace still holds, for its removal dialog
   registerTaskRoutes(app, taskDeps);
   registerDesignFrameMint(app, { requireLive, tokens: designFrames, exec, machineFor }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes

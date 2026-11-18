@@ -5,12 +5,12 @@ import { basename, join } from 'node:path';
 import { type PrepareHooks, type TaskSetupDeps, removeInRun, runTaskSetup } from '../src/task-setup.js';
 import { type ConsoleStore, createConsoleStore } from '../src/console.js';
 import { createPtyHost, NO_PTY, type PtyHost } from '../src/pty-host.js';
-import type { Task, Effect, Exec, HiveEvent, SetupRow, Workspace } from '../src/types.js';
+import type { Machine, MachineExec } from '../src/machine.js';
+import type { Task, Effect, HiveEvent, SetupRow, Workspace } from '../src/types.js';
 import { SETUP_MARKER } from '../src/worktree-setup.js';
 import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
-import { RunFailure, type RunShell } from '../src/worktree-steps.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
-import { fakeFacts } from './fakes.js';
+import { fakeFacts, fakeMachine, runResult } from './fakes.js';
 
 const TASK: Task = {
   item: { itemId: 'board:I1', id: '1', title: 'Task 1', body: '', url: 'https://github.com/acme/r/issues/1' }, stage: 'dev', boardColumn: 'Ready', auto: true,
@@ -24,15 +24,15 @@ const TEARDOWN_HEADER = '── #1 · teardown · \\d\\d:\\d\\d:\\d\\d ──\\r
 const TEARDOWN = { id: 'teardown:board:I1', label: '#1', force: false };
 const HEADER = /^── #1 · setup · \d\d:\d\d:\d\d ──\r\n/;
 
-interface Harness { deps: TaskSetupDeps; workspace: Workspace; worktree: string; gitDir: string; events: HiveEvent[]; store: ConsoleStore; ptys: PtyHost }
+interface Harness { machine: Machine; run: Machine['run']; deps: TaskSetupDeps; workspace: Workspace; worktree: string; gitDir: string; events: HiveEvent[]; store: ConsoleStore; ptys: PtyHost }
 
 // A real console store and pty host, a fake dispatch that records, and git that answers the worktree's git dir only (#351).
-async function harness(t: AfterHost, setup: string, run: RunShell): Promise<Harness> {
+async function harness(t: AfterHost, setup: string, run: Machine['run']): Promise<Harness> {
   const [repo, worktree] = await Promise.all([tempDir(t, 'repo-'), tempDir(t, 'wt-')]);
   const gitDir = join(repo, '.git', 'worktrees', basename(worktree));
   await mkdir(gitDir, { recursive: true });
   const events: HiveEvent[] = [];
-  const exec: Exec = async (_file, args) => ({ stdout: args.includes('--git-common-dir') ? `${join(repo, '.git')}\n` : `${gitDir}\n` });
+  const exec: MachineExec = async (_file, args) => ({ stdout: args.includes('--git-common-dir') ? `${join(repo, '.git')}\n` : `${gitDir}\n` });
   const dispatch = async (event: HiveEvent): Promise<Effect[]> => {
     events.push(event);
     return [];
@@ -40,10 +40,10 @@ async function harness(t: AfterHost, setup: string, run: RunShell): Promise<Harn
   const store = createConsoleStore(() => 1000);
   const ptys = createPtyHost(NO_PTY);
   const workspace: Workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', setup };
-  return { deps: { exec, log: { info: () => undefined }, dispatch, ptys, consoleStore: store, run }, workspace, worktree, gitDir, events, store, ptys };
+  return { machine: fakeMachine({ exec, run }), run, deps: { log: { info: () => undefined }, dispatch, ptys, consoleStore: store }, workspace, worktree, gitDir, events, store, ptys };
 }
 
-const quiet: RunShell = async () => undefined;
+const quiet: Machine['run'] = async () => runResult(0);
 // The run's text made readable (#576): ESC stands for \x1b, since Biome refuses a control character in a pattern
 const shown = (text: string | undefined): string => (text ?? '').replaceAll('\x1b', 'ESC');
 const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -55,8 +55,8 @@ const GIT_DIR = `${cmd('git -C [^\\r ]+ rev-parse --absolute-git-dir')}${MS}`;
 const COMMON_DIR = `${cmd('git -C [^\\r ]+ rev-parse --git-common-dir')}${MS}`;
 
 // The worktree's git, as the stage spawn's ensureWorktree would run it (#351): one command through the exec it is handed, then the path.
-const prepareIn = (worktree: string) => async (exec: Exec): Promise<string> => {
-  await exec('git', ['worktree', 'add', worktree]);
+const prepareIn = (worktree: string) => async (machine: Machine): Promise<string> => {
+  await machine.exec('git', ['worktree', 'add', worktree]);
   return worktree;
 };
 
@@ -72,17 +72,17 @@ const withoutRows = (event: HiveEvent): object => {
   return rest;
 };
 
-test('runTaskSetup on a worktree already on disk of a workspace with no steps prepares with the plain exec: no console run, no event (#351, #576)', async (t) => {
+test('runTaskSetup on a worktree already on disk of a workspace with no steps prepares with the plain machine: no console run, no event (#351, #576)', async (t) => {
   const none = await harness(t, '# later\n', quiet);
-  const execs: Exec[] = [];
-  const path = await runTaskSetup(none.deps, TASK, ACTIVITY, none.workspace, none.worktree, async (exec) => { execs.push(exec); return none.worktree; }, BRANCH);
-  assert.deepEqual([path, execs, none.events, none.store.channels()], [none.worktree, [none.deps.exec], [], []]);
+  const machines: Machine[] = [];
+  const path = await runTaskSetup(none.machine, none.deps, TASK, ACTIVITY, none.workspace, none.worktree, async (machine) => { machines.push(machine); return none.worktree; }, BRANCH);
+  assert.deepEqual([path, machines, none.events, none.store.channels()], [none.worktree, [none.machine], [], []]);
 });
 
 test('runTaskSetup on a new worktree of a workspace with no steps marks the task and runs its git in the Setup worktree channel, ended by setup ok (#576)', async (t) => {
   const none = await harness(t, '# later\n', quiet);
   const worktree = join(none.worktree, 'new'); // no folder yet
-  const path = await runTaskSetup(none.deps, TASK, ACTIVITY, none.workspace, worktree, prepareIn(worktree), BRANCH);
+  const path = await runTaskSetup(none.machine, none.deps, TASK, ACTIVITY, none.workspace, worktree, prepareIn(worktree), BRANCH);
   assert.equal(path, worktree);
   assert.deepEqual(none.events.map(withoutRows), [
     { type: 'setupStarted', activityId: ACTIVITY, consoleId: ID }, { type: 'setupStep', activityId: ACTIVITY }, { type: 'setupEnded', activityId: ACTIVITY },
@@ -94,14 +94,15 @@ test('runTaskSetup on a new worktree of a workspace with no steps marks the task
 test('runTaskSetup marks the task before the git, logs every git command of the preparation and of the setup as `> git <args>` then `ok <ms>ms`, then the steps and setup ok, live on the pty host; a pipe\'s newlines become \\r\\n (#351)', async (t) => {
   let whileRunning: [boolean, number] | undefined;
   // typed: the RUN below reads h, and TS cannot infer a const from an initializer that refers to it (TS7022)
-  const h: Harness = await harness(t, 'RUN pnpm install', async (_file, _args, options) => {
-    options.onOutput?.('added 12 packages\n');
+  const h: Harness = await harness(t, 'RUN pnpm install', async (p) => {
+    p.onOutput?.('added 12 packages\n');
     whileRunning = [h.ptys.has(ID), h.store.history(CHANNEL)?.live.length ?? 0];
+    return runResult(0);
   });
   let markedFirst = false;
-  const path = await runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, async (exec) => {
+  const path = await runTaskSetup(h.machine, h.deps, TASK, ACTIVITY, h.workspace, h.worktree, async (machine) => {
     markedFirst = h.events.length === 1 && h.events[0].type === 'setupStarted';
-    await exec('git', ['worktree', 'add', h.worktree]);
+    await machine.exec('git', ['worktree', 'add', h.worktree]);
     return h.worktree;
   }, BRANCH);
   assert.equal(path, h.worktree);
@@ -125,50 +126,48 @@ test('runTaskSetup marks the task before the git, logs every git command of the 
 test('a worktree already there and set up prepares with the plain exec: no mark, no run; a new one (no folder yet) is marked before any git (#351)', async (t) => {
   const done = await harness(t, 'RUN pnpm install', quiet);
   await writeFile(join(done.gitDir, SETUP_MARKER), '');
-  const execs: Exec[] = [];
-  await runTaskSetup(done.deps, TASK, ACTIVITY, done.workspace, done.worktree, async (exec) => { execs.push(exec); return done.worktree; }, BRANCH);
-  assert.deepEqual([execs, done.events, done.store.channels()], [[done.deps.exec], [], []]);
+  const machines: Machine[] = [];
+  await runTaskSetup(done.machine, done.deps, TASK, ACTIVITY, done.workspace, done.worktree, async (machine) => { machines.push(machine); return done.worktree; }, BRANCH);
+  assert.deepEqual([machines, done.events, done.store.channels()], [[done.machine], [], []]);
   const fresh = await harness(t, 'RUN pnpm install', quiet);
   const git: string[][] = [];
-  const exec: Exec = async (file, args) => { git.push(args); return fresh.deps.exec(file, args); };
+  const exec: MachineExec = async (file, args) => { git.push(args); return fresh.machine.exec(file, args); };
   let before: string[][] = [];
-  await runTaskSetup({ ...fresh.deps, exec }, TASK, ACTIVITY, fresh.workspace, join(fresh.worktree, 'new'), async (logged) => { before = [...git]; return prepareIn(fresh.worktree)(logged); }, BRANCH);
+  await runTaskSetup(fakeMachine({ exec, run: fresh.run }), fresh.deps, TASK, ACTIVITY, fresh.workspace, join(fresh.worktree, 'new'), async (logged) => { before = [...git]; return prepareIn(fresh.worktree)(logged); }, BRANCH);
   assert.deepEqual(before, [], 'no git before the mark for a new worktree');
   assert.deepEqual(fresh.events.map((e) => e.type), ['setupStarted', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'setupEnded']);
 });
 
 test('a git command that fails writes its message under it and ends the run with it; setupEnded still comes and the failure is rethrown (#351)', async (t) => {
   const h = await harness(t, 'RUN pnpm install', quiet);
-  const exec: Exec = async (_file, args) => {
+  const exec: MachineExec = async (_file, args) => {
     if (args[0] === 'worktree') throw new Error('fatal: invalid reference: nope');
-    return h.deps.exec('git', args);
+    return h.machine.exec('git', args);
   };
-  await assert.rejects(runTaskSetup({ ...h.deps, exec }, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH), { message: 'fatal: invalid reference: nope' });
+  await assert.rejects(runTaskSetup(fakeMachine({ exec, run: h.run }), h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH), { message: 'fatal: invalid reference: nope' });
   assert.deepEqual(h.events.map((e) => e.type), ['setupStarted', 'setupStep', 'setupEnded']); // the failed git's end fails both rows
   assert.match(shown(h.store.history(CHANNEL)?.history), new RegExp(`\\r\\n${cmd('git worktree add [^\\r]*')}${fail('fatal: invalid reference: nope')}${fail('fatal: invalid reference: nope')}$`));
 });
 
 test('a failed or stopped setup ends its run with the failure\'s first line, still dispatches setupEnded, and rethrows for the spawn\'s spawnFailed (#351)', async (t) => {
-  const failing: RunShell = async () => {
-    throw new RunFailure(1, 'npm ERR! TOKEN=secret');
-  };
+  const failing: Machine['run'] = async () => runResult(1, 'npm ERR! TOKEN=secret');
   const h = await harness(t, 'RUN pnpm install', failing);
-  await assert.rejects(runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH), { message: 'setup failed at step 1 of 1 (line 1, RUN pnpm install): the command exited with code 1\nnpm ERR! TOKEN=secret' });
+  await assert.rejects(runTaskSetup(h.machine, h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH), { message: 'setup failed at step 1 of 1 (line 1, RUN pnpm install): the command exited with code 1\nnpm ERR! TOKEN=secret' });
   assert.deepEqual(h.events.at(-1), { type: 'setupEnded', activityId: ACTIVITY });
   assert.equal(h.store.channels()[0]?.status, 'failed', 'the console chip reads the failed setup (#537)');
   const history = h.store.history(CHANNEL)?.history ?? '';
   assert.match(shown(history), new RegExp(`\\r\\n${cmd('RUN pnpm install')}${fail('setup failed at step 1 of 1 \\(line 1, RUN pnpm install\\): the command exited with code 1')}$`));
   assert.ok(!history.includes('TOKEN=secret'), 'the tail stays on the task\'s error');
   const stopped = await harness(t, 'RUN pnpm install', quiet);
-  await assert.rejects(runTaskSetup(stopped.deps, TASK, ACTIVITY, stopped.workspace, stopped.worktree, prepareIn(stopped.worktree), { ...BRANCH, signal: AbortSignal.abort() }), { message: 'setup failed at step 1 of 1 (line 1, RUN pnpm install): stopped' });
+  await assert.rejects(runTaskSetup(stopped.machine, stopped.deps, TASK, ACTIVITY, stopped.workspace, stopped.worktree, prepareIn(stopped.worktree), { ...BRANCH, signal: AbortSignal.abort() }), { message: 'setup failed at step 1 of 1 (line 1, RUN pnpm install): stopped' });
 });
 
 test('the setups of two tasks are runs of the one Setup worktree channel: each keeps its own run id, and its header names its task (#351)', async (t) => {
   const h = await harness(t, 'RUN pnpm install', quiet);
   const other: Task = { ...TASK, item: { ...TASK.item, itemId: 'board:I2', id: '2', title: 'Task 2' } };
   const second = await harness(t, 'RUN pnpm install', quiet); // its own worktree and git dir, the first one's console
-  await runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH);
-  await runTaskSetup({ ...second.deps, consoleStore: h.store, ptys: h.ptys }, other, OTHER_ACTIVITY, second.workspace, second.worktree, prepareIn(second.worktree), BRANCH);
+  await runTaskSetup(h.machine, h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH);
+  await runTaskSetup(second.machine, { ...second.deps, consoleStore: h.store, ptys: h.ptys }, other, OTHER_ACTIVITY, second.workspace, second.worktree, prepareIn(second.worktree), BRANCH);
   assert.deepEqual([h.events[0], second.events[0]].map(withoutRows), [
     { type: 'setupStarted', activityId: ACTIVITY, consoleId: 'setup:board:I1' },
     { type: 'setupStarted', activityId: OTHER_ACTIVITY, consoleId: 'setup:board:I2' },
@@ -181,9 +180,9 @@ test('the setups of two tasks are runs of the one Setup worktree channel: each k
 
 test('removeInRun runs the teardown inside the removal, after git\'s checks and before the remove, in a teardown run ended by its summary; it writes the marker and dispatches nothing (#654)', async (t) => {
   const order: string[] = [];
-  const h = await harness(t, '', async () => { order.push('teardown'); });
+  const h = await harness(t, '', async () => { order.push('teardown'); return runResult(0); });
   const workspace: Workspace = { ...h.workspace, teardown: 'RUN docker compose down' };
-  await removeInRun(h.deps, { ...TEARDOWN, workspace }, async (before) => {
+  await removeInRun(h.machine, h.deps, { ...TEARDOWN, workspace }, async (before) => {
     order.push('checks');
     await before?.(h.worktree, true);
     order.push('remove');
@@ -200,10 +199,10 @@ test('removeInRun writes why it skipped: already torn down, worktree gone, no te
   const workspace: Workspace = { ...h.workspace, teardown: 'RUN docker compose down' };
   await writeFile(join(h.gitDir, TEARDOWN_MARKER), '');
   const hooks: (string | undefined)[] = [];
-  await removeInRun(h.deps, { ...TEARDOWN, workspace }, async (before) => before?.(h.worktree, true));
-  await removeInRun(h.deps, { ...TEARDOWN, workspace }, async (before) => before?.(h.worktree, false));
-  await removeInRun(h.deps, { ...TEARDOWN, workspace: h.workspace }, async (before) => before?.(h.worktree, true));
-  await removeInRun(h.deps, { ...TEARDOWN, workspace, force: true }, async (before) => { hooks.push(typeof before); });
+  await removeInRun(h.machine, h.deps, { ...TEARDOWN, workspace }, async (before) => before?.(h.worktree, true));
+  await removeInRun(h.machine, h.deps, { ...TEARDOWN, workspace }, async (before) => before?.(h.worktree, false));
+  await removeInRun(h.machine, h.deps, { ...TEARDOWN, workspace: h.workspace }, async (before) => before?.(h.worktree, true));
+  await removeInRun(h.machine, h.deps, { ...TEARDOWN, workspace, force: true }, async (before) => { hooks.push(typeof before); });
   assert.deepEqual(hooks, ['undefined'], 'force: no teardown hook');
   const skips = (h.store.history(CHANNEL)?.history ?? '').match(/teardown skipped: [^\r]+/g);
   assert.deepEqual(skips, ['teardown skipped: already torn down', 'teardown skipped: worktree gone', 'teardown skipped: no teardown lines', 'teardown skipped: forced']);
@@ -211,11 +210,11 @@ test('removeInRun writes why it skipped: already torn down, worktree gone, no te
 });
 
 test('a failing teardown step rejects removeInRun with its message before the remove, ends the run red and writes no marker; a run for an orphan is labelled by its slug (#654)', async (t) => {
-  const h = await harness(t, '', async () => { throw new RunFailure(1, 'Error: no such service'); });
+  const h = await harness(t, '', async () => runResult(1, 'Error: no such service'));
   const workspace: Workspace = { ...h.workspace, teardown: 'RUN docker compose down' };
   let removed = false;
   const target = { id: 'teardown:hive:hive-9-gone', label: 'hive-9-gone', workspace, force: false };
-  await assert.rejects(removeInRun(h.deps, target, async (before) => { await before?.(h.worktree, true); removed = true; }), { message: 'teardown failed at step 1 of 1 (line 1, RUN docker compose down): the command exited with code 1\nError: no such service' });
+  await assert.rejects(removeInRun(h.machine, h.deps, target, async (before) => { await before?.(h.worktree, true); removed = true; }), { message: 'teardown failed at step 1 of 1 (line 1, RUN docker compose down): the command exited with code 1\nError: no such service' });
   assert.equal(removed, false);
   assert.equal(await access(join(h.gitDir, TEARDOWN_MARKER)).then(() => true, () => false), false);
   assert.equal(h.store.channels()[0]?.status, 'failed');
@@ -227,7 +226,7 @@ test('a failing teardown step rejects removeInRun with its message before the re
 test('a git refusal before the teardown is reached propagates unchanged and ends the run clean, with no red teardown failure line (#654)', async (t) => {
   const h = await harness(t, '', quiet);
   const workspace: Workspace = { ...h.workspace, teardown: 'RUN docker compose down' };
-  await assert.rejects(removeInRun(h.deps, { ...TEARDOWN, workspace }, async () => { throw new Error('contains modified files'); }), { message: 'contains modified files' });
+  await assert.rejects(removeInRun(h.machine, h.deps, { ...TEARDOWN, workspace }, async () => { throw new Error('contains modified files'); }), { message: 'contains modified files' });
   assert.equal(h.store.channels()[0]?.status, 'done');
   const history = h.store.history(CHANNEL)?.history ?? '';
   assert.doesNotMatch(history, /failed/);
@@ -238,18 +237,16 @@ test('runTaskSetup deletes the teardown marker of a worktree on disk before it r
   const h = await harness(t, 'RUN pnpm install', quiet);
   await writeFile(join(h.gitDir, SETUP_MARKER), '');
   await writeFile(join(h.gitDir, TEARDOWN_MARKER), '');
-  await runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, async () => h.worktree, BRANCH);
+  await runTaskSetup(h.machine, h.deps, TASK, ACTIVITY, h.workspace, h.worktree, async () => h.worktree, BRANCH);
   assert.equal(await access(join(h.gitDir, TEARDOWN_MARKER)).then(() => true, () => false), false);
   assert.deepEqual(h.events, [], 'set up already: still no run');
 });
 
 test('a task\'s setup writes worktree.step for each step with its activity and phase, error on a failure, never the line (#742)', async (t) => {
-  const failing: RunShell = async () => {
-    throw new RunFailure(1, 'TOKEN=secret');
-  };
+  const failing: Machine['run'] = async () => runResult(1, 'TOKEN=secret');
   const h = await harness(t, 'RUN pnpm install', failing);
   const { facts, records } = fakeFacts();
-  await assert.rejects(runTaskSetup({ ...h.deps, facts }, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH));
+  await assert.rejects(runTaskSetup(h.machine, { ...h.deps, facts }, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH));
   assert.deepEqual(records.map((r) => ({ ...(r as unknown as Record<string, unknown>), duration_ms: 0 })),
     [{ event: 'worktree.step', level: 'error', activity_id: ACTIVITY, phase: 'setup', index: 0, kind: 'RUN', duration_ms: 0, outcome: 'failed' }]);
   assert.ok(!JSON.stringify(records).includes('pnpm'));
@@ -258,7 +255,7 @@ test('a task\'s setup writes worktree.step for each step with its activity and p
 
 test('a task\'s setup dispatches its rows on every change: the worktree and branch running from the mark and done once prepared, then each step queued, running and done in order; its run is a console group of its own (#390)', async (t) => {
   const h = await harness(t, 'RUN one\nRUN two', quiet);
-  await runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH);
+  await runTaskSetup(h.machine, h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH);
   assert.deepEqual(rowsOf(h.events).map(statuses), [
     'running running', 'done done', 'done done queued queued', 'done done running queued', 'done done done queued', 'done done done running', 'done done done done',
   ]);
@@ -274,26 +271,26 @@ test('a task\'s setup dispatches its rows on every change: the worktree and bran
 });
 
 test('a RUN that fails marks its row failed with its exit code; a git failure marks the worktree and branch rows failed with no code (#390)', async (t) => {
-  const failing: RunShell = async () => { throw new RunFailure(1, ''); };
+  const failing: Machine['run'] = async () => runResult(1);
   const h = await harness(t, 'RUN pnpm install', failing);
-  await assert.rejects(runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH));
+  await assert.rejects(runTaskSetup(h.machine, h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH));
   const failed = rowsOf(h.events).at(-1) ?? [];
   assert.deepEqual([statuses(failed), failed[2]?.code], ['done done failed', '1']);
   const git = await harness(t, 'RUN pnpm install', quiet);
-  const refusing: Exec = async (_file, args) => {
+  const refusing: MachineExec = async (_file, args) => {
     if (args[0] === 'worktree') throw new Error('fatal: invalid reference: nope');
-    return git.deps.exec('git', args);
+    return git.machine.exec('git', args);
   };
-  await assert.rejects(runTaskSetup({ ...git.deps, exec: refusing }, TASK, ACTIVITY, git.workspace, git.worktree, prepareIn(git.worktree), BRANCH));
+  await assert.rejects(runTaskSetup(fakeMachine({ exec: refusing, run: git.run }), git.deps, TASK, ACTIVITY, git.workspace, git.worktree, prepareIn(git.worktree), BRANCH));
   assert.deepEqual((rowsOf(git.events).at(-1) ?? []).map(({ kind, status, code }) => [kind, status, code]), [['worktree', 'failed', undefined], ['branch', 'failed', undefined]]);
 });
 
 // A prepare with the nested step (#450): the outer git, the mark, then each nested repo as prepareNested reports it
-const prepareNestedIn = (worktree: string) => async (exec: Exec, run?: PrepareHooks): Promise<string> => {
-  await exec('git', ['worktree', 'add', worktree]);
+const prepareNestedIn = (worktree: string) => async (machine: Machine, run?: PrepareHooks): Promise<string> => {
+  await machine.exec('git', ['worktree', 'add', worktree]);
   run?.prepared();
   run?.nested.started('docs');
-  await exec('git', ['-C', 'docs', 'worktree', 'add']);
+  await machine.exec('git', ['-C', 'docs', 'worktree', 'add']);
   run?.nested.ended('docs', { base: 'origin/main' });
   run?.nested.started('wiki');
   run?.nested.ended('wiki', { reused: true });
@@ -302,7 +299,7 @@ const prepareNestedIn = (worktree: string) => async (exec: Exec, run?: PrepareHo
 
 test('a run with nested repos queues their rows from the mark, ends the worktree and branch rows before the first starts, and writes `> nested <path>` before that repo\'s git (#450)', async (t) => {
   const h = await harness(t, 'RUN one', quiet);
-  await runTaskSetup(h.deps, TASK, ACTIVITY, { ...h.workspace, nestedRepos: ['docs', 'wiki'] }, h.worktree, prepareNestedIn(h.worktree), BRANCH);
+  await runTaskSetup(h.machine, h.deps, TASK, ACTIVITY, { ...h.workspace, nestedRepos: ['docs', 'wiki'] }, h.worktree, prepareNestedIn(h.worktree), BRANCH);
   assert.deepEqual(rowsOf(h.events).map(statuses), [
     'running running queued queued', 'done done queued queued', 'done done running queued', 'done done done queued', 'done done done running', 'done done done done',
     'done done done done queued', 'done done done done running', 'done done done done done',
@@ -318,14 +315,14 @@ test('a nested repo whose git fails fails its own row, the worktree and branch r
   const h = await harness(t, 'RUN one', quiet);
   const nested = { ...h.workspace, nestedRepos: ['docs', 'wiki'] };
   const refusal = new Error('/wt/docs is checked out on other, not on hive/1-task-1');
-  await assert.rejects(runTaskSetup(h.deps, TASK, ACTIVITY, nested, h.worktree, async (_exec, run) => {
+  await assert.rejects(runTaskSetup(h.machine, h.deps, TASK, ACTIVITY, nested, h.worktree, async (_machine, run) => {
     run?.prepared();
     run?.nested.started('docs');
     throw refusal;
   }, BRANCH), refusal);
   assert.equal(statuses(rowsOf(h.events).at(-1) ?? []), 'done done failed queued');
   const dirty = await harness(t, 'RUN one', quiet);
-  await assert.rejects(runTaskSetup(dirty.deps, TASK, ACTIVITY, { ...dirty.workspace, nestedRepos: ['docs', 'wiki'] }, dirty.worktree, async (_exec, run) => {
+  await assert.rejects(runTaskSetup(dirty.machine, dirty.deps, TASK, ACTIVITY, { ...dirty.workspace, nestedRepos: ['docs', 'wiki'] }, dirty.worktree, async (_machine, run) => {
     run?.prepared();
     run?.nested.failed('wiki');
     throw new Error('wiki has changes that are not committed');

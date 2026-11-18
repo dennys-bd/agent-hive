@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Exec } from '../src/types.js';
+import type { Machine } from '../src/machine.js';
+import { parseSetup, type SetupStep } from '../src/setup-script.js';
+import type { Exec, Workspace } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
+import { type Phase, type StepDeps, WORKTREE_NAME } from '../src/worktree-steps.js';
+import { fakeMachine } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
 // Records every command; `worktree list` answers `listing`; `rev-parse` fails unless `branch` says the ref exists; the call
@@ -47,3 +51,19 @@ export const porcelain = (repo: string, entries: [string, string?][]): string =>
     .map(([path, branch]) => `worktree ${path}\nHEAD 0123456789abcdef0123456789abcdef01234567\n${branch ? `branch refs/heads/${branch}` : 'detached'}\n`)
     .join('\n');
 
+
+export interface StepHarness { workspace: Workspace; main: string; worktree: string; home: string; machine: Machine; deps: StepDeps; output: string[] }
+
+// The main checkout, the worktree and a machine home, each a temp folder; the steps run no git (#159).
+export async function stepHarness(t: AfterHost): Promise<StepHarness> {
+  const [main, worktree, home] = await Promise.all([tempDir(t, 'main-'), tempDir(t, 'wt-'), tempDir(t, 'home-')]);
+  const output: string[] = [];
+  const noGit: Exec = async () => assert.fail('the steps run no git');
+  const machine = fakeMachine({ exec: noGit, info: { homedir: home } });
+  const deps: StepDeps = { log: { info: () => undefined }, output: (text) => output.push(text) };
+  return { workspace: { name: 'hive', path: main, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, main, worktree, home, machine, deps, output };
+}
+
+export const setupPhase = (h: StepHarness): Phase => ({ name: 'setup', from: h.main, fromName: 'hive', to: h.worktree, toName: WORKTREE_NAME });
+export const teardownPhase = (h: StepHarness): Phase => ({ name: 'teardown', from: h.worktree, fromName: WORKTREE_NAME, to: h.main, toName: 'hive' });
+export const steps = (text: string): SetupStep[] => parseSetup(text, { allowLoad: true });

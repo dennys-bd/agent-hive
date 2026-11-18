@@ -26,7 +26,7 @@ import { agentPrompt } from './stage-agent.js';
 import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, windowsShell, writePrompt, writeRunFiles } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
-import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
+import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
 import type { PtyPool } from './ptys.js';
 import type { TerminalSize } from './terminal-wire.js';
 import { prepareNested } from './worktree-nested.js';
@@ -66,7 +66,6 @@ export function taskProtocol(home: string, runtime: Pick<Runtime, 'config' | 'pr
 export interface SpawnerDeps {
   machineFor: MachineFor; // #158: the activity's machine
   pool: Pick<PtyPool, 'start'>;
-  exec: Exec; // git for the worktree step; tests inject a fake
   log: Pick<Logger, 'info' | 'error'>;
   dispatch(event: HiveEvent): Promise<Effect[]>;
   exitOf(ptyId: string): Promise<HiveEvent>; // #586: the run's exit event, its transcript check made (server-exit.ts)
@@ -157,7 +156,7 @@ function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], 
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
-  const { pool, exec, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, secret, home, facts, lspDir, plugin, externalMcp, machineFor } = deps;
+  const { pool, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, secret, home, facts, lspDir, plugin, externalMcp, machineFor } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
   // What the pool answers for any run: the exit frees it, a kill / focus failure reaches the bar, a start that never happened frees it too.
   const handlers = (ptyId: string, slug: string) => ({
@@ -193,23 +192,22 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const base = workspaceBase(config, workspace); // #854: the base remote, the workspace's base branch over the general one, its fork
     let reused: string | undefined; // #267: the branch ensure reused, which a failed setup names
     const machine = machineFor(activity);
-    const ensure = async (git: Exec, run?: PrepareHooks): Promise<string> => {
-      const logged = { ...machine, exec: git }; // the logged exec, until the step runner takes a machine
+    const ensure = async (on: Machine, run?: PrepareHooks): Promise<string> => {
       const prepared = activity.local
-        ? await ensureCheckout(logged, workspace.path, branch, base, activity.base?.ref, workspace.nestedRepos)
-        : await ensureWorktree(logged, workspace.path, workSlug(activity, task), branch, base, activity.base?.ref);
+        ? await ensureCheckout(on, workspace.path, branch, base, activity.base?.ref, workspace.nestedRepos)
+        : await ensureWorktree(on, workspace.path, workSlug(activity, task), branch, base, activity.base?.ref);
       run?.prepared(); // #450: the outer git alone is the worktree and branch rows' time; a local task's ensure runs with no run
       reused = prepared.reused;
       if (prepared.line) log.info(prepared.line);
       if (prepared.sync) await dispatch({ type: 'forkSynced', activityId: activity.id, sync: prepared.sync }); // #854
-      for (const line of await prepareNested(workspace, prepared, branch, activity.local === true, base.remote, git, run?.nested)) log.info(line); // #653, #450: before the setup, in its console run, each repo its row
+      for (const line of await prepareNested(workspace, prepared, branch, activity.local === true, base.remote, on.exec, run?.nested)) log.info(line); // #653, #450: before the setup, in its console run, each repo its row
       return prepared.path;
     };
-    if (activity.local) return ensure(machine.exec);
+    if (activity.local) return ensure(machine);
     const controller = new AbortController();
     setups.set(ptyId, controller);
     try {
-      return await runTaskSetup({ exec, log, dispatch, ptys, consoleStore, facts }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
+      return await runTaskSetup(machine, { log, dispatch, ptys, consoleStore, facts }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
     } catch (err) {
       throw controller.signal.aborted ? err : withReused(err, reused); // a Stop is no failure the branch could explain
     } finally {

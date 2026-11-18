@@ -45,7 +45,7 @@ export const isRunningIn = (state: Pick<State, 'workers' | 'activities'>, name: 
 const HTTP_NOT_FOUND = 404;
 const HTTP_SERVER_ERROR = 500;
 
-export type HoldingsRouteDeps = { exec: Exec } & Pick<WorktreeRouteDeps, 'log' | 'requireLive'>;
+export type HoldingsRouteDeps = Pick<WorktreeRouteDeps, 'log' | 'requireLive'> & { exec: Exec };
 
 // Decision 1: what delete activity would refuse. refuseUnmerged's rule (the upstream, or HEAD), then the PRs for a squash merge; a refusal
 // that is not unmerged is git failing, the route's 500

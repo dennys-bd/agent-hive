@@ -11,7 +11,7 @@ import type { Logger } from './log.js';
 import { activityOf, keptActivity, worktreeOwner } from './activities.js';
 import type { PtyHost } from './pty-host.js';
 import { removeInRun } from './task-setup.js';
-import type { Activity, Task, Config, Effect, Exec, HiveEvent, State, Workspace, WorktreeRow } from './types.js';
+import type { Activity, Task, Config, Effect, HiveEvent, State, Workspace, WorktreeRow } from './types.js';
 import { taskDir, listWorktrees, wordsOf } from './worktree.js';
 import { cleanWorktree, removeWorktree } from './worktree-remove.js';
 import { refusalOf, UNEXPECTED } from './worktree-base.js';
@@ -28,7 +28,6 @@ const UNKNOWN_WORKSPACE_MESSAGE = 'unknown workspace';
 
 export interface WorktreeRouteDeps {
   machineFor: MachineFor; // #158: the activity's machine
-  exec: Exec; // git; until the teardown's step runner takes a machine, removeInRun reads it
   log: Pick<Logger, 'info' | 'error'>;
   /** The workspace is read at call time: a POST /settings may have moved it (#202). baseBranch: what the activities' worktree line counts from (#586). */
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb' | 'baseBranch'>; promptsDir: string } } | undefined;
@@ -170,7 +169,7 @@ function registerRemoveRoute(app: Express, deps: WorktreeRouteDeps): void {
 function removeListed(deps: WorktreeRouteDeps, workspace: Workspace, slug: string, branch: string, force?: { promptsDir: string }): Promise<void> {
   const target = { id: orphanTeardownRunId(workspace.name, slug), label: slug, workspace, force: force !== undefined };
   const machine = deps.machineFor({});
-  return removeInRun(deps, target, (before) => (force
+  return removeInRun(machine, deps, target, (before) => (force
     ? removeWorktree(machine, workspace.path, { slug }, branch, force.promptsDir, workspace.nestedRepos)
     : cleanWorktree(machine, workspace.path, { slug }, branch, before, { nested: workspace.nestedRepos }))); // #653
 }

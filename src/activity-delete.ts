@@ -78,7 +78,7 @@ export async function deleteActivityOnDisk(
     const extras = await leftBehind(machine, repo, activity, branch); // a Restart's old branches (#283)
     if (!force) for (const name of extras) await refuseUnmerged(machine, repo, name); // all or nothing, as cleanWorktree checks its own
     const target = { id: teardownRunId(task.item.itemId), label: `#${task.item.id}`, workspace, force: force !== undefined };
-    await removeInRun(deps, target, (before) => (force
+    await removeInRun(machine, deps, target, (before) => (force
       ? removeWorktree(machine, repo, activity, branch, force.promptsDir, workspace.nestedRepos)
       : cleanWorktree(machine, repo, activity, branch, before, { nested: workspace.nestedRepos, prs, log }))); // #653, #660
     await dropBranches(machine, repo, extras, force !== undefined);
