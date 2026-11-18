@@ -122,7 +122,7 @@ async function doStep(machine: Machine, phase: Phase, worktree: string, step: Se
   if (step.kind === 'del') return delStep(machine, worktree, step);
   const ran = await machine.run({
     command: machine.info().shell, args: ['-c', step.arg], cwd: worktree, env: deps.env, timeoutMs: deps.timeoutMs, signal: deps.signal,
-    maxBytes: Number.POSITIVE_INFINITY, // ponytail: runShell kept no cap either; the tail is what the task keeps
+    maxBytes: Number.POSITIVE_INFINITY, tailOnly: true, // as runShell: no cap on the output, and only the tail kept, so a RUN that prints without end holds no memory
     ...(deps.output === undefined ? {} : { onOutput: deps.output }),
   });
   checkRun(ran);

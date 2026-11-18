@@ -64,7 +64,9 @@ export async function excludeFromGit(machine: Machine, repo: string): Promise<vo
     return;
   }
   const excludePath = join(infoDir, 'exclude');
-  const current = await machine.fs.readFile(excludePath, { maxBytes: EDITOR_FILE_MAX, encoding: 'utf8' }).catch(() => '');
+  // Only a missing file reads as empty: any other failure (over the cap, unreadable) appends nothing, never glued onto a last pattern
+  const current = await machine.fs.readFile(excludePath, { maxBytes: EDITOR_FILE_MAX, encoding: 'utf8' }).catch((err: { code?: unknown }) => (err?.code === 'ENOENT' ? '' : undefined));
+  if (current === undefined) return;
   if (current.split('\n').includes(`${HIVE_DIR}/`)) return;
   const separator = current === '' || current.endsWith('\n') ? '' : '\n';
   await machine.fs.appendFile(excludePath, `${separator}${HIVE_DIR}/\n`);

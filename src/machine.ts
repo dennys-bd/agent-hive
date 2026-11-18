@@ -95,6 +95,7 @@ export interface RunProcess {
   timeoutMs?: number; // absent: no limit
   signal?: AbortSignal;
   maxBytes?: number; // per stream; EDITOR_FILE_MAX by default
+  tailOnly?: true; // keep no stream's bytes, only the tail and onOutput: a caller that reads neither stream holds no memory (#159)
   onOutput?: (text: string) => void; // every decoded chunk of either stream, live; it must not throw: it runs in the stream's data event
   windowsVerbatimArguments?: boolean; // the .cmd runner's line (#632)
 }

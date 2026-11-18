@@ -78,3 +78,10 @@ test('a timeout settles within a second and kills the whole group, a background 
     assert.equal(isGroupAlive(pgid), false);
   });
 });
+
+test('tailOnly keeps no bytes of either stream, only the tail and onOutput: a setup RUN that prints without end holds no memory (#159)', async () => {
+  const seen: string[] = [];
+  const ran = await runDetached(node("process.stdout.write('one\\n'); process.stderr.write('two\\n')", { tailOnly: true, maxBytes: Number.POSITIVE_INFINITY, onOutput: (text) => seen.push(text) }));
+  assert.deepEqual([ran.code, ran.stdout.length, ran.stderr, ran.tail], [0, 0, '', 'one\ntwo']);
+  assert.equal(seen.join('').length, 'one\ntwo\n'.length);
+});

@@ -87,3 +87,12 @@ test('excludeFromGit reads and appends .git/info/exclude through the machine\'s 
   await excludeFromGit(fakeMachine({ fs: { appendFile: async (path, data) => { appended.push([path, String(data)]); } } }), repo);
   assert.deepEqual(appended, [[join(repo, '.git', 'info', 'exclude'), '.hive/\n']]);
 });
+
+test('an exclude file the machine cannot read (over the cap, unreadable) gets nothing appended, never .hive/ glued onto its last pattern (#159)', async (t) => {
+  const repo = await tempDir(t, 'repo-');
+  await mkdir(join(repo, '.git', 'info'), { recursive: true });
+  const appended: string[] = [];
+  const tooLarge = Object.assign(new Error('over the cap'), { code: 'too_large' });
+  await excludeFromGit(fakeMachine({ fs: { readFile: async () => { throw tooLarge; }, appendFile: async (_path, data) => { appended.push(String(data)); } } }), repo);
+  assert.deepEqual(appended, []);
+});
