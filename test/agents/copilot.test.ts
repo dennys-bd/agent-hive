@@ -136,14 +136,13 @@ test('the stray pattern matches the argv\'s MCP path; the command line runs copi
 
 const LOCAL = fakeMachine({ env: {} });
 
-test('clear renders no argv, since /clear is typed in the session (#875); transcripts and limits answer their placeholders until nodes 6 and 7; hooks pass a Stop on (#873, #874)', async () => {
+test('clear renders no argv, since /clear is typed in the session (#875); limits answer their placeholders until node 7; hooks pass a Stop on (#873, #874)', async () => {
   assert.deepEqual([copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({})], [undefined, ['COPILOT_ALLOW_ALL'], []]);
   const stop = { hook_event_name: 'Stop', session_id: ID };
   assert.equal(copilotRunner.hookPayload(stop), stop);
   assert.deepEqual([copilotRunner.transcriptDir(LOCAL, '/repo'), copilotRunner.ownsTranscript(LOCAL, '/x', '/repo', ID)], [undefined, false]);
   assert.deepEqual(await copilotRunner.sessionFiles(LOCAL, '/repo', ID), []);
-  assert.deepEqual(await copilotRunner.readTurn(LOCAL, '/x.jsonl'), { tokens: 0 });
-  assert.deepEqual([await copilotRunner.countMessages(LOCAL, '/x.jsonl'), await copilotRunner.planLimits(), copilotRunner.statusLimits({}, 0)], [0, undefined, undefined]);
+  assert.deepEqual([await copilotRunner.planLimits(), copilotRunner.statusLimits({}, 0)], [undefined, undefined]);
 });
 
 test('prepareHome writes the hooks plugin under the Hive\'s home for the boot\'s port, beside its shim (#873, #874)', async (t) => {

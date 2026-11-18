@@ -86,6 +86,7 @@ export interface MachineInfo {
   shell: string; // posixShell().shell
   claudeConfigDir?: string;
   codexHome?: string; // CODEX_HOME, as claudeConfigDir is CLAUDE_CONFIG_DIR (#161)
+  copilotHome?: string; // COPILOT_HOME (#878)
   agents: AgentAvailability[];
 }
 
