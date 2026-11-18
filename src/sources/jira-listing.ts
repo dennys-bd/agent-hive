@@ -3,6 +3,7 @@ import type { JsonValue, SourceItems, SourceItemValue, StoredSourceItem } from '
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type { Item, ItemFacets, SourceConfig, SourceItem } from '../types.js';
+import { relationsOf } from './jira-links.js';
 import { blockersOf, type CategoryOf, linkedIds, openBlockers, storedCategories, storedLinks } from './jira-relations.js';
 import type { JiraIssue } from './jira-queries.js';
 import { groupUnderParents, isHidden, treeLinks, withTree } from './jira-tree.js';
@@ -35,16 +36,19 @@ export function issueReader({ item, values }: Stored): (field: string) => string
 
 /** A stored issue as the Hive's task, its status the column. As GitHub's issueItem: the hint only from a rule, auto and entry resolved whole
  * (never ??: a rule's null entry is a value). Its tree is jira-tree.ts's, read over the whole listing (#830). Its blockers on every task
- * (#828), empty lists included, so the section shows; blockedBy only when one is open, as GitHub's. */
+ * (#828) and its relations (#829), empty lists included, so the sections show; blockedBy only when one is open, as GitHub's. */
 export function taskOf(stored: Stored, source: Listed, categoryOf: CategoryOf): SourceItem {
   const { item: row, values } = stored;
   const facets: ItemFacets = { assignees: textsOf(row.data.assignees), labels: textsOf(row.data.labels), fields: fieldsOf(values) };
   const createdAt = textOf(row.data.createdAt);
-  const blockers = blockersOf(storedLinks(row.data.links), source.blockingLinkTypes, categoryOf);
+  const links = storedLinks(row.data.links);
+  const blockers = blockersOf(links, source.blockingLinkTypes, categoryOf);
+  const relations = relationsOf(links, source.blockingLinkTypes, categoryOf);
   const blockedBy = openBlockers(blockers);
   const item: Item = {
     itemId: row.nodeId, id: row.key, title: textOf(row.data.title), body: textOf(row.data.body),
-    url: `https://${source.site}/browse/${row.key}`, facets, ...(createdAt === '' ? {} : { createdAt }), blockers, ...(blockedBy.length > 0 ? { blockedBy } : {}),
+    url: `https://${source.site}/browse/${row.key}`, facets, ...(createdAt === '' ? {} : { createdAt }), blockers, relations,
+    ...(blockedBy.length > 0 ? { blockedBy } : {}),
   };
   const { workspace, auto, entry } = matchTaskProps(source.taskProps.rules, issueReader(stored));
   const { defaults } = source.taskProps;
